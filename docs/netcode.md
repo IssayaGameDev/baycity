@@ -1,7 +1,8 @@
-# Netcode (current: M2 walking skeleton)
+# Netcode (current: M3 physics in the loop)
 
-Server-authoritative. Server owns state; clients render it. No physics,
-prediction, rewind, or clock sync yet (M3 / M4 / M5). Positions only.
+Server-authoritative. Server owns state; clients render it. Server now simulates
+with Rapier3d; the client renders via Three.js. No prediction, rewind, or clock
+sync yet (M4 / M5). Positions only (no rotation on the wire yet).
 
 ## Server (`packages/server`)
 
@@ -9,8 +10,11 @@ prediction, rewind, or clock sync yet (M3 / M4 / M5). Positions only.
   pure `createStepper` accumulator (`packages/core/src/loop.ts`). The stepper
   clamps to `maxSteps` and drops the backlog after a long stall (no spiral of
   death). `simTimeMs` advances by the fixed dt each tick.
-- **World:** throwaway kinematic sphere orbiting the origin in XZ
-  (`world.ts`) — content only to exercise the net path. Rapier replaces it in M3.
+- **World:** Rapier3d (`@mp/physics`) — a fixed ground with dynamic balls dropped
+  from staggered heights, **re-dropped every ~4 s** so the demo keeps moving instead
+  of settling once (`world.ts`, throwaway content). `world.step(dt)` runs one physics
+  step per tick. `initPhysics()` must resolve before the world is created. Only
+  dynamic bodies are replicated; the static ground is drawn client-side.
 - **Snapshots:** 20 Hz (`SNAPSHOT_RATE_HZ`, within SEED's 15–20 Hz), decoupled
   from the tick by a millisecond accumulator, so the rate is independent of the
   tick ratio.
@@ -41,6 +45,14 @@ prediction, rewind, or clock sync yet (M3 / M4 / M5). Positions only.
   time and lerps per entity; holds the nearest endpoint outside the buffered
   range (no extrapolation yet).
 - Buffer is pruned beyond `maxBufferMs` behind the newest snapshot.
+
+## Rendering (`@mp/render-three`)
+
+- `createThreeStage({ canvas })` gives WebGL2 renderer + scene + camera + rAF loop
+  + resize. It is unopinionated: the game adds lights/ground/meshes and, each
+  frame, positions one mesh per sampled entity id.
+- The client does **not** run physics in M3 — it only renders interpolated
+  snapshot positions. Client-side physics/prediction arrives in M4.
 
 ## ⚠ Design decision pending: interpolation buffer duration
 

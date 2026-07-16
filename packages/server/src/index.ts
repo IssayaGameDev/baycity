@@ -1,8 +1,9 @@
 import { startFixedLoop, type Connection, type LoopHandle } from '@mp/core'
 import { encodeSnapshot } from '@mp/net'
+import { initPhysics } from '@mp/physics'
 
 import { createUwsServerTransport, type UwsServerTransport } from './transport-uws'
-import { createSphereWorld } from './world'
+import { createSimWorld } from './world'
 
 /**
  * @mp/server — authoritative simulation host: rooms, fixed tick, per-client
@@ -23,8 +24,9 @@ export interface ServerHandle {
 /** Starts the walking-skeleton server. No side effects at import; call to run. */
 export const startServer = async (opts: { port?: number } = {}): Promise<ServerHandle> => {
   const port = opts.port ?? DEFAULT_PORT
+  await initPhysics()
   const transport: UwsServerTransport = await createUwsServerTransport({ port })
-  const world = createSphereWorld()
+  const world = createSimWorld()
   const connections = new Set<Connection>()
 
   transport.onConnection((conn) => {
@@ -41,7 +43,7 @@ export const startServer = async (opts: { port?: number } = {}): Promise<ServerH
     onTick: (dtSeconds) => {
       const dtMs = dtSeconds * 1000
       simTimeMs += dtMs
-      world.update(simTimeMs)
+      world.step(dtSeconds)
 
       sinceSnapshotMs += dtMs
       if (sinceSnapshotMs >= snapshotIntervalMs) {

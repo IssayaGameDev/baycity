@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Walking Skeleton — M2</title>
+    <title>Physics in the loop — M3</title>
     <style>
       body {
         margin: 0;
@@ -18,13 +18,13 @@
       }
       h1 { font-size: 16px; font-weight: 600; margin: 0; }
       #status { font-size: 14px; opacity: 0.8; }
-      canvas { background: #0f172a; border-radius: 8px; }
+      canvas { border-radius: 8px; }
     </style>
   </head>
   <body>
-    <h1>M2 walking skeleton — server-authoritative sphere, interpolated (top-down X/Z)</h1>
+    <h1>M3 — server-simulated Rapier balls, rendered in Three.js (WebGL2), interpolated</h1>
     <div id="status">connecting…</div>
-    <canvas id="view" width="600" height="600"></canvas>
+    <canvas id="view" width="900" height="560"></canvas>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

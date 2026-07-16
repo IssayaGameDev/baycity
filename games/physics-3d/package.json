@@ -1,5 +1,5 @@
 {
-  "name": "@game/walking-skeleton",
+  "name": "@game/physics-3d",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -12,7 +12,8 @@
   "dependencies": {
     "@mp/client": "workspace:*",
     "@mp/core": "workspace:*",
-    "@mp/net": "workspace:*"
+    "@mp/net": "workspace:*",
+    "@mp/render-three": "workspace:*"
   },
   "devDependencies": {
     "vite": "^6.0.0"

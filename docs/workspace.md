@@ -7,12 +7,12 @@ strict, source-first (no build step at this stage).
 
 - `packages/core` — fixed-timestep loop, entity model, math, transport interface. Imports no sibling.
 - `packages/net` — schemas, binary serialization, quantization, clock sync. → core
-- `packages/physics` — Rapier3d wrapper, headless-capable. → core
+- `packages/physics` — Rapier3d wrapper (`@dimforge/rapier3d-compat`), headless. → core
 - `packages/server` — rooms, tick, per-client snapshots, rewind. → core, net, physics
 - `packages/client` — prediction/reconciliation, interpolation, input; headless-capable (bots). → core, net, physics
 - `packages/render-pixi` — PixiJS 2D/HUD renderer. Browser (DOM lib). → core
-- `packages/render-three` — Three.js WebGL2 renderer. Browser (DOM lib). → core
-- `games/walking-skeleton` — throwaway M2 browser demo (Vite + canvas), composes `client`/`net`/`core`. Not the deferred reference game.
+- `packages/render-three` — Three.js WebGL2 stage; re-exports THREE. Browser (DOM lib). → core, three
+- `games/physics-3d` — throwaway M3 browser demo (Three.js), composes `client`/`net`/`core`/`render-three`. Not the deferred reference game.
 - `tools/`, `infra/` — empty placeholders; populated later (SEED §7).
 
 ## Dependency laws (SEED §6)
@@ -46,12 +46,12 @@ headless packages) is a later addition. Today the `lib` split enforces (2) at th
   (`pnpm -r run typecheck`), each applying its own `lib`.
 - `pnpm check` — typecheck + test. The milestone gate.
 
-## Run the M2 demo
+## Run the demo
 
 Two terminals from the repo root:
 
 - `pnpm dev:server` — server on `ws://localhost:9200` (via `tsx`).
-- `pnpm dev:demo` — Vite dev server for the browser demo (`http://localhost:5173`).
+- `pnpm dev:demo` — Vite dev server for the current demo, `games/physics-3d` (`http://localhost:5173`).
 
 The server runs through `tsx` (dev tooling; not a shipped/runtime dependency). The
 browser client is served from TypeScript source by Vite (no stack build step).

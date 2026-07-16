@@ -13,7 +13,7 @@
     "test:watch": "vitest",
     "check": "pnpm run typecheck && pnpm run test",
     "dev:server": "pnpm --filter @mp/server run dev",
-    "dev:demo": "pnpm --filter @game/walking-skeleton run dev"
+    "dev:demo": "pnpm --filter @game/physics-3d run dev"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
