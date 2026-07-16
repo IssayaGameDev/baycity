@@ -2,7 +2,7 @@
 
 A reusable multiplayer game stack for HTML5/TypeScript browser games — 3D via Three.js (WebGL2) with a PixiJS 2D HUD, server-authoritative netcode. Games are built as thin compositions on top of the stack.
 
-**Status:** M1 — scaffold. Packages are skeletons only. See `SEED.md` for the plan and `docs/INDEX.md` for system docs.
+**Status:** M2 — walking skeleton. A server-authoritative sphere syncs to the browser over WebSocket and is interpolated. See `SEED.md` for the plan and `docs/INDEX.md` for system docs.
 
 ## Requirements
 
@@ -17,6 +17,17 @@ pnpm check      # typecheck + tests (milestone gate)
 pnpm test       # tests only
 pnpm typecheck  # types only
 ```
+
+## Run the demo (M2)
+
+Two terminals:
+
+```sh
+pnpm dev:server   # ws://localhost:9200
+pnpm dev:demo     # http://localhost:5173  (open it)
+```
+
+You should see a teal dot orbiting — the server-simulated sphere, interpolated on the client.
 
 ## Deploy
 

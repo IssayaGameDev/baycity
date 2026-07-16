@@ -28,3 +28,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# claude code — personal overrides only; shared settings.json is tracked
+.claude/settings.local.json

@@ -12,7 +12,8 @@ strict, source-first (no build step at this stage).
 - `packages/client` — prediction/reconciliation, interpolation, input; headless-capable (bots). → core, net, physics
 - `packages/render-pixi` — PixiJS 2D/HUD renderer. Browser (DOM lib). → core
 - `packages/render-three` — Three.js WebGL2 renderer. Browser (DOM lib). → core
-- `games/`, `tools/`, `infra/` — empty placeholders; populated later (SEED §7).
+- `games/walking-skeleton` — throwaway M2 browser demo (Vite + canvas), composes `client`/`net`/`core`. Not the deferred reference game.
+- `tools/`, `infra/` — empty placeholders; populated later (SEED §7).
 
 ## Dependency laws (SEED §6)
 
@@ -40,10 +41,20 @@ headless packages) is a later addition. Today the `lib` split enforces (2) at th
 
 ## Scripts (run from repo root)
 
-- `pnpm test` — Vitest over all packages.
-- `pnpm typecheck` — typecheck root config files, then `tsc --noEmit` per package (each
-  applies its own `lib`).
+- `pnpm test` — Vitest over all packages (pool `forks`, for the native uWS addon + sockets).
+- `pnpm typecheck` — root config files, then `tsc --noEmit` in every workspace project
+  (`pnpm -r run typecheck`), each applying its own `lib`.
 - `pnpm check` — typecheck + test. The milestone gate.
+
+## Run the M2 demo
+
+Two terminals from the repo root:
+
+- `pnpm dev:server` — server on `ws://localhost:9200` (via `tsx`).
+- `pnpm dev:demo` — Vite dev server for the browser demo (`http://localhost:5173`).
+
+The server runs through `tsx` (dev tooling; not a shipped/runtime dependency). The
+browser client is served from TypeScript source by Vite (no stack build step).
 
 ## Adding a package
 

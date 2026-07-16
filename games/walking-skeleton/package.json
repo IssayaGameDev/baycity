@@ -1,0 +1,20 @@
+{
+  "name": "@game/walking-skeleton",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mp/client": "workspace:*",
+    "@mp/core": "workspace:*",
+    "@mp/net": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}
