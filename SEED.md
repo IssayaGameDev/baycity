@@ -8,12 +8,13 @@ If code and this file conflict on a *decision*, ask Kodjo. Decisions here are lo
 
 ## 1. What is being built
 
-A reusable **multiplayer game stack** for HTML5/TypeScript browser games. Games are built *on top of* the stack as thin compositions. The stack must support two game types:
+A reusable **multiplayer game stack** for HTML5/TypeScript browser games. Games are built *on top of* the stack as thin compositions.
 
-- **2D games** — PixiJS rendering only
-- **3D games** — Three.js world rendering + PixiJS HUD layer
+**Current scope:** 3D games — Three.js world rendering (WebGL2) + PixiJS 2D HUD overlay. Physics is **3D only** (Rapier3d).
 
-The stack is the product of this phase. A reference game exists only to exercise it.
+**Deferred (not now, not rejected):** a 2D game path (PixiJS-only rendering + 2D physics). PixiJS is in scope today *solely* as the 2D renderer for the HUD. Kodjo scopes this when relevant.
+
+The stack is the product of this phase. A reference/sandbox game is **out of scope for now** (Kodjo defines it later); milestones are exercised with throwaway content only.
 
 ## 2. Locked technical decisions
 
@@ -23,7 +24,7 @@ The stack is the product of this phase. A reference game exists only to exercise
 | Client build | Vite | — |
 | 3D rendering | Three.js on **WebGL2** | WebGPU rejected for now: mobile Safari reach |
 | 2D rendering / HUD | PixiJS | Stacked canvas over the Three.js canvas (not shared context) |
-| Physics | Rapier (WASM), **standard SIMD build** | 2D and 3D flavors behind one thin wrapper API |
+| Physics | Rapier3d (WASM), **standard SIMD build** | **3D only for now.** Thin wrapper over Rapier3d (shared world/stepping/lifecycle) — not a dimension-agnostic 2D/3D surface. 2D flavor deferred; wrapper must not preclude adding rapier2d later |
 | Determinism | **None.** No lockstep, no deterministic build | Rejected deliberately — see §4 rationale |
 | Server runtime | Node (Bun acceptable if justified) | Headless Rapier, no rendering imports |
 | Server tick | 30 Hz fixed timestep | Starting point; raising it is a design/budget question |
@@ -71,7 +72,7 @@ Known mitigations (menu, not mandates — each application is a design question)
 3. **Games are thin compositions.** If a new game requires modifying `packages/`, that is a stack gap to fix, not a workaround to write
 
 Package layout agreed as a starting point (agent may propose changes — ask first):
-`core` (fixed-timestep loop, entity model, math, transport interface) · `net` (schemas, binary serialization, quantization, clock sync) · `physics` (Rapier wrapper, 2D+3D) · `server` (rooms, tick, per-client snapshots, rewind) · `client` (prediction/reconciliation, interpolation, input) · `render-pixi` · `render-three` · plus `games/`, `tools/` (netsim, bots), `infra/`.
+`core` (fixed-timestep loop, entity model, math, transport interface) · `net` (schemas, binary serialization, quantization, clock sync) · `physics` (Rapier3d wrapper, headless-capable) · `server` (rooms, tick, per-client snapshots, rewind) · `client` (prediction/reconciliation, interpolation, input) · `render-pixi` · `render-three` · plus `games/`, `tools/` (netsim, bots), `infra/`.
 
 ## 7. Build order (proposed milestones — vertical slices, adjustable with Kodjo's sign-off)
 
@@ -83,8 +84,10 @@ Package layout agreed as a starting point (agent may propose changes — ask fir
 6. **Per-client snapshots & binary protocol hardening** — delta encoding, quantization plumbing (present but unconfigured), schema versioning
 7. **HUD & input** — `render-pixi` overlay, touch + kb/m abstraction
 8. **Bots & load validation** — headless clients, measure budgets 2 and 3 with 20 bots
-9. **2D path** — `physics` 2D flavor + Pixi-only game proving the stack isn't 3D-coupled
-10. **Reference sandbox game + deploy** — exercises every feature; Dockerfile + single-VPS deploy script
+9. **[Deferred] 2D path** — `physics` 2D flavor + Pixi-only game proving the stack isn't 3D-coupled — out of scope now (2D dropped)
+10. **[Deferred] Reference sandbox game + deploy** — reference game out of scope now; deploy (Dockerfile + single-VPS) re-scoped with Kodjo when a deploy target exists
+
+**Active program is M1–M8.** M9–M10 deferred per scope above. Milestones exercised with throwaway content, not a reference game.
 
 Each milestone ends with: tests passing, docs updated (same commit), and a runnable demonstration.
 

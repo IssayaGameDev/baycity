@@ -28,6 +28,17 @@ Boundary examples: snapshot header layout — technical. Interpolation buffer du
 - Prefer plain functions and data over classes
 - Every milestone ends runnable: tests green, demo works
 
+## Git
+
+- One commit per completed feature request or milestone — no work-in-progress commits; a commit and its docs travel together (see documentation policy)
+- Commit only after Kodjo has validated the work — never before
+- Messages: imperative subject line; body only when the *why* isn't obvious from the diff. No "Co-Authored-By" or agent attribution lines
+- Main stays green — never commit failing tests or a broken build to main
+- Branches are for experiments and risky refactors; short-lived, merged or deleted — no long-running divergence
+- Never rewrite pushed history; never force-push
+- Never commit secrets or generated output (`node_modules`, `dist`, builds) — maintain `.gitignore` from the first commit
+- Tag milestone completions (`m1`, `m2`, …) so any milestone state is recoverable
+
 ## Documentation policy
 
 1. Docs are for the next agent session, not humans — dense, factual, no narrative
