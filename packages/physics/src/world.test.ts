@@ -70,6 +70,23 @@ describe('physics world', () => {
     world.free()
   })
 
+  it('setPosition keeps velocity while teleport zeros it', () => {
+    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+    const body = world.addDynamicBody({ position: { x: 0, y: 0, z: 0 }, shape: { kind: 'ball', radius: 0.5 } })
+    body.setLinvel({ x: 5, y: 0, z: 0 })
+    world.step(1 / 60)
+    expect(body.translation().x).toBeGreaterThan(0) // moving
+
+    body.setPosition({ x: 0, y: 0, z: 0 }) // relocate, keep momentum
+    world.step(1 / 60)
+    expect(body.translation().x).toBeGreaterThan(0) // still moving
+
+    body.teleport({ x: 0, y: 0, z: 0 }) // relocate, kill momentum
+    world.step(1 / 60)
+    expect(body.translation().x).toBeCloseTo(0, 3) // stopped
+    world.free()
+  })
+
   it('leaves a fixed body where it was placed', () => {
     const world = createPhysicsWorld()
     const ground = world.addFixedBody({

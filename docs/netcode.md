@@ -31,7 +31,9 @@ client predictor (SEED §4). Determinism verified in `sim.test.ts`.
 
 - **Prediction (`predictor.ts`):** generic world predictor — predicts the local
   player and the balls (per-entity render-interpolation + eased corrections);
-  full-state reconciliation replays unacked inputs. Remote players are kinematic
+  full-state reconciliation replays unacked inputs. Predicted props are
+  position-corrected but **keep their velocity** (`setPosition`, not `teleport`), so a
+  correction doesn't freeze a rolling ball mid-motion. Remote players are kinematic
   obstacles.
 - **Reassembly + interpolation:** `createSnapshotReassembler` rebuilds full snapshots
   from full/delta messages; `snapshotClient` renders remotes ~`interpolationDelayMs`

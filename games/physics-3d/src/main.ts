@@ -150,10 +150,10 @@ const initPrediction = async (id: EntityId): Promise<void> => {
     },
     restore: (state) => {
       const pp = state.get(id)
-      if (pp) playerBody.teleport(pp)
+      if (pp) playerBody.teleport(pp) // player velocity is re-derived by input replay
       for (const b of balls) {
         const bp = state.get(b.id)
-        if (bp) b.body.teleport(bp)
+        if (bp) b.body.setPosition(bp) // keep the ball's predicted momentum (no freeze)
       }
     },
   }

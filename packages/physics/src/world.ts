@@ -36,6 +36,9 @@ export interface PhysicsBody {
   setLinvel: (v: Vec3) => void
   /** Move the body to `position` and zero its velocities (wakes it). */
   teleport: (position: Vec3) => void
+  /** Move the body to `position` but keep its velocity — for reconciling a
+   * predicted prop without killing its momentum (avoids a freeze/stutter). */
+  setPosition: (position: Vec3) => void
   /** Kinematic bodies only: set the target position for the next step (Rapier
    * moves it there and generates contacts, so it blocks/pushes dynamic bodies). */
   setNextKinematicTranslation: (position: Vec3) => void
@@ -101,6 +104,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
         body.setLinvel({ x: 0, y: 0, z: 0 }, true)
         body.setAngvel({ x: 0, y: 0, z: 0 }, true)
       },
+      setPosition: (p) => body.setTranslation({ x: p.x, y: p.y, z: p.z }, true),
       setNextKinematicTranslation: (p) => body.setNextKinematicTranslation({ x: p.x, y: p.y, z: p.z }),
       remove: () => world.removeRigidBody(body),
     }

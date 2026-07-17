@@ -21,7 +21,8 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
 - `ShapeDesc`: `{ kind: 'ball', radius }` | `{ kind: 'cuboid', halfExtents }`
 - `PhysicsBody.translation()` → `Vec3` (rotation not read yet — see below)
 - `PhysicsBody.linvel()` / `setLinvel(v)` — read/set linear velocity (velocity-controlled player, M4)
-- `PhysicsBody.teleport(position)` — moves the body and zeros its velocities (demo re-drop; predictor reconciliation restore)
+- `PhysicsBody.teleport(position)` — moves the body and zeros its velocities (player reconciliation restore; re-drop)
+- `PhysicsBody.setPosition(position)` — moves the body but keeps velocity (reconciling a predicted prop without freezing its momentum)
 - `PhysicsBody.remove()` — remove the body from the world (player disconnect)
 - `world.addKinematicBody(...)` + `PhysicsBody.setNextKinematicTranslation(p)` — a
   position-based kinematic body moved each step; used client-side to mirror remote
