@@ -1,0 +1,26 @@
+{
+  "name": "@game/tps",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mp/client": "workspace:*",
+    "@mp/core": "workspace:*",
+    "@mp/net": "workspace:*",
+    "@mp/netsim": "workspace:*",
+    "@mp/physics": "workspace:*",
+    "@mp/render-three": "workspace:*",
+    "@mp/server": "workspace:*",
+    "tweakpane": "^4.0.5"
+  },
+  "devDependencies": {
+    "@tweakpane/core": "^2.0.0",
+    "vite": "^6.0.0"
+  }
+}

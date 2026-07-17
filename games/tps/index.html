@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TPS character controller — M10</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0b1020;
+        color: #e2e8f0;
+        font-family: system-ui, sans-serif;
+      }
+      /* The game fills the viewport; the renderer tracks this size (DPR-aware). */
+      #view {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .overlay {
+        position: fixed;
+        pointer-events: none;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+      }
+      #status {
+        top: 12px;
+        left: 14px;
+        font-size: 13px;
+        opacity: 0.9;
+      }
+      #hint {
+        left: 14px;
+        bottom: 12px;
+        font-size: 12px;
+        opacity: 0.65;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="status" class="overlay">connecting…</div>
+    <div id="hint" class="overlay">Click to capture the mouse (Esc releases) · Mouse: look · WASD: move · Space: jump</div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

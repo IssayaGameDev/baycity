@@ -20,6 +20,7 @@ export const initPhysics = async (): Promise<void> => {
 export type ShapeDesc =
   | { readonly kind: 'ball'; readonly radius: number }
   | { readonly kind: 'cuboid'; readonly halfExtents: Vec3 }
+  | { readonly kind: 'capsule'; readonly halfHeight: number; readonly radius: number }
 
 export interface BodyOptions {
   readonly position: Vec3
@@ -48,6 +49,28 @@ export interface PhysicsBody {
 
 type BodyKind = 'dynamic' | 'fixed' | 'kinematic'
 
+export interface CharacterOptions {
+  readonly position: Vec3
+  readonly radius: number
+  /** Half-height of the capsule's cylindrical section. */
+  readonly halfHeight: number
+}
+
+/**
+ * A kinematic-character-controller body (SEED §4-ready): crisp, non-bouncy
+ * control that resolves against colliders (walls, steps, slopes). The caller owns
+ * the vertical velocity / gravity / jump; `move` applies a desired translation
+ * with collision and reports whether it ended grounded.
+ */
+export interface CharacterBody {
+  translation: () => Vec3
+  /** Reposition immediately (reconciliation restore). */
+  setPosition: (position: Vec3) => void
+  /** Apply a desired translation this step (collision-resolved); returns grounded. */
+  move: (desired: Vec3) => { grounded: boolean }
+  remove: () => void
+}
+
 export interface PhysicsWorldOptions {
   readonly gravity?: Vec3
 }
@@ -58,6 +81,8 @@ export interface PhysicsWorld {
   /** Kinematic (position-based) body — moved via `setNextKinematicTranslation`.
    * Used client-side to mirror server entities as collision obstacles. */
   addKinematicBody: (opts: BodyOptions) => PhysicsBody
+  /** Kinematic character controller (capsule). */
+  addCharacter: (opts: CharacterOptions) => CharacterBody
   /** Advance the simulation by one fixed step of `dtSeconds`. */
   step: (dtSeconds: number) => void
   /** Release the underlying WASM world. */
@@ -68,7 +93,9 @@ const makeCollider = (shape: ShapeDesc, restitution: number | undefined) => {
   let cd =
     shape.kind === 'ball'
       ? RAPIER.ColliderDesc.ball(shape.radius)
-      : RAPIER.ColliderDesc.cuboid(shape.halfExtents.x, shape.halfExtents.y, shape.halfExtents.z)
+      : shape.kind === 'cuboid'
+        ? RAPIER.ColliderDesc.cuboid(shape.halfExtents.x, shape.halfExtents.y, shape.halfExtents.z)
+        : RAPIER.ColliderDesc.capsule(shape.halfHeight, shape.radius)
   if (restitution !== undefined) cd = cd.setRestitution(restitution)
   return cd
 }
@@ -110,10 +137,45 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
     }
   }
 
+  const addCharacter = (o: CharacterOptions): CharacterBody => {
+    const controller = world.createCharacterController(0.02)
+    controller.enableAutostep(0.4, 0.2, true) // step over small ledges
+    controller.enableSnapToGround(0.4) // stick to the ground on slopes/steps
+    const body = world.createRigidBody(
+      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(o.position.x, o.position.y, o.position.z),
+    )
+    const collider = world.createCollider(RAPIER.ColliderDesc.capsule(o.halfHeight, o.radius), body)
+    return {
+      translation: () => {
+        const t = body.translation()
+        return vec3(t.x, t.y, t.z)
+      },
+      setPosition: (p) => {
+        body.setTranslation({ x: p.x, y: p.y, z: p.z }, true)
+        // Body→collider sync only happens inside world.step; sync now so a
+        // computeColliderMovement right after a teleport (reconciliation replay)
+        // doesn't run from the collider's stale position.
+        collider.setTranslation({ x: p.x, y: p.y, z: p.z })
+      },
+      move: (desired) => {
+        controller.computeColliderMovement(collider, { x: desired.x, y: desired.y, z: desired.z })
+        const c = controller.computedMovement()
+        const t = body.translation()
+        body.setNextKinematicTranslation({ x: t.x + c.x, y: t.y + c.y, z: t.z + c.z })
+        return { grounded: controller.computedGrounded() }
+      },
+      remove: () => {
+        world.removeRigidBody(body)
+        world.removeCharacterController(controller)
+      },
+    }
+  }
+
   return {
     addDynamicBody: (o) => addBody(o, 'dynamic'),
     addFixedBody: (o) => addBody(o, 'fixed'),
     addKinematicBody: (o) => addBody(o, 'kinematic'),
+    addCharacter,
     step: (dtSeconds) => {
       world.timestep = dtSeconds
       world.step()

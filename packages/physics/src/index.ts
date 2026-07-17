@@ -11,5 +11,7 @@ export type {
   PhysicsBody,
   PhysicsWorld,
   PhysicsWorldOptions,
+  CharacterOptions,
+  CharacterBody,
 } from './world'
 export { initPhysics, createPhysicsWorld } from './world'

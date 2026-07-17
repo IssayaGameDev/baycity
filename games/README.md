@@ -18,3 +18,7 @@ recoverable at their milestone tag). Current:
   `render-pixi`/`netsim` + `@mp/server/sim`. A **Tweakpane** "Network" folder exposes the
   netsim knobs and the two game-feel sliders live. Doubles as proof a game composes the
   stack without modifying it. (M2's `walking-skeleton` was removed; recover it at tag `m2`.)
+- `tps` — M10 prototype: a 3D TPS character controller (orbit/mouselook camera,
+  camera-relative predicted movement, jump) on an obstacle course. Runs against the server
+  in `tps` mode (`pnpm dev:server:tps`). The first game that made the server host a
+  pluggable `GameSim` (ADR-0010).

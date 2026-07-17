@@ -3,16 +3,16 @@ import { describe, expect, it } from 'vitest'
 import { createManualInputSource, keysToMovement } from './input'
 
 describe('keysToMovement', () => {
-  it('maps WASD and arrows to a movement vector', () => {
-    expect(keysToMovement(new Set(['d']))).toEqual({ x: 1, z: 0 })
-    expect(keysToMovement(new Set(['a']))).toEqual({ x: -1, z: 0 })
-    expect(keysToMovement(new Set(['w']))).toEqual({ x: 0, z: -1 })
-    expect(keysToMovement(new Set(['arrowdown']))).toEqual({ x: 0, z: 1 })
+  it('maps physical WASD and arrow codes to a movement vector', () => {
+    expect(keysToMovement(new Set(['KeyD']))).toEqual({ x: 1, z: 0 })
+    expect(keysToMovement(new Set(['KeyA']))).toEqual({ x: -1, z: 0 })
+    expect(keysToMovement(new Set(['KeyW']))).toEqual({ x: 0, z: -1 })
+    expect(keysToMovement(new Set(['ArrowDown']))).toEqual({ x: 0, z: 1 })
   })
 
   it('cancels opposite keys and combines axes', () => {
-    expect(keysToMovement(new Set(['a', 'd']))).toEqual({ x: 0, z: 0 })
-    expect(keysToMovement(new Set(['d', 's']))).toEqual({ x: 1, z: 1 })
+    expect(keysToMovement(new Set(['KeyA', 'KeyD']))).toEqual({ x: 0, z: 0 })
+    expect(keysToMovement(new Set(['KeyD', 'KeyS']))).toEqual({ x: 1, z: 1 })
   })
 
   it('is empty with no keys', () => {

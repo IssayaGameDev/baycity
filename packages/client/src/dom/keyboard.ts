@@ -4,21 +4,23 @@ export interface KeyboardInput extends InputSource {
   dispose: () => void
 }
 
-/** Keyboard/arrow-key movement source (browser). */
+/**
+ * Keyboard/arrow-key movement source (browser). Tracks **physical key codes**
+ * (`KeyboardEvent.code`), so it works regardless of layout (QWERTY/AZERTY/…).
+ */
 export const createKeyboardInput = (target: Window = window): KeyboardInput => {
-  const keys = new Set<string>()
+  const codes = new Set<string>()
   const down = (e: KeyboardEvent): void => {
-    const k = e.key.toLowerCase()
-    if (k.startsWith('arrow')) e.preventDefault()
-    keys.add(k)
+    if (e.code.startsWith('Arrow')) e.preventDefault()
+    codes.add(e.code)
   }
   const up = (e: KeyboardEvent): void => {
-    keys.delete(e.key.toLowerCase())
+    codes.delete(e.code)
   }
   target.addEventListener('keydown', down)
   target.addEventListener('keyup', up)
   return {
-    movement: () => keysToMovement(keys),
+    movement: () => keysToMovement(codes),
     dispose: () => {
       target.removeEventListener('keydown', down)
       target.removeEventListener('keyup', up)

@@ -29,7 +29,7 @@ export const createBot = (url: string, phase = 0): Bot => {
     if (readMessageType(ev.data) === MSG_WELCOME && inputTimer === null) {
       inputTimer = setInterval(() => {
         angle += 0.12
-        ws.send(encodeInput({ seq: ++seq, moveX: Math.cos(angle), moveZ: Math.sin(angle) }))
+        ws.send(encodeInput({ seq: ++seq, moveX: Math.cos(angle), moveZ: Math.sin(angle), jump: false }))
       }, 1000 / TICK_HZ)
     }
   }

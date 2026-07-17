@@ -23,7 +23,7 @@ describe('shared player sim', () => {
   }
 
   const driveRight = (): InputCommand[] =>
-    Array.from({ length: 60 }, (_, i) => ({ seq: i + 1, moveX: 1, moveZ: 0 }))
+    Array.from({ length: 60 }, (_, i) => ({ seq: i + 1, moveX: 1, moveZ: 0, jump: false }))
 
   it('is deterministic: identical inputs yield identical state (basis of reconciliation)', () => {
     // Server authority and client prediction run this same sim; matching results

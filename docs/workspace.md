@@ -14,12 +14,17 @@ strict, source-first (no build step at this stage).
 - `packages/render-three` — Three.js WebGL2 stage; re-exports THREE. Browser (DOM lib). → core, three
 - `tools/netsim` — latency/jitter/loss `ClientTransport` wrapper, headless. → core
 - `tools/bots` — headless load clients + `load` harness (budgets 2 & 3). → net, server
-- `games/physics-3d` — throwaway demo (evolves per milestone; currently M4 prediction): WASD predicted player vs interpolated balls, netsim sliders, prediction toggle. Not the deferred reference game.
+- `games/physics-3d` — netcode demo: WASD predicted player + pushable balls, click-to-shoot, netsim/prediction toggles.
+- `games/tps` — M10 3D TPS character-controller prototype (orbit camera, camera-relative predicted movement, jump).
 - `infra/` — empty placeholder; populated later (SEED §7).
 
+The server room is game-agnostic (`GameSim`); `startServer({ mode })` hosts `ballGame` (default)
+or `tpsGame`. Both games' shared sims live under `@mp/server` (see subpaths below).
+
 Subpaths (secondary entry points, each with its own tsconfig where the lib differs):
-- `@mp/server/sim` — shared deterministic player sim, free of server-only deps (no
-  transport/uWS). Imported by the server room and by the demo. See ADR-0004.
+- `@mp/server/sim` — shared deterministic ball-demo sim, free of server-only deps. See ADR-0004.
+- `@mp/server/tps` — shared deterministic TPS character sim + world geometry. Imported by the
+  TPS server game and the TPS client. See ADR-0010.
 - `@mp/client/dom` — browser input adapters (keyboard, touch joystick), DOM-enabled via
   `packages/client/tsconfig.dom.json`, so the main `@mp/client` stays headless. See ADR-0008.
 

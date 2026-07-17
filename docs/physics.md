@@ -30,6 +30,11 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
 - `BodyOptions.linearDamping` — velocity damping; pushable props use it so a shove
   settles quickly (keeps position-only reconciliation clean)
 
+- `world.addCharacter({ position, radius, halfHeight })` → `CharacterBody` — a Rapier
+  **kinematic character controller** (capsule, autostep + snap-to-ground). `move(desired)`
+  applies a collision-resolved translation and returns `{ grounded }`; the caller owns
+  vertical velocity (gravity/jump). Used by the M10 TPS controller.
+
 Runs in the browser too (M4 client prediction), not just Node — `rapier3d-compat`'s
 inlined WASM makes the same wrapper work both places.
 

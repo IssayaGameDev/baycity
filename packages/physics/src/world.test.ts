@@ -87,6 +87,92 @@ describe('physics world', () => {
     world.free()
   })
 
+  it('character controller falls, rests on the ground, and reports grounded', () => {
+    const world = createPhysicsWorld()
+    world.addFixedBody({ position: { x: 0, y: 0, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 10, y: 0.1, z: 10 } } })
+    const char = world.addCharacter({ position: { x: 0, y: 3, z: 0 }, radius: 0.4, halfHeight: 0.5 })
+    let result = { grounded: false }
+    for (let i = 0; i < 180; i++) {
+      result = char.move({ x: 0, y: -0.08, z: 0 })
+      world.step(1 / 60)
+    }
+    expect(result.grounded).toBe(true)
+    const y = char.translation().y
+    expect(y).toBeGreaterThan(0.5) // resting above the ground, not sunk
+    expect(y).toBeLessThan(1.6) // came down from y=3
+    world.free()
+  })
+
+  it('character controller is blocked by a wall', () => {
+    const world = createPhysicsWorld()
+    world.addFixedBody({ position: { x: 0, y: 0, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 10, y: 0.1, z: 10 } } })
+    world.addFixedBody({ position: { x: 2, y: 1, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 0.1, y: 1, z: 5 } } })
+    const char = world.addCharacter({ position: { x: 0, y: 1, z: 0 }, radius: 0.4, halfHeight: 0.5 })
+    for (let i = 0; i < 120; i++) {
+      char.move({ x: 0.1, y: -0.05, z: 0 })
+      world.step(1 / 60)
+    }
+    expect(char.translation().x).toBeLessThan(1.7) // stopped before the wall face (~1.5)
+    world.free()
+  })
+
+  it('a kinematic capsule blocks a character controller (remote-player mirror)', () => {
+    const world = createPhysicsWorld()
+    world.addFixedBody({ position: { x: 0, y: 0, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 10, y: 0.1, z: 10 } } })
+    world.addKinematicBody({
+      position: { x: 2, y: 1.01, z: 0 },
+      shape: { kind: 'capsule', halfHeight: 0.5, radius: 0.4 },
+    })
+    const char = world.addCharacter({ position: { x: 0, y: 1.01, z: 0 }, radius: 0.4, halfHeight: 0.5 })
+    for (let i = 0; i < 120; i++) {
+      char.move({ x: 0.1, y: -0.05, z: 0 })
+      world.step(1 / 60)
+    }
+    // Unblocked it would pass x≈2; it must stop near contact (2 − 2·radius = 1.2).
+    expect(char.translation().x).toBeLessThan(1.5)
+    world.free()
+  })
+
+  it('character replay after setPosition reproduces the original trajectory', () => {
+    // Reconciliation contract: setPosition back to a past position and re-running
+    // the same moves must yield the same result — requires the collider to be
+    // synced on setPosition (computeColliderMovement runs outside world.step).
+    const makeWorld = () => {
+      const world = createPhysicsWorld()
+      world.addFixedBody({ position: { x: 0, y: 0, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 10, y: 0.1, z: 10 } } })
+      return world
+    }
+    const moves = Array.from({ length: 30 }, (_, i) => ({
+      x: 0.05,
+      y: i < 4 ? 0.25 : -0.1, // a short jump arc, then falling
+      z: 0,
+    }))
+
+    const run = (world: ReturnType<typeof makeWorld>, char: ReturnType<(typeof world)['addCharacter']>): number[] => {
+      const ys: number[] = []
+      for (const m of moves) {
+        char.move(m)
+        world.step(1 / 60)
+        ys.push(char.translation().y)
+      }
+      return ys
+    }
+
+    const world = makeWorld()
+    const char = world.addCharacter({ position: { x: 0, y: 1.01, z: 0 }, radius: 0.4, halfHeight: 0.5 })
+    // settle onto the ground first
+    for (let i = 0; i < 30; i++) {
+      char.move({ x: 0, y: -0.05, z: 0 })
+      world.step(1 / 60)
+    }
+    const start = char.translation()
+    const first = run(world, char)
+    char.setPosition(start)
+    const replay = run(world, char)
+    for (let i = 0; i < moves.length; i++) expect(replay[i]).toBeCloseTo(first[i]!, 6)
+    world.free()
+  })
+
   it('leaves a fixed body where it was placed', () => {
     const world = createPhysicsWorld()
     const ground = world.addFixedBody({

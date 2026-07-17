@@ -47,7 +47,7 @@ describe('prediction end-to-end', () => {
         const type = readMessageType(ev.data)
         if (type === MSG_WELCOME) {
           playerId = decodeWelcome(ev.data).playerId
-          inputTimer = setInterval(() => ws.send(encodeInput({ seq: ++seq, moveX: 1, moveZ: 0 })), 1000 / 30)
+          inputTimer = setInterval(() => ws.send(encodeInput({ seq: ++seq, moveX: 1, moveZ: 0, jump: false })), 1000 / 30)
         } else if (type === MSG_SNAPSHOT) {
           const snap = decodeSnapshot(ev.data)
           ackSeq = snap.lastProcessedInputSeq

@@ -28,11 +28,14 @@ export const createManualInputSource = (initial: InputState = { x: 0, z: 0 }): M
   }
 }
 
-const any = (keys: ReadonlySet<string>, ...candidates: string[]): boolean =>
-  candidates.some((k) => keys.has(k))
+const any = (codes: ReadonlySet<string>, ...candidates: string[]): boolean =>
+  candidates.some((c) => codes.has(c))
 
-/** Pure WASD/arrow → movement mapping (lowercased key names). */
-export const keysToMovement = (keys: ReadonlySet<string>): InputState => ({
-  x: (any(keys, 'd', 'arrowright') ? 1 : 0) - (any(keys, 'a', 'arrowleft') ? 1 : 0),
-  z: (any(keys, 's', 'arrowdown') ? 1 : 0) - (any(keys, 'w', 'arrowup') ? 1 : 0),
+/**
+ * Pure WASD/arrow → movement mapping over **physical key codes** (`KeyboardEvent.code`,
+ * e.g. `KeyW`), so it's keyboard-layout-independent (WASD is a position, not letters).
+ */
+export const keysToMovement = (codes: ReadonlySet<string>): InputState => ({
+  x: (any(codes, 'KeyD', 'ArrowRight') ? 1 : 0) - (any(codes, 'KeyA', 'ArrowLeft') ? 1 : 0),
+  z: (any(codes, 'KeyS', 'ArrowDown') ? 1 : 0) - (any(codes, 'KeyW', 'ArrowUp') ? 1 : 0),
 })

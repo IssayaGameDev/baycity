@@ -7,17 +7,26 @@ import type { InputCommand } from '@mp/net'
  * props "pulled into the prediction loop" (SEED §4). Generic here so the
  * predictor is testable without physics.
  */
-export interface PredictedWorld {
+export interface PredictedWorld<Aux = undefined> {
   /** Apply the local player's input and advance the sim by one fixed step. */
   applyInput: (cmd: InputCommand) => void
   /** Current positions of every predicted entity (player + predicted props). */
   readState: () => Map<EntityId, Vec3>
   /** Set predicted entities to authoritative positions (for reconciliation). */
   restore: (state: ReadonlyMap<EntityId, Vec3>) => void
+  /**
+   * Optional rollback of sim state that positions alone don't capture (velocities,
+   * grounded flags, …). `saveAux` is called after every predicted input; on
+   * reconcile, the aux saved at the acked tick is `restoreAux`d before the replay —
+   * otherwise the replay re-integrates from the *latest* tick's state and the
+   * prediction diverges (visible as jitter) whenever that state matters.
+   */
+  saveAux?: () => Aux
+  restoreAux?: (aux: Aux) => void
 }
 
-export interface PredictorOptions {
-  world: PredictedWorld
+export interface PredictorOptions<Aux = undefined> {
+  world: PredictedWorld<Aux>
   /** Prediction/input tick rate (Hz) — used to render-interpolate between steps. */
   tickRateHz: number
   /**
@@ -29,9 +38,9 @@ export interface PredictorOptions {
 }
 
 export interface Predictor {
-  /** Generate the next input from a movement direction, predict it locally,
-   * and return the command to send to the server. */
-  predict: (moveX: number, moveZ: number) => InputCommand
+  /** Generate the next input from a movement direction (+ optional jump), predict
+   * it locally, and return the command to send to the server. */
+  predict: (moveX: number, moveZ: number, jump?: boolean) => InputCommand
   /** Apply authoritative positions + processed-input ack: drop acked inputs,
    * restore predicted entities, replay the rest, absorb each delta smoothly. */
   reconcile: (authoritative: ReadonlyMap<EntityId, Vec3>, lastProcessedSeq: number) => void
@@ -56,15 +65,17 @@ const add = (a: Vec3, b: Vec3): Vec3 => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + 
 const sub = (a: Vec3, b: Vec3): Vec3 => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z })
 const clone = (v: Vec3): Vec3 => ({ x: v.x, y: v.y, z: v.z })
 
-export const createPredictor = (opts: PredictorOptions): Predictor => {
+export const createPredictor = <Aux = undefined>(opts: PredictorOptions<Aux>): Predictor => {
   const now = opts.now ?? (() => performance.now())
   const tickIntervalMs = 1000 / opts.tickRateHz
   let smoothingMs = opts.correctionSmoothingMs
-  const unacked: InputCommand[] = []
+  const unacked: { cmd: InputCommand; aux: Aux | undefined }[] = []
   let seq = 0
   const tracks = new Map<EntityId, Track>()
   let lastTickAt = now()
   let lastFrame = now()
+  // Aux at the last-acked tick — the replay's starting point (initially: pre-input state).
+  let ackedAux: Aux | undefined = opts.world.saveAux?.()
 
   const seedTrack = (id: EntityId, pos: Vec3): Track => {
     const track: Track = { prev: clone(pos), curr: clone(pos), offset: clone(ZERO) }
@@ -74,8 +85,8 @@ export const createPredictor = (opts: PredictorOptions): Predictor => {
   for (const [id, pos] of opts.world.readState()) seedTrack(id, pos)
 
   return {
-    predict: (moveX, moveZ) => {
-      const cmd: InputCommand = { seq: ++seq, moveX, moveZ }
+    predict: (moveX, moveZ, jump = false) => {
+      const cmd: InputCommand = { seq: ++seq, moveX, moveZ, jump }
       opts.world.applyInput(cmd)
       for (const [id, pos] of opts.world.readState()) {
         const track = tracks.get(id)
@@ -86,15 +97,19 @@ export const createPredictor = (opts: PredictorOptions): Predictor => {
         }
       }
       lastTickAt = now()
-      unacked.push(cmd)
+      unacked.push({ cmd, aux: opts.world.saveAux?.() })
       return cmd
     },
 
     reconcile: (authoritative, lastProcessedSeq) => {
       const before = opts.world.readState()
-      while (unacked.length > 0 && unacked[0]!.seq <= lastProcessedSeq) unacked.shift()
+      while (unacked.length > 0 && unacked[0]!.cmd.seq <= lastProcessedSeq) ackedAux = unacked.shift()!.aux
+      if (opts.world.restoreAux !== undefined && ackedAux !== undefined) opts.world.restoreAux(ackedAux)
       opts.world.restore(authoritative)
-      for (const cmd of unacked) opts.world.applyInput(cmd)
+      for (const p of unacked) {
+        opts.world.applyInput(p.cmd)
+        p.aux = opts.world.saveAux?.() // keep history on the corrected timeline
+      }
       const after = opts.world.readState()
       for (const [id, aPos] of after) {
         const track = tracks.get(id)

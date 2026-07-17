@@ -1,5 +1,5 @@
 /** Protocol version — first byte of every message from day one (SEED §2). */
-export const PROTOCOL_VERSION = 4 as const
+export const PROTOCOL_VERSION = 5 as const
 
 /** Message-type discriminators (second byte). */
 export const MSG_SNAPSHOT = 1 as const // server -> client

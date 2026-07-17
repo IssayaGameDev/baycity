@@ -67,6 +67,51 @@ describe('createPredictor (world predictor)', () => {
     expect(p.renderPositions().get(PLAYER)!.x).toBeCloseTo(3)
   })
 
+  it('rolls back aux sim state (velocity) to the acked tick before replaying', () => {
+    // 1-D jump sim: y integrates vy, vy integrates gravity; jump sets vy while
+    // grounded. vy/grounded are aux — positions alone can't reproduce the arc.
+    const makeJumpWorld = () => {
+      const sim = { y: 0, vy: 0, grounded: true }
+      const step = (jump: boolean): void => {
+        if (jump && sim.grounded) sim.vy = 10
+        sim.vy -= 1
+        sim.y = Math.max(0, sim.y + sim.vy)
+        sim.grounded = sim.y === 0
+        if (sim.grounded && sim.vy < 0) sim.vy = 0
+      }
+      const world: PredictedWorld<{ vy: number; grounded: boolean }> = {
+        applyInput: (cmd) => step(cmd.jump),
+        readState: () => new Map([[PLAYER, { x: 0, y: sim.y, z: 0 }]]),
+        restore: (s) => {
+          sim.y = s.get(PLAYER)!.y
+        },
+        saveAux: () => ({ vy: sim.vy, grounded: sim.grounded }),
+        restoreAux: (aux) => {
+          sim.vy = aux.vy
+          sim.grounded = aux.grounded
+        },
+      }
+      return { sim, world, step }
+    }
+
+    // Authority: the same sim stepped with the same inputs (jump on the first).
+    const authority = makeJumpWorld()
+    const authorityY: number[] = []
+    for (let i = 0; i < 6; i++) {
+      authority.step(i === 0)
+      authorityY.push(authority.sim.y)
+    }
+
+    const client = makeJumpWorld()
+    const p = createPredictor({ world: client.world, tickRateHz: 100, correctionSmoothingMs: 0, now: () => 0 })
+    for (let i = 0; i < 6; i++) p.predict(0, 0, i === 0)
+    // Server agrees through seq 2 — reconciling must NOT disturb the predicted arc.
+    for (const ack of [1, 2] as const) {
+      p.reconcile(new Map([[PLAYER, { x: 0, y: authorityY[ack - 1]!, z: 0 }]]), ack)
+      expect(client.sim.y).toBeCloseTo(authorityY[5]!)
+    }
+  })
+
   it('eases in an authoritative prop correction instead of snapping', () => {
     let t = 0
     const p = createPredictor(opts(() => t))

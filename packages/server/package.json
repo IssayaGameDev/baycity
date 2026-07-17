@@ -5,11 +5,13 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./sim": "./src/sim.ts"
+    "./sim": "./src/sim.ts",
+    "./tps": "./src/tps.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
+    "dev:tps": "tsx watch src/main-tps.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

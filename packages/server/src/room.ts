@@ -16,35 +16,47 @@ import {
   type SnapshotEntity,
   type SnapshotMessage,
 } from '@mp/net'
-import { createPhysicsWorld, type PhysicsBody } from '@mp/physics'
 
 import { createRewindBuffer, hitScan } from './rewind'
-import {
-  addBalls,
-  addGround,
-  addPlayerBody,
-  applyPlayerInput,
-  FIRST_PLAYER_ID,
-  GRAVITY,
-  PLAYER_RADIUS,
-  playerSpawn,
-  type Ball,
-} from './sim'
 
 const MAX_INPUT_QUEUE = 6 // bound buffered latency; drop oldest beyond this
 const REWIND_MS = 1000 // history kept + max honored rewind window (SEED §3)
+const FIRST_PLAYER_ID = 1000 // props (if any) use lower ids
+
+/** One player's simulation, owned by a game. */
+export interface PlayerSim {
+  applyInput: (cmd: InputCommand) => void
+  remove: () => void
+}
+
+/**
+ * A game the room hosts: it owns the physics world, players, and props; the room
+ * owns the generic netcode (connections, input queues, per-client delta snapshots,
+ * ping/pong, lag-comp rewind). This is the seam that lets the server run different
+ * games (ball demo, TPS) without duplicating the netcode.
+ */
+export interface GameSim {
+  addPlayer: (id: EntityId) => PlayerSim
+  step: (dtSeconds: number) => void
+  /** All replicated entities (players + props) for snapshots. */
+  entities: () => SnapshotEntity[]
+  /** Positions recorded for lag-comp rewind (the hittable players). */
+  hittablePositions: () => Map<EntityId, Vec3>
+  /** Collider radius used for hit tests. */
+  hitRadius: number
+}
 
 interface Player {
   readonly conn: Connection
   readonly id: EntityId
-  readonly body: PhysicsBody
+  readonly sim: PlayerSim
   queue: InputCommand[]
   lastProcessedSeq: number
   sentFull: boolean
   baseline: Map<EntityId, Vec3> // last positions sent to this client (for delta)
 }
 
-const ZERO_INPUT = (seq: number): InputCommand => ({ seq, moveX: 0, moveZ: 0 })
+const ZERO_INPUT = (seq: number): InputCommand => ({ seq, moveX: 0, moveZ: 0, jump: false })
 
 // Send an entity only when its quantized position actually changes.
 const quantizedDiffers = (a: Vec3, b: Vec3): boolean =>
@@ -58,11 +70,7 @@ export interface Room {
   sendSnapshots: () => void
 }
 
-export const createRoom = (): Room => {
-  const world = createPhysicsWorld({ gravity: GRAVITY })
-  addGround(world)
-  const balls: Ball[] = addBalls(world)
-
+export const createRoom = (game: GameSim): Room => {
   const players = new Map<Connection, Player>()
   const rewind = createRewindBuffer(REWIND_MS)
   let nextPlayerId = FIRST_PLAYER_ID
@@ -74,9 +82,8 @@ export const createRoom = (): Room => {
 
   const handleFire = (shooter: Player, data: ArrayBuffer): void => {
     const fire = decodeFire(data)
-    // Clamp the claimed time to the honored rewind window, then rewind and test.
     const t = Math.max(serverTimeMs - REWIND_MS, Math.min(serverTimeMs, fire.fireTimeMs))
-    const targetId = hitScan(rewind.positionsAt(t), fire.origin, fire.direction, PLAYER_RADIUS, shooter.id)
+    const targetId = hitScan(rewind.positionsAt(t), fire.origin, fire.direction, game.hitRadius, shooter.id)
     if (targetId !== null) broadcast(encodeHit({ shooterId: shooter.id, targetId }))
   }
 
@@ -86,7 +93,7 @@ export const createRoom = (): Room => {
       const player: Player = {
         conn,
         id,
-        body: addPlayerBody(world, playerSpawn(id)),
+        sim: game.addPlayer(id),
         queue: [],
         lastProcessedSeq: 0,
         sentFull: false,
@@ -96,8 +103,8 @@ export const createRoom = (): Room => {
       conn.send(encodeWelcome({ playerId: id }))
 
       conn.onMessage((data) => {
-        // Every message self-describes its protocol version; the decoders reject a
-        // mismatch. Guard so a malformed/wrong-version message can't crash the room.
+        // Every message self-describes its version; decoders reject a mismatch.
+        // Guard so a malformed/wrong-version frame can't crash the room.
         try {
           switch (readMessageType(data)) {
             case MSG_INPUT:
@@ -116,7 +123,7 @@ export const createRoom = (): Room => {
         }
       })
       conn.onClose(() => {
-        player.body.remove()
+        player.sim.remove()
         players.delete(conn)
       })
     },
@@ -125,26 +132,19 @@ export const createRoom = (): Room => {
       for (const player of players.values()) {
         const cmd = player.queue.shift()
         if (cmd) {
-          applyPlayerInput(player.body, cmd)
+          player.sim.applyInput(cmd)
           player.lastProcessedSeq = cmd.seq
         } else {
-          applyPlayerInput(player.body, ZERO_INPUT(player.lastProcessedSeq))
+          player.sim.applyInput(ZERO_INPUT(player.lastProcessedSeq))
         }
       }
-      world.step(dtSeconds)
+      game.step(dtSeconds)
       serverTimeMs += dtSeconds * 1000
-
-      // Record player colliders for lag compensation (SEED §3).
-      const snapshotPositions = new Map<EntityId, Vec3>()
-      for (const player of players.values()) snapshotPositions.set(player.id, player.body.translation())
-      rewind.record(serverTimeMs, snapshotPositions)
+      rewind.record(serverTimeMs, game.hittablePositions())
     },
 
     sendSnapshots: () => {
-      const entities: SnapshotEntity[] = [
-        ...balls.map((b) => ({ id: b.id, position: b.body.translation() })),
-        ...[...players.values()].map((p) => ({ id: p.id, position: p.body.translation() })),
-      ]
+      const entities = game.entities()
       const time = serverTimeMs >>> 0
       for (const player of players.values()) {
         player.conn.send(encodeSnapshot(snapshotFor(player, entities, time)))

@@ -1,9 +1,13 @@
 import { startFixedLoop, type LoopHandle } from '@mp/core'
 import { initPhysics } from '@mp/physics'
 
+import { createBallGame } from './ballGame'
 import { createRoom } from './room'
 import { TICK_RATE_HZ } from './sim'
+import { createTpsGame } from './tpsGame'
 import { createUwsServerTransport, type UwsServerTransport } from './transport-uws'
+
+export type GameMode = 'ball' | 'tps'
 
 /**
  * @mp/server — authoritative simulation host: rooms, fixed tick, per-client
@@ -29,12 +33,13 @@ export interface ServerHandle {
   stop: () => Promise<void>
 }
 
-/** Starts the game server. No side effects at import; call to run. */
-export const startServer = async (opts: { port?: number } = {}): Promise<ServerHandle> => {
+/** Starts the game server. No side effects at import; call to run. `mode` selects
+ * which game the room hosts (default the ball demo; `tps` the M10 character world). */
+export const startServer = async (opts: { port?: number; mode?: GameMode } = {}): Promise<ServerHandle> => {
   const port = opts.port ?? DEFAULT_PORT
   await initPhysics()
   const transport: UwsServerTransport = await createUwsServerTransport({ port })
-  const room = createRoom()
+  const room = createRoom(opts.mode === 'tps' ? createTpsGame() : createBallGame())
 
   transport.onConnection((conn) => room.addConnection(conn))
 

@@ -1,7 +1,7 @@
-# Wire protocol (v4)
+# Wire protocol (v5)
 
 Binary, little-endian. No JSON on the hot path (SEED §2). Defined in
-`packages/net`. `PROTOCOL_VERSION = 4`.
+`packages/net`. `PROTOCOL_VERSION = 5`.
 
 ## Framing & versioning
 
@@ -37,7 +37,7 @@ a UDP transport would need ack-based baselines. Client reassembles full snapshot
 ## Welcome — `2`  ·  Input — `3`  ·  Ping/Pong — `4`/`5`  ·  Fire — `6`  ·  Hit — `7`
 
 - Welcome (s→c): `u16 playerId`.
-- Input (c→s): `u32 seq`, `i8 moveX×127`, `i8 moveZ×127`.
+- Input (c→s): `u32 seq`, `i8 moveX×127`, `i8 moveZ×127` (world-space dir), `u8 flags` (bit0 = jump).
 - Ping (c→s): `u32 clientTimeMs`. Pong (s→c): `u32 clientTimeMs` + `u32 serverTimeMs`.
 - Fire (c→s): `u32 fireTimeMs`, `f32 origin xyz`, `f32 dir xyz`.
 - Hit (s→c): `u16 shooterId`, `u16 targetId`.

@@ -35,6 +35,14 @@ client predictor (SEED §4). Determinism verified in `sim.test.ts`.
   position-corrected but **keep their velocity** (`setPosition`, not `teleport`), so a
   correction doesn't freeze a rolling ball mid-motion. Remote players are kinematic
   obstacles.
+  Sim state that positions don't capture (e.g. the TPS `vy`/`grounded`) must be
+  exposed via the `PredictedWorld` `saveAux`/`restoreAux` hooks: the predictor saves
+  aux after every predicted input and restores the acked tick's aux before replaying —
+  otherwise the replay re-integrates from the latest tick's state and the prediction
+  jitters (regression: `predictor.test.ts` "rolls back aux sim state").
+  Physics note: `CharacterBody.setPosition` also syncs the collider — body→collider
+  sync otherwise only happens in `world.step`, and `computeColliderMovement` runs
+  outside it (regression: `world.test.ts` "character replay after setPosition").
 - **Reassembly + interpolation:** `createSnapshotReassembler` rebuilds full snapshots
   from full/delta messages; `snapshotClient` renders remotes ~`interpolationDelayMs`
   in the past on the **clock-synced** timeline (`serverNow`).
