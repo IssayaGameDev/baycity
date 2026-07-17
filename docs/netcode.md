@@ -1,9 +1,10 @@
-# Netcode (current: M5 rewind & clock sync)
+# Netcode (current: M6 delta + quantization)
 
 Server-authoritative. Clients send inputs; the server owns state. The local
 player and the balls are client-predicted; remote players are interpolated on a
 clock-synced timeline; hits are lag-compensated against the shooter-perceived
-past. Positions only on the wire (no rotation yet).
+past. Snapshots are per-client deltas with quantized positions. Positions only on
+the wire (no rotation yet).
 
 ## Server (`packages/server`)
 
@@ -11,8 +12,12 @@ past. Positions only on the wire (no rotation yet).
   `serverTimeMs` (advanced per tick).
 - **Room (`room.ts`):** Rapier world (ground + pushable balls + one dynamic-ball
   player per connection). Per-connection input FIFO (one/tick, records
-  `lastProcessedSeq`). Per-client snapshots carry that client's ack (SEED §3).
-  Also answers `PING` with `PONG{clientTime, serverTime}` and handles `FIRE`.
+  `lastProcessedSeq`). Answers `PING` with `PONG` and handles `FIRE`.
+- **Per-client snapshots (SEED §3) + delta (M6):** each client gets its own message
+  with its ack. After a first full snapshot, subsequent ones are **deltas** vs the
+  last positions sent to that client — only entities whose *quantized* position
+  changed, plus removed ids. Positions are **quantized** to u16/axis. Delta-vs-last-sent
+  is safe on the reliable, ordered WebSocket transport.
 - **Rewind (`rewind.ts`, SEED §3):** each tick records a frame of player positions
   into a ~1 s ring buffer. `positionsAt(t)` reconstructs (interpolated) positions
   at any past time; `hitScan` ray-tests those spheres.
@@ -28,8 +33,9 @@ client predictor (SEED §4). Determinism verified in `sim.test.ts`.
   player and the balls (per-entity render-interpolation + eased corrections);
   full-state reconciliation replays unacked inputs. Remote players are kinematic
   obstacles.
-- **Interpolation (`snapshotClient.ts`):** remotes rendered ~`interpolationDelayMs`
-  in the past, on the **clock-synced** timeline (`serverNow`).
+- **Reassembly + interpolation:** `createSnapshotReassembler` rebuilds full snapshots
+  from full/delta messages; `snapshotClient` renders remotes ~`interpolationDelayMs`
+  in the past on the **clock-synced** timeline (`serverNow`).
 - **Clock sync (`clockSync.ts`, SEED §3):** from `PING`/`PONG` round-trips it keeps
   a smoothed estimate of `serverTime − localTime` (and RTT). `serverNow()` drives
   both interpolation playback and the timestamp on hit claims — so "fire at what I

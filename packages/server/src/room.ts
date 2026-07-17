@@ -10,9 +10,11 @@ import {
   MSG_FIRE,
   MSG_INPUT,
   MSG_PING,
+  quantizeAxis,
   readMessageType,
   type InputCommand,
   type SnapshotEntity,
+  type SnapshotMessage,
 } from '@mp/net'
 import { createPhysicsWorld, type PhysicsBody } from '@mp/physics'
 
@@ -38,9 +40,17 @@ interface Player {
   readonly body: PhysicsBody
   queue: InputCommand[]
   lastProcessedSeq: number
+  sentFull: boolean
+  baseline: Map<EntityId, Vec3> // last positions sent to this client (for delta)
 }
 
 const ZERO_INPUT = (seq: number): InputCommand => ({ seq, moveX: 0, moveZ: 0 })
+
+// Send an entity only when its quantized position actually changes.
+const quantizedDiffers = (a: Vec3, b: Vec3): boolean =>
+  quantizeAxis(a.x) !== quantizeAxis(b.x) ||
+  quantizeAxis(a.y) !== quantizeAxis(b.y) ||
+  quantizeAxis(a.z) !== quantizeAxis(b.z)
 
 export interface Room {
   addConnection: (conn: Connection) => void
@@ -79,22 +89,30 @@ export const createRoom = (): Room => {
         body: addPlayerBody(world, playerSpawn(id)),
         queue: [],
         lastProcessedSeq: 0,
+        sentFull: false,
+        baseline: new Map(),
       }
       players.set(conn, player)
       conn.send(encodeWelcome({ playerId: id }))
 
       conn.onMessage((data) => {
-        switch (readMessageType(data)) {
-          case MSG_INPUT:
-            player.queue.push(decodeInput(data))
-            if (player.queue.length > MAX_INPUT_QUEUE) player.queue.shift()
-            break
-          case MSG_PING:
-            conn.send(encodePong({ clientTimeMs: decodePing(data).clientTimeMs, serverTimeMs }))
-            break
-          case MSG_FIRE:
-            handleFire(player, data)
-            break
+        // Every message self-describes its protocol version; the decoders reject a
+        // mismatch. Guard so a malformed/wrong-version message can't crash the room.
+        try {
+          switch (readMessageType(data)) {
+            case MSG_INPUT:
+              player.queue.push(decodeInput(data))
+              if (player.queue.length > MAX_INPUT_QUEUE) player.queue.shift()
+              break
+            case MSG_PING:
+              conn.send(encodePong({ clientTimeMs: decodePing(data).clientTimeMs, serverTimeMs }))
+              break
+            case MSG_FIRE:
+              handleFire(player, data)
+              break
+          }
+        } catch {
+          // ignore (schema-version mismatch or corrupt frame)
         }
       })
       conn.onClose(() => {
@@ -129,10 +147,29 @@ export const createRoom = (): Room => {
       ]
       const time = serverTimeMs >>> 0
       for (const player of players.values()) {
-        player.conn.send(
-          encodeSnapshot({ serverTimeMs: time, lastProcessedInputSeq: player.lastProcessedSeq, entities }),
-        )
+        player.conn.send(encodeSnapshot(snapshotFor(player, entities, time)))
       }
     },
   }
+}
+
+/** A full snapshot on first send, then per-client deltas vs the last positions sent. */
+const snapshotFor = (player: Player, entities: SnapshotEntity[], time: number): SnapshotMessage => {
+  const lastProcessedInputSeq = player.lastProcessedSeq
+  if (!player.sentFull) {
+    player.sentFull = true
+    player.baseline = new Map(entities.map((e) => [e.id, e.position]))
+    return { isFull: true, serverTimeMs: time, lastProcessedInputSeq, changed: entities, removed: [] }
+  }
+  const changed: SnapshotEntity[] = []
+  const present = new Set<EntityId>()
+  for (const e of entities) {
+    present.add(e.id)
+    const base = player.baseline.get(e.id)
+    if (base === undefined || quantizedDiffers(base, e.position)) changed.push(e)
+  }
+  const removed: EntityId[] = []
+  for (const id of player.baseline.keys()) if (!present.has(id)) removed.push(id)
+  player.baseline = new Map(entities.map((e) => [e.id, e.position]))
+  return { isFull: false, serverTimeMs: time, lastProcessedInputSeq, changed, removed }
 }

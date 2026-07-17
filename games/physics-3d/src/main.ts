@@ -2,6 +2,7 @@ import {
   createClockSync,
   createPredictor,
   createSnapshotClient,
+  createSnapshotReassembler,
   createWebSocketClientTransport,
   type PredictedWorld,
   type Predictor,
@@ -116,6 +117,7 @@ const transport = createNetsimClientTransport(createWebSocketClientTransport(SER
   lossRate: params.loss / 100,
 })
 const clock = createClockSync()
+const reassembler = createSnapshotReassembler()
 const interp = createSnapshotClient({ interpolationDelayMs: params.interpDelay, serverNow: () => clock.serverNow() })
 let myId: EntityId | null = null
 let predictor: Predictor | null = null
@@ -218,7 +220,7 @@ transport.onMessage((data) => {
       void initPrediction(myId)
       break
     case MSG_SNAPSHOT: {
-      const snap = decodeSnapshot(data)
+      const snap = reassembler.apply(decodeSnapshot(data))
       if (myId !== null && predictor) {
         const authoritative = new Map<EntityId, Vec3>()
         for (const e of snap.entities) if (isPredicted(e.id)) authoritative.set(e.id, e.position)

@@ -51,7 +51,8 @@ describe('prediction end-to-end', () => {
         } else if (type === MSG_SNAPSHOT) {
           const snap = decodeSnapshot(ev.data)
           ackSeq = snap.lastProcessedInputSeq
-          const me = snap.entities.find((e) => e.id === playerId)
+          // the moving player is in `changed` every tick (full or delta)
+          const me = snap.changed.find((e) => e.id === playerId)
           if (me) playerX.push(me.position.x)
           if (playerX.length >= 20) done()
         }

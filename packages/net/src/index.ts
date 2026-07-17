@@ -15,8 +15,9 @@ export {
   readMessageType,
   readHeader,
 } from './messages'
-export type { Snapshot, SnapshotEntity } from './snapshot'
-export { encodeSnapshot, decodeSnapshot } from './snapshot'
+export type { Snapshot, SnapshotEntity, SnapshotMessage } from './snapshot'
+export { encodeSnapshot, decodeSnapshot, fullSnapshotMessage } from './snapshot'
+export { quantizeAxis, dequantizeAxis, QUANT_BOUND } from './quantize'
 export type { InputCommand } from './input'
 export { encodeInput, decodeInput } from './input'
 export type { Welcome } from './welcome'

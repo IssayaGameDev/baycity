@@ -3,10 +3,10 @@
 System documentation for the multiplayer stack. Read this, then load only what
 the current task needs.
 
-Current state: **M5 — rewind & clock sync complete.** Client↔server clock sync,
-a server-side rewind ring buffer, and lag-compensated hit validation (click to
-shoot moving players, hits resolved against the shooter-perceived past). Builds
-on M4 prediction/reconciliation + netsim. Program: `SEED.md` §7 (active M1–M8).
+Current state: **M6 — per-client snapshots & protocol hardening complete.** Snapshots
+are per-client **deltas** with **quantized** positions (u16/axis); schema versioning is
+guarded. Builds on M5 (clock sync, rewind, lag comp) and M4 (prediction). Program:
+`SEED.md` §7 (active M1–M8).
 
 ## Docs
 
@@ -16,12 +16,12 @@ on M4 prediction/reconciliation + netsim. Program: `SEED.md` §7 (active M1–M8
 - [protocol.md](protocol.md) — binary wire format v3 (snapshot / welcome / input / ping / pong / fire / hit).
 - ADRs (`adr/`, append-only):
   - [0001](adr/0001-monorepo-tooling.md) tooling · [0002](adr/0002-transport-and-client-clock.md) transports · [0003](adr/0003-physics-and-renderer.md) physics+renderer
-  - [0004](adr/0004-prediction-and-netsim.md) prediction+netsim · [0005](adr/0005-predicting-props.md) predicting props · [0006](adr/0006-clock-sync-and-lag-compensation.md) clock sync + lag comp
+  - [0004](adr/0004-prediction-and-netsim.md) prediction+netsim · [0005](adr/0005-predicting-props.md) predicting props · [0006](adr/0006-clock-sync-and-lag-compensation.md) clock sync + lag comp · [0007](adr/0007-delta-and-quantization.md) delta + quantization
 
 ## Built
 
 - `core` — math, entity model, fixed-timestep loop, transport interface.
-- `net` — binary codecs: snapshot (v3), welcome, input, ping/pong, fire/hit.
+- `net` — binary codecs (v4): snapshot (delta + quantized), welcome, input, ping/pong, fire/hit; quantization utils.
 - `physics` — Rapier3d wrapper (dynamic/fixed/kinematic bodies, velocity, damping), headless + browser.
 - `server` — uWS transport, room (players, inputs, per-client acks, ping/pong, fire), `@mp/server/sim` shared sim, `rewind` ring buffer + lag-comp hit test.
 - `client` — WebSocket transport, interpolation, world predictor (player + props), clock sync.
@@ -31,5 +31,5 @@ on M4 prediction/reconciliation + netsim. Program: `SEED.md` §7 (active M1–M8
 
 ## Not built yet
 
-Delta encoding + quantization + schema-version negotiation (M6), HUD + input abstraction via `render-pixi` (M7),
-bots/load validation (M8). `render-pixi`, `infra/` remain skeletons/empty.
+HUD + input abstraction via `render-pixi` (M7), bots + load/budget validation (M8).
+`render-pixi`, `infra/` remain skeletons/empty.

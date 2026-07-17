@@ -2,7 +2,7 @@
 
 A reusable multiplayer game stack for HTML5/TypeScript browser games — 3D via Three.js (WebGL2) with a PixiJS 2D HUD, server-authoritative netcode. Games are built as thin compositions on top of the stack.
 
-**Status:** M5 — rewind & clock sync. Client-predicted player + pushable balls, clock-synced interpolation of remote players, and **lag-compensated hit validation** (click to shoot moving players; hits resolve against the shooter-perceived past). A built-in network simulator (`tools/netsim`) adds latency/jitter/loss. See `SEED.md` for the plan and `docs/INDEX.md` for system docs.
+**Status:** M6 — per-client snapshots & protocol hardening. On top of prediction, clock sync, and lag-compensated hits: snapshots are now per-client **deltas** with **quantized** positions, and schema versioning is guarded. A built-in network simulator (`tools/netsim`) adds latency/jitter/loss. See `SEED.md` for the plan and `docs/INDEX.md` for system docs.
 
 ## Requirements
 
