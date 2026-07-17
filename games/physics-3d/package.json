@@ -13,9 +13,14 @@
     "@mp/client": "workspace:*",
     "@mp/core": "workspace:*",
     "@mp/net": "workspace:*",
-    "@mp/render-three": "workspace:*"
+    "@mp/netsim": "workspace:*",
+    "@mp/physics": "workspace:*",
+    "@mp/render-three": "workspace:*",
+    "@mp/server": "workspace:*",
+    "tweakpane": "^4.0.5"
   },
   "devDependencies": {
+    "@tweakpane/core": "^2.0.5",
     "vite": "^6.0.0"
   }
 }

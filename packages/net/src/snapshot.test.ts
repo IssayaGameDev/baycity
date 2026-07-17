@@ -8,6 +8,7 @@ describe('snapshot codec', () => {
   // All values are exactly representable in float32, so round-trip is exact.
   const sample: Snapshot = {
     serverTimeMs: 123456,
+    lastProcessedInputSeq: 42,
     entities: [
       { id: entityId(1), position: { x: 1.5, y: -2.25, z: 0.125 } },
       { id: entityId(2), position: { x: 100.5, y: 0, z: -50.75 } },
@@ -23,11 +24,11 @@ describe('snapshot codec', () => {
   })
 
   it('encodes to the expected byte length', () => {
-    expect(encodeSnapshot(sample).byteLength).toBe(8 + 2 * 14)
+    expect(encodeSnapshot(sample).byteLength).toBe(12 + 2 * 14)
   })
 
   it('handles an empty entity list', () => {
-    const empty: Snapshot = { serverTimeMs: 7, entities: [] }
+    const empty: Snapshot = { serverTimeMs: 7, lastProcessedInputSeq: 0, entities: [] }
     expect(decodeSnapshot(encodeSnapshot(empty))).toEqual(empty)
   })
 

@@ -20,7 +20,17 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
   - `free()` — releases the WASM world
 - `ShapeDesc`: `{ kind: 'ball', radius }` | `{ kind: 'cuboid', halfExtents }`
 - `PhysicsBody.translation()` → `Vec3` (rotation not read yet — see below)
-- `PhysicsBody.teleport(position)` — moves the body and zeros its velocities (used by the demo's periodic re-drop)
+- `PhysicsBody.linvel()` / `setLinvel(v)` — read/set linear velocity (velocity-controlled player, M4)
+- `PhysicsBody.teleport(position)` — moves the body and zeros its velocities (demo re-drop; predictor reconciliation restore)
+- `PhysicsBody.remove()` — remove the body from the world (player disconnect)
+- `world.addKinematicBody(...)` + `PhysicsBody.setNextKinematicTranslation(p)` — a
+  position-based kinematic body moved each step; used client-side to mirror remote
+  players as collision obstacles (predicted local player collides with them)
+- `BodyOptions.linearDamping` — velocity damping; pushable props use it so a shove
+  settles quickly (keeps position-only reconciliation clean)
+
+Runs in the browser too (M4 client prediction), not just Node — `rapier3d-compat`'s
+inlined WASM makes the same wrapper work both places.
 
 ## Notes
 

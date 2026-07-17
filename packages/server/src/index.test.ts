@@ -13,7 +13,7 @@ describe('@mp/server', () => {
 
   it('resolves all upstream packages (core, net, physics)', () => {
     expect(CORE_VERSION).toBe('0.0.0')
-    expect(PROTOCOL_VERSION).toBe(1)
+    expect(PROTOCOL_VERSION).toBe(2)
     expect(PHYSICS_BACKEND).toBe('rapier3d')
   })
 })

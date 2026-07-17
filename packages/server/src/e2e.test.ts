@@ -1,11 +1,18 @@
-import { decodeSnapshot } from '@mp/net'
+import {
+  decodeSnapshot,
+  decodeWelcome,
+  encodeInput,
+  MSG_SNAPSHOT,
+  MSG_WELCOME,
+  readMessageType,
+} from '@mp/net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { startServer, type ServerHandle } from './index'
 
 const TEST_PORT = 9250
 
-describe('walking skeleton end-to-end', () => {
+describe('prediction end-to-end', () => {
   let server: ServerHandle
 
   beforeAll(async () => {
@@ -15,24 +22,35 @@ describe('walking skeleton end-to-end', () => {
     await server.stop()
   })
 
-  it('streams the physics world (falling balls) to a connected WebSocket client', async () => {
+  it('assigns a player, drives it from inputs, and echoes the processed sequence', async () => {
     const ws = new WebSocket(`ws://127.0.0.1:${TEST_PORT}`)
     ws.binaryType = 'arraybuffer'
-    const firstBallY: number[] = []
-    let entityCount = 0
+    let playerId = -1
+    let ackSeq = 0
+    let seq = 0
+    const playerX: number[] = []
+    let inputTimer: ReturnType<typeof setInterval> | null = null
 
     await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('no snapshots received in time')), 4000)
+      const timeout = setTimeout(() => reject(new Error('timeout waiting for movement')), 6000)
+      const done = (): void => {
+        clearTimeout(timeout)
+        if (inputTimer) clearInterval(inputTimer)
+        ws.close()
+        resolve()
+      }
       ws.onmessage = (ev) => {
         if (!(ev.data instanceof ArrayBuffer)) return
-        const snap = decodeSnapshot(ev.data)
-        entityCount = snap.entities.length
-        const ball = snap.entities[0]
-        if (ball) firstBallY.push(ball.position.y)
-        if (firstBallY.length >= 10) {
-          clearTimeout(timeout)
-          ws.close()
-          resolve()
+        const type = readMessageType(ev.data)
+        if (type === MSG_WELCOME) {
+          playerId = decodeWelcome(ev.data).playerId
+          inputTimer = setInterval(() => ws.send(encodeInput({ seq: ++seq, moveX: 1, moveZ: 0 })), 1000 / 30)
+        } else if (type === MSG_SNAPSHOT) {
+          const snap = decodeSnapshot(ev.data)
+          ackSeq = snap.lastProcessedInputSeq
+          const me = snap.entities.find((e) => e.id === playerId)
+          if (me) playerX.push(me.position.x)
+          if (playerX.length >= 20) done()
         }
       }
       ws.onerror = () => {
@@ -41,9 +59,10 @@ describe('walking skeleton end-to-end', () => {
       }
     })
 
-    expect(firstBallY.length).toBeGreaterThanOrEqual(10)
-    expect(entityCount).toBe(8) // all dynamic balls replicated
-    // Physics is running: the ball's height changes (it falls) across snapshots.
-    expect(Math.max(...firstBallY) - Math.min(...firstBallY)).toBeGreaterThan(0.05)
+    expect(playerId).toBeGreaterThanOrEqual(1000) // players use ids >= 1000
+    expect(ackSeq).toBeGreaterThan(0) // server processed inputs and echoed the seq
+    expect(playerX.length).toBeGreaterThanOrEqual(20)
+    // Driving +x moves the authoritative player right over the sampled window.
+    expect(playerX[playerX.length - 1]! - playerX[0]!).toBeGreaterThan(0.3)
   })
 })

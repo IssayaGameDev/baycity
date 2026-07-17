@@ -2,7 +2,7 @@
 
 A reusable multiplayer game stack for HTML5/TypeScript browser games — 3D via Three.js (WebGL2) with a PixiJS 2D HUD, server-authoritative netcode. Games are built as thin compositions on top of the stack.
 
-**Status:** M3 — physics in the loop. The server simulates a Rapier3d world (ground + falling balls); the browser renders it in Three.js (WebGL2), interpolated. See `SEED.md` for the plan and `docs/INDEX.md` for system docs.
+**Status:** M4 — prediction & reconciliation. The local player (WASD) is client-predicted with client-side Rapier and reconciled against the authoritative server; remote balls are interpolated. A built-in network simulator (`tools/netsim`) adds latency/jitter/loss. See `SEED.md` for the plan and `docs/INDEX.md` for system docs.
 
 ## Requirements
 
@@ -27,7 +27,7 @@ pnpm dev:server   # ws://localhost:9200
 pnpm dev:demo     # http://localhost:5173  (open it)
 ```
 
-You should see teal balls fall and bounce on a ground plane — the server's Rapier3d simulation, rendered in Three.js and interpolated on the client.
+Move your yellow player with **WASD / arrow keys**. Teal balls are server-simulated physics (interpolated). Use the sliders to add latency/loss, and toggle **Prediction** off to feel the input lag it hides.
 
 ## Deploy
 

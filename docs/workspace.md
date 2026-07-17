@@ -12,8 +12,13 @@ strict, source-first (no build step at this stage).
 - `packages/client` — prediction/reconciliation, interpolation, input; headless-capable (bots). → core, net, physics
 - `packages/render-pixi` — PixiJS 2D/HUD renderer. Browser (DOM lib). → core
 - `packages/render-three` — Three.js WebGL2 stage; re-exports THREE. Browser (DOM lib). → core, three
-- `games/physics-3d` — throwaway M3 browser demo (Three.js), composes `client`/`net`/`core`/`render-three`. Not the deferred reference game.
-- `tools/`, `infra/` — empty placeholders; populated later (SEED §7).
+- `tools/netsim` — latency/jitter/loss `ClientTransport` wrapper, headless. → core
+- `games/physics-3d` — throwaway demo (evolves per milestone; currently M4 prediction): WASD predicted player vs interpolated balls, netsim sliders, prediction toggle. Not the deferred reference game.
+- `infra/` — empty placeholder; populated later (SEED §7).
+
+Note: `@mp/server` also exposes a `./sim` subpath (`@mp/server/sim`) — the shared
+deterministic player sim, free of server-only deps (no transport/uWS). Imported by
+the server room and by the demo (games → packages). See ADR-0004.
 
 ## Dependency laws (SEED §6)
 

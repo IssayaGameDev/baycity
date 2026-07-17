@@ -1,63 +1,67 @@
-# Netcode (current: M3 physics in the loop)
+# Netcode (current: M4 prediction & reconciliation)
 
-Server-authoritative. Server owns state; clients render it. Server now simulates
-with Rapier3d; the client renders via Three.js. No prediction, rewind, or clock
-sync yet (M4 / M5). Positions only (no rotation on the wire yet).
+Server-authoritative. Clients send inputs; the server owns state. The local
+player **and the balls** are client-predicted (props "pulled into the prediction
+loop", SEED §4); remote players are interpolated. Positions only on the wire (no
+rotation yet). No rewind/lag-comp or clock sync yet (M5).
 
 ## Server (`packages/server`)
 
-- **Tick:** 30 Hz fixed (`TICK_RATE_HZ`), driven by `startFixedLoop` over the
-  pure `createStepper` accumulator (`packages/core/src/loop.ts`). The stepper
-  clamps to `maxSteps` and drops the backlog after a long stall (no spiral of
-  death). `simTimeMs` advances by the fixed dt each tick.
-- **World:** Rapier3d (`@mp/physics`) — a fixed ground with dynamic balls dropped
-  from staggered heights, **re-dropped every ~4 s** so the demo keeps moving instead
-  of settling once (`world.ts`, throwaway content). `world.step(dt)` runs one physics
-  step per tick. `initPhysics()` must resolve before the world is created. Only
-  dynamic bodies are replicated; the static ground is drawn client-side.
-- **Snapshots:** 20 Hz (`SNAPSHOT_RATE_HZ`, within SEED's 15–20 Hz), decoupled
-  from the tick by a millisecond accumulator, so the rate is independent of the
-  tick ratio.
-- **Per-client construction (SEED §3):** the loop iterates connections and builds
-  a snapshot per connection — never a single global broadcast. `snapshotFor`
-  takes `connId`; it is unused now (no AOI/filtering) but is the seam where every
-  bandwidth lever hooks in later.
+- **Tick:** 30 Hz fixed (`TICK_RATE_HZ`) over the pure `createStepper` accumulator.
+  Snapshots at 20 Hz (`SNAPSHOT_RATE_HZ`), decoupled from the tick.
+- **Room (`room.ts`):** owns the Rapier world — ground, inert pushable balls
+  (throwaway content), and one dynamic-ball player per connection. All dynamic, so
+  players push balls, balls push players, and multiple players can push one ball —
+  resolved authoritatively.
+- **Inputs:** per-connection bounded FIFO; one input applied per tick, recording
+  `lastProcessedSeq`; empty queue → zero-move (ack unchanged).
+- **Per-client snapshots (SEED §3):** one per connection with that client's
+  `lastProcessedInputSeq` (the ack). Entity list (balls + all players) is shared.
 
-## Transport
+## Shared deterministic sim (`@mp/server/sim`)
 
-- Server: uWebSockets.js (`transport-uws.ts`) behind `ServerTransport`.
-- Client: standard `WebSocket` (`transport-ws.ts`) behind `ClientTransport` —
-  one implementation for browser and Node ≥ 22, so bots reuse it headless.
-- Payload is `ArrayBuffer` end to end. Inbound uWS buffers are neutered after the
-  callback, so the server transport copies before handing off.
-- **TCP/WS caveat:** WebSocket is reliable-ordered, so a lost packet head-of-line
-  blocks later snapshots. The `*Transport` interfaces in `core` are the seam for a
-  later UDP-like swap (SEED §2); the cost is to be quantified in netsim (M4).
+World/collision config + player movement + the pushable balls, in one module run
+by both the server (authority) and the client predictor. Same values + same step ⇒
+replaying inputs reproduces server state (SEED §4); determinism on the same Rapier
+build is verified in `sim.test.ts`. (Lives under `@mp/server` for now; extraction
+to a game-owned shared sim is later work — ADR-0004/0005.)
 
-## Client interpolation (`packages/client`)
+## Client (`packages/client`)
 
-- `createSnapshotClient` buffers snapshots and samples a view delayed by
-  `interpolationDelayMs`.
-- **Render clock (pre-clock-sync):** `renderServerTime = lastServerTimeMs +
-  (localNow − localArrivalOfNewest) − interpolationDelayMs`. Replaced by real
-  clock sync in M5.
-- `interpolateAt` (pure, tested): finds the two snapshots bracketing the render
-  time and lerps per entity; holds the nearest endpoint outside the buffered
-  range (no extrapolation yet).
-- Buffer is pruned beyond `maxBufferMs` behind the newest snapshot.
+- **Transport:** standard `WebSocket`, optionally wrapped by `@mp/netsim`.
+- **What's predicted:** the local player **and the balls** run in a local physics
+  world (shared sim), so pushing is instant. Remote players can't be predicted
+  (unknown input), so they are **kinematic obstacles** synced from snapshots.
+- **World predictor (`predictor.ts`):** generic over a `PredictedWorld` (apply
+  input + step; read/restore predicted entities). Each fixed tick it applies the
+  local input, steps, and records every predicted entity's position.
+- **Reconciliation:** per snapshot, take the authoritative positions of the
+  predicted entities + `lastProcessedInputSeq`; drop acked inputs, restore those
+  entities, replay the remaining unacked inputs (re-simulating the local world).
+  Each entity's visual delta is absorbed into a **decaying offset**
+  (`correctionSmoothingMs`) so corrections ease in (SEED §4). Position-only
+  reconciliation (v1): free-coasting props lose velocity, mitigated by damping;
+  exact reconciliation would add velocities to the wire (later, with M6).
+- **Render interpolation:** every predicted entity is drawn by interpolating
+  between its last two tick positions — smooth at display rate, not 30 Hz stepping.
+- **Remotes:** other players are interpolated (`createSnapshotClient`), ~`interpolationDelayMs`
+  in the past; also mirrored as kinematic obstacles so the local player collides with them.
+  Playback runs off a **smoothed render clock** — a free-running local→server time offset
+  gently corrected by each snapshot — so 20 Hz arrival jitter doesn't stutter remote motion
+  (real clock sync is M5).
+- Headless-capable, so bots reuse the same prediction path.
 
-## Rendering (`@mp/render-three`)
+## Network simulation (`tools/netsim`)
 
-- `createThreeStage({ canvas })` gives WebGL2 renderer + scene + camera + rAF loop
-  + resize. It is unopinionated: the game adds lights/ground/meshes and, each
-  frame, positions one mesh per sampled entity id.
-- The client does **not** run physics in M3 — it only renders interpolated
-  snapshot positions. Client-side physics/prediction arrives in M4.
+`createNetsimClientTransport(inner, { latencyMs, jitterMs, lossRate })` delays/drops
+both directions (RTT ≈ 2×latency). The demo exposes latency/loss sliders + a
+prediction toggle so behaviour can be felt under realistic conditions (SEED §7).
 
-## ⚠ Design decision pending: interpolation buffer duration
+## Game-feel values (Kodjo's call)
 
-`interpolationDelayMs` is a **game-feel design slider** (CLAUDE.md), not a
-technical default. The demo uses **100 ms as a placeholder**. The real value is
-Kodjo's call and is best made at **M4**, when netsim can show its effect under
-jitter/loss — choosing it on jitter-free localhost is uninformative. It is a
-runtime parameter: changing it is a one-line edit, no rework.
+Both set to **100 ms** — provisional; revisit with real-network/device feel. Tunable
+live in the demo's Tweakpane "Network" folder.
+
+- **`interpolationDelayMs`** — how far in the past remotes render (latency vs. smoothness).
+- **`correctionSmoothingMs`** — how fast a reconciliation correction eases in
+  (responsiveness vs. rubber-banding).

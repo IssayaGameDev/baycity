@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Physics in the loop — M3</title>
+    <title>Prediction &amp; reconciliation — M4</title>
     <style>
       body {
         margin: 0;
@@ -13,18 +13,20 @@
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 12px;
+        gap: 10px;
         padding: 16px;
       }
       h1 { font-size: 16px; font-weight: 600; margin: 0; }
-      #status { font-size: 14px; opacity: 0.8; }
+      #status { font-size: 13px; opacity: 0.85; }
+      .hint { opacity: 0.7; font-size: 12px; }
       canvas { border-radius: 8px; }
     </style>
   </head>
   <body>
-    <h1>M3 — server-simulated Rapier balls, rendered in Three.js (WebGL2), interpolated</h1>
+    <h1>M4 — predicted player + pushable balls vs interpolated remotes</h1>
     <div id="status">connecting…</div>
-    <canvas id="view" width="900" height="560"></canvas>
+    <div class="hint">Yellow = your player (WASD / arrows) — push the balls. Teal = balls. Orange = other players. Tune the network + game-feel sliders in the Debug pane (top-right).</div>
+    <canvas id="view" width="900" height="540"></canvas>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

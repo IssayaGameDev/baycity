@@ -50,6 +50,26 @@ describe('physics world', () => {
     world.free()
   })
 
+  it('a kinematic obstacle blocks a moving dynamic body (no tunneling)', () => {
+    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+    const obstacle = world.addKinematicBody({
+      position: { x: 2, y: 0, z: 0 },
+      shape: { kind: 'ball', radius: 0.5 },
+    })
+    const mover = world.addDynamicBody({
+      position: { x: 0, y: 0, z: 0 },
+      shape: { kind: 'ball', radius: 0.5 },
+    })
+    for (let i = 0; i < 120; i++) {
+      obstacle.setNextKinematicTranslation({ x: 2, y: 0, z: 0 })
+      mover.setLinvel({ x: 6, y: 0, z: 0 }) // driven right at the obstacle
+      world.step(1 / 60)
+    }
+    // Unobstructed it would reach x≈12; it must be stopped near contact (~x=1).
+    expect(mover.translation().x).toBeLessThan(1.5)
+    world.free()
+  })
+
   it('leaves a fixed body where it was placed', () => {
     const world = createPhysicsWorld()
     const ground = world.addFixedBody({

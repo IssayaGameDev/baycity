@@ -1,9 +1,9 @@
-import { startFixedLoop, type Connection, type LoopHandle } from '@mp/core'
-import { encodeSnapshot } from '@mp/net'
+import { startFixedLoop, type LoopHandle } from '@mp/core'
 import { initPhysics } from '@mp/physics'
 
+import { createRoom } from './room'
+import { TICK_RATE_HZ } from './sim'
 import { createUwsServerTransport, type UwsServerTransport } from './transport-uws'
-import { createSimWorld } from './world'
 
 /**
  * @mp/server — authoritative simulation host: rooms, fixed tick, per-client
@@ -13,7 +13,7 @@ import { createSimWorld } from './world'
 export const SERVER_VERSION = '0.0.0' as const
 
 export const DEFAULT_PORT = 9200
-export const TICK_RATE_HZ = 30 // SEED §2 (locked starting point)
+export { TICK_RATE_HZ }
 export const SNAPSHOT_RATE_HZ = 20 // SEED §2: 15–20 Hz; upper end within the locked range
 
 export interface ServerHandle {
@@ -21,18 +21,14 @@ export interface ServerHandle {
   stop: () => Promise<void>
 }
 
-/** Starts the walking-skeleton server. No side effects at import; call to run. */
+/** Starts the game server. No side effects at import; call to run. */
 export const startServer = async (opts: { port?: number } = {}): Promise<ServerHandle> => {
   const port = opts.port ?? DEFAULT_PORT
   await initPhysics()
   const transport: UwsServerTransport = await createUwsServerTransport({ port })
-  const world = createSimWorld()
-  const connections = new Set<Connection>()
+  const room = createRoom()
 
-  transport.onConnection((conn) => {
-    connections.add(conn)
-    conn.onClose(() => connections.delete(conn))
-  })
+  transport.onConnection((conn) => room.addConnection(conn))
 
   const snapshotIntervalMs = 1000 / SNAPSHOT_RATE_HZ
   let simTimeMs = 0
@@ -41,16 +37,13 @@ export const startServer = async (opts: { port?: number } = {}): Promise<ServerH
   const loop: LoopHandle = startFixedLoop({
     tickRateHz: TICK_RATE_HZ,
     onTick: (dtSeconds) => {
-      const dtMs = dtSeconds * 1000
-      simTimeMs += dtMs
-      world.step(dtSeconds)
+      simTimeMs += dtSeconds * 1000
+      room.step(dtSeconds)
 
-      sinceSnapshotMs += dtMs
+      sinceSnapshotMs += dtSeconds * 1000
       if (sinceSnapshotMs >= snapshotIntervalMs) {
         sinceSnapshotMs -= snapshotIntervalMs
-        for (const conn of connections) {
-          conn.send(encodeSnapshot(world.snapshotFor(conn.id, simTimeMs)))
-        }
+        room.sendSnapshots(simTimeMs)
       }
     },
   })

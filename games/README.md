@@ -10,7 +10,11 @@ throwaway content instead.
 Per-milestone throwaway demos live here; each supersedes the last (older ones are
 recoverable at their milestone tag). Current:
 
-- `physics-3d` — throwaway M3 demo: renders the server's Rapier3d world in Three.js
-  via `@mp/render-three`, interpolated by `@mp/client`. Doubles as proof a game
-  composes the stack without modifying it. Expected to be replaced, not kept.
+- `physics-3d` — throwaway demo, evolving per milestone. **Currently M4:** a
+  WASD-controlled, client-predicted player (client-side Rapier, reconciled against
+  the server) among interpolated server balls, with netsim sliders and a prediction
+  toggle. Composes `client`/`net`/`core`/`physics`/`render-three`/`netsim` +
+  `@mp/server/sim`. A **Tweakpane** "Network" debug folder exposes the netsim knobs
+  and the two game-feel sliders (interp delay, correction) live. Doubles as proof a
+  game composes the stack without modifying it.
   (M2's `walking-skeleton` was removed; recover it at tag `m2`.)
