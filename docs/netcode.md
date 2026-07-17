@@ -1,67 +1,58 @@
-# Netcode (current: M4 prediction & reconciliation)
+# Netcode (current: M5 rewind & clock sync)
 
 Server-authoritative. Clients send inputs; the server owns state. The local
-player **and the balls** are client-predicted (props "pulled into the prediction
-loop", SEED §4); remote players are interpolated. Positions only on the wire (no
-rotation yet). No rewind/lag-comp or clock sync yet (M5).
+player and the balls are client-predicted; remote players are interpolated on a
+clock-synced timeline; hits are lag-compensated against the shooter-perceived
+past. Positions only on the wire (no rotation yet).
 
 ## Server (`packages/server`)
 
-- **Tick:** 30 Hz fixed (`TICK_RATE_HZ`) over the pure `createStepper` accumulator.
-  Snapshots at 20 Hz (`SNAPSHOT_RATE_HZ`), decoupled from the tick.
-- **Room (`room.ts`):** owns the Rapier world — ground, inert pushable balls
-  (throwaway content), and one dynamic-ball player per connection. All dynamic, so
-  players push balls, balls push players, and multiple players can push one ball —
-  resolved authoritatively.
-- **Inputs:** per-connection bounded FIFO; one input applied per tick, recording
-  `lastProcessedSeq`; empty queue → zero-move (ack unchanged).
-- **Per-client snapshots (SEED §3):** one per connection with that client's
-  `lastProcessedInputSeq` (the ack). Entity list (balls + all players) is shared.
+- **Tick:** 30 Hz fixed (`TICK_RATE_HZ`); snapshots at 20 Hz. The room owns
+  `serverTimeMs` (advanced per tick).
+- **Room (`room.ts`):** Rapier world (ground + pushable balls + one dynamic-ball
+  player per connection). Per-connection input FIFO (one/tick, records
+  `lastProcessedSeq`). Per-client snapshots carry that client's ack (SEED §3).
+  Also answers `PING` with `PONG{clientTime, serverTime}` and handles `FIRE`.
+- **Rewind (`rewind.ts`, SEED §3):** each tick records a frame of player positions
+  into a ~1 s ring buffer. `positionsAt(t)` reconstructs (interpolated) positions
+  at any past time; `hitScan` ray-tests those spheres.
 
 ## Shared deterministic sim (`@mp/server/sim`)
 
-World/collision config + player movement + the pushable balls, in one module run
-by both the server (authority) and the client predictor. Same values + same step ⇒
-replaying inputs reproduces server state (SEED §4); determinism on the same Rapier
-build is verified in `sim.test.ts`. (Lives under `@mp/server` for now; extraction
-to a game-owned shared sim is later work — ADR-0004/0005.)
+World/collision config + player movement + pushable balls, run by both server and
+client predictor (SEED §4). Determinism verified in `sim.test.ts`.
 
 ## Client (`packages/client`)
 
-- **Transport:** standard `WebSocket`, optionally wrapped by `@mp/netsim`.
-- **What's predicted:** the local player **and the balls** run in a local physics
-  world (shared sim), so pushing is instant. Remote players can't be predicted
-  (unknown input), so they are **kinematic obstacles** synced from snapshots.
-- **World predictor (`predictor.ts`):** generic over a `PredictedWorld` (apply
-  input + step; read/restore predicted entities). Each fixed tick it applies the
-  local input, steps, and records every predicted entity's position.
-- **Reconciliation:** per snapshot, take the authoritative positions of the
-  predicted entities + `lastProcessedInputSeq`; drop acked inputs, restore those
-  entities, replay the remaining unacked inputs (re-simulating the local world).
-  Each entity's visual delta is absorbed into a **decaying offset**
-  (`correctionSmoothingMs`) so corrections ease in (SEED §4). Position-only
-  reconciliation (v1): free-coasting props lose velocity, mitigated by damping;
-  exact reconciliation would add velocities to the wire (later, with M6).
-- **Render interpolation:** every predicted entity is drawn by interpolating
-  between its last two tick positions — smooth at display rate, not 30 Hz stepping.
-- **Remotes:** other players are interpolated (`createSnapshotClient`), ~`interpolationDelayMs`
-  in the past; also mirrored as kinematic obstacles so the local player collides with them.
-  Playback runs off a **smoothed render clock** — a free-running local→server time offset
-  gently corrected by each snapshot — so 20 Hz arrival jitter doesn't stutter remote motion
-  (real clock sync is M5).
-- Headless-capable, so bots reuse the same prediction path.
+- **Prediction (`predictor.ts`):** generic world predictor — predicts the local
+  player and the balls (per-entity render-interpolation + eased corrections);
+  full-state reconciliation replays unacked inputs. Remote players are kinematic
+  obstacles.
+- **Interpolation (`snapshotClient.ts`):** remotes rendered ~`interpolationDelayMs`
+  in the past, on the **clock-synced** timeline (`serverNow`).
+- **Clock sync (`clockSync.ts`, SEED §3):** from `PING`/`PONG` round-trips it keeps
+  a smoothed estimate of `serverTime − localTime` (and RTT). `serverNow()` drives
+  both interpolation playback and the timestamp on hit claims — so "fire at what I
+  see" lines up with the server's rewind.
+
+## Lag-compensated hits (SEED §3)
+
+1. Client fires: raycast from the camera; send `FIRE{fireTimeMs, origin, dir}` where
+   `fireTimeMs = serverNow − interpolationDelay` (the time the shooter rendered the targets).
+2. Server clamps `fireTimeMs` to the honored rewind window (**1 s**, = buffer length;
+   technical default — the design/anti-cheat clamp lives here), rewinds players to it,
+   ray-tests, and broadcasts `HIT{shooterId, targetId}`.
+3. Result: hitting where you *saw* a moving target registers, despite latency. The
+   demo's "lag compensation" toggle sends `fireTimeMs = serverNow` (present) instead,
+   so shots miss moving targets — showing why rewind is needed.
 
 ## Network simulation (`tools/netsim`)
 
 `createNetsimClientTransport(inner, { latencyMs, jitterMs, lossRate })` delays/drops
-both directions (RTT ≈ 2×latency). The demo exposes latency/loss sliders + a
-prediction toggle so behaviour can be felt under realistic conditions (SEED §7).
+both directions. The demo's Tweakpane "Network" folder tunes it live.
 
 ## Game-feel values (Kodjo's call)
 
-Both set to **100 ms** — provisional; revisit with real-network/device feel. Tunable
-live in the demo's Tweakpane "Network" folder.
-
-- **`interpolationDelayMs`** — how far in the past remotes render (latency vs. smoothness).
-- **`correctionSmoothingMs`** — how fast a reconciliation correction eases in
-  (responsiveness vs. rubber-banding).
+Both **100 ms**, provisional; tunable live in the demo:
+- `interpolationDelayMs` — how far in the past remotes render.
+- `correctionSmoothingMs` — how fast a reconciliation correction eases in.

@@ -1,7 +1,10 @@
 import {
+  decodePong,
   decodeSnapshot,
   decodeWelcome,
   encodeInput,
+  encodePing,
+  MSG_PONG,
   MSG_SNAPSHOT,
   MSG_WELCOME,
   readMessageType,
@@ -64,5 +67,31 @@ describe('prediction end-to-end', () => {
     expect(playerX.length).toBeGreaterThanOrEqual(20)
     // Driving +x moves the authoritative player right over the sampled window.
     expect(playerX[playerX.length - 1]! - playerX[0]!).toBeGreaterThan(0.3)
+  })
+
+  it('answers a clock-sync ping with the echoed time and its server time', async () => {
+    const ws = new WebSocket(`ws://127.0.0.1:${TEST_PORT}`)
+    ws.binaryType = 'arraybuffer'
+    const CLIENT_TIME = 424242
+
+    const pong = await new Promise<{ clientTimeMs: number; serverTimeMs: number }>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('no pong')), 4000)
+      ws.onopen = () => ws.send(encodePing({ clientTimeMs: CLIENT_TIME }))
+      ws.onmessage = (ev) => {
+        if (!(ev.data instanceof ArrayBuffer)) return
+        if (readMessageType(ev.data) !== MSG_PONG) return
+        clearTimeout(timeout)
+        const p = decodePong(ev.data)
+        ws.close()
+        resolve(p)
+      }
+      ws.onerror = () => {
+        clearTimeout(timeout)
+        reject(new Error('client socket error'))
+      }
+    })
+
+    expect(pong.clientTimeMs).toBe(CLIENT_TIME) // echoed back for RTT
+    expect(pong.serverTimeMs).toBeGreaterThan(0) // server advanced its clock
   })
 })

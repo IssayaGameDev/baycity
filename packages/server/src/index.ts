@@ -31,19 +31,16 @@ export const startServer = async (opts: { port?: number } = {}): Promise<ServerH
   transport.onConnection((conn) => room.addConnection(conn))
 
   const snapshotIntervalMs = 1000 / SNAPSHOT_RATE_HZ
-  let simTimeMs = 0
   let sinceSnapshotMs = 0
 
   const loop: LoopHandle = startFixedLoop({
     tickRateHz: TICK_RATE_HZ,
     onTick: (dtSeconds) => {
-      simTimeMs += dtSeconds * 1000
       room.step(dtSeconds)
-
       sinceSnapshotMs += dtSeconds * 1000
       if (sinceSnapshotMs >= snapshotIntervalMs) {
         sinceSnapshotMs -= snapshotIntervalMs
-        room.sendSnapshots(simTimeMs)
+        room.sendSnapshots()
       }
     },
   })

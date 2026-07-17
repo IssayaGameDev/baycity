@@ -1,4 +1,5 @@
 import {
+  createClockSync,
   createPredictor,
   createSnapshotClient,
   createWebSocketClientTransport,
@@ -6,7 +7,20 @@ import {
   type Predictor,
 } from '@mp/client'
 import { startFixedLoop, type EntityId, type Vec3 } from '@mp/core'
-import { decodeSnapshot, decodeWelcome, encodeInput, MSG_SNAPSHOT, MSG_WELCOME, readMessageType } from '@mp/net'
+import {
+  decodeHit,
+  decodePong,
+  decodeSnapshot,
+  decodeWelcome,
+  encodeFire,
+  encodeInput,
+  encodePing,
+  MSG_HIT,
+  MSG_PONG,
+  MSG_SNAPSHOT,
+  MSG_WELCOME,
+  readMessageType,
+} from '@mp/net'
 import { createNetsimClientTransport } from '@mp/netsim'
 import { createPhysicsWorld, initPhysics, type PhysicsBody } from '@mp/physics'
 import { THREE, createThreeStage } from '@mp/render-three'
@@ -50,6 +64,13 @@ const place = (id: EntityId, isSelf: boolean, p: Vec3): void => {
   }
   m.position.set(p.x, p.y, p.z)
 }
+const flash = (id: EntityId): void => {
+  const m = meshes.get(id)
+  if (m === undefined) return
+  const mat = m.material as THREE.MeshStandardMaterial
+  mat.emissive.setHex(0xff2d2d)
+  setTimeout(() => mat.emissive.setHex(0x000000), 200)
+}
 
 // --- input ---
 const keys = new Set<string>()
@@ -65,7 +86,6 @@ const sampleMove = (): { x: number; z: number } => ({
 })
 
 // --- debug pane (Tweakpane) ---
-// interpDelay / correction are DESIGN sliders (game feel) — tune them by feel here.
 const params = {
   latency: 80, // one-way ms (netsim)
   jitter: 20, // ms
@@ -73,7 +93,9 @@ const params = {
   prediction: true,
   interpDelay: 100, // ms — how far in the past remotes render
   correction: 100, // ms — how fast a reconciliation correction eases in
-  pending: 0, // readonly monitor
+  lagComp: true, // fire at the shooter-perceived past (vs the present)
+  pending: 0, // readonly
+  rtt: 0, // readonly
 }
 const pane = new Pane({ title: 'Debug' })
 const net = pane.addFolder({ title: 'Network' })
@@ -81,19 +103,20 @@ net.addBinding(params, 'latency', { min: 0, max: 250, step: 1, label: 'latency m
 net.addBinding(params, 'jitter', { min: 0, max: 100, step: 1, label: 'jitter ms' })
 net.addBinding(params, 'loss', { min: 0, max: 30, step: 1, label: 'loss %' })
 net.addBinding(params, 'prediction', { label: 'prediction' })
+net.addBinding(params, 'lagComp', { label: 'lag compensation' })
 net.addBinding(params, 'interpDelay', { min: 0, max: 300, step: 5, label: 'interp delay ms' })
 net.addBinding(params, 'correction', { min: 10, max: 400, step: 5, label: 'correction ms' })
 const pendingMonitor = net.addBinding(params, 'pending', { readonly: true, label: 'pending inputs' })
+const rttMonitor = net.addBinding(params, 'rtt', { readonly: true, label: 'rtt ms' })
 
-// --- transport (through the network simulator) ---
+// --- transport, clock sync, netcode ---
 const transport = createNetsimClientTransport(createWebSocketClientTransport(SERVER_URL), {
   latencyMs: params.latency,
   jitterMs: params.jitter,
   lossRate: params.loss / 100,
 })
-
-// --- netcode ---
-const interp = createSnapshotClient({ interpolationDelayMs: params.interpDelay })
+const clock = createClockSync()
+const interp = createSnapshotClient({ interpolationDelayMs: params.interpDelay, serverNow: () => clock.serverNow() })
 let myId: EntityId | null = null
 let predictor: Predictor | null = null
 
@@ -104,7 +127,6 @@ const applyNet = (): void => {
 }
 net.on('change', applyNet)
 
-// A predicted entity is the local player or a ball; remote players are not predicted.
 const isPredicted = (id: EntityId): boolean => id === myId || isBallId(id)
 
 const initPrediction = async (id: EntityId): Promise<void> => {
@@ -114,8 +136,6 @@ const initPrediction = async (id: EntityId): Promise<void> => {
   const playerBody = addPlayerBody(world, playerSpawn(id))
   const balls = addBalls(world)
 
-  // Predict the local player AND the balls (pulled into the loop, SEED §4) so
-  // pushing is instant. Remote players can't be predicted — kinematic obstacles.
   const predicted: PredictedWorld = {
     applyInput: (cmd) => {
       applyPlayerInput(playerBody, cmd)
@@ -162,25 +182,59 @@ const initPrediction = async (id: EntityId): Promise<void> => {
   })
 }
 
+// Click to fire a ray from the camera. lag-comp on: aim at what we SEE (the past);
+// off: aim at "now" — which misses moving targets, demonstrating why rewind matters.
+const raycaster = new THREE.Raycaster()
+canvas.addEventListener('pointerdown', (e) => {
+  if (!clock.ready()) return
+  const rect = canvas.getBoundingClientRect()
+  const ndc = new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1,
+  )
+  raycaster.setFromCamera(ndc, stage.camera)
+  const { origin, direction } = raycaster.ray
+  const fireTimeMs = clock.serverNow() - (params.lagComp ? params.interpDelay : 0)
+  transport.send(
+    encodeFire({
+      fireTimeMs,
+      origin: { x: origin.x, y: origin.y, z: origin.z },
+      direction: { x: direction.x, y: direction.y, z: direction.z },
+    }),
+  )
+})
+
 transport.onOpen(() => {
-  statusEl.textContent = `connected: ${SERVER_URL}`
+  statusEl.textContent = `connected: ${SERVER_URL} — click to shoot other players`
+  setInterval(() => transport.send(encodePing({ clientTimeMs: performance.now() })), 250)
 })
 transport.onClose(() => {
   statusEl.textContent = `disconnected — run 'pnpm dev:server' (${SERVER_URL})`
 })
 transport.onMessage((data) => {
-  const type = readMessageType(data)
-  if (type === MSG_WELCOME) {
-    myId = decodeWelcome(data).playerId
-    void initPrediction(myId)
-  } else if (type === MSG_SNAPSHOT) {
-    const snap = decodeSnapshot(data)
-    if (myId !== null && predictor) {
-      const authoritative = new Map<EntityId, Vec3>()
-      for (const e of snap.entities) if (isPredicted(e.id)) authoritative.set(e.id, e.position)
-      predictor.reconcile(authoritative, snap.lastProcessedInputSeq)
+  switch (readMessageType(data)) {
+    case MSG_WELCOME:
+      myId = decodeWelcome(data).playerId
+      void initPrediction(myId)
+      break
+    case MSG_SNAPSHOT: {
+      const snap = decodeSnapshot(data)
+      if (myId !== null && predictor) {
+        const authoritative = new Map<EntityId, Vec3>()
+        for (const e of snap.entities) if (isPredicted(e.id)) authoritative.set(e.id, e.position)
+        predictor.reconcile(authoritative, snap.lastProcessedInputSeq)
+      }
+      interp.ingest(snap)
+      break
     }
-    interp.ingest(snap)
+    case MSG_PONG: {
+      const pong = decodePong(data)
+      clock.recordSample(pong.clientTimeMs, pong.serverTimeMs, performance.now())
+      break
+    }
+    case MSG_HIT:
+      flash(decodeHit(data).targetId)
+      break
   }
 })
 
@@ -194,5 +248,7 @@ stage.start(() => {
     for (const e of interp.sample()) place(e.id, e.id === myId, e.position)
     params.pending = 0
   }
+  params.rtt = Math.round(clock.rttMs())
   pendingMonitor.refresh()
+  rttMonitor.refresh()
 })

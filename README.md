@@ -2,7 +2,7 @@
 
 A reusable multiplayer game stack for HTML5/TypeScript browser games — 3D via Three.js (WebGL2) with a PixiJS 2D HUD, server-authoritative netcode. Games are built as thin compositions on top of the stack.
 
-**Status:** M4 — prediction & reconciliation. The local player (WASD) is client-predicted with client-side Rapier and reconciled against the authoritative server; remote balls are interpolated. A built-in network simulator (`tools/netsim`) adds latency/jitter/loss. See `SEED.md` for the plan and `docs/INDEX.md` for system docs.
+**Status:** M5 — rewind & clock sync. Client-predicted player + pushable balls, clock-synced interpolation of remote players, and **lag-compensated hit validation** (click to shoot moving players; hits resolve against the shooter-perceived past). A built-in network simulator (`tools/netsim`) adds latency/jitter/loss. See `SEED.md` for the plan and `docs/INDEX.md` for system docs.
 
 ## Requirements
 
@@ -27,7 +27,7 @@ pnpm dev:server   # ws://localhost:9200
 pnpm dev:demo     # http://localhost:5173  (open it)
 ```
 
-Move your yellow player with **WASD / arrow keys**. Teal balls are server-simulated physics (interpolated). Use the sliders to add latency/loss, and toggle **Prediction** off to feel the input lag it hides.
+Move your yellow player with **WASD / arrow keys** and push the balls. **Click to shoot** other (orange) players — hits are lag-compensated. Open a second browser tab to get a second player. Use the **Debug** pane (top-right) to add latency/loss and toggle **prediction** / **lag compensation** to feel what each does.
 
 ## Deploy
 

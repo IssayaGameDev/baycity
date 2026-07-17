@@ -1,51 +1,49 @@
-# Wire protocol (v2)
+# Wire protocol (v3)
 
 Binary, little-endian. No JSON on the hot path (SEED §2). Defined in
-`packages/net`. `PROTOCOL_VERSION = 2`.
+`packages/net`. `PROTOCOL_VERSION = 3`.
 
 ## Framing
 
-Every message starts with:
+Every message starts with `u8 version` (`PROTOCOL_VERSION`, decoder rejects
+mismatches) then `u8 type` (`readMessageType` peeks it).
 
-| offset | type | field | notes |
-|---|---|---|---|
-| 0 | u8 | version | `PROTOCOL_VERSION`; `readHeader` rejects mismatches |
-| 1 | u8 | type | message-type discriminator (`readMessageType` peeks it) |
+Types: `SNAPSHOT=1`, `WELCOME=2` (server→client); `INPUT=3` (client→server);
+`PING=4` (c→s), `PONG=5` (s→c); `FIRE=6` (c→s), `HIT=7` (s→c broadcast).
 
-Types: `MSG_SNAPSHOT = 1`, `MSG_WELCOME = 2` (server→client), `MSG_INPUT = 3` (client→server).
+## Snapshot — `1` (server → client)
 
-## Snapshot — `type = 1` (server → client)
+Per-client full state. `u32 serverTimeMs`, `u32 lastProcessedInputSeq` (recon
+ack), `u16 entityCount`, then per entity `u16 id` + `f32 x,y,z`. Header 12 B,
+entity 14 B. Includes the recipient's own player.
 
-Per-client full state (no delta yet; delta is M6).
+## Welcome — `2` (server → client, on connect)
 
-| offset | type | field |
-|---|---|---|
-| 2 | u32 | serverTimeMs (interpolation timeline) |
-| 6 | u32 | lastProcessedInputSeq (reconciliation ack for this client) |
-| 10 | u16 | entityCount |
-| 12 + n·14 | u16 | entity id |
-| +2 | f32 ×3 | position x, y, z |
+`u16 playerId` — the client's own entity id.
 
-Header 12 B, entity 14 B. Includes the recipient's own player entity (used both
-for reconciliation and, when prediction is off, for rendering).
+## Input — `3` (client → server)
 
-## Welcome — `type = 2` (server → client, on connect)
+`u32 seq`, `i8 moveX×127`, `i8 moveZ×127`.
 
-| offset | type | field |
-|---|---|---|
-| 2 | u16 | playerId (the client's own entity id) |
+## Ping / Pong — `4` / `5` (clock sync)
 
-## Input — `type = 3` (client → server)
+- Ping (c→s): `u32 clientTimeMs`.
+- Pong (s→c): `u32 clientTimeMs` (echoed) + `u32 serverTimeMs`.
 
-| offset | type | field |
-|---|---|---|
-| 2 | u32 | seq (per-client, increasing) |
-| 6 | i8 | moveX × 127 (−1..1) |
-| 7 | i8 | moveZ × 127 (−1..1) |
+Client computes offset = `serverTimeMs − (clientSend + rtt/2)`, rtt = recv − send.
+
+## Fire — `6` (client → server, lag-compensated hit claim)
+
+`u32 fireTimeMs` (server time the shooter was rendering), `f32 origin x,y,z`,
+`f32 direction x,y,z` (unit). Server clamps `fireTimeMs` to the honored rewind
+window, reconstructs player positions then, and ray-tests.
+
+## Hit — `7` (server → client, broadcast)
+
+`u16 shooterId`, `u16 targetId`.
 
 ## Current limits (will change)
 
-- Positions are raw `float32`; quantization is M6.
-- Full-state snapshots each tick — see budget 2 (SEED §5); meaningful only after
-  delta + quantization (M6), measured under load (M8).
+- Positions raw `float32`; quantization is M6.
+- Full-state snapshots each tick (delta is M6).
 - Codec round-trips covered by `packages/net/src/*.test.ts`.

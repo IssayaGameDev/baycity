@@ -12,10 +12,16 @@ export interface SnapshotClientOptions {
   /** Drop buffered snapshots older than this many ms behind the newest. */
   maxBufferMs?: number
   /**
-   * How strongly each snapshot nudges the render clock (0..1, per snapshot).
-   * Small = smoother (absorbs arrival jitter) but tracks drift slower.
+   * How strongly each snapshot nudges the internal render clock (0..1, per
+   * snapshot). Small = smoother (absorbs arrival jitter) but tracks drift slower.
+   * Ignored when `serverNow` is supplied.
    */
   clockTracking?: number
+  /**
+   * Synced "server now" (ms), e.g. from `createClockSync`. When provided, playback
+   * uses it (real clock sync, M5) instead of the interim snapshot-derived estimate.
+   */
+  serverNow?: () => number
   /** Injectable clock (ms). Defaults to `performance.now`. */
   now?: () => number
 }
@@ -69,9 +75,12 @@ export const createSnapshotClient = (opts: SnapshotClientOptions): SnapshotClien
       while (buffer.length > 2 && buffer[0]!.serverTimeMs < cutoff) buffer.shift()
     },
     sample: () => {
+      if (opts.serverNow) {
+        if (buffer.length === 0) return []
+        return interpolateAt(buffer, opts.serverNow() - delayMs)
+      }
       if (!hasBaseline) return []
-      const renderServerTimeMs = now() + clockOffset - delayMs
-      return interpolateAt(buffer, renderServerTimeMs)
+      return interpolateAt(buffer, now() + clockOffset - delayMs)
     },
     setInterpolationDelayMs: (ms) => {
       delayMs = ms
