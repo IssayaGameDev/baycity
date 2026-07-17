@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Prediction &amp; reconciliation — M4</title>
+    <title>HUD &amp; input — M7</title>
     <style>
       body {
         margin: 0;
@@ -18,15 +18,30 @@
       }
       h1 { font-size: 16px; font-weight: 600; margin: 0; }
       #status { font-size: 13px; opacity: 0.85; }
-      .hint { opacity: 0.7; font-size: 12px; }
-      canvas { border-radius: 8px; }
+      .hint { opacity: 0.7; font-size: 12px; max-width: 900px; text-align: center; }
+      #stage { position: relative; width: 900px; height: 540px; }
+      #view { position: absolute; inset: 0; border-radius: 8px; }
+      canvas.hud { position: absolute; inset: 0; pointer-events: none; }
+      #joystick {
+        position: absolute;
+        left: 14px;
+        bottom: 14px;
+        width: 150px;
+        height: 150px;
+        border-radius: 14px;
+        background: rgba(148, 163, 184, 0.06);
+        touch-action: none;
+      }
     </style>
   </head>
   <body>
-    <h1>M4 — predicted player + pushable balls vs interpolated remotes</h1>
+    <h1>M7 — PixiJS HUD overlay + keyboard/touch input abstraction</h1>
     <div id="status">connecting…</div>
-    <div class="hint">Yellow = you (WASD / arrows), push the balls. Orange = other players — <b>click to shoot them</b> (lag-compensated; toggle it off to watch shots miss moving targets). Teal = balls. Tune everything in the Debug pane (top-right).</div>
-    <canvas id="view" width="900" height="540"></canvas>
+    <div class="hint">Move with <b>WASD / arrows</b> or drag the <b>joystick</b> (bottom-left). <b>Click</b> to shoot other players. Crosshair + status are the PixiJS HUD; network/game-feel knobs are in the Debug pane.</div>
+    <div id="stage">
+      <canvas id="view" width="900" height="540"></canvas>
+      <div id="joystick"></div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

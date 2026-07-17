@@ -15,6 +15,7 @@
     "@mp/net": "workspace:*",
     "@mp/netsim": "workspace:*",
     "@mp/physics": "workspace:*",
+    "@mp/render-pixi": "workspace:*",
     "@mp/render-three": "workspace:*",
     "@mp/server": "workspace:*",
     "tweakpane": "^4.0.5"

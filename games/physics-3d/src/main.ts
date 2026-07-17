@@ -7,6 +7,7 @@ import {
   type PredictedWorld,
   type Predictor,
 } from '@mp/client'
+import { createBrowserInput } from '@mp/client/dom'
 import { startFixedLoop, type EntityId, type Vec3 } from '@mp/core'
 import {
   decodeHit,
@@ -24,6 +25,7 @@ import {
 } from '@mp/net'
 import { createNetsimClientTransport } from '@mp/netsim'
 import { createPhysicsWorld, initPhysics, type PhysicsBody } from '@mp/physics'
+import { createHud } from '@mp/render-pixi'
 import { THREE, createThreeStage } from '@mp/render-three'
 import {
   addBalls,
@@ -44,6 +46,8 @@ const SERVER_URL = `ws://${location.hostname}:9200`
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector<T>(sel)!
 const canvas = $<HTMLCanvasElement>('#view')
 const statusEl = $<HTMLDivElement>('#status')
+const stageEl = $<HTMLDivElement>('#stage')
+const joystickZone = $<HTMLDivElement>('#joystick')
 
 // --- scene (game-owned content) ---
 const stage = createThreeStage({ canvas, cameraPosition: [0, 12, 20], lookAt: [0, 1, 0] })
@@ -73,30 +77,25 @@ const flash = (id: EntityId): void => {
   setTimeout(() => mat.emissive.setHex(0x000000), 200)
 }
 
-// --- input ---
-const keys = new Set<string>()
-window.addEventListener('keydown', (e) => {
-  const k = e.key.toLowerCase()
-  if (k.startsWith('arrow')) e.preventDefault()
-  keys.add(k)
-})
-window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()))
-const sampleMove = (): { x: number; z: number } => ({
-  x: (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0),
-  z: (keys.has('s') || keys.has('arrowdown') ? 1 : 0) - (keys.has('w') || keys.has('arrowup') ? 1 : 0),
-})
+// --- input (keyboard + touch joystick behind one interface) ---
+const input = createBrowserInput(joystickZone)
+
+// --- HUD (PixiJS, stacked over the Three canvas) ---
+const hud = await createHud({ width: canvas.width, height: canvas.height })
+hud.canvas.className = 'hud'
+stageEl.appendChild(hud.canvas)
 
 // --- debug pane (Tweakpane) ---
 const params = {
-  latency: 80, // one-way ms (netsim)
-  jitter: 20, // ms
-  loss: 3, // %
+  latency: 80,
+  jitter: 20,
+  loss: 3,
   prediction: true,
-  interpDelay: 100, // ms — how far in the past remotes render
-  correction: 100, // ms — how fast a reconciliation correction eases in
-  lagComp: true, // fire at the shooter-perceived past (vs the present)
-  pending: 0, // readonly
-  rtt: 0, // readonly
+  interpDelay: 100,
+  correction: 100,
+  lagComp: true,
+  pending: 0,
+  rtt: 0,
 }
 const pane = new Pane({ title: 'Debug' })
 const net = pane.addFolder({ title: 'Network' })
@@ -178,14 +177,14 @@ const initPrediction = async (id: EntityId): Promise<void> => {
     tickRateHz: TICK_RATE_HZ,
     onTick: () => {
       syncRemotes()
-      const move = sampleMove()
+      const move = input.movement()
       transport.send(encodeInput(predictor!.predict(move.x, move.z)))
     },
   })
 }
 
-// Click to fire a ray from the camera. lag-comp on: aim at what we SEE (the past);
-// off: aim at "now" — which misses moving targets, demonstrating why rewind matters.
+// Click to fire (lag-compensated); the HUD canvas is pointer-events:none, so clicks
+// reach the Three canvas. The joystick zone captures its own pointers.
 const raycaster = new THREE.Raycaster()
 canvas.addEventListener('pointerdown', (e) => {
   if (!clock.ready()) return
@@ -207,7 +206,7 @@ canvas.addEventListener('pointerdown', (e) => {
 })
 
 transport.onOpen(() => {
-  statusEl.textContent = `connected: ${SERVER_URL} — click to shoot other players`
+  statusEl.textContent = `connected: ${SERVER_URL}`
   setInterval(() => transport.send(encodePing({ clientTimeMs: performance.now() })), 250)
 })
 transport.onClose(() => {
@@ -240,6 +239,27 @@ transport.onMessage((data) => {
   }
 })
 
+// Draw the joystick indicator on the HUD, offset to the joystick zone's position.
+const drawJoystick = (): void => {
+  const j = input.joystick()
+  if (!j.active) {
+    hud.setJoystick(null)
+    return
+  }
+  const zr = joystickZone.getBoundingClientRect()
+  const sr = stageEl.getBoundingClientRect()
+  const ox = zr.left - sr.left
+  const oy = zr.top - sr.top
+  hud.setJoystick({
+    active: true,
+    radius: j.radius,
+    baseX: j.baseX + ox,
+    baseY: j.baseY + oy,
+    knobX: j.knobX + ox,
+    knobY: j.knobY + oy,
+  })
+}
+
 // --- render ---
 stage.start(() => {
   if (myId !== null && predictor && params.prediction) {
@@ -253,4 +273,6 @@ stage.start(() => {
   params.rtt = Math.round(clock.rttMs())
   pendingMonitor.refresh()
   rttMonitor.refresh()
+  hud.setStatus(myId !== null ? `you #${myId} · rtt ${params.rtt}ms` : 'connecting…')
+  drawJoystick()
 })

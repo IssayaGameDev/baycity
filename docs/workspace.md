@@ -10,15 +10,17 @@ strict, source-first (no build step at this stage).
 - `packages/physics` — Rapier3d wrapper (`@dimforge/rapier3d-compat`), headless. → core
 - `packages/server` — rooms, tick, per-client snapshots, rewind. → core, net, physics
 - `packages/client` — prediction/reconciliation, interpolation, input; headless-capable (bots). → core, net, physics
-- `packages/render-pixi` — PixiJS 2D/HUD renderer. Browser (DOM lib). → core
+- `packages/render-pixi` — PixiJS 2D HUD, stacked canvas over Three (SEED §2). Browser (DOM lib). → core, pixi.js
 - `packages/render-three` — Three.js WebGL2 stage; re-exports THREE. Browser (DOM lib). → core, three
 - `tools/netsim` — latency/jitter/loss `ClientTransport` wrapper, headless. → core
 - `games/physics-3d` — throwaway demo (evolves per milestone; currently M4 prediction): WASD predicted player vs interpolated balls, netsim sliders, prediction toggle. Not the deferred reference game.
 - `infra/` — empty placeholder; populated later (SEED §7).
 
-Note: `@mp/server` also exposes a `./sim` subpath (`@mp/server/sim`) — the shared
-deterministic player sim, free of server-only deps (no transport/uWS). Imported by
-the server room and by the demo (games → packages). See ADR-0004.
+Subpaths (secondary entry points, each with its own tsconfig where the lib differs):
+- `@mp/server/sim` — shared deterministic player sim, free of server-only deps (no
+  transport/uWS). Imported by the server room and by the demo. See ADR-0004.
+- `@mp/client/dom` — browser input adapters (keyboard, touch joystick), DOM-enabled via
+  `packages/client/tsconfig.dom.json`, so the main `@mp/client` stays headless. See ADR-0008.
 
 ## Dependency laws (SEED §6)
 
