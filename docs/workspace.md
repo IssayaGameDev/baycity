@@ -13,6 +13,7 @@ strict, source-first (no build step at this stage).
 - `packages/render-pixi` — PixiJS 2D HUD, stacked canvas over Three (SEED §2). Browser (DOM lib). → core, pixi.js
 - `packages/render-three` — Three.js WebGL2 stage; re-exports THREE. Browser (DOM lib). → core, three
 - `tools/netsim` — latency/jitter/loss `ClientTransport` wrapper, headless. → core
+- `tools/bots` — headless load clients + `load` harness (budgets 2 & 3). → net, server
 - `games/physics-3d` — throwaway demo (evolves per milestone; currently M4 prediction): WASD predicted player vs interpolated balls, netsim sliders, prediction toggle. Not the deferred reference game.
 - `infra/` — empty placeholder; populated later (SEED §7).
 

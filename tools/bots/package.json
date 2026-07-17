@@ -1,0 +1,17 @@
+{
+  "name": "@mp/bots",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "load": "tsx src/load.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mp/net": "workspace:*",
+    "@mp/server": "workspace:*"
+  }
+}

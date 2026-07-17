@@ -124,6 +124,15 @@ importers:
         specifier: github:uNetworking/uWebSockets.js#v20.69.0
         version: https://codeload.github.com/uNetworking/uWebSockets.js/tar.gz/dddd8ffd1b2c28a66022160923ca92f064cdacb4
 
+  tools/bots:
+    dependencies:
+      '@mp/net':
+        specifier: workspace:*
+        version: link:../../packages/net
+      '@mp/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+
   tools/netsim:
     dependencies:
       '@mp/core':

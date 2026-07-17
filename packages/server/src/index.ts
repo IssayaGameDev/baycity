@@ -16,8 +16,16 @@ export const DEFAULT_PORT = 9200
 export { TICK_RATE_HZ }
 export const SNAPSHOT_RATE_HZ = 20 // SEED §2: 15–20 Hz; upper end within the locked range
 
+/** Tick-time stats for budget 3 (physics step + snapshot build < 33 ms/room). */
+export interface ServerStats {
+  ticks: number
+  tickAvgMs: number
+  tickMaxMs: number
+}
+
 export interface ServerHandle {
   readonly port: number
+  stats: () => ServerStats
   stop: () => Promise<void>
 }
 
@@ -32,21 +40,30 @@ export const startServer = async (opts: { port?: number } = {}): Promise<ServerH
 
   const snapshotIntervalMs = 1000 / SNAPSHOT_RATE_HZ
   let sinceSnapshotMs = 0
+  let ticks = 0
+  let tickSumMs = 0
+  let tickMaxMs = 0
 
   const loop: LoopHandle = startFixedLoop({
     tickRateHz: TICK_RATE_HZ,
     onTick: (dtSeconds) => {
+      const t0 = performance.now()
       room.step(dtSeconds)
       sinceSnapshotMs += dtSeconds * 1000
       if (sinceSnapshotMs >= snapshotIntervalMs) {
         sinceSnapshotMs -= snapshotIntervalMs
         room.sendSnapshots()
       }
+      const dur = performance.now() - t0
+      ticks += 1
+      tickSumMs += dur
+      if (dur > tickMaxMs) tickMaxMs = dur
     },
   })
 
   return {
     port,
+    stats: () => ({ ticks, tickAvgMs: ticks > 0 ? tickSumMs / ticks : 0, tickMaxMs }),
     stop: async () => {
       loop.stop()
       transport.close()
