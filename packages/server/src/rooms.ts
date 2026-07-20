@@ -17,9 +17,8 @@ import {
   type SnapshotMessage,
 } from '@mp/net'
 
-import { FIRST_PLAYER_ID } from './tps'
-
 export const SNAPSHOT_RATE_HZ = 20 // SEED §2: 15–20 Hz; upper end within the locked range
+const FIRST_PLAYER_ID = 1000 // ids for relayed players (server assigns; content-free)
 
 interface Player {
   readonly client: Client
@@ -67,7 +66,7 @@ export const resetRoomStats = (): void => {
  * peers' positions as per-client delta snapshots on its own clock-synced timeline.
  * No `@colyseus/schema` — our binary protocol is the payload.
  */
-export class TpsRoom extends Room {
+export class ParkourRoom extends Room {
   override maxClients = 20
   private readonly players = new Map<Client, Player>()
   private nextPlayerId = FIRST_PLAYER_ID

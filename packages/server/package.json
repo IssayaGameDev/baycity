@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./tps": "./src/tps.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",
@@ -15,7 +14,6 @@
   "dependencies": {
     "@mp/core": "workspace:*",
     "@mp/net": "workspace:*",
-    "@mp/physics": "workspace:*",
     "colyseus": "0.16.5"
   },
   "devDependencies": {

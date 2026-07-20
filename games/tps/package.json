@@ -10,13 +10,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mp/character": "workspace:*",
     "@mp/client": "workspace:*",
+    "@mp/content": "workspace:*",
     "@mp/core": "workspace:*",
     "@mp/net": "workspace:*",
-    "@mp/netsim": "workspace:*",
     "@mp/physics": "workspace:*",
     "@mp/render-three": "workspace:*",
-    "@mp/server": "workspace:*",
     "colyseus.js": "^0.16.22",
     "tweakpane": "^4.0.5"
   },

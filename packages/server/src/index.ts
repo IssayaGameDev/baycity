@@ -1,7 +1,6 @@
 import { Server } from 'colyseus'
 
-import { getRoomStats, resetRoomStats, SNAPSHOT_RATE_HZ, TpsRoom } from './rooms'
-import { TICK_RATE_HZ } from './tps'
+import { getRoomStats, ParkourRoom, resetRoomStats, SNAPSHOT_RATE_HZ } from './rooms'
 
 /**
  * @mp/server — client-authoritative multiplayer host (ADR 0011/0013). Colyseus owns
@@ -13,7 +12,7 @@ import { TICK_RATE_HZ } from './tps'
 export const SERVER_VERSION = '0.0.0' as const
 
 export const DEFAULT_PORT = 9200
-export { TICK_RATE_HZ, SNAPSHOT_RATE_HZ }
+export { SNAPSHOT_RATE_HZ }
 
 /** Tick-time stats for budget 3 (snapshot relay < 33 ms/room), aggregated across the
  * process's rooms. */
@@ -30,12 +29,12 @@ export interface ServerHandle {
 }
 
 /** Starts the game server. No side effects at import; call to run. Defines the `tps`
- * room; clients reach it via matchmaking (`joinOrCreate('tps')`). */
+ * room; clients reach it via matchmaking (`joinOrCreate('parkour')`). */
 export const startServer = async (opts: { port?: number } = {}): Promise<ServerHandle> => {
   const port = opts.port ?? DEFAULT_PORT
   resetRoomStats()
   const gameServer = new Server() // default ws transport
-  gameServer.define('tps', TpsRoom)
+  gameServer.define('parkour', ParkourRoom)
   await gameServer.listen(port)
 
   return {

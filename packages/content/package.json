@@ -1,0 +1,16 @@
+{
+  "name": "@mp/content",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mp/core": "workspace:*",
+    "@mp/physics": "workspace:*"
+  }
+}

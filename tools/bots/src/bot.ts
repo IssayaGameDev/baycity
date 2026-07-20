@@ -25,7 +25,7 @@ export const createBot = (url: string, phase = 0): Bot => {
   let timer: ReturnType<typeof setInterval> | null = null
 
   void new Client(url)
-    .joinOrCreate('tps', { name: 'bot' })
+    .joinOrCreate('parkour', { name: 'bot' })
     .then((r) => {
       room = r
       // Count the relayed payload (our snapshot bytes); Colyseus framing is extra.

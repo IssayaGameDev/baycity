@@ -22,29 +22,25 @@ import {
   NET_CHANNEL,
   readMessageType,
 } from '@mp/net'
-import { initPhysics, type PhysicsBody } from '@mp/physics'
+import { createPhysicsWorld, initPhysics, type PhysicsBody } from '@mp/physics'
 import { THREE, createThreeStage } from '@mp/render-three'
 import {
   addCharacter,
   CHAR_HALF_HEIGHT,
   CHAR_RADIUS,
-  CHECKPOINT_RADIUS,
-  CHECKPOINTS,
-  createTpsWorld,
   DEFAULT_TUNING,
-  GROUND,
-  MOVING_PLATFORM,
-  platformY,
   playerSpawn,
   stepCharacter,
   TICK_DT,
   TICK_RATE_HZ,
-  TPS_OBSTACLES,
   type CharacterState,
   type CharacterTuning,
-} from '@mp/server/tps'
+} from '@mp/character'
+import { instantiateLevel, validateLevel, type LoadedLevel, type VisualItem } from '@mp/content'
 import { Client, type Room } from 'colyseus.js'
 import { Pane } from 'tweakpane'
+
+import level1 from '../../../content/levels/level1.json'
 
 const SERVER_URL = `ws://${location.hostname}:9200`
 
@@ -59,30 +55,30 @@ const sun = new THREE.DirectionalLight(0xffffff, 1.2)
 sun.position.set(10, 20, 10)
 stage.scene.add(sun)
 
-const boxMesh = (b: { position: Vec3; halfExtents: Vec3 }, color: number): void => {
-  const m = new THREE.Mesh(
-    new THREE.BoxGeometry(b.halfExtents.x * 2, b.halfExtents.y * 2, b.halfExtents.z * 2),
-    new THREE.MeshStandardMaterial({ color }),
-  )
-  m.position.set(b.position.x, b.position.y, b.position.z)
-  stage.scene.add(m)
+// Greybox visual language (basic now; polished in C3): a color per platform style.
+// A level's meshes are built from the loader's visual list (data-driven, ADR 0013).
+const STYLE_COLOR: Record<string, number> = { ground: 0x1e293b, platform: 0x334155, moving: 0x22d3ee }
+const levelMesh = (v: VisualItem): THREE.Mesh => {
+  const c = v.collider
+  const geo =
+    c.kind === 'box'
+      ? new THREE.BoxGeometry(c.halfExtents.x * 2, c.halfExtents.y * 2, c.halfExtents.z * 2)
+      : c.kind === 'capsule'
+        ? new THREE.CapsuleGeometry(c.radius, c.halfHeight * 2, 6, 16)
+        : c.kind === 'ball'
+          ? new THREE.SphereGeometry(c.radius, 16, 12)
+          : new THREE.BoxGeometry(1, 1, 1)
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: STYLE_COLOR[v.style ?? ''] ?? 0x475569 }))
+  mesh.position.set(v.position.x, v.position.y, v.position.z)
+  stage.scene.add(mesh)
+  return mesh
 }
-boxMesh(GROUND, 0x1e293b)
-for (const o of TPS_OBSTACLES) boxMesh(o, 0x334155)
-
-// Clock-driven elevator (its Y = platformY(serverNow) each frame — synced across
-// clients) + checkpoint discs. Throwaway content validating the shared clock (ADR 0013).
-const platformMesh = new THREE.Mesh(
-  new THREE.BoxGeometry(MOVING_PLATFORM.halfExtents.x * 2, MOVING_PLATFORM.halfExtents.y * 2, MOVING_PLATFORM.halfExtents.z * 2),
-  new THREE.MeshStandardMaterial({ color: 0x22d3ee }),
-)
-stage.scene.add(platformMesh)
-for (const c of CHECKPOINTS) {
+const addCheckpointDisc = (p: Vec3, radius: number): void => {
   const disc = new THREE.Mesh(
-    new THREE.CylinderGeometry(CHECKPOINT_RADIUS, CHECKPOINT_RADIUS, 0.1, 24),
+    new THREE.CylinderGeometry(radius, radius, 0.1, 24),
     new THREE.MeshStandardMaterial({ color: 0x34d399, transparent: true, opacity: 0.4 }),
   )
-  disc.position.set(c.x, 0.06, c.z)
+  disc.position.set(p.x, 0.06, p.z)
   stage.scene.add(disc)
 }
 
@@ -236,6 +232,8 @@ let myId: EntityId | null = null
 let controller: LocalController | null = null
 let ownFacing = 0
 let room: Room | null = null
+let loaded: LoadedLevel | null = null // the instantiated level (colliders + markers + visuals)
+const levelSync: { visual: VisualItem; mesh: THREE.Mesh }[] = [] // moving pieces to re-sync each frame
 const names = new Map<EntityId, string>() // peer id -> display name (from ROSTER)
 
 // Auto-assigned random display name (player-chosen names come later — ADR 0013).
@@ -250,26 +248,34 @@ const toArrayBuffer = (m: Uint8Array): ArrayBuffer => {
   return copy.buffer
 }
 
-const CHECKPOINT_KEY = 'tps.checkpoint'
-// Respawn at the last checkpoint touched (persisted locally — ADR 0013), else default spawn.
-const spawnPoint = (id: EntityId): Vec3 => {
-  const saved = Number(localStorage.getItem(CHECKPOINT_KEY))
-  return Number.isInteger(saved) && saved >= 0 && saved < CHECKPOINTS.length ? { ...CHECKPOINTS[saved]! } : playerSpawn(id)
-}
+const CHECKPOINT_KEY = 'parkour.checkpoint'
 
 const initLocalSim = async (id: EntityId): Promise<void> => {
   await initPhysics()
-  const world = createTpsWorld()
-  const char: CharacterState = addCharacter(world, spawnPoint(id))
-  // The clock-driven elevator, mirrored into our world as a kinematic body so the
-  // character collides with / rides it. Its Y is a pure function of server time.
-  const platform = world.addKinematicBody({
-    position: { x: MOVING_PLATFORM.center.x, y: platformY(clock.serverNow()), z: MOVING_PLATFORM.center.z },
-    shape: { kind: 'cuboid', halfExtents: MOVING_PLATFORM.halfExtents },
-  })
-  // Client-authoritative (ADR 0011): this local sim IS the truth for our own
-  // character. We advance it from input and report its position — no server
-  // correction, so no reconciliation hooks.
+  // Client-owned world (ADR 0011): gravity is integrated by the character, not Rapier.
+  // The loader adds the level's colliders (data-driven, ADR 0013).
+  const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+  loaded = instantiateLevel(world, validateLevel(level1))
+
+  // Build the level's greybox meshes + checkpoint discs from the loaded data.
+  for (const v of loaded.visuals) levelSync.push({ visual: v, mesh: levelMesh(v) })
+  const checkpoints = loaded.markers.filter((m) => m.kind === 'checkpoint')
+  for (const c of checkpoints) addCheckpointDisc(c.position, c.radius ?? 1.5)
+
+  // Spawn: last checkpoint touched (persisted), else the level's spawn marker (spread a
+  // little by id so players don't stack), else a fallback.
+  const spawnMarker = loaded.markers.find((m) => m.kind === 'spawn')?.position
+  const saved = Number(localStorage.getItem(CHECKPOINT_KEY))
+  const a = id * 2.399963
+  const spawn =
+    Number.isInteger(saved) && saved >= 0 && saved < checkpoints.length
+      ? { ...checkpoints[saved]!.position }
+      : spawnMarker !== undefined
+        ? { x: spawnMarker.x + Math.cos(a) * 2, y: spawnMarker.y, z: spawnMarker.z + Math.sin(a) * 2 }
+        : playerSpawn(id)
+  const char: CharacterState = addCharacter(world, spawn)
+
+  // This local sim IS the truth for our own character (client-authoritative, ADR 0011).
   const local: LocalWorld = {
     applyInput: (cmd) => {
       stepCharacter(char, cmd, TICK_DT, tuning)
@@ -279,9 +285,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   }
   controller = createLocalController({ world: local, tickRateHz: TICK_RATE_HZ })
 
-  // Remote players mirrored into our world as kinematic capsules so walking into
-  // a player collides locally. Positions come from interpolation (~100 ms past),
-  // relayed peer-authoritative state — good enough for body-to-body blocking.
+  // Remote players mirrored as kinematic capsules so walking into one collides locally.
   const remotes = new Map<EntityId, PhysicsBody>()
   const syncRemotes = (): void => {
     const seen = new Set<EntityId>()
@@ -308,9 +312,6 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   startFixedLoop({
     tickRateHz: TICK_RATE_HZ,
     onTick: () => {
-      // Drive the elevator from the synced clock before stepping (so collision uses
-      // its updated position); all clients agree since it's a function of server time.
-      platform.setNextKinematicTranslation({ x: MOVING_PLATFORM.center.x, y: platformY(clock.serverNow()), z: MOVING_PLATFORM.center.z })
       syncRemotes()
       const move = worldMove()
       if (move.x !== 0 || move.z !== 0) ownFacing = Math.atan2(move.x, move.z)
@@ -318,9 +319,9 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
       const p = controller!.state().get(id)
       if (p) {
         room?.sendBytes(NET_CHANNEL, new Uint8Array(encodeState(p)))
-        for (let i = 0; i < CHECKPOINTS.length; i++) {
-          const c = CHECKPOINTS[i]!
-          if (Math.hypot(p.x - c.x, p.z - c.z) < CHECKPOINT_RADIUS) {
+        for (let i = 0; i < checkpoints.length; i++) {
+          const c = checkpoints[i]!
+          if (Math.hypot(p.x - c.position.x, p.z - c.position.z) < (c.radius ?? 1.5)) {
             localStorage.setItem(CHECKPOINT_KEY, String(i))
             break
           }
@@ -358,7 +359,7 @@ const onNet = (m: Uint8Array): void => {
 // performs the HTTP seat reservation then upgrades.
 const connect = async (): Promise<void> => {
   try {
-    room = await new Client(SERVER_URL).joinOrCreate('tps', { name: myName })
+    room = await new Client(SERVER_URL).joinOrCreate('parkour', { name: myName })
   } catch {
     statusEl.textContent = `couldn't join — is the server up? run 'pnpm dev:server' (${SERVER_URL})`
     return
@@ -375,8 +376,12 @@ void connect()
 // --- render ---
 let ownPos: Vec3 = { x: 0, y: 1, z: 0 }
 stage.start(() => {
-  // Elevator: same clock function as the physics body, so render matches collision.
-  platformMesh.position.set(MOVING_PLATFORM.center.x, platformY(clock.serverNow()), MOVING_PLATFORM.center.z)
+  // Advance clock-driven level pieces (moving platforms) on the synced clock — all
+  // clients agree since it's a function of server time — and sync their meshes.
+  if (loaded !== null) {
+    loaded.update(clock.serverNow())
+    for (const s of levelSync) s.mesh.position.set(s.visual.position.x, s.visual.position.y, s.visual.position.z)
+  }
 
   // Own character: our authoritative local sim, render-smoothed. Peers: interpolated.
   const seen = new Set<EntityId>()
