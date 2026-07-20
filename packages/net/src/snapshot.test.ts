@@ -13,7 +13,6 @@ import {
 describe('snapshot codec', () => {
   const full: Snapshot = {
     serverTimeMs: 123456,
-    lastProcessedInputSeq: 42,
     entities: [
       { id: entityId(1), position: { x: 1.5, y: 12, z: -20.25 } },
       { id: entityId(1000), position: { x: -5.5, y: 0.5, z: 8 } },
@@ -24,7 +23,6 @@ describe('snapshot codec', () => {
     const decoded = decodeSnapshot(encodeSnapshot(fullSnapshotMessage(full)))
     expect(decoded.isFull).toBe(true)
     expect(decoded.serverTimeMs).toBe(123456)
-    expect(decoded.lastProcessedInputSeq).toBe(42)
     expect(decoded.removed).toEqual([])
     expect(decoded.changed).toHaveLength(2)
     for (let i = 0; i < full.entities.length; i++) {
@@ -41,7 +39,6 @@ describe('snapshot codec', () => {
     const delta: SnapshotMessage = {
       isFull: false,
       serverTimeMs: 200,
-      lastProcessedInputSeq: 7,
       changed: [{ id: entityId(1), position: { x: 2, y: 0, z: 0 } }],
       removed: [entityId(1000), entityId(1001)],
     }
@@ -53,8 +50,8 @@ describe('snapshot codec', () => {
   })
 
   it('quantized full snapshot is smaller than the old f32 layout', () => {
-    // 13 header + 2*8 changed + 2 removedCount = 31 B for 2 entities
-    expect(encodeSnapshot(fullSnapshotMessage(full)).byteLength).toBe(13 + 2 * 8 + 2)
+    // 9 header + 2*8 changed + 2 removedCount = 27 B for 2 entities
+    expect(encodeSnapshot(fullSnapshotMessage(full)).byteLength).toBe(9 + 2 * 8 + 2)
   })
 
   it('writes the protocol version as the first byte', () => {

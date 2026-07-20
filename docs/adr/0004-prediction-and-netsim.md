@@ -1,6 +1,8 @@
 # ADR 0004 — Prediction, reconciliation, and network simulation
 
-Status: accepted (M4)
+Status: accepted (M4). **Prediction/reconciliation superseded by ADR 0011** (client-
+authoritative): the client's own body is now the authority, so there is no correction to
+predict against. `netsim` is unaffected. Retained for history.
 
 ## Context
 

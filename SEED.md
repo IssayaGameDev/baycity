@@ -43,6 +43,14 @@ The stack is the product of this phase. A reference/sandbox game is **out of sco
 
 ## 4. Netcode model (locked)
 
+> **Superseded by ADR 0011 (2026-07-17), with Kodjo's sign-off.** The target game
+> class was re-scoped (scarce player-to-player interaction, cheating tolerated, no
+> rewind needed), so the stack is now **client-authoritative**: each client owns and
+> simulates its own entity and sends state; the server relays. Prediction/
+> reconciliation, predicted props, and rewind/lag-comp are retired; clock sync is
+> kept for peer interpolation. The original locked model is recorded below for
+> history — see `docs/netcode.md` for current behaviour.
+
 **Server-authoritative.** Clients send inputs only; server owns all state.
 
 - Client predicts **its own body** locally; inputs carry sequence numbers; server echoes last-processed sequence; client rewinds and replays unacknowledged inputs on mismatch

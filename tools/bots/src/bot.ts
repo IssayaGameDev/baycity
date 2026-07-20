@@ -1,9 +1,12 @@
-import { encodeInput, MSG_WELCOME, readMessageType } from '@mp/net'
+import { encodeState, MSG_WELCOME, readMessageType } from '@mp/net'
 
 /**
- * A headless load client: connects over the standard WebSocket, drives synthetic
- * circular movement at the tick rate (so its player actually moves — realistic
- * delta bandwidth), and counts bytes received. Reuses the same wire as real clients.
+ * A headless load client (client-authoritative, ADR 0011): connects over the
+ * standard WebSocket and reports a synthetic circular position at the tick rate
+ * (so it actually moves — realistic delta bandwidth), counting bytes received.
+ * It synthesizes the position directly rather than running the physics sim: the
+ * server does no simulation, so this exercises the relay + snapshot path exactly
+ * like a real client. Reuses the same wire.
  */
 export interface Bot {
   bytesReceived: () => number
@@ -12,24 +15,24 @@ export interface Bot {
 }
 
 const TICK_HZ = 30
+const RADIUS = 5
 
 export const createBot = (url: string, phase = 0): Bot => {
   const ws = new WebSocket(url)
   ws.binaryType = 'arraybuffer'
   let bytes = 0
   let messages = 0
-  let seq = 0
   let angle = phase
-  let inputTimer: ReturnType<typeof setInterval> | null = null
+  let stateTimer: ReturnType<typeof setInterval> | null = null
 
   ws.onmessage = (ev) => {
     if (!(ev.data instanceof ArrayBuffer)) return
     bytes += ev.data.byteLength
     messages += 1
-    if (readMessageType(ev.data) === MSG_WELCOME && inputTimer === null) {
-      inputTimer = setInterval(() => {
+    if (readMessageType(ev.data) === MSG_WELCOME && stateTimer === null) {
+      stateTimer = setInterval(() => {
         angle += 0.12
-        ws.send(encodeInput({ seq: ++seq, moveX: Math.cos(angle), moveZ: Math.sin(angle), jump: false }))
+        ws.send(encodeState({ x: Math.cos(angle) * RADIUS, y: 1, z: Math.sin(angle) * RADIUS }))
       }, 1000 / TICK_HZ)
     }
   }
@@ -38,7 +41,7 @@ export const createBot = (url: string, phase = 0): Bot => {
     bytesReceived: () => bytes,
     messages: () => messages,
     close: () => {
-      if (inputTimer !== null) clearInterval(inputTimer)
+      if (stateTimer !== null) clearInterval(stateTimer)
       ws.close()
     },
   }

@@ -1,7 +1,7 @@
-# Wire protocol (v5)
+# Wire protocol (v6)
 
 Binary, little-endian. No JSON on the hot path (SEED §2). Defined in
-`packages/net`. `PROTOCOL_VERSION = 5`.
+`packages/net`. `PROTOCOL_VERSION = 6`. Client-authoritative (ADR 0011).
 
 ## Framing & versioning
 
@@ -10,37 +10,35 @@ Every message: `u8 version` then `u8 type`. `readMessageType` peeks the type;
 handling in a guard, so a wrong-version/corrupt frame is ignored, not fatal —
 this is the schema-versioning safety net (every message self-describes its version).
 
-Types: `SNAPSHOT=1`, `WELCOME=2` (s→c); `INPUT=3` (c→s); `PING=4`/`PONG=5`
-(clock sync); `FIRE=6` (c→s) / `HIT=7` (s→c broadcast).
+Types: `SNAPSHOT=1`, `WELCOME=2` (s→c); `STATE=3` (c→s); `PING=4`/`PONG=5` (clock sync).
+(v5's `INPUT`, `FIRE`, `HIT` were removed with the server-authoritative model.)
 
 ## Snapshot — `1` (server → client, per-client)
 
-Full state or a delta vs the client's previous snapshot. **Positions are
-quantized** to `u16`/axis over ±`QUANT_BOUND` (~16-bit, SEED §5).
+Relayed **peer** positions (a client is never sent its own body). Full state or a delta
+vs the client's previous snapshot. **Positions are quantized** to `u16`/axis over
+±`QUANT_BOUND` (~16-bit, SEED §5).
 
 | field | type | notes |
 |---|---|---|
 | flags | u8 | bit0 = isFull |
 | serverTimeMs | u32 | interpolation timeline |
-| lastProcessedInputSeq | u32 | reconciliation ack |
 | changedCount | u16 | |
-| changed[] | u16 id + u16 x,y,z | full: all entities; delta: new/changed only |
+| changed[] | u16 id + u16 x,y,z | full: all peers; delta: new/changed only |
 | removedCount | u16 | |
-| removed[] | u16 id | delta: entities to drop |
+| removed[] | u16 id | delta: peers to drop (e.g. disconnected) |
 
-Header 13 B, changed entity 8 B (was 14 B raw f32). Deltas skip unchanged
-entities entirely (an entity is "changed" only when its *quantized* position moves).
-Delta-vs-last-sent is safe because the transport is reliable+ordered (WebSocket);
-a UDP transport would need ack-based baselines. Client reassembles full snapshots
-(`createSnapshotReassembler`).
+Header 9 B, changed entity 8 B. Deltas skip unchanged entities entirely (an entity is
+"changed" only when its *quantized* position moves). Delta-vs-last-sent is safe because
+the transport is reliable+ordered (WebSocket); a UDP transport would need ack-based
+baselines. Client reassembles full snapshots (`createSnapshotReassembler`).
 
-## Welcome — `2`  ·  Input — `3`  ·  Ping/Pong — `4`/`5`  ·  Fire — `6`  ·  Hit — `7`
+## Welcome — `2`  ·  State — `3`  ·  Ping/Pong — `4`/`5`
 
 - Welcome (s→c): `u16 playerId`.
-- Input (c→s): `u32 seq`, `i8 moveX×127`, `i8 moveZ×127` (world-space dir), `u8 flags` (bit0 = jump).
+- State (c→s): `f32 x`, `f32 y`, `f32 z` — the sender's own authoritative position (14 B
+  total). Full float upstream; quantization happens once, in the snapshot encoder on relay.
 - Ping (c→s): `u32 clientTimeMs`. Pong (s→c): `u32 clientTimeMs` + `u32 serverTimeMs`.
-- Fire (c→s): `u32 fireTimeMs`, `f32 origin xyz`, `f32 dir xyz`.
-- Hit (s→c): `u16 shooterId`, `u16 targetId`.
 
 ## Notes / limits
 

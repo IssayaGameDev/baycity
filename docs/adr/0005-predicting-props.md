@@ -1,6 +1,8 @@
 # ADR 0005 — Predicting props (pull into the prediction loop)
 
-Status: accepted (M4). Extends ADR-0004.
+Status: accepted (M4). Extends ADR-0004. **Superseded by ADR 0011** (client-authoritative):
+there is no prediction loop to pull props into. Shared-prop ownership is now ADR 0011's D1=B
+policy (per-client ownership + handoff), not yet built. Retained for history.
 
 ## Context
 

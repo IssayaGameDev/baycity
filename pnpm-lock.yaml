@@ -21,43 +21,6 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.1)(tsx@4.23.1)
 
-  games/physics-3d:
-    dependencies:
-      '@mp/client':
-        specifier: workspace:*
-        version: link:../../packages/client
-      '@mp/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@mp/net':
-        specifier: workspace:*
-        version: link:../../packages/net
-      '@mp/netsim':
-        specifier: workspace:*
-        version: link:../../tools/netsim
-      '@mp/physics':
-        specifier: workspace:*
-        version: link:../../packages/physics
-      '@mp/render-pixi':
-        specifier: workspace:*
-        version: link:../../packages/render-pixi
-      '@mp/render-three':
-        specifier: workspace:*
-        version: link:../../packages/render-three
-      '@mp/server':
-        specifier: workspace:*
-        version: link:../../packages/server
-      tweakpane:
-        specifier: ^4.0.5
-        version: 4.0.5
-    devDependencies:
-      '@tweakpane/core':
-        specifier: ^2.0.5
-        version: 2.0.5
-      vite:
-        specifier: ^6.0.0
-        version: 6.4.3(@types/node@22.20.1)(tsx@4.23.1)
-
   games/tps:
     dependencies:
       '@mp/client':

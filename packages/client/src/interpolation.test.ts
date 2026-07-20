@@ -6,7 +6,6 @@ import { interpolateAt } from './interpolation'
 
 const snap = (t: number, x: number): Snapshot => ({
   serverTimeMs: t,
-  lastProcessedInputSeq: 0,
   entities: [{ id: entityId(1), position: { x, y: 0, z: 0 } }],
 })
 

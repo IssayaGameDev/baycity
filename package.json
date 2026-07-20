@@ -13,8 +13,6 @@
     "test:watch": "vitest",
     "check": "pnpm run typecheck && pnpm run test",
     "dev:server": "pnpm --filter @mp/server run dev",
-    "dev:demo": "pnpm --filter @game/physics-3d run dev",
-    "dev:server:tps": "pnpm --filter @mp/server run dev:tps",
     "dev:tps": "pnpm --filter @game/tps run dev"
   },
   "devDependencies": {

@@ -1,20 +1,20 @@
 import {
   createClockSync,
-  createPredictor,
+  createLocalController,
   createSnapshotClient,
   createSnapshotReassembler,
   createWebSocketClientTransport,
   keysToMovement,
-  type PredictedWorld,
-  type Predictor,
+  type LocalController,
+  type LocalWorld,
 } from '@mp/client'
 import { clamp, startFixedLoop, type EntityId, type Vec3 } from '@mp/core'
 import {
   decodePong,
   decodeSnapshot,
   decodeWelcome,
-  encodeInput,
   encodePing,
+  encodeState,
   MSG_PONG,
   MSG_SNAPSHOT,
   MSG_WELCOME,
@@ -116,7 +116,6 @@ let camPitch = 0.35
 const params = {
   latency: 40,
   loss: 0,
-  prediction: true,
   camDistance: 7,
   sensitivity: 0.0025,
 }
@@ -159,7 +158,6 @@ const pane = new Pane({ title: 'Debug' })
 const net = pane.addFolder({ title: 'Network' })
 net.addBinding(params, 'latency', { min: 0, max: 250, step: 1, label: 'latency ms (1-way)' })
 net.addBinding(params, 'loss', { min: 0, max: 30, step: 1, label: 'loss %' })
-net.addBinding(params, 'prediction', { label: 'prediction' })
 const cam = pane.addFolder({ title: 'Camera' })
 cam.addBinding(params, 'camDistance', { min: 3, max: 14, step: 0.5, label: 'distance' })
 cam.addBinding(params, 'sensitivity', { min: 0.0005, max: 0.006, step: 0.0005, label: 'sensitivity' })
@@ -175,38 +173,28 @@ const clock = createClockSync()
 const reassembler = createSnapshotReassembler()
 const interp = createSnapshotClient({ interpolationDelayMs: 100, serverNow: () => clock.serverNow() })
 let myId: EntityId | null = null
-let predictor: Predictor | null = null
+let controller: LocalController | null = null
 let ownFacing = 0
 
-const initPrediction = async (id: EntityId): Promise<void> => {
+const initLocalSim = async (id: EntityId): Promise<void> => {
   await initPhysics()
   const world = createTpsWorld()
   const char: CharacterState = addCharacter(world, playerSpawn(id))
-  const predicted: PredictedWorld<{ vy: number; grounded: boolean }> = {
+  // Client-authoritative (ADR 0011): this local sim IS the truth for our own
+  // character. We advance it from input and report its position — no server
+  // correction, so no reconciliation hooks.
+  const local: LocalWorld = {
     applyInput: (cmd) => {
       stepCharacter(char, cmd, TICK_DT)
       world.step(TICK_DT)
     },
     readState: () => new Map<EntityId, Vec3>([[id, char.body.translation()]]),
-    restore: (state) => {
-      const p = state.get(id)
-      if (p) char.body.setPosition(p)
-    },
-    // vy/grounded live outside the body; without rolling them back the replay
-    // re-integrates gravity from the latest tick and the jump arc jitters.
-    saveAux: () => ({ vy: char.vy, grounded: char.grounded }),
-    restoreAux: (aux) => {
-      char.vy = aux.vy
-      char.grounded = aux.grounded
-    },
   }
-  predictor = createPredictor({ world: predicted, tickRateHz: TICK_RATE_HZ, correctionSmoothingMs: 100 })
+  controller = createLocalController({ world: local, tickRateHz: TICK_RATE_HZ })
 
-  // Remote players mirrored into the predicted world as kinematic capsules (same
-  // shape the server collides against), so walking into a player is predicted
-  // instead of corrected. Positions come from interpolation (~100 ms past) — for
-  // moving remotes the contact point differs slightly from the server's; the
-  // reconciliation correction absorbs it.
+  // Remote players mirrored into our world as kinematic capsules so walking into
+  // a player collides locally. Positions come from interpolation (~100 ms past),
+  // relayed peer-authoritative state — good enough for body-to-body blocking.
   const remotes = new Map<EntityId, PhysicsBody>()
   const syncRemotes = (): void => {
     const seen = new Set<EntityId>()
@@ -236,7 +224,9 @@ const initPrediction = async (id: EntityId): Promise<void> => {
       syncRemotes()
       const move = worldMove()
       if (move.x !== 0 || move.z !== 0) ownFacing = Math.atan2(move.x, move.z)
-      transport.send(encodeInput(predictor!.predict(move.x, move.z, keys.has('Space'))))
+      controller!.step(move.x, move.z, keys.has('Space'))
+      const p = controller!.state().get(id)
+      if (p) transport.send(encodeState(p))
     },
   })
 }
@@ -246,23 +236,18 @@ transport.onOpen(() => {
   setInterval(() => transport.send(encodePing({ clientTimeMs: performance.now() })), 250)
 })
 transport.onClose(() => {
-  statusEl.textContent = `disconnected — run 'pnpm dev:server:tps' (${SERVER_URL})`
+  statusEl.textContent = `disconnected — run 'pnpm dev:server' (${SERVER_URL})`
 })
 transport.onMessage((data) => {
   switch (readMessageType(data)) {
     case MSG_WELCOME:
       myId = decodeWelcome(data).playerId
-      void initPrediction(myId)
+      void initLocalSim(myId)
       break
-    case MSG_SNAPSHOT: {
-      const snap = reassembler.apply(decodeSnapshot(data))
-      if (myId !== null && predictor) {
-        const me = snap.entities.find((e) => e.id === myId)
-        if (me) predictor.reconcile(new Map([[myId, me.position]]), snap.lastProcessedInputSeq)
-      }
-      interp.ingest(snap)
+    case MSG_SNAPSHOT:
+      // Peers only (the server never relays our own body back to us); interpolate.
+      interp.ingest(reassembler.apply(decodeSnapshot(data)))
       break
-    }
     case MSG_PONG: {
       const pong = decodePong(data)
       clock.recordSample(pong.clientTimeMs, pong.serverTimeMs, performance.now())
@@ -274,16 +259,12 @@ transport.onMessage((data) => {
 // --- render ---
 let ownPos: Vec3 = { x: 0, y: 1, z: 0 }
 stage.start(() => {
-  if (myId !== null && predictor && params.prediction) {
-    ownPos = predictor.renderPositions().get(myId) ?? ownPos
+  // Own character: our authoritative local sim, render-smoothed. Peers: interpolated.
+  if (myId !== null && controller) {
+    ownPos = controller.renderPositions().get(myId) ?? ownPos
     placeChar(charFor(myId, true), ownPos, ownFacing)
-    for (const e of interp.sample()) if (e.id !== myId) placeChar(charFor(e.id, false), e.position, null)
-  } else {
-    for (const e of interp.sample()) {
-      if (e.id === myId) ownPos = e.position
-      placeChar(charFor(e.id, e.id === myId), e.position, e.id === myId ? ownFacing : null)
-    }
   }
+  for (const e of interp.sample()) if (e.id !== myId) placeChar(charFor(e.id, false), e.position, null)
 
   // orbit camera around the own character
   const target = { x: ownPos.x, y: ownPos.y + 1, z: ownPos.z }

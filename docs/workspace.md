@@ -8,23 +8,22 @@ strict, source-first (no build step at this stage).
 - `packages/core` — fixed-timestep loop, entity model, math, transport interface. Imports no sibling.
 - `packages/net` — schemas, binary serialization, quantization, clock sync. → core
 - `packages/physics` — Rapier3d wrapper (`@dimforge/rapier3d-compat`), headless. → core
-- `packages/server` — rooms, tick, per-client snapshots, rewind. → core, net, physics
-- `packages/client` — prediction/reconciliation, interpolation, input; headless-capable (bots). → core, net, physics
+- `packages/server` — rooms, tick, per-client snapshot relay (no simulation). → core, net, physics
+- `packages/client` — local authoritative sim, interpolation, clock sync, input; headless-capable (bots). → core, net, physics
 - `packages/render-pixi` — PixiJS 2D HUD, stacked canvas over Three (SEED §2). Browser (DOM lib). → core, pixi.js
 - `packages/render-three` — Three.js WebGL2 stage; re-exports THREE. Browser (DOM lib). → core, three
 - `tools/netsim` — latency/jitter/loss `ClientTransport` wrapper, headless. → core
 - `tools/bots` — headless load clients + `load` harness (budgets 2 & 3). → net, server
-- `games/physics-3d` — netcode demo: WASD predicted player + pushable balls, click-to-shoot, netsim/prediction toggles.
-- `games/tps` — M10 3D TPS character-controller prototype (orbit camera, camera-relative predicted movement, jump).
+- `games/tps` — 3D TPS character-controller demo (orbit camera, camera-relative client-authoritative movement, jump) on a static obstacle course. The current throwaway exercise.
 - `infra/` — empty placeholder; populated later (SEED §7).
 
-The server room is game-agnostic (`GameSim`); `startServer({ mode })` hosts `ballGame` (default)
-or `tpsGame`. Both games' shared sims live under `@mp/server` (see subpaths below).
+The server is a client-authoritative relay (ADR 0011): it owns no simulation and hosts no
+game — `startServer()` just relays peer state. The TPS character sim lives under `@mp/server`
+for historical reasons (see subpaths below).
 
 Subpaths (secondary entry points, each with its own tsconfig where the lib differs):
-- `@mp/server/sim` — shared deterministic ball-demo sim, free of server-only deps. See ADR-0004.
-- `@mp/server/tps` — shared deterministic TPS character sim + world geometry. Imported by the
-  TPS server game and the TPS client. See ADR-0010.
+- `@mp/server/tps` — shared deterministic TPS character sim + world geometry. Run by the TPS
+  client (its own body) and bots; the server no longer runs it. See ADR-0010/0011.
 - `@mp/client/dom` — browser input adapters (keyboard, touch joystick), DOM-enabled via
   `packages/client/tsconfig.dom.json`, so the main `@mp/client` stays headless. See ADR-0008.
 
@@ -63,8 +62,8 @@ headless packages) is a later addition. Today the `lib` split enforces (2) at th
 
 Two terminals from the repo root:
 
-- `pnpm dev:server` — server on `ws://localhost:9200` (via `tsx`).
-- `pnpm dev:demo` — Vite dev server for the current demo, `games/physics-3d` (`http://localhost:5173`).
+- `pnpm dev:server` — relay server on `ws://localhost:9200` (via `tsx`).
+- `pnpm dev:tps` — Vite dev server for the TPS demo, `games/tps` (`http://localhost:5174`).
 
 The server runs through `tsx` (dev tooling; not a shipped/runtime dependency). The
 browser client is served from TypeScript source by Vite (no stack build step).

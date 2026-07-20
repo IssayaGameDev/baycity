@@ -7,11 +7,9 @@ export {
   PROTOCOL_VERSION,
   MSG_SNAPSHOT,
   MSG_WELCOME,
-  MSG_INPUT,
+  MSG_STATE,
   MSG_PING,
   MSG_PONG,
-  MSG_FIRE,
-  MSG_HIT,
   readMessageType,
   readHeader,
 } from './messages'
@@ -19,10 +17,8 @@ export type { Snapshot, SnapshotEntity, SnapshotMessage } from './snapshot'
 export { encodeSnapshot, decodeSnapshot, fullSnapshotMessage } from './snapshot'
 export { quantizeAxis, dequantizeAxis, QUANT_BOUND } from './quantize'
 export type { InputCommand } from './input'
-export { encodeInput, decodeInput } from './input'
+export { encodeState, decodeState } from './state'
 export type { Welcome } from './welcome'
 export { encodeWelcome, decodeWelcome } from './welcome'
 export type { Ping, Pong } from './timesync'
 export { encodePing, decodePing, encodePong, decodePong } from './timesync'
-export type { Fire, Hit } from './combat'
-export { encodeFire, decodeFire, encodeHit, decodeHit } from './combat'

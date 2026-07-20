@@ -1,8 +1,8 @@
 /**
  * Client↔server clock sync from ping/pong round-trips (SEED §3). Estimates the
  * offset between the local clock and the server clock (and the RTT), so the
- * client can compute "server now" — needed to render remotes on a stable
- * timeline and to timestamp lag-compensated hit claims.
+ * client can compute "server now" — needed to render remote peers on a stable
+ * timeline (client-authoritative, ADR 0011; its former lag-comp use is retired).
  */
 export interface ClockSyncOptions {
   now?: () => number

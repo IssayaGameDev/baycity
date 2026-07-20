@@ -1,6 +1,9 @@
 # ADR 0010 — TPS character-controller prototype + pluggable game
 
-Status: accepted (M10)
+Status: accepted (M10). **The pluggable-game seam (`GameSim`, `startServer({ mode })`) is
+superseded by ADR 0011** — the server no longer simulates, so it hosts no game. The
+character controller, shared `@mp/server/tps` sim, and camera-relative movement survive
+(now run client-side). Retained for history.
 
 ## Context
 

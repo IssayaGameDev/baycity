@@ -1,6 +1,8 @@
 # ADR 0006 — Clock sync and lag-compensated hits
 
-Status: accepted (M5)
+Status: accepted (M5). **Lag-compensated hits (rewind) superseded by ADR 0011** (client-
+authoritative, cheating tolerated — no rewind). **Clock sync is retained**, now driving peer
+interpolation only. Retained for history.
 
 ## Context
 

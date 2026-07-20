@@ -19,7 +19,6 @@ export const createSnapshotReassembler = (): SnapshotReassembler => {
       for (const id of msg.removed) state.delete(id)
       return {
         serverTimeMs: msg.serverTimeMs,
-        lastProcessedInputSeq: msg.lastProcessedInputSeq,
         entities: [...state].map(([id, position]) => ({ id, position })),
       }
     },

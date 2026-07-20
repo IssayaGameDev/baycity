@@ -1,18 +1,13 @@
 import { startFixedLoop, type LoopHandle } from '@mp/core'
-import { initPhysics } from '@mp/physics'
 
-import { createBallGame } from './ballGame'
 import { createRoom } from './room'
-import { TICK_RATE_HZ } from './sim'
-import { createTpsGame } from './tpsGame'
+import { TICK_RATE_HZ } from './tps'
 import { createUwsServerTransport, type UwsServerTransport } from './transport-uws'
 
-export type GameMode = 'ball' | 'tps'
-
 /**
- * @mp/server — authoritative simulation host: rooms, fixed tick, per-client
- * snapshot construction, rewind ring buffer. Headless, no rendering imports
- * (SEED §6, law 2).
+ * @mp/server — client-authoritative relay host (ADR 0011): rooms, fixed tick,
+ * per-client snapshot construction. It owns no simulation — clients send their own
+ * state and the server relays peers'. Headless, no rendering imports (SEED §6, law 2).
  */
 export const SERVER_VERSION = '0.0.0' as const
 
@@ -20,7 +15,7 @@ export const DEFAULT_PORT = 9200
 export { TICK_RATE_HZ }
 export const SNAPSHOT_RATE_HZ = 20 // SEED §2: 15–20 Hz; upper end within the locked range
 
-/** Tick-time stats for budget 3 (physics step + snapshot build < 33 ms/room). */
+/** Tick-time stats for budget 3 (snapshot build < 33 ms/room; no physics anymore). */
 export interface ServerStats {
   ticks: number
   tickAvgMs: number
@@ -33,13 +28,11 @@ export interface ServerHandle {
   stop: () => Promise<void>
 }
 
-/** Starts the game server. No side effects at import; call to run. `mode` selects
- * which game the room hosts (default the ball demo; `tps` the M10 character world). */
-export const startServer = async (opts: { port?: number; mode?: GameMode } = {}): Promise<ServerHandle> => {
+/** Starts the relay server. No side effects at import; call to run. */
+export const startServer = async (opts: { port?: number } = {}): Promise<ServerHandle> => {
   const port = opts.port ?? DEFAULT_PORT
-  await initPhysics()
   const transport: UwsServerTransport = await createUwsServerTransport({ port })
-  const room = createRoom(opts.mode === 'tps' ? createTpsGame() : createBallGame())
+  const room = createRoom()
 
   transport.onConnection((conn) => room.addConnection(conn))
 

@@ -10,15 +10,14 @@ throwaway content instead.
 Per-milestone throwaway demos live here; each supersedes the last (older ones are
 recoverable at their milestone tag). Current:
 
-- `physics-3d` — throwaway demo, evolving per milestone. **Currently M4:** a
-  WASD-controlled, client-predicted player (client-side Rapier, reconciled against
-  the server) among interpolated server balls, with netsim sliders and a prediction
-  toggle, plus a **PixiJS HUD** (crosshair/status) and **keyboard + touch-joystick**
-  input via `@mp/client/dom`. Composes `client`/`net`/`core`/`physics`/`render-three`/
-  `render-pixi`/`netsim` + `@mp/server/sim`. A **Tweakpane** "Network" folder exposes the
-  netsim knobs and the two game-feel sliders live. Doubles as proof a game composes the
-  stack without modifying it. (M2's `walking-skeleton` was removed; recover it at tag `m2`.)
-- `tps` — M10 prototype: a 3D TPS character controller (orbit/mouselook camera,
-  camera-relative predicted movement, jump) on an obstacle course. Runs against the server
-  in `tps` mode (`pnpm dev:server:tps`). The first game that made the server host a
-  pluggable `GameSim` (ADR-0010).
+- `tps` — a 3D TPS character controller (orbit/mouselook camera, camera-relative movement,
+  jump) on a static obstacle course. **Client-authoritative (ADR 0011):** each client
+  simulates its own character (client-side Rapier) and reports its position; the server
+  relays peers, which are interpolated. A **Tweakpane** "Network" folder tunes netsim
+  latency/loss (affects how peers look) and camera feel. Composes
+  `client`/`net`/`core`/`physics`/`render-three`/`netsim` + `@mp/server/tps` (shared sim).
+  Run with `pnpm dev:server` + `pnpm dev:tps`. Doubles as proof a game composes the stack
+  without modifying it.
+
+The M2–M8 **ball demo** (`physics-3d`) was retired when the stack went client-authoritative
+(it relied on server-side prop physics). Recover it at tag `m10`.

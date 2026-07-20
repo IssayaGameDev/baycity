@@ -3,12 +3,14 @@ import type { InputCommand } from '@mp/net'
 import { createPhysicsWorld, type CharacterBody, type PhysicsWorld } from '@mp/physics'
 
 /**
- * Shared, deterministic TPS character simulation (M10) — the single source of
- * truth run by both the server (authority) and the client (prediction), SEED §4.
- * No server-only deps; imported client-side via the `@mp/server/tps` subpath.
+ * Deterministic TPS character simulation. Client-authoritative (ADR 0011): each
+ * client runs this to drive its own character (the authority for its body); bots
+ * run it headless too. The server no longer simulates. Despite the `@mp/server`
+ * home (a historical wart from M10; relocation is future cleanup), it has no
+ * server-only deps and is imported via the `@mp/server/tps` subpath.
  *
- * Movement/jump feel values are shared constants (not client-tunable — that would
- * desync prediction from authority). Camera feel is client-only (tunable there).
+ * Movement/jump feel values are shared constants so every client's own body moves
+ * identically. Camera feel is client-only (tunable there).
  */
 export const TICK_RATE_HZ = 30
 export const TICK_DT = 1 / TICK_RATE_HZ

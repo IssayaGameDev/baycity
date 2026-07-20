@@ -8,10 +8,11 @@ export interface SnapshotEntity {
   position: Vec3
 }
 
-/** A reconstructed full snapshot (what the client interpolates over). */
+/** A reconstructed full snapshot (what the client interpolates over). Carries the
+ * relayed positions of *peer* entities on the server's clock-synced timeline
+ * (client-authoritative, ADR 0011 — the recipient's own entity is not included). */
 export interface Snapshot {
   serverTimeMs: number
-  lastProcessedInputSeq: number
   entities: SnapshotEntity[]
 }
 
@@ -23,7 +24,6 @@ export interface Snapshot {
 export interface SnapshotMessage {
   isFull: boolean
   serverTimeMs: number
-  lastProcessedInputSeq: number
   /** Full: all entities. Delta: new/changed entities only. */
   changed: SnapshotEntity[]
   /** Delta: entities to drop. Empty for a full. */
@@ -34,15 +34,13 @@ export interface SnapshotMessage {
 export const fullSnapshotMessage = (s: Snapshot): SnapshotMessage => ({
   isFull: true,
   serverTimeMs: s.serverTimeMs,
-  lastProcessedInputSeq: s.lastProcessedInputSeq,
   changed: s.entities,
   removed: [],
 })
 
 // Wire (little-endian): u8 version, u8 type, u8 flags, u32 serverTimeMs,
-// u32 lastProcessedInputSeq, u16 changedCount, [u16 id, u16 x,y,z (quantized)]*,
-// u16 removedCount, [u16 id]*
-const HEADER_BYTES = 13
+// u16 changedCount, [u16 id, u16 x,y,z (quantized)]*, u16 removedCount, [u16 id]*
+const HEADER_BYTES = 9
 const CHANGED_BYTES = 8
 const LE = true
 const FLAG_FULL = 1
@@ -58,8 +56,6 @@ export const encodeSnapshot = (msg: SnapshotMessage): ArrayBuffer => {
   view.setUint8(o, msg.isFull ? FLAG_FULL : 0)
   o += 1
   view.setUint32(o, msg.serverTimeMs >>> 0, LE)
-  o += 4
-  view.setUint32(o, msg.lastProcessedInputSeq >>> 0, LE)
   o += 4
   view.setUint16(o, msg.changed.length, LE)
   o += 2
@@ -90,8 +86,6 @@ export const decodeSnapshot = (buffer: ArrayBuffer): SnapshotMessage => {
   o += 1
   const serverTimeMs = view.getUint32(o, LE)
   o += 4
-  const lastProcessedInputSeq = view.getUint32(o, LE)
-  o += 4
   const changedCount = view.getUint16(o, LE)
   o += 2
   const changed: SnapshotEntity[] = []
@@ -113,5 +107,5 @@ export const decodeSnapshot = (buffer: ArrayBuffer): SnapshotMessage => {
     removed.push(entityId(view.getUint16(o, LE)))
     o += 2
   }
-  return { isFull, serverTimeMs, lastProcessedInputSeq, changed, removed }
+  return { isFull, serverTimeMs, changed, removed }
 }
