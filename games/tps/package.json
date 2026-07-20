@@ -17,6 +17,7 @@
     "@mp/physics": "workspace:*",
     "@mp/render-three": "workspace:*",
     "@mp/server": "workspace:*",
+    "colyseus.js": "^0.16.22",
     "tweakpane": "^4.0.5"
   },
   "devDependencies": {

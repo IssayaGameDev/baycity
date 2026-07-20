@@ -2,7 +2,7 @@
 
 A reusable multiplayer game stack for HTML5/TypeScript browser games — 3D via Three.js (WebGL2) with a PixiJS 2D HUD, client-authoritative netcode. Games are built as thin compositions on top of the stack.
 
-**Status:** client-authoritative stack (ADR 0011) with a 3D TPS character-controller demo. Each client simulates its own entity and reports state; the server relays peers, interpolated on a clock-synced timeline. Includes delta + quantized snapshots, clock sync, a network simulator, and budget-validating bots. (History: M1–M8 + an M10 TPS prototype were built server-authoritative, then the authority model was reversed — see ADR 0011.) See `docs/INDEX.md` for system docs and `docs/budgets.md` for load numbers.
+**Status:** client-authoritative stack (ADR 0011) with multiplayer **rooms on Colyseus** (ADR 0013) and a 3D TPS demo. Each client simulates its own entity and reports state; a Colyseus room relays peers, interpolated on a clock-synced timeline (no `@colyseus/schema`). Players auto-join rooms (fill-then-create, max 20), get auto-random names + nametags, and persist checkpoints locally. Includes delta + quantized snapshots, clock sync, and budget-validating bots. (History: server-authoritative through M10, then the authority model was reversed — ADR 0011.) See `docs/INDEX.md` for system docs and `docs/budgets.md` for load numbers.
 
 ## Requirements
 
@@ -23,11 +23,11 @@ pnpm typecheck  # types only
 Two terminals:
 
 ```sh
-pnpm dev:server   # relay server, ws://localhost:9200
+pnpm dev:server   # Colyseus relay server, ws://localhost:9200
 pnpm dev:tps      # http://localhost:5174  (open it)
 ```
 
-Click the view to capture the mouse. **Mouse** orbits the camera, **WASD** moves (camera-relative; the character faces its movement), **Space** jumps. Your character is simulated locally (client-authoritative); the server relays your position to other players, who appear interpolated. Open a second browser tab for a second player. Use the **Debug** pane (top-right) to add network latency/loss — it affects how other players look, not your own movement.
+Click the view to capture the mouse. **Mouse** orbits the camera, **WASD** moves (camera-relative; the character faces its movement), **Space** jumps. Your character is simulated locally (client-authoritative); the server relays your position to other players, who appear interpolated with a nametag. Open a second browser tab — both auto-join one shared room. Touch a green checkpoint disc and reload to respawn there; the cyan elevator runs off the shared clock (in sync across tabs). The **Debug** pane (top-right) tunes movement feel and camera.
 
 ## Load test
 

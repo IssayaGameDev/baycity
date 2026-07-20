@@ -6,7 +6,7 @@ import { PROTOCOL_VERSION } from './index'
 
 describe('@mp/net', () => {
   it('defines a protocol version byte', () => {
-    expect(PROTOCOL_VERSION).toBe(6)
+    expect(PROTOCOL_VERSION).toBe(7)
   })
 
   it('resolves @mp/core across the workspace boundary', () => {

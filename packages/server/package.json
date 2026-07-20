@@ -16,6 +16,9 @@
     "@mp/core": "workspace:*",
     "@mp/net": "workspace:*",
     "@mp/physics": "workspace:*",
-    "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.69.0"
+    "colyseus": "0.16.5"
+  },
+  "devDependencies": {
+    "colyseus.js": "^0.16.22"
   }
 }

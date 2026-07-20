@@ -1,10 +1,16 @@
-# Netcode (current: client-authoritative relay, ADR 0011)
+# Netcode (current: client-authoritative relay in Colyseus rooms, ADR 0011 + 0013)
 
 Client-authoritative. Each client owns and simulates its **own** entity and sends its
 position; the server owns no simulation and **relays** peers' positions. Remote players
 are interpolated on a clock-synced timeline. No prediction/reconciliation, no rewind, no
 lag-comp (retired with the server-authoritative model — SEED §4 superseded by ADR 0011).
 Positions only on the wire (no rotation yet).
+
+Rooms run on **Colyseus** (ADR 0013): it owns the transport (default `ws`), room lifecycle,
+matchmaking and the scale-out path; our binary relay is the payload inside each room — **no
+`@colyseus/schema`**. Clients `joinOrCreate('tps')` (fill-then-create, `maxClients = 20`, solo
+→ own room); `joinById` handles join-by-code. Versions are pinned to Colyseus **0.16** (server
+`colyseus@0.16.5` + client `colyseus.js@0.16.22` — the matched stable pair).
 
 ## Client (`packages/client`, composed in `games/tps`)
 
@@ -24,17 +30,24 @@ Positions only on the wire (no rotation yet).
   a smoothed estimate of `serverTime − localTime`. `serverNow()` drives peer interpolation
   playback. (Its former second job — timestamping lag-comp hit claims — is gone.)
 
-## Server (`packages/server`) — relay only
+## Server (`packages/server`) — Colyseus relay room (`rooms.ts`)
 
-- **Tick:** 30 Hz fixed (`TICK_RATE_HZ`); snapshots at 20 Hz. The room advances
-  `serverTimeMs` per tick (the interpolation timeline); it runs **no physics**.
-- **Room (`room.ts`):** per connection, stores the last `STATE` position that client
-  reported (it owns its own body). Assigns ids, answers `PING` with `PONG`.
-- **Per-client snapshots (SEED §3) + delta:** each client gets its own message containing
-  only its **peers'** current positions (never its own). After a first full snapshot,
-  subsequent ones are **deltas** vs the last positions sent to that client — only entities
-  whose *quantized* position changed, plus removed ids. Positions are **quantized** to
-  u16/axis. Delta-vs-last-sent is safe on the reliable, ordered WebSocket transport.
+- **`TpsRoom`** (a Colyseus `Room`, `maxClients = 20`, no `@colyseus/schema`): on `onJoin` it
+  assigns an `EntityId`, stores the join name, sends `WELCOME`, and broadcasts the `ROSTER`.
+  `onMessage(NET_CHANNEL)` receives our binary frames: `STATE` → store the client's last
+  position (it owns its own body); `PING` → `PONG`. `onLeave` drops the player and re-broadcasts
+  the roster.
+- **Relay tick:** `setSimulationInterval` at 20 Hz advances `serverTimeMs` (the interpolation
+  timeline) and sends each client its snapshot. **No physics.** Per-room tick time is aggregated
+  for budget 3 (`getRoomStats`).
+- **Per-client snapshots (SEED §3) + delta:** each client's message contains only its **peers'**
+  positions (never its own). First send is full, then **deltas** vs the last positions sent —
+  only entities whose *quantized* position changed, plus removed ids. Quantized u16/axis.
+  Delta-vs-last-sent is safe on the reliable, ordered transport. The pure delta logic
+  (`deltaSnapshot`) is unit-tested; the live path is proven by a tsx check + the load harness
+  (a Colyseus server can't boot under vitest — `@pm2/io` corrupts its IPC).
+- **Names:** each client sends an auto-random name as a join option; the room relays the peer
+  roster (id → name) via `ROSTER`. Chosen names + accounts come later (platform SDK).
 
 ## Shared deterministic sim (`@mp/server/tps`)
 
@@ -52,11 +65,20 @@ static). When a game adds shared props, each is owned by one client that simulat
 it, with handoff-on-contact, server-refereed claim arbitration, and reassignment on owner
 disconnect. Accepted tradeoff: contested objects diverge/snap on handoff.
 
+## Clock-driven world objects + checkpoints (ADR 0013)
+
+The room's authoritative shared state is essentially just its **clock**. Moving world
+objects are pure functions of `serverNow()` from shared definitions, so all clients agree
+with no per-object state on the wire — the TPS demo's elevator (`platformY(serverNow)`)
+proves this. **Checkpoints** are client-detected and persisted to `localStorage`; the player
+respawns at the last one touched (local now; platform-account sync later).
+
 ## Network simulation (`tools/netsim`)
 
-`createNetsimClientTransport(inner, { latencyMs, jitterMs, lossRate })` delays/drops
-both directions. The TPS demo's Tweakpane "Network" folder tunes it live (affects how
-peers look; the owned body is local and unaffected).
+`createNetsimClientTransport(inner, { latencyMs, jitterMs, lossRate })` delays/drops both
+directions. It is **no longer wired into the TPS client** (the transport is now the Colyseus
+SDK, ADR 0013); kept for potential reuse. Re-adding latency/loss to the demo would wrap the
+Colyseus message layer instead.
 
 ## Game-feel values (Kodjo's call)
 

@@ -3,7 +3,6 @@ import {
   createLocalController,
   createSnapshotClient,
   createSnapshotReassembler,
-  createWebSocketClientTransport,
   keysToMovement,
   type LocalController,
   type LocalWorld,
@@ -11,25 +10,31 @@ import {
 import { clamp, startFixedLoop, type EntityId, type Vec3 } from '@mp/core'
 import {
   decodePong,
+  decodeRoster,
   decodeSnapshot,
   decodeWelcome,
   encodePing,
   encodeState,
   MSG_PONG,
+  MSG_ROSTER,
   MSG_SNAPSHOT,
   MSG_WELCOME,
+  NET_CHANNEL,
   readMessageType,
 } from '@mp/net'
-import { createNetsimClientTransport } from '@mp/netsim'
 import { initPhysics, type PhysicsBody } from '@mp/physics'
 import { THREE, createThreeStage } from '@mp/render-three'
 import {
   addCharacter,
   CHAR_HALF_HEIGHT,
   CHAR_RADIUS,
+  CHECKPOINT_RADIUS,
+  CHECKPOINTS,
   createTpsWorld,
   DEFAULT_TUNING,
   GROUND,
+  MOVING_PLATFORM,
+  platformY,
   playerSpawn,
   stepCharacter,
   TICK_DT,
@@ -38,6 +43,7 @@ import {
   type CharacterState,
   type CharacterTuning,
 } from '@mp/server/tps'
+import { Client, type Room } from 'colyseus.js'
 import { Pane } from 'tweakpane'
 
 const SERVER_URL = `ws://${location.hostname}:9200`
@@ -64,6 +70,22 @@ const boxMesh = (b: { position: Vec3; halfExtents: Vec3 }, color: number): void 
 boxMesh(GROUND, 0x1e293b)
 for (const o of TPS_OBSTACLES) boxMesh(o, 0x334155)
 
+// Clock-driven elevator (its Y = platformY(serverNow) each frame — synced across
+// clients) + checkpoint discs. Throwaway content validating the shared clock (ADR 0013).
+const platformMesh = new THREE.Mesh(
+  new THREE.BoxGeometry(MOVING_PLATFORM.halfExtents.x * 2, MOVING_PLATFORM.halfExtents.y * 2, MOVING_PLATFORM.halfExtents.z * 2),
+  new THREE.MeshStandardMaterial({ color: 0x22d3ee }),
+)
+stage.scene.add(platformMesh)
+for (const c of CHECKPOINTS) {
+  const disc = new THREE.Mesh(
+    new THREE.CylinderGeometry(CHECKPOINT_RADIUS, CHECKPOINT_RADIUS, 0.1, 24),
+    new THREE.MeshStandardMaterial({ color: 0x34d399, transparent: true, opacity: 0.4 }),
+  )
+  disc.position.set(c.x, 0.06, c.z)
+  stage.scene.add(disc)
+}
+
 // A character: capsule + a "nose" so facing is visible.
 const charGeo = new THREE.CapsuleGeometry(CHAR_RADIUS, CHAR_HALF_HEIGHT * 2, 6, 16)
 const makeCharacter = (color: number): THREE.Group => {
@@ -82,6 +104,8 @@ interface Rendered {
   group: THREE.Group
   facing: number
   last: Vec3
+  label?: THREE.Sprite
+  labelText?: string
 }
 const chars = new Map<EntityId, Rendered>()
 const charFor = (id: EntityId, isSelf: boolean): Rendered => {
@@ -91,6 +115,41 @@ const charFor = (id: EntityId, isSelf: boolean): Rendered => {
     chars.set(id, r)
   }
   return r
+}
+
+// A billboard nametag above a character (a Sprite always faces the camera). Rebuilt
+// only when the name changes.
+const makeNameLabel = (text: string): THREE.Sprite => {
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 64
+  const ctx = canvas.getContext('2d')!
+  ctx.font = 'bold 32px sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const w = Math.min(248, ctx.measureText(text).width + 24)
+  ctx.fillStyle = 'rgba(11,16,32,0.6)'
+  ctx.fillRect(128 - w / 2, 10, w, 44)
+  ctx.fillStyle = '#e5e7eb'
+  ctx.fillText(text, 128, 32)
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, transparent: true }),
+  )
+  sprite.scale.set(2, 0.5, 1)
+  sprite.position.set(0, CHAR_HALF_HEIGHT + CHAR_RADIUS + 0.5, 0)
+  sprite.renderOrder = 999
+  return sprite
+}
+const setLabel = (r: Rendered, name: string): void => {
+  if (r.labelText === name) return
+  if (r.label !== undefined) {
+    r.group.remove(r.label)
+    r.label.material.map?.dispose()
+    r.label.material.dispose()
+  }
+  r.label = makeNameLabel(name)
+  r.labelText = name
+  r.group.add(r.label)
 }
 // Place a character, easing its facing toward `yaw` (or its movement dir if yaw is null).
 const placeChar = (r: Rendered, p: Vec3, yaw: number | null): void => {
@@ -116,8 +175,6 @@ const camera = stage.camera
 let camYaw = 0
 let camPitch = 0.35
 const params = {
-  latency: 40,
-  loss: 0,
   camDistance: 7,
   sensitivity: 0.0025,
 }
@@ -157,9 +214,6 @@ const worldMove = (): { x: number; z: number } => {
 
 // --- debug pane ---
 const pane = new Pane({ title: 'Debug' })
-const net = pane.addFolder({ title: 'Network' })
-net.addBinding(params, 'latency', { min: 0, max: 250, step: 1, label: 'latency ms (1-way)' })
-net.addBinding(params, 'loss', { min: 0, max: 30, step: 1, label: 'loss %' })
 const cam = pane.addFolder({ title: 'Camera' })
 cam.addBinding(params, 'camDistance', { min: 3, max: 14, step: 0.5, label: 'distance' })
 cam.addBinding(params, 'sensitivity', { min: 0.0005, max: 0.006, step: 0.0005, label: 'sensitivity' })
@@ -174,24 +228,45 @@ mv.addBinding(tuning, 'groundAccelTime', { min: 0, max: 0.5, step: 0.01, label: 
 mv.addBinding(tuning, 'groundStopTime', { min: 0, max: 0.5, step: 0.01, label: 'stop s' })
 mv.addBinding(tuning, 'airControl', { min: 0, max: 1, step: 0.05, label: 'air control' })
 
-// --- netcode ---
-const transport = createNetsimClientTransport(createWebSocketClientTransport(SERVER_URL), {
-  latencyMs: params.latency,
-  jitterMs: 10,
-  lossRate: params.loss / 100,
-})
-net.on('change', () => transport.setConditions({ latencyMs: params.latency, jitterMs: 10, lossRate: params.loss / 100 }))
+// --- netcode (Colyseus rooms, ADR 0013) ---
 const clock = createClockSync()
 const reassembler = createSnapshotReassembler()
 const interp = createSnapshotClient({ interpolationDelayMs: 100, serverNow: () => clock.serverNow() })
 let myId: EntityId | null = null
 let controller: LocalController | null = null
 let ownFacing = 0
+let room: Room | null = null
+const names = new Map<EntityId, string>() // peer id -> display name (from ROSTER)
+
+// Auto-assigned random display name (player-chosen names come later — ADR 0013).
+const ADJ = ['Swift', 'Brave', 'Calm', 'Lucky', 'Sly', 'Bold', 'Keen', 'Wily']
+const NOUN = ['Fox', 'Otter', 'Hawk', 'Wolf', 'Lynx', 'Crow', 'Bear', 'Mole']
+const pick = <T>(a: readonly T[]): T => a[Math.floor(Math.random() * a.length)]!
+const myName = `${pick(ADJ)} ${pick(NOUN)}`
+// Colyseus onMessage hands us a Uint8Array view; our codecs take a standalone ArrayBuffer.
+const toArrayBuffer = (m: Uint8Array): ArrayBuffer => {
+  const copy = new Uint8Array(m.byteLength)
+  copy.set(m)
+  return copy.buffer
+}
+
+const CHECKPOINT_KEY = 'tps.checkpoint'
+// Respawn at the last checkpoint touched (persisted locally — ADR 0013), else default spawn.
+const spawnPoint = (id: EntityId): Vec3 => {
+  const saved = Number(localStorage.getItem(CHECKPOINT_KEY))
+  return Number.isInteger(saved) && saved >= 0 && saved < CHECKPOINTS.length ? { ...CHECKPOINTS[saved]! } : playerSpawn(id)
+}
 
 const initLocalSim = async (id: EntityId): Promise<void> => {
   await initPhysics()
   const world = createTpsWorld()
-  const char: CharacterState = addCharacter(world, playerSpawn(id))
+  const char: CharacterState = addCharacter(world, spawnPoint(id))
+  // The clock-driven elevator, mirrored into our world as a kinematic body so the
+  // character collides with / rides it. Its Y is a pure function of server time.
+  const platform = world.addKinematicBody({
+    position: { x: MOVING_PLATFORM.center.x, y: platformY(clock.serverNow()), z: MOVING_PLATFORM.center.z },
+    shape: { kind: 'cuboid', halfExtents: MOVING_PLATFORM.halfExtents },
+  })
   // Client-authoritative (ADR 0011): this local sim IS the truth for our own
   // character. We advance it from input and report its position — no server
   // correction, so no reconciliation hooks.
@@ -233,50 +308,98 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   startFixedLoop({
     tickRateHz: TICK_RATE_HZ,
     onTick: () => {
+      // Drive the elevator from the synced clock before stepping (so collision uses
+      // its updated position); all clients agree since it's a function of server time.
+      platform.setNextKinematicTranslation({ x: MOVING_PLATFORM.center.x, y: platformY(clock.serverNow()), z: MOVING_PLATFORM.center.z })
       syncRemotes()
       const move = worldMove()
       if (move.x !== 0 || move.z !== 0) ownFacing = Math.atan2(move.x, move.z)
       controller!.step(move.x, move.z, keys.has('Space'))
       const p = controller!.state().get(id)
-      if (p) transport.send(encodeState(p))
+      if (p) {
+        room?.sendBytes(NET_CHANNEL, new Uint8Array(encodeState(p)))
+        for (let i = 0; i < CHECKPOINTS.length; i++) {
+          const c = CHECKPOINTS[i]!
+          if (Math.hypot(p.x - c.x, p.z - c.z) < CHECKPOINT_RADIUS) {
+            localStorage.setItem(CHECKPOINT_KEY, String(i))
+            break
+          }
+        }
+      }
     },
   })
 }
 
-transport.onOpen(() => {
-  statusEl.textContent = `connected: ${SERVER_URL} — click to capture the mouse`
-  setInterval(() => transport.send(encodePing({ clientTimeMs: performance.now() })), 250)
-})
-transport.onClose(() => {
-  statusEl.textContent = `disconnected — run 'pnpm dev:server' (${SERVER_URL})`
-})
-transport.onMessage((data) => {
-  switch (readMessageType(data)) {
+const onNet = (m: Uint8Array): void => {
+  const buf = toArrayBuffer(m)
+  switch (readMessageType(buf)) {
     case MSG_WELCOME:
-      myId = decodeWelcome(data).playerId
+      myId = decodeWelcome(buf).playerId
       void initLocalSim(myId)
       break
     case MSG_SNAPSHOT:
       // Peers only (the server never relays our own body back to us); interpolate.
-      interp.ingest(reassembler.apply(decodeSnapshot(data)))
+      interp.ingest(reassembler.apply(decodeSnapshot(buf)))
+      break
+    case MSG_ROSTER:
+      names.clear()
+      for (const e of decodeRoster(buf)) names.set(e.id, e.name)
       break
     case MSG_PONG: {
-      const pong = decodePong(data)
+      const pong = decodePong(buf)
       clock.recordSample(pong.clientTimeMs, pong.serverTimeMs, performance.now())
       break
     }
   }
-})
+}
+
+// Colyseus matchmaking: joinOrCreate fills the most-full non-full room, else spins up a
+// new one (auto-join, no matchmaking UI — ADR 0013). A raw WebSocket won't do; the SDK
+// performs the HTTP seat reservation then upgrades.
+const connect = async (): Promise<void> => {
+  try {
+    room = await new Client(SERVER_URL).joinOrCreate('tps', { name: myName })
+  } catch {
+    statusEl.textContent = `couldn't join — is the server up? run 'pnpm dev:server' (${SERVER_URL})`
+    return
+  }
+  statusEl.textContent = `connected: room ${room.roomId} — click to capture the mouse`
+  room.onMessage(NET_CHANNEL, onNet)
+  room.onLeave(() => {
+    statusEl.textContent = `disconnected — run 'pnpm dev:server' (${SERVER_URL})`
+  })
+  setInterval(() => room?.sendBytes(NET_CHANNEL, new Uint8Array(encodePing({ clientTimeMs: performance.now() }))), 250)
+}
+void connect()
 
 // --- render ---
 let ownPos: Vec3 = { x: 0, y: 1, z: 0 }
 stage.start(() => {
+  // Elevator: same clock function as the physics body, so render matches collision.
+  platformMesh.position.set(MOVING_PLATFORM.center.x, platformY(clock.serverNow()), MOVING_PLATFORM.center.z)
+
   // Own character: our authoritative local sim, render-smoothed. Peers: interpolated.
+  const seen = new Set<EntityId>()
   if (myId !== null && controller) {
+    seen.add(myId)
     ownPos = controller.renderPositions().get(myId) ?? ownPos
-    placeChar(charFor(myId, true), ownPos, ownFacing)
+    const self = charFor(myId, true)
+    placeChar(self, ownPos, ownFacing)
+    setLabel(self, myName)
   }
-  for (const e of interp.sample()) if (e.id !== myId) placeChar(charFor(e.id, false), e.position, null)
+  for (const e of interp.sample())
+    if (e.id !== myId) {
+      seen.add(e.id)
+      const r = charFor(e.id, false)
+      placeChar(r, e.position, null)
+      setLabel(r, names.get(e.id) ?? '…')
+    }
+  // Drop characters whose players left the room (no longer relayed).
+  for (const [id, r] of chars)
+    if (!seen.has(id)) {
+      stage.scene.remove(r.group)
+      chars.delete(id)
+    }
 
   // orbit camera around the own character
   const target = { x: ownPos.x, y: ownPos.y + 1, z: ownPos.z }

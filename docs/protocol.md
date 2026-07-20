@@ -1,17 +1,22 @@
-# Wire protocol (v6)
+# Wire protocol (v7)
 
 Binary, little-endian. No JSON on the hot path (SEED §2). Defined in
-`packages/net`. `PROTOCOL_VERSION = 6`. Client-authoritative (ADR 0011).
+`packages/net`. `PROTOCOL_VERSION = 7`. Client-authoritative (ADR 0011), rooms on
+Colyseus (ADR 0013).
 
 ## Framing & versioning
 
 Every message: `u8 version` then `u8 type`. `readMessageType` peeks the type;
-`readHeader` validates both and throws on mismatch. The server wraps inbound
-handling in a guard, so a wrong-version/corrupt frame is ignored, not fatal —
-this is the schema-versioning safety net (every message self-describes its version).
+`readHeader` validates both and throws on mismatch. Handlers guard decoding, so a
+wrong-version/corrupt frame is ignored, not fatal — the schema-versioning safety net.
 
-Types: `SNAPSHOT=1`, `WELCOME=2` (s→c); `STATE=3` (c→s); `PING=4`/`PONG=5` (clock sync).
-(v5's `INPUT`, `FIRE`, `HIT` were removed with the server-authoritative model.)
+**Transport (ADR 0013):** all messages ride a single Colyseus message channel
+(`NET_CHANNEL`) as raw bytes (`sendBytes`/`onMessage`); we dispatch on the version+type
+header inside. Colyseus adds its own framing around each payload — the bytes below are
+our payload only.
+
+Types: `SNAPSHOT=1`, `WELCOME=2`, `PONG=5`, `ROSTER=6` (s→c); `STATE=3`, `PING=4` (c→s).
+(v5's `INPUT`/`FIRE`/`HIT` went with server authority; `ROSTER` arrived with rooms.)
 
 ## Snapshot — `1` (server → client, per-client)
 
@@ -33,12 +38,14 @@ Header 9 B, changed entity 8 B. Deltas skip unchanged entities entirely (an enti
 the transport is reliable+ordered (WebSocket); a UDP transport would need ack-based
 baselines. Client reassembles full snapshots (`createSnapshotReassembler`).
 
-## Welcome — `2`  ·  State — `3`  ·  Ping/Pong — `4`/`5`
+## Welcome — `2`  ·  State — `3`  ·  Ping/Pong — `4`/`5`  ·  Roster — `6`
 
 - Welcome (s→c): `u16 playerId`.
 - State (c→s): `f32 x`, `f32 y`, `f32 z` — the sender's own authoritative position (14 B
   total). Full float upstream; quantization happens once, in the snapshot encoder on relay.
 - Ping (c→s): `u32 clientTimeMs`. Pong (s→c): `u32 clientTimeMs` + `u32 serverTimeMs`.
+- Roster (s→c): `u16 count`, then `[u16 id, u8 nameLen, utf8 name]*` — peer id → display
+  name. Broadcast on join/leave (names are static per session, so it's not per-tick).
 
 ## Notes / limits
 

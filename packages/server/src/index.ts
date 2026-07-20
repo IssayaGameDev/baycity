@@ -1,21 +1,22 @@
-import { startFixedLoop, type LoopHandle } from '@mp/core'
+import { Server } from 'colyseus'
 
-import { createRoom } from './room'
+import { getRoomStats, resetRoomStats, SNAPSHOT_RATE_HZ, TpsRoom } from './rooms'
 import { TICK_RATE_HZ } from './tps'
-import { createUwsServerTransport, type UwsServerTransport } from './transport-uws'
 
 /**
- * @mp/server — client-authoritative relay host (ADR 0011): rooms, fixed tick,
- * per-client snapshot construction. It owns no simulation — clients send their own
- * state and the server relays peers'. Headless, no rendering imports (SEED §6, law 2).
+ * @mp/server — client-authoritative multiplayer host (ADR 0011/0013). Colyseus owns
+ * the transport, room lifecycle, matchmaking and the scale-out path; each room relays
+ * peers' state (no simulation, no `@colyseus/schema`). Uses Colyseus's default `ws`
+ * transport; the uWebSockets transport is a later perf swap. Headless, no rendering
+ * imports (SEED §6, law 2).
  */
 export const SERVER_VERSION = '0.0.0' as const
 
 export const DEFAULT_PORT = 9200
-export { TICK_RATE_HZ }
-export const SNAPSHOT_RATE_HZ = 20 // SEED §2: 15–20 Hz; upper end within the locked range
+export { TICK_RATE_HZ, SNAPSHOT_RATE_HZ }
 
-/** Tick-time stats for budget 3 (snapshot build < 33 ms/room; no physics anymore). */
+/** Tick-time stats for budget 3 (snapshot relay < 33 ms/room), aggregated across the
+ * process's rooms. */
 export interface ServerStats {
   ticks: number
   tickAvgMs: number
@@ -28,43 +29,20 @@ export interface ServerHandle {
   stop: () => Promise<void>
 }
 
-/** Starts the relay server. No side effects at import; call to run. */
+/** Starts the game server. No side effects at import; call to run. Defines the `tps`
+ * room; clients reach it via matchmaking (`joinOrCreate('tps')`). */
 export const startServer = async (opts: { port?: number } = {}): Promise<ServerHandle> => {
   const port = opts.port ?? DEFAULT_PORT
-  const transport: UwsServerTransport = await createUwsServerTransport({ port })
-  const room = createRoom()
-
-  transport.onConnection((conn) => room.addConnection(conn))
-
-  const snapshotIntervalMs = 1000 / SNAPSHOT_RATE_HZ
-  let sinceSnapshotMs = 0
-  let ticks = 0
-  let tickSumMs = 0
-  let tickMaxMs = 0
-
-  const loop: LoopHandle = startFixedLoop({
-    tickRateHz: TICK_RATE_HZ,
-    onTick: (dtSeconds) => {
-      const t0 = performance.now()
-      room.step(dtSeconds)
-      sinceSnapshotMs += dtSeconds * 1000
-      if (sinceSnapshotMs >= snapshotIntervalMs) {
-        sinceSnapshotMs -= snapshotIntervalMs
-        room.sendSnapshots()
-      }
-      const dur = performance.now() - t0
-      ticks += 1
-      tickSumMs += dur
-      if (dur > tickMaxMs) tickMaxMs = dur
-    },
-  })
+  resetRoomStats()
+  const gameServer = new Server() // default ws transport
+  gameServer.define('tps', TpsRoom)
+  await gameServer.listen(port)
 
   return {
     port,
-    stats: () => ({ ticks, tickAvgMs: ticks > 0 ? tickSumMs / ticks : 0, tickMaxMs }),
+    stats: () => getRoomStats(),
     stop: async () => {
-      loop.stop()
-      transport.close()
+      await gameServer.gracefullyShutdown(false)
     },
   }
 }

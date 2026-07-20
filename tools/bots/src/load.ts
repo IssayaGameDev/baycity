@@ -23,7 +23,7 @@ const main = async (): Promise<void> => {
   const server = await startServer({ port: PORT })
   const bots = Array.from({ length: BOTS }, (_, i) => createBot(`ws://127.0.0.1:${PORT}`, (i / BOTS) * Math.PI * 2))
 
-  await sleep(500) // let everyone connect and start moving
+  await sleep(1500) // let everyone matchmake, connect (async SDK handshake) and start moving
   const startBytes = bots.map((b) => b.bytesReceived())
   const t0 = performance.now()
 

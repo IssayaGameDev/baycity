@@ -8,18 +8,20 @@ strict, source-first (no build step at this stage).
 - `packages/core` — fixed-timestep loop, entity model, math, transport interface. Imports no sibling.
 - `packages/net` — schemas, binary serialization, quantization, clock sync. → core
 - `packages/physics` — Rapier3d wrapper (`@dimforge/rapier3d-compat`), headless. → core
-- `packages/server` — rooms, tick, per-client snapshot relay (no simulation). → core, net, physics
+- `packages/server` — Colyseus `Server` + `TpsRoom`: per-client snapshot relay (no simulation, no schema), auto-join, roster. → core, net, physics, `colyseus`
 - `packages/client` — local authoritative sim, interpolation, clock sync, input; headless-capable (bots). → core, net, physics
 - `packages/render-pixi` — PixiJS 2D HUD, stacked canvas over Three (SEED §2). Browser (DOM lib). → core, pixi.js
 - `packages/render-three` — Three.js WebGL2 stage; re-exports THREE. Browser (DOM lib). → core, three
-- `tools/netsim` — latency/jitter/loss `ClientTransport` wrapper, headless. → core
-- `tools/bots` — headless load clients + `load` harness (budgets 2 & 3). → net, server
-- `games/tps` — 3D TPS character-controller demo (orbit camera, camera-relative client-authoritative movement, jump) on a static obstacle course. The current throwaway exercise.
+- `tools/netsim` — latency/jitter/loss `ClientTransport` wrapper, headless. → core. (Not wired into the current client — ADR 0013.)
+- `tools/bots` — headless `colyseus.js` load clients + `load` harness (budgets 2 & 3; live integration check). → net, server, `colyseus.js`
+- `games/tps` — 3D TPS demo on Colyseus rooms (`colyseus.js`): Roblox-like controller, auto-join, nametags, local checkpoints, clock-driven elevator, static course. The current throwaway exercise.
 - `infra/` — empty placeholder; populated later (SEED §7).
 
-The server is a client-authoritative relay (ADR 0011): it owns no simulation and hosts no
-game — `startServer()` just relays peer state. The TPS character sim lives under `@mp/server`
-for historical reasons (see subpaths below).
+The server is a client-authoritative relay (ADR 0011) hosted on **Colyseus** (ADR 0013,
+supersedes SEED §2's uWS transport): Colyseus owns transport/rooms/matchmaking/scale; `TpsRoom`
+relays peer state (no `@colyseus/schema`). Colyseus is pinned to **0.16** (matched client/server),
+default `ws` transport (uWS is a later swap), single-process for now (scale-out deferred to
+deploy). The TPS sim lives under `@mp/server` for historical reasons (see subpaths below).
 
 Subpaths (secondary entry points, each with its own tsconfig where the lib differs):
 - `@mp/server/tps` — shared deterministic TPS character sim + world geometry. Run by the TPS
@@ -62,8 +64,10 @@ headless packages) is a later addition. Today the `lib` split enforces (2) at th
 
 Two terminals from the repo root:
 
-- `pnpm dev:server` — relay server on `ws://localhost:9200` (via `tsx`).
+- `pnpm dev:server` — Colyseus relay server on `ws://localhost:9200` (via `tsx`).
 - `pnpm dev:tps` — Vite dev server for the TPS demo, `games/tps` (`http://localhost:5174`).
+
+Open the demo in two tabs to get two players auto-joined into one shared room.
 
 The server runs through `tsx` (dev tooling; not a shipped/runtime dependency). The
 browser client is served from TypeScript source by Vite (no stack build step).

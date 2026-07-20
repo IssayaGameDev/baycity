@@ -1,7 +1,12 @@
 /** Protocol version — first byte of every message from day one (SEED §2).
  * v6: client-authoritative. Clients send STATE (their own position), the server
- * relays it. INPUT / FIRE / HIT (server-auth + lag-comp) removed (ADR 0011). */
-export const PROTOCOL_VERSION = 6 as const
+ * relays it. INPUT / FIRE / HIT (server-auth + lag-comp) removed (ADR 0011).
+ * v7: rooms on Colyseus; adds ROSTER (peer id -> name) (ADR 0013). */
+export const PROTOCOL_VERSION = 7 as const
+
+/** The single Colyseus message channel our whole binary protocol rides on (ADR 0013).
+ * Colyseus never inspects the payload; we dispatch on the version+type header inside. */
+export const NET_CHANNEL = 'n' as const
 
 /** Message-type discriminators (second byte). */
 export const MSG_SNAPSHOT = 1 as const // server -> client (relayed peer states)
@@ -9,6 +14,7 @@ export const MSG_WELCOME = 2 as const // server -> client (on connect)
 export const MSG_STATE = 3 as const // client -> server (owner-authoritative position)
 export const MSG_PING = 4 as const // client -> server (clock sync)
 export const MSG_PONG = 5 as const // server -> client (clock sync)
+export const MSG_ROSTER = 6 as const // server -> client (peer id -> display name, on join/leave)
 
 /** Read the message-type byte without fully decoding. */
 export const readMessageType = (buffer: ArrayBuffer): number => new DataView(buffer).getUint8(1)

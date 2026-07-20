@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@mp/net": "workspace:*",
-    "@mp/server": "workspace:*"
+    "@mp/server": "workspace:*",
+    "colyseus.js": "^0.16.22"
   }
 }

@@ -33,6 +33,11 @@ The stack is the product of this phase. A reference/sandbox game is **out of sco
 | Protocol | Binary. No JSON on the hot path | Schema carries a version byte from day one |
 | Repo | Monorepo (pnpm workspaces or equivalent) | Structural laws in §6 |
 
+> **Transport superseded by ADR 0013 (Kodjo's sign-off):** rooms now run on **Colyseus**
+> (open-source, optional managed Cloud) for lifecycle/matchmaking/scale-out. It uses its
+> default `ws` transport; the uWebSockets transport is a later perf swap. Our binary protocol
+> rides inside Colyseus messages (no `@colyseus/schema`).
+
 ## 3. Requirements
 
 - **Players per room:** 5–20

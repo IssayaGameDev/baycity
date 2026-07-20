@@ -75,6 +75,29 @@ export const TPS_OBSTACLES: Box[] = [
   { position: { x: 0, y: 1, z: -8 }, halfExtents: { x: 6, y: 1, z: 0.3 } },
 ]
 
+/**
+ * A vertical elevator that oscillates on the shared clock. Its height is a pure
+ * function of server time, so every client computes the same position from
+ * `serverNow()` with no per-platform state on the wire (ADR 0013 — validates the
+ * clock foundation for synced world objects). Throwaway demo content.
+ */
+export const MOVING_PLATFORM = {
+  center: { x: -4, y: 1.4, z: -3 } as Vec3,
+  halfExtents: { x: 1.5, y: 0.2, z: 1.5 } as Vec3,
+  amplitudeY: 1.2,
+  periodMs: 4000,
+}
+export const platformY = (serverTimeMs: number): number =>
+  MOVING_PLATFORM.center.y + MOVING_PLATFORM.amplitudeY * Math.sin((serverTimeMs / MOVING_PLATFORM.periodMs) * Math.PI * 2)
+
+/** Checkpoints (client-detected, locally persisted): the player respawns at the last
+ * one they touched. Placement is game design; two throwaway spots for now (ADR 0013). */
+export const CHECKPOINTS: readonly Vec3[] = [
+  { x: 8, y: 1.5, z: 8 },
+  { x: -8, y: 1.5, z: -6 },
+]
+export const CHECKPOINT_RADIUS = 1.5
+
 export const createTpsWorld = (): PhysicsWorld => {
   // Nothing dynamic reads world gravity here (kinematic character + static course
   // + kinematic remote mirrors), so it's zero; the character integrates its own
