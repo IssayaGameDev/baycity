@@ -1,5 +1,5 @@
 import RAPIER from '@dimforge/rapier3d-compat'
-import { vec3, type Vec3 } from '@mp/core'
+import { quat, vec3, type Quat, type Vec3 } from '@mp/core'
 
 /**
  * Thin wrapper over Rapier3d (WASM, compat/SIMD build). 3D only (SEED §2).
@@ -25,6 +25,9 @@ export type ShapeDesc =
 export interface BodyOptions {
   readonly position: Vec3
   readonly shape: ShapeDesc
+  /** Initial orientation (unit quaternion). Omit for identity. Used for tilted colliders
+   * (ramps) and the starting pose of a rotating body. */
+  readonly rotation?: Quat
   readonly restitution?: number
   /** Linear velocity damping — higher makes a pushed body settle sooner. */
   readonly linearDamping?: number
@@ -33,6 +36,8 @@ export interface BodyOptions {
 export interface PhysicsBody {
   readonly handle: number
   translation: () => Vec3
+  /** Current orientation (unit quaternion). */
+  rotation: () => Quat
   linvel: () => Vec3
   setLinvel: (v: Vec3) => void
   /** Move the body to `position` and zero its velocities (wakes it). */
@@ -43,6 +48,9 @@ export interface PhysicsBody {
   /** Kinematic bodies only: set the target position for the next step (Rapier
    * moves it there and generates contacts, so it blocks/pushes dynamic bodies). */
   setNextKinematicTranslation: (position: Vec3) => void
+  /** Kinematic bodies only: set the target orientation for the next step (spinning
+   * obstacles — rotating bars). */
+  setNextKinematicRotation: (rotation: Quat) => void
   /** Remove this body (and its colliders) from the world. */
   remove: () => void
 }
@@ -112,6 +120,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
 
   const addBody = (o: BodyOptions, kind: BodyKind): PhysicsBody => {
     let desc = bodyDescFor(kind).setTranslation(o.position.x, o.position.y, o.position.z)
+    if (o.rotation !== undefined) desc = desc.setRotation(o.rotation)
     if (o.linearDamping !== undefined) desc = desc.setLinearDamping(o.linearDamping)
     const body = world.createRigidBody(desc)
     world.createCollider(makeCollider(o.shape, o.restitution), body)
@@ -120,6 +129,10 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
       translation: () => {
         const t = body.translation()
         return vec3(t.x, t.y, t.z)
+      },
+      rotation: () => {
+        const r = body.rotation()
+        return quat(r.x, r.y, r.z, r.w)
       },
       linvel: () => {
         const v = body.linvel()
@@ -133,6 +146,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
       },
       setPosition: (p) => body.setTranslation({ x: p.x, y: p.y, z: p.z }, true),
       setNextKinematicTranslation: (p) => body.setNextKinematicTranslation({ x: p.x, y: p.y, z: p.z }),
+      setNextKinematicRotation: (r) => body.setNextKinematicRotation({ x: r.x, y: r.y, z: r.z, w: r.w }),
       remove: () => world.removeRigidBody(body),
     }
   }

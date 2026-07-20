@@ -70,6 +70,7 @@ const levelMesh = (v: VisualItem): THREE.Mesh => {
           : new THREE.BoxGeometry(1, 1, 1)
   const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: STYLE_COLOR[v.style ?? ''] ?? 0x475569 }))
   mesh.position.set(v.position.x, v.position.y, v.position.z)
+  mesh.quaternion.set(v.rotation.x, v.rotation.y, v.rotation.z, v.rotation.w)
   stage.scene.add(mesh)
   return mesh
 }
@@ -380,7 +381,10 @@ stage.start(() => {
   // clients agree since it's a function of server time — and sync their meshes.
   if (loaded !== null) {
     loaded.update(clock.serverNow())
-    for (const s of levelSync) s.mesh.position.set(s.visual.position.x, s.visual.position.y, s.visual.position.z)
+    for (const s of levelSync) {
+      s.mesh.position.set(s.visual.position.x, s.visual.position.y, s.visual.position.z)
+      s.mesh.quaternion.set(s.visual.rotation.x, s.visual.rotation.y, s.visual.rotation.z, s.visual.rotation.w)
+    }
   }
 
   // Own character: our authoritative local sim, render-smoothed. Peers: interpolated.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { clamp, lerp, lerpVec3 } from './math'
+import { axisAngleToQuat, clamp, eulerToQuat, lerp, lerpVec3, mulQuat, quat, rotateVec3, vec3 } from './math'
 
 describe('math', () => {
   it('lerp hits endpoints and midpoint', () => {
@@ -21,5 +21,35 @@ describe('math', () => {
       y: 2,
       z: 3,
     })
+  })
+
+  const closeQuat = (a: ReturnType<typeof quat>, b: ReturnType<typeof quat>): void => {
+    expect(a.x).toBeCloseTo(b.x, 6)
+    expect(a.y).toBeCloseTo(b.y, 6)
+    expect(a.z).toBeCloseTo(b.z, 6)
+    expect(a.w).toBeCloseTo(b.w, 6)
+  }
+
+  it('eulerToQuat matches axisAngleToQuat for a single-axis rotation', () => {
+    closeQuat(eulerToQuat(vec3(0, Math.PI / 2, 0)), axisAngleToQuat(vec3(0, 1, 0), Math.PI / 2))
+    closeQuat(eulerToQuat(vec3(Math.PI / 3, 0, 0)), axisAngleToQuat(vec3(1, 0, 0), Math.PI / 3))
+  })
+
+  it('rotateVec3 rotates +x to -z under a +90° yaw', () => {
+    const r = rotateVec3(axisAngleToQuat(vec3(0, 1, 0), Math.PI / 2), vec3(1, 0, 0))
+    expect(r.x).toBeCloseTo(0, 6)
+    expect(r.y).toBeCloseTo(0, 6)
+    expect(r.z).toBeCloseTo(-1, 6)
+  })
+
+  it('mulQuat composes rotations (two quarter turns = one half turn)', () => {
+    const q90 = axisAngleToQuat(vec3(0, 1, 0), Math.PI / 2)
+    const r = rotateVec3(mulQuat(q90, q90), vec3(1, 0, 0))
+    expect(r.x).toBeCloseTo(-1, 6)
+    expect(r.z).toBeCloseTo(0, 6)
+  })
+
+  it('axisAngleToQuat normalizes a non-unit axis', () => {
+    closeQuat(axisAngleToQuat(vec3(0, 5, 0), Math.PI / 2), axisAngleToQuat(vec3(0, 1, 0), Math.PI / 2))
   })
 })

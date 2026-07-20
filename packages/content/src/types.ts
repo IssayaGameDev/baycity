@@ -41,11 +41,13 @@ export interface Piece {
   visual?: Visual
 }
 
-/** Gameplay markers — positions are data; the mode decides what they mean. */
+/** Gameplay markers — positions are data; the mode decides what they mean. `hazard` is a
+ * kill/respawn zone (touch → the mode respawns you); fall-kill below `fallY` is separate. */
 export type Marker =
   | { readonly kind: 'spawn'; readonly transform: Transform }
   | { readonly kind: 'checkpoint'; readonly transform: Transform; readonly radius: number }
   | { readonly kind: 'goal'; readonly transform: Transform; readonly radius: number }
+  | { readonly kind: 'hazard'; readonly transform: Transform; readonly radius: number }
 
 /** Clock-driven motion — a pure function of synced time, so no per-object networking. */
 export type Behavior =

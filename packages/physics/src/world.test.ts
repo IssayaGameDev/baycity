@@ -1,3 +1,4 @@
+import { axisAngleToQuat } from '@mp/core'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { createPhysicsWorld, initPhysics } from './world'
@@ -170,6 +171,39 @@ describe('physics world', () => {
     char.setPosition(start)
     const replay = run(world, char)
     for (let i = 0; i < moves.length; i++) expect(replay[i]).toBeCloseTo(first[i]!, 6)
+    world.free()
+  })
+
+  it('places a fixed body at its initial rotation (tilted ramp collider)', () => {
+    const world = createPhysicsWorld()
+    const q = axisAngleToQuat({ x: 0, y: 0, z: 1 }, Math.PI / 6) // tilt 30° about Z
+    const ramp = world.addFixedBody({
+      position: { x: 0, y: 0, z: 0 },
+      shape: { kind: 'cuboid', halfExtents: { x: 2, y: 0.1, z: 2 } },
+      rotation: q,
+    })
+    for (let i = 0; i < 10; i++) world.step(1 / 60)
+    const r = ramp.rotation()
+    expect(r.x).toBeCloseTo(q.x, 6)
+    expect(r.y).toBeCloseTo(q.y, 6)
+    expect(r.z).toBeCloseTo(q.z, 6)
+    expect(r.w).toBeCloseTo(q.w, 6)
+    world.free()
+  })
+
+  it('setNextKinematicRotation spins a kinematic body (rotating bar)', () => {
+    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+    const bar = world.addKinematicBody({
+      position: { x: 0, y: 1, z: 0 },
+      shape: { kind: 'cuboid', halfExtents: { x: 2, y: 0.1, z: 0.1 } },
+    })
+    expect(bar.rotation().w).toBeCloseTo(1, 6) // starts at identity
+    const q = axisAngleToQuat({ x: 0, y: 1, z: 0 }, Math.PI / 2) // quarter turn about Y
+    bar.setNextKinematicRotation(q)
+    world.step(1 / 60)
+    const r = bar.rotation()
+    expect(r.y).toBeCloseTo(q.y, 5)
+    expect(r.w).toBeCloseTo(q.w, 5)
     world.free()
   })
 
