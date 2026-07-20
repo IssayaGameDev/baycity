@@ -22,7 +22,7 @@ ball demo was retired (recover at tag `m10`). **M9 (2D path)** remains deferred 
   - [0001](adr/0001-monorepo-tooling.md) tooling · [0002](adr/0002-transport-and-client-clock.md) transports · [0003](adr/0003-physics-and-renderer.md) physics+renderer
   - [0004](adr/0004-prediction-and-netsim.md) prediction+netsim · [0005](adr/0005-predicting-props.md) predicting props · [0006](adr/0006-clock-sync-and-lag-compensation.md) clock sync + lag comp
   - [0007](adr/0007-delta-and-quantization.md) delta + quantization · [0008](adr/0008-hud-and-input.md) HUD + input · [0009](adr/0009-load-validation.md) load validation
-  - [0010](adr/0010-tps-character-controller.md) TPS character controller + pluggable game · [0011](adr/0011-client-authoritative.md) **client-authoritative (reverses SEED §4)**
+  - [0010](adr/0010-tps-character-controller.md) TPS character controller + pluggable game · [0011](adr/0011-client-authoritative.md) **client-authoritative (reverses SEED §4)** · [0012](adr/0012-roblox-like-character-controller.md) Roblox-like kinematic controller
 
 ## Built
 
@@ -35,7 +35,7 @@ ball demo was retired (recover at tag `m10`). **M9 (2D path)** remains deferred 
 - `render-pixi` — PixiJS HUD (`createHud`): stacked transparent canvas, crosshair/status/joystick. (Not used by the current demo.)
 - `tools/netsim` — latency/jitter/loss transport wrapper.
 - `tools/bots` — headless load clients (report synthetic state) + `load` harness; measures budgets 2 & 3.
-- `games/tps` — 3D TPS character controller (orbit camera, camera-relative client-authoritative movement, jump) on a static obstacle course.
+- `games/tps` — 3D TPS with a Roblox-like kinematic character controller (orbit camera, camera-relative movement with ground accel, force-limited air control, fixed-apex jump; ADR 0012; live-tunable) on a static obstacle course.
 
 ## Deferred (SEED §7, not built)
 

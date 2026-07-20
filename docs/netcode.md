@@ -38,11 +38,12 @@ Positions only on the wire (no rotation yet).
 
 ## Shared deterministic sim (`@mp/server/tps`)
 
-World/collision config + `stepCharacter` (world-space move + jump/gravity), run by each
-client for its own character and by bots. Movement/jump feel are shared constants so every
-client's own body moves identically. Determinism verified in `tps.test.ts`. (It still lives
-under `@mp/server` for historical reasons — ADR 0010/0011 — though the server no longer runs
-it; relocation is future cleanup.)
+World/collision config + `stepCharacter` (Roblox-like kinematic locomotion — ground
+accel/decel, force-limited air control, fixed-apex jump; ADR 0012), run by each client for
+its own character. Feel lives in a `CharacterTuning` object (`DEFAULT_TUNING`), tuned live in
+the demo. Determinism verified in `tps.test.ts`. (It still lives under `@mp/server` for
+historical reasons — ADR 0010/0011 — though the server no longer runs it; relocation is
+future cleanup.)
 
 ## Ownership of shared objects (policy, not yet built — ADR 0011 D1=B)
 
@@ -60,4 +61,6 @@ peers look; the owned body is local and unaffected).
 ## Game-feel values (Kodjo's call)
 
 - `interpolationDelayMs` — how far in the past peers render. **100 ms**, provisional; tunable.
+- `CharacterTuning` (speed, jump apex, gravity, accel/stop times, air control) — Roblox-derived
+  defaults, live-tunable in the demo (ADR 0012). Client-side only under client authority.
 - Camera feel (distance, sensitivity) — client-only, tunable in the demo.

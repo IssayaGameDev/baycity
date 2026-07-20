@@ -28,6 +28,7 @@ import {
   CHAR_HALF_HEIGHT,
   CHAR_RADIUS,
   createTpsWorld,
+  DEFAULT_TUNING,
   GROUND,
   playerSpawn,
   stepCharacter,
@@ -35,6 +36,7 @@ import {
   TICK_RATE_HZ,
   TPS_OBSTACLES,
   type CharacterState,
+  type CharacterTuning,
 } from '@mp/server/tps'
 import { Pane } from 'tweakpane'
 
@@ -162,6 +164,16 @@ const cam = pane.addFolder({ title: 'Camera' })
 cam.addBinding(params, 'camDistance', { min: 3, max: 14, step: 0.5, label: 'distance' })
 cam.addBinding(params, 'sensitivity', { min: 0.0005, max: 0.006, step: 0.0005, label: 'sensitivity' })
 
+// Live locomotion feel (client-authoritative, so tuning is purely local — ADR 0011/0012).
+const tuning: CharacterTuning = { ...DEFAULT_TUNING }
+const mv = pane.addFolder({ title: 'Movement (Roblox-like)' })
+mv.addBinding(tuning, 'moveSpeed', { min: 1, max: 12, step: 0.1, label: 'speed m/s' })
+mv.addBinding(tuning, 'jumpHeight', { min: 0.5, max: 5, step: 0.1, label: 'jump apex m' })
+mv.addBinding(tuning, 'gravity', { min: 10, max: 100, step: 1, label: 'gravity m/s²' })
+mv.addBinding(tuning, 'groundAccelTime', { min: 0, max: 0.5, step: 0.01, label: 'accel s' })
+mv.addBinding(tuning, 'groundStopTime', { min: 0, max: 0.5, step: 0.01, label: 'stop s' })
+mv.addBinding(tuning, 'airControl', { min: 0, max: 1, step: 0.05, label: 'air control' })
+
 // --- netcode ---
 const transport = createNetsimClientTransport(createWebSocketClientTransport(SERVER_URL), {
   latencyMs: params.latency,
@@ -185,7 +197,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   // correction, so no reconciliation hooks.
   const local: LocalWorld = {
     applyInput: (cmd) => {
-      stepCharacter(char, cmd, TICK_DT)
+      stepCharacter(char, cmd, TICK_DT, tuning)
       world.step(TICK_DT)
     },
     readState: () => new Map<EntityId, Vec3>([[id, char.body.translation()]]),

@@ -141,6 +141,8 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
     const controller = world.createCharacterController(0.02)
     controller.enableAutostep(0.4, 0.2, true) // step over small ledges
     controller.enableSnapToGround(0.4) // stick to the ground on slopes/steps
+    controller.setMaxSlopeClimbAngle((50 * Math.PI) / 180) // walk up inclines to ~50°
+    controller.setMinSlopeSlideAngle((45 * Math.PI) / 180) // slide back down steeper ones
     const body = world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(o.position.x, o.position.y, o.position.z),
     )
