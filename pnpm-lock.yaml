@@ -21,7 +21,7 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.1)(tsx@4.23.1)
 
-  games/tps:
+  modes/parkour:
     dependencies:
       '@mp/character':
         specifier: workspace:*
