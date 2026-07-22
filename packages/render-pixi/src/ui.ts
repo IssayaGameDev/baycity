@@ -144,11 +144,13 @@ export interface ButtonOpts {
 export interface UiButton {
   readonly view: Container
   setLabel: (text: string) => void
+  /** Change the base (idle) fill — e.g. to mark a selected item. */
+  setColor: (color: number) => void
 }
 
 export const uiButton = (o: ButtonOpts): UiButton => {
   const h = o.height ?? 44
-  const base = o.color ?? 0x3b82f6
+  let base = o.color ?? 0x3b82f6
   const view = new Container()
   const bg = new Graphics()
   const paint = (fill: number): void => {
@@ -171,7 +173,14 @@ export const uiButton = (o: ButtonOpts): UiButton => {
     o.onClick()
   })
   view.on('pointerupoutside', () => paint(base))
-  return { view, setLabel: (t) => (text.text = t) }
+  return {
+    view,
+    setLabel: (t) => (text.text = t),
+    setColor: (c) => {
+      base = c
+      paint(base)
+    },
+  }
 }
 
 // ---- slider (0..1) -----------------------------------------------------------
