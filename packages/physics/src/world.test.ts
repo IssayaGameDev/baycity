@@ -224,6 +224,36 @@ describe('physics world', () => {
     world.free()
   })
 
+  it('a character rides a rising kinematic platform when the platform steps first (two-phase)', () => {
+    const world = createPhysicsWorld()
+    const platform = world.addKinematicBody({ position: { x: 0, y: 0, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 2, y: 0.25, z: 2 } } })
+    const char = world.addCharacter({ position: { x: 0, y: 1.5, z: 0 }, radius: 0.4, halfHeight: 0.5 })
+
+    // Settle onto the platform (two-phase each tick: platform, then character).
+    for (let i = 0; i < 120; i++) {
+      platform.setNextKinematicTranslation({ x: 0, y: 0, z: 0 })
+      world.step(1 / 60)
+      char.move({ x: 0, y: -0.05, z: 0 })
+      world.step(1 / 60)
+    }
+    const startY = char.translation().y
+    const clearance = startY - 0.25 // platform top starts at y = 0.25
+
+    // Raise the platform 3 cm/tick for 1 s; the player must ride up, not sink through.
+    let py = 0
+    for (let i = 0; i < 60; i++) {
+      py += 0.03
+      platform.setNextKinematicTranslation({ x: 0, y: py, z: 0 }) // move platform first...
+      world.step(1 / 60)
+      char.move({ x: 0, y: -0.05, z: 0 }) // ...then resolve the character against it
+      world.step(1 / 60)
+    }
+    const topNow = 0.25 + py
+    expect(char.translation().y - topNow).toBeCloseTo(clearance, 1) // same clearance — rode up with it
+    expect(char.translation().y).toBeGreaterThan(startY + 1.5) // actually rose ~py (1.8 m)
+    world.free()
+  })
+
   it('leaves a fixed body where it was placed', () => {
     const world = createPhysicsWorld()
     const ground = world.addFixedBody({

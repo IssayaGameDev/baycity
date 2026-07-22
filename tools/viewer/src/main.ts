@@ -202,10 +202,13 @@ const startPlay = (): void => {
     tickRateHz: TICK_RATE_HZ,
     onTick: () => {
       if (world === null || loaded === null || char === null) return
-      loaded.update(performance.now()) // clock-driven pieces move in the sim too
+      // Two-phase: move clock-driven pieces first, then resolve the character against them
+      // (so it rides moving platforms / gets pushed by the bar). Matches the game.
+      loaded.update(performance.now())
+      world.step(TICK_DT) // (A) platforms move
       const m = worldMove()
       stepCharacter(char, { moveX: m.x, moveZ: m.z, jump: keys.has('Space') }, TICK_DT, tuning)
-      world.step(TICK_DT)
+      world.step(TICK_DT) // (B) character resolves against them
       if (char.body.translation().y < loaded.config.fallY) {
         char.body.setPosition(spawnPoint)
         char.vx = char.vy = char.vz = 0

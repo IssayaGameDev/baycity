@@ -81,6 +81,25 @@ describe('instantiateLevel', () => {
     world.free()
   })
 
+  it('render(alpha) interpolates a moving piece between the last two sim poses', () => {
+    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+    const loaded = instantiateLevel(world, fixture)
+    loaded.update(0) // prev = curr = pose(0)
+    const a = loaded.visuals.find((v) => v.style === 'moving')!.position.y
+    loaded.update(1000) // prev = pose(0), curr = pose(1000)
+    const lift = loaded.visuals.find((v) => v.style === 'moving')!
+    const b = lift.position.y
+    expect(Math.abs(b - a)).toBeGreaterThan(0.5) // it actually moved between ticks
+
+    loaded.render(0)
+    expect(lift.position.y).toBeCloseTo(a, 6) // alpha 0 → the previous tick
+    loaded.render(1)
+    expect(lift.position.y).toBeCloseTo(b, 6) // alpha 1 → the latest tick
+    loaded.render(0.5)
+    expect(lift.position.y).toBeCloseTo((a + b) / 2, 6) // halfway
+    world.free()
+  })
+
   it('applies a rotated static collider (ramp)', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
     const tilt = vec3(0, 0, Math.PI / 6)

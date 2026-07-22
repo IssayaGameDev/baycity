@@ -66,6 +66,36 @@ export const mulQuat = (a: Quat, b: Quat): Quat => ({
   w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
 })
 
+/** Spherical linear interpolation between unit quaternions, along the shortest arc.
+ * Falls back to normalized-lerp when nearly parallel (avoids a divide-by-~0). */
+export const slerpQuat = (a: Quat, b: Quat, t: number): Quat => {
+  let bx = b.x
+  let by = b.y
+  let bz = b.z
+  let bw = b.w
+  let dot = a.x * bx + a.y * by + a.z * bz + a.w * bw
+  if (dot < 0) {
+    bx = -bx
+    by = -by
+    bz = -bz
+    bw = -bw
+    dot = -dot
+  }
+  if (dot > 0.9995) {
+    const x = a.x + (bx - a.x) * t
+    const y = a.y + (by - a.y) * t
+    const z = a.z + (bz - a.z) * t
+    const w = a.w + (bw - a.w) * t
+    const len = Math.hypot(x, y, z, w) || 1
+    return { x: x / len, y: y / len, z: z / len, w: w / len }
+  }
+  const theta0 = Math.acos(dot)
+  const sinTheta0 = Math.sin(theta0)
+  const s0 = Math.cos(theta0 * t) - (dot * Math.sin(theta0 * t)) / sinTheta0
+  const s1 = Math.sin(theta0 * t) / sinTheta0
+  return { x: a.x * s0 + bx * s1, y: a.y * s0 + by * s1, z: a.z * s0 + bz * s1, w: a.w * s0 + bw * s1 }
+}
+
 /** Rotate vector `v` by unit quaternion `q` (v + 2·q.w·t + 2·q.xyz×t, t = q.xyz×v). */
 export const rotateVec3 = (q: Quat, v: Vec3): Vec3 => {
   const tx = 2 * (q.y * v.z - q.z * v.y)

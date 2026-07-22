@@ -264,6 +264,7 @@ let ownFacing = 0
 let room: Room | null = null
 let loaded: LoadedLevel | null = null // the instantiated level (colliders + markers + visuals)
 let levelView: LevelView | null = null // Three meshes for the level; sync() re-poses moving pieces
+let lastSimTickAt = 0 // wall-clock of the last fixed tick, for render-interpolating clock-driven pieces
 const names = new Map<EntityId, string>() // peer id -> display name (from ROSTER)
 
 // Auto-assigned random display name (player-chosen names come later — ADR 0013).
@@ -332,8 +333,15 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   // This local sim IS the truth for our own character (client-authoritative, ADR 0011).
   const local: LocalWorld = {
     applyInput: (cmd) => {
+      // Two-phase step so the character resolves against the platforms' CURRENT positions,
+      // not last tick's: (A) advance clock-driven pieces on the synced clock and step so they
+      // move, (B) step the character against them — the controller's depenetration + snap-to-
+      // ground then carry it up a rising platform and push it off a sweeping bar.
+      loaded?.update(clock.serverNow())
+      world.step(TICK_DT) // (A) platforms move
       stepCharacter(char, cmd, TICK_DT, tuning)
-      world.step(TICK_DT)
+      world.step(TICK_DT) // (B) character resolves against the moved platforms
+      lastSimTickAt = performance.now()
     },
     readState: () => new Map<EntityId, Vec3>([[id, char.body.translation()]]),
   }
@@ -438,10 +446,11 @@ void connect()
 // --- render ---
 let ownPos: Vec3 = { x: 0, y: 1, z: 0 }
 stage.start(() => {
-  // Advance clock-driven level pieces (moving platforms) on the synced clock — all
-  // clients agree since it's a function of server time — and sync their meshes.
+  // Clock-driven pieces advance in the fixed sim loop; here we only render-interpolate
+  // their meshes between the last two ticks (same timeline as the player), then sync.
   if (loaded !== null) {
-    loaded.update(clock.serverNow())
+    const alpha = clamp((performance.now() - lastSimTickAt) / (1000 / TICK_RATE_HZ), 0, 1)
+    loaded.render(alpha)
     levelView?.sync()
   }
 

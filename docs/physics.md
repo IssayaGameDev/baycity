@@ -47,6 +47,12 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
 - **Rotation** is read from Rapier and used locally for content (tilted/rotating colliders, their
   visuals, and contact triggers — ADR 0014). Still **position-only on the wire** (v7); orientation
   would only join the protocol if a replicated body needed it.
+- **Moving-platform interaction (two-phase step):** the KCC is not pushed by kinematic bodies on
+  its own. To ride / get pushed by clock-driven pieces, step the platforms first, then the
+  character, in **separate `world.step` calls** — the controller then resolves against the pieces'
+  current positions, so depenetration carries it up a rising platform and off a sweeping bar, and
+  snap-to-ground holds it on a descending one. See `modes/parkour` and the viewer's play loop;
+  covered by `world.test.ts`.
 - Correctness covered by `packages/physics/src/world.test.ts`: gravity drop/rest, fixed-body
   placement, kinematic obstacles, character grounding/walls, initial + kinematic rotation, and
   contact reporting (the resting collider is reported, an untouched one is not).

@@ -1,4 +1,4 @@
-import { axisAngleToQuat, eulerToQuat, mulQuat, quat, rotateVec3, vec3, type Quat, type Vec3 } from '@mp/core'
+import { axisAngleToQuat, eulerToQuat, lerpVec3, mulQuat, quat, rotateVec3, slerpQuat, vec3, type Quat, type Vec3 } from '@mp/core'
 import type { PhysicsBody, PhysicsWorld, ShapeDesc } from '@mp/physics'
 
 import type { Behavior, ColliderDesc, Level, LevelConfig, Marker, Transform, TriggerKind, Visual } from './types'
@@ -44,6 +44,8 @@ interface MoveHandle {
   base: Vec3
   behavior: Extract<Behavior, { kind: 'move' }>
   visual: VisualItem
+  prevPos: Vec3 // previous sim-tick position (for render interpolation)
+  currPos: Vec3 // latest sim-tick position
 }
 interface RotateHandle {
   kind: 'rotate'
@@ -52,6 +54,8 @@ interface RotateHandle {
   baseRotation: Quat
   behavior: Extract<Behavior, { kind: 'rotate' }>
   visual: VisualItem
+  prevRot: Quat // previous sim-tick orientation
+  currRot: Quat // latest sim-tick orientation
 }
 type BehaviorHandle = MoveHandle | RotateHandle
 
@@ -61,8 +65,13 @@ export interface LoadedLevel {
   /** Physics-backed triggers (checkpoint/goal/hazard) — one sensor per non-spawn marker. */
   triggers: WorldTrigger[]
   visuals: VisualItem[]
-  /** Advance clock-driven pieces to their pose at `nowMs`. */
+  /** Advance clock-driven pieces one **sim step** to their pose at `nowMs`: moves the
+   * kinematic bodies and records prev/curr poses. Call once per fixed tick, before
+   * `world.step`, so physics and rendering share a timeline. */
   update: (nowMs: number) => void
+  /** Set the visual poses to `alpha` (0..1) between the last two sim ticks — call each
+   * render frame so clock-driven meshes are smooth and match the (interpolated) player. */
+  render: (alpha: number) => void
 }
 
 const add = (a: Vec3, b: Vec3): Vec3 => vec3(a.x + b.x, a.y + b.y, a.z + b.z)
@@ -129,10 +138,10 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
       let body: PhysicsBody
       if (behavior.kind === 'move') {
         body = world.addKinematicBody({ position, rotation, shape })
-        behaviors.push({ kind: 'move', body, base: position, behavior, visual })
+        behaviors.push({ kind: 'move', body, base: position, behavior, visual, prevPos: { ...position }, currPos: { ...position } })
       } else if (behavior.kind === 'rotate') {
         body = world.addKinematicBody({ position, rotation, shape })
-        behaviors.push({ kind: 'rotate', body, position, baseRotation: rotation, behavior, visual })
+        behaviors.push({ kind: 'rotate', body, position, baseRotation: rotation, behavior, visual, prevRot: { ...rotation }, currRot: { ...rotation } })
       } else {
         body = world.addFixedBody({ position, rotation, shape })
       }
@@ -149,14 +158,26 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
       if (h.kind === 'move') {
         const p = movePosition(h.base, h.behavior, nowMs)
         h.body.setNextKinematicTranslation(p)
-        h.visual.position = p
+        h.prevPos = h.currPos
+        h.currPos = p
+        h.visual.position = p // latest (a consumer that doesn't interpolate still gets a live pose)
       } else {
         const q = rotateOrientation(h.baseRotation, h.behavior, nowMs)
         h.body.setNextKinematicTranslation(h.position)
         h.body.setNextKinematicRotation(q)
+        h.prevRot = h.currRot
+        h.currRot = q
         h.visual.rotation = q
       }
     }
   }
-  return { config: level.config, markers, triggers, visuals, update }
+
+  const render = (alpha: number): void => {
+    for (const h of behaviors) {
+      if (h.kind === 'move') h.visual.position = lerpVec3(h.prevPos, h.currPos, alpha)
+      else h.visual.rotation = slerpQuat(h.prevRot, h.currRot, alpha)
+    }
+  }
+
+  return { config: level.config, markers, triggers, visuals, update, render }
 }

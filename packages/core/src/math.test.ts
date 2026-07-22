@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { axisAngleToQuat, clamp, eulerToQuat, lerp, lerpVec3, mulQuat, quat, rotateVec3, vec3 } from './math'
+import { axisAngleToQuat, clamp, eulerToQuat, lerp, lerpVec3, mulQuat, quat, rotateVec3, slerpQuat, vec3 } from './math'
 
 describe('math', () => {
   it('lerp hits endpoints and midpoint', () => {
@@ -51,5 +51,12 @@ describe('math', () => {
 
   it('axisAngleToQuat normalizes a non-unit axis', () => {
     closeQuat(axisAngleToQuat(vec3(0, 5, 0), Math.PI / 2), axisAngleToQuat(vec3(0, 1, 0), Math.PI / 2))
+  })
+
+  it('slerpQuat hits endpoints and the constant-velocity midpoint', () => {
+    const y90 = axisAngleToQuat(vec3(0, 1, 0), Math.PI / 2)
+    closeQuat(slerpQuat(quat(), y90, 0), quat())
+    closeQuat(slerpQuat(quat(), y90, 1), y90)
+    closeQuat(slerpQuat(quat(), y90, 0.5), axisAngleToQuat(vec3(0, 1, 0), Math.PI / 4)) // halfway → 45°
   })
 })
