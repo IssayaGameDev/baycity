@@ -8,11 +8,11 @@ Positions only on the wire (no rotation yet).
 
 Rooms run on **Colyseus** (ADR 0013): it owns the transport (default `ws`), room lifecycle,
 matchmaking and the scale-out path; our binary relay is the payload inside each room — **no
-`@colyseus/schema`**. Clients `joinOrCreate('tps')` (fill-then-create, `maxClients = 20`, solo
+`@colyseus/schema`**. Clients `joinOrCreate('parkour')` (fill-then-create, `maxClients = 20`, solo
 → own room); `joinById` handles join-by-code. Versions are pinned to Colyseus **0.16** (server
 `colyseus@0.16.5` + client `colyseus.js@0.16.22` — the matched stable pair).
 
-## Client (`packages/client`, composed in `games/tps`)
+## Client (`packages/client`, composed in `modes/parkour`)
 
 - **Local authority (`localController.ts`):** `createLocalController` drives the owned
   entity's sim one fixed step per tick and render-interpolates between the last two ticks
@@ -32,7 +32,7 @@ matchmaking and the scale-out path; our binary relay is the payload inside each 
 
 ## Server (`packages/server`) — Colyseus relay room (`rooms.ts`)
 
-- **`TpsRoom`** (a Colyseus `Room`, `maxClients = 20`, no `@colyseus/schema`): on `onJoin` it
+- **`ParkourRoom`** (a Colyseus `Room`, `maxClients = 20`, no `@colyseus/schema`): on `onJoin` it
   assigns an `EntityId`, stores the join name, sends `WELCOME`, and broadcasts the `ROSTER`.
   `onMessage(NET_CHANNEL)` receives our binary frames: `STATE` → store the client's last
   position (it owns its own body); `PING` → `PONG`. `onLeave` drops the player and re-broadcasts
@@ -49,34 +49,37 @@ matchmaking and the scale-out path; our binary relay is the payload inside each 
 - **Names:** each client sends an auto-random name as a join option; the room relays the peer
   roster (id → name) via `ROSTER`. Chosen names + accounts come later (platform SDK).
 
-## Shared deterministic sim (`@mp/server/tps`)
+## Character controller (`@mp/character`) + content (`@mp/content`)
 
-World/collision config + `stepCharacter` (Roblox-like kinematic locomotion — ground
-accel/decel, force-limited air control, fixed-apex jump; ADR 0012), run by each client for
-its own character. Feel lives in a `CharacterTuning` object (`DEFAULT_TUNING`), tuned live in
-the demo. Determinism verified in `tps.test.ts`. (It still lives under `@mp/server` for
-historical reasons — ADR 0010/0011 — though the server no longer runs it; relocation is
-future cleanup.)
+`stepCharacter` (Roblox-like kinematic locomotion — ground accel/decel, force-limited air
+control, fixed-apex jump; ADR 0012) is now a stack-level, mode-agnostic library, run by each
+client for its own character. Feel lives in `CharacterTuning` (`DEFAULT_TUNING`), tuned live in
+the demo. The world is **data** (`@mp/content`, ADR 0014): the client loads a level
+(`instantiateLevel`) into its local physics world — colliders, markers, physics-backed triggers,
+and clock-driven pieces. Checkpoints/hazard/goal are a piece's own collider, detected by the
+controller's real contacts (`CharacterBody.collisions()`).
 
 ## Ownership of shared objects (policy, not yet built — ADR 0011 D1=B)
 
-The TPS demo has no shared dynamic props (each client owns only its character; the course is
-static). When a game adds shared props, each is owned by one client that simulates and relays
+The parkour demo has no shared dynamic props (each client owns only its character; the course
+is static/clock-driven). When a mode adds shared props, each is owned by one client that simulates and relays
 it, with handoff-on-contact, server-refereed claim arbitration, and reassignment on owner
 disconnect. Accepted tradeoff: contested objects diverge/snap on handoff.
 
 ## Clock-driven world objects + checkpoints (ADR 0013)
 
 The room's authoritative shared state is essentially just its **clock**. Moving world
-objects are pure functions of `serverNow()` from shared definitions, so all clients agree
-with no per-object state on the wire — the TPS demo's elevator (`platformY(serverNow)`)
-proves this. **Checkpoints** are client-detected and persisted to `localStorage`; the player
-respawns at the last one touched (local now; platform-account sync later).
+objects are pure functions of `serverNow()` (the loader's `move`/`rotate` behaviors), so all
+clients agree with no per-object state on the wire — moving platforms / rotating bars prove
+this. **Checkpoints/hazard/fall** are client-detected via real contact with the level's trigger
+colliders (ADR 0014); the player respawns at the last checkpoint. Per-player state (the
+checkpoint index) goes through a `PersistenceAdapter` — `local` (`localStorage`) now,
+account-backed later behind the same interface.
 
 ## Network simulation (`tools/netsim`)
 
 `createNetsimClientTransport(inner, { latencyMs, jitterMs, lossRate })` delays/drops both
-directions. It is **no longer wired into the TPS client** (the transport is now the Colyseus
+directions. It is **no longer wired into the parkour client** (the transport is now the Colyseus
 SDK, ADR 0013); kept for potential reuse. Re-adding latency/loss to the demo would wrap the
 Colyseus message layer instead.
 

@@ -1,8 +1,9 @@
 # Physics (`@mp/physics`)
 
-Thin wrapper over Rapier3d. **3D only** (SEED §2). Headless — runs in Node on the
-server today and (from M4) in the browser for client prediction, sharing one
-pinned Rapier version, timestep, and world config (SEED §4).
+Thin wrapper over Rapier3d. **3D only** (SEED §2). Headless — runs in the browser (each
+client's own sim + the viewer) and in Node (tests), sharing one pinned Rapier version,
+timestep, and world config (SEED §4). The server runs **no** physics (content-free relay,
+ADR 0011/0014).
 
 ## Dependency
 
@@ -18,35 +19,34 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
   - `addDynamicBody({ position, shape, restitution? })` / `addFixedBody(...)` → `PhysicsBody`
   - `step(dtSeconds)` — sets `world.timestep = dtSeconds`, then one `world.step()`
   - `free()` — releases the WASM world
-- `ShapeDesc`: `{ kind: 'ball', radius }` | `{ kind: 'cuboid', halfExtents }`
-- `PhysicsBody.translation()` → `Vec3` (rotation not read yet — see below)
-- `PhysicsBody.linvel()` / `setLinvel(v)` — read/set linear velocity (velocity-controlled player, M4)
-- `PhysicsBody.teleport(position)` — moves the body and zeros its velocities (player reconciliation restore; re-drop)
-- `PhysicsBody.setPosition(position)` — moves the body but keeps velocity (reconciling a predicted prop without freezing its momentum)
-- `PhysicsBody.remove()` — remove the body from the world (player disconnect)
-- `world.addKinematicBody(...)` + `PhysicsBody.setNextKinematicTranslation(p)` — a
-  position-based kinematic body moved each step; used client-side to mirror remote
-  players as collision obstacles (predicted local player collides with them)
-- `BodyOptions.linearDamping` — velocity damping; pushable props use it so a shove
-  settles quickly (keeps position-only reconciliation clean)
+- `ShapeDesc`: `{ kind: 'ball', radius }` | `{ kind: 'cuboid', halfExtents }` | `{ kind: 'capsule', halfHeight, radius }`
+- `BodyOptions`: `{ position, shape, rotation?: Quat, restitution?, linearDamping? }` — `rotation` sets the initial orientation (tilted colliders like ramps; a rotating body's start pose)
+- `PhysicsBody.translation()` → `Vec3` / `rotation()` → `Quat`; `colliderHandle` (matches `CharacterBody.collisions()`)
+- `PhysicsBody.linvel()` / `setLinvel(v)` — read/set linear velocity
+- `PhysicsBody.teleport(position)` — moves the body and zeros its velocities · `setPosition(position)` — moves but keeps velocity
+- `PhysicsBody.remove()` — remove the body from the world
+- `world.addKinematicBody(...)` + `setNextKinematicTranslation(p)` / `setNextKinematicRotation(q)` — a
+  position-based kinematic body moved each step; mirrors remote players and drives content's
+  moving/rotating pieces (ADR 0014)
+- `BodyOptions.linearDamping` — velocity damping; pushable props settle quickly
 
 - `world.addCharacter({ position, radius, halfHeight })` → `CharacterBody` — a Rapier
   **kinematic character controller** (capsule, autostep + snap-to-ground). `move(desired)`
-  applies a collision-resolved translation and returns `{ grounded }`; the caller owns
-  vertical velocity (gravity/jump). Used by the M10 TPS controller.
+  applies a collision-resolved translation and returns `{ grounded }`; the caller owns vertical
+  velocity (gravity/jump). `collisions()` returns the collider handles the capsule contacted
+  during the last `move` — **gameplay triggers key off these** (real contact, not distance; ADR 0014).
 
-Runs in the browser too (M4 client prediction), not just Node — `rapier3d-compat`'s
-inlined WASM makes the same wrapper work both places.
+`rapier3d-compat`'s inlined WASM makes the same wrapper work in the browser and Node.
 
 ## Notes
 
-- **Fixed timestep:** the server steps at 30 Hz (`dt = 1/30`). Rapier uses
-  `world.timestep`; the wrapper sets it per step so the passed `dt` governs.
-- **No cross-platform determinism** (SEED §2). Server and client run the same
-  pinned build/timestep/config, but float results differ across platforms;
-  reconciliation (M4) corrects the drift — this is why lockstep was rejected.
-- **Position only on the wire** (protocol v1). Rotation is available from Rapier
-  but not yet read or replicated; it joins when an oriented body needs it
-  (player capsule in M4, or quantization in M6).
-- Correctness covered by `packages/physics/src/world.test.ts` (a ball drops under
-  gravity and rests on a fixed ground; a fixed body stays put).
+- **Fixed timestep:** clients step at 30 Hz (`dt = 1/30`); the server runs no physics
+  (content-free relay, ADR 0011/0014). Rapier uses `world.timestep`; the wrapper sets it per step.
+- **No cross-platform determinism** (SEED §2). Under client authority each client owns its own
+  sim, so cross-client float drift is never reconciled and never shows — lockstep stays rejected.
+- **Rotation** is read from Rapier and used locally for content (tilted/rotating colliders, their
+  visuals, and contact triggers — ADR 0014). Still **position-only on the wire** (v7); orientation
+  would only join the protocol if a replicated body needed it.
+- Correctness covered by `packages/physics/src/world.test.ts`: gravity drop/rest, fixed-body
+  placement, kinematic obstacles, character grounding/walls, initial + kinematic rotation, and
+  contact reporting (the resting collider is reported, an untouched one is not).
