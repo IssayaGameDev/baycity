@@ -47,6 +47,7 @@ import { instantiateLevel, validateLevel, type LoadedLevel } from '@mp/content'
 import { Client, type Room } from 'colyseus.js'
 import { Pane } from 'tweakpane'
 
+import { localParkourPersistence } from './persistence'
 import { showcase } from './showcase'
 
 const SERVER_URL = `ws://${location.hostname}:9200`
@@ -277,7 +278,8 @@ const toArrayBuffer = (m: Uint8Array): ArrayBuffer => {
   return copy.buffer
 }
 
-const CHECKPOINT_KEY = 'parkour.checkpoint'
+// Per-player state behind a pluggable adapter (mode seam): local now, account-backed later.
+const persistence = localParkourPersistence()
 
 const initLocalSim = async (id: EntityId): Promise<void> => {
   await initPhysics()
@@ -302,10 +304,12 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   // Spawn: last checkpoint touched (persisted), else the level's spawn marker (spread a
   // little by id so players don't stack), else a fallback.
   const spawnMarker = loaded.markers.find((m) => m.kind === 'spawn')?.position
-  const saved = Number(localStorage.getItem(CHECKPOINT_KEY))
+  const playerState = persistence.load()
   const a = id * 2.399963
   const cp =
-    Number.isInteger(saved) && saved >= 0 && saved < checkpointTriggers.length ? checkpointTriggers[saved]!.position : undefined
+    playerState.checkpoint >= 0 && playerState.checkpoint < checkpointTriggers.length
+      ? checkpointTriggers[playerState.checkpoint]!.position
+      : undefined
   const spawn =
     cp !== undefined
       ? { x: cp.x, y: cp.y + STAND_OFFSET, z: cp.z }
@@ -375,7 +379,8 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
         for (let i = 0; i < checkpointTriggers.length; i++) {
           const t = checkpointTriggers[i]!
           if (hits.has(t.colliderHandle)) {
-            localStorage.setItem(CHECKPOINT_KEY, String(i))
+            playerState.checkpoint = i
+            persistence.save(playerState)
             respawnPos = { x: t.position.x, y: t.position.y + STAND_OFFSET, z: t.position.z }
             break
           }

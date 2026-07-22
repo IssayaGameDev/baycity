@@ -5,6 +5,6 @@ export default defineConfig({
     // 'forks' (child processes) keeps the native uWebSockets.js addon and real
     // sockets used by the end-to-end test well-isolated per test file.
     pool: 'forks',
-    include: ['{packages,tools}/*/src/**/*.test.ts'],
+    include: ['{packages,tools,modes}/*/src/**/*.test.ts'],
   },
 })
