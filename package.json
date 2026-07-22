@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "check": "pnpm run typecheck && pnpm run test",
     "dev:server": "pnpm --filter @mp/server run dev",
-    "dev:parkour": "pnpm --filter @mode/parkour run dev"
+    "dev:parkour": "pnpm --filter @mode/parkour run dev",
+    "dev:viewer": "pnpm --filter @mp/viewer run dev"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -6,6 +6,8 @@
 export const RENDER_THREE_VERSION = '0.0.0' as const
 
 export * as THREE from 'three'
+// Orbit camera control (viewer/tools) — re-exported so consumers share the pinned three.
+export { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 export type { ThreeStage, ThreeStageOptions } from './stage'
 export { createThreeStage } from './stage'
 
