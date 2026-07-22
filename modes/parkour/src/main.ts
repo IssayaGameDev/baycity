@@ -37,7 +37,7 @@ import {
   type CharacterTuning,
 } from '@mp/character'
 import { instantiateLevel, validateLevel, type LoadedLevel } from '@mp/content'
-import { getLocale, matchLocale, onLocaleChange, setLocale, t } from '@mp/i18n'
+import { getLocale, matchLocale, onLocaleChange, setLocale, t, type TranslationKey } from '@mp/i18n'
 import { createUiOverlay, uiButton, type ListItem } from '@mp/render-pixi'
 import { Client, type Room } from 'colyseus.js'
 import { Pane } from 'tweakpane'
@@ -53,6 +53,40 @@ const SERVER_URL = `ws://${location.hostname}:9200`
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector<T>(sel)!
 const canvas = $<HTMLCanvasElement>('#view')
 const statusEl = $<HTMLDivElement>('#status')
+const hintEl = $<HTMLDivElement>('#hint')
+
+// --- localization (ADR 0016) ---
+// All player-facing text routes through i18n. The status line is state-driven, so re-render it
+// (and the hint) on locale change. Detect the locale up front (stored override, else browser),
+// and persist changes.
+const LOCALE_KEY = 'mp.locale'
+let statusMsg: { key: TranslationKey; params?: Record<string, string | number> } = { key: 'status.connecting' }
+const renderStatus = (): void => {
+  statusEl.textContent = t(statusMsg.key, statusMsg.params)
+}
+const setStatus = (key: TranslationKey, params?: Record<string, string | number>): void => {
+  statusMsg = params !== undefined ? { key, params } : { key }
+  renderStatus()
+}
+const renderHint = (): void => {
+  hintEl.textContent = t('hint.controls')
+}
+try {
+  setLocale(localStorage.getItem(LOCALE_KEY) ?? matchLocale(navigator.language))
+} catch {
+  setLocale(matchLocale(navigator.language))
+}
+onLocaleChange(() => {
+  try {
+    localStorage.setItem(LOCALE_KEY, getLocale())
+  } catch {
+    // best-effort persistence
+  }
+  renderStatus()
+  renderHint()
+})
+renderStatus()
+renderHint()
 
 // --- scene ---
 const stage = createThreeStage({ canvas, cameraPosition: [0, 6, 10], lookAt: [0, 1, 0] })
@@ -337,13 +371,13 @@ const connect = async (): Promise<void> => {
   try {
     room = await new Client(SERVER_URL).joinOrCreate('parkour', { name: myName })
   } catch {
-    statusEl.textContent = `couldn't join — is the server up? run 'pnpm dev:server' (${SERVER_URL})`
+    setStatus('status.offline')
     return
   }
-  statusEl.textContent = `connected: room ${room.roomId} — click to capture the mouse`
+  setStatus('status.room', { room: room.roomId })
   room.onMessage(NET_CHANNEL, onNet)
   room.onLeave(() => {
-    statusEl.textContent = `disconnected — run 'pnpm dev:server' (${SERVER_URL})`
+    setStatus('status.offline')
   })
   setInterval(() => room?.sendBytes(NET_CHANNEL, new Uint8Array(encodePing({ clientTimeMs: performance.now() }))), 250)
 }
@@ -394,21 +428,6 @@ ui.canvas.style.position = 'fixed'
 ui.canvas.style.inset = '0'
 ui.canvas.style.zIndex = '10'
 document.body.appendChild(ui.canvas)
-
-// Locale: a stored override, else the best match for the browser; persisted on change (ADR i18n).
-const LOCALE_KEY = 'mp.locale'
-try {
-  setLocale(localStorage.getItem(LOCALE_KEY) ?? matchLocale(navigator.language))
-} catch {
-  setLocale(matchLocale(navigator.language))
-}
-onLocaleChange(() => {
-  try {
-    localStorage.setItem(LOCALE_KEY, getLocale())
-  } catch {
-    // best-effort persistence
-  }
-})
 
 const SENS_MIN = 0.0005
 const SENS_MAX = 0.006
