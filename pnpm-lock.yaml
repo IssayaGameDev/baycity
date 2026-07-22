@@ -35,12 +35,18 @@ importers:
       '@mp/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@mp/i18n':
+        specifier: workspace:*
+        version: link:../../packages/i18n
       '@mp/net':
         specifier: workspace:*
         version: link:../../packages/net
       '@mp/physics':
         specifier: workspace:*
         version: link:../../packages/physics
+      '@mp/render-pixi':
+        specifier: workspace:*
+        version: link:../../packages/render-pixi
       '@mp/render-three':
         specifier: workspace:*
         version: link:../../packages/render-three
@@ -92,6 +98,8 @@ importers:
         version: link:../physics
 
   packages/core: {}
+
+  packages/i18n: {}
 
   packages/net:
     dependencies:

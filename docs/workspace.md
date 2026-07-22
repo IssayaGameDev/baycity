@@ -10,9 +10,10 @@ strict, source-first (no build step at this stage).
 - `packages/physics` — Rapier3d wrapper (`@dimforge/rapier3d-compat`), bodies (position+rotation) + kinematic character controller, headless. → core
 - `packages/character` — the stack-level kinematic character controller (`stepCharacter`, `CharacterTuning`; ADR 0012), mode-agnostic. → core, net, physics
 - `packages/content` — data-driven content: schema, validation, loader (`instantiateLevel`), greybox kit + generators (ADR 0014). Headless, no rendering. → core, net, physics
+- `packages/i18n` — tiny dependency-free localization (ADR 0016): typed `t()`, per-language tables, browser-locale match + runtime switch. Headless. → (none)
 - `packages/server` — Colyseus `Server` + `ParkourRoom`: per-client snapshot relay (no simulation, no schema), auto-join, roster. Content-free. → core, net, `colyseus`
 - `packages/client` — local authoritative sim, interpolation, clock sync, input; headless-capable (bots). → core, net, physics
-- `packages/render-pixi` — PixiJS 2D HUD, stacked canvas over Three (SEED §2). Browser (DOM lib). → core, pixi.js
+- `packages/render-pixi` — PixiJS 2D **UI layer** (ADR 0015): stacked transparent canvas over Three, overlay + pointer-lock-aware input, reusable widgets (panel/button/slider/list). Browser (DOM lib). → core, pixi.js
 - `packages/render-three` — Three.js WebGL2 stage + polished greybox pipeline (IBL, ACES, soft shadows, GTAO/SMAA/bloom, style→material, level-view); re-exports THREE + OrbitControls. Browser (DOM lib). → core, content (types), three
 - `tools/netsim` — latency/jitter/loss `ClientTransport` wrapper, headless. → core. (Not wired into the current client — ADR 0013.)
 - `tools/bots` — headless `colyseus.js` load clients + `load` harness (budgets 2 & 3; live integration check). → net, server, `colyseus.js`

@@ -35,7 +35,8 @@ reversed it); ball demo retired (tag `m10`); world/controller relocated out of `
   - [0004](adr/0004-prediction-and-netsim.md) prediction+netsim · [0005](adr/0005-predicting-props.md) predicting props · [0006](adr/0006-clock-sync-and-lag-compensation.md) clock sync + lag comp
   - [0007](adr/0007-delta-and-quantization.md) delta + quantization · [0008](adr/0008-hud-and-input.md) HUD + input · [0009](adr/0009-load-validation.md) load validation
   - [0010](adr/0010-tps-character-controller.md) TPS controller + pluggable game · [0011](adr/0011-client-authoritative.md) **client-authoritative (reverses SEED §4)** · [0012](adr/0012-roblox-like-character-controller.md) Roblox-like kinematic controller
-  - [0013](adr/0013-colyseus-rooms.md) **Colyseus rooms foundation** · [0014](adr/0014-content-pipeline.md) **data-driven content pipeline + modes layering** · [0015](adr/0015-ui-rendering.md) **PixiJS for all game UI**
+  - [0013](adr/0013-colyseus-rooms.md) **Colyseus rooms foundation** · [0014](adr/0014-content-pipeline.md) **data-driven content pipeline + modes layering**
+  - [0015](adr/0015-ui-rendering.md) **PixiJS for all game UI** · [0016](adr/0016-localization.md) **localization (`@mp/i18n`)**
 
 ## Built
 
@@ -47,11 +48,12 @@ reversed it); ball demo retired (tag `m10`); world/controller relocated out of `
 - `server` — **Colyseus** `Server` (`startServer()`) hosting `ParkourRoom`: client-authoritative relay (per-client delta snapshots, no simulation, no schema), auto-join, roster/names, clock-sync ping/pong. Content-free.
 - `client` — `colyseus.js` transport (`joinOrCreate`), interpolation, local authoritative controller (`localController`), clock sync, input abstraction (`.` headless + `./dom` adapters).
 - `render-three` — WebGL2 stage + the polished greybox pipeline (IBL, ACES, soft shadows, GTAO/SMAA/bloom, style→material, level-view); re-exports THREE + OrbitControls.
-- `render-pixi` — PixiJS 2D HUD (`createHud`), transparent canvas stacked over Three. The designated layer for **all game UI** (ADR 0015); not yet wired into the demo.
+- `render-pixi` — PixiJS 2D UI layer (ADR 0015): a transparent canvas stacked over Three, an overlay with pointer-lock-aware input, and reusable widgets (panel/button/slider/list). Wired into the parkour pause screen.
+- `i18n` — tiny dependency-free localization (ADR 0016): typed `t()`, 9 languages, browser-locale detect + runtime switch. Headless.
 - `tools/netsim` — latency/jitter/loss transport wrapper. (Not wired into the current client — ADR 0013.)
 - `tools/bots` — headless `colyseus.js` load clients + `load` harness; measures budgets 2 & 3 and doubles as the live integration check.
 - `tools/viewer` — localhost content inspector (`pnpm dev:viewer`): picker, orbit, collider/marker/trigger overlays, jump-reachability gizmo, play-in-place. ADR 0014.
-- `modes/parkour` — the parkour mode on Colyseus rooms: Roblox-like controller (live-tunable), auto-join, nametags, data-driven level (loads a throwaway kit sampler), checkpoints/hazard/fall via physics triggers + a persistence adapter. (Rename of `games/tps`.)
+- `modes/parkour` — the parkour mode on Colyseus rooms: Roblox-like controller (live-tunable), auto-join, nametags, data-driven level (kit sampler), checkpoints/hazard/fall via physics triggers + persistence adapter, and a **Pixi pause screen** (settings + roster + restart, localized via `@mp/i18n`). Composition root; view pieces in `nametag.ts`/`characterView.ts`/`pauseMenu.ts`.
 - `content/levels` — level JSON (`level1.json`, the ported original world).
 
 ## Deferred (SEED §7, not built)

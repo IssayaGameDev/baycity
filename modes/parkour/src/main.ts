@@ -23,14 +23,7 @@ import {
   readMessageType,
 } from '@mp/net'
 import { createPhysicsWorld, initPhysics, type PhysicsBody } from '@mp/physics'
-import {
-  THREE,
-  createThreeStage,
-  applyGreyboxEnvironment,
-  createPostFX,
-  addLevel,
-  type LevelView,
-} from '@mp/render-three'
+import { createThreeStage, applyGreyboxEnvironment, createPostFX, addLevel, type LevelView } from '@mp/render-three'
 import {
   addCharacter,
   CHAR_HALF_HEIGHT,
@@ -44,9 +37,14 @@ import {
   type CharacterTuning,
 } from '@mp/character'
 import { instantiateLevel, validateLevel, type LoadedLevel } from '@mp/content'
+import { getLocale, matchLocale, onLocaleChange, setLocale, t } from '@mp/i18n'
+import { createUiOverlay, uiButton, type ListItem } from '@mp/render-pixi'
 import { Client, type Room } from 'colyseus.js'
 import { Pane } from 'tweakpane'
 
+import { createCharacterViews } from './characterView'
+import { OVERLAY_LAYER } from './nametag'
+import { createPauseMenu } from './pauseMenu'
 import { localParkourPersistence } from './persistence'
 import { showcase } from './showcase'
 
@@ -68,8 +66,7 @@ const postfx = createPostFX(stage.renderer, stage.scene, stage.camera, { ao: tru
 // own depth/normal buffer to compute occlusion; a sprite left in the world pipeline shows
 // up there as a hard dark AO ghost (the tilted black quad). Keeping the sprites on a layer
 // the world camera never sees during post-FX excludes them from GTAO entirely; we then draw
-// them on top, free of AO and tone mapping.
-const OVERLAY_LAYER = 1
+// them on top, free of AO and tone mapping (OVERLAY_LAYER — see nametag.ts).
 stage.setRenderStep(() => {
   postfx.render() // world + AO + bloom to screen (camera sees layer 0 only)
   const r = stage.renderer
@@ -87,101 +84,8 @@ stage.setRenderStep(() => {
   r.autoClear = true
 })
 
-// A character: capsule + a "nose" so facing is visible.
-const charGeo = new THREE.CapsuleGeometry(CHAR_RADIUS, CHAR_HALF_HEIGHT * 2, 6, 16)
-const makeCharacter = (color: number): THREE.Group => {
-  const g = new THREE.Group()
-  const body = new THREE.Mesh(charGeo, new THREE.MeshStandardMaterial({ color, roughness: 0.6 }))
-  body.castShadow = true
-  g.add(body)
-  const nose = new THREE.Mesh(
-    new THREE.BoxGeometry(0.15, 0.15, 0.4),
-    new THREE.MeshStandardMaterial({ color: 0x0b1020 }),
-  )
-  nose.position.set(0, 0.2, CHAR_RADIUS) // +z front
-  nose.castShadow = true
-  g.add(nose)
-  stage.scene.add(g)
-  return g
-}
-interface Rendered {
-  group: THREE.Group
-  facing: number
-  last: Vec3
-  label?: THREE.Sprite
-  labelText?: string
-}
-const chars = new Map<EntityId, Rendered>()
-const charFor = (id: EntityId, isSelf: boolean): Rendered => {
-  let r = chars.get(id)
-  if (r === undefined) {
-    r = { group: makeCharacter(isSelf ? 0xfacc15 : 0xf97316), facing: 0, last: { x: 0, y: 0, z: 0 } }
-    chars.set(id, r)
-  }
-  return r
-}
-
-// A billboard nametag above a character (a Sprite always faces the camera). Rebuilt
-// only when the name changes.
-const makeNameLabel = (text: string): THREE.Sprite => {
-  const canvas = document.createElement('canvas')
-  canvas.width = 256
-  canvas.height = 64
-  const ctx = canvas.getContext('2d')!
-  ctx.font = 'bold 32px sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  const w = Math.min(248, ctx.measureText(text).width + 24)
-  ctx.fillStyle = 'rgba(11,16,32,0.6)'
-  ctx.fillRect(128 - w / 2, 10, w, 44)
-  ctx.fillStyle = '#e5e7eb'
-  ctx.fillText(text, 128, 32)
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace // canvas pixels are sRGB — decode them correctly
-  const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({
-      map: texture,
-      transparent: true,
-      depthTest: false, // draw over the world
-      depthWrite: false, // ...and stay out of the depth buffer GTAO reads (was a dark AO ghost)
-      toneMapped: false, // in-world UI, not a lit surface — keep it out of ACES tone mapping
-    }),
-  )
-  sprite.scale.set(2, 0.5, 1)
-  sprite.position.set(0, CHAR_HALF_HEIGHT + CHAR_RADIUS + 0.5, 0)
-  sprite.renderOrder = 999
-  sprite.layers.set(OVERLAY_LAYER) // excluded from the world/post-FX pipeline; drawn in the overlay pass
-  return sprite
-}
-const setLabel = (r: Rendered, name: string): void => {
-  if (r.labelText === name) return
-  if (r.label !== undefined) {
-    r.group.remove(r.label)
-    r.label.material.map?.dispose()
-    r.label.material.dispose()
-  }
-  r.label = makeNameLabel(name)
-  r.labelText = name
-  r.group.add(r.label)
-}
-// Place a character, easing its facing toward `yaw` (or its movement dir if yaw is null).
-const placeChar = (r: Rendered, p: Vec3, yaw: number | null): void => {
-  r.group.position.set(p.x, p.y, p.z)
-  const target = yaw ?? facingFromDelta(r, p)
-  if (target !== null) r.facing = easeAngle(r.facing, target, 0.25)
-  r.group.rotation.y = r.facing
-  r.last = { x: p.x, y: p.y, z: p.z }
-}
-const facingFromDelta = (r: Rendered, p: Vec3): number | null => {
-  const dx = p.x - r.last.x
-  const dz = p.z - r.last.z
-  return dx * dx + dz * dz > 1e-5 ? Math.atan2(dx, dz) : null
-}
-const easeAngle = (from: number, to: number, t: number): number => {
-  let d = ((to - from + Math.PI) % (Math.PI * 2)) - Math.PI
-  if (d < -Math.PI) d += Math.PI * 2
-  return from + d * t
-}
+// Player views (own + peers): capsule + facing-nose + billboard nametag. See characterView.ts.
+const views = createCharacterViews(stage.scene)
 
 // --- camera orbit (mouselook via pointer lock) ---
 const camera = stage.camera
@@ -265,6 +169,7 @@ let room: Room | null = null
 let loaded: LoadedLevel | null = null // the instantiated level (colliders + markers + visuals)
 let levelView: LevelView | null = null // Three meshes for the level; sync() re-poses moving pieces
 let lastSimTickAt = 0 // wall-clock of the last fixed tick, for render-interpolating clock-driven pieces
+let requestRespawn: (() => void) | null = null // set once the local sim exists; used by the pause menu's Restart
 const names = new Map<EntityId, string>() // peer id -> display name (from ROSTER)
 
 // Auto-assigned random display name (player-chosen names come later — ADR 0013).
@@ -329,6 +234,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
     char.vz = 0
     char.grounded = false
   }
+  requestRespawn = respawn // let the pause menu's Restart reach it
 
   // This local sim IS the truth for our own character (client-authoritative, ADR 0011).
   const local: LocalWorld = {
@@ -459,23 +365,14 @@ stage.start(() => {
   if (myId !== null && controller) {
     seen.add(myId)
     ownPos = controller.renderPositions().get(myId) ?? ownPos
-    const self = charFor(myId, true)
-    placeChar(self, ownPos, ownFacing)
-    setLabel(self, myName)
+    views.upsert(myId, { isSelf: true, position: ownPos, yaw: ownFacing, name: myName })
   }
   for (const e of interp.sample())
     if (e.id !== myId) {
       seen.add(e.id)
-      const r = charFor(e.id, false)
-      placeChar(r, e.position, null)
-      setLabel(r, names.get(e.id) ?? '…')
+      views.upsert(e.id, { isSelf: false, position: e.position, yaw: null, name: names.get(e.id) ?? '…' })
     }
-  // Drop characters whose players left the room (no longer relayed).
-  for (const [id, r] of chars)
-    if (!seen.has(id)) {
-      stage.scene.remove(r.group)
-      chars.delete(id)
-    }
+  views.prune(seen) // drop players who left the room (no longer relayed)
 
   // orbit camera around the own character
   const target = { x: ownPos.x, y: ownPos.y + 1, z: ownPos.z }
@@ -486,4 +383,87 @@ stage.start(() => {
     target.z + Math.cos(camYaw) * cp * params.camDistance,
   )
   camera.lookAt(target.x, target.y, target.z)
+})
+
+// --- pause screen (Pixi UI, ADR 0015) ---
+// A transparent Pixi canvas stacked over the Three canvas. The pause screen composition
+// lives in pauseMenu.ts; this wires it to the game (params, roster, respawn) and manages the
+// pointer-lock handoff.
+const ui = await createUiOverlay({ width: window.innerWidth, height: window.innerHeight })
+ui.canvas.style.position = 'fixed'
+ui.canvas.style.inset = '0'
+ui.canvas.style.zIndex = '10'
+document.body.appendChild(ui.canvas)
+
+// Locale: a stored override, else the best match for the browser; persisted on change (ADR i18n).
+const LOCALE_KEY = 'mp.locale'
+try {
+  setLocale(localStorage.getItem(LOCALE_KEY) ?? matchLocale(navigator.language))
+} catch {
+  setLocale(matchLocale(navigator.language))
+}
+onLocaleChange(() => {
+  try {
+    localStorage.setItem(LOCALE_KEY, getLocale())
+  } catch {
+    // best-effort persistence
+  }
+})
+
+const SENS_MIN = 0.0005
+const SENS_MAX = 0.006
+
+const pause = createPauseMenu(ui, {
+  onResume: () => resumePlay(),
+  onRestart: () => {
+    requestRespawn?.()
+    resumePlay()
+  },
+  sensitivity: {
+    get: () => (params.sensitivity - SENS_MIN) / (SENS_MAX - SENS_MIN),
+    set: (t) => {
+      params.sensitivity = SENS_MIN + t * (SENS_MAX - SENS_MIN)
+    },
+  },
+  players: () => {
+    const items: ListItem[] = [{ text: t('pause.self', { name: myName }), highlight: true }]
+    for (const [pid, name] of names) if (pid !== myId) items.push({ text: name })
+    return items
+  },
+})
+
+const resumePlay = (): void => {
+  pause.close()
+  void canvas.requestPointerLock()
+}
+
+// Pointer-lock drives pause state: releasing it (Esc / focus loss) opens the menu; re-locking
+// closes it. Tapping empty overlay space (menu closed) re-captures the mouse for look control.
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement === canvas) pause.close()
+  else pause.open()
+})
+ui.setBackgroundTap(() => {
+  if (!pause.isOpen()) void canvas.requestPointerLock()
+})
+
+// Top-left pause button (placeholder glyph until skinned). During locked play the cursor is
+// hidden, so this is clickable when free; Esc is the primary open while playing.
+const pauseBtn = uiButton({
+  label: 'II',
+  width: 44,
+  height: 40,
+  color: 0x475569,
+  onClick: () => {
+    if (document.pointerLockElement === canvas) document.exitPointerLock()
+    else pause.open()
+  },
+})
+pauseBtn.view.position.set(16, 16)
+ui.root.addChild(pauseBtn.view)
+
+window.addEventListener('resize', () => {
+  ui.resize(window.innerWidth, window.innerHeight)
+  pauseBtn.view.position.set(16, 16)
+  pause.layout()
 })
