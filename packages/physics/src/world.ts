@@ -35,6 +35,8 @@ export interface BodyOptions {
 
 export interface PhysicsBody {
   readonly handle: number
+  /** Handle of this body's collider — matches the handles from `CharacterBody.collisions`. */
+  readonly colliderHandle: number
   translation: () => Vec3
   /** Current orientation (unit quaternion). */
   rotation: () => Quat
@@ -76,6 +78,10 @@ export interface CharacterBody {
   setPosition: (position: Vec3) => void
   /** Apply a desired translation this step (collision-resolved); returns grounded. */
   move: (desired: Vec3) => { grounded: boolean }
+  /** Collider handles the capsule actually collided with during the last `move` (walls,
+   * ground, obstacles it pushed against). The basis for real contact-driven triggers —
+   * match against `PhysicsBody.colliderHandle`. */
+  collisions: () => number[]
   remove: () => void
 }
 
@@ -123,9 +129,10 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
     if (o.rotation !== undefined) desc = desc.setRotation(o.rotation)
     if (o.linearDamping !== undefined) desc = desc.setLinearDamping(o.linearDamping)
     const body = world.createRigidBody(desc)
-    world.createCollider(makeCollider(o.shape, o.restitution), body)
+    const collider = world.createCollider(makeCollider(o.shape, o.restitution), body)
     return {
       handle: body.handle,
+      colliderHandle: collider.handle,
       translation: () => {
         const t = body.translation()
         return vec3(t.x, t.y, t.z)
@@ -161,6 +168,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(o.position.x, o.position.y, o.position.z),
     )
     const collider = world.createCollider(RAPIER.ColliderDesc.capsule(o.halfHeight, o.radius), body)
+    const lastCollisions: number[] = []
     return {
       translation: () => {
         const t = body.translation()
@@ -178,8 +186,18 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
         const c = controller.computedMovement()
         const t = body.translation()
         body.setNextKinematicTranslation({ x: t.x + c.x, y: t.y + c.y, z: t.z + c.z })
+        // Record what the capsule actually pushed against this step — the real contacts
+        // that gameplay triggers key off (not a distance heuristic).
+        lastCollisions.length = 0
+        const n = controller.numComputedCollisions()
+        for (let i = 0; i < n; i++) {
+          const hit = controller.computedCollision(i)
+          const h = hit?.collider?.handle
+          if (h !== undefined && h !== null) lastCollisions.push(h)
+        }
         return { grounded: controller.computedGrounded() }
       },
+      collisions: () => lastCollisions.slice(),
       remove: () => {
         world.removeRigidBody(body)
         world.removeCharacterController(controller)

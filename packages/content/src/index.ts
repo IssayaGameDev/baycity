@@ -17,9 +17,10 @@ export type {
   PrefabInstance,
   LevelConfig,
   Level,
+  TriggerKind,
 } from './types'
 export { validateLevel, LevelError } from './validate'
-export type { LoadedLevel, WorldMarker, VisualItem } from './loader'
+export type { LoadedLevel, WorldMarker, WorldTrigger, VisualItem } from './loader'
 export { instantiateLevel } from './loader'
 
 export { KIT_STYLE, platform, ledge, ramp, gapJump, movingPlatform, rotatingBar, spawnPad, checkpointPad, goalPad, hazardPad } from './kit'

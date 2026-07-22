@@ -12,6 +12,10 @@ export interface ThreeStage {
   /** Begin the rAF loop; `onFrame(dtSeconds)` runs before each render. */
   start: (onFrame: (dtSeconds: number) => void) => void
   stop: () => void
+  /** Replace the render step (e.g. drive an EffectComposer for post-FX). Pass `null`
+   * to restore the default `renderer.render(scene, camera)`. Keeps the stage
+   * unopinionated: post-FX is opt-in by the consumer. */
+  setRenderStep: (step: (() => void) | null) => void
   dispose: () => void
 }
 
@@ -46,6 +50,7 @@ export const createThreeStage = (opts: ThreeStageOptions): ThreeStage => {
   window.addEventListener('resize', resize)
 
   let onFrame: ((dtSeconds: number) => void) | null = null
+  let renderStep: (() => void) | null = null
   let raf = 0
   let last = 0
   let running = false
@@ -56,7 +61,8 @@ export const createThreeStage = (opts: ThreeStageOptions): ThreeStage => {
     const dt = last === 0 ? 0 : (now - last) / 1000
     last = now
     onFrame?.(dt)
-    renderer.render(scene, camera)
+    if (renderStep !== null) renderStep()
+    else renderer.render(scene, camera)
     raf = requestAnimationFrame(loop)
   }
 
@@ -74,6 +80,9 @@ export const createThreeStage = (opts: ThreeStageOptions): ThreeStage => {
     stop: () => {
       running = false
       if (raf) cancelAnimationFrame(raf)
+    },
+    setRenderStep: (step) => {
+      renderStep = step
     },
     dispose: () => {
       running = false

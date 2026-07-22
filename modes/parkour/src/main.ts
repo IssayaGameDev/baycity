@@ -23,7 +23,14 @@ import {
   readMessageType,
 } from '@mp/net'
 import { createPhysicsWorld, initPhysics, type PhysicsBody } from '@mp/physics'
-import { THREE, createThreeStage } from '@mp/render-three'
+import {
+  THREE,
+  createThreeStage,
+  applyGreyboxEnvironment,
+  createPostFX,
+  addLevel,
+  type LevelView,
+} from '@mp/render-three'
 import {
   addCharacter,
   CHAR_HALF_HEIGHT,
@@ -36,11 +43,11 @@ import {
   type CharacterState,
   type CharacterTuning,
 } from '@mp/character'
-import { instantiateLevel, validateLevel, type LoadedLevel, type VisualItem } from '@mp/content'
+import { instantiateLevel, validateLevel, type LoadedLevel } from '@mp/content'
 import { Client, type Room } from 'colyseus.js'
 import { Pane } from 'tweakpane'
 
-import level1 from '../../../content/levels/level1.json'
+import { showcase } from './showcase'
 
 const SERVER_URL = `ws://${location.hostname}:9200`
 
@@ -50,49 +57,48 @@ const statusEl = $<HTMLDivElement>('#status')
 
 // --- scene ---
 const stage = createThreeStage({ canvas, cameraPosition: [0, 6, 10], lookAt: [0, 1, 0] })
-stage.scene.add(new THREE.AmbientLight(0xffffff, 0.6))
-const sun = new THREE.DirectionalLight(0xffffff, 1.2)
-sun.position.set(10, 20, 10)
-stage.scene.add(sun)
+// Polished greybox pipeline (content pipeline C3): IBL + ACES + soft shadows, with GTAO +
+// SMAA post-FX. Level meshes, materials (the "High-contrast dev" palette) and markers are
+// realized by the shared @mp/render-three renderer — same code the viewer uses.
+applyGreyboxEnvironment(stage.renderer, stage.scene, { shadowRadius: 30, sunIntensity: 2.4 })
+const postfx = createPostFX(stage.renderer, stage.scene, stage.camera, { ao: true, bloom: true, bloomStrength: 0.3 })
 
-// Greybox visual language (basic now; polished in C3): a color per platform style.
-// A level's meshes are built from the loader's visual list (data-driven, ADR 0013).
-const STYLE_COLOR: Record<string, number> = { ground: 0x1e293b, platform: 0x334155, moving: 0x22d3ee }
-const levelMesh = (v: VisualItem): THREE.Mesh => {
-  const c = v.collider
-  const geo =
-    c.kind === 'box'
-      ? new THREE.BoxGeometry(c.halfExtents.x * 2, c.halfExtents.y * 2, c.halfExtents.z * 2)
-      : c.kind === 'capsule'
-        ? new THREE.CapsuleGeometry(c.radius, c.halfHeight * 2, 6, 16)
-        : c.kind === 'ball'
-          ? new THREE.SphereGeometry(c.radius, 16, 12)
-          : new THREE.BoxGeometry(1, 1, 1)
-  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: STYLE_COLOR[v.style ?? ''] ?? 0x475569 }))
-  mesh.position.set(v.position.x, v.position.y, v.position.z)
-  mesh.quaternion.set(v.rotation.x, v.rotation.y, v.rotation.z, v.rotation.w)
-  stage.scene.add(mesh)
-  return mesh
-}
-const addCheckpointDisc = (p: Vec3, radius: number): void => {
-  const disc = new THREE.Mesh(
-    new THREE.CylinderGeometry(radius, radius, 0.1, 24),
-    new THREE.MeshStandardMaterial({ color: 0x34d399, transparent: true, opacity: 0.4 }),
-  )
-  disc.position.set(p.x, 0.06, p.z)
-  stage.scene.add(disc)
-}
+// Nametags live on an overlay layer drawn AFTER post-FX. GTAO renders the scene into its
+// own depth/normal buffer to compute occlusion; a sprite left in the world pipeline shows
+// up there as a hard dark AO ghost (the tilted black quad). Keeping the sprites on a layer
+// the world camera never sees during post-FX excludes them from GTAO entirely; we then draw
+// them on top, free of AO and tone mapping.
+const OVERLAY_LAYER = 1
+stage.setRenderStep(() => {
+  postfx.render() // world + AO + bloom to screen (camera sees layer 0 only)
+  const r = stage.renderer
+  r.setRenderTarget(null)
+  // A solid-colour scene.background forces a buffer clear on render() even with
+  // autoClear off — which would wipe the composer output. Null it for the overlay only.
+  const bg = stage.scene.background
+  stage.scene.background = null
+  r.autoClear = false
+  stage.camera.layers.set(OVERLAY_LAYER) // render only the overlay (nametags), on top
+  r.clearDepth()
+  r.render(stage.scene, stage.camera)
+  stage.camera.layers.set(0) // restore the world layer for the next frame
+  stage.scene.background = bg
+  r.autoClear = true
+})
 
 // A character: capsule + a "nose" so facing is visible.
 const charGeo = new THREE.CapsuleGeometry(CHAR_RADIUS, CHAR_HALF_HEIGHT * 2, 6, 16)
 const makeCharacter = (color: number): THREE.Group => {
   const g = new THREE.Group()
-  g.add(new THREE.Mesh(charGeo, new THREE.MeshStandardMaterial({ color })))
+  const body = new THREE.Mesh(charGeo, new THREE.MeshStandardMaterial({ color, roughness: 0.6 }))
+  body.castShadow = true
+  g.add(body)
   const nose = new THREE.Mesh(
     new THREE.BoxGeometry(0.15, 0.15, 0.4),
     new THREE.MeshStandardMaterial({ color: 0x0b1020 }),
   )
   nose.position.set(0, 0.2, CHAR_RADIUS) // +z front
+  nose.castShadow = true
   g.add(nose)
   stage.scene.add(g)
   return g
@@ -129,12 +135,21 @@ const makeNameLabel = (text: string): THREE.Sprite => {
   ctx.fillRect(128 - w / 2, 10, w, 44)
   ctx.fillStyle = '#e5e7eb'
   ctx.fillText(text, 128, 32)
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace // canvas pixels are sRGB — decode them correctly
   const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false, transparent: true }),
+    new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false, // draw over the world
+      depthWrite: false, // ...and stay out of the depth buffer GTAO reads (was a dark AO ghost)
+      toneMapped: false, // in-world UI, not a lit surface — keep it out of ACES tone mapping
+    }),
   )
   sprite.scale.set(2, 0.5, 1)
   sprite.position.set(0, CHAR_HALF_HEIGHT + CHAR_RADIUS + 0.5, 0)
   sprite.renderOrder = 999
+  sprite.layers.set(OVERLAY_LAYER) // excluded from the world/post-FX pipeline; drawn in the overlay pass
   return sprite
 }
 const setLabel = (r: Rendered, name: string): void => {
@@ -225,6 +240,19 @@ mv.addBinding(tuning, 'groundAccelTime', { min: 0, max: 0.5, step: 0.01, label: 
 mv.addBinding(tuning, 'groundStopTime', { min: 0, max: 0.5, step: 0.01, label: 'stop s' })
 mv.addBinding(tuning, 'airControl', { min: 0, max: 1, step: 0.05, label: 'air control' })
 
+// Live render tuning (content C3) — the greybox polish is data, so you can dial it here.
+const renderParams = { exposure: 1.0, bloom: true, bloomStrength: 0.3 }
+const rp = pane.addFolder({ title: 'Render (greybox C3)' })
+rp.addBinding(renderParams, 'exposure', { min: 0.4, max: 2, step: 0.05 }).on('change', (e) => {
+  stage.renderer.toneMappingExposure = e.value
+})
+rp.addBinding(renderParams, 'bloom').on('change', (e) => {
+  postfx.bloom.enabled = e.value
+})
+rp.addBinding(renderParams, 'bloomStrength', { min: 0, max: 1.5, step: 0.05, label: 'bloom str' }).on('change', (e) => {
+  postfx.bloom.strength = e.value
+})
+
 // --- netcode (Colyseus rooms, ADR 0013) ---
 const clock = createClockSync()
 const reassembler = createSnapshotReassembler()
@@ -234,7 +262,7 @@ let controller: LocalController | null = null
 let ownFacing = 0
 let room: Room | null = null
 let loaded: LoadedLevel | null = null // the instantiated level (colliders + markers + visuals)
-const levelSync: { visual: VisualItem; mesh: THREE.Mesh }[] = [] // moving pieces to re-sync each frame
+let levelView: LevelView | null = null // Three meshes for the level; sync() re-poses moving pieces
 const names = new Map<EntityId, string>() // peer id -> display name (from ROSTER)
 
 // Auto-assigned random display name (player-chosen names come later — ADR 0013).
@@ -256,25 +284,46 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   // Client-owned world (ADR 0011): gravity is integrated by the character, not Rapier.
   // The loader adds the level's colliders (data-driven, ADR 0013).
   const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-  loaded = instantiateLevel(world, validateLevel(level1))
+  loaded = instantiateLevel(world, validateLevel(showcase))
 
-  // Build the level's greybox meshes + checkpoint discs from the loaded data.
-  for (const v of loaded.visuals) levelSync.push({ visual: v, mesh: levelMesh(v) })
-  const checkpoints = loaded.markers.filter((m) => m.kind === 'checkpoint')
-  for (const c of checkpoints) addCheckpointDisc(c.position, c.radius ?? 1.5)
+  // Build the level's greybox meshes via the shared renderer (content C3). Marker pads are
+  // just their (colour-coded) box here; radius/overlay visualization belongs in the viewer.
+  levelView = addLevel(stage.scene, loaded.visuals)
+  // Gameplay triggers are the pads' own colliders (content C5 seam): the engine reports
+  // real contact via char.body.collisions() — no distance heuristics.
+  const checkpointTriggers = loaded.triggers.filter((t) => t.kind === 'checkpoint')
+  const hazardHandles = new Set(loaded.triggers.filter((t) => t.kind === 'hazard').map((t) => t.colliderHandle))
+  const { fallBehavior, fallY } = loaded.config
+
+  // Markers sit on a surface; the capsule's *centre* must clear it by its stand height so
+  // the player rests on top rather than sinking in.
+  const STAND_OFFSET = CHAR_HALF_HEIGHT + CHAR_RADIUS
 
   // Spawn: last checkpoint touched (persisted), else the level's spawn marker (spread a
   // little by id so players don't stack), else a fallback.
   const spawnMarker = loaded.markers.find((m) => m.kind === 'spawn')?.position
   const saved = Number(localStorage.getItem(CHECKPOINT_KEY))
   const a = id * 2.399963
+  const cp =
+    Number.isInteger(saved) && saved >= 0 && saved < checkpointTriggers.length ? checkpointTriggers[saved]!.position : undefined
   const spawn =
-    Number.isInteger(saved) && saved >= 0 && saved < checkpoints.length
-      ? { ...checkpoints[saved]!.position }
+    cp !== undefined
+      ? { x: cp.x, y: cp.y + STAND_OFFSET, z: cp.z }
       : spawnMarker !== undefined
-        ? { x: spawnMarker.x + Math.cos(a) * 2, y: spawnMarker.y, z: spawnMarker.z + Math.sin(a) * 2 }
+        ? { x: spawnMarker.x + Math.cos(a) * 2, y: spawnMarker.y + STAND_OFFSET, z: spawnMarker.z + Math.sin(a) * 2 }
         : playerSpawn(id)
   const char: CharacterState = addCharacter(world, spawn)
+
+  // Respawn: teleport to the last checkpoint (or spawn) and kill momentum. Triggered by
+  // touching a hazard pad or falling below the level's kill plane (mode config).
+  let respawnPos: Vec3 = { ...spawn }
+  const respawn = (): void => {
+    char.body.setPosition(respawnPos)
+    char.vx = 0
+    char.vy = 0
+    char.vz = 0
+    char.grounded = false
+  }
 
   // This local sim IS the truth for our own character (client-authoritative, ADR 0011).
   const local: LocalWorld = {
@@ -320,13 +369,20 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
       const p = controller!.state().get(id)
       if (p) {
         room?.sendBytes(NET_CHANNEL, new Uint8Array(encodeState(p)))
-        for (let i = 0; i < checkpoints.length; i++) {
-          const c = checkpoints[i]!
-          if (Math.hypot(p.x - c.position.x, p.z - c.position.z) < (c.radius ?? 1.5)) {
+        // Real contact: the colliders the capsule pushed against this tick.
+        const hits = new Set(char.body.collisions())
+        // Checkpoint touched → it becomes the respawn point (persisted).
+        for (let i = 0; i < checkpointTriggers.length; i++) {
+          const t = checkpointTriggers[i]!
+          if (hits.has(t.colliderHandle)) {
             localStorage.setItem(CHECKPOINT_KEY, String(i))
+            respawnPos = { x: t.position.x, y: t.position.y + STAND_OFFSET, z: t.position.z }
             break
           }
         }
+        // Hazard touched (any side), or fell below the kill plane → respawn.
+        const hitHazard = [...hits].some((h) => hazardHandles.has(h))
+        if (hitHazard || (fallBehavior === 'respawn-checkpoint' && p.y < fallY)) respawn()
       }
     },
   })
@@ -381,10 +437,7 @@ stage.start(() => {
   // clients agree since it's a function of server time — and sync their meshes.
   if (loaded !== null) {
     loaded.update(clock.serverNow())
-    for (const s of levelSync) {
-      s.mesh.position.set(s.visual.position.x, s.visual.position.y, s.visual.position.z)
-      s.mesh.quaternion.set(s.visual.rotation.x, s.visual.rotation.y, s.visual.rotation.z, s.visual.rotation.w)
-    }
+    levelView?.sync()
   }
 
   // Own character: our authoritative local sim, render-smoothed. Peers: interpolated.

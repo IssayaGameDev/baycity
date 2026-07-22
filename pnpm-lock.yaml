@@ -119,6 +119,9 @@ importers:
 
   packages/render-three:
     dependencies:
+      '@mp/content':
+        specifier: workspace:*
+        version: link:../content
       '@mp/core':
         specifier: workspace:*
         version: link:../core

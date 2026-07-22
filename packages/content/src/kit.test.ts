@@ -47,11 +47,11 @@ describe('greybox kit — shapes', () => {
     expect(rotatingBar().behavior?.kind).toBe('rotate')
   })
 
-  it('pads emit the right marker kind', () => {
+  it('spawn uses a marker; checkpoint/goal/hazard tag their piece collider as a trigger', () => {
     expect(spawnPad().markers?.[0]?.kind).toBe('spawn')
-    expect(checkpointPad().markers?.[0]?.kind).toBe('checkpoint')
-    expect(goalPad().markers?.[0]?.kind).toBe('goal')
-    expect(hazardPad().markers?.[0]?.kind).toBe('hazard')
+    expect(checkpointPad().pieces[0]?.trigger).toBe('checkpoint')
+    expect(goalPad().pieces[0]?.trigger).toBe('goal')
+    expect(hazardPad().pieces[0]?.trigger).toBe('hazard')
   })
 })
 
@@ -70,10 +70,10 @@ describe('greybox kit — loads into a world', () => {
     world.free()
   })
 
-  it('a checkpoint pad surfaces a checkpoint marker with its radius', () => {
+  it('a checkpoint pad instantiates as a physics trigger', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLevel(world, levelOf(checkpointPad({ radius: 2 })))
-    expect(loaded.markers.find((m) => m.kind === 'checkpoint')?.radius).toBe(2)
+    const loaded = instantiateLevel(world, levelOf(checkpointPad()))
+    expect(loaded.triggers.find((t) => t.kind === 'checkpoint')).toBeDefined()
     world.free()
   })
 })

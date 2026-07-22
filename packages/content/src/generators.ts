@@ -19,17 +19,18 @@ export interface StaircaseOpts {
   id?: string
   steps?: number
   stepRun?: number // horizontal depth of each step along +x (m)
-  stepRise?: number // height gained per step (m)
+  stepRise?: number // height gained per step (m) — default kept under the controller's 0.4 m auto-step so it's walkable
   width?: number // z extent of each step (m)
   thickness?: number
   style?: string
 }
 
-/** A straight flight of steps ascending along +x. */
+/** A straight flight of steps ascending along +x. Default rise is walkable (auto-stepped,
+ * no jump); pass a larger `stepRise` for a hop-per-step obstacle. */
 export const staircase = (o: StaircaseOpts = {}): Prefab => {
   const steps = o.steps ?? 8
-  const run = o.stepRun ?? 1.5
-  const rise = o.stepRise ?? 0.6
+  const run = o.stepRun ?? 1.2
+  const rise = o.stepRise ?? 0.3
   const width = o.width ?? 3
   const thickness = o.thickness ?? 0.5
   const style = o.style ?? KIT_STYLE.platform
@@ -50,11 +51,12 @@ export interface SpiralStaircaseOpts {
   style?: string
 }
 
-/** A helical flight winding around the +y axis, each step rotated to lie radially. */
+/** A helical flight winding around the +y axis, each step rotated to lie radially. Default
+ * rise is walkable (auto-stepped); pass a larger `stepRise` for a hop-per-step climb. */
 export const spiralStaircase = (o: SpiralStaircaseOpts = {}): Prefab => {
   const steps = o.steps ?? 12
   const radius = o.radius ?? 5
-  const rise = o.stepRise ?? 0.5
+  const rise = o.stepRise ?? 0.3
   const angleStep = ((o.stepAngleDeg ?? 30) * Math.PI) / 180
   const length = o.length ?? 3
   const width = o.width ?? 2

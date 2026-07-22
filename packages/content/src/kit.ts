@@ -1,6 +1,6 @@
 import { vec3, type Vec3 } from '@mp/core'
 
-import type { Marker, Piece, Prefab } from './types'
+import type { Piece, Prefab, TriggerKind } from './types'
 
 /**
  * Greybox kit — parametric constructors that emit `Prefab` data (pieces + markers +
@@ -151,44 +151,38 @@ export interface PadOpts {
   width?: number
   depth?: number
   thickness?: number
-  radius?: number // marker trigger radius (m); ignored by spawn
   style?: string
 }
 
-type PadKind = 'spawn' | 'checkpoint' | 'goal' | 'hazard'
-
-// Per-kind so each marker carries its literal `kind` (assignable to the Marker union).
-const markerFor = (kind: PadKind, position: Vec3, radius: number): Marker => {
-  switch (kind) {
-    case 'spawn':
-      return { kind: 'spawn', transform: { position } }
-    case 'checkpoint':
-      return { kind: 'checkpoint', transform: { position }, radius }
-    case 'goal':
-      return { kind: 'goal', transform: { position }, radius }
-    case 'hazard':
-      return { kind: 'hazard', transform: { position }, radius }
+// A footing slab. `spawn` carries a spawn marker (a point the mode reads); the others tag
+// the slab's own collider as a trigger, so contact with the pad — real physics, any side —
+// fires the mode's rule. No proximity radius, no separate volume.
+const spawnPad_ = (o: PadOpts, style: string): Prefab => {
+  const width = o.width ?? 3
+  const depth = o.depth ?? 3
+  const thickness = o.thickness ?? 0.5
+  return {
+    id: o.id ?? 'spawn-pad',
+    pieces: [box(vec3(width / 2, thickness / 2, depth / 2), vec3(0, 0, 0), o.style ?? style)],
+    markers: [{ kind: 'spawn', transform: { position: vec3(0, thickness / 2, 0) } }],
   }
 }
 
-// A footing slab + a marker on its top surface. The mode offsets a character onto the
-// marker by its own height (content is height-agnostic).
-const pad = (o: PadOpts, kind: PadKind, defaultId: string, style: string): Prefab => {
+const triggerPad = (o: PadOpts, kind: TriggerKind, defaultId: string, style: string): Prefab => {
   const width = o.width ?? 3
   const depth = o.depth ?? 3
   const thickness = o.thickness ?? (kind === 'hazard' ? 0.2 : 0.5)
   return {
     id: o.id ?? defaultId,
-    pieces: [box(vec3(width / 2, thickness / 2, depth / 2), vec3(0, 0, 0), o.style ?? style)],
-    markers: [markerFor(kind, vec3(0, thickness / 2, 0), o.radius ?? 1.5)],
+    pieces: [{ ...box(vec3(width / 2, thickness / 2, depth / 2), vec3(0, 0, 0), o.style ?? style), trigger: kind }],
   }
 }
 
 /** A footing with a spawn marker. */
-export const spawnPad = (o: PadOpts = {}): Prefab => pad(o, 'spawn', 'spawn-pad', KIT_STYLE.spawn)
-/** A footing with a checkpoint marker (radius trigger). */
-export const checkpointPad = (o: PadOpts = {}): Prefab => pad(o, 'checkpoint', 'checkpoint-pad', KIT_STYLE.checkpoint)
-/** A footing with a goal marker (radius trigger). */
-export const goalPad = (o: PadOpts = {}): Prefab => pad(o, 'goal', 'goal-pad', KIT_STYLE.goal)
-/** A thin slab with a hazard marker (touch → the mode respawns you). */
-export const hazardPad = (o: PadOpts = {}): Prefab => pad(o, 'hazard', 'hazard-pad', KIT_STYLE.hazard)
+export const spawnPad = (o: PadOpts = {}): Prefab => spawnPad_(o, KIT_STYLE.spawn)
+/** A footing whose collider is a checkpoint trigger (contact saves it as your respawn). */
+export const checkpointPad = (o: PadOpts = {}): Prefab => triggerPad(o, 'checkpoint', 'checkpoint-pad', KIT_STYLE.checkpoint)
+/** A footing whose collider is the goal trigger (contact = finish). */
+export const goalPad = (o: PadOpts = {}): Prefab => triggerPad(o, 'goal', 'goal-pad', KIT_STYLE.goal)
+/** A thin slab whose collider is a hazard trigger (contact → the mode respawns you). */
+export const hazardPad = (o: PadOpts = {}): Prefab => triggerPad(o, 'hazard', 'hazard-pad', KIT_STYLE.hazard)

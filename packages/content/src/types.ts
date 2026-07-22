@@ -33,12 +33,18 @@ export type Visual =
   | { readonly kind: 'primitive'; readonly style?: string }
   | { readonly kind: 'gltf'; readonly src: string; readonly style?: string }
 
+/** Gameplay triggers fired by real contact with a piece's collider — the mode decides the
+ * rule (save checkpoint / reach goal / respawn on hazard). */
+export type TriggerKind = 'checkpoint' | 'goal' | 'hazard'
+
 /** One collider + visual at a local transform in a prefab. `visual` defaults to a
- * greybox primitive matching the collider when omitted. */
+ * greybox primitive matching the collider when omitted. `trigger` marks this piece's
+ * collider as a gameplay trigger — contact with it (not proximity) fires the mode's rule. */
 export interface Piece {
   collider: ColliderDesc
   transform: Transform
   visual?: Visual
+  trigger?: TriggerKind
 }
 
 /** Gameplay markers — positions are data; the mode decides what they mean. `hazard` is a

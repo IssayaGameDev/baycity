@@ -51,6 +51,36 @@ describe('instantiateLevel', () => {
     world.free()
   })
 
+  it('a trigger piece exposes a collider the character contact-detects', () => {
+    const world = createPhysicsWorld() // character drives its own vertical movement
+    const level: Level = {
+      id: 'trig',
+      config: { fallBehavior: 'physical-fall', fallY: -10 },
+      instances: [
+        {
+          prefab: {
+            id: 'pad',
+            pieces: [{ collider: { kind: 'box', halfExtents: vec3(3, 0.25, 3) }, transform: { position: vec3(0, 0, 0) }, trigger: 'hazard' }],
+          },
+          transform: { position: vec3(0, 0, 0) },
+        },
+      ],
+    }
+    const loaded = instantiateLevel(world, level)
+    const trig = loaded.triggers.find((t) => t.kind === 'hazard')
+    expect(trig).toBeDefined()
+
+    const char = world.addCharacter({ position: { x: 0, y: 2, z: 0 }, radius: 0.4, halfHeight: 0.5 })
+    let hit = false
+    for (let i = 0; i < 120; i++) {
+      char.move({ x: 0, y: -0.05, z: 0 })
+      world.step(1 / 60)
+      if (char.collisions().includes(trig!.colliderHandle)) hit = true // real contact with the pad
+    }
+    expect(hit).toBe(true)
+    world.free()
+  })
+
   it('applies a rotated static collider (ramp)', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
     const tilt = vec3(0, 0, Math.PI / 6)

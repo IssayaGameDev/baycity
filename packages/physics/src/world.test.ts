@@ -207,6 +207,23 @@ describe('physics world', () => {
     world.free()
   })
 
+  it('reports the colliders the character actually contacts, and only those', () => {
+    const world = createPhysicsWorld()
+    const floor = world.addFixedBody({ position: { x: 0, y: 0, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 10, y: 0.1, z: 10 } } })
+    // A slab floating well above the head — never touched.
+    const overhead = world.addFixedBody({ position: { x: 0, y: 6, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 10, y: 0.1, z: 10 } } })
+    const char = world.addCharacter({ position: { x: 0, y: 2, z: 0 }, radius: 0.4, halfHeight: 0.5 })
+
+    for (let i = 0; i < 180; i++) {
+      char.move({ x: 0, y: -0.08, z: 0 })
+      world.step(1 / 60)
+    }
+    const contacts = char.collisions()
+    expect(contacts).toContain(floor.colliderHandle) // resting on the floor → contact reported
+    expect(contacts).not.toContain(overhead.colliderHandle) // never touched → never reported
+    world.free()
+  })
+
   it('leaves a fixed body where it was placed', () => {
     const world = createPhysicsWorld()
     const ground = world.addFixedBody({

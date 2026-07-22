@@ -1,7 +1,7 @@
 import { axisAngleToQuat, eulerToQuat, mulQuat, quat, rotateVec3, vec3, type Quat, type Vec3 } from '@mp/core'
 import type { PhysicsBody, PhysicsWorld, ShapeDesc } from '@mp/physics'
 
-import type { Behavior, ColliderDesc, Level, LevelConfig, Marker, Transform, Visual } from './types'
+import type { Behavior, ColliderDesc, Level, LevelConfig, Marker, Transform, TriggerKind, Visual } from './types'
 
 /**
  * Turns level data into a live world: adds Rapier colliders (fixed for static pieces,
@@ -18,6 +18,15 @@ export interface WorldMarker {
   kind: 'spawn' | 'checkpoint' | 'goal' | 'hazard'
   position: Vec3
   radius?: number
+}
+
+/** A gameplay trigger = a piece's own solid collider. The mode detects real contact by
+ * matching `colliderHandle` against `CharacterBody.collisions()` each tick — no distance math.
+ * `position` is the piece's world centre (e.g. for placing a respawn). */
+export interface WorldTrigger {
+  kind: TriggerKind
+  colliderHandle: number
+  position: Vec3
 }
 
 /** One thing to draw. `position`/`rotation` are mutated by `update` for clock-driven pieces. */
@@ -49,6 +58,8 @@ type BehaviorHandle = MoveHandle | RotateHandle
 export interface LoadedLevel {
   config: LevelConfig
   markers: WorldMarker[]
+  /** Physics-backed triggers (checkpoint/goal/hazard) — one sensor per non-spawn marker. */
+  triggers: WorldTrigger[]
   visuals: VisualItem[]
   /** Advance clock-driven pieces to their pose at `nowMs`. */
   update: (nowMs: number) => void
@@ -87,6 +98,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
   const visuals: VisualItem[] = []
   const behaviors: BehaviorHandle[] = []
   const markers: WorldMarker[] = []
+  const triggers: WorldTrigger[] = []
   const table = level.prefabs ?? {}
 
   const pushMarker = (m: Marker, origin: Vec3, originRot: Quat): void => {
@@ -114,15 +126,19 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
       }
       visuals.push(visual)
 
+      let body: PhysicsBody
       if (behavior.kind === 'move') {
-        const body = world.addKinematicBody({ position, rotation, shape })
+        body = world.addKinematicBody({ position, rotation, shape })
         behaviors.push({ kind: 'move', body, base: position, behavior, visual })
       } else if (behavior.kind === 'rotate') {
-        const body = world.addKinematicBody({ position, rotation, shape })
+        body = world.addKinematicBody({ position, rotation, shape })
         behaviors.push({ kind: 'rotate', body, position, baseRotation: rotation, behavior, visual })
       } else {
-        world.addFixedBody({ position, rotation, shape })
+        body = world.addFixedBody({ position, rotation, shape })
       }
+      // A trigger piece exposes its collider so the mode can detect real contact with it.
+      if (piece.trigger !== undefined)
+        triggers.push({ kind: piece.trigger, colliderHandle: body.colliderHandle, position: { ...position } })
     }
     for (const m of prefab.markers ?? []) pushMarker(m, origin, originRot)
   }
@@ -142,5 +158,5 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
       }
     }
   }
-  return { config: level.config, markers, visuals, update }
+  return { config: level.config, markers, triggers, visuals, update }
 }
