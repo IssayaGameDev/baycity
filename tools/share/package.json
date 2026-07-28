@@ -1,0 +1,13 @@
+{
+  "name": "@mp/share",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "share": "tsx src/main.ts",
+    "typecheck": "tsc --noEmit"
+  }
+}

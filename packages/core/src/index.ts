@@ -6,12 +6,15 @@
 export const CORE_VERSION = '0.0.0' as const
 
 export type { Vec3, Quat } from './math'
-export { vec3, lerp, clamp, lerpVec3, quat, eulerToQuat, axisAngleToQuat, mulQuat, rotateVec3, slerpQuat } from './math'
+export { vec3, lerp, clamp, lerpVec3, quat, eulerToQuat, axisAngleToQuat, conjQuat, mulQuat, rotateVec3, slerpQuat } from './math'
 
 export type { EntityId, EntityState } from './entity'
 export { entityId } from './entity'
 
 export type { Stepper, LoopHandle } from './loop'
 export { createStepper, startFixedLoop } from './loop'
+
+export type { SimClock, SimClockOptions } from './simClock'
+export { createSimClock } from './simClock'
 
 export type { Bytes, Connection, ServerTransport, ClientTransport } from './transport'

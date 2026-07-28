@@ -55,3 +55,4 @@ Exception: one human-facing `README.md` at the root — what this is, run locall
 
 - Technical peer: precise terminology, no simplification, no unrequested explanations
 - Short, scannable messages — bullets, headers, tables. Never walls of prose
+- Almost caveman language DO NOT use inneficient or useless language

@@ -5,7 +5,7 @@ strict, source-first (no build step at this stage).
 
 ## Layout
 
-- `packages/core` — fixed-timestep loop, entity model, math (incl. quaternion helpers), transport interface. Imports no sibling.
+- `packages/core` — fixed-timestep loop, `createSimClock` (fixed-step time for clock-driven content), entity model, math (incl. quaternion helpers), transport interface. Imports no sibling.
 - `packages/net` — schemas, binary serialization, quantization, clock sync. → core
 - `packages/physics` — Rapier3d wrapper (`@dimforge/rapier3d-compat`), bodies (position+rotation) + kinematic character controller, headless. → core
 - `packages/character` — the stack-level kinematic character controller (`stepCharacter`, `CharacterTuning`; ADR 0012), mode-agnostic. → core, net, physics
@@ -18,6 +18,7 @@ strict, source-first (no build step at this stage).
 - `tools/netsim` — latency/jitter/loss `ClientTransport` wrapper, headless. → core. (Not wired into the current client — ADR 0013.)
 - `tools/bots` — headless `colyseus.js` load clients + `load` harness (budgets 2 & 3; live integration check). → net, server, `colyseus.js`
 - `tools/viewer` — localhost content inspector (`pnpm dev:viewer`): picker, orbit, overlays, jump gizmo, play-in-place (ADR 0014). → character, content, core, physics, render-three
+- `tools/share` — opt-in remote debugging (`pnpm share`): relay + page behind two Cloudflare quick tunnels, prints one link. No workspace deps; shells out to `cloudflared`.
 - `modes/parkour` — the parkour mode on Colyseus rooms (`colyseus.js`): Roblox-like controller, auto-join, nametags, data-driven level (kit sampler), physics-trigger checkpoints/hazard/fall + persistence adapter. (Rename of `games/tps`.) → character, client, content, core, net, physics, render-three
 - `content/` — level JSON (`levels/level1.json`). Shared content, not a package.
 - `infra/` — empty placeholder; populated later (SEED §7).
@@ -74,6 +75,19 @@ Open the demo in two tabs to get two players auto-joined into one shared room.
 
 To inspect content in isolation: `pnpm dev:viewer` — the content viewer, `tools/viewer`
 (`http://localhost:5175`); no server needed.
+
+## Play with someone off-network (debug only)
+
+`pnpm share` (needs `cloudflared` on PATH). Reuses whatever dev servers are already
+running, starts the rest, opens a Cloudflare quick tunnel per port and prints one link
+to send. Ctrl+C tears down the whole tree.
+
+The page and the relay land on separate origins, so the page reads its relay endpoint
+from `?server=wss://…` (`modes/parkour/src/main.ts`), falling back to
+`ws://<page host>:9200`. Vite accepts the tunnel's `Host` via `allowedHosts` in
+`modes/parkour/vite.config.ts`. Quick-tunnel hostnames are random per run, so the link
+changes every session. Traffic is relayed through Cloudflare's edge — latency is
+inflated, so never read game-feel or clock-sync numbers off it.
 
 The server runs through `tsx` (dev tooling; not a shipped/runtime dependency). Browser apps are
 served from TypeScript source by Vite (no stack build step).

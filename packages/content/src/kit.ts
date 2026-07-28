@@ -106,8 +106,8 @@ export interface MovingPlatformOpts {
   width?: number
   depth?: number
   thickness?: number
-  axis?: Vec3 // travel direction (normalized internally)
-  amplitude?: number // peak offset from centre (m)
+  axis?: Vec3 // travel direction (normalized internally); sign chooses the way
+  distance?: number // travel distance from the home position along axis (m)
   periodMs?: number
   style?: string
 }
@@ -120,7 +120,7 @@ export const movingPlatform = (o: MovingPlatformOpts = {}): Prefab => {
   return {
     id: o.id ?? 'moving-platform',
     pieces: [box(vec3(width / 2, thickness / 2, depth / 2), vec3(0, 0, 0), o.style ?? KIT_STYLE.moving)],
-    behavior: { kind: 'move', axis: o.axis ?? vec3(0, 1, 0), amplitude: o.amplitude ?? 1.5, periodMs: o.periodMs ?? 4000 },
+    behavior: { kind: 'move', axis: o.axis ?? vec3(0, 1, 0), distance: o.distance ?? 1.5, periodMs: o.periodMs ?? 4000 },
   }
 }
 

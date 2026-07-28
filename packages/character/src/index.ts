@@ -5,7 +5,7 @@
  */
 export const CHARACTER_VERSION = '0.0.0' as const
 
-export type { CharacterTuning, CharacterState } from './character'
+export type { CharacterTuning, CharacterState, MovementBase, PlatformFrame, PlatformPoseLookup } from './character'
 export {
   TICK_RATE_HZ,
   TICK_DT,

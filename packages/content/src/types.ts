@@ -7,10 +7,16 @@ import type { Vec3 } from '@mp/core'
  * small; extended (glTF visuals, more behaviors) as needed.
  */
 
-/** Position + optional rotation (euler radians, XYZ). Size lives in shape dimensions. */
+/**
+ * Position + optional rotation (euler radians, XYZ) + optional scale (per-axis, default 1).
+ * Scale is baked into shape dimensions at load — like Unity baking lossy scale into a PhysX
+ * shape (there is no scale in a Rapier collider pose). Non-uniform scale on a ball/capsule is
+ * approximated (uniform-ish), same limitation as Unity; boxes are exact.
+ */
 export interface Transform {
   position: Vec3
   rotation?: Vec3
+  scale?: Vec3
 }
 
 /**
@@ -39,12 +45,15 @@ export type TriggerKind = 'checkpoint' | 'goal' | 'hazard'
 
 /** One collider + visual at a local transform in a prefab. `visual` defaults to a
  * greybox primitive matching the collider when omitted. `trigger` marks this piece's
- * collider as a gameplay trigger — contact with it (not proximity) fires the mode's rule. */
+ * collider as a gameplay trigger — contact with it (not proximity) fires the mode's rule.
+ * `behavior` drives this piece's own kinematic motion (flat, non-recursive — no nested
+ * prefabs); precedence at load is piece → instance → prefab → static. */
 export interface Piece {
   collider: ColliderDesc
   transform: Transform
   visual?: Visual
   trigger?: TriggerKind
+  behavior?: Behavior
 }
 
 /** Gameplay markers — positions are data; the mode decides what they mean. `hazard` is a
@@ -55,10 +64,15 @@ export type Marker =
   | { readonly kind: 'goal'; readonly transform: Transform; readonly radius: number }
   | { readonly kind: 'hazard'; readonly transform: Transform; readonly radius: number }
 
-/** Clock-driven motion — a pure function of synced time, so no per-object networking. */
+/**
+ * Clock-driven motion — a pure function of synced time, so no per-object networking.
+ * `move`: an eased out-and-back from the home (authored) position — travels `distance` metres
+ * along `axis`, then returns, over `periodMs`; starts and ends at rest. `rotate`: a continuous
+ * spin about `axis` (sign = direction), one turn per `periodMs`.
+ */
 export type Behavior =
   | { readonly kind: 'static' }
-  | { readonly kind: 'move'; readonly axis: Vec3; readonly amplitude: number; readonly periodMs: number }
+  | { readonly kind: 'move'; readonly axis: Vec3; readonly distance: number; readonly periodMs: number }
   | { readonly kind: 'rotate'; readonly axis: Vec3; readonly periodMs: number }
 
 /** A reusable obstacle: pieces (+ optional local markers) with an optional default behavior. */

@@ -19,7 +19,7 @@ const fixture: Level = {
         pieces: [{ collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(0, 0, 0) }, visual: { kind: 'primitive', style: 'moving' } }],
       },
       transform: { position: vec3(0, 2, 0) },
-      behavior: { kind: 'move', axis: vec3(0, 1, 0), amplitude: 1.5, periodMs: 4000 },
+      behavior: { kind: 'move', axis: vec3(0, 1, 0), distance: 1.5, periodMs: 4000 },
     },
   ],
   markers: [
@@ -44,10 +44,62 @@ describe('instantiateLevel', () => {
     const lift = loaded.visuals.find((v) => v.style === 'moving')!
     expect(lift).toBeDefined()
     loaded.update(0)
-    const y0 = lift.position.y
-    loaded.update(1000) // quarter of the 4000ms period → near apex
+    const y0 = lift.position.y // home (at rest)
+    loaded.update(1000) // quarter period → half of the travel
     expect(Math.abs(lift.position.y - y0)).toBeGreaterThan(0.5)
 
+    world.free()
+  })
+
+  it('bakes transform scale into collider dims and scaled offsets', () => {
+    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+    const level: Level = {
+      id: 'scaled',
+      config: { fallBehavior: 'physical-fall', fallY: -10 },
+      instances: [
+        {
+          prefab: {
+            id: 'p',
+            pieces: [{ collider: { kind: 'box', halfExtents: vec3(1, 1, 1) }, transform: { position: vec3(1, 0, 0) } }],
+          },
+          transform: { position: vec3(0, 0, 0), scale: vec3(2, 3, 4) },
+        },
+      ],
+    }
+    const loaded = instantiateLevel(world, level)
+    const v = loaded.visuals[0]!
+    expect(v.collider).toEqual({ kind: 'box', halfExtents: vec3(2, 3, 4) }) // dims × scale
+    expect(v.position).toEqual(vec3(2, 0, 0)) // local offset (1,0,0) × instance scale x=2
+    world.free()
+  })
+
+  it('applies per-piece behavior (one piece moves while its sibling stays put)', () => {
+    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+    const level: Level = {
+      id: 'perpiece',
+      config: { fallBehavior: 'physical-fall', fallY: -10 },
+      instances: [
+        {
+          prefab: {
+            id: 'mixed',
+            pieces: [
+              { collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(0, 0, 0) }, behavior: { kind: 'move', axis: vec3(0, 1, 0), distance: 2, periodMs: 4000 } },
+              { collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(3, 0, 0) } },
+            ],
+          },
+          transform: { position: vec3(0, 0, 0) },
+        },
+      ],
+    }
+    const loaded = instantiateLevel(world, level)
+    const mover = loaded.visuals[0]!
+    const stat = loaded.visuals[1]!
+    loaded.update(0)
+    const m0 = mover.position.y
+    const s0 = stat.position.y
+    loaded.update(1000) // quarter period → mover near apex
+    expect(Math.abs(mover.position.y - m0)).toBeGreaterThan(0.5)
+    expect(stat.position.y).toBe(s0) // sibling untouched
     world.free()
   })
 
@@ -137,6 +189,70 @@ describe('instantiateLevel', () => {
     expect(bar.rotation.w).toBeCloseTo(1, 6) // θ=0 → identity
     loaded.update(1000) // quarter of the 4000ms period → 90° about Y
     expect(Math.abs(bar.rotation.y)).toBeGreaterThan(0.5)
+    world.free()
+  })
+
+  // Trigger pieces are the only ones whose collider handle the loader publishes, so these
+  // fixtures tag the moving piece as a hazard to get at it (a moving hazard is real content).
+  it('basePose reports a moving piece pose, and nothing for a static collider', () => {
+    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+    const loaded = instantiateLevel(world, {
+      id: 'lift',
+      config: { fallBehavior: 'physical-fall', fallY: -3 },
+      instances: [
+        {
+          prefab: { id: 'g', pieces: [{ collider: { kind: 'box', halfExtents: vec3(5, 0.1, 5) }, transform: { position: vec3(0, -2, 0) }, trigger: 'checkpoint' }] },
+          transform: { position: vec3(0, 0, 0) },
+        },
+        {
+          prefab: { id: 'l', pieces: [{ collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(0, 0, 0) }, trigger: 'hazard' }] },
+          transform: { position: vec3(0, 2, 0) },
+          behavior: { kind: 'move', axis: vec3(0, 1, 0), distance: 2, periodMs: 4000 },
+        },
+      ],
+    })
+    const lift = loaded.triggers.find((t) => t.kind === 'hazard')!
+    const staticFloor = loaded.triggers.find((t) => t.kind === 'checkpoint')!
+    const visual = loaded.visuals[1]!
+
+    loaded.update(0)
+    const y0 = visual.position.y
+    loaded.update(1000) // quarter period
+    expect(visual.position.y - y0).toBeGreaterThan(0.5) // it really moved
+
+    // The pose a rider keeps its position in: the piece's live pose, tracking `update`.
+    const pose = loaded.basePose(lift.colliderHandle)!
+    expect(pose.position.y).toBeCloseTo(visual.position.y, 6)
+    expect(pose.rotation.w).toBeCloseTo(1, 6) // a mover does not spin
+    // Static geometry is not a movement base — nothing to ride.
+    expect(loaded.basePose(staticFloor.colliderHandle)).toBeUndefined()
+    world.free()
+  })
+
+  it('basePose follows a spinning piece orientation', () => {
+    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+    const loaded = instantiateLevel(world, {
+      id: 'disc',
+      config: { fallBehavior: 'physical-fall', fallY: -3 },
+      instances: [
+        {
+          prefab: { id: 'd', pieces: [{ collider: { kind: 'box', halfExtents: vec3(3, 0.2, 3) }, transform: { position: vec3(0, 0, 0) }, trigger: 'hazard' }] },
+          transform: { position: vec3(0, 0, 0) },
+          behavior: { kind: 'rotate', axis: vec3(0, 1, 0), periodMs: 4000 },
+        },
+      ],
+    })
+    const disc = loaded.triggers[0]!
+    loaded.update(0)
+    expect(loaded.basePose(disc.colliderHandle)!.rotation.w).toBeCloseTo(1, 6) // θ=0 → identity
+    loaded.update(1000) // quarter period → +90° about +y
+
+    // A quarter turn about +y: (x,y,z,w) = (0, sin45, 0, cos45). A rider's stored local point
+    // maps through this, which is what makes it orbit rather than spin in place.
+    const pose = loaded.basePose(disc.colliderHandle)!
+    expect(pose.rotation.y).toBeCloseTo(Math.SQRT1_2, 5)
+    expect(pose.rotation.w).toBeCloseTo(Math.SQRT1_2, 5)
+    expect(pose.position.y).toBeCloseTo(0, 6) // spins in place, does not translate
     world.free()
   })
 

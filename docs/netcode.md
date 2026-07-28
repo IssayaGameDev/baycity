@@ -89,3 +89,16 @@ Colyseus message layer instead.
 - `CharacterTuning` (speed, jump apex, gravity, accel/stop times, air control) — Roblox-derived
   defaults, live-tunable in the demo (ADR 0012). Client-side only under client authority.
 - Camera feel (distance, sensitivity) — client-only, tunable in the demo.
+- **Platform carry** — standing on a moving piece tracks it exactly (translation and spin), and
+  walking on it composes normally. Implemented in the stack, not inherited from the engine; the
+  mechanism and the measurements are in `docs/physics.md`.
+- **Jump momentum: on.** Jumping off a mover adds its velocity (all three axes) to yours, so a fast
+  platform flings you. Walking off inherits nothing. Needs no netcode: behaviors are pure functions
+  of the synced clock, so every client derives the same platform pose, and each client is
+  authoritative over its own body anyway (ADR 0011).
+- **Platform time is fixed-step** (`createSimClock`, `@mp/core`): the level advances exactly one
+  step per sim step, slewing (≤5% of a tick) to track `serverNow()`. Reading the wall clock inside
+  the tick makes the platforms stall whenever the loop runs several ticks in one wake while the
+  character keeps advancing a full step each.
+- **Open:** whether a rotating platform should also turn which way you face. Riders orbit correctly;
+  facing does not follow. Turntable in the gym at `z = -20`.

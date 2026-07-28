@@ -7,7 +7,7 @@ import {
   type LocalController,
   type LocalWorld,
 } from '@mp/client'
-import { clamp, startFixedLoop, type EntityId, type Vec3 } from '@mp/core'
+import { clamp, createSimClock, startFixedLoop, type EntityId, type Vec3 } from '@mp/core'
 import {
   decodePong,
   decodeRoster,
@@ -48,7 +48,9 @@ import { createPauseMenu } from './pauseMenu'
 import { localParkourPersistence } from './persistence'
 import { showcase } from './showcase'
 
-const SERVER_URL = `ws://${location.hostname}:9200`
+// Relay endpoint. Defaults to the dev host on :9200. `?server=wss://host` overrides it, so a
+// tunnelled page (served from a different origin than the relay) can point at its own relay URL.
+const SERVER_URL = new URLSearchParams(location.search).get('server') ?? `ws://${location.hostname}:9200`
 
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector<T>(sel)!
 const canvas = $<HTMLCanvasElement>('#view')
@@ -164,7 +166,14 @@ const worldMove = (): { x: number; z: number } => {
 }
 
 // --- debug pane ---
-const pane = new Pane({ title: 'Debug' })
+// Own host element with an explicit stacking order: the Pixi UI canvas is at z-index 10, and
+// with tweakpane's default wrapper the pause screen covered the pane — i.e. it was unreachable
+// exactly when the mouse is free (during play the game holds pointer lock). Dev tooling stays
+// on top of the game UI.
+const paneHost = document.createElement('div')
+paneHost.style.cssText = 'position:fixed;top:8px;right:8px;width:256px;z-index:100'
+document.body.appendChild(paneHost)
+const pane = new Pane({ title: 'Debug', container: paneHost })
 const cam = pane.addFolder({ title: 'Camera' })
 cam.addBinding(params, 'camDistance', { min: 3, max: 14, step: 0.5, label: 'distance' })
 cam.addBinding(params, 'sensitivity', { min: 0.0005, max: 0.006, step: 0.0005, label: 'sensitivity' })
@@ -191,6 +200,7 @@ rp.addBinding(renderParams, 'bloom').on('change', (e) => {
 rp.addBinding(renderParams, 'bloomStrength', { min: 0, max: 1.5, step: 0.05, label: 'bloom str' }).on('change', (e) => {
   postfx.bloom.strength = e.value
 })
+
 
 // --- netcode (Colyseus rooms, ADR 0013) ---
 const clock = createClockSync()
@@ -271,15 +281,23 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   requestRespawn = respawn // let the pause menu's Restart reach it
 
   // This local sim IS the truth for our own character (client-authoritative, ADR 0011).
+  // Clock-driven pieces advance one fixed step per fixed step, tracking the synced server
+  // clock by slewing. Reading `serverNow()` directly here would stall the platforms whenever
+  // the loop runs several ticks in one wake, while the character kept advancing a full step
+  // each — the platform-carry jitter (see @mp/core simClock).
+  const simClock = createSimClock({ tickMs: TICK_DT * 1000, reference: () => clock.serverNow() })
+
   const local: LocalWorld = {
     applyInput: (cmd) => {
       // Two-phase step so the character resolves against the platforms' CURRENT positions,
       // not last tick's: (A) advance clock-driven pieces on the synced clock and step so they
       // move, (B) step the character against them — the controller's depenetration + snap-to-
       // ground then carry it up a rising platform and push it off a sweeping bar.
-      loaded?.update(clock.serverNow())
+      // The piece we are riding is posed without velocity so only our own carry moves us; every
+      // other piece keeps its velocity so it can still shove us (the spinning bar). See the loader.
+      loaded?.update(simClock.tick(), char.base?.colliderHandle)
       world.step(TICK_DT) // (A) platforms move
-      stepCharacter(char, cmd, TICK_DT, tuning)
+      stepCharacter(char, cmd, TICK_DT, tuning, loaded?.basePose) // rides whatever it stands on
       world.step(TICK_DT) // (B) character resolves against the moved platforms
       lastSimTickAt = performance.now()
     },
@@ -318,15 +336,17 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
       const move = worldMove()
       if (move.x !== 0 || move.z !== 0) ownFacing = Math.atan2(move.x, move.z)
       controller!.step(move.x, move.z, keys.has('Space'))
+
       const p = controller!.state().get(id)
       if (p) {
         room?.sendBytes(NET_CHANNEL, new Uint8Array(encodeState(p)))
         // Real contact: the colliders the capsule pushed against this tick.
         const hits = new Set(char.body.collisions())
-        // Checkpoint touched → it becomes the respawn point (persisted).
+        // Checkpoint touched → it becomes the respawn point (persisted). Progress only
+        // advances: touching an earlier checkpoint never lowers your saved index.
         for (let i = 0; i < checkpointTriggers.length; i++) {
           const t = checkpointTriggers[i]!
-          if (hits.has(t.colliderHandle)) {
+          if (hits.has(t.colliderHandle) && i > playerState.checkpoint) {
             playerState.checkpoint = i
             persistence.save(playerState)
             respawnPos = { x: t.position.x, y: t.position.y + STAND_OFFSET, z: t.position.z }

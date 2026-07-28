@@ -62,10 +62,10 @@ describe('greybox kit — loads into a world', () => {
 
   it('a moving platform instantiates and moves on the clock', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLevel(world, levelOf(movingPlatform({ axis: { x: 0, y: 1, z: 0 }, amplitude: 2, periodMs: 4000 })))
+    const loaded = instantiateLevel(world, levelOf(movingPlatform({ axis: { x: 0, y: 1, z: 0 }, distance: 2, periodMs: 4000 })))
     loaded.update(0)
-    const y0 = loaded.visuals[0]!.position.y
-    loaded.update(1000)
+    const y0 = loaded.visuals[0]!.position.y // home (at rest)
+    loaded.update(2000) // half period → far end (peak travel)
     expect(Math.abs(loaded.visuals[0]!.position.y - y0)).toBeGreaterThan(1)
     world.free()
   })

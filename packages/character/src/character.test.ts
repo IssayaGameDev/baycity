@@ -1,8 +1,8 @@
-import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
+﻿import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import type { InputCommand } from '@mp/net'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { addCharacter, DEFAULT_TUNING, playerSpawn, stepCharacter, TICK_DT } from './character'
+import { addCharacter, DEFAULT_TUNING, playerSpawn, stepCharacter, TICK_DT, type PlatformPoseLookup } from './character'
 
 const cmd = (moveX: number, moveZ: number, jump = false): InputCommand => ({ moveX, moveZ, jump })
 
@@ -42,7 +42,7 @@ describe('character controller', () => {
     expect(moved.x).toBeGreaterThan(still.x + 1)
   })
 
-  it('jump apex ≈ the configured jump height (v₀ = √(2gh))', () => {
+  it('jump apex â‰ˆ the configured jump height (vâ‚€ = âˆš(2gh))', () => {
     const world = makeWorld()
     const c = addCharacter(world, playerSpawn(1000))
     for (let i = 0; i < 60; i++) {
@@ -76,6 +76,24 @@ describe('character controller', () => {
       world.step(TICK_DT)
     }
     expect(Math.abs(c.vx)).toBeLessThan(0.05)
+    world.free()
+  })
+
+  // Platform carry has its own suite (`platformCarry.test.ts`) — riding, elevators, turntables,
+  // jump momentum, and leaving a platform. Kept out of here so this file stays about locomotion.
+
+  it('gains nothing from a jump off static ground', () => {
+    const world = makeWorld()
+    const c = addCharacter(world, playerSpawn(1000))
+    const noPlatforms: PlatformPoseLookup = () => undefined // static geometry has no pose to ride
+    for (let i = 0; i < 30; i++) {
+      stepCharacter(c, cmd(0, 0), TICK_DT, DEFAULT_TUNING, noPlatforms)
+      world.step(TICK_DT)
+    }
+    stepCharacter(c, cmd(0, 0, true), TICK_DT, DEFAULT_TUNING, noPlatforms)
+    world.step(TICK_DT)
+    expect(c.vx).toBe(0)
+    expect(c.vz).toBe(0)
     world.free()
   })
 

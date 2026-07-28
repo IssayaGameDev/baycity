@@ -13,5 +13,6 @@ export type {
   PhysicsWorldOptions,
   CharacterOptions,
   CharacterBody,
+  GroundContact,
 } from './world'
 export { initPhysics, createPhysicsWorld } from './world'

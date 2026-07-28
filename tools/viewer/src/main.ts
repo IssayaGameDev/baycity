@@ -10,7 +10,7 @@ import {
   type CharacterTuning,
 } from '@mp/character'
 import { instantiateLevel, type LoadedLevel, type VisualItem } from '@mp/content'
-import { startFixedLoop, type LoopHandle, type Vec3 } from '@mp/core'
+import { createSimClock, startFixedLoop, type LoopHandle, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
   addLevel,
@@ -198,16 +198,18 @@ const startPlay = (): void => {
     : { x: 0, y: 3, z: 0 }
   char = addCharacter(world, spawnPoint)
   charMesh.visible = true
+  // One fixed step of platform time per fixed step — see @mp/core simClock.
+  const simClock = createSimClock({ tickMs: TICK_DT * 1000, reference: () => performance.now() })
   playLoop = startFixedLoop({
     tickRateHz: TICK_RATE_HZ,
     onTick: () => {
       if (world === null || loaded === null || char === null) return
       // Two-phase: move clock-driven pieces first, then resolve the character against them
       // (so it rides moving platforms / gets pushed by the bar). Matches the game.
-      loaded.update(performance.now())
+      loaded.update(simClock.tick(), char.base?.colliderHandle) // only the ridden piece is frozen
       world.step(TICK_DT) // (A) platforms move
       const m = worldMove()
-      stepCharacter(char, { moveX: m.x, moveZ: m.z, jump: keys.has('Space') }, TICK_DT, tuning)
+      stepCharacter(char, { moveX: m.x, moveZ: m.z, jump: keys.has('Space') }, TICK_DT, tuning, loaded.basePose)
       world.step(TICK_DT) // (B) character resolves against them
       if (char.body.translation().y < loaded.config.fallY) {
         char.body.setPosition(spawnPoint)

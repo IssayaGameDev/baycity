@@ -35,6 +35,20 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
   applies a collision-resolved translation and returns `{ grounded }`; the caller owns vertical
   velocity (gravity/jump). `collisions()` returns the collider handles the capsule contacted
   during the last `move` — **gameplay triggers key off these** (real contact, not distance; ADR 0014).
+- `CharacterBody.probeGround()` → `GroundContact | undefined` — a downward ray from the capsule
+  centre (`castRayAndGetNormal`, own collider excluded), rejected if the surface normal is steeper
+  than the 50° climb angle. Returns which collider is underfoot, the hit point, and the normal.
+  Separate from `move` on purpose: the controller only reports contacts it actually resolved, and
+  its `grounded` flag flickers false while resting, so anything needing footing *every* tick
+  (platform carry) asks here instead. Reach below the feet is the **snap-to-ground distance** — the
+  controller will hold the capsule to ground that far away, so ground that far away is its footing,
+  and it must exceed how far a surface moves in one tick (a platform descending at 3 m/s drops
+  0.1 m per tick; a tighter margin loses the floor and the rider bounce-falls after it).
+- `CharacterOptions.offset` / `snapToGround` / `autostep` — controller collision parameters, so its
+  behaviour can be probed rather than guessed at. Defaults are the values above.
+- `move` returns `applied`, the translation actually resolved. It differs from what was asked
+  wherever the step was blocked or slid, and it is how a caller can tell what the controller did.
+  `move` also **retries once** when it discards an entire step while resting (see `CONTACT_NUDGE`).
 
 `rapier3d-compat`'s inlined WASM makes the same wrapper work in the browser and Node.
 
@@ -53,6 +67,41 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
   current positions, so depenetration carries it up a rising platform and off a sweeping bar, and
   snap-to-ground holds it on a descending one. See `modes/parkour` and the viewer's play loop;
   covered by `world.test.ts`.
+- **Platform carry (`@mp/character` movement base + `@mp/content` frozen posing).** Riding a moving
+  piece is implemented here, the way engines do it — Unreal's movement base, Godot's platform
+  floor, Quake's ground entity. The character stores which collider it stands on plus its position
+  *in that surface's frame*, and each tick asks where that local point has moved to; the difference
+  goes to the controller together with the character's own movement. Deriving the position from the
+  frame rather than accumulating a delta is what makes it drift-free.
+  Verified by `character/src/platformCarry.test.ts` (12 cases) and end-to-end on the real level by
+  `modes/parkour/src/gym.test.ts`: worst single-tick slip **< 5 mm** at 1/3/4.5/9 m/s, no creep over
+  8 s, turntable riders orbit at constant radius, elevator feet stay within 15 cm.
+
+  Four things it depends on, each of which was a real failure when violated:
+  1. **The ridden piece — and only that one — is posed with zero derived velocity** (set the pose
+     *and* target the same pose; pass `CharacterState.base?.colliderHandle` to `LoadedLevel.update`).
+     A kinematic body with a velocity makes the controller add that velocity to a rider itself, on
+     *some* ticks only (strictly all-or-nothing, ~13% dropped on a 4 m platform, worse the smaller
+     the collider), so riding cannot be built on top of it; frozen, the controller contributes
+     exactly nothing (measured: one distinct value, zero) and the piece still travels the same
+     distance. Every other piece **keeps** its velocity, because that velocity is also what makes a
+     moving piece *push* a character it sweeps into — freezing all of them made the spinning bar
+     pass straight through the player. Pinned by `gym.test.ts` ("shoved sideways by the spinning
+     bar").
+  2. **The base is held by `probeGround`, not by `grounded`.** The controller's flag reports false
+     for isolated ticks while resting; releasing the base on it costs a full tick of ride, which is
+     the once-or-twice-a-second lurch.
+  3. **Only the horizontal is handed to the controller as movement; the vertical is the surface's
+     alone, with gravity suppressed while riding.** Gravity fighting a rising platform loses by the
+     difference each tick and the rider is left behind (measured: falls to y ≈ −1085).
+  4. **The ride is never a teleport.** Moving the collider behind the controller's back leaves
+     Rapier's query pipeline stale and `computeColliderMovement` then resolves to *nothing* — the
+     character silently cannot walk, and gets pushed through walls.
+- Jumping off a mover inherits its velocity (the ride distance over dt) — the engine hands over
+  nothing here either. See `docs/netcode.md` for the feel values.
+- Platform time advances **one fixed step per sim step** (`createSimClock`): a multi-tick loop wake
+  otherwise stalls the platform while the character keeps advancing. The loader also primes its
+  first step to zero motion, so a mid-cycle start is never reported as travel.
 - Correctness covered by `packages/physics/src/world.test.ts`: gravity drop/rest, fixed-body
   placement, kinematic obstacles, character grounding/walls, initial + kinematic rotation, and
   contact reporting (the resting collider is reported, an untouched one is not).

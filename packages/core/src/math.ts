@@ -58,6 +58,10 @@ export const axisAngleToQuat = (axis: Vec3, angle: number): Quat => {
   return { x: (axis.x / len) * s, y: (axis.y / len) * s, z: (axis.z / len) * s, w: Math.cos(angle / 2) }
 }
 
+/** Inverse of a unit quaternion — the opposite rotation. Used to express a world-space point
+ * in a rotated frame (`rotateVec3(conjQuat(q), p - origin)`). */
+export const conjQuat = (q: Quat): Quat => ({ x: -q.x, y: -q.y, z: -q.z, w: q.w })
+
 /** Hamilton product `a·b` — the rotation that applies `b` first, then `a`. */
 export const mulQuat = (a: Quat, b: Quat): Quat => ({
   x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,

@@ -40,6 +40,10 @@ export const validateLevel = (data: unknown): Level => {
       throw new LevelError(`${at}: prefab '${prefab}' is not in level.prefabs`)
     if (!isObj(transform) || !isVec3(transform.position))
       throw new LevelError(`${at}.transform.position: expected a Vec3`)
+    if (transform.rotation !== undefined && !isVec3(transform.rotation))
+      throw new LevelError(`${at}.transform.rotation: expected a Vec3`)
+    if (transform.scale !== undefined && !isVec3(transform.scale))
+      throw new LevelError(`${at}.transform.scale: expected a Vec3`)
   })
   return data as unknown as Level
 }

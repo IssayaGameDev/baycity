@@ -16,11 +16,14 @@ import {
 } from '@mp/content'
 
 /**
- * Throwaway kit sampler (content pipeline C2/C3 validation — NOT the real level; that's
- * Kodjo's design). Lays every kit piece + both generators out on a ground plane so the
- * polished renderer and clock-driven behaviors are visible in one place: ramps tilt, the
- * moving platform oscillates, the bar spins, stairs/spiral are generated, markers glow.
- * Delete once the viewer (C4) can pick pieces directly.
+ * The test gym — NOT designed content (that's Kodjo's). Two jobs:
+ *
+ * 1. Kit sampler (rows at z ≈ 0 … 16): every kit piece + both generators, so the polished
+ *    renderer and clock-driven behaviors are visible in one place.
+ * 2. Platform-carry bench (rows at z = -20 and z = -28): the cases that only work if the
+ *    character rides the surface underfoot — horizontal travel along both axes, a turntable
+ *    (off-centre = orbit), and a fast mover whose inherited velocity is the *only* way to
+ *    clear the last gap.
  */
 export const showcase: Level = {
   id: 'kit-sampler',
@@ -50,5 +53,33 @@ export const showcase: Level = {
     { prefab: checkpointPad(), transform: { position: vec3(1, 0.75, -10) } },
     { prefab: goalPad(), transform: { position: vec3(8, 0.75, -10) } },
     { prefab: hazardPad(), transform: { position: vec3(15, 2.6, -10) } },
+
+    // ---- carry bench, row A (z = -20): ride it, don't slip off -------------------------
+    // Board from the ground (platform tops sit 1 m up — one jump).
+    { prefab: platform({ width: 4, depth: 4 }), transform: { position: vec3(-18, 0.75, -20) } },
+    // Travels 8 m along +x and back over 6 s (peak ≈ 4.2 m/s — faster than a walk, so
+    // standing still on it is unmistakable). Stand still: you should go with it.
+    { prefab: movingPlatform({ width: 4, depth: 4, axis: vec3(1, 0, 0), distance: 8, periodMs: 6000 }), transform: { position: vec3(-13, 0.75, -20) } },
+    // Step off onto solid ground mid-bench (carry must stop the moment you leave).
+    { prefab: platform({ width: 4, depth: 4 }), transform: { position: vec3(-2, 0.75, -20) } },
+    // Same again across +z, to catch an axis-specific mistake.
+    { prefab: movingPlatform({ width: 4, depth: 4, axis: vec3(0, 0, 1), distance: 6, periodMs: 5000 }), transform: { position: vec3(4, 0.75, -20) } },
+    // Turntable: one turn per 8 s. On the axis nothing happens; at the rim (r ≈ 3.5 m) you
+    // are swept ≈ 2.7 m/s. Tests the rotational half of carry — and whether facing should
+    // turn with it (open question).
+    {
+      prefab: platform({ width: 8, depth: 8, thickness: 0.4, style: 'moving' }),
+      transform: { position: vec3(14, 0.75, -20) },
+      behavior: { kind: 'rotate', axis: vec3(0, 1, 0), periodMs: 8000 },
+    },
+
+    // ---- carry bench, row B (z = -28): jump momentum ----------------------------------
+    { prefab: platform({ width: 4, depth: 4 }), transform: { position: vec3(-14, 0.75, -28) } },
+    // 12 m of travel in 4 s → peak ≈ 9.4 m/s, double the run speed. Ride to the far end and
+    // jump: the inherited velocity is what gets you across.
+    { prefab: movingPlatform({ width: 4, depth: 4, axis: vec3(1, 0, 0), distance: 12, periodMs: 4000 }), transform: { position: vec3(-10, 0.75, -28) } },
+    // Sits 7 m past the mover's far end (x = 2) — a standing jump reaches ≈ 5.4 m, so this
+    // is only clearable with the platform's speed. If you can't land it, momentum is broken.
+    { prefab: platform({ width: 5, depth: 5 }), transform: { position: vec3(9, 0.75, -28) } },
   ],
 }

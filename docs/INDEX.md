@@ -40,11 +40,11 @@ reversed it); ball demo retired (tag `m10`); world/controller relocated out of `
 
 ## Built
 
-- `core` — math (incl. quaternion helpers), entity model, fixed-timestep loop, transport interface.
+- `core` — math (incl. quaternion helpers), entity model, fixed-timestep loop, `createSimClock` (fixed-step content time, slewed to a reference clock), transport interface.
 - `net` — binary codecs (v7): snapshot (delta + quantized), welcome, state, ping/pong, roster; quantization utils. `NET_CHANNEL` is the Colyseus channel they ride.
-- `physics` — Rapier3d wrapper: dynamic/fixed/kinematic bodies (position + rotation), **kinematic character controller** (with contact reporting), headless + browser.
-- `character` — the stack-level kinematic character controller (`stepCharacter`, `CharacterTuning`; ADR 0012), mode-agnostic. Relocated out of `@mp/server/tps`.
-- `content` — data-driven content: schema (prefab/level/collider/marker/behavior/visual), validation, the **loader** (`instantiateLevel`), the greybox **kit** + generators. Headless, no rendering. ADR 0014.
+- `physics` — Rapier3d wrapper: dynamic/fixed/kinematic bodies (position + rotation), **kinematic character controller** (contact reporting + a downward `probeGround`), headless + browser.
+- `character` — the stack-level kinematic character controller (`stepCharacter`, `CharacterTuning`; ADR 0012), mode-agnostic. Relocated out of `@mp/server/tps`. **Platform carry** (movement base): rides a moving piece by keeping its position in that surface's frame (`PlatformPoseLookup`), and a jump off a mover inherits its velocity. Paired with the loader's frozen posing — see `docs/physics.md`.
+- `content` — data-driven content: schema (prefab/level/collider/marker/behavior/visual), validation, the **loader** (`instantiateLevel`; `update(now, riddenCollider?)` poses the ridden piece without velocity and exposes `basePose` so riders can track it), the greybox **kit** + generators. Headless, no rendering. ADR 0014.
 - `server` — **Colyseus** `Server` (`startServer()`) hosting `ParkourRoom`: client-authoritative relay (per-client delta snapshots, no simulation, no schema), auto-join, roster/names, clock-sync ping/pong. Content-free.
 - `client` — `colyseus.js` transport (`joinOrCreate`), interpolation, local authoritative controller (`localController`), clock sync, input abstraction (`.` headless + `./dom` adapters).
 - `render-three` — WebGL2 stage + the polished greybox pipeline (IBL, ACES, soft shadows, GTAO/SMAA/bloom, style→material, level-view); re-exports THREE + OrbitControls.

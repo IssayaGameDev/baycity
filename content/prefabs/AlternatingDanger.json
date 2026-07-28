@@ -1,0 +1,223 @@
+{
+  "id": "FastElevator",
+  "pieces": [
+    {
+      "collider": {
+        "kind": "box",
+        "halfExtents": {
+          "x": 1.5,
+          "y": 0.15,
+          "z": 1.5
+        }
+      },
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0.5
+        },
+        "scale": {
+          "x": 0.5,
+          "y": 2,
+          "z": 1
+        }
+      }
+    },
+    {
+      "collider": {
+        "kind": "box",
+        "halfExtents": {
+          "x": 1.5,
+          "y": 0.15,
+          "z": 1.5
+        }
+      },
+      "transform": {
+        "position": {
+          "x": 1.5,
+          "y": 0,
+          "z": 0.5
+        },
+        "scale": {
+          "x": 0.5,
+          "y": 2,
+          "z": 1
+        }
+      },
+      "trigger": "hazard",
+      "visual": {
+        "kind": "primitive",
+        "style": "hazard"
+      }
+    },
+    {
+      "collider": {
+        "kind": "box",
+        "halfExtents": {
+          "x": 1.5,
+          "y": 0.15,
+          "z": 1.5
+        }
+      },
+      "transform": {
+        "position": {
+          "x": 3,
+          "y": 0,
+          "z": 0.5
+        },
+        "scale": {
+          "x": 0.5,
+          "y": 2,
+          "z": 1
+        }
+      }
+    },
+    {
+      "collider": {
+        "kind": "box",
+        "halfExtents": {
+          "x": 1.5,
+          "y": 0.15,
+          "z": 1.5
+        }
+      },
+      "transform": {
+        "position": {
+          "x": 6,
+          "y": 0,
+          "z": 0.5
+        },
+        "scale": {
+          "x": 0.5,
+          "y": 2,
+          "z": 1
+        }
+      }
+    },
+    {
+      "collider": {
+        "kind": "box",
+        "halfExtents": {
+          "x": 1.5,
+          "y": 0.15,
+          "z": 1.5
+        }
+      },
+      "transform": {
+        "position": {
+          "x": 4.5,
+          "y": 0,
+          "z": 0.5
+        },
+        "scale": {
+          "x": 0.5,
+          "y": 2,
+          "z": 1
+        }
+      },
+      "trigger": "hazard",
+      "visual": {
+        "kind": "primitive",
+        "style": "hazard"
+      }
+    },
+    {
+      "collider": {
+        "kind": "box",
+        "halfExtents": {
+          "x": 1.5,
+          "y": 0.15,
+          "z": 1.5
+        }
+      },
+      "transform": {
+        "position": {
+          "x": 7.5,
+          "y": 0,
+          "z": 0.5
+        },
+        "scale": {
+          "x": 0.5,
+          "y": 2,
+          "z": 1
+        }
+      },
+      "trigger": "hazard",
+      "visual": {
+        "kind": "primitive",
+        "style": "hazard"
+      }
+    },
+    {
+      "collider": {
+        "kind": "box",
+        "halfExtents": {
+          "x": 1.5,
+          "y": 0.15,
+          "z": 1.5
+        }
+      },
+      "transform": {
+        "position": {
+          "x": 9,
+          "y": 0,
+          "z": 0.5
+        },
+        "scale": {
+          "x": 0.5,
+          "y": 2,
+          "z": 1
+        }
+      }
+    },
+    {
+      "collider": {
+        "kind": "box",
+        "halfExtents": {
+          "x": 1.5,
+          "y": 0.15,
+          "z": 1.5
+        }
+      },
+      "transform": {
+        "position": {
+          "x": 12,
+          "y": 0,
+          "z": 0.5
+        },
+        "scale": {
+          "x": 0.5,
+          "y": 2,
+          "z": 1
+        }
+      }
+    },
+    {
+      "collider": {
+        "kind": "box",
+        "halfExtents": {
+          "x": 1.5,
+          "y": 0.15,
+          "z": 1.5
+        }
+      },
+      "transform": {
+        "position": {
+          "x": 10.5,
+          "y": 0,
+          "z": 0.5
+        },
+        "scale": {
+          "x": 0.5,
+          "y": 2,
+          "z": 1
+        }
+      },
+      "trigger": "hazard",
+      "visual": {
+        "kind": "primitive",
+        "style": "hazard"
+      }
+    }
+  ]
+}

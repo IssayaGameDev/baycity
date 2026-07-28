@@ -1,6 +1,6 @@
-import { vec3, type Vec3 } from '@mp/core'
+import { conjQuat, rotateVec3, vec3, type Quat, type Vec3 } from '@mp/core'
 import type { InputCommand } from '@mp/net'
-import { type CharacterBody, type PhysicsWorld } from '@mp/physics'
+import { type CharacterBody, type CharacterOptions, type PhysicsWorld } from '@mp/physics'
 
 /**
  * Kinematic character-controller library (stack-level, mode-agnostic — ADR pending).
@@ -32,15 +32,48 @@ export const DEFAULT_TUNING: CharacterTuning = {
   airControl: 0.3,
 }
 
+/** World pose of a moving surface — the frame a rider's position is kept in. */
+export interface PlatformFrame {
+  readonly position: Vec3
+  readonly rotation: Quat
+}
+
+/**
+ * Current pose of the moving piece owning `colliderHandle`, or `undefined` when that collider
+ * is static (nothing to ride). `@mp/content`'s `LoadedLevel.basePose` implements this; the
+ * character stays content-agnostic (docs/workspace.md §Dependency laws).
+ */
+export type PlatformPoseLookup = (colliderHandle: number) => PlatformFrame | undefined
+
+/** The surface the character is riding, and where it stands **in that surface's frame**. Keeping the
+ * position in local space is what makes riding exact: each tick the character moves to where that
+ * local point has gone, so translation and spin are both followed and no per-tick error
+ * accumulates. Held for as long as the ground probe still finds that collider underfoot — not on
+ * the controller's `grounded` flag, which flickers false for isolated ticks while resting, and
+ * releasing the base on it costs a whole tick of ride (the once-or-twice-a-second lurch). */
+export interface MovementBase {
+  colliderHandle: number
+  localPos: Vec3
+}
+
 /** Character state beyond position: horizontal velocity (momentum + accel), vertical
- * velocity, and grounded. */
+ * velocity, grounded, and the moving surface it is riding (if any). */
 export interface CharacterState {
   body: CharacterBody
   vx: number
   vz: number
   vy: number
   grounded: boolean
+  /** Set while standing on a moving piece; `undefined` on static ground or in the air. */
+  base: MovementBase | undefined
 }
+
+const addVec = (a: Vec3, b: Vec3): Vec3 => vec3(a.x + b.x, a.y + b.y, a.z + b.z)
+const subVec = (a: Vec3, b: Vec3): Vec3 => vec3(a.x - b.x, a.y - b.y, a.z - b.z)
+/** World point → the frame's local space. */
+const toLocal = (f: PlatformFrame, world: Vec3): Vec3 => rotateVec3(conjQuat(f.rotation), subVec(world, f.position))
+/** Local point → world space under the frame's current pose. */
+const toWorld = (f: PlatformFrame, local: Vec3): Vec3 => addVec(f.position, rotateVec3(f.rotation, local))
 
 /** Deterministic fallback spawn spread around the origin by id (used when a level has
  * no spawn marker). */
@@ -49,12 +82,24 @@ export const playerSpawn = (playerId: number): Vec3 => {
   return vec3(Math.cos(a) * 5, 2, Math.sin(a) * 5)
 }
 
+/** `addCharacter` with the controller's collision parameters overridden — for experiments and
+ * tests that need to probe the controller's behaviour. Modes should use `addCharacter`. */
+export const addCharacterWith = (world: PhysicsWorld, spawn: Vec3, opts: Partial<CharacterOptions>): CharacterState => ({
+  body: world.addCharacter({ position: spawn, radius: CHAR_RADIUS, halfHeight: CHAR_HALF_HEIGHT, ...opts }),
+  vx: 0,
+  vz: 0,
+  vy: 0,
+  grounded: false,
+  base: undefined,
+})
+
 export const addCharacter = (world: PhysicsWorld, spawn: Vec3): CharacterState => ({
   body: world.addCharacter({ position: spawn, radius: CHAR_RADIUS, halfHeight: CHAR_HALF_HEIGHT }),
   vx: 0,
   vz: 0,
   vy: 0,
   grounded: false,
+  base: undefined,
 })
 
 // Move `cur` toward `target` by at most `maxDelta` (frame-rate-independent accel).
@@ -68,15 +113,58 @@ const approach = (cur: number, target: number, maxDelta: number): number => {
  * - Jump: fixed-apex impulse, v₀ = √(2·g·h) → reaches exactly `jumpHeight`.
  * - Ground: eases toward the input over `groundAccelTime`; brakes over `groundStopTime`.
  * - Air: `airControl`× steering, momentum otherwise preserved.
+ * - Jumping off a moving platform inherits its velocity, so a jump from a fast mover is flung
+ *   along with it (Kodjo's call). Walking off inherits nothing.
+ *
+ * **Riding a moving platform is ours to do** (`platforms`), the way engines do it — Unreal's
+ * movement base, Godot's platform floor, Quake's ground entity. The character remembers which
+ * surface it stands on and its position *in that surface's frame*, and each tick is placed where
+ * that local point has moved to. Because the position is re-derived from the frame rather than
+ * nudged by a delta, it cannot drift and cannot double-apply.
+ *
+ * This requires that nothing else also moves the character. Rapier's controller will happily add a
+ * kinematic ground body's velocity itself — but only on some ticks — so the piece being ridden is
+ * posed with zero derived velocity, which keeps the controller out of it. Pass
+ * `CharacterState.base?.colliderHandle` to `LoadedLevel.update` to arrange that; every *other*
+ * piece keeps its velocity, which is what still lets a moving piece shove a character it sweeps
+ * into. The two halves belong together: see `update` in the loader.
+ *
+ * Call after the platforms have been advanced and stepped for this tick, so the ground probe and
+ * `platforms` both see where they are now.
  */
 export const stepCharacter = (
   state: CharacterState,
   cmd: InputCommand,
   dt: number,
   tuning: CharacterTuning = DEFAULT_TUNING,
+  platforms?: PlatformPoseLookup,
 ): void => {
-  if (cmd.jump && state.grounded) state.vy = Math.sqrt(2 * tuning.gravity * tuning.jumpHeight)
-  state.vy -= tuning.gravity * dt
+  // --- footing ------------------------------------------------------------------------------
+  // Decided by an explicit downward probe, not the controller's `grounded` flag: that flag
+  // reports false for isolated ticks while resting (measured on a moving platform), which would
+  // drop jumps and release the ride. The probe runs first, from where the character is now — the
+  // platforms have already moved this tick — so `frame` is the pose to measure against.
+  const under = state.body.probeGround()
+  const frame = under !== undefined && platforms !== undefined ? platforms(under.colliderHandle) : undefined
+  // Where the character *should* be: its stored local point under the surface's new pose. The
+  // difference from where it is now is handed to the controller together with the character's own
+  // movement below, and never applied as a teleport — moving the collider behind the controller's
+  // back leaves Rapier's query pipeline stale, and `computeColliderMovement` then resolves to
+  // nothing (the character silently cannot walk, and gets shoved through walls).
+  let ride: Vec3 | undefined
+  if (frame !== undefined && under !== undefined && state.base?.colliderHandle === under.colliderHandle) {
+    ride = subVec(toWorld(frame, state.base.localPos), state.body.translation())
+  }
+
+  const jumping = cmd.jump && state.grounded
+  const riding = ride !== undefined && !jumping
+
+  if (jumping) state.vy = Math.sqrt(2 * tuning.gravity * tuning.jumpHeight)
+  // While riding, the surface owns our vertical. Gravity must not fight a rising platform: it
+  // loses by the difference each tick, and the character is left behind and drops off the edge
+  // (measured: applying gravity while riding a 3 m/s elevator falls through to y ≈ −1085).
+  if (riding) state.vy = 0
+  else state.vy -= tuning.gravity * dt
 
   const len = Math.hypot(cmd.moveX, cmd.moveZ)
   const scale = len > 1 ? 1 / len : 1
@@ -95,7 +183,43 @@ export const stepCharacter = (
     state.vz = approach(state.vz, targetZ, rate * dt)
   }
 
-  const { grounded } = state.body.move({ x: state.vx * dt, y: state.vy * dt, z: state.vz * dt })
-  state.grounded = grounded
-  if (grounded && state.vy < 0) state.vy = 0
+  // Jumping off a mover inherits its velocity: the distance it would have carried us, over dt.
+  // Added *after* the horizontal solve — this tick still counts as grounded, so doing it earlier
+  // would let the ground brake (no input → stop in `groundStopTime`) eat most of it again. The
+  // ride is then dropped for this tick: velocity carries the motion instead, and doing both would
+  // move us twice.
+  if (jumping && ride !== undefined) {
+    state.vx += ride.x / dt
+    state.vy += ride.y / dt
+    state.vz += ride.z / dt
+  }
+
+  // One translation for the controller to resolve: our own movement plus the surface's. The ridden
+  // piece is posed without velocity, so the controller adds nothing of its own for that surface and
+  // this is the only thing carrying us. The vertical while riding is the surface's alone — see the
+  // gravity note above.
+  const desired = {
+    x: state.vx * dt + (riding ? ride!.x : 0),
+    y: riding ? ride!.y : state.vy * dt,
+    z: state.vz * dt + (riding ? ride!.z : 0),
+  }
+
+  const { grounded, applied } = state.body.move(desired)
+  // Either signal counts as footing: the probe covers the controller's flicker, and the controller
+  // covers surfaces the probe's narrow ray misses (standing on an edge, wedged against geometry).
+  // The probe was taken before this step ran, so it must not vouch for a tick that jumped away.
+  state.grounded = grounded || (under !== undefined && !jumping)
+  if (state.grounded && state.vy < 0) state.vy = 0
+
+  // Re-anchor in the base's frame. `move` only sets the body's target for this tick's step, so the
+  // final position is where we are plus what it resolved. Doing this every tick is what lets
+  // walking (and being pushed, and being blocked by a wall) change where on the platform we stand,
+  // while the ride itself stays exact. A jump releases the base outright; otherwise it lives as
+  // long as the probe still finds that surface underfoot.
+  if (frame !== undefined && under !== undefined && !jumping) {
+    const finalPos = addVec(state.body.translation(), applied)
+    state.base = { colliderHandle: under.colliderHandle, localPos: toLocal(frame, finalPos) }
+  } else {
+    state.base = undefined
+  }
 }

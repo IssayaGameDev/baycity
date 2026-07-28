@@ -1,10 +1,9 @@
 import { Application, Container, Graphics, Rectangle, Text, type FederatedPointerEvent, type FederatedWheelEvent } from 'pixi.js'
 
 /**
- * Reusable Pixi UI widgets (ADR 0015 — PixiJS is the game-UI layer). Placeholder-skinned
- * with `Graphics` for now; each widget isolates its drawing so it can later be re-skinned
- * with Layer Lab sprites (`NineSliceSprite` for panels/buttons, `Sprite` for the handle/✕)
- * without touching layout or behavior. Browser-only (DOM lib).
+ * Reusable Pixi UI widgets (ADR 0015 — PixiJS is the game-UI layer). Drawn with `Graphics`;
+ * each widget isolates its drawing so the visual style can be changed in one place without
+ * touching layout or behavior. Browser-only (DOM lib).
  */
 
 // ---- overlay -----------------------------------------------------------------

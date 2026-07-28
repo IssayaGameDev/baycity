@@ -186,7 +186,7 @@
           "y": 1,
           "z": 0
         },
-        "amplitude": 1.2,
+        "distance": 1.2,
         "periodMs": 4000
       }
     }
