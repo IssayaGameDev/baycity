@@ -1,10 +1,10 @@
 import { addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, stepCharacter, TICK_DT } from '@mp/character'
-import { instantiateLevel, validateLevel } from '@mp/content'
-import { createSimClock, vec3, type Vec3 } from '@mp/core'
+import { curvedBeam, instantiateLevel, validateLevel, type PrefabInstance } from '@mp/content'
+import { createSimClock, eulerToQuat, mulQuat, rotateVec3, vec3, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { showcase } from './showcase'
+import { courses, showcase } from './showcase'
 
 /**
  * End-to-end on the real level, through the real loader, stepped exactly as `main.ts` steps it:
@@ -24,6 +24,218 @@ const MOVERS = [
 ] as const
 
 const near = (a: Vec3, b: Vec3, tol: number): boolean => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) < tol
+
+/**
+ * Measured maximum edge-to-edge gap as a function of the rise between take-off and landing
+ * (packages/character envelope runs, tuning 5.5 m/s / 3 m apex). Linear between samples; the trade
+ * is ≈0.35 m of reach per metre climbed, and the same bought back by dropping.
+ */
+const MAX_GAP: ReadonlyArray<readonly [rise: number, gap: number]> = [
+  [-2, 4.1],
+  [-1, 3.9],
+  [0, 3.5],
+  [0.5, 3.4],
+  [1, 3.2],
+  [1.5, 3.0],
+  [2, 2.8],
+  [2.5, 2.5],
+]
+
+const maxGapForRise = (rise: number): number => {
+  if (rise <= MAX_GAP[0]![0]) return MAX_GAP[0]![1]
+  const last = MAX_GAP[MAX_GAP.length - 1]!
+  if (rise >= last[0]) return last[1]
+  for (let i = 1; i < MAX_GAP.length; i++) {
+    const [r1, g1] = MAX_GAP[i]!
+    const [r0, g0] = MAX_GAP[i - 1]!
+    if (rise <= r1) return g0 + ((g1 - g0) * (rise - r0)) / (r1 - r0)
+  }
+  return last[1]
+}
+
+/** World-space AABB of every piece of an instance, with the instance transform applied. */
+const pieceBoxes = (inst: PrefabInstance): { min: Vec3; max: Vec3 }[] => {
+  const prefab = inst.prefab
+  if (typeof prefab === 'string') return []
+  const q = eulerToQuat(inst.transform.rotation ?? vec3(0, 0, 0))
+  const origin = inst.transform.position
+  return prefab.pieces.map((p) => {
+    const col = p.collider
+    const pq = mulQuat(q, eulerToQuat(p.transform.rotation ?? vec3(0, 0, 0)))
+    const centre = rotateVec3(q, p.transform.position)
+    // Local corner set: a box's eight corners, or a convex hull's own points.
+    const corners: Vec3[] =
+      col.kind === 'convex'
+        ? [...col.points]
+        : col.kind === 'box'
+          ? [-1, 1].flatMap((sx) => [-1, 1].flatMap((sy) => [-1, 1].map((sz) => vec3(col.halfExtents.x * sx, col.halfExtents.y * sy, col.halfExtents.z * sz))))
+          : [vec3(0, 0, 0)]
+    let min = vec3(Infinity, Infinity, Infinity)
+    let max = vec3(-Infinity, -Infinity, -Infinity)
+    for (const local of corners) {
+      const c = rotateVec3(pq, local)
+      const w = vec3(origin.x + centre.x + c.x, origin.y + centre.y + c.y, origin.z + centre.z + c.z)
+      min = vec3(Math.min(min.x, w.x), Math.min(min.y, w.y), Math.min(min.z, w.z))
+      max = vec3(Math.max(max.x, w.x), Math.max(max.y, w.y), Math.max(max.z, w.z))
+    }
+    return { min, max }
+  })
+}
+
+/** Horizontal gap between two AABBs — 0 when they overlap or touch. */
+const boxGap = (a: { min: Vec3; max: Vec3 }, b: { min: Vec3; max: Vec3 }): number => {
+  const dx = Math.max(0, a.min.x - b.max.x, b.min.x - a.max.x)
+  const dz = Math.max(0, a.min.z - b.max.z, b.min.z - a.max.z)
+  return Math.hypot(dx, dz)
+}
+
+/**
+ * Every jump the level asks for must be inside the measured envelope. This exists because it is
+ * easy to author an obstacle that simply cannot be cleared — the carry bench originally had a pad
+ * placed on a reach number that was wrong by 2 m — and playing the whole course by hand to find
+ * out is slow.
+ */
+describe('parkour gym: authored jumps are clearable', () => {
+  // The seam between one course piece and the next is exactly where the first version of this file
+  // was blind: it checked jumps *within* each pad chain and never the transitions between
+  // instances, which is how a 5.4 m step to the final pad shipped.
+  it('every seam between consecutive course pieces is crossable', () => {
+    for (const [name, course] of Object.entries(courses)) {
+      for (let i = 1; i < course.length; i++) {
+        const from = pieceBoxes(course[i - 1]!)
+        const to = pieceBoxes(course[i]!)
+        expect(from.length && to.length, `${name}[${i}]: no boxes`).toBeTruthy()
+
+        // Nearest pair of pieces across the seam, and the height it lands at.
+        let best = Infinity
+        let rise = 0
+        for (const a of from)
+          for (const b of to) {
+            const g = boxGap(a, b)
+            if (g < best) {
+              best = g
+              rise = b.max.y - a.max.y // top surface to top surface
+            }
+          }
+        expect(best, `${name} seam ${i - 1}→${i}: ${best.toFixed(2)} m at rise ${rise.toFixed(1)} m`).toBeLessThan(
+          maxGapForRise(rise),
+        )
+      }
+    }
+  })
+
+  it('every pad-to-pad jump in the level is inside the measured envelope', () => {
+    // Pads belonging to one chain: same z-line group, ordered along x. Read straight off the level
+    // data so the check follows whatever showcase.ts says.
+    const chains = showcase.instances.filter((i) => typeof i.prefab !== 'string' && i.prefab.id === 'pad-chain')
+    expect(chains.length).toBeGreaterThan(0)
+
+    for (const inst of chains) {
+      const prefab = inst.prefab as { id: string; pieces: { collider: { kind: string; halfExtents?: { x: number; y: number; z: number } }; transform: { position: { x: number; y: number; z: number } } }[] }
+      const pads = prefab.pieces.map((p) => ({ pos: p.transform.position, half: p.collider.halfExtents! }))
+      for (let i = 1; i < pads.length; i++) {
+        const a = pads[i - 1]!
+        const b = pads[i]!
+        // Edge-to-edge along the direction of travel, plus the lateral offset: the real jump.
+        const alongX = b.pos.x - a.pos.x - a.half.x - b.half.x
+        const lateral = Math.abs(b.pos.z - a.pos.z)
+        const jump = Math.hypot(Math.max(alongX, 0), lateral)
+        const rise = b.pos.y - a.pos.y
+        const limit = maxGapForRise(rise)
+        expect(jump, `${prefab.id} pad ${i - 1}→${i}: ${jump.toFixed(2)} m at rise ${rise.toFixed(1)} m (limit ${limit.toFixed(2)} m)`).toBeLessThan(limit)
+      }
+    }
+  })
+
+  it('the carry bench momentum gap needs the platform, and is reachable with it', () => {
+    // Mover: 4 m pad, home x = -10, travels 12 m → far edge at x = -10 + 12 + 2 = 4.
+    const moverFarEdge = 4
+    const catchPad = showcase.instances.find(
+      (i) => Math.abs(i.transform.position.z - -28) < 0.01 && i.transform.position.x > 5,
+    )
+    expect(catchPad).toBeDefined()
+    const nearEdge = catchPad!.transform.position.x - 2.5 // 5 m pad
+    const gap = nearEdge - moverFarEdge
+    expect(gap).toBeGreaterThan(maxGapForRise(0)) // a plain jump must NOT cover it
+    expect(gap).toBeLessThan(6) // riding at ≈9.4 m/s for 0.66 s does
+  })
+})
+
+describe('parkour gym: curved beams are walkable', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  // Steers along the arc's tangent each tick, which is what a player does with the mouse. Passing
+  // means the swept prisms really are continuous underfoot — a notch at any join would drop the
+  // character, and a box chain of the same subdivision has notches at every one.
+  for (const [label, radius, sweepDeg, width] of [
+    ['gentle', 12, 90, 1.2],
+    ['tight', 6, 120, 0.8],
+    ['hairpin', 4, 180, 0.8],
+  ] as const) {
+    it(`walks a ${label} arc (r=${radius} m, ${sweepDeg}°, ${width} m wide) end to end`, () => {
+      const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+      const thickness = 0.5
+      const prefab = curvedBeam({ radius, sweepDeg, width, thickness })
+      instantiateLevel(world, {
+        id: 'arc',
+        config: { fallBehavior: 'physical-fall', fallY: -20 },
+        instances: [{ prefab, transform: { position: vec3(0, 0, 0) } }],
+      })
+      const c = addCharacter(world, vec3(0, thickness / 2 + STAND + 0.02, 0))
+
+      const total = (sweepDeg * Math.PI) / 180
+      let reached = 0
+      let lowest = Infinity
+      for (let t = 0; t < 900; t++) {
+        const p = c.body.translation()
+        // Angular position around the arc centre (0, 0, radius), and the tangent there.
+        const u = Math.atan2(p.x, radius - p.z)
+        const tangent = { x: Math.cos(u), z: Math.sin(u) }
+        stepCharacter(c, { moveX: tangent.x, moveZ: tangent.z, jump: false }, TICK_DT)
+        world.step(TICK_DT)
+        const now = c.body.translation()
+        lowest = Math.min(lowest, now.y)
+        reached = Math.max(reached, Math.atan2(now.x, radius - now.z))
+        if (reached >= total - 0.05) break
+      }
+      expect(reached, `only got ${((reached / total) * 100).toFixed(0)}% round the arc`).toBeGreaterThan(total - 0.05)
+      expect(lowest, 'fell through a join between segments').toBeGreaterThan(-1)
+      world.free()
+    })
+  }
+})
+
+describe('parkour gym: the beam course is continuous', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  // Walking a straight line is enough to cross every beam (measured: all widths down to 0.2 m are
+  // traversable dead centre), so this passes only if the pieces really do abut — no hole to drop
+  // through, no misplaced rotation leaving a beam running the wrong way.
+  it('can be walked from the slab edge to the far end without falling', () => {
+    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+    const loaded = instantiateLevel(world, validateLevel(showcase))
+    const c = addCharacter(world, vec3(0, STAND + 0.02, 31)) // on the entry pad, tops flush at y = 0
+
+    let lowest = Infinity
+    for (let t = 0; t < 600; t++) {
+      loaded.update(t * TICK_DT * 1000, c.base?.colliderHandle)
+      world.step(TICK_DT)
+      stepCharacter(c, { moveX: 0, moveZ: 1, jump: false }, TICK_DT, undefined, loaded.basePose)
+      world.step(TICK_DT)
+      const p = c.body.translation()
+      lowest = Math.min(lowest, p.y)
+      if (p.z > 88) break
+    }
+    const p = c.body.translation()
+    expect(p.z, 'did not reach the far end of the beam course').toBeGreaterThan(88)
+    expect(lowest, 'fell through a hole between pieces').toBeGreaterThan(-1)
+    world.free()
+  })
+})
 
 describe('parkour gym: riding the authored platforms', () => {
   beforeAll(async () => {

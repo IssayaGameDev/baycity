@@ -21,6 +21,13 @@ export type ShapeDesc =
   | { readonly kind: 'ball'; readonly radius: number }
   | { readonly kind: 'cuboid'; readonly halfExtents: Vec3 }
   | { readonly kind: 'capsule'; readonly halfHeight: number; readonly radius: number }
+  /**
+   * Convex polyhedron through `points` (its convex hull). For authored shapes a box cannot
+   * represent — a segment swept along a curve has non-parallel end faces, so a chain of these
+   * meets exactly where a chain of boxes leaves notches. Convex, so the character controller
+   * depenetrates properly, unlike a trimesh which has no interior.
+   */
+  | { readonly kind: 'convex'; readonly points: readonly Vec3[] }
 
 export interface BodyOptions {
   readonly position: Vec3
@@ -157,13 +164,31 @@ const CHAR_OFFSET = 0.02
  */
 const CONTACT_NUDGE = 0.0005
 
+const descFor = (shape: ShapeDesc): RAPIER.ColliderDesc => {
+  switch (shape.kind) {
+    case 'ball':
+      return RAPIER.ColliderDesc.ball(shape.radius)
+    case 'cuboid':
+      return RAPIER.ColliderDesc.cuboid(shape.halfExtents.x, shape.halfExtents.y, shape.halfExtents.z)
+    case 'capsule':
+      return RAPIER.ColliderDesc.capsule(shape.halfHeight, shape.radius)
+    case 'convex': {
+      const flat = new Float32Array(shape.points.length * 3)
+      shape.points.forEach((p, i) => {
+        flat[i * 3] = p.x
+        flat[i * 3 + 1] = p.y
+        flat[i * 3 + 2] = p.z
+      })
+      // Returns null when the points are degenerate (coplanar, coincident, fewer than four).
+      const cd = RAPIER.ColliderDesc.convexHull(flat)
+      if (cd === null) throw new Error(`convex collider: ${shape.points.length} points do not form a hull`)
+      return cd
+    }
+  }
+}
+
 const makeCollider = (shape: ShapeDesc, restitution: number | undefined) => {
-  let cd =
-    shape.kind === 'ball'
-      ? RAPIER.ColliderDesc.ball(shape.radius)
-      : shape.kind === 'cuboid'
-        ? RAPIER.ColliderDesc.cuboid(shape.halfExtents.x, shape.halfExtents.y, shape.halfExtents.z)
-        : RAPIER.ColliderDesc.capsule(shape.halfHeight, shape.radius)
+  let cd = descFor(shape)
   if (restitution !== undefined) cd = cd.setRestitution(restitution)
   return cd
 }

@@ -18,14 +18,20 @@ export interface CharacterTuning {
   moveSpeed: number // m/s target ground speed (Roblox WalkSpeed 16 studs ≈ 4.5)
   jumpHeight: number // m apex above launch (Roblox JumpHeight 7.2 studs ≈ 2)
   gravity: number // m/s² downward magnitude (Roblox 196.2 studs/s² ≈ 55; high = snappy)
+  // Kodjo's values are deliberately above the Roblox reference: see DEFAULT_TUNING.
   groundAccelTime: number // s to reach full speed from rest
   groundStopTime: number // s to brake to a stop when input is released
   airControl: number // 0..1 air steering strength relative to ground accel
 }
 
+/**
+ * Kodjo's call. Faster and higher than the Roblox reference (4.5 / 2), which widens the obstacle
+ * envelope: 3.6 m maximum gap and 3.1 m maximum step-up, measured. Gravity is unchanged, so the
+ * higher apex also means a longer hang — 0.66 s of air per jump against 0.54 s before.
+ */
 export const DEFAULT_TUNING: CharacterTuning = {
-  moveSpeed: 4.5,
-  jumpHeight: 2,
+  moveSpeed: 5.5,
+  jumpHeight: 3,
   gravity: 55,
   groundAccelTime: 0.1,
   groundStopTime: 0.08,

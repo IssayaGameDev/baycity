@@ -1,7 +1,7 @@
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { checkpointPad, gapJump, goalPad, hazardPad, ledge, movingPlatform, platform, ramp, rotatingBar, spawnPad } from './kit'
+import { beam, checkpointPad, gapJump, goalPad, hazardPad, ledge, movingPlatform, platform, ramp, rotatingBar, spawnPad } from './kit'
 import { instantiateLevel } from './loader'
 import type { Level, Prefab } from './types'
 
@@ -17,6 +17,13 @@ describe('greybox kit — shapes', () => {
     const p = platform({ width: 6, depth: 2, thickness: 0.4 })
     expect(p.pieces).toHaveLength(1)
     expect(p.pieces[0]!.collider).toEqual({ kind: 'box', halfExtents: { x: 3, y: 0.2, z: 1 } })
+  })
+
+  it('beam is long along +x and narrow along +z', () => {
+    const b = beam({ length: 14, width: 0.4 })
+    expect(b.pieces).toHaveLength(1)
+    // width is the narrowness (z), length the distance you have to hold the line (x).
+    expect(b.pieces[0]!.collider).toEqual({ kind: 'box', halfExtents: { x: 7, y: 0.25, z: 0.2 } })
   })
 
   it('ledge is a thinner, smaller platform preset', () => {

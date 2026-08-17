@@ -1,5 +1,6 @@
 import type { ColliderDesc } from '@mp/content'
 import * as THREE from 'three'
+import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js'
 
 /**
  * The greybox visual language (content pipeline C3). One colour per `style` key —
@@ -49,5 +50,9 @@ export const geometryForCollider = (c: ColliderDesc): THREE.BufferGeometry => {
       return new THREE.SphereGeometry(c.radius, 28, 18)
     case 'cylinder':
       return new THREE.CylinderGeometry(c.radius, c.radius, c.halfHeight * 2, 28)
+    case 'convex':
+      // Same points Rapier hulls for collision, so the mesh and the collider are one description
+      // rather than two that have to be kept in agreement (ADR 0017).
+      return new ConvexGeometry(c.points.map((p) => new THREE.Vector3(p.x, p.y, p.z)))
   }
 }

@@ -23,14 +23,15 @@ export { validateLevel, LevelError } from './validate'
 export type { LoadedLevel, WorldMarker, WorldTrigger, VisualItem } from './loader'
 export { instantiateLevel } from './loader'
 
-export { KIT_STYLE, platform, ledge, ramp, gapJump, movingPlatform, rotatingBar, spawnPad, checkpointPad, goalPad, hazardPad } from './kit'
+export { KIT_STYLE, platform, ledge, beam, ramp, gapJump, movingPlatform, rotatingBar, spawnPad, checkpointPad, goalPad, hazardPad } from './kit'
 export type {
   PlatformOpts,
+  BeamOpts,
   RampOpts,
   GapJumpOpts,
   MovingPlatformOpts,
   RotatingBarOpts,
   PadOpts,
 } from './kit'
-export { staircase, spiralStaircase } from './generators'
-export type { StaircaseOpts, SpiralStaircaseOpts } from './generators'
+export { staircase, spiralStaircase, padChain, curvedBeam, curvedBeamExit } from './generators'
+export type { StaircaseOpts, SpiralStaircaseOpts, PadChainOpts, CurvedBeamOpts } from './generators'

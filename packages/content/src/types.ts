@@ -20,15 +20,21 @@ export interface Transform {
 }
 
 /**
- * Gameplay collision primitive — simple and **separate from visuals** (crisp and cheap
- * for the kinematic character controller). A ramp is just a `box` with a rotated
- * Transform. Never a trimesh from the art mesh.
+ * Gameplay collision primitive — crisp and cheap for the kinematic character controller. A ramp is
+ * just a `box` with a rotated Transform. Still never a trimesh from an art mesh (ADR 0014): every
+ * shape here is authored, convex, and cheap to query.
+ *
+ * `convex` is the exception to "primitive", added because some authored surfaces genuinely are not
+ * boxes: a segment swept along a curve has **non-parallel end faces**, so a chain of boxes can only
+ * approximate it and leaves notches at the joins no matter how finely it is divided (ADR 0017).
+ * The renderer draws these from the same `points`, so collider and mesh cannot disagree.
  */
 export type ColliderDesc =
   | { readonly kind: 'box'; readonly halfExtents: Vec3 }
   | { readonly kind: 'cylinder'; readonly halfHeight: number; readonly radius: number }
   | { readonly kind: 'capsule'; readonly halfHeight: number; readonly radius: number }
   | { readonly kind: 'ball'; readonly radius: number }
+  | { readonly kind: 'convex'; readonly points: readonly Vec3[] }
 
 /**
  * The swappable visual layer. `primitive` greyboxes the collider shape (now); `gltf`

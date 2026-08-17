@@ -256,6 +256,59 @@ describe('instantiateLevel', () => {
     world.free()
   })
 
+  it('a convex collider becomes a real solid the character rests on', () => {
+    const world = createPhysicsWorld() // character drives its own vertical movement
+    // A wedge: the end faces are not parallel, which is exactly what a box cannot express.
+    const points = [
+      vec3(-2, -0.25, -2),
+      vec3(-2, -0.25, 2),
+      vec3(-2, 0.25, -2),
+      vec3(-2, 0.25, 2),
+      vec3(2, -0.25, -1),
+      vec3(2, -0.25, 1),
+      vec3(2, 0.25, -1),
+      vec3(2, 0.25, 1),
+    ]
+    const loaded = instantiateLevel(world, {
+      id: 'convex',
+      config: { fallBehavior: 'physical-fall', fallY: -10 },
+      instances: [{ prefab: { id: 'wedge', pieces: [{ collider: { kind: 'convex', points }, transform: { position: vec3(0, 0, 0) } }] }, transform: { position: vec3(0, 0, 0) } }],
+    })
+    expect(loaded.visuals[0]!.collider.kind).toBe('convex')
+
+    const char = world.addCharacter({ position: vec3(0, 3, 0), radius: 0.4, halfHeight: 0.5 })
+    for (let i = 0; i < 120; i++) {
+      char.move({ x: 0, y: -0.05, z: 0 })
+      world.step(1 / 60)
+    }
+    // Landed on the top face (y = 0.25) rather than falling through it.
+    expect(char.translation().y).toBeGreaterThan(0.25)
+    expect(char.translation().y).toBeLessThan(2)
+    world.free()
+  })
+
+  it('bakes scale into convex points exactly, unlike ball and capsule', () => {
+    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+    const points = [vec3(-1, -1, -1), vec3(1, -1, -1), vec3(-1, 1, -1), vec3(1, 1, -1), vec3(-1, -1, 1), vec3(1, -1, 1), vec3(-1, 1, 1), vec3(1, 1, 1)]
+    const loaded = instantiateLevel(world, {
+      id: 'scaled-convex',
+      config: { fallBehavior: 'physical-fall', fallY: -10 },
+      instances: [
+        {
+          prefab: { id: 'c', pieces: [{ collider: { kind: 'convex', points }, transform: { position: vec3(0, 0, 0) } }] },
+          transform: { position: vec3(0, 0, 0), scale: vec3(2, 3, 4) },
+        },
+      ],
+    })
+    const col = loaded.visuals[0]!.collider
+    expect(col.kind).toBe('convex')
+    if (col.kind !== 'convex') return
+    // Every point scaled per-axis — no approximation, which is the ball/capsule limitation.
+    expect(col.points[0]).toEqual(vec3(-2, -3, -4))
+    expect(col.points[7]).toEqual(vec3(2, 3, 4))
+    world.free()
+  })
+
   it('rotates child piece positions by the instance rotation', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
     const loaded = instantiateLevel(world, {

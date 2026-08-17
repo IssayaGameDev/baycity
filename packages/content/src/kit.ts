@@ -54,6 +54,32 @@ export const platform = (o: PlatformOpts = {}): Prefab => {
 export const ledge = (o: PlatformOpts = {}): Prefab =>
   platform({ id: o.id ?? 'ledge', width: o.width ?? 2, depth: o.depth ?? 1, thickness: o.thickness ?? 0.3, ...(o.style !== undefined ? { style: o.style } : {}) })
 
+export interface BeamOpts {
+  id?: string
+  length?: number // x extent — how far you have to hold the line (m)
+  width?: number // z extent — the narrowness (m)
+  thickness?: number
+  style?: string
+}
+
+/**
+ * A long narrow walkway along +x. A `platform` preset, but the defining parameter is `width`:
+ * the player gets **width / 2 + 0.25 m** of lateral margin, because the capsule's rounded bottom
+ * overhangs an edge by a quarter-metre before letting go (measured — see docs/obstacles.md). So
+ * 0.4 m of beam is ±0.45 m of tolerance, not ±0.2 m, and thinning the geometry buys much less
+ * difficulty than it looks like it should.
+ *
+ * Rotate the instance 90° about +y to run it along z.
+ */
+export const beam = (o: BeamOpts = {}): Prefab =>
+  platform({
+    id: o.id ?? 'beam',
+    width: o.length ?? 14,
+    depth: o.width ?? 0.8,
+    thickness: o.thickness ?? 0.5,
+    style: o.style ?? KIT_STYLE.platform,
+  })
+
 export interface RampOpts {
   id?: string
   width?: number // z extent (m)

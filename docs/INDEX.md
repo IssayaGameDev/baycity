@@ -27,6 +27,7 @@ reversed it); ball demo retired (tag `m10`); world/controller relocated out of `
 - [workspace.md](workspace.md) — monorepo layout (packages/modes/tools), dependency laws, conventions, scripts, how to run.
 - [netcode.md](netcode.md) — client authority, Colyseus rooms + relay, per-client snapshots, interpolation, clock sync, roster/names. Records the game-feel values.
 - [physics.md](physics.md) — Rapier3d wrapper API (bodies, rotation, kinematic character controller + collisions), timestep, determinism stance.
+- [obstacles.md](obstacles.md) — measured movement envelope (max gap vs rise, beam margin, slope/curve limits), the rules those numbers impose, and the obstacle vocabulary built so far.
 - [protocol.md](protocol.md) — binary wire format v7 (snapshot / welcome / state / ping / pong / roster) over a Colyseus channel.
 - [budgets.md](budgets.md) — the five budgets (SEED §5), how they're measured, latest load numbers.
 - Content schema/loader/kit are self-documenting via `@mp/content` types + ADR 0014 (no prose doc).
@@ -37,6 +38,7 @@ reversed it); ball demo retired (tag `m10`); world/controller relocated out of `
   - [0010](adr/0010-tps-character-controller.md) TPS controller + pluggable game · [0011](adr/0011-client-authoritative.md) **client-authoritative (reverses SEED §4)** · [0012](adr/0012-roblox-like-character-controller.md) Roblox-like kinematic controller
   - [0013](adr/0013-colyseus-rooms.md) **Colyseus rooms foundation** · [0014](adr/0014-content-pipeline.md) **data-driven content pipeline + modes layering**
   - [0015](adr/0015-ui-rendering.md) **PixiJS for all game UI** · [0016](adr/0016-localization.md) **localization (`@mp/i18n`)**
+  - [0017](adr/0017-convex-colliders.md) **convex colliders for authored swept surfaces** (widens ADR 0014's primitive-only rule)
 
 ## Built
 

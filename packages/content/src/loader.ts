@@ -113,6 +113,9 @@ const scaleCollider = (c: ColliderDesc, s: Vec3): ColliderDesc => {
       return { kind: 'capsule', halfHeight: c.halfHeight * s.y, radius: c.radius * ((s.x + s.z) / 2) }
     case 'cylinder':
       return { kind: 'cylinder', halfHeight: c.halfHeight * s.y, radius: c.radius * ((s.x + s.z) / 2) }
+    case 'convex':
+      // Exact under any scale, unlike ball/capsule — a scaled convex hull is still that hull.
+      return { kind: 'convex', points: c.points.map((p) => mul(p, s)) }
   }
 }
 
@@ -124,6 +127,8 @@ const toShape = (c: ColliderDesc): ShapeDesc => {
       return { kind: 'capsule', halfHeight: c.halfHeight, radius: c.radius }
     case 'ball':
       return { kind: 'ball', radius: c.radius }
+    case 'convex':
+      return { kind: 'convex', points: c.points }
     case 'cylinder':
       throw new Error('cylinder collider not supported yet (needs a physics-wrapper shape)')
   }
