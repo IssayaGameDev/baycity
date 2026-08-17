@@ -20,6 +20,8 @@ interface Rendered {
   last: Vec3
   /** Smoothed derived planar speed (m/s), for peers. */
   speed: number
+  /** Smoothed derived vertical velocity (m/s), for peers. */
+  vy: number
   yaw: number
   label?: THREE.Sprite
   labelText?: string
@@ -32,6 +34,12 @@ export interface CharacterPlacement {
   yaw: number | null
   /** Locomotion speed (m/s); `null` derives it from movement. */
   speed: number | null
+  /**
+   * World vertical velocity (m/s), excluding anything carrying the character; `null` derives it from the
+   * rendered position. What the joint lag needs to trail a jump — without it there is no vertical trail at
+   * all, since a platform ride is the only other vertical signal.
+   */
+  vy: number | null
   grounded: boolean
   rising: boolean
   /**
@@ -72,7 +80,7 @@ export const createCharacterViews = (scene: THREE.Scene, gait: GaitTuning = DEFA
       scene.add(rig.root)
       // Seed from the entity id so a session is reproducible, and so two characters do not roll the
       // same sequence of steps — the variation is still per movement, not a fixed personality.
-      r = { rig, animator: createAnimator(gait, (id as number) * 2654435761), last: { ...position }, speed: 0, yaw: 0 }
+      r = { rig, animator: createAnimator(gait, (id as number) * 2654435761), last: { ...position }, speed: 0, vy: 0, yaw: 0 }
       chars.set(id, r)
     }
     return r
@@ -91,17 +99,21 @@ export const createCharacterViews = (scene: THREE.Scene, gait: GaitTuning = DEFA
   }
 
   return {
-    upsert: (id, { isSelf, position, yaw, speed, grounded, rising, carry, name }, dt) => {
+    upsert: (id, { isSelf, position, yaw, speed, vy, grounded, rising, carry, name }, dt) => {
       const r = charFor(id, isSelf, position)
 
       // Derived motion, from the interpolated render position.
       const dx = position.x - r.last.x
+      const dy = position.y - r.last.y
       const dz = position.z - r.last.z
       const moved = Math.hypot(dx, dz)
       if (dt > 0) {
         const observed = moved / dt
         // Light smoothing: interpolation is smooth but snapshot boundaries still step a little.
         r.speed += (observed - r.speed) * Math.min(1, dt * 12)
+        // Same for the vertical, which peers have no other source for. Signed, unlike the speed, and it
+        // includes any platform carrying them — separating the two needs a quantity the wire does not have.
+        r.vy += (dy / dt - r.vy) * Math.min(1, dt * 12)
       }
       if (moved > 1e-4) r.yaw = Math.atan2(dx, dz)
       r.last = { ...position }
@@ -111,6 +123,7 @@ export const createCharacterViews = (scene: THREE.Scene, gait: GaitTuning = DEFA
           position,
           yaw: yaw ?? r.yaw,
           speed: speed ?? r.speed,
+          vy: vy ?? r.vy,
           grounded,
           rising,
           carry: carry ?? NO_CARRY,

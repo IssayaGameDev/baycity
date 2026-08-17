@@ -1092,6 +1092,32 @@ describe('createAnimator', () => {
     expect(jitterOf(start), 'a real start must still register').toBeGreaterThan(0.004)
   })
 
+  it('trails vertically through a jump and a fall', () => {
+    // Lost once already, silently: the layer used to difference the world position, which picked up every
+    // vertical source for free, and replacing that with a velocity signal replaced only the horizontal
+    // half. `carry.y` is a platform ride and nothing else, so without `vy` there was no vertical drive at
+    // all and jumps had no trail. This is the test that says so.
+    const at = (vy: number): number => {
+      const a = createAnimator(DEFAULT_GAIT, 3)
+      const stand = { position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }
+      for (let t = 0; t < 1 / DT; t++) a.step(stand, DT)
+      let y = 0
+      let out = 0
+      for (let t = 0; t < 0.4 / DT; t++) {
+        y += vy * DT
+        out = a.step({ position: vec3(0, y, 0), yaw: 0, speed: 0, vy, grounded: false, rising: vy > 0 }, DT).jointOffset.head.y
+      }
+      return out
+    }
+    // Rising, the head is left below its neck; falling, above it. Bounded by the stop either way.
+    expect(at(12), 'rising: the head should hang below the neck').toBeLessThan(-0.02)
+    expect(at(-12), 'falling: it should ride above it').toBeGreaterThan(0.02)
+    expect(Math.abs(at(12))).toBeLessThanOrEqual(DEFAULT_GAIT.headLagMax + 1e-9)
+    // And a platform's ride drives it through the same axis, from `carry.y` instead.
+    const lifted = carried(vec3(0, 4, 0), 0.5)
+    expect(lifted.jointOffset.head.y, 'an elevator starting up should leave the head behind').toBeLessThan(-0.01)
+  })
+
   it('trails the same distance at 60 and 144 fps', () => {
     // A plain `smooth` toward a *moving* target is frame-rate dependent — it treats the target as jumping
     // at the frame boundary and settles at `v·dt·α/(1−α)`, which measured 42 mm at 60 fps against 62 mm at

@@ -271,9 +271,18 @@ change to adopt it.
   shape. The character's total world velocity is already computed exactly for the inertial layer, so it is
   used directly and nothing is differenced. The same warning is written above the inertial layer's own
   derivative, which made this a hazard already documented and then walked into.
-  Two things are deliberately absent from that velocity: the stride's bob, whose contribution to the trail
-  measured ~10 mm and whose analytic rate is not worth carrying; and a jump's vertical velocity, which is
-  not in the animator's input at all, so the joints do not trail vertically while airborne.
+  **Losing the vertical to that change is a mistake worth recording.** Differencing the world position had
+  been picking up every vertical source for free; the velocity signal that replaced it covered only the
+  horizontal half, because `carry.y` is a platform ride and nothing else. Jumps stopped trailing entirely
+  and it was reported as the effect having disappeared. `AnimationInput.vy` now carries the character's own
+  vertical velocity, and the lag's vertical drive is `vy + carry.y` — complementary rather than
+  overlapping, since the controller zeroes `vy` while grounded and hands the vertical to the surface while
+  riding, so a jump is all `vy` and an elevator is all `carry.y`.
+  `vy` is given to the lag and **withheld from the inertial rotations**, deliberately. There the signal
+  would be differentiated, and free fall is not an upward acceleration — it is the absence of a ground
+  reaction. Differentiating `vy` in flight yields a constant −g and would float the arms for the whole arc.
+  Still absent from the velocity: the stride's bob, worth about 10 mm, which would need its rate computed
+  analytically rather than differenced.
   A test drives the animator with a position held for two frames at a time — the 30 Hz-into-60 fps case,
   plus a platform's carry so the per-tick step is as large as the report — and asserts the offset's
   frame-to-frame change stays under the *body's* own, which is 25 mm there because a held position also

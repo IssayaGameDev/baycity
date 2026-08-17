@@ -25,6 +25,21 @@ export interface AnimationInput {
   yaw: number
   /** Planar speed, m/s, **excluding** any platform carrying the character. */
   speed: number
+  /**
+   * World vertical velocity, m/s, **excluding** any platform carrying the character (`CharacterState.vy`).
+   * Omit for none.
+   *
+   * Only the joint-lag layer reads it, and only for the trail: a jump carries the body upward and the head
+   * and arms are late to it. It is deliberately **not** fed to the inertial rotations, because there the
+   * signal would be differentiated, and free fall is not an upward acceleration — it is the absence of a
+   * ground reaction. Differentiating `vy` in flight gives a constant −g and would float the arms for the
+   * whole arc.
+   *
+   * Without this the lag has no vertical drive at all, since `carry.y` is a platform ride and nothing else.
+   * That is how it was lost: the layer used to difference the world position, which picked up every
+   * vertical source for free, and replacing that with a velocity signal replaced only the horizontal half.
+   */
+  vy?: number
   grounded: boolean
   rising: boolean
   /**
@@ -672,8 +687,9 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
       // *going*, and the smoother is a rendering choice about where it looks.
       const locoX = Math.sin(input.yaw) * speed
       const locoZ = Math.cos(input.yaw) * speed
+      // Planar total, for the joint lag below. The vertical is assembled there, because the two layers want
+      // different vertical signals: the lag wants a jump's `vy`, the rotations must not have it.
       const cx = locoX + (input.carry?.x ?? 0)
-      const cy = input.carry?.y ?? 0
       const cz = locoZ + (input.carry?.z ?? 0)
       // Acceleration without differencing anything. For an exponential smoother the derivative of
       // the smoothed value is exactly `(raw − smoothed) · ln2 / halfLife`, so the *gap* between the
@@ -932,18 +948,22 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
       // rather than by differencing a position, and `Lag` for what the earlier root-space attempts got
       // wrong.
       //
-      // Driven by `cx/cy/cz`, the same total world velocity the inertial layer uses: the character's own
-      // locomotion plus anything carrying it. Starting, stopping, turning and a platform's jolt are all in
-      // there. Two things are not, deliberately: the stride's bob, whose contribution to the trail measured
-      // ~10 mm and whose analytic rate is not worth carrying; and a jump's vertical velocity, which is not
-      // in the animator's input at all, so the joints do not trail vertically while airborne.
+      // Driven by the character's total world velocity: its own locomotion and vertical motion, plus
+      // anything carrying it. Starting, stopping, turning, jumping, falling, landing and a platform's jolt
+      // are all in there.
+      //
+      // The vertical is `vy + carry.y` and the two are complementary rather than overlapping: the
+      // controller zeroes `vy` while grounded and hands the vertical to the surface while riding, so a jump
+      // is all `vy` and an elevator is all `carry.y`. One thing is still absent — the stride's bob, worth
+      // about 10 mm, which would need its rate computed analytically rather than differenced.
       const cosY = Math.cos(yaw)
       const sinY = Math.sin(yaw)
+      const worldVy = (input.vy ?? 0) + (input.carry?.y ?? 0)
 
       for (const part of LAG_PARTS) {
         const halfLife = part === 'head' ? tuning.headLagHalfLife : tuning.armLagHalfLife
         const max = part === 'head' ? tuning.headLagMax : tuning.armLagMax
-        const o = follow(part, cx, cy, cz, Math.max(halfLife, 0), max, dt)
+        const o = follow(part, cx, worldVy, cz, Math.max(halfLife, 0), max, dt)
         // World → root (undo the facing) → body (undo the torso), since a joint's position is written in
         // its parent's frame, and every lagging joint's parent is the body.
         pose.jointOffset[part] = rotateVec3(invBody, vec3(o.x * cosY - o.z * sinY, o.y, o.x * sinY + o.z * cosY))

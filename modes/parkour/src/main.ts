@@ -529,6 +529,7 @@ stage.start(() => {
         position: ownPos,
         yaw: ownFacing,
         speed: ownState !== null ? Math.hypot(ownState.vx, ownState.vz) : 0,
+        vy: ownState?.vy ?? 0,
         grounded: ownState?.grounded ?? true,
         rising: (ownState?.vy ?? 0) > 0,
         // Motion we did not ask for — a platform carrying us, a bar shoving us, a wall stopping us.
@@ -550,6 +551,7 @@ stage.start(() => {
           position: e.position,
           yaw: null,
           speed: null,
+          vy: null,
           grounded: (e.flags & STATE_GROUNDED) !== 0,
           rising: (e.flags & STATE_RISING) !== 0,
           carry: null, // not derivable from position alone — see CharacterPlacement.carry
