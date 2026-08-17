@@ -746,13 +746,14 @@ describe('createAnimator', () => {
   it('responds to acceleration, not to being carried at speed', () => {
     // Standing on a train at line speed feels like standing still. A layer keyed to velocity would
     // hold a permanent lean the whole time a platform is moving.
+    // Rotations only. The *translations* legitimately hold a steady trail at a steady carry — a joint lag is
+    // first order and settles at `v·τ` behind whatever is dragging it, exactly as it does when the character
+    // runs. Measured 30 mm at a 3 m/s carry, which is the layer working, not the lean failing to settle.
     const still = carried(vec3(0, 0, 0), 6)
     const cruising = carried(vec3(0, 0, 3), 6)
-    for (const part of PART_NAMES) {
-      const d = tipPosition(cruising, part)
-      const s = tipPosition(still, part)
-      expect(Math.hypot(d.x - s.x, d.y - s.y, d.z - s.z), `${part} should settle back once the speed is steady`).toBeLessThan(2e-3)
-    }
+    for (const part of PART_NAMES)
+      for (const axis of ['x', 'y', 'z', 'w'] as const)
+        expect(Math.abs(cruising.rotation[part][axis] - still.rotation[part][axis]), `${part} should settle back once the speed is steady (${axis})`).toBeLessThan(2e-3)
   })
 
   it('compresses under upward acceleration and never lifts the feet', () => {
@@ -784,7 +785,9 @@ describe('createAnimator', () => {
   })
 
   it('does nothing at all when the layer is off, or when nothing is carrying the character', () => {
-    const off = { ...DEFAULT_GAIT, inertiaStrength: 0 }
+    // Both halves of the response to carry: `inertiaStrength` for the rotations, the two lag half-lives for
+    // the translations. They are separate mechanisms now, so switching one off is not switching carry off.
+    const off = { ...DEFAULT_GAIT, inertiaStrength: 0, headLagHalfLife: 0, armLagHalfLife: 0 }
     const sample = (pose: Pose): number[] => [
       pose.bodyOffset.x,
       pose.bodyOffset.y,
@@ -969,6 +972,124 @@ describe('createAnimator', () => {
     const live = landing(DEFAULT_GAIT, 4)
     const lag = live[live.length - 1]!.jointOffset.head
     expect(Math.hypot(lag.x, lag.y, lag.z), 'idle keeps it alive, but barely').toBeLessThan(6.6e-3)
+  })
+
+  it('does not vibrate when the position arrives at the sim rate', () => {
+    // The bug this exists to prevent, reported from the game: the head and arms shook while moving, worst
+    // on a platform. Position comes from a 30 Hz simulation and this layer runs per rendered frame, so a
+    // one-frame difference of it alternates between zero and a whole tick's travel — a square wave at the
+    // frame rate. The velocity feed-forward that makes the trail frame-rate independent was reading that
+    // difference raw.
+    //
+    // Modelled exactly: the position is held for two 60 fps frames at a time, and a platform's carry is
+    // added on top so the per-tick step is as large as the case that showed it worst.
+    const a = createAnimator(DEFAULT_GAIT, 3)
+    const speed = DEFAULT_GAIT.runSpeed
+    const carry = vec3(4, 0, 0) // a fast mover underfoot, on top of the running
+    let held = vec3(0, 0, 0)
+    let z = 0
+    let x = 0
+    const offsets: Vec3[] = []
+    const bodyOffsets: Vec3[] = []
+    for (let t = 0; t < 4 / DT; t++) {
+      // The sim advances every other rendered frame; between ticks the position does not change at all.
+      if (t % 2 === 0) {
+        z += speed * (2 * DT)
+        x += carry.x * (2 * DT)
+        held = vec3(x, 0, z)
+      }
+      const p = a.step({ position: held, yaw: 0, speed, grounded: true, rising: false, carry }, DT)
+      if (t > 1 / DT) {
+        offsets.push({ ...p.jointOffset.upperArmL })
+        bodyOffsets.push({ ...p.bodyOffset })
+      }
+    }
+    // Frame-to-frame change. Vibration shows up here and nowhere else: a trail that is merely large is
+    // fine, one that reverses every frame is the artefact.
+    const worstJump = (vs: Vec3[]): number => {
+      let worst = 0
+      for (let i = 1; i < vs.length; i++) {
+        const p = vs[i]!
+        const q = vs[i - 1]!
+        worst = Math.max(worst, Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z))
+      }
+      return worst
+    }
+    // Compared against the *body's* own frame-to-frame movement under the same stepped input, rather than
+    // against zero. A held position also freezes the stride phase, so the gait's bob steps by 25 mm a frame
+    // here; the layer cannot be steadier than the body it hangs off. What it must not do is add jitter of
+    // its own, and it does not: 3.9 mm against the body's 25.
+    //
+    // Reading the position difference raw gave 92 mm — a whole tick's travel, alternating in sign every
+    // frame — and 12 mm even after averaging it over 60 ms, since the square wave's amplitude is twice its
+    // mean. Driving from the known velocity removes it by construction.
+    expect(worstJump(offsets), 'the offset must not jitter more than the body it hangs off').toBeLessThan(worstJump(bodyOffsets))
+    expect(worstJump(offsets), 'and must stay small in absolute terms').toBeLessThan(5e-3)
+  })
+
+  it('does not vibrate on a noisy carry while the character stands still', () => {
+    // The second half of the same report: still shaking slightly when carried by a platform and not moving.
+    // `carry` is `(applied − locomotion)/dt` from the controller — a per-tick difference of what the physics
+    // solver resolved, divided by a 33 ms tick, so a few millimetres of contact hash becomes tenths of a m/s.
+    // Modelled here as a carry that alternates every sim tick around its mean.
+    const a = createAnimator(DEFAULT_GAIT, 3)
+    const stand = { position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }
+    let x = 0
+    const offsets: Vec3[] = []
+    for (let t = 0; t < 4 / DT; t++) {
+      // 2 m/s of ride with ±0.3 m/s of hash on it, held for a sim tick at a time.
+      const tick = Math.floor(t / 2)
+      const noisy = 2 + (tick % 2 === 0 ? 0.3 : -0.3)
+      if (t % 2 === 0) x += noisy * (2 * DT)
+      const p = a.step({ ...stand, position: vec3(x, 0, 0), carry: vec3(noisy, 0, 0) }, DT)
+      if (t > 1 / DT) offsets.push({ ...p.jointOffset.upperArmL })
+    }
+    let worst = 0
+    for (let i = 1; i < offsets.length; i++) {
+      const p = offsets[i]!
+      const q = offsets[i - 1]!
+      worst = Math.max(worst, Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z))
+    }
+    // The trail itself is ~29 mm here and must hold steady; only its frame-to-frame change is the artefact.
+    expect(worst, 'a noisy carry must not shake the arm').toBeLessThan(5e-4)
+  })
+
+  it('does not shake the rotations on a noisy carry, but still answers a clean start', () => {
+    // The half of the vibration report that survived fixing the translation, and the more visible half: a
+    // few degrees of arm and head rotation, not a fraction of a millimetre of travel. `carry` is a per-tick
+    // difference out of the physics solver, so it arrives with 30 Hz hash on it, and differentiating scales
+    // that hash by `ln2/window`. Locomotion's 0.03 s window — needed to see a 0.1 s start at all — turned a
+    // quiet platform ride into shake. The two inputs now get their own windows.
+    const jitterOf = (steps: { speed: number; carry: Vec3 }[]): number => {
+      const a = createAnimator(DEFAULT_GAIT, 3)
+      const angles: number[] = []
+      let x = 0
+      let z = 0
+      for (let t = 0; t < steps.length; t++) {
+        const s = steps[t]!
+        x += s.carry.x * DT
+        z += s.speed * DT
+        const p = a.step({ position: vec3(x, 0, z), yaw: 0, speed: s.speed, grounded: true, rising: false, carry: s.carry }, DT)
+        if (t > 1 / DT) angles.push(p.rotation.upperArmL.x)
+      }
+      let worst = 0
+      for (let i = 1; i < angles.length; i++) worst = Math.max(worst, Math.abs(angles[i]! - angles[i - 1]!))
+      return worst
+    }
+
+    // Standing on a 2 m/s ride with ±0.3 m/s of per-tick hash: the arm must be quiet.
+    const noisy = Array.from({ length: Math.round(4 / DT) }, (_, t) => ({ speed: 0, carry: vec3(2 + (Math.floor(t / 2) % 2 === 0 ? 0.3 : -0.3), 0, 0) }))
+    // Under 0.2° of change per frame, against the several degrees this used to shake by.
+    expect(jitterOf(noisy), 'a noisy carry must not shake the arm').toBeLessThan(0.0017)
+
+    // And the sharp window still earns its keep: after a second of standing, a clean 0.1 s ramp to full
+    // speed must move the arm a lot more than that in a single frame.
+    const warmup = Math.round(1.2 / DT)
+    const start = Array.from({ length: warmup + Math.round(0.5 / DT) }, (_, t) => ({
+      speed: t < warmup ? 0 : Math.min(DEFAULT_GAIT.runSpeed, (DEFAULT_GAIT.runSpeed / 0.1) * (t - warmup) * DT),
+      carry: vec3(0, 0, 0),
+    }))
+    expect(jitterOf(start), 'a real start must still register').toBeGreaterThan(0.004)
   })
 
   it('trails the same distance at 60 and 144 fps', () => {

@@ -129,15 +129,16 @@ export interface GaitTuning {
   /** Response half-life (s) — how loose the body is once it has been told to move. */
   inertiaHalfLife: number
   /**
-   * The window the acceleration is *measured* over (s). Separate from the response half-life, and it
-   * has to be: one knob doing both jobs is what made this layer nearly invisible for the motion that
-   * matters most. The controller reaches full speed in 0.1 s, so a 0.12 s measurement window is wider
-   * than the entire event and averages it away — the layer saw 6° of arm lag on a hard start where it
-   * should see tens. A platform ramps over about a second, which is why the fault only ever showed up
-   * away from platforms.
+   * The window the **locomotion** acceleration is measured over (s). Separate from the response half-life,
+   * and it has to be: one knob doing both jobs is what made this layer nearly invisible for the motion that
+   * matters most. The controller reaches full speed in 0.1 s, so a 0.12 s measurement window is wider than
+   * the entire event and averages it away — the layer saw 6° of arm lag on a hard start where it should see
+   * tens.
    *
-   * Keep it at or below the 33 ms sim tick that feeds it. Shorter is more faithful and more twitchy;
-   * `inertiaHalfLife` is where twitch is meant to be taken out, *after* the measurement.
+   * Applies to locomotion only, because locomotion velocity is a *clean* signal: it comes from the
+   * controller's own speed, which ramps smoothly. `carry` is differentiated over a much wider fixed window
+   * instead — see `CARRY_SAMPLE_HALFLIFE` — since it is far noisier and sharing one window between them
+   * means either a blind layer or a shaking one.
    */
   inertiaSampleHalfLife: number
   /** Torso lag weight. */
@@ -362,21 +363,51 @@ const LAG_PARTS = ['head', 'upperArmL', 'upperArmR'] as const
 type LagPart = (typeof LAG_PARTS)[number]
 
 /**
- * One lagging joint: where it currently is in **world** space (`p`), and where its attachment point was
- * last frame (`t`).
+ * One lagging joint: how far behind its attachment point it currently sits (`o`, world space), and the
+ * smoothed world velocity it is being dragged along at (`v`).
  *
- * World, not root, and this is the crux of the whole layer. A joint's position in the body's own frame
- * never changes — a shoulder is bolted to the torso — so interpolating it there converges instantly and
- * renders nothing at all. The attachment point only moves when the *character* moves: walking, turning,
- * jumping, bobbing. That is world motion, and it is what there is to be late to.
- *
- * The previous target is kept so the target's velocity can be measured, which is what makes the trail
- * frame-rate independent — see `follow`.
+ * World space, not root, and this is the crux of the whole layer. A joint's position in the body's own
+ * frame never changes — a shoulder is bolted to the torso — so a filter applied there converges instantly
+ * and renders nothing at all. The attachment point only moves because the *character* moves, and that is
+ * what there is to be late to.
  */
 interface Lag {
-  p: Vec3
-  t: Vec3
+  o: Vec3
+  v: Vec3
 }
+
+/**
+ * How long the driving velocity is averaged over (s).
+ *
+ * Not a feel knob — it exists because of the *input*, on two counts. The velocity arrives from a 30 Hz
+ * simulation while this runs per rendered frame, so it steps rather than ramps. And its carry half is
+ * `(applied − locomotion)/dt` from the controller: a per-tick *difference* of what the physics solver
+ * resolved, so it carries the solver's contact noise, multiplied by 30 by that division. Standing on a
+ * moving platform therefore feeds this a few tenths of a m/s of tick-to-tick hash, which at 0.05 s showed
+ * as a slight vibration in the head and arms even while the character itself was still.
+ *
+ * 0.12 s matches `inertiaHalfLife`, so the translation is filtered as heavily as the rotations that share
+ * the same signal — those pass through two low-passes and never showed the noise. It costs nothing at a
+ * steady speed, where the average is the speed and the trail still settles at exactly `v·τ`; what it costs
+ * is a slightly softer arrival of the trail on a hard start.
+ */
+const LAG_VELOCITY_HALFLIFE = 0.12
+
+/**
+ * The window `carry` is differentiated over (s) — much wider than locomotion's, and set by noise rather
+ * than by feel.
+ *
+ * `CharacterState.carry` is `(applied − locomotion)/dt`: a per-tick *difference* of what the physics solver
+ * resolved, so it inherits the solver's contact hash, and dividing by a 33 ms tick multiplies that by 30.
+ * Standing on a moving platform hands this a few tenths of a m/s of tick-to-tick noise. Differentiating
+ * again scales that by `ln2/window`, so the 0.03 s window that locomotion needs turns a quiet ride into a
+ * few degrees of arm and head shake — which is exactly what it did, reported from the game twice.
+ *
+ * Locomotion can afford a sharp window because its signal is clean; carry cannot. Nothing is lost by
+ * widening this one: a platform's own accelerations play out over about a second, so a 0.12 s window sees
+ * them in full. It is the *noise* that is 30 Hz, not the motion.
+ */
+const CARRY_SAMPLE_HALFLIFE = 0.12
 
 /** Frame-rate-independent smoothing: `cur` moves half the remaining distance every `halfLife`. */
 const smooth = (cur: number, target: number, dt: number, halfLife: number): number =>
@@ -447,16 +478,21 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
   let shiftEase = 0
   let shift = 0
   let idleTimer = 0
-  // Inertia: the smoothed carry velocity, and the acceleration derived from it.
+  // Inertia. Two independent derivative paths, because locomotion is a clean signal and `carry` is a noisy
+  // one: each keeps its own smoothed velocity and its own acceleration, and the two are summed.
+  let locoSmX = 0
+  let locoSmZ = 0
+  let accLocoX = 0
+  let accLocoZ = 0
   let carryX = 0
   let carryY = 0
   let carryZ = 0
-  let accX = 0
-  let accY = 0
-  let accZ = 0
+  let accCarryX = 0
+  let accCarryY = 0
+  let accCarryZ = 0
   // Lagging joints, in world space. Seeded on the first frame from wherever the joints actually are:
   // starting them at the origin would fling every one of them across the world on frame one.
-  const lag = Object.fromEntries(LAG_PARTS.map((n) => [n, { p: vec3(0, 0, 0), t: vec3(0, 0, 0) }])) as Record<LagPart, Lag>
+  const lag = Object.fromEntries(LAG_PARTS.map((n) => [n, { o: vec3(0, 0, 0), v: vec3(0, 0, 0) }])) as Record<LagPart, Lag>
   let lagPrimed = false
 
   // Per-movement variation. Each of these is a multiplier around 1, rolled on an event and then
@@ -513,36 +549,41 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
   }
 
   /**
-   * Interpolate one joint toward the world position of the point it hangs from, and return how far
-   * behind it ended up — in world space, and bounded by `max`.
+   * Advance one joint's trail behind its attachment point, given the **world velocity** that point is
+   * being carried at, and return how far behind it now sits — in world space, bounded by `max`.
    *
-   * Exact for a target moving at a constant velocity across the frame, which is why the previous target
-   * is kept. A plain `smooth` toward a *moving* target treats it as jumping at the frame boundary and
-   * settles at `v·dt·α/(1−α)`, which depends on `dt`: 42 mm at 60 fps against 62 mm at 144 for the same
-   * tuning. This form settles at `v·τ` at any frame rate, which is the continuous answer.
+   * Exact for a constant velocity across the frame, and that is what makes the trail frame-rate
+   * independent. A plain `smooth` toward a *moving* target treats it as jumping at the frame boundary and
+   * settles at `v·dt·α/(1−α)`, which depends on `dt`: 42 mm at 60 fps against 62 mm at 144 for one tuning.
+   * This form settles at `v·τ` at any frame rate, the continuous answer.
+   *
+   * Given the velocity rather than differencing a position, and that is not a convenience — it is the fix
+   * for the head and arms visibly vibrating in game. Position arrives from a 30 Hz simulation while this
+   * runs per rendered frame, so a one-frame difference of it alternates between zero and a whole tick's
+   * travel: a square wave whose amplitude is *twice* the mean, which no affordable amount of smoothing
+   * removes (measured 92 mm of frame-to-frame flip raw, still 12 mm after a 60 ms average). The character's
+   * world velocity is already known exactly — the inertial layer computes it — so nothing needs
+   * differencing at all.
    *
    * First order, so it cannot overshoot: a joint falls behind and catches up, it never swings past. That
    * is the trade this construction makes against a spring, and the reason `max` is a hard stop rather
    * than a damping ratio.
    */
-  const follow = (part: LagPart, wx: number, wy: number, wz: number, halfLife: number, max: number, dt: number): Vec3 => {
+  const follow = (part: LagPart, vx: number, vy: number, vz: number, halfLife: number, max: number, dt: number): Vec3 => {
     const st = lag[part]
     if (!lagPrimed || halfLife <= 0) {
-      // Re-seeded while disabled too, so switching the knob back on does not read one enormous velocity.
-      st.p = vec3(wx, wy, wz)
-      st.t = vec3(wx, wy, wz)
-      if (halfLife <= 0) return vec3(0, 0, 0)
+      st.o = vec3(0, 0, 0)
+      st.v = vec3(0, 0, 0)
+      if (halfLife <= 0) return st.o
     }
+    st.v = vec3(smooth(st.v.x, vx, dt, LAG_VELOCITY_HALFLIFE), smooth(st.v.y, vy, dt, LAG_VELOCITY_HALFLIFE), smooth(st.v.z, vz, dt, LAG_VELOCITY_HALFLIFE))
     const tau = halfLife / LN2
     const alpha = Math.exp(-dt / tau)
-    const vx = dt > 0 ? (wx - st.t.x) / dt : 0
-    const vy = dt > 0 ? (wy - st.t.y) / dt : 0
-    const vz = dt > 0 ? (wz - st.t.z) / dt : 0
-    let ox = -vx * tau + (st.p.x - st.t.x + vx * tau) * alpha
-    let oy = -vy * tau + (st.p.y - st.t.y + vy * tau) * alpha
-    let oz = -vz * tau + (st.p.z - st.t.z + vz * tau) * alpha
+    let ox = -st.v.x * tau + (st.o.x + st.v.x * tau) * alpha
+    let oy = -st.v.y * tau + (st.o.y + st.v.y * tau) * alpha
+    let oz = -st.v.z * tau + (st.o.z + st.v.z * tau) * alpha
     // Bounded as a vector, so a fast move saturates the trail without skewing its direction. Applied to
-    // the stored position as well, or the state keeps running while the render stays pinned.
+    // the stored offset as well, or the state keeps running while the render stays pinned.
     const reach = Math.hypot(ox, oy, oz)
     if (reach > max) {
       const f = max / reach
@@ -550,9 +591,8 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
       oy *= f
       oz *= f
     }
-    st.p = vec3(wx + ox, wy + oy, wz + oz)
-    st.t = vec3(wx, wy, wz)
-    return vec3(ox, oy, oz)
+    st.o = vec3(ox, oy, oz)
+    return st.o
   }
 
   return {
@@ -637,27 +677,49 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
       const cz = locoZ + (input.carry?.z ?? 0)
       // Acceleration without differencing anything. For an exponential smoother the derivative of
       // the smoothed value is exactly `(raw − smoothed) · ln2 / halfLife`, so the *gap* between the
-      // two is already a low-passed derivative. A plain difference would be hopeless: carry updates
-      // at the 30 Hz sim rate while this runs per rendered frame, so differencing it yields a
+      // two is already a low-passed derivative. A plain difference would be hopeless: these update
+      // at the 30 Hz sim rate while this runs per rendered frame, so differencing them yields a
       // staircase of spikes and zeroes.
       // Sampled at the midpoint of the frame — the average of the gap before and after this frame's
       // update. Reading it only before (or only after) leaves a one-frame bias that scales with dt,
       // which is precisely the frame-rate dependence this construction exists to avoid: 144 fps and
       // 60 fps disagreed by 4% on it.
-      // Measured over `mhl`, then the *response* is smoothed over `hl`. Two stages with two purposes:
+      // Measured over a window, then the *response* is smoothed over `hl`. Two stages with two purposes:
       // the first has to be short enough to see a 0.1 s acceleration at all, the second is where the
       // resulting twitch is taken out. Sharing one half-life between them meant every window wide
       // enough to be calm was also wide enough to average the event away.
-      const rate = LN2 / mhl
-      const gapX = cx - carryX
-      const gapY = cy - carryY
-      const gapZ = cz - carryZ
-      carryX = smooth(carryX, cx, dt, mhl)
-      carryY = smooth(carryY, cy, dt, mhl)
-      carryZ = smooth(carryZ, cz, dt, mhl)
-      accX = smooth(accX, (gapX + (cx - carryX)) * 0.5 * rate, dt, hl)
-      accY = smooth(accY, (gapY + (cy - carryY)) * 0.5 * rate, dt, hl)
-      accZ = smooth(accZ, (gapZ + (cz - carryZ)) * 0.5 * rate, dt, hl)
+      //
+      // **Two windows, not one**, because the two inputs have nothing in common but their units.
+      // Locomotion is clean and fast — 0.1 s to full speed — so it needs a sharp window and can take one.
+      // `carry` is a per-tick difference out of the physics solver and arrives with 30 Hz hash on it, and
+      // `ln2/window` multiplies that hash: at locomotion's 0.03 s it became several degrees of visible
+      // arm and head shake on a platform. Widening it costs nothing, because a platform's real
+      // accelerations play out over about a second — it is the noise that is fast, not the motion.
+      const rateLoco = LN2 / mhl
+      const gapLocoX = locoX - locoSmX
+      const gapLocoZ = locoZ - locoSmZ
+      locoSmX = smooth(locoSmX, locoX, dt, mhl)
+      locoSmZ = smooth(locoSmZ, locoZ, dt, mhl)
+      accLocoX = smooth(accLocoX, (gapLocoX + (locoX - locoSmX)) * 0.5 * rateLoco, dt, hl)
+      accLocoZ = smooth(accLocoZ, (gapLocoZ + (locoZ - locoSmZ)) * 0.5 * rateLoco, dt, hl)
+
+      const kx = input.carry?.x ?? 0
+      const ky = input.carry?.y ?? 0
+      const kz = input.carry?.z ?? 0
+      const rateCarry = LN2 / CARRY_SAMPLE_HALFLIFE
+      const gapCarryX = kx - carryX
+      const gapCarryY = ky - carryY
+      const gapCarryZ = kz - carryZ
+      carryX = smooth(carryX, kx, dt, CARRY_SAMPLE_HALFLIFE)
+      carryY = smooth(carryY, ky, dt, CARRY_SAMPLE_HALFLIFE)
+      carryZ = smooth(carryZ, kz, dt, CARRY_SAMPLE_HALFLIFE)
+      accCarryX = smooth(accCarryX, (gapCarryX + (kx - carryX)) * 0.5 * rateCarry, dt, hl)
+      accCarryY = smooth(accCarryY, (gapCarryY + (ky - carryY)) * 0.5 * rateCarry, dt, hl)
+      accCarryZ = smooth(accCarryZ, (gapCarryZ + (kz - carryZ)) * 0.5 * rateCarry, dt, hl)
+
+      const accX = accLocoX + accCarryX
+      const accY = accCarryY
+      const accZ = accLocoZ + accCarryZ
       // Into the character's own frame, so "forward" means where it is facing.
       const yawCos = Math.cos(yaw)
       const yawSin = Math.sin(yaw)
@@ -863,32 +925,25 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
       }
 
       // --- joint lag ------------------------------------------------------------------------
-      // Secondary motion, as translation. Every joint that attaches to the torso interpolates toward the
-      // **world** position of its attachment point instead of sitting on it exactly, so it is simply
-      // late to wherever the body went. One mechanism for the neck and both shoulders, differing only in
-      // half-life and stop — see `follow` for why world space is the whole trick, and `Lag` for what the
-      // two earlier root-space attempts got wrong.
+      // Secondary motion, as translation. Every joint that attaches to the torso trails behind its
+      // attachment point in **world** space instead of sitting on it exactly, so it is simply late to
+      // wherever the body went. One mechanism for the neck and both shoulders, differing only in half-life
+      // and stop — see `follow` for why world space is the whole trick and why this is driven by a velocity
+      // rather than by differencing a position, and `Lag` for what the earlier root-space attempts got
+      // wrong.
       //
-      // Everything the character does drives it, with no term of its own: walking, starting, stopping,
-      // turning, jumping, the stride's bob, a landing, a platform's jolt. All of it moves the attachment
-      // point through the world, which is the only input this needs.
-      const bodyPivot = RIG.body.pivot
-      const bodyX = bodyPivot.x + pose.bodyOffset.x
-      const bodyY = bodyPivot.y + pose.bodyOffset.y
-      const bodyZ = bodyPivot.z + pose.bodyOffset.z
+      // Driven by `cx/cy/cz`, the same total world velocity the inertial layer uses: the character's own
+      // locomotion plus anything carrying it. Starting, stopping, turning and a platform's jolt are all in
+      // there. Two things are not, deliberately: the stride's bob, whose contribution to the trail measured
+      // ~10 mm and whose analytic rate is not worth carrying; and a jump's vertical velocity, which is not
+      // in the animator's input at all, so the joints do not trail vertically while airborne.
       const cosY = Math.cos(yaw)
       const sinY = Math.sin(yaw)
 
       for (const part of LAG_PARTS) {
         const halfLife = part === 'head' ? tuning.headLagHalfLife : tuning.armLagHalfLife
         const max = part === 'head' ? tuning.headLagMax : tuning.armLagMax
-        // The attachment point in world space: its root-space position, turned by the character's
-        // facing, placed at the character's position.
-        const attach = rotateVec3(bodyQ, RIG[part].pivot)
-        const rx = bodyX + attach.x
-        const ry = bodyY + attach.y
-        const rz = bodyZ + attach.z
-        const o = follow(part, input.position.x + rx * cosY + rz * sinY, input.position.y + ry, input.position.z - rx * sinY + rz * cosY, Math.max(halfLife, 0), max, dt)
+        const o = follow(part, cx, cy, cz, Math.max(halfLife, 0), max, dt)
         // World → root (undo the facing) → body (undo the torso), since a joint's position is written in
         // its parent's frame, and every lagging joint's parent is the body.
         pose.jointOffset[part] = rotateVec3(invBody, vec3(o.x * cosY - o.z * sinY, o.y, o.x * sinY + o.z * cosY))

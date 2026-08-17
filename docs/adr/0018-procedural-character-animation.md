@@ -260,15 +260,50 @@ change to adopt it.
   the trail, the head now rides 119 mm of the hips' 129. The visible neck gap survives and is larger; the
   vertical steadiness is what was traded for coordination with the arms. Recorded in a test so it is not
   rediscovered by accident.
-  **Frame-rate independence needs the target's velocity.** A plain `smooth` toward a *moving* target
-  treats it as jumping at the frame boundary and settles at `v·dt·α/(1−α)` — 42 mm at 60 fps against
-  62 mm at 144 for one tuning. The previous target is therefore kept, its velocity measured, and the
-  exact linear-ramp solution used, which settles at `v·τ` at any frame rate.
+  **Frame-rate independence needs the driving velocity.** A plain `smooth` toward a *moving* target treats
+  it as jumping at the frame boundary and settles at `v·dt·α/(1−α)` — 42 mm at 60 fps against 62 mm at 144
+  for one tuning. The exact linear-ramp solution is used instead, which settles at `v·τ` at any frame rate.
+  **That velocity must be given, never differenced from a position**, and getting this wrong shipped as a
+  visible bug: the head and arms vibrated while moving, worst on a platform. Position arrives from a 30 Hz
+  simulation while this layer runs per rendered frame, so a one-frame difference of it alternates between
+  zero and a whole tick's travel — a square wave whose amplitude is *twice* the mean, measured at 92 mm of
+  frame-to-frame flip, and still 12 mm after averaging it over 60 ms. No affordable smoothing fixes that
+  shape. The character's total world velocity is already computed exactly for the inertial layer, so it is
+  used directly and nothing is differenced. The same warning is written above the inertial layer's own
+  derivative, which made this a hazard already documented and then walked into.
+  Two things are deliberately absent from that velocity: the stride's bob, whose contribution to the trail
+  measured ~10 mm and whose analytic rate is not worth carrying; and a jump's vertical velocity, which is
+  not in the animator's input at all, so the joints do not trail vertically while airborne.
+  A test drives the animator with a position held for two frames at a time — the 30 Hz-into-60 fps case,
+  plus a platform's carry so the per-tick step is as large as the report — and asserts the offset's
+  frame-to-frame change stays under the *body's* own, which is 25 mm there because a held position also
+  freezes the stride phase. The layer cannot be steadier than what it hangs off; it must not add jitter.
+  **The velocity needs its own smoothing anyway, because `carry` is noisy at source.** It is
+  `(applied − locomotion)/dt` from the controller — a per-tick *difference* of what the physics solver
+  resolved, so it carries the solver's contact hash, and dividing by a 33 ms tick multiplies that by 30.
+  Standing on a moving platform feeds this a few tenths of a m/s of tick-to-tick noise, which showed as a
+  slight vibration even with the character still. `LAG_VELOCITY_HALFLIFE` is therefore 0.12 s, matching
+  `inertiaHalfLife`, so the translation is filtered as heavily as the rotations that share the signal —
+  those pass through two low-passes and never showed it. Costs nothing at a steady speed; costs a slightly
+  softer arrival of the trail on a hard start.
   The body and the four leg parts are excluded **by construction**, not left untuned: the body's travel
   is `bodyOffset`, which the leg IK is solved against, and displacing a leg would slide the foot it is
   standing on. Every `jointOffset` entry but the neck's and the two shoulders' is asserted to be exactly
   zero.
-- **The acceleration is measured as the gap between the carry signal and its own smoothed value**,
+- **Locomotion and `carry` get separate differentiation windows, because only one of them is a clean
+  signal.** They are summed afterwards. `carry` is `(applied − locomotion)/dt` out of the controller — a
+  per-tick difference of what the physics solver resolved — so it inherits the solver's contact hash, and
+  dividing by a 33 ms tick multiplies that by 30. Differentiating again scales it by `ln2/window`, so the
+  0.03 s window that locomotion needs to see a 0.1 s start turned a quiet platform ride into **several
+  degrees** of arm and head shake. It was reported from the game twice, and the first fix — filtering the
+  *translation* harder — did nothing, which is what identified the rotations as the real path.
+  Locomotion can afford a sharp window because it comes from the controller's own speed and ramps
+  smoothly. `carry` takes 0.12 s, and loses nothing by it: a platform's real accelerations play out over
+  about a second. It is the noise that is fast, not the motion.
+  A test drives a 2 m/s ride with ±0.3 m/s of per-tick hash and asserts under 0.2° of arm rotation change
+  per frame, then drives a clean 0.1 s start and asserts it still moves the arm more than that — the two
+  halves have to hold at once, and a single window cannot do it.
+- **The acceleration is measured as the gap between a velocity signal and its own smoothed value**,
   sampled at the frame midpoint. For an exponential smoother that gap is exactly a low-passed
   derivative (`(raw − smoothed)·ln2/halfLife`), so nothing is differenced: `carry` updates at the
   30 Hz sim rate while this runs per rendered frame, and a plain difference is a staircase of spikes
