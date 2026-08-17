@@ -1,5 +1,5 @@
 import { Room, type Client } from 'colyseus'
-import { entityId, type EntityId, type Vec3 } from '@mp/core'
+import { entityId, type EntityId } from '@mp/core'
 import {
   decodePing,
   decodeState,
@@ -12,6 +12,7 @@ import {
   NET_CHANNEL,
   quantizeAxis,
   readMessageType,
+  type PlayerState,
   type RosterEntry,
   type SnapshotEntity,
   type SnapshotMessage,
@@ -24,16 +25,19 @@ interface Player {
   readonly client: Client
   readonly id: EntityId
   readonly name: string // display name (auto-random now, player-chosen later)
-  latest: Vec3 | null // last position this client reported (it owns its own body)
+  latest: PlayerState | null // last state this client reported (it owns its own body)
   sentFull: boolean
-  baseline: Map<EntityId, Vec3> // last positions sent to this client (for delta)
+  baseline: Map<EntityId, PlayerState> // last states sent to this client (for delta)
 }
 
-// Relay an entity only when its quantized position actually changes.
-const quantizedDiffers = (a: Vec3, b: Vec3): boolean =>
-  quantizeAxis(a.x) !== quantizeAxis(b.x) ||
-  quantizeAxis(a.y) !== quantizeAxis(b.y) ||
-  quantizeAxis(a.z) !== quantizeAxis(b.z)
+// Relay an entity when its quantized position changes, or when its state flags do — a player can
+// leave the ground without their quantized position moving, and the flags are what a viewer cannot
+// reconstruct (see STATE_GROUNDED).
+const relayDiffers = (a: PlayerState, b: PlayerState): boolean =>
+  a.flags !== b.flags ||
+  quantizeAxis(a.position.x) !== quantizeAxis(b.position.x) ||
+  quantizeAxis(a.position.y) !== quantizeAxis(b.position.y) ||
+  quantizeAxis(a.position.z) !== quantizeAxis(b.position.z)
 
 // Colyseus hands us a Uint8Array view (possibly onto a pooled/shared buffer); our
 // codecs take a standalone ArrayBuffer, so copy the exact bytes out.
@@ -134,7 +138,7 @@ export class ParkourRoom extends Room {
       const peers: SnapshotEntity[] = []
       for (const other of all) {
         if (other === player || other.latest === null) continue
-        peers.push({ id: other.id, position: other.latest })
+        peers.push({ id: other.id, position: other.latest.position, flags: other.latest.flags })
       }
       player.client.sendBytes(NET_CHANNEL, bytes(encodeSnapshot(deltaSnapshot(player, peers, time))))
     }
@@ -145,18 +149,20 @@ export class ParkourRoom extends Room {
   }
 }
 
-/** Per-client delta baseline: whether a full has been sent, and the last positions sent. */
+/** Per-client delta baseline: whether a full has been sent, and the last states sent. */
 export interface DeltaBaseline {
   sentFull: boolean
-  baseline: Map<EntityId, Vec3>
+  baseline: Map<EntityId, PlayerState>
 }
 
-/** A full snapshot on first send, then per-client deltas vs the last positions sent.
+const asState = (e: SnapshotEntity): PlayerState => ({ position: e.position, flags: e.flags })
+
+/** A full snapshot on first send, then per-client deltas vs the last states sent.
  * Pure (mutates only the passed baseline) so it's unit-testable without Colyseus. */
 export const deltaSnapshot = (s: DeltaBaseline, peers: SnapshotEntity[], time: number): SnapshotMessage => {
   if (!s.sentFull) {
     s.sentFull = true
-    s.baseline = new Map(peers.map((e) => [e.id, e.position]))
+    s.baseline = new Map(peers.map((e) => [e.id, asState(e)]))
     return { isFull: true, serverTimeMs: time, changed: peers, removed: [] }
   }
   const changed: SnapshotEntity[] = []
@@ -164,10 +170,10 @@ export const deltaSnapshot = (s: DeltaBaseline, peers: SnapshotEntity[], time: n
   for (const e of peers) {
     present.add(e.id)
     const base = s.baseline.get(e.id)
-    if (base === undefined || quantizedDiffers(base, e.position)) changed.push(e)
+    if (base === undefined || relayDiffers(base, asState(e))) changed.push(e)
   }
   const removed: EntityId[] = []
   for (const id of s.baseline.keys()) if (!present.has(id)) removed.push(id)
-  s.baseline = new Map(peers.map((e) => [e.id, e.position]))
+  s.baseline = new Map(peers.map((e) => [e.id, asState(e)]))
   return { isFull: false, serverTimeMs: time, changed, removed }
 }

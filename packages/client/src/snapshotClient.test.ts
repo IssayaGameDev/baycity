@@ -1,4 +1,4 @@
-import { entityId } from '@mp/core'
+﻿import { entityId } from '@mp/core'
 import type { Snapshot } from '@mp/net'
 import { describe, expect, it } from 'vitest'
 
@@ -6,7 +6,7 @@ import { createSnapshotClient } from './snapshotClient'
 
 const snap = (t: number, x: number): Snapshot => ({
   serverTimeMs: t,
-  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 } }],
+  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags: 0 }],
 })
 
 describe('createSnapshotClient', () => {
@@ -53,3 +53,4 @@ describe('createSnapshotClient', () => {
     expect(client.bufferedCount()).toBeLessThanOrEqual(4)
   })
 })
+

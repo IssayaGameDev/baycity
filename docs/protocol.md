@@ -1,7 +1,7 @@
-# Wire protocol (v7)
+# Wire protocol (v8)
 
 Binary, little-endian. No JSON on the hot path (SEED §2). Defined in
-`packages/net`. `PROTOCOL_VERSION = 7`. Client-authoritative (ADR 0011), rooms on
+`packages/net`. `PROTOCOL_VERSION = 8`. Client-authoritative (ADR 0011), rooms on
 Colyseus (ADR 0013).
 
 ## Framing & versioning
@@ -26,23 +26,40 @@ vs the client's previous snapshot. **Positions are quantized** to `u16`/axis ove
 
 | field | type | notes |
 |---|---|---|
-| flags | u8 | bit0 = isFull |
+| msgFlags | u8 | bit0 = isFull |
 | serverTimeMs | u32 | interpolation timeline |
 | changedCount | u16 | |
-| changed[] | u16 id + u16 x,y,z | full: all peers; delta: new/changed only |
+| changed[] | u16 id + u16 x,y,z + u8 stateFlags | full: all peers; delta: new/changed only |
 | removedCount | u16 | |
 | removed[] | u16 id | delta: peers to drop (e.g. disconnected) |
 
-Header 9 B, changed entity 8 B. Deltas skip unchanged entities entirely (an entity is
-"changed" only when its *quantized* position moves). Delta-vs-last-sent is safe because
+Header 9 B, changed entity 9 B. Deltas skip unchanged entities entirely; an entity is
+"changed" when its *quantized* position moves **or its state flags change** — leaving the
+ground need not move you a whole quantization step. Delta-vs-last-sent is safe because
 the transport is reliable+ordered (WebSocket); a UDP transport would need ack-based
-baselines. Client reassembles full snapshots (`createSnapshotReassembler`).
+baselines. Client reassembles full snapshots (`createSnapshotReassembler`), which keeps
+whole entities so an unchanged peer retains its last flags.
+
+### State flags (v8)
+
+`STATE_GROUNDED` (bit 0), `STATE_RISING` (bit 1). These carry the animation state a viewer
+**cannot** reconstruct from a position curve, and they are **never interpolated** — the
+interpolator takes them from the sample at or before the render time (`interpolation.ts`),
+because blending "grounded" toward "airborne" is meaningless and fading a change in early
+would start an air pose while the player is still on the ground.
+
+Vertical velocity is not a substitute for `GROUNDED`: it passes through zero at the apex of
+every jump (reads as standing, mid-air) and is negative while running down a ramp or stairs
+(reads as falling, on the ground). Facing and planar speed *are* derived on the client, and
+correctly — the controller always faces its movement direction, so velocity direction is
+authoritative. Yaw goes on the wire only if aim ever decouples from movement.
 
 ## Welcome — `2`  ·  State — `3`  ·  Ping/Pong — `4`/`5`  ·  Roster — `6`
 
 - Welcome (s→c): `u16 playerId`.
-- State (c→s): `f32 x`, `f32 y`, `f32 z` — the sender's own authoritative position (14 B
-  total). Full float upstream; quantization happens once, in the snapshot encoder on relay.
+- State (c→s): `f32 x`, `f32 y`, `f32 z`, `u8 flags` — the sender's own authoritative position
+  plus its state flags (15 B total). Full float upstream; quantization happens once, in the
+  snapshot encoder on relay. Flags pass through unquantized.
 - Ping (c→s): `u32 clientTimeMs`. Pong (s→c): `u32 clientTimeMs` + `u32 serverTimeMs`.
 - Roster (s→c): `u16 count`, then `[u16 id, u8 nameLen, utf8 name]*` — peer id → display
   name. Broadcast on join/leave (names are static per session, so it's not per-tick).

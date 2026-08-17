@@ -1,8 +1,10 @@
 /** Protocol version — first byte of every message from day one (SEED §2).
  * v6: client-authoritative. Clients send STATE (their own position), the server
  * relays it. INPUT / FIRE / HIT (server-auth + lag-comp) removed (ADR 0011).
- * v7: rooms on Colyseus; adds ROSTER (peer id -> name) (ADR 0013). */
-export const PROTOCOL_VERSION = 7 as const
+ * v7: rooms on Colyseus; adds ROSTER (peer id -> name) (ADR 0013).
+ * v8: STATE and snapshot entities carry a flags byte — the animation state a viewer
+ * cannot derive from position (see `STATE_GROUNDED`). */
+export const PROTOCOL_VERSION = 8 as const
 
 /** The single Colyseus message channel our whole binary protocol rides on (ADR 0013).
  * Colyseus never inspects the payload; we dispatch on the version+type header inside. */

@@ -21,6 +21,8 @@ import {
   MSG_WELCOME,
   NET_CHANNEL,
   readMessageType,
+  STATE_GROUNDED,
+  STATE_RISING,
 } from '@mp/net'
 import { createPhysicsWorld, initPhysics, type PhysicsBody } from '@mp/physics'
 import { createThreeStage, applyGreyboxEnvironment, createPostFX, addLevel, type LevelView } from '@mp/render-three'
@@ -267,6 +269,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
         ? { x: spawnMarker.x + Math.cos(a) * 2, y: spawnMarker.y + STAND_OFFSET, z: spawnMarker.z + Math.sin(a) * 2 }
         : playerSpawn(id)
   const char: CharacterState = addCharacter(world, spawn)
+  ownState = char // the render loop reads velocity/grounded straight off the sim for our own rig
 
   // Respawn: teleport to the last checkpoint (or spawn) and kill momentum. Triggered by
   // touching a hazard pad or falling below the level's kill plane (mode config).
@@ -339,7 +342,10 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
 
       const p = controller!.state().get(id)
       if (p) {
-        room?.sendBytes(NET_CHANNEL, new Uint8Array(encodeState(p)))
+        // Position plus the animation bits a viewer cannot derive from it (v8): vertical velocity
+        // passes through zero at every jump apex, so "grounded" has to be told, not inferred.
+        const flags = (char.grounded ? STATE_GROUNDED : 0) | (char.vy > 0 ? STATE_RISING : 0)
+        room?.sendBytes(NET_CHANNEL, new Uint8Array(encodeState({ position: p, flags })))
         // Real contact: the colliders the capsule pushed against this tick.
         const hits = new Set(char.body.collisions())
         // Checkpoint touched → it becomes the respawn point (persisted). Progress only
@@ -405,7 +411,14 @@ void connect()
 
 // --- render ---
 let ownPos: Vec3 = { x: 0, y: 1, z: 0 }
+let ownState: CharacterState | null = null // set once the local sim exists; drives our own animation
+let lastFrameAt = performance.now()
 stage.start(() => {
+  // Animation is evaluated per rendered frame, not per sim tick, so it is smooth at any refresh
+  // rate; everything it drives is smoothed by half-life rather than per-frame fraction.
+  const nowMs = performance.now()
+  const frameDt = Math.min(0.1, (nowMs - lastFrameAt) / 1000)
+  lastFrameAt = nowMs
   // Clock-driven pieces advance in the fixed sim loop; here we only render-interpolate
   // their meshes between the last two ticks (same timeline as the player), then sync.
   if (loaded !== null) {
@@ -419,12 +432,39 @@ stage.start(() => {
   if (myId !== null && controller) {
     seen.add(myId)
     ownPos = controller.renderPositions().get(myId) ?? ownPos
-    views.upsert(myId, { isSelf: true, position: ownPos, yaw: ownFacing, name: myName })
+    // Our own inputs are exact — we own the sim — so nothing is derived for us.
+    views.upsert(
+      myId,
+      {
+        isSelf: true,
+        position: ownPos,
+        yaw: ownFacing,
+        speed: ownState !== null ? Math.hypot(ownState.vx, ownState.vz) : 0,
+        grounded: ownState?.grounded ?? true,
+        rising: (ownState?.vy ?? 0) > 0,
+        name: myName,
+      },
+      frameDt,
+    )
   }
   for (const e of interp.sample())
     if (e.id !== myId) {
       seen.add(e.id)
-      views.upsert(e.id, { isSelf: false, position: e.position, yaw: null, name: names.get(e.id) ?? '…' })
+      // Peers: facing and speed derived from the interpolated position; grounded/rising off the
+      // wire, because vertical velocity cannot tell standing from a jump apex.
+      views.upsert(
+        e.id,
+        {
+          isSelf: false,
+          position: e.position,
+          yaw: null,
+          speed: null,
+          grounded: (e.flags & STATE_GROUNDED) !== 0,
+          rising: (e.flags & STATE_RISING) !== 0,
+          name: names.get(e.id) ?? '…',
+        },
+        frameDt,
+      )
     }
   views.prune(seen) // drop players who left the room (no longer relayed)
 

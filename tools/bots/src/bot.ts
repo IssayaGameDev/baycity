@@ -1,5 +1,5 @@
 import { Client, type Room } from 'colyseus.js'
-import { encodeState, NET_CHANNEL } from '@mp/net'
+import { encodeState, NET_CHANNEL, STATE_GROUNDED } from '@mp/net'
 
 /**
  * A headless load client (client-authoritative, ADR 0011/0013): joins a room via the
@@ -35,7 +35,14 @@ export const createBot = (url: string, phase = 0): Bot => {
       })
       timer = setInterval(() => {
         angle += 0.12
-        r.sendBytes(NET_CHANNEL, new Uint8Array(encodeState({ x: Math.cos(angle) * RADIUS, y: 1, z: Math.sin(angle) * RADIUS })))
+        // Bots walk a circle on the ground, so they report grounded — the flags byte is part of
+        // the measured payload (v8), and sending 0 would under-report the delta traffic.
+        r.sendBytes(
+          NET_CHANNEL,
+          new Uint8Array(
+            encodeState({ position: { x: Math.cos(angle) * RADIUS, y: 1, z: Math.sin(angle) * RADIUS }, flags: STATE_GROUNDED }),
+          ),
+        )
       }, 1000 / TICK_HZ)
     })
     .catch(() => {

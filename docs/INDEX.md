@@ -16,7 +16,7 @@ by a polished shared pipeline (`@mp/render-three`: IBL, ACES, soft shadows, GTAO
 Gameplay **triggers are a piece's own collider**, detected by real engine contact. Inspect it
 locally with the **viewer** (`tools/viewer`, `pnpm dev:viewer`). Server stays content-free.
 
-Wire is delta + quantized snapshots (v7); budgets 2 & 3 validated with bots. Colyseus pinned to
+Wire is delta + quantized snapshots (v8: position + a state-flags byte for animation); budgets 2 & 3 validated with bots. Colyseus pinned to
 **0.16** (matched client/server); default `ws` transport (uWS is a later swap); scale-out infra
 (Redis/multi-region) deferred to deploy. History: server-authoritative through M10 (ADR 0011
 reversed it); ball demo retired (tag `m10`); world/controller relocated out of `@mp/server/tps`
@@ -38,18 +38,18 @@ reversed it); ball demo retired (tag `m10`); world/controller relocated out of `
   - [0010](adr/0010-tps-character-controller.md) TPS controller + pluggable game · [0011](adr/0011-client-authoritative.md) **client-authoritative (reverses SEED §4)** · [0012](adr/0012-roblox-like-character-controller.md) Roblox-like kinematic controller
   - [0013](adr/0013-colyseus-rooms.md) **Colyseus rooms foundation** · [0014](adr/0014-content-pipeline.md) **data-driven content pipeline + modes layering**
   - [0015](adr/0015-ui-rendering.md) **PixiJS for all game UI** · [0016](adr/0016-localization.md) **localization (`@mp/i18n`)**
-  - [0017](adr/0017-convex-colliders.md) **convex colliders for authored swept surfaces** (widens ADR 0014's primitive-only rule)
+  - [0017](adr/0017-convex-colliders.md) **convex colliders for authored swept surfaces** (widens ADR 0014's primitive-only rule) · [0018](adr/0018-procedural-character-animation.md) **procedural animation on a rigid 10-part rig** (+ protocol v8 state flags)
 
 ## Built
 
 - `core` — math (incl. quaternion helpers), entity model, fixed-timestep loop, `createSimClock` (fixed-step content time, slewed to a reference clock), transport interface.
 - `net` — binary codecs (v7): snapshot (delta + quantized), welcome, state, ping/pong, roster; quantization utils. `NET_CHANNEL` is the Colyseus channel they ride.
 - `physics` — Rapier3d wrapper: dynamic/fixed/kinematic bodies (position + rotation), **kinematic character controller** (contact reporting + a downward `probeGround`), headless + browser.
-- `character` — the stack-level kinematic character controller (`stepCharacter`, `CharacterTuning`; ADR 0012), mode-agnostic. Relocated out of `@mp/server/tps`. **Platform carry** (movement base): rides a moving piece by keeping its position in that surface's frame (`PlatformPoseLookup`), and a jump off a mover inherits its velocity. Paired with the loader's frozen posing — see `docs/physics.md`.
+- `character` — the stack-level kinematic character controller (`stepCharacter`, `CharacterTuning`; ADR 0012), mode-agnostic. Relocated out of `@mp/server/tps`. **Platform carry** (movement base): rides a moving piece by keeping its position in that surface's frame (`PlatformPoseLookup`), and a jump off a mover inherits its velocity. Paired with the loader's frozen posing — see `docs/physics.md`. Also the **blocky 10-part rig** (`RIG`, proportions derived from the capsule) and its **procedural animator** (`createAnimator`): distance-driven stride, two-bone analytic IK, half-life smoothing. No skinning, no clips, no art; headless and unit-tested (ADR 0018).
 - `content` — data-driven content: schema (prefab/level/collider/marker/behavior/visual), validation, the **loader** (`instantiateLevel`; `update(now, riddenCollider?)` poses the ridden piece without velocity and exposes `basePose` so riders can track it), the greybox **kit** + generators. Headless, no rendering. ADR 0014.
 - `server` — **Colyseus** `Server` (`startServer()`) hosting `ParkourRoom`: client-authoritative relay (per-client delta snapshots, no simulation, no schema), auto-join, roster/names, clock-sync ping/pong. Content-free.
 - `client` — `colyseus.js` transport (`joinOrCreate`), interpolation, local authoritative controller (`localController`), clock sync, input abstraction (`.` headless + `./dom` adapters).
-- `render-three` — WebGL2 stage + the polished greybox pipeline (IBL, ACES, soft shadows, GTAO/SMAA/bloom, style→material, level-view); re-exports THREE + OrbitControls.
+- `render-three` — WebGL2 stage + the polished greybox pipeline (IBL, ACES, soft shadows, GTAO/SMAA/bloom, style→material, level-view); realizes `@mp/character`'s rig as nodes (`createCharacterRig`) and applies a `Pose`; re-exports THREE + OrbitControls.
 - `render-pixi` — PixiJS 2D UI layer (ADR 0015): a transparent canvas stacked over Three, an overlay with pointer-lock-aware input, and reusable widgets (panel/button/slider/list). Wired into the parkour pause screen.
 - `i18n` — tiny dependency-free localization (ADR 0016): typed `t()`, 9 languages, browser-locale detect + runtime switch. Headless.
 - `tools/netsim` — latency/jitter/loss transport wrapper. (Not wired into the current client — ADR 0013.)

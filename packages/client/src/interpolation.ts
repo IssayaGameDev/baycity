@@ -44,9 +44,13 @@ export const interpolateAt = (
     return {
       id: e.id,
       position: target ? lerpVec3(e.position, target, t) : { ...e.position },
+      // Flags are discrete state, not a quantity: blending "grounded" with "airborne" is
+      // meaningless. Take them from `a`, the newest sample at or before the render time, so a
+      // state change lands on the tick it was reported rather than fading in ahead of it.
+      flags: e.flags,
     }
   })
 }
 
 const clone = (entities: readonly SnapshotEntity[]): SnapshotEntity[] =>
-  entities.map((e) => ({ id: e.id, position: { ...e.position } }))
+  entities.map((e) => ({ id: e.id, position: { ...e.position }, flags: e.flags }))

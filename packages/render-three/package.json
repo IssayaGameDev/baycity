@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mp/character": "workspace:*",
     "@mp/content": "workspace:*",
     "@mp/core": "workspace:*",
     "three": "^0.169.0"

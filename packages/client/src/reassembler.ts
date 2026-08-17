@@ -1,5 +1,5 @@
-import type { EntityId, Vec3 } from '@mp/core'
-import type { Snapshot, SnapshotMessage } from '@mp/net'
+import type { EntityId } from '@mp/core'
+import type { Snapshot, SnapshotEntity, SnapshotMessage } from '@mp/net'
 
 /**
  * Reconstructs full snapshots from the wire's full/delta messages. Relies on the
@@ -11,15 +11,17 @@ export interface SnapshotReassembler {
 }
 
 export const createSnapshotReassembler = (): SnapshotReassembler => {
-  const state = new Map<EntityId, Vec3>()
+  // Keeps whole entities, not just positions: the state flags (v8) travel with them and an
+  // unchanged entity has to retain the flags it was last sent.
+  const state = new Map<EntityId, SnapshotEntity>()
   return {
     apply: (msg) => {
       if (msg.isFull) state.clear()
-      for (const e of msg.changed) state.set(e.id, e.position)
+      for (const e of msg.changed) state.set(e.id, e)
       for (const id of msg.removed) state.delete(id)
       return {
         serverTimeMs: msg.serverTimeMs,
-        entities: [...state].map(([id, position]) => ({ id, position })),
+        entities: [...state.values()].map((e) => ({ id: e.id, position: e.position, flags: e.flags })),
       }
     },
   }

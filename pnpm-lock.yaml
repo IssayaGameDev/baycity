@@ -127,6 +127,9 @@ importers:
 
   packages/render-three:
     dependencies:
+      '@mp/character':
+        specifier: workspace:*
+        version: link:../character
       '@mp/content':
         specifier: workspace:*
         version: link:../content
