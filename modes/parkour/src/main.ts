@@ -7,7 +7,7 @@ import {
   type LocalController,
   type LocalWorld,
 } from '@mp/client'
-import { clamp, createSimClock, startFixedLoop, type EntityId, type Vec3 } from '@mp/core'
+import { clamp, createSimClock, startFixedLoop, vec3, type EntityId, type Vec3 } from '@mp/core'
 import {
   decodePong,
   decodeRoster,
@@ -38,6 +38,7 @@ import {
   type CharacterState,
   type CharacterTuning,
   DEFAULT_GAIT,
+  partTransforms,
   type GaitTuning,
 } from '@mp/character'
 import { instantiateLevel, validateLevel, type LoadedLevel } from '@mp/content'
@@ -46,9 +47,11 @@ import { createUiOverlay, uiButton, type ListItem } from '@mp/render-pixi'
 import { Client, type Room } from 'colyseus.js'
 import { Pane } from 'tweakpane'
 
-import { createCharacterViews } from './characterView'
+import { createAssembly, type Assembly, type AssemblyTiming } from './assemble'
+import { createCharacterViews, SELF_COLORS } from './characterView'
 import { OVERLAY_LAYER } from './nametag'
 import { createPauseMenu } from './pauseMenu'
+import { createRagdoll, type Ragdoll } from './ragdoll'
 import { localParkourPersistence } from './persistence'
 import { showcase } from './showcase'
 
@@ -128,6 +131,8 @@ stage.setRenderStep(() => {
 // One shared gait object so the debug pane retunes every character live (ADR 0018).
 const gait: GaitTuning = { ...DEFAULT_GAIT }
 const views = createCharacterViews(stage.scene, gait)
+// Spawn assembly timing. Declared up here so the debug pane below can bind it.
+const assembleTiming: AssemblyTiming = { stagger: 0.05, fall: 0.18, height: 2.5 }
 
 // --- camera orbit (mouselook via pointer lock) ---
 const camera = stage.camera
@@ -139,6 +144,11 @@ const params = {
 }
 canvas.addEventListener('click', () => {
   if (document.pointerLockElement !== canvas) void canvas.requestPointerLock()
+})
+// Left click respawns while dead — but only during locked play, so the click that *re-captures* the mouse
+// after the pause menu does not also cut a death short.
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 0 && dead && document.pointerLockElement === canvas) requestRespawn?.()
 })
 window.addEventListener('mousemove', (e) => {
   if (document.pointerLockElement !== canvas) return
@@ -292,6 +302,15 @@ af.addBinding(gait, 'airTuckFall', { min: 0, max: 0.6, step: 0.01, label: 'knee 
 af.addBinding(gait, 'airAsymArm', { min: 0, max: 2, step: 0.05, label: 'asym arm' })
 af.addBinding(gait, 'airAsymLeg', { min: 0, max: 2, step: 0.05, label: 'asym leg' })
 
+// Death, on demand. The real triggers are hazard contact and the level's fall plane, but reaching either
+// costs a run — and the ragdoll is the kind of thing that wants looking at twenty times in a row.
+const df = pane.addFolder({ title: 'Death', expanded: false })
+df.addButton({ title: 'Ragdoll now' }).on('click', () => requestDeath?.())
+// Spawn assembly. Total length is 5 x stagger + fall, so the defaults run in 0.43 s.
+df.addBinding(assembleTiming, 'stagger', { min: 0, max: 0.4, step: 0.01, label: 'pair gap s' })
+df.addBinding(assembleTiming, 'fall', { min: 0.02, max: 1, step: 0.01, label: 'fall s' })
+df.addBinding(assembleTiming, 'height', { min: 0.2, max: 8, step: 0.1, label: 'drop from m' })
+
 
 // --- netcode (Colyseus rooms, ADR 0013) ---
 const clock = createClockSync()
@@ -305,6 +324,25 @@ let loaded: LoadedLevel | null = null // the instantiated level (colliders + mar
 let levelView: LevelView | null = null // Three meshes for the level; sync() re-poses moving pieces
 let lastSimTickAt = 0 // wall-clock of the last fixed tick, for render-interpolating clock-driven pieces
 let requestRespawn: (() => void) | null = null // set once the local sim exists; used by the pause menu's Restart
+let requestDeath: (() => void) | null = null // set once the local sim exists; the death path, for the ragdoll
+// Death state. `dead` gates input and the kill checks; `ragdoll` is the ten loose bodies, synced per frame
+// and thrown away on respawn. Local and visual only — nothing about a death goes on the wire.
+let dead = false
+let ragdoll: Ragdoll | null = null
+// Spawn assembly: the body drops in a pair at a time. Runs on the first spawn and every respawn, and owns
+// the rig's visibility while it does — the rig only reappears once the last part has landed.
+let assembly: Assembly | null = null
+let assembledFor = 0
+const startAssembly = (): void => {
+  assembly?.dispose()
+  assembly = createAssembly({ scene: stage.scene, look: { colors: SELF_COLORS } })
+  assembledFor = 0
+}
+const clearRagdoll = (): void => {
+  ragdoll?.dispose()
+  ragdoll = null
+  dead = false
+}
 const names = new Map<EntityId, string>() // peer id -> display name (from ROSTER)
 
 // Auto-assigned random display name (player-chosen names come later — ADR 0013).
@@ -324,9 +362,10 @@ const persistence = localParkourPersistence()
 
 const initLocalSim = async (id: EntityId): Promise<void> => {
   await initPhysics()
-  // Client-owned world (ADR 0011): gravity is integrated by the character, not Rapier.
-  // The loader adds the level's colliders (data-driven, ADR 0013).
-  const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+  // Client-owned world (ADR 0011). The character is kinematic and integrates its own gravity, so Rapier's
+  // gravity never touches it — but the ragdoll's parts are *dynamic* and it is the only thing that pulls
+  // them down. It was zero here, which left a corpse coasting off in a straight line for ever.
+  const world = createPhysicsWorld({ gravity: { x: 0, y: -tuning.gravity, z: 0 } })
   loaded = instantiateLevel(world, validateLevel(showcase))
 
   // Build the level's greybox meshes via the shared renderer (content C3). Marker pads are
@@ -364,13 +403,41 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   // touching a hazard pad or falling below the level's kill plane (mode config).
   let respawnPos: Vec3 = { ...spawn }
   const respawn = (): void => {
+    clearRagdoll()
     char.body.setPosition(respawnPos)
     char.vx = 0
     char.vy = 0
     char.vz = 0
     char.grounded = false
+    startAssembly()
   }
   requestRespawn = respawn // let the pause menu's Restart reach it
+
+  /**
+   * Death: the animated rig is replaced by ten dynamic bodies in exactly the pose it was in, and the
+   * player waits for a click. Both kill paths come through here — hazard contact and the fall plane are
+   * the same death, so they get the same ragdoll.
+   *
+   * The capsule keeps being stepped while dead, because the world step it shares drives the ragdoll's own
+   * bodies and every platform in the level. It is just invisible, given no input, and not allowed to die
+   * again until it respawns.
+   */
+  const die = (): void => {
+    if (dead) return
+    const pose = views.poseOf(id)
+    if (pose === null) return // no rig drawn yet; nothing to fall apart
+    dead = true
+    views.setVisible(id, false)
+    ragdoll = createRagdoll({
+      world,
+      scene: stage.scene,
+      transforms: partTransforms(pose, char.body.translation()),
+      velocity: vec3(char.vx, char.vy, char.vz),
+      look: { colors: SELF_COLORS },
+    })
+  }
+  requestDeath = die
+  startAssembly() // the first spawn arrives the same way a respawn does
 
   // This local sim IS the truth for our own character (client-authoritative, ADR 0011).
   // Clock-driven pieces advance one fixed step per fixed step, tracking the synced server
@@ -387,10 +454,16 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
       // ground then carry it up a rising platform and push it off a sweeping bar.
       // The piece we are riding is posed without velocity so only our own carry moves us; every
       // other piece keeps its velocity so it can still shove us (the spinning bar). See the loader.
+      // Each step advances half a tick, so the two together advance exactly one. At a full tick each,
+      // anything *dynamic* in the world integrated twice per tick and ran at double speed — which is what
+      // the ragdoll's parts did. Neither of the other two things in here is affected: the level's pieces are
+      // kinematic and move to a pose the loader sets rather than by integration, and the character's own
+      // translation is computed by `stepCharacter` from the full `TICK_DT` and applied through `move`.
+      const half = TICK_DT / 2
       loaded?.update(simClock.tick(), char.base?.colliderHandle)
-      world.step(TICK_DT) // (A) platforms move
+      world.step(half) // (A) platforms move
       stepCharacter(char, cmd, TICK_DT, tuning, loaded?.basePose) // rides whatever it stands on
-      world.step(TICK_DT) // (B) character resolves against the moved platforms
+      world.step(half) // (B) character resolves against the moved platforms
       lastSimTickAt = performance.now()
     },
     readState: () => new Map<EntityId, Vec3>([[id, char.body.translation()]]),
@@ -425,9 +498,14 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
     tickRateHz: TICK_RATE_HZ,
     onTick: () => {
       syncRemotes()
-      const move = worldMove()
+      // No input while dead — but the character is still stepped, because that same world step is what
+      // makes the ragdoll's bodies fall and the level's platforms move.
+      const move = dead ? { x: 0, z: 0 } : worldMove()
       if (move.x !== 0 || move.z !== 0) ownFacing = Math.atan2(move.x, move.z)
-      controller!.step(move.x, move.z, keys.has('Space'))
+      controller!.step(move.x, move.z, !dead && keys.has('Space'))
+      // After the world has stepped: the ragdoll's bodies only move on a tick, so this is where their new
+      // pose is taken. The render loop interpolates between the last two.
+      ragdoll?.capture()
 
       const p = controller!.state().get(id)
       if (p) {
@@ -448,9 +526,10 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
             break
           }
         }
-        // Hazard touched (any side), or fell below the kill plane → respawn.
+        // Hazard touched (any side), or fell below the kill plane → die. Gated on `dead`, or a corpse
+        // still falling past the plane would re-trigger every tick.
         const hitHazard = [...hits].some((h) => hazardHandles.has(h))
-        if (hitHazard || (fallBehavior === 'respawn-checkpoint' && p.y < fallY)) respawn()
+        if (!dead && (hitHazard || (fallBehavior === 'respawn-checkpoint' && p.y < fallY))) die()
       }
     },
   })
@@ -510,9 +589,9 @@ stage.start(() => {
   lastFrameAt = nowMs
   // Clock-driven pieces advance in the fixed sim loop; here we only render-interpolate
   // their meshes between the last two ticks (same timeline as the player), then sync.
+  const tickAlpha = clamp((performance.now() - lastSimTickAt) / (1000 / TICK_RATE_HZ), 0, 1)
   if (loaded !== null) {
-    const alpha = clamp((performance.now() - lastSimTickAt) / (1000 / TICK_RATE_HZ), 0, 1)
-    loaded.render(alpha)
+    loaded.render(tickAlpha)
     levelView?.sync()
   }
 
@@ -521,23 +600,40 @@ stage.start(() => {
   if (myId !== null && controller) {
     seen.add(myId)
     ownPos = controller.renderPositions().get(myId) ?? ownPos
+    // Dead: the rig is hidden and the ragdoll's bodies own the picture. Still counted as `seen`, so the
+    // hidden rig is not pruned and can simply be shown again on respawn.
+    if (dead) ragdoll?.sync(tickAlpha)
     // Our own inputs are exact — we own the sim — so nothing is derived for us.
-    views.upsert(
-      myId,
-      {
-        isSelf: true,
-        position: ownPos,
-        yaw: ownFacing,
-        speed: ownState !== null ? Math.hypot(ownState.vx, ownState.vz) : 0,
-        vy: ownState?.vy ?? 0,
-        grounded: ownState?.grounded ?? true,
-        rising: (ownState?.vy ?? 0) > 0,
-        // Motion we did not ask for — a platform carrying us, a bar shoving us, a wall stopping us.
-        carry: ownState?.carry ?? null,
-        name: myName,
-      },
-      frameDt,
-    )
+    else
+      views.upsert(
+        myId,
+        {
+          isSelf: true,
+          position: ownPos,
+          yaw: ownFacing,
+          speed: ownState !== null ? Math.hypot(ownState.vx, ownState.vz) : 0,
+          vy: ownState?.vy ?? 0,
+          grounded: ownState?.grounded ?? true,
+          rising: (ownState?.vy ?? 0) > 0,
+          // Motion we did not ask for — a platform carrying us, a bar shoving us, a wall stopping us.
+          carry: ownState?.carry ?? null,
+          name: myName,
+        },
+        frameDt,
+      )
+    // Assembling: the animator still runs above (the parts fall toward the pose it produces, so a player
+    // already walking has their body arrive around them), but the rig itself stays hidden until the last
+    // part lands. Hidden here rather than at the start, because the view does not exist until first upsert.
+    if (!dead && assembly !== null) {
+      views.setVisible(myId, false)
+      assembledFor += frameDt
+      const pose = views.poseOf(myId)
+      if (pose === null || assembly.draw(partTransforms(pose, ownPos), assembledFor, assembleTiming)) {
+        assembly.dispose()
+        assembly = null
+        views.setVisible(myId, true)
+      }
+    }
   }
   for (const e of interp.sample())
     if (e.id !== myId) {

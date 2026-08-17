@@ -8,8 +8,8 @@ export const CHARACTER_VERSION = '0.0.0' as const
 export type { CharacterTuning, CharacterState, MovementBase, PlatformFrame, PlatformPoseLookup } from './character'
 
 // Blocky 10-part rig + procedural animation (no skinning, no art).
-export type { PartName, RigPart, Pose } from './rig'
-export { RIG, PART_NAMES, CHAR_HEIGHT, CHAR_WIDTH, FOOT_Y, HIP_HEIGHT, LIMB_LENGTH, restPose } from './rig'
+export type { PartName, RigPart, Pose, PartTransform } from './rig'
+export { RIG, PART_NAMES, CHAR_HEIGHT, CHAR_WIDTH, FOOT_Y, HIP_HEIGHT, LIMB_LENGTH, restPose, partTransforms } from './rig'
 export type { AnimationInput, GaitTuning, Animator } from './animate'
 export { createAnimator, solveTwoBone, DEFAULT_GAIT } from './animate'
 export {

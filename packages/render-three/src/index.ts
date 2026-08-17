@@ -22,5 +22,5 @@ export type { LevelView, LevelViewOptions, MarkersView } from './levelView'
 export { addLevel, addMarkers } from './levelView'
 
 // Blocky character rig (10 parts, no skinning) — shape and motion come from @mp/character.
-export type { CharacterRig, CharacterRigOptions, RigStyle } from './characterRig'
-export { createCharacterRig } from './characterRig'
+export type { CharacterRig, CharacterRigOptions, RigStyle, LooseParts } from './characterRig'
+export { createCharacterRig, createLooseParts } from './characterRig'

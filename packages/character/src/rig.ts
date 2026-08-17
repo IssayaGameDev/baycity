@@ -1,4 +1,4 @@
-import { quat, vec3, type Quat, type Vec3 } from '@mp/core'
+import { mulQuat, quat, rotateVec3, vec3, type Quat, type Vec3 } from '@mp/core'
 
 import { CHAR_HALF_HEIGHT, CHAR_RADIUS } from './character'
 
@@ -129,6 +129,52 @@ export interface Pose {
    */
   jointOffset: Record<PartName, Vec3>
 }
+
+/** Where a part's **box** sits in the world: the centre of the drawn solid, and its orientation. */
+export interface PartTransform {
+  position: Vec3
+  rotation: Quat
+}
+
+/**
+ * Forward-kinematic the whole rig: the world transform of every part's box under `pose`, for a
+ * character rooted at `origin`.
+ *
+ * This is the same walk a renderer does — pivot, offsets, parent rotation, then `meshOffset` to reach
+ * the box's centre rather than its joint — pulled out because a ragdoll needs it too. A death has to
+ * hand ten rigid bodies the exact pose the animated rig was in, or the parts jump at the moment of
+ * transition. Kept here with the rig data rather than in a renderer so it stays headless and testable.
+ *
+ * Parts come out in `PART_NAMES` order, which lists every parent before its children, so one pass
+ * suffices.
+ */
+export const partTransforms = (pose: Pose, origin: Vec3): Record<PartName, PartTransform> => {
+  const rootQ = quatFromY(pose.yaw)
+  const jointPos = {} as Record<PartName, Vec3>
+  const jointRot = {} as Record<PartName, Quat>
+  const out = {} as Record<PartName, PartTransform>
+  for (const name of PART_NAMES) {
+    const part = RIG[name]
+    const parent = part.parent
+    const parentPos = parent === null ? origin : jointPos[parent]
+    const parentRot = parent === null ? rootQ : jointRot[parent]
+    // The body carries `bodyOffset` on top of its `jointOffset`; every other part has only the latter.
+    const extra = pose.jointOffset[name]
+    const bob = name === 'body' ? pose.bodyOffset : ZERO
+    const local = vec3(part.pivot.x + extra.x + bob.x, part.pivot.y + extra.y + bob.y, part.pivot.z + extra.z + bob.z)
+    const moved = rotateVec3(parentRot, local)
+    const pos = vec3(parentPos.x + moved.x, parentPos.y + moved.y, parentPos.z + moved.z)
+    const rot = mulQuat(parentRot, pose.rotation[name])
+    jointPos[name] = pos
+    jointRot[name] = rot
+    const centre = rotateVec3(rot, part.meshOffset)
+    out[name] = { position: vec3(pos.x + centre.x, pos.y + centre.y, pos.z + centre.z), rotation: rot }
+  }
+  return out
+}
+
+const ZERO = vec3(0, 0, 0)
+const quatFromY = (yaw: number): Quat => quat(0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2))
 
 export const restPose = (): Pose => ({
   yaw: 0,

@@ -1,8 +1,8 @@
-import { mulQuat, rotateVec3, vec3, type Quat, type Vec3 } from '@mp/core'
+﻿import { mulQuat, rotateVec3, vec3, type Quat, type Vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
 import { createAnimator, solveTwoBone, DEFAULT_GAIT } from './animate'
-import { CHAR_HEIGHT, FOOT_Y, HIP_HEIGHT, LIMB_LENGTH, RIG, PART_NAMES, type PartName, type Pose } from './rig'
+import { CHAR_HEIGHT, FOOT_Y, HIP_HEIGHT, LIMB_LENGTH, RIG, PART_NAMES, partTransforms, restPose, type PartName, type Pose } from './rig'
 
 const DT = 1 / 60
 const ZERO = vec3(0, 0, 0)
@@ -51,6 +51,19 @@ const jointPosition = (pose: Pose, part: PartName): Vec3 => {
   return pos
 }
 
+/**
+ * Composed **root-space** rotation of a part â€” every local rotation from the body down, without the root
+ * yaw. The moonwalk bug went through a solver test that checked angles against their own convention, so
+ * the assertions built on this one are about where things physically end up.
+ */
+const partQuatOf = (pose: Pose, part: PartName): Quat => {
+  const chain: PartName[] = []
+  for (let p: PartName | null = part; p !== null; p = RIG[p].parent) chain.unshift(p)
+  let q: Quat = { x: 0, y: 0, z: 0, w: 1 }
+  for (const name of chain) q = mulQuat(q, pose.rotation[name])
+  return q
+}
+
 /** Root-space position of a foot's sole under a pose. */
 const solePosition = (pose: Pose, side: 'L' | 'R'): Vec3 => {
   const knee = jointPosition(pose, `lowerLeg${side}` as PartName)
@@ -84,6 +97,58 @@ describe('rig', () => {
       const parent = RIG[name].parent
       if (parent !== null) expect(PART_NAMES).toContain(parent)
     }
+  })
+})
+
+describe('partTransforms', () => {
+  // What a ragdoll is seeded from. If it disagrees with the walk a renderer does, the ten rigid bodies
+  // start somewhere other than where the rig was drawn and every death begins with a visible jump.
+  const origin = vec3(3, 1, -2)
+
+  it('puts every box where the renderer puts it', () => {
+    const a = createAnimator(DEFAULT_GAIT, 5)
+    let z = 0
+    let pose = a.step({ position: vec3(0, 0, 0), yaw: 0.7, speed: 5, grounded: true, rising: false }, DT)
+    for (let t = 0; t < 40; t++) {
+      z += 5 * DT
+      pose = a.step({ position: vec3(0, 0, z), yaw: 0.7, speed: 5, grounded: true, rising: false }, DT)
+    }
+    const world = partTransforms(pose, origin)
+    // Independent check: the test's own joint walk, plus the root yaw, plus `meshOffset` to reach the box.
+    const rootQ = { x: 0, y: Math.sin(pose.yaw / 2), z: 0, w: Math.cos(pose.yaw / 2) }
+    for (const name of PART_NAMES) {
+      const jointLocal = jointPosition(pose, name)
+      const turned = rotateVec3(rootQ, jointLocal)
+      const q = mulQuat(rootQ, partQuatOf(pose, name))
+      const centre = rotateVec3(q, RIG[name].meshOffset)
+      expect(world[name].position.x, `${name} x`).toBeCloseTo(origin.x + turned.x + centre.x, 9)
+      expect(world[name].position.y, `${name} y`).toBeCloseTo(origin.y + turned.y + centre.y, 9)
+      expect(world[name].position.z, `${name} z`).toBeCloseTo(origin.z + turned.z + centre.z, 9)
+      for (const axis of ['x', 'y', 'z', 'w'] as const) expect(world[name].rotation[axis], `${name} rot ${axis}`).toBeCloseTo(q[axis], 9)
+    }
+  })
+
+  it('stands the rest pose on the ground, with the parts stacked', () => {
+    const w = partTransforms(restPose(), vec3(0, 0, 0))
+    // Sole of the lower leg: its box centre is half a segment above its foot.
+    expect(w.lowerLegL.position.y - LIMB_LENGTH / 2).toBeCloseTo(FOOT_Y, 9)
+    // Head box centre sits half a head above the top of the torso.
+    expect(w.head.position.y).toBeGreaterThan(w.body.position.y)
+    // Left and right mirror.
+    expect(w.upperArmL.position.x).toBeCloseTo(-w.upperArmR.position.x, 9)
+  })
+
+  it('moves with the root, and turns with the yaw', () => {
+    const flat = partTransforms(restPose(), vec3(0, 0, 0))
+    const shifted = partTransforms(restPose(), vec3(10, 4, -7))
+    expect(shifted.head.position.x - flat.head.position.x).toBeCloseTo(10, 9)
+    expect(shifted.head.position.y - flat.head.position.y).toBeCloseTo(4, 9)
+    // A quarter turn swaps the arms' lateral offset onto the other axis. Negated: a rotation about +y
+    // carries +x toward −z, the same convention the renderer's `root.rotation.y` uses, and the same one
+    // that makes the animator's `yaw = atan2(dx, dz)` mean forward is `(sin yaw, cos yaw)`.
+    const turned = partTransforms({ ...restPose(), yaw: Math.PI / 2 }, vec3(0, 0, 0))
+    expect(turned.upperArmL.position.z).toBeCloseTo(-flat.upperArmL.position.x, 9)
+    expect(Math.abs(turned.upperArmL.position.x)).toBeLessThan(1e-9)
   })
 })
 
@@ -131,17 +196,17 @@ describe('createAnimator', () => {
     const { soles } = run(4, 2)
     const min = Math.min(...soles)
     const max = Math.max(...soles)
-    // Never digs into the floor…
+    // Never digs into the floorâ€¦
     expect(min).toBeGreaterThan(FOOT_Y - 0.03)
-    // …and does lift clear of it during swing.
+    // â€¦and does lift clear of it during swing.
     expect(max - min).toBeGreaterThan(0.1)
   })
 
-  it('plants the stance foot in the world — it must not slide (no moonwalk)', () => {
+  it('plants the stance foot in the world â€” it must not slide (no moonwalk)', () => {
     // The definitive test of walk direction. Travelling +z with yaw 0, a foot in its stance phase
     // has to hold still in *world* space: its local offset must move backward exactly as fast as
     // the body moves forward. If the limb pitch is mirrored, the local offset moves forward
-    // instead and the planted foot slides at twice the body's speed — a moonwalk.
+    // instead and the planted foot slides at twice the body's speed â€” a moonwalk.
     const a = createAnimator()
     const speed = 4
     let z = 0
@@ -154,7 +219,7 @@ describe('createAnimator', () => {
       z += speed * DT
       const pose = a.step({ position: vec3(0, 0, z), yaw: 0, speed, grounded: true, rising: false }, DT)
       const sole = solePosition(pose, 'L')
-      const planted = sole.y < FOOT_Y + 0.01 // on the ground → this foot is bearing weight
+      const planted = sole.y < FOOT_Y + 0.01 // on the ground â†’ this foot is bearing weight
       const worldZ = z + sole.z
       if (planted) {
         if (runStart === null) runStart = worldZ
@@ -169,7 +234,7 @@ describe('createAnimator', () => {
     expect(worstSlide).toBeLessThan(0.08)
   })
 
-  it('bends knees like a human — shin swings back from a forward thigh', () => {
+  it('bends knees like a human â€” shin swings back from a forward thigh', () => {
     // The other half-mirror: with the wrong IK branch the knee inverts and the character walks on
     // bird legs. Mid-stride, the knee joint must sit forward of the straight hip-to-ankle line.
     const a = createAnimator()
@@ -182,7 +247,7 @@ describe('createAnimator', () => {
       const hip = jointPosition(pose, 'upperLegL')
       const knee = jointPosition(pose, 'lowerLegL')
       const ankle = solePosition(pose, 'L')
-      // Knee's forward offset from the hip→ankle chord.
+      // Knee's forward offset from the hipâ†’ankle chord.
       const span = vec3(ankle.x - hip.x, ankle.y - hip.y, ankle.z - hip.z)
       const mid = vec3(hip.x + span.x / 2, hip.y + span.y / 2, hip.z + span.z / 2)
       if (knee.z - mid.z > 0.02) sawForwardKnee = true
@@ -192,7 +257,7 @@ describe('createAnimator', () => {
   })
 
   it('advances stride with distance, so the cycle count scales with speed not time', () => {
-    // Same duration, double the speed → about double the strides. Time-driven animation would
+    // Same duration, double the speed â†’ about double the strides. Time-driven animation would
     // give the same count for both, which is what makes feet skate.
     const cycles = (speed: number): number => {
       const a = createAnimator()
@@ -225,7 +290,7 @@ describe('createAnimator', () => {
   })
 
   it('smooths facing frame-rate independently', () => {
-    // The same elapsed time at different frame rates must land in the same place — the flaw in the
+    // The same elapsed time at different frame rates must land in the same place â€” the flaw in the
     // view this replaces, which eased by a fixed fraction per frame.
     const settle = (dt: number): number => {
       const a = createAnimator()
@@ -243,7 +308,7 @@ describe('createAnimator', () => {
     const a = createAnimator()
     let pose = restPoseOf(a)
     for (let t = 0; t < 60; t++) pose = a.step({ position: vec3(0, 5, 0), yaw: 0, speed: 3, grounded: false, rising: true }, DT)
-    // The *tucked* leg, whichever side leads this jump — the other one is deliberately extended.
+    // The *tucked* leg, whichever side leads this jump â€” the other one is deliberately extended.
     const airSole = Math.max(solePosition(pose, 'L').y, solePosition(pose, 'R').y)
     for (let t = 0; t < 60; t++) pose = a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
     const groundSole = Math.max(solePosition(pose, 'L').y, solePosition(pose, 'R').y)
@@ -252,7 +317,7 @@ describe('createAnimator', () => {
 
   it('keeps the feet on the ground however hard the body leans and twists', () => {
     // The legs hang off the body, so lean and twist rotate the frame they are solved in. Solving as
-    // though it were upright pushes the feet through the floor, and the error grows with the lean —
+    // though it were upright pushes the feet through the floor, and the error grows with the lean â€”
     // which only showed up once the values were raised. Exaggerate both and the feet must still land.
     const a = createAnimator({ ...DEFAULT_GAIT, lean: 0.5, torsoTwist: 0.5, bob: 0.2 })
     let z = 0
@@ -268,7 +333,7 @@ describe('createAnimator', () => {
 
   it('swings the arms wide, splayed off the body, with a bent elbow throughout', () => {
     // Read from a camera behind the character, pure fore/aft swing is foreshortened to nearly
-    // nothing — hence the splay — and a straight arm swinging from the shoulder reads as a mannequin.
+    // nothing â€” hence the splay â€” and a straight arm swinging from the shoulder reads as a mannequin.
     const a = createAnimator()
     let z = 0
     let minElbowBend = Infinity
@@ -279,7 +344,7 @@ describe('createAnimator', () => {
       z += 5.5 * DT
       const pose = a.step({ position: vec3(0, 0, z), yaw: 0, speed: 5.5, grounded: true, rising: false }, DT)
       // Skip the first half second, as the variation tests do. This harness jumps from a standstill to
-      // top speed in one frame — a 330 m/s² acceleration no controller can produce — and the inertial
+      // top speed in one frame â€” a 330 m/sÂ² acceleration no controller can produce â€” and the inertial
       // layer answers it by straightening the elbow, which is not what the assertion below is about.
       if (t < 0.5 / DT) continue
       const shoulder = jointPosition(pose, 'upperArmL')
@@ -315,7 +380,7 @@ describe('createAnimator', () => {
   })
 
   it('poses rising and falling differently', () => {
-    // `STATE_RISING` exists on the wire precisely so a viewer can tell the two apart — vertical
+    // `STATE_RISING` exists on the wire precisely so a viewer can tell the two apart â€” vertical
     // velocity crosses zero at the apex. It was plumbed through and then ignored, which made a jump
     // and a fall the same shape.
     const settle = (rising: boolean): Pose => {
@@ -352,7 +417,7 @@ describe('createAnimator', () => {
 
   /**
    * Apex height of each swing. Filtered above the ground band on purpose: during stance the sole
-   * sits flat at FOOT_Y and float noise there produces "local maxima" that are not steps at all —
+   * sits flat at FOOT_Y and float noise there produces "local maxima" that are not steps at all â€”
    * counting them measures the stance-to-swing gap instead of the difference between steps, which
    * makes a variation test pass whether or not anything varies.
    */
@@ -395,7 +460,7 @@ describe('createAnimator', () => {
   it('varies jumps and landings from one to the next', () => {
     const a = createAnimator(DEFAULT_GAIT, 3)
     const jump = (): number => {
-      // grounded → airborne rolls this jump's shape
+      // grounded â†’ airborne rolls this jump's shape
       for (let t = 0; t < 20; t++) a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
       let pose = a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: false, rising: true }, DT)
       for (let t = 0; t < 25; t++) pose = a.step({ position: vec3(0, 2, 0), yaw: 0, speed: 0, grounded: false, rising: true }, DT)
@@ -451,7 +516,7 @@ describe('createAnimator', () => {
   it('variation 0 makes the seed irrelevant', () => {
     // Asserted this way round on purpose. "Cycles are identical" is hard to measure honestly: the
     // gait fades in from rest, stride creeps as the speed smoother settles, and the swing apex is
-    // sampled at a slightly different phase each cycle — all of which look like variation. Seed
+    // sampled at a slightly different phase each cycle â€” all of which look like variation. Seed
     // independence is the actual property and nothing aliases it.
     const walk = (seed: number, variation: number): number[] => {
       const a = createAnimator({ ...DEFAULT_GAIT, variation }, seed)
@@ -505,7 +570,7 @@ describe('createAnimator', () => {
     const poses = idle()
     for (const side of ['L', 'R'] as const) {
       const soles = poses.map((p) => solePosition(p, side))
-      // Strict on purpose — unlike the amplitudes above this is correctness, not feel, and the
+      // Strict on purpose â€” unlike the amplitudes above this is correctness, not feel, and the
       // measured drift is 0.00 mm. Slack here would hide exactly the bug the lateral solve fixed.
       expect(range(soles.map((s) => s.x)), `${side} foot should not slide sideways`).toBeLessThan(5e-4)
       expect(range(soles.map((s) => s.z)), `${side} foot should not slide fore/aft`).toBeLessThan(5e-4)
@@ -517,7 +582,7 @@ describe('createAnimator', () => {
 
   it('rests its weight on alternating legs, bending the knees unequally', () => {
     // Contrapposto: hips toward the weighted leg, which straightens it and folds the other. The
-    // asymmetry is not posed — it falls out of the IK once the hips move off centre.
+    // asymmetry is not posed â€” it falls out of the IK once the hips move off centre.
     const poses = idle()
     // Knee bend is a pure pitch on the lower leg, so the quaternion's x component reads it directly.
     const skew = poses.map((p) => p.rotation.lowerLegL.x - p.rotation.lowerLegR.x)
@@ -528,7 +593,7 @@ describe('createAnimator', () => {
   it('varies one weight shift from the next', () => {
     const sway = (seed: number): number[] => idle(DEFAULT_GAIT, 30, seed).map((p) => p.bodyOffset.x)
     const held = (xs: number[]): number[] => {
-      // Peak sway of each shift — the value it settles on before easing to the other side.
+      // Peak sway of each shift â€” the value it settles on before easing to the other side.
       const peaks: number[] = []
       for (let i = 1; i < xs.length - 1; i++) if (Math.abs(xs[i]!) > Math.abs(xs[i - 1]!) && Math.abs(xs[i]!) >= Math.abs(xs[i + 1]!)) peaks.push(Math.abs(xs[i]!))
       return peaks
@@ -562,7 +627,7 @@ describe('createAnimator', () => {
   it('does not let the twisting torso drag the planted feet sideways', () => {
     // The torso counter-rotates against the stride, which swings the hip joints laterally. The legs
     // used to be solved as though the foot sat under the hip's *current* x, so the stance foot
-    // tracked that swing — a ~1 cm lateral scuff every step.
+    // tracked that swing â€” a ~1 cm lateral scuff every step.
     const a = createAnimator(DEFAULT_GAIT, 2)
     let z = 0
     const xs: number[] = []
@@ -576,7 +641,7 @@ describe('createAnimator', () => {
   })
 
   /**
-   * Root-space position of a part's far end — the tip of a hanging limb, the top of an upright part.
+   * Root-space position of a part's far end â€” the tip of a hanging limb, the top of an upright part.
    * The inertia assertions are all about where a part physically ends up, deliberately: the moonwalk
    * bug slipped through a solver test that checked angles against their own sign convention.
    */
@@ -601,12 +666,12 @@ describe('createAnimator', () => {
   }
 
   /**
-   * Stand still facing `yaw` for `warmup`, then have `carry` applied for `seconds` — the step onto a
+   * Stand still facing `yaw` for `warmup`, then have `carry` applied for `seconds` â€” the step onto a
    * moving surface, which is an acceleration. The warmup exists so the facing smoother has arrived:
    * a yaw still easing toward its target rotates the frame the acceleration is measured in.
    */
   /**
-   * `seconds` defaults to 1/12 — near the peak of the response, and an exact tick count at both 60 and
+   * `seconds` defaults to 1/12 â€” near the peak of the response, and an exact tick count at both 60 and
    * 144 fps for the frame-rate test. The layer measures acceleration over `inertiaSampleHalfLife`
    * (30 ms), so a step in carry is a short pulse; the old 0.5 s default sat in the tail of the 120 ms
    * window this used to share with the response smoothing, and now lands long after it has settled.
@@ -623,7 +688,7 @@ describe('createAnimator', () => {
 
   it('lags every part against the acceleration, and never the planted feet', () => {
     // The physical property, asserted in world space for all ten parts. A positive roll carries an
-    // upright part's top toward −x but a hanging limb's tip toward +x, so the two kinds need
+    // upright part's top toward âˆ’x but a hanging limb's tip toward +x, so the two kinds need
     // opposite signs; checking displacement rather than angles is what makes that unfakeable.
     for (const [axis, carry] of [
       ['z', vec3(0, 0, 3)],
@@ -657,10 +722,10 @@ describe('createAnimator', () => {
   })
 
   /**
-   * Drive the animator through the controller's own speed profile — 0 → 5.5 m/s in 0.1 s, hold, then
-   * brake to a stop in 0.08 s — and return the poses of each phase separately.
+   * Drive the animator through the controller's own speed profile â€” 0 â†’ 5.5 m/s in 0.1 s, hold, then
+   * brake to a stop in 0.08 s â€” and return the poses of each phase separately.
    *
-   * Those times are 55 m/s² and 69 m/s², 5.6 g and 7 g: the largest accelerations in the game by a
+   * Those times are 55 m/sÂ² and 69 m/sÂ², 5.6 g and 7 g: the largest accelerations in the game by a
    * wide margin, and for a long time the only ones the animator never saw.
    */
   const locomotion = (gait = DEFAULT_GAIT): { ramp: Pose[]; steady: Pose[]; brake: Pose[] } => {
@@ -686,15 +751,15 @@ describe('createAnimator', () => {
     }
     return { ramp, steady, brake }
   }
-  /** Fore/aft component of a joint's offset — the axis locomotion acts on, clear of the vertical bob. */
+  /** Fore/aft component of a joint's offset â€” the axis locomotion acts on, clear of the vertical bob. */
   const fore = (ps: Pose[], part: PartName): { min: number; max: number } => ({
     min: Math.min(...ps.map((p) => p.jointOffset[part].z)),
     max: Math.max(...ps.map((p) => p.jointOffset[part].z)),
   })
 
   it('drags the loose parts when the character itself accelerates', () => {
-    // The bug this exists to prevent, and it shipped: the layer was fed `carry` alone — motion the
-    // character did *not* ask for — so it fired on platforms and nowhere else. Your own starts, stops
+    // The bug this exists to prevent, and it shipped: the layer was fed `carry` alone â€” motion the
+    // character did *not* ask for â€” so it fired on platforms and nowhere else. Your own starts, stops
     // and turns are the biggest accelerations in the game and produced nothing whatsoever.
     const { ramp, steady, brake } = locomotion()
     const parts = ['head', 'upperArmL', 'upperArmR'] as const
@@ -710,9 +775,9 @@ describe('createAnimator', () => {
       // the head used to have, and why the stop is a hard maximum rather than a damping ratio.
       const trailing = fore(brake, part)
       expect(trailing.min, `${part} should still be behind as the brake starts`).toBeLessThan(-0.005)
-      expect(trailing.max, `${part} must not overshoot — a first-order lag cannot`).toBeLessThan(0.01)
+      expect(trailing.max, `${part} must not overshoot â€” a first-order lag cannot`).toBeLessThan(0.01)
       // A held speed keeps a *constant* trail rather than settling to nothing, and that is the effect
-      // rather than a defect: a first-order lag against a target at constant velocity settles at `v·τ`
+      // rather than a defect: a first-order lag against a target at constant velocity settles at `vÂ·Ï„`
       // behind it. Keying to acceleration instead is what made this invisible for two attempts. Bounded
       // by the stop rather than growing with speed without limit.
       expect(meanOf(part), `${part} should hold a steady trail behind its attachment`).toBeLessThan(-0.02)
@@ -739,15 +804,15 @@ describe('createAnimator', () => {
       const p = a.step({ position: vec3(x, 0, z), yaw, speed, grounded: true, rising: false }, DT)
       worst = Math.max(worst, Math.hypot(p.jointOffset.upperArmL.x, p.jointOffset.upperArmL.y, p.jointOffset.upperArmL.z))
     }
-    // Measured 49 mm for a 90° turn over a quarter second.
+    // Measured 49 mm for a 90Â° turn over a quarter second.
     expect(worst, 'a corner should throw the arms wide').toBeGreaterThan(0.02)
   })
 
   it('responds to acceleration, not to being carried at speed', () => {
     // Standing on a train at line speed feels like standing still. A layer keyed to velocity would
     // hold a permanent lean the whole time a platform is moving.
-    // Rotations only. The *translations* legitimately hold a steady trail at a steady carry — a joint lag is
-    // first order and settles at `v·τ` behind whatever is dragging it, exactly as it does when the character
+    // Rotations only. The *translations* legitimately hold a steady trail at a steady carry â€” a joint lag is
+    // first order and settles at `vÂ·Ï„` behind whatever is dragging it, exactly as it does when the character
     // runs. Measured 30 mm at a 3 m/s carry, which is the layer working, not the lean failing to settle.
     const still = carried(vec3(0, 0, 0), 6)
     const cruising = carried(vec3(0, 0, 3), 6)
@@ -757,7 +822,7 @@ describe('createAnimator', () => {
   })
 
   it('compresses under upward acceleration and never lifts the feet', () => {
-    // Rising hips are unsolvable — standing legs are already at full extension — so a downward
+    // Rising hips are unsolvable â€” standing legs are already at full extension â€” so a downward
     // acceleration has to show up somewhere other than the hips.
     const still = carried(vec3(0, 0, 0))
     const up = carried(vec3(0, 4, 0))
@@ -778,7 +843,7 @@ describe('createAnimator', () => {
     //
     // Read as the forearm's *rotation*, which is what this closed form governs. A tip position would also
     // carry the arms' world-space positional lag, and that one is only exact for a target at constant
-    // velocity — against an accelerating shoulder it keeps an O(dt) error, measured 2.1 mm here. Worth
+    // velocity â€” against an accelerating shoulder it keeps an O(dt) error, measured 2.1 mm here. Worth
     // knowing, and a separate matter from the derivative this test is about.
     const at = (step: number): number => pushed(0, vec3(0, 0, 3), 1 / 12, 0, DEFAULT_GAIT, step).rotation.lowerArmL.x
     expect(Math.abs(at(1 / 144) - at(1 / 60))).toBeLessThan(1e-3)
@@ -817,24 +882,12 @@ describe('createAnimator', () => {
     const yaw = Math.PI / 2 // facing +x
     const pose = pushed(yaw, vec3(3, 0, 0), 1 / 12, 1)
     const still = pushed(yaw, vec3(0, 0, 0), 1 / 12, 1)
-    // Root-space −z is behind the character, which faces +x in the world: a backward lag.
+    // Root-space âˆ’z is behind the character, which faces +x in the world: a backward lag.
     expect(tipPosition(pose, 'lowerArmL').z).toBeLessThan(tipPosition(still, 'lowerArmL').z - 1e-3)
     // Compared against the same moment of the idle layer, which is also moving the hips sideways.
     expect(Math.abs(pose.bodyOffset.x - still.bodyOffset.x), 'nothing lateral, in its own frame').toBeLessThan(1e-4)
   })
 
-  /**
-   * Composed **world** rotation of a part, parents included, and its angle away from upright. The
-   * head's whole point is what it does in the world while the torso does something else, so a test
-   * that reads its local quaternion is testing the wrong frame.
-   */
-  const partQuat = (pose: Pose, part: PartName): Quat => {
-    const chain: PartName[] = []
-    for (let p: PartName | null = part; p !== null; p = RIG[p].parent) chain.unshift(p)
-    let q: Quat = { x: 0, y: 0, z: 0, w: 1 }
-    for (const name of chain) q = mulQuat(q, pose.rotation[name])
-    return q
-  }
   const angleOf = (q: Quat): number => 2 * Math.acos(Math.min(1, Math.abs(q.w)))
 
   /** Walk at top speed for `seconds`, dropping the first second while the gait fades in. */
@@ -852,17 +905,17 @@ describe('createAnimator', () => {
 
   it('holds the head level in the world while the torso leans and twists', () => {
     // The head's own signals off, so this measures stabilization alone. At 0 the head is welded and
-    // goes exactly where the torso goes — which is the state this layer exists to leave behind.
+    // goes exactly where the torso goes â€” which is the state this layer exists to leave behind.
     const bare = { ...DEFAULT_GAIT, headRise: 0, headFall: 0, headLand: 0, headSprint: 0, headCounterBob: 0, inertiaStrength: 0 }
     const ratio = (headStabilize: number): number => {
       const poses = walkPoses({ ...bare, headStabilize })
-      const head = Math.max(...poses.map((p) => angleOf(partQuat(p, 'head'))))
-      const body = Math.max(...poses.map((p) => angleOf(partQuat(p, 'body'))))
+      const head = Math.max(...poses.map((p) => angleOf(partQuatOf(p, 'head'))))
+      const body = Math.max(...poses.map((p) => angleOf(partQuatOf(p, 'body'))))
       return head / body
     }
     // Exact at both ends and linear between, because the counter-rotation is the base rotation's
-    // conjugate slerped along the geodesic — not its three Euler terms negated, which would only
-    // agree to first order. Torso tilt is 0.238 rad at top speed; the head's is (1 − knob) of it.
+    // conjugate slerped along the geodesic â€” not its three Euler terms negated, which would only
+    // agree to first order. Torso tilt is 0.238 rad at top speed; the head's is (1 âˆ’ knob) of it.
     expect(ratio(0), 'welded: the head is exactly as tilted as the torso').toBeCloseTo(1, 6)
     expect(ratio(0.5), 'half of it').toBeCloseTo(0.5, 3)
     expect(ratio(1), 'stabilized: dead level while the torso works').toBeLessThan(1e-6)
@@ -885,14 +938,14 @@ describe('createAnimator', () => {
   })
 
   it('opens and closes a gap at the neck, and does not shrink the stride to do it', () => {
-    // A rotation cannot express this: the neck has to translate. The gap is the visible effect — two boxes
+    // A rotation cannot express this: the neck has to translate. The gap is the visible effect â€” two boxes
     // meeting at a horizontal seam, so any offset shows.
     //
     // What this deliberately does **not** claim is that the head is much steadier than the hips. It is
     // not, any more: at the tuned half-life the head rides 119 mm of the hips' 129 mm. The spring this
     // replaced managed 43 mm, because it filtered the neck point in *root* space and so never saw the
-    // character travelling at all. One first-order lag in world space cannot do both — attenuating a
-    // 3.2 Hz bob wants τ ≫ 50 ms, which at 5.5 m/s is a 275 mm trail. The trail was the ask; the vertical
+    // character travelling at all. One first-order lag in world space cannot do both â€” attenuating a
+    // 3.2 Hz bob wants Ï„ â‰« 50 ms, which at 5.5 m/s is a 275 mm trail. The trail was the ask; the vertical
     // steadiness is what it cost, and this records the number so the trade is not rediscovered by accident.
     const gap = (headLagHalfLife: number): { gap: number; head: number; hip: number } => {
       const poses = walkPoses({ ...DEFAULT_GAIT, headLagHalfLife })
@@ -906,7 +959,7 @@ describe('createAnimator', () => {
     const welded = gap(0)
     expect(welded.gap, 'welded: the head sits exactly on its neck').toBe(0)
     expect(lagging.gap, 'lagging: a gap worth seeing opens at the neck').toBeGreaterThan(0.03)
-    expect(lagging.hip, 'the hips must keep bobbing — this is a neck, not a smaller stride').toBeCloseTo(welded.hip, 6)
+    expect(lagging.hip, 'the hips must keep bobbing â€” this is a neck, not a smaller stride').toBeCloseTo(welded.hip, 6)
     expect(lagging.head).toBeLessThan(welded.head + 1e-9) // no worse than welded, but only just
   })
 
@@ -933,7 +986,7 @@ describe('createAnimator', () => {
     expect(Math.abs(settled.rotation.head.x), 'and it should decay away, not stick').toBeLessThan(0.02)
   })
 
-  /** Stand for `before`, then jump and land — the sharpest step the joint targets ever take. */
+  /** Stand for `before`, then jump and land â€” the sharpest step the joint targets ever take. */
   const landing = (gait = DEFAULT_GAIT, after = 1.2, before = 0.4): Pose[] => {
     const a = createAnimator(gait, 5)
     const stand = { position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }
@@ -948,7 +1001,7 @@ describe('createAnimator', () => {
     // Structural, not tuned. The body's travel is `bodyOffset`, which the leg IK is solved against, and
     // a leg offset would slide the foot it is standing on. The forearms are excluded for a different
     // reason: they inherit their shoulder, so the arm lags as one piece instead of coming apart at the
-    // elbow — and a spring there would also force the shoulder's frequency, which is what kept the
+    // elbow â€” and a spring there would also force the shoulder's frequency, which is what kept the
     // shoulder too stiff to see.
     const sprung = new Set<PartName>(['head', 'upperArmL', 'upperArmR'])
     for (const poses of [walkPoses(), landing(), idle(DEFAULT_GAIT, 4)])
@@ -959,7 +1012,7 @@ describe('createAnimator', () => {
   it('settles back to nothing once the character is still', () => {
     // A lag that kept a residual would leave the head permanently off its neck. Measured against a flat
     // idle: with the idle layer live the torso never actually stops moving, so a real character holds a
-    // fraction of a millimetre of lag forever — correctly, but that is not what this asks.
+    // fraction of a millimetre of lag forever â€” correctly, but that is not what this asks.
     const poses = landing(FLAT_IDLE, 4)
     const last = poses[poses.length - 1]!
     for (const part of PART_NAMES) {
@@ -977,7 +1030,7 @@ describe('createAnimator', () => {
   it('does not vibrate when the position arrives at the sim rate', () => {
     // The bug this exists to prevent, reported from the game: the head and arms shook while moving, worst
     // on a platform. Position comes from a 30 Hz simulation and this layer runs per rendered frame, so a
-    // one-frame difference of it alternates between zero and a whole tick's travel — a square wave at the
+    // one-frame difference of it alternates between zero and a whole tick's travel â€” a square wave at the
     // frame rate. The velocity feed-forward that makes the trail frame-rate independent was reading that
     // difference raw.
     //
@@ -1020,8 +1073,8 @@ describe('createAnimator', () => {
     // here; the layer cannot be steadier than the body it hangs off. What it must not do is add jitter of
     // its own, and it does not: 3.9 mm against the body's 25.
     //
-    // Reading the position difference raw gave 92 mm — a whole tick's travel, alternating in sign every
-    // frame — and 12 mm even after averaging it over 60 ms, since the square wave's amplitude is twice its
+    // Reading the position difference raw gave 92 mm â€” a whole tick's travel, alternating in sign every
+    // frame â€” and 12 mm even after averaging it over 60 ms, since the square wave's amplitude is twice its
     // mean. Driving from the known velocity removes it by construction.
     expect(worstJump(offsets), 'the offset must not jitter more than the body it hangs off').toBeLessThan(worstJump(bodyOffsets))
     expect(worstJump(offsets), 'and must stay small in absolute terms').toBeLessThan(5e-3)
@@ -1029,7 +1082,7 @@ describe('createAnimator', () => {
 
   it('does not vibrate on a noisy carry while the character stands still', () => {
     // The second half of the same report: still shaking slightly when carried by a platform and not moving.
-    // `carry` is `(applied − locomotion)/dt` from the controller — a per-tick difference of what the physics
+    // `carry` is `(applied âˆ’ locomotion)/dt` from the controller â€” a per-tick difference of what the physics
     // solver resolved, divided by a 33 ms tick, so a few millimetres of contact hash becomes tenths of a m/s.
     // Modelled here as a carry that alternates every sim tick around its mean.
     const a = createAnimator(DEFAULT_GAIT, 3)
@@ -1037,7 +1090,7 @@ describe('createAnimator', () => {
     let x = 0
     const offsets: Vec3[] = []
     for (let t = 0; t < 4 / DT; t++) {
-      // 2 m/s of ride with ±0.3 m/s of hash on it, held for a sim tick at a time.
+      // 2 m/s of ride with Â±0.3 m/s of hash on it, held for a sim tick at a time.
       const tick = Math.floor(t / 2)
       const noisy = 2 + (tick % 2 === 0 ? 0.3 : -0.3)
       if (t % 2 === 0) x += noisy * (2 * DT)
@@ -1058,7 +1111,7 @@ describe('createAnimator', () => {
     // The half of the vibration report that survived fixing the translation, and the more visible half: a
     // few degrees of arm and head rotation, not a fraction of a millimetre of travel. `carry` is a per-tick
     // difference out of the physics solver, so it arrives with 30 Hz hash on it, and differentiating scales
-    // that hash by `ln2/window`. Locomotion's 0.03 s window — needed to see a 0.1 s start at all — turned a
+    // that hash by `ln2/window`. Locomotion's 0.03 s window â€” needed to see a 0.1 s start at all â€” turned a
     // quiet platform ride into shake. The two inputs now get their own windows.
     const jitterOf = (steps: { speed: number; carry: Vec3 }[]): number => {
       const a = createAnimator(DEFAULT_GAIT, 3)
@@ -1077,9 +1130,9 @@ describe('createAnimator', () => {
       return worst
     }
 
-    // Standing on a 2 m/s ride with ±0.3 m/s of per-tick hash: the arm must be quiet.
+    // Standing on a 2 m/s ride with Â±0.3 m/s of per-tick hash: the arm must be quiet.
     const noisy = Array.from({ length: Math.round(4 / DT) }, (_, t) => ({ speed: 0, carry: vec3(2 + (Math.floor(t / 2) % 2 === 0 ? 0.3 : -0.3), 0, 0) }))
-    // Under 0.2° of change per frame, against the several degrees this used to shake by.
+    // Under 0.2Â° of change per frame, against the several degrees this used to shake by.
     expect(jitterOf(noisy), 'a noisy carry must not shake the arm').toBeLessThan(0.0017)
 
     // And the sharp window still earns its keep: after a second of standing, a clean 0.1 s ramp to full
@@ -1119,10 +1172,10 @@ describe('createAnimator', () => {
   })
 
   it('trails the same distance at 60 and 144 fps', () => {
-    // A plain `smooth` toward a *moving* target is frame-rate dependent — it treats the target as jumping
-    // at the frame boundary and settles at `v·dt·α/(1−α)`, which measured 42 mm at 60 fps against 62 mm at
+    // A plain `smooth` toward a *moving* target is frame-rate dependent â€” it treats the target as jumping
+    // at the frame boundary and settles at `vÂ·dtÂ·Î±/(1âˆ’Î±)`, which measured 42 mm at 60 fps against 62 mm at
     // 144 for the same tuning. Measuring the target's velocity and using the exact linear-ramp solution
-    // removes that, and this is the test that says so: a steady run, where the trail is purely v·τ.
+    // removes that, and this is the test that says so: a steady run, where the trail is purely vÂ·Ï„.
     const trail = (step: number): number => {
       const a = createAnimator(FLAT_IDLE, 5)
       const speed = DEFAULT_GAIT.runSpeed
@@ -1143,7 +1196,7 @@ describe('createAnimator', () => {
     // all, so they converged instantly and rendered nothing. This one is in world space.
     //
     // The elbow has no lag of its own, so whatever the shoulder is displaced by, the elbow is displaced
-    // by identically — the arm cannot come apart. Exact, not approximate: this layer writes translations
+    // by identically â€” the arm cannot come apart. Exact, not approximate: this layer writes translations
     // only and no rotation reads them back, so turning the lag off changes positions and nothing else.
     const on = walkPoses()
     const off = walkPoses({ ...DEFAULT_GAIT, armLagHalfLife: 0 })
@@ -1233,16 +1286,16 @@ describe('createAnimator', () => {
   })
 
   it('folds one leg and extends the other, on every jump', () => {
-    // Kodjo's ask, and the reason the tuck share is asymmetric by construction rather than a ±fraction
+    // Kodjo's ask, and the reason the tuck share is asymmetric by construction rather than a Â±fraction
     // around the tuck: half of a 0.36 m tuck is still a bent knee, not an extended leg.
     //
     // It is also why the trailing leg's share is the one quantity in the air pose that the per-jump
-    // strength roll does not touch. Near full extension the knee angle is savagely nonlinear — 66 mm
-    // of residual lift measures 46° of bend — so a roll landing under 1 does not read as "slightly
+    // strength roll does not touch. Near full extension the knee angle is savagely nonlinear â€” 66 mm
+    // of residual lift measures 46Â° of bend â€” so a roll landing under 1 does not read as "slightly
     // less straight", it reads as bent, and it did on half the jumps before this was separated out.
     for (const j of jumps(4)) {
       const bends = [kneeBend(j.rise, 'L'), kneeBend(j.rise, 'R')]
-      // Measured: lead 99–112°, trail 2–13°.
+      // Measured: lead 99â€“112Â°, trail 2â€“13Â°.
       expect(Math.max(...bends), 'the leading knee folds').toBeGreaterThan(60)
       expect(Math.min(...bends), 'the trailing leg extends').toBeLessThan(20)
     }
@@ -1299,3 +1352,4 @@ describe('createAnimator', () => {
 
 const restPoseOf = (a: ReturnType<typeof createAnimator>): Pose =>
   a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
+

@@ -49,6 +49,8 @@ export interface PhysicsBody {
   rotation: () => Quat
   linvel: () => Vec3
   setLinvel: (v: Vec3) => void
+  /** Angular velocity (rad/s about each world axis). Set at spawn so a ragdoll's parts tumble. */
+  setAngvel: (v: Vec3) => void
   /** Move the body to `position` and zero its velocities (wakes it). */
   teleport: (position: Vec3) => void
   /** Move the body to `position` but keep its velocity — for reconciling a
@@ -225,6 +227,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
         return vec3(v.x, v.y, v.z)
       },
       setLinvel: (v) => body.setLinvel({ x: v.x, y: v.y, z: v.z }, true),
+      setAngvel: (v) => body.setAngvel({ x: v.x, y: v.y, z: v.z }, true),
       teleport: (p) => {
         body.setTranslation({ x: p.x, y: p.y, z: p.z }, true)
         body.setLinvel({ x: 0, y: 0, z: 0 }, true)

@@ -1,4 +1,4 @@
-import { createAnimator, DEFAULT_GAIT, type Animator, type GaitTuning } from '@mp/character'
+import { createAnimator, DEFAULT_GAIT, type Animator, type GaitTuning, type Pose } from '@mp/character'
 import type { EntityId, Vec3 } from '@mp/core'
 import { createCharacterRig, THREE, type CharacterRig } from '@mp/render-three'
 
@@ -17,6 +17,8 @@ import { makeNameLabel } from './nametag'
 interface Rendered {
   rig: CharacterRig
   animator: Animator
+  /** The pose written this frame. The animator reuses one object, so this is a live reference to it. */
+  pose: Pose | null
   last: Vec3
   /** Smoothed derived planar speed (m/s), for peers. */
   speed: number
@@ -55,6 +57,13 @@ export interface CharacterPlacement {
 export interface CharacterViews {
   /** Create or update a player's view for this frame. */
   upsert: (id: EntityId, placement: CharacterPlacement, dt: number) => void
+  /**
+   * The pose last written for a player, or `null` if it has no view yet. A ragdoll is seeded from this,
+   * so the ten rigid bodies start in exactly the pose the animated rig was in and nothing jumps.
+   */
+  poseOf: (id: EntityId) => Pose | null
+  /** Show or hide a player's rig — hidden while its ragdoll has the floor. */
+  setVisible: (id: EntityId, visible: boolean) => void
   /** Remove any players whose id isn't in `keep` (left the room). */
   prune: (keep: Set<EntityId>) => void
 }
@@ -62,7 +71,8 @@ export interface CharacterViews {
 /** Shared, read-only: the animator treats zero carry exactly as it treats none. */
 const NO_CARRY: Vec3 = { x: 0, y: 0, z: 0 }
 
-const SELF_COLORS = { shirt: 0xfacc15, trousers: 0x422006 }
+/** Exported so a ragdoll's loose parts are the same colours the player's own rig was. */
+export const SELF_COLORS = { shirt: 0xfacc15, trousers: 0x422006 }
 const PEER_COLORS = { shirt: 0xf97316, trousers: 0x2b1503 }
 
 /**
@@ -80,7 +90,7 @@ export const createCharacterViews = (scene: THREE.Scene, gait: GaitTuning = DEFA
       scene.add(rig.root)
       // Seed from the entity id so a session is reproducible, and so two characters do not roll the
       // same sequence of steps — the variation is still per movement, not a fixed personality.
-      r = { rig, animator: createAnimator(gait, (id as number) * 2654435761), last: { ...position }, speed: 0, vy: 0, yaw: 0 }
+      r = { rig, animator: createAnimator(gait, (id as number) * 2654435761), pose: null, last: { ...position }, speed: 0, vy: 0, yaw: 0 }
       chars.set(id, r)
     }
     return r
@@ -130,9 +140,15 @@ export const createCharacterViews = (scene: THREE.Scene, gait: GaitTuning = DEFA
         },
         dt,
       )
+      r.pose = pose
       r.rig.apply(pose)
       r.rig.root.position.set(position.x, position.y, position.z)
       setLabel(r, name)
+    },
+    poseOf: (id) => chars.get(id)?.pose ?? null,
+    setVisible: (id, visible) => {
+      const r = chars.get(id)
+      if (r !== undefined) r.rig.root.visible = visible
     },
     prune: (keep) => {
       for (const [id, r] of chars)

@@ -37,13 +37,14 @@ export interface CharacterRig {
   dispose: () => void
 }
 
-export const createCharacterRig = (opts: CharacterRigOptions = {}): CharacterRig => {
+/**
+ * One mesh per part, geometry and material built exactly as the rig builds them, plus the disposables
+ * to hand back. Shared so a ragdoll's loose parts cannot drift from the rig's own look.
+ */
+const buildParts = (opts: CharacterRigOptions): { mesh: Record<PartName, THREE.Mesh>; owned: (THREE.BufferGeometry | THREE.Material)[] } => {
   const radius = opts.cornerRadius ?? 0.03
   const colors = { ...DEFAULT_COLORS, ...opts.colors }
   const castShadow = opts.castShadow ?? true
-
-  const root = new THREE.Group()
-  const joints = {} as Record<PartName, THREE.Group>
   const owned: (THREE.BufferGeometry | THREE.Material)[] = []
 
   const materials = new Map<RigStyle, THREE.MeshStandardMaterial>()
@@ -57,6 +58,53 @@ export const createCharacterRig = (opts: CharacterRigOptions = {}): CharacterRig
     return m
   }
 
+  const mesh = {} as Record<PartName, THREE.Mesh>
+  for (const name of PART_NAMES) {
+    const part = RIG[name]
+    const geo =
+      radius > 0
+        ? new RoundedBoxGeometry(part.size.x, part.size.y, part.size.z, 2, Math.min(radius, Math.min(part.size.x, part.size.y, part.size.z) / 2 - 1e-3))
+        : new THREE.BoxGeometry(part.size.x, part.size.y, part.size.z)
+    owned.push(geo)
+    const m = new THREE.Mesh(geo, materialFor(part.style))
+    m.castShadow = castShadow
+    m.receiveShadow = castShadow
+    mesh[name] = m
+  }
+  return { mesh, owned }
+}
+
+/**
+ * The rig's ten parts as **loose, unparented** meshes, each to be positioned in world space by its own
+ * `PartTransform`. What a ragdoll draws: the same solids the rig draws, with the joint hierarchy gone,
+ * because after death there are no joints left — only ten rigid bodies.
+ */
+export interface LooseParts {
+  /** Add to the scene, then write world transforms onto the meshes each frame. */
+  group: THREE.Group
+  mesh: Record<PartName, THREE.Mesh>
+  dispose: () => void
+}
+
+export const createLooseParts = (opts: CharacterRigOptions = {}): LooseParts => {
+  const { mesh, owned } = buildParts(opts)
+  const group = new THREE.Group()
+  for (const name of PART_NAMES) group.add(mesh[name])
+  return {
+    group,
+    mesh,
+    dispose: () => {
+      group.removeFromParent()
+      for (const o of owned) o.dispose()
+    },
+  }
+}
+
+export const createCharacterRig = (opts: CharacterRigOptions = {}): CharacterRig => {
+  const root = new THREE.Group()
+  const joints = {} as Record<PartName, THREE.Group>
+  const { mesh, owned } = buildParts(opts)
+
   // Parents before children: the rig lists the body first and every part's parent precedes it.
   for (const name of PART_NAMES) {
     const part = RIG[name]
@@ -64,17 +112,9 @@ export const createCharacterRig = (opts: CharacterRigOptions = {}): CharacterRig
     joint.name = name // so callers (and tests) can find a specific joint
     joint.position.set(part.pivot.x, part.pivot.y, part.pivot.z)
 
-    const geo =
-      radius > 0
-        ? new RoundedBoxGeometry(part.size.x, part.size.y, part.size.z, 2, Math.min(radius, Math.min(part.size.x, part.size.y, part.size.z) / 2 - 1e-3))
-        : new THREE.BoxGeometry(part.size.x, part.size.y, part.size.z)
-    owned.push(geo)
-
-    const mesh = new THREE.Mesh(geo, materialFor(part.style))
-    mesh.position.set(part.meshOffset.x, part.meshOffset.y, part.meshOffset.z)
-    mesh.castShadow = castShadow
-    mesh.receiveShadow = castShadow
-    joint.add(mesh)
+    const m = mesh[name]
+    m.position.set(part.meshOffset.x, part.meshOffset.y, part.meshOffset.z)
+    joint.add(m)
 
     joints[name] = joint
     const parent = part.parent
