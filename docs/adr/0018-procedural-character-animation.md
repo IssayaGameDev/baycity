@@ -35,7 +35,8 @@ realize:
 **Four techniques carry the smoothness:**
 
 1. **Stride phase advances with distance travelled, not time.** Feet plant correctly at any speed
-   with no per-speed tuning, and it stays correct while riding a moving platform.
+   with no per-speed tuning, and it stays correct while riding a moving platform. (The platform half of
+   that was false in the first implementation — see the stride-pacing update below.)
 2. **Feet are placed, not posed.** A parametric foot path plus closed-form two-bone IK derives hip
    and knee. Controlling where the foot *is* removes skating by construction; hand-tuned joint
    curves only shrink it.
@@ -96,7 +97,8 @@ change to adopt it.
   the physical property: a foot in stance holds still in **world** space. Testing the IK against its
   own convention did not catch this; only testing against the rendered result did.
 - Peer speed is derived from rendered position, which **includes platform carry** — so a peer
-  standing still on a fast mover animates as a sprint. Fixable without bandwidth by probing the
+  standing still on a fast mover animates as a sprint. **Fixed by putting locomotion speed on the wire
+  (v9) — see the update above.** Fixable without bandwidth by probing the
   peer's ground and subtracting the platform's velocity (`LoadedLevel.basePose`); not done. The same
   gap is why peers get no `carry` and so never brace: separating a peer's carry from its walking needs
   either its locomotion speed on the wire or that ground probe. Both bugs, one missing quantity.
@@ -392,3 +394,34 @@ Still derived for peers: **vertical velocity**. Its only consumer is the joint l
 vertical motion whatever caused it, so a platform's carry riding along in it is correct rather than a
 compromise. Peers still brace for nothing on the inertial layer (`carry` is null for them), which is a
 separate gap and unchanged.
+
+## Update — the stride is paced by the surface underfoot, not by the world
+
+Reported from the game: running the way a platform travels made the legs sprint, and running against it
+made them crawl. Walking on a moving surface is relative to that surface, not to the world.
+
+The phase was advancing by `min(worldPositionDelta, speed * dt * 1.5)`. On a platform the world delta is
+locomotion **plus** carry, so with the platform it ran at that 1.5x cap and against it the delta fell
+toward zero and the legs froze mid-stride. The comment above that line claimed the delta was there so a
+carried character would not accrue stride while standing still on a mover — but that case works purely
+because `speed` is zero, which is equally true without the delta. So the delta was doing nothing the
+clamp needed and was wrong on the two cases it was actually deciding.
+
+It is now `speed * dt` alone: `speed` is locomotion speed, so on a platform it *is* the surface-relative
+distance, and on static ground the surface is not moving and the two agree. A teleport (respawn,
+reconciliation) also cannot spin the legs any more, since no position difference feeds this term.
+
+**`AnimationInput.position` is gone.** With the stride paced by speed it was the last consumer, and a
+required field nothing reads is worse than a mechanical change across the call sites. Sixty-six of them,
+all proven by the typechecker.
+
+One behaviour deliberately changed with it: **walking into a wall now runs on the spot** instead of
+freezing mid-stride. The world delta used to be zero there and pinned the phase. Making that exact again
+needs the surface's *own* velocity, which `CharacterState.carry` cannot supply — it is
+`(applied − locomotion)/dt`, so it conflates "the ground moved under me" with "I was blocked", and the
+two want opposite answers. `stepCharacter` has the platform's velocity internally (`ride`) and could
+expose it if the wall case ever matters.
+
+The regression test asserts the property directly: identical sole traces at the same locomotion speed
+with carry at 0, +4, −4 and −5 m/s (that last being a full walk with no world movement at all), and no
+stride at all when carried at a standstill.

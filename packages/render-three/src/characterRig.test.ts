@@ -1,5 +1,4 @@
 import { createAnimator, FOOT_Y, LIMB_LENGTH, PART_NAMES, RIG, restPose } from '@mp/character'
-import { vec3 } from '@mp/core'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 
@@ -41,11 +40,9 @@ describe('createCharacterRig', () => {
   it('keeps the soles at ground level while walking', () => {
     const rig = createCharacterRig()
     const animator = createAnimator()
-    let x = 0
     let lowest = Infinity
     for (let t = 0; t < 240; t++) {
-      x += 4 * (1 / 60)
-      rig.apply(animator.step({ position: vec3(x, 0, 0), yaw: 0, speed: 4, grounded: true, rising: false }, 1 / 60))
+      rig.apply(animator.step({ yaw: 0, speed: 4, grounded: true, rising: false }, 1 / 60))
       for (const side of ['L', 'R'] as const) lowest = Math.min(lowest, solePosition(rig, side).y)
     }
     // Never punches through the floor the capsule rests on.

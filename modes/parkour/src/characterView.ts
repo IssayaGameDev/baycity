@@ -146,7 +146,6 @@ export const createCharacterViews = (scene: THREE.Scene, gait: GaitTuning = DEFA
 
       const pose = r.animator.step(
         {
-          position,
           yaw: yaw ?? r.yaw,
           speed: speed ?? r.speed,
           vy: vy ?? r.vy,

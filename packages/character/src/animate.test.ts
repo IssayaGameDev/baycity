@@ -108,10 +108,10 @@ describe('partTransforms', () => {
   it('puts every box where the renderer puts it', () => {
     const a = createAnimator(DEFAULT_GAIT, 5)
     let z = 0
-    let pose = a.step({ position: vec3(0, 0, 0), yaw: 0.7, speed: 5, grounded: true, rising: false }, DT)
+    let pose = a.step({ yaw: 0.7, speed: 5, grounded: true, rising: false }, DT)
     for (let t = 0; t < 40; t++) {
       z += 5 * DT
-      pose = a.step({ position: vec3(0, 0, z), yaw: 0.7, speed: 5, grounded: true, rising: false }, DT)
+      pose = a.step({ yaw: 0.7, speed: 5, grounded: true, rising: false }, DT)
     }
     const world = partTransforms(pose, origin)
     // Independent check: the test's own joint walk, plus the root yaw, plus `meshOffset` to reach the box.
@@ -182,15 +182,57 @@ describe('createAnimator', () => {
   const run = (speed: number, seconds: number, grounded = true) => {
     const a = createAnimator()
     let x = 0
-    let pose = a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded, rising: false }, DT)
+    let pose = a.step({ yaw: 0, speed: 0, grounded, rising: false }, DT)
     const soles: number[] = []
     for (let t = 0; t < seconds / DT; t++) {
       x += speed * DT
-      pose = a.step({ position: vec3(x, 0, 0), yaw: 0, speed, grounded, rising: false }, DT)
+      pose = a.step({ yaw: 0, speed, grounded, rising: false }, DT)
       soles.push(solePosition(pose, 'L').y)
     }
     return { pose, soles, distance: x }
   }
+
+  describe('stride pacing on a moving surface', () => {
+    // Inertia and variation off: this is about the stride clock alone, and both of those layers react to
+    // `carry` in ways that are correct but would mask an exact comparison.
+    const STRIDE_ONLY = {
+      ...DEFAULT_GAIT,
+      variation: 0,
+      inertiaStrength: 0,
+      inertiaHip: 0,
+      inertiaVertical: 0,
+      inertiaFloat: 0,
+      headLagHalfLife: 0,
+      armLagHalfLife: 0,
+    }
+    /** Walk at `speed` for two seconds while the ground underfoot moves at `carryZ`. */
+    const ride = (speed: number, carryZ: number): number[] => {
+      const a = createAnimator(STRIDE_ONLY, 3)
+      const out: number[] = []
+      for (let t = 0; t < 2 / DT; t++) {
+        const pose = a.step({ yaw: 0, speed, grounded: true, rising: false, carry: vec3(0, 0, carryZ) }, DT)
+        out.push(solePosition(pose, 'L').y, solePosition(pose, 'R').y)
+      }
+      return out
+    }
+
+    it('paces the stride off the surface underfoot, not off the world', () => {
+      // Reported from the game: running the way a platform travels made the legs sprint, running against
+      // it made them crawl. The phase was advancing with the *world* position delta, clamped to 1.5x the
+      // locomotion rate â€” so with the platform it ran at that cap, and against it the delta approached
+      // zero and the legs froze mid-stride while the player was plainly walking.
+      const still = ride(5, 0)
+      expect(ride(5, 4), 'running with the platform').toEqual(still)
+      expect(ride(5, -4), 'running against it').toEqual(still)
+      expect(ride(5, -5), 'exactly cancelling: no world movement at all, but a full walk').toEqual(still)
+    })
+
+    it('accrues no stride while carried at a standstill', () => {
+      // The one case the old position delta got right, and the reason it was there. Zero locomotion
+      // accrues zero stride whatever the world is doing, which `speed * dt` gives for free.
+      expect(ride(0, 6)).toEqual(ride(0, 0))
+    })
+  })
 
   it('keeps both soles at or above the ground, and plants them at ground level', () => {
     const { soles } = run(4, 2)
@@ -210,14 +252,14 @@ describe('createAnimator', () => {
     const a = createAnimator()
     const speed = 4
     let z = 0
-    a.step({ position: vec3(0, 0, 0), yaw: 0, speed, grounded: true, rising: false }, DT)
+    a.step({ yaw: 0, speed, grounded: true, rising: false }, DT)
 
     let worstSlide = 0
     let runStart: number | null = null
     let runLast = 0
     for (let t = 0; t < 3 / DT; t++) {
       z += speed * DT
-      const pose = a.step({ position: vec3(0, 0, z), yaw: 0, speed, grounded: true, rising: false }, DT)
+      const pose = a.step({ yaw: 0, speed, grounded: true, rising: false }, DT)
       const sole = solePosition(pose, 'L')
       const planted = sole.y < FOOT_Y + 0.01 // on the ground â†’ this foot is bearing weight
       const worldZ = z + sole.z
@@ -239,11 +281,11 @@ describe('createAnimator', () => {
     // bird legs. Mid-stride, the knee joint must sit forward of the straight hip-to-ankle line.
     const a = createAnimator()
     let z = 0
-    let pose = a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 4, grounded: true, rising: false }, DT)
+    let pose = a.step({ yaw: 0, speed: 4, grounded: true, rising: false }, DT)
     let sawForwardKnee = false
     for (let t = 0; t < 2 / DT; t++) {
       z += 4 * DT
-      pose = a.step({ position: vec3(0, 0, z), yaw: 0, speed: 4, grounded: true, rising: false }, DT)
+      pose = a.step({ yaw: 0, speed: 4, grounded: true, rising: false }, DT)
       const hip = jointPosition(pose, 'upperLegL')
       const knee = jointPosition(pose, 'lowerLegL')
       const ankle = solePosition(pose, 'L')
@@ -264,10 +306,10 @@ describe('createAnimator', () => {
       let x = 0
       let last = 0
       let crossings = 0
-      a.step({ position: vec3(0, 0, 0), yaw: 0, speed, grounded: true, rising: false }, DT)
+      a.step({ yaw: 0, speed, grounded: true, rising: false }, DT)
       for (let t = 0; t < 2 / DT; t++) {
         x += speed * DT
-        const pose = a.step({ position: vec3(x, 0, 0), yaw: 0, speed, grounded: true, rising: false }, DT)
+        const pose = a.step({ yaw: 0, speed, grounded: true, rising: false }, DT)
         const y = solePosition(pose, 'L').y
         if (last <= FOOT_Y + 0.01 && y > FOOT_Y + 0.01) crossings++
         last = y
@@ -281,9 +323,9 @@ describe('createAnimator', () => {
 
   it('does not accrue stride while standing still', () => {
     const a = createAnimator()
-    let pose = a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
+    let pose = a.step({ yaw: 0, speed: 0, grounded: true, rising: false }, DT)
     const first = solePosition(pose, 'L')
-    for (let t = 0; t < 120; t++) pose = a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
+    for (let t = 0; t < 120; t++) pose = a.step({ yaw: 0, speed: 0, grounded: true, rising: false }, DT)
     const later = solePosition(pose, 'L')
     expect(Math.abs(later.z - first.z)).toBeLessThan(0.01)
     expect(Math.abs(later.y - first.y)).toBeLessThan(0.02)
@@ -294,9 +336,9 @@ describe('createAnimator', () => {
     // view this replaces, which eased by a fixed fraction per frame.
     const settle = (dt: number): number => {
       const a = createAnimator()
-      let pose = a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, dt)
+      let pose = a.step({ yaw: 0, speed: 0, grounded: true, rising: false }, dt)
       for (let t = 0; t < Math.round(0.3 / dt); t++)
-        pose = a.step({ position: vec3(0, 0, 0), yaw: Math.PI / 2, speed: 0, grounded: true, rising: false }, dt)
+        pose = a.step({ yaw: Math.PI / 2, speed: 0, grounded: true, rising: false }, dt)
       return pose.yaw
     }
     expect(settle(1 / 144)).toBeCloseTo(settle(1 / 30), 2)
@@ -307,10 +349,10 @@ describe('createAnimator', () => {
     // rise/fall test below), so this has to ask for the half it means.
     const a = createAnimator()
     let pose = restPoseOf(a)
-    for (let t = 0; t < 60; t++) pose = a.step({ position: vec3(0, 5, 0), yaw: 0, speed: 3, grounded: false, rising: true }, DT)
+    for (let t = 0; t < 60; t++) pose = a.step({ yaw: 0, speed: 3, grounded: false, rising: true }, DT)
     // The *tucked* leg, whichever side leads this jump â€” the other one is deliberately extended.
     const airSole = Math.max(solePosition(pose, 'L').y, solePosition(pose, 'R').y)
-    for (let t = 0; t < 60; t++) pose = a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
+    for (let t = 0; t < 60; t++) pose = a.step({ yaw: 0, speed: 0, grounded: true, rising: false }, DT)
     const groundSole = Math.max(solePosition(pose, 'L').y, solePosition(pose, 'R').y)
     expect(airSole, 'the leading knee tucks up while rising').toBeGreaterThan(groundSole + 0.15)
   })
@@ -322,10 +364,10 @@ describe('createAnimator', () => {
     const a = createAnimator({ ...DEFAULT_GAIT, lean: 0.5, torsoTwist: 0.5, bob: 0.2 })
     let z = 0
     let lowest = Infinity
-    a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 5.5, grounded: true, rising: false }, DT)
+    a.step({ yaw: 0, speed: 5.5, grounded: true, rising: false }, DT)
     for (let t = 0; t < 3 / DT; t++) {
       z += 5.5 * DT
-      const pose = a.step({ position: vec3(0, 0, z), yaw: 0, speed: 5.5, grounded: true, rising: false }, DT)
+      const pose = a.step({ yaw: 0, speed: 5.5, grounded: true, rising: false }, DT)
       for (const side of ['L', 'R'] as const) lowest = Math.min(lowest, solePosition(pose, side).y)
     }
     expect(lowest).toBeGreaterThan(FOOT_Y - 0.03)
@@ -339,10 +381,10 @@ describe('createAnimator', () => {
     let minElbowBend = Infinity
     let maxHandSpread = 0
     let handRange = { min: Infinity, max: -Infinity }
-    a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 5.5, grounded: true, rising: false }, DT)
+    a.step({ yaw: 0, speed: 5.5, grounded: true, rising: false }, DT)
     for (let t = 0; t < 2 / DT; t++) {
       z += 5.5 * DT
-      const pose = a.step({ position: vec3(0, 0, z), yaw: 0, speed: 5.5, grounded: true, rising: false }, DT)
+      const pose = a.step({ yaw: 0, speed: 5.5, grounded: true, rising: false }, DT)
       // Skip the first half second, as the variation tests do. This harness jumps from a standstill to
       // top speed in one frame â€” a 330 m/sÂ² acceleration no controller can produce â€” and the inertial
       // layer answers it by straightening the elbow, which is not what the assertion below is about.
@@ -368,10 +410,10 @@ describe('createAnimator', () => {
     let z = 0
     let min = Infinity
     let max = -Infinity
-    a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 5.5, grounded: true, rising: false }, DT)
+    a.step({ yaw: 0, speed: 5.5, grounded: true, rising: false }, DT)
     for (let t = 0; t < 2 / DT; t++) {
       z += 5.5 * DT
-      const pose = a.step({ position: vec3(0, 0, z), yaw: 0, speed: 5.5, grounded: true, rising: false }, DT)
+      const pose = a.step({ yaw: 0, speed: 5.5, grounded: true, rising: false }, DT)
       min = Math.min(min, pose.bodyOffset.y)
       max = Math.max(max, pose.bodyOffset.y)
     }
@@ -385,8 +427,8 @@ describe('createAnimator', () => {
     // and a fall the same shape.
     const settle = (rising: boolean): Pose => {
       const a = createAnimator()
-      let pose = a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
-      for (let t = 0; t < 60; t++) pose = a.step({ position: vec3(0, 4, 0), yaw: 0, speed: 2, grounded: false, rising }, DT)
+      let pose = a.step({ yaw: 0, speed: 0, grounded: true, rising: false }, DT)
+      for (let t = 0; t < 60; t++) pose = a.step({ yaw: 0, speed: 2, grounded: false, rising }, DT)
       return pose
     }
     const up = settle(true)
@@ -408,9 +450,9 @@ describe('createAnimator', () => {
     // The camera sits behind the character, where fore/aft motion is foreshortened away. A jump has
     // to displace the arms laterally or, from the player's own view, nothing appears to happen.
     const a = createAnimator()
-    let pose = a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
+    let pose = a.step({ yaw: 0, speed: 0, grounded: true, rising: false }, DT)
     const groundSpread = Math.abs(jointPosition(pose, 'lowerArmL').x - jointPosition(pose, 'upperArmL').x)
-    for (let t = 0; t < 60; t++) pose = a.step({ position: vec3(0, 4, 0), yaw: 0, speed: 2, grounded: false, rising: false }, DT)
+    for (let t = 0; t < 60; t++) pose = a.step({ yaw: 0, speed: 2, grounded: false, rising: false }, DT)
     const airSpread = Math.abs(jointPosition(pose, 'lowerArmL').x - jointPosition(pose, 'upperArmL').x)
     expect(airSpread - groundSpread, 'arms should swing out to the side once airborne').toBeGreaterThan(0.15)
   })
@@ -441,7 +483,7 @@ describe('createAnimator', () => {
       let z = 0
       for (let t = 0; t < ticks; t++) {
         z += 5 * DT
-        const pose = a.step({ position: vec3(0, 0, z), yaw: 0, speed: 5, grounded: true, rising: false }, DT)
+        const pose = a.step({ yaw: 0, speed: 5, grounded: true, rising: false }, DT)
         lifts.push(solePosition(pose, 'L').y)
       }
       return lifts
@@ -461,9 +503,9 @@ describe('createAnimator', () => {
     const a = createAnimator(DEFAULT_GAIT, 3)
     const jump = (): number => {
       // grounded â†’ airborne rolls this jump's shape
-      for (let t = 0; t < 20; t++) a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
-      let pose = a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: false, rising: true }, DT)
-      for (let t = 0; t < 25; t++) pose = a.step({ position: vec3(0, 2, 0), yaw: 0, speed: 0, grounded: false, rising: true }, DT)
+      for (let t = 0; t < 20; t++) a.step({ yaw: 0, speed: 0, grounded: true, rising: false }, DT)
+      let pose = a.step({ yaw: 0, speed: 0, grounded: false, rising: true }, DT)
+      for (let t = 0; t < 25; t++) pose = a.step({ yaw: 0, speed: 0, grounded: false, rising: true }, DT)
       return solePosition(pose, 'L').y
     }
     const a1 = jump()
@@ -481,10 +523,10 @@ describe('createAnimator', () => {
     let z = 0
     let worstSlide = 0
     let runStart: number | null = null
-    a.step({ position: vec3(0, 0, 0), yaw: 0, speed, grounded: true, rising: false }, DT)
+    a.step({ yaw: 0, speed, grounded: true, rising: false }, DT)
     for (let t = 0; t < 4 / DT; t++) {
       z += speed * DT
-      const pose = a.step({ position: vec3(0, 0, z), yaw: 0, speed, grounded: true, rising: false }, DT)
+      const pose = a.step({ yaw: 0, speed, grounded: true, rising: false }, DT)
       const sole = solePosition(pose, 'L')
       const worldZ = z + sole.z
       if (sole.y < FOOT_Y + 0.01) {
@@ -504,7 +546,7 @@ describe('createAnimator', () => {
     let worst = 0
     for (let t = 0; t < 6 / DT; t++) {
       z += 5 * DT
-      const pose = a.step({ position: vec3(0, 0, z), yaw: 0, speed: 5, grounded: true, rising: false }, DT)
+      const pose = a.step({ yaw: 0, speed: 5, grounded: true, rising: false }, DT)
       expect(pose.bodyOffset.y).toBeLessThanOrEqual(1e-6)
       worst = Math.min(worst, solePosition(pose, 'L').y - FOOT_Y)
     }
@@ -524,7 +566,7 @@ describe('createAnimator', () => {
       let z = 0
       for (let t = 0; t < 4 / DT; t++) {
         z += 5 * DT
-        const pose = a.step({ position: vec3(0, 0, z), yaw: 0, speed: 5, grounded: true, rising: false }, DT)
+        const pose = a.step({ yaw: 0, speed: 5, grounded: true, rising: false }, DT)
         out.push(solePosition(pose, 'L').y, pose.bodyOffset.y, pose.rotation.upperArmL.x)
       }
       return out
@@ -538,7 +580,7 @@ describe('createAnimator', () => {
     const a = createAnimator(gait, seed)
     const out: Pose[] = []
     for (let t = 0; t < seconds / DT; t++) {
-      const pose = a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
+      const pose = a.step({ yaw: 0, speed: 0, grounded: true, rising: false }, DT)
       out.push(snapshot(pose))
     }
     return out
@@ -615,7 +657,7 @@ describe('createAnimator', () => {
       let z = 0
       for (let t = 0; t < 3 / DT; t++) {
         z += 5 * DT
-        const pose = a.step({ position: vec3(0, 0, z), yaw: 0, speed: 5, grounded: true, rising: false }, DT)
+        const pose = a.step({ yaw: 0, speed: 5, grounded: true, rising: false }, DT)
         // Skip the first second: the speed smoother ramps from rest, so idle legitimately applies.
         if (t > 1 / DT) out.push(pose.bodyOffset.x, pose.bodyOffset.y, pose.rotation.body.z, solePosition(pose, 'L').y)
       }
@@ -633,7 +675,7 @@ describe('createAnimator', () => {
     const xs: number[] = []
     for (let t = 0; t < 4 / DT; t++) {
       z += 5 * DT
-      const pose = a.step({ position: vec3(0, 0, z), yaw: 0, speed: 5, grounded: true, rising: false }, DT)
+      const pose = a.step({ yaw: 0, speed: 5, grounded: true, rising: false }, DT)
       const sole = solePosition(pose, 'L')
       if (sole.y < FOOT_Y + 0.01) xs.push(sole.x) // planted
     }
@@ -678,7 +720,7 @@ describe('createAnimator', () => {
    */
   const pushed = (yaw: number, carry: Vec3, seconds = 1 / 12, warmup = 0, gait = DEFAULT_GAIT, step = DT): Pose => {
     const a = createAnimator(gait, 6)
-    const stand = { position: vec3(0, 0, 0), yaw, speed: 0, grounded: true, rising: false }
+    const stand = { yaw, speed: 0, grounded: true, rising: false }
     for (let t = 0; t < Math.round(warmup / step); t++) a.step(stand, step)
     let pose = a.step(stand, step)
     for (let t = 0; t < Math.round(seconds / step); t++) pose = a.step({ ...stand, carry }, step)
@@ -734,7 +776,7 @@ describe('createAnimator', () => {
     let speed = 0
     const at = (s: number): Pose => {
       z += s * DT
-      return snapshot(a.step({ position: vec3(0, 0, z), yaw: 0, speed: s, grounded: true, rising: false }, DT))
+      return snapshot(a.step({ yaw: 0, speed: s, grounded: true, rising: false }, DT))
     }
     for (let t = 0; t < 1 / DT; t++) at(0)
     const ramp: Pose[] = []
@@ -794,14 +836,14 @@ describe('createAnimator', () => {
     let z = 0
     for (let t = 0; t < 1.5 / DT; t++) {
       z += speed * DT
-      a.step({ position: vec3(x, 0, z), yaw: 0, speed, grounded: true, rising: false }, DT)
+      a.step({ yaw: 0, speed, grounded: true, rising: false }, DT)
     }
     let worst = 0
     for (let t = 0; t < 0.5 / DT; t++) {
       const yaw = (Math.PI / 2) * Math.min(1, (t * DT) / 0.25)
       x += Math.sin(yaw) * speed * DT
       z += Math.cos(yaw) * speed * DT
-      const p = a.step({ position: vec3(x, 0, z), yaw, speed, grounded: true, rising: false }, DT)
+      const p = a.step({ yaw, speed, grounded: true, rising: false }, DT)
       worst = Math.max(worst, Math.hypot(p.jointOffset.upperArmL.x, p.jointOffset.upperArmL.y, p.jointOffset.upperArmL.z))
     }
     // Measured 49 mm for a 90Â° turn over a quarter second.
@@ -871,8 +913,8 @@ describe('createAnimator', () => {
     // And an animator never told about carry at all must be untouched by the feature existing. Same
     // elapsed time as the comparison below, or the two land at different points in the idle cycle.
     const a = createAnimator(DEFAULT_GAIT, 6)
-    let plain = a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
-    for (let t = 0; t < Math.round(0.5 / DT); t++) plain = a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
+    let plain = a.step({ yaw: 0, speed: 0, grounded: true, rising: false }, DT)
+    for (let t = 0; t < Math.round(0.5 / DT); t++) plain = a.step({ yaw: 0, speed: 0, grounded: true, rising: false }, DT)
     expect(sample(plain)).toEqual(sample(carried(vec3(0, 0, 0), 0.5)))
   })
 
@@ -897,7 +939,7 @@ describe('createAnimator', () => {
     let z = 0
     for (let t = 0; t < seconds / DT; t++) {
       z += DEFAULT_GAIT.runSpeed * DT
-      const pose = a.step({ position: vec3(0, 0, z), yaw: 0, speed: DEFAULT_GAIT.runSpeed, grounded: true, rising: false }, DT)
+      const pose = a.step({ yaw: 0, speed: DEFAULT_GAIT.runSpeed, grounded: true, rising: false }, DT)
       if (t > 1 / DT) out.push(snapshot(pose))
     }
     return out
@@ -925,7 +967,7 @@ describe('createAnimator', () => {
     // Both smoothers chase the same target on different half-lives, so the lead is self-cancelling:
     // it exists only while the heading is changing and needs nothing to unwind it.
     const a = createAnimator()
-    const stand = { position: vec3(0, 0, 0), speed: 0, grounded: true, rising: false }
+    const stand = { speed: 0, grounded: true, rising: false }
     let pose = a.step({ ...stand, yaw: 0 }, DT)
     let peak = 0
     for (let t = 0; t < 0.3 / DT; t++) {
@@ -966,18 +1008,18 @@ describe('createAnimator', () => {
   it('looks at the landing on the way down, and nods on the impact', () => {
     const air = (rising: boolean): number => {
       const a = createAnimator()
-      a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
+      a.step({ yaw: 0, speed: 0, grounded: true, rising: false }, DT)
       let pose = restPoseOf(a)
-      for (let t = 0; t < 1 / DT; t++) pose = a.step({ position: vec3(0, 4, 0), yaw: 0, speed: 0, grounded: false, rising }, DT)
+      for (let t = 0; t < 1 / DT; t++) pose = a.step({ yaw: 0, speed: 0, grounded: false, rising }, DT)
       return pose.rotation.head.x // positive pitches the head forward and down
     }
     expect(air(false), 'falling: looking down at where this ends').toBeGreaterThan(air(true) + 0.1)
 
     // The nod, isolated from the falling look so it is the nod being measured.
     const a = createAnimator({ ...DEFAULT_GAIT, headRise: 0, headFall: 0 })
-    a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
-    for (let t = 0; t < 0.5 / DT; t++) a.step({ position: vec3(0, 4, 0), yaw: 0, speed: 0, grounded: false, rising: false }, DT)
-    const land = { position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }
+    a.step({ yaw: 0, speed: 0, grounded: true, rising: false }, DT)
+    for (let t = 0; t < 0.5 / DT; t++) a.step({ yaw: 0, speed: 0, grounded: false, rising: false }, DT)
+    const land = { yaw: 0, speed: 0, grounded: true, rising: false }
     let nod = 0
     for (let t = 0; t < 0.2 / DT; t++) nod = Math.max(nod, a.step(land, DT).rotation.head.x)
     expect(nod, 'the impact should drive the head down').toBeGreaterThan(0.05)
@@ -989,9 +1031,9 @@ describe('createAnimator', () => {
   /** Stand for `before`, then jump and land â€” the sharpest step the joint targets ever take. */
   const landing = (gait = DEFAULT_GAIT, after = 1.2, before = 0.4): Pose[] => {
     const a = createAnimator(gait, 5)
-    const stand = { position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }
+    const stand = { yaw: 0, speed: 0, grounded: true, rising: false }
     for (let t = 0; t < before / DT; t++) a.step(stand, DT)
-    for (let t = 0; t < 0.4 / DT; t++) a.step({ ...stand, position: vec3(0, 3, 0), grounded: false, rising: false }, DT)
+    for (let t = 0; t < 0.4 / DT; t++) a.step({ ...stand, grounded: false, rising: false }, DT)
     const out: Pose[] = []
     for (let t = 0; t < after / DT; t++) out.push(snapshot(a.step(stand, DT)))
     return out
@@ -1027,31 +1069,27 @@ describe('createAnimator', () => {
     expect(Math.hypot(lag.x, lag.y, lag.z), 'idle keeps it alive, but barely').toBeLessThan(6.6e-3)
   })
 
-  it('does not vibrate when the position arrives at the sim rate', () => {
+  it('does not vibrate when its input arrives at the sim rate', () => {
     // The bug this exists to prevent, reported from the game: the head and arms shook while moving, worst
-    // on a platform. Position comes from a 30 Hz simulation and this layer runs per rendered frame, so a
-    // one-frame difference of it alternates between zero and a whole tick's travel â€” a square wave at the
-    // frame rate. The velocity feed-forward that makes the trail frame-rate independent was reading that
-    // difference raw.
+    // on a platform. Everything this layer is driven by is computed once per 30 Hz tick while the layer
+    // itself runs per rendered frame, so any per-frame difference of it alternates between zero and a whole
+    // tick's worth â€” a square wave at the frame rate, whose amplitude is *twice* its mean. The velocity
+    // feed-forward that makes the trail frame-rate independent was differencing the position raw: 92 mm of
+    // frame-to-frame flip, and 12 mm even after averaging over 60 ms.
     //
-    // Modelled exactly: the position is held for two 60 fps frames at a time, and a platform's carry is
-    // added on top so the per-tick step is as large as the case that showed it worst.
+    // The position feed is gone entirely now (the stride is paced by `speed * dt`), but the hazard is not:
+    // `carry` genuinely does arrive per tick and is held between renders, which is what this models â€” a fast
+    // mover underfoot, its velocity stepping every other 60 fps frame, on top of a full run.
     const a = createAnimator(DEFAULT_GAIT, 3)
     const speed = DEFAULT_GAIT.runSpeed
-    const carry = vec3(4, 0, 0) // a fast mover underfoot, on top of the running
-    let held = vec3(0, 0, 0)
-    let z = 0
-    let x = 0
+    let carry = vec3(0, 0, 0)
     const offsets: Vec3[] = []
     const bodyOffsets: Vec3[] = []
     for (let t = 0; t < 4 / DT; t++) {
-      // The sim advances every other rendered frame; between ticks the position does not change at all.
-      if (t % 2 === 0) {
-        z += speed * (2 * DT)
-        x += carry.x * (2 * DT)
-        held = vec3(x, 0, z)
-      }
-      const p = a.step({ position: held, yaw: 0, speed, grounded: true, rising: false, carry }, DT)
+      // The sim advances every other rendered frame; between ticks the carry does not change at all, and
+      // its value alternates by a realistic amount of solver hash on top of the mover's 4 m/s.
+      if (t % 2 === 0) carry = vec3(4 + (t % 4 === 0 ? 0.3 : -0.3), 0, 0)
+      const p = a.step({ yaw: 0, speed, grounded: true, rising: false, carry }, DT)
       if (t > 1 / DT) {
         offsets.push({ ...p.jointOffset.upperArmL })
         bodyOffsets.push({ ...p.bodyOffset })
@@ -1069,18 +1107,17 @@ describe('createAnimator', () => {
       return worst
     }
     // Compared against the *body's* own frame-to-frame movement under the same stepped input, rather than
-    // against zero. A held position also freezes the stride phase, so the gait's bob steps by 25 mm a frame
-    // here; the layer cannot be steadier than the body it hangs off. What it must not do is add jitter of
-    // its own, and it does not: 3.9 mm against the body's 25.
+    // against zero: the layer cannot be steadier than the body it hangs off, and at a full run the gait's
+    // own bob moves the hips 22 mm a frame here. What it must not do is add jitter of its own, and it does
+    // not — 6.4 mm against the body's 22.
     //
-    // Reading the position difference raw gave 92 mm â€” a whole tick's travel, alternating in sign every
-    // frame â€” and 12 mm even after averaging it over 60 ms, since the square wave's amplitude is twice its
-    // mean. Driving from the known velocity removes it by construction.
+    // Reading a position difference raw gave 92 mm â€” a whole tick's travel, alternating in sign every frame
+    // â€” and 12 mm even after averaging it over 60 ms, since the square wave's amplitude is twice its mean.
+    // Driving from known velocities removes it by construction.
     expect(worstJump(offsets), 'the offset must not jitter more than the body it hangs off').toBeLessThan(worstJump(bodyOffsets))
-    // 6.9 mm, up from 3.9 before the bob joined the drive: `phase` advances from the position delta, so under
-    // a stepped position the bob's rate is stepped too, and it is a *derivative*, which amplifies that. It is
-    // filtered down by `BOB_RATE_HALFLIFE` rather than out, deliberately — see there for the trade. If shimmer
-    // is ever reported on a platform again this is the first number to move.
+    // 6.4 mm of it is the bob joining the drive: the bob's rate is a *derivative* of the stride, so any step
+    // in the drive is amplified. `BOB_RATE_HALFLIFE` filters it down rather than out, deliberately — see
+    // there for the trade. If shimmer is ever reported on a platform again this is the first number to move.
     expect(worstJump(offsets), 'and must stay small in absolute terms').toBeLessThan(1e-2)
   })
 
@@ -1090,7 +1127,7 @@ describe('createAnimator', () => {
     // solver resolved, divided by a 33 ms tick, so a few millimetres of contact hash becomes tenths of a m/s.
     // Modelled here as a carry that alternates every sim tick around its mean.
     const a = createAnimator(DEFAULT_GAIT, 3)
-    const stand = { position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }
+    const stand = { yaw: 0, speed: 0, grounded: true, rising: false }
     let x = 0
     const offsets: Vec3[] = []
     for (let t = 0; t < 4 / DT; t++) {
@@ -1098,7 +1135,7 @@ describe('createAnimator', () => {
       const tick = Math.floor(t / 2)
       const noisy = 2 + (tick % 2 === 0 ? 0.3 : -0.3)
       if (t % 2 === 0) x += noisy * (2 * DT)
-      const p = a.step({ ...stand, position: vec3(x, 0, 0), carry: vec3(noisy, 0, 0) }, DT)
+      const p = a.step({ ...stand, carry: vec3(noisy, 0, 0) }, DT)
       if (t > 1 / DT) offsets.push({ ...p.jointOffset.upperArmL })
     }
     let worst = 0
@@ -1126,7 +1163,7 @@ describe('createAnimator', () => {
         const s = steps[t]!
         x += s.carry.x * DT
         z += s.speed * DT
-        const p = a.step({ position: vec3(x, 0, z), yaw: 0, speed: s.speed, grounded: true, rising: false, carry: s.carry }, DT)
+        const p = a.step({ yaw: 0, speed: s.speed, grounded: true, rising: false, carry: s.carry }, DT)
         if (t > 1 / DT) angles.push(p.rotation.upperArmL.x)
       }
       let worst = 0
@@ -1156,13 +1193,13 @@ describe('createAnimator', () => {
     // all and jumps had no trail. This is the test that says so.
     const at = (vy: number): number => {
       const a = createAnimator(DEFAULT_GAIT, 3)
-      const stand = { position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }
+      const stand = { yaw: 0, speed: 0, grounded: true, rising: false }
       for (let t = 0; t < 1 / DT; t++) a.step(stand, DT)
       let y = 0
       let out = 0
       for (let t = 0; t < 0.4 / DT; t++) {
         y += vy * DT
-        out = a.step({ position: vec3(0, y, 0), yaw: 0, speed: 0, vy, grounded: false, rising: vy > 0 }, DT).jointOffset.head.y
+        out = a.step({ yaw: 0, speed: 0, vy, grounded: false, rising: vy > 0 }, DT).jointOffset.head.y
       }
       return out
     }
@@ -1187,7 +1224,7 @@ describe('createAnimator', () => {
       let out = 0
       for (let t = 0; t < Math.round(3 / step); t++) {
         z += speed * step
-        out = a.step({ position: vec3(0, 0, z), yaw: 0, speed, grounded: true, rising: false }, step).jointOffset.upperArmL.z
+        out = a.step({ yaw: 0, speed, grounded: true, rising: false }, step).jointOffset.upperArmL.z
       }
       return out
     }
@@ -1254,14 +1291,14 @@ describe('createAnimator', () => {
    */
   const jumps = (n: number, gait = DEFAULT_GAIT): { rise: Pose; fall: Pose }[] => {
     const a = createAnimator(gait, 9)
-    const stand = { position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }
+    const stand = { yaw: 0, speed: 0, grounded: true, rising: false }
     const out: { rise: Pose; fall: Pose }[] = []
     for (let j = 0; j < n; j++) {
       for (let t = 0; t < 0.4 / DT; t++) a.step(stand, DT)
-      let rise = snapshot(a.step({ ...stand, position: vec3(0, 2, 0), grounded: false, rising: true }, DT))
-      for (let t = 0; t < 0.4 / DT; t++) rise = snapshot(a.step({ ...stand, position: vec3(0, 3, 0), grounded: false, rising: true }, DT))
+      let rise = snapshot(a.step({ ...stand, grounded: false, rising: true }, DT))
+      for (let t = 0; t < 0.4 / DT; t++) rise = snapshot(a.step({ ...stand, grounded: false, rising: true }, DT))
       let fall = rise
-      for (let t = 0; t < 0.4 / DT; t++) fall = snapshot(a.step({ ...stand, position: vec3(0, 2, 0), grounded: false, rising: false }, DT))
+      for (let t = 0; t < 0.4 / DT; t++) fall = snapshot(a.step({ ...stand, grounded: false, rising: false }, DT))
       out.push({ rise, fall })
     }
     return out
@@ -1355,5 +1392,5 @@ describe('createAnimator', () => {
 })
 
 const restPoseOf = (a: ReturnType<typeof createAnimator>): Pose =>
-  a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
+  a.step({ yaw: 0, speed: 0, grounded: true, rising: false }, DT)
 

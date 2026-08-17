@@ -9,8 +9,10 @@ import { FOOT_Y, HIP_HEIGHT, LIMB_LENGTH, RIG, restPose, type PartName, type Pos
  *
  * Three things make it read as smooth rather than as a loop being played:
  *
- * 1. **Stride phase advances with distance travelled, not with time.** Feet then plant correctly at
- *    any speed with no per-speed tuning, and it stays right while riding a moving platform.
+ * 1. **Stride phase advances with distance travelled, not with time** — and specifically distance
+ *    relative to the surface underfoot, which is `speed * dt`. Feet then plant correctly at any speed
+ *    with no per-speed tuning, and stay right while riding a moving platform, where world distance and
+ *    stride distance are two different things.
  * 2. **Feet are placed, not posed.** The foot follows a parametric path and a closed-form two-bone
  *    solve derives hip and knee. Controlling the foot is what removes skating by construction; the
  *    alternative — hand-tuned joint curves — only shrinks it.
@@ -19,11 +21,13 @@ import { FOOT_Y, HIP_HEIGHT, LIMB_LENGTH, RIG, restPose, type PartName, type Pos
  *    144 fps than at 60.
  */
 export interface AnimationInput {
-  /** Root position (capsule centre) this frame. */
-  position: Vec3
   /** Facing target, radians. Movement direction — the controller has no independent aim. */
   yaw: number
-  /** Planar speed, m/s, **excluding** any platform carrying the character. */
+  /**
+   * Planar speed, m/s, **excluding** any platform carrying the character. This is the stride's
+   * odometer: `speed * dt` is distance covered relative to the surface underfoot, which is what the
+   * feet plant against. A world position is deliberately *not* an input — see the phase advance.
+   */
   speed: number
   /**
    * World vertical velocity, m/s, **excluding** any platform carrying the character (`CharacterState.vy`).
@@ -500,7 +504,6 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
   // seeded: the side is the feature, not the variation, and starting every character on the same one
   // costs nothing because the *magnitude* is rolled per jump on top.
   let airLead: -1 | 1 = 1
-  let prev: Vec3 | null = null
   let wasGrounded = true
   let lastSpeed = 0
   // Idle state. Its clock is time, not distance, and only advances while actually idle.
@@ -637,15 +640,20 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
       const stride = tuning.strideWalk + (tuning.strideRun - tuning.strideWalk) * t
 
       // --- phase from distance, not time -------------------------------------------------
-      // Horizontal distance actually covered this frame. Using the position delta rather than
-      // `speed * dt` means a character carried by a platform does not accrue stride while standing
-      // still on it, as long as the caller reports locomotion speed rather than world speed.
-      if (prev !== null && input.grounded) {
-        const moved = Math.hypot(input.position.x - prev.x, input.position.z - prev.z)
-        // One cycle is two strides (left then right).
-        if (stride > 0) phase += Math.min(moved, speed * dt * 1.5) / (stride * 2)
-      }
-      prev = { ...input.position }
+      // Distance covered **relative to the surface underfoot**, which is `speed * dt`: `speed` is
+      // locomotion speed, so on a platform it is already the surface-relative quantity, and on static
+      // ground the surface is not moving and the two agree.
+      //
+      // This used to clamp against the world position delta, and that was wrong on exactly the case
+      // the clamp was there to handle. Running *with* a platform, the delta is locomotion plus carry,
+      // so the legs ran up to 1.5x too fast (the cap); running *against* it the delta approaches zero
+      // and the legs froze mid-stride while the player was plainly walking. Standing still on a mover
+      // was the one case it got right, and `speed` alone gets that right too — zero locomotion accrues
+      // no stride, which is what the old comment here claimed the delta was for.
+      //
+      // It also means a teleport (respawn, reconciliation) cannot spin the legs: there is no position
+      // difference in this term to spin them with.
+      if (input.grounded && stride > 0) phase += (speed * dt) / (stride * 2) // one cycle = two strides
 
       // --- per-movement variation ---------------------------------------------------------
       // Rolled on events, never per frame: per-frame randomness reads as noise, not as life.
