@@ -143,7 +143,8 @@ export const createCharacterViews = (scene: THREE.Scene, gait: GaitTuning = DEFA
       r.pose = pose
       r.rig.apply(pose)
       r.rig.root.position.set(position.x, position.y, position.z)
-      setLabel(r, name)
+      // No nametag over your own head: you know who you are, and the camera sits directly behind it.
+      if (!isSelf) setLabel(r, name)
     },
     poseOf: (id) => chars.get(id)?.pose ?? null,
     setVisible: (id, visible) => {

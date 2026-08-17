@@ -378,17 +378,18 @@ const LAG_PARTS = ['head', 'upperArmL', 'upperArmR'] as const
 type LagPart = (typeof LAG_PARTS)[number]
 
 /**
- * One lagging joint: how far behind its attachment point it currently sits (`o`, world space), and the
- * smoothed world velocity it is being dragged along at (`v`).
+ * One lagging joint: how far behind its attachment point it currently sits, in world space.
  *
  * World space, not root, and this is the crux of the whole layer. A joint's position in the body's own
  * frame never changes — a shoulder is bolted to the torso — so a filter applied there converges instantly
  * and renders nothing at all. The attachment point only moves because the *character* moves, and that is
  * what there is to be late to.
+ *
+ * The velocity driving them is shared, since all three hang off the same torso, so it is smoothed once
+ * outside rather than once per part.
  */
 interface Lag {
   o: Vec3
-  v: Vec3
 }
 
 /**
@@ -423,6 +424,21 @@ const LAG_VELOCITY_HALFLIFE = 0.12
  * them in full. It is the *noise* that is 30 Hz, not the motion.
  */
 const CARRY_SAMPLE_HALFLIFE = 0.12
+
+/**
+ * How long the bob's vertical rate is averaged over (s), before it joins the lag's driving velocity.
+ *
+ * Its rate is computed in closed form, so it carries no differencing error of its own — but `phase` advances
+ * from the *position delta*, which arrives at the sim rate, so the rate inherits that staircase and
+ * differentiating amplifies it. Left raw it put 27 mm of frame-to-frame jitter into the offset, more than the
+ * body's own.
+ *
+ * It has to sit between the two frequencies that matter, and it only works because they are far apart: the
+ * bob is ~3.2 Hz at top speed and the tick is 30 Hz. At 40 ms roughly two thirds of the bob survives and the
+ * staircase is down by a factor of ten. `LAG_VELOCITY_HALFLIFE` is far too wide for this — 120 ms would leave
+ * about a quarter of the bob, which is the negligible amount it had before being added at all.
+ */
+const BOB_RATE_HALFLIFE = 0.04
 
 /** Frame-rate-independent smoothing: `cur` moves half the remaining distance every `halfLife`. */
 const smooth = (cur: number, target: number, dt: number, halfLife: number): number =>
@@ -507,7 +523,13 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
   let accCarryZ = 0
   // Lagging joints, in world space. Seeded on the first frame from wherever the joints actually are:
   // starting them at the origin would fling every one of them across the world on frame one.
-  const lag = Object.fromEntries(LAG_PARTS.map((n) => [n, { o: vec3(0, 0, 0), v: vec3(0, 0, 0) }])) as Record<LagPart, Lag>
+  const lag = Object.fromEntries(LAG_PARTS.map((n) => [n, { o: vec3(0, 0, 0) }])) as Record<LagPart, Lag>
+  // The velocity every lagging joint is dragged along at, smoothed. Shared: they all hang off one torso.
+  let lagVx = 0
+  let lagVy = 0
+  let lagVz = 0
+  // The bob's vertical rate, on its own shorter filter — see `BOB_RATE_HALFLIFE`.
+  let bobRate = 0
   let lagPrimed = false
 
   // Per-movement variation. Each of these is a multiplier around 1, rolled on an event and then
@@ -588,15 +610,13 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
     const st = lag[part]
     if (!lagPrimed || halfLife <= 0) {
       st.o = vec3(0, 0, 0)
-      st.v = vec3(0, 0, 0)
       if (halfLife <= 0) return st.o
     }
-    st.v = vec3(smooth(st.v.x, vx, dt, LAG_VELOCITY_HALFLIFE), smooth(st.v.y, vy, dt, LAG_VELOCITY_HALFLIFE), smooth(st.v.z, vz, dt, LAG_VELOCITY_HALFLIFE))
     const tau = halfLife / LN2
     const alpha = Math.exp(-dt / tau)
-    let ox = -st.v.x * tau + (st.o.x + st.v.x * tau) * alpha
-    let oy = -st.v.y * tau + (st.o.y + st.v.y * tau) * alpha
-    let oz = -st.v.z * tau + (st.o.z + st.v.z * tau) * alpha
+    let ox = -vx * tau + (st.o.x + vx * tau) * alpha
+    let oy = -vy * tau + (st.o.y + vy * tau) * alpha
+    let oz = -vz * tau + (st.o.z + vz * tau) * alpha
     // Bounded as a vector, so a fast move saturates the trail without skewing its direction. Applied to
     // the stored offset as well, or the state keeps running while the render stays pinned.
     const reach = Math.hypot(ox, oy, oz)
@@ -954,16 +974,34 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
       //
       // The vertical is `vy + carry.y` and the two are complementary rather than overlapping: the
       // controller zeroes `vy` while grounded and hands the vertical to the surface while riding, so a jump
-      // is all `vy` and an elevator is all `carry.y`. One thing is still absent — the stride's bob, worth
-      // about 10 mm, which would need its rate computed analytically rather than differenced.
+      // is all `vy` and an elevator is all `carry.y`.
       const cosY = Math.cos(yaw)
       const sinY = Math.sin(yaw)
-      const worldVy = (input.vy ?? 0) + (input.carry?.y ?? 0)
+
+      // Smoothed once here rather than per part: all three joints hang off the same torso, so the velocity
+      // dragging them is one signal. The smoothing is for `carry`, which arrives from the solver with 30 Hz
+      // hash on it — see `LAG_VELOCITY_HALFLIFE`.
+      lagVx = smooth(lagVx, cx, dt, LAG_VELOCITY_HALFLIFE)
+      lagVy = smooth(lagVy, (input.vy ?? 0) + (input.carry?.y ?? 0), dt, LAG_VELOCITY_HALFLIFE)
+      lagVz = smooth(lagVz, cz, dt, LAG_VELOCITY_HALFLIFE)
+
+      // The stride's bob, on its own filter rather than the one above. The bob is
+      // `−|sin(phase·τ)| · amplitude` and `phase` advances at `speed / (stride · 2)`, so its rate is exact in
+      // closed form. It still needs *some* averaging — `phase` advances from the position delta, which
+      // arrives at the sim rate — but a far shorter one than `carry` needs, which is what lets most of it
+      // through. See `BOB_RATE_HALFLIFE`. The neck gap now breathes with each footfall rather than only with
+      // starts, stops and jumps.
+      //
+      // `|sin|` has a corner at every footfall, so this rate flips sign there — which is the bob itself
+      // bouncing, and exactly what should be felt.
+      const bobPhase = phase * TAU
+      const bobRaw = stride > 0 ? -tuning.bob * intensity * vary.bob * Math.sign(Math.sin(bobPhase)) * Math.cos(bobPhase) * TAU * (speed / (stride * 2)) : 0
+      bobRate = smooth(bobRate, bobRaw, dt, BOB_RATE_HALFLIFE)
 
       for (const part of LAG_PARTS) {
         const halfLife = part === 'head' ? tuning.headLagHalfLife : tuning.armLagHalfLife
         const max = part === 'head' ? tuning.headLagMax : tuning.armLagMax
-        const o = follow(part, cx, worldVy, cz, Math.max(halfLife, 0), max, dt)
+        const o = follow(part, lagVx, lagVy + bobRate, lagVz, Math.max(halfLife, 0), max, dt)
         // World → root (undo the facing) → body (undo the torso), since a joint's position is written in
         // its parent's frame, and every lagging joint's parent is the body.
         pose.jointOffset[part] = rotateVec3(invBody, vec3(o.x * cosY - o.z * sinY, o.y, o.x * sinY + o.z * cosY))

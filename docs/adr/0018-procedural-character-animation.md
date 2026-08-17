@@ -281,8 +281,19 @@ change to adopt it.
   `vy` is given to the lag and **withheld from the inertial rotations**, deliberately. There the signal
   would be differentiated, and free fall is not an upward acceleration — it is the absence of a ground
   reaction. Differentiating `vy` in flight yields a constant −g and would float the arms for the whole arc.
-  Still absent from the velocity: the stride's bob, worth about 10 mm, which would need its rate computed
-  analytically rather than differenced.
+  **The stride's bob drives it too, on its own filter.** The bob is `−|sin(phase·τ)| · amplitude` and `phase`
+  advances at `speed / (stride · 2)`, so its rate is available in closed form. That is not enough on its own:
+  `phase` advances from the *position delta*, which arrives at the sim rate, so the rate inherits that
+  staircase and differentiating amplifies it — left raw it put 27 mm of frame-to-frame jitter into the offset,
+  more than the body's own. It needs averaging, but far less than `carry` does, and this only works because
+  the two frequencies are far apart: the bob is ~3.2 Hz at top speed and the tick is 30 Hz. At 40 ms roughly
+  two thirds of the bob survives and the staircase is down tenfold. Passing it through the 120 ms window
+  `carry` needs would leave about a quarter of it, which is the negligible amount it had before it was added.
+  The cost, recorded in a test: worst-case frame-to-frame jitter under a deliberately stepped position went
+  from 3.9 mm to 6.9 mm — still under the body's own 25 mm, and this is the first number to move if shimmer is
+  ever reported again.
+  Also restructured by this: the driving velocity is smoothed **once** rather than per part, since all three
+  joints hang off the same torso and were smoothing an identical signal three times.
   A test drives the animator with a position held for two frames at a time — the 30 Hz-into-60 fps case,
   plus a platform's carry so the per-tick step is as large as the report — and asserts the offset's
   frame-to-frame change stays under the *body's* own, which is 25 mm there because a held position also

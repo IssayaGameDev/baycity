@@ -1077,7 +1077,11 @@ describe('createAnimator', () => {
     // frame â€” and 12 mm even after averaging it over 60 ms, since the square wave's amplitude is twice its
     // mean. Driving from the known velocity removes it by construction.
     expect(worstJump(offsets), 'the offset must not jitter more than the body it hangs off').toBeLessThan(worstJump(bodyOffsets))
-    expect(worstJump(offsets), 'and must stay small in absolute terms').toBeLessThan(5e-3)
+    // 6.9 mm, up from 3.9 before the bob joined the drive: `phase` advances from the position delta, so under
+    // a stepped position the bob's rate is stepped too, and it is a *derivative*, which amplifies that. It is
+    // filtered down by `BOB_RATE_HALFLIFE` rather than out, deliberately — see there for the trade. If shimmer
+    // is ever reported on a platform again this is the first number to move.
+    expect(worstJump(offsets), 'and must stay small in absolute terms').toBeLessThan(1e-2)
   })
 
   it('does not vibrate on a noisy carry while the character stands still', () => {
