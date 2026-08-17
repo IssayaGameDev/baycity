@@ -21,10 +21,11 @@ import {
   MSG_WELCOME,
   NET_CHANNEL,
   readMessageType,
+  STATE_DEAD,
   STATE_GROUNDED,
   STATE_RISING,
 } from '@mp/net'
-import { createPhysicsWorld, initPhysics, type PhysicsBody } from '@mp/physics'
+import { createPhysicsWorld, initPhysics, type PhysicsBody, type PhysicsWorld } from '@mp/physics'
 import { createThreeStage, applyGreyboxEnvironment, createPostFX, addLevel, type LevelView } from '@mp/render-three'
 import {
   addCharacter,
@@ -48,7 +49,8 @@ import { Client, type Room } from 'colyseus.js'
 import { Pane } from 'tweakpane'
 
 import { createAssembly, type Assembly, type AssemblyTiming } from './assemble'
-import { createCharacterViews, SELF_COLORS } from './characterView'
+import { createCharacterViews, PEER_COLORS, SELF_COLORS } from './characterView'
+import { BODY_LAYERS } from './layers'
 import { OVERLAY_LAYER } from './nametag'
 import { createPauseMenu } from './pauseMenu'
 import { createRagdoll, type Ragdoll } from './ragdoll'
@@ -428,6 +430,20 @@ let requestDeath: (() => void) | null = null // set once the local sim exists; t
 // and thrown away on respawn. Local and visual only — nothing about a death goes on the wire.
 let dead = false
 let ragdoll: Ragdoll | null = null
+/**
+ * Peers' corpses, one per dead remote player. A death travels as a single flag (`STATE_DEAD`) and the
+ * ragdoll is built here, from *this* client's interpolated pose of that player — so every viewer's
+ * corpse lands somewhere different and no part positions ever go on the wire (ADR 0019).
+ */
+const peerRagdolls = new Map<EntityId, Ragdoll>()
+/**
+ * Peers' spawn assemblies, one per peer whose body is currently dropping back in. Same trigger as the
+ * corpse — the *falling* edge of `STATE_DEAD` — and the same timing knobs, so a respawn looks the same
+ * from the outside as it does to the player it happened to.
+ */
+const peerAssemblies = new Map<EntityId, { assembly: Assembly; elapsed: number }>()
+/** The client's own physics world, once the local sim exists. Peer corpses are dynamic bodies in it. */
+let physicsWorld: PhysicsWorld | null = null
 // Spawn assembly: the body drops in a pair at a time. Runs on the first spawn and every respawn, and owns
 // the rig's visibility while it does — the rig only reappears once the last part has landed.
 let assembly: Assembly | null = null
@@ -465,6 +481,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   // gravity never touches it — but the ragdoll's parts are *dynamic* and it is the only thing that pulls
   // them down. It was zero here, which left a corpse coasting off in a straight line for ever.
   const world = createPhysicsWorld({ gravity: { x: 0, y: -tuning.gravity, z: 0 } })
+  physicsWorld = world // the render loop builds peers' corpses in it
   loaded = instantiateLevel(world, validateLevel(showcase))
 
   // Build the level's greybox meshes via the shared renderer (content C3). Marker pads are
@@ -495,7 +512,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
       : spawnMarker !== undefined
         ? { x: spawnMarker.x + Math.cos(a) * 2, y: spawnMarker.y + STAND_OFFSET, z: spawnMarker.z + Math.sin(a) * 2 }
         : playerSpawn(id)
-  const char: CharacterState = addCharacter(world, spawn)
+  const char: CharacterState = addCharacter(world, spawn, BODY_LAYERS)
   ownState = char // the render loop reads velocity/grounded straight off the sim for our own rig
 
   /**
@@ -508,8 +525,12 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
    * not scenery to be shoved away from.
    */
   camClearance = (origin, direction, want) => {
-    const own = ragdoll === null ? [char.body.colliderHandle] : [char.body.colliderHandle, ...ragdoll.colliders]
-    return world.castSphere({ origin, direction, maxDistance: want, radius: CAM_PROBE_RADIUS, exclude: own })?.distance ?? want
+    const skip = [char.body.colliderHandle, ...(ragdoll?.colliders ?? [])]
+    // Every corpse, not only our own. A living peer is mirrored as a kinematic capsule here, so they do
+    // move the camera — but a ragdoll is a visual whose position no two clients agree on, and ten cuboids
+    // tumbling around your feet because someone died next to you should not shove your view.
+    for (const corpse of peerRagdolls.values()) skip.push(...corpse.colliders)
+    return world.castSphere({ origin, direction, maxDistance: want, radius: CAM_PROBE_RADIUS, exclude: skip })?.distance ?? want
   }
 
   // Respawn: teleport to the last checkpoint (or spawn) and kill momentum. Triggered by
@@ -594,6 +615,9 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
         mirror = world.addKinematicBody({
           position: e.position,
           shape: { kind: 'capsule', halfHeight: CHAR_HALF_HEIGHT, radius: CHAR_RADIUS },
+          // A body, so corpses pass through it: a dead peer's mirror stands invisibly at their death
+          // point and their own parts were landing on it.
+          layers: BODY_LAYERS,
         })
         remotes.set(e.id, mirror)
       }
@@ -615,16 +639,25 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
       const move = dead ? { x: 0, z: 0 } : worldMove()
       if (move.x !== 0 || move.z !== 0) ownFacing = Math.atan2(move.x, move.z)
       controller!.step(move.x, move.z, !dead && keys.has('Space'))
-      // After the world has stepped: the ragdoll's bodies only move on a tick, so this is where their new
-      // pose is taken. The render loop interpolates between the last two.
+      // After the world has stepped: a ragdoll's bodies only move on a tick, so this is where their new
+      // pose is taken. The render loop interpolates between the last two. Peers' corpses are bodies in
+      // this same world, so they are captured on the same tick.
       ragdoll?.capture()
+      for (const corpse of peerRagdolls.values()) corpse.capture()
 
       const p = controller!.state().get(id)
       if (p) {
-        // Position plus the animation bits a viewer cannot derive from it (v8): vertical velocity
-        // passes through zero at every jump apex, so "grounded" has to be told, not inferred.
-        const flags = (char.grounded ? STATE_GROUNDED : 0) | (char.vy > 0 ? STATE_RISING : 0)
-        room?.sendBytes(NET_CHANNEL, new Uint8Array(encodeState({ position: p, flags })))
+        // Position plus everything about us a viewer cannot derive from it (v8/v9): vertical velocity
+        // passes through zero at every jump apex, so "grounded" has to be told, not inferred; facing
+        // follows the input rather than the movement; and locomotion speed is what is left after a
+        // platform's carry is taken out. These are exactly the values our own rig is animated from,
+        // just below — a peer's rig should be given the same numbers, not a guess at them.
+        const flags =
+          (char.grounded ? STATE_GROUNDED : 0) | (char.vy > 0 ? STATE_RISING : 0) | (dead ? STATE_DEAD : 0)
+        room?.sendBytes(
+          NET_CHANNEL,
+          new Uint8Array(encodeState({ position: p, flags, yaw: ownFacing, speed: Math.hypot(char.vx, char.vz) })),
+        )
         // Real contact: the colliders the capsule pushed against this tick.
         const hits = new Set(char.body.collisions())
         // Checkpoint touched → it becomes the respawn point (persisted). Progress only
@@ -748,25 +781,95 @@ stage.start(() => {
   for (const e of interp.sample())
     if (e.id !== myId) {
       seen.add(e.id)
-      // Peers: facing and speed derived from the interpolated position; grounded/rising off the
-      // wire, because vertical velocity cannot tell standing from a jump apex.
-      views.upsert(
-        e.id,
-        {
-          isSelf: false,
-          position: e.position,
-          yaw: null,
-          speed: null,
-          vy: null,
-          grounded: (e.flags & STATE_GROUNDED) !== 0,
-          rising: (e.flags & STATE_RISING) !== 0,
-          carry: null, // not derivable from position alone — see CharacterPlacement.carry
-          name: names.get(e.id) ?? '…',
-        },
-        frameDt,
-      )
+      // A peer's death is one flag; the corpse is ours to build and ours alone (ADR 0019). It is seeded
+      // from the pose *this* client last drew them in, so it starts exactly where the rig was.
+      const peerDead = (e.flags & STATE_DEAD) !== 0
+      let corpse = peerRagdolls.get(e.id)
+      if (corpse !== undefined && !peerDead) {
+        // They respawned. The corpse goes and the body drops back in, exactly as it does for us — the rig
+        // stays hidden until the last part lands.
+        corpse.dispose()
+        peerRagdolls.delete(e.id)
+        corpse = undefined
+        // Their position just jumped to a checkpoint. Differenced, that teleport reads as a sprint, and
+        // the assembly falls toward whatever pose the animator is in.
+        views.resetMotion(e.id, e.position)
+        peerAssemblies.get(e.id)?.assembly.dispose()
+        peerAssemblies.set(e.id, {
+          assembly: createAssembly({ scene: stage.scene, look: { colors: PEER_COLORS } }),
+          elapsed: 0,
+        })
+      }
+      if (corpse === undefined && peerDead && physicsWorld !== null) {
+        const pose = views.poseOf(e.id)
+        // No pose means their rig has never been drawn — a peer who was already dead when we joined.
+        // Let them draw standing for one frame; the ragdoll goes up on the next.
+        if (pose !== null) {
+          corpse = createRagdoll({
+            world: physicsWorld,
+            scene: stage.scene,
+            transforms: partTransforms(pose, e.position),
+            velocity: views.velocityOf(e.id) ?? vec3(),
+            look: { colors: PEER_COLORS },
+          })
+          peerRagdolls.set(e.id, corpse)
+          views.setVisible(e.id, false)
+          // Killed again mid-assembly: the corpse owns the picture from here.
+          const spawning = peerAssemblies.get(e.id)
+          if (spawning !== undefined) {
+            spawning.assembly.dispose()
+            peerAssemblies.delete(e.id)
+          }
+        }
+      }
+      // Dead: the corpse owns the picture, and the rig is left hidden and un-animated behind it.
+      if (corpse !== undefined) corpse.sync(tickAlpha)
+      // Peers: facing, locomotion speed and grounded/rising all come off the wire (v8/v9) — a position
+      // curve cannot tell facing from heading, nor walking from being carried. Only the vertical is
+      // still derived, and it is the one place where carry riding along in it does no harm: the joint
+      // lag wants total vertical motion, whatever caused it.
+      else
+        views.upsert(
+          e.id,
+          {
+            isSelf: false,
+            position: e.position,
+            yaw: e.yaw,
+            speed: e.speed,
+            vy: null,
+            grounded: (e.flags & STATE_GROUNDED) !== 0,
+            rising: (e.flags & STATE_RISING) !== 0,
+            carry: null, // not derivable from position alone — see CharacterPlacement.carry
+            name: names.get(e.id) ?? '…',
+          },
+          frameDt,
+        )
+      // Assembling: the animator above has run, so the falling parts have a live pose to arrive at — a
+      // peer already walking when they respawn has their body land around them, same as for us.
+      const spawning = corpse === undefined ? peerAssemblies.get(e.id) : undefined
+      if (spawning !== undefined) {
+        views.setVisible(e.id, false)
+        spawning.elapsed += frameDt
+        const pose = views.poseOf(e.id)
+        if (pose === null || spawning.assembly.draw(partTransforms(pose, e.position), spawning.elapsed, assembleTiming)) {
+          spawning.assembly.dispose()
+          peerAssemblies.delete(e.id)
+          views.setVisible(e.id, true)
+        }
+      }
     }
   views.prune(seen) // drop players who left the room (no longer relayed)
+  // A player who leaves mid-death or mid-respawn takes both with them; `views.prune` only knows rigs.
+  for (const [pid, corpse] of peerRagdolls)
+    if (!seen.has(pid)) {
+      corpse.dispose()
+      peerRagdolls.delete(pid)
+    }
+  for (const [pid, spawning] of peerAssemblies)
+    if (!seen.has(pid)) {
+      spawning.assembly.dispose()
+      peerAssemblies.delete(pid)
+    }
 
   // orbit camera around the own character
   const target = { x: ownPos.x, y: ownPos.y + 1, z: ownPos.z }

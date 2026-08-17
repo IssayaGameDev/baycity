@@ -9,10 +9,13 @@ import { makeNameLabel } from './nametag'
  * `@mp/character`, plus a billboard nametag. This file is now only an **adapter** — it fills the
  * animator's input from what the mode knows and hands the result to the rig.
  *
- * Facing and speed are derived here when the caller does not know them (peers), from the *rendered*
- * position, which is already interpolated — differencing raw snapshots would be jittery at 20 Hz.
- * Grounded and rising cannot be derived at all (vertical velocity crosses zero at every jump apex),
- * so they arrive on the wire as state flags and are passed straight through.
+ * Facing, speed, grounded and rising all arrive on the wire now (v8/v9) and are passed straight
+ * through: none of them can be derived from a position curve — facing follows the input, speed would
+ * include a platform's carry, and vertical velocity crosses zero at every jump apex. Only the vertical
+ * is still derived for peers, from the *rendered* position, which is already interpolated (differencing
+ * raw snapshots would be jittery at 20 Hz). The derived facing and speed remain as the fallback for a
+ * caller that passes `null`, and as what `velocityOf` reports — a corpse should inherit the world
+ * velocity it appeared to have, carry included.
  */
 interface Rendered {
   rig: CharacterRig
@@ -62,8 +65,21 @@ export interface CharacterViews {
    * so the ten rigid bodies start in exactly the pose the animated rig was in and nothing jumps.
    */
   poseOf: (id: EntityId) => Pose | null
-  /** Show or hide a player's rig — hidden while its ragdoll has the floor. */
+  /**
+   * The velocity last derived for a player, or `null` if it has no view yet. Reconstructed from the
+   * smoothed planar speed and facing plus the smoothed vertical, which is what a peer's motion is known
+   * as here — a peer's ragdoll inherits it so the corpse carries the momentum the body had.
+   */
+  velocityOf: (id: EntityId) => Vec3 | null
+  /** Show or hide a player's rig — hidden while its ragdoll or its spawn assembly has the floor. */
   setVisible: (id: EntityId, visible: boolean) => void
+  /**
+   * Forget a player's derived motion and re-anchor it at `position`. For peers, whose speed and facing
+   * come from differencing the rendered position: a respawn is a teleport of many metres, and
+   * differenced it reads as a sprint for as long as the smoothing takes to decay. Called when a peer
+   * comes back, so their body assembles around an idle rig rather than a running one.
+   */
+  resetMotion: (id: EntityId, position: Vec3) => void
   /** Remove any players whose id isn't in `keep` (left the room). */
   prune: (keep: Set<EntityId>) => void
 }
@@ -71,9 +87,9 @@ export interface CharacterViews {
 /** Shared, read-only: the animator treats zero carry exactly as it treats none. */
 const NO_CARRY: Vec3 = { x: 0, y: 0, z: 0 }
 
-/** Exported so a ragdoll's loose parts are the same colours the player's own rig was. */
+/** Exported so a ragdoll's loose parts are the same colours the rig they came from was. */
 export const SELF_COLORS = { shirt: 0xfacc15, trousers: 0x422006 }
-const PEER_COLORS = { shirt: 0xf97316, trousers: 0x2b1503 }
+export const PEER_COLORS = { shirt: 0xf97316, trousers: 0x2b1503 }
 
 /**
  * `gait` is shared by every character's animator and read fresh each frame, so mutating it — from
@@ -147,9 +163,22 @@ export const createCharacterViews = (scene: THREE.Scene, gait: GaitTuning = DEFA
       if (!isSelf) setLabel(r, name)
     },
     poseOf: (id) => chars.get(id)?.pose ?? null,
+    velocityOf: (id) => {
+      const r = chars.get(id)
+      return r === undefined ? null : { x: Math.sin(r.yaw) * r.speed, y: r.vy, z: Math.cos(r.yaw) * r.speed }
+    },
     setVisible: (id, visible) => {
       const r = chars.get(id)
       if (r !== undefined) r.rig.root.visible = visible
+    },
+    resetMotion: (id, position) => {
+      const r = chars.get(id)
+      if (r === undefined) return
+      r.last = { ...position }
+      r.speed = 0
+      r.vy = 0
+      // Facing is left alone: it is where they were looking, which is a better guess than the direction
+      // the teleport happened to point.
     },
     prune: (keep) => {
       for (const [id, r] of chars)

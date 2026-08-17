@@ -29,6 +29,20 @@ export type ShapeDesc =
    */
   | { readonly kind: 'convex'; readonly points: readonly Vec3[] }
 
+/**
+ * Which layers a collider is *in*, and which layers it collides *with* — 16 bits each. Two colliders
+ * interact only if each one's membership intersects the other's filter, so switching an interaction off
+ * takes one side, not both. Omit for Rapier's default: in every layer, colliding with every layer.
+ *
+ * Prefer "everything except" over "only these" when writing a filter. A collider that lists the layers
+ * it wants stops colliding with anything added later that forgot to claim one of them; a collider that
+ * excludes the one layer it must ignore keeps working.
+ */
+export interface CollisionLayers {
+  readonly belongsTo: number
+  readonly collidesWith: number
+}
+
 export interface BodyOptions {
   readonly position: Vec3
   readonly shape: ShapeDesc
@@ -38,6 +52,7 @@ export interface BodyOptions {
   readonly restitution?: number
   /** Linear velocity damping — higher makes a pushed body settle sooner. */
   readonly linearDamping?: number
+  readonly layers?: CollisionLayers
 }
 
 export interface PhysicsBody {
@@ -82,6 +97,13 @@ export interface CharacterOptions {
   readonly snapToGround?: number | false
   /** Ledge height the controller steps over automatically; `false` disables. */
   readonly autostep?: { maxHeight: number; minWidth: number } | false
+  /**
+   * Collision layers for the capsule. Unlike a dynamic body's, these also filter the controller's own
+   * queries — `move` and `probeGround` — because Rapier's character controller does not read its
+   * collider's layers for that, it takes them per call. So a capsule that ignores a layer is neither
+   * blocked by it nor stands on it.
+   */
+  readonly layers?: CollisionLayers
 }
 
 /** The surface a capsule is resting on, found by casting straight down from it. */
@@ -220,9 +242,13 @@ const descFor = (shape: ShapeDesc): RAPIER.ColliderDesc => {
   }
 }
 
-const makeCollider = (shape: ShapeDesc, restitution: number | undefined) => {
+/** Rapier packs interaction groups into one u32: memberships in the high half, filter in the low half. */
+const packLayers = (l: CollisionLayers): number => ((l.belongsTo & 0xffff) << 16) | (l.collidesWith & 0xffff)
+
+const makeCollider = (shape: ShapeDesc, restitution: number | undefined, layers: CollisionLayers | undefined) => {
   let cd = descFor(shape)
   if (restitution !== undefined) cd = cd.setRestitution(restitution)
+  if (layers !== undefined) cd = cd.setCollisionGroups(packLayers(layers))
   return cd
 }
 
@@ -255,7 +281,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
     if (o.rotation !== undefined) desc = desc.setRotation(o.rotation)
     if (o.linearDamping !== undefined) desc = desc.setLinearDamping(o.linearDamping)
     const body = world.createRigidBody(desc)
-    const collider = world.createCollider(makeCollider(o.shape, o.restitution), body)
+    const collider = world.createCollider(makeCollider(o.shape, o.restitution, o.layers), body)
     queriesStale = true
     return {
       handle: body.handle,
@@ -308,7 +334,14 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
     const body = world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(o.position.x, o.position.y, o.position.z),
     )
-    const collider = world.createCollider(RAPIER.ColliderDesc.capsule(o.halfHeight, o.radius), body)
+    const collider = world.createCollider(
+      makeCollider({ kind: 'capsule', halfHeight: o.halfHeight, radius: o.radius }, undefined, o.layers),
+      body,
+    )
+    // The controller's queries take their groups per call rather than reading the collider's, so the
+    // capsule's layers have to be handed to every one of them or `move` resolves against layers the
+    // capsule cannot actually touch.
+    const queryLayers = o.layers === undefined ? undefined : packLayers(o.layers)
     queriesStale = true
     const lastCollisions: number[] = []
     return {
@@ -328,7 +361,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
       move: (desired) => {
         // `computedMovement` returns a view into WASM memory that the next call reuses — copy it.
         const resolve = (dy: number): Vec3 => {
-          controller.computeColliderMovement(collider, { x: desired.x, y: dy, z: desired.z })
+          controller.computeColliderMovement(collider, { x: desired.x, y: dy, z: desired.z }, undefined, queryLayers)
           const m = controller.computedMovement()
           return vec3(m.x, m.y, m.z)
         }
@@ -396,7 +429,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
           reach,
           true,
           undefined,
-          undefined,
+          queryLayers, // a layer the capsule cannot collide with is not footing either
           collider, // never hit ourselves
         )
         if (hit === null || hit.normal.y < GROUND_NORMAL_MIN_Y) return undefined

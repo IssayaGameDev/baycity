@@ -1,13 +1,17 @@
 import { entityId, type EntityId, type Vec3 } from '@mp/core'
 
 import { MSG_SNAPSHOT, PROTOCOL_VERSION, readHeader } from './messages'
-import { dequantizeAxis, quantizeAxis } from './quantize'
+import { dequantizeAxis, dequantizeSpeed, dequantizeYaw, quantizeAxis, quantizeSpeed, quantizeYaw } from './quantize'
 
 export interface SnapshotEntity {
   id: EntityId
   position: Vec3
   /** Bitfield of `STATE_*` (v8) — relayed as sent, never interpolated. */
   flags: number
+  /** Facing (radians), quantized to a byte on the wire (v9). See `PlayerState.yaw`. */
+  yaw: number
+  /** Locomotion speed (m/s) excluding carry, quantized to a byte on the wire (v9). See `PlayerState.speed`. */
+  speed: number
 }
 
 /** A reconstructed full snapshot (what the client interpolates over). Carries the
@@ -40,10 +44,10 @@ export const fullSnapshotMessage = (s: Snapshot): SnapshotMessage => ({
   removed: [],
 })
 
-// Wire (little-endian): u8 version, u8 type, u8 msgFlags, u32 serverTimeMs,
-// u16 changedCount, [u16 id, u16 x,y,z (quantized), u8 stateFlags]*, u16 removedCount, [u16 id]*
+// Wire (little-endian): u8 version, u8 type, u8 msgFlags, u32 serverTimeMs, u16 changedCount,
+// [u16 id, u16 x,y,z (quantized), u8 stateFlags, u8 yaw, u8 speed]*, u16 removedCount, [u16 id]*
 const HEADER_BYTES = 9
-const CHANGED_BYTES = 9
+const CHANGED_BYTES = 11
 const LE = true
 const FLAG_FULL = 1
 
@@ -71,6 +75,10 @@ export const encodeSnapshot = (msg: SnapshotMessage): ArrayBuffer => {
     view.setUint16(o, quantizeAxis(e.position.z), LE)
     o += 2
     view.setUint8(o, e.flags & 0xff)
+    o += 1
+    view.setUint8(o, quantizeYaw(e.yaw))
+    o += 1
+    view.setUint8(o, quantizeSpeed(e.speed))
     o += 1
   }
   view.setUint16(o, msg.removed.length, LE)
@@ -104,7 +112,11 @@ export const decodeSnapshot = (buffer: ArrayBuffer): SnapshotMessage => {
     o += 2
     const flags = view.getUint8(o)
     o += 1
-    changed.push({ id, position: { x, y, z }, flags })
+    const yaw = dequantizeYaw(view.getUint8(o))
+    o += 1
+    const speed = dequantizeSpeed(view.getUint8(o))
+    o += 1
+    changed.push({ id, position: { x, y, z }, flags, yaw, speed })
   }
   const removedCount = view.getUint16(o, LE)
   o += 2

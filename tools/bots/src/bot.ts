@@ -35,12 +35,19 @@ export const createBot = (url: string, phase = 0): Bot => {
       })
       timer = setInterval(() => {
         angle += 0.12
-        // Bots walk a circle on the ground, so they report grounded — the flags byte is part of
-        // the measured payload (v8), and sending 0 would under-report the delta traffic.
+        // Bots walk a circle on the ground, so they report grounded, a facing along the circle's
+        // tangent and a real speed — flags, yaw and speed are all part of the measured payload
+        // (v8/v9), and sending zeroes would under-report the delta traffic: a constant facing and a
+        // constant speed both quantize to the same byte every tick, which the relay would then skip.
         r.sendBytes(
           NET_CHANNEL,
           new Uint8Array(
-            encodeState({ position: { x: Math.cos(angle) * RADIUS, y: 1, z: Math.sin(angle) * RADIUS }, flags: STATE_GROUNDED }),
+            encodeState({
+              position: { x: Math.cos(angle) * RADIUS, y: 1, z: Math.sin(angle) * RADIUS },
+              flags: STATE_GROUNDED,
+              yaw: angle,
+              speed: 0.12 * RADIUS * TICK_HZ,
+            }),
           ),
         )
       }, 1000 / TICK_HZ)

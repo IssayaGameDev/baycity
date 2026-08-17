@@ -11,8 +11,8 @@ export interface SnapshotReassembler {
 }
 
 export const createSnapshotReassembler = (): SnapshotReassembler => {
-  // Keeps whole entities, not just positions: the state flags (v8) travel with them and an
-  // unchanged entity has to retain the flags it was last sent.
+  // Keeps whole entities, not just positions: the flags, facing and speed (v8/v9) travel with them,
+  // and an entity the delta skipped has to retain everything it was last sent.
   const state = new Map<EntityId, SnapshotEntity>()
   return {
     apply: (msg) => {
@@ -21,7 +21,13 @@ export const createSnapshotReassembler = (): SnapshotReassembler => {
       for (const id of msg.removed) state.delete(id)
       return {
         serverTimeMs: msg.serverTimeMs,
-        entities: [...state.values()].map((e) => ({ id: e.id, position: e.position, flags: e.flags })),
+        entities: [...state.values()].map((e) => ({
+          id: e.id,
+          position: e.position,
+          flags: e.flags,
+          yaw: e.yaw,
+          speed: e.speed,
+        })),
       }
     },
   }

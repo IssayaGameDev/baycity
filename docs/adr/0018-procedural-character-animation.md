@@ -60,6 +60,8 @@ Facing is different: the controller always faces its movement direction and ther
 aim, so velocity direction *is* facing. Deriving it loses nothing. Yaw goes on the wire the day aim
 decouples from movement, and not before.
 
+**That last paragraph was wrong, and both derived quantities now travel — see the update below.**
+
 ## Rejected
 
 **Skinning.** Ruled out by Kodjo. It would also mean art, a bind pose, and a mesh pipeline for a game
@@ -358,3 +360,35 @@ change to adopt it.
 - `@mp/render-three` now depends on `@mp/character`. Safe: `@mp/character` imports `@mp/physics`
   **types only**, so no Rapier WASM enters the render bundle.
 - Corner radius is a single knob (`cornerRadius`, default 0.03 m). 0 gives hard edges.
+
+## Update — facing and locomotion speed travel too (protocol v9)
+
+Two peer-animation bugs Kodjo found, both from deriving what only the owner knows:
+
+- **A player who jumps one way and turns in the air never turned, for anyone else.** Facing follows
+  the *input* direction, not the velocity: air control changes where you face while you keep
+  travelling the way you jumped. The claim above — that the controller always faces its movement
+  direction — is simply false while airborne, and false on the spot as well, where facing changes
+  with no movement at all to derive it from.
+- **A player carried by a platform walked, for everyone else, while sliding on their own screen.**
+  Differencing a position gives *world* speed. `AnimationInput.speed` is documented here as
+  locomotion speed excluding carry, and it is that contract the derived value was breaking.
+
+Both are now sent: `f32` each upstream, a byte each on the snapshot (facing 1.4°, speed 0.063 m/s over
+0–16 m/s). The owner passes its own rig exactly these two numbers, so a peer's rig is given the same
+values rather than a guess at them. `docs/protocol.md` has the encoding and the delta rule — the relay
+compares the *quantized* values, and turning on the spot now forces a relay that nothing else would.
+
+**Interpolated differently, and it matters.** Speed is lerped between samples: it drives stride length
+and swing amplitude, so at the snapshot rate it would staircase both. Facing is not lerped — it is an
+angle, and lerping goes the wrong way round the circle half the time. It is taken from the sample at or
+before the render time, like the flags, and the animator's own `yawHalfLife` smooths it, which is what
+that knob is for.
+
+**Cost, measured, not estimated:** snapshot entities 9 B → 11 B; the load harness went from 2.6 to
+3.5 kB/s per client at 20 bots, against a 20–30 kB/s budget.
+
+Still derived for peers: **vertical velocity**. Its only consumer is the joint lag, which wants total
+vertical motion whatever caused it, so a platform's carry riding along in it is correct rather than a
+compromise. Peers still brace for nothing on the inertial layer (`carry` is null for them), which is a
+separate gap and unchanged.

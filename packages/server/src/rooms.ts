@@ -11,6 +11,8 @@ import {
   MSG_STATE,
   NET_CHANNEL,
   quantizeAxis,
+  quantizeSpeed,
+  quantizeYaw,
   readMessageType,
   type PlayerState,
   type RosterEntry,
@@ -30,14 +32,20 @@ interface Player {
   baseline: Map<EntityId, PlayerState> // last states sent to this client (for delta)
 }
 
-// Relay an entity when its quantized position changes, or when its state flags do — a player can
-// leave the ground without their quantized position moving, and the flags are what a viewer cannot
-// reconstruct (see STATE_GROUNDED).
+// Relay an entity when anything a viewer will actually receive changes: its quantized position, its
+// state flags, or its quantized facing/speed. A player can turn on the spot, or leave the ground,
+// without their quantized position moving at all — and those are exactly the things a viewer cannot
+// reconstruct (see STATE_GROUNDED, PlayerState.yaw).
+//
+// Compared *quantized*, not raw: the wire only carries the quantized value, so comparing floats would
+// relay an entity every tick for a change the recipient could never see, which is the delta's whole job.
 const relayDiffers = (a: PlayerState, b: PlayerState): boolean =>
   a.flags !== b.flags ||
   quantizeAxis(a.position.x) !== quantizeAxis(b.position.x) ||
   quantizeAxis(a.position.y) !== quantizeAxis(b.position.y) ||
-  quantizeAxis(a.position.z) !== quantizeAxis(b.position.z)
+  quantizeAxis(a.position.z) !== quantizeAxis(b.position.z) ||
+  quantizeYaw(a.yaw) !== quantizeYaw(b.yaw) ||
+  quantizeSpeed(a.speed) !== quantizeSpeed(b.speed)
 
 // Colyseus hands us a Uint8Array view (possibly onto a pooled/shared buffer); our
 // codecs take a standalone ArrayBuffer, so copy the exact bytes out.
@@ -138,7 +146,13 @@ export class ParkourRoom extends Room {
       const peers: SnapshotEntity[] = []
       for (const other of all) {
         if (other === player || other.latest === null) continue
-        peers.push({ id: other.id, position: other.latest.position, flags: other.latest.flags })
+        peers.push({
+          id: other.id,
+          position: other.latest.position,
+          flags: other.latest.flags,
+          yaw: other.latest.yaw,
+          speed: other.latest.speed,
+        })
       }
       player.client.sendBytes(NET_CHANNEL, bytes(encodeSnapshot(deltaSnapshot(player, peers, time))))
     }
@@ -155,7 +169,12 @@ export interface DeltaBaseline {
   baseline: Map<EntityId, PlayerState>
 }
 
-const asState = (e: SnapshotEntity): PlayerState => ({ position: e.position, flags: e.flags })
+const asState = (e: SnapshotEntity): PlayerState => ({
+  position: e.position,
+  flags: e.flags,
+  yaw: e.yaw,
+  speed: e.speed,
+})
 
 /** A full snapshot on first send, then per-client deltas vs the last states sent.
  * Pure (mutates only the passed baseline) so it's unit-testable without Colyseus. */

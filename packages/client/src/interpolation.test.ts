@@ -6,12 +6,17 @@ import { interpolateAt } from './interpolation'
 
 const snap = (t: number, x: number): Snapshot => ({
   serverTimeMs: t,
-  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags: 0 }],
+  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags: 0, yaw: 0, speed: 0 }],
 })
 
 const withFlags = (t: number, x: number, flags: number): Snapshot => ({
   serverTimeMs: t,
-  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags }],
+  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags, yaw: 0, speed: 0 }],
+})
+
+const withMotion = (t: number, yaw: number, speed: number): Snapshot => ({
+  serverTimeMs: t,
+  entities: [{ id: entityId(1), position: { x: 0, y: 0, z: 0 }, flags: 0, yaw, speed }],
 })
 
 describe('interpolateAt', () => {
@@ -27,6 +32,18 @@ describe('interpolateAt', () => {
     expect(interpolateAt(buf, 99)[0]!.flags).toBe(STATE_GROUNDED) // still the older sample
     expect(interpolateAt(buf, 100)[0]!.flags).toBe(STATE_RISING) // lands exactly on the change
     expect(interpolateAt(buf, 150)[0]!.flags).toBe(STATE_RISING)
+  })
+
+  it('interpolates speed but not facing', () => {
+    // Speed is an ordinary quantity and drives stride length and swing amplitude, so stepping it at the
+    // snapshot rate would put a staircase in both. Facing is an angle: lerping it goes the wrong way
+    // round the circle half the time, and the animator smooths facing itself (`yawHalfLife`).
+    const buf = [withMotion(0, 3.0, 0), withMotion(100, -3.0, 6)]
+    expect(interpolateAt(buf, 50)[0]!.speed).toBeCloseTo(3)
+    expect(interpolateAt(buf, 50)[0]!.yaw).toBe(3.0) // the older sample, untouched
+    // Lerped, these two would pass through 0 — a character facing backwards mid-blend.
+    expect(interpolateAt(buf, 99)[0]!.yaw).toBe(3.0)
+    expect(interpolateAt(buf, 100)[0]!.yaw).toBe(-3.0)
   })
 
   it('holds the earliest snapshot before the buffered range', () => {

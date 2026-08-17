@@ -46,6 +46,16 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
   0.1 m per tick; a tighter margin loses the floor and the rider bounce-falls after it).
 - `CharacterBody.colliderHandle` — the capsule's own collider, for queries cast *from* the character
   that must not hit it (the camera's occlusion probe starts inside it).
+- `BodyOptions.layers` / `CharacterOptions.layers` → `CollisionLayers` = `{ belongsTo, collidesWith }`,
+  16 bits each (Rapier interaction groups, packed into one u32 by the wrapper). Two colliders interact
+  only if each one's membership intersects the other's filter, so switching an interaction off takes one
+  side, not both. Omit for the default: in every layer, colliding with every layer. **Write filters as
+  "everything except"** — a collider that lists the layers it wants silently stops colliding with
+  anything added later that forgot to claim one. **A capsule's layers also filter the controller's own
+  queries** (`move`, `probeGround`): Rapier's character controller does not read its collider's layers,
+  it takes groups per call, so the wrapper passes them to both — a capsule that ignores a layer is
+  neither blocked by it nor stands on it. Used by `modes/parkour/src/layers.ts` to keep corpses and
+  character capsules apart (ADR 0019).
 - `CharacterOptions.offset` / `snapToGround` / `autostep` — controller collision parameters, so its
   behaviour can be probed rather than guessed at. Defaults are the values above.
 - `world.castSphere({ origin, direction, maxDistance, radius, exclude? })` → `CastHit | undefined` —
@@ -124,6 +134,7 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
   first step to zero motion, so a mid-cycle start is never reported as travel.
 - Correctness covered by `packages/physics/src/world.test.ts`: gravity drop/rest, fixed-body
   placement, kinematic obstacles, character grounding/walls, initial + kinematic rotation, contact
-  reporting (the resting collider is reported, an untouched one is not), and `castSphere` (radius
+  reporting (the resting collider is reported, an untouched one is not), `castSphere` (radius
   clearance, clear sweep, exclusion, direction normalization, initial overlap, casting out of the
-  character capsule).
+  character capsule), and collision layers (a dynamic body falls through an excluded slab and still
+  lands on a default-layer floor; a capsule is neither blocked by nor grounded on an excluded layer).

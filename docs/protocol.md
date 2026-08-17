@@ -1,7 +1,7 @@
-# Wire protocol (v8)
+# Wire protocol (v9)
 
 Binary, little-endian. No JSON on the hot path (SEED §2). Defined in
-`packages/net`. `PROTOCOL_VERSION = 8`. Client-authoritative (ADR 0011), rooms on
+`packages/net`. `PROTOCOL_VERSION = 9`. Client-authoritative (ADR 0011), rooms on
 Colyseus (ADR 0013).
 
 ## Framing & versioning
@@ -29,37 +29,70 @@ vs the client's previous snapshot. **Positions are quantized** to `u16`/axis ove
 | msgFlags | u8 | bit0 = isFull |
 | serverTimeMs | u32 | interpolation timeline |
 | changedCount | u16 | |
-| changed[] | u16 id + u16 x,y,z + u8 stateFlags | full: all peers; delta: new/changed only |
+| changed[] | u16 id + u16 x,y,z + u8 stateFlags + u8 yaw + u8 speed | full: all peers; delta: new/changed only |
 | removedCount | u16 | |
 | removed[] | u16 id | delta: peers to drop (e.g. disconnected) |
 
-Header 9 B, changed entity 9 B. Deltas skip unchanged entities entirely; an entity is
-"changed" when its *quantized* position moves **or its state flags change** — leaving the
-ground need not move you a whole quantization step. Delta-vs-last-sent is safe because
-the transport is reliable+ordered (WebSocket); a UDP transport would need ack-based
-baselines. Client reassembles full snapshots (`createSnapshotReassembler`), which keeps
-whole entities so an unchanged peer retains its last flags.
+Header 9 B, changed entity 11 B. Deltas skip unchanged entities entirely; an entity is
+"changed" when its *quantized* position moves, **or its state flags change, or its quantized
+facing or speed change** — leaving the ground, and turning on the spot, need not move you a
+whole quantization step. The comparison is on the quantized bytes, not the floats behind them:
+relaying a change the recipient could never receive is what the delta exists to avoid.
+Delta-vs-last-sent is safe because the transport is reliable+ordered (WebSocket); a UDP
+transport would need ack-based baselines. Client reassembles full snapshots
+(`createSnapshotReassembler`), which keeps whole entities so a skipped peer retains its last
+flags, facing and speed.
+
+### Facing and speed (v9)
+
+`u8` each, alongside the flags. Facing is 256 steps over the turn (1.4°, wrapped not clamped);
+speed is 0–16 m/s in 255 steps (0.063 m/s). Both are quantities **only the owner knows**:
+
+- **Facing follows the input direction, not the movement direction.** A player who jumps one way
+  and turns in the air is still travelling the way they jumped, so a viewer deriving facing from
+  the position curve never turned them.
+- **Speed is locomotion only, with a platform's carry taken out.** Differencing a position gives
+  world speed, so a viewer saw a player standing on a moving platform as walking — while on their
+  own screen they were sliding. It is the quantity `@mp/character`'s animator documents as its
+  input; the owner passes its own rig exactly these two numbers, so a peer's rig gets the same
+  values rather than a guess at them.
+
+Interpolation treats them differently: **speed is lerped** between samples (an ordinary quantity,
+and it drives stride length and swing amplitude, which would otherwise staircase at the snapshot
+rate); **facing is not** (an angle — lerping goes the wrong way round the circle half the time,
+and the animator smooths facing itself via `yawHalfLife`).
 
 ### State flags (v8)
 
-`STATE_GROUNDED` (bit 0), `STATE_RISING` (bit 1). These carry the animation state a viewer
-**cannot** reconstruct from a position curve, and they are **never interpolated** — the
+`STATE_GROUNDED` (bit 0), `STATE_RISING` (bit 1), `STATE_DEAD` (bit 2). These carry the state a
+viewer **cannot** reconstruct from a position curve, and they are **never interpolated** — the
 interpolator takes them from the sample at or before the render time (`interpolation.ts`),
 because blending "grounded" toward "airborne" is meaningless and fading a change in early
 would start an air pose while the player is still on the ground.
 
+`DEAD` is an event rather than a pose: a corpse and a player standing still have identical position
+curves. It is the entire wire cost of a death — each viewer runs its own ragdoll from its own
+interpolated pose of that player, so no part transforms travel and the corpses disagree between
+clients by design (ADR 0019). Separate bits, so "dead" is readable off a player who is also grounded.
+
 Vertical velocity is not a substitute for `GROUNDED`: it passes through zero at the apex of
 every jump (reads as standing, mid-air) and is negative while running down a ramp or stairs
-(reads as falling, on the ground). Facing and planar speed *are* derived on the client, and
-correctly — the controller always faces its movement direction, so velocity direction is
-authoritative. Yaw goes on the wire only if aim ever decouples from movement.
+(reads as falling, on the ground).
+
+v8 claimed facing and planar speed were derived correctly on the client, on the grounds that the
+controller always faces its movement direction. It does not: facing follows the *input*, so it
+moves without the position moving (turning in the air, turning on the spot), and a derived planar
+speed counts a platform's carry as walking. Both now travel — see above. What is still derived is
+the peer's **vertical** velocity, and there the carry riding along in it does no harm: its only
+consumer is the joint lag, which wants total vertical motion whatever caused it.
 
 ## Welcome — `2`  ·  State — `3`  ·  Ping/Pong — `4`/`5`  ·  Roster — `6`
 
 - Welcome (s→c): `u16 playerId`.
-- State (c→s): `f32 x`, `f32 y`, `f32 z`, `u8 flags` — the sender's own authoritative position
-  plus its state flags (15 B total). Full float upstream; quantization happens once, in the
-  snapshot encoder on relay. Flags pass through unquantized.
+- State (c→s): `f32 x`, `f32 y`, `f32 z`, `u8 flags`, `f32 yaw`, `f32 speed` — the sender's own
+  authoritative position plus everything about it a viewer cannot derive (23 B total). Full float
+  upstream; quantization happens once, in the snapshot encoder on relay. Flags pass through
+  unquantized.
 - Ping (c→s): `u32 clientTimeMs`. Pong (s→c): `u32 clientTimeMs` + `u32 serverTimeMs`.
 - Roster (s→c): `u16 count`, then `[u16 id, u8 nameLen, utf8 name]*` — peer id → display
   name. Broadcast on join/leave (names are static per session, so it's not per-tick).

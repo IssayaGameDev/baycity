@@ -3,6 +3,8 @@ import { clamp, slerpQuat, vec3, type Vec3 } from '@mp/core'
 import type { PhysicsBody, PhysicsWorld } from '@mp/physics'
 import { createLooseParts, THREE, type CharacterRigOptions } from '@mp/render-three'
 
+import { CORPSE_LAYERS } from './layers'
+
 /**
  * Death ragdoll: each of the ten rig parts becomes its own dynamic rigid body at the pose it was already
  * in, keeping the character's velocity. Physics does the rest.
@@ -61,6 +63,9 @@ export const createRagdoll = (opts: RagdollOptions): Ragdoll => {
       position: t.position,
       rotation: t.rotation,
       shape: { kind: 'cuboid', halfExtents: vec3(size.x / 2, size.y / 2, size.z / 2) },
+      // Everything except character capsules — the dead player's own is still standing invisibly at the
+      // death point, and parts were coming to rest on it (see layers.ts).
+      layers: CORPSE_LAYERS,
     })
     body.setLinvel(velocity)
     bodies[name] = body

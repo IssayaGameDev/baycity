@@ -3,8 +3,11 @@
  * relays it. INPUT / FIRE / HIT (server-auth + lag-comp) removed (ADR 0011).
  * v7: rooms on Colyseus; adds ROSTER (peer id -> name) (ADR 0013).
  * v8: STATE and snapshot entities carry a flags byte — the animation state a viewer
- * cannot derive from position (see `STATE_GROUNDED`). */
-export const PROTOCOL_VERSION = 8 as const
+ * cannot derive from position (see `STATE_GROUNDED`).
+ * v9: they also carry facing and locomotion speed (f32 upstream, a byte each on relay). Both are
+ * things only the owner knows: facing follows the *input* direction, and a position curve cannot
+ * separate walking from being carried by a platform. +2 B per snapshot entity. */
+export const PROTOCOL_VERSION = 9 as const
 
 /** The single Colyseus message channel our whole binary protocol rides on (ADR 0013).
  * Colyseus never inspects the payload; we dispatch on the version+type header inside. */

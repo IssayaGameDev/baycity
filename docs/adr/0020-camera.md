@@ -70,10 +70,13 @@ magnitude is ±100 on one mouse, ±3 on another, a page height on a third — an
 the current distance, as Roblox's does, so the far end of the range is not thirty notches away.
 Gated on pointer lock, so scrolling the debug pane does not move the camera.
 
-**The player's own body is not scenery.** The probe excludes the character capsule (the boom starts
-at its crown, so the probe overlaps it every frame and would report zero clearance) and, while dead,
-the ragdoll's ten parts. Hazard and checkpoint pads are *not* excluded: they are solid pieces you
-stand on (ADR 0014), so the camera treating them as geometry is correct.
+**Bodies are not scenery; every corpse is excluded, not only your own.** The probe excludes the
+character capsule (the boom starts at its crown, so the probe overlaps it every frame and would report
+zero clearance) and every ragdoll in the world, yours and peers'. A ragdoll's position is agreed by no
+two clients (ADR 0019), and ten cuboids tumbling round your feet because someone died next to you
+should not shove your view. Living peers *are* mirrored as kinematic capsules in the local world, so
+they do move the camera — that is left alone. Hazard and checkpoint pads are not excluded either: they
+are solid pieces you stand on (ADR 0014), so the camera treating them as geometry is correct.
 
 **Your own rig is hidden when the camera is inside it, rather than floored at a minimum distance.**
 A low ceiling squeezes the camera into the head, because the probe ignores your own body. Flooring the
@@ -131,8 +134,6 @@ refreshes on demand — see `docs/physics.md`.
   inside the lookahead window is mispredicted: the camera eases in toward something it never reaches
   (then eases back out), or gets no warning at all and the hard clamp pops as before.
 
-- Peers have no collider in the local world (client-authoritative relay, ADR 0011/0013), so another
-  player standing between you and your character does not move the camera.
 - Nothing fades or hides *level* geometry between the camera and the character — only your own rig is
   hidden, and only when the camera is inside it.
 - Squeezed all the way in you are effectively in first person with no body. There is no first-person

@@ -19,10 +19,19 @@ export type { RosterEntry } from './roster'
 export { encodeRoster, decodeRoster } from './roster'
 export type { Snapshot, SnapshotEntity, SnapshotMessage } from './snapshot'
 export { encodeSnapshot, decodeSnapshot, fullSnapshotMessage } from './snapshot'
-export { quantizeAxis, dequantizeAxis, QUANT_BOUND } from './quantize'
+export {
+  quantizeAxis,
+  dequantizeAxis,
+  QUANT_BOUND,
+  quantizeYaw,
+  dequantizeYaw,
+  quantizeSpeed,
+  dequantizeSpeed,
+  SPEED_BOUND,
+} from './quantize'
 export type { InputCommand } from './input'
 export type { PlayerState } from './state'
-export { encodeState, decodeState, STATE_GROUNDED, STATE_RISING } from './state'
+export { encodeState, decodeState, STATE_GROUNDED, STATE_RISING, STATE_DEAD } from './state'
 export type { Welcome } from './welcome'
 export { encodeWelcome, decodeWelcome } from './welcome'
 export type { Ping, Pong } from './timesync'

@@ -334,6 +334,42 @@ describe('physics world', () => {
     })
   })
 
+  describe('collision layers', () => {
+    const A = { belongsTo: 0x0001, collidesWith: 0xffff & ~0x0002 }
+    const B = { belongsTo: 0x0002, collidesWith: 0xffff & ~0x0001 }
+
+    it('lets a dynamic body fall through a body whose layers it excludes, but not through the floor', () => {
+      const world = createPhysicsWorld({ gravity: { x: 0, y: -9.81, z: 0 } })
+      // Floor with default layers: it never claimed one, and must still stop everything.
+      world.addFixedBody({ position: { x: 0, y: -3, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 20, y: 0.5, z: 20 } } })
+      world.addFixedBody({ position: { x: 0, y: 0, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 2, y: 0.5, z: 2 } }, layers: A })
+      const through = world.addDynamicBody({ position: { x: 0, y: 3, z: 0 }, shape: { kind: 'ball', radius: 0.3 }, layers: B })
+      const onto = world.addDynamicBody({ position: { x: 1, y: 3, z: 0 }, shape: { kind: 'ball', radius: 0.3 }, layers: A })
+      for (let i = 0; i < 240; i++) world.step(1 / 60)
+      expect(through.translation().y).toBeLessThan(-2) // passed the slab, stopped by the floor
+      expect(through.translation().y).toBeGreaterThan(-3)
+      expect(onto.translation().y).toBeGreaterThan(0) // rested on the slab
+      world.free()
+    })
+
+    it('stops a character being blocked by, or standing on, a layer it excludes', () => {
+      const world = createPhysicsWorld()
+      // A slab right under the capsule's feet, in the layer the capsule excludes.
+      world.addFixedBody({ position: { x: 0, y: 0, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 2, y: 0.5, z: 2 } }, layers: B })
+      const char = world.addCharacter({ position: { x: 0, y: 1.5, z: 0 }, radius: 0.4, halfHeight: 0.5, layers: A })
+      for (let i = 0; i < 30; i++) {
+        char.move({ x: 0, y: -0.05, z: 0 })
+        world.step(1 / 60)
+      }
+      // Neither resolved against nor probed: the controller takes its groups per call, so a capsule that
+      // ignores a layer must not be able to walk on it either.
+      expect(char.translation().y).toBeLessThan(0.5) // fell straight through
+      expect(char.probeGround()).toBeUndefined()
+      expect(char.collisions()).toHaveLength(0)
+      world.free()
+    })
+  })
+
   it('leaves a fixed body where it was placed', () => {
     const world = createPhysicsWorld()
     const ground = world.addFixedBody({

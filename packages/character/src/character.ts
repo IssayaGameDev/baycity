@@ -1,6 +1,6 @@
 import { conjQuat, rotateVec3, vec3, type Quat, type Vec3 } from '@mp/core'
 import type { InputCommand } from '@mp/net'
-import { type CharacterBody, type CharacterOptions, type PhysicsWorld } from '@mp/physics'
+import { type CharacterBody, type CharacterOptions, type CollisionLayers, type PhysicsWorld } from '@mp/physics'
 
 /**
  * Kinematic character-controller library (stack-level, mode-agnostic — ADR pending).
@@ -107,8 +107,14 @@ export const addCharacterWith = (world: PhysicsWorld, spawn: Vec3, opts: Partial
   carry: vec3(0, 0, 0),
 })
 
-export const addCharacter = (world: PhysicsWorld, spawn: Vec3): CharacterState => ({
-  body: world.addCharacter({ position: spawn, radius: CHAR_RADIUS, halfHeight: CHAR_HALF_HEIGHT }),
+/** `layers` is the mode's, not the controller's: which collision layers this capsule takes part in. */
+export const addCharacter = (world: PhysicsWorld, spawn: Vec3, layers?: CollisionLayers): CharacterState => ({
+  body: world.addCharacter({
+    position: spawn,
+    radius: CHAR_RADIUS,
+    halfHeight: CHAR_HALF_HEIGHT,
+    ...(layers === undefined ? {} : { layers }),
+  }),
   vx: 0,
   vz: 0,
   vy: 0,

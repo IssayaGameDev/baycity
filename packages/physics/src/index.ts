@@ -16,5 +16,6 @@ export type {
   GroundContact,
   CastHit,
   SphereCastOptions,
+  CollisionLayers,
 } from './world'
 export { initPhysics, createPhysicsWorld } from './world'
