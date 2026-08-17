@@ -236,9 +236,10 @@ idf.addBinding(gait, 'idleShiftPeriod', { min: 0.5, max: 10, step: 0.1, label: '
 idf.addBinding(gait, 'idleSway', { min: 0, max: 0.12, step: 0.005, label: 'hip sway m' })
 idf.addBinding(gait, 'idleRoll', { min: 0, max: 0.2, step: 0.005, label: 'torso tilt rad' })
 
-// Inertia (ADR 0018). Responds to the *derivative* of motion the character did not ask for, so a
-// platform at a steady speed shows nothing and its starts, stops and corners show everything. Each
-// weight is that part's own lag; parts inherit their parent's, so a forearm ends up lagging most.
+// Inertia (ADR 0018). Fed the character's *total* world velocity — its own locomotion plus anything
+// carrying it — and responds to the derivative, so constant speed of any kind shows nothing while every
+// start, stop and corner shows. Each weight is that part's own lag; parts inherit their parent's, so a
+// forearm ends up lagging most. These are rotations only — the translation is the Joint lag folder.
 const inf = pane.addFolder({ title: 'Inertia', expanded: false })
 inf.addBinding(gait, 'inertiaStrength', { min: 0, max: 3, step: 0.05, label: 'strength' })
 inf.addBinding(gait, 'inertiaHalfLife', { min: 0.02, max: 0.5, step: 0.01, label: 'looseness s' })
@@ -247,8 +248,8 @@ inf.addBinding(gait, 'inertiaHead', { min: 0, max: 2, step: 0.05, label: 'w head
 inf.addBinding(gait, 'inertiaUpperArm', { min: 0, max: 3, step: 0.05, label: 'w upper arm' })
 inf.addBinding(gait, 'inertiaLowerArm', { min: 0, max: 3, step: 0.05, label: 'w forearm' })
 inf.addBinding(gait, 'inertiaHip', { min: 0, max: 0.15, step: 0.005, label: 'hip lag m' })
-inf.addBinding(gait, 'inertiaVertical', { min: 0, max: 0.15, step: 0.005, label: 'compress m' })
-inf.addBinding(gait, 'inertiaFloat', { min: 0, max: 1, step: 0.05, label: 'arm float rad' })
+inf.addBinding(gait, 'inertiaVertical', { min: 0, max: 0.8, step: 0.01, label: 'compress m' })
+inf.addBinding(gait, 'inertiaFloat', { min: 0, max: 4, step: 0.05, label: 'arm float rad' })
 
 // Head (ADR 0018). Every head term used to be a torso term times a constant, so it read as welded.
 // `stabilize` is the base: 1 holds the head level in the world with the torso turning under it.
@@ -264,18 +265,16 @@ hf.addBinding(gait, 'headFall', { min: 0, max: 0.8, step: 0.02, label: 'look dow
 hf.addBinding(gait, 'headLand', { min: 0, max: 1, step: 0.02, label: 'land nod' })
 hf.addBinding(gait, 'headSprint', { min: 0, max: 0.5, step: 0.02, label: 'sprint pitch' })
 
-// Follow-through springs (ADR 0018). Secondary motion as translation: a part lags its joint and rings
-// back. `head Hz` is the important one and it is not a "speed" knob — the spring is an isolator, so
-// under the bob's ~3.2 Hz the head stays level and the neck gap opens, and over it the head amplifies
-// the bob into a bobblehead. Arms need their own, far stiffer: their drive is their own swing.
-const sf = pane.addFolder({ title: 'Springs (follow-through)', expanded: false })
-sf.addBinding(gait, 'springFrequency', { min: 0.5, max: 10, step: 0.1, label: 'head Hz' })
-sf.addBinding(gait, 'springArmFrequency', { min: 1, max: 20, step: 0.5, label: 'arm Hz' })
-sf.addBinding(gait, 'springDamping', { min: 0.05, max: 1, step: 0.05, label: 'damping ζ' })
-sf.addBinding(gait, 'springMax', { min: 0.01, max: 0.3, step: 0.005, label: 'max reach m' })
-sf.addBinding(gait, 'springHead', { min: 0, max: 1.5, step: 0.05, label: 'w head' })
-sf.addBinding(gait, 'springUpperArm', { min: 0, max: 1.5, step: 0.05, label: 'w upper arm' })
-sf.addBinding(gait, 'springLowerArm', { min: 0, max: 1.5, step: 0.05, label: 'w forearm' })
+// Joint lag (ADR 0018). One mechanism for the neck and both shoulders: each interpolates toward the
+// **world** position of the point it attaches to, so it is simply late to wherever the body went. Zero
+// welds it. Raise it and the joint trails further behind everything the character does, saturating at its
+// max. At 5.5 m/s the trail is about 0.005 → 40 mm, 0.01 → 79 mm, 0.03 → the stop. Crank a lag and its max
+// to maximum to confirm it is working, then tune down.
+const lf = pane.addFolder({ title: 'Joint lag', expanded: false })
+lf.addBinding(gait, 'headLagHalfLife', { min: 0, max: 0.06, step: 0.001, label: 'head lag s' })
+lf.addBinding(gait, 'headLagMax', { min: 0, max: 0.4, step: 0.01, label: 'head max m' })
+lf.addBinding(gait, 'armLagHalfLife', { min: 0, max: 0.06, step: 0.001, label: 'arm lag s' })
+lf.addBinding(gait, 'armLagMax', { min: 0, max: 0.4, step: 0.01, label: 'arm max m' })
 
 // Air pose. Rising and falling are separate shapes (ADR 0018) — the outward rolls are what make a
 // jump visible at all from a camera sitting behind the character.

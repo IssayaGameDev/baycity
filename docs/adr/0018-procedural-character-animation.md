@@ -165,18 +165,30 @@ change to adopt it.
   (0.75 m) above the sole by construction. So *any* hip lift is unsolvable and pulls the feet off the
   floor, and no idle motion at all is possible until the hips drop first. `idleSettle` is that slack;
   breathing is expressed as a varying drop that never reaches zero rather than as a rise.
-- **Inertia is a per-part additive layer keyed to acceleration, not velocity.** A character being
-  *moved* rather than moving has no locomotion to animate but still has mass. `CharacterState.carry`
-  is the signal: everything the controller resolved horizontally that locomotion did not ask for —
-  a platform's ride, a sweeping piece's shove, a wall taking momentum away — plus the ride alone
-  vertically. It was already being computed and discarded (`applied` minus the locomotion delta).
+- **Inertia is a per-part additive layer keyed to acceleration, not velocity, and it is fed the
+  character's *total* world velocity.** That total is its own locomotion (`speed` along `yaw`) plus
+  `CharacterState.carry` — everything the controller resolved that locomotion did not ask for: a
+  platform's ride, a sweeping piece's shove, a wall taking momentum away, plus the ride alone
+  vertically. `carry` was already being computed and discarded (`applied` minus the locomotion delta).
+  **Only `carry` was wired up at first, and that was the layer's central bug**: the signal is by
+  definition motion the character did *not* ask for, so the layer fired on platforms and nowhere else.
+  Your own starts, stops and turns — 55 m/s² and 69 m/s², by far the largest accelerations in the game —
+  produced nothing at all. It read as a stiff character with a mysterious platform-only twitch. Two
+  separate attempts to make the arms visibly lag failed against this, because both were tuning a
+  mechanism whose dominant input was missing: the arm springs are driven in root space, and root space
+  is attached to the character, so running through the world moves nothing in it either.
   Vertically it must **not** come from `applied.y`: that also cancels the gravity nudge on every
   grounded tick, so the difference would report a permanent upward shove from the floor holding the
   character up, and snap-to-ground and autostep land there too.
-  Because the response is to the derivative, a platform at a steady speed produces nothing — standing
-  on a train at line speed feels like standing still — while its starts, stops and corners produce
-  everything. A turntable therefore leans its rider inward for free: constant speed, constant change
-  of direction, constant centripetal acceleration.
+  Because the response is to the derivative, *any* steady speed produces nothing — standing on a train
+  at line speed feels like standing still, and so does running flat out — while every start, stop and
+  corner produces everything. A turntable therefore leans its rider inward for free, and so does a
+  player's own hard turn: constant speed, constant change of direction, constant centripetal
+  acceleration.
+  Velocity comes from `input.yaw` rather than the smoothed facing, because it points where the character
+  is *going*; the smoother is a rendering choice about where it looks. This also closes the peer gap
+  noted below for the inertial layer specifically: a peer's derived speed and yaw are its world
+  velocity, so peers now brace even though they still receive no `carry`.
   Each part has its own lag weight and **inherits its parent's**, so the weights are increments down
   the chain and a forearm ends up lagging most. Two consequences worth knowing: the head's weight is
   low because a real head stabilizes itself, yet its *absolute* travel is still the largest on the
@@ -203,10 +215,10 @@ change to adopt it.
      construction: two smoothers chasing one target agree once the target stops moving, so the lead
      exists only during a turn and nothing has to unwind it (measured 22° peak on a 90° snap turn,
      2·10⁻⁵ rad a second later).
-  3. **A steadier eyeline than the hips**, which is why `Pose` grew a translation. A rotation cannot
-     express the neck absorbing the stride's vertical travel — the head has to *move*. This began as
-     `headCounterBob`, a fraction of the gait bob subtracted; the spring layer below subsumed it and
-     the term is gone.
+  3. **Translation**, which is why `Pose` grew `jointOffset`. A rotation cannot express a head that is
+     late to where its neck went. This began as `headCounterBob`, a fraction of the gait bob subtracted,
+     then became a root-space spring, and is now the world-space joint lag described below; both earlier
+     forms are gone.
   4. **State pitch** — chin up while rising, looking down at the landing while falling, a nod on the
      impact decaying with the landing crouch, and a little down the run at speed. These are the only
      head terms with no counterpart anywhere else on the body.
@@ -215,38 +227,47 @@ change to adopt it.
   pitch in the frame the stabilization was supposed to remove.
   Worth knowing when tuning: from the default camera, behind the character, head yaw and pitch are
   the most foreshortened quantities on the whole rig. The translation is the one a player sees.
-- **Follow-through is a spring layer, and the spring is a vibration isolator — which is the whole
-  design.** Each of head, upper arm and forearm hangs off its joint on an under-damped spring chasing
-  where that joint belongs; the lag *is* `jointOffset`, and the under-damping is what makes it ring.
-  One construction then covers every source: the stride's bob, the landing crouch, hip travel from a
-  platform's jolt, an elevator's compression, the air pose changing shape. All of them already arrive
-  in the joint targets, so nothing needs a term of its own.
-  **The frequency is not a "how snappy" knob, it decides the sign of the effect**, and this is the
-  trap the whole layer turns on. Measured against 129 mm of hip travel at top speed: at 2 Hz — below
-  the bob's ~3.2 Hz — the head travels 43 mm and the neck gap opens to 66 mm, an isolator doing its
-  job. At 8 Hz it travels 126 mm: the head now *tracks* the bob and reads as a bobblehead. Reaching
-  for a stiffer, snappier neck makes it strictly worse, which is why there is a test asserting both
-  ends. The arms need their own, far stiffer frequency (8 Hz) for an unrelated reason: an arm's primary
-  motion is its own swing, ~1.6 Hz through a half-metre arc, and a spring soft enough to isolate a
-  head cannot follow that at all — it pins at full excursion and degenerates into a rigid offset with
-  no dynamics left in it. Two drives, two frequencies.
-  `springHead` is 0.7 rather than 1 because head travel is *lowest* there (43 mm, against 62 mm at
-  full weight): the lag is not purely anti-phase with the bob, so it has a quadrature component and an
-  intermediate weight cancels more of the bob than all of it does.
-  `springMax` is an anatomical stop, not a shaper. A landing binds it — and should, since the torso's
-  crouch pitches 0.15 rad and the neck sits 0.75 m above that joint, so the head's target jumps 110 mm
-  sideways in one frame, more than the 125 mm hip drop does. Ordinary walking must stay clear of it
-  (66 mm against 110 mm); if it binds while walking, the frequency is wrong.
-  Solved in **closed form** — the exact 2×2 map on (displacement, velocity) — like every other
-  smoother here, so 60 fps and 144 fps ring identically. A stepped integrator would also *gain* energy
-  at low damping and never settle.
-  Driven from **root space**, not world: everything above is already in root space and smooth per
-  rendered frame, whereas a peer's world position is an interpolated 20 Hz staircase that a
-  lightly-damped spring would ring on. The cost is that a pure spin drives nothing, since turning in
-  place moves no root-space joint.
-  The body and the four leg parts are excluded **by construction**, not left untuned: the body's
-  travel is `bodyOffset`, which the leg IK is solved against, and displacing a leg would slide the
-  foot it is standing on. Their `jointOffset` entries are asserted to be exactly zero.
+- **Secondary motion is one first-order lag per attachment to the torso, in WORLD space.** The neck and
+  the two shoulders each interpolate toward the world position of the point they hang from, so each is
+  simply late to wherever the body went. The offset *is* `jointOffset`. Everything drives it with no term
+  of its own — walking, starting, stopping, turning, jumping, the stride's bob, a landing, a platform's
+  jolt all move that point through the world, and that is the only input it takes.
+  **World space, not root, is the entire trick, and three attempts failed on it.** A joint's position in
+  the body's own frame never changes — a shoulder is bolted to the torso — so a filter applied there
+  converges instantly and renders nothing at all. Two rounds of tuning went into root-space springs on
+  the shoulder (12 mm of lag, then 45 mm, both invisible) before the frame itself turned out to be the
+  bug. If a filter has nothing to chase, no amount of tuning will show.
+  **Nothing below an attachment gets its own lag.** A forearm inherits its shoulder, so each arm travels
+  as one piece; a second filter at the elbow only opens a gap there, and it also dictated the shoulder's
+  tuning, since the elbow's target moves with the arm's own swing (~1.6 Hz through a half-metre arc)
+  rather than with the body. A chain of filters couples their tuning and the child's drive is always the
+  faster one. The elbow's displacement is asserted to equal its shoulder's *exactly*: this layer writes
+  translations only and no rotation reads them back, so the identity holds to floating point and the arm
+  provably cannot come apart.
+  **A steady speed holds a constant trail, and that is the effect rather than a defect.** A first-order
+  lag against a target at constant velocity settles at `v·τ` behind it, so running flat out holds each
+  joint a fixed distance back — measured 79 mm at the shoulders and 55 mm at the neck at 5.5 m/s.
+  Removing that steady offset needs the response keyed to *acceleration* instead, which was tried, and it
+  deleted exactly the effect being asked for while looking correct in every test. Keying to acceleration
+  is right for the rotations, where a permanent lean would be wrong, and wrong here.
+  **First order cannot overshoot**, so a joint falls behind and catches up but never swings past. That is
+  the trade against the under-damped spring this replaced, which did ring on landings, and it is why the
+  bound is a hard maximum rather than a damping ratio.
+  **What it cost: the head is no longer much steadier than the hips.** The spring it replaced filtered
+  the neck point in root space, so it never saw the character travelling and could be soft enough to
+  attenuate the bob — 43 mm of head travel against 129 mm of hip travel. The world-space lag cannot do
+  both at once: attenuating a 3.2 Hz bob wants `τ ≫ 50 ms`, which at 5.5 m/s is a 275 mm trail. Tuned for
+  the trail, the head now rides 119 mm of the hips' 129. The visible neck gap survives and is larger; the
+  vertical steadiness is what was traded for coordination with the arms. Recorded in a test so it is not
+  rediscovered by accident.
+  **Frame-rate independence needs the target's velocity.** A plain `smooth` toward a *moving* target
+  treats it as jumping at the frame boundary and settles at `v·dt·α/(1−α)` — 42 mm at 60 fps against
+  62 mm at 144 for one tuning. The previous target is therefore kept, its velocity measured, and the
+  exact linear-ramp solution used, which settles at `v·τ` at any frame rate.
+  The body and the four leg parts are excluded **by construction**, not left untuned: the body's travel
+  is `bodyOffset`, which the leg IK is solved against, and displacing a leg would slide the foot it is
+  standing on. Every `jointOffset` entry but the neck's and the two shoulders' is asserted to be exactly
+  zero.
 - **The acceleration is measured as the gap between the carry signal and its own smoothed value**,
   sampled at the frame midpoint. For an exponential smoother that gap is exactly a low-passed
   derivative (`(raw − smoothed)·ln2/halfLife`), so nothing is differenced: `carry` updates at the
@@ -255,9 +276,20 @@ change to adopt it.
   — left a one-frame bias that scaled with `dt`, and 144 fps disagreed with 60 fps by 4%; the midpoint
   brings that under 1 mm on a 17 cm lag.
 - `atan(a/g)` sets the magnitude, being the angle a pendulum hangs at under that acceleration. It
-  saturates rather than exploding when a platform reverses in a single tick. `g` is 9.81, **not** the
-  simulation's 55: sim gravity is 5.6× Earth's so jumps are snappy, and normalizing against it would
-  make every response five times too small to see.
+  saturates rather than exploding when a platform reverses in a single tick. **`g` is the simulation's
+  own 55**, and it was 9.81 for as long as `carry` was the only input: platform rides accelerate gently,
+  and normalizing them against 55 made every response five times too small to see. Feeding locomotion in
+  inverts that argument entirely — against 9.81, a 5.6 g start pins the tilt near 90° and throws the
+  character flat. The consequence to know about: every weight in the layer became 5.6× weaker for a
+  given acceleration, which is *correct* for locomotion (5.6× the acceleration, so it nets out) and a
+  real reduction for platforms. `inertiaVertical` and `inertiaFloat` were scaled up by 55/9.81 to
+  compensate, because they are fed the vertical signal and locomotion is planar — a platform is still
+  their only driver, so leaving them alone would have quietly made an elevator 5.6× weaker.
+- **The inertial layer is rotations only.** An `inertiaTravel` term was added to it, translating each
+  sprung joint against the acceleration, and then removed: the world-space joint lag above produces the
+  same displacement from the same motion, and two mechanisms writing one `jointOffset` is worse than one.
+  Keying translation to acceleration was also the specific mistake that hid the effect for two rounds —
+  it makes a constant speed produce nothing, which is correct for a lean and wrong for a trail.
 - Upward acceleration compresses the body; downward is **not** permitted to lift the hips (see the
   full-extension note above) and goes to the arms floating outward instead.
 - **Two bones with one pitch each reach a plane, not a volume.** The leg solve originally assumed the
