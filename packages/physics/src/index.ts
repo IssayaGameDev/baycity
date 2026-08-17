@@ -14,5 +14,7 @@ export type {
   CharacterOptions,
   CharacterBody,
   GroundContact,
+  CastHit,
+  SphereCastOptions,
 } from './world'
 export { initPhysics, createPhysicsWorld } from './world'

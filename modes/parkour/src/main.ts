@@ -138,10 +138,79 @@ const assembleTiming: AssemblyTiming = { stagger: 0.05, fall: 0.18, height: 2.5 
 const camera = stage.camera
 let camYaw = 0
 let camPitch = 0.35
+/**
+ * Top pitch limit (rad, positive = camera above the character looking down): 90°, straight over the
+ * head. Exactly 90° is fine because the orientation is built from the angles — with `lookAt` it was
+ * not, since there the view direction goes parallel to `camera.up` and the roll becomes undefined.
+ * The bottom limit is a tunable (`params.pitchMinDeg`): nothing structural stops the camera going
+ * under the character now that the ground pulls it in.
+ */
+const PITCH_MAX = Math.PI / 2
+const DEG = Math.PI / 180
+/**
+ * Radius of the sphere swept from the character to the camera to find obstructions. It is the
+ * clearance the camera keeps from whatever stopped it, and it has to beat the near plane (0.1 m at
+ * 60° vertical FOV = 0.12 m to the near plane's corner) or the wall it stopped at cuts through the
+ * frame anyway.
+ */
+const CAM_PROBE_RADIUS = 0.25
+/** Boom height above the orbit sphere — the camera looks slightly down at the target. */
+const CAM_RISE = 0.5
+/**
+ * Half-life (s) for the turn and travel rates that drive the lookahead probe. Mouse movement arrives
+ * in bursts, so the raw per-frame rate is spiky; this is short enough to answer a flick and long
+ * enough that the predicted boom does not jitter. Move it before touching `camLookahead` if the soft
+ * limit ever looks nervous.
+ */
+const CAM_RATE_HALFLIFE = 0.05
+/** The orbit distance the boom has room for, chasing the soft limit. `null` until the first frame. */
+let camBoom: number | null = null
+let camYawPrev = 0
+let camPitchPrev = 0.35
+let camYawRate = 0
+let camPitchRate = 0
+let camTargetPrev: Vec3 = { x: 0, y: 1, z: 0 }
+let camVel: Vec3 = vec3()
+/** Frame-rate-independent chase toward `to`: `halfLife` is the time to close half the gap. 0 snaps. */
+const chase = (from: number, to: number, dt: number, halfLife: number): number =>
+  halfLife > 0 ? from + (to - from) * (1 - Math.pow(2, -dt / halfLife)) : to
+/**
+ * How far the camera may sit along a given boom before it hits the world, in metres. Set once the
+ * local sim exists, since that owns the physics world; until then the camera just uses its zoom.
+ */
+let camClearance: ((target: Vec3, boom: Vec3, want: number) => number) | null = null
 const params = {
-  camDistance: 7,
+  /** Zoom goal (m) — what the wheel sets. What renders is `camDistance`, which chases this. */
+  camZoom: 7,
+  camZoomMin: 3,
+  camZoomMax: 14,
+  /** Metres one notch moves at zero zoom. It grows with the current zoom — see the wheel handler. */
+  camZoomStep: 0.5,
+  camZoomGrowth: 0.04,
+  /** Half-life (s) of the rendered distance chasing the goal. 0 snaps. */
+  camZoomSmooth: 0.08,
+  /** Lowest pitch (degrees below the eyeline). The ground no longer stops the camera, it pulls it in. */
+  pitchMinDeg: -80,
+  /**
+   * Lookahead (s) for the soft limit — how far into the future the second probe is aimed. Longer gives
+   * the camera more warning and so a smoother move in, at the cost of reacting to obstructions it may
+   * never actually reach. 0 turns the soft limit off, leaving the hard clamp: instant pull-in.
+   */
+  camLookahead: 0.15,
+  /** Half-life (s) of the camera moving in toward the soft limit. */
+  camPushInSmooth: 0.06,
+  /** Half-life (s) of the camera easing back out once an obstruction clears. */
+  camReturnSmooth: 0.18,
+  /**
+   * Clearance (m) the camera must keep from your own capsule before your rig is hidden. Below it you
+   * would be looking at the inside of your own head. 0.12 m is the near plane's corner at a 60° FOV,
+   * so anything under that is already cutting into the frame.
+   */
+  camHideMargin: 0.15,
   sensitivity: 0.0025,
 }
+/** The orbit distance actually rendered: `camZoom` smoothed, so a notch glides instead of jumping. */
+let camDistance = params.camZoom
 canvas.addEventListener('click', () => {
   if (document.pointerLockElement !== canvas) void canvas.requestPointerLock()
 })
@@ -153,8 +222,27 @@ canvas.addEventListener('mousedown', (e) => {
 window.addEventListener('mousemove', (e) => {
   if (document.pointerLockElement !== canvas) return
   camYaw -= e.movementX * params.sensitivity
-  camPitch = clamp(camPitch + e.movementY * params.sensitivity, -0.2, 1.2)
+  camPitch = clamp(camPitch + e.movementY * params.sensitivity, params.pitchMinDeg * DEG, PITCH_MAX)
 })
+// Wheel zoom. One notch per event whatever the device reports — `deltaY` is ±100 on one mouse, ±3 on
+// another and a page height on a third, so only the sign is portable. The step grows with the current
+// distance, as Roblox's does, so the far end of the range is not thirty notches away. Gated on pointer
+// lock: scrolling the debug pane with the mouse free must not move the camera.
+window.addEventListener(
+  'wheel',
+  (e) => {
+    if (document.pointerLockElement !== canvas) return
+    e.preventDefault()
+    const dir = Math.sign(e.deltaY)
+    if (dir === 0) return
+    params.camZoom = clamp(
+      params.camZoom + dir * params.camZoomStep * (1 + params.camZoom * params.camZoomGrowth),
+      params.camZoomMin,
+      params.camZoomMax,
+    )
+  },
+  { passive: false },
+)
 
 // --- input --- (physical key codes: layout-independent)
 const keys = new Set<string>()
@@ -191,7 +279,18 @@ paneHost.style.cssText = 'position:fixed;top:8px;right:8px;width:256px;z-index:1
 document.body.appendChild(paneHost)
 const pane = new Pane({ title: 'Debug', container: paneHost })
 const cam = pane.addFolder({ title: 'Camera' })
-cam.addBinding(params, 'camDistance', { min: 3, max: 14, step: 0.5, label: 'distance' })
+// No slider for the zoom itself — the wheel owns it, and tweakpane does not track a value changed
+// from outside. These are its bounds and its feel instead.
+cam.addBinding(params, 'camZoomMin', { min: 0.5, max: 10, step: 0.5, label: 'zoom min m' })
+cam.addBinding(params, 'camZoomMax', { min: 4, max: 40, step: 0.5, label: 'zoom max m' })
+cam.addBinding(params, 'camZoomStep', { min: 0.1, max: 3, step: 0.1, label: 'notch m' })
+cam.addBinding(params, 'camZoomGrowth', { min: 0, max: 0.2, step: 0.005, label: 'notch growth' })
+cam.addBinding(params, 'camZoomSmooth', { min: 0, max: 0.4, step: 0.01, label: 'zoom smooth s' })
+cam.addBinding(params, 'pitchMinDeg', { min: -89, max: 0, step: 1, label: 'pitch floor °' })
+cam.addBinding(params, 'camLookahead', { min: 0, max: 0.5, step: 0.01, label: 'lookahead s' })
+cam.addBinding(params, 'camPushInSmooth', { min: 0, max: 0.5, step: 0.01, label: 'push-in s' })
+cam.addBinding(params, 'camReturnSmooth', { min: 0, max: 1, step: 0.01, label: 'pull-out s' })
+cam.addBinding(params, 'camHideMargin', { min: 0, max: 1, step: 0.01, label: 'rig hide m' })
 cam.addBinding(params, 'sensitivity', { min: 0.0005, max: 0.006, step: 0.0005, label: 'sensitivity' })
 
 // Live locomotion feel (client-authoritative, so tuning is purely local — ADR 0011/0012).
@@ -399,6 +498,20 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   const char: CharacterState = addCharacter(world, spawn)
   ownState = char // the render loop reads velocity/grounded straight off the sim for our own rig
 
+  /**
+   * Camera occlusion: sweep a sphere from the character's head out along the boom and report how far it
+   * got. Everything in the level is a collider already — including the hazard and checkpoint pads, which
+   * are solid pieces you stand on, so the camera treating them as geometry is right.
+   *
+   * Excluded: ourselves. The boom starts at the capsule's crown, so the probe overlaps the capsule every
+   * single frame and would report zero clearance; and while dead the ragdoll's parts are our own body too,
+   * not scenery to be shoved away from.
+   */
+  camClearance = (origin, direction, want) => {
+    const own = ragdoll === null ? [char.body.colliderHandle] : [char.body.colliderHandle, ...ragdoll.colliders]
+    return world.castSphere({ origin, direction, maxDistance: want, radius: CAM_PROBE_RADIUS, exclude: own })?.distance ?? want
+  }
+
   // Respawn: teleport to the last checkpoint (or spawn) and kill momentum. Triggered by
   // touching a hazard pad or falling below the level's kill plane (mode config).
   let respawnPos: Vec3 = { ...spawn }
@@ -427,7 +540,6 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
     const pose = views.poseOf(id)
     if (pose === null) return // no rig drawn yet; nothing to fall apart
     dead = true
-    views.setVisible(id, false)
     ragdoll = createRagdoll({
       world,
       scene: stage.scene,
@@ -623,15 +735,13 @@ stage.start(() => {
       )
     // Assembling: the animator still runs above (the parts fall toward the pose it produces, so a player
     // already walking has their body arrive around them), but the rig itself stays hidden until the last
-    // part lands. Hidden here rather than at the start, because the view does not exist until first upsert.
+    // part lands. The hiding is the camera block's job at the end of the frame — one writer for it.
     if (!dead && assembly !== null) {
-      views.setVisible(myId, false)
       assembledFor += frameDt
       const pose = views.poseOf(myId)
       if (pose === null || assembly.draw(partTransforms(pose, ownPos), assembledFor, assembleTiming)) {
         assembly.dispose()
         assembly = null
-        views.setVisible(myId, true)
       }
     }
   }
@@ -660,13 +770,86 @@ stage.start(() => {
 
   // orbit camera around the own character
   const target = { x: ownPos.x, y: ownPos.y + 1, z: ownPos.z }
-  const cp = Math.cos(camPitch)
-  camera.position.set(
-    target.x + Math.sin(camYaw) * cp * params.camDistance,
-    target.y + Math.sin(camPitch) * params.camDistance + 0.5,
-    target.z + Math.cos(camYaw) * cp * params.camDistance,
-  )
-  camera.lookAt(target.x, target.y, target.z)
+  // Re-clamped every frame, because the range itself is tunable in the pane while playing.
+  params.camZoom = clamp(params.camZoom, params.camZoomMin, params.camZoomMax)
+  camDistance = chase(camDistance, params.camZoom, frameDt, params.camZoomSmooth)
+
+  // Rates, for the lookahead probe below: how fast the mouse is turning the boom and how fast the
+  // character is carrying it. Both are differenced per frame and smoothed — mouse deltas arrive in
+  // bursts, and an unsmoothed rate makes the predicted boom jitter, which the soft limit then chases.
+  if (frameDt > 0) {
+    camYawRate = chase(camYawRate, (camYaw - camYawPrev) / frameDt, frameDt, CAM_RATE_HALFLIFE)
+    camPitchRate = chase(camPitchRate, (camPitch - camPitchPrev) / frameDt, frameDt, CAM_RATE_HALFLIFE)
+    camVel = vec3(
+      chase(camVel.x, (target.x - camTargetPrev.x) / frameDt, frameDt, CAM_RATE_HALFLIFE),
+      chase(camVel.y, (target.y - camTargetPrev.y) / frameDt, frameDt, CAM_RATE_HALFLIFE),
+      chase(camVel.z, (target.z - camTargetPrev.z) / frameDt, frameDt, CAM_RATE_HALFLIFE),
+    )
+  }
+  camYawPrev = camYaw
+  camPitchPrev = camPitch
+  camTargetPrev = target
+
+  // The boom: where the camera would sit with the world empty. Everything below moves it along this
+  // line, never off it, so what the probe cleared is where the camera lands.
+  const boomX = Math.sin(camYaw) * Math.cos(camPitch) * camDistance
+  const boomY = Math.sin(camPitch) * camDistance + CAM_RISE
+  const boomZ = Math.cos(camYaw) * Math.cos(camPitch) * camDistance
+  const boom = Math.hypot(boomX, boomY, boomZ)
+  // Hard limit: how far the boom has room for *now*. The camera is clamped to it unconditionally, and
+  // that clamp is the whole no-clipping guarantee.
+  const hard = camClearance?.(target, vec3(boomX, boomY, boomZ), boom) ?? boom
+  // Soft limit: the same probe, of the same radius, run where the boom *will* be `lookahead` from now —
+  // the character has moved on and the mouse has kept turning. An obstruction about to cross the sight
+  // line shows up there before it shows up here, which is the head start the ease needs to arrive
+  // before the clamp has to bite. Widening the probe instead would also see it early, and would collapse
+  // the camera every time a surface merely runs alongside the boom (ADR 0020).
+  let soft = hard
+  if (params.camLookahead > 0 && camClearance !== null) {
+    const t = params.camLookahead
+    const yaw = camYaw + camYawRate * t
+    const pitch = clamp(camPitch + camPitchRate * t, params.pitchMinDeg * DEG, PITCH_MAX)
+    const aheadBoom = vec3(
+      Math.sin(yaw) * Math.cos(pitch) * camDistance,
+      Math.sin(pitch) * camDistance + CAM_RISE,
+      Math.cos(yaw) * Math.cos(pitch) * camDistance,
+    )
+    const aheadTarget = vec3(target.x + camVel.x * t, target.y + camVel.y * t, target.z + camVel.z * t)
+    const aheadLen = Math.hypot(aheadBoom.x, aheadBoom.y, aheadBoom.z)
+    soft = Math.min(hard, camClearance(aheadTarget, aheadBoom, aheadLen))
+  }
+  // Move toward the soft limit on a half-life — in on one, back out on another — then clamp to the hard
+  // limit. `null` on the first frame only, where there is nothing to interpolate from.
+  camBoom =
+    camBoom === null
+      ? soft
+      : chase(camBoom, soft, frameDt, soft < camBoom ? params.camPushInSmooth : params.camReturnSmooth)
+  const reach = Math.min(camBoom, hard) / boom
+  camera.position.set(target.x + boomX * reach, target.y + boomY * reach, target.z + boomZ * reach)
+  // Orientation from the boom's *direction*, not from `lookAt`. A fully squeezed boom puts the camera
+  // exactly on its target, and lookAt then has a zero-length direction to build a basis from: three
+  // falls back to looking along world -Z, which is a fixed heading that ignores the mouse entirely.
+  // The direction is known whatever the length is. YXZ order — yaw about Y, then pitch about X — is the
+  // one that keeps the horizon level, and it stays defined at straight-up, where lookAt does not.
+  camera.rotation.set(-Math.atan2(boomY, Math.hypot(boomX, boomZ)), camYaw, 0, 'YXZ')
+
+  // Your own rig's visibility, decided here because three things want a say and the third needs the
+  // camera placed first: death (the ragdoll has the floor), the spawn assembly (the body has not landed
+  // yet), and the camera being inside you.
+  //
+  // The probe deliberately ignores your own body, so nothing stops a low ceiling squeezing the camera
+  // into your head — a minimum boom length would instead push the camera *through* the ceiling, which
+  // trades your body for the whole world. So the body goes rather than the collision (ADR 0020).
+  // Measured against the capsule, whose height and width the rig is built from, so it hides only when
+  // the camera is genuinely inside the mesh and not on every close pass: distance from the camera to
+  // the capsule's spine, less its radius. Peers are unaffected — they always see you.
+  if (myId !== null) {
+    const spineY = clamp(camera.position.y - ownPos.y, -CHAR_HALF_HEIGHT, CHAR_HALF_HEIGHT)
+    const gap =
+      Math.hypot(camera.position.x - ownPos.x, camera.position.y - ownPos.y - spineY, camera.position.z - ownPos.z) -
+      CHAR_RADIUS
+    views.setVisible(myId, !dead && assembly === null && gap >= params.camHideMargin)
+  }
 })
 
 // --- pause screen (Pixi UI, ADR 0015) ---

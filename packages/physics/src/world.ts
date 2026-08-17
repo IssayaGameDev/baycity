@@ -100,6 +100,9 @@ export interface GroundContact {
  * with collision and reports whether it ended grounded.
  */
 export interface CharacterBody {
+  /** Handle of this capsule's collider — matches `PhysicsBody.colliderHandle` and the handles from
+   * `collisions`. What a query casting *from* the character passes to `exclude` so it cannot hit itself. */
+  readonly colliderHandle: number
   translation: () => Vec3
   /** Reposition immediately (reconciliation restore). */
   setPosition: (position: Vec3) => void
@@ -128,6 +131,24 @@ export interface PhysicsWorldOptions {
   readonly gravity?: Vec3
 }
 
+/** What a cast touched, and how far along it. */
+export interface CastHit {
+  /** Distance travelled from the origin before contact (m). 0 if it started already touching. */
+  distance: number
+  colliderHandle: number
+}
+
+export interface SphereCastOptions {
+  readonly origin: Vec3
+  /** Cast direction. Normalized internally, so any length will do. */
+  readonly direction: Vec3
+  /** Longest sweep considered (m). Beyond it the cast reports clear. */
+  readonly maxDistance: number
+  readonly radius: number
+  /** Collider handles to ignore — what the caster considers part of itself. */
+  readonly exclude?: readonly number[]
+}
+
 export interface PhysicsWorld {
   addDynamicBody: (opts: BodyOptions) => PhysicsBody
   addFixedBody: (opts: BodyOptions) => PhysicsBody
@@ -136,6 +157,16 @@ export interface PhysicsWorld {
   addKinematicBody: (opts: BodyOptions) => PhysicsBody
   /** Kinematic character controller (capsule). */
   addCharacter: (opts: CharacterOptions) => CharacterBody
+  /**
+   * Sweep a sphere from `origin` along `direction` and report the first collider it touches, or
+   * `undefined` if it gets `maxDistance` clear. A sphere rather than a ray because the caller puts
+   * something with volume where the result says — a camera stopped by a ray sits flush with the wall
+   * and its near plane cuts through it, while a sphere leaves exactly its radius of clearance.
+   * A sphere that starts overlapping something reports 0 only if it is heading further in; on a path
+   * out of the overlap it ignores it and reports whatever it meets next.
+   * Queries the world as it stands; no step needed.
+   */
+  castSphere: (opts: SphereCastOptions) => CastHit | undefined
   /** Advance the simulation by one fixed step of `dtSeconds`. */
   step: (dtSeconds: number) => void
   /** Release the underlying WASM world. */
@@ -199,6 +230,20 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
   if (!ready) throw new Error('initPhysics() must resolve before createPhysicsWorld()')
   const world = new RAPIER.World(opts.gravity ?? { x: 0, y: -9.81, z: 0 })
 
+  /**
+   * Rapier's scene queries (ray and shape casts) read a spatial index that `step()` refreshes. Casting
+   * between steps is fine — the render loop runs at up to 144 Hz over a 30 Hz sim — but a collider
+   * created, removed or repositioned since the last step is simply not in that index, so the cast
+   * reports geometry that has moved and misses geometry that has arrived. Refreshed on demand rather
+   * than per cast: the refresh walks the collider set, and most frames change nothing.
+   */
+  let queriesStale = false
+  const freshenQueries = (): void => {
+    if (!queriesStale) return
+    world.updateSceneQueries()
+    queriesStale = false
+  }
+
   const bodyDescFor = (kind: BodyKind) => {
     if (kind === 'dynamic') return RAPIER.RigidBodyDesc.dynamic()
     if (kind === 'fixed') return RAPIER.RigidBodyDesc.fixed()
@@ -211,6 +256,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
     if (o.linearDamping !== undefined) desc = desc.setLinearDamping(o.linearDamping)
     const body = world.createRigidBody(desc)
     const collider = world.createCollider(makeCollider(o.shape, o.restitution), body)
+    queriesStale = true
     return {
       handle: body.handle,
       colliderHandle: collider.handle,
@@ -232,12 +278,22 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
         body.setTranslation({ x: p.x, y: p.y, z: p.z }, true)
         body.setLinvel({ x: 0, y: 0, z: 0 }, true)
         body.setAngvel({ x: 0, y: 0, z: 0 }, true)
+        queriesStale = true
       },
-      setPosition: (p) => body.setTranslation({ x: p.x, y: p.y, z: p.z }, true),
-      setRotation: (r) => body.setRotation({ x: r.x, y: r.y, z: r.z, w: r.w }, true),
+      setPosition: (p) => {
+        body.setTranslation({ x: p.x, y: p.y, z: p.z }, true)
+        queriesStale = true
+      },
+      setRotation: (r) => {
+        body.setRotation({ x: r.x, y: r.y, z: r.z, w: r.w }, true)
+        queriesStale = true
+      },
       setNextKinematicTranslation: (p) => body.setNextKinematicTranslation({ x: p.x, y: p.y, z: p.z }),
       setNextKinematicRotation: (r) => body.setNextKinematicRotation({ x: r.x, y: r.y, z: r.z, w: r.w }),
-      remove: () => world.removeRigidBody(body),
+      remove: () => {
+        world.removeRigidBody(body)
+        queriesStale = true
+      },
     }
   }
 
@@ -253,8 +309,10 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(o.position.x, o.position.y, o.position.z),
     )
     const collider = world.createCollider(RAPIER.ColliderDesc.capsule(o.halfHeight, o.radius), body)
+    queriesStale = true
     const lastCollisions: number[] = []
     return {
+      colliderHandle: collider.handle,
       translation: () => {
         const t = body.translation()
         return vec3(t.x, t.y, t.z)
@@ -265,6 +323,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
         // computeColliderMovement right after a teleport (reconciliation replay)
         // doesn't run from the collider's stale position.
         collider.setTranslation({ x: p.x, y: p.y, z: p.z })
+        queriesStale = true
       },
       move: (desired) => {
         // `computedMovement` returns a view into WASM memory that the next call reuses — copy it.
@@ -324,6 +383,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
         return { grounded, applied: c }
       },
       probeGround: () => {
+        freshenQueries()
         const t = body.translation()
         // Reach below the feet is the snap-to-ground distance: the controller is willing to hold
         // the capsule to ground that far away, so ground that far away is its footing. It also has
@@ -350,8 +410,43 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
       remove: () => {
         world.removeRigidBody(body)
         world.removeCharacterController(controller)
+        queriesStale = true
       },
     }
+  }
+
+  // Reused across calls: the only thing that varies is the radius, and `castShape` builds (and frees)
+  // its own raw WASM shape per call, so holding one JS wrapper costs nothing.
+  const castBall = new RAPIER.Ball(0.1)
+  const NO_ROTATION = { x: 0, y: 0, z: 0, w: 1 }
+
+  const castSphere = ({ origin, direction, maxDistance, radius, exclude }: SphereCastOptions): CastHit | undefined => {
+    const len = Math.hypot(direction.x, direction.y, direction.z)
+    if (len === 0 || maxDistance <= 0 || radius <= 0) return undefined
+    freshenQueries()
+    castBall.radius = radius
+    const skip = exclude
+    const hit = world.castShape(
+      origin,
+      NO_ROTATION,
+      { x: direction.x / len, y: direction.y / len, z: direction.z / len },
+      castBall,
+      0, // contact at touching, no extra margin — the radius is the margin
+      maxDistance,
+      // `stopAtPenetration: false` — a sphere that starts already overlapping something, on a path that
+      // takes it *out* of that overlap, ignores it and carries on. Otherwise every cast whose origin
+      // grazes a surface reports 0 no matter which way it was heading: a camera under a low roof would
+      // collapse onto the character even with its whole boom pointing down and away, clear of everything.
+      // Heading *into* the thing it starts inside still reports 0.
+      false,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      skip === undefined || skip.length === 0 ? undefined : (c) => !skip.includes(c.handle),
+    )
+    // `time_of_impact` is in units of the cast velocity, and that is a unit vector — so metres.
+    return hit === null ? undefined : { distance: hit.time_of_impact, colliderHandle: hit.collider.handle }
   }
 
   return {
@@ -359,9 +454,11 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
     addFixedBody: (o) => addBody(o, 'fixed'),
     addKinematicBody: (o) => addBody(o, 'kinematic'),
     addCharacter,
+    castSphere,
     step: (dtSeconds) => {
       world.timestep = dtSeconds
       world.step()
+      queriesStale = false // a step refreshes the query index itself
     },
     free: () => world.free(),
   }

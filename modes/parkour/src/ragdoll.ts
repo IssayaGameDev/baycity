@@ -15,6 +15,9 @@ import { createLooseParts, THREE, type CharacterRigOptions } from '@mp/render-th
  * peers simply see that player stop moving.
  */
 export interface Ragdoll {
+  /** The ten parts' collider handles. A query that must ignore the player's own body — the camera's
+   * occlusion probe — needs these as well as the capsule's. */
+  colliders: readonly number[]
   /**
    * Snapshot the bodies. Call once per **sim tick**, after the world has stepped.
    *
@@ -66,6 +69,7 @@ export const createRagdoll = (opts: RagdollOptions): Ragdoll => {
   }
 
   return {
+    colliders: PART_NAMES.map((name) => bodies[name].colliderHandle),
     capture: () => {
       for (const name of PART_NAMES) {
         prev[name] = curr[name]

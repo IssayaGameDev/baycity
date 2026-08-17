@@ -40,12 +40,13 @@ reversed it); ball demo retired (tag `m10`); world/controller relocated out of `
   - [0015](adr/0015-ui-rendering.md) **PixiJS for all game UI** · [0016](adr/0016-localization.md) **localization (`@mp/i18n`)**
   - [0017](adr/0017-convex-colliders.md) **convex colliders for authored swept surfaces** (widens ADR 0014's primitive-only rule) · [0018](adr/0018-procedural-character-animation.md) **procedural animation on a rigid 10-part rig** (+ protocol v8 state flags)
   - [0019](adr/0019-death-ragdoll.md) **death is a local ragdoll; spawning assembles the body** (both kill paths; visual-only, nothing on the wire)
+  - [0020](adr/0020-camera.md) **third-person camera**: wheel zoom, pitch to straight overhead, sphere-cast occlusion pulling the boom in
 
 ## Built
 
 - `core` — math (incl. quaternion helpers), entity model, fixed-timestep loop, `createSimClock` (fixed-step content time, slewed to a reference clock), transport interface.
 - `net` — binary codecs (v7): snapshot (delta + quantized), welcome, state, ping/pong, roster; quantization utils. `NET_CHANNEL` is the Colyseus channel they ride.
-- `physics` — Rapier3d wrapper: dynamic/fixed/kinematic bodies (position + rotation, linear + angular velocity), **kinematic character controller** (contact reporting + a downward `probeGround`), headless + browser.
+- `physics` — Rapier3d wrapper: dynamic/fixed/kinematic bodies (position + rotation, linear + angular velocity), **kinematic character controller** (contact reporting + a downward `probeGround`), a general **sphere cast** (`castSphere`, with self-exclusion and on-demand query-index refresh), headless + browser.
 - `character` — the stack-level kinematic character controller (`stepCharacter`, `CharacterTuning`; ADR 0012), mode-agnostic. Relocated out of `@mp/server/tps`. **Platform carry** (movement base): rides a moving piece by keeping its position in that surface's frame (`PlatformPoseLookup`), and a jump off a mover inherits its velocity. Paired with the loader's frozen posing — see `docs/physics.md`. Also the **blocky 10-part rig** (`RIG`, proportions derived from the capsule) and its **procedural animator** (`createAnimator`): distance-driven stride, two-bone analytic IK, half-life smoothing. No skinning, no clips, no art; headless and unit-tested (ADR 0018).
 - `content` — data-driven content: schema (prefab/level/collider/marker/behavior/visual), validation, the **loader** (`instantiateLevel`; `update(now, riddenCollider?)` poses the ridden piece without velocity and exposes `basePose` so riders can track it), the greybox **kit** + generators. Headless, no rendering. ADR 0014.
 - `server` — **Colyseus** `Server` (`startServer()`) hosting `ParkourRoom`: client-authoritative relay (per-client delta snapshots, no simulation, no schema), auto-join, roster/names, clock-sync ping/pong. Content-free.
@@ -56,7 +57,7 @@ reversed it); ball demo retired (tag `m10`); world/controller relocated out of `
 - `tools/netsim` — latency/jitter/loss transport wrapper. (Not wired into the current client — ADR 0013.)
 - `tools/bots` — headless `colyseus.js` load clients + `load` harness; measures budgets 2 & 3 and doubles as the live integration check.
 - `tools/viewer` — localhost content inspector (`pnpm dev:viewer`): picker, orbit, collider/marker/trigger overlays, jump-reachability gizmo, play-in-place. ADR 0014.
-- `modes/parkour` — the parkour mode on Colyseus rooms: Roblox-like controller (live-tunable), auto-join, nametags, data-driven level (kit sampler), checkpoints/hazard/fall via physics triggers + persistence adapter, a **death ragdoll** + **spawn assembly** (ten dynamic bodies seeded from the animated pose; left click respawns and the body drops back in a pair at a time — ADR 0019), and a **Pixi pause screen** (settings + roster + restart, localized via `@mp/i18n`). Composition root; view pieces in `nametag.ts`/`characterView.ts`/`pauseMenu.ts`/`ragdoll.ts`/`assemble.ts`.
+- `modes/parkour` — the parkour mode on Colyseus rooms: Roblox-like controller (live-tunable), auto-join, nametags, data-driven level (kit sampler), checkpoints/hazard/fall via physics triggers + persistence adapter, a **death ragdoll** + **spawn assembly** (ten dynamic bodies seeded from the animated pose; left click respawns and the body drops back in a pair at a time — ADR 0019), a **Pixi pause screen** (settings + roster + restart, localized via `@mp/i18n`), and the **third-person camera** (wheel zoom, pitch to straight overhead, sphere-cast occlusion — ADR 0020). Composition root; view pieces in `nametag.ts`/`characterView.ts`/`pauseMenu.ts`/`ragdoll.ts`/`assemble.ts`.
 - `content/levels` — level JSON (`level1.json`, the ported original world).
 
 ## Deferred (SEED §7, not built)

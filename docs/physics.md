@@ -44,8 +44,20 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
   controller will hold the capsule to ground that far away, so ground that far away is its footing,
   and it must exceed how far a surface moves in one tick (a platform descending at 3 m/s drops
   0.1 m per tick; a tighter margin loses the floor and the rider bounce-falls after it).
+- `CharacterBody.colliderHandle` — the capsule's own collider, for queries cast *from* the character
+  that must not hit it (the camera's occlusion probe starts inside it).
 - `CharacterOptions.offset` / `snapToGround` / `autostep` — controller collision parameters, so its
   behaviour can be probed rather than guessed at. Defaults are the values above.
+- `world.castSphere({ origin, direction, maxDistance, radius, exclude? })` → `CastHit | undefined` —
+  sweeps a sphere and reports `{ distance, colliderHandle }` for the first collider touched, or
+  `undefined` if it gets `maxDistance` clear. `direction` is normalized internally, so `distance` is
+  always metres. `exclude` is collider handles to ignore (what the caster counts as itself). A sphere
+  rather than a ray because the caller puts something with volume where the result says: stopped by a
+  ray, a camera sits flush with the wall and its near plane cuts through it; a sphere leaves exactly
+  `radius` of clearance. An overlap at the origin reports `distance: 0` only when the sweep heads
+  *further in*; on a path out of the overlap it is ignored (Rapier's `stopAtPenetration: false`), so a
+  probe whose origin grazes a surface is not pinned to zero regardless of where it was going.
+  Used by the parkour camera (ADR 0020).
 - `move` returns `applied`, the translation actually resolved. It differs from what was asked
   wherever the step was blocked or slid, and it is how a caller can tell what the controller did.
   `move` also **retries once** when it discards an entire step while resting (see `CONTACT_NUDGE`).
@@ -58,6 +70,14 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
   (content-free relay, ADR 0011/0014). Rapier uses `world.timestep`; the wrapper sets it per step.
 - **No cross-platform determinism** (SEED §2). Under client authority each client owns its own
   sim, so cross-client float drift is never reconciled and never shows — lockstep stays rejected.
+- **Scene queries read an index that only `step()` refreshes.** A collider created, removed or
+  repositioned since the last step is not in it, so a cast reports geometry that has moved and misses
+  geometry that has arrived — the same staleness that makes a teleported platform stop resolving
+  movement (see carry, point 4). The wrapper tracks it: any add / remove / `setPosition` / `teleport` /
+  `setRotation` marks the index stale, and `castSphere`/`probeGround` call Rapier's
+  `updateSceneQueries()` before casting if it is. On demand, not per cast — the refresh walks the
+  collider set and most frames change nothing. Relevant because the camera casts from the **render**
+  loop, which runs up to 144 Hz against a 30 Hz sim.
 - **Rotation** is read from Rapier and used locally for content (tilted/rotating colliders, their
   visuals, and contact triggers — ADR 0014). Still **position-only on the wire** (v7); orientation
   would only join the protocol if a replicated body needed it.
@@ -103,5 +123,7 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
   otherwise stalls the platform while the character keeps advancing. The loader also primes its
   first step to zero motion, so a mid-cycle start is never reported as travel.
 - Correctness covered by `packages/physics/src/world.test.ts`: gravity drop/rest, fixed-body
-  placement, kinematic obstacles, character grounding/walls, initial + kinematic rotation, and
-  contact reporting (the resting collider is reported, an untouched one is not).
+  placement, kinematic obstacles, character grounding/walls, initial + kinematic rotation, contact
+  reporting (the resting collider is reported, an untouched one is not), and `castSphere` (radius
+  clearance, clear sweep, exclusion, direction normalization, initial overlap, casting out of the
+  character capsule).

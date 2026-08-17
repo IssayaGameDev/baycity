@@ -254,6 +254,86 @@ describe('physics world', () => {
     world.free()
   })
 
+  describe('castSphere', () => {
+    // A wall centred 5 m along +x, 0.5 m thick, so its near face is at x = 4.75.
+    const walled = () => {
+      const world = createPhysicsWorld()
+      const wall = world.addFixedBody({
+        position: { x: 5, y: 0, z: 0 },
+        shape: { kind: 'cuboid', halfExtents: { x: 0.25, y: 5, z: 5 } },
+      })
+      return { world, wall }
+    }
+
+    it('stops a sphere its own radius short of the surface, and names what it hit', () => {
+      const { world, wall } = walled()
+      const hit = world.castSphere({
+        origin: { x: 0, y: 0, z: 0 },
+        direction: { x: 1, y: 0, z: 0 },
+        maxDistance: 20,
+        radius: 0.3,
+      })
+      // Centre travel = 4.75 (face) - 0.3 (radius). This is the whole point of a sphere over a ray:
+      // whatever sits at the result keeps that much clearance.
+      expect(hit?.distance).toBeCloseTo(4.45, 3)
+      expect(hit?.colliderHandle).toBe(wall.colliderHandle)
+      world.free()
+    })
+
+    it('reports clear when the sweep ends short of anything', () => {
+      const { world } = walled()
+      expect(
+        world.castSphere({ origin: { x: 0, y: 0, z: 0 }, direction: { x: 1, y: 0, z: 0 }, maxDistance: 3, radius: 0.3 }),
+      ).toBeUndefined()
+      world.free()
+    })
+
+    it('ignores excluded colliders — a caster cannot hit itself', () => {
+      const { world, wall } = walled()
+      const near = world.addFixedBody({
+        position: { x: 1, y: 0, z: 0 },
+        shape: { kind: 'cuboid', halfExtents: { x: 0.25, y: 1, z: 1 } },
+      })
+      const opts = { origin: { x: 0, y: 0, z: 0 }, direction: { x: 1, y: 0, z: 0 }, maxDistance: 20, radius: 0.3 }
+      expect(world.castSphere(opts)?.colliderHandle).toBe(near.colliderHandle)
+      expect(world.castSphere({ ...opts, exclude: [near.colliderHandle] })?.colliderHandle).toBe(wall.colliderHandle)
+      world.free()
+    })
+
+    it('normalizes the direction, so distance is metres either way', () => {
+      const { world } = walled()
+      const opts = { origin: { x: 0, y: 0, z: 0 }, maxDistance: 20, radius: 0.3 }
+      const unit = world.castSphere({ ...opts, direction: { x: 1, y: 0, z: 0 } })
+      const long = world.castSphere({ ...opts, direction: { x: 17, y: 0, z: 0 } })
+      expect(long?.distance).toBeCloseTo(unit?.distance ?? -1, 6)
+      world.free()
+    })
+
+    it('ignores what it starts inside when it is heading out of it, but not when heading further in', () => {
+      const { world } = walled()
+      // Radius 0.3 from x = 4.6 reaches 4.9, past the wall's face at 4.75 — overlapping at the start.
+      const opts = { origin: { x: 4.6, y: 0, z: 0 }, maxDistance: 20, radius: 0.3 }
+      expect(world.castSphere({ ...opts, direction: { x: 1, y: 0, z: 0 } })?.distance).toBe(0) // deeper in
+      expect(world.castSphere({ ...opts, direction: { x: -1, y: 0, z: 0 } })).toBeUndefined() // on the way out
+      // Why it matters: the camera's boom starts at the character's head. Under a low roof the probe
+      // sphere grazes the ceiling every frame, and stopping there would collapse the camera onto the
+      // player even with the whole boom pointing down and away, clear of everything.
+      world.free()
+    })
+
+    it('gives the character controller a collider handle to exclude itself by', () => {
+      const world = createPhysicsWorld()
+      const char = world.addCharacter({ position: { x: 0, y: 0, z: 0 }, radius: 0.4, halfHeight: 0.6 })
+      const opts = { origin: { x: 0, y: 1, z: 0 }, direction: { x: 0, y: -1, z: 0 }, maxDistance: 5, radius: 0.3 }
+      // Cast from the capsule's crown down through the body — the camera's boom at negative pitch.
+      // The sphere starts overlapping the capsule and is heading deeper in, so without the exclusion
+      // it never leaves the character.
+      expect(world.castSphere(opts)?.colliderHandle).toBe(char.colliderHandle)
+      expect(world.castSphere({ ...opts, exclude: [char.colliderHandle] })).toBeUndefined()
+      world.free()
+    })
+  })
+
   it('leaves a fixed body where it was placed', () => {
     const world = createPhysicsWorld()
     const ground = world.addFixedBody({
