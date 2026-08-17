@@ -105,6 +105,38 @@ change to adopt it.
 - **Rising and falling are separate poses** — tucked and compact going up, extended and reaching
   coming down, arms wider on the descent. This is what `STATE_RISING` is for; it was carried on the
   wire and ignored at first, which made a jump and a fall identical.
+- **Consecutive jumps mirror each other** (Kodjo's call). A lead side flips at every takeoff and drives
+  a contralateral pose: the lead knee tucks higher and reaches further forward, the *opposite* arm
+  throws wider and higher. Same-side pairing was never on the table — it is the robot walk, and a test
+  asserts the contralateral sign so a slip cannot produce one.
+  Three things this exposed or needed:
+  - The legs' fore/aft air split already existed and was **hard-coded to favour the left on every jump
+    of every character**. It is now lead-driven, so amount 0 gives a symmetric pose rather than
+    reproducing the old left-handed one.
+  - **One leg folds and the other extends** — which a ±fraction around the tuck cannot express, since
+    half of a 0.36 m tuck is still a bent knee. The share is asymmetric by construction: the lead leg
+    takes the whole tuck at any amount and the trailing one gives up its share until it reaches zero
+    lift, which *is* full extension, and saturates there because a leg cannot straighten past straight.
+    `airTuckRise` therefore keeps meaning what it always did, for the leading knee. Measured at the top
+    of the rise: lead 99–112° of knee bend, trail 2–13°.
+  - **The trailing leg's extension is the one air quantity the strength roll must not touch.** Near
+    full extension the knee angle is savagely nonlinear: 66 mm of residual lift measures 46° of visible
+    bend. A roll landing under 1 therefore does not read as "slightly less straight", it reads as bent —
+    and did, on half the jumps, before this was split off from the rolled term. A leg either extends or
+    it does not; the variation lives in the fore/aft rake, the arm throw and the lead knee's height.
+  - **The asymmetry fades out with `riseBlend`.** The descent extends both legs to feel for the floor;
+    held through it, the character lands visibly one-footed and then snaps flat. Measured 1.3 mm of
+    sole-height split by mid-descent.
+  - **Alternating alone is only two poses** and reads as a pattern within a few jumps, so the *strength*
+    is rolled per takeoff like every other per-movement quantity. Measured fore/aft rake across six
+    jumps: 277/298/366/421/269/406 mm.
+  Split between arms and legs by what the camera can see: the arm half is carried mostly in the
+  **outward roll** (measured 166–262 mm of lateral hand separation), because a raised arm pointing
+  forward is foreshortened to nothing from behind the character — the same constraint that put a splay
+  in the walk. The leg half is worth less from there and is weighted accordingly.
+  With idle live, an airborne pose is symmetric only to ~0.9 mm even with both knobs at zero. Not a
+  leak: the idle arm hang is deliberately unmirrored, and the arm springs still hold a little of it
+  when the jump begins.
 - Gait and air-pose parameters are bound live in the debug pane ("Gait (procedural)", "Jump / air
   pose") over one shared tuning object read fresh each frame, so it retunes every character including
   peers. Feel is Kodjo's call and words are a slow way to converge on it.

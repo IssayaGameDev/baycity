@@ -86,6 +86,20 @@ export interface GaitTuning {
   airTuckRise: number
   /** Foot lift while falling — legs nearly straight, feeling for the floor. */
   airTuckFall: number
+  /**
+   * Contralateral asymmetry in the **arms** while rising (0 for a symmetric jump, 1 the tuned
+   * amount). The arm opposite the lead leg swings wider and higher; the other tucks in. Carried
+   * mostly by the outward roll rather than the pitch, because a raised arm pointing forward is
+   * nearly invisible from a camera behind the character — the same reason the walk needed a splay,
+   * and the reason this is the half of the effect that actually reads.
+   */
+  airAsymArm: number
+  /**
+   * The same for the **legs**: the lead knee tucks higher and reaches further forward, the trailing
+   * one drops and trails. Worth less than the arms from the default camera, where fore/aft is
+   * foreshortened and the torso hides much of the knee's travel.
+   */
+  airAsymLeg: number
 
   // --- idle. Standing still is not the absence of animation, it is its own layer, and it runs on a
   // *time* clock rather than the distance clock the gait uses — there is no distance.
@@ -243,6 +257,8 @@ export const DEFAULT_GAIT: GaitTuning = {
   airElbowFall: 0.2,
   airTuckRise: 0.36,
   airTuckFall: 0.05,
+  airAsymArm: 1,
+  airAsymLeg: 1,
   idleSettle: 0.025,
   breathPeriod: 2,
   breathDepth: 0.02,
@@ -321,6 +337,19 @@ const G_REF = 9.81
  * `bodyOffset`, which the leg IK is solved against, and the legs' feet are planted — displacing
  * either would slide a foot, which is the one thing this whole design exists to prevent.
  */
+// Magnitudes of the jump's lead/trail asymmetry at amount 1, so the two pane knobs stay unitless
+// amounts rather than one being radians and the other metres.
+/** Extra outward roll on the raised arm (radians), and as much taken off the other. */
+const ARM_ASYM_OUT = 0.35
+/** Extra pitch on the raised arm (radians). Smaller than the roll — foreshortened from behind. */
+const ARM_ASYM_PITCH = 0.35
+/**
+ * Fore/aft foot split (m). Large enough that the trailing leg rakes visibly backward: straight and
+ * angled back is the shape, and at this size the target is just out of reach so the IK holds the leg
+ * dead straight and points it there — the clamp doing exactly the right thing for once.
+ */
+const LEG_ASYM_FWD = 0.18
+
 const SPRING_PARTS = ['head', 'upperArmL', 'lowerArmL', 'upperArmR', 'lowerArmR'] as const
 type SpringPart = (typeof SPRING_PARTS)[number]
 
@@ -419,6 +448,10 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
   let airBlend = 0
   let riseBlend = 0
   let crouch = 0
+  // Which side leads this jump. Flips at every takeoff, so consecutive jumps mirror each other. Not
+  // seeded: the side is the feature, not the variation, and starting every character on the same one
+  // costs nothing because the *magnitude* is rolled per jump on top.
+  let airLead: -1 | 1 = 1
   let prev: Vec3 | null = null
   let wasGrounded = true
   let lastSpeed = 0
@@ -446,7 +479,7 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
   // Note what is *not* here: stride length. Phase advances as distance / stride, so changing stride
   // while a foot is planted slides that foot — the skating this design exists to remove. Everything
   // varied below is free of ground contact.
-  const vary = { footLift: 1, armSwing: 1, twist: 1, bob: 1, airTuck: 1, airSplay: 1, crouch: 1, idleSway: 1 }
+  const vary = { footLift: 1, armSwing: 1, twist: 1, bob: 1, airTuck: 1, airSplay: 1, airLead: 1, crouch: 1, idleSway: 1 }
   const target = { ...vary }
   /**
    * Roll a multiplier of roughly ±`spread`, scaled by the tuning's variation amount. The amount is
@@ -559,9 +592,12 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
         target.bob = roll(0.16)
       }
       if (wasGrounded && !input.grounded) {
-        // Takeoff: this jump's shape.
+        // Takeoff: this jump's shape. The lead side alternates and its strength is rolled, because
+        // strict L,R,L,R is only two poses and reads as predictable after a few jumps.
+        airLead = airLead === 1 ? -1 : 1
         target.airTuck = roll(0.2)
         target.airSplay = roll(0.18)
+        target.airLead = roll(0.3)
       }
       if (!wasGrounded && input.grounded) target.crouch = roll(0.3) // landing depth
       for (const k of Object.keys(vary) as (keyof typeof vary)[]) vary[k] = smooth(vary[k], target[k], dt, 0.1)
@@ -728,6 +764,17 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
       const bodyQ = pose.rotation.body
       const invBody = conjQuat(bodyQ)
       const hipLineY = HIP_HEIGHT + pose.bodyOffset.y
+
+      // This jump's lead/trail asymmetry, shared by the legs and the arms so the two stay
+      // contralateral. Faded out with the rise on purpose: the descent extends both legs to feel for
+      // the floor, and holding the split through it lands the character visibly one-footed before it
+      // snaps back to a two-foot stance.
+      const asym = riseBlend * vary.airLead
+      // The same thing without the per-jump strength roll, for the one quantity that must not be
+      // varied: whether the trailing leg is *straight*. Near full extension the knee angle is savagely
+      // nonlinear — 66 mm of residual lift is 46° of visible bend — so a roll that lands under 1 does
+      // not make the leg slightly less straight, it makes it bent. A leg either extends or it does not.
+      const asymFirm = riseBlend
       for (const side of [-1, 1] as const) {
         const s = side === -1 ? 'L' : 'R'
         const legPhase = phase + (side === -1 ? 0 : 0.5)
@@ -735,8 +782,21 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
         const gait = footTarget(legPhase, stride, tuning.footLift * vary.footLift, 0)
         // Ground gait, and an airborne pose, blended. The air pose itself differs by arc half:
         // knees up and split on the way up, legs together and nearly straight on the way down.
-        const airFwd = riseBlend * (side === -1 ? 0.16 : -0.08) + (1 - riseBlend) * (side === -1 ? -0.04 : 0.06)
-        const airLift = (tuning.airTuckRise * riseBlend + tuning.airTuckFall * (1 - riseBlend)) * vary.airTuck
+        //
+        // The split used to be hard-coded to favour the left on every jump of every character. It now
+        // follows the lead side, so the two-jump cycle mirrors — and at amount 0 the pose is symmetric
+        // rather than reproducing the old left-handed one.
+        const legLead = (side === airLead ? 1 : -1) * asym * tuning.airAsymLeg
+        const airFwd = riseBlend * 0.04 + (1 - riseBlend) * 0.01 + LEG_ASYM_FWD * legLead
+        // One leg folds and the other **extends** — which a ±fraction around the tuck cannot express,
+        // since half of a 0.36 m tuck is still a bent knee. So the share is asymmetric by
+        // construction: the lead leg takes the whole tuck at any amount, and the trailing one gives up
+        // its share until it reaches zero lift, which *is* full extension (the hip line sits exactly
+        // two bone lengths above the sole). It saturates there because a leg cannot straighten past
+        // straight — and this way `airTuckRise` keeps meaning what it did for the lead knee.
+        const tuckLead = (side === airLead ? 1 : -1) * asymFirm * tuning.airAsymLeg
+        const tuckShare = tuckLead >= 0 ? 1 : Math.max(0, 1 + tuckLead)
+        const airLift = (tuning.airTuckRise * riseBlend + tuning.airTuckFall * (1 - riseBlend)) * vary.airTuck * tuckShare
         const forward = gait.forward * moveBlend + airFwd * airBlend
         const lift = gait.y * moveBlend + airLift * airBlend
 
@@ -776,9 +836,13 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
         const raw = Math.sin((phase + (side === -1 ? 0.5 : 0)) * TAU)
         const swing = raw * tuning.armSwing * intensity * vary.armSwing
         const fold = (tuning.elbowBase + Math.max(0, raw) * tuning.elbowFold * intensity) * (1 - airBlend)
+        // Contralateral: the arm opposite the lead *leg* is the one that raises. Same-side pairing
+        // reads as a robot; this is the pattern a real jump and a real run both use.
+        const armLead = (side === airLead ? -1 : 1) * asym * tuning.airAsymArm
         // Outward roll is what makes any of this visible from a camera behind the character; in the
         // air it is the dominant term, since a raised arm pointing forward is nearly invisible there.
-        const outward = tuning.armOutward * (1 - airBlend) + airArmOut * airBlend
+        // Which is also why the asymmetry is carried mostly here rather than in the pitch.
+        const outward = tuning.armOutward * (1 - airBlend) + (airArmOut + ARM_ASYM_OUT * armLead) * airBlend
         // Idle: arms drift out a little on the inhale (mirrored, so inside the `side` factor), and
         // hang more vertically than the tilted torso does (unmirrored, so outside it) — the torso
         // carries them and gravity does not.
@@ -787,7 +851,7 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
         // Arms are the loosest thing on the body and the most visible, so they carry the most lag.
         // `floatUp` is mirrored (inside the `side` factor) and the lateral lag is not — one is the
         // body losing weight, the other is a direction in the world.
-        setLimb(`upperArm${s}` as PartName, swing + airArm * airBlend + lagFwd * tuning.inertiaUpperArm, side * (outward + breathOut + floatUp) + hang + lagRight * tuning.inertiaUpperArm)
+        setLimb(`upperArm${s}` as PartName, swing + (airArm + ARM_ASYM_PITCH * armLead) * airBlend + lagFwd * tuning.inertiaUpperArm, side * (outward + breathOut + floatUp) + hang + lagRight * tuning.inertiaUpperArm)
         // Pitch only: the forearm's lateral lag arrives by inheriting the shoulder's, and an elbow
         // is a hinge — rolling it sideways bends the arm in a direction it does not have.
         setLimb(`lowerArm${s}` as PartName, fold + airElbow * airBlend + lagFwd * tuning.inertiaLowerArm)

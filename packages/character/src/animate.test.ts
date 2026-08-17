@@ -243,10 +243,11 @@ describe('createAnimator', () => {
     const a = createAnimator()
     let pose = restPoseOf(a)
     for (let t = 0; t < 60; t++) pose = a.step({ position: vec3(0, 5, 0), yaw: 0, speed: 3, grounded: false, rising: true }, DT)
-    const airSole = solePosition(pose, 'L').y
+    // The *tucked* leg, whichever side leads this jump — the other one is deliberately extended.
+    const airSole = Math.max(solePosition(pose, 'L').y, solePosition(pose, 'R').y)
     for (let t = 0; t < 60; t++) pose = a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
-    const groundSole = solePosition(pose, 'L').y
-    expect(airSole, 'legs tuck up while rising').toBeGreaterThan(groundSole + 0.15)
+    const groundSole = Math.max(solePosition(pose, 'L').y, solePosition(pose, 'R').y)
+    expect(airSole, 'the leading knee tucks up while rising').toBeGreaterThan(groundSole + 0.15)
   })
 
   it('keeps the feet on the ground however hard the body leans and twists', () => {
@@ -322,9 +323,10 @@ describe('createAnimator', () => {
     const up = settle(true)
     const down = settle(false)
 
-    // Legs: tucked up on the way up, extended on the way down.
-    const upSole = solePosition(up, 'L').y
-    const downSole = solePosition(down, 'L').y
+    // Legs: tucked up on the way up, extended on the way down. Highest sole either side, since only
+    // the leading leg tucks.
+    const upSole = Math.max(solePosition(up, 'L').y, solePosition(up, 'R').y)
+    const downSole = Math.max(solePosition(down, 'L').y, solePosition(down, 'R').y)
     expect(upSole, 'knees should be higher while rising').toBeGreaterThan(downSole + 0.15)
 
     // Arms: different pitch and a wider spread while falling.
@@ -473,6 +475,13 @@ describe('createAnimator', () => {
     return out
   }
   const range = (xs: number[]): number => Math.max(...xs) - Math.min(...xs)
+
+  /**
+   * Idle amplitudes off, for tests that need the torso to actually hold still. `breathPeriod: 0`
+   * matters: the torso's breathing *pitch* is not scaled by `breathDepth`, which governs only the
+   * hips, so zeroing the depth alone leaves the chest moving.
+   */
+  const FLAT_IDLE = { ...DEFAULT_GAIT, idleSettle: 0, breathDepth: 0, breathPeriod: 0, idleSway: 0, idleRoll: 0 }
 
   it('is not a statue when standing still', () => {
     // Every gait amplitude is scaled by speed, so at a standstill the gait contributes exactly
@@ -848,19 +857,18 @@ describe('createAnimator', () => {
     // A spring that kept a residual would leave the head permanently off its neck. Measured against a
     // flat idle: with the idle layer live the torso never actually stops moving, so a real character
     // holds a fraction of a millimetre of lag forever — correctly, but that is not what this asks.
-    // `breathPeriod: 0` matters: the torso's breathing *pitch* is not scaled by `breathDepth`, which
-    // only governs the hips, so zeroing the depth alone leaves the chest still moving.
-    const flat = { ...DEFAULT_GAIT, idleSettle: 0, breathDepth: 0, breathPeriod: 0, idleSway: 0, idleRoll: 0 }
-    const poses = landing(flat, 4)
+    const poses = landing(FLAT_IDLE, 4)
     const last = poses[poses.length - 1]!
     for (const part of PART_NAMES) {
       const o = last.jointOffset[part]
       expect(Math.hypot(o.x, o.y, o.z), `${part} should come to rest on its joint`).toBeLessThan(1e-4)
     }
-    // With idle running it stays small rather than accumulating. Measured 1.5 mm.
+    // With idle running it stays small rather than accumulating. Bounded against the walking neck gap
+    // (66 mm) rather than against its own measured value, which moves whenever anything else draws
+    // from the PRNG and shifts the idle sequence: a few mm of standing lag is correct, 10% is not.
     const live = landing(DEFAULT_GAIT, 4)
     const lag = live[live.length - 1]!.jointOffset.head
-    expect(Math.hypot(lag.x, lag.y, lag.z), 'idle keeps it alive, but barely').toBeLessThan(3e-3)
+    expect(Math.hypot(lag.x, lag.y, lag.z), 'idle keeps it alive, but barely').toBeLessThan(6.6e-3)
   })
 
   it('rings identically at 60 and 144 fps', () => {
@@ -874,9 +882,8 @@ describe('createAnimator', () => {
     // Idle is flattened for the same reason. Its shift is an *event* on a `dt`-decremented timer, so
     // it fires up to one tick apart at different rates and the torso is then in a slightly different
     // place — a real difference, inherent to an event clock, and not the spring's.
-    const flat = { ...DEFAULT_GAIT, idleSettle: 0, breathDepth: 0, breathPeriod: 0, idleSway: 0, idleRoll: 0 }
     const at = (step: number): number => {
-      const a = createAnimator(flat, 5)
+      const a = createAnimator(FLAT_IDLE, 5)
       const stand = { position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }
       for (let t = 0; t < Math.round(0.5 / step); t++) a.step(stand, step)
       for (let t = 0; t < Math.round(0.5 / step); t++) a.step({ ...stand, position: vec3(0, 3, 0), grounded: false, rising: false }, step)
@@ -910,6 +917,104 @@ describe('createAnimator', () => {
   it('does nothing at all when the weights are zero', () => {
     const off = { ...DEFAULT_GAIT, springHead: 0, springUpperArm: 0, springLowerArm: 0 }
     for (const p of landing(off)) for (const part of PART_NAMES) expect(magnitude(p.jointOffset[part])).toBe(0)
+  })
+
+  /**
+   * Jump `n` times off the spot and return the pose at the top of each rise, plus one well into each
+   * descent. The rise is where the lead/trail asymmetry lives; the descent is where it must be gone.
+   */
+  const jumps = (n: number, gait = DEFAULT_GAIT): { rise: Pose; fall: Pose }[] => {
+    const a = createAnimator(gait, 9)
+    const stand = { position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }
+    const out: { rise: Pose; fall: Pose }[] = []
+    for (let j = 0; j < n; j++) {
+      for (let t = 0; t < 0.4 / DT; t++) a.step(stand, DT)
+      let rise = snapshot(a.step({ ...stand, position: vec3(0, 2, 0), grounded: false, rising: true }, DT))
+      for (let t = 0; t < 0.4 / DT; t++) rise = snapshot(a.step({ ...stand, position: vec3(0, 3, 0), grounded: false, rising: true }, DT))
+      let fall = rise
+      for (let t = 0; t < 0.4 / DT; t++) fall = snapshot(a.step({ ...stand, position: vec3(0, 2, 0), grounded: false, rising: false }, DT))
+      out.push({ rise, fall })
+    }
+    return out
+  }
+  /** Knee bend in degrees, measured at the joint. 0 is a dead straight leg. */
+  const kneeBend = (pose: Pose, side: 'L' | 'R'): number => {
+    const hip = jointPosition(pose, `upperLeg${side}` as PartName)
+    const knee = jointPosition(pose, `lowerLeg${side}` as PartName)
+    const sole = solePosition(pose, side)
+    const a = vec3(knee.x - hip.x, knee.y - hip.y, knee.z - hip.z)
+    const b = vec3(sole.x - knee.x, sole.y - knee.y, sole.z - knee.z)
+    const dot = (a.x * b.x + a.y * b.y + a.z * b.z) / (Math.hypot(a.x, a.y, a.z) * Math.hypot(b.x, b.y, b.z))
+    return Math.acos(clampTo(dot)) * (180 / Math.PI)
+  }
+  const clampTo = (x: number): number => Math.max(-1, Math.min(1, x))
+
+  /** Signed lead/trail split: which knee is tucked higher, and which arm is thrown wider. */
+  const kneeSplit = (p: Pose): number => solePosition(p, 'L').y - solePosition(p, 'R').y
+  const armSplit = (p: Pose): number => Math.abs(jointPosition(p, 'lowerArmL').x) - Math.abs(jointPosition(p, 'lowerArmR').x)
+
+  it('alternates which side leads from one jump to the next', () => {
+    const js = jumps(4)
+    const knees = js.map((j) => kneeSplit(j.rise))
+    for (const k of knees) expect(Math.abs(k), 'a jump should be visibly one-sided').toBeGreaterThan(0.05)
+    for (let i = 1; i < knees.length; i++) expect(Math.sign(knees[i]!), `jump ${i} should mirror jump ${i - 1}`).toBe(-Math.sign(knees[i - 1]!))
+  })
+
+  it('folds one leg and extends the other, on every jump', () => {
+    // Kodjo's ask, and the reason the tuck share is asymmetric by construction rather than a ±fraction
+    // around the tuck: half of a 0.36 m tuck is still a bent knee, not an extended leg.
+    //
+    // It is also why the trailing leg's share is the one quantity in the air pose that the per-jump
+    // strength roll does not touch. Near full extension the knee angle is savagely nonlinear — 66 mm
+    // of residual lift measures 46° of bend — so a roll landing under 1 does not read as "slightly
+    // less straight", it reads as bent, and it did on half the jumps before this was separated out.
+    for (const j of jumps(4)) {
+      const bends = [kneeBend(j.rise, 'L'), kneeBend(j.rise, 'R')]
+      // Measured: lead 99–112°, trail 2–13°.
+      expect(Math.max(...bends), 'the leading knee folds').toBeGreaterThan(60)
+      expect(Math.min(...bends), 'the trailing leg extends').toBeLessThan(20)
+    }
+  })
+
+  it('pairs the raised arm with the opposite knee', () => {
+    // Contralateral, as a run and a jump both are. Same-side pairing reads as a robot, and this is the
+    // assertion that stops a sign slip from producing one.
+    for (const j of jumps(4)) expect(Math.sign(armSplit(j.rise)), 'wide arm opposite the high knee').toBe(-Math.sign(kneeSplit(j.rise)))
+  })
+
+  it('comes back to symmetric before landing', () => {
+    // Held through the descent, the split lands the character one-footed and then snaps flat.
+    for (const j of jumps(3)) {
+      expect(Math.abs(kneeSplit(j.fall)), 'knees together on the way down').toBeLessThan(Math.abs(kneeSplit(j.rise)) * 0.2)
+      expect(Math.abs(armSplit(j.fall)), 'arms even on the way down').toBeLessThan(Math.abs(armSplit(j.rise)) * 0.2)
+    }
+  })
+
+  it('varies how one-sided each jump is, not only which side', () => {
+    // Strict L,R,L,R is two poses and reads as a pattern within a few jumps. Compared two apart, so
+    // the side matches and only the strength differs.
+    const knees = jumps(5).map((j) => Math.abs(kneeSplit(j.rise)))
+    expect(Math.abs(knees[2]! - knees[0]!), 'same side, different strength').toBeGreaterThan(1e-3)
+    expect(Math.abs(knees[3]! - knees[1]!)).toBeGreaterThan(1e-3)
+  })
+
+  it('is exactly symmetric with the asymmetry off', () => {
+    // Also the guard on everything else in the air pose: with idle flat, nothing but these two knobs
+    // may distinguish left from right while airborne.
+    for (const j of jumps(3, { ...FLAT_IDLE, airAsymArm: 0, airAsymLeg: 0 }))
+      for (const p of [j.rise, j.fall]) {
+        expect(kneeSplit(p)).toBeCloseTo(0, 12)
+        expect(armSplit(p)).toBeCloseTo(0, 12)
+      }
+
+    // With idle live it is symmetric only to a fraction of a millimetre, and that is not a leak: the
+    // idle arm hang is deliberately *unmirrored* (the torso carries both arms and gravity does not),
+    // and the arm springs still hold a little of it when the jump starts. Measured 0.86 mm against
+    // the 50 mm the asymmetry itself is worth.
+    for (const j of jumps(3, { ...DEFAULT_GAIT, airAsymArm: 0, airAsymLeg: 0 })) {
+      expect(Math.abs(kneeSplit(j.rise))).toBeLessThan(1e-9)
+      expect(Math.abs(armSplit(j.rise))).toBeLessThan(2e-3)
+    }
   })
 
   it('leans forward with speed and stands up when stopped', () => {

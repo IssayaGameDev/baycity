@@ -288,6 +288,10 @@ af.addBinding(gait, 'airArmFall', { min: -1, max: 3, step: 0.05, label: 'arm pit
 af.addBinding(gait, 'airArmOutFall', { min: 0, max: 1.6, step: 0.05, label: 'arm splay ↓' })
 af.addBinding(gait, 'airElbowFall', { min: 0, max: 2.5, step: 0.05, label: 'elbow ↓' })
 af.addBinding(gait, 'airTuckFall', { min: 0, max: 0.6, step: 0.01, label: 'knee tuck ↓ m' })
+// Lead/trail asymmetry, alternating side per jump and contralateral (arm opposite the lead knee).
+// Unitless amounts; 0 gives a symmetric jump. The arm one is worth more from a camera behind.
+af.addBinding(gait, 'airAsymArm', { min: 0, max: 2, step: 0.05, label: 'asym arm' })
+af.addBinding(gait, 'airAsymLeg', { min: 0, max: 2, step: 0.05, label: 'asym leg' })
 
 
 // --- netcode (Colyseus rooms, ADR 0013) ---
