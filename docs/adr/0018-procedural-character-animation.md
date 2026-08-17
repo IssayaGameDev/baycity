@@ -1,4 +1,4 @@
-# ADR 0018 — Procedural animation on a rigid 10-part character rig
+# ADR 0018 — Procedural animation on a rigid character rig (10 parts, 11 since the waist split)
 
 ## Context
 
@@ -17,7 +17,7 @@ and nothing else: a stiff pendulum, no crouch, no tuck. Where the splits go *is*
 ## Choice
 
 **Ten rigid parts**: body, head, upper and lower arm ×2, upper and lower leg ×2. Knees and elbows
-both bend. Proportions are derived from `CHAR_RADIUS`/`CHAR_HALF_HEIGHT`, so the silhouette is
+both bend. (Eleven now — the torso was later split at the waist; see the update at the end.) Proportions are derived from `CHAR_RADIUS`/`CHAR_HALF_HEIGHT`, so the silhouette is
 exactly as tall and wide as the collider and cannot drift from what collides.
 
 **Procedural, not authored.** No clips, no keyframes, no DCC pipeline. The pose is a function of what
@@ -425,3 +425,71 @@ expose it if the wall case ever matters.
 The regression test asserts the property directly: identical sole traces at the same locomotion speed
 with carry at 0, +4, −4 and −5 m/s (that last being a full walk with no world movement at all), and no
 stride at all when carried at a standstill.
+
+## Update — the torso splits at the waist (11 parts)
+
+Kodjo asked whether the torso should become three pieces — waist, abdomen, chest — for a more fluid
+character. It became two: `body` (hips, legs hang off it) hinged at the waist to `chest` (arms and head
+hang off it). One split, not two, because:
+
+- **The counter-rotation was fiction.** Arms, head and legs all hung off one torso box, so `torsoTwist`
+  turned the hip sockets along with the shoulders — a whole-body turn, not shoulders against hips.
+  ADR 0018's own consequence list records the side effect: the counter-twist swung the hip joints
+  sideways and the stance foot used to follow. One joint is all it takes to make that term mean what its
+  name says, and it is the biggest readability win available on this rig.
+- A second split buys much less **here**: the character is boxy, so more joints give a stepped bend
+  rather than a curve, and spine flexion is mostly fore/aft — which this ADR already records as nearly
+  invisible from a camera sitting directly behind. Twist and side-bend are what read, and one joint
+  delivers both. R15, the reference Kodjo keeps pointing at, also splits once.
+
+**Layers keep expressing one intent.** They ask for a lean, a twist, a tilt; `spineChestShare` decides
+how much of each happens above the waist. The joints turn about the same axes so the shares sum, which
+means the shoulders end up exactly where a single box would have put them at any value of the knob —
+what changes is how much the hips join in. 0 reproduces the old single box, 1 keeps the hips square.
+Default 0.75. (Exact per axis; composing X·Y·Z in two stages differs from one stage at second order,
+far below anything visible at these angles.)
+
+That is deliberately the *only* new tuning knob. A chain that multiplied every torso term by the number
+of joints is the failure mode here, and one distribution point is what prevents it.
+
+Three things it touched that were easy to get wrong:
+
+- **The head stabilizes against the composed spine**, not either joint's share. It counters
+  `body ∘ chest` in chain order; countering one half would have left the other half's tilt in the head.
+- **The joint-lag layer writes offsets in the parent's frame, and its joints moved.** Neck and both
+  shoulders now hang off the chest, so the world→local conversion uses the chest's composed frame. The
+  body's frame is still right for the legs, which stayed on `body`, so both inverses exist now.
+- **Tests that read `rotation.body` as "the torso" were measuring the hips' share.** Three of them
+  failed for that reason and are now asserted against the composed chain, which is the more honest
+  measure anyway — the same lesson as the moonwalk, where testing the convention passed and testing the
+  rendered result caught it.
+
+Nothing on the wire: poses are local, so this costs zero bandwidth. The ragdoll, the spawn assembly and
+the renderer all build from `RIG`/`PART_NAMES` and picked the new part up for free — one more dynamic
+body per corpse, and one more step in the assembly's bottom-up order (hips, then chest, then the arms
+that hang off it).
+
+## Update — the neck lags sideways and vertically, not fore/aft
+
+Kodjo's call after looking at it: a head that slides back and forth along the run reads wrong, while the
+same trail across a corner and under the bob reads as weight. So the character's own forward axis is
+projected out of the head's drive. The shoulders keep all three axes — this is a neck rule, not a
+rig-wide one.
+
+Removed from the **drive**, not from the result. `follow` carries state and clamps its output as a
+vector, so a forward component zeroed after the fact would still accumulate and still fill up
+`headLagMax`, quietly shrinking the lateral and vertical trail that is meant to show. The filter is
+per-axis and its clamp is uniform, so no forward component in means none out.
+
+What this does *not* touch, and what to reach for if fore/aft head motion still looks wrong:
+
+- The **inertial layer still pitches the head** (`inertiaHead`, `w head` in the pane). A pitched head's
+  box centre travels fore/aft — 17 mm under a 4 m/s shove — which is a rotation, not this layer. Zero
+  that knob to see it without.
+- The **torso still leans into acceleration**, and the head rides on it. That is the whole body's weight
+  shift rather than a head effect.
+
+Two numbers worth keeping: the neck gap on a straight run is now 9.8 mm, of which 9.6 is the bob — the
+fore/aft trail used to dominate that figure. And the axis test asserts the lag layer's *own* world
+displacement, by differencing a tuned run against a welded one, because the total displacement includes
+the two sources above and would pass or fail for the wrong reasons.

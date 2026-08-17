@@ -323,6 +323,10 @@ const gf = pane.addFolder({ title: 'Gait (procedural)', expanded: false })
 gf.addBinding(gait, 'bob', { min: 0, max: 0.3, step: 0.005, label: 'body bob m' })
 gf.addBinding(gait, 'lean', { min: 0, max: 0.6, step: 0.01, label: 'lean rad' })
 gf.addBinding(gait, 'torsoTwist', { min: 0, max: 0.5, step: 0.01, label: 'torso twist' })
+// Where the torso bends. The shoulders go the same place at any value — this decides how much the hips
+// join in. 0 is the old single-box torso (hips turn with the shoulders, so no counter-rotation at all);
+// 1 keeps the hips square and puts the whole twist and lean at the waist.
+gf.addBinding(gait, 'spineChestShare', { min: 0, max: 1, step: 0.05, label: 'waist share' })
 gf.addBinding(gait, 'armSwing', { min: 0, max: 2.5, step: 0.05, label: 'arm swing' })
 gf.addBinding(gait, 'armOutward', { min: 0, max: 0.6, step: 0.01, label: 'arm splay' })
 gf.addBinding(gait, 'elbowBase', { min: 0, max: 1.5, step: 0.05, label: 'elbow rest' })
@@ -407,7 +411,7 @@ af.addBinding(gait, 'airAsymLeg', { min: 0, max: 2, step: 0.05, label: 'asym leg
 // costs a run — and the ragdoll is the kind of thing that wants looking at twenty times in a row.
 const df = pane.addFolder({ title: 'Death', expanded: false })
 df.addButton({ title: 'Ragdoll now' }).on('click', () => requestDeath?.())
-// Spawn assembly. Total length is 5 x stagger + fall, so the defaults run in 0.43 s.
+// Spawn assembly. Total length is 6 x stagger + fall, so the defaults run in 0.48 s.
 df.addBinding(assembleTiming, 'stagger', { min: 0, max: 0.4, step: 0.01, label: 'pair gap s' })
 df.addBinding(assembleTiming, 'fall', { min: 0.02, max: 1, step: 0.01, label: 'fall s' })
 df.addBinding(assembleTiming, 'height', { min: 0.2, max: 8, step: 0.1, label: 'drop from m' })
@@ -426,7 +430,7 @@ let levelView: LevelView | null = null // Three meshes for the level; sync() re-
 let lastSimTickAt = 0 // wall-clock of the last fixed tick, for render-interpolating clock-driven pieces
 let requestRespawn: (() => void) | null = null // set once the local sim exists; used by the pause menu's Restart
 let requestDeath: (() => void) | null = null // set once the local sim exists; the death path, for the ragdoll
-// Death state. `dead` gates input and the kill checks; `ragdoll` is the ten loose bodies, synced per frame
+// Death state. `dead` gates input and the kill checks; `ragdoll` is the loose bodies, synced per frame
 // and thrown away on respawn. Local and visual only — nothing about a death goes on the wire.
 let dead = false
 let ragdoll: Ragdoll | null = null
@@ -548,7 +552,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   requestRespawn = respawn // let the pause menu's Restart reach it
 
   /**
-   * Death: the animated rig is replaced by ten dynamic bodies in exactly the pose it was in, and the
+   * Death: the animated rig is replaced by one dynamic body per part in exactly the pose it was in, and the
    * player waits for a click. Both kill paths come through here — hazard contact and the fall plane are
    * the same death, so they get the same ragdoll.
    *

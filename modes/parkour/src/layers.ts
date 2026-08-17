@@ -19,5 +19,5 @@ const LAYER_CORPSE = 0x0002
 
 /** Character capsules: the local player's and the kinematic mirrors of peers. */
 export const BODY_LAYERS: CollisionLayers = { belongsTo: LAYER_BODY, collidesWith: 0xffff & ~LAYER_CORPSE }
-/** A ragdoll's ten parts. They still collide with the level and with each other. */
+/** A ragdoll's parts. They still collide with the level and with each other. */
 export const CORPSE_LAYERS: CollisionLayers = { belongsTo: LAYER_CORPSE, collidesWith: 0xffff & ~LAYER_BODY }

@@ -91,8 +91,8 @@ describe('rig', () => {
     expect(HIP_HEIGHT - LIMB_LENGTH * 2).toBeCloseTo(FOOT_Y, 6)
   })
 
-  it('has ten parts and a connected parent chain', () => {
-    expect(PART_NAMES).toHaveLength(10)
+  it('has eleven parts and a connected parent chain', () => {
+    expect(PART_NAMES).toHaveLength(11)
     for (const name of PART_NAMES) {
       const parent = RIG[name].parent
       if (parent !== null) expect(PART_NAMES).toContain(parent)
@@ -101,7 +101,7 @@ describe('rig', () => {
 })
 
 describe('partTransforms', () => {
-  // What a ragdoll is seeded from. If it disagrees with the walk a renderer does, the ten rigid bodies
+  // What a ragdoll is seeded from. If it disagrees with the walk a renderer does, the rigid bodies
   // start somewhere other than where the rig was drawn and every death begins with a visible jump.
   const origin = vec3(3, 1, -2)
 
@@ -603,7 +603,9 @@ describe('createAnimator', () => {
     const poses = idle()
     expect(range(poses.map((p) => p.bodyOffset.y)), 'breathing should move the hips').toBeGreaterThan(0.02)
     expect(range(poses.map((p) => p.bodyOffset.x)), 'weight should shift side to side').toBeGreaterThan(0.015)
-    expect(range(poses.map((p) => p.rotation.body.z)), 'torso should tip with the shift').toBeGreaterThan(0.006)
+    // The composed spine, not `rotation.body`: the tilt is shared across the waist, so the hips hold
+    // only a fraction of it while the torso as a whole tips by the full amount.
+    expect(range(poses.map((p) => partQuatOf(p, 'chest').z)), 'torso should tip with the shift').toBeGreaterThan(0.006)
   })
 
   it('keeps both feet planted through a weight shift', () => {
@@ -729,7 +731,7 @@ describe('createAnimator', () => {
   const carried = (carry: Vec3, seconds = 1 / 12, gait = DEFAULT_GAIT): Pose => pushed(0, carry, seconds, 0, gait)
 
   it('lags every part against the acceleration, and never the planted feet', () => {
-    // The physical property, asserted in world space for all ten parts. A positive roll carries an
+    // The physical property, asserted in world space for every part. A positive roll carries an
     // upright part's top toward âˆ’x but a hanging limb's tip toward +x, so the two kinds need
     // opposite signs; checking displacement rather than angles is what makes that unfakeable.
     for (const [axis, carry] of [
@@ -759,8 +761,10 @@ describe('createAnimator', () => {
     expect(lag('upperLegL'), 'knees only move as far as the hips do').toBeLessThan(lag('body'))
     // The head is the exception that displacement cannot express: it rides on top of a leaning torso,
     // so its *absolute* travel is the largest on the body however little it adds of its own. The
-    // weight ordering is only visible in what the head contributes, which is its local rotation.
-    expect(Math.abs(moved.rotation.head.x), 'a real head stabilizes itself').toBeLessThan(Math.abs(moved.rotation.body.x))
+    // weight ordering is only visible in what the head contributes, which is its local rotation —
+    // compared against the torso's *composed* rotation, since the torso is two joints and either one's
+    // share of it is not what the head is riding on.
+    expect(angleOf(moved.rotation.head), 'a real head stabilizes itself').toBeLessThan(angleOf(partQuatOf(moved, 'chest')))
   })
 
   /**
@@ -804,7 +808,9 @@ describe('createAnimator', () => {
     // character did *not* ask for â€” so it fired on platforms and nowhere else. Your own starts, stops
     // and turns are the biggest accelerations in the game and produced nothing whatsoever.
     const { ramp, steady, brake } = locomotion()
-    const parts = ['head', 'upperArmL', 'upperArmR'] as const
+    // The **shoulders** only: the head's fore/aft lag is deliberately gone (Kodjo's call), and the test
+    // right below this one is what says so.
+    const parts = ['upperArmL', 'upperArmR'] as const
     const maxOf = (part: PartName): number => (part === 'head' ? DEFAULT_GAIT.headLagMax : DEFAULT_GAIT.armLagMax)
     const meanOf = (part: PartName): number => {
       const held = steady.slice(Math.round(0.5 / DT)).map((p) => p.jointOffset[part].z)
@@ -825,6 +831,43 @@ describe('createAnimator', () => {
       expect(meanOf(part), `${part} should hold a steady trail behind its attachment`).toBeLessThan(-0.02)
       expect(meanOf(part), `${part}'s trail must stay bounded`).toBeGreaterThan(-maxOf(part) - 1e-9)
     }
+  })
+
+  it('lags the head sideways and vertically but never fore/aft', () => {
+    // Kodjo's call, and it is about the axes rather than the amount: a head that slides back and forth
+    // along the run reads wrong, while the same trail across a corner or under the bob reads as weight.
+    // The character's own forward axis is projected out of the head's drive — out of the *drive*, because
+    // `follow` clamps its output as a vector, so a component zeroed afterwards would still fill the clamp
+    // and shrink the axes that are meant to show.
+    //
+    // Asserted in **world** space, via the same forward kinematics a renderer and a ragdoll use. The
+    // stored offset lives in the chest's frame, so a purely vertical world trail still shows a millimetre
+    // or two on the local z whenever the chest is leaning — bookkeeping, not motion.
+    const at = (carry: Vec3, part: PartName, gait: typeof DEFAULT_GAIT): Vec3 => {
+      const a = createAnimator(gait, 3)
+      const stand = { yaw: 0, speed: 0, grounded: true, rising: false }
+      for (let t = 0; t < 1 / DT; t++) a.step(stand, DT)
+      let pose = a.step(stand, DT)
+      for (let t = 0; t < 0.5 / DT; t++) pose = a.step({ ...stand, carry }, DT)
+      return partTransforms(pose, vec3(0, 0, 0))[part].position
+    }
+    /**
+     * The lag layer's *own* world displacement: the same shove with the lag tuned and with it welded, and
+     * the difference between them. Isolating it matters, because the head also moves fore/aft for reasons
+     * that are not this layer — the inertial layer pitches it, and a pitched head's box centre travels —
+     * and those are a separate mechanism with its own knob (`inertiaHead`).
+     */
+    const WELDED = { ...DEFAULT_GAIT, headLagHalfLife: 0, armLagHalfLife: 0 }
+    const lagOf = (carry: Vec3, part: PartName): Vec3 => {
+      const live = at(carry, part, DEFAULT_GAIT)
+      const welded = at(carry, part, WELDED)
+      return vec3(live.x - welded.x, live.y - welded.y, live.z - welded.z)
+    }
+    // Facing +z, so z is fore/aft and x is lateral.
+    expect(Math.abs(lagOf(vec3(4, 0, 0), 'head').x), 'a sideways shove should still trail the head').toBeGreaterThan(0.02)
+    expect(Math.abs(lagOf(vec3(0, 0, 4), 'head').z), 'a forward shove must not').toBeLessThan(1e-3)
+    // The shoulders keep all three axes — this is a neck rule, not a rig-wide one.
+    expect(Math.abs(lagOf(vec3(0, 0, 4), 'upperArmL').z), 'the shoulders still trail fore/aft').toBeGreaterThan(0.02)
   })
 
   it('drags them sideways through a turn taken at a constant speed', () => {
@@ -945,6 +988,42 @@ describe('createAnimator', () => {
     return out
   }
 
+  describe('the waist joint', () => {
+    // Twist only: no lean, no side-tilt, no inertia. Every rotation in the spine is then about y and
+    // the two joints compose exactly, so the whole spine's behaviour is one number per joint.
+    const TWIST_ONLY = { ...DEFAULT_GAIT, lean: 0, idleRoll: 0, inertiaStrength: 0, variation: 0 }
+    /** Radians about y. A quaternion's `y` term is `sin(angle/2)`, so the components cannot be compared
+     * as angles — half the angle is not half the term, and at 0.14 rad that error is already 1 part in
+     * 1600, which is enough to fail an exactness check that should hold. */
+    const twistAngle = (q: Quat): number => 2 * Math.asin(Math.min(1, Math.abs(q.y)))
+    /** Peak hip twist and peak shoulder-line twist (radians) over a walk at the given waist share. */
+    const twist = (spineChestShare: number): { hips: number; shoulders: number } => {
+      const poses = walkPoses({ ...TWIST_ONLY, spineChestShare })
+      return {
+        hips: Math.max(...poses.map((p) => twistAngle(p.rotation.body))),
+        shoulders: Math.max(...poses.map((p) => twistAngle(partQuatOf(p, 'chest')))),
+      }
+    }
+
+    it('turns the shoulders without turning the hips', () => {
+      // What the split is for. With one torso box, `torsoTwist` rotated the hip sockets along with the
+      // shoulders — the two were the same rigid part, so there was no counter-rotation at all, only a
+      // whole-body turn that the legs' IK then had to absorb.
+      const welded = twist(0)
+      const waist = twist(1)
+      expect(welded.hips, 'share 0 is the old single box: hips turn exactly as much as the shoulders').toBeCloseTo(
+        welded.shoulders,
+        6,
+      )
+      expect(waist.hips, 'share 1 keeps the hips square').toBeLessThan(1e-9)
+      // The shoulders arrive in the same place either way: the shares sum to the intent, so the knob
+      // redistributes the bend rather than scaling it. `torsoTwist` is 0.14 rad at top speed.
+      expect(waist.shoulders).toBeCloseTo(welded.shoulders, 6)
+      expect(waist.shoulders).toBeCloseTo(DEFAULT_GAIT.torsoTwist, 3)
+      expect(twist(0.5).hips).toBeCloseTo(welded.hips / 2, 6)
+    })
+  })
+
   it('holds the head level in the world while the torso leans and twists', () => {
     // The head's own signals off, so this measures stabilization alone. At 0 the head is welded and
     // goes exactly where the torso goes â€” which is the state this layer exists to leave behind.
@@ -952,8 +1031,11 @@ describe('createAnimator', () => {
     const ratio = (headStabilize: number): number => {
       const poses = walkPoses({ ...bare, headStabilize })
       const head = Math.max(...poses.map((p) => angleOf(partQuatOf(p, 'head'))))
-      const body = Math.max(...poses.map((p) => angleOf(partQuatOf(p, 'body'))))
-      return head / body
+      // `chest` composed through its parent chain *is* the torso's world rotation. Measuring
+      // `body` alone would only see the hips' share of the spine, and the ratio would come out as
+      // 1/share instead of 1 at the welded end.
+      const torso = Math.max(...poses.map((p) => angleOf(partQuatOf(p, 'chest'))))
+      return head / torso
     }
     // Exact at both ends and linear between, because the counter-rotation is the base rotation's
     // conjugate slerped along the geodesic â€” not its three Euler terms negated, which would only
@@ -1000,7 +1082,10 @@ describe('createAnimator', () => {
     const lagging = gap(DEFAULT_GAIT.headLagHalfLife)
     const welded = gap(0)
     expect(welded.gap, 'welded: the head sits exactly on its neck').toBe(0)
-    expect(lagging.gap, 'lagging: a gap worth seeing opens at the neck').toBeGreaterThan(0.03)
+    // 9.8 mm on a straight run, and 9.6 of it is the bob: the fore/aft trail that used to dominate this
+    // number is gone by request (see the fore/aft test above), so what is left on a straight line is the
+    // vertical. A corner still opens the lateral gap.
+    expect(lagging.gap, 'lagging: a gap opens at the neck').toBeGreaterThan(0.006)
     expect(lagging.hip, 'the hips must keep bobbing â€” this is a neck, not a smaller stride').toBeCloseTo(welded.hip, 6)
     expect(lagging.head).toBeLessThan(welded.head + 1e-9) // no worse than welded, but only just
   })

@@ -7,8 +7,8 @@ import { createLooseParts, THREE, type CharacterRigOptions } from '@mp/render-th
  * animated rig would have put it. Plays on the first spawn and on every respawn.
  *
  * Drawn with **loose parts** rather than through the rig, for the same reason the ragdoll is: the rig is a
- * hierarchy, so dropping the torso in would drag the legs that already landed down with it. Ten independent
- * meshes each go to their own place.
+ * hierarchy, so dropping the torso in would drag the legs that already landed down with it. Every part is an
+ * independent mesh going to its own place.
  *
  * The targets are recomputed every frame from the live pose, so nothing has to be frozen or input locked —
  * a player who is already walking simply has their parts fall in around them.
@@ -33,12 +33,14 @@ export interface Assembly {
 
 /**
  * Which parts arrive together, and in what order: feet, then thighs, then the torso, then shoulders, then
- * forearms, then the head. Kodjo's order — it builds from the ground up.
+ * forearms, then the head. Kodjo's order — it builds from the ground up, which is what decides where the
+ * waist split goes: hips before chest, both before the arms that hang off the chest.
  */
 const ORDER: readonly (readonly PartName[])[] = [
   ['lowerLegL', 'lowerLegR'],
   ['upperLegL', 'upperLegR'],
   ['body'],
+  ['chest'],
   ['upperArmL', 'upperArmR'],
   ['lowerArmL', 'lowerArmR'],
   ['head'],

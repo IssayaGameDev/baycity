@@ -3,7 +3,7 @@ import { mulQuat, quat, rotateVec3, vec3, type Quat, type Vec3 } from '@mp/core'
 import { CHAR_HALF_HEIGHT, CHAR_RADIUS } from './character'
 
 /**
- * Blocky character rig — 10 rigid parts, no skinning, no art (Kodjo's call). Geometry is data here
+ * Blocky character rig — 11 rigid parts, no skinning, no art (Kodjo's call). Geometry is data here
  * and realized by a renderer (`@mp/render-three`), the same split `@mp/content` uses for levels.
  *
  * Everything is expressed in **root space, origin at the capsule's centre**, because that is what
@@ -17,6 +17,7 @@ export const FOOT_Y = -(CHAR_HALF_HEIGHT + CHAR_RADIUS)
 
 export type PartName =
   | 'body'
+  | 'chest'
   | 'head'
   | 'upperArmL'
   | 'lowerArmL'
@@ -50,13 +51,26 @@ const HEAD = 0.5
 const LIMB = 0.375 // each half of an arm or leg
 const HIP_Y = FOOT_Y + LIMB * 2 // -0.25
 const SHOULDER_Y = HIP_Y + TORSO_H - 0.1
+/**
+ * Height of the waist joint above the hip line — where the torso splits in two. The lower part
+ * (`body`) carries the legs, the upper (`chest`) carries the arms and head, so a twist above the waist
+ * turns the shoulders while the hips stay square. Without this joint they were the same box, and
+ * `torsoTwist` could only turn the whole torso including the hip sockets.
+ *
+ * 0.3 of 0.75 puts it a little below the middle, roughly at a navel — the same place R15 splits its
+ * lower and upper torso. It is geometry rather than feel, so it is a constant and not a gait knob;
+ * how much *bending* happens up there is the knob (`spineChestShare`).
+ */
+const WAIST_Y = 0.3
+const BODY_H = WAIST_Y
+const CHEST_H = TORSO_H - WAIST_Y
 
 const arm = (side: -1 | 1): Record<string, RigPart> => {
   const s = side === -1 ? 'L' : 'R'
   return {
     [`upperArm${s}`]: {
-      parent: 'body',
-      pivot: vec3(side * 0.325, SHOULDER_Y - HIP_Y, 0),
+      parent: 'chest',
+      pivot: vec3(side * 0.325, SHOULDER_Y - HIP_Y - WAIST_Y, 0),
       size: vec3(0.15, LIMB, 0.15),
       meshOffset: vec3(0, -LIMB / 2, 0),
       style: 'skin',
@@ -92,11 +106,16 @@ const leg = (side: -1 | 1): Record<string, RigPart> => {
 }
 
 // Insertion order is load-bearing: a renderer walks it once and needs every part's parent to
-// already exist, so the body comes first and each limb's upper half precedes its lower.
+// already exist, so the torso comes first, chest before head and arms, and each limb's upper half
+// precedes its lower.
 const PARTS: Record<string, RigPart> = {
-  // Body's joint is the hip line, so a bob or lean moves the hips and the legs' IK absorbs it.
-  body: { parent: null, pivot: vec3(0, HIP_Y, 0), size: vec3(0.5, TORSO_H, 0.3), meshOffset: vec3(0, TORSO_H / 2, 0), style: 'shirt' },
-  head: { parent: 'body', pivot: vec3(0, TORSO_H, 0), size: vec3(HEAD, HEAD, HEAD), meshOffset: vec3(0, HEAD / 2, 0), style: 'skin' },
+  // Body's joint is the hip line, so a bob or lean moves the hips and the legs' IK absorbs it. It is
+  // the lower torso: the legs hang off it, and it ends at the waist.
+  body: { parent: null, pivot: vec3(0, HIP_Y, 0), size: vec3(0.5, BODY_H, 0.3), meshOffset: vec3(0, BODY_H / 2, 0), style: 'shirt' },
+  // Upper torso, hinged at the waist. Arms and head hang off this, so anything it does they inherit —
+  // which is the point of the split: shoulders that can turn without taking the hips with them.
+  chest: { parent: 'body', pivot: vec3(0, WAIST_Y, 0), size: vec3(0.5, CHEST_H, 0.3), meshOffset: vec3(0, CHEST_H / 2, 0), style: 'shirt' },
+  head: { parent: 'chest', pivot: vec3(0, CHEST_H, 0), size: vec3(HEAD, HEAD, HEAD), meshOffset: vec3(0, HEAD / 2, 0), style: 'skin' },
   ...arm(-1),
   ...arm(1),
   ...leg(-1),
@@ -142,7 +161,7 @@ export interface PartTransform {
  *
  * This is the same walk a renderer does — pivot, offsets, parent rotation, then `meshOffset` to reach
  * the box's centre rather than its joint — pulled out because a ragdoll needs it too. A death has to
- * hand ten rigid bodies the exact pose the animated rig was in, or the parts jump at the moment of
+ * hand one rigid body per part the exact pose the animated rig was in, or the parts jump at the moment of
  * transition. Kept here with the rig data rather than in a renderer so it stays headless and testable.
  *
  * Parts come out in `PART_NAMES` order, which lists every parent before its children, so one pass

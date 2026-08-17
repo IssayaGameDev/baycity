@@ -84,6 +84,16 @@ export interface GaitTuning {
   elbowFold: number
   /** Shoulders counter-rotating against the hips (radians at top speed). */
   torsoTwist: number
+  /**
+   * How much of every torso rotation happens **above** the waist rather than below it (0–1). The
+   * shoulders end up in the same place either way — the two joints turn about the same axes and their
+   * shares sum — so what this really sets is how much the *hips* join in.
+   *
+   * At 0 the torso behaves as the single box it used to be: `torsoTwist` turns the hip sockets along
+   * with the shoulders, which is no counter-rotation at all. At 1 the hips stay square and the whole
+   * twist and lean happen at the waist. In between is a spine that bends in two stages.
+   */
+  spineChestShare: number
 
   // --- air pose. Rising and falling are deliberately different shapes: tucked and compact on the
   // way up, extended and reaching on the way down. Both hold the arms well **out to the side**,
@@ -218,9 +228,13 @@ export interface GaitTuning {
    * position. 0 welds the head to the torso; raise it and the head both lags the character's motion and
    * rides the stride's bob less, since attenuating the bob and trailing the travel are the same filter
    * seen from two directions. Bounded by `headLagMax`.
+   *
+   * **Sideways and vertical only** — the character's own fore/aft axis is projected out of the head's
+   * drive (Kodjo's call), so a head trails across a corner and under the bob but never slides back and
+   * forth along the run. The shoulders keep all three axes.
    */
   headLagHalfLife: number
-  /** Furthest the head may sit from its neck (m). */
+  /** Furthest the head may sit from its neck (m). Bounds the lateral + vertical trail only. */
   headLagMax: number
   /**
    * **How far behind the arms are.** Same quantity for each shoulder. 0 pins the arms rigidly to the
@@ -268,6 +282,9 @@ export const DEFAULT_GAIT: GaitTuning = {
   elbowBase: 0.3,
   elbowFold: 0.95,
   torsoTwist: 0.14,
+  // Most of the bend above the waist, but not all of it: hips that stay perfectly square while the
+  // chest works read as a mannequin turning on a lazy susan. Kodjo's to tune.
+  spineChestShare: 0.75,
   airArmRise: 2.2,
   airArmFall: 0.7,
   airArmOutRise: 0.5,
@@ -828,12 +845,34 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
       // head stabilizes against *this*: inertia is an additive layer with its own per-part weights,
       // and cancelling a share of it here would quietly rewrite what those weights mean.
       const lean = tuning.lean * intensity + crouch * 0.15 - breath * 0.012 * idleBlend
-      const bodyBaseQ = uprightQuat(lean, twist, tilt)
       // Inertia is additive on top. Roll is negated for upright parts and not for limbs: a positive
       // roll carries an upward part's *top* toward −x but a hanging limb's *tip* toward +x. Sharing
       // one sign between the two kinds is the mistake that produced the moonwalk, so the test for
-      // this asserts world-space displacement for all ten parts rather than any angle convention.
-      setUpright('body', lean + lagFwd * tuning.inertiaBody, twist, tilt - lagRight * tuning.inertiaBody)
+      // this asserts world-space displacement for every part rather than any angle convention.
+      const leanTotal = lean + lagFwd * tuning.inertiaBody
+      const tiltTotal = tilt - lagRight * tuning.inertiaBody
+      // --- spine: one intent, two joints ---------------------------------------------------
+      // The torso is two parts hinged at the waist, and every layer above states what the torso as a
+      // whole should do. `spineChestShare` decides how much of that happens above the waist rather
+      // than below, and this is the only place that knows the torso is not one box — layers keep
+      // expressing "lean this much", which is what stops a chain from multiplying every torso knob.
+      //
+      // Since both joints turn about the same axes, the shares sum to the intent and the shoulders end
+      // up where a single box would have put them. What changes is the *hips*: they take only
+      // `1 − share` of it, so at 1 they stay square while the shoulders turn — which is the whole
+      // point, and what `torsoTwist` could never do when the hip sockets were welded to the shoulders.
+      // (Exactly true per axis; composing X·Y·Z in two stages differs from one stage at second order,
+      // which at these angles is far below anything visible.)
+      const chestShare = clamp(tuning.spineChestShare, 0, 1)
+      const hipShare = 1 - chestShare
+      setUpright('body', leanTotal * hipShare, twist * hipShare, tiltTotal * hipShare)
+      setUpright('chest', leanTotal * chestShare, twist * chestShare, tiltTotal * chestShare)
+      // The head hangs off the chest, so what it must stabilize against is the whole spine's base
+      // rotation, composed in chain order — not either joint's share of it.
+      const spineBaseQ = mulQuat(
+        uprightQuat(lean * hipShare, twist * hipShare, tilt * hipShare),
+        uprightQuat(lean * chestShare, twist * chestShare, tilt * chestShare),
+      )
 
       // --- head ---------------------------------------------------------------------------
       // The head used to be three constants times three torso terms, which is a head that can only
@@ -845,7 +884,7 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
       //    the three terms individually is what makes the cancellation exact: the head's world tilt
       //    comes out at (1 − headStabilize) × the torso's, measured, at every value of the knob.
       //    Negated Euler terms only agree with that to first order, because X·Y·Z does not commute.
-      const counter = slerpQuat(quat(), conjQuat(bodyBaseQ), clamp(tuning.headStabilize, 0, 1))
+      const counter = slerpQuat(quat(), conjQuat(spineBaseQ), clamp(tuning.headStabilize, 0, 1))
       // 2. Facing, on the head's own clock. Both smoothers chase the same target, so this is zero
       //    except while turning — no drift to correct, and it settles itself.
       let lead = ((headYaw - yaw + Math.PI) % TAU) - Math.PI
@@ -874,6 +913,9 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
       // leg's *actual* parent frame, and solve there.
       const bodyQ = pose.rotation.body
       const invBody = conjQuat(bodyQ)
+      // The chest's frame, in root space: the two spine joints composed. What the head and the
+      // shoulders actually hang in, and so the frame their joint offsets have to be written in.
+      const invChest = conjQuat(mulQuat(bodyQ, pose.rotation.chest))
       const hipLineY = HIP_HEIGHT + pose.bodyOffset.y
 
       // This jump's lead/trail asymmetry, shared by the legs and the arms so the two stay
@@ -1006,13 +1048,27 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
       const bobRaw = stride > 0 ? -tuning.bob * intensity * vary.bob * Math.sign(Math.sin(bobPhase)) * Math.cos(bobPhase) * TAU * (speed / (stride * 2)) : 0
       bobRate = smooth(bobRate, bobRaw, dt, BOB_RATE_HALFLIFE)
 
+      // The neck lags sideways and vertically but **not** fore/aft (Kodjo's call): a head that slides
+      // back and forth along the run reads wrong, while the same trail across a corner and under the bob
+      // reads as weight. So the head's drive has the character's own forward axis projected out of it —
+      // removed from the *drive* rather than from the result, because `follow` accumulates state and
+      // clamps its output as a vector: a forward component zeroed at the end would still fill up the
+      // clamp and quietly shrink the lateral trail that is meant to be seen. The filter is per-axis and
+      // its clamp is uniform, so no forward component in means none out.
+      const lagFwdDot = lagVx * sinY + lagVz * cosY
+
       for (const part of LAG_PARTS) {
-        const halfLife = part === 'head' ? tuning.headLagHalfLife : tuning.armLagHalfLife
-        const max = part === 'head' ? tuning.headLagMax : tuning.armLagMax
-        const o = follow(part, lagVx, lagVy + bobRate, lagVz, Math.max(halfLife, 0), max, dt)
-        // World → root (undo the facing) → body (undo the torso), since a joint's position is written in
-        // its parent's frame, and every lagging joint's parent is the body.
-        pose.jointOffset[part] = rotateVec3(invBody, vec3(o.x * cosY - o.z * sinY, o.y, o.x * sinY + o.z * cosY))
+        const isHead = part === 'head'
+        const halfLife = isHead ? tuning.headLagHalfLife : tuning.armLagHalfLife
+        const max = isHead ? tuning.headLagMax : tuning.armLagMax
+        const vx = isHead ? lagVx - lagFwdDot * sinY : lagVx
+        const vz = isHead ? lagVz - lagFwdDot * cosY : lagVz
+        const o = follow(part, vx, lagVy + bobRate, vz, Math.max(halfLife, 0), max, dt)
+        // World → root (undo the facing) → chest (undo the whole spine), since a joint's position is
+        // written in its parent's frame and every lagging joint — neck and both shoulders — hangs off
+        // the chest. Using the body's frame here would leave the chest's own rotation in the offset,
+        // which is a lag that swings with the torso instead of trailing the world.
+        pose.jointOffset[part] = rotateVec3(invChest, vec3(o.x * cosY - o.z * sinY, o.y, o.x * sinY + o.z * cosY))
       }
       lagPrimed = true
 

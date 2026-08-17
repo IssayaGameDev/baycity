@@ -62,7 +62,7 @@ export interface CharacterViews {
   upsert: (id: EntityId, placement: CharacterPlacement, dt: number) => void
   /**
    * The pose last written for a player, or `null` if it has no view yet. A ragdoll is seeded from this,
-   * so the ten rigid bodies start in exactly the pose the animated rig was in and nothing jumps.
+   * so its rigid bodies start in exactly the pose the animated rig was in and nothing jumps.
    */
   poseOf: (id: EntityId) => Pose | null
   /**

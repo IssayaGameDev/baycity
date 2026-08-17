@@ -6,8 +6,8 @@ import { createLooseParts, THREE, type CharacterRigOptions } from '@mp/render-th
 import { CORPSE_LAYERS } from './layers'
 
 /**
- * Death ragdoll: each of the ten rig parts becomes its own dynamic rigid body at the pose it was already
- * in, keeping the character's velocity. Physics does the rest.
+ * Death ragdoll: every rig part becomes its own dynamic rigid body at the pose it was already in, keeping
+ * the character's velocity. Physics does the rest.
  *
  * It lives in the mode rather than in a package because it is the only layer that owns both the physics
  * world and the scene. `@mp/render-three` deliberately has no physics dependency — that is what keeps
@@ -17,7 +17,7 @@ import { CORPSE_LAYERS } from './layers'
  * peers simply see that player stop moving.
  */
 export interface Ragdoll {
-  /** The ten parts' collider handles. A query that must ignore the player's own body — the camera's
+  /** Every part's collider handle. A query that must ignore the player's own body — the camera's
    * occlusion probe — needs these as well as the capsule's. */
   colliders: readonly number[]
   /**

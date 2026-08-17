@@ -75,9 +75,9 @@ const buildParts = (opts: CharacterRigOptions): { mesh: Record<PartName, THREE.M
 }
 
 /**
- * The rig's ten parts as **loose, unparented** meshes, each to be positioned in world space by its own
+ * The rig's parts as **loose, unparented** meshes, each to be positioned in world space by its own
  * `PartTransform`. What a ragdoll draws: the same solids the rig draws, with the joint hierarchy gone,
- * because after death there are no joints left — only ten rigid bodies.
+ * because after death there are no joints left — only one rigid body per part.
  */
 export interface LooseParts {
   /** Add to the scene, then write world transforms onto the meshes each frame. */

@@ -8,7 +8,7 @@ strict, source-first (no build step at this stage).
 - `packages/core` — fixed-timestep loop, `createSimClock` (fixed-step time for clock-driven content), entity model, math (incl. quaternion helpers), transport interface. Imports no sibling.
 - `packages/net` — schemas, binary serialization, quantization, clock sync. → core
 - `packages/physics` — Rapier3d wrapper (`@dimforge/rapier3d-compat`), bodies (position+rotation) + kinematic character controller, headless. → core
-- `packages/character` — the stack-level kinematic character controller (`stepCharacter`, `CharacterTuning`; ADR 0012), mode-agnostic, plus the blocky 10-part **rig** and **procedural animator** (renderer-agnostic: emits a `Pose`). → core, net, physics
+- `packages/character` — the stack-level kinematic character controller (`stepCharacter`, `CharacterTuning`; ADR 0012), mode-agnostic, plus the blocky 11-part **rig** and **procedural animator** (renderer-agnostic: emits a `Pose`). → core, net, physics
 - `packages/content` — data-driven content: schema, validation, loader (`instantiateLevel`), greybox kit + generators (ADR 0014). Headless, no rendering. → core, net, physics
 - `packages/i18n` — tiny dependency-free localization (ADR 0016): typed `t()`, per-language tables, browser-locale match + runtime switch. Headless. → (none)
 - `packages/server` — Colyseus `Server` + `ParkourRoom`: per-client snapshot relay (no simulation, no schema), auto-join, roster. Content-free. → core, net, `colyseus`
