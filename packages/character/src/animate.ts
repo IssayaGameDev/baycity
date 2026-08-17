@@ -1,4 +1,4 @@
-import { axisAngleToQuat, clamp, conjQuat, mulQuat, rotateVec3, vec3, type Vec3 } from '@mp/core'
+import { axisAngleToQuat, clamp, conjQuat, mulQuat, quat, rotateVec3, slerpQuat, vec3, type Quat, type Vec3 } from '@mp/core'
 
 import { FOOT_Y, HIP_HEIGHT, LIMB_LENGTH, RIG, restPose, type PartName, type Pose } from './rig'
 
@@ -136,6 +136,71 @@ export interface GaitTuning {
   /** Arms floating up as apparent weight drops (radians) — an elevator starting down. */
   inertiaFloat: number
 
+  // --- head. Every head term used to be a torso term times a constant, so the head could only ever
+  // read as a slightly lazier torso — welded, however it was tuned. What follows is the set of
+  // signals it has *of its own*. Note that from the default camera, behind the character, head yaw
+  // and pitch are heavily foreshortened; the counter-bob and the roll carried by stabilization are
+  // what actually read from there.
+  /**
+   * How much of the torso's rotation the head cancels. 0 welds it; 1 holds it level and facing
+   * where the character faces, with the torso turning underneath. This replaces three separate
+   * counter-fractions, and cancels the *whole* base rotation rather than the terms someone
+   * remembered to negate.
+   */
+  headStabilize: number
+  /**
+   * Half-life of the head's own facing smoother (s). Shorter than `yawHalfLife` and the head
+   * arrives first — it leads into a turn, which is what reads as looking where you are going.
+   * Longer and it trails instead, which reads as being thrown around. One knob, either behaviour.
+   */
+  headYawHalfLife: number
+  /** Cap on how far the head may lead or trail the body (radians) — a flick must not spin it off. */
+  headYawMax: number
+  /** Chin lift while rising (radians). */
+  headRise: number
+  /** Downward look while falling (radians) — the landing is down there. */
+  headFall: number
+  /** Nod on impact (radians). Decays with the landing crouch. */
+  headLand: number
+  /** Forward pitch at top speed (radians) — looking down the run. */
+  headSprint: number
+
+  // --- follow-through springs. Secondary motion as *translation*: a part hangs off its joint on an
+  // under-damped spring chasing where that joint belongs, so it arrives late and overshoots. Every
+  // motion the rig expresses drives it — the stride's bob, a landing, a platform's jolt — rather
+  // than one hand-written term per source.
+  /**
+   * Head spring frequency (Hz). This is a vibration isolator, so which side of the drive it sits on
+   * decides the whole character of the layer: **below** the stride's bob (~3.2 Hz at top speed) it
+   * attenuates, and the head stays level while the neck gap opens — measured 62 mm of head travel
+   * against the hips' 129 mm at 2 Hz. **Above** it, the head amplifies the bob instead and reads as a
+   * bobblehead: 139 mm at 4.5 Hz. Lower is steadier, at the cost of a bigger gap and a slower settle.
+   */
+  springFrequency: number
+  /**
+   * Arm spring frequency (Hz), necessarily much higher. An arm's primary motion is its own swing —
+   * roughly 1.6 Hz through a half-metre arc — not the bob, so a spring soft enough to isolate a head
+   * cannot follow an arm at all: it pins at full excursion and becomes a rigid offset with no
+   * dynamics left in it. Stiff enough to track, and what is left over is the follow-through.
+   */
+  springArmFrequency: number
+  /**
+   * Damping ratio, shared. 1 lags without ever overshooting; below ~0.6 it visibly bounces, and low
+   * values ring for a long time. This is the knob that decides between weight and jelly.
+   */
+  springDamping: number
+  /**
+   * Largest excursion a spring may take (m), before its weight. A safety net for a spike no tuning
+   * anticipated, not a shaper — if it binds during ordinary play the frequency is wrong.
+   */
+  springMax: number
+  /** Head follow-through weight. 0 excludes the head from the layer. */
+  springHead: number
+  /** Upper arm weight. Held well below the head's: a gap at the shoulder reads worse than at the neck. */
+  springUpperArm: number
+  /** Forearm weight — *on top of* the upper arm's, whose displacement it already inherits. */
+  springLowerArm: number
+
   /**
    * How much each *movement* differs from the last (0 disables it entirely). Variation is rolled
    * per event — per footfall, per jump, per landing — and held for that movement's duration, so no
@@ -193,6 +258,23 @@ export const DEFAULT_GAIT: GaitTuning = {
   inertiaHip: 0.05,
   inertiaVertical: 0.06,
   inertiaFloat: 0.35,
+  headStabilize: 0.7,
+  headYawHalfLife: 0.03,
+  headYawMax: 0.7,
+  headRise: 0.2,
+  headFall: 0.25,
+  headLand: 0.3,
+  headSprint: 0.06,
+  springFrequency: 2,
+  springArmFrequency: 8,
+  springDamping: 0.45,
+  springMax: 0.11,
+  // 0.7, not 1, and not because less is safer: head travel is *lowest* here. The lag is not purely
+  // anti-phase with the bob, so it has a quadrature component, and an intermediate weight cancels
+  // more of the bob than full weight does — measured 43 mm of head travel at 0.7 against 62 mm at 1.
+  springHead: 0.7,
+  springUpperArm: 0.4,
+  springLowerArm: 0.3,
   variation: 1,
   yawHalfLife: 0.06,
   blendHalfLife: 0.08,
@@ -230,6 +312,56 @@ const LN2 = Math.LN2
  * feel, and `inertiaStrength` scales it.
  */
 const G_REF = 9.81
+
+/**
+ * The parts the follow-through springs act on, parents before children so a child's target can
+ * include the displacement its parent already took.
+ *
+ * The body and the legs are absent by construction, not by omission: the body's travel is
+ * `bodyOffset`, which the leg IK is solved against, and the legs' feet are planted — displacing
+ * either would slide a foot, which is the one thing this whole design exists to prevent.
+ */
+const SPRING_PARTS = ['head', 'upperArmL', 'lowerArmL', 'upperArmR', 'lowerArmR'] as const
+type SpringPart = (typeof SPRING_PARTS)[number]
+
+/** One spring: where the joint currently is in root space, and how fast it is moving. */
+interface Spring {
+  x: number
+  y: number
+  z: number
+  vx: number
+  vy: number
+  vz: number
+}
+
+/**
+ * The exact solution of `x'' + 2ζωx' + ω²x = 0` over one frame, as a 2×2 map on (displacement,
+ * velocity): `x' = k1·x + k2·v`, `v' = k3·x + k4·v`.
+ *
+ * Closed form rather than integrated, for the same reason as every smoother in this file: 60 fps and
+ * 144 fps must ring identically. A stepped integrator would also *gain* energy at low damping and
+ * never settle.
+ */
+interface SpringStep {
+  k1: number
+  k2: number
+  k3: number
+  k4: number
+}
+
+const springStep = (frequency: number, zeta: number, dt: number): SpringStep => {
+  const w0 = TAU * Math.max(frequency, 1e-3)
+  if (zeta < 0.999) {
+    const wd = w0 * Math.sqrt(1 - zeta * zeta)
+    const e = Math.exp(-zeta * w0 * dt)
+    const co = Math.cos(wd * dt)
+    const si = Math.sin(wd * dt)
+    return { k1: e * (co + ((zeta * w0) / wd) * si), k2: (e * si) / wd, k3: -e * ((w0 * w0) / wd) * si, k4: e * (co - ((zeta * w0) / wd) * si) }
+  }
+  // Critically damped: the ω_d → 0 limit of the above, which the general form cannot evaluate.
+  const e = Math.exp(-w0 * dt)
+  return { k1: e * (1 + w0 * dt), k2: e * dt, k3: -e * w0 * w0 * dt, k4: e * (1 - w0 * dt) }
+}
 
 /** Frame-rate-independent smoothing: `cur` moves half the remaining distance every `halfLife`. */
 const smooth = (cur: number, target: number, dt: number, halfLife: number): number =>
@@ -281,6 +413,9 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
   const random = rng(seed)
   let phase = 0
   let yaw = 0
+  // The head's own facing smoother. Same target as `yaw`, its own half-life, so it arrives at a new
+  // heading before (or after) the body does and the difference is a lead (or a trail).
+  let headYaw = 0
   let airBlend = 0
   let riseBlend = 0
   let crouch = 0
@@ -300,6 +435,10 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
   let accX = 0
   let accY = 0
   let accZ = 0
+  // Follow-through springs, in root space. Seeded on the first frame from wherever the joints
+  // actually are: starting them at the origin would fire every spring at once on frame one.
+  const spring = Object.fromEntries(SPRING_PARTS.map((n) => [n, { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 }])) as Record<SpringPart, Spring>
+  let springsPrimed = false
 
   // Per-movement variation. Each of these is a multiplier around 1, rolled on an event and then
   // eased toward, so a new step or jump differs from the last without anything popping.
@@ -330,12 +469,15 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
   const Z = vec3(0, 0, 1)
 
   /**
-   * Pose a part that extends **upward** from its joint (body, head). A rotation about +x carries its
-   * top toward +z, so positive `forward` leans forward. `twist` turns it about its own axis, `roll`
-   * tips it sideways (positive toward −x at the top).
+   * Rotation for a part that extends **upward** from its joint (body, head). A rotation about +x
+   * carries its top toward +z, so positive `forward` leans forward. `twist` turns it about its own
+   * axis, `roll` tips it sideways (positive toward −x at the top).
    */
+  const uprightQuat = (forward: number, twist = 0, roll = 0): Quat =>
+    mulQuat(mulQuat(axisAngleToQuat(X, forward), axisAngleToQuat(Y, twist)), axisAngleToQuat(Z, roll))
+
   const setUpright = (part: PartName, forward: number, twist = 0, roll = 0): void => {
-    pose.rotation[part] = mulQuat(mulQuat(axisAngleToQuat(X, forward), axisAngleToQuat(Y, twist)), axisAngleToQuat(Z, roll))
+    pose.rotation[part] = uprightQuat(forward, twist, roll)
   }
 
   /**
@@ -349,6 +491,44 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
    */
   const setLimb = (part: PartName, forward: number, outward = 0): void => {
     pose.rotation[part] = mulQuat(axisAngleToQuat(X, -forward), axisAngleToQuat(Z, outward))
+  }
+
+  /**
+   * Advance one part's spring toward where its joint belongs and return the displacement it settled
+   * on, weighted, in root space. Clamped as a vector, so a spike shortens the excursion without
+   * skewing its direction.
+   */
+  const settle = (part: SpringPart, tx: number, ty: number, tz: number, weight: number, k: SpringStep): Vec3 => {
+    const s = spring[part]
+    if (!springsPrimed) {
+      s.x = tx
+      s.y = ty
+      s.z = tz
+    }
+    const dx = s.x - tx
+    const dy = s.y - ty
+    const dz = s.z - tz
+    // New velocity from the *old* displacement, so both come out of the same state.
+    const nvx = k.k3 * dx + k.k4 * s.vx
+    const nvy = k.k3 * dy + k.k4 * s.vy
+    const nvz = k.k3 * dz + k.k4 * s.vz
+    let ex = k.k1 * dx + k.k2 * s.vx
+    let ey = k.k1 * dy + k.k2 * s.vy
+    let ez = k.k1 * dz + k.k2 * s.vz
+    const reach = Math.hypot(ex, ey, ez)
+    if (reach > tuning.springMax) {
+      const f = tuning.springMax / reach
+      ex *= f
+      ey *= f
+      ez *= f
+    }
+    s.x = tx + ex
+    s.y = ty + ey
+    s.z = tz + ez
+    s.vx = nvx
+    s.vy = nvy
+    s.vz = nvz
+    return vec3(ex * weight, ey * weight, ez * weight)
   }
 
   return {
@@ -388,6 +568,7 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
 
       // --- smoothed drivers ---------------------------------------------------------------
       yaw = smoothAngle(yaw, input.yaw, dt, tuning.yawHalfLife)
+      headYaw = smoothAngle(headYaw, input.yaw, dt, tuning.headYawHalfLife)
       airBlend = smooth(airBlend, input.grounded ? 0 : 1, dt, tuning.blendHalfLife)
       // Which half of the arc we are in. This is what `STATE_RISING` is on the wire for — vertical
       // velocity crosses zero at the apex, so a viewer cannot tell ascent from descent reliably.
@@ -491,17 +672,52 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
       const hipLag = tuning.inertiaHip * ground0
       pose.bodyOffset = vec3(sway + lagRight * hipLag, bob + crouchDrop - idleDrop - compress, lagFwd * hipLag)
       // Shoulders turn against the stride. Costs one rotation and does more for liveliness than any
-      // amount of extra limb amplitude; the head counter-turns so the face still leads.
+      // amount of extra limb amplitude.
       const twist = -Math.sin(phase * TAU) * tuning.torsoTwist * intensity * vary.twist
       // Hips travel toward the weighted leg and the torso tips the other way — contrapposto, as far
-      // as a single rigid torso can express it. The head counter-rolls to stay level.
+      // as a single rigid torso can express it.
       const tilt = -shift * tuning.idleRoll * idleBlend
+      // What the gait and idle layers ask of the torso, before inertia. Kept separately because the
+      // head stabilizes against *this*: inertia is an additive layer with its own per-part weights,
+      // and cancelling a share of it here would quietly rewrite what those weights mean.
+      const lean = tuning.lean * intensity + crouch * 0.15 - breath * 0.012 * idleBlend
+      const bodyBaseQ = uprightQuat(lean, twist, tilt)
       // Inertia is additive on top. Roll is negated for upright parts and not for limbs: a positive
       // roll carries an upward part's *top* toward −x but a hanging limb's *tip* toward +x. Sharing
       // one sign between the two kinds is the mistake that produced the moonwalk, so the test for
       // this asserts world-space displacement for all ten parts rather than any angle convention.
-      setUpright('body', tuning.lean * intensity + crouch * 0.15 - breath * 0.012 * idleBlend + lagFwd * tuning.inertiaBody, twist, tilt - lagRight * tuning.inertiaBody)
-      setUpright('head', -tuning.lean * intensity * 0.7 + lagFwd * tuning.inertiaHead, -twist * 0.6, -tilt * 0.6 - lagRight * tuning.inertiaHead)
+      setUpright('body', lean + lagFwd * tuning.inertiaBody, twist, tilt - lagRight * tuning.inertiaBody)
+
+      // --- head ---------------------------------------------------------------------------
+      // The head used to be three constants times three torso terms, which is a head that can only
+      // ever look like a lazier torso. It now gets its own signals, on top of a real stabilization.
+      //
+      // 1. Cancel a share of everything the torso is doing. At 1 the head holds level in the world
+      //    and the torso turns underneath it — a vestibular reflex, and the reason a real walk does
+      //    not read as a bobbing skull. Slerping the base rotation's *conjugate* rather than negating
+      //    the three terms individually is what makes the cancellation exact: the head's world tilt
+      //    comes out at (1 − headStabilize) × the torso's, measured, at every value of the knob.
+      //    Negated Euler terms only agree with that to first order, because X·Y·Z does not commute.
+      const counter = slerpQuat(quat(), conjQuat(bodyBaseQ), clamp(tuning.headStabilize, 0, 1))
+      // 2. Facing, on the head's own clock. Both smoothers chase the same target, so this is zero
+      //    except while turning — no drift to correct, and it settles itself.
+      let lead = ((headYaw - yaw + Math.PI) % TAU) - Math.PI
+      if (lead < -Math.PI) lead += TAU
+      lead = clamp(lead, -tuning.headYawMax, tuning.headYawMax)
+      // 3. State pitch. Chin up going up, look down at the landing coming down, nod on the impact,
+      //    and a little down the run at speed. Positive pitches the head forward, so only the rise
+      //    is negated. These are the head's only inputs that no other part shares.
+      const headPitch =
+        (tuning.headFall * (1 - riseBlend) - tuning.headRise * riseBlend) * airBlend +
+        tuning.headLand * crouch +
+        tuning.headSprint * intensity +
+        lagFwd * tuning.inertiaHead
+      // Applied *inside* the counter-rotation, so `counter · own` puts the head's own terms in the
+      // stabilized frame rather than in the torso's.
+      pose.rotation.head = mulQuat(counter, uprightQuat(headPitch, lead, -lagRight * tuning.inertiaHead))
+      // The head's translation — a steadier eyeline than the hips — is no longer a term here. The
+      // spring layer at the end of this function produces it as a consequence of being a soft
+      // isolator, and rings on impacts as well, which a phase-locked counter-term could not.
 
       // --- legs ---------------------------------------------------------------------------
       // The legs hang off the body, so the body's lean and twist rotate the frame they are solved in.
@@ -576,6 +792,59 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
         // is a hinge — rolling it sideways bends the arm in a direction it does not have.
         setLimb(`lowerArm${s}` as PartName, fold + airElbow * airBlend + lagFwd * tuning.inertiaLowerArm)
       }
+
+      // --- follow-through springs ----------------------------------------------------------
+      // Secondary motion, as translation. Each part hangs off its joint on an under-damped spring
+      // whose target is where that joint belongs this frame; the lag *is* the offset, and because the
+      // spring is under-damped it overshoots and rings on the way back — the bounce.
+      //
+      // This subsumes what the head's counter-bob did with one hand-written term, and generalizes it:
+      // one construction responds to every motion the rig expresses. The stride's bob, the landing
+      // crouch, hip travel from a platform's jolt, an elevator's compression, the air pose changing
+      // shape — all of them already arrive in the joint targets below.
+      //
+      // Driven from **root space**, not world, deliberately. Everything above is already in root
+      // space and perfectly smooth per rendered frame, whereas a peer's world position is an
+      // interpolated 20 Hz staircase and a lightly-damped spring would ring on the steps. The cost is
+      // that turning in place drives nothing — a pure yaw moves no root-space joint.
+      // Two frequencies, because the head and the arms are not the same mechanical problem: the head's
+      // drive is the stride's bob and the arms' is their own swing, which is far faster.
+      const zeta = clamp(tuning.springDamping, 0.02, 1)
+      const kHead = springStep(tuning.springFrequency, zeta, dt)
+      const kArm = springStep(tuning.springArmFrequency, zeta, dt)
+
+      // Forward kinematics down each spring chain. A child's target is measured from where its parent
+      // *ended up*, so a forearm inherits the shoulder's displacement and adds its own — the same
+      // increments-down-the-chain model the inertia weights use.
+      const bodyPivot = RIG.body.pivot
+      const bodyX = bodyPivot.x + pose.bodyOffset.x
+      const bodyY = bodyPivot.y + pose.bodyOffset.y
+      const bodyZ = bodyPivot.z + pose.bodyOffset.z
+
+      const neck = rotateVec3(bodyQ, RIG.head.pivot)
+      const headLag = settle('head', bodyX + neck.x, bodyY + neck.y, bodyZ + neck.z, tuning.springHead, kHead)
+      // Offsets are written in the parent's frame, since that is the frame a joint's position is in.
+      pose.jointOffset.head = rotateVec3(invBody, headLag)
+
+      for (const side of [-1, 1] as const) {
+        const s = side === -1 ? 'L' : 'R'
+        const upper = `upperArm${s}` as SpringPart
+        const lower = `lowerArm${s}` as SpringPart
+
+        const shoulder = rotateVec3(bodyQ, RIG[upper].pivot)
+        const upperLag = settle(upper, bodyX + shoulder.x, bodyY + shoulder.y, bodyZ + shoulder.z, tuning.springUpperArm, kArm)
+        pose.jointOffset[upper] = rotateVec3(invBody, upperLag)
+
+        // Elbow target, from the shoulder as displaced above.
+        const upperQ = mulQuat(bodyQ, pose.rotation[upper])
+        const fore = rotateVec3(upperQ, RIG[lower].pivot)
+        const ex = bodyX + shoulder.x + upperLag.x + fore.x
+        const ey = bodyY + shoulder.y + upperLag.y + fore.y
+        const ez = bodyZ + shoulder.z + upperLag.z + fore.z
+        const lowerLag = settle(lower, ex, ey, ez, tuning.springLowerArm, kArm)
+        pose.jointOffset[lower] = rotateVec3(conjQuat(upperQ), lowerLag)
+      }
+      springsPrimed = true
 
       pose.yaw = yaw
       return pose

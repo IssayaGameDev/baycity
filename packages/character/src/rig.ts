@@ -113,16 +113,26 @@ export const LIMB_LENGTH = LIMB
 /** Hip joint height in root space — where the legs hang from before any bob. */
 export const HIP_HEIGHT = HIP_Y
 
-/** One frame of animation: the character's facing, each joint's local rotation, and a body offset
- * for bob and crouch. Everything a renderer needs, with no renderer types in it. */
+/** One frame of animation: the character's facing, each joint's local rotation, and translations for
+ * the two joints that need one. Everything a renderer needs, with no renderer types in it. */
 export interface Pose {
   yaw: number
   rotation: Record<PartName, Quat>
   bodyOffset: Vec3
+  /**
+   * Each joint's translation away from its pivot, in the **parent's** frame — the frame a joint's
+   * position lives in. Secondary motion needs parts to *move*, not only to turn: a rotation cannot
+   * express a head lagging a bob or an arm still arriving after the body has stopped.
+   *
+   * Two groups are permanently zero. The body's travel is `bodyOffset`, which the leg IK is solved
+   * against; and the four leg parts' feet are planted, so anything that moved them would slide them.
+   */
+  jointOffset: Record<PartName, Vec3>
 }
 
 export const restPose = (): Pose => ({
   yaw: 0,
   rotation: Object.fromEntries(PART_NAMES.map((n) => [n, quat()])) as Record<PartName, Quat>,
   bodyOffset: vec3(0, 0, 0),
+  jointOffset: Object.fromEntries(PART_NAMES.map((n) => [n, vec3(0, 0, 0)])) as Record<PartName, Vec3>,
 })

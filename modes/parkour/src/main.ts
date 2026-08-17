@@ -250,6 +250,33 @@ inf.addBinding(gait, 'inertiaHip', { min: 0, max: 0.15, step: 0.005, label: 'hip
 inf.addBinding(gait, 'inertiaVertical', { min: 0, max: 0.15, step: 0.005, label: 'compress m' })
 inf.addBinding(gait, 'inertiaFloat', { min: 0, max: 1, step: 0.05, label: 'arm float rad' })
 
+// Head (ADR 0018). Every head term used to be a torso term times a constant, so it read as welded.
+// `stabilize` is the base: 1 holds the head level in the world with the torso turning under it.
+// The rest are signals no other part has. From a camera behind the character, yaw and pitch here are
+// heavily foreshortened — `counter-bob` is the one that reads.
+const hf = pane.addFolder({ title: 'Head', expanded: false })
+hf.addBinding(gait, 'headStabilize', { min: 0, max: 1, step: 0.05, label: 'stabilize' })
+// Below `yawHalfLife` (0.06) the head leads into a turn; above it, the head trails.
+hf.addBinding(gait, 'headYawHalfLife', { min: 0.01, max: 0.4, step: 0.01, label: 'turn smooth s' })
+hf.addBinding(gait, 'headYawMax', { min: 0, max: 1.5, step: 0.05, label: 'turn cap rad' })
+hf.addBinding(gait, 'headRise', { min: 0, max: 0.8, step: 0.02, label: 'chin up ↑' })
+hf.addBinding(gait, 'headFall', { min: 0, max: 0.8, step: 0.02, label: 'look down ↓' })
+hf.addBinding(gait, 'headLand', { min: 0, max: 1, step: 0.02, label: 'land nod' })
+hf.addBinding(gait, 'headSprint', { min: 0, max: 0.5, step: 0.02, label: 'sprint pitch' })
+
+// Follow-through springs (ADR 0018). Secondary motion as translation: a part lags its joint and rings
+// back. `head Hz` is the important one and it is not a "speed" knob — the spring is an isolator, so
+// under the bob's ~3.2 Hz the head stays level and the neck gap opens, and over it the head amplifies
+// the bob into a bobblehead. Arms need their own, far stiffer: their drive is their own swing.
+const sf = pane.addFolder({ title: 'Springs (follow-through)', expanded: false })
+sf.addBinding(gait, 'springFrequency', { min: 0.5, max: 10, step: 0.1, label: 'head Hz' })
+sf.addBinding(gait, 'springArmFrequency', { min: 1, max: 20, step: 0.5, label: 'arm Hz' })
+sf.addBinding(gait, 'springDamping', { min: 0.05, max: 1, step: 0.05, label: 'damping ζ' })
+sf.addBinding(gait, 'springMax', { min: 0.01, max: 0.3, step: 0.005, label: 'max reach m' })
+sf.addBinding(gait, 'springHead', { min: 0, max: 1.5, step: 0.05, label: 'w head' })
+sf.addBinding(gait, 'springUpperArm', { min: 0, max: 1.5, step: 0.05, label: 'w upper arm' })
+sf.addBinding(gait, 'springLowerArm', { min: 0, max: 1.5, step: 0.05, label: 'w forearm' })
+
 // Air pose. Rising and falling are separate shapes (ADR 0018) — the outward rolls are what make a
 // jump visible at all from a camera sitting behind the character.
 const af = pane.addFolder({ title: 'Jump / air pose', expanded: false })

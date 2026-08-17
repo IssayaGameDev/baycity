@@ -1,10 +1,21 @@
-import { rotateVec3, vec3, type Vec3 } from '@mp/core'
+import { mulQuat, rotateVec3, vec3, type Quat, type Vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
 import { createAnimator, solveTwoBone, DEFAULT_GAIT } from './animate'
 import { CHAR_HEIGHT, FOOT_Y, HIP_HEIGHT, LIMB_LENGTH, RIG, PART_NAMES, type PartName, type Pose } from './rig'
 
 const DT = 1 / 60
+const ZERO = vec3(0, 0, 0)
+/** Length of an offset. Summed absolutes rather than `hypot`, so a signed zero still reads as zero. */
+const magnitude = (v: Vec3): number => Math.abs(v.x) + Math.abs(v.y) + Math.abs(v.z)
+
+/** Snapshot a pose: the animator mutates and returns one object, so assertions need a copy. */
+const snapshot = (pose: Pose): Pose => ({
+  yaw: pose.yaw,
+  bodyOffset: { ...pose.bodyOffset },
+  jointOffset: { ...pose.jointOffset },
+  rotation: { ...pose.rotation },
+})
 
 /** Walk the rig's parent chain to get a joint's root-space position under a pose. */
 const jointPosition = (pose: Pose, part: PartName): Vec3 => {
@@ -20,13 +31,12 @@ const jointPosition = (pose: Pose, part: PartName): Vec3 => {
   let q = { x: 0, y: 0, z: 0, w: 1 }
   for (const name of chain) {
     const part2 = RIG[name]
-    // All three components: the body sways laterally at idle, and dropping x here would let the
-    // helper disagree with the renderer about where the hips are — reading the legs' compensation
-    // for that sway as the feet sliding.
-    const offset =
-      name === 'body'
-        ? vec3(part2.pivot.x + pose.bodyOffset.x, part2.pivot.y + pose.bodyOffset.y, part2.pivot.z + pose.bodyOffset.z)
-        : part2.pivot
+    // Every joint can translate (`jointOffset`, the spring layer) and the body adds its bob on top.
+    // Both matter: dropping the body's x would let the helper disagree with the renderer about where
+    // the hips are, reading the legs' compensation for the idle sway as the feet sliding.
+    const jo = pose.jointOffset[name]
+    const bo = name === 'body' ? pose.bodyOffset : ZERO
+    const offset = vec3(part2.pivot.x + jo.x + bo.x, part2.pivot.y + jo.y + bo.y, part2.pivot.z + jo.z + bo.z)
     const rotated = rotateVec3(q, offset)
     acc = vec3(acc.x + rotated.x, acc.y + rotated.y, acc.z + rotated.z)
     const r = pose.rotation[name]
@@ -458,8 +468,7 @@ describe('createAnimator', () => {
     const out: Pose[] = []
     for (let t = 0; t < seconds / DT; t++) {
       const pose = a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
-      // The animator mutates and returns one pose object, so snapshot what the assertions read.
-      out.push({ yaw: pose.yaw, bodyOffset: { ...pose.bodyOffset }, rotation: { ...pose.rotation } })
+      out.push(snapshot(pose))
     }
     return out
   }
@@ -665,7 +674,20 @@ describe('createAnimator', () => {
 
   it('does nothing at all when the layer is off, or when nothing is carrying the character', () => {
     const off = { ...DEFAULT_GAIT, inertiaStrength: 0 }
-    const sample = (pose: Pose): number[] => [pose.bodyOffset.x, pose.bodyOffset.y, pose.bodyOffset.z, ...PART_NAMES.flatMap((n) => [pose.rotation[n].x, pose.rotation[n].y, pose.rotation[n].z, pose.rotation[n].w])]
+    const sample = (pose: Pose): number[] => [
+      pose.bodyOffset.x,
+      pose.bodyOffset.y,
+      pose.bodyOffset.z,
+      ...PART_NAMES.flatMap((n) => [
+        pose.jointOffset[n].x,
+        pose.jointOffset[n].y,
+        pose.jointOffset[n].z,
+        pose.rotation[n].x,
+        pose.rotation[n].y,
+        pose.rotation[n].z,
+        pose.rotation[n].w,
+      ]),
+    ]
     expect(sample(carried(vec3(3, 2, 3), 0.5, off))).toEqual(sample(carried(vec3(0, 0, 0), 0.5, off)))
     // And an animator never told about carry at all must be untouched by the feature existing.
     const a = createAnimator(DEFAULT_GAIT, 6)
@@ -684,6 +706,210 @@ describe('createAnimator', () => {
     expect(tipPosition(pose, 'lowerArmL').z).toBeLessThan(tipPosition(still, 'lowerArmL').z - 1e-3)
     // Compared against the same moment of the idle layer, which is also moving the hips sideways.
     expect(Math.abs(pose.bodyOffset.x - still.bodyOffset.x), 'nothing lateral, in its own frame').toBeLessThan(1e-4)
+  })
+
+  /**
+   * Composed **world** rotation of a part, parents included, and its angle away from upright. The
+   * head's whole point is what it does in the world while the torso does something else, so a test
+   * that reads its local quaternion is testing the wrong frame.
+   */
+  const partQuat = (pose: Pose, part: PartName): Quat => {
+    const chain: PartName[] = []
+    for (let p: PartName | null = part; p !== null; p = RIG[p].parent) chain.unshift(p)
+    let q: Quat = { x: 0, y: 0, z: 0, w: 1 }
+    for (const name of chain) q = mulQuat(q, pose.rotation[name])
+    return q
+  }
+  const angleOf = (q: Quat): number => 2 * Math.acos(Math.min(1, Math.abs(q.w)))
+
+  /** Walk at top speed for `seconds`, dropping the first second while the gait fades in. */
+  const walkPoses = (gait = DEFAULT_GAIT, seconds = 3, seed = 3): Pose[] => {
+    const a = createAnimator(gait, seed)
+    const out: Pose[] = []
+    let z = 0
+    for (let t = 0; t < seconds / DT; t++) {
+      z += DEFAULT_GAIT.runSpeed * DT
+      const pose = a.step({ position: vec3(0, 0, z), yaw: 0, speed: DEFAULT_GAIT.runSpeed, grounded: true, rising: false }, DT)
+      if (t > 1 / DT) out.push(snapshot(pose))
+    }
+    return out
+  }
+
+  it('holds the head level in the world while the torso leans and twists', () => {
+    // The head's own signals off, so this measures stabilization alone. At 0 the head is welded and
+    // goes exactly where the torso goes — which is the state this layer exists to leave behind.
+    const bare = { ...DEFAULT_GAIT, headRise: 0, headFall: 0, headLand: 0, headSprint: 0, headCounterBob: 0, inertiaStrength: 0 }
+    const ratio = (headStabilize: number): number => {
+      const poses = walkPoses({ ...bare, headStabilize })
+      const head = Math.max(...poses.map((p) => angleOf(partQuat(p, 'head'))))
+      const body = Math.max(...poses.map((p) => angleOf(partQuat(p, 'body'))))
+      return head / body
+    }
+    // Exact at both ends and linear between, because the counter-rotation is the base rotation's
+    // conjugate slerped along the geodesic — not its three Euler terms negated, which would only
+    // agree to first order. Torso tilt is 0.238 rad at top speed; the head's is (1 − knob) of it.
+    expect(ratio(0), 'welded: the head is exactly as tilted as the torso').toBeCloseTo(1, 6)
+    expect(ratio(0.5), 'half of it').toBeCloseTo(0.5, 3)
+    expect(ratio(1), 'stabilized: dead level while the torso works').toBeLessThan(1e-6)
+  })
+
+  it('leads the turn with the head, then stops leading', () => {
+    // Both smoothers chase the same target on different half-lives, so the lead is self-cancelling:
+    // it exists only while the heading is changing and needs nothing to unwind it.
+    const a = createAnimator()
+    const stand = { position: vec3(0, 0, 0), speed: 0, grounded: true, rising: false }
+    let pose = a.step({ ...stand, yaw: 0 }, DT)
+    let peak = 0
+    for (let t = 0; t < 0.3 / DT; t++) {
+      pose = a.step({ ...stand, yaw: Math.PI / 2 }, DT)
+      peak = Math.max(peak, pose.rotation.head.y) // signed toward the new heading
+    }
+    expect(peak, 'the head should arrive at the new heading first').toBeGreaterThan(0.05)
+    for (let t = 0; t < 1 / DT; t++) pose = a.step({ ...stand, yaw: Math.PI / 2 }, DT)
+    expect(Math.abs(pose.rotation.head.y), 'and hold no residual once the turn is done').toBeLessThan(0.005)
+  })
+
+  it('keeps the eyeline steadier than the hips', () => {
+    // A rotation cannot express this: the neck has to translate. The spring layer produces it as a
+    // consequence of being a soft isolator — which is also why the *frequency* decides the sign of
+    // the effect. Below the bob's ~3.2 Hz it attenuates; above it, it amplifies and reads as a
+    // bobblehead. That is a trap worth a test, since a "stiffer, snappier neck" makes it worse.
+    const travel = (springFrequency: number): { head: number; hip: number } => {
+      const poses = walkPoses({ ...DEFAULT_GAIT, springFrequency })
+      return { head: range(poses.map((p) => jointPosition(p, 'head').y)), hip: range(poses.map((p) => p.bodyOffset.y)) }
+    }
+    // Measured at top speed against 129 mm of hip travel: 43 mm at the default 2 Hz, 126 mm at 8 Hz.
+    const soft = travel(DEFAULT_GAIT.springFrequency)
+    expect(soft.head, 'a soft neck isolates: the head travels well under the hips').toBeLessThan(soft.hip * 0.6)
+    const stiff = travel(8)
+    expect(stiff.head, 'a stiff one tracks the bob instead — the bobblehead').toBeGreaterThan(soft.head * 2)
+    expect(soft.hip, 'the hips must keep bobbing — this is a neck, not a smaller stride').toBeCloseTo(stiff.hip, 6)
+  })
+
+  it('looks at the landing on the way down, and nods on the impact', () => {
+    const air = (rising: boolean): number => {
+      const a = createAnimator()
+      a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
+      let pose = restPoseOf(a)
+      for (let t = 0; t < 1 / DT; t++) pose = a.step({ position: vec3(0, 4, 0), yaw: 0, speed: 0, grounded: false, rising }, DT)
+      return pose.rotation.head.x // positive pitches the head forward and down
+    }
+    expect(air(false), 'falling: looking down at where this ends').toBeGreaterThan(air(true) + 0.1)
+
+    // The nod, isolated from the falling look so it is the nod being measured.
+    const a = createAnimator({ ...DEFAULT_GAIT, headRise: 0, headFall: 0 })
+    a.step({ position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }, DT)
+    for (let t = 0; t < 0.5 / DT; t++) a.step({ position: vec3(0, 4, 0), yaw: 0, speed: 0, grounded: false, rising: false }, DT)
+    const land = { position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }
+    let nod = 0
+    for (let t = 0; t < 0.2 / DT; t++) nod = Math.max(nod, a.step(land, DT).rotation.head.x)
+    expect(nod, 'the impact should drive the head down').toBeGreaterThan(0.05)
+    let settled = a.step(land, DT)
+    for (let t = 0; t < 1.5 / DT; t++) settled = a.step(land, DT)
+    expect(Math.abs(settled.rotation.head.x), 'and it should decay away, not stick').toBeLessThan(0.02)
+  })
+
+  /** Stand for `before`, then jump and land — the sharpest step the joint targets ever take. */
+  const landing = (gait = DEFAULT_GAIT, after = 1.2, before = 0.4): Pose[] => {
+    const a = createAnimator(gait, 5)
+    const stand = { position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }
+    for (let t = 0; t < before / DT; t++) a.step(stand, DT)
+    for (let t = 0; t < 0.4 / DT; t++) a.step({ ...stand, position: vec3(0, 3, 0), grounded: false, rising: false }, DT)
+    const out: Pose[] = []
+    for (let t = 0; t < after / DT; t++) out.push(snapshot(a.step(stand, DT)))
+    return out
+  }
+
+  it('never displaces the body or a leg — the spring layer cannot reach a planted foot', () => {
+    // Structural, not tuned: the body's travel is `bodyOffset`, which the leg IK is solved against,
+    // and a leg offset would slide the foot it is standing on. Both are excluded by construction and
+    // this is what says so.
+    for (const poses of [walkPoses(), landing(), idle(DEFAULT_GAIT, 4)])
+      for (const p of poses)
+        for (const part of ['body', 'upperLegL', 'lowerLegL', 'upperLegR', 'lowerLegR'] as const)
+          expect(magnitude(p.jointOffset[part]), `${part} must not translate`).toBe(0)
+  })
+
+  it('overshoots and rings on a landing, and does not when critically damped', () => {
+    // The bounce is the overshoot: the spring passes the target and comes back. Sign changes in the
+    // head's vertical displacement count it. At ζ = 1 there is no oscillation at all by definition,
+    // which is the control — if that one rings too, the integrator is wrong rather than the tuning.
+    const crossings = (springDamping: number): number => {
+      const ys = landing({ ...DEFAULT_GAIT, springDamping }).map((p) => p.jointOffset.head.y)
+      let n = 0
+      for (let i = 1; i < ys.length; i++) if (Math.sign(ys[i]!) !== Math.sign(ys[i - 1]!) && Math.abs(ys[i]!) > 1e-4) n++
+      return n
+    }
+    expect(crossings(DEFAULT_GAIT.springDamping), 'under-damped: it should ring').toBeGreaterThan(1)
+    expect(crossings(1), 'critically damped: it must not').toBeLessThan(2)
+  })
+
+  it('settles back to nothing once the character is still', () => {
+    // A spring that kept a residual would leave the head permanently off its neck. Measured against a
+    // flat idle: with the idle layer live the torso never actually stops moving, so a real character
+    // holds a fraction of a millimetre of lag forever — correctly, but that is not what this asks.
+    // `breathPeriod: 0` matters: the torso's breathing *pitch* is not scaled by `breathDepth`, which
+    // only governs the hips, so zeroing the depth alone leaves the chest still moving.
+    const flat = { ...DEFAULT_GAIT, idleSettle: 0, breathDepth: 0, breathPeriod: 0, idleSway: 0, idleRoll: 0 }
+    const poses = landing(flat, 4)
+    const last = poses[poses.length - 1]!
+    for (const part of PART_NAMES) {
+      const o = last.jointOffset[part]
+      expect(Math.hypot(o.x, o.y, o.z), `${part} should come to rest on its joint`).toBeLessThan(1e-4)
+    }
+    // With idle running it stays small rather than accumulating. Measured 1.5 mm.
+    const live = landing(DEFAULT_GAIT, 4)
+    const lag = live[live.length - 1]!.jointOffset.head
+    expect(Math.hypot(lag.x, lag.y, lag.z), 'idle keeps it alive, but barely').toBeLessThan(3e-3)
+  })
+
+  it('rings identically at 60 and 144 fps', () => {
+    // The spring is solved in closed form for exactly this reason. A stepped integrator would ring at
+    // a frame-rate-dependent amplitude, and at low damping would gain energy and never settle.
+    //
+    // Sampled at a fixed elapsed time rather than by peak: a 2 Hz ring read off a 60 Hz grid misses
+    // its own peak by ~3%, which is 1.7 mm here and says nothing about the integrator. Durations are
+    // whole tick counts at both rates.
+    //
+    // Idle is flattened for the same reason. Its shift is an *event* on a `dt`-decremented timer, so
+    // it fires up to one tick apart at different rates and the torso is then in a slightly different
+    // place — a real difference, inherent to an event clock, and not the spring's.
+    const flat = { ...DEFAULT_GAIT, idleSettle: 0, breathDepth: 0, breathPeriod: 0, idleSway: 0, idleRoll: 0 }
+    const at = (step: number): number => {
+      const a = createAnimator(flat, 5)
+      const stand = { position: vec3(0, 0, 0), yaw: 0, speed: 0, grounded: true, rising: false }
+      for (let t = 0; t < Math.round(0.5 / step); t++) a.step(stand, step)
+      for (let t = 0; t < Math.round(0.5 / step); t++) a.step({ ...stand, position: vec3(0, 3, 0), grounded: false, rising: false }, step)
+      let y = 0
+      for (let t = 0; t < Math.round(1.25 / step); t++) y = a.step(stand, step).jointOffset.head.y
+      return y
+    }
+    expect(Math.abs(at(1 / 144) - at(1 / 60))).toBeLessThan(1e-4)
+  })
+
+  it('gives the forearm the shoulder’s displacement plus its own', () => {
+    // Same increments-down-the-chain model the inertia weights use: a child's target hangs off where
+    // its parent ended up, so the loose end of a limb moves furthest.
+    const poses = walkPoses()
+    const travel = (part: PartName): number => range(poses.map((p) => jointPosition(p, part).y))
+    expect(travel('lowerArmL'), 'the elbow inherits the shoulder and adds its own').toBeGreaterThan(travel('upperArmL'))
+  })
+
+  it('holds every part within the displacement clamp', () => {
+    // A landing is a step change in the joint targets; without the clamp a lightly-damped spring can
+    // throw a part far enough off the body to read as detached.
+    const springMax = 0.03
+    for (const p of landing({ ...DEFAULT_GAIT, springMax, springDamping: 0.15, springUpperArm: 1, springLowerArm: 1 }))
+      for (const part of PART_NAMES) {
+        const o = p.jointOffset[part]
+        // Weights are all ≤ 1 here, and the clamp is applied before the weight, so this bounds them.
+        expect(Math.hypot(o.x, o.y, o.z), `${part} within the clamp`).toBeLessThanOrEqual(springMax + 1e-9)
+      }
+  })
+
+  it('does nothing at all when the weights are zero', () => {
+    const off = { ...DEFAULT_GAIT, springHead: 0, springUpperArm: 0, springLowerArm: 0 }
+    for (const p of landing(off)) for (const part of PART_NAMES) expect(magnitude(p.jointOffset[part])).toBe(0)
   })
 
   it('leans forward with speed and stands up when stopped', () => {

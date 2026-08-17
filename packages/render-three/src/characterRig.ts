@@ -20,6 +20,9 @@ export interface CharacterRigOptions {
 
 export type RigStyle = 'skin' | 'shirt' | 'trousers'
 
+/** Shared, read-only: every joint but the body adds no bob/crouch travel of its own. */
+const ZERO = { x: 0, y: 0, z: 0 }
+
 const DEFAULT_COLORS: Record<RigStyle, number> = {
   skin: 0xf2c49b,
   shirt: 0x3b82f6,
@@ -79,15 +82,18 @@ export const createCharacterRig = (opts: CharacterRigOptions = {}): CharacterRig
     else joints[parent].add(joint)
   }
 
-  const bodyRest = RIG.body.pivot
-
   return {
     root,
     apply: (pose) => {
       root.rotation.y = pose.yaw
-      // Body carries the bob/crouch offset; every other joint sits at its rest pivot.
-      joints.body.position.set(bodyRest.x + pose.bodyOffset.x, bodyRest.y + pose.bodyOffset.y, bodyRest.z + pose.bodyOffset.z)
+      // Joints both rotate and translate: `jointOffset` carries the spring layer's secondary motion,
+      // and the body adds its own bob/crouch travel on top (that one is in the leg IK, the rest are
+      // not). Most entries are permanently zero, so this stays ten writes of each kind.
       for (const name of PART_NAMES) {
+        const rest = RIG[name].pivot
+        const o = pose.jointOffset[name]
+        const b = name === 'body' ? pose.bodyOffset : ZERO
+        joints[name].position.set(rest.x + o.x + b.x, rest.y + o.y + b.y, rest.z + o.z + b.z)
         const r = pose.rotation[name]
         joints[name].quaternion.set(r.x, r.y, r.z, r.w)
       }

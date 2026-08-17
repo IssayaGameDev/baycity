@@ -151,6 +151,70 @@ change to adopt it.
   body since it rides atop a leaning torso — weight ordering is only visible in local rotation. And
   the legs take no rotation at all: their feet are planted, so the lower body's inertia arrives as
   hip travel that the IK absorbs into unequal knee bends.
+- **The head was welded to the torso, and no amount of tuning could have unwelded it.** Every one of
+  its terms was a torso term times a constant — pitch `−lean·0.7`, yaw `−twist·0.6`, roll `−tilt·0.6` —
+  so the head could only ever render as a lazier copy of the torso. The fix is not bigger constants,
+  it is giving the head inputs no other part has. Four, all in the `Head` pane folder:
+  1. **Stabilization** replaces the three constants with one knob. The head's local rotation carries
+     `slerp(identity, conj(bodyBaseQ), headStabilize)`, so at 1 it holds dead level in the world with
+     the torso turning underneath — a vestibular reflex. Slerping the base rotation's **conjugate**
+     rather than negating its three Euler terms is what makes this exact: measured head world tilt is
+     `(1 − knob)` × the torso's at every value of the knob (torso 0.238 rad at top speed → head 0.238 /
+     0.119 / 0.000 at knob 0 / 0.5 / 1). Negated Euler terms only agree to first order, since X·Y·Z
+     does not commute. It stabilizes against the **gait and idle** rotation only, deliberately: the
+     inertia layer is additive with its own per-part weights, and cancelling a share of it here would
+     silently rewrite what every one of those weights means.
+  2. **Its own facing smoother.** `headYaw` chases the same target as `yaw` on its own half-life; the
+     difference is the head's local twist, clamped. Shorter than `yawHalfLife` and the head arrives
+     first — it leads into a turn, which is what reads as looking where you are going; longer and it
+     trails, which reads as being thrown around. One knob covers both. Self-cancelling by
+     construction: two smoothers chasing one target agree once the target stops moving, so the lead
+     exists only during a turn and nothing has to unwind it (measured 22° peak on a 90° snap turn,
+     2·10⁻⁵ rad a second later).
+  3. **A steadier eyeline than the hips**, which is why `Pose` grew a translation. A rotation cannot
+     express the neck absorbing the stride's vertical travel — the head has to *move*. This began as
+     `headCounterBob`, a fraction of the gait bob subtracted; the spring layer below subsumed it and
+     the term is gone.
+  4. **State pitch** — chin up while rising, looking down at the landing while falling, a nod on the
+     impact decaying with the landing crouch, and a little down the run at speed. These are the only
+     head terms with no counterpart anywhere else on the body.
+  The head's own terms are composed **inside** the counter-rotation (`counter · own`), so they act in
+  the stabilized frame rather than in the torso's. Ordering them the other way applies the head's
+  pitch in the frame the stabilization was supposed to remove.
+  Worth knowing when tuning: from the default camera, behind the character, head yaw and pitch are
+  the most foreshortened quantities on the whole rig. The translation is the one a player sees.
+- **Follow-through is a spring layer, and the spring is a vibration isolator — which is the whole
+  design.** Each of head, upper arm and forearm hangs off its joint on an under-damped spring chasing
+  where that joint belongs; the lag *is* `jointOffset`, and the under-damping is what makes it ring.
+  One construction then covers every source: the stride's bob, the landing crouch, hip travel from a
+  platform's jolt, an elevator's compression, the air pose changing shape. All of them already arrive
+  in the joint targets, so nothing needs a term of its own.
+  **The frequency is not a "how snappy" knob, it decides the sign of the effect**, and this is the
+  trap the whole layer turns on. Measured against 129 mm of hip travel at top speed: at 2 Hz — below
+  the bob's ~3.2 Hz — the head travels 43 mm and the neck gap opens to 66 mm, an isolator doing its
+  job. At 8 Hz it travels 126 mm: the head now *tracks* the bob and reads as a bobblehead. Reaching
+  for a stiffer, snappier neck makes it strictly worse, which is why there is a test asserting both
+  ends. The arms need their own, far stiffer frequency (8 Hz) for an unrelated reason: an arm's primary
+  motion is its own swing, ~1.6 Hz through a half-metre arc, and a spring soft enough to isolate a
+  head cannot follow that at all — it pins at full excursion and degenerates into a rigid offset with
+  no dynamics left in it. Two drives, two frequencies.
+  `springHead` is 0.7 rather than 1 because head travel is *lowest* there (43 mm, against 62 mm at
+  full weight): the lag is not purely anti-phase with the bob, so it has a quadrature component and an
+  intermediate weight cancels more of the bob than all of it does.
+  `springMax` is an anatomical stop, not a shaper. A landing binds it — and should, since the torso's
+  crouch pitches 0.15 rad and the neck sits 0.75 m above that joint, so the head's target jumps 110 mm
+  sideways in one frame, more than the 125 mm hip drop does. Ordinary walking must stay clear of it
+  (66 mm against 110 mm); if it binds while walking, the frequency is wrong.
+  Solved in **closed form** — the exact 2×2 map on (displacement, velocity) — like every other
+  smoother here, so 60 fps and 144 fps ring identically. A stepped integrator would also *gain* energy
+  at low damping and never settle.
+  Driven from **root space**, not world: everything above is already in root space and smooth per
+  rendered frame, whereas a peer's world position is an interpolated 20 Hz staircase that a
+  lightly-damped spring would ring on. The cost is that a pure spin drives nothing, since turning in
+  place moves no root-space joint.
+  The body and the four leg parts are excluded **by construction**, not left untuned: the body's
+  travel is `bodyOffset`, which the leg IK is solved against, and displacing a leg would slide the
+  foot it is standing on. Their `jointOffset` entries are asserted to be exactly zero.
 - **The acceleration is measured as the gap between the carry signal and its own smoothed value**,
   sampled at the frame midpoint. For an exponential smoother that gap is exactly a low-passed
   derivative (`(raw − smoothed)·ln2/halfLife`), so nothing is differenced: `carry` updates at the
