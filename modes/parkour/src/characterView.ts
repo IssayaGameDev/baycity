@@ -1,4 +1,4 @@
-import { createAnimator, type Animator } from '@mp/character'
+import { createAnimator, DEFAULT_GAIT, type Animator, type GaitTuning } from '@mp/character'
 import type { EntityId, Vec3 } from '@mp/core'
 import { createCharacterRig, THREE, type CharacterRig } from '@mp/render-three'
 
@@ -34,6 +34,13 @@ export interface CharacterPlacement {
   speed: number | null
   grounded: boolean
   rising: boolean
+  /**
+   * World velocity being applied to the character that its own locomotion did not ask for
+   * (`CharacterState.carry`) — what the inertial layer reacts to. `null` for peers: the wire carries
+   * position and two flags, and separating a peer's carry from its walking would need either its
+   * locomotion speed on the wire or a ground probe here. So peers brace for nothing, for now.
+   */
+  carry: Vec3 | null
   name: string
 }
 
@@ -44,10 +51,18 @@ export interface CharacterViews {
   prune: (keep: Set<EntityId>) => void
 }
 
+/** Shared, read-only: the animator treats zero carry exactly as it treats none. */
+const NO_CARRY: Vec3 = { x: 0, y: 0, z: 0 }
+
 const SELF_COLORS = { shirt: 0xfacc15, trousers: 0x422006 }
 const PEER_COLORS = { shirt: 0xf97316, trousers: 0x2b1503 }
 
-export const createCharacterViews = (scene: THREE.Scene): CharacterViews => {
+/**
+ * `gait` is shared by every character's animator and read fresh each frame, so mutating it — from
+ * the debug pane — retunes everyone live. Feel is Kodjo's call, and describing it in words is a slow
+ * way to converge; sliders are not.
+ */
+export const createCharacterViews = (scene: THREE.Scene, gait: GaitTuning = DEFAULT_GAIT): CharacterViews => {
   const chars = new Map<EntityId, Rendered>()
 
   const charFor = (id: EntityId, isSelf: boolean, position: Vec3): Rendered => {
@@ -55,7 +70,9 @@ export const createCharacterViews = (scene: THREE.Scene): CharacterViews => {
     if (r === undefined) {
       const rig = createCharacterRig({ colors: isSelf ? SELF_COLORS : PEER_COLORS })
       scene.add(rig.root)
-      r = { rig, animator: createAnimator(), last: { ...position }, speed: 0, yaw: 0 }
+      // Seed from the entity id so a session is reproducible, and so two characters do not roll the
+      // same sequence of steps — the variation is still per movement, not a fixed personality.
+      r = { rig, animator: createAnimator(gait, (id as number) * 2654435761), last: { ...position }, speed: 0, yaw: 0 }
       chars.set(id, r)
     }
     return r
@@ -74,7 +91,7 @@ export const createCharacterViews = (scene: THREE.Scene): CharacterViews => {
   }
 
   return {
-    upsert: (id, { isSelf, position, yaw, speed, grounded, rising, name }, dt) => {
+    upsert: (id, { isSelf, position, yaw, speed, grounded, rising, carry, name }, dt) => {
       const r = charFor(id, isSelf, position)
 
       // Derived motion, from the interpolated render position.
@@ -96,6 +113,7 @@ export const createCharacterViews = (scene: THREE.Scene): CharacterViews => {
           speed: speed ?? r.speed,
           grounded,
           rising,
+          carry: carry ?? NO_CARRY,
         },
         dt,
       )

@@ -72,6 +72,13 @@ export interface CharacterState {
   grounded: boolean
   /** Set while standing on a moving piece; `undefined` on static ground or in the air. */
   base: MovementBase | undefined
+  /**
+   * World velocity (m/s) the character received that its own locomotion did not ask for: a platform
+   * carrying it, a sweeping piece shoving it, a wall taking its momentum away. Purely an output —
+   * nothing in the step reads it — and the signal an animator needs to show inertia, since none of
+   * this appears in `vx`/`vy`/`vz`.
+   */
+  carry: Vec3
 }
 
 const addVec = (a: Vec3, b: Vec3): Vec3 => vec3(a.x + b.x, a.y + b.y, a.z + b.z)
@@ -97,6 +104,7 @@ export const addCharacterWith = (world: PhysicsWorld, spawn: Vec3, opts: Partial
   vy: 0,
   grounded: false,
   base: undefined,
+  carry: vec3(0, 0, 0),
 })
 
 export const addCharacter = (world: PhysicsWorld, spawn: Vec3): CharacterState => ({
@@ -106,6 +114,7 @@ export const addCharacter = (world: PhysicsWorld, spawn: Vec3): CharacterState =
   vy: 0,
   grounded: false,
   base: undefined,
+  carry: vec3(0, 0, 0),
 })
 
 // Move `cur` toward `target` by at most `maxDelta` (frame-rate-independent accel).
@@ -211,6 +220,14 @@ export const stepCharacter = (
   }
 
   const { grounded, applied } = state.body.move(desired)
+
+  // Everything the controller resolved horizontally that locomotion did not ask for: the ride, a
+  // sweeping piece's shove, and a wall taking momentum away. Vertically it is the ride alone —
+  // `applied.y` also cancels the gravity nudge on every grounded tick, and taking that difference
+  // would report a permanent upward push from the floor holding us up. Snap-to-ground and autostep
+  // land in `applied.y` for the same reason, which is the other half of why only x/z come from it.
+  state.carry = vec3((applied.x - state.vx * dt) / dt, riding ? ride!.y / dt : 0, (applied.z - state.vz * dt) / dt)
+
   // Either signal counts as footing: the probe covers the controller's flicker, and the controller
   // covers surfaces the probe's narrow ray misses (standing on an edge, wedged against geometry).
   // The probe was taken before this step ran, so it must not vouch for a tick that jumped away.

@@ -37,6 +37,8 @@ import {
   TICK_RATE_HZ,
   type CharacterState,
   type CharacterTuning,
+  DEFAULT_GAIT,
+  type GaitTuning,
 } from '@mp/character'
 import { instantiateLevel, validateLevel, type LoadedLevel } from '@mp/content'
 import { getLocale, matchLocale, onLocaleChange, setLocale, t, type TranslationKey } from '@mp/i18n'
@@ -122,8 +124,10 @@ stage.setRenderStep(() => {
   r.autoClear = true
 })
 
-// Player views (own + peers): capsule + facing-nose + billboard nametag. See characterView.ts.
-const views = createCharacterViews(stage.scene)
+// Player views (own + peers): the blocky rig, procedurally animated, + billboard nametag.
+// One shared gait object so the debug pane retunes every character live (ADR 0018).
+const gait: GaitTuning = { ...DEFAULT_GAIT }
+const views = createCharacterViews(stage.scene, gait)
 
 // --- camera orbit (mouselook via pointer lock) ---
 const camera = stage.camera
@@ -202,6 +206,61 @@ rp.addBinding(renderParams, 'bloom').on('change', (e) => {
 rp.addBinding(renderParams, 'bloomStrength', { min: 0, max: 1.5, step: 0.05, label: 'bloom str' }).on('change', (e) => {
   postfx.bloom.strength = e.value
 })
+
+// Gait feel (ADR 0018). Read fresh every frame by every character's animator, so these are live.
+const gf = pane.addFolder({ title: 'Gait (procedural)', expanded: false })
+gf.addBinding(gait, 'bob', { min: 0, max: 0.3, step: 0.005, label: 'body bob m' })
+gf.addBinding(gait, 'lean', { min: 0, max: 0.6, step: 0.01, label: 'lean rad' })
+gf.addBinding(gait, 'torsoTwist', { min: 0, max: 0.5, step: 0.01, label: 'torso twist' })
+gf.addBinding(gait, 'armSwing', { min: 0, max: 2.5, step: 0.05, label: 'arm swing' })
+gf.addBinding(gait, 'armOutward', { min: 0, max: 0.6, step: 0.01, label: 'arm splay' })
+gf.addBinding(gait, 'elbowBase', { min: 0, max: 1.5, step: 0.05, label: 'elbow rest' })
+gf.addBinding(gait, 'elbowFold', { min: 0, max: 2.5, step: 0.05, label: 'elbow fold' })
+gf.addBinding(gait, 'footLift', { min: 0, max: 0.6, step: 0.01, label: 'foot lift m' })
+gf.addBinding(gait, 'strideWalk', { min: 0.3, max: 2, step: 0.05, label: 'stride walk m' })
+gf.addBinding(gait, 'strideRun', { min: 0.5, max: 3, step: 0.05, label: 'stride run m' })
+gf.addBinding(gait, 'landCrouch', { min: 0, max: 1.5, step: 0.05, label: 'land crouch' })
+gf.addBinding(gait, 'yawHalfLife', { min: 0.01, max: 0.4, step: 0.01, label: 'turn smooth s' })
+// Runs past 1 (the life-like amount) on purpose: the per-quantity spreads are only ±14–30%, so
+// exaggeration is the only way to see what is varying while tuning it.
+gf.addBinding(gait, 'variation', { min: 0, max: 10, step: 0.1, label: 'variation' })
+
+// Idle. Its own layer on a time clock, since the gait scales everything by speed and contributes
+// nothing at a standstill. `settle` is load-bearing, not cosmetic: standing legs are at full
+// extension, so without it nothing else here can move without lifting a foot.
+const idf = pane.addFolder({ title: 'Idle', expanded: false })
+idf.addBinding(gait, 'idleSettle', { min: 0, max: 0.12, step: 0.005, label: 'settle m' })
+idf.addBinding(gait, 'breathPeriod', { min: 1, max: 10, step: 0.1, label: 'breath period s' })
+idf.addBinding(gait, 'breathDepth', { min: 0, max: 0.06, step: 0.002, label: 'breath depth m' })
+idf.addBinding(gait, 'idleShiftPeriod', { min: 0.5, max: 10, step: 0.1, label: 'shift every s' })
+idf.addBinding(gait, 'idleSway', { min: 0, max: 0.12, step: 0.005, label: 'hip sway m' })
+idf.addBinding(gait, 'idleRoll', { min: 0, max: 0.2, step: 0.005, label: 'torso tilt rad' })
+
+// Inertia (ADR 0018). Responds to the *derivative* of motion the character did not ask for, so a
+// platform at a steady speed shows nothing and its starts, stops and corners show everything. Each
+// weight is that part's own lag; parts inherit their parent's, so a forearm ends up lagging most.
+const inf = pane.addFolder({ title: 'Inertia', expanded: false })
+inf.addBinding(gait, 'inertiaStrength', { min: 0, max: 3, step: 0.05, label: 'strength' })
+inf.addBinding(gait, 'inertiaHalfLife', { min: 0.02, max: 0.5, step: 0.01, label: 'looseness s' })
+inf.addBinding(gait, 'inertiaBody', { min: 0, max: 2, step: 0.05, label: 'w torso' })
+inf.addBinding(gait, 'inertiaHead', { min: 0, max: 2, step: 0.05, label: 'w head' })
+inf.addBinding(gait, 'inertiaUpperArm', { min: 0, max: 3, step: 0.05, label: 'w upper arm' })
+inf.addBinding(gait, 'inertiaLowerArm', { min: 0, max: 3, step: 0.05, label: 'w forearm' })
+inf.addBinding(gait, 'inertiaHip', { min: 0, max: 0.15, step: 0.005, label: 'hip lag m' })
+inf.addBinding(gait, 'inertiaVertical', { min: 0, max: 0.15, step: 0.005, label: 'compress m' })
+inf.addBinding(gait, 'inertiaFloat', { min: 0, max: 1, step: 0.05, label: 'arm float rad' })
+
+// Air pose. Rising and falling are separate shapes (ADR 0018) — the outward rolls are what make a
+// jump visible at all from a camera sitting behind the character.
+const af = pane.addFolder({ title: 'Jump / air pose', expanded: false })
+af.addBinding(gait, 'airArmRise', { min: -1, max: 3, step: 0.05, label: 'arm pitch ↑' })
+af.addBinding(gait, 'airArmOutRise', { min: 0, max: 1.6, step: 0.05, label: 'arm splay ↑' })
+af.addBinding(gait, 'airElbowRise', { min: 0, max: 2.5, step: 0.05, label: 'elbow ↑' })
+af.addBinding(gait, 'airTuckRise', { min: 0, max: 0.6, step: 0.01, label: 'knee tuck ↑ m' })
+af.addBinding(gait, 'airArmFall', { min: -1, max: 3, step: 0.05, label: 'arm pitch ↓' })
+af.addBinding(gait, 'airArmOutFall', { min: 0, max: 1.6, step: 0.05, label: 'arm splay ↓' })
+af.addBinding(gait, 'airElbowFall', { min: 0, max: 2.5, step: 0.05, label: 'elbow ↓' })
+af.addBinding(gait, 'airTuckFall', { min: 0, max: 0.6, step: 0.01, label: 'knee tuck ↓ m' })
 
 
 // --- netcode (Colyseus rooms, ADR 0013) ---
@@ -442,6 +501,8 @@ stage.start(() => {
         speed: ownState !== null ? Math.hypot(ownState.vx, ownState.vz) : 0,
         grounded: ownState?.grounded ?? true,
         rising: (ownState?.vy ?? 0) > 0,
+        // Motion we did not ask for — a platform carrying us, a bar shoving us, a wall stopping us.
+        carry: ownState?.carry ?? null,
         name: myName,
       },
       frameDt,
@@ -461,6 +522,7 @@ stage.start(() => {
           speed: null,
           grounded: (e.flags & STATE_GROUNDED) !== 0,
           rising: (e.flags & STATE_RISING) !== 0,
+          carry: null, // not derivable from position alone — see CharacterPlacement.carry
           name: names.get(e.id) ?? '…',
         },
         frameDt,
