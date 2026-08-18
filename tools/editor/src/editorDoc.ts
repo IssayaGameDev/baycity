@@ -17,6 +17,9 @@ import {
   spawnPad,
   spiralStaircase,
   staircase,
+  visualMaterial,
+  visualModel,
+  visualStyle,
   walkInstances,
   type Behavior,
   type ColliderDesc,
@@ -57,6 +60,10 @@ export interface MeshSpec {
   collider: ColliderDesc
   transform: Transform
   style: string | undefined
+  /** Model asset id — drawn instead of the collider's greybox shape. */
+  model: string | undefined
+  /** Material asset id — replaces the greybox style. */
+  material: string | undefined
 }
 
 /**
@@ -73,6 +80,8 @@ export interface ItemProps {
   pieceLevel: boolean
   style: string
   trigger: TriggerChoice
+  /** Material asset id, or `''` for none. Piece-level, like `trigger`: a material belongs to the piece. */
+  material: string
 }
 
 export interface Doc {
@@ -82,6 +91,12 @@ export interface Doc {
   meshSpecs: (i: number) => MeshSpec[]
   palette: () => string[]
   place: (name: string, position: Vec3) => number
+  /**
+   * Place a model asset: a one-piece prefab whose visual is the mesh and whose collider is an authored box.
+   * Visual is not collision (ADR 0014), so a detailed prop collides as a shape somebody can see and resize
+   * rather than as its own triangles.
+   */
+  placeModel: (assetId: string, position: Vec3) => number
   remove: (i: number) => void
   duplicate: (i: number) => number
   /** Display name: the typed name if there is one, else what the item is (prefab id / collider kind). */
@@ -122,6 +137,8 @@ export interface Doc {
    * index, or `from` unchanged if the move is illegal.
    */
   reparent: (from: number, parent: number | null, at: number) => number
+  /** Assets every item in the document references — what to preload before drawing it. */
+  assetIds: () => string[]
   props: (i: number) => ItemProps
   setProps: (i: number, p: ItemProps) => void
   /** The prefab id this item references, or `null` for an inline definition / a piece. */
@@ -252,7 +269,9 @@ export const levelDoc = (level: Level, library: Record<string, Prefab>): Doc => 
       return resolvePrefab(level, inst).pieces.map((pc) => ({
         collider: pc.collider,
         transform: pc.transform,
-        style: inst.style ?? pc.visual?.style,
+        style: inst.style ?? visualStyle(pc.visual),
+        model: visualModel(pc.visual),
+        material: visualMaterial(pc.visual),
       }))
     },
     // Kit makers, prefab files on disk, and whatever this level already defines — a prefab authored
@@ -270,6 +289,23 @@ export const levelDoc = (level: Level, library: Record<string, Prefab>): Doc => 
       }
       // Placing lands at the top level, as in Unity; parent it afterwards by dragging.
       const inst: PrefabInstance = { prefab: id, transform: { position } }
+      level.instances.push(inst)
+      return indexOfInstance(inst)
+    },
+    placeModel: (assetId, position) => {
+      const inst: PrefabInstance = {
+        prefab: {
+          id: 'model',
+          pieces: [
+            {
+              collider: { kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) },
+              transform: { position: vec3(0, 0, 0) },
+              visual: { kind: 'model', asset: assetId },
+            },
+          ],
+        },
+        transform: { position },
+      }
       level.instances.push(inst)
       return indexOfInstance(inst)
     },
@@ -338,7 +374,25 @@ export const levelDoc = (level: Level, library: Record<string, Prefab>): Doc => 
       if (!sameList) tidy(v.parent)
       return indexOfInstance(v.inst)
     },
-    props: (i) => ({ ...readBehavior(at(i)!.inst.behavior), pieceLevel: false, style: at(i)!.inst.style ?? '', trigger: 'none' }),
+    assetIds: () => {
+      const ids = new Set<string>()
+      for (const v of visits()) {
+        for (const pc of resolvePrefab(level, v.inst).pieces) {
+          const model = visualModel(pc.visual)
+          const material = visualMaterial(pc.visual)
+          if (model !== undefined) ids.add(model)
+          if (material !== undefined) ids.add(material)
+        }
+      }
+      return [...ids]
+    },
+    props: (i) => ({
+      ...readBehavior(at(i)!.inst.behavior),
+      pieceLevel: false,
+      style: at(i)!.inst.style ?? '',
+      trigger: 'none',
+      material: '',
+    }),
     setProps: (i, p) => {
       const inst = at(i)!.inst
       const b = makeBehavior(p)
@@ -369,12 +423,28 @@ export const prefabDoc = (prefab: Prefab): Doc => {
     mode: 'prefab',
     count: () => pieces.length,
     transformOf: (i) => pieces[i]!.transform,
-    meshSpecs: (i) => [{ collider: pieces[i]!.collider, transform: { position: vec3(0, 0, 0) }, style: pieces[i]!.visual?.style }],
+    meshSpecs: (i) => [
+      {
+        collider: pieces[i]!.collider,
+        transform: { position: vec3(0, 0, 0) },
+        style: visualStyle(pieces[i]!.visual),
+        model: visualModel(pieces[i]!.visual),
+        material: visualMaterial(pieces[i]!.visual),
+      },
+    ],
     palette: () => Object.keys(PRIMITIVES),
     place: (name, position) => {
       const piece = (PRIMITIVES[name] ?? PRIMITIVES['box']!)()
       piece.transform = { position }
       pieces.push(piece)
+      return pieces.length - 1
+    },
+    placeModel: (assetId, position) => {
+      pieces.push({
+        collider: { kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) },
+        transform: { position },
+        visual: { kind: 'model', asset: assetId },
+      })
       return pieces.length - 1
     },
     remove: (i) => void pieces.splice(i, 1),
@@ -394,6 +464,16 @@ export const prefabDoc = (prefab: Prefab): Doc => {
       else pc.name = name
     },
     move: (from, to) => moveWithin(pieces, from, to),
+    assetIds: () => {
+      const ids = new Set<string>()
+      for (const pc of pieces) {
+        const model = visualModel(pc.visual)
+        const material = visualMaterial(pc.visual)
+        if (model !== undefined) ids.add(model)
+        if (material !== undefined) ids.add(material)
+      }
+      return [...ids]
+    },
     // A prefab is flat by design (ADR 0014): pieces have no children and cannot be reparented.
     depthOf: () => 0,
     parentOf: () => null,
@@ -404,14 +484,27 @@ export const prefabDoc = (prefab: Prefab): Doc => {
     reparent: (from) => from,
     props: (i) => {
       const pc = pieces[i]!
-      return { ...readBehavior(pc.behavior), pieceLevel: true, style: pc.visual?.style ?? '', trigger: pc.trigger ?? 'none' }
+      return {
+        ...readBehavior(pc.behavior),
+        pieceLevel: true,
+        style: visualStyle(pc.visual) ?? '',
+        trigger: pc.trigger ?? 'none',
+        material: visualMaterial(pc.visual) ?? '',
+      }
     },
     setProps: (i, p) => {
       const pc = pieces[i]!
       const b = makeBehavior(p)
       if (b !== undefined) pc.behavior = b
       else delete pc.behavior
-      if (p.style !== '') pc.visual = { kind: 'primitive', style: p.style }
+      // The visual is rebuilt from the fields rather than patched, so clearing the last one removes the
+      // key instead of leaving `{ kind: 'primitive' }` behind.
+      const model = visualModel(pc.visual)
+      const style = p.style === '' ? undefined : p.style
+      const material = p.material === '' ? undefined : p.material
+      if (model !== undefined) pc.visual = { kind: 'model', asset: model, ...(material !== undefined ? { material } : {}) }
+      else if (style !== undefined || material !== undefined)
+        pc.visual = { kind: 'primitive', ...(style !== undefined ? { style } : {}), ...(material !== undefined ? { material } : {}) }
       else delete pc.visual
       if (p.trigger === 'none') delete pc.trigger
       else pc.trigger = p.trigger

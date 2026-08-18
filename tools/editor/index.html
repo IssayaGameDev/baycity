@@ -281,13 +281,30 @@
         color: var(--dim);
       }
 
-      /* ---- palette ---- */
+      /* ---- project panel ---- */
       #palette {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 6px;
+      }
+      .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        flex: 0 0 auto;
+      }
+      .tab {
+        padding: 2px 8px;
+        font-size: 11px;
+      }
+      .tiles {
         display: flex;
         flex-wrap: wrap;
         align-content: flex-start;
         gap: 4px;
-        padding: 6px;
+        overflow: auto;
+        min-height: 0;
       }
       .tile {
         padding: 4px 9px;
@@ -296,6 +313,110 @@
         background: var(--accent);
         border-color: var(--accent);
         color: #fff;
+      }
+      .tile.new {
+        border-style: dashed;
+      }
+      /* A texture's tile is the texture; everything else is named. */
+      .tile.has-thumb {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        padding: 4px;
+        max-width: 92px;
+      }
+      .tile .thumb {
+        width: 64px;
+        height: 64px;
+        object-fit: contain;
+        background: #0e1013 repeating-conic-gradient(#1b1e23 0% 25%, transparent 0% 50%) 50% / 12px 12px;
+        border-radius: 2px;
+      }
+      .tile.has-thumb {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-size: 11px;
+      }
+      .asset-preview {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 0 0 auto;
+        min-height: 0;
+      }
+      .asset-preview img {
+        max-height: 96px;
+        max-width: 40%;
+        object-fit: contain;
+        border: 1px solid var(--line);
+      }
+      .asset-preview .caption {
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .font-sample {
+        font-size: 20px;
+      }
+
+      /* ---- asset inspector (materials) ---- */
+      #asset-inspector {
+        padding: 6px;
+      }
+      .a-head {
+        margin-bottom: 6px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--line);
+      }
+      .a-name {
+        font-weight: 600;
+      }
+      .a-meta {
+        color: var(--dim);
+        font-size: 10px;
+        word-break: break-all;
+      }
+      .a-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 4px;
+      }
+      .a-label {
+        flex: 0 0 92px;
+        color: var(--dim);
+      }
+      .a-row > :not(.a-label) {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .a-vec,
+      .a-texture {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+        min-width: 0;
+      }
+      .a-vec input {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+      .a-texture select {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .a-texture .thumb {
+        width: 24px;
+        height: 24px;
+        object-fit: cover;
+        border: 1px solid var(--line);
+        border-radius: 2px;
+        flex: 0 0 auto;
+      }
+      .a-warn {
+        color: #f0b849;
+        font-size: 11px;
+        margin: 4px 0;
       }
 
       /* ---- inspector header: name + prefab link (ours, above the tweakpane grid) ---- */
@@ -401,6 +522,9 @@
         color: var(--text);
         font-weight: 600;
       }
+      #status .problem {
+        color: #ff6b6b;
+      }
       #hint {
         position: absolute;
         left: 10px;
@@ -435,12 +559,13 @@
         <div class="panel-body">
           <div id="insp-head"></div>
           <div id="inspector"></div>
+          <div id="asset-inspector"></div>
         </div>
       </div>
 
       <div id="split-bottom" class="splitter"></div>
       <div id="bottom" class="panel">
-        <h2>Prefabs — click one, then click in the viewport</h2>
+        <h2>Project — prefabs and models place on click; anything else opens in the Inspector</h2>
         <div id="palette" class="panel-body"></div>
       </div>
 

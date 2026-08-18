@@ -10,7 +10,7 @@ import {
   type CharacterTuning,
 } from '@mp/character'
 import { createLocalController, type LocalController, type LocalWorld } from '@mp/client'
-import { instantiateLevel, platform, type Level, type LoadedLevel, type Prefab } from '@mp/content'
+import { assetsOfKind, instantiateLevel, platform, type Level, type LoadedLevel, type Prefab } from '@mp/content'
 import { createSimClock, eulerToQuat, quat, startFixedLoop, vec3, type EntityId, type LoopHandle, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
@@ -22,16 +22,20 @@ import {
   createThreeStage,
   geometryForCollider,
   OrbitControls,
+  createAssetRuntime,
   STYLE_PALETTE,
   THREE,
   TransformControls,
+  type AssetRuntime,
   type LevelView,
 } from '@mp/render-three'
 import { levelDoc, prefabDoc, type Doc, type Mode } from './editorDoc'
 import { listFiles, loadLevel, loadPrefab, saveFile, type FileKind } from './filesApi'
 import { createHierarchy, type Hierarchy } from './hierarchy'
 import { createInspector, type Inspector } from './inspector'
-import { createPalette, type Palette } from './palette'
+import { createAssetInspector, type AssetInspector } from './assetInspector'
+import { loadAssetLibrary, type AssetLibrary } from './assetsApi'
+import { createProjectPanel, type Project } from './projectPanel'
 import { createSplitter, readPx, writePx } from './splitter'
 import { createToolbar, type GizmoMode, type GizmoSpace, type Toolbar } from './toolbar'
 
@@ -76,7 +80,17 @@ const markerGroup = new THREE.Group()
 stage.scene.add(instanceRoot, markerGroup)
 let instanceGroups: THREE.Group[] = []
 let selected: number | null = null
-let placing: string | null = null // a palette entry name awaiting a click to place
+/**
+ * What a viewport click will place. A prefab is named (the palette's key); a model is an asset id, and
+ * placing one wraps it in a one-piece inline prefab whose collider is authored — visual is not collision,
+ * so a detailed prop still collides as a box somebody can resize.
+ */
+type Placing = { kind: 'prefab'; name: string } | { kind: 'model'; assetId: string }
+let placing: Placing | null = null
+/** Loaded assets. Both arrive at boot, before any document is opened. */
+let assets: AssetLibrary | null = null
+let runtime: AssetRuntime | null = null
+let selectedAsset: string | null = null
 const edit: { mode: GizmoMode; snap: boolean; step: number; space: GizmoSpace } = {
   mode: 'translate',
   snap: true,
@@ -152,11 +166,26 @@ const buildItemMeshes = (g: THREE.Group, i: number): void => {
   if (doc === null) return
   const holder = meshHolderOf(g)
   for (const spec of doc.meshSpecs(i)) {
-    const mesh = new THREE.Mesh(geometryForCollider(spec.collider), createStyleMaterial(spec.style))
-    applyTransform(mesh, spec.transform.position, spec.transform.rotation, spec.transform.scale)
-    mesh.castShadow = true
-    mesh.receiveShadow = true
-    holder.add(mesh)
+    // The same precedence the game's level view uses, so the editor is never showing a different scene:
+    // a model replaces the greybox shape, a material replaces the greybox style, and either falling
+    // through leaves the piece as its collider in its style colour.
+    const model = spec.model !== undefined ? (runtime?.model(spec.model) ?? null) : null
+    const material = spec.material !== undefined ? (runtime?.material(spec.material) ?? null) : null
+    let object: THREE.Object3D
+    if (model !== null) {
+      if (material !== null) model.traverse((o) => void (o instanceof THREE.Mesh && (o.material = material)))
+      object = model
+    } else {
+      object = new THREE.Mesh(geometryForCollider(spec.collider), material ?? createStyleMaterial(spec.style))
+    }
+    applyTransform(object, spec.transform.position, spec.transform.rotation, spec.transform.scale)
+    object.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        o.castShadow = true
+        o.receiveShadow = true
+      }
+    })
+    holder.add(object)
   }
 }
 
@@ -387,6 +416,11 @@ const select = (index: number): void => {
   // put a handle in mid-air over a level you are walking. The Hierarchy panel can reach here too, so the
   // guard belongs on the selection itself rather than on the viewport's click handler alone.
   if (playing) return
+  // The Inspector shows one thing: a scene item or an asset, never both.
+  if (selectedAsset !== null) {
+    selectedAsset = null
+    assetInspector.show(null)
+  }
   const g = instanceGroups[index]
   if (g === undefined || doc === null) return
   selected = index
@@ -434,7 +468,8 @@ canvas.addEventListener('pointerup', (e) => {
     const snap = edit.snap ? edit.step : 0
     const sx = snap !== 0 ? Math.round(point.x / snap) * snap : r4(point.x)
     const sz = snap !== 0 ? Math.round(point.z / snap) * snap : r4(point.z)
-    const idx = doc.place(placing, vec3(sx, r4(point.y), sz))
+    const at = vec3(sx, r4(point.y), sz)
+    const idx = placing.kind === 'prefab' ? doc.place(placing.name, at) : doc.placeModel(placing.assetId, at)
     placing = null
     buildItems()
     rebuildLoaded()
@@ -811,13 +846,62 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
   },
 })
 
-// --- palette ---
-const palette: Palette = createPalette($<HTMLDivElement>('#palette'), {
-  names: () => doc?.palette() ?? [],
-  armed: () => placing,
-  onPick: (name) => {
-    placing = placing === name ? null : name // clicking the armed tile disarms it
+// --- project panel (prefabs + assets) ---
+const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
+  prefabs: () => doc?.palette() ?? [],
+  db: () => assets?.db ?? null,
+  urlOf: (path) => assets?.urlOf(path) ?? path,
+  armed: () => (placing === null ? null : placing.kind === 'prefab' ? placing.name : placing.assetId),
+  selectedAsset: () => selectedAsset,
+  onPickPrefab: (name) => {
+    // Clicking the armed tile disarms it, so there is a way out of placement without placing.
+    placing = placing?.kind === 'prefab' && placing.name === name ? null : { kind: 'prefab', name }
     refreshUi()
+  },
+  onPickModel: (assetId) => {
+    placing = placing?.kind === 'model' && placing.assetId === assetId ? null : { kind: 'model', assetId }
+    refreshUi()
+  },
+  onSelectAsset: (assetId) => {
+    // Selecting an asset and selecting something in the scene are the same slot in the Inspector, so
+    // one clears the other rather than both claiming it.
+    selectedAsset = assetId
+    deselect()
+    assetInspector.show(assetId)
+    refreshUi()
+  },
+  onCreateMaterial: () => {
+    void (async () => {
+      if (assets === null) return
+      const created = await assets.createMaterial(`material-${Date.now()}`, {
+        shader: 'standard',
+        params: {},
+      })
+      await reloadAssets()
+      if (created !== undefined) {
+        selectedAsset = created.id
+        assetInspector.show(created.id)
+      }
+      refreshUi()
+    })()
+  },
+})
+
+// --- asset inspector (materials) ---
+const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#asset-inspector'), {
+  db: () => assets?.db ?? null,
+  urlOf: (path) => assets?.urlOf(path) ?? path,
+  materialOf: (id) => assets?.materialOf(id),
+  onMaterialChanged: (id, material) => {
+    void (async () => {
+      if (assets === null) return
+      await assets.saveMaterial(id, material).catch((e: unknown) => setStatus(`save failed: ${String(e)}`))
+      // Recompile and redraw: a material edit has to show on every piece using it, immediately.
+      await reloadAssets()
+      assetInspector.show(id)
+      buildItems()
+      refreshUi()
+    })()
   },
 })
 
@@ -864,19 +948,40 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     if (selected !== null) openPrefabOf(selected)
   },
   styles: Object.keys(STYLE_PALETTE),
+  materials: () => {
+    const options: Record<string, string> = { '(none)': '' }
+    const db = assets?.db
+    if (db !== undefined) for (const m of assetsOfKind(db, 'material')) options[m.name] = m.id
+    return options
+  },
 })
 
 // --- status bar ---
+/** Transient: what just happened. Cleared whenever the document changes, since it would then be a lie. */
 let statusMsg = ''
+/**
+ * Persistent: something is broken and stays broken until it is fixed. Kept apart from `statusMsg`
+ * because it was not: a failed asset load set a message, and the level load immediately after it wiped
+ * it — leaving an empty Project panel and no reason anywhere on screen.
+ */
+let problemMsg = ''
 const setStatus = (msg: string): void => {
   statusMsg = msg
+  renderStatus()
+}
+const setProblem = (msg: string): void => {
+  problemMsg = msg
   renderStatus()
 }
 const renderStatus = (): void => {
   const parts: string[] = [breadcrumb()]
   if (selected !== null && doc !== null) parts.push(`selected #${selected} (${doc.label(selected)})`)
-  if (placing !== null) parts.push(`click in the viewport to place <b>${placing}</b>`)
+  if (placing !== null) {
+    const what = placing.kind === 'prefab' ? placing.name : (assets?.db.byId[placing.assetId]?.name ?? 'model')
+    parts.push(`click in the viewport to place <b>${what}</b>`)
+  }
   if (statusMsg !== '') parts.push(statusMsg)
+  if (problemMsg !== '') parts.push(`<span class="problem">${problemMsg}</span>`)
   statusBar.innerHTML = parts.filter((p) => p !== '').join(' · ')
 }
 
@@ -884,7 +989,7 @@ const renderStatus = (): void => {
 const refreshUi = (): void => {
   toolbar.render()
   hierarchy.render()
-  palette.render()
+  project.render()
   renderStatus()
 }
 uiChanged = refreshUi
@@ -960,8 +1065,36 @@ stage.start(() => {
   }
 })
 
+/**
+ * (Re)read the asset database and rebuild the runtime, then fetch everything the open document needs.
+ *
+ * Loading is a separate pass from drawing on purpose: `buildItems` is synchronous, so a piece is never
+ * briefly a grey box that becomes a model a moment later. The cost is that every asset edit reloads the
+ * runtime, which at this scale is cheaper than tracking which cache entries a change invalidated.
+ */
+const reloadAssets = async (): Promise<void> => {
+  try {
+    assets = await loadAssetLibrary()
+    setProblem('')
+  } catch (e) {
+    // The usual cause is a dev server started before these routes existed, which answers /api/assets with
+    // the index page — so say what to do rather than only what failed.
+    setProblem(`assets did not load (${String(e)}) — restart pnpm dev:editor`)
+    return
+  }
+  runtime?.dispose()
+  const library = assets
+  runtime = createAssetRuntime({
+    db: library.db,
+    urlOf: library.urlOf,
+    materialOf: library.materialOf,
+  })
+  await runtime.load(doc?.assetIds() ?? [])
+}
+
 // --- boot ---
 await initPhysics()
 applySnap()
+await reloadAssets()
 await refreshPrefabLibrary()
 await enterMode('level')

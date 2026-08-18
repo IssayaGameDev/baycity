@@ -1,0 +1,28 @@
+{
+  "shader": "standard",
+  "params": {
+    "color": {
+      "kind": "color",
+      "value": "#ffffff"
+    },
+    "metalness": {
+      "kind": "number",
+      "value": 0.0
+    },
+    "roughness": {
+      "kind": "number",
+      "value": 0.6
+    },
+    "albedo": {
+      "kind": "texture",
+      "value": "f8935251f352b8da"
+    },
+    "tiling": {
+      "kind": "vec2",
+      "value": {
+        "x": 2,
+        "y": 2
+      }
+    }
+  }
+}

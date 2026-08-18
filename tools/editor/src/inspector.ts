@@ -39,6 +39,8 @@ export interface InspectorHost {
   openPrefab: () => void
   /** Style palette keys, in the order they should be offered. */
   styles: readonly string[]
+  /** Material assets to offer, as Tweakpane options (label → asset id; `''` for none). */
+  materials: () => Record<string, string>
 }
 
 export interface Inspector {
@@ -151,6 +153,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     axis: { x: 0, y: 1, z: 0 },
     style: '',
     trigger: 'none' as TriggerChoice,
+    material: '',
   }
 
   const styleOptions: Record<string, string> = { '(default)': '' }
@@ -189,6 +192,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       pieceLevel: doc.mode === 'prefab',
       style: prop.style,
       trigger: prop.trigger,
+      material: prop.material,
     }
     doc.setProps(at, p)
     host.onPropsChanged()
@@ -211,6 +215,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     prop.direction = dirNameOf(p.axis)
     prop.style = p.style
     prop.trigger = p.trigger
+    prop.material = p.material
 
     const pos = { step: 0.1 }
     const rot = { step: 1 }
@@ -230,6 +235,9 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
           .addBinding(prop, 'trigger', { label: 'trigger', options: { none: 'none', checkpoint: 'checkpoint', goal: 'goal', hazard: 'hazard' } })
           .on('change', applyProps),
       )
+      // A material belongs to the piece, like the trigger does — it is part of what the prefab *is*, so
+      // every instance of it gets the same surface unless one overrides the style.
+      blades.push(pane.addBinding(prop, 'material', { label: 'material', options: host.materials() }).on('change', applyProps))
     }
 
     blades.push(

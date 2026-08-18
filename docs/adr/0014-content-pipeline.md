@@ -78,7 +78,7 @@ rendering and feel, not art.
 ## Rejected
 
 - **Blender / glTF art now** — no artist; greybox from rendering + feel. glTF is in the schema,
-  not built.
+  not built. **Built since: ADR 0026 consumes the seam** (models, textures, materials by asset id).
 - **Trimesh colliders from the art mesh** — authored primitives instead (crisp/cheap for the KCC).
 - **Distance-based triggers** — replaced by real engine contact after distance heuristics kept
   mis-firing (fired under a floating pad, missed side contact).

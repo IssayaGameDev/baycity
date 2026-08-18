@@ -27,7 +27,15 @@ import {
   STATE_RISING,
 } from '@mp/net'
 import { createPhysicsWorld, initPhysics, type PhysicsBody, type PhysicsWorld } from '@mp/physics'
-import { createThreeStage, applyGreyboxEnvironment, createPostFX, addLevel, type LevelView } from '@mp/render-three'
+import {
+  addLevel,
+  applyGreyboxEnvironment,
+  assetIdsIn,
+  createAssetRuntime,
+  createPostFX,
+  createThreeStage,
+  type LevelView,
+} from '@mp/render-three'
 import {
   addCharacter,
   CHAR_HALF_HEIGHT,
@@ -55,6 +63,7 @@ import { BODY_LAYERS } from './layers'
 import { OVERLAY_LAYER } from './nametag'
 import { createPauseMenu } from './pauseMenu'
 import { createRagdoll, type Ragdoll } from './ragdoll'
+import { ASSET_DB, assetUrlOf, materialOf } from './assets'
 import { GYM, levelByName } from './levels'
 import { localParkourPersistence } from './persistence'
 
@@ -604,7 +613,11 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
 
   // Build the level's greybox meshes via the shared renderer (content C3). Marker pads are
   // just their (colour-coded) box here; radius/overlay visualization belongs in the viewer.
-  levelView = addLevel(stage.scene, loaded.visuals)
+  // Assets first, then build: `addLevel` is synchronous, so a level is never briefly walkable with its
+  // models still arriving. Anything unreferenced is never fetched, so a greybox level costs nothing.
+  const assets = createAssetRuntime({ db: ASSET_DB, urlOf: assetUrlOf, materialOf })
+  await assets.load(assetIdsIn(loaded.visuals))
+  levelView = addLevel(stage.scene, loaded.visuals, { assets })
   // Gameplay triggers are the pads' own colliders (content C5 seam): the engine reports
   // real contact via char.body.collisions() — no distance heuristics.
   const checkpointTriggers = loaded.triggers.filter((t) => t.kind === 'checkpoint')

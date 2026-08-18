@@ -1,8 +1,9 @@
 import { axisAngleToQuat, eulerToQuat, lerpVec3, mulQuat, quat, rotateVec3, slerpQuat, vec3, type Quat, type Vec3 } from '@mp/core'
 import type { PhysicsBody, PhysicsWorld, ShapeDesc } from '@mp/physics'
 
+import { visualMaterial, visualModel, visualStyle } from './assets'
 import { resolvePrefab } from './resolve'
-import type { Behavior, ColliderDesc, Level, LevelConfig, Marker, PrefabInstance, Transform, TriggerKind, Visual } from './types'
+import type { Behavior, ColliderDesc, Level, LevelConfig, Marker, PrefabInstance, Transform, TriggerKind } from './types'
 
 /**
  * Turns level data into a live world: adds Rapier colliders (fixed for static pieces,
@@ -36,7 +37,10 @@ export interface VisualItem {
   position: Vec3
   rotation: Quat
   style: string | undefined
-  gltf: string | undefined
+  /** Model asset id, when this piece draws a mesh instead of its collider's greybox shape. */
+  model: string | undefined
+  /** Material asset id, overriding the greybox style. */
+  material: string | undefined
 }
 
 /**
@@ -148,8 +152,6 @@ const add = (a: Vec3, b: Vec3): Vec3 => vec3(a.x + b.x, a.y + b.y, a.z + b.z)
 const mul = (a: Vec3, b: Vec3): Vec3 => vec3(a.x * b.x, a.y * b.y, a.z * b.z)
 const rotationOf = (t: Transform): Quat => (t.rotation !== undefined ? eulerToQuat(t.rotation) : quat())
 const scaleOf = (t: Transform): Vec3 => t.scale ?? vec3(1, 1, 1)
-const styleOf = (v: Visual | undefined): string | undefined => v?.style
-const gltfOf = (v: Visual | undefined): string | undefined => (v?.kind === 'gltf' ? v.src : undefined)
 
 // Bake a per-axis scale into a collider's dimensions (Unity's lossy-scale → shape bake). Ball
 // and capsule can't represent non-uniform scale, so they take a uniform-ish approximation.
@@ -278,8 +280,9 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
         // An instance's style override beats the prefab's own — that is what an override is, and it
         // applies to every piece, so recolouring a placed pad recolours all of it. It does not cascade
         // to children: a child is its own placement with its own override.
-        style: inst.style ?? styleOf(piece.visual),
-        gltf: gltfOf(piece.visual),
+        style: inst.style ?? visualStyle(piece.visual),
+        model: visualModel(piece.visual),
+        material: visualMaterial(piece.visual),
       }
       visuals.push(visual)
 

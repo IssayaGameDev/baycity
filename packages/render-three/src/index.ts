@@ -19,6 +19,11 @@ export { applyGreyboxEnvironment } from './environment'
 export type { PostFX, PostFXOptions } from './postfx'
 export { createPostFX } from './postfx'
 export type { LevelView, LevelViewOptions, MarkersView } from './levelView'
+// Assets: shaders + materials (parameterising Three, not an engine) and the preload runtime.
+export { BUILTIN_SHADERS, compileMaterial, defaultParams, registerShader, shaderDef } from './shaders'
+export type { ParamReader, ShaderDef, ShaderParam, ShaderParamKind } from './shaders'
+export { assetIdsIn, createAssetRuntime } from './assetRuntime'
+export type { AssetRuntime, AssetRuntimeOptions } from './assetRuntime'
 export { addLevel, addMarkers } from './levelView'
 
 // Blocky character rig (10 parts, no skinning) — shape and motion come from @mp/character.

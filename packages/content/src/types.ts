@@ -37,13 +37,20 @@ export type ColliderDesc =
   | { readonly kind: 'convex'; readonly points: readonly Vec3[] }
 
 /**
- * The swappable visual layer. `primitive` greyboxes the collider shape (now); `gltf`
- * is a real mesh (later, not built). `style` selects a palette entry (the visual
- * language). Swapping greybox → art never touches collision.
+ * The swappable visual layer, and the only place content meets art. Collision never changes with it.
+ *
+ * - `primitive` greyboxes the collider shape. `style` picks a palette entry (the greybox visual language);
+ *   `material` overrides that with a material **asset id**, which is how a piece stops being greybox
+ *   without stopping being an authored primitive.
+ * - `model` draws a mesh asset instead, by **asset id**. The collider stays authored, so a detailed prop
+ *   still collides as the box someone chose.
+ *
+ * Was `{ kind: 'gltf', src }` — a path. Ids replaced it (see `assets.ts`) before anything consumed it, so
+ * no content had to migrate.
  */
 export type Visual =
-  | { readonly kind: 'primitive'; readonly style?: string }
-  | { readonly kind: 'gltf'; readonly src: string; readonly style?: string }
+  | { readonly kind: 'primitive'; readonly style?: string; readonly material?: string }
+  | { readonly kind: 'model'; readonly asset: string; readonly material?: string }
 
 /** Gameplay triggers fired by real contact with a piece's collider — the mode decides the
  * rule (save checkpoint / reach goal / respawn on hazard). */

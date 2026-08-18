@@ -16,6 +16,7 @@ const props = (over: Partial<ItemProps> = {}): ItemProps => ({
   pieceLevel: false,
   style: '',
   trigger: 'none',
+  material: '',
   ...over,
 })
 

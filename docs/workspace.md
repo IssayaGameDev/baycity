@@ -21,7 +21,7 @@ strict, source-first (no build step at this stage).
 - `tools/editor` — localhost level/prefab editor (`pnpm dev:editor`; ADR 0023 authoring, ADR 0024 UI): fixed-panel DOM shell (toolbar/hierarchy/viewport/inspector/palette/status, CSS grid + hand-rolled splitters), prefab references + instance overrides, play-in-place on the real controller. Tweakpane is the Inspector panel only. Reads/writes `content/` through a Vite dev-server file API (`vite.config.ts`), so it is a dev tool only. → character, client, content, core, physics, render-three
 - `tools/share` — opt-in remote debugging (`pnpm share`): relay + page behind two Cloudflare quick tunnels, prints one link. No workspace deps; shells out to `cloudflared`.
 - `modes/parkour` — the parkour mode on Colyseus rooms (`colyseus.js`): Roblox-like controller, auto-join, nametags, data-driven level (kit sampler), physics-trigger checkpoints/hazard/fall + persistence adapter. (Rename of `games/tps`.) → character, client, content, core, net, physics, render-three
-- `content/` — level + prefab JSON (`levels/`, `prefabs/`), what `tools/editor` reads and writes and what the parkour mode loads by name (`?level=<file>`; no param → the code gym). Shared content, not a package. See ADR 0023.
+- `content/` — level + prefab JSON (`levels/`, `prefabs/`) and the **asset tree** (`assets/`: textures, models, materials, shaders, sounds, fonts, each with a `.meta` sidecar holding its id — ADR 0026). What `tools/editor` reads and writes, and what the parkour mode loads by name (`?level=<file>`; no param → the code gym). Shared content, not a package. See ADR 0023.
 - `infra/` — empty placeholder; populated later (SEED §7).
 
 The server is a client-authoritative relay (ADR 0011) hosted on **Colyseus** (ADR 0013,
