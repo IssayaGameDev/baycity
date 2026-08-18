@@ -25,13 +25,18 @@ export interface PreviewHost {
    * yet has never been compiled, and its tile would be blank for ever.
    */
   ensureLoaded: (assetId: string) => Promise<void>
-  /** A previously-blank tile can now be drawn. Redraw the panel. */
-  onReady: () => void
 }
+
+export type PreviewKind = 'prefab' | 'model' | 'material' | 'shader' | 'texture'
 
 export interface Previews {
   /** A data URL for this tile, or `null` when the kind has no rendered preview. Cached. */
-  of: (kind: 'prefab' | 'model' | 'material' | 'shader' | 'texture', key: string) => string | null
+  of: (kind: PreviewKind, key: string) => string | null
+  /**
+   * Ask for a preview and be called back once, whether it was cached, had to be rendered, or had to be
+   * fetched first. One tile's answer fills one tile — a newly loaded asset does not redraw the panel.
+   */
+  request: (kind: PreviewKind, key: string, done: (url: string | null) => void) => void
   /** Forget one entry (an edited material) or everything (a reimport). */
   invalidate: (key?: string) => void
   dispose: () => void
@@ -86,27 +91,44 @@ export const createPreviews = (host: PreviewHost): Previews => {
   }
 
   /** Whether the runtime can now answer for this id — the test for "did the fetch actually help". */
-  const isLoaded = (kind: string, key: string): boolean =>
+  const isLoaded = (kind: PreviewKind, key: string): boolean =>
     kind === 'model' ? host.runtime()?.model(key) != null : host.runtime()?.material(key) != null
 
+  /** Callers waiting on the same asset, so one fetch answers all of them. */
+  const waiting = new Map<string, ((url: string | null) => void)[]>()
+
   /**
-   * Fetch a missing asset once, then ask for a redraw. Nothing here retries: an id that is fetched and
+   * Fetch a missing asset once, then answer everyone who asked. Nothing retries: an id that is fetched and
    * still absent is dangling, and asking again on every redraw would be a loop.
    */
-  const request = (kind: string, key: string): void => {
-    if (pending.has(key) || failed.has(key)) return
+  const fetchThen = (kind: PreviewKind, key: string, done: (url: string | null) => void): void => {
+    if (failed.has(key)) {
+      done(null)
+      return
+    }
+    const id = `${kind}:${key}`
+    const queue = waiting.get(id)
+    if (queue !== undefined) {
+      queue.push(done)
+      return
+    }
+    waiting.set(id, [done])
     pending.add(key)
     void host
       .ensureLoaded(key)
       .catch(() => {})
       .finally(() => {
         pending.delete(key)
+        const callbacks = waiting.get(id) ?? []
+        waiting.delete(id)
         if (!isLoaded(kind, key)) {
           failed.add(key)
+          for (const cb of callbacks) cb(null)
           return
         }
-        cache.delete(`${kind}:${key}`)
-        host.onReady()
+        cache.delete(id)
+        const url = of(kind, key)
+        for (const cb of callbacks) cb(url)
       })
   }
 
@@ -119,16 +141,12 @@ export const createPreviews = (host: PreviewHost): Previews => {
     if (kind === 'material' || kind === 'shader') {
       // Only a material compiles to something previewable; a shader asset has no values of its own yet.
       const compiled = host.runtime()?.material(key)
-      if (compiled != null) return lazy().renderMaterial(compiled)
-      request(kind, key)
-      return null
+      return compiled == null ? null : lazy().renderMaterial(compiled)
     }
 
     if (kind === 'model') {
       const model = host.runtime()?.model(key)
-      if (model != null) return lazy().render(model)
-      request(kind, key)
-      return null
+      return model == null ? null : lazy().render(model)
     }
 
     const prefab = host.prefabFor(key)
@@ -140,8 +158,8 @@ export const createPreviews = (host: PreviewHost): Previews => {
     return url
   }
 
-  return {
-    of: (kind, key) => {
+  const of = (kind: PreviewKind, key: string): string | null => {
+    {
       const id = `${kind}:${key}`
       const hit = cache.get(id)
       if (hit !== undefined) return hit
@@ -154,6 +172,20 @@ export const createPreviews = (host: PreviewHost): Previews => {
       }
       cache.set(id, made)
       return made
+    }
+  }
+
+  return {
+    of,
+    request: (kind, key, done) => {
+      const made = of(kind, key)
+      // Null with nothing loaded yet means "not fetched", which is worth one fetch. Null after a fetch is
+      // a dangling id, and `fetchThen` remembers that so a redraw cannot loop on it.
+      if (made !== null || kind === 'prefab' || kind === 'texture' || isLoaded(kind, key)) {
+        done(made)
+        return
+      }
+      fetchThen(kind, key, done)
     },
     invalidate: (key) => {
       // A reimport can turn a dangling id into a real one, so forget the failures too.

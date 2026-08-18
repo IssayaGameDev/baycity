@@ -31,8 +31,12 @@ Tuning: `moveSpeed 5.5`, `jumpHeight 3`, `gravity 55` (Kodjo's values, above the
 | +2.0 m | 2.8 m |
 | +2.5 m | 2.5 m |
 
-≈0.35 m of reach per metre climbed, bought back by dropping. `modes/parkour/src/gym.test.ts`
-encodes this table and asserts every authored jump in the level is inside it.
+≈0.35 m of reach per metre climbed, bought back by dropping.
+
+**Nothing currently asserts that authored content respects this table.** `gym.test.ts` used to, against the
+code-built gym; both are deleted (ADR 0027). The numbers above are still measured by
+`packages/character/src/envelope*.test.ts` — what is missing is a check over a *level*, which belongs in the
+editor as a reachability gizmo rather than a test over a fixture.
 
 ### Lateral margin on a beam
 
@@ -83,7 +87,12 @@ approach angle, visibility, chain length, vertical direction.
 
 ### Built
 
-| Piece | Where | Parameters |
+**The pieces below no longer exist as code.** The kit and its generators are deleted (ADR 0027): geometry is
+authored in the editor as prefab assets. The vocabulary is kept here because it is what the measurements
+above *mean* — a beam is a footing-area obstacle whatever produces it — and because anything rebuilt as a
+prefab should be rebuilt to these numbers.
+
+| Piece | Was | Parameters that mattered |
 |---|---|---|
 | `beam` | `@mp/content` kit | `length`, `width` — margin per the table above |
 | `padChain` | `@mp/content` generators | `pads`, `padSize`, `gap` (edge to edge), `rise`, `lateral` |
@@ -111,11 +120,12 @@ Difficulty on a curve is as much **camera** as footing: movement is camera-relat
 hairpin means swinging the view through 180° while holding a narrow line. Tune with radius before
 width.
 
-### Courses in the gym
+### Courses that were built, and are gone
 
-`modes/parkour/src/showcase.ts`. Both run **outside** the 64 m ground slab so stepping off is a
-real fall, with tops flush at y = 0 so you walk straight on. Each obstacle is preceded by a
-checkpoint pad that doubles as its entry platform.
+`modes/parkour/src/showcase.ts` — **deleted with the kit (ADR 0027)**. Kept here as a record of what the
+levers above produced when they were exercised, and as parameters to rebuild against. All three ran
+**outside** the ground slab so stepping off was a real fall, tops flush at y = 0 so you walked straight on,
+each obstacle preceded by a checkpoint pad that doubled as its entry platform.
 
 - **Beam course**, +z from the slab edge: widths 1.2 → 0.8 → 0.4 m, pieces abutting, nothing to
   jump. Holding a line — an introduction, deliberately simple.
@@ -126,7 +136,7 @@ checkpoint pad that doubles as its entry platform.
   turn (r 6, −120°, 0.8) → S-bend with no rest between halves (r 5, ±90°, 0.6) → hairpin
   (r 4, 180°, 0.8). Built by chaining exit points, so the seams are exact by construction.
 
-`courses` is exported from `showcase.ts` in walk order. `gym.test.ts` checks **every seam between
-consecutive pieces** against the gap table, using rotated world AABBs so turned pieces get truthful
-extents. The first version of that test only checked jumps *within* a pad chain, which is how a
-5.4 m step to a goal pad shipped; the seam check reproduces that failure if the pad is moved back.
+`gym.test.ts` checked **every seam between consecutive pieces** against the gap table, using rotated world
+AABBs so turned pieces got truthful extents. The first version only checked jumps *within* a pad chain, which
+is how a 5.4 m step to a goal pad shipped. Both are deleted; the lesson is the one worth keeping for whatever
+replaces them — **check the seams, not the pieces**.

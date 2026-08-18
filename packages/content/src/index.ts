@@ -27,15 +27,3 @@ export type { InstanceVisit } from './resolve'
 export type { LoadedLevel, WorldMarker, WorldTrigger, VisualItem } from './loader'
 export { instantiateLevel } from './loader'
 
-export { KIT_STYLE, platform, ledge, beam, ramp, gapJump, movingPlatform, rotatingBar, spawnPad, checkpointPad, goalPad, hazardPad } from './kit'
-export type {
-  PlatformOpts,
-  BeamOpts,
-  RampOpts,
-  GapJumpOpts,
-  MovingPlatformOpts,
-  RotatingBarOpts,
-  PadOpts,
-} from './kit'
-export { staircase, spiralStaircase, padChain, curvedBeam, curvedBeamExit } from './generators'
-export type { StaircaseOpts, SpiralStaircaseOpts, PadChainOpts, CurvedBeamOpts } from './generators'

@@ -5,14 +5,16 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 
 import { importAssets } from './src/assetImporter'
+import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './src/assetOps'
 
-// Levels + prefabs live at repo-root content/ (shared, mode-agnostic) — the same files the game loads.
+// Levels live at repo-root content/levels (shared, mode-agnostic) — the same files the game loads. Prefabs
+// used to sit beside them; they are assets now (`*.prefab.json` under content/assets), so they get ids that
+// survive a rename, folders and previews.
 const DIRS: Record<string, string> = {
   levels: fileURLToPath(new URL('../../content/levels', import.meta.url)),
-  prefabs: fileURLToPath(new URL('../../content/prefabs', import.meta.url)),
 }
 const ASSETS_DIR = fileURLToPath(new URL('../../content/assets', import.meta.url))
-const ROUTE_RE = /^\/api\/(levels|prefabs)(?:\/([\w-]+))?$/
+const ROUTE_RE = /^\/api\/(levels)(?:\/([\w-]+))?$/
 
 const CONTENT_TYPES: Record<string, string> = {
   png: 'image/png',
@@ -62,14 +64,17 @@ const readBody = async (req: IncomingMessage): Promise<string> =>
 
 /**
  * Dev-server file API for editing content on disk:
- *   GET  /api/{levels|prefabs}        → string[] of names (filenames without .json)
- *   GET  /api/{levels|prefabs}/:name  → the JSON
- *   PUT  /api/{levels|prefabs}/:name  → write the JSON (pretty-printed)
+ *   GET  /api/levels        → string[] of names (filenames without .json)
+ *   GET  /api/levels/:name  → the JSON
+ *   PUT  /api/levels/:name  → write the JSON (pretty-printed)
  *
  * And the asset tree at content/assets/:
- *   GET  /api/assets            → the database (runs the importer, so sidecars exist before anyone looks)
+ *   GET  /api/assets            → the database + folder list (runs the importer, so sidecars exist first)
+ *   POST /api/assets/mkdir      → { path }
+ *   POST /api/assets/move       → { from, to } — rename or move; the sidecar goes too, so ids survive
+ *   POST /api/assets/delete     → { path } — a file (with its sidecar) or a folder and its contents
  *   GET  /assets/<path>         → the bytes, for a texture, model, sound or font
- *   PUT  /assets/<path>         → write a JSON asset (a material the editor authored)
+ *   PUT  /assets/<path>         → write a JSON asset (a material or prefab the editor authored)
  */
 const filesApi = (): Plugin => ({
   name: 'files-api',
@@ -83,7 +88,34 @@ const filesApi = (): Plugin => ({
       if (url === '/api/assets' && req.method === 'GET') {
         const { entries, created } = importAssets(ASSETS_DIR)
         if (created.length > 0) console.log(`assets: wrote ${created.length} sidecar(s)`)
-        sendJson(res, 200, { entries })
+        // Folders are sent alongside: an *empty* one exists on disk and no asset path implies it.
+        sendJson(res, 200, { entries, folders: listFolders(ASSETS_DIR) })
+        return
+      }
+
+      // Mutations. All POST rather than PUT/DELETE: one body-reading path, and the verb is in the route.
+      const op = /^\/api\/assets\/(mkdir|move|delete)$/.exec(url)
+      if (op !== null) {
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { error: 'POST expected' })
+          return
+        }
+        void readBody(req).then((body) => {
+          try {
+            const args = JSON.parse(body) as { path?: unknown; from?: unknown; to?: unknown }
+            const str = (v: unknown, name: string): string => {
+              if (typeof v !== 'string') throw new AssetOpError(`${name}: expected a string`)
+              return v
+            }
+            if (op[1] === 'mkdir') makeFolder(ASSETS_DIR, str(args.path, 'path'))
+            else if (op[1] === 'move') movePath(ASSETS_DIR, str(args.from, 'from'), str(args.to, 'to'))
+            else removePath(ASSETS_DIR, str(args.path, 'path'))
+            sendJson(res, 200, { ok: true })
+          } catch (e) {
+            // An operation refused for a stated reason is a 400 the editor can show; anything else is a bug.
+            sendJson(res, e instanceof AssetOpError || e instanceof SyntaxError ? 400 : 500, { error: String(e) })
+          }
+        })
         return
       }
 
@@ -125,7 +157,7 @@ const filesApi = (): Plugin => ({
       next()
     })
 
-    // --- levels + prefabs ---
+    // --- levels ---
     server.middlewares.use((req, res, next) => {
       const url = (req.url ?? '').split('?')[0] ?? ''
       const m = ROUTE_RE.exec(url)

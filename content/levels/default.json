@@ -1,0 +1,428 @@
+{
+  "id": "default",
+  "config": {
+    "fallBehavior": "respawn-checkpoint",
+    "fallY": -6
+  },
+  "instances": [
+    {
+      "prefab": {
+        "id": "ground",
+        "pieces": [
+          {
+            "collider": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 20,
+                "y": 0.5,
+                "z": 20
+              }
+            },
+            "transform": {
+              "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "visual": {
+              "kind": "primitive",
+              "style": "ground"
+            }
+          }
+        ]
+      },
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -0.5,
+          "z": 0
+        }
+      }
+    },
+    {
+      "prefab": {
+        "id": "step",
+        "pieces": [
+          {
+            "collider": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 2,
+                "y": 0.2,
+                "z": 2
+              }
+            },
+            "transform": {
+              "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "visual": {
+              "kind": "primitive",
+              "style": "platform"
+            }
+          }
+        ]
+      },
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0.2,
+          "z": 6
+        }
+      }
+    },
+    {
+      "prefab": {
+        "id": "rise-1",
+        "pieces": [
+          {
+            "collider": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.15,
+                "z": 1.5
+              }
+            },
+            "transform": {
+              "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "visual": {
+              "kind": "primitive",
+              "style": "platform"
+            }
+          }
+        ]
+      },
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 1.2,
+          "z": 11
+        }
+      }
+    },
+    {
+      "prefab": {
+        "id": "rise-2",
+        "pieces": [
+          {
+            "collider": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.15,
+                "z": 1.5
+              }
+            },
+            "transform": {
+              "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "visual": {
+              "kind": "primitive",
+              "style": "platform"
+            }
+          }
+        ]
+      },
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 2.4,
+          "z": 16
+        }
+      }
+    },
+    {
+      "prefab": {
+        "id": "rise-3",
+        "pieces": [
+          {
+            "collider": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.15,
+                "z": 1.5
+              }
+            },
+            "transform": {
+              "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "visual": {
+              "kind": "primitive",
+              "style": "platform"
+            }
+          }
+        ]
+      },
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 3.6,
+          "z": 21
+        }
+      }
+    },
+    {
+      "prefab": {
+        "id": "checkpoint",
+        "pieces": [
+          {
+            "collider": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.1,
+                "z": 1.5
+              }
+            },
+            "transform": {
+              "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "visual": {
+              "kind": "primitive",
+              "style": "checkpoint"
+            },
+            "trigger": "checkpoint"
+          }
+        ]
+      },
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 3.7,
+          "z": 26
+        }
+      }
+    },
+    {
+      "prefab": {
+        "id": "landing",
+        "pieces": [
+          {
+            "collider": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 2,
+                "y": 0.15,
+                "z": 2
+              }
+            },
+            "transform": {
+              "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "visual": {
+              "kind": "primitive",
+              "style": "platform"
+            }
+          }
+        ]
+      },
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 3.6,
+          "z": 32
+        }
+      }
+    },
+    {
+      "prefab": {
+        "id": "elevator",
+        "pieces": [
+          {
+            "collider": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.15,
+                "z": 1.5
+              }
+            },
+            "transform": {
+              "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "visual": {
+              "kind": "primitive",
+              "style": "moving"
+            }
+          }
+        ]
+      },
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 3.6,
+          "z": 37
+        }
+      },
+      "behavior": {
+        "kind": "move",
+        "axis": {
+          "x": 0,
+          "y": 1,
+          "z": 0
+        },
+        "distance": 3,
+        "periodMs": 4000
+      }
+    },
+    {
+      "prefab": {
+        "id": "turntable",
+        "pieces": [
+          {
+            "collider": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 3,
+                "y": 0.15,
+                "z": 0.6
+              }
+            },
+            "transform": {
+              "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "visual": {
+              "kind": "primitive",
+              "style": "moving"
+            }
+          }
+        ]
+      },
+      "transform": {
+        "position": {
+          "x": 8,
+          "y": 1,
+          "z": 16
+        }
+      },
+      "behavior": {
+        "kind": "rotate",
+        "axis": {
+          "x": 0,
+          "y": 1,
+          "z": 0
+        },
+        "periodMs": 6000
+      }
+    },
+    {
+      "prefab": {
+        "id": "hazard",
+        "pieces": [
+          {
+            "collider": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.1,
+                "z": 1.5
+              }
+            },
+            "transform": {
+              "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "visual": {
+              "kind": "primitive",
+              "style": "hazard"
+            },
+            "trigger": "hazard"
+          }
+        ]
+      },
+      "transform": {
+        "position": {
+          "x": -6,
+          "y": 0.1,
+          "z": 6
+        }
+      }
+    },
+    {
+      "prefab": {
+        "id": "goal",
+        "pieces": [
+          {
+            "collider": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 2,
+                "y": 0.15,
+                "z": 2
+              }
+            },
+            "transform": {
+              "position": {
+                "x": 0,
+                "y": 0,
+                "z": 0
+              }
+            },
+            "visual": {
+              "kind": "primitive",
+              "style": "goal"
+            },
+            "trigger": "goal"
+          }
+        ]
+      },
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 6.7,
+          "z": 42
+        }
+      }
+    }
+  ],
+  "markers": [
+    {
+      "kind": "spawn",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      }
+    }
+  ]
+}

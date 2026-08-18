@@ -14,10 +14,10 @@ import type { Visual } from './types'
  * Headless: this is the schema and the resolution rules. Loading a texture or compiling a material is a
  * renderer's job (`@mp/render-three`), and playing a sound is nobody's yet.
  */
-export type AssetKind = 'texture' | 'model' | 'material' | 'shader' | 'sound' | 'font'
+export type AssetKind = 'prefab' | 'texture' | 'model' | 'material' | 'shader' | 'sound' | 'font'
 
 /** Every kind, for iteration in a browser panel and for validation. */
-export const ASSET_KINDS: readonly AssetKind[] = ['texture', 'model', 'material', 'shader', 'sound', 'font']
+export const ASSET_KINDS: readonly AssetKind[] = ['prefab', 'texture', 'model', 'material', 'shader', 'sound', 'font']
 
 /**
  * What a `.meta` sidecar holds. Written once by the importer and then never regenerated — the id *is* the
@@ -72,6 +72,16 @@ export type MaterialValue =
   | { kind: 'texture'; value: string | null }
 
 /**
+ * A **prefab asset** (`*.prefab.json`): a reusable prefab on disk, in a folder, with an id that survives being
+ * renamed or moved. What it is *not* is what a level references. Placing one still interns a copy into
+ * `Level.prefabs` under a table id (ADR 0023), so a level stays self-contained and moving a prefab file can
+ * never leave a level without geometry. The asset id names the *file*; the table id names the level's copy.
+ *
+ * Kit makers (`platform()`, `beam()`) are code, not files, and stay out of the tree: they are parametric,
+ * which is exactly the reason to keep them that way.
+ */
+
+/**
  * A material asset: **a shader plus values for its parameters**. Materials are instances of shaders, so
  * the property set is the shader's, not the schema's — which is what keeps a custom shader from needing a
  * change here, and what lets one generic inspector edit any material.
@@ -118,6 +128,7 @@ export const kindForPath = (path: string): AssetKind | undefined => {
   if (lower.endsWith(META_SUFFIX)) return undefined
   if (lower.endsWith('.mat.json')) return 'material'
   if (lower.endsWith('.shader.json')) return 'shader'
+  if (lower.endsWith('.prefab.json')) return 'prefab'
   const dot = lower.lastIndexOf('.')
   if (dot < 0) return undefined
   return BY_EXTENSION[lower.slice(dot + 1)]
@@ -126,7 +137,7 @@ export const kindForPath = (path: string): AssetKind | undefined => {
 /** Display name: the file name with its extension (compound ones included) removed. */
 export const nameForPath = (path: string): string => {
   const file = path.slice(path.lastIndexOf('/') + 1)
-  for (const suffix of ['.mat.json', '.shader.json']) {
+  for (const suffix of ['.mat.json', '.shader.json', '.prefab.json']) {
     if (file.toLowerCase().endsWith(suffix)) return file.slice(0, -suffix.length)
   }
   const dot = file.lastIndexOf('.')

@@ -64,7 +64,7 @@ import { OVERLAY_LAYER } from './nametag'
 import { createPauseMenu } from './pauseMenu'
 import { createRagdoll, type Ragdoll } from './ragdoll'
 import { ASSET_DB, assetUrlOf, materialOf } from './assets'
-import { GYM, levelByName } from './levels'
+import { DEFAULT_NAME, levelByName } from './levels'
 import { localParkourPersistence } from './persistence'
 
 // Relay endpoint. Defaults to the dev host on :9200. `?server=wss://host` overrides it, so a
@@ -72,8 +72,8 @@ import { localParkourPersistence } from './persistence'
 const SERVER_URL = new URLSearchParams(location.search).get('server') ?? `ws://${location.hostname}:9200`
 
 /**
- * Which level: `?level=<name>` picks a file from `content/levels/`, no param gets the built-in gym
- * (ADR 0023). A typo falls back to the gym rather than bricking the page, and says so in the console.
+ * Which level: `?level=<name>` picks a file from `content/levels/`, no param gets `default.json`. A typo
+ * falls back to the default rather than bricking the page, and says so in the console.
  *
  * The name also picks the **room** — see `connect`. Everyone sharing a room has to be on the same
  * level: the geometry differs, and so does the movement-base index a rider puts on the wire, which is
@@ -82,13 +82,13 @@ const SERVER_URL = new URLSearchParams(location.search).get('server') ?? `ws://$
  */
 const levelName = ((): string => {
   const requested = new URLSearchParams(location.search).get('level')
-  if (requested === null) return GYM
+  if (requested === null) return DEFAULT_NAME
   try {
     levelByName(requested)
     return requested
   } catch (e) {
-    console.error(`${String(e)} — falling back to the gym`)
-    return GYM
+    console.error(`${String(e)} — falling back to ${DEFAULT_NAME}`)
+    return DEFAULT_NAME
   }
 })()
 const levelData = levelByName(levelName)

@@ -1,22 +1,7 @@
 import {
-  beam,
-  checkpointPad,
-  curvedBeam,
   freeTableId,
-  gapJump,
-  goalPad,
-  hazardPad,
   instancesOf,
-  ledge,
-  movingPlatform,
-  padChain,
-  platform,
-  ramp,
   resolvePrefab,
-  rotatingBar,
-  spawnPad,
-  spiralStaircase,
-  staircase,
   visualMaterial,
   visualModel,
   visualStyle,
@@ -90,6 +75,7 @@ export interface Doc {
   transformOf: (i: number) => Transform
   meshSpecs: (i: number) => MeshSpec[]
   palette: () => string[]
+  /** Place a palette entry. `-1` when the name is not in the library or this level's table. */
   place: (name: string, position: Vec3) => number
   /**
    * Place a model asset: a one-piece prefab whose visual is the mesh and whose collider is an authored box.
@@ -97,6 +83,12 @@ export interface Doc {
    * rather than as its own triangles.
    */
   placeModel: (assetId: string, position: Vec3) => number
+  /**
+   * Place a prefab that came from a file. The prefab is **interned as a copy** into `Level.prefabs`, exactly
+   * as a kit piece is, so the level stays self-contained: moving or deleting the prefab *file* afterwards can
+   * never leave the level without geometry. The asset id names the file; the table id names this copy.
+   */
+  placePrefab: (prefab: Prefab, position: Vec3) => number
   /**
    * The prefab a palette entry would place, without placing it — what a Project tile previews. Resolved
    * through the same sources as `place`, so a tile cannot show something other than what it will put down.
@@ -160,27 +152,6 @@ export interface Doc {
   /** Save writes under a file name; the id follows it, or the two silently diverge. */
   setId: (id: string) => void
 }
-
-const KIT: Record<string, () => Prefab> = {
-  platform: () => platform(),
-  ledge: () => ledge(),
-  beam: () => beam(),
-  ramp: () => ramp(),
-  'gap jump': () => gapJump(),
-  'moving platform': () => movingPlatform(),
-  'rotating bar': () => rotatingBar(),
-  staircase: () => staircase(),
-  'spiral staircase': () => spiralStaircase(),
-  'pad chain': () => padChain(),
-  'curved beam': () => curvedBeam(),
-  'spawn pad': () => spawnPad(),
-  'checkpoint pad': () => checkpointPad(),
-  'goal pad': () => goalPad(),
-  'hazard pad': () => hazardPad(),
-}
-
-/** Every kit maker the palette offers — exported so a test can catch the kit growing past it. */
-export const KIT_NAMES: readonly string[] = Object.keys(KIT)
 
 // Primitive pieces for prefab mode. Only shapes the physics loader supports (no cylinder).
 const PRIMITIVES: Record<string, () => Piece> = {
@@ -279,20 +250,32 @@ export const levelDoc = (level: Level, library: Record<string, Prefab>): Doc => 
         material: visualMaterial(pc.visual),
       }))
     },
-    // Kit makers, prefab files on disk, and whatever this level already defines — a prefab authored
-    // here is placeable again without a round trip through a file.
-    palette: () => [...new Set([...Object.keys(KIT), ...Object.keys(library), ...Object.keys(level.prefabs ?? {})])],
+    /**
+     * Only what *this level* defines. Prefab **files** are placed from the Project explorer, by asset id, and
+     * listing them here as well is what made one prefab appear twice — first beside the code kit, and then
+     * beside the folder tree after the kit was deleted. A level's own table entries have nowhere else to
+     * appear, so this is what is left.
+     */
+    palette: () => Object.keys(level.prefabs ?? {}),
     place: (name, position) => {
-      const make = KIT[name]
       let id: string
-      if (make !== undefined) id = intern(make())
-      else if (level.prefabs?.[name] !== undefined) id = name // already this level's own entry
+      if (level.prefabs?.[name] !== undefined) id = name // already this level's own entry
       else {
-        const copy = structuredClone(library[name]!)
+        const source = library[name]
+        // A palette that offers a name the library no longer has is a bug, but not a crash: the file may
+        // have been deleted or renamed between the panel drawing and the click landing.
+        if (source === undefined) return -1
+        const copy = structuredClone(source)
         copy.id = name // a prefab file is known by its file name; the stored id may be stale
         id = intern(copy)
       }
       // Placing lands at the top level, as in Unity; parent it afterwards by dragging.
+      const inst: PrefabInstance = { prefab: id, transform: { position } }
+      level.instances.push(inst)
+      return indexOfInstance(inst)
+    },
+    placePrefab: (prefab, position) => {
+      const id = intern(structuredClone(prefab))
       const inst: PrefabInstance = { prefab: id, transform: { position } }
       level.instances.push(inst)
       return indexOfInstance(inst)
@@ -314,11 +297,7 @@ export const levelDoc = (level: Level, library: Record<string, Prefab>): Doc => 
       level.instances.push(inst)
       return indexOfInstance(inst)
     },
-    prefabForPalette: (name) => {
-      const make = KIT[name]
-      if (make !== undefined) return make()
-      return level.prefabs?.[name] ?? library[name]
-    },
+    prefabForPalette: (name) => level.prefabs?.[name] ?? library[name],
     // Removing takes the subtree with it: children are placed relative to this item and have nowhere
     // to be without it.
     remove: (i) => {
@@ -447,6 +426,15 @@ export const prefabDoc = (prefab: Prefab): Doc => {
       const piece = (PRIMITIVES[name] ?? PRIMITIVES['box']!)()
       piece.transform = { position }
       pieces.push(piece)
+      return pieces.length - 1
+    },
+    // A prefab holds pieces, never prefabs (ADR 0014), so placing one here appends its pieces.
+    placePrefab: (prefab, position) => {
+      for (const piece of prefab.pieces) {
+        const copy = structuredClone(piece)
+        copy.transform = { ...copy.transform, position: vec3(position.x + copy.transform.position.x, position.y + copy.transform.position.y, position.z + copy.transform.position.z) }
+        pieces.push(copy)
+      }
       return pieces.length - 1
     },
     placeModel: (assetId, position) => {

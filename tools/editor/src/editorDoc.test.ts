@@ -1,10 +1,9 @@
-import * as content from '@mp/content'
 import { instantiateLevel, validateLevel, type Level, type Prefab } from '@mp/content'
 import { vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { KIT_NAMES, levelDoc, prefabDoc, type ItemProps } from './editorDoc'
+import { levelDoc, prefabDoc, type ItemProps } from './editorDoc'
 
 const blank = (): Level => ({ id: 'untitled', config: { fallBehavior: 'physical-fall', fallY: -20 }, instances: [] })
 
@@ -25,10 +24,41 @@ const inlineInstance = (id: string, half = vec3(1, 0.5, 1)): Prefab => ({
   pieces: [{ collider: { kind: 'box', halfExtents: half }, transform: { position: vec3(0, 0, 0) } }],
 })
 
+/**
+ * The prefab files a level's palette offers. Generators are gone (ADR 0027), so everything placeable is
+ * data — which is what these stand in for.
+ */
+const LIBRARY: Record<string, Prefab> = {
+  platform: inlineInstance('platform', vec3(1.5, 0.15, 1.5)),
+  ramp: inlineInstance('ramp', vec3(1.5, 0.15, 2)),
+  'moving platform': {
+    id: 'moving platform',
+    pieces: [
+      {
+        collider: { kind: 'box', halfExtents: vec3(1.5, 0.15, 1.5) },
+        transform: { position: vec3(0, 0, 0) },
+        visual: { kind: 'primitive', style: 'moving' },
+      },
+    ],
+    behavior: { kind: 'move', axis: vec3(0, 1, 0), distance: 1.5, periodMs: 4000 },
+  },
+  'checkpoint pad': {
+    id: 'checkpoint pad',
+    pieces: [
+      {
+        collider: { kind: 'box', halfExtents: vec3(1.5, 0.1, 1.5) },
+        transform: { position: vec3(0, 0, 0) },
+        visual: { kind: 'primitive', style: 'checkpoint' },
+        trigger: 'checkpoint',
+      },
+    ],
+  },
+}
+
 describe('levelDoc: placing references, not copies', () => {
-  it('places two of the same kit piece as one table entry and two references', () => {
+  it('places two of the same prefab as one table entry and two references', () => {
     const level = blank()
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
     doc.place('platform', vec3(0, 0, 0))
     doc.place('platform', vec3(4, 0, 0))
 
@@ -39,7 +69,7 @@ describe('levelDoc: placing references, not copies', () => {
 
   it('lets an edit to the shared definition through to every instance', () => {
     const level = blank()
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
     doc.place('platform', vec3(0, 0, 0))
     doc.place('platform', vec3(4, 0, 0))
 
@@ -53,7 +83,7 @@ describe('levelDoc: placing references, not copies', () => {
 
   it('keeps the reference when an instance is duplicated', () => {
     const level = blank()
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
     doc.place('platform', vec3(0, 0, 0))
     const copy = doc.duplicate(0)
 
@@ -71,21 +101,24 @@ describe('levelDoc: placing references, not copies', () => {
     expect(level.prefabs!['FastElevator']!.id).toBe('FastElevator')
   })
 
-  it('offers kit makers, prefab files and the level\'s own entries in the palette', () => {
+  // The palette is only what *this level* defines. Prefab files are placed from the Project explorer by
+  // asset id; listing them here too is what made one prefab appear in two places (ADR 0027).
+  it("offers only the level's own table entries in the palette", () => {
     const level = blank()
-    const doc = levelDoc(level, { MyRamp: inlineInstance('MyRamp') })
+    const doc = levelDoc(level, { ...LIBRARY, MyRamp: inlineInstance('MyRamp') })
+
+    expect(doc.palette(), 'nothing placed yet, so nothing of its own').toEqual([])
+
     doc.place('platform', vec3(0, 0, 0))
 
-    const palette = doc.palette()
-    expect(palette).toContain('platform') // kit
-    expect(palette).toContain('MyRamp') // file
-    expect(new Set(palette).size, 'no duplicate entries when a name appears twice').toBe(palette.length)
+    expect(doc.palette(), 'now it has one').toEqual(['platform'])
+    expect(doc.palette(), "an unplaced prefab file is the explorer's to offer").not.toContain('MyRamp')
   })
 
   it('extracts an inline one-off into a shared entry, keeping its geometry', () => {
     const level = blank()
     level.instances.push({ prefab: inlineInstance('slab', vec3(2, 0.25, 2)), transform: { position: vec3(1, 2, 3) } })
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
 
     expect(doc.refOf(0), 'inline to start with').toBeNull()
     const id = doc.extract(0)
@@ -100,13 +133,13 @@ describe('levelDoc: placing references, not copies', () => {
 
   it('suffixes an extracted prefab whose id is taken by different content', () => {
     const level = blank()
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
     doc.place('platform', vec3(0, 0, 0))
-    // A different shape claiming the name the kit piece already holds.
+    // A different shape claiming the name the placed prefab already holds.
     level.instances.push({ prefab: inlineInstance('platform', vec3(9, 9, 9)), transform: { position: vec3(0, 0, 0) } })
 
     expect(doc.extract(1)).toBe('platform-2')
-    expect(doc.prefabAt('platform')!.pieces[0]!.collider, 'the kit entry is not overwritten').not.toEqual({
+    expect(doc.prefabAt('platform')!.pieces[0]!.collider, 'the existing entry is not overwritten').not.toEqual({
       kind: 'box',
       halfExtents: vec3(9, 9, 9),
     })
@@ -117,7 +150,7 @@ describe('nesting', () => {
   /** Four top-level platforms named a..d, the shape most of these start from. */
   const four = (): { doc: ReturnType<typeof levelDoc>; level: Level } => {
     const level = blank()
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
     for (const n of ['a', 'b', 'c', 'd']) doc.setName(doc.place('platform', vec3(0, 0, 0)), n)
     return { doc, level }
   }
@@ -139,7 +172,7 @@ describe('nesting', () => {
 
   it('keeps the local transform, so the child sits at that offset from its parent', () => {
     const level = blank()
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
     doc.place('platform', vec3(10, 0, 0))
     const child = doc.place('platform', vec3(3, 0, 0))
     doc.reparent(child, 0, 0)
@@ -227,7 +260,7 @@ describe('nesting', () => {
 describe('names', () => {
   it('falls back to the prefab id until one is typed, and keeps the JSON clean', () => {
     const level = blank()
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
     doc.place('platform', vec3(0, 0, 0))
 
     expect(doc.nameOf(0), 'nothing typed').toBe('')
@@ -237,7 +270,7 @@ describe('names', () => {
 
   it('shows a typed name and stores it on the instance', () => {
     const level = blank()
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
     doc.place('platform', vec3(0, 0, 0))
     doc.place('platform', vec3(4, 0, 0))
 
@@ -253,7 +286,7 @@ describe('names', () => {
 
   it('reverts to the fallback when the name is cleared', () => {
     const level = blank()
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
     doc.place('ramp', vec3(0, 0, 0))
 
     doc.setName(0, 'entry ramp')
@@ -274,7 +307,7 @@ describe('names', () => {
 
   it('survives a round trip through validate + JSON', () => {
     const level = blank()
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
     doc.place('platform', vec3(0, 0, 0))
     doc.setName(0, 'start pad')
 
@@ -286,7 +319,7 @@ describe('names', () => {
 describe('reordering', () => {
   const named = (): ReturnType<typeof levelDoc> => {
     const level = blank()
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
     for (const n of ['a', 'b', 'c', 'd']) {
       const i = doc.place('platform', vec3(0, 0, 0))
       doc.setName(i, n)
@@ -354,7 +387,7 @@ describe('reordering', () => {
 describe('levelDoc: instance overrides', () => {
   it('round-trips a style override without touching the shared definition', () => {
     const level = blank()
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
     doc.place('platform', vec3(0, 0, 0))
     doc.place('platform', vec3(4, 0, 0))
 
@@ -368,7 +401,7 @@ describe('levelDoc: instance overrides', () => {
 
   it('drops the override rather than writing an empty string', () => {
     const level = blank()
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
     doc.place('platform', vec3(0, 0, 0))
 
     doc.setProps(0, props({ style: 'hazard' }))
@@ -379,7 +412,7 @@ describe('levelDoc: instance overrides', () => {
 
   it('writes a behavior override onto the instance, not the prefab', () => {
     const level = blank()
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
     doc.place('platform', vec3(0, 0, 0))
     doc.place('platform', vec3(4, 0, 0))
 
@@ -398,7 +431,7 @@ describe('what the editor writes is what the game loads', () => {
 
   it('validates and instantiates, references and overrides included', () => {
     const level = blank()
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
     doc.place('platform', vec3(0, 0, 0))
     doc.place('platform', vec3(4, 0, 0))
     doc.place('moving platform', vec3(8, 2, 0))
@@ -417,42 +450,5 @@ describe('what the editor writes is what the game loads', () => {
     expect(loaded.triggers.map((t) => t.kind)).toContain('checkpoint')
     expect(loaded.baseIndex(loaded.triggers[0]!.colliderHandle), 'a static pad is no movement base').toBeUndefined()
     world.free()
-  })
-})
-
-describe('the palette does not drift behind the kit', () => {
-  /**
-   * Every no-arg callable in `@mp/content` that hands back something with `pieces` is a prefab maker.
-   * Discovered rather than listed, because a hand-kept list is exactly what drifted: `beam`,
-   * `padChain` and `curvedBeam` shipped and then sat unreachable in both the editor palette and the
-   * viewer for four commits. Discovery also caught the reverse — `curvedBeamExit` is not a maker at
-   * all (it returns where a beam *ends*) and had no business being offered as a placeable prefab.
-   */
-  const makers: { name: string; make: () => Prefab }[] = []
-  for (const [name, value] of Object.entries(content as Record<string, unknown>)) {
-    if (typeof value !== 'function') continue
-    try {
-      const out: unknown = (value as () => unknown)()
-      if (typeof out === 'object' && out !== null && Array.isArray((out as { pieces?: unknown }).pieces))
-        makers.push({ name, make: value as () => Prefab })
-    } catch {
-      // Needs arguments, so it is not a maker — `instantiateLevel`, `validateLevel`, `resolvePrefab`.
-    }
-  }
-
-  it('finds the makers at all (the discovery itself could silently break)', () => {
-    expect(makers.length).toBeGreaterThanOrEqual(15)
-  })
-
-  it('has a palette entry for every one of them', () => {
-    const placeable = new Set(
-      KIT_NAMES.map((n) => {
-        const level = blank()
-        levelDoc(level, {}).place(n, vec3(0, 0, 0))
-        return level.prefabs![Object.keys(level.prefabs!)[0]!]!.id
-      }),
-    )
-    const missing = makers.filter(({ make }) => !placeable.has(make().id)).map(({ name }) => name)
-    expect(missing, 'kit makers with no way to place them').toEqual([])
   })
 })

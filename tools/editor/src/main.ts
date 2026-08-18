@@ -10,7 +10,7 @@ import {
   type CharacterTuning,
 } from '@mp/character'
 import { createLocalController, type LocalController, type LocalWorld } from '@mp/client'
-import { assetsOfKind, instantiateLevel, platform, type Level, type LoadedLevel, type Prefab } from '@mp/content'
+import { assetsOfKind, instantiateLevel, type AssetEntry, type Level, type LoadedLevel, type Prefab } from '@mp/content'
 import { createSimClock, eulerToQuat, quat, startFixedLoop, vec3, type EntityId, type LoopHandle, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
@@ -30,11 +30,12 @@ import {
   type LevelView,
 } from '@mp/render-three'
 import { levelDoc, prefabDoc, type Doc, type Mode } from './editorDoc'
-import { listFiles, loadLevel, loadPrefab, saveFile, type FileKind } from './filesApi'
+import { listFiles, loadLevel, saveFile } from './filesApi'
 import { createHierarchy, type Hierarchy } from './hierarchy'
 import { createInspector, type Inspector } from './inspector'
 import { createAssetInspector, type AssetInspector } from './assetInspector'
 import { loadAssetLibrary, type AssetLibrary } from './assetsApi'
+import { canMoveFolder, movedInto, renamedTo } from './assetTree'
 import { createPreviews, type Previews } from './previews'
 import { createProjectPanel, type Project } from './projectPanel'
 import { createSplitter, readPx, writePx } from './splitter'
@@ -82,11 +83,15 @@ stage.scene.add(instanceRoot, markerGroup)
 let instanceGroups: THREE.Group[] = []
 let selected: number | null = null
 /**
- * What a viewport click will place. A prefab is named (the palette's key); a model is an asset id, and
+ * What a viewport click will place. `own` is a prefab this level defines in its own table, named; a model or a
+ * prefab file is an asset id, and
  * placing one wraps it in a one-piece inline prefab whose collider is authored — visual is not collision,
  * so a detailed prop still collides as a box somebody can resize.
  */
-type Placing = { kind: 'prefab'; name: string } | { kind: 'model'; assetId: string }
+type Placing =
+  | { kind: 'own'; name: string }
+  | { kind: 'model'; assetId: string }
+  | { kind: 'prefabAsset'; assetId: string }
 let placing: Placing | null = null
 /** Loaded assets. Both arrive at boot, before any document is opened. */
 let assets: AssetLibrary | null = null
@@ -103,7 +108,8 @@ const edit: { mode: GizmoMode; snap: boolean; step: number; space: GizmoSpace } 
 let playing = false // play-in-place active (editing is suspended)
 let lastSimTickAt = 0
 
-const fileKind = (m: Mode): FileKind => (m === 'level' ? 'levels' : 'prefabs')
+/** Asset id of the prefab open in prefab mode, or `null` for a level or an unsaved prefab. */
+let openPrefabAsset: string | null = null
 
 const r4 = (n: number): number => Math.round(n * 1e4) / 1e4
 const isOne = (v: THREE.Vector3): boolean => Math.abs(v.x - 1) < 1e-4 && Math.abs(v.y - 1) < 1e-4 && Math.abs(v.z - 1) < 1e-4
@@ -355,7 +361,23 @@ const closePrefab = (): void => {
 const blankLevel = (id: string): Level => ({
   id,
   config: { fallBehavior: 'respawn-checkpoint', fallY: -10 },
-  instances: [{ prefab: platform({ width: 20, depth: 20, thickness: 1, style: 'ground' }), transform: { position: vec3(0, -0.5, 0) } }],
+  // A literal ground slab: there are no makers to call any more (ADR 0027), and a new level still has to
+  // have something to stand on.
+  instances: [
+    {
+      prefab: {
+        id: 'ground',
+        pieces: [
+          {
+            collider: { kind: 'box', halfExtents: vec3(10, 0.5, 10) },
+            transform: { position: vec3(0, 0, 0) },
+            visual: { kind: 'primitive', style: 'ground' },
+          },
+        ],
+      },
+      transform: { position: vec3(0, -0.5, 0) },
+    },
+  ],
   markers: [{ kind: 'spawn', transform: { position: vec3(0, 0, 0) } }],
 })
 const blankPrefab = (id: string): Prefab => ({
@@ -470,7 +492,20 @@ canvas.addEventListener('pointerup', (e) => {
     const sx = snap !== 0 ? Math.round(point.x / snap) * snap : r4(point.x)
     const sz = snap !== 0 ? Math.round(point.z / snap) * snap : r4(point.z)
     const at = vec3(sx, r4(point.y), sz)
-    const idx = placing.kind === 'prefab' ? doc.place(placing.name, at) : doc.placeModel(placing.assetId, at)
+    const prefabAsset = placing.kind === 'prefabAsset' ? assets?.prefabOf(placing.assetId) : undefined
+    const idx =
+      placing.kind === 'own'
+        ? doc.place(placing.name, at)
+        : placing.kind === 'model'
+          ? doc.placeModel(placing.assetId, at)
+          : prefabAsset !== undefined
+            ? doc.placePrefab(prefabAsset, at)
+            : -1
+    if (idx < 0) {
+      setStatus('that prefab did not load')
+      placing = null
+      return
+    }
     placing = null
     buildItems()
     rebuildLoaded()
@@ -697,28 +732,45 @@ const statusBar = $<HTMLDivElement>('#status')
 const fileState: { mode: Mode; name: string } = { mode: 'level', name: 'untitled' }
 let fileNames: string[] = []
 
+/** Prefab assets, by name — what the file picker offers in prefab mode. */
+const prefabEntries = (): AssetEntry[] => (assets === null ? [] : assetsOfKind(assets.db, 'prefab'))
+
 const openFile = async (name: string): Promise<void> => {
   try {
-    if (fileState.mode === 'level') setDoc(levelDoc(await loadLevel(name), userPrefabs), name)
-    else setDoc(prefabDoc(await loadPrefab(name)), name)
+    if (fileState.mode === 'level') {
+      openPrefabAsset = null
+      setDoc(levelDoc(await loadLevel(name), userPrefabs), name)
+      return
+    }
+    // A prefab is an asset now, so it is opened by id and saved back to its own path.
+    const entry = prefabEntries().find((e) => e.name === name)
+    const prefab = entry === undefined ? undefined : assets?.prefabOf(entry.id)
+    if (entry === undefined || prefab === undefined) {
+      setStatus(`no prefab asset named ${name}`)
+      return
+    }
+    openPrefabAsset = entry.id
+    setDoc(prefabDoc(prefab), name)
   } catch (e) {
     setStatus(`load failed: ${String(e)}`)
   }
 }
 
-const refreshPrefabLibrary = async (): Promise<void> => {
+/**
+ * The palette's library of prefab files, keyed by name. Two prefabs with the same name in different folders
+ * collide here and the later one wins; placing from the Project explorer is by asset id and has no such
+ * ambiguity, which is the path to prefer.
+ */
+const refreshPrefabLibrary = (): void => {
   for (const k of Object.keys(userPrefabs)) delete userPrefabs[k]
-  for (const n of await listFiles('prefabs').catch(() => [])) {
-    try {
-      userPrefabs[n] = await loadPrefab(n)
-    } catch {
-      // skip a malformed prefab file
-    }
+  for (const entry of prefabEntries()) {
+    const prefab = assets?.prefabOf(entry.id)
+    if (prefab !== undefined) userPrefabs[entry.name] = prefab
   }
 }
 
 const refreshFileList = async (): Promise<void> => {
-  fileNames = await listFiles(fileKind(fileState.mode)).catch(() => [] as string[])
+  fileNames = fileState.mode === 'level' ? await listFiles('levels').catch(() => [] as string[]) : prefabEntries().map((e) => e.name)
   toolbar?.render()
 }
 
@@ -758,16 +810,33 @@ const toolbar: Toolbar = createToolbar(
       // Saving writes the *file*, not whatever prefab is open on top of it, and the id follows the
       // name. Letting them drift is how content/levels ended up with three files all claiming "level1".
       root.setId(fileState.name)
-      void saveFile(fileKind(fileState.mode), fileState.name, root.toJSON())
+      const write = async (): Promise<void> => {
+        if (fileState.mode === 'level') {
+          await saveFile('levels', fileState.name, root.toJSON())
+          return
+        }
+        const prefab = root.toJSON() as Prefab
+        // Overwrite the asset it came from, or create one when this prefab has never been saved.
+        if (openPrefabAsset !== null) await assets?.savePrefab(openPrefabAsset, prefab)
+        else {
+          const created = await assets?.createPrefab(`prefabs/${fileState.name}.prefab.json`, prefab)
+          openPrefabAsset = created?.id ?? null
+        }
+      }
+      void write()
         .then(async () => {
           setStatus(`saved ${fileState.name}`)
-          if (fileState.mode === 'prefab') await refreshPrefabLibrary()
+          previews.invalidate()
+          await reloadAssets()
+          refreshPrefabLibrary()
           await refreshFileList()
+          refreshUi()
         })
         .catch((e: unknown) => setStatus(`save failed: ${String(e)}`))
     },
     newBlank: () => {
       const name = fileState.name || 'untitled'
+      openPrefabAsset = null // a new prefab has no asset yet; the first Save creates one
       setDoc(fileState.mode === 'level' ? levelDoc(blankLevel(name), userPrefabs) : prefabDoc(blankPrefab(name)), name)
     },
     back: closePrefab,
@@ -855,45 +924,68 @@ const previews: Previews = createPreviews({
   urlOf: (path) => assets?.urlOf(path) ?? path,
   // A palette name is a kit maker, a prefab file, or one of this level's own entries — the same three
   // places `place` looks, so a tile previews exactly what clicking it would put in the scene.
-  prefabFor: (name) => doc?.prefabForPalette(name),
+  // A prefab tile's key is either a kit maker's name or a prefab asset's id; the two cannot collide, since
+  // an id is 16 hex characters.
+  prefabFor: (key) => doc?.prefabForPalette(key) ?? assets?.prefabOf(key),
   ensureLoaded: async (id) => {
     await runtime?.load([id])
   },
-  onReady: () => uiChanged(),
 })
 
-// --- project panel (prefabs + assets) ---
+// --- project explorer (folder tree + assets + the kit) ---
+/** Run a file operation, then rebuild the database — every one of them changes what is on disk. */
+const afterFileOp = (label: string, run: () => Promise<void>): void => {
+  void (async () => {
+    try {
+      await run()
+    } catch (e) {
+      setStatus(`${label} failed: ${String(e)}`)
+      return
+    }
+    previews.invalidate()
+    await reloadAssets()
+    setStatus(label)
+    refreshUi()
+  })()
+}
+
 const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
-  prefabs: () => doc?.palette() ?? [],
+  ownPrefabs: () => doc?.palette() ?? [],
   db: () => assets?.db ?? null,
+  folders: () => assets?.folders ?? [],
   urlOf: (path) => assets?.urlOf(path) ?? path,
-  armed: () => (placing === null ? null : placing.kind === 'prefab' ? placing.name : placing.assetId),
+  armed: () => (placing === null ? null : placing.kind === 'own' ? placing.name : placing.assetId),
   selectedAsset: () => selectedAsset,
-  onPickPrefab: (name) => {
+  onPickOwn: (name) => {
     // Clicking the armed tile disarms it, so there is a way out of placement without placing.
-    placing = placing?.kind === 'prefab' && placing.name === name ? null : { kind: 'prefab', name }
+    placing = placing?.kind === 'own' && placing.name === name ? null : { kind: 'own', name }
     refreshUi()
   },
-  onPickModel: (assetId) => {
-    placing = placing?.kind === 'model' && placing.assetId === assetId ? null : { kind: 'model', assetId }
+  onPickAsset: (assetId) => {
+    const entry = assets?.db.byId[assetId]
+    if (entry === undefined) return
+    const kind = entry.kind === 'prefab' ? ('prefabAsset' as const) : ('model' as const)
+    placing = placing !== null && placing.kind !== 'own' && placing.assetId === assetId ? null : { kind, assetId }
     refreshUi()
   },
   onSelectAsset: (assetId) => {
-    // Selecting an asset and selecting something in the scene are the same slot in the Inspector, so
-    // one clears the other rather than both claiming it.
+    // Selecting an asset and selecting something in the scene are the same slot in the Inspector, so one
+    // clears the other rather than both claiming it.
     selectedAsset = assetId
     deselect()
     assetInspector.show(assetId)
     refreshUi()
   },
-  previewOf: (kind, key) => previews.of(kind, key),
-  onCreateMaterial: () => {
+  requestPreview: (kind, key, done) => previews.request(kind, key, done),
+  onCreateMaterial: (folder) => {
     void (async () => {
       if (assets === null) return
-      const created = await assets.createMaterial(`material-${Date.now()}`, {
-        shader: 'standard',
-        params: {},
-      })
+      const created = await assets
+        .createMaterial(`material-${Date.now()}`, { shader: 'standard', params: {} }, folder)
+        .catch((e: unknown) => {
+          setStatus(`new material failed: ${String(e)}`)
+          return undefined
+        })
       await reloadAssets()
       if (created !== undefined) {
         selectedAsset = created.id
@@ -901,6 +993,19 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
       }
       refreshUi()
     })()
+  },
+  onMkdir: (parent, name) => afterFileOp(`created ${name}`, async () => assets?.mkdir(parent, name) ?? Promise.resolve()),
+  onRename: (path, name) =>
+    afterFileOp(`renamed to ${name}`, async () => assets?.move(path, renamedTo(path, name)) ?? Promise.resolve()),
+  onDelete: (path) => afterFileOp(`deleted ${path}`, async () => assets?.remove(path) ?? Promise.resolve()),
+  onMove: (from, toFolder) => {
+    // Refuse a folder into its own subtree here as well as on the server: a rejected drop should not need a
+    // round trip to say so.
+    if (!from.includes('.') && !canMoveFolder(from, toFolder)) {
+      setStatus('a folder cannot move inside itself')
+      return
+    }
+    afterFileOp(`moved into ${toFolder === '' ? 'assets' : toFolder}`, async () => assets?.move(from, movedInto(from, toFolder)) ?? Promise.resolve())
   },
 })
 
@@ -996,7 +1101,7 @@ const renderStatus = (): void => {
   const parts: string[] = [breadcrumb()]
   if (selected !== null && doc !== null) parts.push(`selected #${selected} (${doc.label(selected)})`)
   if (placing !== null) {
-    const what = placing.kind === 'prefab' ? placing.name : (assets?.db.byId[placing.assetId]?.name ?? 'model')
+    const what = placing.kind === 'own' ? placing.name : (assets?.db.byId[placing.assetId]?.name ?? 'asset')
     parts.push(`click in the viewport to place <b>${what}</b>`)
   }
   if (statusMsg !== '') parts.push(statusMsg)
@@ -1115,5 +1220,5 @@ const reloadAssets = async (): Promise<void> => {
 await initPhysics()
 applySnap()
 await reloadAssets()
-await refreshPrefabLibrary()
+refreshPrefabLibrary()
 await enterMode('level')

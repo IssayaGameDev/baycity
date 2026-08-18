@@ -33,9 +33,10 @@ By default you get the built-in **gym** — the test course below. Add `?level=<
 file from `content/levels/` instead (`?level=level1`); the name also picks the room, so tabs on
 different levels will not see each other. Author those files with `pnpm dev:editor`.
 
-You spawn on a 64 m slab holding a sampler of every kit piece. The obstacle courses sit past its
-edges, over open void — walk **+z** for the beam course, **+x** for the pad course, and **+x along
-the z = 20 line** for the curved-beam course. Behind spawn (**−z**) is the platform-carry bench.
+With no `?level=` you get **`content/levels/default.json`**: a floor, a climb, a gap, an elevator, a
+turntable, a hazard pad, a checkpoint and a goal. One of each mechanic, deliberately a placeholder rather than
+designed content — it exists so the game always boots into something. It is a normal level file, so open it in
+the editor and change it.
 
 Other dev servers, each independent of the game:
 

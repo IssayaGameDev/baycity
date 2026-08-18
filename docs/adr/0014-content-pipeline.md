@@ -28,7 +28,8 @@ rendering and feel, not art.
 - **Greybox kit** (`@mp/content/kit`, `/generators`): parametric prefab constructors (platform,
   ledge, ramp, gap-jump, moving platform, rotating bar, spawn/checkpoint/goal/hazard pads) and
   procedural generators (`staircase`, `spiralStaircase`). Palette is the "High-contrast dev"
-  visual language (Kodjo's pick).
+  visual language (Kodjo's pick). **Deleted by ADR 0027: geometry is authored data now.** The style
+  palette survives in `@mp/render-three`.
 - **Rotation** added end-to-end: quaternion math in `@mp/core` (`eulerToQuat`, `axisAngleToQuat`,
   `mulQuat`, `rotateVec3`); collider rotation + `setNextKinematicRotation` in `@mp/physics`;
   transforms compose (instance × piece) in the loader. Enables ramps + rotating bars.

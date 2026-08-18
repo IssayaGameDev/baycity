@@ -13,8 +13,9 @@ solo → own room); `joinById` handles join-by-code. Matchmaking is **filtered b
 (`define(...).filterBy(['level'])`): a room only ever holds clients on the same level, because
 geometry and the movement-base index a rider replicates (ADR 0021) are both positional and would
 otherwise disagree. Filtering is per *supplied* option — a client that omits `level` matches any
-room, so every client here names one (the browser defaults to `gym`, bots take `LEVEL`, default
-`gym`). The server still loads no content; it never learns what a level is. Versions are pinned to Colyseus **0.16** (server
+room, so every client here names one — the browser defaults to `default` (`content/levels/default.json`) and bots take
+`LEVEL`, also defaulting to `default`. These two have to agree or the load harness measures a room of bots
+nobody can see. The server still loads no content; it never learns what a level is. Versions are pinned to Colyseus **0.16** (server
 `colyseus@0.16.5` + client `colyseus.js@0.16.22` — the matched stable pair).
 
 ## Client (`packages/client`, composed in `modes/parkour`)
@@ -106,4 +107,4 @@ Colyseus message layer instead.
   the tick makes the platforms stall whenever the loop runs several ticks in one wake while the
   character keeps advancing a full step each.
 - **Open:** whether a rotating platform should also turn which way you face. Riders orbit correctly;
-  facing does not follow. Turntable in the gym at `z = -20`.
+  facing does not follow. `default.json` has a turntable off to the side for this.

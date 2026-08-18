@@ -2,26 +2,26 @@ import { instantiateLevel } from '@mp/content'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { GYM, levelByName, levelNames } from './levels'
+import { DEFAULT_NAME, levelByName, levelNames } from './levels'
 
 describe('level selection', () => {
   beforeAll(async () => {
     await initPhysics()
   })
 
-  it('defaults to the gym when no name is given', () => {
-    expect(levelByName(null).id).toBe(levelByName(GYM).id)
+  it('defaults to default.json when no name is given', () => {
+    expect(levelByName(null).id).toBe(levelByName(DEFAULT_NAME).id)
   })
 
-  it('lists the gym first, then the files', () => {
+  it('lists the default first, then the rest', () => {
     const names = levelNames()
-    expect(names[0]).toBe(GYM)
+    expect(names[0]).toBe(DEFAULT_NAME)
     expect(new Set(names).size, 'no duplicates').toBe(names.length)
   })
 
   it('names the alternatives when asked for a level that is not there', () => {
     expect(() => levelByName('nope')).toThrow(/no level "nope"/)
-    expect(() => levelByName('nope')).toThrow(new RegExp(GYM))
+    expect(() => levelByName('nope')).toThrow(new RegExp(DEFAULT_NAME))
   })
 
   // Every file the mode will now load, actually loading. `validateLevel` only checks structure, so

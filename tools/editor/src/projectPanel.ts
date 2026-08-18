@@ -1,22 +1,61 @@
-import { ASSET_KINDS, assetsOfKind, type AssetDatabase, type AssetEntry, type AssetKind } from '@mp/content'
+import { ASSET_KINDS, buildDatabase, type AssetDatabase, type AssetEntry, type AssetKind } from '@mp/content'
+
+import { buildTree, filterEntries, flattenTree, folderOf, subfoldersOf, type Filter, type TreeNode } from './assetTree'
 
 /**
- * The Project panel: prefabs and every asset, in one browser.
+ * The Project panel: a file explorer over `content/assets/`, plus the open level's own prefabs.
  *
- * Tabs rather than a folder tree, deliberately — a folder tree answers "where is this file", and the
- * question an author actually has is "what textures do I have". Folders still exist on disk and a tile
- * shows its path, so nothing is hidden; there is just no navigation to do.
+ * A folder tree on the left, tiles on the right, with a breadcrumb, a kind filter and a search box. The
+ * folder and the kind are **independent axes**: "textures in this folder" and "every material anywhere" are
+ * both things an author asks for, and the tabs this panel started with could only answer the second.
  *
- * What clicking a tile means depends on what it is, and each is the only sensible verb for that kind:
- * a prefab or a model arms placement, a material opens for editing, a texture previews, a sound plays, a
- * font renders a sample.
+ * **A preview is generated only for a tile that comes into view.** A folder of a thousand models cannot render
+ * a thousand thumbnails and does not have to: an `IntersectionObserver` with a margin asks for one just before
+ * its tile scrolls in, once, and the cache keeps it. That bounds the *loading* too — a model is fetched only
+ * when something is about to show it.
+ *
+ * One node is not a folder: the prefabs a level defines **in its own table** rather than in a file. Those have
+ * no path and no id, so they cannot sit in the tree, and they are the only placeable thing left that is not a
+ * file — the code kit that used to live there is deleted (ADR 0027).
  */
-export type ProjectTab = 'prefabs' | AssetKind
+export interface ProjectHost {
+  /** Prefabs the open level defines in its own table — placeable, but not files. */
+  ownPrefabs: () => readonly string[]
+  db: () => AssetDatabase | null
+  /** Folders on disk, including the empty ones no asset path can imply. */
+  folders: () => readonly string[]
+  urlOf: (path: string) => string
+  /** The armed prefab or model, shown pressed while it waits for a viewport click. */
+  armed: () => string | null
+  selectedAsset: () => string | null
+  onPickOwn: (name: string) => void
+  /** Arm a placeable asset (a prefab file or a model) for the next viewport click. */
+  onPickAsset: (assetId: string) => void
+  /** Open a non-placeable asset in the Inspector. */
+  onSelectAsset: (assetId: string) => void
+  onCreateMaterial: (folder: string) => void
+  onMkdir: (parent: string, name: string) => void
+  onRename: (path: string, name: string) => void
+  onDelete: (path: string) => void
+  /** Move a file or folder into `toFolder`. */
+  onMove: (from: string, toFolder: string) => void
+  /**
+   * Ask for a tile's picture. Called only when the tile is about to be visible, and expected to answer from
+   * cache when it can — `done` may be called synchronously.
+   */
+  requestPreview: (
+    kind: 'prefab' | 'model' | 'material' | 'shader' | 'texture',
+    key: string,
+    done: (url: string | null) => void,
+  ) => void
+}
 
-export const PROJECT_TABS: readonly ProjectTab[] = ['prefabs', ...ASSET_KINDS]
+export interface Project {
+  render: () => void
+}
 
-const TAB_LABEL: Record<ProjectTab, string> = {
-  prefabs: 'Prefabs',
+const KIND_LABEL: Record<AssetKind, string> = {
+  prefab: 'Prefabs',
   texture: 'Textures',
   model: 'Models',
   material: 'Materials',
@@ -25,184 +64,345 @@ const TAB_LABEL: Record<ProjectTab, string> = {
   font: 'Fonts',
 }
 
-export interface ProjectHost {
-  /** Placeable prefab names — the kit, prefab files, and the level's own entries. */
-  prefabs: () => readonly string[]
-  db: () => AssetDatabase | null
-  urlOf: (path: string) => string
-  /** The armed prefab or model, shown as pressed while it waits for a viewport click. */
-  armed: () => string | null
-  /** The asset currently open in the Inspector. */
-  selectedAsset: () => string | null
-  onPickPrefab: (name: string) => void
-  /** A model tile: arm it for placement. */
-  onPickModel: (assetId: string) => void
-  /** Anything else: open it in the Inspector (and preview it). */
-  onSelectAsset: (assetId: string) => void
-  onCreateMaterial: () => void
-  /**
-   * A picture for this tile, or `null` if the kind has none. Called once per tile per draw and expected to
-   * be cached by the host: a panel redraw must not cost a render.
-   */
-  previewOf: (kind: 'prefab' | 'model' | 'material' | 'shader' | 'texture', key: string) => string | null
-}
+/** Kinds a viewport click can place; everything else opens in the Inspector. */
+const PLACEABLE = new Set<AssetKind>(['prefab', 'model'])
+/** Kinds with no picture worth inventing. */
+const UNPREVIEWABLE = new Set<AssetKind>(['sound', 'font'])
+/** The pseudo-folder for a level's own prefabs. Not a path, so it can never collide with one. */
+const OWN = ' own'
 
-export interface Project {
-  render: () => void
+type PreviewKind = 'prefab' | 'model' | 'material' | 'shader' | 'texture'
+
+const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className = ''): HTMLElementTagNameMap[K] => {
+  const node = document.createElement(tag)
+  if (className !== '') node.className = className
+  return node
 }
 
 export const createProjectPanel = (container: HTMLElement, host: ProjectHost): Project => {
-  let tab: ProjectTab = 'prefabs'
+  /** Selected folder. `''` is the assets root, `null` means every folder, `OWN` is the level's own prefabs. */
+  let folder: string | null = OWN
+  let kind: AssetKind | null = null
+  let search = ''
+  let recursive = false
+  const collapsed = new Set<string>()
 
-  const tabBar = document.createElement('div')
-  tabBar.className = 'tabs'
-  const grid = document.createElement('div')
-  grid.className = 'tiles'
-  const preview = document.createElement('div')
-  preview.className = 'asset-preview'
-  container.append(tabBar, grid, preview)
+  const head = el('div', 'ex-head')
+  const body = el('div', 'ex-body')
+  const treePane = el('div', 'ex-tree')
+  const grid = el('div', 'tiles')
+  const preview = el('div', 'asset-preview')
+  const right = el('div', 'ex-right')
+  right.append(grid, preview)
+  body.append(treePane, right)
+  container.append(head, body)
 
-  const countFor = (t: ProjectTab): number => {
-    if (t === 'prefabs') return host.prefabs().length
-    const db = host.db()
-    return db === null ? 0 : assetsOfKind(db, t).length
+  /**
+   * One observer for the whole grid. A tile is asked for its preview once, just before it scrolls in, then
+   * unobserved — the cache answers any later redraw.
+   */
+  const observer = new IntersectionObserver(
+    (records) => {
+      for (const record of records) {
+        if (!record.isIntersecting) continue
+        const tile = record.target
+        if (!(tile instanceof HTMLElement)) continue
+        observer.unobserve(tile)
+        const previewKind = tile.dataset['previewKind']
+        const previewKey = tile.dataset['previewKey']
+        if (previewKind === undefined || previewKey === undefined) continue
+        host.requestPreview(previewKind as PreviewKind, previewKey, (url) => {
+          // The tile may have been redrawn away while the preview was being made.
+          if (url === null || !tile.isConnected) return
+          const img = tile.querySelector('img.thumb')
+          if (img instanceof HTMLImageElement) img.src = url
+        })
+      }
+    },
+    { root: grid, rootMargin: '200px' },
+  )
+
+  // --- header ---
+  const crumbs = el('div', 'ex-crumbs')
+  const kindSelect = el('select', 'ctl')
+  for (const [value, label] of [['', 'All kinds'], ...ASSET_KINDS.map((k) => [k, KIND_LABEL[k]] as const)] as const) {
+    const opt = el('option')
+    opt.value = value
+    opt.textContent = label
+    kindSelect.append(opt)
+  }
+  kindSelect.addEventListener('change', () => {
+    kind = kindSelect.value === '' ? null : (kindSelect.value as AssetKind)
+    render()
+  })
+
+  const searchInput = el('input', 'ctl')
+  searchInput.type = 'text'
+  searchInput.placeholder = 'search'
+  searchInput.addEventListener('input', () => {
+    search = searchInput.value
+    render()
+  })
+
+  const recurseBox = el('input', 'ctl')
+  recurseBox.type = 'checkbox'
+  recurseBox.id = 'ex-recurse'
+  recurseBox.addEventListener('change', () => {
+    recursive = recurseBox.checked
+    render()
+  })
+  const recurseLabel = el('label', 'tb-label')
+  recurseLabel.htmlFor = 'ex-recurse'
+  recurseLabel.textContent = 'subfolders'
+
+  const newFolderButton = el('button', 'ctl')
+  newFolderButton.textContent = '+ folder'
+  newFolderButton.addEventListener('click', () => {
+    const name = prompt('New folder name')
+    if (name !== null && name.trim() !== '') host.onMkdir(folder === null || folder === OWN ? '' : folder, name.trim())
+  })
+
+  head.append(crumbs, kindSelect, searchInput, recurseBox, recurseLabel, newFolderButton)
+
+  const goTo = (target: string | null): void => {
+    folder = target
+    render()
   }
 
-  const renderTabs = (): void => {
-    tabBar.replaceChildren()
-    for (const t of PROJECT_TABS) {
-      const b = document.createElement('button')
-      b.className = `ctl tab${t === tab ? ' on' : ''}`
-      b.textContent = `${TAB_LABEL[t]} ${countFor(t)}`
-      b.addEventListener('click', () => {
-        tab = t
-        preview.replaceChildren()
-        render()
-      })
-      tabBar.append(b)
+  const renderCrumbs = (): void => {
+    crumbs.replaceChildren()
+    const crumb = (label: string, target: string | null): HTMLButtonElement => {
+      const b = el('button', 'ctl crumb')
+      b.textContent = label
+      b.addEventListener('click', () => goTo(target))
+      return b
+    }
+    if (folder === OWN) {
+      crumbs.append(crumb('level prefabs', OWN))
+      return
+    }
+    crumbs.append(crumb('assets', ''))
+    if (folder === null) {
+      crumbs.append(crumb('(all folders)', null))
+      return
+    }
+    let acc = ''
+    for (const part of folder === '' ? [] : folder.split('/')) {
+      acc = acc === '' ? part : `${acc}/${part}`
+      crumbs.append(crumb(part, acc))
     }
   }
 
-  const tile = (label: string, title: string, on: boolean, onClick: () => void, preview: string | null): HTMLButtonElement => {
-    const b = document.createElement('button')
-    b.className = `ctl tile${on ? ' armed' : ''}${preview !== null ? ' has-thumb' : ''}`
+  const dropTargetFor = (target: HTMLElement, into: string): void => {
+    target.addEventListener('dragover', (e) => {
+      e.preventDefault()
+      target.classList.add('drop-onto')
+    })
+    target.addEventListener('dragleave', () => target.classList.remove('drop-onto'))
+    target.addEventListener('drop', (e) => {
+      e.preventDefault()
+      target.classList.remove('drop-onto')
+      const from = e.dataTransfer?.getData('text/plain')
+      if (from !== undefined && from !== '') host.onMove(from, into)
+    })
+  }
+
+  const renderTree = (root: TreeNode): void => {
+    treePane.replaceChildren()
+
+    const ownRow = el('div', `row${folder === OWN ? ' sel' : ''}`)
+    const ownName = el('span', 'name')
+    ownName.textContent = `This level (${host.ownPrefabs().length})`
+    ownRow.append(el('span', 'twist'), ownName)
+    ownRow.title = 'prefabs this level defines in its own table'
+    ownRow.addEventListener('click', () => goTo(OWN))
+    treePane.append(ownRow)
+
+    for (const node of flattenTree(root, collapsed)) {
+      const row = el('div', `row${folder === node.path ? ' sel' : ''}`)
+      row.style.paddingLeft = `${6 + node.depth * 12}px`
+
+      const twist = el('span', 'twist')
+      twist.textContent = node.children.length > 0 ? (collapsed.has(node.path) ? '▸' : '▾') : ''
+      if (node.children.length > 0) {
+        twist.addEventListener('click', (e) => {
+          e.stopPropagation()
+          if (collapsed.has(node.path)) collapsed.delete(node.path)
+          else collapsed.add(node.path)
+          render()
+        })
+      }
+      const name = el('span', 'name')
+      name.textContent = node.name
+      const count = el('span', 'badge')
+      count.textContent = String(node.fileCount)
+      row.append(twist, name, count)
+      row.addEventListener('click', () => goTo(node.path))
+      dropTargetFor(row, node.path)
+      treePane.append(row)
+    }
+
+    const all = el('div', `row${folder === null ? ' sel' : ''}`)
+    const allName = el('span', 'name')
+    allName.textContent = 'All folders'
+    all.append(el('span', 'twist'), allName)
+    all.addEventListener('click', () => goTo(null))
+    treePane.append(all)
+  }
+
+  const tile = (label: string, title: string, on: boolean, previewKind: PreviewKind | null, previewKey: string): HTMLButtonElement => {
+    const b = el('button', `ctl tile${on ? ' armed' : ''}${previewKind !== null ? ' has-thumb' : ''}`)
     b.title = title
-    if (preview !== null) {
-      const img = document.createElement('img')
-      img.className = 'thumb'
-      img.src = preview
+    if (previewKind !== null) {
+      // The <img> is created empty on purpose: the observer fills its src when the tile nears the viewport,
+      // so a thousand tiles cost a thousand empty boxes rather than a thousand renders.
+      const img = el('img', 'thumb')
       img.alt = ''
-      img.loading = 'lazy'
       b.append(img)
+      b.dataset['previewKind'] = previewKind
+      b.dataset['previewKey'] = previewKey
     }
-    const text = document.createElement('span')
-    text.className = 'tile-name'
+    const text = el('span', 'tile-name')
     text.textContent = label
     b.append(text)
-    b.addEventListener('click', onClick)
     return b
   }
 
-  /** Shows what a click on a non-placeable asset does — audition, sample text, a bigger image. */
+  /** Right-click: rename, or delete when the name is cleared. */
+  const contextMenu = (target: HTMLElement, path: string, isFolder: boolean): void => {
+    target.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      const current = path.slice(path.lastIndexOf('/') + 1)
+      const name = prompt(`Rename — clear the name to delete this ${isFolder ? 'folder and its contents' : 'file'}`, current)
+      if (name === null) return
+      if (name.trim() === '') host.onDelete(path)
+      else if (name.trim() !== current) host.onRename(path, name.trim())
+    })
+  }
+
+  const draggable = (target: HTMLElement, path: string): void => {
+    target.draggable = true
+    target.addEventListener('dragstart', (e) => {
+      e.dataTransfer?.setData('text/plain', path)
+      if (e.dataTransfer !== null) e.dataTransfer.effectAllowed = 'move'
+    })
+  }
+
+  /** Audition a sound, sample a font, enlarge a texture. */
   const showPreview = (entry: AssetEntry): void => {
     preview.replaceChildren()
     const url = host.urlOf(entry.path)
 
     if (entry.kind === 'texture') {
-      const img = document.createElement('img')
+      const img = el('img')
       img.src = url
       img.alt = entry.name
       preview.append(img)
     } else if (entry.kind === 'sound') {
-      // The one asset kind whose preview *is* its content, and the only audio anywhere in the project.
-      const audio = document.createElement('audio')
+      const audio = el('audio')
       audio.src = url
       audio.controls = true
       audio.autoplay = true
       preview.append(audio)
     } else if (entry.kind === 'font') {
       const family = `preview-${entry.id}`
-      const sample = document.createElement('div')
-      sample.className = 'font-sample'
+      const sample = el('div', 'font-sample')
       sample.textContent = 'The quick brown fox 0123456789'
       sample.style.fontFamily = `"${family}", system-ui, sans-serif`
       preview.append(sample)
-      // Loaded rather than declared, so a font that fails to parse says so instead of silently
-      // falling back to the UI font and looking like it worked.
+      // Loaded rather than declared, so a font that fails says so instead of silently using the UI font.
       void new FontFace(family, `url(${url})`)
         .load()
         .then((face) => void document.fonts.add(face))
         .catch(() => (sample.textContent = `${entry.name}: could not be loaded`))
     }
 
-    const caption = document.createElement('div')
-    caption.className = 'caption'
+    const caption = el('div', 'caption')
     caption.textContent = entry.path
     preview.append(caption)
   }
 
+  const empty = (text: string): HTMLDivElement => {
+    const d = el('div', 'empty')
+    d.textContent = text
+    return d
+  }
+
   const render = (): void => {
-    renderTabs()
+    const db = host.db() ?? buildDatabase([])
+    const root = buildTree(db, host.folders())
+
+    kindSelect.value = kind ?? ''
+    recurseBox.checked = recursive
+    if (document.activeElement !== searchInput) searchInput.value = search
+    newFolderButton.disabled = folder === null || folder === OWN
+    renderCrumbs()
+    renderTree(root)
+
+    // Every tile is about to be replaced, so the old observations are meaningless.
+    observer.disconnect()
     grid.replaceChildren()
 
-    if (tab === 'prefabs') {
-      const names = host.prefabs()
+    if (folder === OWN) {
+      const names = host.ownPrefabs()
       if (names.length === 0) grid.append(empty('nothing to place'))
       for (const name of names) {
-        grid.append(tile(name, `place ${name}`, name === host.armed(), () => host.onPickPrefab(name), host.previewOf('prefab', name)))
+        const t = tile(name, `place ${name}`, host.armed() === name, 'prefab', name)
+        t.addEventListener('click', () => host.onPickOwn(name))
+        grid.append(t)
+        observer.observe(t)
       }
       return
     }
 
-    const db = host.db()
-    if (db === null) {
-      grid.append(empty('assets not loaded'))
-      return
+    // Subfolders as tiles, so going down a level does not mean crossing to the tree.
+    if (folder !== null && search === '') {
+      for (const node of subfoldersOf(root, folder)) {
+        const t = el('button', 'ctl tile folder')
+        t.textContent = `▸ ${node.name}`
+        t.title = node.path
+        t.addEventListener('click', () => goTo(node.path))
+        dropTargetFor(t, node.path)
+        draggable(t, node.path)
+        contextMenu(t, node.path, true)
+        grid.append(t)
+      }
     }
 
-    if (tab === 'material') {
-      const b = document.createElement('button')
-      b.className = 'ctl tile new'
+    if (kind === 'material' && folder !== null) {
+      const target = folder
+      const b = el('button', 'ctl tile new')
       b.textContent = '+ new material'
-      b.addEventListener('click', host.onCreateMaterial)
+      b.addEventListener('click', () => host.onCreateMaterial(target))
       grid.append(b)
     }
 
-    const entries = assetsOfKind(db, tab)
-    if (entries.length === 0 && tab !== 'material') {
-      grid.append(empty(`no ${TAB_LABEL[tab].toLowerCase()} in content/assets/`))
+    const filter: Filter = { folder: folder === OWN ? null : folder, kind, search, recursive }
+    const entries = filterEntries(db, filter)
+    if (entries.length === 0 && grid.children.length === 0) {
+      grid.append(empty(folder === null ? 'nothing matches' : `nothing in ${folder === '' ? 'assets' : folder}`))
       return
     }
 
     for (const entry of entries) {
-      const placeable = entry.kind === 'model'
+      const placeable = PLACEABLE.has(entry.kind)
       const on = placeable ? host.armed() === entry.id : host.selectedAsset() === entry.id
-      // A texture is its own file; a model, material or prefab is rendered once offscreen and cached. A
-      // sound or a font has no visual form worth inventing, so it is not asked for and the tile stays text.
-      const preview = entry.kind === 'font' || entry.kind === 'sound' ? null : host.previewOf(entry.kind, entry.id)
-      grid.append(
-        tile(
-          entry.name,
-          entry.path,
-          on,
-          () => {
-            if (placeable) host.onPickModel(entry.id)
-            else {
-              host.onSelectAsset(entry.id)
-              showPreview(entry)
-            }
-          },
-          preview,
-        ),
-      )
+      const previewKind = UNPREVIEWABLE.has(entry.kind) ? null : (entry.kind as PreviewKind)
+      // Showing more than one folder's worth means the name alone is ambiguous.
+      const label = folder === null || recursive ? `${folderOf(entry.path)}/${entry.name}`.replace(/^\//, '') : entry.name
+      const t = tile(label, entry.path, on, previewKind, entry.id)
+      t.addEventListener('click', () => {
+        if (placeable) host.onPickAsset(entry.id)
+        else {
+          host.onSelectAsset(entry.id)
+          showPreview(entry)
+        }
+      })
+      draggable(t, entry.path)
+      contextMenu(t, entry.path, false)
+      grid.append(t)
+      if (previewKind !== null) observer.observe(t)
     }
-  }
-
-  const empty = (text: string): HTMLDivElement => {
-    const d = document.createElement('div')
-    d.className = 'empty'
-    d.textContent = text
-    return d
   }
 
   render()

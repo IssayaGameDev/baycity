@@ -7,6 +7,14 @@ import { dropTarget, rowsOf, zoneFor, type Openness, type Row } from './hierarch
 
 const blank = (): Level => ({ id: 'l', config: { fallBehavior: 'physical-fall', fallY: -20 }, instances: [] })
 
+/** Prefab files the palette offers — generators are gone (ADR 0027), so a placeable thing is data. */
+const LIBRARY: Record<string, Prefab> = {
+  platform: {
+    id: 'platform',
+    pieces: [{ collider: { kind: 'box', halfExtents: vec3(1.5, 0.15, 1.5) }, transform: { position: vec3(0, 0, 0) } }],
+  },
+}
+
 const twoPieces = (id: string): Prefab => ({
   id,
   pieces: [
@@ -24,7 +32,7 @@ const shape = (doc: Doc, o: Openness = ALL_OPEN): string[] =>
 
 /** Four top-level platforms named a..d. */
 const four = (): Doc => {
-  const doc = levelDoc(blank(), {})
+  const doc = levelDoc(blank(), LIBRARY)
   for (const n of ['a', 'b', 'c', 'd']) doc.setName(doc.place('platform', vec3(0, 0, 0)), n)
   return doc
 }
@@ -78,7 +86,7 @@ describe('rowsOf: prefab pieces', () => {
   it('reveals pieces when opened, addressed by item and piece index', () => {
     const level = blank()
     level.instances.push({ prefab: twoPieces('x'), transform: { position: vec3(0, 0, 0) } })
-    const doc = levelDoc(level, {})
+    const doc = levelDoc(level, LIBRARY)
 
     const rows = rowsOf(doc, open({ piecesOpen: new Set([doc.pathOf(0)]) }))
     expect(rows.map((r) => `${r.kind}:${r.index}.${r.pieceIndex}@${r.depth}`)).toEqual([
@@ -105,7 +113,7 @@ describe('rowsOf: annotations', () => {
 
     const level = blank()
     level.instances.push({ prefab: twoPieces('oneoff'), transform: { position: vec3(0, 0, 0) } })
-    expect(rowsOf(levelDoc(level, {}), ALL_OPEN)[0]!.badge).toBe('inline')
+    expect(rowsOf(levelDoc(level, LIBRARY), ALL_OPEN)[0]!.badge).toBe('inline')
   })
 
   it('reports the parent and sibling index a drop needs', () => {
