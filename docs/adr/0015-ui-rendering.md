@@ -13,7 +13,7 @@ lack a UI layer.
 
 ## Decision
 
-- **All game UI is PixiJS** — a transparent 2D canvas (`@mp/render-pixi`, `createHud`) stacked
+- **All game UI is PixiJS** — a transparent 2D canvas (`@mp/render-pixi`, `createUiOverlay`) stacked
   over the Three.js canvas. One rendering paradigm, UI consistent with the game's look, and
   GPU effects/particles available *on the HUD*.
 - **DOM is not used for game UI.** Two bounded exceptions, neither of which is visible UI:

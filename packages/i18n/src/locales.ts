@@ -18,7 +18,6 @@ export const en = {
   'status.connecting': 'Connecting…',
   'status.room': 'Room {room}',
   'status.offline': 'Offline',
-  'hint.controls': 'Move: WASD · Jump: Space · Look: mouse · Menu: Esc',
 }
 
 export type TranslationKey = keyof typeof en
@@ -35,7 +34,6 @@ export const es: Table = {
   'status.connecting': 'Conectando…',
   'status.room': 'Sala {room}',
   'status.offline': 'Sin conexión',
-  'hint.controls': 'Mover: WASD · Saltar: Espacio · Mirar: ratón · Menú: Esc',
 }
 export const fr: Table = {
   'pause.title': 'Pause',
@@ -48,7 +46,6 @@ export const fr: Table = {
   'status.connecting': 'Connexion…',
   'status.room': 'Salon {room}',
   'status.offline': 'Hors ligne',
-  'hint.controls': 'Déplacer : WASD · Sauter : Espace · Regarder : souris · Menu : Échap',
 }
 export const nl: Table = {
   'pause.title': 'Gepauzeerd',
@@ -61,7 +58,6 @@ export const nl: Table = {
   'status.connecting': 'Verbinden…',
   'status.room': 'Kamer {room}',
   'status.offline': 'Offline',
-  'hint.controls': 'Bewegen: WASD · Springen: Spatie · Kijken: muis · Menu: Esc',
 }
 export const pt: Table = {
   'pause.title': 'Pausado',
@@ -74,7 +70,6 @@ export const pt: Table = {
   'status.connecting': 'Conectando…',
   'status.room': 'Sala {room}',
   'status.offline': 'Offline',
-  'hint.controls': 'Mover: WASD · Pular: Espaço · Olhar: mouse · Menu: Esc',
 }
 export const ja: Table = {
   'pause.title': 'ポーズ',
@@ -87,7 +82,6 @@ export const ja: Table = {
   'status.connecting': '接続中…',
   'status.room': 'ルーム {room}',
   'status.offline': 'オフライン',
-  'hint.controls': '移動: WASD · ジャンプ: スペース · 視点: マウス · メニュー: Esc',
 }
 export const ko: Table = {
   'pause.title': '일시정지',
@@ -100,7 +94,6 @@ export const ko: Table = {
   'status.connecting': '연결 중…',
   'status.room': '방 {room}',
   'status.offline': '오프라인',
-  'hint.controls': '이동: WASD · 점프: 스페이스 · 시점: 마우스 · 메뉴: Esc',
 }
 export const zh: Table = {
   'pause.title': '暂停',
@@ -113,7 +106,6 @@ export const zh: Table = {
   'status.connecting': '连接中…',
   'status.room': '房间 {room}',
   'status.offline': '离线',
-  'hint.controls': '移动: WASD · 跳跃: 空格 · 视角: 鼠标 · 菜单: Esc',
 }
 export const ar: Table = {
   'pause.title': 'إيقاف مؤقت',
@@ -126,5 +118,4 @@ export const ar: Table = {
   'status.connecting': 'جارٍ الاتصال…',
   'status.room': 'غرفة {room}',
   'status.offline': 'غير متصل',
-  'hint.controls': 'التحرك: WASD · القفز: مسافة · النظر: الفأرة · القائمة: Esc',
 }

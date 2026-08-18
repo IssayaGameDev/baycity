@@ -92,8 +92,9 @@ With no lock on touch, the pause button drives it and `resumePlay()` must not re
   clamping, dead zone, tap detection and pinch re-baselining are all unit-tested headlessly. Only the
   event binding needs a browser.
 - `createTouchJoystick` is replaced rather than kept alongside: it was floating-only, mapped
-  screen-down to +z for a top-down demo that no longer exists, and had no tests. `JoystickState`'s field
-  names are preserved so `render-pixi/hud.ts` still compiles against it.
+  screen-down to +z for a top-down demo that no longer exists, and had no tests. `render-pixi/hud.ts` —
+  the second Pixi application from the retired ball demo, whose joystick view this supersedes — is
+  deleted along with it.
 - Nothing about this touches the wire, the sim, or the animation. It is an input adapter and a view.
 
 ## Rejected

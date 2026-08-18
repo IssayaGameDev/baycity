@@ -28,7 +28,8 @@ abstraction behind keyboard/mouse and touch from day one (bots use a synthetic s
 ## Consequences / per-game cost
 
 - A game gets kb/m + touch via `createBrowserInput(zone)` + `movement()`; bots use
-  `createManualInputSource`. HUD is `createHud()` + setters.
+  `createManualInputSource`. HUD was `createHud()` + setters; superseded by `createUiOverlay` (ADR 0015)
+  and the touch-control view (ADR 0022), and deleted with them.
 - The client `./dom` subpath needs its own tsconfig (documented in workspace.md).
 - ES2022 build target (top-level await for the async HUD init) — within the SEED
   mobile-Safari reach.
