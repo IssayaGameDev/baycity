@@ -105,7 +105,7 @@ const stage = createThreeStage({ canvas, cameraPosition: [0, 6, 10], lookAt: [0,
 // SMAA post-FX. Level meshes, materials (the "High-contrast dev" palette) and markers are
 // realized by the shared @mp/render-three renderer — same code the viewer uses.
 applyGreyboxEnvironment(stage.renderer, stage.scene, { shadowRadius: 30, sunIntensity: 2.4 })
-const postfx = createPostFX(stage.renderer, stage.scene, stage.camera, { ao: true, bloom: true, bloomStrength: 0.3 })
+const postfx = createPostFX(stage.renderer, stage.scene, stage.camera, { ao: true, bloom: true, bloomStrength: 0.1 })
 
 // Nametags live on an overlay layer drawn AFTER post-FX. GTAO renders the scene into its
 // own depth/normal buffer to compute occlusion; a sprite left in the world pipeline shows
@@ -326,7 +326,7 @@ mv.addBinding(tuning, 'groundStopTime', { min: 0, max: 0.5, step: 0.01, label: '
 mv.addBinding(tuning, 'airControl', { min: 0, max: 1, step: 0.05, label: 'air control' })
 
 // Live render tuning (content C3) — the greybox polish is data, so you can dial it here.
-const renderParams = { exposure: 1.0, bloom: true, bloomStrength: 0.3 }
+const renderParams = { exposure: 1.0, bloom: true, bloomStrength: 0.1 }
 const rp = pane.addFolder({ title: 'Render (greybox C3)' })
 rp.addBinding(renderParams, 'exposure', { min: 0.4, max: 2, step: 0.05 }).on('change', (e) => {
   stage.renderer.toneMappingExposure = e.value
