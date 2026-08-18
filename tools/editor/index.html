@@ -317,14 +317,17 @@
       .tile.new {
         border-style: dashed;
       }
-      /* A texture's tile is the texture; everything else is named. */
+      /* A tile with a preview: picture over name. Prefabs, models and materials are rendered once
+         offscreen and cached; a texture is its own file; sounds and fonts stay text. */
       .tile.has-thumb {
         display: flex;
         flex-direction: column;
         align-items: center;
         gap: 3px;
         padding: 4px;
-        max-width: 92px;
+        width: 92px;
+        font-size: 11px;
+        overflow: hidden;
       }
       .tile .thumb {
         width: 64px;
@@ -332,11 +335,13 @@
         object-fit: contain;
         background: #0e1013 repeating-conic-gradient(#1b1e23 0% 25%, transparent 0% 50%) 50% / 12px 12px;
         border-radius: 2px;
+        flex: 0 0 auto;
       }
-      .tile.has-thumb {
+      .tile .tile-name {
+        max-width: 100%;
         overflow: hidden;
         text-overflow: ellipsis;
-        font-size: 11px;
+        white-space: nowrap;
       }
       .asset-preview {
         display: flex;

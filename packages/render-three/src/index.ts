@@ -23,6 +23,9 @@ export type { LevelView, LevelViewOptions, MarkersView } from './levelView'
 export { BUILTIN_SHADERS, compileMaterial, defaultParams, registerShader, shaderDef } from './shaders'
 export type { ParamReader, ShaderDef, ShaderParam, ShaderParamKind } from './shaders'
 export { assetIdsIn, createAssetRuntime } from './assetRuntime'
+// Asset thumbnails: render once offscreen, cache the image (the caller owns the cache).
+export { createThumbnailer, fitDistance } from './thumbnails'
+export type { Thumbnailer, ThumbnailerOptions } from './thumbnails'
 export type { AssetRuntime, AssetRuntimeOptions } from './assetRuntime'
 export { addLevel, addMarkers } from './levelView'
 

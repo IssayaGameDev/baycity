@@ -68,6 +68,11 @@ to be scaled does not resize the other thirty-nine.
 authored box, so a detailed prop collides as a shape somebody can see and resize (ADR 0014's visual ≠
 collision, now load-bearing rather than aspirational).
 
+**One assembler, two finders.** The importer walks the filesystem and the game enumerates a build-time
+glob, which are genuinely different ways of finding the same files. *Deriving an entry* from one is not:
+both call `entriesFrom`, so a kind or a name cannot come out differently, and a test asserts the importer
+really uses it rather than keeping a copy.
+
 **The editor's dev server imports; the game bundles.** `GET /api/assets` runs the importer, so sidecars
 exist before anyone looks at the panel, and `/assets/<path>` serves bytes. The game builds the same
 database from `import.meta.glob` over the sidecars — no server, no runtime scan, the same trick
@@ -103,10 +108,33 @@ database from `import.meta.glob` over the sidecars — no server, no runtime sca
 - **Custom GLSL shaders.** The registry, the parameter schema and the generic inspector are the seam;
   loading a `shader` asset's GLSL and compiling a `ShaderMaterial` is not written, and there is no shader
   to test it against.
-- **Thumbnails for models.** A texture's tile is the texture; everything else is named text, because
-  rendering a mesh offscreen for a thumbnail is machinery this does not need yet.
-- **No drift test between the two database builders.** The importer (Node) and the game's glob (browser)
-  agree by sharing `kindForPath`, but nothing asserts the two produce the same entries for one tree.
+
+## Update — every kind gets a thumbnail
+
+A named tile says what an asset is called, not what it looks like, so prefabs, models and materials are
+**rendered once offscreen and cached** (`thumbnails.ts` in `@mp/render-three`, `previews.ts` in the editor).
+A material previews on a sphere as Unity's does; a prefab previews as its own pieces, built through the same
+lookups `place` uses, so a tile cannot show one thing and put down another.
+
+Cost is the design, since a panel redraws on every selection change:
+
+- **One** renderer with its own context, created on first use and reused. Rendered **once** per subject; every
+  later request is a `Map` hit, so a redraw touches no GL.
+- **Lazy** — a tile asks only when it is built, so the Textures tab renders no models. 96 px, pixel ratio
+  pinned to 1 (a thumbnail gains nothing from device ratio and pays for it squared).
+- Preview-only geometry and materials are disposed after the shot; the runtime's cached models and materials
+  are not this code's to free.
+- Editing a material invalidates the cache, so its sphere and any prefab using it regenerate.
+
+Two things this needed that were not obvious:
+
+- **Framing uses `sin`, not `tan`.** What has to fit is the subject's bounding *sphere* — a tangent from the
+  eye — not a plane through its centre, and `tan` sits too close and crops the edges. `fitDistance` is pure
+  and carries the tests, including the rule that the tighter of the two half-angles decides.
+- **The runtime only preloads what the open document references**, and the panel shows the whole library, so
+  an unplaced material had never been compiled and its tile was blank. A tile that finds nothing now fetches
+  it once and asks for one redraw; a fetched-and-still-missing id is recorded as dangling so a redraw cannot
+  loop on it, and a reimport clears that.
 
 ## Rejected
 

@@ -40,14 +40,16 @@ export interface ProjectHost {
   /** Anything else: open it in the Inspector (and preview it). */
   onSelectAsset: (assetId: string) => void
   onCreateMaterial: () => void
+  /**
+   * A picture for this tile, or `null` if the kind has none. Called once per tile per draw and expected to
+   * be cached by the host: a panel redraw must not cost a render.
+   */
+  previewOf: (kind: 'prefab' | 'model' | 'material' | 'shader' | 'texture', key: string) => string | null
 }
 
 export interface Project {
   render: () => void
 }
-
-/** Kinds whose tile is a picture of themselves. */
-const THUMBNAILED = new Set<AssetKind>(['texture'])
 
 export const createProjectPanel = (container: HTMLElement, host: ProjectHost): Project => {
   let tab: ProjectTab = 'prefabs'
@@ -81,11 +83,22 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     }
   }
 
-  const tile = (label: string, title: string, on: boolean, onClick: () => void): HTMLButtonElement => {
+  const tile = (label: string, title: string, on: boolean, onClick: () => void, preview: string | null): HTMLButtonElement => {
     const b = document.createElement('button')
-    b.className = `ctl tile${on ? ' armed' : ''}`
+    b.className = `ctl tile${on ? ' armed' : ''}${preview !== null ? ' has-thumb' : ''}`
     b.title = title
-    b.textContent = label
+    if (preview !== null) {
+      const img = document.createElement('img')
+      img.className = 'thumb'
+      img.src = preview
+      img.alt = ''
+      img.loading = 'lazy'
+      b.append(img)
+    }
+    const text = document.createElement('span')
+    text.className = 'tile-name'
+    text.textContent = label
+    b.append(text)
     b.addEventListener('click', onClick)
     return b
   }
@@ -135,7 +148,9 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     if (tab === 'prefabs') {
       const names = host.prefabs()
       if (names.length === 0) grid.append(empty('nothing to place'))
-      for (const name of names) grid.append(tile(name, `place ${name}`, name === host.armed(), () => host.onPickPrefab(name)))
+      for (const name of names) {
+        grid.append(tile(name, `place ${name}`, name === host.armed(), () => host.onPickPrefab(name), host.previewOf('prefab', name)))
+      }
       return
     }
 
@@ -162,25 +177,24 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     for (const entry of entries) {
       const placeable = entry.kind === 'model'
       const on = placeable ? host.armed() === entry.id : host.selectedAsset() === entry.id
-      const t = tile(entry.name, entry.path, on, () => {
-        if (placeable) host.onPickModel(entry.id)
-        else {
-          host.onSelectAsset(entry.id)
-          showPreview(entry)
-        }
-      })
-      if (THUMBNAILED.has(entry.kind)) {
-        // A texture's tile is the texture. Everything else is named, because a mesh or a sound has no
-        // thumbnail worth the machinery of rendering one offscreen.
-        const img = document.createElement('img')
-        img.className = 'thumb'
-        img.src = host.urlOf(entry.path)
-        img.alt = ''
-        img.loading = 'lazy'
-        t.prepend(img)
-        t.classList.add('has-thumb')
-      }
-      grid.append(t)
+      // A texture is its own file; a model, material or prefab is rendered once offscreen and cached. A
+      // sound or a font has no visual form worth inventing, so it is not asked for and the tile stays text.
+      const preview = entry.kind === 'font' || entry.kind === 'sound' ? null : host.previewOf(entry.kind, entry.id)
+      grid.append(
+        tile(
+          entry.name,
+          entry.path,
+          on,
+          () => {
+            if (placeable) host.onPickModel(entry.id)
+            else {
+              host.onSelectAsset(entry.id)
+              showPreview(entry)
+            }
+          },
+          preview,
+        ),
+      )
     }
   }
 

@@ -35,6 +35,7 @@ import { createHierarchy, type Hierarchy } from './hierarchy'
 import { createInspector, type Inspector } from './inspector'
 import { createAssetInspector, type AssetInspector } from './assetInspector'
 import { loadAssetLibrary, type AssetLibrary } from './assetsApi'
+import { createPreviews, type Previews } from './previews'
 import { createProjectPanel, type Project } from './projectPanel'
 import { createSplitter, readPx, writePx } from './splitter'
 import { createToolbar, type GizmoMode, type GizmoSpace, type Toolbar } from './toolbar'
@@ -846,6 +847,21 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
   },
 })
 
+// --- asset previews (thumbnails, cached) ---
+const previews: Previews = createPreviews({
+  db: () => assets?.db ?? null,
+  runtime: () => runtime,
+  materialOf: (id) => assets?.materialOf(id),
+  urlOf: (path) => assets?.urlOf(path) ?? path,
+  // A palette name is a kit maker, a prefab file, or one of this level's own entries — the same three
+  // places `place` looks, so a tile previews exactly what clicking it would put in the scene.
+  prefabFor: (name) => doc?.prefabForPalette(name),
+  ensureLoaded: async (id) => {
+    await runtime?.load([id])
+  },
+  onReady: () => uiChanged(),
+})
+
 // --- project panel (prefabs + assets) ---
 const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   prefabs: () => doc?.palette() ?? [],
@@ -870,6 +886,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     assetInspector.show(assetId)
     refreshUi()
   },
+  previewOf: (kind, key) => previews.of(kind, key),
   onCreateMaterial: () => {
     void (async () => {
       if (assets === null) return
@@ -896,7 +913,9 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
     void (async () => {
       if (assets === null) return
       await assets.saveMaterial(id, material).catch((e: unknown) => setStatus(`save failed: ${String(e)}`))
-      // Recompile and redraw: a material edit has to show on every piece using it, immediately.
+      // Recompile and redraw: a material edit has to show on every piece using it, immediately. Its
+      // thumbnail is stale too, and so is any prefab preview that used it.
+      previews.invalidate()
       await reloadAssets()
       assetInspector.show(id)
       buildItems()

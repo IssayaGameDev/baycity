@@ -97,6 +97,11 @@ export interface Doc {
    * rather than as its own triangles.
    */
   placeModel: (assetId: string, position: Vec3) => number
+  /**
+   * The prefab a palette entry would place, without placing it — what a Project tile previews. Resolved
+   * through the same sources as `place`, so a tile cannot show something other than what it will put down.
+   */
+  prefabForPalette: (name: string) => Prefab | undefined
   remove: (i: number) => void
   duplicate: (i: number) => number
   /** Display name: the typed name if there is one, else what the item is (prefab id / collider kind). */
@@ -309,6 +314,11 @@ export const levelDoc = (level: Level, library: Record<string, Prefab>): Doc => 
       level.instances.push(inst)
       return indexOfInstance(inst)
     },
+    prefabForPalette: (name) => {
+      const make = KIT[name]
+      if (make !== undefined) return make()
+      return level.prefabs?.[name] ?? library[name]
+    },
     // Removing takes the subtree with it: children are placed relative to this item and have nowhere
     // to be without it.
     remove: (i) => {
@@ -446,6 +456,12 @@ export const prefabDoc = (prefab: Prefab): Doc => {
         visual: { kind: 'model', asset: assetId },
       })
       return pieces.length - 1
+    },
+    // In prefab mode the palette offers primitives; wrapping one as a throwaway prefab lets the same
+    // renderer draw its preview.
+    prefabForPalette: (name) => {
+      const make = PRIMITIVES[name]
+      return make === undefined ? undefined : { id: name, pieces: [make()] }
     },
     remove: (i) => void pieces.splice(i, 1),
     duplicate: (i) => {
