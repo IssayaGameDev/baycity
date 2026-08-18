@@ -42,6 +42,7 @@ reversed it); ball demo retired (tag `m10`); world/controller relocated out of `
   - [0019](adr/0019-death-ragdoll.md) **death is a local ragdoll; spawning assembles the body** (both kill paths; visual-only, nothing on the wire)
   - [0020](adr/0020-camera.md) **third-person camera**: wheel zoom, pitch to straight overhead, sphere-cast occlusion pulling the boom in
   - [0021](adr/0021-relative-to-base-replication.md) **a rider replicates in its platform's frame** (protocol v10; stops peers sliding on movers)
+  - [0022](adr/0022-touch-controls.md) **touch controls**: stick bottom-left, jump bottom-right, look everywhere else; pointer ownership by zone
 
 ## Built
 
@@ -51,9 +52,9 @@ reversed it); ball demo retired (tag `m10`); world/controller relocated out of `
 - `character` — the stack-level kinematic character controller (`stepCharacter`, `CharacterTuning`; ADR 0012), mode-agnostic. Relocated out of `@mp/server/tps`. **Platform carry** (movement base): rides a moving piece by keeping its position in that surface's frame (`PlatformPoseLookup`), and a jump off a mover inherits its velocity. Paired with the loader's frozen posing — see `docs/physics.md`. Also the **blocky 11-part rig** (torso split at the waist) (`RIG`, proportions derived from the capsule) and its **procedural animator** (`createAnimator`): distance-driven stride, two-bone analytic IK, half-life smoothing. No skinning, no clips, no art; headless and unit-tested (ADR 0018).
 - `content` — data-driven content: schema (prefab/level/collider/marker/behavior/visual), validation, the **loader** (`instantiateLevel`; `update(now, riddenCollider?)` poses the ridden piece without velocity and exposes `basePose` so riders can track it), the greybox **kit** + generators; `baseIndex`/`basePoseOf` expose clock-driven pieces as replicable movement bases (ADR 0021). Headless, no rendering. ADR 0014.
 - `server` — **Colyseus** `Server` (`startServer()`) hosting `ParkourRoom`: client-authoritative relay (per-client delta snapshots, no simulation, no schema), auto-join, roster/names, clock-sync ping/pong. Content-free.
-- `client` — `colyseus.js` transport (`joinOrCreate`), interpolation, local authoritative controller (`localController`), clock sync, input abstraction (`.` headless + `./dom` adapters).
+- `client` — `colyseus.js` transport (`joinOrCreate`), interpolation, local authoritative controller (`localController`), clock sync, input abstraction (`.` headless + `./dom` adapters), and **touch controls** (`createTouchControls`: zone ownership by `pointerId`, re-centring stick, look/pinch/tap channels — headless and unit-tested; ADR 0022).
 - `render-three` — WebGL2 stage + the polished greybox pipeline (IBL, ACES, soft shadows, GTAO/SMAA/bloom, style→material, level-view); realizes `@mp/character`'s rig as nodes (`createCharacterRig`) and applies a `Pose`, or as loose unparented meshes for a ragdoll (`createLooseParts`); re-exports THREE + OrbitControls.
-- `render-pixi` — PixiJS 2D UI layer (ADR 0015): a transparent canvas stacked over Three, an overlay with pointer-lock-aware input, and reusable widgets (panel/button/slider/list). Wired into the parkour pause screen.
+- `render-pixi` — PixiJS 2D UI layer (ADR 0015): a transparent canvas stacked over Three, an overlay with pointer-lock-aware input, reusable widgets (panel/button/slider/list), and the **touch-control view** (`createTouchHud`, non-interactive by design — ADR 0022). Wired into the parkour pause screen.
 - `i18n` — tiny dependency-free localization (ADR 0016): typed `t()`, 9 languages, browser-locale detect + runtime switch. Headless.
 - `tools/netsim` — latency/jitter/loss transport wrapper. (Not wired into the current client — ADR 0013.)
 - `tools/bots` — headless `colyseus.js` load clients + `load` harness; measures budgets 2 & 3 and doubles as the live integration check.
@@ -63,15 +64,12 @@ reversed it); ball demo retired (tag `m10`); world/controller relocated out of `
 
 ## Deferred (not built)
 
-- **Mobile play. There is no way to control the character on a phone.** The requirements name mid-range
-  Android and iOS Safari as first-class targets. Some groundwork exists and **nothing imports it**:
-  `createTouchJoystick` and `createBrowserInput` (`@mp/client/dom`, ADR 0008) and a joystick HUD view
-  (`render-pixi/hud.ts`) are all unused, and the DOM adapters have no tests. `modes/parkour` reads
-  `keydown`/`keyup` for movement, Space for jump, and pointer lock for the camera — and pointer lock does
-  not exist on mobile browsers at all. A phone can open the Pixi pause screen and do nothing else.
-  A mobile pass therefore needs wiring *and* new work: a look control, a jump button, a HUD layout.
-  Kodjo's position (2026-08-18): no mobile stance yet. Unmeasured on the same device, for the same
-  reason: budgets 1 (frame time) and 5 (memory).
+- **Mobile is playable but unmeasured and unvalidated on a device.** Touch controls exist and are wired
+  (ADR 0022): stick bottom-left, jump bottom-right, look everywhere else, pinch to zoom, tap to respawn
+  while dead. What has *not* happened is anyone playing it on a phone — so the layout numbers are first
+  guesses (all exposed in the pane's **Touch** folder), and budgets 1 (frame time) and 5 (memory) are still
+  unmeasured, which needs the same device session. The pause screen is the only UI laid out for a small
+  screen; nothing else has been sized for one.
 - **Goal/win rule, other modes** (obby-tower variant, keyboard-run grind + progression), **glTF art layer**, **full in-viewer editor**, **account-backed persistence** — accounted for by seams (ADR 0014), not built. The `goal` **trigger kind** and `goalPad()` exist in `@mp/content`, but no level uses them and the mode has no goal rule: `showcase.ts` uses `style: 'goal'`, which is only a colour. Nothing ends a run.
 - **M9 — 2D path** (Rapier2d + Pixi-only). Deferred when scope narrowed to 3D.
 - **Deploy** (Dockerfile + single-VPS) — re-scoped with Kodjo when a target exists. `infra/` empty.

@@ -30,7 +30,7 @@ is pinned to **0.16** (matched client/server), default `ws` transport (uWS is a 
 single-process for now (scale-out deferred to deploy).
 
 Subpaths (secondary entry points, each with its own tsconfig where the lib differs):
-- `@mp/client/dom` — browser input adapters (keyboard, touch joystick), DOM-enabled via
+- `@mp/client/dom` — browser input adapters (keyboard, and the touch controls of ADR 0022: stick + jump button + look/pinch routing), DOM-enabled via
   `packages/client/tsconfig.dom.json`, so the main `@mp/client` stays headless. See ADR-0008.
 
 ## Dependency laws (SEED §6)

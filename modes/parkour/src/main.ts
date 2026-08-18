@@ -7,6 +7,7 @@ import {
   type LocalController,
   type LocalWorld,
 } from '@mp/client'
+import { createTouchJoystick, DEFAULT_TOUCH_LAYOUT } from '@mp/client/dom'
 import { clamp, createSimClock, rotateVec3, startFixedLoop, vec3, yawOf, type EntityId, type Vec3 } from '@mp/core'
 import {
   decodePong,
@@ -44,7 +45,7 @@ import {
 } from '@mp/character'
 import { instantiateLevel, validateLevel, type LoadedLevel } from '@mp/content'
 import { getLocale, matchLocale, onLocaleChange, setLocale, t, type TranslationKey } from '@mp/i18n'
-import { createUiOverlay, uiButton, type ListItem } from '@mp/render-pixi'
+import { createTouchHud, createUiOverlay, uiButton, type ListItem, type TouchHud } from '@mp/render-pixi'
 import { Client, type Room } from 'colyseus.js'
 import { Pane } from 'tweakpane'
 
@@ -230,14 +231,71 @@ const params = {
    */
   camHideMargin: 0.15,
   sensitivity: 0.0025,
+  /**
+   * Look sensitivity for a **finger** (rad per CSS pixel). Its own number, and far larger than the mouse
+   * one: `movementX` from a mouse is a raw device delta, while a thumb crosses a few hundred CSS pixels
+   * for a whole turn (ADR 0022).
+   */
+  touchSensitivity: 0.006,
+  /** Pinch: metres of zoom per CSS pixel of finger separation. A pinch is ~300 px for the whole range. */
+  pinchZoom: 0.02,
 }
 /** The orbit distance actually rendered: `camZoom` smoothed, so a notch glides instead of jumping. */
 let camDistance = params.camZoom
+/**
+ * Touch controls (ADR 0022): stick bottom-left, jump bottom-right, look everywhere else. Bound to the
+ * canvas, so its rect is the coordinate frame the HUD draws in. `active()` stays false until a real touch
+ * arrives, which is what keeps a mouse user from ever seeing a joystick.
+ */
+// Deep-copied, not spread: `stickInset`/`jumpInset` are objects, and a shallow copy would share them with
+// the exported default — mutating one here would then move every future mode's controls. Mutable and read
+// fresh by the controls, like `gait`, so the pane and the safe-area pass both take effect live.
+const touchLayout = {
+  ...DEFAULT_TOUCH_LAYOUT,
+  stickInset: { ...DEFAULT_TOUCH_LAYOUT.stickInset },
+  jumpInset: { ...DEFAULT_TOUCH_LAYOUT.jumpInset },
+  stickZone: { ...DEFAULT_TOUCH_LAYOUT.stickZone },
+}
+/**
+ * UI that owns its own pointers. Filled with the debug pane's host further down — it is DOM, it sits inside
+ * the look region, and dragging one of its sliders must not also swing the camera. Read per event, so
+ * pushing to it after the fact is enough and the pane can stay where it belongs in this file.
+ */
+const touchIgnore: HTMLElement[] = []
+const touch = createTouchJoystick(canvas, touchLayout, { ignore: touchIgnore })
+
+/**
+ * Push the controls clear of a notch and the home indicator. `viewport-fit=cover` lets the canvas reach
+ * under both, so the insets have to come back here — in landscape, which is how this is held, the big ones
+ * are left and right. Re-read on resize because an orientation change changes which edge they are on.
+ */
+const px = (name: string): number => Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) || 0
+const applySafeArea = (): void => {
+  touchLayout.stickInset.x = DEFAULT_TOUCH_LAYOUT.stickInset.x + px('--safe-left')
+  touchLayout.jumpInset.x = DEFAULT_TOUCH_LAYOUT.jumpInset.x + px('--safe-right')
+  const bottom = px('--safe-bottom')
+  touchLayout.stickInset.y = DEFAULT_TOUCH_LAYOUT.stickInset.y + bottom
+  touchLayout.jumpInset.y = DEFAULT_TOUCH_LAYOUT.jumpInset.y + bottom
+}
+applySafeArea()
+window.addEventListener('resize', applySafeArea)
+/** True once the player has touched the screen — the mode then stops asking for pointer lock. */
+const onTouch = (): boolean => touch.active()
+/**
+ * The on-screen controls, and whether the pause menu is up. Both live on the Pixi overlay, which is built
+ * with an `await` **after** the render loop starts — so a frame can run before they exist and the loop has
+ * to cope with that rather than reference them eagerly.
+ */
+let touchHud: TouchHud | null = null
+let menuOpen: () => boolean = () => false
+
 canvas.addEventListener('click', () => {
-  if (document.pointerLockElement !== canvas) void canvas.requestPointerLock()
+  // Never on touch: there is no pointer lock on mobile, and asking for it on every tap throws.
+  if (!onTouch() && document.pointerLockElement !== canvas) void canvas.requestPointerLock()
 })
 // Left click respawns while dead — but only during locked play, so the click that *re-captures* the mouse
-// after the pause menu does not also cut a death short.
+// after the pause menu does not also cut a death short. The touch equivalent is a tap in the look region,
+// drained in the render loop (ADR 0022); a placeholder in both cases until the dev menu has its own button.
 canvas.addEventListener('mousedown', (e) => {
   if (e.button === 0 && dead && document.pointerLockElement === canvas) requestRespawn?.()
 })
@@ -275,7 +333,12 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => keys.delete(e.code))
 // Camera-relative world-space move direction from WASD/arrows (+ current camera yaw).
 const worldMove = (): { x: number; z: number } => {
-  const { x: rawX, z: rawZ } = keysToMovement(keys)
+  // Keyboard first, stick otherwise: on a hybrid device the two must never fight, and releasing the key
+  // hands control straight back. Both produce the same `{x, z}` in −1..1, so the camera-relative rotation
+  // below is shared — a stick pushed left strafes left and the character turns to face it, exactly like A.
+  const k = keysToMovement(keys)
+  const stick = touch.movement()
+  const { x: rawX, z: rawZ } = k.x !== 0 || k.z !== 0 ? k : stick
   if (rawX === 0 && rawZ === 0) return { x: 0, z: 0 }
   const fwdX = -Math.sin(camYaw)
   const fwdZ = -Math.cos(camYaw)
@@ -299,6 +362,7 @@ const worldMove = (): { x: number; z: number } => {
 const paneHost = document.createElement('div')
 paneHost.style.cssText = 'position:fixed;top:8px;right:8px;width:256px;z-index:100'
 document.body.appendChild(paneHost)
+touchIgnore.push(paneHost) // see `touchIgnore`
 const pane = new Pane({ title: 'Debug', container: paneHost })
 const cam = pane.addFolder({ title: 'Camera' })
 // No slider for the zoom itself — the wheel owns it, and tweakpane does not track a value changed
@@ -314,6 +378,21 @@ cam.addBinding(params, 'camPushInSmooth', { min: 0, max: 0.5, step: 0.01, label:
 cam.addBinding(params, 'camReturnSmooth', { min: 0, max: 1, step: 0.01, label: 'pull-out s' })
 cam.addBinding(params, 'camHideMargin', { min: 0, max: 1, step: 0.01, label: 'rig hide m' })
 cam.addBinding(params, 'sensitivity', { min: 0.0005, max: 0.006, step: 0.0005, label: 'sensitivity' })
+
+// Touch controls (ADR 0022). Kodjo keeps the pane on phones, and these are the numbers that need a thumb
+// to judge. `anchor` is the one to try first: `recentre` moves the stick's centre to wherever the zone was
+// touched and starts from a standstill, `fixed` keeps it at the drawn home and deflects on contact.
+const tc = pane.addFolder({ title: 'Touch', expanded: false })
+tc.addBinding(touchLayout, 'anchor', { options: { recentre: 'recentre', fixed: 'fixed' } })
+tc.addBinding(touchLayout, 'stickRadius', { min: 30, max: 140, step: 2, label: 'stick r px' })
+tc.addBinding(touchLayout.stickZone, 'width', { min: 0.2, max: 0.6, step: 0.01, label: 'zone w' })
+tc.addBinding(touchLayout.stickZone, 'height', { min: 0.2, max: 1, step: 0.01, label: 'zone h' })
+tc.addBinding(touchLayout, 'deadZone', { min: 0, max: 0.4, step: 0.01, label: 'dead zone' })
+tc.addBinding(touchLayout, 'jumpRadius', { min: 24, max: 96, step: 2, label: 'jump r px' })
+tc.addBinding(touchLayout, 'topStrip', { min: 0, max: 140, step: 4, label: 'top strip px' })
+tc.addBinding(touchLayout, 'tapSlop', { min: 2, max: 40, step: 1, label: 'tap slop px' })
+tc.addBinding(params, 'touchSensitivity', { min: 0.001, max: 0.02, step: 0.0005, label: 'look rad/px' })
+tc.addBinding(params, 'pinchZoom', { min: 0, max: 0.08, step: 0.002, label: 'pinch m/px' })
 
 // Live locomotion feel (client-authoritative, so tuning is purely local — ADR 0011/0012).
 const tuning: CharacterTuning = { ...DEFAULT_TUNING }
@@ -662,7 +741,9 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
       // makes the ragdoll's bodies fall and the level's platforms move.
       const move = dead ? { x: 0, z: 0 } : worldMove()
       if (move.x !== 0 || move.z !== 0) ownFacing = Math.atan2(move.x, move.z)
-      controller!.step(move.x, move.z, !dead && keys.has('Space'))
+      // The jump button is *held*, like Space: `stepCharacter` reads `jump && grounded` every tick, so
+      // holding either re-jumps the instant you land (ADR 0022).
+      controller!.step(move.x, move.z, !dead && (keys.has('Space') || touch.jump()))
       // After the world has stepped: a ragdoll's bodies only move on a tick, so this is where their new
       // pose is taken. The render loop interpolates between the last two. Peers' corpses are bodies in
       // this same world, so they are captured on the same tick.
@@ -925,6 +1006,24 @@ stage.start(() => {
       peerAssemblies.delete(pid)
     }
 
+  // Touch: one drain per frame, applied exactly where the mouse and wheel handlers apply theirs. Drained
+  // rather than read, so a frame never consumes the same drag twice (ADR 0022).
+  if (touch.active()) {
+    // The menu owns the screen while it is open: no routing, no camera swing, nothing held.
+    touch.setEnabled(!menuOpen())
+    const t = touch.drainLook()
+    camYaw -= t.dx * params.touchSensitivity
+    camPitch = clamp(camPitch + t.dy * params.touchSensitivity, params.pitchMinDeg * DEG, PITCH_MAX)
+    if (t.pinch !== 0)
+      params.camZoom = clamp(params.camZoom - t.pinch * params.pinchZoom, params.camZoomMin, params.camZoomMax)
+    // Tap in the look region = the mobile respawn, matching desktop's left click.
+    if (t.tapped && dead && !menuOpen()) requestRespawn?.()
+    if (touchHud !== null) {
+      touchHud.setVisible(!menuOpen())
+      touchHud.draw(touch.joystick(), touch.jumpButton())
+    }
+  }
+
   // orbit camera around the own character
   const target = { x: ownPos.x, y: ownPos.y + 1, z: ownPos.z }
   // Re-clamped every frame, because the range itself is tunable in the pane while playing.
@@ -1013,7 +1112,17 @@ stage.start(() => {
 // A transparent Pixi canvas stacked over the Three canvas. The pause screen composition
 // lives in pauseMenu.ts; this wires it to the game (params, roster, respawn) and manages the
 // pointer-lock handoff.
-const ui = await createUiOverlay({ width: window.innerWidth, height: window.innerHeight })
+/**
+ * Sized from the **canvas**, not from `window.innerWidth/innerHeight`. The canvas is `dvh`-sized, so on
+ * mobile it is shorter than the layout viewport; taking the overlay's size from the window instead would
+ * put the drawn controls a browser-bar's height away from the touch zones, which come from the canvas rect.
+ * One source for both means they cannot drift.
+ */
+const viewSize = (): { width: number; height: number } => ({
+  width: canvas.clientWidth || window.innerWidth,
+  height: canvas.clientHeight || window.innerHeight,
+})
+const ui = await createUiOverlay(viewSize())
 ui.canvas.style.position = 'fixed'
 ui.canvas.style.inset = '0'
 ui.canvas.style.zIndex = '10'
@@ -1041,19 +1150,25 @@ const pause = createPauseMenu(ui, {
   },
 })
 
+touchHud = createTouchHud(ui.root)
+menuOpen = () => pause.isOpen()
+
 const resumePlay = (): void => {
   pause.close()
-  void canvas.requestPointerLock()
+  // Touch has no lock to take, and requesting one on mobile either throws or does nothing (ADR 0022).
+  if (!onTouch()) void canvas.requestPointerLock()
 }
 
-// Pointer-lock drives pause state: releasing it (Esc / focus loss) opens the menu; re-locking
-// closes it. Tapping empty overlay space (menu closed) re-captures the mouse for look control.
+// On a mouse, pointer lock *is* the pause state: releasing it (Esc / focus loss) opens the menu and
+// re-locking closes it. Touch has no lock at all, so there the pause button is the only way in and out —
+// hence the guard, without which the first touch would open the menu and never let it close.
 document.addEventListener('pointerlockchange', () => {
+  if (onTouch()) return
   if (document.pointerLockElement === canvas) pause.close()
   else pause.open()
 })
 ui.setBackgroundTap(() => {
-  if (!pause.isOpen()) void canvas.requestPointerLock()
+  if (!onTouch() && !pause.isOpen()) void canvas.requestPointerLock()
 })
 
 // Top-left pause button (placeholder glyph until skinned). During locked play the cursor is
@@ -1064,7 +1179,8 @@ const pauseBtn = uiButton({
   height: 40,
   color: 0x475569,
   onClick: () => {
-    if (document.pointerLockElement === canvas) document.exitPointerLock()
+    if (onTouch()) pause.open()
+    else if (document.pointerLockElement === canvas) document.exitPointerLock()
     else pause.open()
   },
 })
@@ -1072,7 +1188,8 @@ pauseBtn.view.position.set(16, 16)
 ui.root.addChild(pauseBtn.view)
 
 window.addEventListener('resize', () => {
-  ui.resize(window.innerWidth, window.innerHeight)
+  const v = viewSize()
+  ui.resize(v.width, v.height)
   pauseBtn.view.position.set(16, 16)
   pause.layout()
 })

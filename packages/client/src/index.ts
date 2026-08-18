@@ -19,3 +19,6 @@ export type { SnapshotReassembler } from './reassembler'
 export { createSnapshotReassembler } from './reassembler'
 export type { InputState, InputSource, ManualInputSource } from './input'
 export { createManualInputSource, keysToMovement } from './input'
+// Touch controls (ADR 0022). The rules are headless and live here; `./dom` binds pointer events to them.
+export type { TouchControls, TouchLayout, TouchLook, JoystickState, JumpButtonState } from './touchControls'
+export { createTouchControls, DEFAULT_TOUCH_LAYOUT } from './touchControls'

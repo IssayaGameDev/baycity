@@ -27,7 +27,7 @@ pnpm dev:server   # Colyseus relay server, ws://localhost:9200
 pnpm dev:parkour  # http://localhost:5174  (open it)
 ```
 
-**Desktop browsers for now** — there are no touch controls (see `docs/INDEX.md`, deferred). Click the view to capture the mouse. **Mouse** orbits the camera, **WASD** moves (camera-relative; the character faces its movement), **Space** jumps, **Esc** opens the pause screen. Your character is simulated locally (client-authoritative); the server relays your position to other players, who appear interpolated with a nametag. Open a second browser tab — both auto-join one shared room. Touch a green checkpoint pad to respawn there; moving platforms run off the shared clock, so they are in sync across tabs. The **Debug** pane (top-right) tunes movement feel and camera.
+Click the view to capture the mouse. **Mouse** orbits the camera, **WASD** moves (camera-relative; the character faces its movement), **Space** jumps, **Esc** opens the pause screen. Your character is simulated locally (client-authoritative); the server relays your position to other players, who appear interpolated with a nametag. Open a second browser tab — both auto-join one shared room. Touch a green checkpoint pad to respawn there; moving platforms run off the shared clock, so they are in sync across tabs. The **Debug** pane (top-right) tunes movement feel and camera. **On a phone**: drag the left thumbstick to move, tap-and-hold the bottom-right button to jump, drag anywhere else to look, pinch to zoom — untested on a real device so far (see `docs/INDEX.md`).
 
 You spawn on a 64 m slab holding a sampler of every kit piece. The obstacle courses sit past its
 edges, over open void — walk **+z** for the beam course, **+x** for the pad course, and **+x along
