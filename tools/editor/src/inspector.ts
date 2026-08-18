@@ -1,10 +1,10 @@
 import { vec3, type Vec3 } from '@mp/core'
 import { Pane } from 'tweakpane'
 
-import type { BehaviorKind, Doc, ItemProps, TriggerChoice } from './editorDoc'
+import type { Doc, ItemProps, TriggerChoice } from './editorDoc'
 
 /**
- * The Inspector panel — transform, material, trigger, behavior, and the prefab actions.
+ * The Inspector panel — transform, material, trigger, and the prefab actions.
  *
  * Still Tweakpane, deliberately: a property grid of labelled numbers with point-and-drag editing is
  * exactly what it is good at, and `PaneConfig.container` mounts it inside a real panel. What changed is
@@ -15,6 +15,10 @@ import type { BehaviorKind, Doc, ItemProps, TriggerChoice } from './editorDoc'
  *
  * Holds no Three.js: the host reads and writes the selection's transform, so this file knows only about
  * documents and numbers.
+ *
+ * Holds no *animation* either, since ADR 0029. Motion is a keyframe track, and a track is edited on a
+ * timeline — a property grid can only show one instant of it, which is what made the old
+ * behavior/direction/travel/cycle form the worst part of this panel. The Animation tab owns it now.
  */
 export interface TransformValues {
   position: Vec3
@@ -48,25 +52,6 @@ export interface Inspector {
   sync: () => void
   /** Redraw just the name + prefab link (e.g. after an Extract changed the link). */
   renderHead: () => void
-}
-
-/** Cardinal axes offered for a behavior, so the common cases need no vector typing. */
-const DIRS: Record<string, Vec3> = {
-  '+X': vec3(1, 0, 0),
-  '-X': vec3(-1, 0, 0),
-  '+Y': vec3(0, 1, 0),
-  '-Y': vec3(0, -1, 0),
-  '+Z': vec3(0, 0, 1),
-  '-Z': vec3(0, 0, -1),
-}
-const DIR_OPTIONS: Record<string, string> = { '+X': '+X', '-X': '-X', '+Y': '+Y', '-Y': '-Y', '+Z': '+Z', '-Z': '-Z', custom: 'custom' }
-
-/** Which cardinal name an axis matches, or `custom` when it is at an angle. */
-export const dirNameOf = (a: Vec3): string => {
-  const len = Math.hypot(a.x, a.y, a.z) || 1
-  const n = vec3(a.x / len, a.y / len, a.z / len)
-  for (const [k, v] of Object.entries(DIRS)) if (Math.abs(n.x - v.x) < 1e-3 && Math.abs(n.y - v.y) < 1e-3 && Math.abs(n.z - v.z) < 1e-3) return k
-  return 'custom'
 }
 
 const r4 = (n: number): number => Math.round(n * 1e4) / 1e4
@@ -144,11 +129,6 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
 
   const sel: TransformValues = { position: vec3(0, 0, 0), rotationDeg: vec3(0, 0, 0), scale: vec3(1, 1, 1) }
   const prop = {
-    behavior: 'static' as BehaviorKind,
-    direction: '+Y',
-    distance: 3,
-    cycleS: 4,
-    axis: { x: 0, y: 1, z: 0 },
     trigger: 'none' as TriggerChoice,
     material: '',
   }
@@ -177,12 +157,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     const doc = host.doc()
     const at = host.selected()
     if (doc === null || at === null) return
-    const axis = prop.direction === 'custom' ? vec3(prop.axis.x, prop.axis.y, prop.axis.z) : { ...DIRS[prop.direction]! }
     const p: ItemProps = {
-      behavior: prop.behavior,
-      distance: prop.distance,
-      periodMs: Math.max(50, prop.cycleS * 1000),
-      axis,
       pieceLevel: doc.mode === 'prefab',
       trigger: prop.trigger,
       material: prop.material,
@@ -201,11 +176,6 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
 
     sync()
     const p = doc.props(at)
-    prop.behavior = p.behavior
-    prop.distance = p.distance
-    prop.cycleS = r4(p.periodMs / 1000)
-    prop.axis = { x: p.axis.x, y: p.axis.y, z: p.axis.z }
-    prop.direction = dirNameOf(p.axis)
     prop.trigger = p.trigger
     prop.material = p.material
 
@@ -233,31 +203,6 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
           .addBinding(prop, 'trigger', { label: 'trigger', options: { none: 'none', checkpoint: 'checkpoint', goal: 'goal', hazard: 'hazard' } })
           .on('change', applyProps),
       )
-    }
-
-    blades.push(
-      pane.addBinding(prop, 'behavior', { label: 'behavior', options: { static: 'static', move: 'move', rotate: 'rotate' } }).on('change', () => {
-        applyProps()
-        rebuild() // show/hide the behavior params
-      }),
-    )
-    if (prop.behavior === 'move' || prop.behavior === 'rotate') {
-      blades.push(
-        pane.addBinding(prop, 'direction', { label: 'direction', options: DIR_OPTIONS }).on('change', () => {
-          if (prop.direction !== 'custom') {
-            const v = DIRS[prop.direction]!
-            prop.axis = { x: v.x, y: v.y, z: v.z }
-          }
-          applyProps()
-          rebuild() // reveal/hide the custom-axis field
-        }),
-      )
-      if (prop.direction === 'custom') {
-        const a = { step: 0.1 }
-        blades.push(pane.addBinding(prop, 'axis', { label: 'axis', x: a, y: a, z: a }).on('change', applyProps))
-      }
-      if (prop.behavior === 'move') blades.push(pane.addBinding(prop, 'distance', { step: 0.1, label: 'travel (m)' }).on('change', applyProps))
-      blades.push(pane.addBinding(prop, 'cycleS', { step: 0.1, label: 'cycle (s)' }).on('change', applyProps))
     }
 
     // Open/Extract live in the header's prefab-link row, where Unity puts them.

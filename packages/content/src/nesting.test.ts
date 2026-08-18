@@ -3,6 +3,7 @@ import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { instantiateLevel } from './loader'
+import { moveTrack, spinTrack } from './track'
 import type { Behavior, Level, PrefabInstance, Prefab } from './types'
 
 /**
@@ -23,8 +24,24 @@ const box = (id: string, half = vec3(1, 0.5, 1), trigger = false): Prefab => ({
   ],
 })
 
-const moves = (axis: Vec3, distance: number): Behavior => ({ kind: 'move', axis, distance, periodMs: T })
-const spins = (axis: Vec3): Behavior => ({ kind: 'rotate', axis, periodMs: T })
+/**
+ * The old `move`/`rotate` behaviors as the keyframe tracks that replaced them (ADR 0029). The presets
+ * reproduce them exactly, so every assertion below is unchanged — which is the point of running these
+ * fixtures through the new evaluator rather than rewriting the expectations.
+ *
+ * A track's keys are **absolute local poses**, so an animated frame away from the origin has to say where it
+ * starts. Defaulted, because every fixture here but one places it at the origin.
+ */
+const moves = (axis: Vec3, distance: number, base: Vec3 = vec3(0, 0, 0)): Behavior => ({
+  kind: 'track',
+  keys: moveTrack(base, axis, distance, T),
+  loop: 'loop',
+})
+const spins = (axis: Vec3, base: Vec3 = vec3(0, 0, 0)): Behavior => ({
+  kind: 'track',
+  keys: spinTrack(base, axis, T),
+  loop: 'loop',
+})
 
 const levelOf = (instances: PrefabInstance[]): Level => ({
   id: 'nest',
@@ -210,7 +227,7 @@ describe('nested placement', () => {
       {
         prefab: box('lift', vec3(1, 0.5, 1), true),
         transform: { position: vec3(20, 0, 0) },
-        behavior: moves(vec3(0, 1, 0), 3),
+        behavior: moves(vec3(0, 1, 0), 3, vec3(20, 0, 0)),
       },
     ])
     // Creation order is: deck's piece, then its child's piece, then the next top-level instance's.

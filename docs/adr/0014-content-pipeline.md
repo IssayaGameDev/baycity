@@ -23,7 +23,8 @@ rendering and feel, not art.
 - **Loader** (`instantiateLevel(world, level) → LoadedLevel`): builds Rapier colliders (fixed
   for static, kinematic for clock-driven), collects world markers + physics-backed triggers,
   emits a **renderer-agnostic visual list**, and `update(now)` advances clock-driven behaviors
-  (`move`/`rotate`) as pure functions of synced time — no per-object networking. Headless;
+  (`move`/`rotate`, **replaced by keyframe tracks in ADR 0029**) as pure functions of synced time — no
+  per-object networking. Headless;
   shared by game, viewer, (and available to bots).
 - **Greybox kit** (`@mp/content/kit`, `/generators`): parametric prefab constructors (platform,
   ledge, ramp, gap-jump, moving platform, rotating bar, spawn/checkpoint/goal/hazard pads) and

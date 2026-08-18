@@ -3,6 +3,7 @@ import {
   instancesOf,
   resolvePrefab,
   visualMaterial,
+  poseAt,
   visualModel,
   walkInstances,
   type Behavior,
@@ -10,11 +11,14 @@ import {
   type InstanceVisit,
   type Level,
   type Piece,
+  type Pose,
   type Prefab,
   type PrefabInstance,
   type Transform,
 } from '@mp/content'
 import { vec3, type Vec3 } from '@mp/core'
+
+import { sortedKeys, type TrackEdit } from './trackEdit'
 
 /**
  * Editor document abstraction. A **level** is placed prefab instances; a **prefab** is a flat list
@@ -36,7 +40,6 @@ import { vec3, type Vec3 } from '@mp/core'
  * there an index is just the piece's position.
  */
 export type Mode = 'level' | 'prefab'
-export type BehaviorKind = 'static' | 'move' | 'rotate'
 export type TriggerChoice = 'none' | 'checkpoint' | 'goal' | 'hazard'
 
 /** One mesh to draw under an item's group (transform is local to that group). */
@@ -61,10 +64,6 @@ export interface MeshSpec {
  * only in prefab mode; `pieceLevel` says which of the two we are.
  */
 export interface ItemProps {
-  behavior: BehaviorKind
-  distance: number
-  periodMs: number
-  axis: Vec3
   pieceLevel: boolean
   trigger: TriggerChoice
   /** Material asset id, or `''` for none: the piece's own, or the instance-wide override. */
@@ -140,6 +139,15 @@ export interface Doc {
   assetIds: () => string[]
   props: (i: number) => ItemProps
   setProps: (i: number, p: ItemProps) => void
+  /** The item's keyframe track, or `null` when it is static. */
+  trackOf: (i: number) => TrackEdit | null
+  /** Replace the track. `null` removes the behavior, which is what "does not move" is. */
+  setTrack: (i: number, track: TrackEdit | null) => void
+  /**
+   * The item's local pose at a track time — what a scrub draws, and what the gizmo writes into a key. The
+   * authored transform for a static item, so a caller never has to ask which kind it is holding.
+   */
+  poseOf: (i: number, timeMs: number) => Pose
   /** The prefab id this item references, or `null` for an inline definition / a piece. */
   refOf: (i: number) => string | null
   /** Turn an inline instance into a shared table entry and reference it. The new id, or `null`. */
@@ -164,18 +172,25 @@ const PRIMITIVES: Record<string, () => Piece> = {
   capsule: () => ({ collider: { kind: 'capsule', halfHeight: 0.5, radius: 0.4 }, transform: { position: vec3(0, 0, 0) } }),
 }
 
-const kindOf = (b: Behavior | undefined): BehaviorKind => (b?.kind === 'move' ? 'move' : b?.kind === 'rotate' ? 'rotate' : 'static')
-const readBehavior = (b: Behavior | undefined): Pick<ItemProps, 'behavior' | 'distance' | 'periodMs' | 'axis'> => ({
-  behavior: kindOf(b),
-  distance: b?.kind === 'move' ? b.distance : 3,
-  periodMs: b?.kind === 'move' || b?.kind === 'rotate' ? b.periodMs : 4000,
-  axis: b?.kind === 'move' || b?.kind === 'rotate' ? { ...b.axis } : vec3(0, 1, 0),
+/**
+ * The behavior as the timeline edits it, or `null` when the item does not move.
+ *
+ * `static` and "no behavior key at all" collapse to one `null`: they mean the same thing to the loader, and
+ * offering two ways to say it in the UI would be a distinction without a difference.
+ */
+const readTrack = (b: Behavior | undefined): TrackEdit | null =>
+  b === undefined || b.kind !== 'track' ? null : { keys: b.keys, loop: b.loop ?? 'loop', phaseMs: b.phaseMs ?? 0 }
+
+/**
+ * A track as JSON, with defaults left out. `loop: 'loop'` and `phaseMs: 0` are what an absent field already
+ * means, so writing them would put noise in every authored file and carry no information.
+ */
+const writeTrack = (t: TrackEdit): Behavior => ({
+  kind: 'track',
+  keys: sortedKeys(t.keys),
+  ...(t.loop !== 'loop' ? { loop: t.loop } : {}),
+  ...(t.phaseMs !== 0 ? { phaseMs: t.phaseMs } : {}),
 })
-const makeBehavior = (p: ItemProps): Behavior | undefined => {
-  if (p.behavior === 'move') return { kind: 'move', axis: p.axis, distance: p.distance, periodMs: p.periodMs }
-  if (p.behavior === 'rotate') return { kind: 'rotate', axis: p.axis, periodMs: p.periodMs }
-  return undefined
-}
 
 /**
  * Splice `arr`'s item at `from` so it lands *before* the original index `to`. `to` is expressed against
@@ -381,18 +396,25 @@ export const levelDoc = (level: Level, library: Record<string, Prefab>): Doc => 
       return [...ids]
     },
     props: (i) => ({
-      ...readBehavior(at(i)!.inst.behavior),
       pieceLevel: false,
       trigger: 'none',
       material: at(i)!.inst.material ?? '',
     }),
     setProps: (i, p) => {
       const inst = at(i)!.inst
-      const b = makeBehavior(p)
-      if (b !== undefined) inst.behavior = b
-      else delete inst.behavior
       if (p.material !== '') inst.material = p.material
       else delete inst.material
+    },
+    trackOf: (i) => readTrack(at(i)?.inst.behavior),
+    setTrack: (i, track) => {
+      const inst = at(i)?.inst
+      if (inst === undefined) return
+      if (track === null) delete inst.behavior
+      else inst.behavior = writeTrack(track)
+    },
+    poseOf: (i, timeMs) => {
+      const inst = at(i)!.inst
+      return poseAt(inst.behavior ?? { kind: 'static' }, inst.transform, timeMs)
     },
     refOf: refAt,
     extract: (i) => {
@@ -493,7 +515,6 @@ export const prefabDoc = (prefab: Prefab): Doc => {
     props: (i) => {
       const pc = pieces[i]!
       return {
-        ...readBehavior(pc.behavior),
         pieceLevel: true,
         trigger: pc.trigger ?? 'none',
         material: visualMaterial(pc.visual) ?? '',
@@ -501,9 +522,6 @@ export const prefabDoc = (prefab: Prefab): Doc => {
     },
     setProps: (i, p) => {
       const pc = pieces[i]!
-      const b = makeBehavior(p)
-      if (b !== undefined) pc.behavior = b
-      else delete pc.behavior
       // The visual is rebuilt from the fields rather than patched, so clearing the last one removes the
       // key instead of leaving `{ kind: 'primitive' }` behind.
       const model = visualModel(pc.visual)
@@ -513,6 +531,17 @@ export const prefabDoc = (prefab: Prefab): Doc => {
       else delete pc.visual
       if (p.trigger === 'none') delete pc.trigger
       else pc.trigger = p.trigger
+    },
+    trackOf: (i) => readTrack(pieces[i]?.behavior),
+    setTrack: (i, track) => {
+      const pc = pieces[i]
+      if (pc === undefined) return
+      if (track === null) delete pc.behavior
+      else pc.behavior = writeTrack(track)
+    },
+    poseOf: (i, timeMs) => {
+      const pc = pieces[i]!
+      return poseAt(pc.behavior ?? { kind: 'static' }, pc.transform, timeMs)
     },
     refOf: () => null,
     extract: () => null,

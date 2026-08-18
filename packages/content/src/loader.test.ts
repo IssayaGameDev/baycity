@@ -3,10 +3,29 @@ import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { instantiateLevel } from './loader'
-import type { Level } from './types'
+import { moveTrack, spinTrack } from './track'
+import type { Behavior, Level } from './types'
 
 /** A material asset id, so the moving piece is findable in `visuals` by what it is surfaced with. */
 const MOVING_MAT = '19079ddb3fbfb27e'
+
+/**
+ * The old `move`/`rotate` behaviors as the keyframe tracks that replaced them (ADR 0029). The presets
+ * reproduce the motion exactly, which is why nothing below had to change its expectations.
+ *
+ * The base is explicit at every site: a track's keys are **absolute local poses**, so the frame's authored
+ * position (for a move) or rotation (for a spin) is what the preset builds from.
+ */
+const moves = (base: Vec3, axis: Vec3, distance: number, periodMs: number): Behavior => ({
+  kind: 'track',
+  keys: moveTrack(base, axis, distance, periodMs),
+  loop: 'loop',
+})
+const spins = (base: Vec3, axis: Vec3, periodMs: number): Behavior => ({
+  kind: 'track',
+  keys: spinTrack(base, axis, periodMs),
+  loop: 'loop',
+})
 
 const fixture: Level = {
   id: 'fx',
@@ -22,7 +41,7 @@ const fixture: Level = {
         pieces: [{ collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(0, 0, 0) }, visual: { kind: 'primitive', material: MOVING_MAT } }],
       },
       transform: { position: vec3(0, 2, 0) },
-      behavior: { kind: 'move', axis: vec3(0, 1, 0), distance: 1.5, periodMs: 4000 },
+      behavior: moves(vec3(0, 2, 0), vec3(0, 1, 0), 1.5, 4000),
     },
   ],
   markers: [
@@ -86,7 +105,7 @@ describe('instantiateLevel', () => {
           prefab: {
             id: 'mixed',
             pieces: [
-              { collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(0, 0, 0) }, behavior: { kind: 'move', axis: vec3(0, 1, 0), distance: 2, periodMs: 4000 } },
+              { collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(0, 0, 0) }, behavior: moves(vec3(0, 0, 0), vec3(0, 1, 0), 2, 4000) },
               { collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(3, 0, 0) } },
             ],
           },
@@ -183,7 +202,7 @@ describe('instantiateLevel', () => {
         {
           prefab: { id: 'b', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.1, 0.1) }, transform: { position: vec3(0, 1, 0) } }] },
           transform: { position: vec3(0, 0, 0) },
-          behavior: { kind: 'rotate', axis: vec3(0, 1, 0), periodMs: 4000 },
+          behavior: spins(vec3(0, 0, 0), vec3(0, 1, 0), 4000),
         },
       ],
     })
@@ -210,7 +229,7 @@ describe('instantiateLevel', () => {
         {
           prefab: { id: 'l', pieces: [{ collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(0, 0, 0) }, trigger: 'hazard' }] },
           transform: { position: vec3(0, 2, 0) },
-          behavior: { kind: 'move', axis: vec3(0, 1, 0), distance: 2, periodMs: 4000 },
+          behavior: moves(vec3(0, 2, 0), vec3(0, 1, 0), 2, 4000),
         },
       ],
     })
@@ -241,7 +260,7 @@ describe('instantiateLevel', () => {
         {
           prefab: { id: 'd', pieces: [{ collider: { kind: 'box', halfExtents: vec3(3, 0.2, 3) }, transform: { position: vec3(0, 0, 0) }, trigger: 'hazard' }] },
           transform: { position: vec3(0, 0, 0) },
-          behavior: { kind: 'rotate', axis: vec3(0, 1, 0), periodMs: 4000 },
+          behavior: spins(vec3(0, 0, 0), vec3(0, 1, 0), 4000),
         },
       ],
     })
@@ -331,12 +350,12 @@ describe('instantiateLevel', () => {
         {
           prefab: { id: 'm', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: 'hazard' }] },
           transform: { position: vec3(0, 1, 0) },
-          behavior: { kind: 'move', axis: vec3(1, 0, 0), distance: 8, periodMs: 4000 },
+          behavior: moves(vec3(0, 1, 0), vec3(1, 0, 0), 8, 4000),
         },
         {
           prefab: { id: 'r', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: 'goal' }] },
           transform: { position: vec3(0, 3, 0) },
-          behavior: { kind: 'rotate', axis: vec3(0, 1, 0), periodMs: 8000 },
+          behavior: spins(vec3(0, 0, 0), vec3(0, 1, 0), 8000),
         },
       ],
     })
@@ -405,12 +424,12 @@ describe('instantiateLevel', () => {
         {
           prefab: { id: 'm', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: 'hazard' }] },
           transform: { position: vec3(0, 1, 0) },
-          behavior: { kind: 'move', axis: vec3(1, 0, 0), distance: DIST, periodMs: T },
+          behavior: moves(vec3(0, 1, 0), vec3(1, 0, 0), DIST, T),
         },
         {
           prefab: { id: 'r', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: 'goal' }] },
           transform: { position: vec3(0, 3, 0) },
-          behavior: { kind: 'rotate', axis: vec3(0, 1, 0), periodMs: T },
+          behavior: spins(vec3(0, 0, 0), vec3(0, 1, 0), T),
         },
       ],
     })

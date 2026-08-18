@@ -1,4 +1,4 @@
-import { instantiateLevel, validateLevel, type Level, type Prefab } from '@mp/content'
+import { instantiateLevel, moveTrack, validateLevel, type Level, type Prefab } from '@mp/content'
 import { vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -8,10 +8,6 @@ import { levelDoc, prefabDoc, type ItemProps } from './editorDoc'
 const blank = (): Level => ({ id: 'untitled', config: { fallBehavior: 'physical-fall', fallY: -20 }, instances: [] })
 
 const props = (over: Partial<ItemProps> = {}): ItemProps => ({
-  behavior: 'static',
-  distance: 3,
-  periodMs: 4000,
-  axis: vec3(0, 1, 0),
   pieceLevel: false,
   trigger: 'none',
   material: '',
@@ -45,7 +41,7 @@ const LIBRARY: Record<string, Prefab> = {
         visual: { kind: 'primitive', material: MAT_MOVING },
       },
     ],
-    behavior: { kind: 'move', axis: vec3(0, 1, 0), distance: 1.5, periodMs: 4000 },
+    behavior: { kind: 'track', keys: moveTrack(vec3(0, 0, 0), vec3(0, 1, 0), 1.5, 4000) },
   },
   'checkpoint pad': {
     id: 'checkpoint pad',
@@ -415,17 +411,75 @@ describe('levelDoc: instance overrides', () => {
     expect('material' in level.instances[0]!, 'no empty key left in the JSON').toBe(false)
   })
 
-  it('writes a behavior override onto the instance, not the prefab', () => {
+  it('writes a track onto the instance, not the prefab', () => {
     const level = blank()
     const doc = levelDoc(level, LIBRARY)
     doc.place('platform', vec3(0, 0, 0))
     doc.place('platform', vec3(4, 0, 0))
 
-    doc.setProps(1, props({ behavior: 'move', distance: 5, periodMs: 2000, axis: vec3(1, 0, 0) }))
+    doc.setTrack(1, { keys: moveTrack(vec3(4, 0, 0), vec3(1, 0, 0), 5, 2000), loop: 'loop', phaseMs: 0 })
 
-    expect(level.instances[1]!.behavior).toEqual({ kind: 'move', axis: vec3(1, 0, 0), distance: 5, periodMs: 2000 })
+    expect(level.instances[1]!.behavior).toMatchObject({ kind: 'track' })
     expect(level.instances[0]!.behavior, 'the first instance stays static').toBeUndefined()
-    expect(doc.prefabAt('platform')!.behavior).toBeUndefined()
+    expect(doc.prefabAt('platform')!.behavior, 'and the shared definition is untouched').toBeUndefined()
+  })
+
+  // `loop` and `phaseMs` at their defaults carry no information, so writing them would put noise in every
+  // authored file. Round-tripping through `trackOf` has to give them back anyway.
+  it('leaves default loop and phase out of the JSON but reads them back', () => {
+    const level = blank()
+    const doc = levelDoc(level, LIBRARY)
+    doc.place('platform', vec3(0, 0, 0))
+
+    doc.setTrack(0, { keys: [{ t: 0 }, { t: 1000, position: vec3(0, 2, 0) }], loop: 'loop', phaseMs: 0 })
+    expect(Object.keys(level.instances[0]!.behavior!)).toEqual(['kind', 'keys'])
+    expect(doc.trackOf(0)).toMatchObject({ loop: 'loop', phaseMs: 0 })
+
+    doc.setTrack(0, { keys: [{ t: 0 }, { t: 1000, position: vec3(0, 2, 0) }], loop: 'pingPong', phaseMs: 250 })
+    expect(level.instances[0]!.behavior).toMatchObject({ loop: 'pingPong', phaseMs: 250 })
+  })
+
+  it('stores keys in time order however they arrive, since the timeline drags them past each other', () => {
+    const level = blank()
+    const doc = levelDoc(level, LIBRARY)
+    doc.place('platform', vec3(0, 0, 0))
+
+    doc.setTrack(0, { keys: [{ t: 900 }, { t: 0 }, { t: 400 }], loop: 'loop', phaseMs: 0 })
+    expect(doc.trackOf(0)!.keys.map((k) => k.t)).toEqual([0, 400, 900])
+  })
+
+  it('removes the behavior for a null track rather than writing an empty one', () => {
+    const level = blank()
+    const doc = levelDoc(level, LIBRARY)
+    doc.place('platform', vec3(0, 0, 0))
+
+    doc.setTrack(0, { keys: [{ t: 0 }, { t: 500, position: vec3(0, 1, 0) }], loop: 'loop', phaseMs: 0 })
+    doc.setTrack(0, null)
+    expect('behavior' in level.instances[0]!, 'no empty key left in the JSON').toBe(false)
+    expect(doc.trackOf(0)).toBeNull()
+  })
+
+  // The scrub, and what the gizmo writes back into a key.
+  it('poses an item at a track time, and at its authored transform when static', () => {
+    const level = blank()
+    const doc = levelDoc(level, LIBRARY)
+    doc.place('platform', vec3(3, 0, 0))
+
+    expect(doc.poseOf(0, 1234).position, 'static: the authored transform').toEqual(vec3(3, 0, 0))
+
+    doc.setTrack(0, { keys: moveTrack(vec3(3, 0, 0), vec3(0, 1, 0), 4, 1000), loop: 'loop', phaseMs: 0 })
+    expect(doc.poseOf(0, 500).position.y, 'half a period is full travel').toBeCloseTo(4, 9)
+    expect(doc.poseOf(0, 0).position.y, 'and it starts home').toBeCloseTo(0, 9)
+  })
+
+  it('reads a piece track in prefab mode', () => {
+    const prefab = inlineInstance('p')
+    const doc = prefabDoc(prefab)
+    expect(doc.trackOf(0)).toBeNull()
+
+    doc.setTrack(0, { keys: [{ t: 0, position: vec3(0, 0, 0) }, { t: 800, position: vec3(0, 2, 0) }], loop: 'pingPong', phaseMs: 0 })
+    expect(prefab.pieces[0]!.behavior).toMatchObject({ kind: 'track', loop: 'pingPong' })
+    expect(doc.poseOf(0, 800).position.y).toBeCloseTo(2, 9)
   })
 })
 

@@ -1,7 +1,8 @@
-import { axisAngleToQuat, eulerToQuat, lerpVec3, mulQuat, quat, rotateVec3, slerpQuat, vec3, type Quat, type Vec3 } from '@mp/core'
+import { eulerToQuat, lerpVec3, mulQuat, quat, rotateVec3, slerpQuat, vec3, type Quat, type Vec3 } from '@mp/core'
 import type { PhysicsBody, PhysicsWorld, ShapeDesc } from '@mp/physics'
 
 import { visualMaterial, visualModel } from './assets'
+import { isAnimated, poseAt } from './track'
 import { resolvePrefab } from './resolve'
 import type { Behavior, ColliderDesc, Level, LevelConfig, Marker, PrefabInstance, Transform, TriggerKind } from './types'
 
@@ -53,8 +54,12 @@ export interface VisualItem {
  * at load and never again, so a level with no movers costs what it always did.
  */
 interface Frame {
-  localPos: Vec3
-  localRot: Quat
+  /**
+   * The authored transform, kept rather than pre-converted: a track is evaluated against it every tick
+   * (its keys may leave a channel alone, which then means "whatever was authored"), so the base pose has
+   * to survive as data rather than as a starting quaternion.
+   */
+  base: Transform
   /** Accumulated scale of the ancestors — what scales *this* frame's own local offset. */
   parentScale: Vec3
   /** `parentScale` times this frame's own scale — what scales its children and its collider. */
@@ -149,7 +154,6 @@ export interface LoadedLevel {
 
 const add = (a: Vec3, b: Vec3): Vec3 => vec3(a.x + b.x, a.y + b.y, a.z + b.z)
 const mul = (a: Vec3, b: Vec3): Vec3 => vec3(a.x * b.x, a.y * b.y, a.z * b.z)
-const rotationOf = (t: Transform): Quat => (t.rotation !== undefined ? eulerToQuat(t.rotation) : quat())
 const scaleOf = (t: Transform): Vec3 => t.scale ?? vec3(1, 1, 1)
 
 // Bake a per-axis scale into a collider's dimensions (Unity's lossy-scale → shape bake). Ball
@@ -185,19 +189,6 @@ const toShape = (c: ColliderDesc): ShapeDesc => {
   }
 }
 
-// Clock-driven translation: eased out-and-back from home (base). Displacement runs 0 → distance
-// → 0 over one period via (1−cos)/2, so it starts and ends at rest. `base` is the home position.
-const movePosition = (base: Vec3, b: Extract<Behavior, { kind: 'move' }>, nowMs: number): Vec3 => {
-  const len = Math.hypot(b.axis.x, b.axis.y, b.axis.z) || 1
-  const d = (b.distance * (1 - Math.cos((nowMs / b.periodMs) * Math.PI * 2))) / 2
-  return vec3(base.x + (b.axis.x / len) * d, base.y + (b.axis.y / len) * d, base.z + (b.axis.z / len) * d)
-}
-
-// Clock-driven orientation: base pose spun by θ = 2π·t/T about a world axis.
-const spinAngle = (b: Extract<Behavior, { kind: 'rotate' }>, nowMs: number): number => (nowMs / b.periodMs) * Math.PI * 2
-const rotateOrientation = (base: Quat, b: Extract<Behavior, { kind: 'rotate' }>, nowMs: number): Quat =>
-  mulQuat(axisAngleToQuat(b.axis, spinAngle(b, nowMs)), base)
-
 export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel => {
   const visuals: VisualItem[] = []
   const markers: WorldMarker[] = []
@@ -226,8 +217,9 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
    * flat behaviour it replaces.
    */
   const evaluate = (f: Frame, nowMs: number): void => {
-    const localPos = f.behavior.kind === 'move' ? movePosition(f.localPos, f.behavior, nowMs) : f.localPos
-    const localRot = f.behavior.kind === 'rotate' ? rotateOrientation(f.localRot, f.behavior, nowMs) : f.localRot
+    const pose = poseAt(f.behavior, f.base, nowMs)
+    const localPos = pose.position
+    const localRot = eulerToQuat(pose.rotation)
     if (f.parent === null) {
       f.worldPos = localPos
       f.worldRot = localRot
@@ -240,19 +232,19 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
   const makeFrame = (t: Transform, behavior: Behavior, parent: Frame | null): Frame => {
     const parentScale = parent?.scale ?? vec3(1, 1, 1)
     const f: Frame = {
-      localPos: t.position,
-      localRot: rotationOf(t),
+      base: t,
       parentScale,
       scale: mul(parentScale, scaleOf(t)),
       behavior,
       parent,
-      animated: behavior.kind !== 'static' || (parent?.animated ?? false),
+      animated: isAnimated(behavior) || (parent?.animated ?? false),
       worldPos: vec3(0, 0, 0),
       worldRot: quat(),
     }
     frames.push(f)
-    // At t = 0 both behaviours are at rest — `(1 − cos 0)/2 = 0` and a zero spin angle — so this is
-    // exactly the authored pose, with no separate code path for "where was this placed".
+    // Evaluated at t = 0 rather than copied from the transform, so there is no separate code path for
+    // "where was this placed": a static frame's pose at 0 *is* its authored transform, and an animated
+    // one's is its first key, which is where the level genuinely starts.
     evaluate(f, 0)
     return f
   }

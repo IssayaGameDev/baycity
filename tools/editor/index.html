@@ -13,7 +13,7 @@
       :root {
         --left: 240px;
         --right: 300px;
-        --bottom: 132px;
+        --bottom: 190px;
         --bg: #14161a;
         --panel: #1c1f24;
         --panel-head: #23272e;
@@ -79,6 +79,243 @@
         overflow: auto;
         min-height: 0;
       }
+
+      /* ---- bottom panel tabs: Project and Animation share the one wide row ---- */
+      .tabs {
+        display: flex;
+        align-items: stretch;
+        gap: 1px;
+        background: var(--panel-head);
+        border-bottom: 1px solid var(--line);
+        flex: 0 0 auto;
+        user-select: none;
+      }
+      .tab {
+        appearance: none;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: transparent;
+        color: var(--dim);
+        font: inherit;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        padding: 5px 12px;
+        cursor: pointer;
+      }
+      .tab:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .tab.on {
+        color: var(--text);
+        border-bottom-color: var(--accent);
+      }
+      .tab-note {
+        margin-left: auto;
+        align-self: center;
+        padding: 0 8px;
+        font-size: 11px;
+        color: var(--dim);
+      }
+
+      /* ---- the timeline strip ---- */
+      #timeline {
+        padding: 6px 8px 10px;
+      }
+      #timeline .hint {
+        margin: 8px 2px;
+        font-size: 12px;
+        color: var(--dim);
+      }
+      .tl-bar {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin-bottom: 8px;
+      }
+      .tl-who {
+        font-size: 12px;
+        font-weight: 600;
+        margin-right: 4px;
+        max-width: 220px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .tl-lbl {
+        font-size: 11px;
+        color: var(--dim);
+      }
+      .tl-dur {
+        font-size: 11px;
+        color: var(--dim);
+        font-variant-numeric: tabular-nums;
+      }
+      .tl-presets {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-left: auto;
+        padding-left: 10px;
+        border-left: 1px solid var(--line);
+      }
+      .tl-presets input.ctl[type='number'] {
+        width: 46px;
+      }
+
+      /* The strip itself: a ruler, one key row, a playhead. Percentages throughout, so it reflows with the
+         panel instead of needing a measure-and-position pass in JS. */
+      .tl-strip {
+        position: relative;
+        height: 54px;
+        margin: 0 10px; /* room for a diamond centred on t=0 and on the far end */
+        cursor: text;
+      }
+      .tl-ruler {
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 16px;
+        border-bottom: 1px solid var(--line);
+      }
+      .tl-tick {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        border-left: 1px solid var(--line);
+      }
+      .tl-tick span {
+        position: absolute;
+        left: 3px;
+        top: 1px;
+        font-size: 10px;
+        color: var(--dim);
+        font-variant-numeric: tabular-nums;
+        pointer-events: none;
+      }
+      .tl-end {
+        position: absolute;
+        top: 0;
+        bottom: -38px;
+        border-left: 1px dashed var(--accent-dim);
+      }
+      .tl-row {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 22px;
+        height: 26px;
+      }
+      /* A segment carries its easing name, and clicking it cycles the curve. */
+      .tl-seg {
+        position: absolute;
+        top: 9px;
+        height: 8px;
+        background: var(--accent-dim);
+        border-radius: 4px;
+        cursor: pointer;
+        overflow: hidden;
+      }
+      .tl-seg:hover {
+        background: var(--accent);
+      }
+      .tl-seg.step {
+        background: repeating-linear-gradient(90deg, var(--accent-dim) 0 4px, transparent 4px 8px);
+      }
+      .tl-seg span {
+        position: absolute;
+        left: 50%;
+        top: -11px;
+        transform: translateX(-50%);
+        font-size: 10px;
+        color: var(--dim);
+        pointer-events: none;
+        white-space: nowrap;
+      }
+      .tl-key {
+        position: absolute;
+        top: 6px;
+        width: 13px;
+        height: 13px;
+        margin-left: -7px;
+        background: var(--text);
+        border: 1px solid var(--bg);
+        transform: rotate(45deg);
+        cursor: ew-resize;
+      }
+      .tl-key:hover {
+        background: #fff;
+      }
+      .tl-key.on {
+        background: var(--accent);
+        border-color: #fff;
+      }
+      /* A rotation-only key is hollow: the viewport draws no path point for it. */
+      .tl-key.rot {
+        background: transparent;
+        border-color: var(--text);
+      }
+      /* Two keys at one time is an instant jump, and worth seeing as one. */
+      .tl-key.stacked {
+        border-color: var(--accent);
+      }
+      .tl-head {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        background: #ff5c8a;
+        pointer-events: none;
+      }
+      .tl-head::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -4px;
+        border: 4px solid transparent;
+        border-top-color: #ff5c8a;
+      }
+
+      /* ---- a small context menu, for what a right-click on a key offers ---- */
+      .menu {
+        position: fixed;
+        z-index: 50;
+        min-width: 180px;
+        padding: 3px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        box-shadow: 0 6px 18px #0009;
+        display: flex;
+        flex-direction: column;
+      }
+      .menu-head {
+        padding: 4px 8px 5px;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--dim);
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 2px;
+      }
+      .menu button {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        font-size: 12px;
+        text-align: left;
+        padding: 4px 8px;
+        border-radius: 3px;
+        cursor: pointer;
+      }
+      .menu button:hover {
+        background: var(--sel);
+      }
+
       #left {
         grid-area: left;
       }
@@ -612,8 +849,13 @@
 
       <div id="split-bottom" class="splitter"></div>
       <div id="bottom" class="panel">
-        <h2>Project — prefabs and models place on click; anything else opens in the Inspector</h2>
+        <div class="tabs" role="tablist">
+          <button class="tab" data-tab="palette">Project</button>
+          <button class="tab" data-tab="timeline">Animation</button>
+          <span class="tab-note"></span>
+        </div>
         <div id="palette" class="panel-body"></div>
+        <div id="timeline" class="panel-body" hidden></div>
       </div>
 
       <div id="status"></div>

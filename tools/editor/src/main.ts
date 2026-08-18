@@ -10,7 +10,19 @@ import {
   type CharacterTuning,
 } from '@mp/character'
 import { createLocalController, type LocalController, type LocalWorld } from '@mp/client'
-import { assetsOfKind, instantiateLevel, type AssetEntry, type Level, type LoadedLevel, type Prefab } from '@mp/content'
+import {
+  assetsOfKind,
+  instantiateLevel,
+  moveTrack,
+  spinTrack,
+  trackDuration,
+  type AssetEntry,
+  type Keyframe,
+  type Level,
+  type LoadedLevel,
+  type Pose,
+  type Prefab,
+} from '@mp/content'
 import { createSimClock, eulerToQuat, quat, startFixedLoop, vec3, type EntityId, type LoopHandle, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
@@ -38,6 +50,8 @@ import { canMoveFolder, movedInto, renamedTo } from './assetTree'
 import { createPreviews, type Previews } from './previews'
 import { createProjectPanel, type Project } from './projectPanel'
 import { createSplitter, readPx, writePx } from './splitter'
+import { createTimeline, type Timeline } from './timeline'
+import { DIRS, keyRows, pathPoints, setKeyPose, trackFrom, type TrackEdit } from './trackEdit'
 import { createToolbar, type GizmoMode, type GizmoSpace, type Toolbar } from './toolbar'
 
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector<T>(sel)!
@@ -213,6 +227,9 @@ const buildItems = (): void => {
     ;(parent === null ? instanceRoot : (instanceGroups[parent] ?? instanceRoot)).add(g)
     instanceGroups[i] = g
   }
+  // Authored transforms are only where *static* items sit. An animated one belongs at its track's pose for
+  // the current playhead — which at 0 is where the game starts it, so the two now agree (ADR 0029).
+  applyPreviewPoses()
 }
 
 /**
@@ -283,41 +300,65 @@ const loadNewReferences = (redraw: () => void): void => {
     .catch((e: unknown) => setProblem(`assets did not load (${String(e)}) — restart pnpm dev:editor`))
 }
 
-// --- end-position widget: a translucent ghost of a moving piece at its far end + a line ---
-const ghostMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.22, depthWrite: false, toneMapped: false })
-const endLineMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false, toneMapped: false })
-const endHelper = new THREE.Group()
-stage.scene.add(endHelper)
-const clearEndHelper = (): void => {
-  for (const c of [...endHelper.children]) {
-    endHelper.remove(c)
-    c.traverse((o) => {
-      if (o instanceof THREE.Mesh || o instanceof THREE.Line) o.geometry.dispose() // shared materials kept
-    })
+/**
+ * The track helper: the path a keyframed item follows, drawn in the viewport (ADR 0029).
+ *
+ * This is where *space* is edited. A line through every positioned key with a handle on each, so the shape
+ * of the motion is visible and draggable with the same gizmo as everything else — the timeline strip only
+ * ever says *when*. It replaces a widget that could draw one straight line for one `move` behavior, which
+ * was all the old vocabulary could express.
+ *
+ * The polyline is exact rather than sampled: easing changes when the item is between two keys and never
+ * where, since every segment is a straight line in space.
+ */
+const pathLineMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false, toneMapped: false })
+const keyDotMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, toneMapped: false, depthTest: false })
+const keyDotActiveMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, depthTest: false })
+const keyDotGeo = new THREE.SphereGeometry(0.11, 12, 8)
+const trackHelper = new THREE.Group()
+trackHelper.renderOrder = 10
+stage.scene.add(trackHelper)
+
+/** Key handles, so a viewport click can say which key it hit. */
+let keyHandles: THREE.Mesh[] = []
+
+const clearTrackHelper = (): void => {
+  for (const c of [...trackHelper.children]) {
+    trackHelper.remove(c)
+    if (c instanceof THREE.Line) c.geometry.dispose() // dot geometry and every material are shared
   }
+  keyHandles = []
 }
-const updateEndGhost = (): void => {
-  clearEndHelper()
-  endHelper.visible = false
-  if (selected === null || doc === null) return
-  const p = doc.props(selected)
-  if (p.behavior !== 'move') return
+
+const updateTrackHelper = (): void => {
+  clearTrackHelper()
+  trackHelper.visible = false
+  if (selected === null || doc === null || playing) return
+  const track = doc.trackOf(selected)
   const g = instanceGroups[selected]
-  if (g === undefined) return
-  const len = Math.hypot(p.axis.x, p.axis.y, p.axis.z) || 1
-  const end = g.position.clone().add(new THREE.Vector3(p.axis.x / len, p.axis.y / len, p.axis.z / len).multiplyScalar(p.distance))
-  const ghost = new THREE.Group()
-  ghost.position.copy(end)
-  ghost.quaternion.copy(g.quaternion)
-  ghost.scale.copy(g.scale)
-  for (const spec of doc.meshSpecs(selected)) {
-    const m = new THREE.Mesh(geometryForCollider(spec.collider), ghostMat)
-    applyTransform(m, spec.transform.position, spec.transform.rotation, spec.transform.scale)
-    ghost.add(m)
-  }
-  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([g.position.clone(), end]), endLineMat)
-  endHelper.add(ghost, line)
-  endHelper.visible = true
+  if (track === null || g === undefined) return
+  const points = pathPoints(track.keys)
+  if (points.length === 0) return // a spin-only track has no path to draw
+
+  // Key positions are *local* poses, so they are placed by the item's parent — which for a nested item is
+  // another animated group, and that is exactly right: the path is drawn where the motion happens.
+  const parent = g.parent ?? instanceRoot
+  parent.updateWorldMatrix(true, false)
+  const world = points.map((p) => parent.localToWorld(new THREE.Vector3(p.position.x, p.position.y, p.position.z)))
+
+  if (world.length > 1) trackHelper.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(world), pathLineMat))
+
+  const positioned = keyRows(track.keys).filter((r) => r.hasPosition)
+  world.forEach((at, n) => {
+    const row = positioned[n]
+    if (row === undefined) return
+    const dot = new THREE.Mesh(keyDotGeo, row.index === activeKey ? keyDotActiveMat : keyDotMat)
+    dot.position.copy(at)
+    dot.userData.keyIndex = row.index
+    trackHelper.add(dot)
+    keyHandles.push(dot)
+  })
+  trackHelper.visible = true
 }
 
 // Re-derive markers/triggers + physics from the current doc (after edits; also a validity check).
@@ -443,24 +484,129 @@ const setSpace = (space: GizmoSpace): void => {
   uiChanged()
 }
 
+// ============================== animation editing (ADR 0029) ==============================
+/**
+ * The playhead, in milliseconds into the selected item's track. It poses **every** animated item, not only
+ * the selection: scrubbing is meant to show what the level does at that instant, and a lift that ignored the
+ * playhead while the bar beside it moved would be worse than not scrubbing at all.
+ */
+let previewMs = 0
+/** The strip's own playback. Separate from `playing`, which is the real game loop with pointer lock. */
+let previewing = false
+let previewLastFrame = 0
+/**
+ * The key the gizmo is editing, or `null` for the item as a whole.
+ *
+ * Selecting a key also parks the playhead on it (the timeline does that), so the item is *already* drawn at
+ * that key's pose — which is why the gizmo needs no proxy object to drag. It edits what it is sitting on.
+ */
+let activeKey: number | null = null
+/**
+ * Snapshot taken when a drag begins on an animated item with no key selected, so the drag **offsets every
+ * key** by one delta instead of accumulating one per pointer event.
+ */
+let dragFrom: { pose: Pose; keys: readonly Keyframe[] } | null = null
+
+/** Pose every item from its track at the playhead. Static items sit at their authored transform. */
+const applyPreviewPoses = (): void => {
+  if (doc === null) return
+  for (let i = 0; i < doc.count(); i++) {
+    const g = instanceGroups[i]
+    if (g === undefined) continue
+    const pose = doc.poseOf(i, previewMs)
+    g.position.set(pose.position.x, pose.position.y, pose.position.z)
+    const q = eulerToQuat(pose.rotation)
+    g.quaternion.set(q.x, q.y, q.z, q.w)
+    // Scale is not animated: a track that resized a collider would rebuild physics every tick.
+  }
+}
+
+const setPreviewTime = (ms: number): void => {
+  previewMs = Math.max(0, ms)
+  applyPreviewPoses()
+  updateTrackHelper()
+  inspectorSync()
+  timeline.syncHead()
+  renderStatus()
+}
+
+/**
+ * The playhead moving during playback, sixty times a second. Deliberately narrower than `setPreviewTime`:
+ * the path handles cannot have moved, and rebuilding their geometry every frame would churn a Line buffer
+ * and a dozen meshes per frame for a picture that is identical.
+ */
+const advancePreviewTime = (ms: number): void => {
+  previewMs = Math.max(0, ms)
+  applyPreviewPoses()
+  timeline.syncHead()
+}
+
+const setActiveKey = (index: number | null): void => {
+  activeKey = index
+  updateTrackHelper()
+}
+
+/** The selected item's track, for the panel and for the write-back routing. */
+const selectedTrack = (): TrackEdit | null => (selected === null || doc === null ? null : doc.trackOf(selected))
+
+/**
+ * Replace the selected item's track, then redraw everything a track affects: the item's pose at the
+ * playhead, the path handles, the physics instance, and the strip.
+ */
+const setSelectedTrack = (track: TrackEdit | null): void => {
+  if (selected === null || doc === null) return
+  doc.setTrack(selected, track)
+  applyPreviewPoses()
+  updateTrackHelper()
+  scheduleRebuild()
+  timeline.render()
+  hierarchy.render()
+  renderStatus()
+}
+
 let gizmoDragged = false
 gizmo.addEventListener('dragging-changed', (event) => {
   const dragging = event.value as boolean
   controls.enabled = !dragging
-  if (dragging) gizmoDragged = true
-  else rebuildLoaded()
+  if (dragging) {
+    gizmoDragged = true
+    // Dragging an animated item as a whole moves its *whole path*, which needs the pose it started from.
+    const track = selectedTrack()
+    dragFrom = track !== null && activeKey === null && selected !== null && doc !== null ? { pose: doc.poseOf(selected, previewMs), keys: track.keys } : null
+  } else {
+    dragFrom = null
+    rebuildLoaded()
+  }
 })
 gizmo.addEventListener('objectChange', () => {
   writeBackSelected()
   inspectorSync()
-  updateEndGhost()
+  updateTrackHelper()
 })
 
-// Copy the selected group's pose back into the doc (position always; rotation/scale only if any).
+/**
+ * Where a gizmo drag lands, which depends on whether the item is animated (ADR 0029).
+ *
+ * - **No track**: the authored transform, as it always did.
+ * - **A key selected**: that key's pose. The item is drawn at the key (the playhead is parked on it), so the
+ *   gizmo is dragging the key itself.
+ * - **A track, no key selected**: every key offsets by the same delta. This is the only coherent answer —
+ *   position keys override the authored transform, so writing the transform would move nothing on screen and
+ *   read as the editor ignoring the drag. Dragging an animated platform moves its whole path, which the
+ *   visible polyline then shows.
+ *
+ * A channel the track does not animate falls through to the authored transform, so rotating a
+ * translation-only lift tilts the lift rather than inventing a one-key rotation channel that would freeze it.
+ */
 const writeBackSelected = (): void => {
   if (selected === null || doc === null) return
   const g = instanceGroups[selected]
   if (g === undefined) return
+  const track = doc.trackOf(selected)
+  if (track !== null) {
+    writeBackIntoTrack(selected, track, g)
+    return
+  }
   const t = doc.transformOf(selected)
   t.position = vec3(r4(g.position.x), r4(g.position.y), r4(g.position.z))
   const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
@@ -468,6 +614,55 @@ const writeBackSelected = (): void => {
   else t.rotation = vec3(r4(e.x), r4(e.y), r4(e.z))
   if (isOne(g.scale)) delete t.scale
   else t.scale = vec3(r4(g.scale.x), r4(g.scale.y), r4(g.scale.z))
+}
+
+const groupPose = (g: THREE.Group): Pose => {
+  const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
+  return { position: vec3(r4(g.position.x), r4(g.position.y), r4(g.position.z)), rotation: vec3(r4(e.x), r4(e.y), r4(e.z)) }
+}
+
+const writeBackIntoTrack = (index: number, track: TrackEdit, g: THREE.Group): void => {
+  if (doc === null) return
+  const pose = groupPose(g)
+  const usesPosition = track.keys.some((k) => k.position !== undefined)
+  const usesRotation = track.keys.some((k) => k.rotation !== undefined)
+
+  // Scale is never animated, so it always belongs to the authored transform. Same for a channel with no
+  // keys: there is nothing to write it into.
+  const t = doc.transformOf(index)
+  if (isOne(g.scale)) delete t.scale
+  else t.scale = vec3(r4(g.scale.x), r4(g.scale.y), r4(g.scale.z))
+  if (!usesRotation) {
+    if (isZeroRot(new THREE.Euler(pose.rotation.x, pose.rotation.y, pose.rotation.z))) delete t.rotation
+    else t.rotation = pose.rotation
+  }
+  if (!usesPosition) t.position = pose.position
+
+  if (activeKey !== null) {
+    doc.setTrack(index, {
+      ...track,
+      keys: setKeyPose(track.keys, activeKey, {
+        ...(usesPosition ? { position: pose.position } : {}),
+        ...(usesRotation ? { rotation: pose.rotation } : {}),
+      }),
+    })
+    return
+  }
+
+  // No key selected: offset the whole track, against the drag's *starting* snapshot — so a hundred pointer
+  // events during one drag produce one offset rather than a hundred compounding ones.
+  const from = dragFrom
+  if (from === null) return
+  const dp = vec3(pose.position.x - from.pose.position.x, pose.position.y - from.pose.position.y, pose.position.z - from.pose.position.z)
+  const dr = vec3(pose.rotation.x - from.pose.rotation.x, pose.rotation.y - from.pose.rotation.y, pose.rotation.z - from.pose.rotation.z)
+  doc.setTrack(index, {
+    ...track,
+    keys: from.keys.map((k) => ({
+      ...k,
+      ...(k.position !== undefined ? { position: vec3(r4(k.position.x + dp.x), r4(k.position.y + dp.y), r4(k.position.z + dp.z)) } : {}),
+      ...(k.rotation !== undefined ? { rotation: vec3(r4(k.rotation.x + dr.x), r4(k.rotation.y + dr.y), r4(k.rotation.z + dr.z)) } : {}),
+    })),
+  })
 }
 
 const select = (index: number): void => {
@@ -484,16 +679,20 @@ const select = (index: number): void => {
   if (g === undefined || doc === null) return
   selected = index
   gizmo.attach(g)
+  activeKey = null // a fresh selection edits the object, not whichever key the last one was on
   inspectorRebuild()
-  updateEndGhost()
+  updateTrackHelper()
+  timeline.render()
   uiChanged()
 }
 
 const deselect = (): void => {
   selected = null
+  activeKey = null
   gizmo.detach()
   inspectorRebuild()
-  updateEndGhost()
+  updateTrackHelper()
+  timeline.render()
   uiChanged()
 }
 
@@ -551,6 +750,19 @@ canvas.addEventListener('pointerup', (e) => {
       buildItems() // resets the item groups, so the gizmo has to be re-attached
       select(idx)
     })
+    return
+  }
+
+  // A key handle wins over the geometry behind it: the dots sit on the path, which is usually inside or
+  // beside the thing being animated, and a click meant for a handle should never reselect the object.
+  const keyHit = keyHandles.length > 0 ? raycaster.intersectObjects(keyHandles, false)[0] : undefined
+  if (keyHit !== undefined) {
+    const index = keyHit.object.userData.keyIndex as number
+    setActiveKey(index)
+    const track = selectedTrack()
+    const key = track === null ? undefined : keyRows(track.keys)[index]
+    if (key !== undefined) setPreviewTime(key.t)
+    timeline.render()
     return
   }
 
@@ -677,6 +889,9 @@ const worldMove = (): { x: number; z: number } => {
 
 const startPlay = (): void => {
   if (doc === null || playing) return
+  // Two clocks running at once would be two answers to "where is this platform". Play wins: it is the real
+  // one, and the track helper hides itself while playing anyway.
+  setPreviewing(false)
   rebuildLoaded() // fresh world + loaded from the current data
   if (loaded === null || world === null) return
   deselect()
@@ -1050,6 +1265,79 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   },
 })
 
+
+// --- animation panel (Animation tab, beside Project in the bottom row) ---
+/**
+ * `setPreviewing` lives here rather than beside the other animation state because it is the one piece that
+ * has to touch the panel: starting playback resets the frame clock so the first frame advances by ~0 rather
+ * than by however long the tab sat idle.
+ */
+function setPreviewing(on: boolean): void {
+  previewing = on
+  previewLastFrame = 0
+  timeline.render()
+}
+
+/** A preset replaces the track outright — it is a starting point, not an increment. */
+const applyPreset = (keys: readonly Keyframe[]): void => {
+  const existing = selectedTrack()
+  setSelectedTrack({ keys, loop: existing?.loop ?? 'loop', phaseMs: existing?.phaseMs ?? 0 })
+  setActiveKey(null)
+  setPreviewTime(0)
+}
+
+const timeline: Timeline = createTimeline($<HTMLDivElement>('#timeline'), {
+  track: selectedTrack,
+  setTrack: setSelectedTrack,
+  hasSelection: () => selected !== null,
+  label: () => (selected !== null && doc !== null ? doc.label(selected) : ''),
+  time: () => previewMs,
+  setTime: setPreviewTime,
+  previewing: () => previewing,
+  setPreviewing,
+  activeKey: () => activeKey,
+  setActiveKey: (index) => {
+    setActiveKey(index)
+    timeline.render()
+  },
+  poseNow: () => (selected === null || doc === null ? null : doc.poseOf(selected, previewMs)),
+  // The same grid the transform gizmo snaps to, in time: a 0.25 grid means quarter-second keys, which keeps
+  // authored times round without a second setting to forget about.
+  snapMs: () => (edit.snap ? edit.step * 1000 : 0),
+  addTrack: () => {
+    if (selected === null || doc === null) return
+    setSelectedTrack(trackFrom(doc.poseOf(selected, 0)))
+    setActiveKey(0)
+    setPreviewTime(0)
+  },
+  applyMovePreset: (dir, distance, periodMs) => {
+    if (selected === null || doc === null) return
+    applyPreset(moveTrack(doc.poseOf(selected, 0).position, DIRS[dir] ?? vec3(0, 1, 0), distance, periodMs))
+  },
+  applySpinPreset: (dir, periodMs) => {
+    if (selected === null || doc === null) return
+    applyPreset(spinTrack(doc.poseOf(selected, 0).rotation, DIRS[dir] ?? vec3(0, 1, 0), periodMs))
+  },
+})
+
+/**
+ * The bottom row's tabs. Project and Animation both want the full width — a file grid needs columns and a
+ * timeline needs a long axis — so they share one panel rather than each getting a narrow one.
+ */
+const bottomTabs = [...document.querySelectorAll<HTMLButtonElement>('.tabs .tab')]
+const showBottomTab = (name: string): void => {
+  for (const tab of bottomTabs) {
+    const on = tab.dataset.tab === name
+    tab.classList.toggle('on', on)
+    const body = document.getElementById(tab.dataset.tab ?? '')
+    if (body !== null) body.hidden = !on
+  }
+  // Percentage layout means the strip only needs a re-render when it becomes visible, not on every resize.
+  if (name === 'timeline') timeline.render()
+}
+for (const tab of bottomTabs) tab.addEventListener('click', () => showBottomTab(tab.dataset.tab ?? 'palette'))
+showBottomTab('palette')
+
 // --- asset inspector (materials) ---
 const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#asset-inspector'), {
   db: () => assets?.db ?? null,
@@ -1089,19 +1377,26 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     if (selected === null) return
     const g = instanceGroups[selected]
     if (g === undefined) return
+    // A typed edit is a one-shot drag: `writeBackSelected` offsets an animated item's whole track against the
+    // pose it started from, and without a snapshot here there is nothing to offset against — the number would
+    // be accepted and change nothing, which is worse than refusing it.
+    const track = doc?.trackOf(selected) ?? null
+    if (track !== null && activeKey === null && doc !== null) dragFrom = { pose: doc.poseOf(selected, previewMs), keys: track.keys }
     g.position.set(t.position.x, t.position.y, t.position.z)
     const q = eulerToQuat(vec3(THREE.MathUtils.degToRad(t.rotationDeg.x), THREE.MathUtils.degToRad(t.rotationDeg.y), THREE.MathUtils.degToRad(t.rotationDeg.z)))
     g.quaternion.set(q.x, q.y, q.z, q.w)
     g.scale.set(t.scale.x, t.scale.y, t.scale.z)
     writeBackSelected()
+    dragFrom = null
+    applyPreviewPoses() // the track moved, so the item's drawn pose at the playhead moved with it
     scheduleRebuild()
-    updateEndGhost()
+    updateTrackHelper()
   },
   onPropsChanged: () => {
     const item = selected
     rebuildSelectedMeshes()
     scheduleRebuild()
-    updateEndGhost()
+    updateTrackHelper()
     hierarchy.render() // a trigger or name change shows in the row's badge/label
     // Draw with what is loaded now, then again once a newly named material has arrived.
     if (item !== null) loadNewReferences(() => rebuildItemMeshes(item))
@@ -1143,6 +1438,11 @@ const setProblem = (msg: string): void => {
 const renderStatus = (): void => {
   const parts: string[] = [breadcrumb()]
   if (selected !== null && doc !== null) parts.push(`selected #${selected} (${doc.label(selected)})`)
+  // What the gizmo is about to move is not otherwise visible, and it is the difference between dragging one
+  // key and dragging a whole path.
+  if (selected !== null && doc?.trackOf(selected) != null) {
+    parts.push(`t=${(previewMs / 1000).toFixed(2)}s${activeKey !== null ? ` · key ${activeKey + 1}` : ' · whole track'}`)
+  }
   if (placing !== null) {
     const what = placing.kind === 'own' ? placing.name : (assets?.db.byId[placing.assetId]?.name ?? 'asset')
     parts.push(`click in the viewport to place <b>${what}</b>`)
@@ -1228,6 +1528,22 @@ stage.start(() => {
     stage.camera.position.set(tx + Math.sin(camYaw) * cp * camParams.distance, ty + Math.sin(camPitch) * camParams.distance + 0.5, tz + Math.cos(camYaw) * cp * camParams.distance)
     stage.camera.lookAt(tx, ty, tz)
   } else {
+    // The strip's own playback: real time, wrapped by the track, and only while the panel asks for it. It is
+    // deliberately not the game clock — this previews one authored track, it does not run the level.
+    if (previewing) {
+      const now = performance.now()
+      const dt = previewLastFrame === 0 ? 0 : now - previewLastFrame
+      previewLastFrame = now
+      const track = selectedTrack()
+      if (track === null) setPreviewing(false)
+      else {
+        const span = trackDuration(track.keys)
+        const wrapAt = track.loop === 'pingPong' ? span * 2 : span
+        // `once` holds its last pose rather than restarting, same as the loader does with it.
+        const next = span <= 0 ? 0 : track.loop === 'once' ? Math.min(span, previewMs + dt) : (previewMs + dt) % wrapAt
+        advancePreviewTime(next)
+      }
+    }
     controls.update()
   }
 })

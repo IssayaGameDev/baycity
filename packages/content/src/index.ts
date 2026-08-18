@@ -1,8 +1,7 @@
 /**
- * @mp/content — data-driven content pipeline. Schema + validation for prefabs and
- * levels; the loader (Rapier colliders + visual list + behaviors) and the greybox kit
- * build on these types. Headless (no rendering) — the loader is imported by the game,
- * bots, and the viewer. See ADR (content pipeline).
+ * @mp/content — data-driven content pipeline. Schema + validation for prefabs and levels; the loader
+ * (Rapier colliders + visual list + keyframe tracks) and the asset layer build on these types. Headless
+ * (no rendering) — the loader is imported by the game, bots, the viewer and the editor. ADR 0014.
  */
 export const CONTENT_VERSION = '0.0.0' as const
 
@@ -13,6 +12,9 @@ export type {
   Piece,
   Marker,
   Behavior,
+  Easing,
+  Keyframe,
+  LoopMode,
   Prefab,
   PrefabInstance,
   LevelConfig,
@@ -26,4 +28,5 @@ export type { AssetDatabase, AssetEntry, AssetKind, AssetMeta, MaterialAsset, Ma
 export type { InstanceVisit } from './resolve'
 export type { LoadedLevel, WorldMarker, WorldTrigger, VisualItem } from './loader'
 export { instantiateLevel } from './loader'
-
+export { easeAt, isAnimated, moveTrack, poseAt, spinTrack, trackDuration, trackTime } from './track'
+export type { Pose } from './track'

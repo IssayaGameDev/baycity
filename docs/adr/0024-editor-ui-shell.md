@@ -14,7 +14,8 @@ specific, diagnosable ways:
 - **No tree, so there was no hierarchy panel at all.** The only way to select anything was to click it
   in the viewport — hopeless for a piece behind another piece, and the largest single usability hole.
 - **The inspector destroyed and rebuilt every control on every change.** Conditional fields ("show
-  `travel` only when the behavior is `move`") cannot be expressed any other way, so `buildInspector`
+  `travel` only when the behavior is `move`" — a form ADR 0029 deleted) cannot be expressed any other way,
+  so `buildInspector`
   disposed all its blades and re-added them. Because the pane *was* the UI, that took the file picker,
   the palette and the play toggle with it: everything flickered, and focus was lost mid-edit.
 - **One pane means no layout.** Unity's arrangement — hierarchy, viewport, inspector, assets — is most

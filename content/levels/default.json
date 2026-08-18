@@ -286,14 +286,36 @@
         }
       },
       "behavior": {
-        "kind": "move",
-        "axis": {
-          "x": 0,
-          "y": 1,
-          "z": 0
-        },
-        "distance": 3,
-        "periodMs": 4000
+        "kind": "track",
+        "keys": [
+          {
+            "t": 0,
+            "position": {
+              "x": 0,
+              "y": 3.6,
+              "z": 37
+            },
+            "easing": "inOut"
+          },
+          {
+            "t": 2000.0,
+            "position": {
+              "x": 0.0,
+              "y": 6.6,
+              "z": 37.0
+            },
+            "easing": "inOut"
+          },
+          {
+            "t": 4000,
+            "position": {
+              "x": 0,
+              "y": 3.6,
+              "z": 37
+            }
+          }
+        ],
+        "loop": "loop"
       }
     },
     {
@@ -331,13 +353,27 @@
         }
       },
       "behavior": {
-        "kind": "rotate",
-        "axis": {
-          "x": 0,
-          "y": 1,
-          "z": 0
-        },
-        "periodMs": 6000
+        "kind": "track",
+        "keys": [
+          {
+            "t": 0,
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "easing": "linear"
+          },
+          {
+            "t": 6000,
+            "rotation": {
+              "x": 0,
+              "y": 6.283185307179586,
+              "z": 0
+            }
+          }
+        ],
+        "loop": "loop"
       }
     },
     {

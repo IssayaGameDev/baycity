@@ -1,0 +1,191 @@
+import { lerp, lerpVec3, vec3, type Vec3 } from '@mp/core'
+
+import type { Behavior, Easing, Keyframe, LoopMode, Transform } from './types'
+
+/**
+ * Evaluating a keyframe track (ADR 0029).
+ *
+ * Pure functions of `(track, base pose, time)` and nothing else — no state, no clock of its own. That is
+ * what keeps clock-driven motion off the wire: every client instantiates the same level and asks the same
+ * question at the same synced millisecond, so they agree without exchanging anything (ADR 0013/0021).
+ *
+ * Headless on purpose: the loader poses colliders with this and the editor scrubs with it, and neither needs
+ * a renderer to know where a platform is.
+ */
+
+/** A track's length: its last key's time. Derived, so it cannot disagree with the keys. */
+export const trackDuration = (keys: readonly Keyframe[]): number => {
+  let end = 0
+  for (const k of keys) if (k.t > end) end = k.t
+  return end
+}
+
+const clamp01 = (u: number): number => (u < 0 ? 0 : u > 1 ? 1 : u)
+
+/**
+ * A named curve as a number.
+ *
+ * `inOut` is cosine rather than the usual quadratic pair, and that is load-bearing: it makes a 3-key
+ * out-and-back identical to the `move` behavior this replaced, which computed
+ * `distance · (1 − cos(2π·t/T)) / 2`. Two cosine-eased halves of a T-long track reproduce it term for term,
+ * so migrating authored content changed nothing anyone can see.
+ *
+ * `step` is 0 throughout, so the segment holds its start pose and jumps at the next key.
+ */
+export const easeAt = (kind: Easing | undefined, u: number): number => {
+  const x = clamp01(u)
+  switch (kind) {
+    case 'in':
+      return x * x
+    case 'out':
+      return 1 - (1 - x) * (1 - x)
+    case 'inOut':
+      return (1 - Math.cos(x * Math.PI)) / 2
+    case 'step':
+      return 0
+    case 'linear':
+    case undefined:
+      return x
+  }
+}
+
+/**
+ * Where in the track we are at `nowMs`: a time in `[0, duration]`.
+ *
+ * `phaseMs` shifts the clock forward, which is what lets two identical tracks run out of step — the hole
+ * that made every mover sharing a period move in lockstep. Wrapping uses a flooring modulo rather than `%`,
+ * which in JavaScript keeps the sign of the dividend and would send a negative phase backwards.
+ */
+export const trackTime = (duration: number, loop: LoopMode | undefined, nowMs: number, phaseMs = 0): number => {
+  if (duration <= 0) return 0
+  const t = nowMs + phaseMs
+  if (loop === 'once') return t < 0 ? 0 : t > duration ? duration : t
+  const span = loop === 'pingPong' ? duration * 2 : duration
+  const wrapped = ((t % span) + span) % span
+  // Ping-pong runs forwards then backwards over twice the length, so the return leg mirrors the outward
+  // one — which is why a two-key track is already a complete there-and-back under it.
+  return loop === 'pingPong' && wrapped > duration ? span - wrapped : wrapped
+}
+
+/**
+ * The keys that define one channel, in time order.
+ *
+ * Sorted here rather than trusted from the file: dragging a key past its neighbour in the timeline reorders
+ * it in time but not in the array, and an unsorted scan silently samples the wrong segment.
+ */
+const channelKeys = (keys: readonly Keyframe[], has: (k: Keyframe) => boolean): Keyframe[] =>
+  keys.filter(has).sort((a, b) => a.t - b.t)
+
+/**
+ * Interpolate one channel at time `u`. Before the first key and after the last, the nearest key's value
+ * holds. The easing belongs to the key a segment *leaves*, which is what lets one track ease into a pause
+ * and step out of it.
+ */
+const sampleChannel = <T>(keys: readonly Keyframe[], valueOf: (k: Keyframe) => T, mix: (a: T, b: T, t: number) => T, u: number): T => {
+  const last = keys.length - 1
+  if (u <= keys[0]!.t) return valueOf(keys[0]!)
+  if (u >= keys[last]!.t) return valueOf(keys[last]!)
+  let i = 0
+  while (i < last && keys[i + 1]!.t <= u) i++
+  const a = keys[i]!
+  const b = keys[i + 1]!
+  const span = b.t - a.t
+  // Two keys at the same time is a deliberate instant jump; without this it divides by zero.
+  if (span <= 0) return valueOf(b)
+  return mix(valueOf(a), valueOf(b), easeAt(a.easing, (u - a.t) / span))
+}
+
+/** A local pose: what a frame's transform is at some instant. */
+export interface Pose {
+  position: Vec3
+  /** Euler radians, like `Transform.rotation`. */
+  rotation: Vec3
+}
+
+const ZERO = vec3(0, 0, 0)
+const baseRotation = (t: Transform): Vec3 => t.rotation ?? ZERO
+
+/**
+ * The frame's local pose at `nowMs`, given its authored transform.
+ *
+ * A channel with no keys falls back to the authored value, **per channel** — so a translation-only track
+ * leaves the authored rotation alone instead of flattening it to zero, and a spin-only track keeps the
+ * authored position. One key in a channel is a constant, which is a legitimate way to say "hold this pose".
+ */
+export const poseAt = (behavior: Behavior, base: Transform, nowMs: number): Pose => {
+  if (behavior.kind !== 'track') return { position: base.position, rotation: baseRotation(base) }
+
+  const u = trackTime(trackDuration(behavior.keys), behavior.loop, nowMs, behavior.phaseMs)
+
+  const posKeys = channelKeys(behavior.keys, (k) => k.position !== undefined)
+  const rotKeys = channelKeys(behavior.keys, (k) => k.rotation !== undefined)
+
+  return {
+    position: posKeys.length === 0 ? base.position : sampleChannel(posKeys, (k) => k.position ?? base.position, lerpVec3, u),
+    rotation:
+      rotKeys.length === 0
+        ? baseRotation(base)
+        : sampleChannel(
+            rotKeys,
+            (k) => k.rotation ?? baseRotation(base),
+            // Component lerp, not slerp: see `Keyframe.rotation`. A full turn depends on it, because slerp
+            // between identity and 2π has nowhere to go.
+            (a, b, t) => vec3(lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t)),
+            u,
+          ),
+  }
+}
+
+/**
+ * Whether this behavior actually moves. A track whose keys all sit at one time is a fixed pose, and the
+ * loader leans on this to keep static subtrees out of the per-tick work — a level with no movers has to
+ * cost what it always did.
+ */
+export const isAnimated = (behavior: Behavior): boolean => behavior.kind === 'track' && trackDuration(behavior.keys) > 0
+
+// ---------------------------------------------------------------------------------------------------
+// Presets. The editor writes keys, never a new behavior kind — these are the two shapes worth one click,
+// and they are exactly the two behaviors a track replaced, so anything authored before ADR 0029 is
+// reproducible from the UI rather than only by hand.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * An eased out-and-back: `distance` metres along `axis` from `base` and back, over `periodMs`.
+ *
+ * Identical to the old `move` behavior by construction — see `easeAt` for why the easing has to be cosine.
+ */
+export const moveTrack = (base: Vec3, axis: Vec3, distance: number, periodMs: number): Keyframe[] => {
+  const len = Math.hypot(axis.x, axis.y, axis.z) || 1
+  const far = vec3(base.x + (axis.x / len) * distance, base.y + (axis.y / len) * distance, base.z + (axis.z / len) * distance)
+  return [
+    { t: 0, position: base, easing: 'inOut' },
+    { t: periodMs / 2, position: far, easing: 'inOut' },
+    { t: periodMs, position: base },
+  ]
+}
+
+/**
+ * One full turn per `periodMs`, looping seamlessly because a turn of 2π is the orientation it started from.
+ *
+ * Cardinal axes only, which is a real limit of euler keys rather than a shortcut: a spin about a slanted
+ * axis is not a straight line through euler space, so the preset takes the dominant component. Spinning
+ * about a slanted axis means keying the poses.
+ */
+export const spinTrack = (base: Vec3, axis: Vec3, periodMs: number): Keyframe[] => {
+  const turn = Math.PI * 2
+  const ax = Math.abs(axis.x)
+  const ay = Math.abs(axis.y)
+  const az = Math.abs(axis.z)
+  const dominant = ax >= ay && ax >= az ? 'x' : ay >= az ? 'y' : 'z'
+  const signed = dominant === 'x' ? axis.x : dominant === 'y' ? axis.y : axis.z
+  const delta = signed < 0 ? -turn : turn
+  const end = vec3(
+    base.x + (dominant === 'x' ? delta : 0),
+    base.y + (dominant === 'y' ? delta : 0),
+    base.z + (dominant === 'z' ? delta : 0),
+  )
+  return [
+    { t: 0, rotation: base, easing: 'linear' },
+    { t: periodMs, rotation: end },
+  ]
+}

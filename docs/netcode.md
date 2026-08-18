@@ -75,7 +75,7 @@ disconnect. Accepted tradeoff: contested objects diverge/snap on handoff.
 ## Clock-driven world objects + checkpoints (ADR 0013)
 
 The room's authoritative shared state is essentially just its **clock**. Moving world
-objects are pure functions of `serverNow()` (the loader's `move`/`rotate` behaviors), so all
+objects are pure functions of `serverNow()` (the loader's keyframe tracks — ADR 0029), so all
 clients agree with no per-object state on the wire — moving platforms / rotating bars prove
 this. **Checkpoints/hazard/fall** are client-detected via real contact with the level's trigger
 colliders (ADR 0014); the player respawns at the last checkpoint. Per-player state (the

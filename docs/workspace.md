@@ -9,7 +9,7 @@ strict, source-first (no build step at this stage).
 - `packages/net` — schemas, binary serialization, quantization, clock sync. → core
 - `packages/physics` — Rapier3d wrapper (`@dimforge/rapier3d-compat`), bodies (position+rotation) + kinematic character controller, headless. → core
 - `packages/character` — the stack-level kinematic character controller (`stepCharacter`, `CharacterTuning`; ADR 0012), mode-agnostic, plus the blocky 11-part **rig** and **procedural animator** (renderer-agnostic: emits a `Pose`). → core, net, physics
-- `packages/content` — data-driven content: schema, validation, loader (`instantiateLevel`), greybox kit + generators (ADR 0014). Headless, no rendering. → core, net, physics
+- `packages/content` — data-driven content: schema, validation, prefab resolution, the loader (`instantiateLevel`), the keyframe-track evaluator (`track.ts`, ADR 0029) and the asset layer (`assets.ts`, ADR 0026). Headless, no rendering. The kit and its generators were deleted in ADR 0027: nothing here produces geometry. → core, net, physics
 - `packages/i18n` — tiny dependency-free localization (ADR 0016): typed `t()`, per-language tables, browser-locale match + runtime switch. Headless. → (none)
 - `packages/server` — Colyseus `Server` + `ParkourRoom`: per-client snapshot relay (no simulation, no schema), auto-join, roster. Content-free. → core, net, `colyseus`
 - `packages/client` — local authoritative sim, interpolation, clock sync, input; headless-capable (bots). → core, net, physics

@@ -8,6 +8,10 @@ Status: accepted. Rewrites the core of `instantiateLevel` (ADR 0014's loader). C
 Content was flat: `Level.instances` a list, `Prefab.pieces` a list, and a piece's world pose composed from
 exactly two transforms. Two things pushed against that.
 
+(Behaviour names below are ADR 0014's `move`/`rotate`, which ADR 0029 replaced with one keyframe track.
+Nothing here changed: a track is evaluated in its own local frame and composed onto the parent exactly as
+these were.)
+
 **Compound motion was inexpressible.** A `move` behaviour translates a piece; a `rotate` behaviour spins
 it. A bar spinning on a deck that is itself travelling is neither, and no third behaviour fixes it — the
 two motions belong to different objects.

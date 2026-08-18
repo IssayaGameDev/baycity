@@ -84,15 +84,67 @@ export type Marker =
   | { readonly kind: 'hazard'; readonly transform: Transform; readonly radius: number }
 
 /**
+ * How the segment *leaving* a key is timed. Named curves, not bezier handles: easing stays a string in the
+ * JSON and a menu item in the editor, which is the whole reason there is no graph editor (ADR 0029).
+ *
+ * `inOut` is cosine, not quadratic, and that is load-bearing: it makes a 3-key out-and-back reproduce the
+ * old `move` behavior *exactly*, so migrating authored content changed nothing anyone can see.
+ * `step` holds the key's pose until the next one — an instant jump, not a curve.
+ */
+export type Easing = 'linear' | 'in' | 'out' | 'inOut' | 'step'
+
+/**
+ * One authored pose at `t` milliseconds from the start of a track.
+ *
+ * Both channels are optional and mean "the authored transform's value" when absent, so a track that only
+ * translates carries no rotation data at all. A key is a whole pose rather than a per-channel curve point:
+ * one row of keys in the timeline, which is the UI this schema exists to serve.
+ *
+ * `rotation` is euler radians like `Transform.rotation`, and is interpolated **per component** rather than
+ * as a quaternion. That is deliberate: slerp between identity and a full turn is degenerate (they are the
+ * same orientation), so a spin could not be expressed at all. Component lerp is also what a per-channel
+ * animation curve does. The cost is that arbitrary orientations do not take the shortest path.
+ */
+export interface Keyframe {
+  readonly t: number
+  readonly position?: Vec3
+  readonly rotation?: Vec3
+  readonly easing?: Easing
+}
+
+/**
+ * What happens when a track reaches its end. `loop` restarts, `pingPong` runs back to the start, `once`
+ * holds the last pose forever.
+ *
+ * `once` is honest but rarely what you want: the clock is the *session's*, not the player's, so a
+ * once-track has already finished before anybody joins a running room. It is here for a one-shot reveal in
+ * a level that starts with the room, and for holding a pose deliberately.
+ */
+export type LoopMode = 'loop' | 'pingPong' | 'once'
+
+/**
  * Clock-driven motion — a pure function of synced time, so no per-object networking.
- * `move`: an eased out-and-back from the home (authored) position — travels `distance` metres
- * along `axis`, then returns, over `periodMs`; starts and ends at rest. `rotate`: a continuous
- * spin about `axis` (sign = direction), one turn per `periodMs`.
+ *
+ * One kind, `track`: a list of keyed poses. It replaced `move` (an eased out-and-back along an axis) and
+ * `rotate` (a continuous spin) in ADR 0029, which are now editor **presets** that write keys. Those two
+ * could not express a pause at either end, a path with a corner, or two platforms moving out of phase —
+ * every mover sharing a period was locked in step, because motion was `nowMs % periodMs` with no offset.
+ *
+ * `phaseMs` shifts this track's clock, which is what unlocks a staggered row of pistons. The duration is the
+ * last key's `t`, derived rather than stored so the two cannot disagree.
+ *
+ * **A track replaces the frame's local pose**, per channel, rather than adding to it — Unity's model. A
+ * spinning object that is also tilted carries the tilt in its keys. Composition onto the *parent* is
+ * unchanged, so a keyed bar under a keyed platform still rides it (ADR 0025).
  */
 export type Behavior =
   | { readonly kind: 'static' }
-  | { readonly kind: 'move'; readonly axis: Vec3; readonly distance: number; readonly periodMs: number }
-  | { readonly kind: 'rotate'; readonly axis: Vec3; readonly periodMs: number }
+  | {
+      readonly kind: 'track'
+      readonly keys: readonly Keyframe[]
+      readonly loop?: LoopMode
+      readonly phaseMs?: number
+    }
 
 /** A reusable obstacle: pieces (+ optional local markers) with an optional default behavior. */
 export interface Prefab {

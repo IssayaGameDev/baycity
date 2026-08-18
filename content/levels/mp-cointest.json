@@ -65,14 +65,36 @@
               "material": "19079ddb3fbfb27e"
             },
             "behavior": {
-              "kind": "move",
-              "axis": {
-                "x": 0,
-                "y": 1,
-                "z": 0
-              },
-              "distance": 3,
-              "periodMs": 4000
+              "kind": "track",
+              "keys": [
+                {
+                  "t": 0,
+                  "position": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                  },
+                  "easing": "inOut"
+                },
+                {
+                  "t": 2000.0,
+                  "position": {
+                    "x": 0.0,
+                    "y": 3.0,
+                    "z": 0.0
+                  },
+                  "easing": "inOut"
+                },
+                {
+                  "t": 4000,
+                  "position": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                  }
+                }
+              ],
+              "loop": "loop"
             }
           }
         ]
