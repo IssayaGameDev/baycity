@@ -51,7 +51,7 @@ rendering and feel, not art.
 - **Viewer** (`tools/viewer`, `pnpm dev:viewer`): a localhost inspector on the shared renderer —
   element/prefab/level picker, orbit camera, collider/marker/trigger overlays, a jump-
   reachability gizmo (from `CharacterTuning`), and **play-in-place** (a real controller, no
-  networking). View-only + play; a full editor is deferred.
+  networking). View-only + play; a full editor is deferred — **built since, see ADR 0023.**
 - **Server stays content-free** (client-auth): the loader runs in the game + viewer only.
 
 ## Technical calls / deviations
@@ -82,7 +82,8 @@ rendering and feel, not art.
 - **Trimesh colliders from the art mesh** — authored primitives instead (crisp/cheap for the KCC).
 - **Distance-based triggers** — replaced by real engine contact after distance heuristics kept
   mis-firing (fired under a floating pad, missed side contact).
-- **Full in-viewer edit/save** — view-only + play-in-place now; a content editor is a post-release
+- **Full in-viewer edit/save** — **superseded by ADR 0023: `tools/editor` is built and is the content
+  path.** As judged at the time: view-only + play-in-place now; a content editor is a post-release
   stretch (SEED §7).
 - **`@colyseus/schema` for moving platforms** — clock-driven `f(serverNow())` keeps them off the
   wire (ADR 0013).

@@ -30,8 +30,10 @@ export const validateLevel = (data: unknown): Level => {
   if (!Array.isArray(data.instances)) throw new LevelError('level.instances: expected array')
 
   const table = isObj(data.prefabs) ? data.prefabs : {}
-  data.instances.forEach((inst, n) => {
-    const at = `level.instances[${n}]`
+
+  // Recursive, because instances nest to arbitrary depth. The path in the message is what makes a
+  // failure findable in a file that is now a tree rather than a list.
+  const checkInstance = (inst: unknown, at: string): void => {
     if (!isObj(inst)) throw new LevelError(`${at}: expected object`)
     const { prefab, transform } = inst
     if (typeof prefab !== 'string' && !isObj(prefab))
@@ -44,6 +46,16 @@ export const validateLevel = (data: unknown): Level => {
       throw new LevelError(`${at}.transform.rotation: expected a Vec3`)
     if (transform.scale !== undefined && !isVec3(transform.scale))
       throw new LevelError(`${at}.transform.scale: expected a Vec3`)
-  })
+    if (inst.style !== undefined && typeof inst.style !== 'string')
+      throw new LevelError(`${at}.style: expected a string (a per-instance style override)`)
+    if (inst.name !== undefined && typeof inst.name !== 'string')
+      throw new LevelError(`${at}.name: expected a string (an author-facing label)`)
+    if (inst.children !== undefined) {
+      if (!Array.isArray(inst.children)) throw new LevelError(`${at}.children: expected an array of instances`)
+      inst.children.forEach((child, n) => checkInstance(child, `${at}.children[${n}]`))
+    }
+  }
+
+  data.instances.forEach((inst, n) => checkInstance(inst, `level.instances[${n}]`))
   return data as unknown as Level
 }

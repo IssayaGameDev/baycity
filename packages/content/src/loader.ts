@@ -1,7 +1,8 @@
 import { axisAngleToQuat, eulerToQuat, lerpVec3, mulQuat, quat, rotateVec3, slerpQuat, vec3, type Quat, type Vec3 } from '@mp/core'
 import type { PhysicsBody, PhysicsWorld, ShapeDesc } from '@mp/physics'
 
-import type { Behavior, ColliderDesc, Level, LevelConfig, Marker, Transform, TriggerKind, Visual } from './types'
+import { resolvePrefab } from './resolve'
+import type { Behavior, ColliderDesc, Level, LevelConfig, Marker, PrefabInstance, Transform, TriggerKind, Visual } from './types'
 
 /**
  * Turns level data into a live world: adds Rapier colliders (fixed for static pieces,
@@ -38,31 +39,47 @@ export interface VisualItem {
   gltf: string | undefined
 }
 
-interface MoveHandle {
-  kind: 'move'
+/**
+ * One animated frame in the placement tree: a placed instance, or a piece inside one.
+ *
+ * Both are the same shape on purpose. Both carry an optional behavior and both compose onto a parent, so
+ * arbitrary nesting is one loop over a flat list rather than a special case per depth — and a piece is
+ * just a leaf, which is why a piece's own `move` still works exactly as it did.
+ *
+ * `worldPos`/`worldRot` are recomputed every tick for animated frames. A static subtree is evaluated once
+ * at load and never again, so a level with no movers costs what it always did.
+ */
+interface Frame {
+  localPos: Vec3
+  localRot: Quat
+  /** Accumulated scale of the ancestors — what scales *this* frame's own local offset. */
+  parentScale: Vec3
+  /** `parentScale` times this frame's own scale — what scales its children and its collider. */
+  scale: Vec3
+  behavior: Behavior
+  parent: Frame | null
+  /** This frame or any ancestor moves, so anything under it needs a kinematic body. */
+  animated: boolean
+  worldPos: Vec3
+  worldRot: Quat
+}
+
+/**
+ * A piece whose world pose changes over time. One record whatever the reason it moves — its own
+ * behavior, an ancestor's, or both at once — because a child of a rotating parent translates *and*
+ * spins, and the old split between a move handle and a rotate handle could not express that.
+ */
+interface Dynamic {
+  frame: Frame
   body: PhysicsBody
-  base: Vec3
-  rotation: Quat // fixed orientation (a mover does not spin)
-  behavior: Extract<Behavior, { kind: 'move' }>
   visual: VisualItem
-  prevPos: Vec3 // previous sim-tick position (for render interpolation)
-  currPos: Vec3 // latest sim-tick position
+  prevPos: Vec3 // previous sim-tick pose (for render interpolation and for taking a velocity)
+  prevRot: Quat
+  currPos: Vec3 // latest sim-tick pose — what physics resolved against
+  currRot: Quat
   renderPos: Vec3 // what `render(alpha)` last drew — the pose a rider has to be placed against
+  renderRot: Quat
 }
-interface RotateHandle {
-  kind: 'rotate'
-  body: PhysicsBody
-  position: Vec3
-  baseRotation: Quat
-  behavior: Extract<Behavior, { kind: 'rotate' }>
-  visual: VisualItem
-  prevRot: Quat // previous sim-tick orientation
-  currRot: Quat // latest sim-tick orientation
-  prevAngle: number // spin angle (rad) at the previous sim tick
-  currAngle: number // spin angle (rad) at the latest sim tick
-  renderRot: Quat // what `render(alpha)` last drew — the pose a rider has to be placed against
-}
-type BehaviorHandle = MoveHandle | RotateHandle
 
 /** Which of a clock-driven piece's three known poses to read — see `LoadedLevel.basePoseOf`. */
 export type BasePhase = 'render' | 'tick' | 'prev'
@@ -182,97 +199,133 @@ const rotateOrientation = (base: Quat, b: Extract<Behavior, { kind: 'rotate' }>,
 
 export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel => {
   const visuals: VisualItem[] = []
-  const behaviors: BehaviorHandle[] = []
   const markers: WorldMarker[] = []
   const triggers: WorldTrigger[] = []
-  // Clock-driven pieces by collider handle — the lookup `carryDelta` needs, since a rider
-  // only knows the handle its feet reported.
-  const movers = new Map<number, BehaviorHandle>()
-  // Collider handle -> index into `behaviors`. The index is what a rider puts on the wire, so it has to
-  // mean the same thing on every client: it does, because each one instantiates the same level JSON in
-  // the same order. A Rapier collider handle would happen to match today and is not a promise.
-  const moverOrder = new Map<number, number>()
-  const table = level.prefabs ?? {}
+  /**
+   * Every frame, in creation order — which is depth-first, so a single forward pass always evaluates a
+   * parent before its children. That ordering is the whole reason nesting needs no recursion at runtime.
+   */
+  const frames: Frame[] = []
+  /**
+   * Moving pieces, in creation order. The index into this list is what a rider puts on the wire as its
+   * movement base (ADR 0021): it means the same thing on every client because each one instantiates the
+   * same level JSON in the same order. A Rapier collider handle would happen to match today and is not
+   * a promise.
+   */
+  const dynamics: Dynamic[] = []
+  const dynamicByCollider = new Map<number, number>()
 
-  const pushMarker = (m: Marker, origin: Vec3, originRot: Quat, originScale: Vec3): void => {
-    const position = add(origin, rotateVec3(originRot, mul(originScale, m.transform.position)))
+  /**
+   * Resolve a frame's pose at `nowMs`: apply its own behavior in its *local* frame, then compose onto the
+   * parent's already-resolved world pose.
+   *
+   * Local, not world, is what makes motion compose — a child's `move` axis and a child's spin axis are
+   * both read in the parent's frame, so a bar rotating about +y on a deck that has itself turned rotates
+   * about the deck's +y. For a top-level instance the parent is the world and this is identical to the
+   * flat behaviour it replaces.
+   */
+  const evaluate = (f: Frame, nowMs: number): void => {
+    const localPos = f.behavior.kind === 'move' ? movePosition(f.localPos, f.behavior, nowMs) : f.localPos
+    const localRot = f.behavior.kind === 'rotate' ? rotateOrientation(f.localRot, f.behavior, nowMs) : f.localRot
+    if (f.parent === null) {
+      f.worldPos = localPos
+      f.worldRot = localRot
+      return
+    }
+    f.worldPos = add(f.parent.worldPos, rotateVec3(f.parent.worldRot, mul(f.parentScale, localPos)))
+    f.worldRot = mulQuat(f.parent.worldRot, localRot)
+  }
+
+  const makeFrame = (t: Transform, behavior: Behavior, parent: Frame | null): Frame => {
+    const parentScale = parent?.scale ?? vec3(1, 1, 1)
+    const f: Frame = {
+      localPos: t.position,
+      localRot: rotationOf(t),
+      parentScale,
+      scale: mul(parentScale, scaleOf(t)),
+      behavior,
+      parent,
+      animated: behavior.kind !== 'static' || (parent?.animated ?? false),
+      worldPos: vec3(0, 0, 0),
+      worldRot: quat(),
+    }
+    frames.push(f)
+    // At t = 0 both behaviours are at rest — `(1 − cos 0)/2 = 0` and a zero spin angle — so this is
+    // exactly the authored pose, with no separate code path for "where was this placed".
+    evaluate(f, 0)
+    return f
+  }
+
+  const pushMarker = (m: Marker, node: Frame): void => {
+    const position = add(node.worldPos, rotateVec3(node.worldRot, mul(node.scale, m.transform.position)))
     markers.push(m.kind === 'spawn' ? { kind: 'spawn', position } : { kind: m.kind, position, radius: m.radius })
   }
 
-  for (const inst of level.instances) {
-    const prefab = typeof inst.prefab === 'string' ? table[inst.prefab] : inst.prefab
-    if (prefab === undefined) throw new Error(`prefab '${String(inst.prefab)}' not found in level.prefabs`)
-    const origin = inst.transform.position
-    const originRot = rotationOf(inst.transform)
-    const originScale = scaleOf(inst.transform)
+  const buildInstance = (inst: PrefabInstance, parent: Frame | null): void => {
+    const prefab = resolvePrefab(level, inst)
+    // The *instance* carries the prefab's default motion, so a multi-piece prefab moves rigidly rather
+    // than each piece animating on its own path. A piece's own behavior composes on top of it.
+    const node = makeFrame(inst.transform, inst.behavior ?? prefab.behavior ?? { kind: 'static' }, parent)
 
     for (const piece of prefab.pieces) {
-      // Per-piece behavior, most-specific wins: piece → instance → prefab → static.
-      const behavior = piece.behavior ?? inst.behavior ?? prefab.behavior ?? { kind: 'static' }
-      // Instance scale scales the piece's local offset; total scale (instance ⊗ piece) bakes into dims.
-      const totalScale = mul(originScale, scaleOf(piece.transform))
-      const position = add(origin, rotateVec3(originRot, mul(originScale, piece.transform.position)))
-      const rotation = mulQuat(originRot, rotationOf(piece.transform))
-      const collider = scaleCollider(piece.collider, totalScale)
+      const pf = makeFrame(piece.transform, piece.behavior ?? { kind: 'static' }, node)
+      const collider = scaleCollider(piece.collider, pf.scale)
       const shape = toShape(collider)
       const visual: VisualItem = {
         collider,
-        position: { ...position },
-        rotation: { ...rotation },
-        style: styleOf(piece.visual),
+        position: { ...pf.worldPos },
+        rotation: { ...pf.worldRot },
+        // An instance's style override beats the prefab's own — that is what an override is, and it
+        // applies to every piece, so recolouring a placed pad recolours all of it. It does not cascade
+        // to children: a child is its own placement with its own override.
+        style: inst.style ?? styleOf(piece.visual),
         gltf: gltfOf(piece.visual),
       }
       visuals.push(visual)
 
-      let body: PhysicsBody
-      if (behavior.kind === 'move') {
-        body = world.addKinematicBody({ position, rotation, shape })
-        const h: BehaviorHandle = {
-          kind: 'move',
+      // Kinematic if anything above it moves, not just if *it* moves: a static piece parented to a
+      // moving platform travels through the world and a fixed body would leave it behind.
+      const body = pf.animated
+        ? world.addKinematicBody({ position: pf.worldPos, rotation: pf.worldRot, shape })
+        : world.addFixedBody({ position: pf.worldPos, rotation: pf.worldRot, shape })
+
+      if (pf.animated) {
+        dynamicByCollider.set(body.colliderHandle, dynamics.length)
+        dynamics.push({
+          frame: pf,
           body,
-          base: position,
-          rotation,
-          behavior,
           visual,
-          prevPos: { ...position },
-          currPos: { ...position },
-          renderPos: { ...position },
-        }
-        behaviors.push(h)
-        movers.set(body.colliderHandle, h)
-        moverOrder.set(body.colliderHandle, behaviors.length - 1)
-      } else if (behavior.kind === 'rotate') {
-        body = world.addKinematicBody({ position, rotation, shape })
-        const h: BehaviorHandle = {
-          kind: 'rotate',
-          body,
-          position,
-          baseRotation: rotation,
-          behavior,
-          visual,
-          prevRot: { ...rotation },
-          currRot: { ...rotation },
-          prevAngle: 0,
-          currAngle: 0,
-          renderRot: { ...rotation },
-        }
-        behaviors.push(h)
-        movers.set(body.colliderHandle, h)
-        moverOrder.set(body.colliderHandle, behaviors.length - 1)
-      } else {
-        body = world.addFixedBody({ position, rotation, shape })
+          prevPos: { ...pf.worldPos },
+          prevRot: { ...pf.worldRot },
+          currPos: { ...pf.worldPos },
+          currRot: { ...pf.worldRot },
+          renderPos: { ...pf.worldPos },
+          renderRot: { ...pf.worldRot },
+        })
       }
+
       // A trigger piece exposes its collider so the mode can detect real contact with it.
       if (piece.trigger !== undefined)
-        triggers.push({ kind: piece.trigger, colliderHandle: body.colliderHandle, position: { ...position } })
+        triggers.push({ kind: piece.trigger, colliderHandle: body.colliderHandle, position: { ...pf.worldPos } })
     }
-    for (const m of prefab.markers ?? []) pushMarker(m, origin, originRot, originScale)
-  }
-  for (const m of level.markers ?? []) pushMarker(m, vec3(0, 0, 0), quat(), vec3(1, 1, 1))
 
-  // Poses are seeded at the authored home, but the first `update` lands wherever the piece is in
-  // its cycle at that clock time — a phase-dependent jump of up to `distance` (or a whole turn).
-  // Priming makes the first step report no motion, so that jump is never interpolated as travel.
+    for (const m of prefab.markers ?? []) pushMarker(m, node)
+    // Depth-first, after this instance's own pieces: children are placed relative to the node above.
+    for (const child of inst.children ?? []) buildInstance(child, node)
+  }
+
+  for (const inst of level.instances) buildInstance(inst, null)
+  for (const m of level.markers ?? []) {
+    markers.push(
+      m.kind === 'spawn'
+        ? { kind: 'spawn', position: m.transform.position }
+        : { kind: m.kind, position: m.transform.position, radius: m.radius },
+    )
+  }
+
+  // Poses are seeded at the authored home, but the first `update` lands wherever a piece is in its
+  // cycle at that clock time — a phase-dependent jump of up to `distance` (or a whole turn). Priming
+  // makes the first step report no motion, so that jump is never interpolated as travel.
   let primed = false
 
   // Normal kinematic posing: Rapier derives `(next − current)/dt` as the body's velocity, which is
@@ -301,26 +354,31 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
   const update = (nowMs: number, ridingColliderHandle?: number): void => {
     prevMs = primed ? currMs : nowMs
     currMs = nowMs
-    for (const h of behaviors) {
-      const poseIt = h.body.colliderHandle === ridingColliderHandle ? poseFrozen : pose
-      if (h.kind === 'move') {
-        const p = movePosition(h.base, h.behavior, nowMs)
-        poseIt(h.body, p, h.rotation)
-        h.prevPos = primed ? h.currPos : p
-        h.currPos = p
-        h.visual.position = p // latest (a consumer that doesn't interpolate still gets a live pose)
-      } else {
-        const q = rotateOrientation(h.baseRotation, h.behavior, nowMs)
-        const angle = spinAngle(h.behavior, nowMs)
-        poseIt(h.body, h.position, q)
-        h.prevRot = primed ? h.currRot : q
-        h.currRot = q
-        h.prevAngle = primed ? h.currAngle : angle
-        h.currAngle = angle
-        h.visual.rotation = q
-      }
+    // One forward pass: `frames` is depth-first, so a parent's world pose is always already resolved
+    // when its children are reached. Static subtrees are skipped — they were resolved at load.
+    for (const f of frames) if (f.animated) evaluate(f, nowMs)
+
+    for (const d of dynamics) {
+      const poseIt = d.body.colliderHandle === ridingColliderHandle ? poseFrozen : pose
+      poseIt(d.body, d.frame.worldPos, d.frame.worldRot)
+      d.prevPos = primed ? d.currPos : d.frame.worldPos
+      d.prevRot = primed ? d.currRot : d.frame.worldRot
+      d.currPos = d.frame.worldPos
+      d.currRot = d.frame.worldRot
+      // Latest, so a consumer that doesn't interpolate still gets a live pose.
+      d.visual.position = d.currPos
+      d.visual.rotation = d.currRot
     }
     primed = true
+  }
+
+  const render = (alpha: number): void => {
+    for (const d of dynamics) {
+      d.renderPos = lerpVec3(d.prevPos, d.currPos, alpha)
+      d.renderRot = slerpQuat(d.prevRot, d.currRot, alpha)
+      d.visual.position = d.renderPos
+      d.visual.rotation = d.renderRot
+    }
   }
 
   // The frame a rider keeps its position in: the pose the last `update` put this piece at. Taken
@@ -329,34 +387,20 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
   // depend on whether the caller had stepped yet, which is a trap. A kinematic body always reaches
   // its target, so the two agree from `world.step` onward.
   const basePose = (colliderHandle: number): { position: Vec3; rotation: Quat } | undefined => {
-    const h = movers.get(colliderHandle)
-    if (h === undefined) return undefined
-    return h.kind === 'move' ? { position: h.currPos, rotation: h.rotation } : { position: h.position, rotation: h.currRot }
+    const i = dynamicByCollider.get(colliderHandle)
+    if (i === undefined) return undefined
+    const d = dynamics[i]!
+    return { position: d.currPos, rotation: d.currRot }
   }
 
-  const render = (alpha: number): void => {
-    for (const h of behaviors) {
-      if (h.kind === 'move') {
-        h.renderPos = lerpVec3(h.prevPos, h.currPos, alpha)
-        h.visual.position = h.renderPos
-      } else {
-        h.renderRot = slerpQuat(h.prevRot, h.currRot, alpha)
-        h.visual.rotation = h.renderRot
-      }
-    }
-  }
-
-  const baseIndex = (colliderHandle: number): number | undefined => moverOrder.get(colliderHandle)
+  const baseIndex = (colliderHandle: number): number | undefined => dynamicByCollider.get(colliderHandle)
 
   const basePoseOf = (index: number, phase: BasePhase): { position: Vec3; rotation: Quat } | undefined => {
-    const h = behaviors[index]
-    if (h === undefined) return undefined
-    if (h.kind === 'move') {
-      const position = phase === 'render' ? h.renderPos : phase === 'tick' ? h.currPos : h.prevPos
-      return { position, rotation: h.rotation }
-    }
-    const rotation = phase === 'render' ? h.renderRot : phase === 'tick' ? h.currRot : h.prevRot
-    return { position: h.position, rotation }
+    const d = dynamics[index]
+    if (d === undefined) return undefined
+    if (phase === 'render') return { position: d.renderPos, rotation: d.renderRot }
+    if (phase === 'tick') return { position: d.currPos, rotation: d.currRot }
+    return { position: d.prevPos, rotation: d.prevRot }
   }
 
   const baseCarry = (index: number, localPos: Vec3): Vec3 | undefined => {
@@ -366,7 +410,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
     const dt = (currMs - prevMs) / 1000
     if (dt <= 0) return vec3(0, 0, 0)
     // The same point, in the frame as it was and as it is. The difference is everything the piece did to
-    // whoever is standing on it, whether it slid, spun, or both.
+    // whoever is standing on it, whether it slid, spun, or both — including motion inherited from a parent.
     const a = add(before.position, rotateVec3(before.rotation, localPos))
     const b = add(now.position, rotateVec3(now.rotation, localPos))
     return vec3((b.x - a.x) / dt, (b.y - a.y) / dt, (b.z - a.z) / dt)

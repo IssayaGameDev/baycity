@@ -27,13 +27,16 @@ import {
   TransformControls,
   type LevelView,
 } from '@mp/render-three'
-import { Pane } from 'tweakpane'
-
-import { levelDoc, prefabDoc, type BehaviorKind, type Doc, type ItemProps, type Mode, type TriggerChoice } from './editorDoc'
+import { levelDoc, prefabDoc, type Doc, type Mode } from './editorDoc'
 import { listFiles, loadLevel, loadPrefab, saveFile, type FileKind } from './filesApi'
+import { createHierarchy, type Hierarchy } from './hierarchy'
+import { createInspector, type Inspector } from './inspector'
+import { createPalette, type Palette } from './palette'
+import { createSplitter, readPx, writePx } from './splitter'
+import { createToolbar, type GizmoMode, type GizmoSpace, type Toolbar } from './toolbar'
 
-const canvas = document.querySelector<HTMLCanvasElement>('#view')!
-const titleEl = document.querySelector<HTMLDivElement>('#title')!
+const $ = <T extends HTMLElement>(sel: string): T => document.querySelector<T>(sel)!
+const canvas = $<HTMLCanvasElement>('#view')
 
 // --- scene + polished pipeline (same renderer the game/viewer use) ---
 const stage = createThreeStage({ canvas, cameraPosition: [12, 10, 16], lookAt: [0, 1, 0] })
@@ -54,8 +57,19 @@ stage.scene.add(grid, axes)
 // --- editor state ---
 let world: PhysicsWorld | null = null
 let loaded: LoadedLevel | null = null // for marker/trigger gizmos (+ physics validity)
-let doc: Doc | null = null
+let doc: Doc | null = null // the doc being edited — always the top of the stack
+/**
+ * The editing context. `[0]` is the open file; a deeper entry is a prefab opened *from* an instance,
+ * and it is the level's own table object — so edits land on the one shared definition and every
+ * instance follows on the way back out. Save always writes `[0]`, never the prefab being inspected.
+ */
+const docStack: { doc: Doc; label: string }[] = []
 const userPrefabs: Record<string, Prefab> = {} // authored prefab library (for the level palette)
+// The panels are built further down (and after a top-level `await`), so the editing code above them
+// reaches the UI through these. Harmless no-ops until then, which is what makes boot order a non-issue.
+let uiChanged: () => void = () => {}
+let inspectorRebuild: () => void = () => {}
+let inspectorSync: () => void = () => {}
 
 const instanceRoot = new THREE.Group() // one Group per editable item (userData.index → data)
 const markerGroup = new THREE.Group()
@@ -63,6 +77,14 @@ stage.scene.add(instanceRoot, markerGroup)
 let instanceGroups: THREE.Group[] = []
 let selected: number | null = null
 let placing: string | null = null // a palette entry name awaiting a click to place
+const edit: { mode: GizmoMode; snap: boolean; step: number; space: GizmoSpace } = {
+  mode: 'translate',
+  snap: true,
+  step: 0.5,
+  // Which frame the handles point along. Three forces `local` for scale and `world` for the free-rotate
+  // ring, exactly as Unity does, so this only ever changes what it can.
+  space: 'world',
+}
 let playing = false // play-in-place active (editing is suspended)
 let lastSimTickAt = 0
 
@@ -115,15 +137,26 @@ const buildMarkers = (): void => {
   for (const t of loaded.triggers) markerGroup.add(markerGizmo(t.position, colorForStyle(t.kind)))
 }
 
-// --- editable item meshes (one Group per item; meshes come from the doc's specs) ---
+// --- editable item meshes ---
+/**
+ * One Group per item, **parented to its own parent's Group**, so Three composes the transform chain and a
+ * gizmo on a child reads and writes that child's *local* pose — which is exactly what the document stores.
+ *
+ * Each item group holds a dedicated mesh holder rather than its meshes directly: rebuilding one item's
+ * meshes must not take its child items with it, and `disposeMeshes` cannot tell a mesh it added from a
+ * child group it did not.
+ */
+const meshHolderOf = (g: THREE.Group): THREE.Group => g.userData.meshes as THREE.Group
+
 const buildItemMeshes = (g: THREE.Group, i: number): void => {
   if (doc === null) return
+  const holder = meshHolderOf(g)
   for (const spec of doc.meshSpecs(i)) {
     const mesh = new THREE.Mesh(geometryForCollider(spec.collider), createStyleMaterial(spec.style))
     applyTransform(mesh, spec.transform.position, spec.transform.rotation, spec.transform.scale)
     mesh.castShadow = true
     mesh.receiveShadow = true
-    g.add(mesh)
+    holder.add(mesh)
   }
 }
 
@@ -131,14 +164,49 @@ const buildItems = (): void => {
   disposeMeshes(instanceRoot)
   instanceGroups = []
   if (doc === null) return
+  // Depth-first order, so a parent's group always exists before its children ask for it.
   for (let i = 0; i < doc.count(); i++) {
     const g = new THREE.Group()
     const t = doc.transformOf(i)
     applyTransform(g, t.position, t.rotation, t.scale)
     g.userData.index = i
+    const holder = new THREE.Group()
+    g.userData.meshes = holder
+    g.add(holder)
     buildItemMeshes(g, i)
-    instanceRoot.add(g)
+    const parent = doc.parentOf(i)
+    ;(parent === null ? instanceRoot : (instanceGroups[parent] ?? instanceRoot)).add(g)
     instanceGroups[i] = g
+  }
+}
+
+/**
+ * The local transform `child` would need to keep its current world pose while sitting under `parent`
+ * (`null` = the level root): `parent⁻¹ · child`, decomposed.
+ *
+ * `null` when either group is missing. Decomposition cannot represent shear, so a child rotated inside a
+ * non-uniformly scaled parent is an approximation — the same limitation Unity has, and the alternative is
+ * refusing the drag.
+ */
+const localInside = (
+  child: THREE.Group | undefined,
+  parent: THREE.Group | null,
+): { position: Vec3; rotation: Vec3; scale: Vec3 } | null => {
+  if (child === undefined) return null
+  child.updateWorldMatrix(true, false)
+  parent?.updateWorldMatrix(true, false)
+  const m = new THREE.Matrix4()
+  if (parent === null) m.copy(child.matrixWorld)
+  else m.copy(parent.matrixWorld).invert().multiply(child.matrixWorld)
+  const position = new THREE.Vector3()
+  const quaternion = new THREE.Quaternion()
+  const scale = new THREE.Vector3()
+  m.decompose(position, quaternion, scale)
+  const e = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ')
+  return {
+    position: vec3(r4(position.x), r4(position.y), r4(position.z)),
+    rotation: vec3(e.x, e.y, e.z),
+    scale: vec3(scale.x, scale.y, scale.z),
   }
 }
 
@@ -146,25 +214,8 @@ const rebuildSelectedMeshes = (): void => {
   if (selected === null) return
   const g = instanceGroups[selected]
   if (g === undefined) return
-  disposeMeshes(g)
+  disposeMeshes(meshHolderOf(g)) // only this item's own meshes; its child items are siblings of the holder
   buildItemMeshes(g, selected)
-}
-
-// --- cardinal directions (behavior axis) ---
-const DIRS: Record<string, Vec3> = {
-  '+X': vec3(1, 0, 0),
-  '-X': vec3(-1, 0, 0),
-  '+Y': vec3(0, 1, 0),
-  '-Y': vec3(0, -1, 0),
-  '+Z': vec3(0, 0, 1),
-  '-Z': vec3(0, 0, -1),
-}
-const DIR_OPTIONS: Record<string, string> = { '+X': '+X', '-X': '-X', '+Y': '+Y', '-Y': '-Y', '+Z': '+Z', '-Z': '-Z', custom: 'custom' }
-const dirNameOf = (a: Vec3): string => {
-  const len = Math.hypot(a.x, a.y, a.z) || 1
-  const n = vec3(a.x / len, a.y / len, a.z / len)
-  for (const [k, v] of Object.entries(DIRS)) if (Math.abs(n.x - v.x) < 1e-3 && Math.abs(n.y - v.y) < 1e-3 && Math.abs(n.z - v.z) < 1e-3) return k
-  return 'custom'
 }
 
 // --- end-position widget: a translucent ghost of a moving piece at its far end + a line ---
@@ -215,7 +266,7 @@ const rebuildLoaded = (): void => {
   } catch (e) {
     loaded = null
     disposeMeshes(markerGroup)
-    titleEl.textContent = `invalid: ${String(e)}`
+    setStatus(`invalid: ${String(e)}`)
   }
 }
 
@@ -228,14 +279,47 @@ const scheduleRebuild = (): void => {
   }, 150)
 }
 
-const setDoc = (next: Doc, name: string): void => {
+const breadcrumb = (): string => {
+  const path = docStack.map((e) => e.label).join(' › ')
+  if (doc === null) return path
+  return `${path} — ${doc.count()} ${doc.mode === 'level' ? 'instances' : 'pieces'}`
+}
+
+/** Point the viewport at the top of the stack. Everything is rebuilt from data, so returning from a
+ * prefab edit is what makes every instance of it move at once. */
+const showDoc = (): void => {
   deselect()
-  doc = next
-  fileState.name = name
+  doc = docStack[docStack.length - 1]?.doc ?? null
   buildItems()
   rebuildLoaded()
-  mountPalette()
-  titleEl.textContent = `${next.mode}: ${name} — ${next.count()} ${next.mode === 'level' ? 'instances' : 'pieces'}`
+  statusMsg = '' // a message about the old document would be a lie about this one
+  uiChanged()
+}
+
+/** Open a file — the stack starts over at its root. */
+const setDoc = (next: Doc, name: string): void => {
+  docStack.length = 0
+  docStack.push({ doc: next, label: `${next.mode}: ${name}` })
+  fileState.name = name
+  showDoc()
+}
+
+/** Step into the shared definition behind a referencing instance. */
+const openPrefabOf = (index: number): void => {
+  if (doc === null) return
+  const id = doc.refOf(index)
+  if (id === null) return
+  const prefab = doc.prefabAt(id)
+  if (prefab === undefined) return
+  const n = doc.refCount(id)
+  docStack.push({ doc: prefabDoc(prefab), label: `${id} (${n} instance${n === 1 ? '' : 's'})` })
+  showDoc()
+}
+
+const closePrefab = (): void => {
+  if (docStack.length < 2) return
+  docStack.pop()
+  showDoc()
 }
 
 const blankLevel = (id: string): Level => ({
@@ -258,6 +342,19 @@ const applySnap = (): void => {
 }
 stage.scene.add(gizmo.getHelper())
 
+/** Switch transform tool (toolbar buttons and the T/R/S keys are the same path). */
+const setMode = (mode: GizmoMode): void => {
+  edit.mode = mode
+  gizmo.setMode(mode)
+  uiChanged()
+}
+
+const setSpace = (space: GizmoSpace): void => {
+  edit.space = space
+  gizmo.space = space
+  uiChanged()
+}
+
 let gizmoDragged = false
 gizmo.addEventListener('dragging-changed', (event) => {
   const dragging = event.value as boolean
@@ -267,7 +364,7 @@ gizmo.addEventListener('dragging-changed', (event) => {
 })
 gizmo.addEventListener('objectChange', () => {
   writeBackSelected()
-  syncInspector()
+  inspectorSync()
   updateEndGhost()
 })
 
@@ -286,20 +383,25 @@ const writeBackSelected = (): void => {
 }
 
 const select = (index: number): void => {
+  // Editing is suspended during play, and the item meshes are hidden — attaching a gizmo to one would
+  // put a handle in mid-air over a level you are walking. The Hierarchy panel can reach here too, so the
+  // guard belongs on the selection itself rather than on the viewport's click handler alone.
+  if (playing) return
   const g = instanceGroups[index]
   if (g === undefined || doc === null) return
   selected = index
   gizmo.attach(g)
-  buildInspector()
+  inspectorRebuild()
   updateEndGhost()
-  titleEl.textContent = `selected #${index} (${doc.label(index)})`
+  uiChanged()
 }
 
 const deselect = (): void => {
   selected = null
   gizmo.detach()
-  buildInspector()
+  inspectorRebuild()
   updateEndGhost()
+  uiChanged()
 }
 
 const raycaster = new THREE.Raycaster()
@@ -334,7 +436,6 @@ canvas.addEventListener('pointerup', (e) => {
     const sz = snap !== 0 ? Math.round(point.z / snap) * snap : r4(point.z)
     const idx = doc.place(placing, vec3(sx, r4(point.y), sz))
     placing = null
-    titleEl.textContent = ''
     buildItems()
     rebuildLoaded()
     select(idx)
@@ -367,7 +468,7 @@ window.addEventListener('keydown', (e) => {
   } else if (e.code === 'Escape') {
     if (placing !== null) {
       placing = null
-      titleEl.textContent = 'placement cancelled'
+      setStatus('placement cancelled')
     } else deselect()
   }
 })
@@ -386,6 +487,15 @@ const duplicateSelected = (): void => {
   rebuildLoaded()
   select(idx)
 }
+/** Give an inline one-off a shared identity, so it can be referenced and edited in one place. */
+const extractSelected = (): void => {
+  if (selected === null || doc === null) return
+  const id = doc.extract(selected)
+  if (id === null) return
+  inspectorRebuild() // the link row flips from "not linked" to the new prefab
+  uiChanged() // the level's own entries are placeable too, and the row gains a badge
+  setStatus(`extracted to prefab "${id}"`)
+}
 
 // ============================ play-in-place (identical to the game) ============================
 // Same building blocks as modes/parkour: createLocalController (fixed tick + render interpolation),
@@ -393,8 +503,6 @@ const duplicateSelected = (): void => {
 // with DEFAULT_TUNING. The viewer skipped the controller/interpolation, which is why it felt off.
 const PLAYER_ID = 0 as EntityId
 const STAND_OFFSET = CHAR_HALF_HEIGHT + CHAR_RADIUS
-const playState = { on: false }
-let playBinding: { refresh: () => void } | null = null
 
 const keys = new Set<string>()
 window.addEventListener('keydown', (e) => {
@@ -490,11 +598,10 @@ const startPlay = (): void => {
   playView = addLevel(stage.scene, loaded.visuals)
   charMesh.visible = true
   playing = true
-  playState.on = true
-  playBinding?.refresh()
   controls.enabled = false // editor orbit off; the player camera takes over
   void canvas.requestPointerLock()
-  titleEl.textContent = 'playing — WASD + Space · mouse to look · Esc to stop'
+  setStatus('playing — WASD + Space · mouse to look · Esc to stop')
+  uiChanged()
 
   playLoop = startFixedLoop({
     tickRateHz: TICK_RATE_HZ,
@@ -535,41 +642,31 @@ const stopPlay = (): void => {
   charMesh.visible = false
   instanceRoot.visible = true
   playing = false
-  playState.on = false
-  playBinding?.refresh()
   if (document.pointerLockElement === canvas) document.exitPointerLock()
   controls.target.set(ownPos.x, ownPos.y + 1, ownPos.z) // resume orbit around where you stopped
   controls.enabled = true
-  titleEl.textContent = ''
+  statusMsg = ''
+  uiChanged()
   rebuildLoaded() // restore the edit world + markers
 }
 
-// ============================ panel ============================
-const pane = new Pane({ title: 'Editor' })
+// ============================ panels ============================
+// The shell is CSS grid (see index.html); each panel is its own module, and every one of them reads
+// the editor's state through a getter rather than being handed a snapshot — so `refreshUi()` is the
+// single "something changed, redraw the chrome" call, and no panel can hold a stale copy.
 
-// --- File: mode (Level/Prefab) + open + name + Save/New ---
-const fileFolder = pane.addFolder({ title: 'File' })
+const app = $<HTMLDivElement>('#app')
+const statusBar = $<HTMLDivElement>('#status')
+
 const fileState: { mode: Mode; name: string } = { mode: 'level', name: 'untitled' }
-
-const pick = { name: '' }
-let pickerBlade: { dispose: () => void } | null = null
-const mountPicker = (names: string[]): void => {
-  pickerBlade?.dispose()
-  const options: Record<string, string> = {}
-  for (const n of names) options[n] = n
-  if (names.length === 0) options['(none)'] = ''
-  pick.name = names[0] ?? ''
-  pickerBlade = fileFolder.addBinding(pick, 'name', { label: 'open', options, index: 1 }).on('change', (ev) => {
-    if (ev.value !== '') void openFile(ev.value)
-  })
-}
+let fileNames: string[] = []
 
 const openFile = async (name: string): Promise<void> => {
   try {
     if (fileState.mode === 'level') setDoc(levelDoc(await loadLevel(name), userPrefabs), name)
     else setDoc(prefabDoc(await loadPrefab(name)), name)
   } catch (e) {
-    titleEl.textContent = `load failed: ${String(e)}`
+    setStatus(`load failed: ${String(e)}`)
   }
 }
 
@@ -584,189 +681,262 @@ const refreshPrefabLibrary = async (): Promise<void> => {
   }
 }
 
+const refreshFileList = async (): Promise<void> => {
+  fileNames = await listFiles(fileKind(fileState.mode)).catch(() => [] as string[])
+  toolbar?.render()
+}
+
 const enterMode = async (mode: Mode): Promise<void> => {
   fileState.mode = mode
-  const names = await listFiles(fileKind(mode)).catch(() => [] as string[])
-  mountPicker(names)
-  if (names[0] !== undefined) await openFile(names[0])
+  await refreshFileList()
+  if (fileNames[0] !== undefined) await openFile(fileNames[0])
   else setDoc(mode === 'level' ? levelDoc(blankLevel('untitled'), userPrefabs) : prefabDoc(blankPrefab('untitled')), 'untitled')
 }
 
-fileFolder.addBinding(fileState, 'mode', { options: { Level: 'level', Prefab: 'prefab' } }).on('change', (ev) => void enterMode(ev.value))
-fileFolder.addBinding(fileState, 'name', { label: 'name' })
-fileFolder.addButton({ title: 'Save' }).on('click', () => {
-  if (doc === null) return
-  void saveFile(fileKind(fileState.mode), fileState.name, doc.toJSON())
-    .then(async () => {
-      titleEl.textContent = `saved: ${fileState.name}`
-      if (fileState.mode === 'prefab') await refreshPrefabLibrary()
-      mountPicker(await listFiles(fileKind(fileState.mode)))
-    })
-    .catch((e: unknown) => (titleEl.textContent = `save failed: ${String(e)}`))
-})
-fileFolder.addButton({ title: 'New (blank)' }).on('click', () => {
-  const name = fileState.name || 'untitled'
-  setDoc(fileState.mode === 'level' ? levelDoc(blankLevel(name), userPrefabs) : prefabDoc(blankPrefab(name)), name)
-})
+// --- toolbar ---
+const toolbar: Toolbar = createToolbar(
+  $<HTMLDivElement>('#toolbar'),
+  () => ({
+    mode: fileState.mode,
+    name: fileState.name,
+    files: fileNames,
+    gizmo: edit.mode,
+    space: edit.space,
+    snap: edit.snap,
+    step: edit.step,
+    playing,
+    inPrefab: docStack.length > 1,
+    grid: grid.visible,
+    markers: markerGroup.visible,
+  }),
+  {
+    setMode: (m) => void enterMode(m),
+    open: (name) => void openFile(name),
+    setName: (name) => {
+      fileState.name = name === '' ? 'untitled' : name
+      refreshUi()
+    },
+    save: () => {
+      const root = docStack[0]?.doc
+      if (root === undefined) return
+      // Saving writes the *file*, not whatever prefab is open on top of it, and the id follows the
+      // name. Letting them drift is how content/levels ended up with three files all claiming "level1".
+      root.setId(fileState.name)
+      void saveFile(fileKind(fileState.mode), fileState.name, root.toJSON())
+        .then(async () => {
+          setStatus(`saved ${fileState.name}`)
+          if (fileState.mode === 'prefab') await refreshPrefabLibrary()
+          await refreshFileList()
+        })
+        .catch((e: unknown) => setStatus(`save failed: ${String(e)}`))
+    },
+    newBlank: () => {
+      const name = fileState.name || 'untitled'
+      setDoc(fileState.mode === 'level' ? levelDoc(blankLevel(name), userPrefabs) : prefabDoc(blankPrefab(name)), name)
+    },
+    back: closePrefab,
+    setGizmo: setMode,
+    setSpace,
+    setSnap: (on) => {
+      edit.snap = on
+      applySnap()
+      refreshUi()
+    },
+    setStep: (step) => {
+      edit.step = step
+      applySnap()
+      refreshUi()
+    },
+    setPlaying: (on) => {
+      if (on) startPlay()
+      else stopPlay()
+    },
+    setGrid: (on) => {
+      grid.visible = on
+      axes.visible = on
+      refreshUi()
+    },
+    setMarkers: (on) => {
+      markerGroup.visible = on
+      refreshUi()
+    },
+  },
+)
 
-// --- Add: palette (place) ---
-const objFolder = pane.addFolder({ title: 'Add' })
-const addPick = { kind: '' }
-let paletteBlade: { dispose: () => void } | null = null
-const mountPalette = (): void => {
-  paletteBlade?.dispose()
-  const names = doc?.palette() ?? []
-  const options: Record<string, string> = {}
-  for (const n of names) options[n] = n
-  addPick.kind = names[0] ?? ''
-  paletteBlade = objFolder.addBinding(addPick, 'kind', { label: 'prefab', options, index: 0 })
-}
-objFolder.addButton({ title: 'Place (then click scene)' }).on('click', () => {
-  placing = addPick.kind !== '' ? addPick.kind : null
-  titleEl.textContent = placing !== null ? `click to place: ${placing}` : ''
-})
+// --- hierarchy ---
+const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
+  doc: () => doc,
+  selected: () => selected,
+  onSelect: select,
+  // A piece belongs to the prefab, not to the instance you clicked it under, so opening it means
+  // stepping into the shared definition — with that piece already selected.
+  onOpenPiece: (index, pieceIndex) => {
+    openPrefabOf(index)
+    if (doc !== null && pieceIndex < doc.count()) select(pieceIndex)
+  },
+  onRename: (index, name) => {
+    doc?.setName(index, name)
+    inspectorRebuild() // the inspector's own name field mirrors this one
+    uiChanged()
+  },
+  onReparent: (from, parent, at) => {
+    if (doc === null || !doc.canReparent(from, parent)) return
+    // Preserve the world pose, as dragging in Unity's hierarchy does: the stored numbers are re-expressed
+    // in the new parent's frame so the object does not jump. Read off the scene graph, which is where the
+    // composed matrices already live — the document only ever holds local transforms.
+    const local = localInside(instanceGroups[from], parent === null ? null : (instanceGroups[parent] ?? null))
+    const wasSelected = selected === from
 
-// --- Gizmo: mode + snap ---
-const edit: { mode: 'translate' | 'rotate' | 'scale'; snap: boolean; step: number } = { mode: 'translate', snap: true, step: 0.5 }
-const editFolder = pane.addFolder({ title: 'Gizmo' })
-const modeBinding = editFolder
-  .addBinding(edit, 'mode', { options: { 'move (T)': 'translate', 'rotate (R)': 'rotate', 'scale (S)': 'scale' } })
-  .on('change', () => gizmo.setMode(edit.mode))
-editFolder.addBinding(edit, 'snap').on('change', applySnap)
-editFolder.addBinding(edit, 'step', { min: 0.1, max: 2, step: 0.1, label: 'grid' }).on('change', applySnap)
-
-const setMode = (mode: 'translate' | 'rotate' | 'scale'): void => {
-  edit.mode = mode
-  gizmo.setMode(mode)
-  modeBinding.refresh()
-}
-
-// --- Selected: transform + behavior/style/trigger + duplicate/delete ---
-const sel = { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } }
-const prop = { behavior: 'static' as BehaviorKind, direction: '+Y', distance: 3, cycleS: 4, axis: { x: 0, y: 1, z: 0 }, style: '', trigger: 'none' as TriggerChoice }
-const selFolder = pane.addFolder({ title: 'Selected' })
-let selBlades: { dispose: () => void }[] = []
-
-const styleOptions: Record<string, string> = { '(default)': '' }
-for (const k of Object.keys(STYLE_PALETTE)) styleOptions[k] = k
-
-const syncInspector = (): void => {
-  if (selected === null) return
-  const g = instanceGroups[selected]
-  if (g === undefined) return
-  sel.position = { x: r4(g.position.x), y: r4(g.position.y), z: r4(g.position.z) }
-  const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
-  sel.rotation = { x: r4(THREE.MathUtils.radToDeg(e.x)), y: r4(THREE.MathUtils.radToDeg(e.y)), z: r4(THREE.MathUtils.radToDeg(e.z)) }
-  sel.scale = { x: r4(g.scale.x), y: r4(g.scale.y), z: r4(g.scale.z) }
-  selFolder.refresh()
-}
-
-const applyTransformEdit = (): void => {
-  if (selected === null) return
-  const g = instanceGroups[selected]
-  if (g === undefined) return
-  g.position.set(sel.position.x, sel.position.y, sel.position.z)
-  const q = eulerToQuat(vec3(THREE.MathUtils.degToRad(sel.rotation.x), THREE.MathUtils.degToRad(sel.rotation.y), THREE.MathUtils.degToRad(sel.rotation.z)))
-  g.quaternion.set(q.x, q.y, q.z, q.w)
-  g.scale.set(sel.scale.x || 1e-3, sel.scale.y || 1e-3, sel.scale.z || 1e-3)
-  writeBackSelected()
-  scheduleRebuild()
-  updateEndGhost()
-}
-
-const applyProps = (): void => {
-  if (selected === null || doc === null) return
-  const axis = prop.direction === 'custom' ? vec3(prop.axis.x, prop.axis.y, prop.axis.z) : { ...DIRS[prop.direction]! }
-  const p: ItemProps = {
-    behavior: prop.behavior,
-    distance: prop.distance,
-    periodMs: Math.max(50, prop.cycleS * 1000),
-    axis,
-    editable: doc.mode === 'prefab',
-    style: prop.style,
-    trigger: prop.trigger,
-  }
-  doc.setProps(selected, p)
-  rebuildSelectedMeshes()
-  scheduleRebuild()
-  updateEndGhost()
-}
-
-const buildInspector = (): void => {
-  for (const b of selBlades) b.dispose()
-  selBlades = []
-  if (selected === null || doc === null) return
-  syncInspector()
-  const p = doc.props(selected)
-  prop.behavior = p.behavior
-  prop.distance = p.distance
-  prop.cycleS = r4(p.periodMs / 1000)
-  prop.axis = { x: p.axis.x, y: p.axis.y, z: p.axis.z }
-  prop.direction = dirNameOf(p.axis)
-  prop.style = p.style
-  prop.trigger = p.trigger
-
-  const pos = { step: 0.1 }
-  const rot = { step: 1 }
-  const scl = { step: 0.05 }
-  selBlades.push(selFolder.addBinding(sel, 'position', { label: 'position', x: pos, y: pos, z: pos }).on('change', applyTransformEdit))
-  selBlades.push(selFolder.addBinding(sel, 'rotation', { label: 'rotation °', x: rot, y: rot, z: rot }).on('change', applyTransformEdit))
-  selBlades.push(selFolder.addBinding(sel, 'scale', { label: 'scale', x: scl, y: scl, z: scl }).on('change', applyTransformEdit))
-
-  if (p.editable) {
-    selBlades.push(
-      selFolder.addBinding(prop, 'style', { label: 'style', options: styleOptions }).on('change', applyProps),
-      selFolder.addBinding(prop, 'trigger', { label: 'trigger', options: { none: 'none', checkpoint: 'checkpoint', goal: 'goal', hazard: 'hazard' } }).on('change', applyProps),
-    )
-  }
-
-  selBlades.push(
-    selFolder
-      .addBinding(prop, 'behavior', { label: 'behavior', options: { static: 'static', move: 'move', rotate: 'rotate' } })
-      .on('change', () => {
-        applyProps()
-        buildInspector() // show/hide the behavior params
-      }),
-  )
-  if (prop.behavior === 'move' || prop.behavior === 'rotate') {
-    selBlades.push(
-      selFolder.addBinding(prop, 'direction', { label: 'direction', options: DIR_OPTIONS }).on('change', () => {
-        if (prop.direction !== 'custom') {
-          const v = DIRS[prop.direction]!
-          prop.axis = { x: v.x, y: v.y, z: v.z }
-        }
-        applyProps()
-        buildInspector() // reveal/hide the custom-axis field
-      }),
-    )
-    if (prop.direction === 'custom') {
-      const a = { step: 0.1 }
-      selBlades.push(selFolder.addBinding(prop, 'axis', { label: 'axis', x: a, y: a, z: a }).on('change', applyProps))
+    const landed = doc.reparent(from, parent, at)
+    if (local !== null) {
+      const t = doc.transformOf(landed)
+      t.position = local.position
+      const rot = new THREE.Euler(local.rotation.x, local.rotation.y, local.rotation.z, 'XYZ')
+      if (isZeroRot(rot)) delete t.rotation
+      else t.rotation = vec3(r4(local.rotation.x), r4(local.rotation.y), r4(local.rotation.z))
+      if (isOne(new THREE.Vector3(local.scale.x, local.scale.y, local.scale.z))) delete t.scale
+      else t.scale = vec3(r4(local.scale.x), r4(local.scale.y), r4(local.scale.z))
     }
-    if (prop.behavior === 'move') selBlades.push(selFolder.addBinding(prop, 'distance', { step: 0.1, label: 'travel (m)' }).on('change', applyProps))
-    selBlades.push(selFolder.addBinding(prop, 'cycleS', { step: 0.1, label: 'cycle (s)' }).on('change', applyProps))
-  }
 
-  selBlades.push(selFolder.addButton({ title: 'Duplicate (Ctrl+D)' }).on('click', duplicateSelected))
-  selBlades.push(selFolder.addButton({ title: 'Delete (Del)' }).on('click', deleteSelected))
+    // Depth-first indices *are* the identity here (meshes, selection, the gizmo's target) and a reparent
+    // renumbers everything after it, so the scene graph and the physics world are rebuilt rather than
+    // patched. `reparent` hands back where the item went, which is the one index worth keeping.
+    buildItems()
+    rebuildLoaded()
+    if (wasSelected) select(landed)
+    else {
+      deselect()
+      uiChanged()
+    }
+  },
+})
+
+// --- palette ---
+const palette: Palette = createPalette($<HTMLDivElement>('#palette'), {
+  names: () => doc?.palette() ?? [],
+  armed: () => placing,
+  onPick: (name) => {
+    placing = placing === name ? null : name // clicking the armed tile disarms it
+    refreshUi()
+  },
+})
+
+// --- inspector ---
+const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<HTMLDivElement>('#inspector'), {
+  doc: () => doc,
+  selected: () => selected,
+  readTransform: () => {
+    if (selected === null) return null
+    const g = instanceGroups[selected]
+    if (g === undefined) return null
+    const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
+    return {
+      position: vec3(g.position.x, g.position.y, g.position.z),
+      rotationDeg: vec3(THREE.MathUtils.radToDeg(e.x), THREE.MathUtils.radToDeg(e.y), THREE.MathUtils.radToDeg(e.z)),
+      scale: vec3(g.scale.x, g.scale.y, g.scale.z),
+    }
+  },
+  writeTransform: (t) => {
+    if (selected === null) return
+    const g = instanceGroups[selected]
+    if (g === undefined) return
+    g.position.set(t.position.x, t.position.y, t.position.z)
+    const q = eulerToQuat(vec3(THREE.MathUtils.degToRad(t.rotationDeg.x), THREE.MathUtils.degToRad(t.rotationDeg.y), THREE.MathUtils.degToRad(t.rotationDeg.z)))
+    g.quaternion.set(q.x, q.y, q.z, q.w)
+    g.scale.set(t.scale.x, t.scale.y, t.scale.z)
+    writeBackSelected()
+    scheduleRebuild()
+    updateEndGhost()
+  },
+  onPropsChanged: () => {
+    rebuildSelectedMeshes()
+    scheduleRebuild()
+    updateEndGhost()
+    hierarchy.render() // a trigger or style change shows in the row's badge/label
+  },
+  // A rename only changes a label: redraw the chrome, leave the property grid and the meshes alone.
+  // Called through the hook, since `refreshUi` is declared below this block.
+  onRenamed: () => uiChanged(),
+  duplicate: duplicateSelected,
+  remove: deleteSelected,
+  extract: extractSelected,
+  openPrefab: () => {
+    if (selected !== null) openPrefabOf(selected)
+  },
+  styles: Object.keys(STYLE_PALETTE),
+})
+
+// --- status bar ---
+let statusMsg = ''
+const setStatus = (msg: string): void => {
+  statusMsg = msg
+  renderStatus()
+}
+const renderStatus = (): void => {
+  const parts: string[] = [breadcrumb()]
+  if (selected !== null && doc !== null) parts.push(`selected #${selected} (${doc.label(selected)})`)
+  if (placing !== null) parts.push(`click in the viewport to place <b>${placing}</b>`)
+  if (statusMsg !== '') parts.push(statusMsg)
+  statusBar.innerHTML = parts.filter((p) => p !== '').join(' · ')
 }
 
-// --- Play (walk the level with the real character + camera, exactly like the game) ---
-const playFolder = pane.addFolder({ title: 'Play' })
-playBinding = playFolder.addBinding(playState, 'on', { label: 'play (WASD/Space)' }).on('change', (ev) => {
-  if (ev.value) startPlay()
-  else stopPlay()
-})
+/** Redraw all the chrome from current state. Cheap: tens of rows, and the toolbar only updates values. */
+const refreshUi = (): void => {
+  toolbar.render()
+  hierarchy.render()
+  palette.render()
+  renderStatus()
+}
+uiChanged = refreshUi
+inspectorRebuild = () => inspector.rebuild()
+inspectorSync = () => inspector.sync()
 
-// --- Overlays ---
-const show = { grid: true, markers: true }
-const overlays = pane.addFolder({ title: 'Overlays' })
-overlays.addBinding(show, 'grid').on('change', () => {
-  grid.visible = show.grid
-  axes.visible = show.grid
+// --- splitters: the canvas is no longer window-sized, so it has to be told when its cell changes ---
+let relayoutQueued = false
+const relayout = (): void => {
+  if (relayoutQueued) return
+  // Coalesce to one per frame: a drag fires pointermove far faster than the composer wants to
+  // reallocate its render targets.
+  relayoutQueued = true
+  requestAnimationFrame(() => {
+    relayoutQueued = false
+    stage.resize()
+    const size = stage.renderer.getSize(new THREE.Vector2())
+    postfx.setSize(size.x, size.y)
+  })
+}
+
+const MIN_PANEL = 140
+const MIN_VIEWPORT = 320
+createSplitter({
+  handle: $<HTMLDivElement>('#split-left'),
+  axis: 'x',
+  sign: 1,
+  read: () => readPx(app, '--left'),
+  write: (px) => writePx(app, '--left', px),
+  min: MIN_PANEL,
+  max: () => window.innerWidth - readPx(app, '--right') - MIN_VIEWPORT,
+  onChange: relayout,
 })
-overlays.addBinding(show, 'markers', { label: 'markers/triggers' }).on('change', () => {
-  markerGroup.visible = show.markers
+createSplitter({
+  handle: $<HTMLDivElement>('#split-right'),
+  axis: 'x',
+  sign: -1,
+  read: () => readPx(app, '--right'),
+  write: (px) => writePx(app, '--right', px),
+  min: MIN_PANEL,
+  max: () => window.innerWidth - readPx(app, '--left') - MIN_VIEWPORT,
+  onChange: relayout,
+})
+createSplitter({
+  handle: $<HTMLDivElement>('#split-bottom'),
+  axis: 'y',
+  sign: -1,
+  read: () => readPx(app, '--bottom'),
+  write: (px) => writePx(app, '--bottom', px),
+  min: 60,
+  max: () => window.innerHeight - 260,
+  onChange: relayout,
 })
 
 // --- render loop ---

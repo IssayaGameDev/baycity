@@ -60,6 +60,12 @@ export interface Piece {
   visual?: Visual
   trigger?: TriggerKind
   behavior?: Behavior
+  /**
+   * Author-facing label, like a GameObject's name. Editor-only: the loader ignores it, nothing derives
+   * behaviour from it, and it is absent unless somebody typed one — a prefab of three boxes reads as
+   * "left rail / floor / right rail" in the hierarchy instead of "box / box / box".
+   */
+  name?: string
 }
 
 /** Gameplay markers — positions are data; the mode decides what they mean. `hazard` is a
@@ -89,12 +95,38 @@ export interface Prefab {
   behavior?: Behavior
 }
 
-/** A prefab placed in a level. `prefab` is an id (resolved against `Level.prefabs`) or
- * an inline definition; `behavior` overrides the prefab's default. */
+/**
+ * A prefab placed in a level. `prefab` is an id (resolved against `Level.prefabs`) or an inline
+ * definition.
+ *
+ * A **reference** is what makes a prefab a prefab: edit the table entry and every instance follows.
+ * An inline definition is a one-off with no shared identity — both are valid, and the loader treats
+ * them identically once resolved.
+ *
+ * The rest are per-instance **overrides**, the counterpart to referencing: `behavior` replaces the
+ * prefab's default motion, `style` recolours *every* piece of this instance. Everything else is
+ * shared, which is the point.
+ */
 export interface PrefabInstance {
   prefab: string | Prefab
   transform: Transform
   behavior?: Behavior
+  style?: string
+  /**
+   * Author-facing label, like a GameObject's name — per *instance*, so two placements of one prefab can
+   * be told apart ("first gap" / "last gap"). Editor-only, ignored by the loader, and absent unless
+   * typed: the display name falls back to the prefab's id, so clean JSON stays clean.
+   */
+  name?: string
+  /**
+   * Nested instances, to arbitrary depth. A child's transform is relative to this instance's — and at
+   * runtime to its *animated* pose, so motion composes: a rotating bar parented to a moving platform
+   * rides the platform while spinning, with no behaviour that can express that on its own.
+   *
+   * Prefabs stay flat (a prefab holds pieces, never prefabs). Nesting is a property of *placement*, which
+   * is what keeps the composition a tree of transforms rather than a dependency graph between assets.
+   */
+  children?: PrefabInstance[]
 }
 
 /**

@@ -18,9 +18,10 @@ strict, source-first (no build step at this stage).
 - `tools/netsim` — latency/jitter/loss `ClientTransport` wrapper, headless. → core. (Not wired into the current client — ADR 0013.)
 - `tools/bots` — headless `colyseus.js` load clients + `load` harness (budgets 2 & 3; live integration check). → net, server, `colyseus.js`
 - `tools/viewer` — localhost content inspector (`pnpm dev:viewer`): picker, orbit, overlays, jump gizmo, play-in-place (ADR 0014). → character, content, core, physics, render-three
+- `tools/editor` — localhost level/prefab editor (`pnpm dev:editor`; ADR 0023 authoring, ADR 0024 UI): fixed-panel DOM shell (toolbar/hierarchy/viewport/inspector/palette/status, CSS grid + hand-rolled splitters), prefab references + instance overrides, play-in-place on the real controller. Tweakpane is the Inspector panel only. Reads/writes `content/` through a Vite dev-server file API (`vite.config.ts`), so it is a dev tool only. → character, client, content, core, physics, render-three
 - `tools/share` — opt-in remote debugging (`pnpm share`): relay + page behind two Cloudflare quick tunnels, prints one link. No workspace deps; shells out to `cloudflared`.
 - `modes/parkour` — the parkour mode on Colyseus rooms (`colyseus.js`): Roblox-like controller, auto-join, nametags, data-driven level (kit sampler), physics-trigger checkpoints/hazard/fall + persistence adapter. (Rename of `games/tps`.) → character, client, content, core, net, physics, render-three
-- `content/` — level JSON (`levels/level1.json`). Shared content, not a package.
+- `content/` — level + prefab JSON (`levels/`, `prefabs/`), what `tools/editor` reads and writes and what the parkour mode loads by name (`?level=<file>`; no param → the code gym). Shared content, not a package. See ADR 0023.
 - `infra/` — empty placeholder; populated later (SEED §7).
 
 The server is a client-authoritative relay (ADR 0011) hosted on **Colyseus** (ADR 0013,

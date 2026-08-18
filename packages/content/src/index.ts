@@ -20,6 +20,8 @@ export type {
   TriggerKind,
 } from './types'
 export { validateLevel, LevelError } from './validate'
+export { resolvePrefab, instancesOf, freeTableId, walkInstances } from './resolve'
+export type { InstanceVisit } from './resolve'
 export type { LoadedLevel, WorldMarker, WorldTrigger, VisualItem } from './loader'
 export { instantiateLevel } from './loader'
 

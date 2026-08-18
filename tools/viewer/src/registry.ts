@@ -1,11 +1,14 @@
 import { vec3 } from '@mp/core'
 import {
+  beam,
   checkpointPad,
+  curvedBeam,
   gapJump,
   goalPad,
   hazardPad,
   ledge,
   movingPlatform,
+  padChain,
   platform,
   ramp,
   rotatingBar,
@@ -69,8 +72,11 @@ const sampler: Level = {
 export const ENTRIES: Entry[] = [
   solo('platform', platform()),
   solo('ledge', ledge()),
+  solo('beam', beam()),
   solo('ramp', ramp()),
   solo('gap jump', gapJump()),
+  solo('pad chain', padChain()),
+  solo('curved beam', curvedBeam()),
   solo('moving platform', movingPlatform(), 2),
   solo('rotating bar', rotatingBar(), 2),
   solo('staircase', staircase()),

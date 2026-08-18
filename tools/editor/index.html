@@ -5,46 +5,447 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Level / prefab editor</title>
     <style>
+      /*
+        Fixed-panel editor shell: toolbar / hierarchy | viewport | inspector / palette / status.
+        One CSS grid; the three panel sizes are custom properties that the splitters write to, so
+        dragging a divider is a single style write and never a re-layout in JS.
+      */
+      :root {
+        --left: 240px;
+        --right: 300px;
+        --bottom: 132px;
+        --bg: #14161a;
+        --panel: #1c1f24;
+        --panel-head: #23272e;
+        --line: #34383f;
+        --text: #d5d9e0;
+        --dim: #8b929d;
+        --accent: #4a8cf7;
+        --accent-dim: #2f5fa8;
+        --hover: #2a2f37;
+        --sel: #3a4a63;
+        --link: #6ab0ff;
+      }
+      * {
+        box-sizing: border-box;
+      }
       html,
       body {
         margin: 0;
         height: 100%;
         overflow: hidden;
-        background: #0b1020;
-        color: #e2e8f0;
-        font-family: system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        font: 12px/1.45 system-ui, sans-serif;
+      }
+      #app {
+        display: grid;
+        height: 100%;
+        grid-template-columns: var(--left) 5px 1fr 5px var(--right);
+        grid-template-rows: 34px 1fr 5px var(--bottom) 22px;
+        grid-template-areas:
+          'tool tool tool tool tool'
+          'left sl   view sr   right'
+          'sb   sb   sb   sb   sb'
+          'bot  bot  bot  bot  bot'
+          'stat stat stat stat stat';
+      }
+
+      /* ---- panels ---- */
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+      }
+      .panel > h2 {
+        margin: 0;
+        padding: 5px 8px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--dim);
+        background: var(--panel-head);
+        border-bottom: 1px solid var(--line);
+        flex: 0 0 auto;
+        user-select: none;
+      }
+      .panel-body {
+        flex: 1 1 auto;
+        overflow: auto;
+        min-height: 0;
+      }
+      #left {
+        grid-area: left;
+      }
+      #right {
+        grid-area: right;
+      }
+      #bottom {
+        grid-area: bot;
+      }
+      #centre {
+        grid-area: view;
+        position: relative;
+        overflow: hidden;
+        min-width: 0;
+        min-height: 0;
       }
       #view {
-        position: fixed;
-        inset: 0;
+        display: block;
         width: 100%;
         height: 100%;
-        display: block;
       }
-      .overlay {
-        position: fixed;
-        pointer-events: none;
-        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+
+      /* ---- splitters ---- */
+      .splitter {
+        background: var(--bg);
       }
-      #title {
-        top: 12px;
-        left: 14px;
-        font-size: 13px;
+      .splitter:hover,
+      .splitter.dragging {
+        background: var(--accent-dim);
+      }
+      #split-left {
+        grid-area: sl;
+        cursor: col-resize;
+      }
+      #split-right {
+        grid-area: sr;
+        cursor: col-resize;
+      }
+      #split-bottom {
+        grid-area: sb;
+        cursor: row-resize;
+      }
+
+      /* ---- toolbar ---- */
+      #toolbar {
+        grid-area: tool;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 8px;
+        background: var(--panel-head);
+        border-bottom: 1px solid var(--line);
+        user-select: none;
+      }
+      .tb-group {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .tb-sep {
+        width: 1px;
+        height: 18px;
+        background: var(--line);
+        margin: 0 4px;
+      }
+      .tb-label {
+        color: var(--dim);
+        font-size: 11px;
+      }
+      /*
+        Our own controls carry `.ctl`. Styling bare `button`/`select`/`input` instead reached inside
+        Tweakpane, which renders numeric fields as `type="text"` — so `input[type='text'] {width:120px}`
+        out-specificity'd its `.tp-pndtxtv_a {width:100%}` and forced every axis field to 120px, three of
+        them to a row, in a 300px panel. A class keeps the boundary explicit: these are ours, Tweakpane
+        styles its own.
+      */
+      .ctl {
+        font: inherit;
+        color: var(--text);
+        background: #2b3038;
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        padding: 3px 8px;
+      }
+      button.ctl {
+        cursor: pointer;
+      }
+      .ctl:hover {
+        background: var(--hover);
+        border-color: #454b55;
+      }
+      .ctl.on {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      .ctl.on:hover {
+        background: #5b98f8;
+      }
+      .ctl[hidden] {
+        display: none;
+      }
+      input.ctl[type='number'] {
+        width: 56px;
+      }
+      input.ctl[type='text'] {
+        width: 120px;
+      }
+      input.ctl[type='checkbox'] {
+        padding: 0;
+        accent-color: var(--accent);
+      }
+      .ctl:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .seg {
+        display: flex;
+      }
+      .seg .ctl {
+        border-radius: 0;
+        border-right-width: 0;
+      }
+      .seg .ctl:first-child {
+        border-radius: 3px 0 0 3px;
+      }
+      .seg .ctl:last-child {
+        border-radius: 0 3px 3px 0;
+        border-right-width: 1px;
+      }
+
+      /* ---- hierarchy ---- */
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 6px;
+        cursor: default;
+        white-space: nowrap;
+        user-select: none;
+      }
+      .row:hover {
+        background: var(--hover);
+      }
+      .row.sel {
+        background: var(--sel);
+      }
+      .row .twist {
+        width: 12px;
+        color: var(--dim);
+        cursor: pointer;
+        text-align: center;
+        flex: 0 0 auto;
+      }
+      .row .name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row.linked .name {
+        color: var(--link);
+      }
+      /* Indentation comes from the row's depth, set inline — a fixed inset here would fight it. */
+      .row.piece {
+        color: var(--dim);
+      }
+      .row.dragging {
+        opacity: 0.4;
+      }
+      /* Insertion line, drawn inside the row so no layout shifts while dragging. */
+      .row.drop-above {
+        box-shadow: inset 0 2px 0 0 var(--accent);
+      }
+      .row.drop-below {
+        box-shadow: inset 0 -2px 0 0 var(--accent);
+      }
+      /* Dropped *onto* — this row becomes the parent, so the whole row is the target, not an edge. */
+      .row.drop-onto {
+        box-shadow: inset 0 0 0 2px var(--accent);
+      }
+      .row input.rename {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 0 4px;
+      }
+      .row .badge {
+        margin-left: auto;
+        font-size: 10px;
+        color: var(--dim);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 0 5px;
+        flex: 0 0 auto;
+      }
+      .row .badge.trig {
+        color: #7ddc9a;
+        border-color: #2f5c40;
+      }
+      .empty {
+        padding: 8px;
+        color: var(--dim);
+      }
+
+      /* ---- palette ---- */
+      #palette {
+        display: flex;
+        flex-wrap: wrap;
+        align-content: flex-start;
+        gap: 4px;
+        padding: 6px;
+      }
+      .tile {
+        padding: 4px 9px;
+      }
+      .tile.armed {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+
+      /* ---- inspector header: name + prefab link (ours, above the tweakpane grid) ---- */
+      #insp-head {
+        padding: 6px;
+        border-bottom: 1px solid var(--line);
+      }
+      #insp-head input.name {
+        width: 100%;
         font-weight: 600;
-        opacity: 0.9;
+      }
+      #insp-head .link {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--dim);
+        min-width: 0;
+      }
+      #insp-head .link .who {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      /* Unity tints a prefab instance; the link line borrows the same cue as the hierarchy row. */
+      #insp-head .link.linked .who {
+        color: var(--link);
+      }
+      #insp-head .link .ctl {
+        margin-left: auto;
+        flex: 0 0 auto;
+        padding: 2px 6px;
+      }
+
+      /* ---- inspector (tweakpane mounts here) ---- */
+      /*
+        Tweakpane lays a row out as a *growing label* beside a *fixed* value column
+        (`.tp-lblv_l {flex:1}`, `.tp-lblv_v {width: var(--bld-vw, 160px); flex-shrink:0}`), sized for the
+        256px pane it normally creates for itself. Mounted in a 300px panel that reads as a wide empty gap
+        before the values, and the fixed column cannot shrink, so anything inside it overflows sideways.
+        Inverted here to the Unity arrangement: fixed label column, values take the rest — and `min-width:0`
+        at every level, because an <input>'s min-content width is ~20 characters and a flex item will not
+        go below that on its own.
+      */
+      #inspector .tp-lblv_l {
+        flex: 0 0 92px;
+        padding-left: 0;
+        padding-right: 6px;
+      }
+      #inspector .tp-lblv_v {
+        flex: 1 1 auto;
+        width: auto;
+        min-width: 0;
+      }
+      #inspector .tp-pndtxtv_a,
+      #inspector .tp-txtv,
+      #inspector input {
+        min-width: 0;
+      }
+      #inspector {
+        padding: 6px;
+        --tp-base-border-radius: 0;
+        --tp-container-horizontal-padding: 0;
+        --tp-base-background-color: transparent;
+        --tp-base-shadow-color: transparent;
+        --tp-container-background-color: #2b3038;
+        --tp-container-background-color-active: #3a414c;
+        --tp-container-background-color-focus: #343b45;
+        --tp-container-background-color-hover: #333a44;
+        --tp-container-foreground-color: #d5d9e0;
+        --tp-input-background-color: #23272e;
+        --tp-input-background-color-active: #2e343d;
+        --tp-input-background-color-focus: #2a3038;
+        --tp-input-background-color-hover: #292f37;
+        --tp-input-foreground-color: #e6eaf0;
+        --tp-label-foreground-color: #8b929d;
+        --tp-button-background-color: #333a44;
+        --tp-button-background-color-active: #4a8cf7;
+        --tp-button-background-color-focus: #3d4550;
+        --tp-button-background-color-hover: #3a424d;
+        --tp-button-foreground-color: #d5d9e0;
+        --tp-monitor-background-color: #23272e;
+        --tp-monitor-foreground-color: #8b929d;
+        --tp-groove-foreground-color: #34383f;
+      }
+
+      /* ---- status bar + viewport hint ---- */
+      #status {
+        grid-area: stat;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 8px;
+        background: var(--panel-head);
+        border-top: 1px solid var(--line);
+        color: var(--dim);
+        font-size: 11px;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      #status b {
+        color: var(--text);
+        font-weight: 600;
       }
       #hint {
-        left: 14px;
-        bottom: 12px;
-        font-size: 12px;
-        opacity: 0.65;
+        position: absolute;
+        left: 10px;
+        bottom: 8px;
+        font-size: 11px;
+        color: var(--dim);
+        pointer-events: none;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
       }
     </style>
   </head>
   <body>
-    <canvas id="view"></canvas>
-    <div id="title" class="overlay">level editor</div>
-    <div id="hint" class="overlay">Orbit: drag · Select: click (Esc) · T/R/S transform · Place: panel then click · Ctrl+D dup · Del delete · Play: panel (WASD/Space, mouse-look, Esc)</div>
+    <div id="app">
+      <div id="toolbar"></div>
+
+      <div id="left" class="panel">
+        <h2>Hierarchy</h2>
+        <div id="hierarchy" class="panel-body"></div>
+      </div>
+      <div id="split-left" class="splitter"></div>
+
+      <div id="centre">
+        <canvas id="view"></canvas>
+        <div id="hint">
+          Orbit: drag · Select: click · T/R/S transform · Ctrl+D duplicate · Del delete · Esc deselect
+        </div>
+      </div>
+
+      <div id="split-right" class="splitter"></div>
+      <div id="right" class="panel">
+        <h2>Inspector</h2>
+        <div class="panel-body">
+          <div id="insp-head"></div>
+          <div id="inspector"></div>
+        </div>
+      </div>
+
+      <div id="split-bottom" class="splitter"></div>
+      <div id="bottom" class="panel">
+        <h2>Prefabs — click one, then click in the viewport</h2>
+        <div id="palette" class="panel-body"></div>
+      </div>
+
+      <div id="status"></div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

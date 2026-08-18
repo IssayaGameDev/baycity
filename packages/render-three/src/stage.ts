@@ -16,6 +16,12 @@ export interface ThreeStage {
    * to restore the default `renderer.render(scene, camera)`. Keeps the stage
    * unopinionated: post-FX is opt-in by the consumer. */
   setRenderStep: (step: (() => void) | null) => void
+  /**
+   * Re-read the canvas's CSS size into the renderer and camera aspect. Called on `window.resize`
+   * already; call it directly when the canvas changes size *without* the window doing so — a canvas
+   * in a resizable panel layout (the editor) rather than filling the viewport.
+   */
+  resize: () => void
   dispose: () => void
 }
 
@@ -84,6 +90,7 @@ export const createThreeStage = (opts: ThreeStageOptions): ThreeStage => {
     setRenderStep: (step) => {
       renderStep = step
     },
+    resize,
     dispose: () => {
       running = false
       if (raf) cancelAnimationFrame(raf)
