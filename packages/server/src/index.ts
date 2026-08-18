@@ -34,7 +34,11 @@ export const startServer = async (opts: { port?: number } = {}): Promise<ServerH
   const port = opts.port ?? DEFAULT_PORT
   resetRoomStats()
   const gameServer = new Server() // default ws transport
-  gameServer.define('parkour', ParkourRoom)
+  // Filtered by `level`: matchmaking only ever puts a client into a room whose creator passed the same
+  // level name. The server still loads no content (ADR 0013) — it never learns what a level *is*, only
+  // that two clients claiming different ones must not share a room, because geometry and the
+  // movement-base index a rider replicates (ADR 0021) are both positional and would disagree.
+  gameServer.define('parkour', ParkourRoom).filterBy(['level'])
   await gameServer.listen(port)
 
   return {

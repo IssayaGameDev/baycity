@@ -29,6 +29,10 @@ pnpm dev:parkour  # http://localhost:5174  (open it)
 
 Click the view to capture the mouse. **Mouse** orbits the camera, **WASD** moves (camera-relative; the character faces its movement), **Space** jumps, **Esc** opens the pause screen. Your character is simulated locally (client-authoritative); the server relays your position to other players, who appear interpolated with a nametag. Open a second browser tab — both auto-join one shared room. Touch a green checkpoint pad to respawn there; moving platforms run off the shared clock, so they are in sync across tabs. The **Debug** pane (top-right) tunes movement feel and camera. **On a phone**: drag the left thumbstick to move, tap-and-hold the bottom-right button to jump, drag anywhere else to look, pinch to zoom — untested on a real device so far (see `docs/INDEX.md`).
 
+By default you get the built-in **gym** — the test course below. Add `?level=<name>` to load a level
+file from `content/levels/` instead (`?level=level1`); the name also picks the room, so tabs on
+different levels will not see each other. Author those files with `pnpm dev:editor`.
+
 You spawn on a 64 m slab holding a sampler of every kit piece. The obstacle courses sit past its
 edges, over open void — walk **+z** for the beam course, **+x** for the pad course, and **+x along
 the z = 20 line** for the curved-beam course. Behind spawn (**−z**) is the platform-carry bench.

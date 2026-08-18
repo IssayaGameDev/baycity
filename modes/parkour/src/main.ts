@@ -43,7 +43,7 @@ import {
   partTransforms,
   type GaitTuning,
 } from '@mp/character'
-import { instantiateLevel, validateLevel, type LoadedLevel } from '@mp/content'
+import { instantiateLevel, type LoadedLevel } from '@mp/content'
 import { getLocale, matchLocale, onLocaleChange, setLocale, t, type TranslationKey } from '@mp/i18n'
 import { createTouchHud, createUiOverlay, uiButton, type ListItem, type TouchHud } from '@mp/render-pixi'
 import { Client, type Room } from 'colyseus.js'
@@ -55,12 +55,34 @@ import { BODY_LAYERS } from './layers'
 import { OVERLAY_LAYER } from './nametag'
 import { createPauseMenu } from './pauseMenu'
 import { createRagdoll, type Ragdoll } from './ragdoll'
+import { GYM, levelByName } from './levels'
 import { localParkourPersistence } from './persistence'
-import { showcase } from './showcase'
 
 // Relay endpoint. Defaults to the dev host on :9200. `?server=wss://host` overrides it, so a
 // tunnelled page (served from a different origin than the relay) can point at its own relay URL.
 const SERVER_URL = new URLSearchParams(location.search).get('server') ?? `ws://${location.hostname}:9200`
+
+/**
+ * Which level: `?level=<name>` picks a file from `content/levels/`, no param gets the built-in gym
+ * (ADR 0023). A typo falls back to the gym rather than bricking the page, and says so in the console.
+ *
+ * The name also picks the **room** — see `connect`. Everyone sharing a room has to be on the same
+ * level: the geometry differs, and so does the movement-base index a rider puts on the wire, which is
+ * assigned in instance order at load (ADR 0021). Mismatched clients would place each other on the
+ * wrong platform entirely.
+ */
+const levelName = ((): string => {
+  const requested = new URLSearchParams(location.search).get('level')
+  if (requested === null) return GYM
+  try {
+    levelByName(requested)
+    return requested
+  } catch (e) {
+    console.error(`${String(e)} — falling back to the gym`)
+    return GYM
+  }
+})()
+const levelData = levelByName(levelName)
 
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector<T>(sel)!
 const canvas = $<HTMLCanvasElement>('#view')
@@ -578,7 +600,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   // them down. It was zero here, which left a corpse coasting off in a straight line for ever.
   const world = createPhysicsWorld({ gravity: { x: 0, y: -tuning.gravity, z: 0 } })
   physicsWorld = world // the render loop builds peers' corpses in it
-  loaded = instantiateLevel(world, validateLevel(showcase))
+  loaded = instantiateLevel(world, levelData)
 
   // Build the level's greybox meshes via the shared renderer (content C3). Marker pads are
   // just their (colour-coded) box here; radius/overlay visualization belongs in the viewer.
@@ -827,7 +849,9 @@ const onNet = (m: Uint8Array): void => {
 // performs the HTTP seat reservation then upgrades.
 const connect = async (): Promise<void> => {
   try {
-    room = await new Client(SERVER_URL).joinOrCreate('parkour', { name: myName })
+    // `level` is a matchmaking filter (server: `.filterBy(['level'])`), so a room only ever holds
+    // players on the same level — see the note on `levelName`.
+    room = await new Client(SERVER_URL).joinOrCreate('parkour', { name: myName, level: levelName })
   } catch {
     setStatus('status.offline')
     return

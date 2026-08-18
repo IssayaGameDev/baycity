@@ -8,8 +8,13 @@ Positions only on the wire (no rotation yet).
 
 Rooms run on **Colyseus** (ADR 0013): it owns the transport (default `ws`), room lifecycle,
 matchmaking and the scale-out path; our binary relay is the payload inside each room — **no
-`@colyseus/schema`**. Clients `joinOrCreate('parkour')` (fill-then-create, `maxClients = 20`, solo
-→ own room); `joinById` handles join-by-code. Versions are pinned to Colyseus **0.16** (server
+`@colyseus/schema`**. Clients `joinOrCreate('parkour', { name, level })` (fill-then-create, `maxClients = 20`,
+solo → own room); `joinById` handles join-by-code. Matchmaking is **filtered by `level`**
+(`define(...).filterBy(['level'])`): a room only ever holds clients on the same level, because
+geometry and the movement-base index a rider replicates (ADR 0021) are both positional and would
+otherwise disagree. Filtering is per *supplied* option — a client that omits `level` matches any
+room, so every client here names one (the browser defaults to `gym`, bots take `LEVEL`, default
+`gym`). The server still loads no content; it never learns what a level is. Versions are pinned to Colyseus **0.16** (server
 `colyseus@0.16.5` + client `colyseus.js@0.16.22` — the matched stable pair).
 
 ## Client (`packages/client`, composed in `modes/parkour`)

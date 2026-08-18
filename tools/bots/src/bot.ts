@@ -17,6 +17,13 @@ export interface Bot {
 const TICK_HZ = 30
 const RADIUS = 5
 
+/**
+ * Matchmaking filters rooms by level (`filterBy(['level'])`, ADR 0023), so a bot has to name the same
+ * one a browser tab would or it lands in a room of its own — which would silently halve the load test
+ * and stop bots being visible from the game. The gym is what an unparameterised page loads.
+ */
+const LEVEL = process.env['LEVEL'] ?? 'gym'
+
 export const createBot = (url: string, phase = 0): Bot => {
   let bytes = 0
   let messages = 0
@@ -25,7 +32,7 @@ export const createBot = (url: string, phase = 0): Bot => {
   let timer: ReturnType<typeof setInterval> | null = null
 
   void new Client(url)
-    .joinOrCreate('parkour', { name: 'bot' })
+    .joinOrCreate('parkour', { name: 'bot', level: LEVEL })
     .then((r) => {
       room = r
       // Count the relayed payload (our snapshot bytes); Colyseus framing is extra.
