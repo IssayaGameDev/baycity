@@ -63,13 +63,15 @@ reversed it); ball demo retired (tag `m10`); world/controller relocated out of `
 
 ## Deferred (not built)
 
-- **Mobile play.** The requirements name mid-range Android and iOS Safari as first-class targets, and the
-  *stack* honours that: one `InputSource` behind a keyboard adapter and a virtual-joystick touch adapter
-  (`@mp/client/dom`, ADR 0008), WebGL2 chosen for mobile-Safari reach (ADR 0003), Pixi for the HUD
-  (ADR 0015). **`modes/parkour` does not.** It wires `keydown`/`keyup` and pointer-lock mouselook
-  directly, so there is no joystick, no touch look control, no jump button and no mobile layout — the one
-  playable thing in the repo is desktop-only. Kodjo's position (2026-08-18): no mobile stance yet.
-  Also unmeasured, and on the same device: budgets 1 (frame time) and 5 (memory).
+- **Mobile play. There is no way to control the character on a phone.** The requirements name mid-range
+  Android and iOS Safari as first-class targets. Some groundwork exists and **nothing imports it**:
+  `createTouchJoystick` and `createBrowserInput` (`@mp/client/dom`, ADR 0008) and a joystick HUD view
+  (`render-pixi/hud.ts`) are all unused, and the DOM adapters have no tests. `modes/parkour` reads
+  `keydown`/`keyup` for movement, Space for jump, and pointer lock for the camera — and pointer lock does
+  not exist on mobile browsers at all. A phone can open the Pixi pause screen and do nothing else.
+  A mobile pass therefore needs wiring *and* new work: a look control, a jump button, a HUD layout.
+  Kodjo's position (2026-08-18): no mobile stance yet. Unmeasured on the same device, for the same
+  reason: budgets 1 (frame time) and 5 (memory).
 - **Goal/win rule, other modes** (obby-tower variant, keyboard-run grind + progression), **glTF art layer**, **full in-viewer editor**, **account-backed persistence** — accounted for by seams (ADR 0014), not built. The `goal` **trigger kind** and `goalPad()` exist in `@mp/content`, but no level uses them and the mode has no goal rule: `showcase.ts` uses `style: 'goal'`, which is only a colour. Nothing ends a run.
 - **M9 — 2D path** (Rapier2d + Pixi-only). Deferred when scope narrowed to 3D.
 - **Deploy** (Dockerfile + single-VPS) — re-scoped with Kodjo when a target exists. `infra/` empty.
