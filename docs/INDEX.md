@@ -61,8 +61,35 @@ reversed it); ball demo retired (tag `m10`); world/controller relocated out of `
 - `modes/parkour` — the parkour mode on Colyseus rooms: Roblox-like controller (live-tunable), auto-join, nametags, data-driven level (kit sampler), checkpoints/hazard/fall via physics triggers + persistence adapter, a **death ragdoll** + **spawn assembly** (one dynamic body per rig part, seeded from the animated pose; left click respawns and the body drops back in a pair at a time — ADR 0019; peers ragdoll and re-assemble too, each viewer running its own from one `STATE_DEAD` flag), a **Pixi pause screen** (settings + roster + restart, localized via `@mp/i18n`), and the **third-person camera** (wheel zoom, pitch to straight overhead, sphere-cast occlusion — ADR 0020). Composition root; view pieces in `nametag.ts`/`characterView.ts`/`pauseMenu.ts`/`ragdoll.ts`/`assemble.ts`, collision layers in `layers.ts`.
 - `content/levels` — level JSON (`level1.json`, the ported original world).
 
-## Deferred (SEED §7, not built)
+## Deferred (not built)
 
-- **Goal/win rule, other modes** (obby-tower variant, keyboard-run grind + progression), **glTF art layer**, **full in-viewer editor**, **account-backed persistence** — accounted for by seams (ADR 0014), not built.
+- **Mobile play.** The requirements name mid-range Android and iOS Safari as first-class targets, and the
+  *stack* honours that: one `InputSource` behind a keyboard adapter and a virtual-joystick touch adapter
+  (`@mp/client/dom`, ADR 0008), WebGL2 chosen for mobile-Safari reach (ADR 0003), Pixi for the HUD
+  (ADR 0015). **`modes/parkour` does not.** It wires `keydown`/`keyup` and pointer-lock mouselook
+  directly, so there is no joystick, no touch look control, no jump button and no mobile layout — the one
+  playable thing in the repo is desktop-only. Kodjo's position (2026-08-18): no mobile stance yet.
+  Also unmeasured, and on the same device: budgets 1 (frame time) and 5 (memory).
+- **Goal/win rule, other modes** (obby-tower variant, keyboard-run grind + progression), **glTF art layer**, **full in-viewer editor**, **account-backed persistence** — accounted for by seams (ADR 0014), not built. The `goal` **trigger kind** and `goalPad()` exist in `@mp/content`, but no level uses them and the mode has no goal rule: `showcase.ts` uses `style: 'goal'`, which is only a colour. Nothing ends a run.
 - **M9 — 2D path** (Rapier2d + Pixi-only). Deferred when scope narrowed to 3D.
 - **Deploy** (Dockerfile + single-VPS) — re-scoped with Kodjo when a target exists. `infra/` empty.
+
+## Where "SEED §n" points
+
+`SEED.md` was Kodjo's requirements handoff — locked decisions, the five budgets, the structural laws, the
+build order. It was **input to the project, not documentation of it**, and by its own lifecycle note it was
+deleted once every part of it had been implemented and documented or explicitly superseded. Git has it.
+
+The `(SEED §n)` citations left in these docs and in code comments mark a constraint as *Kodjo's*, not an
+agent's invention, which is worth keeping. Where each section's content lives now:
+
+| SEED | Now |
+|---|---|
+| §1 scope, "simplified Roblox" + modes | ADR 0014, the top of this file |
+| §2 locked technical decisions | ADRs 0001–0003, 0013 (transport → Colyseus), 0015; `workspace.md`, `protocol.md` |
+| §3 players per room, mobile targets, input abstraction, per-client snapshots | `netcode.md`, ADR 0008, the mobile entry above. Its rewind requirement was retired by ADR 0011 |
+| §4 netcode model | **Reversed** by ADR 0011; `netcode.md` is current |
+| §5 the five budgets + mitigation menu | `budgets.md`, verbatim |
+| §6 structural laws + package layout | `workspace.md`; `games/` → `modes/` in ADR 0014 |
+| §7 build order M1–M8 | tags `m1`–`m8`; M9/M10 in the deferred list above |
+| §8 human-owned tasks | `budgets.md` (which budgets are human-measured), CLAUDE.md's prime directive |
