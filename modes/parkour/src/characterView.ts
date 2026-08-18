@@ -16,7 +16,23 @@ import { makeNameLabel } from './nametag'
  * raw snapshots would be jittery at 20 Hz). The derived facing and speed remain as the fallback for a
  * caller that passes `null`, and as what `velocityOf` reports — a corpse should inherit the world
  * velocity it appeared to have, carry included.
+ *
+ * Peers riding a clock-driven piece arrive already converted out of that piece's frame (v10, ADR 0021);
+ * what this file does with the base itself is smooth the moment it changes.
  */
+
+/**
+ * Half-life (s) of the catch-up after a peer's movement base changes (ADR 0021).
+ *
+ * Riding a platform, a peer is drawn against the deck's *current* pose, so effectively at now. Off it,
+ * they are drawn from a world position sampled on the delayed timeline. Both are right; the step between
+ * them is not, and it is the rider's whole displacement over the interpolation delay — nearly a metre
+ * when they leap off the fast mover, whose velocity they inherit. Left alone that is a teleport, so the
+ * gap is kept and decayed: the drawn position stays where it was and closes on the truth. 0 restores the
+ * teleport, which is the honest alternative and reads worse.
+ */
+const BASE_SWITCH_HALFLIFE = 0.1
+
 interface Rendered {
   rig: CharacterRig
   animator: Animator
@@ -28,6 +44,10 @@ interface Rendered {
   /** Smoothed derived vertical velocity (m/s), for peers. */
   vy: number
   yaw: number
+  /** Movement base last seen, so a change of frame can be detected and smoothed over. */
+  base: number
+  /** Decaying world-space offset that hides the step at a base change. */
+  slip: Vec3
   label?: THREE.Sprite
   labelText?: string
 }
@@ -54,6 +74,13 @@ export interface CharacterPlacement {
    * locomotion speed on the wire or a ground probe here. So peers brace for nothing, for now.
    */
   carry: Vec3 | null
+  /**
+   * The clock-driven piece this player is riding (`LoadedLevel.baseIndex + 1`, 0 for none). `position`
+   * and `yaw` are already in world space by the time they arrive here — the caller undoes the frame,
+   * since only it has the level. This is passed purely so a *change* of base can be smoothed: the two
+   * sides of that change are drawn against different timelines and the step between them is visible.
+   */
+  base: number
   name: string
 }
 
@@ -106,7 +133,17 @@ export const createCharacterViews = (scene: THREE.Scene, gait: GaitTuning = DEFA
       scene.add(rig.root)
       // Seed from the entity id so a session is reproducible, and so two characters do not roll the
       // same sequence of steps — the variation is still per movement, not a fixed personality.
-      r = { rig, animator: createAnimator(gait, (id as number) * 2654435761), pose: null, last: { ...position }, speed: 0, vy: 0, yaw: 0 }
+      r = {
+        rig,
+        animator: createAnimator(gait, (id as number) * 2654435761),
+        pose: null,
+        last: { ...position },
+        speed: 0,
+        vy: 0,
+        yaw: 0,
+        base: 0,
+        slip: { x: 0, y: 0, z: 0 },
+      }
       chars.set(id, r)
     }
     return r
@@ -125,8 +162,18 @@ export const createCharacterViews = (scene: THREE.Scene, gait: GaitTuning = DEFA
   }
 
   return {
-    upsert: (id, { isSelf, position, yaw, speed, vy, grounded, rising, carry, name }, dt) => {
+    upsert: (id, { isSelf, position, yaw, speed, vy, grounded, rising, carry, base, name }, dt) => {
       const r = charFor(id, isSelf, position)
+
+      // Stepping onto or off a moving platform swaps which timeline this player is drawn against, so the
+      // position steps. Keep the step as an offset and decay it, rather than showing it.
+      if (base !== r.base) {
+        const drawn = r.rig.root.position
+        r.slip = { x: drawn.x - position.x, y: drawn.y - position.y, z: drawn.z - position.z }
+        r.base = base
+      }
+      const decay = BASE_SWITCH_HALFLIFE > 0 ? Math.pow(2, -dt / BASE_SWITCH_HALFLIFE) : 0
+      r.slip = { x: r.slip.x * decay, y: r.slip.y * decay, z: r.slip.z * decay }
 
       // Derived motion, from the interpolated render position.
       const dx = position.x - r.last.x
@@ -157,7 +204,7 @@ export const createCharacterViews = (scene: THREE.Scene, gait: GaitTuning = DEFA
       )
       r.pose = pose
       r.rig.apply(pose)
-      r.rig.root.position.set(position.x, position.y, position.z)
+      r.rig.root.position.set(position.x + r.slip.x, position.y + r.slip.y, position.z + r.slip.z)
       // No nametag over your own head: you know who you are, and the camera sits directly behind it.
       if (!isSelf) setLabel(r, name)
     },
@@ -176,6 +223,7 @@ export const createCharacterViews = (scene: THREE.Scene, gait: GaitTuning = DEFA
       r.last = { ...position }
       r.speed = 0
       r.vy = 0
+      r.slip = { x: 0, y: 0, z: 0 } // a respawn is a teleport on purpose; nothing to hide
       // Facing is left alone: it is where they were looking, which is a better guess than the direction
       // the teleport happened to point.
     },

@@ -45,7 +45,10 @@ const relayDiffers = (a: PlayerState, b: PlayerState): boolean =>
   quantizeAxis(a.position.y) !== quantizeAxis(b.position.y) ||
   quantizeAxis(a.position.z) !== quantizeAxis(b.position.z) ||
   quantizeYaw(a.yaw) !== quantizeYaw(b.yaw) ||
-  quantizeSpeed(a.speed) !== quantizeSpeed(b.speed)
+  quantizeSpeed(a.speed) !== quantizeSpeed(b.speed) ||
+  // Stepping onto or off a platform changes the *frame* the position is expressed in, so it has to
+  // reach every viewer on the tick it happens even if nothing else moved (v10, ADR 0021).
+  a.base !== b.base
 
 // Colyseus hands us a Uint8Array view (possibly onto a pooled/shared buffer); our
 // codecs take a standalone ArrayBuffer, so copy the exact bytes out.
@@ -152,6 +155,7 @@ export class ParkourRoom extends Room {
           flags: other.latest.flags,
           yaw: other.latest.yaw,
           speed: other.latest.speed,
+          base: other.latest.base,
         })
       }
       player.client.sendBytes(NET_CHANNEL, bytes(encodeSnapshot(deltaSnapshot(player, peers, time))))
@@ -174,6 +178,7 @@ const asState = (e: SnapshotEntity): PlayerState => ({
   flags: e.flags,
   yaw: e.yaw,
   speed: e.speed,
+  base: e.base,
 })
 
 /** A full snapshot on first send, then per-client deltas vs the last states sent.

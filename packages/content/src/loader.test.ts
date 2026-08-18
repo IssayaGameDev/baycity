@@ -1,4 +1,4 @@
-import { eulerToQuat, vec3 } from '@mp/core'
+import { eulerToQuat, rotateVec3, vec3, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -306,6 +306,85 @@ describe('instantiateLevel', () => {
     // Every point scaled per-axis — no approximation, which is the ball/capsule limitation.
     expect(col.points[0]).toEqual(vec3(-2, -3, -4))
     expect(col.points[7]).toEqual(vec3(2, 3, 4))
+    world.free()
+  })
+
+  it('gives every clock-driven piece a stable index, and poses it at tick or at render time', () => {
+    // The machinery relative-to-base replication stands on (ADR 0021). A rider sends the index of the
+    // piece it is on and its position *in that piece's frame*; a viewer has to turn that back into a world
+    // position against the pose the deck was **drawn** at, which is not the same as the pose physics last
+    // resolved against. Getting that distinction wrong is the whole bug this replaced: the rider ends up
+    // 100 ms behind the deck and slides across it whenever the platform turns around.
+    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+    const loaded = instantiateLevel(world, {
+      id: 'bases',
+      config: { fallBehavior: 'physical-fall', fallY: -3 },
+      instances: [
+        // A static piece first, to prove the index counts clock-driven pieces rather than all of them.
+        {
+          prefab: { id: 's', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: 'checkpoint' }] },
+          transform: { position: vec3(0, 0, 0) },
+        },
+        {
+          prefab: { id: 'm', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: 'hazard' }] },
+          transform: { position: vec3(0, 1, 0) },
+          behavior: { kind: 'move', axis: vec3(1, 0, 0), distance: 8, periodMs: 4000 },
+        },
+        {
+          prefab: { id: 'r', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: 'goal' }] },
+          transform: { position: vec3(0, 3, 0) },
+          behavior: { kind: 'rotate', axis: vec3(0, 1, 0), periodMs: 8000 },
+        },
+      ],
+    })
+    const mover = loaded.triggers.find((t) => t.kind === 'hazard')!
+    const turntable = loaded.triggers.find((t) => t.kind === 'goal')!
+    const staticFloor = loaded.triggers.find((t) => t.kind === 'checkpoint')!
+
+    // Indices are dense over the clock-driven pieces, in level order, and static geometry has none.
+    expect(loaded.baseIndex(mover.colliderHandle)).toBe(0)
+    expect(loaded.baseIndex(turntable.colliderHandle)).toBe(1)
+    expect(loaded.baseIndex(staticFloor.colliderHandle)).toBeUndefined()
+    expect(loaded.basePoseOf(2, true)).toBeUndefined()
+
+    // Two ticks apart, then drawn halfway between them: the render pose is the interpolated one, which is
+    // where the deck visibly is, and the tick pose is where physics left it. A viewer must use the first.
+    loaded.update(0)
+    const atZero = loaded.basePoseOf(0, false)!.position.x
+    loaded.update(500)
+    const atTick = loaded.basePoseOf(0, false)!.position.x
+    expect(atTick, 'the piece really moved between the two ticks').toBeGreaterThan(atZero + 0.5)
+    expect(loaded.basePose(mover.colliderHandle)!.position.x, 'same pose the carry solver reads').toBeCloseTo(atTick, 9)
+    loaded.render(0.5)
+    expect(loaded.basePoseOf(0, true)!.position.x, 'drawn halfway between the last two ticks').toBeCloseTo(
+      (atZero + atTick) / 2,
+      9,
+    )
+    expect(loaded.basePoseOf(0, false)!.position.x, 'and the tick pose is untouched by drawing').toBeCloseTo(atTick, 9)
+
+    // The round trip a rider makes: a *fixed* point in the deck's frame becomes a world point that tracks
+    // the deck exactly. That is the whole mechanism — the number on the wire does not change while the
+    // platform moves, so no amount of latency can slide the rider across the deck.
+    const stand = vec3(0.5, 0.6, -1.25)
+    const worldOn = (index: number): Vec3 => {
+      const deck = loaded.basePoseOf(index, true)!
+      const p = rotateVec3(deck.rotation, stand)
+      return vec3(deck.position.x + p.x, deck.position.y + p.y, deck.position.z + p.z)
+    }
+    const before = worldOn(0)
+    loaded.update(1000)
+    loaded.render(1)
+    const after = worldOn(0)
+    const deckMoved = loaded.basePoseOf(0, true)!.position.x - (atZero + atTick) / 2
+    expect(after.x - before.x, 'the rider travels exactly as far as the deck did').toBeCloseTo(deckMoved, 9)
+    expect(after.y).toBeCloseTo(before.y, 9)
+
+    // A turntable's frame carries rotation, so the same round trip has to go through its orientation.
+    loaded.update(2000) // quarter period -> +90 deg about Y
+    loaded.render(1)
+    const spun = loaded.basePoseOf(1, true)!
+    const point = rotateVec3(spun.rotation, vec3(1, 0, 0)) // local +x
+    expect(point.z, 'local +x should have swung to -z').toBeCloseTo(-1, 3)
     world.free()
   })
 

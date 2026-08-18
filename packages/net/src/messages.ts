@@ -6,8 +6,11 @@
  * cannot derive from position (see `STATE_GROUNDED`).
  * v9: they also carry facing and locomotion speed (f32 upstream, a byte each on relay). Both are
  * things only the owner knows: facing follows the *input* direction, and a position curve cannot
- * separate walking from being carried by a platform. +2 B per snapshot entity. */
-export const PROTOCOL_VERSION = 9 as const
+ * separate walking from being carried by a platform. +2 B per snapshot entity.
+ * v10: they also carry the clock-driven piece being ridden, and while it is non-zero the position and
+ * facing are expressed **in that piece's frame** — relative-to-base replication (ADR 0021), which is
+ * what stops a rider sliding across a platform for everyone but its owner. +1 B per snapshot entity. */
+export const PROTOCOL_VERSION = 10 as const
 
 /** The single Colyseus message channel our whole binary protocol rides on (ADR 0013).
  * Colyseus never inspects the payload; we dispatch on the version+type header inside. */

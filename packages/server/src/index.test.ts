@@ -12,6 +12,6 @@ describe('@mp/server', () => {
 
   it('resolves upstream packages (core, net)', () => {
     expect(CORE_VERSION).toBe('0.0.0')
-    expect(PROTOCOL_VERSION).toBe(9)
+    expect(PROTOCOL_VERSION).toBe(10)
   })
 })

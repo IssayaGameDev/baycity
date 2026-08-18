@@ -6,17 +6,22 @@ import { interpolateAt } from './interpolation'
 
 const snap = (t: number, x: number): Snapshot => ({
   serverTimeMs: t,
-  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags: 0, yaw: 0, speed: 0 }],
+  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags: 0, yaw: 0, speed: 0, base: 0 }],
 })
 
 const withFlags = (t: number, x: number, flags: number): Snapshot => ({
   serverTimeMs: t,
-  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags, yaw: 0, speed: 0 }],
+  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags, yaw: 0, speed: 0, base: 0 }],
 })
 
 const withMotion = (t: number, yaw: number, speed: number): Snapshot => ({
   serverTimeMs: t,
-  entities: [{ id: entityId(1), position: { x: 0, y: 0, z: 0 }, flags: 0, yaw, speed }],
+  entities: [{ id: entityId(1), position: { x: 0, y: 0, z: 0 }, flags: 0, yaw, speed, base: 0 }],
+})
+
+const onBase = (t: number, x: number, base: number): Snapshot => ({
+  serverTimeMs: t,
+  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags: 0, yaw: 0, speed: 0, base }],
 })
 
 describe('interpolateAt', () => {
@@ -32,6 +37,19 @@ describe('interpolateAt', () => {
     expect(interpolateAt(buf, 99)[0]!.flags).toBe(STATE_GROUNDED) // still the older sample
     expect(interpolateAt(buf, 100)[0]!.flags).toBe(STATE_RISING) // lands exactly on the change
     expect(interpolateAt(buf, 150)[0]!.flags).toBe(STATE_RISING)
+  })
+
+  it('does not blend positions across a change of base', () => {
+    // While a peer rides a clock-driven piece its position is in that piece's frame (v10), so two
+    // samples on different bases are two different coordinate systems. Lerping 0 in the world against 10
+    // on a platform would walk the rider through whatever lies between. The older sample is held instead.
+    const buf = [onBase(0, 0, 0), onBase(100, 10, 3)]
+    expect(interpolateAt(buf, 50)[0]!.position.x, 'held, not blended').toBe(0)
+    expect(interpolateAt(buf, 50)[0]!.base).toBe(0)
+    expect(interpolateAt(buf, 100)[0]!.position.x, 'and lands on the new frame at the sample').toBe(10)
+    expect(interpolateAt(buf, 100)[0]!.base).toBe(3)
+    // Same base on both ends: an ordinary lerp, in that base's frame.
+    expect(interpolateAt([onBase(0, 0, 3), onBase(100, 10, 3)], 50)[0]!.position.x).toBeCloseTo(5)
   })
 
   it('interpolates speed but not facing', () => {

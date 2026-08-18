@@ -47,6 +47,7 @@ interface MoveHandle {
   visual: VisualItem
   prevPos: Vec3 // previous sim-tick position (for render interpolation)
   currPos: Vec3 // latest sim-tick position
+  renderPos: Vec3 // what `render(alpha)` last drew — the pose a rider has to be placed against
 }
 interface RotateHandle {
   kind: 'rotate'
@@ -59,6 +60,7 @@ interface RotateHandle {
   currRot: Quat // latest sim-tick orientation
   prevAngle: number // spin angle (rad) at the previous sim tick
   currAngle: number // spin angle (rad) at the latest sim tick
+  renderRot: Quat // what `render(alpha)` last drew — the pose a rider has to be placed against
 }
 type BehaviorHandle = MoveHandle | RotateHandle
 
@@ -92,6 +94,22 @@ export interface LoadedLevel {
    * exactly (`stepCharacter`'s `platforms` argument). Call after `update(now)`.
    */
   basePose: (colliderHandle: number) => { position: Vec3; rotation: Quat } | undefined
+  /**
+   * Stable index of the clock-driven piece owning `colliderHandle`, or `undefined` if that collider is
+   * static. **Stable across clients**, because every one instantiates the same level JSON in the same
+   * order — which is what makes it safe to put on the wire as a rider's movement base (ADR 0021). A
+   * Rapier collider handle would happen to match today and is not a promise.
+   */
+  baseIndex: (colliderHandle: number) => number | undefined
+  /**
+   * Pose of the clock-driven piece with that index, or `undefined` if there is none.
+   *
+   * `rendered` picks *which* pose, and the distinction is the whole point of this on a client: `true`
+   * gives the interpolated pose the last `render(alpha)` drew, which is where the deck visibly is and so
+   * where a rider has to be placed to sit still on it; `false` gives the latest sim tick's, which is what
+   * physics resolved against and what a collision proxy wants.
+   */
+  basePoseOf: (index: number, rendered: boolean) => { position: Vec3; rotation: Quat } | undefined
 }
 
 const add = (a: Vec3, b: Vec3): Vec3 => vec3(a.x + b.x, a.y + b.y, a.z + b.z)
@@ -155,6 +173,10 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
   // Clock-driven pieces by collider handle — the lookup `carryDelta` needs, since a rider
   // only knows the handle its feet reported.
   const movers = new Map<number, BehaviorHandle>()
+  // Collider handle -> index into `behaviors`. The index is what a rider puts on the wire, so it has to
+  // mean the same thing on every client: it does, because each one instantiates the same level JSON in
+  // the same order. A Rapier collider handle would happen to match today and is not a promise.
+  const moverOrder = new Map<number, number>()
   const table = level.prefabs ?? {}
 
   const pushMarker = (m: Marker, origin: Vec3, originRot: Quat, originScale: Vec3): void => {
@@ -190,9 +212,20 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
       let body: PhysicsBody
       if (behavior.kind === 'move') {
         body = world.addKinematicBody({ position, rotation, shape })
-        const h: BehaviorHandle = { kind: 'move', body, base: position, rotation, behavior, visual, prevPos: { ...position }, currPos: { ...position } }
+        const h: BehaviorHandle = {
+          kind: 'move',
+          body,
+          base: position,
+          rotation,
+          behavior,
+          visual,
+          prevPos: { ...position },
+          currPos: { ...position },
+          renderPos: { ...position },
+        }
         behaviors.push(h)
         movers.set(body.colliderHandle, h)
+        moverOrder.set(body.colliderHandle, behaviors.length - 1)
       } else if (behavior.kind === 'rotate') {
         body = world.addKinematicBody({ position, rotation, shape })
         const h: BehaviorHandle = {
@@ -206,9 +239,11 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
           currRot: { ...rotation },
           prevAngle: 0,
           currAngle: 0,
+          renderRot: { ...rotation },
         }
         behaviors.push(h)
         movers.set(body.colliderHandle, h)
+        moverOrder.set(body.colliderHandle, behaviors.length - 1)
       } else {
         body = world.addFixedBody({ position, rotation, shape })
       }
@@ -279,10 +314,24 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
 
   const render = (alpha: number): void => {
     for (const h of behaviors) {
-      if (h.kind === 'move') h.visual.position = lerpVec3(h.prevPos, h.currPos, alpha)
-      else h.visual.rotation = slerpQuat(h.prevRot, h.currRot, alpha)
+      if (h.kind === 'move') {
+        h.renderPos = lerpVec3(h.prevPos, h.currPos, alpha)
+        h.visual.position = h.renderPos
+      } else {
+        h.renderRot = slerpQuat(h.prevRot, h.currRot, alpha)
+        h.visual.rotation = h.renderRot
+      }
     }
   }
 
-  return { config: level.config, markers, triggers, visuals, update, render, basePose }
+  const baseIndex = (colliderHandle: number): number | undefined => moverOrder.get(colliderHandle)
+
+  const basePoseOf = (index: number, rendered: boolean): { position: Vec3; rotation: Quat } | undefined => {
+    const h = behaviors[index]
+    if (h === undefined) return undefined
+    if (h.kind === 'move') return { position: rendered ? h.renderPos : h.currPos, rotation: h.rotation }
+    return { position: h.position, rotation: rendered ? h.renderRot : h.currRot }
+  }
+
+  return { config: level.config, markers, triggers, visuals, update, render, basePose, baseIndex, basePoseOf }
 }

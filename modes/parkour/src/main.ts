@@ -7,7 +7,7 @@ import {
   type LocalController,
   type LocalWorld,
 } from '@mp/client'
-import { clamp, createSimClock, startFixedLoop, vec3, type EntityId, type Vec3 } from '@mp/core'
+import { clamp, createSimClock, rotateVec3, startFixedLoop, vec3, yawOf, type EntityId, type Vec3 } from '@mp/core'
 import {
   decodePong,
   decodeRoster,
@@ -173,6 +173,26 @@ let camYawRate = 0
 let camPitchRate = 0
 let camTargetPrev: Vec3 = { x: 0, y: 1, z: 0 }
 let camVel: Vec3 = vec3()
+/**
+ * A peer's world transform from what the wire carried (v10, ADR 0021). While `base` is non-zero the
+ * position and facing are in that clock-driven piece's frame, so they have to be brought back out
+ * through the piece's pose — and *which* pose matters: `rendered` for anything drawn, so the rider sits
+ * still on the deck the eye can see, and the sim tick's for the collision proxy, which resolves against
+ * where physics has the deck.
+ *
+ * Falls back to treating the values as world-space if the piece is unknown, which is what a client that
+ * somehow lacks it should do: slightly wrong beats nowhere.
+ */
+const worldFromBase = (e: { position: Vec3; yaw: number; base: number }, rendered: boolean): { position: Vec3; yaw: number } => {
+  const pose = e.base === 0 ? undefined : loaded?.basePoseOf(e.base - 1, rendered)
+  if (pose === undefined) return { position: e.position, yaw: e.yaw }
+  const p = rotateVec3(pose.rotation, e.position)
+  return {
+    position: vec3(pose.position.x + p.x, pose.position.y + p.y, pose.position.z + p.z),
+    yaw: e.yaw + yawOf(pose.rotation),
+  }
+}
+
 /** Frame-rate-independent chase toward `to`: `halfLife` is the time to close half the gap. 0 snaps. */
 const chase = (from: number, to: number, dt: number, halfLife: number): number =>
   halfLife > 0 ? from + (to - from) * (1 - Math.pow(2, -dt / halfLife)) : to
@@ -617,7 +637,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
       let mirror = remotes.get(e.id)
       if (mirror === undefined) {
         mirror = world.addKinematicBody({
-          position: e.position,
+          position: worldFromBase(e, false).position,
           shape: { kind: 'capsule', halfHeight: CHAR_HALF_HEIGHT, radius: CHAR_RADIUS },
           // A body, so corpses pass through it: a dead peer's mirror stands invisibly at their death
           // point and their own parts were landing on it.
@@ -625,7 +645,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
         })
         remotes.set(e.id, mirror)
       }
-      mirror.setNextKinematicTranslation(e.position)
+      mirror.setNextKinematicTranslation(worldFromBase(e, false).position)
     }
     for (const [rid, mirror] of remotes)
       if (!seen.has(rid)) {
@@ -658,9 +678,30 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
         // just below — a peer's rig should be given the same numbers, not a guess at them.
         const flags =
           (char.grounded ? STATE_GROUNDED : 0) | (char.vy > 0 ? STATE_RISING : 0) | (dead ? STATE_DEAD : 0)
+        // Riding a clock-driven piece? Then send the transform **in that piece's frame** and say which
+        // piece it is (v10, ADR 0021). A viewer draws the level at its own current time and draws peers
+        // on a delayed timeline, so a world position puts a rider where they were 100 ms ago on a deck
+        // drawn where it is now — up to a metre out on the fast mover, and visibly sliding across the
+        // deck as it turns around. The relative transform does not change while the platform moves, so
+        // the two clocks stop mattering. `char.base.localPos` is the very same quantity the carry solver
+        // already keeps for its own use, so nothing new is computed here.
+        //
+        // Index + 1, because 0 means "no base". Above 254 there is no room in the byte, so those pieces
+        // fall back to world coordinates rather than aliasing onto another piece's frame.
+        const baseIdx = char.base === undefined ? undefined : loaded?.baseIndex(char.base.colliderHandle)
+        const base = baseIdx !== undefined && baseIdx < 255 ? baseIdx + 1 : 0
+        const basePose = base === 0 ? undefined : loaded?.basePoseOf(base - 1, false)
         room?.sendBytes(
           NET_CHANNEL,
-          new Uint8Array(encodeState({ position: p, flags, yaw: ownFacing, speed: Math.hypot(char.vx, char.vz) })),
+          new Uint8Array(
+            encodeState({
+              position: basePose === undefined ? p : char.base!.localPos,
+              flags,
+              yaw: basePose === undefined ? ownFacing : ownFacing - yawOf(basePose.rotation),
+              speed: Math.hypot(char.vx, char.vz),
+              base: basePose === undefined ? 0 : base,
+            }),
+          ),
         )
         // Real contact: the colliders the capsule pushed against this tick.
         const hits = new Set(char.body.collisions())
@@ -766,6 +807,9 @@ stage.start(() => {
           rising: (ownState?.vy ?? 0) > 0,
           // Motion we did not ask for — a platform carrying us, a bar shoving us, a wall stopping us.
           carry: ownState?.carry ?? null,
+          // Our own rig is drawn from our own sim, in world space, on one timeline — there is no frame
+          // change to smooth over, so this is always 0 for us however much platform we are riding.
+          base: 0,
           name: myName,
         },
         frameDt,
@@ -785,6 +829,11 @@ stage.start(() => {
   for (const e of interp.sample())
     if (e.id !== myId) {
       seen.add(e.id)
+      // Out of the base's frame and into the world, against the pose the deck was *drawn* at — which is
+      // what pins a rider to a moving platform instead of leaving them 100 ms behind it (ADR 0021).
+      // Everything below uses this, not `e.position`: the rig, the corpse it is seeded from, the spawn
+      // assembly's targets.
+      const at = worldFromBase(e, true)
       // A peer's death is one flag; the corpse is ours to build and ours alone (ADR 0019). It is seeded
       // from the pose *this* client last drew them in, so it starts exactly where the rig was.
       const peerDead = (e.flags & STATE_DEAD) !== 0
@@ -797,7 +846,7 @@ stage.start(() => {
         corpse = undefined
         // Their position just jumped to a checkpoint. Differenced, that teleport reads as a sprint, and
         // the assembly falls toward whatever pose the animator is in.
-        views.resetMotion(e.id, e.position)
+        views.resetMotion(e.id, at.position)
         peerAssemblies.get(e.id)?.assembly.dispose()
         peerAssemblies.set(e.id, {
           assembly: createAssembly({ scene: stage.scene, look: { colors: PEER_COLORS } }),
@@ -812,7 +861,7 @@ stage.start(() => {
           corpse = createRagdoll({
             world: physicsWorld,
             scene: stage.scene,
-            transforms: partTransforms(pose, e.position),
+            transforms: partTransforms(pose, at.position),
             velocity: views.velocityOf(e.id) ?? vec3(),
             look: { colors: PEER_COLORS },
           })
@@ -837,13 +886,14 @@ stage.start(() => {
           e.id,
           {
             isSelf: false,
-            position: e.position,
-            yaw: e.yaw,
+            position: at.position,
+            yaw: at.yaw,
             speed: e.speed,
             vy: null,
             grounded: (e.flags & STATE_GROUNDED) !== 0,
             rising: (e.flags & STATE_RISING) !== 0,
             carry: null, // not derivable from position alone — see CharacterPlacement.carry
+            base: e.base,
             name: names.get(e.id) ?? '…',
           },
           frameDt,
@@ -855,7 +905,7 @@ stage.start(() => {
         views.setVisible(e.id, false)
         spawning.elapsed += frameDt
         const pose = views.poseOf(e.id)
-        if (pose === null || spawning.assembly.draw(partTransforms(pose, e.position), spawning.elapsed, assembleTiming)) {
+        if (pose === null || spawning.assembly.draw(partTransforms(pose, at.position), spawning.elapsed, assembleTiming)) {
           spawning.assembly.dispose()
           peerAssemblies.delete(e.id)
           views.setVisible(e.id, true)

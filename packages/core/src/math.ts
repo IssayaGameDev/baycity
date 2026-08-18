@@ -100,6 +100,18 @@ export const slerpQuat = (a: Quat, b: Quat, t: number): Quat => {
   return { x: a.x * s0 + bx * s1, y: a.y * s0 + by * s1, z: a.z * s0 + bz * s1, w: a.w * s0 + bw * s1 }
 }
 
+/**
+ * The yaw of a rotation: the heading of its forward axis, in radians, matching `atan2(x, z)` — the
+ * convention the character's facing uses (forward = `(sin yaw, 0, cos yaw)`).
+ *
+ * Only meaningful as a *facing* when the rotation is about the vertical, which is what a turntable is.
+ * For a rotation about any other axis this is the heading its forward axis happens to project onto.
+ */
+export const yawOf = (q: Quat): number => {
+  const f = rotateVec3(q, { x: 0, y: 0, z: 1 })
+  return Math.atan2(f.x, f.z)
+}
+
 /** Rotate vector `v` by unit quaternion `q` (v + 2·q.w·t + 2·q.xyz×t, t = q.xyz×v). */
 export const rotateVec3 = (q: Quat, v: Vec3): Vec3 => {
   const tx = 2 * (q.y * v.z - q.z * v.y)

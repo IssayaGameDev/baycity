@@ -27,6 +27,7 @@ export const createSnapshotReassembler = (): SnapshotReassembler => {
           flags: e.flags,
           yaw: e.yaw,
           speed: e.speed,
+          base: e.base,
         })),
       }
     },

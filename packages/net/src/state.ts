@@ -48,10 +48,26 @@ export interface PlayerState {
    * documents as its input, and only the owner knows it.
    */
   speed: number
+  /**
+   * The clock-driven piece this character is standing on, as `LoadedLevel.baseIndex + 1`, or **0 for
+   * none** (v10). When it is non-zero, `position` and `yaw` are **in that piece's frame**, not the
+   * world's — relative-to-base replication, the same thing Unreal's based movement does.
+   *
+   * It exists because a viewer draws the level at its own current time and draws peers on a delayed
+   * timeline, so a world position put a rider where they were 100 ms ago on a deck drawn where it is
+   * now: at 9.4 m/s that is nearly a metre out, and it slides across the deck as the platform turns
+   * around. Sending the *relative* transform makes the two clocks stop mattering, because the number
+   * being sent does not change while the platform moves.
+   *
+   * An index rather than a collider handle: every client instantiates the same level JSON in the same
+   * order, so the index is the same everywhere by construction, which a Rapier handle is not (it
+   * happens to match today and that is not a promise).
+   */
+  base: number
 }
 
-// wire (little-endian): u8 version, u8 type, f32 x, f32 y, f32 z, u8 flags, f32 yaw, f32 speed
-const STATE_BYTES = 23
+// wire (little-endian): u8 version, u8 type, f32 x, f32 y, f32 z, u8 flags, f32 yaw, f32 speed, u8 base
+const STATE_BYTES = 24
 const LE = true
 
 export const encodeState = (state: PlayerState): ArrayBuffer => {
@@ -66,6 +82,7 @@ export const encodeState = (state: PlayerState): ArrayBuffer => {
   // Full precision upstream, like the position: quantization happens once, on relay.
   view.setFloat32(15, state.yaw, LE)
   view.setFloat32(19, state.speed, LE)
+  view.setUint8(23, state.base & 0xff)
   return buffer
 }
 
@@ -81,5 +98,6 @@ export const decodeState = (buffer: ArrayBuffer): PlayerState => {
     flags: view.getUint8(14),
     yaw: view.getFloat32(15, LE),
     speed: view.getFloat32(19, LE),
+    base: view.getUint8(23),
   }
 }

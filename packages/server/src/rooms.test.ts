@@ -6,12 +6,13 @@ import { deltaSnapshot, type DeltaBaseline } from './rooms'
 
 const A = entityId(1000)
 const B = entityId(1001)
-const at = (id: typeof A, x: number, flags = STATE_GROUNDED, yaw = 0, speed = 0): SnapshotEntity => ({
+const at = (id: typeof A, x: number, flags = STATE_GROUNDED, yaw = 0, speed = 0, base = 0): SnapshotEntity => ({
   id,
   position: { x, y: 0, z: 0 },
   flags,
   yaw,
   speed,
+  base,
 })
 
 // The Colyseus room + live handshake are exercised by the tsx load harness (a full
@@ -61,6 +62,18 @@ describe('deltaSnapshot (per-client relay delta)', () => {
     const s: DeltaBaseline = { sentFull: false, baseline: new Map() }
     deltaSnapshot(s, [at(A, 1, STATE_GROUNDED, 1, 3)], 0) // full
     expect(deltaSnapshot(s, [at(A, 1, STATE_GROUNDED, 1.001, 3.001)], 50).changed).toEqual([])
+  })
+
+  it('relays a peer that stepped onto or off a moving platform', () => {
+    // The base is the frame the position is expressed in (v10, ADR 0021), so a change of base changes the
+    // meaning of bytes that may themselves be identical: a rider stepping onto a platform at the moment it
+    // passes through its own origin reports the same numbers with a different frame. Nothing else here
+    // would force that relay, and a viewer left on the old base would put them somewhere else entirely.
+    const s: DeltaBaseline = { sentFull: false, baseline: new Map() }
+    deltaSnapshot(s, [at(A, 1, STATE_GROUNDED, 0, 0, 0)], 0) // full
+    expect(deltaSnapshot(s, [at(A, 1, STATE_GROUNDED, 0, 0, 4)], 50).changed).toHaveLength(1)
+    expect(deltaSnapshot(s, [at(A, 1, STATE_GROUNDED, 0, 0, 4)], 100).changed).toEqual([])
+    expect(deltaSnapshot(s, [at(A, 1, STATE_GROUNDED, 0, 0, 0)], 150).changed).toHaveLength(1)
   })
 
   it('sends nothing for a peer that is both still and in the same state', () => {

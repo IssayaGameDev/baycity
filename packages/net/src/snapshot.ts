@@ -12,6 +12,11 @@ export interface SnapshotEntity {
   yaw: number
   /** Locomotion speed (m/s) excluding carry, quantized to a byte on the wire (v9). See `PlayerState.speed`. */
   speed: number
+  /**
+   * Clock-driven piece being ridden (`baseIndex + 1`), or 0 for none (v10). Non-zero means `position`
+   * and `yaw` are in that piece's frame — see `PlayerState.base`. Not quantized: it is an index.
+   */
+  base: number
 }
 
 /** A reconstructed full snapshot (what the client interpolates over). Carries the
@@ -45,9 +50,9 @@ export const fullSnapshotMessage = (s: Snapshot): SnapshotMessage => ({
 })
 
 // Wire (little-endian): u8 version, u8 type, u8 msgFlags, u32 serverTimeMs, u16 changedCount,
-// [u16 id, u16 x,y,z (quantized), u8 stateFlags, u8 yaw, u8 speed]*, u16 removedCount, [u16 id]*
+// [u16 id, u16 x,y,z (quantized), u8 stateFlags, u8 yaw, u8 speed, u8 base]*, u16 removedCount, [u16 id]*
 const HEADER_BYTES = 9
-const CHANGED_BYTES = 11
+const CHANGED_BYTES = 12
 const LE = true
 const FLAG_FULL = 1
 
@@ -79,6 +84,8 @@ export const encodeSnapshot = (msg: SnapshotMessage): ArrayBuffer => {
     view.setUint8(o, quantizeYaw(e.yaw))
     o += 1
     view.setUint8(o, quantizeSpeed(e.speed))
+    o += 1
+    view.setUint8(o, e.base & 0xff)
     o += 1
   }
   view.setUint16(o, msg.removed.length, LE)
@@ -116,7 +123,9 @@ export const decodeSnapshot = (buffer: ArrayBuffer): SnapshotMessage => {
     o += 1
     const speed = dequantizeSpeed(view.getUint8(o))
     o += 1
-    changed.push({ id, position: { x, y, z }, flags, yaw, speed })
+    const base = view.getUint8(o)
+    o += 1
+    changed.push({ id, position: { x, y, z }, flags, yaw, speed, base })
   }
   const removedCount = view.getUint16(o, LE)
   o += 2
