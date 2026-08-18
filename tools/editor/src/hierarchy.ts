@@ -103,7 +103,7 @@ export const rowsOf = (doc: Doc, open: Openness): Row[] => {
         path: `${path}#${p}`,
         parent: i,
         siblingIndex: p,
-        label: spec.style !== undefined ? `${spec.collider.kind} · ${spec.style}` : spec.collider.kind,
+        label: spec.name ?? spec.collider.kind,
         badge: '',
         linked: false,
         hasChildren: false,

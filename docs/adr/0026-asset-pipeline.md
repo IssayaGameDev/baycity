@@ -82,12 +82,13 @@ database from `import.meta.glob` over the sidecars — no server, no runtime sca
 
 - **`Visual` changed shape.** `{ kind: 'gltf', src }` became `{ kind: 'model', asset }`, and `primitive`
   gained `material`. Safe to do bluntly because nothing consumed the old variant, so no content migrated.
-  `VisualItem` now carries `model`/`material` ids alongside `style`.
-- **Reading the visual layer is a shared helper.** A `model` has no greybox `style`, so every reader needs
-  the same narrowing — and the editor got it wrong in three places the first time the union grew.
-  `visualStyle`/`visualModel`/`visualMaterial` are exported for that reason.
+  `VisualItem` now carries `model`/`material` ids alongside `style`. (**ADR 0028 deleted `style`**, leaving
+  `material` as the only visual answer and making it overridable per instance.)
+- **Reading the visual layer is a shared helper.** Only a `model` has an `asset`, so every reader needs the
+  same narrowing — and the editor got it wrong in three places the first time the union grew.
+  `visualModel`/`visualMaterial` are exported for that reason (`visualStyle` went with ADR 0028).
 - **The editor's own mesh builder uses the same precedence as the game's level view** (model over
-  primitive, material over style, greybox as the floor). Two implementations, one rule, because the editor
+  primitive, material over nothing, greybox as the floor). Two implementations, one rule, because the editor
   draws items itself rather than through `addLevel` — the risk being an editor that shows a scene the game
   will not render.
 - **The importer imports `@mp/content` by relative source path.** Vite loads its own config through plain

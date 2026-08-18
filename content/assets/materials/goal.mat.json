@@ -1,0 +1,25 @@
+{
+  "shader": "standard",
+  "params": {
+    "color": {
+      "kind": "color",
+      "value": "#ffea00"
+    },
+    "metalness": {
+      "kind": "number",
+      "value": 0
+    },
+    "roughness": {
+      "kind": "number",
+      "value": 0.85
+    },
+    "emissive": {
+      "kind": "color",
+      "value": "#ffea00"
+    },
+    "emissiveIntensity": {
+      "kind": "number",
+      "value": 0.14
+    }
+  }
+}

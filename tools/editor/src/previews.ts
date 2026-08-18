@@ -1,5 +1,5 @@
-import { visualStyle, type AssetDatabase, type MaterialAsset, type Prefab } from '@mp/content'
-import { createStyleMaterial, createThumbnailer, geometryForCollider, THREE, type AssetRuntime, type Thumbnailer } from '@mp/render-three'
+import type { AssetDatabase, MaterialAsset, Prefab } from '@mp/content'
+import { createGreyboxMaterial, createThumbnailer, geometryForCollider, THREE, type AssetRuntime, type Thumbnailer } from '@mp/render-three'
 
 /**
  * Thumbnails for the Project panel, cached.
@@ -69,7 +69,7 @@ export const createPreviews = (host: PreviewHost): Previews => {
       else {
         const geometry = geometryForCollider(piece.collider)
         disposables.push(geometry)
-        const mat = material ?? createStyleMaterial(visualStyle(piece.visual))
+        const mat = material ?? createGreyboxMaterial()
         if (material == null) owned.push(mat)
         object = new THREE.Mesh(geometry, mat)
       }

@@ -7,13 +7,13 @@ import { freeTableId, instancesOf, resolvePrefab, walkInstances } from './resolv
 import { validateLevel } from './validate'
 import type { Level, Prefab } from './types'
 
-const pad = (style?: string): Prefab => ({
+const pad = (material?: string): Prefab => ({
   id: 'pad',
   pieces: [
     {
       collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) },
       transform: { position: vec3(0, 0, 0) },
-      ...(style !== undefined ? { visual: { kind: 'primitive' as const, style } } : {}),
+      ...(material !== undefined ? { visual: { kind: 'primitive' as const, material } } : {}),
     },
   ],
 })
@@ -22,11 +22,11 @@ const pad = (style?: string): Prefab => ({
 const referenced: Level = {
   id: 'refs',
   config: { fallBehavior: 'physical-fall', fallY: -20 },
-  prefabs: { pad: pad('platform') },
+  prefabs: { pad: pad('mat-platform') },
   instances: [
     { prefab: 'pad', transform: { position: vec3(0, 0, 0) } },
     { prefab: 'pad', transform: { position: vec3(4, 0, 0) } },
-    { prefab: 'pad', transform: { position: vec3(8, 0, 0) }, style: 'hazard' },
+    { prefab: 'pad', transform: { position: vec3(8, 0, 0) }, material: 'mat-hazard' },
   ],
 }
 
@@ -98,22 +98,22 @@ describe('prefab references', () => {
     world.free()
   })
 
-  it("an instance's style override beats the prefab's, and only for that instance", () => {
+  it("an instance's material override beats the prefab's, and only for that instance", () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
     const loaded = instantiateLevel(world, referenced)
-    expect(loaded.visuals.map((v) => v.style)).toEqual(['platform', 'platform', 'hazard'])
+    expect(loaded.visuals.map((v) => v.material)).toEqual(['mat-platform', 'mat-platform', 'mat-hazard'])
     expect(referenced.prefabs!['pad']!.pieces[0]!.visual, 'the shared definition is untouched').toEqual({
       kind: 'primitive',
-      style: 'platform',
+      material: 'mat-platform',
     })
     world.free()
   })
 
-  it('validates a referencing level, and rejects a style that is not a string', () => {
+  it('validates a referencing level, and rejects a material that is not a string', () => {
     expect(() => validateLevel(structuredClone(referenced))).not.toThrow()
-    const bad = structuredClone(referenced) as unknown as { instances: { style?: unknown }[] }
-    bad.instances[0]!.style = 7
-    expect(() => validateLevel(bad)).toThrow(/style/)
+    const bad = structuredClone(referenced) as unknown as { instances: { material?: unknown }[] }
+    bad.instances[0]!.material = 7
+    expect(() => validateLevel(bad)).toThrow(/material/)
   })
 })
 

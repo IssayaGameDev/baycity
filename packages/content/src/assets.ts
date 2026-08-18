@@ -173,11 +173,10 @@ export const entriesFrom = (pairs: Iterable<readonly [string, AssetMeta]>): Asse
 }
 
 /**
- * Reading the visual layer. Small, but exported rather than duplicated: a `model` visual has no greybox
- * `style`, so every reader needs the same narrowing, and the editor got it wrong in three places the first
+ * Reading the visual layer. Small, but exported rather than duplicated: only a `model` visual has an
+ * `asset`, so every reader needs the same narrowing, and the editor got it wrong in three places the first
  * time the union grew.
  */
-export const visualStyle = (v: Visual | undefined): string | undefined => (v?.kind === 'primitive' ? v.style : undefined)
 export const visualModel = (v: Visual | undefined): string | undefined => (v?.kind === 'model' ? v.asset : undefined)
 export const visualMaterial = (v: Visual | undefined): string | undefined => v?.material
 

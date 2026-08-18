@@ -1,0 +1,17 @@
+{
+  "shader": "standard",
+  "params": {
+    "color": {
+      "kind": "color",
+      "value": "#9aa0a6"
+    },
+    "metalness": {
+      "kind": "number",
+      "value": 0
+    },
+    "roughness": {
+      "kind": "number",
+      "value": 0.85
+    }
+  }
+}

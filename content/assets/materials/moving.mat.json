@@ -1,0 +1,29 @@
+{
+  "shader": "standard",
+  "params": {
+    "color": {
+      "kind": "color",
+      "value": "#00b3d6"
+    },
+    "metalness": {
+      "kind": "number",
+      "value": 0
+    },
+    "roughness": {
+      "kind": "number",
+      "value": 0.85
+    },
+    "emissive": {
+      "kind": "color",
+      "value": "#c800d6"
+    },
+    "emissiveIntensity": {
+      "kind": "number",
+      "value": 0
+    },
+    "albedo": {
+      "kind": "texture",
+      "value": null
+    }
+  }
+}

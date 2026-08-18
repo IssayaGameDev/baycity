@@ -4,7 +4,6 @@ import {
   resolvePrefab,
   visualMaterial,
   visualModel,
-  visualStyle,
   walkInstances,
   type Behavior,
   type ColliderDesc,
@@ -44,16 +43,20 @@ export type TriggerChoice = 'none' | 'checkpoint' | 'goal' | 'hazard'
 export interface MeshSpec {
   collider: ColliderDesc
   transform: Transform
-  style: string | undefined
-  /** Model asset id — drawn instead of the collider's greybox shape. */
+  /**
+   * The piece's authored name. Carried so a level-mode piece row can read "left rail" instead of "box";
+   * it replaces a `· style` suffix, which was the only thing distinguishing three boxes before.
+   */
+  name: string | undefined
+  /** Model asset id — drawn instead of the collider's shape. */
   model: string | undefined
-  /** Material asset id — replaces the greybox style. */
+  /** Material asset id — absent means unsurfaced, which the viewport greyboxes. */
   material: string | undefined
 }
 
 /**
- * Per-item editable properties beyond the transform. `style` means the piece's own style in prefab
- * mode and the instance's **override** in level mode — the same question ("what colour is this")
+ * Per-item editable properties beyond the transform. `material` means the piece's own material in prefab
+ * mode and the instance's **override** in level mode — the same question ("what is this made of")
  * answered at the level each mode owns. `trigger` belongs to a piece's collider, so it is editable
  * only in prefab mode; `pieceLevel` says which of the two we are.
  */
@@ -63,9 +66,8 @@ export interface ItemProps {
   periodMs: number
   axis: Vec3
   pieceLevel: boolean
-  style: string
   trigger: TriggerChoice
-  /** Material asset id, or `''` for none. Piece-level, like `trigger`: a material belongs to the piece. */
+  /** Material asset id, or `''` for none: the piece's own, or the instance-wide override. */
   material: string
 }
 
@@ -245,9 +247,9 @@ export const levelDoc = (level: Level, library: Record<string, Prefab>): Doc => 
       return resolvePrefab(level, inst).pieces.map((pc) => ({
         collider: pc.collider,
         transform: pc.transform,
-        style: inst.style ?? visualStyle(pc.visual),
+        name: pc.name,
         model: visualModel(pc.visual),
-        material: visualMaterial(pc.visual),
+        material: inst.material ?? visualMaterial(pc.visual),
       }))
     },
     /**
@@ -366,6 +368,9 @@ export const levelDoc = (level: Level, library: Record<string, Prefab>): Doc => 
     assetIds: () => {
       const ids = new Set<string>()
       for (const v of visits()) {
+        // The instance's own override counts: it is an asset reference now, where `style` was a name the
+        // renderer resolved by itself, so leaving it out of the preload silently greyboxes the override.
+        if (v.inst.material !== undefined) ids.add(v.inst.material)
         for (const pc of resolvePrefab(level, v.inst).pieces) {
           const model = visualModel(pc.visual)
           const material = visualMaterial(pc.visual)
@@ -378,17 +383,16 @@ export const levelDoc = (level: Level, library: Record<string, Prefab>): Doc => 
     props: (i) => ({
       ...readBehavior(at(i)!.inst.behavior),
       pieceLevel: false,
-      style: at(i)!.inst.style ?? '',
       trigger: 'none',
-      material: '',
+      material: at(i)!.inst.material ?? '',
     }),
     setProps: (i, p) => {
       const inst = at(i)!.inst
       const b = makeBehavior(p)
       if (b !== undefined) inst.behavior = b
       else delete inst.behavior
-      if (p.style !== '') inst.style = p.style
-      else delete inst.style
+      if (p.material !== '') inst.material = p.material
+      else delete inst.material
     },
     refOf: refAt,
     extract: (i) => {
@@ -416,7 +420,7 @@ export const prefabDoc = (prefab: Prefab): Doc => {
       {
         collider: pieces[i]!.collider,
         transform: { position: vec3(0, 0, 0) },
-        style: visualStyle(pieces[i]!.visual),
+        name: pieces[i]!.name,
         model: visualModel(pieces[i]!.visual),
         material: visualMaterial(pieces[i]!.visual),
       },
@@ -491,7 +495,6 @@ export const prefabDoc = (prefab: Prefab): Doc => {
       return {
         ...readBehavior(pc.behavior),
         pieceLevel: true,
-        style: visualStyle(pc.visual) ?? '',
         trigger: pc.trigger ?? 'none',
         material: visualMaterial(pc.visual) ?? '',
       }
@@ -504,11 +507,9 @@ export const prefabDoc = (prefab: Prefab): Doc => {
       // The visual is rebuilt from the fields rather than patched, so clearing the last one removes the
       // key instead of leaving `{ kind: 'primitive' }` behind.
       const model = visualModel(pc.visual)
-      const style = p.style === '' ? undefined : p.style
       const material = p.material === '' ? undefined : p.material
       if (model !== undefined) pc.visual = { kind: 'model', asset: model, ...(material !== undefined ? { material } : {}) }
-      else if (style !== undefined || material !== undefined)
-        pc.visual = { kind: 'primitive', ...(style !== undefined ? { style } : {}), ...(material !== undefined ? { material } : {}) }
+      else if (material !== undefined) pc.visual = { kind: 'primitive', material }
       else delete pc.visual
       if (p.trigger === 'none') delete pc.trigger
       else pc.trigger = p.trigger

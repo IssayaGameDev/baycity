@@ -47,7 +47,7 @@
       "trigger": "hazard",
       "visual": {
         "kind": "primitive",
-        "style": "hazard"
+        "material": "4a11d049f9f8e5ac"
       }
     },
     {
@@ -118,7 +118,7 @@
       "trigger": "hazard",
       "visual": {
         "kind": "primitive",
-        "style": "hazard"
+        "material": "4a11d049f9f8e5ac"
       }
     },
     {
@@ -145,7 +145,7 @@
       "trigger": "hazard",
       "visual": {
         "kind": "primitive",
-        "style": "hazard"
+        "material": "4a11d049f9f8e5ac"
       }
     },
     {
@@ -216,7 +216,7 @@
       "trigger": "hazard",
       "visual": {
         "kind": "primitive",
-        "style": "hazard"
+        "material": "4a11d049f9f8e5ac"
       }
     }
   ]

@@ -15,7 +15,7 @@ import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
   addLevel,
   applyGreyboxEnvironment,
-  colorForStyle,
+  colorForMarker,
   createPostFX,
   createThreeStage,
   geometryForCollider,
@@ -105,8 +105,8 @@ const buildOverlays = (): void => {
   }
 
   // Spawn markers + trigger colliders, coloured by kind.
-  for (const m of loaded.markers) if (m.kind === 'spawn') markerGroup.add(markerGizmo(m.position, colorForStyle('spawn')))
-  for (const t of loaded.triggers) markerGroup.add(markerGizmo(t.position, colorForStyle(t.kind)))
+  for (const m of loaded.markers) if (m.kind === 'spawn') markerGroup.add(markerGizmo(m.position, colorForMarker('spawn')))
+  for (const t of loaded.triggers) markerGroup.add(markerGizmo(t.position, colorForMarker(t.kind)))
 }
 
 // --- jump-reachability gizmo (from the character tuning) ---

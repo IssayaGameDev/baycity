@@ -46,8 +46,8 @@ export const validateLevel = (data: unknown): Level => {
       throw new LevelError(`${at}.transform.rotation: expected a Vec3`)
     if (transform.scale !== undefined && !isVec3(transform.scale))
       throw new LevelError(`${at}.transform.scale: expected a Vec3`)
-    if (inst.style !== undefined && typeof inst.style !== 'string')
-      throw new LevelError(`${at}.style: expected a string (a per-instance style override)`)
+    if (inst.material !== undefined && typeof inst.material !== 'string')
+      throw new LevelError(`${at}.material: expected a material asset id (a per-instance override)`)
     if (inst.name !== undefined && typeof inst.name !== 'string')
       throw new LevelError(`${at}.name: expected a string (an author-facing label)`)
     if (inst.children !== undefined) {

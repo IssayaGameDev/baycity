@@ -2,11 +2,11 @@ import type { VisualItem, WorldMarker } from '@mp/content'
 import * as THREE from 'three'
 
 import type { AssetRuntime } from './assetRuntime'
-import { colorForStyle, createStyleMaterial, geometryForCollider } from './materials'
+import { colorForMarker, createGreyboxMaterial, geometryForCollider } from './materials'
 
 /**
  * Realizes the loader's renderer-agnostic outputs into Three.js meshes (content pipeline
- * C3). `addLevel` builds a mesh per visual (shadow-casting, styled by the visual language)
+ * C3). `addLevel` builds a mesh per visual (shadow-casting, surfaced by its material asset)
  * and returns a `sync()` that re-poses clock-driven pieces each frame from the (loader-
  * mutated) visual objects. `addMarkers` draws gameplay markers as translucent pads.
  * Shared by the game and the viewer.
@@ -61,7 +61,9 @@ export const addLevel = (scene: THREE.Scene, visuals: VisualItem[], opts: LevelV
       let material: THREE.Material
       if (assigned != null) material = assigned // shared, owned by the runtime
       else {
-        material = createStyleMaterial(v.style)
+        // No material chosen, or one whose asset is missing: greybox rather than nothing, so an unfinished
+        // level is still walkable and a dangling reference costs one wrong surface (see LevelViewOptions).
+        material = createGreyboxMaterial()
         owned.materials.push(material)
       }
       object = new THREE.Mesh(geometry, material)
@@ -106,7 +108,7 @@ export const addMarkers = (scene: THREE.Scene, markers: WorldMarker[], _opts: Le
   const group = new THREE.Group()
 
   for (const m of markers) {
-    const color = colorForStyle(m.kind === 'spawn' ? 'spawn' : m.kind)
+    const color = colorForMarker(m.kind)
     const radius = m.radius ?? 0.8
     const pad = new THREE.Mesh(
       new THREE.CylinderGeometry(radius, radius, 0.06, 40),

@@ -64,7 +64,8 @@ name — renaming an instance never renames the prefab it references.
 **Overrides are transform, behavior and `style` (new).** An override is the counterpart to a
 reference: worth having exactly where instances of one prefab must differ, and no further. `style`
 recolours **every** piece of the instance and beats the prefab's own. Everything else is shared, which
-is the point of sharing it.
+is the point of sharing it. (**ADR 0028 replaced `style` with `material`** — an asset id rather than a
+palette name. The override's reach and precedence are unchanged.)
 
 **Inline definitions stay valid.** Older files are full of them and the loader treats resolved and
 inline identically. `extract` promotes a one-off into a table entry in place, which is how an existing
@@ -145,4 +146,5 @@ advantage by keeping the physics answer out of the blockout stage.
 origin, which is the thing references already are, minus the guarantee.
 
 **Overriding arbitrary piece properties per instance** (Unity's model). Unbounded serialization surface
-for a schema this small; transform + behavior + style is what placing actually needs.
+for a schema this small; transform + behavior + style (now material, ADR 0028) is what placing actually
+needs.

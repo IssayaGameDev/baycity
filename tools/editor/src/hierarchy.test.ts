@@ -18,7 +18,7 @@ const LIBRARY: Record<string, Prefab> = {
 const twoPieces = (id: string): Prefab => ({
   id,
   pieces: [
-    { collider: { kind: 'box', halfExtents: vec3(1, 1, 1) }, transform: { position: vec3(0, 0, 0) }, visual: { kind: 'primitive', style: 'platform' } },
+    { collider: { kind: 'box', halfExtents: vec3(1, 1, 1) }, transform: { position: vec3(0, 0, 0) }, name: 'left rail' },
     { collider: { kind: 'ball', radius: 0.5 }, transform: { position: vec3(2, 0, 0) } },
   ],
 })
@@ -94,8 +94,10 @@ describe('rowsOf: prefab pieces', () => {
       'piece:0.0@1',
       'piece:0.1@1',
     ])
-    expect(rows[1]!.label, 'style shown when the piece has one').toBe('box · platform')
-    expect(rows[2]!.label, 'and omitted when it does not').toBe('ball')
+    // The authored name, falling back to the collider kind. It used to be `box · <style>`, which stopped
+    // meaning anything when style died (ADR 0028) — and a name is what distinguishes three boxes anyway.
+    expect(rows[1]!.label, 'the piece name when it has one').toBe('left rail')
+    expect(rows[2]!.label, 'the collider kind when it does not').toBe('ball')
   })
 
   it('offers no piece rows in prefab mode, where the item already *is* the piece', () => {

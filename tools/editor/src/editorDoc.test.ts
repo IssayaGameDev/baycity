@@ -13,7 +13,6 @@ const props = (over: Partial<ItemProps> = {}): ItemProps => ({
   periodMs: 4000,
   axis: vec3(0, 1, 0),
   pieceLevel: false,
-  style: '',
   trigger: 'none',
   material: '',
   ...over,
@@ -28,6 +27,12 @@ const inlineInstance = (id: string, half = vec3(1, 0.5, 1)): Prefab => ({
  * The prefab files a level's palette offers. Generators are gone (ADR 0027), so everything placeable is
  * data — which is what these stand in for.
  */
+// Material asset ids the fixtures reference. Any string works: the doc stores ids and never resolves
+// them, which is the point of referencing an asset rather than naming a palette entry.
+const MAT_MOVING = 'mat-moving'
+const MAT_CHECKPOINT = 'mat-checkpoint'
+const MAT_HAZARD = 'mat-hazard'
+
 const LIBRARY: Record<string, Prefab> = {
   platform: inlineInstance('platform', vec3(1.5, 0.15, 1.5)),
   ramp: inlineInstance('ramp', vec3(1.5, 0.15, 2)),
@@ -37,7 +42,7 @@ const LIBRARY: Record<string, Prefab> = {
       {
         collider: { kind: 'box', halfExtents: vec3(1.5, 0.15, 1.5) },
         transform: { position: vec3(0, 0, 0) },
-        visual: { kind: 'primitive', style: 'moving' },
+        visual: { kind: 'primitive', material: MAT_MOVING },
       },
     ],
     behavior: { kind: 'move', axis: vec3(0, 1, 0), distance: 1.5, periodMs: 4000 },
@@ -48,7 +53,7 @@ const LIBRARY: Record<string, Prefab> = {
       {
         collider: { kind: 'box', halfExtents: vec3(1.5, 0.1, 1.5) },
         transform: { position: vec3(0, 0, 0) },
-        visual: { kind: 'primitive', style: 'checkpoint' },
+        visual: { kind: 'primitive', material: MAT_CHECKPOINT },
         trigger: 'checkpoint',
       },
     ],
@@ -75,10 +80,10 @@ describe('levelDoc: placing references, not copies', () => {
 
     // Exactly what "Edit prefab" does: a prefabDoc over the table object the instances reference.
     const shared = doc.prefabAt('platform')!
-    prefabDoc(shared).setProps(0, props({ pieceLevel: true, style: 'hazard' }))
+    prefabDoc(shared).setProps(0, props({ pieceLevel: true, material: MAT_HAZARD }))
 
-    expect(doc.meshSpecs(0)[0]!.style).toBe('hazard')
-    expect(doc.meshSpecs(1)[0]!.style, 'the second instance followed without being touched').toBe('hazard')
+    expect(doc.meshSpecs(0)[0]!.material).toBe(MAT_HAZARD)
+    expect(doc.meshSpecs(1)[0]!.material, 'the second instance followed without being touched').toBe(MAT_HAZARD)
   })
 
   it('keeps the reference when an instance is duplicated', () => {
@@ -385,18 +390,18 @@ describe('reordering', () => {
 })
 
 describe('levelDoc: instance overrides', () => {
-  it('round-trips a style override without touching the shared definition', () => {
+  it('round-trips a material override without touching the shared definition', () => {
     const level = blank()
     const doc = levelDoc(level, LIBRARY)
     doc.place('platform', vec3(0, 0, 0))
     doc.place('platform', vec3(4, 0, 0))
 
-    doc.setProps(0, props({ style: 'hazard' }))
+    doc.setProps(0, props({ material: MAT_HAZARD }))
 
-    expect(doc.props(0).style).toBe('hazard')
-    expect(level.instances[0]!.style).toBe('hazard')
-    expect(doc.meshSpecs(0)[0]!.style).toBe('hazard')
-    expect(doc.meshSpecs(1)[0]!.style, 'the other instance keeps the prefab style').not.toBe('hazard')
+    expect(doc.props(0).material).toBe(MAT_HAZARD)
+    expect(level.instances[0]!.material).toBe(MAT_HAZARD)
+    expect(doc.meshSpecs(0)[0]!.material).toBe(MAT_HAZARD)
+    expect(doc.meshSpecs(1)[0]!.material, "the other instance keeps the prefab's").not.toBe(MAT_HAZARD)
   })
 
   it('drops the override rather than writing an empty string', () => {
@@ -404,10 +409,10 @@ describe('levelDoc: instance overrides', () => {
     const doc = levelDoc(level, LIBRARY)
     doc.place('platform', vec3(0, 0, 0))
 
-    doc.setProps(0, props({ style: 'hazard' }))
-    doc.setProps(0, props({ style: '' }))
+    doc.setProps(0, props({ material: MAT_HAZARD }))
+    doc.setProps(0, props({ material: '' }))
 
-    expect('style' in level.instances[0]!, 'no empty key left in the JSON').toBe(false)
+    expect('material' in level.instances[0]!, 'no empty key left in the JSON').toBe(false)
   })
 
   it('writes a behavior override onto the instance, not the prefab', () => {
@@ -436,7 +441,7 @@ describe('what the editor writes is what the game loads', () => {
     doc.place('platform', vec3(4, 0, 0))
     doc.place('moving platform', vec3(8, 2, 0))
     doc.place('checkpoint pad', vec3(12, 0, 0))
-    doc.setProps(1, props({ style: 'hazard' }))
+    doc.setProps(1, props({ material: MAT_HAZARD }))
     doc.setId('gym')
 
     const json: unknown = JSON.parse(JSON.stringify(doc.toJSON()))
@@ -446,7 +451,7 @@ describe('what the editor writes is what the game loads', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: -30, z: 0 } })
     const loaded = instantiateLevel(world, parsed)
     expect(loaded.visuals.length).toBeGreaterThanOrEqual(4)
-    expect(loaded.visuals.some((v) => v.style === 'hazard'), 'the override survived the round trip').toBe(true)
+    expect(loaded.visuals.some((v) => v.material === MAT_HAZARD), 'the override survived the round trip').toBe(true)
     expect(loaded.triggers.map((t) => t.kind)).toContain('checkpoint')
     expect(loaded.baseIndex(loaded.triggers[0]!.colliderHandle), 'a static pad is no movement base').toBeUndefined()
     world.free()

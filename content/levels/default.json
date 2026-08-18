@@ -27,7 +27,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "ground"
+              "material": "a563891204f971a4"
             }
           }
         ]
@@ -62,7 +62,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "platform"
+              "material": "55205761e38bc929"
             }
           }
         ]
@@ -97,7 +97,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "platform"
+              "material": "55205761e38bc929"
             }
           }
         ]
@@ -132,7 +132,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "platform"
+              "material": "55205761e38bc929"
             }
           }
         ]
@@ -167,7 +167,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "platform"
+              "material": "55205761e38bc929"
             }
           }
         ]
@@ -202,7 +202,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "checkpoint"
+              "material": "d67ddcac4f57efc8"
             },
             "trigger": "checkpoint"
           }
@@ -238,7 +238,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "platform"
+              "material": "55205761e38bc929"
             }
           }
         ]
@@ -273,7 +273,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "moving"
+              "material": "19079ddb3fbfb27e"
             }
           }
         ]
@@ -318,7 +318,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "moving"
+              "material": "19079ddb3fbfb27e"
             }
           }
         ]
@@ -362,7 +362,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "hazard"
+              "material": "4a11d049f9f8e5ac"
             },
             "trigger": "hazard"
           }
@@ -398,7 +398,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "goal"
+              "material": "6bbc0130aff311b5"
             },
             "trigger": "goal"
           }

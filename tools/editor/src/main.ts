@@ -16,14 +16,13 @@ import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
   addLevel,
   applyGreyboxEnvironment,
-  colorForStyle,
+  colorForMarker,
   createPostFX,
-  createStyleMaterial,
+  createGreyboxMaterial,
   createThreeStage,
   geometryForCollider,
   OrbitControls,
   createAssetRuntime,
-  STYLE_PALETTE,
   THREE,
   TransformControls,
   type AssetRuntime,
@@ -154,8 +153,8 @@ const markerGizmo = (position: Vec3, color: number): THREE.Group => {
 const buildMarkers = (): void => {
   disposeMeshes(markerGroup)
   if (loaded === null) return
-  for (const m of loaded.markers) if (m.kind === 'spawn') markerGroup.add(markerGizmo(m.position, colorForStyle('spawn')))
-  for (const t of loaded.triggers) markerGroup.add(markerGizmo(t.position, colorForStyle(t.kind)))
+  for (const m of loaded.markers) if (m.kind === 'spawn') markerGroup.add(markerGizmo(m.position, colorForMarker('spawn')))
+  for (const t of loaded.triggers) markerGroup.add(markerGizmo(t.position, colorForMarker(t.kind)))
 }
 
 // --- editable item meshes ---
@@ -175,7 +174,7 @@ const buildItemMeshes = (g: THREE.Group, i: number): void => {
   for (const spec of doc.meshSpecs(i)) {
     // The same precedence the game's level view uses, so the editor is never showing a different scene:
     // a model replaces the greybox shape, a material replaces the greybox style, and either falling
-    // through leaves the piece as its collider in its style colour.
+    // through leaves the piece as its collider, greyboxed when no material is assigned.
     const model = spec.model !== undefined ? (runtime?.model(spec.model) ?? null) : null
     const material = spec.material !== undefined ? (runtime?.material(spec.material) ?? null) : null
     let object: THREE.Object3D
@@ -183,7 +182,7 @@ const buildItemMeshes = (g: THREE.Group, i: number): void => {
       if (material !== null) model.traverse((o) => void (o instanceof THREE.Mesh && (o.material = material)))
       object = model
     } else {
-      object = new THREE.Mesh(geometryForCollider(spec.collider), material ?? createStyleMaterial(spec.style))
+      object = new THREE.Mesh(geometryForCollider(spec.collider), material ?? createGreyboxMaterial())
     }
     applyTransform(object, spec.transform.position, spec.transform.rotation, spec.transform.scale)
     object.traverse((o) => {
@@ -246,12 +245,42 @@ const localInside = (
   }
 }
 
-const rebuildSelectedMeshes = (): void => {
-  if (selected === null) return
-  const g = instanceGroups[selected]
+const rebuildItemMeshes = (index: number): void => {
+  const g = instanceGroups[index]
   if (g === undefined) return
   disposeMeshes(meshHolderOf(g)) // only this item's own meshes; its child items are siblings of the holder
-  buildItemMeshes(g, selected)
+  buildItemMeshes(g, index)
+}
+
+const rebuildSelectedMeshes = (): void => {
+  if (selected === null) return
+  rebuildItemMeshes(selected)
+}
+
+/**
+ * Fetch what the document references but the runtime has not loaded yet, then `redraw`.
+ *
+ * The preload pass runs when a document *opens*, so it only ever covers the references that existed then.
+ * Two ordinary edits add one mid-session: assigning a material, and placing a prefab file that brings its
+ * own. Until the asset is fetched, `runtime.material(id)` is null and the piece greyboxes — which reads as
+ * the editor having ignored the change, and is the shape of the bug that came with ADR 0028: a `style` was a
+ * name the renderer resolved by itself and always applied instantly, a material is an asset that has to
+ * arrive first.
+ *
+ * Cheap to call on every edit: `load` skips ids it already holds and shares in-flight fetches. The redraw is
+ * conditional on the document still being the one we loaded for — a fetch that lands after the user has
+ * opened something else has nothing to draw into, and that document ran its own preload anyway.
+ */
+const loadNewReferences = (redraw: () => void): void => {
+  const r = runtime
+  const forDoc = doc
+  if (r === null || forDoc === null) return
+  void r
+    .load(forDoc.assetIds())
+    .then(() => {
+      if (doc === forDoc) redraw()
+    })
+    .catch((e: unknown) => setProblem(`assets did not load (${String(e)}) — restart pnpm dev:editor`))
 }
 
 // --- end-position widget: a translucent ghost of a moving piece at its far end + a line ---
@@ -330,6 +359,11 @@ const showDoc = (): void => {
   rebuildLoaded()
   statusMsg = '' // a message about the old document would be a lie about this one
   uiChanged()
+  // The document's own preload, and the only one there is. `reloadAssets` also loads `doc.assetIds()`, but
+  // at boot it runs *before* the first document exists, so that call has always been over an empty list —
+  // which left every open drawing against an empty runtime, and every material in the viewport greyboxed.
+  // Deselected above, so the re-`buildItems` has no gizmo to re-attach.
+  loadNewReferences(buildItems)
 }
 
 /** Open a file — the stack starts over at its root. */
@@ -371,7 +405,9 @@ const blankLevel = (id: string): Level => ({
           {
             collider: { kind: 'box', halfExtents: vec3(10, 0.5, 10) },
             transform: { position: vec3(0, 0, 0) },
-            visual: { kind: 'primitive', style: 'ground' },
+            // No material: greybox is what "nobody has surfaced this yet" looks like, and it is truthful for
+            // a slab a new level got for free. Hardcoding a material id here would also be a tool-source
+            // reference to a content file somebody is free to delete.
           },
         ],
       },
@@ -510,6 +546,11 @@ canvas.addEventListener('pointerup', (e) => {
     buildItems()
     rebuildLoaded()
     select(idx)
+    // A placed prefab file can reference a material this document had never named before.
+    loadNewReferences(() => {
+      buildItems() // resets the item groups, so the gizmo has to be re-attached
+      select(idx)
+    })
     return
   }
 
@@ -1057,10 +1098,13 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     updateEndGhost()
   },
   onPropsChanged: () => {
+    const item = selected
     rebuildSelectedMeshes()
     scheduleRebuild()
     updateEndGhost()
-    hierarchy.render() // a trigger or style change shows in the row's badge/label
+    hierarchy.render() // a trigger or name change shows in the row's badge/label
+    // Draw with what is loaded now, then again once a newly named material has arrived.
+    if (item !== null) loadNewReferences(() => rebuildItemMeshes(item))
   },
   // A rename only changes a label: redraw the chrome, leave the property grid and the meshes alone.
   // Called through the hook, since `refreshUi` is declared below this block.
@@ -1071,7 +1115,6 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   openPrefab: () => {
     if (selected !== null) openPrefabOf(selected)
   },
-  styles: Object.keys(STYLE_PALETTE),
   materials: () => {
     const options: Record<string, string> = { '(none)': '' }
     const db = assets?.db

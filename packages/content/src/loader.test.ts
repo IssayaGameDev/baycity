@@ -5,6 +5,9 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { instantiateLevel } from './loader'
 import type { Level } from './types'
 
+/** A material asset id, so the moving piece is findable in `visuals` by what it is surfaced with. */
+const MOVING_MAT = '19079ddb3fbfb27e'
+
 const fixture: Level = {
   id: 'fx',
   config: { fallBehavior: 'respawn-checkpoint', fallY: -3 },
@@ -16,7 +19,7 @@ const fixture: Level = {
     {
       prefab: {
         id: 'lift',
-        pieces: [{ collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(0, 0, 0) }, visual: { kind: 'primitive', style: 'moving' } }],
+        pieces: [{ collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(0, 0, 0) }, visual: { kind: 'primitive', material: MOVING_MAT } }],
       },
       transform: { position: vec3(0, 2, 0) },
       behavior: { kind: 'move', axis: vec3(0, 1, 0), distance: 1.5, periodMs: 4000 },
@@ -41,7 +44,7 @@ describe('instantiateLevel', () => {
     expect(loaded.markers.filter((m) => m.kind === 'spawn')).toHaveLength(1)
     expect(loaded.markers.filter((m) => m.kind === 'checkpoint')).toHaveLength(1)
 
-    const lift = loaded.visuals.find((v) => v.style === 'moving')!
+    const lift = loaded.visuals.find((v) => v.material === MOVING_MAT)!
     expect(lift).toBeDefined()
     loaded.update(0)
     const y0 = lift.position.y // home (at rest)
@@ -137,9 +140,9 @@ describe('instantiateLevel', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
     const loaded = instantiateLevel(world, fixture)
     loaded.update(0) // prev = curr = pose(0)
-    const a = loaded.visuals.find((v) => v.style === 'moving')!.position.y
+    const a = loaded.visuals.find((v) => v.material === MOVING_MAT)!.position.y
     loaded.update(1000) // prev = pose(0), curr = pose(1000)
-    const lift = loaded.visuals.find((v) => v.style === 'moving')!
+    const lift = loaded.visuals.find((v) => v.material === MOVING_MAT)!
     const b = lift.position.y
     expect(Math.abs(b - a)).toBeGreaterThan(0.5) // it actually moved between ticks
 

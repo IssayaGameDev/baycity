@@ -27,7 +27,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "ground"
+              "material": "a563891204f971a4"
             }
           }
         ]
@@ -62,7 +62,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "platform"
+              "material": "55205761e38bc929"
             }
           }
         ]
@@ -97,7 +97,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "platform"
+              "material": "55205761e38bc929"
             }
           }
         ]
@@ -132,7 +132,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "platform"
+              "material": "55205761e38bc929"
             }
           }
         ]
@@ -167,7 +167,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "moving"
+              "material": "19079ddb3fbfb27e"
             }
           }
         ]

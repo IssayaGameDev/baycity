@@ -8,7 +8,6 @@ import {
   nameForPath,
   visualMaterial,
   visualModel,
-  visualStyle,
 } from './assets'
 import type { AssetEntry, MaterialAsset } from './assets'
 
@@ -108,17 +107,21 @@ describe('materialDependencies', () => {
 })
 
 describe('reading the visual layer', () => {
-  // The narrowing every reader needs: a model has no greybox style, and the editor got this wrong in
+  // The narrowing every reader needs: only a model has an `asset`, and the editor got this wrong in
   // three places the first time the union grew.
-  it('reads a style only from a primitive', () => {
-    expect(visualStyle({ kind: 'primitive', style: 'hazard' })).toBe('hazard')
-    expect(visualStyle({ kind: 'model', asset: 'm1' })).toBeUndefined()
-    expect(visualStyle(undefined)).toBeUndefined()
-  })
-
   it('reads a model id only from a model', () => {
     expect(visualModel({ kind: 'model', asset: 'm1' })).toBe('m1')
-    expect(visualModel({ kind: 'primitive', style: 'ground' })).toBeUndefined()
+    expect(visualModel({ kind: 'primitive' })).toBeUndefined()
+    expect(visualModel(undefined)).toBeUndefined()
+  })
+
+  // A material reads off either arm, which is what makes it the one visual answer (ADR 0028): the same
+  // field surfaces an authored primitive and overrides an imported mesh's own material.
+  it('reads a material from either arm of the union', () => {
+    expect(visualMaterial({ kind: 'primitive', material: 'mat1' })).toBe('mat1')
+    expect(visualMaterial({ kind: 'model', asset: 'm1', material: 'mat1' })).toBe('mat1')
+    expect(visualMaterial({ kind: 'primitive' })).toBeUndefined()
+    expect(visualMaterial(undefined)).toBeUndefined()
   })
 
   it('reads a material override off either, since both can be re-surfaced', () => {

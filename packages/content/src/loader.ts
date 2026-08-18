@@ -1,7 +1,7 @@
 import { axisAngleToQuat, eulerToQuat, lerpVec3, mulQuat, quat, rotateVec3, slerpQuat, vec3, type Quat, type Vec3 } from '@mp/core'
 import type { PhysicsBody, PhysicsWorld, ShapeDesc } from '@mp/physics'
 
-import { visualMaterial, visualModel, visualStyle } from './assets'
+import { visualMaterial, visualModel } from './assets'
 import { resolvePrefab } from './resolve'
 import type { Behavior, ColliderDesc, Level, LevelConfig, Marker, PrefabInstance, Transform, TriggerKind } from './types'
 
@@ -36,10 +36,9 @@ export interface VisualItem {
   collider: ColliderDesc
   position: Vec3
   rotation: Quat
-  style: string | undefined
-  /** Model asset id, when this piece draws a mesh instead of its collider's greybox shape. */
+  /** Model asset id, when this piece draws a mesh instead of its collider's shape. */
   model: string | undefined
-  /** Material asset id, overriding the greybox style. */
+  /** Material asset id. Absent means nobody has chosen a surface, and the renderer greyboxes it. */
   material: string | undefined
 }
 
@@ -277,12 +276,11 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
         collider,
         position: { ...pf.worldPos },
         rotation: { ...pf.worldRot },
-        // An instance's style override beats the prefab's own — that is what an override is, and it
-        // applies to every piece, so recolouring a placed pad recolours all of it. It does not cascade
-        // to children: a child is its own placement with its own override.
-        style: inst.style ?? visualStyle(piece.visual),
         model: visualModel(piece.visual),
-        material: visualMaterial(piece.visual),
+        // An instance's material override beats the prefab's own — that is what an override is, and it
+        // applies to every piece, so resurfacing a placed pad resurfaces all of it. It does not cascade
+        // to children: a child is its own placement with its own override.
+        material: inst.material ?? visualMaterial(piece.visual),
       }
       visuals.push(visual)
 

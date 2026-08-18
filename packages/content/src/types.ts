@@ -39,17 +39,17 @@ export type ColliderDesc =
 /**
  * The swappable visual layer, and the only place content meets art. Collision never changes with it.
  *
- * - `primitive` greyboxes the collider shape. `style` picks a palette entry (the greybox visual language);
- *   `material` overrides that with a material **asset id**, which is how a piece stops being greybox
- *   without stopping being an authored primitive.
+ * - `primitive` draws the collider shape. `material` is a material **asset id**; omitted, the shape draws
+ *   in the flat untextured grey that means "nobody has chosen a surface for this yet".
  * - `model` draws a mesh asset instead, by **asset id**. The collider stays authored, so a detailed prop
- *   still collides as the box someone chose.
+ *   still collides as the box someone chose. `material` overrides the mesh's own.
  *
- * Was `{ kind: 'gltf', src }` — a path. Ids replaced it (see `assets.ts`) before anything consumed it, so
- * no content had to migrate.
+ * There used to be a second answer here: `style`, a key into a table of eight hardcoded colours. It is gone
+ * (ADR 0028). The greybox palette survives as seven material assets, so the visual language is authored
+ * content like everything else rather than a switch statement in the renderer.
  */
 export type Visual =
-  | { readonly kind: 'primitive'; readonly style?: string; readonly material?: string }
+  | { readonly kind: 'primitive'; readonly material?: string }
   | { readonly kind: 'model'; readonly asset: string; readonly material?: string }
 
 /** Gameplay triggers fired by real contact with a piece's collider — the mode decides the
@@ -111,14 +111,15 @@ export interface Prefab {
  * them identically once resolved.
  *
  * The rest are per-instance **overrides**, the counterpart to referencing: `behavior` replaces the
- * prefab's default motion, `style` recolours *every* piece of this instance. Everything else is
+ * prefab's default motion, `material` resurfaces *every* piece of this instance. Everything else is
  * shared, which is the point.
  */
 export interface PrefabInstance {
   prefab: string | Prefab
   transform: Transform
   behavior?: Behavior
-  style?: string
+  /** Material asset id applied to every piece of this placement, beating each piece's own. */
+  material?: string
   /**
    * Author-facing label, like a GameObject's name — per *instance*, so two placements of one prefab can
    * be told apart ("first gap" / "last gap"). Editor-only, ignored by the loader, and absent unless

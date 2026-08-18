@@ -14,7 +14,7 @@ strict, source-first (no build step at this stage).
 - `packages/server` — Colyseus `Server` + `ParkourRoom`: per-client snapshot relay (no simulation, no schema), auto-join, roster. Content-free. → core, net, `colyseus`
 - `packages/client` — local authoritative sim, interpolation, clock sync, input; headless-capable (bots). → core, net, physics
 - `packages/render-pixi` — PixiJS 2D **UI layer** (ADR 0015): stacked transparent canvas over Three, overlay + pointer-lock-aware input, reusable widgets (panel/button/slider/list). Browser (DOM lib). → core, pixi.js
-- `packages/render-three` — Three.js WebGL2 stage + polished greybox pipeline (IBL, ACES, soft shadows, GTAO/SMAA/bloom, style→material, level-view) + `createCharacterRig` (realizes `@mp/character`'s rig data, applies a `Pose`). Browser (DOM lib). → character (rig data, types only at runtime), core, content (types), three
+- `packages/render-three` — Three.js WebGL2 stage + polished greybox pipeline (IBL, ACES, soft shadows, GTAO/SMAA/bloom, material assets compiled from shader definitions, level-view) + `createCharacterRig` (realizes `@mp/character`'s rig data, applies a `Pose`). Browser (DOM lib). → character (rig data, types only at runtime), core, content (types), three
 - `tools/netsim` — latency/jitter/loss `ClientTransport` wrapper, headless. → core. (Not wired into the current client — ADR 0013.)
 - `tools/bots` — headless `colyseus.js` load clients + `load` harness (budgets 2 & 3; live integration check). → net, server, `colyseus.js`
 - `tools/viewer` — localhost content inspector (`pnpm dev:viewer`): picker, orbit, overlays, jump gizmo, play-in-place (ADR 0014). → character, content, core, physics, render-three

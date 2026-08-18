@@ -28,8 +28,8 @@ rendering and feel, not art.
 - **Greybox kit** (`@mp/content/kit`, `/generators`): parametric prefab constructors (platform,
   ledge, ramp, gap-jump, moving platform, rotating bar, spawn/checkpoint/goal/hazard pads) and
   procedural generators (`staircase`, `spiralStaircase`). Palette is the "High-contrast dev"
-  visual language (Kodjo's pick). **Deleted by ADR 0027: geometry is authored data now.** The style
-  palette survives in `@mp/render-three`.
+  visual language (Kodjo's pick). **Deleted by ADR 0027: geometry is authored data now**, and the style
+  palette with it by ADR 0028 — its seven used keys are material assets under `content/assets/materials/`.
 - **Rotation** added end-to-end: quaternion math in `@mp/core` (`eulerToQuat`, `axisAngleToQuat`,
   `mulQuat`, `rotateVec3`); collider rotation + `setNextKinematicRotation` in `@mp/physics`;
   transforms compose (instance × piece) in the loader. Enables ramps + rotating bars.
@@ -40,7 +40,8 @@ rendering and feel, not art.
   collider from any side/height → fire; don't touch it → nothing.
 - **Renderer** (`@mp/render-three`): a polished greybox pipeline — `RoomEnvironment` IBL, ACES
   tone mapping, soft shadows, and GTAO + SMAA + optional bloom post-FX; a `style → material`
-  visual language; and a level-view that realizes the loader's visual list into shadowed meshes
+  visual language (**deleted by ADR 0028**: a visual names a material asset, and an unsurfaced primitive
+  greyboxes); and a level-view that realizes the loader's visual list into shadowed meshes
   (`sync()` re-poses clock-driven pieces). **Shared by the game and the viewer.**
 - **Controller is stack-level** (`@mp/character`): the `stepCharacter` KCC relocated out of
   `@mp/server/tps`. Modes pick a controller; feel is data (`CharacterTuning`).

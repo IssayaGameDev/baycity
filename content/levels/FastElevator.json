@@ -1,5 +1,5 @@
 {
-  "id": "level1",
+  "id": "FastElevator",
   "config": {
     "fallBehavior": "respawn-checkpoint",
     "fallY": -3
@@ -27,7 +27,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "ground"
+              "material": "a563891204f971a4"
             }
           }
         ]
@@ -35,10 +35,47 @@
       "transform": {
         "position": {
           "x": 0,
-          "y": 0,
+          "y": -0.5,
           "z": -0.5
         }
-      }
+      },
+      "children": [
+        {
+          "prefab": {
+            "id": "wall",
+            "pieces": [
+              {
+                "collider": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 6,
+                    "y": 1,
+                    "z": 0.3
+                  }
+                },
+                "transform": {
+                  "position": {
+                    "x": 0,
+                    "y": 0,
+                    "z": 0
+                  }
+                },
+                "visual": {
+                  "kind": "primitive",
+                  "material": "55205761e38bc929"
+                }
+              }
+            ]
+          },
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 1,
+              "z": -7.5
+            }
+          }
+        }
+      ]
     },
     {
       "prefab": {
@@ -62,7 +99,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "platform"
+              "material": "55205761e38bc929"
             }
           }
         ]
@@ -97,7 +134,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "platform"
+              "material": "55205761e38bc929"
             }
           }
         ]
@@ -107,41 +144,6 @@
           "x": -4,
           "y": 0.15,
           "z": 3
-        }
-      }
-    },
-    {
-      "prefab": {
-        "id": "wall",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 6,
-                "y": 1,
-                "z": 0.3
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "style": "platform"
-            }
-          }
-        ]
-      },
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 1,
-          "z": -8
         }
       }
     },
@@ -167,7 +169,7 @@
             },
             "visual": {
               "kind": "primitive",
-              "style": "moving"
+              "material": "19079ddb3fbfb27e"
             }
           }
         ]
@@ -186,8 +188,8 @@
           "y": 1,
           "z": 0
         },
-        "distance": 1.2,
-        "periodMs": 4000
+        "distance": 10.200000000000001,
+        "periodMs": 1000
       }
     },
     {

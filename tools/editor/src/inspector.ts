@@ -4,7 +4,7 @@ import { Pane } from 'tweakpane'
 import type { BehaviorKind, Doc, ItemProps, TriggerChoice } from './editorDoc'
 
 /**
- * The Inspector panel — transform, style, trigger, behavior, and the prefab actions.
+ * The Inspector panel — transform, material, trigger, behavior, and the prefab actions.
  *
  * Still Tweakpane, deliberately: a property grid of labelled numbers with point-and-drag editing is
  * exactly what it is good at, and `PaneConfig.container` mounts it inside a real panel. What changed is
@@ -37,8 +37,6 @@ export interface InspectorHost {
   remove: () => void
   extract: () => void
   openPrefab: () => void
-  /** Style palette keys, in the order they should be offered. */
-  styles: readonly string[]
   /** Material assets to offer, as Tweakpane options (label → asset id; `''` for none). */
   materials: () => Record<string, string>
 }
@@ -151,13 +149,9 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     distance: 3,
     cycleS: 4,
     axis: { x: 0, y: 1, z: 0 },
-    style: '',
     trigger: 'none' as TriggerChoice,
     material: '',
   }
-
-  const styleOptions: Record<string, string> = { '(default)': '' }
-  for (const k of host.styles) styleOptions[k] = k
 
   let blades: { dispose: () => void }[] = []
 
@@ -190,7 +184,6 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       periodMs: Math.max(50, prop.cycleS * 1000),
       axis,
       pieceLevel: doc.mode === 'prefab',
-      style: prop.style,
       trigger: prop.trigger,
       material: prop.material,
     }
@@ -213,7 +206,6 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     prop.cycleS = r4(p.periodMs / 1000)
     prop.axis = { x: p.axis.x, y: p.axis.y, z: p.axis.z }
     prop.direction = dirNameOf(p.axis)
-    prop.style = p.style
     prop.trigger = p.trigger
     prop.material = p.material
 
@@ -226,18 +218,21 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       pane.addBinding(sel, 'scale', { label: 'scale', x: scl, y: scl, z: scl }).on('change', applyTransform),
     )
 
-    // Style is editable either way — the piece's own inside a prefab, an override on an instance. A
-    // trigger belongs to a piece's collider, so it is only offered where pieces are what's being edited.
-    blades.push(pane.addBinding(prop, 'style', { label: p.pieceLevel ? 'style' : 'style override', options: styleOptions }).on('change', applyProps))
+    // Material is editable either way — the piece's own inside a prefab, an instance-wide override in a
+    // level. Both levels, because the override is the only per-placement visual there is, and until now
+    // the capable system (materials) was the one you could not override while the weak one (styles) was
+    // (ADR 0028). A trigger belongs to a piece's collider, so it is only offered where pieces are edited.
+    blades.push(
+      pane
+        .addBinding(prop, 'material', { label: p.pieceLevel ? 'material' : 'material override', options: host.materials() })
+        .on('change', applyProps),
+    )
     if (p.pieceLevel) {
       blades.push(
         pane
           .addBinding(prop, 'trigger', { label: 'trigger', options: { none: 'none', checkpoint: 'checkpoint', goal: 'goal', hazard: 'hazard' } })
           .on('change', applyProps),
       )
-      // A material belongs to the piece, like the trigger does — it is part of what the prefab *is*, so
-      // every instance of it gets the same surface unless one overrides the style.
-      blades.push(pane.addBinding(prop, 'material', { label: 'material', options: host.materials() }).on('change', applyProps))
     }
 
     blades.push(
