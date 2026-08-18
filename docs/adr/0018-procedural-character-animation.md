@@ -102,6 +102,8 @@ change to adopt it.
   peer's ground and subtracting the platform's velocity (`LoadedLevel.basePose`); not done. The same
   gap is why peers get no `carry` and so never brace: separating a peer's carry from its walking needs
   either its locomotion speed on the wire or that ground probe. Both bugs, one missing quantity.
+  **Both fixed since: speed travels (v9), and a peer's platform carry is derived from the movement base
+  (v10) — see ADR 0021's update. A peer still does not brace for a shove it is not standing on.**
 - **The camera sits behind the character, so fore/aft motion is nearly invisible from it.** This bit
   twice: arm swing at 51° read as "barely moving", and a jump that raised the arms forward read as
   nothing happening at all. Limb posing therefore takes pitch *and* an outward roll, and the roll is

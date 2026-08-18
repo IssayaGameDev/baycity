@@ -178,7 +178,7 @@ let camVel: Vec3 = vec3()
  * somehow lacks it should do: slightly wrong beats nowhere.
  */
 const worldFromBase = (e: { position: Vec3; yaw: number; base: number }, rendered: boolean): { position: Vec3; yaw: number } => {
-  const pose = e.base === 0 ? undefined : loaded?.basePoseOf(e.base - 1, rendered)
+  const pose = e.base === 0 ? undefined : loaded?.basePoseOf(e.base - 1, rendered ? 'render' : 'tick')
   if (pose === undefined) return { position: e.position, yaw: e.yaw }
   const p = rotateVec3(pose.rotation, e.position)
   return {
@@ -764,7 +764,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
         // fall back to world coordinates rather than aliasing onto another piece's frame.
         const baseIdx = char.base === undefined ? undefined : loaded?.baseIndex(char.base.colliderHandle)
         const base = baseIdx !== undefined && baseIdx < 255 ? baseIdx + 1 : 0
-        const basePose = base === 0 ? undefined : loaded?.basePoseOf(base - 1, false)
+        const basePose = base === 0 ? undefined : loaded?.basePoseOf(base - 1, 'tick')
         room?.sendBytes(
           NET_CHANNEL,
           new Uint8Array(
@@ -966,7 +966,13 @@ stage.start(() => {
             vy: null,
             grounded: (e.flags & STATE_GROUNDED) !== 0,
             rising: (e.flags & STATE_RISING) !== 0,
-            carry: null, // not derivable from position alone — see CharacterPlacement.carry
+            // A peer's platform carry, for nothing on the wire: v10 already says *which* piece they are
+            // riding, and a piece's own motion is known to every client, so the velocity it imparts at the
+            // rider's exact spot is derivable here. That is the dominant case — a deck starting, stopping
+            // or reversing under someone — and it is why a peer now braces against it like its owner does.
+            // Still missing: being shoved by something you are *not* standing on, and a wall taking your
+            // momentum. Neither is a base, and both would need real bytes (ADR 0021).
+            carry: e.base === 0 ? null : loaded?.baseCarry(e.base - 1, e.position) ?? null,
             base: e.base,
             name: names.get(e.id) ?? '…',
           },

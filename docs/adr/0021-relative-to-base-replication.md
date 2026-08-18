@@ -53,8 +53,9 @@ the surface's frame — already existed, because that is how platform carry has 
 (ADR 0012's movement base). The wire now carries a quantity the solver was already keeping.
 
 **The receiver undoes the frame against the piece's *drawn* pose**, not the last sim tick's. That
-distinction is the fix: the deck the eye sees is the interpolated one, so `basePoseOf(index, true)` is
-what a rider must be placed against. The collision proxy for peers uses the tick pose instead, because
+distinction is the fix: the deck the eye sees is the interpolated one, so `basePoseOf(index, 'render')` is
+what a rider must be placed against (`'render'` since the phases were named). The collision proxy for
+peers uses the tick pose instead, because
 that is what physics resolved against.
 
 ## Consequences
@@ -76,6 +77,7 @@ that is what physics resolved against.
   coordinates — degraded, not aliased onto another piece's frame.
 - A peer's **vertical velocity is still derived** from their rendered position, and while they ride, that
   position now tracks the deck, so the derived vertical picks up the platform's lift as it always did.
+  (The carry update below then has to take that lift back out, or the animator counts it twice.)
 - The loader gained `baseIndex` and `basePoseOf`, and records the pose `render(alpha)` drew rather than
   leaving callers to read it back off the visual, which would have depended on call order.
 
@@ -93,3 +95,34 @@ with, so the idle-rider case — the one reported — would not have been fixed.
 
 **Sending the platform's velocity so viewers could compensate.** More bytes than the index, and still
 wrong at a reversal: a velocity sampled 100 ms ago is the wrong velocity.
+
+## Update — the base also gives peers their platform's carry, for no extra bytes
+
+The inertial layer leans a character against whatever accelerates it, and it is fed two things: the
+character's own locomotion, and `carry` — motion applied that its locomotion did not ask for. Peers had
+`carry: null`, so on someone else's screen a rider stood impassively while the deck lurched into motion
+under them, and only its owner leaned.
+
+Sending `carry` would have cost bytes. It does not need to: the base index already says *which* piece a
+peer is riding, every client simulates that piece identically, and the wire's position **is** the rider's
+point in that piece's frame. So the velocity the piece imparts at that exact point is derivable from two
+of its own poses — `LoadedLevel.baseCarry(index, localPos)`, the same point transformed by the last two
+tick poses over the interval between them.
+
+Differencing the *point* rather than the piece's origin is what makes one expression cover both kinds of
+motion: a translating deck and a spinning one, with a turntable's tangential velocity falling out for
+free, and a rider standing exactly on the axis correctly carried nowhere.
+
+Two things this exposed:
+
+- **The derived vertical would have counted the lift twice.** `AnimationInput.vy` is documented as the
+  character's *own* vertical, with the animator adding the carry's share itself. A peer's vy is derived
+  from the rendered position, which already contains the platform's lift — so the carry's y is taken back
+  out where the placement is filled.
+- **A finite difference measures the chord, not the tangent.** It is perpendicular to the radius at the
+  arc's *midpoint*, carrying a half-angle bias of `|v|·r·sin(ωdt/2)` — 28 mm/s on the test's turntable.
+  Inherent to taking a velocity by differencing, far below anything visible, and the regression test
+  asserts against the mid-arc radius rather than pretending it is not there.
+
+Still not covered, and it would need real bytes: a shove from something the peer is *not* standing on (the
+spinning bar sweeping them off a ledge), and a wall taking their momentum. Neither is a movement base.

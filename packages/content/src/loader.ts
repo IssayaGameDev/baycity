@@ -64,6 +64,9 @@ interface RotateHandle {
 }
 type BehaviorHandle = MoveHandle | RotateHandle
 
+/** Which of a clock-driven piece's three known poses to read — see `LoadedLevel.basePoseOf`. */
+export type BasePhase = 'render' | 'tick' | 'prev'
+
 export interface LoadedLevel {
   config: LevelConfig
   markers: WorldMarker[]
@@ -104,12 +107,24 @@ export interface LoadedLevel {
   /**
    * Pose of the clock-driven piece with that index, or `undefined` if there is none.
    *
-   * `rendered` picks *which* pose, and the distinction is the whole point of this on a client: `true`
-   * gives the interpolated pose the last `render(alpha)` drew, which is where the deck visibly is and so
-   * where a rider has to be placed to sit still on it; `false` gives the latest sim tick's, which is what
-   * physics resolved against and what a collision proxy wants.
+   * Which pose matters, and that is why they are named: `render` is the interpolated pose the last
+   * `render(alpha)` drew, so it is where the deck visibly is and where a rider must be placed to sit still
+   * on it; `tick` is the latest sim tick's, which is what physics resolved against and what a collision
+   * proxy wants; `prev` is the tick before that, which exists so a velocity can be taken across a known
+   * interval.
    */
-  basePoseOf: (index: number, rendered: boolean) => { position: Vec3; rotation: Quat } | undefined
+  basePoseOf: (index: number, phase: BasePhase) => { position: Vec3; rotation: Quat } | undefined
+  /**
+   * World velocity (m/s) of a point held **fixed in the piece's frame** — a rider's own `localPos`.
+   *
+   * This is the platform's contribution to that rider's motion, which is exactly what an animator's
+   * inertial layer means by `carry`: motion applied to a character that its own locomotion did not ask
+   * for. Taken across the last two sim ticks, so translation and rotation are covered without either being
+   * special-cased — a point on a turntable picks up its tangential velocity for free.
+   *
+   * Zero on the first update, when there is no earlier tick to difference against.
+   */
+  baseCarry: (index: number, localPos: Vec3) => Vec3 | undefined
 }
 
 const add = (a: Vec3, b: Vec3): Vec3 => vec3(a.x + b.x, a.y + b.y, a.z + b.z)
@@ -278,7 +293,14 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
     pose(body, position, rotation)
   }
 
+  // The last two update times, so a velocity can be divided by the interval it was actually measured over
+  // rather than by an assumed tick length.
+  let prevMs = 0
+  let currMs = 0
+
   const update = (nowMs: number, ridingColliderHandle?: number): void => {
+    prevMs = primed ? currMs : nowMs
+    currMs = nowMs
     for (const h of behaviors) {
       const poseIt = h.body.colliderHandle === ridingColliderHandle ? poseFrozen : pose
       if (h.kind === 'move') {
@@ -326,12 +348,40 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
 
   const baseIndex = (colliderHandle: number): number | undefined => moverOrder.get(colliderHandle)
 
-  const basePoseOf = (index: number, rendered: boolean): { position: Vec3; rotation: Quat } | undefined => {
+  const basePoseOf = (index: number, phase: BasePhase): { position: Vec3; rotation: Quat } | undefined => {
     const h = behaviors[index]
     if (h === undefined) return undefined
-    if (h.kind === 'move') return { position: rendered ? h.renderPos : h.currPos, rotation: h.rotation }
-    return { position: h.position, rotation: rendered ? h.renderRot : h.currRot }
+    if (h.kind === 'move') {
+      const position = phase === 'render' ? h.renderPos : phase === 'tick' ? h.currPos : h.prevPos
+      return { position, rotation: h.rotation }
+    }
+    const rotation = phase === 'render' ? h.renderRot : phase === 'tick' ? h.currRot : h.prevRot
+    return { position: h.position, rotation }
   }
 
-  return { config: level.config, markers, triggers, visuals, update, render, basePose, baseIndex, basePoseOf }
+  const baseCarry = (index: number, localPos: Vec3): Vec3 | undefined => {
+    const now = basePoseOf(index, 'tick')
+    const before = basePoseOf(index, 'prev')
+    if (now === undefined || before === undefined) return undefined
+    const dt = (currMs - prevMs) / 1000
+    if (dt <= 0) return vec3(0, 0, 0)
+    // The same point, in the frame as it was and as it is. The difference is everything the piece did to
+    // whoever is standing on it, whether it slid, spun, or both.
+    const a = add(before.position, rotateVec3(before.rotation, localPos))
+    const b = add(now.position, rotateVec3(now.rotation, localPos))
+    return vec3((b.x - a.x) / dt, (b.y - a.y) / dt, (b.z - a.z) / dt)
+  }
+
+  return {
+    config: level.config,
+    markers,
+    triggers,
+    visuals,
+    update,
+    render,
+    basePose,
+    baseIndex,
+    basePoseOf,
+    baseCarry,
+  }
 }

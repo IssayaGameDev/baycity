@@ -69,9 +69,13 @@ export interface CharacterPlacement {
   rising: boolean
   /**
    * World velocity being applied to the character that its own locomotion did not ask for
-   * (`CharacterState.carry`) — what the inertial layer reacts to. `null` for peers: the wire carries
-   * position and two flags, and separating a peer's carry from its walking would need either its
-   * locomotion speed on the wire or a ground probe here. So peers brace for nothing, for now.
+   * (`CharacterState.carry`) — what the inertial layer reacts to, and the reason a character leans into a
+   * platform starting under it.
+   *
+   * Its own sim supplies this exactly. For a peer the caller derives the *platform* part of it from the
+   * movement base the wire carries and the piece's own known motion (`LoadedLevel.baseCarry`, ADR 0021),
+   * so a rider braces on every screen for no bytes at all. What no viewer can know is a shove from
+   * something the peer is not standing on, or a wall taking their momentum: those are not a base.
    */
   carry: Vec3 | null
   /**
@@ -195,7 +199,10 @@ export const createCharacterViews = (scene: THREE.Scene, gait: GaitTuning = DEFA
         {
           yaw: yaw ?? r.yaw,
           speed: speed ?? r.speed,
-          vy: vy ?? r.vy,
+          // `AnimationInput.vy` is the character's *own* vertical, excluding carry — the animator adds the
+          // carry's share itself. A derived vertical comes from the rendered position, which already
+          // contains a platform's lift, so the carry is taken back out here or an elevator counts twice.
+          vy: vy ?? r.vy - (carry?.y ?? 0),
           grounded,
           rising,
           carry: carry ?? NO_CARRY,
