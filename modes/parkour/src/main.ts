@@ -51,7 +51,7 @@ import {
   partTransforms,
   type GaitTuning,
 } from '@mp/character'
-import { instantiateNodeLevel, type LoadedNodeLevel } from '@mp/content'
+import { instantiateLevel, type LoadedLevel } from '@mp/content'
 import { Checkpoint, DEFAULT_REGISTRY, characterAccess, createComponentRuntime, hasComponent, type ComponentRuntime } from '@mp/components'
 import { getLocale, matchLocale, onLocaleChange, setLocale, t, type TranslationKey } from '@mp/i18n'
 import { createTouchHud, createUiOverlay, uiButton, type ListItem, type TouchHud } from '@mp/render-pixi'
@@ -551,7 +551,7 @@ let myId: EntityId | null = null
 let controller: LocalController | null = null
 let ownFacing = 0
 let room: Room | null = null
-let loaded: LoadedNodeLevel | null = null // the instantiated level (colliders + markers + visuals)
+let loaded: LoadedLevel | null = null // the instantiated level (colliders + markers + visuals)
 let levelView: LevelView | null = null // Three meshes for the level; sync() re-poses moving pieces
 let lastSimTickAt = 0 // wall-clock of the last fixed tick, for render-interpolating clock-driven pieces
 let requestRespawn: (() => void) | null = null // set once the local sim exists; used by the pause menu's Restart
@@ -612,7 +612,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   // them down. It was zero here, which left a corpse coasting off in a straight line for ever.
   const world = createPhysicsWorld({ gravity: { x: 0, y: -tuning.gravity, z: 0 } })
   physicsWorld = world // the render loop builds peers' corpses in it
-  loaded = instantiateNodeLevel(world, levelData, DEFAULT_REGISTRY)
+  loaded = instantiateLevel(world, levelData, DEFAULT_REGISTRY)
 
   // Build the level's greybox meshes via the shared renderer (content C3). Marker pads are
   // just their (colour-coded) box here; radius/overlay visualization belongs in the viewer.

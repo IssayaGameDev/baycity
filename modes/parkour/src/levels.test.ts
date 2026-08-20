@@ -1,4 +1,4 @@
-import { instantiateNodeLevel } from '@mp/content'
+import { instantiateLevel } from '@mp/content'
 import { DEFAULT_REGISTRY } from '@mp/components'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -31,7 +31,7 @@ describe('level selection', () => {
   it.each(levelNames())('loads and instantiates %s', (name) => {
     const level = levelByName(name)
     const world = createPhysicsWorld({ gravity: { x: 0, y: -30, z: 0 } })
-    const loaded = instantiateNodeLevel(world, level, DEFAULT_REGISTRY)
+    const loaded = instantiateLevel(world, level, DEFAULT_REGISTRY)
     expect(loaded.visuals.length, `${name} has no geometry`).toBeGreaterThan(0)
     world.free()
   })

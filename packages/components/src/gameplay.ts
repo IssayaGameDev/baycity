@@ -1,4 +1,4 @@
-import { TRACK, type TriggerKind } from '@mp/content'
+import { TRACK } from '@mp/content'
 import { defineComponent } from './define'
 
 /**
@@ -101,7 +101,7 @@ export const GAMEPLAY_COMPONENTS = [Checkpoint, Goal, Hazard, Bumper, Track]
  * A table rather than lowercasing the type name, which would work for these four by coincidence and break
  * on the first two-word rule. Kept honest by a test that asserts it covers exactly the rule components.
  */
-export const RULE_KINDS: Record<string, TriggerKind> = {
+export const RULE_KINDS: Record<string, 'checkpoint' | 'goal' | 'hazard' | 'bumper'> = {
   [Checkpoint.type]: 'checkpoint',
   [Goal.type]: 'goal',
   [Hazard.type]: 'hazard',

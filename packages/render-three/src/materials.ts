@@ -1,4 +1,4 @@
-import type { ColliderDesc, TriggerKind, WorldMarker } from '@mp/content'
+import type { ColliderDesc } from '@mp/content'
 import * as THREE from 'three'
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js'
 
@@ -14,10 +14,14 @@ import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js'
  * grey a primitive draws in when no material has been chosen.
  */
 /**
- * Keyed by marker kinds **and** trigger kinds, since the editor draws a wireframe for both and they overlap
- * everywhere but `spawn` (a marker only) and `bumper` (a trigger only).
+ * What the editor and the viewer draw a coloured wireframe for: the spawn point, and each gameplay rule.
+ *
+ * Declared here rather than derived from a content type, because that is all it is — a palette key for debug
+ * chrome. It used to be `WorldMarker['kind'] | TriggerKind`, which tied a renderer's colour table to the
+ * authoring schema and outlived both of those types (ADR 0035). A mode's `RULE_KINDS` maps its rule components
+ * onto these names.
  */
-export type GizmoKind = WorldMarker['kind'] | TriggerKind
+export type GizmoKind = 'spawn' | 'checkpoint' | 'goal' | 'hazard' | 'bumper'
 
 export const MARKER_COLORS: Record<GizmoKind, number> = {
   spawn: 0x2979ff,

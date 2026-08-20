@@ -16,7 +16,7 @@ import {
   type Keyframe,
   type LoopMode,
   type Node,
-  type NodeLevel,
+  type Level,
   type NodeOverride,
   type Pose,
   type Transform,
@@ -226,8 +226,8 @@ export interface Doc {
   /** How many placements reference `id`: what "edit this and 3 things move" is counting. */
   refCount: (id: string) => number
   /** A level to instantiate for spawn gizmos and physics (prefab mode → wrapped at the origin). */
-  asLevel: () => NodeLevel
-  toJSON: () => NodeLevel | Node
+  asLevel: () => Level
+  toJSON: () => Level | Node
   /** Save writes under a file name; the id follows it, or the two silently diverge. */
   setId: (id: string) => void
 }
@@ -345,7 +345,7 @@ interface DocNode {
  * is a level of one node with no table, which is why there is one implementation here where there used to be
  * two — the operations differ only in what the palette offers and in whether references exist at all.
  */
-const docOver = (level: NodeLevel, opts: { mode: Mode; library: Record<string, Node>; registry: Registry; json: () => NodeLevel | Node }): Doc => {
+const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>; registry: Registry; json: () => Level | Node }): Doc => {
   const { mode, library, registry } = opts
   const roots = level.nodes
 
@@ -1057,7 +1057,7 @@ const docOver = (level: NodeLevel, opts: { mode: Mode; library: Record<string, N
   }
 }
 
-export const levelDoc = (level: NodeLevel, library: Record<string, Node>, registry: Registry = DEFAULT_REGISTRY): Doc =>
+export const levelDoc = (level: Level, library: Record<string, Node>, registry: Registry = DEFAULT_REGISTRY): Doc =>
   docOver(level, { mode: 'level', library, registry, json: () => level })
 
 /**

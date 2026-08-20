@@ -1,5 +1,5 @@
 import type { Vec3 } from '@mp/core'
-import type { ComponentData, Node, NodeLevel, NodeOverride, Transform } from './types'
+import type { ComponentData, Node, Level, NodeOverride, Transform } from './types'
 
 /**
  * Node-tree helpers: the component types the **engine itself** must understand, and the resolution of a
@@ -31,6 +31,25 @@ export const SPAWN = 'Spawn'
  */
 export interface TypeInfo {
   readonly get: (type: string) => { readonly singleton?: boolean } | undefined
+}
+
+/**
+ * A free key in a prefab table for `entry`, wanting `key` — reusing an existing entry that is **identical**,
+ * so placing the same prefab twice shares one entry instead of filling the table with copies.
+ *
+ * The wanted key is passed in rather than read off the value, because it is the *file name*: a name stored
+ * inside a prefab is routinely stale (commit 0fc0b9f).
+ */
+export const freeTableKey = <T>(table: Record<string, T>, key: string, entry: T): string => {
+  const body = JSON.stringify(entry)
+  const same = (a: T): boolean => JSON.stringify(a) === body
+  const at = table[key]
+  if (at === undefined || same(at)) return key
+  for (let n = 2; ; n++) {
+    const id = `${key}-${n}`
+    const other = table[id]
+    if (other === undefined || same(other)) return id
+  }
 }
 
 /** Enabled components of a type, in order. `enabled` absent means enabled. */
@@ -104,8 +123,8 @@ const patchComponents = (components: readonly ComponentData[], o: NodeOverride |
  * Exported because two callers want exactly this: `effectiveNode` below, and anything that has to turn a
  * placement back into plain nodes — extracting a one-off, or migrating an inline definition.
  *
- * Returns **the prefab's own object** when nothing changed, at any depth. Deliberate, and the same choice
- * `effectivePieces` made under ADR 0033: the editor writes through the objects it is handed when editing
+ * Returns **the prefab's own object** when nothing changed, at any depth. Deliberate, and the same choice the
+ * piece-shaped resolver made under ADR 0033: the editor writes through the objects it is handed when editing
  * the shared definition, so copying unconditionally would turn a prefab edit into a silent no-op.
  */
 export const bakeOverrides = (node: Node, overrides: Record<string, NodeOverride> | undefined): Node => {
@@ -143,10 +162,10 @@ const layerOwn = (inherited: readonly ComponentData[], own: readonly ComponentDa
  *
  * A placement's own `children` are **appended after** the inherited ones, which is what the loader already
  * did (a prefab's pieces, then the instance's children). An unknown prefab key resolves to the placement's
- * own layer alone rather than throwing: `validateNodeLevel` is where a dangling reference is reported, and
+ * own layer alone rather than throwing: `validateLevel` is where a dangling reference is reported, and
  * a viewer should still show the rest of the level.
  */
-export const effectiveNode = (level: NodeLevel, node: Node, types: TypeInfo): Resolved => {
+export const effectiveNode = (level: Level, node: Node, types: TypeInfo): Resolved => {
   const root = node.prefab === undefined ? undefined : level.prefabs?.[node.prefab]
   if (root === undefined) {
     return {
@@ -172,7 +191,7 @@ export const effectiveNode = (level: NodeLevel, node: Node, types: TypeInfo): Re
 
 /** Depth-first walk over a resolved tree, parent before child — the order the loader's frames need. */
 export const walkNodes = (
-  level: NodeLevel,
+  level: Level,
   types: TypeInfo,
   visit: (resolved: Resolved, node: Node, parent: Resolved | undefined) => void,
 ): void => {

@@ -109,7 +109,9 @@ export const addMarkers = (scene: THREE.Scene, markers: WorldMarker[], _opts: Le
 
   for (const m of markers) {
     const color = colorForMarker(m.kind)
-    const radius = m.radius ?? 0.8
+    // A fixed size: a marker is a point now. Its radius went with the authored `Marker`, whose non-spawn kinds
+    // were dead data and became inert nodes when the schema did (ADR 0035).
+    const radius = 0.8
     const pad = new THREE.Mesh(
       new THREE.CylinderGeometry(radius, radius, 0.06, 40),
       new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 0.28, emissive: color, emissiveIntensity: 0.4, depthWrite: false }),

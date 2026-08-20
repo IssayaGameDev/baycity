@@ -1,4 +1,4 @@
-import type { LoadedNodeLevel, WorldNode } from '@mp/content'
+import type { LoadedLevel, WorldNode } from '@mp/content'
 import type { AnyComponentDef, Registry } from './registry'
 import { readParams, type ParamDecls, type Params } from './params'
 import type { ComponentDef } from './define'
@@ -155,7 +155,7 @@ const hashRandom = (a: number, b: number, c: number): number => {
  * explicit costs nothing and is what makes the determinism test meaningful.
  */
 export const createComponentRuntime = (
-  loaded: LoadedNodeLevel,
+  loaded: LoadedLevel,
   registry: Registry,
   io: { readonly character: CharacterAccess; readonly effects: Effects },
 ): ComponentRuntime => {

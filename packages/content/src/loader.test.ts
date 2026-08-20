@@ -1,495 +1,307 @@
-import { axisAngleToQuat, eulerToQuat, rotateVec3, vec3, type Vec3 } from '@mp/core'
+import { vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { instantiateLegacyLevel } from './loader'
-import { moveTrack, spinTrack } from './track'
-import type { Behavior, Level } from './types'
-
-/** A material asset id, so the moving piece is findable in `visuals` by what it is surfaced with. */
-const MOVING_MAT = '19079ddb3fbfb27e'
+import { instantiateLevel } from './loader'
+import { effectiveNode, COLLIDER, MATERIAL_OVERRIDE, MESH, RENDERER, SPAWN, TRACK, type TypeInfo } from './nodes'
+import { moveTrack } from './track'
+import type { ComponentData, Node, Level } from './types'
 
 /**
- * The old `move`/`rotate` behaviors as the keyframe tracks that replaced them (ADR 0029). The presets
- * reproduce the motion exactly, which is why nothing below had to change its expectations.
+ * The node loader's own behaviour — what a `Piece` could not express.
  *
- * The base is explicit at every site: a track's keys are **absolute local poses**, so the frame's authored
- * position (for a move) or rotation (for a spin) is what the preset builds from.
+ * The migration is proved elsewhere (`@mp/components`' equivalence pass loads every authored level both
+ * ways). This covers the capabilities that are new: several colliders on one node, a collider offset, a node
+ * that draws nothing, a material that cascades, a component switched off, and override resolution.
  */
-const moves = (base: Vec3, axis: Vec3, distance: number, periodMs: number): Behavior => ({
-  kind: 'track',
-  keys: moveTrack(base, axis, distance, periodMs),
-  loop: 'loop',
-})
-const spins = (base: Vec3, axis: Vec3, periodMs: number): Behavior => ({
-  kind: 'track',
-  keys: spinTrack(base, axis, periodMs),
-  loop: 'loop',
-})
 
-const fixture: Level = {
-  id: 'fx',
-  config: { fallBehavior: 'respawn-checkpoint', fallY: -3 },
-  instances: [
-    {
-      prefab: { id: 'ground', pieces: [{ collider: { kind: 'box', halfExtents: vec3(10, 0.1, 10) }, transform: { position: vec3(0, 0, 0) } }] },
-      transform: { position: vec3(0, 0, 0) },
-    },
-    {
-      prefab: {
-        id: 'lift',
-        pieces: [{ collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(0, 0, 0) }, visual: { kind: 'primitive', material: MOVING_MAT } }],
-      },
-      transform: { position: vec3(0, 2, 0) },
-      behavior: moves(vec3(0, 2, 0), vec3(0, 1, 0), 1.5, 4000),
-    },
-  ],
-  markers: [
-    { kind: 'spawn', transform: { position: vec3(0, 2, 0) } },
-    { kind: 'checkpoint', transform: { position: vec3(3, 0.5, 0) }, radius: 1.5 },
-  ],
+/** Only `singleton` matters to resolution, so the real registry is not needed here. */
+const TYPES: TypeInfo = {
+  get: (type) => (type === COLLIDER ? {} : { singleton: true }),
 }
 
-describe('instantiateLegacyLevel', () => {
+const comp = (id: string, type: string, params: Record<string, unknown> = {}): ComponentData => ({ id, type, params })
+
+const box = (half = 0.5): ComponentData['params'] => ({ shape: { kind: 'box', halfExtents: vec3(half, half, half) } })
+
+const levelOf = (nodes: Node[], prefabs?: Record<string, Node>): Level => ({
+  id: 'fx',
+  config: { fallBehavior: 'physical-fall', fallY: -999 },
+  ...(prefabs !== undefined ? { prefabs } : {}),
+  nodes,
+})
+
+const load = (level: Level): ReturnType<typeof instantiateLevel> =>
+  instantiateLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), level, TYPES)
+
+describe('a node with more than one collider', () => {
   beforeAll(async () => {
     await initPhysics()
   })
 
-  it('builds colliders + markers and moves clock-driven pieces', () => {
-    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLegacyLevel(world, fixture)
-
-    expect(loaded.visuals).toHaveLength(2)
-    expect(loaded.markers.filter((m) => m.kind === 'spawn')).toHaveLength(1)
-    expect(loaded.markers.filter((m) => m.kind === 'checkpoint')).toHaveLength(1)
-
-    const lift = loaded.visuals.find((v) => v.material === MOVING_MAT)!
-    expect(lift).toBeDefined()
-    loaded.update(0)
-    const y0 = lift.position.y // home (at rest)
-    loaded.update(1000) // quarter period → half of the travel
-    expect(Math.abs(lift.position.y - y0)).toBeGreaterThan(0.5)
-
-    world.free()
-  })
-
-  it('bakes transform scale into collider dims and scaled offsets', () => {
-    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const level: Level = {
-      id: 'scaled',
-      config: { fallBehavior: 'physical-fall', fallY: -10 },
-      instances: [
+  it('builds a body and a mesh for each, and offsets them by their centres', () => {
+    const loaded = load(
+      levelOf([
         {
-          prefab: {
-            id: 'p',
-            pieces: [{ collider: { kind: 'box', halfExtents: vec3(1, 1, 1) }, transform: { position: vec3(1, 0, 0) } }],
-          },
-          transform: { position: vec3(0, 0, 0), scale: vec3(2, 3, 4) },
-        },
-      ],
-    }
-    const loaded = instantiateLegacyLevel(world, level)
-    const v = loaded.visuals[0]!
-    expect(v.collider).toEqual({ kind: 'box', halfExtents: vec3(2, 3, 4) }) // dims × scale
-    expect(v.position).toEqual(vec3(2, 0, 0)) // local offset (1,0,0) × instance scale x=2
-    world.free()
-  })
-
-  it('applies per-piece behavior (one piece moves while its sibling stays put)', () => {
-    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const level: Level = {
-      id: 'perpiece',
-      config: { fallBehavior: 'physical-fall', fallY: -10 },
-      instances: [
-        {
-          prefab: {
-            id: 'mixed',
-            pieces: [
-              { collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(0, 0, 0) }, behavior: moves(vec3(0, 0, 0), vec3(0, 1, 0), 2, 4000) },
-              { collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(3, 0, 0) } },
-            ],
-          },
-          transform: { position: vec3(0, 0, 0) },
-        },
-      ],
-    }
-    const loaded = instantiateLegacyLevel(world, level)
-    const mover = loaded.visuals[0]!
-    const stat = loaded.visuals[1]!
-    loaded.update(0)
-    const m0 = mover.position.y
-    const s0 = stat.position.y
-    loaded.update(1000) // quarter period → mover near apex
-    expect(Math.abs(mover.position.y - m0)).toBeGreaterThan(0.5)
-    expect(stat.position.y).toBe(s0) // sibling untouched
-    world.free()
-  })
-
-  it('a trigger piece exposes a collider the character contact-detects', () => {
-    const world = createPhysicsWorld() // character drives its own vertical movement
-    const level: Level = {
-      id: 'trig',
-      config: { fallBehavior: 'physical-fall', fallY: -10 },
-      instances: [
-        {
-          prefab: {
-            id: 'pad',
-            pieces: [{ collider: { kind: 'box', halfExtents: vec3(3, 0.25, 3) }, transform: { position: vec3(0, 0, 0) }, trigger: { kind: 'hazard' } }],
-          },
-          transform: { position: vec3(0, 0, 0) },
-        },
-      ],
-    }
-    const loaded = instantiateLegacyLevel(world, level)
-    const trig = loaded.triggers.find((t) => t.kind === 'hazard')
-    expect(trig).toBeDefined()
-
-    const char = world.addCharacter({ position: { x: 0, y: 2, z: 0 }, radius: 0.4, halfHeight: 0.5 })
-    let hit = false
-    for (let i = 0; i < 120; i++) {
-      char.move({ x: 0, y: -0.05, z: 0 })
-      world.step(1 / 60)
-      if (char.collisions().includes(trig!.colliderHandle)) hit = true // real contact with the pad
-    }
-    expect(hit).toBe(true)
-    world.free()
-  })
-
-  it('render(alpha) interpolates a moving piece between the last two sim poses', () => {
-    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLegacyLevel(world, fixture)
-    loaded.update(0) // prev = curr = pose(0)
-    const a = loaded.visuals.find((v) => v.material === MOVING_MAT)!.position.y
-    loaded.update(1000) // prev = pose(0), curr = pose(1000)
-    const lift = loaded.visuals.find((v) => v.material === MOVING_MAT)!
-    const b = lift.position.y
-    expect(Math.abs(b - a)).toBeGreaterThan(0.5) // it actually moved between ticks
-
-    loaded.render(0)
-    expect(lift.position.y).toBeCloseTo(a, 6) // alpha 0 → the previous tick
-    loaded.render(1)
-    expect(lift.position.y).toBeCloseTo(b, 6) // alpha 1 → the latest tick
-    loaded.render(0.5)
-    expect(lift.position.y).toBeCloseTo((a + b) / 2, 6) // halfway
-    world.free()
-  })
-
-  it('applies a rotated static collider (ramp)', () => {
-    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const tilt = vec3(0, 0, Math.PI / 6)
-    const loaded = instantiateLegacyLevel(world, {
-      id: 'ramp',
-      config: { fallBehavior: 'physical-fall', fallY: -3 },
-      instances: [
-        {
-          prefab: { id: 'r', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.1, 1) }, transform: { position: vec3(0, 0, 0), rotation: tilt } }] },
-          transform: { position: vec3(0, 0, 0) },
-        },
-      ],
-    })
-    const q = eulerToQuat(tilt)
-    expect(loaded.visuals[0]!.rotation.z).toBeCloseTo(q.z, 6)
-    expect(loaded.visuals[0]!.rotation.w).toBeCloseTo(q.w, 6)
-    world.free()
-  })
-
-  it('spins a rotate-behavior piece over time', () => {
-    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLegacyLevel(world, {
-      id: 'bar',
-      config: { fallBehavior: 'physical-fall', fallY: -3 },
-      instances: [
-        {
-          prefab: { id: 'b', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.1, 0.1) }, transform: { position: vec3(0, 1, 0) } }] },
-          transform: { position: vec3(0, 0, 0) },
-          behavior: spins(vec3(0, 0, 0), vec3(0, 1, 0), 4000),
-        },
-      ],
-    })
-    const bar = loaded.visuals[0]!
-    loaded.update(0)
-    expect(bar.rotation.w).toBeCloseTo(1, 6) // θ=0 → identity
-    loaded.update(1000) // quarter of the 4000ms period → 90° about Y
-    expect(Math.abs(bar.rotation.y)).toBeGreaterThan(0.5)
-    world.free()
-  })
-
-  // Trigger pieces are the only ones whose collider handle the loader publishes, so these
-  // fixtures tag the moving piece as a hazard to get at it (a moving hazard is real content).
-  it('basePose reports a moving piece pose, and nothing for a static collider', () => {
-    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLegacyLevel(world, {
-      id: 'lift',
-      config: { fallBehavior: 'physical-fall', fallY: -3 },
-      instances: [
-        {
-          prefab: { id: 'g', pieces: [{ collider: { kind: 'box', halfExtents: vec3(5, 0.1, 5) }, transform: { position: vec3(0, -2, 0) }, trigger: { kind: 'checkpoint' } }] },
-          transform: { position: vec3(0, 0, 0) },
-        },
-        {
-          prefab: { id: 'l', pieces: [{ collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(0, 0, 0) }, trigger: { kind: 'hazard' } }] },
-          transform: { position: vec3(0, 2, 0) },
-          behavior: moves(vec3(0, 2, 0), vec3(0, 1, 0), 2, 4000),
-        },
-      ],
-    })
-    const lift = loaded.triggers.find((t) => t.kind === 'hazard')!
-    const staticFloor = loaded.triggers.find((t) => t.kind === 'checkpoint')!
-    const visual = loaded.visuals[1]!
-
-    loaded.update(0)
-    const y0 = visual.position.y
-    loaded.update(1000) // quarter period
-    expect(visual.position.y - y0).toBeGreaterThan(0.5) // it really moved
-
-    // The pose a rider keeps its position in: the piece's live pose, tracking `update`.
-    const pose = loaded.basePose(lift.colliderHandle)!
-    expect(pose.position.y).toBeCloseTo(visual.position.y, 6)
-    expect(pose.rotation.w).toBeCloseTo(1, 6) // a mover does not spin
-    // Static geometry is not a movement base — nothing to ride.
-    expect(loaded.basePose(staticFloor.colliderHandle)).toBeUndefined()
-    world.free()
-  })
-
-  it('basePose follows a spinning piece orientation', () => {
-    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLegacyLevel(world, {
-      id: 'disc',
-      config: { fallBehavior: 'physical-fall', fallY: -3 },
-      instances: [
-        {
-          prefab: { id: 'd', pieces: [{ collider: { kind: 'box', halfExtents: vec3(3, 0.2, 3) }, transform: { position: vec3(0, 0, 0) }, trigger: { kind: 'hazard' } }] },
-          transform: { position: vec3(0, 0, 0) },
-          behavior: spins(vec3(0, 0, 0), vec3(0, 1, 0), 4000),
-        },
-      ],
-    })
-    const disc = loaded.triggers[0]!
-    loaded.update(0)
-    expect(loaded.basePose(disc.colliderHandle)!.rotation.w).toBeCloseTo(1, 6) // θ=0 → identity
-    loaded.update(1000) // quarter period → +90° about +y
-
-    // A quarter turn about +y: (x,y,z,w) = (0, sin45, 0, cos45). A rider's stored local point
-    // maps through this, which is what makes it orbit rather than spin in place.
-    const pose = loaded.basePose(disc.colliderHandle)!
-    expect(pose.rotation.y).toBeCloseTo(Math.SQRT1_2, 5)
-    expect(pose.rotation.w).toBeCloseTo(Math.SQRT1_2, 5)
-    expect(pose.position.y).toBeCloseTo(0, 6) // spins in place, does not translate
-    world.free()
-  })
-
-  it('a convex collider becomes a real solid the character rests on', () => {
-    const world = createPhysicsWorld() // character drives its own vertical movement
-    // A wedge: the end faces are not parallel, which is exactly what a box cannot express.
-    const points = [
-      vec3(-2, -0.25, -2),
-      vec3(-2, -0.25, 2),
-      vec3(-2, 0.25, -2),
-      vec3(-2, 0.25, 2),
-      vec3(2, -0.25, -1),
-      vec3(2, -0.25, 1),
-      vec3(2, 0.25, -1),
-      vec3(2, 0.25, 1),
-    ]
-    const loaded = instantiateLegacyLevel(world, {
-      id: 'convex',
-      config: { fallBehavior: 'physical-fall', fallY: -10 },
-      instances: [{ prefab: { id: 'wedge', pieces: [{ collider: { kind: 'convex', points }, transform: { position: vec3(0, 0, 0) } }] }, transform: { position: vec3(0, 0, 0) } }],
-    })
-    expect(loaded.visuals[0]!.collider.kind).toBe('convex')
-
-    const char = world.addCharacter({ position: vec3(0, 3, 0), radius: 0.4, halfHeight: 0.5 })
-    for (let i = 0; i < 120; i++) {
-      char.move({ x: 0, y: -0.05, z: 0 })
-      world.step(1 / 60)
-    }
-    // Landed on the top face (y = 0.25) rather than falling through it.
-    expect(char.translation().y).toBeGreaterThan(0.25)
-    expect(char.translation().y).toBeLessThan(2)
-    world.free()
-  })
-
-  it('bakes scale into convex points exactly, unlike ball and capsule', () => {
-    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const points = [vec3(-1, -1, -1), vec3(1, -1, -1), vec3(-1, 1, -1), vec3(1, 1, -1), vec3(-1, -1, 1), vec3(1, -1, 1), vec3(-1, 1, 1), vec3(1, 1, 1)]
-    const loaded = instantiateLegacyLevel(world, {
-      id: 'scaled-convex',
-      config: { fallBehavior: 'physical-fall', fallY: -10 },
-      instances: [
-        {
-          prefab: { id: 'c', pieces: [{ collider: { kind: 'convex', points }, transform: { position: vec3(0, 0, 0) } }] },
-          transform: { position: vec3(0, 0, 0), scale: vec3(2, 3, 4) },
-        },
-      ],
-    })
-    const col = loaded.visuals[0]!.collider
-    expect(col.kind).toBe('convex')
-    if (col.kind !== 'convex') return
-    // Every point scaled per-axis — no approximation, which is the ball/capsule limitation.
-    expect(col.points[0]).toEqual(vec3(-2, -3, -4))
-    expect(col.points[7]).toEqual(vec3(2, 3, 4))
-    world.free()
-  })
-
-  it('gives every clock-driven piece a stable index, and poses it at tick or at render time', () => {
-    // The machinery relative-to-base replication stands on (ADR 0021). A rider sends the index of the
-    // piece it is on and its position *in that piece's frame*; a viewer has to turn that back into a world
-    // position against the pose the deck was **drawn** at, which is not the same as the pose physics last
-    // resolved against. Getting that distinction wrong is the whole bug this replaced: the rider ends up
-    // 100 ms behind the deck and slides across it whenever the platform turns around.
-    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLegacyLevel(world, {
-      id: 'bases',
-      config: { fallBehavior: 'physical-fall', fallY: -3 },
-      instances: [
-        // A static piece first, to prove the index counts clock-driven pieces rather than all of them.
-        {
-          prefab: { id: 's', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: { kind: 'checkpoint' } }] },
-          transform: { position: vec3(0, 0, 0) },
-        },
-        {
-          prefab: { id: 'm', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: { kind: 'hazard' } }] },
+          id: 'n0',
           transform: { position: vec3(0, 1, 0) },
-          behavior: moves(vec3(0, 1, 0), vec3(1, 0, 0), 8, 4000),
+          components: [
+            comp('c0', COLLIDER, { ...box(), center: vec3(-2, 0, 0) }),
+            comp('c1', COLLIDER, { ...box(), center: vec3(2, 0, 0) }),
+            comp('c2', RENDERER, { material: '' }),
+          ],
         },
-        {
-          prefab: { id: 'r', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: { kind: 'goal' } }] },
-          transform: { position: vec3(0, 3, 0) },
-          behavior: spins(vec3(0, 0, 0), vec3(0, 1, 0), 8000),
-        },
-      ],
-    })
-    const mover = loaded.triggers.find((t) => t.kind === 'hazard')!
-    const turntable = loaded.triggers.find((t) => t.kind === 'goal')!
-    const staticFloor = loaded.triggers.find((t) => t.kind === 'checkpoint')!
-
-    // Indices are dense over the clock-driven pieces, in level order, and static geometry has none.
-    expect(loaded.baseIndex(mover.colliderHandle)).toBe(0)
-    expect(loaded.baseIndex(turntable.colliderHandle)).toBe(1)
-    expect(loaded.baseIndex(staticFloor.colliderHandle)).toBeUndefined()
-    expect(loaded.basePoseOf(2, 'render')).toBeUndefined()
-
-    // Two ticks apart, then drawn halfway between them: the render pose is the interpolated one, which is
-    // where the deck visibly is, and the tick pose is where physics left it. A viewer must use the first.
-    loaded.update(0)
-    const atZero = loaded.basePoseOf(0, 'tick')!.position.x
-    loaded.update(500)
-    const atTick = loaded.basePoseOf(0, 'tick')!.position.x
-    expect(atTick, 'the piece really moved between the two ticks').toBeGreaterThan(atZero + 0.5)
-    expect(loaded.basePose(mover.colliderHandle)!.position.x, 'same pose the carry solver reads').toBeCloseTo(atTick, 9)
-    loaded.render(0.5)
-    expect(loaded.basePoseOf(0, 'render')!.position.x, 'drawn halfway between the last two ticks').toBeCloseTo(
-      (atZero + atTick) / 2,
-      9,
+      ]),
     )
-    expect(loaded.basePoseOf(0, 'tick')!.position.x, 'and the tick pose is untouched by drawing').toBeCloseTo(atTick, 9)
-
-    // The round trip a rider makes: a *fixed* point in the deck's frame becomes a world point that tracks
-    // the deck exactly. That is the whole mechanism — the number on the wire does not change while the
-    // platform moves, so no amount of latency can slide the rider across the deck.
-    const stand = vec3(0.5, 0.6, -1.25)
-    const worldOn = (index: number): Vec3 => {
-      const deck = loaded.basePoseOf(index, 'render')!
-      const p = rotateVec3(deck.rotation, stand)
-      return vec3(deck.position.x + p.x, deck.position.y + p.y, deck.position.z + p.z)
-    }
-    const before = worldOn(0)
-    loaded.update(1000)
-    loaded.render(1)
-    const after = worldOn(0)
-    const deckMoved = loaded.basePoseOf(0, 'render')!.position.x - (atZero + atTick) / 2
-    expect(after.x - before.x, 'the rider travels exactly as far as the deck did').toBeCloseTo(deckMoved, 9)
-    expect(after.y).toBeCloseTo(before.y, 9)
-
-    // A turntable's frame carries rotation, so the same round trip has to go through its orientation.
-    loaded.update(2000) // quarter period -> +90 deg about Y
-    loaded.render(1)
-    const spun = loaded.basePoseOf(1, 'render')!
-    const point = rotateVec3(spun.rotation, vec3(1, 0, 0)) // local +x
-    expect(point.z, 'local +x should have swung to -z').toBeCloseTo(-1, 3)
-    world.free()
+    expect(loaded.visuals.map((v) => v.position)).toEqual([vec3(-2, 1, 0), vec3(2, 1, 0)])
   })
 
-  it('reports what a moving piece does to whoever stands on it, translation and spin alike', () => {
-    // A rider's `carry` for free: the wire already says which piece they ride (ADR 0021), and a piece's
-    // own motion is known to every client, so the velocity it imparts at the rider's exact spot needs no
-    // bytes. This is what lets a peer brace against a deck starting under them.
-    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const T = 4000
-    const DIST = 8
-    const loaded = instantiateLegacyLevel(world, {
-      id: 'carry',
-      config: { fallBehavior: 'physical-fall', fallY: -3 },
-      instances: [
+  it('reports one node for both colliders, so a rule on it covers either one', () => {
+    const loaded = load(
+      levelOf([
         {
-          prefab: { id: 'm', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: { kind: 'hazard' } }] },
-          transform: { position: vec3(0, 1, 0) },
-          behavior: moves(vec3(0, 1, 0), vec3(1, 0, 0), DIST, T),
+          id: 'n0',
+          transform: { position: vec3(0, 0, 0) },
+          components: [comp('c0', COLLIDER, box()), comp('c1', COLLIDER, { ...box(), center: vec3(3, 0, 0) })],
         },
-        {
-          prefab: { id: 'r', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: { kind: 'goal' } }] },
-          transform: { position: vec3(0, 3, 0) },
-          behavior: spins(vec3(0, 0, 0), vec3(0, 1, 0), T),
-        },
-      ],
-    })
-    const stand = vec3(1.5, 0.2, 0)
-
-    // Nothing to difference against on the first update.
-    loaded.update(0)
-    expect(loaded.baseCarry(0, stand)).toEqual(vec3(0, 0, 0))
-
-    // A quarter period in, the mover is at its fastest: x = distance·(1 − cos(2πt/T))/2, so the speed is
-    // distance·π/T — 6.28 m/s here. Sampled across a 10 ms step, which is close enough to the derivative.
-    loaded.update(T / 4 - 5)
-    loaded.update(T / 4 + 5)
-    const peak = (DIST * Math.PI) / (T / 1000)
-    expect(loaded.baseCarry(0, stand)!.x).toBeCloseTo(peak, 2)
-    expect(loaded.baseCarry(0, stand)!.z).toBeCloseTo(0, 6)
-
-    // At the end of the travel it is momentarily still — which is why the *slide* a viewer used to see
-    // peaked at the reversal while the offset peaked mid-travel (ADR 0021).
-    loaded.update(T / 2 - 5)
-    loaded.update(T / 2 + 5)
-    expect(Math.abs(loaded.baseCarry(0, stand)!.x)).toBeLessThan(0.05)
-
-    // The turntable is the case a position-only difference would miss: the piece's origin never moves, so
-    // all of the rider's motion is tangential. |v| = ω·r, and it is perpendicular to the radius.
-    loaded.update(0)
-    loaded.update(10)
-    const spin = loaded.baseCarry(1, stand)!
-    const omega = (2 * Math.PI) / (T / 1000)
-    expect(Math.hypot(spin.x, spin.z), 'tangential speed is omega times radius').toBeCloseTo(omega * 1.5, 2)
-    // Perpendicular to the radius at the *midpoint* of the arc, not at its start: a finite difference
-    // measures the chord, which carries a half-angle bias of |v|·r·sin(omega·dt/2) — here 0.028, entirely
-    // inherent to taking a velocity by differencing and not worth removing. Against the mid-arc radius it
-    // is exactly perpendicular, which is the property actually worth asserting.
-    const mid = rotateVec3(axisAngleToQuat(vec3(0, 1, 0), (omega * 10) / 1000 / 2), stand)
-    expect(spin.x * mid.x + spin.z * mid.z).toBeCloseTo(0, 9)
-    expect(spin.y, 'a turntable lifts nobody').toBeCloseTo(0, 6)
-
-    // A rider at the axis is carried nowhere at all, however fast it spins.
-    expect(Math.hypot(...Object.values(loaded.baseCarry(1, vec3(0, 0, 0))!))).toBeCloseTo(0, 6)
-    expect(loaded.baseCarry(2, stand), 'no such piece').toBeUndefined()
-    world.free()
+      ]),
+    )
+    expect(loaded.nodes).toHaveLength(1)
+    expect(loaded.nodes[0]?.id).toBe('n0')
   })
 
-  it('rotates child piece positions by the instance rotation', () => {
-    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLegacyLevel(world, {
-      id: 'inst-rot',
-      config: { fallBehavior: 'physical-fall', fallY: -3 },
-      instances: [
+  // A rotated node turns its colliders' offsets with it, or two colliders would swap sides.
+  it('rotates an offset with the node', () => {
+    const loaded = load(
+      levelOf([
         {
-          prefab: { id: 'p', pieces: [{ collider: { kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) }, transform: { position: vec3(1, 0, 0) } }] },
-          transform: { position: vec3(10, 0, 0), rotation: vec3(0, Math.PI / 2, 0) }, // +90° about Y
+          id: 'n0',
+          transform: { position: vec3(0, 0, 0), rotation: vec3(0, Math.PI / 2, 0) },
+          components: [comp('c0', COLLIDER, { ...box(), center: vec3(2, 0, 0) }), comp('c1', RENDERER, { material: '' })],
         },
-      ],
-    })
-    // Local (1,0,0) rotated +90° about Y → (0,0,-1), plus origin (10,0,0).
+      ]),
+    )
     const p = loaded.visuals[0]!.position
-    expect(p.x).toBeCloseTo(10, 6)
-    expect(p.z).toBeCloseTo(-1, 6)
-    world.free()
+    expect(p.x).toBeCloseTo(0, 9)
+    expect(p.z).toBeCloseTo(-2, 9)
+  })
+})
+
+describe('a node draws only what it says it draws', () => {
+  it('draws nothing without a Renderer, the way a GameObject with no renderer is invisible', () => {
+    const loaded = load(levelOf([{ id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', COLLIDER, box())] }]))
+    expect(loaded.visuals).toEqual([])
+    expect(loaded.nodes, 'still solid, and still something a rule can sit on').toHaveLength(1)
+  })
+
+  it('draws a model without colliding, which no Piece could do', () => {
+    const loaded = load(
+      levelOf([
+        { id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', MESH, { model: 'mesh1' }), comp('c1', RENDERER, { material: '' })] },
+      ]),
+    )
+    expect(loaded.visuals).toHaveLength(1)
+    expect(loaded.visuals[0]?.model).toBe('mesh1')
+    expect(loaded.nodes, 'nothing to touch').toEqual([])
+  })
+
+  // A Renderer with nothing to render has nothing to draw. Inventing a box for it would put geometry in the
+  // world that no data asked for.
+  it('draws nothing for a Renderer with no mesh and no collider', () => {
+    const loaded = load(levelOf([{ id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', RENDERER, { material: 'mat' })] }]))
+    expect(loaded.visuals).toEqual([])
+  })
+
+  /** Unity's rule, and the reason the two are separate components (ADR 0039). */
+  it('draws nothing for a Mesh with no Renderer, the way a MeshFilter alone shows nothing', () => {
+    const loaded = load(
+      levelOf([{ id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', COLLIDER, box()), comp('c1', MESH, { model: 'mesh1' })] }]),
+    )
+    expect(loaded.visuals).toEqual([])
+    expect(loaded.nodes, 'still solid').toHaveLength(1)
+  })
+
+  it('falls back to the colliders when a Mesh names no model', () => {
+    const loaded = load(
+      levelOf([
+        {
+          id: 'n0',
+          transform: { position: vec3(0, 0, 0) },
+          components: [comp('c0', COLLIDER, box()), comp('c1', MESH, { model: '' }), comp('c2', RENDERER, { material: 'mat' })],
+        },
+      ]),
+    )
+    expect(loaded.visuals).toHaveLength(1)
+    expect(loaded.visuals[0]?.model, 'no mesh asset, so the collider shape').toBeUndefined()
+  })
+
+  it('ignores a component that is switched off', () => {
+    const loaded = load(
+      levelOf([
+        {
+          id: 'n0',
+          transform: { position: vec3(0, 0, 0) },
+          components: [{ ...comp('c0', COLLIDER, box()), enabled: false }, comp('c1', RENDERER, { material: '' })],
+        },
+      ]),
+    )
+    expect(loaded.nodes, 'no body, so nothing can touch it').toEqual([])
+    expect(loaded.visuals, 'and the Renderer has no collider left to draw').toEqual([])
+  })
+})
+
+describe('a material that cascades', () => {
+  const tree = (): Node[] => [
+    {
+      id: 'root',
+      transform: { position: vec3(0, 0, 0) },
+      components: [comp('c0', MATERIAL_OVERRIDE, { material: 'gold' })],
+      children: [
+        {
+          id: 'kid',
+          transform: { position: vec3(1, 0, 0) },
+          components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: 'plain' })],
+        },
+      ],
+    },
+  ]
+
+  /**
+   * `PrefabInstance.material` stopped at the instance's own pieces. There is no longer a distinction between
+   * a node's pieces and its children to stop at, so it reaches the whole subtree.
+   */
+  it('beats a descendant’s own material', () => {
+    expect(load(levelOf(tree())).visuals[0]?.material).toBe('gold')
+  })
+
+  it('is itself beaten by a closer one', () => {
+    const nodes = tree()
+    nodes[0]!.children![0]!.components.push(comp('c2', MATERIAL_OVERRIDE, { material: 'ice' }))
+    expect(load(levelOf(nodes)).visuals[0]?.material).toBe('ice')
+  })
+
+  it('greyboxes a subtree when it says nothing, which is an opinion and not an absence', () => {
+    const nodes = tree()
+    nodes[0]!.components = [comp('c0', MATERIAL_OVERRIDE, { material: '' })]
+    expect(load(levelOf(nodes)).visuals[0]?.material).toBeUndefined()
+  })
+})
+
+describe('spawn', () => {
+  it('comes from the component, composed through its parents', () => {
+    const loaded = load(
+      levelOf([
+        {
+          id: 'root',
+          transform: { position: vec3(5, 0, 0) },
+          components: [],
+          children: [{ id: 'sp', transform: { position: vec3(0, 2, 0) }, components: [comp('c0', SPAWN)] }],
+        },
+      ]),
+    )
+    expect(loaded.markers).toEqual([{ kind: 'spawn', position: vec3(5, 2, 0) }])
+  })
+})
+
+describe('resolving a placement against its prefab', () => {
+  const prefab: Node = {
+    id: 'root',
+    name: 'pad',
+    transform: { position: vec3(0, 0, 0) },
+    components: [comp('rc0', TRACK, { keys: moveTrack(vec3(0, 0, 0), vec3(0, 1, 0), 2, 1000), loop: 'loop', phaseMs: 0 })],
+    children: [
+      {
+        id: 'p0',
+        transform: { position: vec3(0, 0, 0) },
+        components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: 'plain' })],
+      },
+    ],
+  }
+
+  const placed = (node: Partial<Node>): Level =>
+    levelOf([{ id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [], prefab: 'pad', ...node }], { pad: prefab })
+
+  it('takes the prefab’s components and children, wearing the placement’s transform', () => {
+    const level = placed({ transform: { position: vec3(7, 0, 0) } })
+    const r = effectiveNode(level, level.nodes[0]!, TYPES)
+    expect(r.transform.position).toEqual(vec3(7, 0, 0))
+    expect(r.components.map((c) => c.type)).toEqual([TRACK])
+    expect(r.children.map((c) => c.id)).toEqual(['p0'])
+  })
+
+  it('patches a descendant’s parameters without touching the prefab', () => {
+    const level = placed({ overrides: { p0: { params: { c1: { material: 'gold' } } } } })
+    expect(load(level).visuals[0]?.material).toBe('gold')
+    expect(prefab.children![0]!.components[1]!.params.material, 'the definition is untouched').toBe('plain')
+  })
+
+  it('removes an inherited component on one placement only', () => {
+    const level = placed({ overrides: { p0: { removed: ['c1'] } } })
+    expect(load(level).visuals, 'nothing left to draw it').toEqual([])
+    expect(load(placed({})).visuals, 'and the plain placement still draws').toHaveLength(1)
+  })
+
+  it('adds a component to one placement only', () => {
+    const level = placed({ overrides: { p0: { added: [comp('a0', COLLIDER, { ...box(), center: vec3(4, 0, 0) })] } } })
+    expect(load(level).visuals.map((v) => v.position.x)).toEqual([0, 4])
+  })
+
+  it('switches an inherited component off on one placement only', () => {
+    const level = placed({ overrides: { p0: { enabled: { c0: false } } } })
+    expect(load(level).nodes, 'no collider, so nothing to stand on').toEqual([])
+  })
+
+  it('lets the placement’s own singleton beat the prefab’s', () => {
+    const level = placed({ components: [comp('o0', TRACK, { keys: [], loop: 'loop', phaseMs: 0 })] })
+    const r = effectiveNode(level, level.nodes[0]!, TYPES)
+    expect(r.components).toHaveLength(1)
+    expect(r.components[0]?.id, 'the placement’s, not the prefab’s').toBe('o0')
+  })
+
+  it('appends a repeatable one instead of replacing', () => {
+    const level = levelOf(
+      [
+        {
+          id: 'n0',
+          transform: { position: vec3(0, 0, 0) },
+          components: [comp('o0', COLLIDER, { ...box(), center: vec3(9, 0, 0) })],
+          prefab: 'solid',
+        },
+      ],
+      { solid: { id: 'root', transform: { position: vec3(0, 0, 0) }, components: [comp('rc0', COLLIDER, box())] } },
+    )
+    const r = effectiveNode(level, level.nodes[0]!, TYPES)
+    expect(r.components.map((c) => c.id)).toEqual(['rc0', 'o0'])
+  })
+
+  it('keeps the placement’s own children after the inherited ones', () => {
+    const level = placed({
+      children: [{ id: 'mine', transform: { position: vec3(0, 3, 0) }, components: [comp('c0', COLLIDER, box())] }],
+    })
+    const r = effectiveNode(level, level.nodes[0]!, TYPES)
+    expect(r.children.map((c) => c.id)).toEqual(['p0', 'mine'])
+  })
+
+  // A prefab that lost a node must not break every placement that had touched it.
+  it('ignores an override for a node the prefab no longer has', () => {
+    const level = placed({ overrides: { gone: { name: 'nobody' } } })
+    expect(() => load(level)).not.toThrow()
+  })
+
+  it('carries the prefab’s motion, so a placement’s children ride it', () => {
+    const level = placed({
+      children: [
+        {
+          id: 'mine',
+          transform: { position: vec3(0, 1, 0) },
+          components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: '' })],
+        },
+      ],
+    })
+    const loaded = load(level)
+    loaded.update(500)
+    // Two visuals: the prefab's own piece at the root's pose, then the placement's child one metre above it.
+    expect(loaded.visuals[0]!.position.y, 'the track lifted the prefab piece by 2').toBeCloseTo(2, 6)
+    expect(loaded.visuals[1]!.position.y, 'and the rider went with it, keeping its own 1').toBeCloseTo(3, 6)
   })
 })

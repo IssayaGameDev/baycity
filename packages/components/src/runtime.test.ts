@@ -1,6 +1,6 @@
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { COLLIDER, instantiateNodeLevel, type ComponentData, type Node, type NodeLevel, type WorldNode } from '@mp/content'
+import { COLLIDER, instantiateLevel, type ComponentData, type Node, type Level, type WorldNode } from '@mp/content'
 import { vec3 } from '@mp/core'
 
 import { createComponentRuntime, characterAccess, hasHooks, type Effects } from './runtime'
@@ -19,7 +19,7 @@ import { ENGINE_COMPONENTS } from './engine'
 const comp = (id: string, type: string, params: Record<string, unknown> = {}): ComponentData => ({ id, type, params })
 const box = { shape: { kind: 'box', halfExtents: vec3(1, 1, 1) }, center: vec3(0, 0, 0) }
 
-const levelOf = (nodes: Node[]): NodeLevel => ({ id: 'fx', config: { fallBehavior: 'physical-fall', fallY: -999 }, nodes })
+const levelOf = (nodes: Node[]): Level => ({ id: 'fx', config: { fallBehavior: 'physical-fall', fallY: -999 }, nodes })
 
 /** Counts every call, so a test can assert order and how often something ran. */
 const log: string[] = []
@@ -62,8 +62,8 @@ const Touchy = defineComponent({
 
 const TEST_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Bumper, Checkpoint, Goal, Hazard, Track, Counter, Peeker, Wanderer, Touchy])
 
-const load = (nodes: Node[]): ReturnType<typeof instantiateNodeLevel> =>
-  instantiateNodeLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), levelOf(nodes), TEST_REGISTRY)
+const load = (nodes: Node[]): ReturnType<typeof instantiateLevel> =>
+  instantiateLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), levelOf(nodes), TEST_REGISTRY)
 
 const noEffects = (): Effects => ({ kill: () => {}, progress: () => {} })
 
@@ -298,9 +298,9 @@ describe('node references (stage C4)', () => {
     onAttach: (self) => void log.push(`link:${self.node.id}->${self.find(self.params.target)?.id ?? 'nothing'}`),
   })
   const REG = createRegistry([...ENGINE_COMPONENTS, Linked])
-  const loadWith = (level: NodeLevel): ReturnType<typeof instantiateNodeLevel> =>
-    instantiateNodeLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), level, REG)
-  const attach = (level: NodeLevel): void => {
+  const loadWith = (level: Level): ReturnType<typeof instantiateLevel> =>
+    instantiateLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), level, REG)
+  const attach = (level: Level): void => {
     log.length = 0
     createComponentRuntime(loadWith(level), REG, { character: { launch: () => {} }, effects: noEffects() }).attach(0, 0, 1 / 60)
   }
@@ -341,7 +341,7 @@ describe('node references (stage C4)', () => {
         { id: 'anchor', transform: { position: vec3(1, 0, 0) }, components: [] },
       ],
     }
-    const level: NodeLevel = {
+    const level: Level = {
       id: 'fx',
       config: { fallBehavior: 'physical-fall', fallY: -999 },
       prefabs: { pair: prefab },
@@ -365,7 +365,7 @@ describe('node references (stage C4)', () => {
 
   it('lets a reference set on a placement reach a level node, since that override lives in the level', () => {
     const prefab: Node = { id: 'root', name: 'one', transform: { position: vec3(0, 0, 0) }, components: [], children: [{ id: 'inner', transform: { position: vec3(0, 0, 0) }, components: [] }] }
-    const level: NodeLevel = {
+    const level: Level = {
       id: 'fx',
       config: { fallBehavior: 'physical-fall', fallY: -999 },
       prefabs: { one: prefab },

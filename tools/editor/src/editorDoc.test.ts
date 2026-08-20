@@ -7,12 +7,12 @@ import {
   TRACK,
   MESH,
   RENDERER,
-  instantiateNodeLevel,
+  instantiateLevel,
   moveTrack,
-  validateNodeLevel,
+  validateLevel,
   type ComponentData,
   type Node,
-  type NodeLevel,
+  type Level,
 } from '@mp/content'
 import { Bumper, Checkpoint, DEFAULT_REGISTRY, ENGINE_COMPONENTS, GAMEPLAY_COMPONENTS, Hazard, createRegistry, defineComponent } from '@mp/components'
 import { vec3, type Vec3 } from '@mp/core'
@@ -43,7 +43,7 @@ const solid = (id: string, position: Vec3): Node => ({
   components: [comp(`${id}-col`, COLLIDER, { shape: BOX, center: ZERO }), comp(`${id}-vis`, RENDERER, { material: '' })],
 })
 
-const blank = (): NodeLevel => ({ id: 'lv', config: { fallBehavior: 'respawn-checkpoint', fallY: -10 }, nodes: [] })
+const blank = (): Level => ({ id: 'lv', config: { fallBehavior: 'respawn-checkpoint', fallY: -10 }, nodes: [] })
 
 /** A two-node prefab: a root carrying only a transform, and a pad under it carrying the geometry. */
 const padPrefab = (): Node => ({ id: 'root', name: 'pad', transform: { position: ZERO }, components: [], children: [solid('pad', ZERO)] })
@@ -64,7 +64,7 @@ const idOf = (doc: Doc, i: number, type: string): string => {
 const paramOn = (doc: Doc, i: number, type: string, key: string): unknown => doc.components(i).find((c) => c.type === type)?.params[key]
 
 /** A level with one placement of `pad`: index 0 is the placement, index 1 the pad it inherits. */
-const placed = (): { level: NodeLevel; doc: Doc } => {
+const placed = (): { level: Level; doc: Doc } => {
   const level = blank()
   const doc = levelDoc(level, library())
   doc.place('pad', vec3(0, 0, 0))
@@ -659,9 +659,9 @@ describe('what it writes is what the game loads', () => {
     doc.removeComponent(spawn, idOf(doc, spawn, COLLIDER))
     doc.addComponent(spawn, SPAWN)
 
-    const parsed = validateNodeLevel(JSON.parse(JSON.stringify(doc.toJSON())), DEFAULT_REGISTRY)
+    const parsed = validateLevel(JSON.parse(JSON.stringify(doc.toJSON())), DEFAULT_REGISTRY)
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateNodeLevel(world, parsed, DEFAULT_REGISTRY)
+    const loaded = instantiateLevel(world, parsed, DEFAULT_REGISTRY)
 
     expect(loaded.visuals).toHaveLength(1)
     expect(loaded.visuals[0]!.position, 'the override moved it').toEqual(vec3(1, 2, 3))
@@ -673,7 +673,7 @@ describe('what it writes is what the game loads', () => {
   it('reopens with the same overrides after a round trip', () => {
     const { doc } = placed()
     doc.setName(1, 'moved')
-    const parsed = validateNodeLevel(JSON.parse(JSON.stringify(doc.toJSON())), DEFAULT_REGISTRY)
+    const parsed = validateLevel(JSON.parse(JSON.stringify(doc.toJSON())), DEFAULT_REGISTRY)
     const reopened = levelDoc(parsed, {})
     expect(reopened.overridesOf(1)).toContain('name')
     expect(reopened.label(1)).toBe('moved')
@@ -684,7 +684,7 @@ describe('node references (stage C4)', () => {
   const Linked = defineComponent({ type: 'Linked', params: { target: { kind: 'nodeRef' } } })
   const REG = createRegistry([...ENGINE_COMPONENTS, ...GAMEPLAY_COMPONENTS, Linked])
 
-  const linked = (): { level: NodeLevel; doc: Doc } => {
+  const linked = (): { level: Level; doc: Doc } => {
     const level = blank()
     const doc = levelDoc(level, library(), REG)
     const a = doc.placeModel('m', vec3(0, 0, 0))

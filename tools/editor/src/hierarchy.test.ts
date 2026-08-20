@@ -1,11 +1,11 @@
-import { COLLIDER, RENDERER, type ComponentData, type Node, type NodeLevel } from '@mp/content'
+import { COLLIDER, RENDERER, type ComponentData, type Node, type Level } from '@mp/content'
 import { vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
 import { levelDoc, prefabDoc, type Doc } from './editorDoc'
 import { ancestorPaths, dropTarget, rowsOf, zoneFor, type Openness, type Row } from './hierarchy'
 
-const blank = (): NodeLevel => ({ id: 'l', config: { fallBehavior: 'physical-fall', fallY: -20 }, nodes: [] })
+const blank = (): Level => ({ id: 'l', config: { fallBehavior: 'physical-fall', fallY: -20 }, nodes: [] })
 
 const comp = (id: string, type: string, params: Record<string, unknown> = {}): ComponentData => ({ id, type, params })
 

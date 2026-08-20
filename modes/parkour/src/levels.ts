@@ -1,4 +1,4 @@
-import { validateNodeLevel, type NodeLevel } from '@mp/content'
+import { validateLevel, type Level } from '@mp/content'
 import { DEFAULT_REGISTRY } from '@mp/components'
 
 /**
@@ -34,7 +34,7 @@ export const levelNames = (): string[] => {
  * The level called `name`, or the default for `null`. Throws for a name that is not there, listing what is —
  * the caller decides whether a typo should be fatal.
  */
-export const levelByName = (name: string | null): NodeLevel => {
+export const levelByName = (name: string | null): Level => {
   const wanted = name ?? DEFAULT_NAME
   const found = Object.entries(FILES).find(([path]) => nameOf(path) === wanted)
   if (found === undefined) {
@@ -44,5 +44,5 @@ export const levelByName = (name: string | null): NodeLevel => {
   }
   // Validated **with the registry**, so a bad component parameter is a load error rather than a surprise
   // mid-frame.
-  return validateNodeLevel(found[1], DEFAULT_REGISTRY)
+  return validateLevel(found[1], DEFAULT_REGISTRY)
 }

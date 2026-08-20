@@ -180,8 +180,20 @@ track migration was: instantiate old and new, compare the world pose-for-pose at
 
 ## Status
 
-**C1, C2, C3 and C4 are built.** ADR 0035 records the schema and the migration; ADR 0036 records the runtime
-and references. C5 is not started and needs Kodjo's decision.
+**C1, C2, C3 and C4 are built, and the legacy schema is deleted.** ADR 0035 records the schema and the
+migration; ADR 0036 the runtime and references; ADR 0039 the `Mesh`/`Renderer` correction. C5 is not started
+and needs Kodjo's decision.
+
+**This file is history, not a to-do.** It survives because five ADRs cite it for the reasoning behind the
+staging, and because the migration table below is the record of what each old field became. The code it
+describes is `packages/components` and `packages/content`; where the two disagree, the code is right. Anything
+still marked as an open question was answered — see the note at the bottom.
+
+The pieces-and-instances schema, the loader that read it, the converter, and the equivalence pass that proved
+the migration are **gone**. They lived until the migration had been confirmed in a browser and survived two
+further schema changes intact; git has them at `a013ebc`. What guards the content now is the mode's own
+`levels.test.ts` (every shipped level loads, instantiates and validates against the registry) and
+`references.test.ts` (every asset id resolves).
 
 Two things went differently from the plan below, both for the better:
 

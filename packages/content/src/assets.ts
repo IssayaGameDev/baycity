@@ -1,6 +1,6 @@
 import type { Vec3 } from '@mp/core'
 
-import type { Visual } from './types'
+
 
 /**
  * The asset layer: what content can reference besides its own authored primitives.
@@ -171,14 +171,6 @@ export const entriesFrom = (pairs: Iterable<readonly [string, AssetMeta]>): Asse
   }
   return out.sort((a, b) => a.path.localeCompare(b.path))
 }
-
-/**
- * Reading the visual layer. Small, but exported rather than duplicated: only a `model` visual has an
- * `asset`, so every reader needs the same narrowing, and the editor got it wrong in three places the first
- * time the union grew.
- */
-export const visualModel = (v: Visual | undefined): string | undefined => (v?.kind === 'model' ? v.asset : undefined)
-export const visualMaterial = (v: Visual | undefined): string | undefined => v?.material
 
 /** Ids a material depends on — its texture slots. What a preload pass has to fetch first. */
 export const materialDependencies = (material: MaterialAsset): string[] => {

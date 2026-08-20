@@ -12,7 +12,7 @@ import {
 import { createLocalController, type LocalController, type LocalWorld } from '@mp/client'
 import {
   assetsOfKind,
-  instantiateNodeLevel,
+  instantiateLevel,
   moveTrack,
   spinTrack,
   trackDuration,
@@ -22,11 +22,11 @@ import {
   type AssetEntry,
   type ComponentData,
   type Keyframe,
-  type LoadedNodeLevel,
+  type LoadedLevel,
   // Aliased: this file is DOM-heavy and `Node` is taken. A scene node is not a DOM node, and the day the two
   // are confused the error is a type error somewhere unrelated.
   type Node as SceneNode,
-  type NodeLevel,
+  type Level,
   type Pose,
   type Transform,
 } from '@mp/content'
@@ -87,7 +87,7 @@ stage.scene.add(grid, axes)
 
 // --- editor state ---
 let world: PhysicsWorld | null = null
-let loaded: LoadedNodeLevel | null = null // for marker/trigger gizmos (+ physics validity)
+let loaded: LoadedLevel | null = null // for marker/trigger gizmos (+ physics validity)
 let doc: Doc | null = null // the doc being edited — always the top of the stack
 /**
  * The editing context. `[0]` is the open file; a deeper entry is a prefab opened *from* an instance,
@@ -394,7 +394,7 @@ const rebuildLoaded = (): void => {
   world?.free()
   world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
   try {
-    loaded = instantiateNodeLevel(world, doc.asLevel(), DEFAULT_REGISTRY)
+    loaded = instantiateLevel(world, doc.asLevel(), DEFAULT_REGISTRY)
     buildMarkers()
   } catch (e) {
     loaded = null
@@ -470,7 +470,7 @@ const comp = (id: string, type: string, params: Record<string, unknown>): Compon
  * something a new level got for free. Hardcoding a material id here would also be a tool-source reference to
  * a content file somebody is free to delete.
  */
-const blankLevel = (id: string): NodeLevel => ({
+const blankLevel = (id: string): Level => ({
   id,
   config: { fallBehavior: 'respawn-checkpoint', fallY: -10 },
   // A literal ground slab: there are no makers to call any more (ADR 0027), and a new level still has to have
@@ -1940,7 +1940,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
  * file is the thing a person expects Ctrl+Z to walk.
  */
 interface EditSnapshot {
-  data: NodeLevel | SceneNode
+  data: Level | SceneNode
   mode: Mode
   /** Sibling paths of the selection (`"0/2"`), primary last — these survive renumbering where indices do not. */
   selectedPaths: string[]
@@ -2005,7 +2005,7 @@ const indexOfPath = (path: string | null): number | null => {
 
 const restore = (snapshot: EditSnapshot): void => {
   const data = structuredClone(snapshot.data)
-  const next = snapshot.mode === 'level' ? levelDoc(data as NodeLevel, userPrefabs) : prefabDoc(data as SceneNode)
+  const next = snapshot.mode === 'level' ? levelDoc(data as Level, userPrefabs) : prefabDoc(data as SceneNode)
   // Straight into the stack rather than through `setDoc`, which would reset the history we are walking.
   docStack.length = 0
   docStack.push({ doc: next, label: `${next.mode}: ${fileState.name}` })
