@@ -37,6 +37,18 @@ export interface ProjectHost {
   onMkdir: (parent: string, name: string) => void
   onRename: (path: string, name: string) => void
   onDelete: (path: string) => void
+  /**
+   * Open a context menu for a file or folder.
+   *
+   * The panel says *what* was right-clicked; the host decides what can be done to it, because that needs the
+   * document (is this prefab open?) and the asset database (is this material referenced?), neither of which
+   * belongs here.
+   *
+   * This replaced a `window.prompt()` in which **clearing the name deleted the file** — a folder and all its
+   * contents included. A blocking dialog whose empty state is destructive is the worst interaction in the
+   * editor, and it was reached by the same right-click that now opens this.
+   */
+  onContext: (at: { x: number; y: number }, path: string, isFolder: boolean) => void
   /** Move a file or folder into `toFolder`. */
   onMove: (from: string, toFolder: string) => void
   /**
@@ -268,15 +280,12 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     return b
   }
 
-  /** Right-click: rename, or delete when the name is cleared. */
+  /** Right-click hands the point and the target to the host, which owns the menu. */
   const contextMenu = (target: HTMLElement, path: string, isFolder: boolean): void => {
     target.addEventListener('contextmenu', (e) => {
       e.preventDefault()
-      const current = path.slice(path.lastIndexOf('/') + 1)
-      const name = prompt(`Rename — clear the name to delete this ${isFolder ? 'folder and its contents' : 'file'}`, current)
-      if (name === null) return
-      if (name.trim() === '') host.onDelete(path)
-      else if (name.trim() !== current) host.onRename(path, name.trim())
+      e.stopPropagation() // a tile's menu, not the panel's
+      host.onContext({ x: e.clientX, y: e.clientY }, path, isFolder)
     })
   }
 

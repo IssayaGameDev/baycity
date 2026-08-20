@@ -49,6 +49,7 @@ import {
   type LevelView,
 } from '@mp/render-three'
 import { levelDoc, prefabDoc, type ClipItem, type Doc, type KeyEditor, type Mode } from './editorDoc'
+import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
 import { listFiles, loadLevel, saveFile } from './filesApi'
 import { createHierarchy, type Hierarchy } from './hierarchy'
 import { createHistory } from './history'
@@ -894,6 +895,9 @@ const applySelection = (next: readonly number[]): void => {
   updateTrackHelper()
   timeline.render()
   uiChanged()
+  // After the panel has been rebuilt, not before: a nested object selected in the viewport is inside a
+  // collapsed parent as often as not, and marking a row nobody can see is the same as not marking it.
+  if (primary !== null) hierarchy.reveal(primary)
 }
 
 /** Select one item outright — the plain click, and what every command that lands on a new item does. */
@@ -929,13 +933,47 @@ canvas.addEventListener('pointerdown', (e) => {
   downY = e.clientY
   gizmoDragged = false
 })
+
+/** Point the raycaster at a client position. Shared by picking, placement and the right-click menu. */
+const castFrom = (clientX: number, clientY: number): void => {
+  const rect = canvas.getBoundingClientRect()
+  ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
+  raycaster.setFromCamera(ndc, stage.camera)
+}
+
+/** The document index under a client position, or `null`. */
+const indexUnder = (clientX: number, clientY: number): number | null => {
+  castFrom(clientX, clientY)
+  const hit = raycaster.intersectObjects(instanceRoot.children, true)[0]?.object
+  let o: THREE.Object3D | null = hit ?? null
+  while (o !== null && o.userData.index === undefined) o = o.parent
+  return o !== null && typeof o.userData.index === 'number' ? o.userData.index : null
+}
+
+/**
+ * The world point under a client position: the surface hit, or the ground plane behind it, snapped like a
+ * placement. `null` when the ray leaves the world entirely — pointing at the sky above the horizon.
+ */
+const surfaceUnder = (clientX: number, clientY: number): Vec3 | null => {
+  castFrom(clientX, clientY)
+  const surf = raycaster.intersectObjects(instanceRoot.children, true)[0]
+  const point = new THREE.Vector3()
+  if (surf !== undefined) point.copy(surf.point)
+  else if (raycaster.ray.intersectPlane(groundPlane, point) === null) return null
+  const snap = edit.snap ? edit.step : 0
+  const sx = snap !== 0 ? Math.round(point.x / snap) * snap : r4(point.x)
+  const sz = snap !== 0 ? Math.round(point.z / snap) * snap : r4(point.z)
+  return vec3(sx, r4(point.y), sz)
+}
+
 canvas.addEventListener('pointerup', (e) => {
+  // Left button only. Without this a right-click placed the armed prefab and moved the selection on its way
+  // to opening a menu, which is the sort of thing that gets blamed on the menu.
+  if (e.button !== 0) return
   if (playing) return // editing suspended during play (pointer = camera only)
   if (gizmoDragged) return // was dragging the gizmo, not a click
   if (Math.hypot(e.clientX - downX, e.clientY - downY) > 4) return // was an orbit drag
-  const rect = canvas.getBoundingClientRect()
-  ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
-  raycaster.setFromCamera(ndc, stage.camera)
+  castFrom(e.clientX, e.clientY)
 
   // Placement mode: drop the chosen palette entry on the surface (or ground plane).
   if (placing !== null && doc !== null) {
@@ -1097,6 +1135,8 @@ const editorShortcuts = createShortcuts([
     run: () => applySelection(doc === null ? [] : Array.from({ length: doc.count() }, (_, i) => i)),
     enabled: () => !playing && doc !== null && doc.count() > 0,
   },
+  // The menu offers Focus with `F` beside it, so the key has to exist or the menu is lying.
+  { id: 'focus', chords: ['f'], label: 'Focus the selection', run: () => focusSelection(), enabled: () => !playing && selection.length > 0 },
   { id: 'translate', chords: ['t', 'g'], label: 'Translate tool', run: () => setMode('translate'), enabled: () => !playing },
   { id: 'rotate', chords: ['r'], label: 'Rotate tool', run: () => setMode('rotate'), enabled: () => !playing },
   { id: 'scale', chords: ['s'], label: 'Scale tool', run: () => setMode('scale'), enabled: () => !playing },
@@ -1449,6 +1489,15 @@ const toolbar: Toolbar = createToolbar(
   },
 )
 
+/**
+ * The editor's one context menu (`menu.ts`).
+ *
+ * **Placeholder wiring.** Right-clicking the Hierarchy opens it with a single item that does nothing, so the
+ * look and the behaviour — where it opens near an edge, what dismisses it, how a disabled item reads — can be
+ * judged before any of the real entries exist. The list of those is in the session notes; nothing here is it.
+ */
+const contextMenu: ContextMenu = createContextMenu()
+
 // --- hierarchy ---
 const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
   doc: () => doc,
@@ -1493,6 +1542,237 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
   },
 })
 
+/**
+ * Drop this placement's overrides, or push them into the prefab.
+ *
+ * Named rather than inline in the Inspector's host, because the Hierarchy's menu offers the same two and a
+ * second copy would be a second set of edge cases.
+ */
+const revertOverride = (field?: string): void => {
+  if (selected === null || doc === null) return
+  doc.revert(selected, field)
+  recordEdit(field === undefined ? 'revert overrides' : `revert ${field}`)
+  buildItems()
+  rebuildLoaded()
+  applySelection(selection)
+  setStatus('reverted to the prefab')
+}
+
+/** Push this placement's overrides into the shared prefab. Named for the same reason as `revertOverride`. */
+const applyOverrides = (): void => {
+  if (selected === null || doc === null) return
+  doc.applyToPrefab(selected)
+  recordEdit('apply to prefab')
+  buildItems()
+  rebuildLoaded()
+  applySelection(selection)
+  setStatus('applied to the prefab — every instance follows')
+}
+
+/**
+ * The Hierarchy's right-click menus.
+ *
+ * Almost every entry is a command that already existed and could only be reached from the keyboard or by a
+ * gesture nobody discovers: rename was double-click only, Extract and Open lived in the Inspector's header,
+ * and delete on an inherited node did nothing at all with no explanation. The menu is where they become
+ * findable, which is why every disabled entry carries a reason rather than being left out.
+ */
+const menuFor = (index: number): MenuItem[] => {
+  if (doc === null) return []
+  const inherited = doc.kindOf(index) === 'inherited'
+  const ref = doc.refOf(index)
+  const shared = ref === null ? 0 : doc.refCount(ref)
+  const own = !inherited
+  const why = 'part of a prefab — its place belongs to the shared definition'
+  return [
+    { label: 'Rename', hint: 'double-click', run: () => hierarchy.beginRename(index) },
+    {
+      label: 'Add component',
+      // The submenu the Inspector's Add Component button opens, reachable without going there first.
+      items: doc.registry
+        .all()
+        .map((d) => d.type)
+        .filter((type) => doc?.canAdd(index, type) === true)
+        .map((type) => ({
+          label: type,
+          run: () => {
+            doc?.addComponent(index, type)
+            recordEdit('add component')
+            scheduleRebuild()
+            inspectorRebuild()
+            uiChanged()
+          },
+        })),
+    },
+    { label: 'Create empty child', divider: true, enabled: own, why, run: () => createEmpty(index) },
+    { label: 'Duplicate', hint: 'Ctrl+D', enabled: own, why, run: () => duplicateSelected() },
+    { label: 'Delete', hint: 'Del', enabled: own, why, run: () => deleteSelected() },
+    { label: 'Copy', hint: 'Ctrl+C', divider: true, enabled: own, why, run: () => copySelected() },
+    { label: 'Cut', hint: 'Ctrl+X', enabled: own, why, run: () => cutSelected() },
+    { label: 'Paste as child', hint: 'Ctrl+Shift+V', enabled: own && clipboard.length > 0, why: own ? 'nothing copied' : why, run: () => pasteClipboard(true) },
+    {
+      label: shared > 1 ? `Open prefab (${shared} placements)` : 'Open prefab',
+      divider: true,
+      enabled: ref !== null || inherited,
+      why: 'not linked to a prefab',
+      run: () => openPrefabOf(index),
+    },
+    {
+      label: 'Extract to prefab',
+      enabled: own && ref === null && doc.mode === 'level',
+      why: ref !== null ? 'already a prefab' : doc.mode === 'prefab' ? 'already inside a prefab' : why,
+      run: () => extractSelected(),
+    },
+    { label: 'Revert to prefab', divider: true, enabled: inherited && doc.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => revertOverride() },
+    { label: 'Apply to prefab', enabled: inherited && doc.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => applyOverrides() },
+  ]
+}
+
+/** The blank-space menu: what you can make when you are not pointing at anything. */
+const blankMenu = (): MenuItem[] => [
+  { label: 'Create empty object', run: () => createEmpty(null) },
+  { label: 'Paste', hint: 'Ctrl+V', enabled: clipboard.length > 0, why: 'nothing copied', divider: true, run: () => pasteClipboard(false) },
+  { label: 'Expand all', divider: true, run: () => hierarchy.setAllOpen(true) },
+  { label: 'Collapse all', run: () => hierarchy.setAllOpen(false) },
+]
+
+/**
+ * Create an empty node and select it.
+ *
+ * Placed at `at` when given (the point that was right-clicked), otherwise on the parent it groups, otherwise
+ * at the camera's focus — which is where a new object is expected to appear rather than at the world origin.
+ */
+const createEmpty = (parent: number | null, at?: Vec3): void => {
+  if (doc === null) return
+  const where = at ?? (parent === null ? vec3(r4(controls.target.x), r4(controls.target.y), r4(controls.target.z)) : vec3(0, 0, 0))
+  const landed = doc.placeEmpty(where, parent)
+  if (landed < 0) {
+    setStatus('nowhere to put that')
+    return
+  }
+  recordEdit('create empty')
+  buildItems()
+  scheduleRebuild()
+  select(landed)
+  uiChanged()
+}
+
+/**
+ * Frame the selection: put the orbit target on it and pull the camera back far enough to see all of it.
+ *
+ * Along the camera's *current* direction, so framing something never also spins the view — the one thing
+ * that makes a focus command disorienting rather than useful. A bounding sphere rather than the box's
+ * diagonal, so a long thin platform is framed by its length and not by a corner-to-corner measurement that
+ * would push the camera into the next county.
+ */
+const focusSelection = (): void => {
+  const box = new THREE.Box3()
+  for (const i of selection) {
+    const g = instanceGroups[i]
+    if (g !== undefined) box.expandByObject(g)
+  }
+  if (box.isEmpty()) return
+  const centre = box.getCenter(new THREE.Vector3())
+  const radius = Math.max(0.5, box.getBoundingSphere(new THREE.Sphere()).radius)
+  const back = stage.camera.position.clone().sub(controls.target)
+  // Degenerate only if the camera is already at its own target, which the controls do not allow.
+  if (back.lengthSq() < 1e-6) back.set(0, 1, 1)
+  const distance = (radius / Math.tan((stage.camera.fov * Math.PI) / 360)) * 1.4
+  controls.target.copy(centre)
+  stage.camera.position.copy(centre).add(back.normalize().multiplyScalar(distance))
+  controls.update()
+}
+
+/**
+ * Paste at a world point rather than beside the selection.
+ *
+ * The **first** item lands on the point and the rest keep their offsets from it, so pasting a group of five
+ * puts the group where you clicked instead of collapsing it onto one spot.
+ */
+const pasteAt = (point: Vec3): void => {
+  if (doc === null || clipboard.length === 0) return
+  const landed: number[] = []
+  for (const item of clipboard) {
+    const at = doc.paste(item, null)
+    if (at >= 0) landed.push(at)
+  }
+  const first = landed[0]
+  if (first === undefined) {
+    setStatus(doc.mode === 'level' ? 'the clipboard holds prefab nodes, not placements' : 'the clipboard holds placements, not nodes')
+    return
+  }
+  const from = doc.transformOf(first).position
+  const d = vec3(point.x - from.x, point.y - from.y, point.z - from.z)
+  for (const i of landed) {
+    const t = doc.transformOf(i)
+    doc.setTransform(i, { ...t, position: vec3(r4(t.position.x + d.x), r4(t.position.y + d.y), r4(t.position.z + d.z)) })
+  }
+  recordEdit(landed.length > 1 ? `paste ${landed.length} here` : 'paste here')
+  buildItems()
+  rebuildLoaded()
+  applySelection(landed)
+  loadNewReferences(() => {
+    buildItems()
+    applySelection(landed)
+  })
+}
+
+/**
+ * The viewport's right-click menu.
+ *
+ * On an object it is the Hierarchy's own list with Focus on top, because the same object should offer the same
+ * things wherever it is right-clicked. On empty space it is what can be *made* at the point under the pointer.
+ */
+const viewportMenu = (index: number | null, point: Vec3 | null): MenuItem[] => {
+  if (index !== null) return [{ label: 'Focus', hint: 'F', run: () => focusSelection() }, ...menuFor(index).map((m, n) => (n === 0 ? { ...m, divider: true } : m))]
+  return [
+    { label: 'Paste here', enabled: clipboard.length > 0 && point !== null, why: clipboard.length === 0 ? 'nothing copied' : 'no surface under the pointer', run: () => point !== null && pasteAt(point) },
+    { label: 'Create empty here', enabled: point !== null, why: 'no surface under the pointer', run: () => createEmpty(null, point ?? undefined) },
+    { label: 'Focus on the selection', divider: true, enabled: selection.length > 0, why: 'nothing selected', run: () => focusSelection() },
+  ]
+}
+
+/**
+ * Right-click in the viewport, opened on the **release** rather than the press.
+ *
+ * OrbitControls pans on right-drag, and `contextmenu` fires on the press — so at that moment there is no way
+ * to know whether a pan is starting. Waiting for the release and checking that the pointer barely moved is
+ * what lets both gestures share the button.
+ */
+let rightDownX = 0
+let rightDownY = 0
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button !== 2) return
+  rightDownX = e.clientX
+  rightDownY = e.clientY
+})
+// OrbitControls already suppresses the native menu on this element; done here too so the behaviour does not
+// depend on its internals.
+canvas.addEventListener('contextmenu', (e) => e.preventDefault())
+canvas.addEventListener('pointerup', (e) => {
+  if (e.button !== 2 || playing || doc === null) return
+  if (Math.hypot(e.clientX - rightDownX, e.clientY - rightDownY) > 4) return // was a pan
+  const index = indexUnder(e.clientX, e.clientY)
+  // Right-clicking an object selects it first, so the menu and the gizmo agree about the subject.
+  if (index !== null && !selection.includes(index)) select(index)
+  contextMenu.open(
+    { x: e.clientX, y: e.clientY },
+    viewportMenu(index, surfaceUnder(e.clientX, e.clientY)),
+    index === null ? undefined : doc.label(index),
+  )
+})
+
+$<HTMLDivElement>('#hierarchy').addEventListener('contextmenu', (e) => {
+  e.preventDefault()
+  if (playing || doc === null) return
+  const row = (e.target as HTMLElement).closest<HTMLElement>('[data-index]')
+  const index = row?.dataset.index === undefined ? null : Number(row.dataset.index)
+  // Right-clicking a row selects it first: a menu that acts on a *different* object than the one under the
+  // pointer is the classic way to delete the wrong thing.
+  if (index !== null && !selection.includes(index)) select(index)
+  contextMenu.open({ x: e.clientX, y: e.clientY }, index === null ? blankMenu() : menuFor(index), index === null ? undefined : doc.label(index))
+})
+
 // --- asset previews (thumbnails, cached) ---
 const previews: Previews = createPreviews({
   db: () => assets?.db ?? null,
@@ -1526,6 +1806,20 @@ const afterFileOp = (label: string, run: () => Promise<void>): void => {
   })()
 }
 
+/** Arm a placeable asset for the next viewport click, or disarm the one already waiting. */
+const armAsset = (assetId: string): void => {
+  const entry = assets?.db.byId[assetId]
+  if (entry === undefined) return
+  const kind = entry.kind === 'prefab' ? ('prefabAsset' as const) : ('model' as const)
+  placing = placing !== null && placing.kind !== 'own' && placing.assetId === assetId ? null : { kind, assetId }
+  refreshUi()
+}
+
+const renameAsset = (path: string, name: string): void =>
+  afterFileOp(`renamed to ${name}`, async () => assets?.move(path, renamedTo(path, name)) ?? Promise.resolve())
+
+const deleteAsset = (path: string): void => afterFileOp(`deleted ${path}`, async () => assets?.remove(path) ?? Promise.resolve())
+
 const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   ownPrefabs: () => doc?.palette() ?? [],
   db: () => assets?.db ?? null,
@@ -1538,13 +1832,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     placing = placing?.kind === 'own' && placing.name === name ? null : { kind: 'own', name }
     refreshUi()
   },
-  onPickAsset: (assetId) => {
-    const entry = assets?.db.byId[assetId]
-    if (entry === undefined) return
-    const kind = entry.kind === 'prefab' ? ('prefabAsset' as const) : ('model' as const)
-    placing = placing !== null && placing.kind !== 'own' && placing.assetId === assetId ? null : { kind, assetId }
-    refreshUi()
-  },
+  onPickAsset: armAsset,
   onSelectAsset: (assetId) => {
     // Selecting an asset and selecting something in the scene are the same slot in the Inspector, so one
     // clears the other rather than both claiming it.
@@ -1571,10 +1859,66 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
       refreshUi()
     })()
   },
+  /**
+   * A file or folder's menu.
+   *
+   * Rename still asks with a `prompt`, because an inline text field in a tile grid is its own piece of work and
+   * a name is genuinely a question. What is gone is the version where **clearing that prompt deleted the
+   * file** — deletion is now its own entry, and a folder's says how many things go with it.
+   */
+  onContext: (at, path, isFolder) => {
+    const current = path.slice(path.lastIndexOf('/') + 1)
+    const inFolder = isFolder ? (assets?.db.entries.filter((e) => e.path.startsWith(`${path}/`)).length ?? 0) : 0
+    const entry = isFolder ? undefined : assets?.db.entries.find((e) => e.path === path)
+    const placeable = entry?.kind === 'prefab' || entry?.kind === 'model'
+    contextMenu.open(
+      at,
+      [
+        {
+          label: placeable ? 'Place in the level' : 'Open in the Inspector',
+          enabled: entry !== undefined && (placeable || entry.kind === 'material'),
+          why: isFolder ? 'a folder is not an asset' : 'nothing to open for this kind',
+          run: () => {
+            if (entry === undefined) return
+            if (placeable) armAsset(entry.id)
+            else {
+              selectedAsset = entry.id
+              assetInspector.show(entry.id)
+              refreshUi()
+            }
+          },
+        },
+        {
+          label: 'Copy path',
+          divider: true,
+          // The only way to see what a `.meta` sidecar is about when a reference has gone stale.
+          run: () => void navigator.clipboard?.writeText(path).then(() => setStatus(`copied ${path}`)),
+        },
+        {
+          label: 'Rename…',
+          run: () => {
+            const name = prompt('Rename', current)
+            if (name === null || name.trim() === '' || name.trim() === current) return
+            renameAsset(path, name.trim())
+          },
+        },
+        {
+          label: isFolder ? (inFolder > 0 ? `Delete folder and ${inFolder} asset${inFolder === 1 ? '' : 's'}` : 'Delete empty folder') : 'Delete',
+          divider: true,
+          run: () => {
+            // A confirm only where it is warranted: a folder takes everything under it, and an id that
+            // disappears greyboxes silently rather than failing (ADR 0028).
+            if (inFolder > 0 && !confirm(`Delete ${current} and the ${inFolder} asset${inFolder === 1 ? '' : 's'} in it?`)) return
+            deleteAsset(path)
+          },
+        },
+      ],
+      current,
+    )
+  },
   onMkdir: (parent, name) => afterFileOp(`created ${name}`, async () => assets?.mkdir(parent, name) ?? Promise.resolve()),
-  onRename: (path, name) =>
-    afterFileOp(`renamed to ${name}`, async () => assets?.move(path, renamedTo(path, name)) ?? Promise.resolve()),
-  onDelete: (path) => afterFileOp(`deleted ${path}`, async () => assets?.remove(path) ?? Promise.resolve()),
+  onRename: renameAsset,
+  onDelete: deleteAsset,
   onMove: (from, toFolder) => {
     // Refuse a folder into its own subtree here as well as on the server: a rejected drop should not need a
     // round trip to say so.
@@ -1786,6 +2130,7 @@ const addKeyComponent = (): void => {
 }
 
 const timeline: Timeline = createTimeline($<HTMLDivElement>('#timeline'), {
+  menu: contextMenu,
   keys: selectedKeys,
   setKeys: setSelectedKeys,
   hasSelection: () => selected !== null,
@@ -1865,6 +2210,7 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
 
 // --- inspector ---
 const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<HTMLDivElement>('#inspector'), {
+  menu: contextMenu,
   doc: () => doc,
   selected: () => selected,
   selectionCount: () => selection.length,
@@ -1924,24 +2270,8 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   openPrefab: () => {
     if (selected !== null) openPrefabOf(selected)
   },
-  revertOverride: (field) => {
-    if (selected === null || doc === null) return
-    doc.revert(selected, field)
-    recordEdit(field === undefined ? 'revert overrides' : `revert ${field}`)
-    buildItems()
-    rebuildLoaded()
-    applySelection(selection)
-    setStatus('reverted to the prefab')
-  },
-  applyOverrides: () => {
-    if (selected === null || doc === null) return
-    doc.applyToPrefab(selected)
-    recordEdit('apply to prefab')
-    buildItems()
-    rebuildLoaded()
-    applySelection(selection)
-    setStatus('applied to the prefab — every instance follows')
-  },
+  revertOverride,
+  applyOverrides,
   editKeys: (componentId, param) => {
     if (selected === null || doc === null) return
     keyTarget = doc.keyEditors(selected).find((e) => e.componentId === componentId && e.param === param) ?? null

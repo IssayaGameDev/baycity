@@ -4,6 +4,7 @@ import { visibleParams, type ParamSpec } from '@mp/components'
 import { Pane } from 'tweakpane'
 
 import type { ComponentView, Doc } from './editorDoc'
+import type { ContextMenu, MenuItem } from './menu'
 
 /**
  * The Inspector panel: a stack of **sections**, one per component, with the fields inside each generated from
@@ -57,6 +58,13 @@ export interface InspectorHost {
   revertOverride: (field?: string) => void
   /** Push the selection's overrides into the shared prefab, so every placement of it follows. */
   applyOverrides: () => void
+  /**
+   * The editor's one context menu (`menu.ts`).
+   *
+   * Shared rather than built here, so a component's `⋯` and a right-click in the Hierarchy cannot both be open
+   * at once, and so dismissal — Escape, a press elsewhere, a scroll, a resize — is written once.
+   */
+  menu: ContextMenu
 }
 
 export interface Inspector {
@@ -98,11 +106,6 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
   if (className !== undefined) node.className = className
   if (text !== undefined) node.textContent = text
   return node
-}
-
-interface MenuItem {
-  readonly text: string
-  readonly run: () => void
 }
 
 export const createInspector = (head: HTMLElement, container: HTMLElement, host: InspectorHost): Inspector => {
@@ -190,15 +193,6 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   let panes: Pane[] = []
   /** The transform pane, which is the only one `sync` has to refresh. */
   let transformPane: Pane | null = null
-  let menu: HTMLElement | null = null
-
-  const closeMenu = (): void => {
-    menu?.remove()
-    menu = null
-  }
-  window.addEventListener('pointerdown', (e) => {
-    if (menu !== null && !menu.contains(e.target as Node)) closeMenu()
-  })
 
   /**
    * True while a build or `sync` is pushing values *into* a pane, so a refresh is not mistaken for a person
@@ -261,22 +255,10 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     at.scrollTop = top
   }
 
-  const openMenu = (at: HTMLElement, items: readonly MenuItem[]): void => {
-    closeMenu()
-    const box = el('div', 'menu')
+  /** Open under a header button, which is where the pointer already is. */
+  const openMenu = (at: HTMLElement, items: readonly MenuItem[], title?: string): void => {
     const rect = at.getBoundingClientRect()
-    box.style.left = `${Math.round(Math.max(4, rect.right - 180))}px`
-    box.style.top = `${Math.round(rect.bottom + 2)}px`
-    for (const item of items) {
-      const b = el('button', undefined, item.text)
-      b.addEventListener('click', () => {
-        closeMenu()
-        item.run()
-      })
-      box.append(b)
-    }
-    document.body.append(box)
-    menu = box
+    host.menu.open({ x: Math.round(rect.right), y: Math.round(rect.bottom + 2) }, items, title)
   }
 
   /**
@@ -337,7 +319,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       const items = opts.menu
       dots.addEventListener('click', (e) => {
         e.stopPropagation()
-        openMenu(dots, items)
+        openMenu(dots, items, opts.title)
       })
       header.append(dots)
     }
@@ -507,10 +489,10 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
      * the opposite of what somebody reaching for it wants.
      */
     if (inherited) {
-      if (overridden) items.push({ text: 'Revert to prefab', run: () => host.revertOverride(view.id) })
+      if (overridden) items.push({ label: 'Revert to prefab', run: () => host.revertOverride(view.id) })
     } else if (def !== undefined) {
       items.push({
-        text: 'Reset to defaults',
+        label: 'Reset to defaults',
         run: () => {
           edited(() => doc.setParams(at, view.id, { ...doc.registry.defaults(view.type) }))
           rebuildKeepingScroll()
@@ -518,11 +500,11 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       })
     }
     if (!inherited) {
-      items.push({ text: 'Move up', run: () => moveAndRebuild(doc, at, view.id, -1) })
-      items.push({ text: 'Move down', run: () => moveAndRebuild(doc, at, view.id, 1) })
+      items.push({ label: 'Move up', run: () => moveAndRebuild(doc, at, view.id, -1) })
+      items.push({ label: 'Move down', run: () => moveAndRebuild(doc, at, view.id, 1) })
     }
     items.push({
-      text: inherited ? (view.added ? 'Remove (undo add)' : 'Remove here') : 'Remove',
+      label: inherited ? (view.added ? 'Remove (undo add)' : 'Remove here') : 'Remove',
       run: () => {
         doc.removeComponent(at, view.id)
         host.onPropsChanged()
@@ -567,7 +549,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   /** The transform, as a section like any other — it used to be three rows floating with no owner. */
   const addTransformSection = (doc: Doc, at: number): void => {
     const overridden = doc.overridesOf(at).includes('transform')
-    const items: MenuItem[] = overridden ? [{ text: 'Revert to prefab', run: () => host.revertOverride('transform') }] : []
+    const items: MenuItem[] = overridden ? [{ label: 'Revert to prefab', run: () => host.revertOverride('transform') }] : []
     const section = addSection(TRANSFORM, { title: 'Transform', badge: overridden ? '1' : '', menu: items })
     const pane = section.pane()
     transformPane = pane
@@ -602,7 +584,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       openMenu(
         button,
         addable.map((type) => ({
-          text: type,
+          label: type,
           run: () => {
             const id = doc.addComponent(at, type)
             host.onPropsChanged()
@@ -653,7 +635,6 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   }
 
   const rebuild = (): void => {
-    closeMenu()
     for (const pane of panes) pane.dispose()
     panes = []
     transformPane = null

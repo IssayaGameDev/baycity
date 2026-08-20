@@ -128,6 +128,19 @@ export const dropTarget = (row: Row, zone: DropZone): { parent: number | null; a
   return { parent: row.parent, at: zone === 'above' ? row.siblingIndex : row.siblingIndex + 1 }
 }
 
+/**
+ * The paths of every ancestor of `index`, nearest first — what has to be open for its row to be on screen.
+ *
+ * Walks `Doc.parentOf` rather than picking the path string apart. A path is a sibling trail with two
+ * separators (`0/2#1`: the second child of the third node, then the node it inherits), and reconstructing an
+ * ancestor's path by trimming one is a second implementation of something the document already answers.
+ */
+export const ancestorPaths = (doc: Doc, index: number): string[] => {
+  const out: string[] = []
+  for (let at = doc.parentOf(index); at !== null; at = doc.parentOf(at)) out.push(doc.pathOf(at))
+  return out
+}
+
 export interface HierarchyHost {
   doc: () => Doc | null
   /**
@@ -149,6 +162,29 @@ export interface HierarchyHost {
 export interface Hierarchy {
   /** Rebuild from the document. Cheap — a level is tens of rows, so no virtualization. */
   render: () => void
+  /**
+   * Open whatever is hiding this row, and scroll it into view.
+   *
+   * Selecting in the viewport marks the row here, which is no use at all when the row is inside a collapsed
+   * parent: the panel highlighted something nobody could see. Unity reveals the selection, and so does this.
+   *
+   * Only ever *opens*. Collapsing on the way past would throw away a shape somebody arranged on purpose.
+   */
+  reveal: (index: number) => void
+  /**
+   * Start the inline rename on a row, as a double-click does.
+   *
+   * Exposed so a context menu can offer Rename: double-click is the only way in today, which is a gesture
+   * nobody discovers and one that a trackpad makes awkward.
+   */
+  beginRename: (index: number) => void
+  /**
+   * Open or shut every row that has contents.
+   *
+   * Collapse-all is the one that earns its place: a level of thirty placements, each with its prefab's nodes
+   * under it, is a hundred rows of which you want four.
+   */
+  setAllOpen: (open: boolean) => void
 }
 
 export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hierarchy => {
@@ -193,6 +229,7 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
         .join(' ')
       // Indentation is the only thing that says "inside", so it comes from the data, not from a class.
       el.style.paddingLeft = `${6 + row.depth * 14}px`
+      el.dataset.index = String(row.index) // what `reveal` scrolls to after a render
 
       const twist = document.createElement('span')
       twist.className = 'twist'
@@ -312,5 +349,37 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
     }
   }
 
-  return { render }
+  /**
+   * Open every ancestor of `index`, then bring the row on screen.
+   *
+   * Re-renders only when something actually opened, so selecting a row that was already visible is a scroll
+   * and nothing else. `block: 'nearest'` because a row already in view should not be yanked to the middle.
+   */
+  const reveal = (index: number): void => {
+    const doc = host.doc()
+    if (doc === null || index < 0 || index >= doc.count()) return
+    let opened = false
+    for (const path of ancestorPaths(doc, index)) {
+      if (expanded.has(path)) continue
+      expanded.add(path)
+      opened = true
+    }
+    if (opened) render()
+    container.querySelector(`[data-index="${index}"]`)?.scrollIntoView({ block: 'nearest' })
+  }
+
+  return {
+    render,
+    reveal,
+    beginRename: (index) => {
+      editing = index
+      render()
+    },
+    setAllOpen: (open) => {
+      expanded.clear()
+      const doc = host.doc()
+      if (open && doc !== null) for (let i = 0; i < doc.count(); i++) if (doc.childCount(i) > 0) expanded.add(doc.pathOf(i))
+      render()
+    },
+  }
 }

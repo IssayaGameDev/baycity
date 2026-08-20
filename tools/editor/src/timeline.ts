@@ -1,6 +1,7 @@
 import { trackDuration, type Keyframe, type Pose } from '@mp/content'
 
 import { DIRS, EASINGS, deleteKey, keyRows, moveKey, nudgeKey, putKey, setEasing, snapTime, sortedKeys } from './trackEdit'
+import type { ContextMenu, MenuItem } from './menu'
 
 /**
  * The Animation panel: the timeline strip (ADR 0029).
@@ -46,6 +47,8 @@ export interface TimelineHost {
   snapMs: () => number
   /** Give the selection a keyframe component, for when it has none. */
   addKeyComponent: () => void
+  /** The editor's one context menu (`menu.ts`), shared so two cannot be open at once. */
+  menu: ContextMenu
   /** Overwrite the keys with a preset built from the item's current pose. */
   applyMovePreset: (dir: string, distance: number, periodMs: number) => void
   applySpinPreset: (dir: string, periodMs: number) => void
@@ -91,47 +94,33 @@ export const tickStep = (spanMs: number, widthPx: number): number => {
 export const visibleSpan = (durationMs: number): number => Math.max(1000, durationMs * 1.25)
 
 export const createTimeline = (root: HTMLElement, host: TimelineHost): Timeline => {
-  let menu: HTMLElement | null = null
   /** The live playhead element and the span it is placed within, so `syncHead` needs no measuring. */
   let head: { node: HTMLElement; span: number } | null = null
 
-  const closeMenu = (): void => {
-    menu?.remove()
-    menu = null
-  }
-  document.addEventListener('pointerdown', (e) => {
-    if (menu !== null && !menu.contains(e.target as Node)) closeMenu()
-  })
-
-  /** Right-click on a key: everything that happens to one key but not on a drag. */
+  /**
+   * Right-click on a key: everything that happens to one key but not on a drag.
+   *
+   * The five easings go in a submenu. Flat, they were five of the eight entries and pushed the two that
+   * actually change the track to the bottom.
+   */
   const openKeyMenu = (index: number, x: number, y: number): void => {
-    closeMenu()
     const keys = host.keys()
     if (keys === null) return
-    const box = el('div', 'menu')
-    box.style.left = `${x}px`
-    box.style.top = `${y}px`
-
-    const item = (text: string, run: () => void): void => {
-      const b = el('button', undefined, text)
-      b.addEventListener('click', () => {
-        run()
-        closeMenu()
-      })
-      box.append(b)
-    }
-
-    box.append(el('div', 'menu-head', `key at ${secs(keyRows(keys)[index]?.t ?? 0)}`))
-    for (const easing of EASINGS) {
-      item(`ease out: ${easing}`, () => host.setKeys(setEasing(keys, index, easing)))
-    }
-    item('duplicate 1ms later (instant jump)', () => host.setKeys(nudgeKey(keys, index)))
-    item('delete key', () => {
-      host.setKeys(deleteKey(keys, index))
-      host.setActiveKey(null)
-    })
-    document.body.append(box)
-    menu = box
+    const items: MenuItem[] = [
+      {
+        label: 'Ease out of this key',
+        items: EASINGS.map((easing) => ({ label: easing, run: () => host.setKeys(setEasing(keys, index, easing)) })),
+      },
+      { label: 'Duplicate 1ms later (instant jump)', divider: true, run: () => host.setKeys(nudgeKey(keys, index)) },
+      {
+        label: 'Delete key',
+        run: () => {
+          host.setKeys(deleteKey(keys, index))
+          host.setActiveKey(null)
+        },
+      },
+    ]
+    host.menu.open({ x, y }, items, `key at ${secs(keyRows(keys)[index]?.t ?? 0)}`)
   }
 
   const syncHead = (): void => {
@@ -140,7 +129,7 @@ export const createTimeline = (root: HTMLElement, host: TimelineHost): Timeline 
   }
 
   const render = (): void => {
-    closeMenu()
+    // No menu to close: the shared one dismisses itself on the press that caused this render.
     head = null
     root.replaceChildren()
 

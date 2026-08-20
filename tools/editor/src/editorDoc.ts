@@ -123,6 +123,14 @@ export interface Doc {
    * routinely stale (`AlternatingDanger` shipped carrying `"id": "FastElevator"`, commit 0fc0b9f).
    */
   placePrefab: (root: Node, name: string, position: Vec3) => number
+  /**
+   * A node with only a transform — Unity's Create Empty.
+   *
+   * `parent` is a node to put it under, or `null` for the top level (the prefab's root, in prefab mode). It is
+   * the only thing here that makes a *grouping handle*: everything else places geometry, so before this the
+   * only way to get one was to place something and delete its components.
+   */
+  placeEmpty: (position: Vec3, parent: number | null) => number
   /** What a palette entry would place, without placing it — what a Project tile previews. */
   prefabForPalette: (name: string) => Node | undefined
   remove: (i: number) => void
@@ -701,6 +709,20 @@ const docOver = (level: NodeLevel, opts: { mode: Mode; library: Record<string, N
       const placed: Node = { id: freshId(), transform: { position }, components: [], prefab: key }
       roots.push(placed)
       return indexOf(placed)
+    },
+    placeEmpty: (position, parent) => {
+      const fresh: Node = { id: freshId(), name: 'empty', transform: { position }, components: [] }
+      if (parent !== null) {
+        const host = own(parent)?.authored
+        // An inherited node's children belong to the prefab, so there is nowhere here to put one.
+        if (host === undefined) return -1
+        ;(host.children ??= []).push(fresh)
+      } else if (mode === 'prefab') {
+        const host = roots[0]
+        if (host === undefined) return -1
+        ;(host.children ??= []).push(fresh)
+      } else roots.push(fresh)
+      return indexOf(fresh)
     },
     placeModel: (assetId, position) => {
       const fresh = solidNode({ kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) }, { position }, undefined, assetId)

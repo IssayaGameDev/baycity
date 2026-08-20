@@ -278,11 +278,12 @@
         border-top-color: #ff5c8a;
       }
 
-      /* ---- a small context menu, for what a right-click on a key offers ---- */
+      /* ---- the editor's one context menu (menu.ts) ---- */
       .menu {
         position: fixed;
         z-index: 50;
-        min-width: 180px;
+        min-width: 190px;
+        max-width: 320px;
         padding: 3px;
         background: var(--panel);
         border: 1px solid var(--line);
@@ -290,6 +291,9 @@
         box-shadow: 0 6px 18px #0009;
         display: flex;
         flex-direction: column;
+      }
+      .menu:focus {
+        outline: none;
       }
       .menu-head {
         padding: 4px 8px 5px;
@@ -299,9 +303,20 @@
         color: var(--dim);
         border-bottom: 1px solid var(--line);
         margin-bottom: 2px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .menu-div {
+        height: 1px;
+        margin: 3px 4px;
+        background: var(--line);
       }
       .menu button {
         appearance: none;
+        display: flex;
+        align-items: center;
+        gap: 12px;
         border: 0;
         background: transparent;
         color: var(--text);
@@ -312,8 +327,41 @@
         border-radius: 3px;
         cursor: pointer;
       }
-      .menu button:hover {
+      .menu button:hover:not(:disabled),
+      .menu button:focus-visible {
         background: var(--sel);
+        outline: none;
+      }
+      /*
+        A disabled item stays, greyed. An operation refused on an inherited node currently does nothing with no
+        explanation, and a menu that omits it teaches nothing either — the `title` says why.
+      */
+      .menu button:disabled {
+        color: var(--dim);
+        cursor: default;
+      }
+      .menu-label {
+        flex: 1 1 auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      /* The shortcut, so the menu teaches the keyboard rather than replacing it. */
+      .menu-hint {
+        flex: 0 0 auto;
+        font-size: 11px;
+        color: var(--dim);
+      }
+      /* Submenu arrow. Takes the hint's slot, because an item cannot have both. */
+      .menu-more {
+        flex: 0 0 auto;
+        font-size: 13px;
+        line-height: 1;
+        color: var(--dim);
+      }
+      .menu button:hover:not(:disabled) .menu-more,
+      .menu button:focus-visible .menu-more {
+        color: var(--text);
       }
 
       #left {

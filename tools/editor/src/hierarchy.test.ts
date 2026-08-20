@@ -3,7 +3,7 @@ import { vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
 import { levelDoc, prefabDoc, type Doc } from './editorDoc'
-import { dropTarget, rowsOf, zoneFor, type Openness, type Row } from './hierarchy'
+import { ancestorPaths, dropTarget, rowsOf, zoneFor, type Openness, type Row } from './hierarchy'
 
 const blank = (): NodeLevel => ({ id: 'l', config: { fallBehavior: 'physical-fall', fallY: -20 }, nodes: [] })
 
@@ -261,5 +261,59 @@ describe('dropTarget', () => {
 
   it('inserts at the top level for a row that has no parent', () => {
     expect(dropTarget(row({ parent: null, siblingIndex: 0 }), 'above')).toEqual({ parent: null, at: 0 })
+  })
+})
+
+describe('revealing a nested selection', () => {
+  /** A placement of `pair` with another placement parked under it, three levels deep. */
+  const nested = (): Doc => {
+    const doc = levelDoc(blank(), { ...LIBRARY, pair: twoNodes('pair') })
+    const outer = doc.place('pair', vec3(0, 0, 0))
+    doc.setName(outer, 'outer')
+    const inner = doc.place('pair', vec3(0, 1, 0))
+    doc.setName(inner, 'inner')
+    doc.reparent(idx(doc, 'inner'), idx(doc, 'outer'), 0)
+    return doc
+  }
+
+  it('names every ancestor of a deep row, nearest first', () => {
+    const doc = nested()
+    const deep = rowsOf(doc, allOpen(doc)).find((r) => r.depth === 2)!
+    const paths = ancestorPaths(doc, deep.index)
+    expect(paths).toHaveLength(2)
+    expect(paths[0], 'the parent before the grandparent').toBe(doc.pathOf(doc.parentOf(deep.index)!))
+    expect(paths[1]).toBe('0')
+  })
+
+  it('names nothing for a top-level row', () => {
+    expect(ancestorPaths(nested(), 0)).toEqual([])
+  })
+
+  /**
+   * The bug this exists for: selecting in the viewport marked a row that a collapsed parent was hiding, so
+   * the panel highlighted something nobody could see.
+   */
+  it('is exactly what has to be open for the row to be drawn', () => {
+    const doc = nested()
+    const deep = rowsOf(doc, allOpen(doc)).find((r) => r.depth === 2)!
+
+    expect(rowsOf(doc, SHUT).some((r) => r.index === deep.index), 'hidden while shut').toBe(false)
+
+    const opened: Openness = { expanded: new Set(ancestorPaths(doc, deep.index)) }
+    expect(rowsOf(doc, opened).some((r) => r.index === deep.index), 'visible once its ancestors are open').toBe(true)
+  })
+
+  it('opens only the chain, leaving a sibling subtree shut', () => {
+    const doc = nested()
+    const sibling = doc.place('pair', vec3(9, 0, 0))
+    doc.setName(sibling, 'other')
+    const deep = rowsOf(doc, allOpen(doc)).find((r) => r.depth === 2)!
+    const opened: Openness = { expanded: new Set(ancestorPaths(doc, deep.index)) }
+    const shown = rowsOf(doc, opened)
+    expect(shown.some((r) => r.label === 'other'), 'the sibling placement is still a row').toBe(true)
+    expect(
+      shown.filter((r) => r.parent === idx(doc, 'other')),
+      'but nothing under it was opened',
+    ).toEqual([])
   })
 })
