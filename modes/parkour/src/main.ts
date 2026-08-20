@@ -227,6 +227,11 @@ const chase = (from: number, to: number, dt: number, halfLife: number): number =
  * local sim exists, since that owns the physics world; until then the camera just uses its zoom.
  */
 let camClearance: ((target: Vec3, boom: Vec3, want: number) => number) | null = null
+/**
+ * Landing strength for the camera dip, in units of a plain jump's landing speed: 1 is landing your own
+ * jump, more is a longer drop. Set on the sim tick that finds footing, eased back to 0 in the render loop.
+ */
+let landImpact = 0
 const params = {
   /** Zoom goal (m) — what the wheel sets. What renders is `camDistance`, which chases this. */
   camZoom: 7,
@@ -247,6 +252,17 @@ const params = {
   camLookahead: 0.15,
   /** Half-life (s) of the camera moving in toward the soft limit. */
   camPushInSmooth: 0.06,
+  /**
+   * Camera dip on landing (m at an impact of 1, i.e. landing your own jump). The one piece of jump feel
+   * that lives in the view rather than the controller: the character stops dead on contact and the camera
+   * carrying on down for a moment is what sells the weight. 0 turns it off; 0.12 is the middle of the
+   * 0.10-0.15 range that reads as impact rather than as a bob.
+   */
+  landKick: 0.12,
+  /** Ceiling on the impact multiplier, so a fall from the skybox does not throw the camera through the floor. */
+  landKickMax: 2.5,
+  /** Half-life (s) of the dip easing back out. Short enough to read as an impact, not a bob. */
+  landKickRecovery: 0.12,
   /** Half-life (s) of the camera easing back out once an obstruction clears. */
   camReturnSmooth: 0.18,
   /**
@@ -351,8 +367,16 @@ window.addEventListener(
 
 // --- input --- (physical key codes: layout-independent)
 const keys = new Set<string>()
+/**
+ * A jump keypress seen since the last tick, latched and drained once per tick. `keys.has('Space')` is a
+ * *level* read at tick time, and at 30 Hz a tap pressed and released inside one 33 ms tick never appears
+ * in it at all — the press was silently thrown away. `e.repeat` is excluded so auto-repeat while the key
+ * is held adds nothing: holding is already covered by the level read.
+ */
+let jumpLatch = false
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault()
+  if (e.code === 'Space' && !e.repeat) jumpLatch = true
   keys.add(e.code)
 })
 window.addEventListener('keyup', (e) => keys.delete(e.code))
@@ -397,6 +421,8 @@ cam.addBinding(params, 'camZoomMax', { min: 4, max: 40, step: 0.5, label: 'zoom 
 cam.addBinding(params, 'camZoomStep', { min: 0.1, max: 3, step: 0.1, label: 'notch m' })
 cam.addBinding(params, 'camZoomGrowth', { min: 0, max: 0.2, step: 0.005, label: 'notch growth' })
 cam.addBinding(params, 'camZoomSmooth', { min: 0, max: 0.4, step: 0.01, label: 'zoom smooth s' })
+cam.addBinding(params, 'landKick', { min: 0, max: 0.4, step: 0.01, label: 'land dip m' })
+cam.addBinding(params, 'landKickRecovery', { min: 0.02, max: 0.5, step: 0.01, label: 'land dip s' })
 cam.addBinding(params, 'pitchMinDeg', { min: -89, max: 0, step: 1, label: 'pitch floor °' })
 cam.addBinding(params, 'camLookahead', { min: 0, max: 0.5, step: 0.01, label: 'lookahead s' })
 cam.addBinding(params, 'camPushInSmooth', { min: 0, max: 0.5, step: 0.01, label: 'push-in s' })
@@ -430,6 +456,15 @@ mv.addBinding(tuning, 'groundStopTime', { min: 0, max: 0.5, step: 0.01, label: '
 mv.addBinding(tuning, 'airControl', { min: 0, max: 1, step: 0.05, label: 'air control' })
 mv.addBinding(tuning, 'maxFallSpeed', { min: 10, max: 100, step: 1, label: 'max fall m/s' })
 mv.addBinding(tuning, 'coyoteTime', { min: 0, max: 0.4, step: 0.01, label: 'coyote s' })
+mv.addBinding(tuning, 'jumpBufferTime', { min: 0, max: 0.4, step: 0.01, label: 'jump buffer s' })
+mv.addBinding(tuning, 'liftStoreTime', { min: 0, max: 0.4, step: 0.01, label: 'lift store s' })
+// Arc shape: fall bias, apex float and release-cut, all live. Each reverts on its own — fall and apex to
+// 1, cut to 1 — so any one can be switched off without disturbing the rest. See DEFAULT_TUNING.
+const arc = mv.addFolder({ title: 'arc', expanded: false })
+arc.addBinding(tuning, 'fallGravityScale', { min: 1, max: 3, step: 0.05, label: 'fall gravity x' })
+arc.addBinding(tuning, 'apexGravityScale', { min: 0, max: 1, step: 0.05, label: 'apex gravity x' })
+arc.addBinding(tuning, 'apexSpeed', { min: 0, max: 10, step: 0.5, label: 'apex window m/s' })
+arc.addBinding(tuning, 'jumpCutScale', { min: 0, max: 1, step: 0.05, label: 'release cut x' })
 
 // Live render tuning (content C3) — the greybox polish is data, so you can dial it here.
 const renderParams = { exposure: 1.0, bloom: true, bloomStrength: 0.1 }
@@ -812,9 +847,24 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
       // makes the ragdoll's bodies fall and the level's platforms move.
       const move = dead ? { x: 0, z: 0 } : worldMove()
       if (move.x !== 0 || move.z !== 0) ownFacing = Math.atan2(move.x, move.z)
-      // The jump button is *held*, like Space: `stepCharacter` reads `jump && grounded` every tick, so
-      // holding either re-jumps the instant you land (ADR 0022).
-      controller!.step(move.x, move.z, !dead && (keys.has('Space') || touch.jump()))
+      // Held *or* tapped. The two level reads (`keys.has`, `touch.jump`) are what make holding either one
+      // re-jump the instant you land (ADR 0022); the two latches are what make a tap shorter than a tick
+      // register at all. Both latches are drained every tick, dead or alive and menu or no menu, so a
+      // press made during a pause cannot surface as a jump later. `stepCharacter` holds the press for
+      // `jumpBufferTime` from here, which is what lets it land slightly before the ground does.
+      const keyTap = jumpLatch
+      jumpLatch = false
+      const touchTap = touch.drainJumpPress()
+      const vyBefore = char.vy
+      const groundedBefore = char.grounded
+      controller!.step(move.x, move.z, !dead && (keys.has('Space') || touch.jump() || keyTap || touchTap))
+      // Landing, for the camera's dip below. Taken from the vertical speed *before* the step, since
+      // `stepCharacter` zeroes it the moment footing is found. Scaled by the speed a plain jump lands at,
+      // so a normal landing is 1 and a long drop is more.
+      if (!groundedBefore && char.grounded && vyBefore < 0) {
+        const ref = Math.sqrt(2 * tuning.gravity * tuning.jumpHeight)
+        landImpact = Math.min(-vyBefore / ref, params.landKickMax)
+      }
       // After the world has stepped: a ragdoll's bodies only move on a tick, so this is where their new
       // pose is taken. The render loop interpolates between the last two. Peers' corpses are bodies in
       // this same world, so they are captured on the same tick.
@@ -1095,8 +1145,9 @@ stage.start(() => {
     }
   }
 
-  // orbit camera around the own character
-  const target = { x: ownPos.x, y: ownPos.y + 1, z: ownPos.z }
+  // orbit camera around the own character, dipped by whatever is left of the last landing
+  landImpact = chase(landImpact, 0, frameDt, params.landKickRecovery)
+  const target = { x: ownPos.x, y: ownPos.y + 1 - landImpact * params.landKick, z: ownPos.z }
   // Re-clamped every frame, because the range itself is tunable in the pane while playing.
   params.camZoom = clamp(params.camZoom, params.camZoomMin, params.camZoomMax)
   camDistance = chase(camDistance, params.camZoom, frameDt, params.camZoomSmooth)

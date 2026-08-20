@@ -91,6 +91,13 @@ export interface TouchControls extends InputSource {
   /** True once any touch-type pointer has been seen — what a mode shows its controls on. */
   active: () => boolean
   jump: () => boolean
+  /**
+   * Whether the jump button was pressed since the last call, and clears it. `jump()` above is the
+   * button's *held* state, sampled at tick time, and a tap shorter than one tick (33 ms at 30 Hz) is
+   * pressed and released between two samples and never seen at all. This latch is what makes a quick
+   * tap register. Drain it once per tick whether or not it is used, or a stale press fires later.
+   */
+  drainJumpPress: () => boolean
   /** Take the accumulated look/pinch/tap and reset them. Call once per frame. */
   drainLook: () => TouchLook
   joystick: () => JoystickState
@@ -131,6 +138,8 @@ export const createTouchControls = (
   let knobY = 0
   let stickId = -1
   let jumpId = -1
+  /** A jump press seen since the last drain — see `drainJumpPress`. */
+  let jumpPress = false
   /** Finger separation at the last pinch sample, or null when a pinch is not in progress. */
   let pinchSpan: number | null = null
 
@@ -186,6 +195,11 @@ export const createTouchControls = (
       return Math.hypot(x, z) < layout.deadZone ? { x: 0, z: 0 } : { x, z }
     },
     jump: () => jumpId >= 0,
+    drainJumpPress: () => {
+      const p = jumpPress
+      jumpPress = false
+      return p
+    },
     drainLook: () => {
       const out = look
       look = { dx: 0, dy: 0, pinch: 0, tapped: false }
@@ -232,6 +246,7 @@ export const createTouchControls = (
       } else if (zone === 'jump') {
         if (jumpId >= 0) return
         jumpId = id
+        jumpPress = true
       } else if (lookPointers().length === 1) {
         // A second look pointer starts a pinch. Look is suspended while both are down.
         pointers.set(id, { zone, x, y, travel: 0 })

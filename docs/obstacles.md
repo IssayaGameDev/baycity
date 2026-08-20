@@ -6,35 +6,51 @@ What the character can physically do, and the obstacle vocabulary built on it. N
 
 ## Movement envelope
 
-Tuning: `moveSpeed 5.5`, `jumpHeight 3`, `gravity 55` (Kodjo's values, above the Roblox reference).
+Tuning: `moveSpeed 5.5`, `jumpHeight 2.7`, `gravity 55`, plus the arc shaping `fallGravityScale 1.6`,
+`apexGravityScale 0.5` over an `apexSpeed 4` window, `jumpCutScale 0.4` (Kodjo's values, above the Roblox
+reference).
+
+Two things about the numbers below changed with ADR 0041 and neither is a level-design hazard, since both
+make the envelope **wider**:
+
+- `jumpHeight` reads 2.7 where it read 3 and **the jump apex did not move** — the old vertical integration
+  undershot by 10%, so 3 flew as 2.70. It is exact now and the number was set to the apex that was always
+  flying. The one figure that fell out of it is take-off speed, derived from `jumpHeight`: 18.2 → 17.2 m/s.
+- **Apex float widened every gap by ~0.5 m** (running gap 3.6 → 4.1 m). Half gravity through the
+  `|vy| < 4` band adds ~0.15 s of air near the top, worth ~0.8 m of reach, against ~0.35 m given back by
+  the heavier fall. Nothing authored became unreachable; every jump got easier.
+
+**Measuring the envelope means holding the jump.** `jumpCutScale` is live, so a one-tick press is a
+deliberate short hop — the harnesses hold the button while `vy > 0`, or they measure the minimum jump
+instead of the maximum.
 
 | | |
 |---|---|
-| Air time per jump | 0.66 s |
+| Air time per jump | 0.63 s for a plain parabola; ~0.71 s with the apex float |
 | Capsule | 0.8 m wide, 2.0 m tall |
 | Full speed reached in | 0.1 s / 0.275 m |
 | Stop distance from full speed | ≈0.22 m |
 | Step-up without jumping | **0.40 m** (autostep) |
 | Step-up jumping | **3.0 m** |
 | Walkable slope | ≤44°; ≥48° slides off |
-| Jump leaves the ground at | 18.2 m/s (`√(2·gravity·jumpHeight)`) |
+| Jump leaves the ground at | 17.2 m/s (`√(2·gravity·jumpHeight)`) |
 | Bumper reach | `power² / (2·gravity)`, so 26 m/s ≈ **6.1 m** (ADR 0032) |
 
 A bumper's `power` is a launch *speed*, and the jump speed above is the number that makes it legible: anything
-below 18.2 throws lower than the player's own jump. Measured in `packages/character/src/bumper.test.ts`.
+below 17.2 throws lower than the player's own jump. Measured in `packages/character/src/bumper.test.ts`.
 
 ### Max gap, edge to edge
 
 | Landing vs take-off | Max gap |
 |---|---|
-| −2.0 m | 4.1 m |
-| −1.0 m | 3.9 m |
-| level | **3.5 m** |
-| +0.5 m | 3.4 m |
-| +1.0 m | 3.2 m |
-| +1.5 m | 3.0 m |
-| +2.0 m | 2.8 m |
-| +2.5 m | 2.5 m |
+| −2.0 m | 4.4 m |
+| −1.0 m | 4.2 m |
+| level | **4.0 m** |
+| +0.5 m | 3.8 m |
+| +1.0 m | 3.7 m |
+| +1.5 m | 3.5 m |
+| +2.0 m | 3.3 m |
+| +2.5 m | 3.1 m |
 
 ≈0.35 m of reach per metre climbed, bought back by dropping.
 
@@ -65,18 +81,25 @@ Three measurements decide what obstacles can work at all:
    4 s); above it, they slide off entirely. Binary. Footing *shape* therefore only limits usable
    area — it never destabilises. Sliding-down-a-slope obstacles are not buildable, and slope
    sliding as a mechanic was considered and rejected.
-2. **Air control is strong.** 16.5 m/s² of steering over a 0.66 s hang redirects ~11 m/s mid-jump,
-   so small landing targets are cheap to hit. Precision has to come from what happens *after*
-   landing, or from what the body collides with in flight — not from landing dispersion.
+2. **Air control is strong for corrections and weak for reversals**, and the distinction matters.
+   16.5 m/s² over a ~0.71 s hang is ~11.7 m/s of total authority, so a small landing correction costs a
+   few ticks and tiny targets are cheap to hit — precision has to come from what happens *after* landing,
+   or from what the body collides with in flight, not from landing dispersion. But *undoing* a full run
+   costs `groundAccelTime/airControl` = 0.33 s to reach zero and the whole hang to reverse, so committing
+   to a jump is real: you cannot change your mind about a direction and still land where you started.
+   **Speed above `moveSpeed` — a mover's fling, a launch — is outside air control entirely** (ADR 0041):
+   it is carried untouched, so holding the direction of flight neither helps nor hurts, and no input can
+   raise speed above what the fling gave you. A moving platform can therefore hand the player reach that
+   this table does not cover, and it is the only thing that can.
 3. **Run-up length is not a lever.** Full speed arrives in 0.275 m, which is why the measured
-   standing gap (3.7 m) matched the running gap (3.6 m). Obstacles that try to deny a run-up do
+   standing gap (4.0 m) all but matches the running gap (4.1 m). Obstacles that try to deny a run-up do
    nothing.
 
 Two further rules fall out of the numbers:
 
 - **Autostep eats anything under 0.4 m.** A block or bar whose top is less than 0.4 m above the
   footing is simply walked over.
-- **A 3 m apex hops most sweepers.** A bar is only a threat if it is ≥3 m tall, or sits under a
+- **A 2.7 m apex hops most sweepers.** A bar is only a threat if it is ≥2.7 m tall, or sits under a
   ceiling lower than its height + 2.0 m, or the landing after the hop is itself the risk.
 - **Push is pure displacement.** Being shoved off carries no lateral velocity — you drop straight
   down. Moving pieces can remove you from footing but can never help you cross anything.

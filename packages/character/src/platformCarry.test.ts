@@ -2,7 +2,15 @@ import { axisAngleToQuat, quat, vec3, type Quat, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsBody, type PhysicsWorld } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, stepCharacter, TICK_DT, type PlatformFrame } from './character'
+import {
+  addCharacter,
+  CHAR_HALF_HEIGHT,
+  CHAR_RADIUS,
+  DEFAULT_TUNING,
+  stepCharacter,
+  TICK_DT,
+  type PlatformFrame,
+} from './character'
 
 /**
  * Platform carry: standing on a moving piece must track it exactly, every tick.
@@ -200,6 +208,40 @@ describe('platform carry', () => {
     world.free()
   })
 
+  it('a coyote jump off a mover still inherits its velocity (lift momentum storage)', () => {
+    // Walk off the edge, then jump out of the coyote window. The live `ride` is gone by then — footing
+    // is what carries it — so without stored lift the mover's momentum silently vanishes for exactly the
+    // late jumps coyote time exists to permit, and the fast platform reads as eating your jump.
+    const run = (liftStoreTime: number): number => {
+      const world = makeWorld()
+      const speed = 6
+      const plat = addPlatform(world, vec3(2, 0.2, 2), vec3(0, 0, 0))
+      const c = addCharacter(world, vec3(0, 0.2 + STAND + 0.02, 0))
+      const platforms = lookupFor(plat)
+      const tuning = { ...DEFAULT_TUNING, liftStoreTime }
+      let x = 0
+      const tick = (cmd: typeof STILL): void => {
+        x += speed * TICK_DT
+        plat.pose(vec3(x, 0, 0), quat())
+        world.step(TICK_DT)
+        stepCharacter(c, cmd, TICK_DT, tuning, platforms)
+        world.step(TICK_DT)
+      }
+      const WALK = { moveX: 0, moveZ: 1, jump: false }
+      for (let t = 0; t < 20; t++) tick(STILL) // settle and lock the base
+      expect(c.vx).toBe(0) // riding accrues no velocity of its own
+      let guard = 0
+      while (c.grounded && guard++ < 60) tick(WALK) // walk +z until the deck runs out
+      expect(c.grounded).toBe(false)
+      tick({ moveX: 0, moveZ: 1, jump: true }) // still inside the coyote window
+      const vx = c.vx
+      world.free()
+      return vx
+    }
+    expect(run(0.1), 'stored lift hands the mover velocity to a late jump').toBeGreaterThan(4)
+    expect(run(0), 'and at 0 it is dropped, which is what this closes').toBeLessThan(1)
+  })
+
   it('inherits the platform velocity when jumping off, and releases the base', () => {
     const world = makeWorld()
     const speed = 6
@@ -225,6 +267,89 @@ describe('platform carry', () => {
     expect(c.grounded).toBe(false)
     expect(c.base).toBeUndefined() // airborne: no base
     world.free()
+  })
+
+  // A vertical mover is the case that broke: fast enough and the surface outruns both the ground probe's
+  // reach and, on the way up, the meaning of "standing on it".
+  const verticalMover = (speed: number, ease: boolean) => {
+    const world = makeWorld()
+    const plat = addPlatform(world, vec3(3, 0.2, 3), vec3(0, 20, 0))
+    const c = addCharacter(world, vec3(0, 20.2 + STAND + 0.02, 0))
+    const platforms = lookupFor(plat)
+    let y = 20
+    let t = 0
+    const tick = (cmd: typeof STILL): void => {
+      // Eased, as an authored keyframe track is: a real platform is not at full speed on tick one.
+      y += speed * TICK_DT * (ease ? Math.min(1, t / 15) : 1)
+      t++
+      plat.pose(vec3(0, y, 0), quat())
+      world.step(TICK_DT / 2)
+      stepCharacter(c, cmd, TICK_DT, undefined, platforms)
+      world.step(TICK_DT / 2)
+    }
+    return { world, c, tick, deckTop: () => y + 0.2 }
+  }
+
+  it('rides a fast descending platform without ever losing it', () => {
+    // Was: from ~7 m/s down the probe's 0.4 m reach could not keep up with a tick of drop plus the
+    // rider's lag, footing vanished, and the character bounce-fell after the deck the whole way.
+    for (const speed of [6, 9, 12, 20]) {
+      const { world, c, tick, deckTop } = verticalMover(-speed, true)
+      let lost = 0
+      let worst = 0
+      for (let i = 0; i < 60; i++) {
+        tick(STILL)
+        if (c.base === undefined) lost++
+        worst = Math.max(worst, Math.abs(c.body.translation().y - STAND - deckTop()))
+      }
+      expect(lost, `${speed} m/s down: ticks without a base`).toBe(0)
+      expect(worst, `${speed} m/s down: worst gap above the deck`).toBeLessThan(0.05)
+      world.free()
+    }
+  })
+
+  it('lands on a platform already descending fast, and keeps it', () => {
+    // The controller reports contact before the probe's centre ray can reach a surface dropping away, so
+    // `grounded` cancelled the fall while no base was acquired — the fall lost for nothing, on repeat.
+    for (const speed of [6, 12, 20]) {
+      const world = makeWorld()
+      const plat = addPlatform(world, vec3(3, 0.2, 3), vec3(0, 20, 0))
+      const c = addCharacter(world, vec3(0, 24, 0)) // dropped in from ~3 m up
+      const platforms = lookupFor(plat)
+      let y = 20
+      for (let i = 0; i < 90; i++) {
+        y -= speed * TICK_DT
+        plat.pose(vec3(0, y, 0), quat())
+        world.step(TICK_DT / 2)
+        stepCharacter(c, STILL, TICK_DT, undefined, platforms)
+        world.step(TICK_DT / 2)
+      }
+      expect(c.base, `${speed} m/s down: base after landing`).not.toBe(undefined)
+      expect(c.body.translation().y - STAND - (y + 0.2)).toBeLessThan(0.05)
+      world.free()
+    }
+  })
+
+  it('a jump off a fast riser is not re-captured by the deck', () => {
+    // Was: the riser stayed inside the probe's reach, so footing and the base both came back on the tick
+    // after take-off while `vy` was still 20+ m/s upward. A held button re-jumped and threw away the
+    // platform velocity it had just inherited; a released one had `riding` zero the climb outright.
+    for (const speed of [6, 9]) {
+      const { world, c, tick } = verticalMover(speed, false)
+      for (let i = 0; i < 30; i++) tick(STILL)
+      tick({ moveX: 0, moveZ: 0, jump: true })
+      const launched = c.vy
+      expect(launched, 'inherits the riser velocity on top of the jump').toBeGreaterThan(speed + 10)
+      // Next few ticks must be gravity and nothing else.
+      for (let i = 0; i < 4; i++) {
+        const expected = c.vy - DEFAULT_TUNING.gravity * TICK_DT
+        tick(STILL)
+        expect(c.base, 'no base while climbing away from the deck').toBe(undefined)
+        expect(c.grounded, 'not grounded while climbing away from the deck').toBe(false)
+        expect(c.vy, 'gravity only — nothing re-captured the jump').toBeCloseTo(expected, 5)
+      }
+      world.free()
+    }
   })
 
   it('stops carrying the moment the platform is no longer underfoot', () => {

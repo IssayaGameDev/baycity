@@ -145,8 +145,14 @@ export interface CharacterBody {
    * anything that must know its footing every tick — riding a moving platform — asks here.
    * `undefined` when nothing is within reach or the surface below is too steep to stand on.
    * Reaches slightly past the feet, so pair it with `move`'s `grounded` to mean *standing on*.
+   *
+   * `extraReach` (metres) lengthens the ray beyond the default snap distance. For a caller tracking a
+   * surface that moves faster than the snap distance covers in one tick — a fast descending platform —
+   * and which therefore knows how far that surface can have gone. Check the returned
+   * `colliderHandle` against the one you expected: a longer ray can also reach a floor you are not
+   * standing on, and reporting that as footing puts the character on ground a metre below its feet.
    */
-  probeGround: () => GroundContact | undefined
+  probeGround: (extraReach?: number) => GroundContact | undefined
   /** Collider handles the capsule actually collided with during the last `move` (walls,
    * ground, obstacles it pushed against). The basis for real contact-driven triggers —
    * match against `PhysicsBody.colliderHandle`. */
@@ -431,7 +437,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
         }
         return { grounded, applied: c, ceiling }
       },
-      probeGround: () => {
+      probeGround: (extraReach = 0) => {
         freshenQueries()
         const t = body.translation()
         // Reach below the feet is the snap-to-ground distance: the controller is willing to hold
@@ -439,7 +445,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
         // to clear how far a surface can move in one tick — a platform descending at 3 m/s drops
         // 0.1 m per tick, so a tighter margin loses the floor underneath a moving platform and the
         // character bounce-falls after it.
-        const reach = o.halfHeight + o.radius + (snap === false ? GROUND_PROBE_FALLBACK : snap)
+        const reach = o.halfHeight + o.radius + (snap === false ? GROUND_PROBE_FALLBACK : snap) + extraReach
         const hit = world.castRayAndGetNormal(
           new RAPIER.Ray({ x: t.x, y: t.y, z: t.z }, { x: 0, y: -1, z: 0 }),
           reach,

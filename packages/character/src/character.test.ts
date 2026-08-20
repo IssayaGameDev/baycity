@@ -42,6 +42,19 @@ describe('character controller', () => {
     await initPhysics()
   })
 
+  /**
+   * DEFAULT_TUNING with the three arc knobs at their inert values. The shipped defaults shape the arc
+   * (fall bias, apex float, release-cut — ADR 0041), which is right for the game and wrong for a test
+   * that wants to pin the plain parabola: the integration guarantee is "apex == jumpHeight", and apex
+   * float deliberately coasts past it. Tests about shaping compare this against a shaped tuning.
+   */
+  const NEUTRAL_ARC: CharacterTuning = {
+    ...DEFAULT_TUNING,
+    fallGravityScale: 1,
+    apexGravityScale: 1,
+    jumpCutScale: 1,
+  }
+
   it('is deterministic', () => {
     const inputs = Array.from({ length: 90 }, (_, i) => cmd(1, 0, i === 40))
     expect(runToPos(inputs)).toEqual(runToPos(inputs))
@@ -53,25 +66,29 @@ describe('character controller', () => {
     expect(moved.x).toBeGreaterThan(still.x + 1)
   })
 
-  it('jump apex â‰ˆ the configured jump height (vâ‚€ = âˆš(2gh))', () => {
+  it('jump apex = the configured jump height (vâ‚€ = âˆš(2gh))', () => {
     const world = makeWorld()
     const c = addCharacter(world, playerSpawn(1000))
     for (let i = 0; i < 60; i++) {
-      stepCharacter(c, cmd(0, 0), TICK_DT)
+      stepCharacter(c, cmd(0, 0), TICK_DT, NEUTRAL_ARC)
       world.step(TICK_DT)
     }
     const restY = c.body.translation().y
-    stepCharacter(c, cmd(0, 0, true), TICK_DT)
+    stepCharacter(c, cmd(0, 0, true), TICK_DT, NEUTRAL_ARC)
     world.step(TICK_DT)
     let peak = c.body.translation().y
     for (let i = 0; i < 80; i++) {
-      stepCharacter(c, cmd(0, 0), TICK_DT)
+      // Held: with `jumpCutScale` live in the shipped tuning a released button is a deliberate short hop.
+      stepCharacter(c, cmd(0, 0, c.vy > 0), TICK_DT, NEUTRAL_ARC)
       world.step(TICK_DT)
       peak = Math.max(peak, c.body.translation().y)
     }
     const apex = peak - restY
-    expect(apex).toBeGreaterThan(DEFAULT_TUNING.jumpHeight * 0.8)
-    expect(apex).toBeLessThan(DEFAULT_TUNING.jumpHeight * 1.3)
+    // Within 1%. It used to need a 0.8x-1.3x band because `y += v*dt` undershot by half a tick of
+    // take-off speed (10% here); the vertical step is the exact trapezoid now, so the apex *is* the
+    // configured number and a loose band would hide the next integration bug.
+    expect(apex).toBeGreaterThan(DEFAULT_TUNING.jumpHeight * 0.99)
+    expect(apex).toBeLessThan(DEFAULT_TUNING.jumpHeight * 1.01)
     world.free()
   })
 
@@ -138,15 +155,16 @@ describe('character controller', () => {
     })
     const c = addCharacter(world, playerSpawn(1000))
     for (let i = 0; i < 40; i++) {
-      stepCharacter(c, cmd(0, 0), TICK_DT)
+      stepCharacter(c, cmd(0, 0), TICK_DT, NEUTRAL_ARC)
       world.step(TICK_DT)
     }
-    stepCharacter(c, cmd(0, 0, true), TICK_DT)
+    stepCharacter(c, cmd(0, 0, true), TICK_DT, NEUTRAL_ARC)
     world.step(TICK_DT)
     let risingTicks = 1
     let peak = c.body.translation().y
     for (let i = 0; i < 40 && c.vy > 0; i++) {
-      stepCharacter(c, cmd(0, 0), TICK_DT)
+      // Held and unshaped: a cut jump would never reach the roof, and apex float would slow the approach.
+      stepCharacter(c, cmd(0, 0, true), TICK_DT, NEUTRAL_ARC)
       world.step(TICK_DT)
       peak = Math.max(peak, c.body.translation().y)
       risingTicks++
@@ -269,5 +287,192 @@ describe('character controller', () => {
     const { world, c, tick } = walkOffALedge(DEFAULT_TUNING)
     expect(countHeldJumps(12, c, tick, 1)).toBe(1)
     world.free()
+  })
+
+  // --- jump buffer -----------------------------------------------------------------------------
+  const TAKE_OFF = Math.sqrt(2 * DEFAULT_TUNING.gravity * DEFAULT_TUNING.jumpHeight)
+
+  /**
+   * Jump from flat ground, then press the button for exactly one tick, `ticksEarly` ticks before the
+   * tick that lands. Did that press survive to fire a jump once footing arrived? A single-tick press is
+   * the case that matters: it is what a real tap is, and what the old level-read threw away.
+   */
+  const pressedBeforeLanding = (ticksEarly: number, tuning: CharacterTuning = DEFAULT_TUNING): boolean => {
+    const run = (pressAt: number): { landAt: number; jumped: boolean } => {
+      const world = makeWorld()
+      const c = addCharacter(world, playerSpawn(1000))
+      const tick = (i: InputCommand): void => {
+        stepCharacter(c, i, TICK_DT, tuning)
+        world.step(TICK_DT)
+      }
+      for (let i = 0; i < 40; i++) tick(cmd(0, 0))
+      tick(cmd(0, 0, true)) // take off
+      let landAt = -1
+      let jumped = false
+      for (let n = 1; n <= 40; n++) {
+        tick(cmd(0, 0, n === pressAt))
+        if (landAt < 0 && c.grounded) landAt = n
+        if (landAt > 0 && c.vy > TAKE_OFF * 0.5) jumped = true
+      }
+      world.free()
+      return { landAt, jumped }
+    }
+    return run(run(-1).landAt - ticksEarly).jumped
+  }
+
+  it('jump buffer: a tap just before landing fires on landing', () => {
+    expect(pressedBeforeLanding(1)).toBe(true)
+  })
+
+  it('jump buffer: a tap long before landing is not still queued', () => {
+    // 5 ticks is 167 ms, past the 100 ms window — otherwise the buffer would be a landing trap.
+    expect(pressedBeforeLanding(5)).toBe(false)
+  })
+
+  it('jump buffer: off at 0, which is the behaviour it replaced', () => {
+    expect(pressedBeforeLanding(1, { ...DEFAULT_TUNING, jumpBufferTime: 0 })).toBe(false)
+  })
+
+  // --- arc shaping -----------------------------------------------------------------------------
+  /** Apex, rise ticks and fall ticks for one jump under `tuning`, holding the button for `hold` ticks. */
+  const arcOf = (tuning: CharacterTuning, hold = 40): { apex: number; rise: number; fall: number; impact: number } => {
+    const world = makeWorld()
+    const c = addCharacter(world, playerSpawn(1000))
+    const tick = (i: InputCommand): void => {
+      stepCharacter(c, i, TICK_DT, tuning)
+      world.step(TICK_DT)
+    }
+    for (let i = 0; i < 40; i++) tick(cmd(0, 0))
+    const restY = c.body.translation().y
+    let peak = restY
+    let rise = 0
+    let fall = 0
+    let n = 0
+    tick(cmd(0, 0, true))
+    rise = 1
+    while (c.vy > 0 && n < 60) {
+      tick(cmd(0, 0, n + 1 < hold))
+      peak = Math.max(peak, c.body.translation().y)
+      rise++
+      n++
+    }
+    let impact = 0
+    while (!c.grounded && fall < 60) {
+      tick(cmd(0, 0, false))
+      impact = Math.max(impact, -c.vy)
+      fall++
+    }
+    world.free()
+    return { apex: peak - restY, rise, fall, impact }
+  }
+
+  it('fall gravity: a heavier fall shortens the drop without lowering the apex', () => {
+    const plain = arcOf(NEUTRAL_ARC)
+    const heavy = arcOf({ ...NEUTRAL_ARC, fallGravityScale: 2 })
+    // Same climb — the scale only applies once `vy` is negative.
+    expect(heavy.apex).toBeCloseTo(plain.apex, 2)
+    expect(heavy.rise).toBe(plain.rise)
+    // ...and the drop is quicker and lands harder. Asserted on the impact speed rather than on a tick
+    // count: the fall is only ~9 ticks long, and a 30 Hz grid cannot resolve a factor of sqrt(2) in
+    // that. Speed is exact — 2x gravity over the same height is sqrt(2) faster at the bottom.
+    expect(heavy.fall).toBeLessThan(plain.fall)
+    expect(heavy.impact).toBeGreaterThan(plain.impact * 1.3)
+  })
+
+  it('apex gravity: a lighter top buys hang time', () => {
+    const plain = arcOf(NEUTRAL_ARC)
+    const floaty = arcOf({ ...NEUTRAL_ARC, apexGravityScale: 0.5 })
+    expect(floaty.rise + floaty.fall).toBeGreaterThan(plain.rise + plain.fall)
+    // Less gravity near the top also means it coasts a little higher.
+    expect(floaty.apex).toBeGreaterThan(plain.apex)
+  })
+
+  it('apex gravity: inert at 1 however wide the window', () => {
+    const plain = arcOf(NEUTRAL_ARC)
+    const wide = arcOf({ ...NEUTRAL_ARC, apexSpeed: 99 })
+    expect(wide.apex).toBeCloseTo(plain.apex, 6)
+    expect(wide.rise + wide.fall).toBe(plain.rise + plain.fall)
+  })
+
+  it('release cut: letting go mid-rise gives a lower jump, holding gives the full one', () => {
+    const cut = { ...NEUTRAL_ARC, jumpCutScale: 0.3 }
+    const tapped = arcOf(cut, 1) // one tick of button, released on the next
+    const held = arcOf(cut, 40)
+    expect(held.apex).toBeCloseTo(arcOf(NEUTRAL_ARC).apex, 2)
+    expect(tapped.apex).toBeLessThan(held.apex * 0.5)
+    // Still a real jump, not a cancelled one.
+    expect(tapped.apex).toBeGreaterThan(0.1)
+  })
+
+  it('release cut: inert at 1, so a tap and a hold reach the same apex', () => {
+    expect(arcOf(NEUTRAL_ARC, 1).apex).toBeCloseTo(arcOf(NEUTRAL_ARC, 40).apex, 6)
+  })
+
+
+  // --- air control above moveSpeed --------------------------------------------------------------
+  /**
+   * Take off, then overwrite `vx` as a mover's fling would (lift storage writes it directly), and fly
+   * with `input` held. Reports how far it travelled, the speed it ended at, and the fastest it ever got.
+   */
+  const flungJump = (
+    input: InputCommand,
+    launch = 12,
+    tuning: CharacterTuning = DEFAULT_TUNING,
+  ): { dist: number; end: number; peak: number } => {
+    const world = makeWorld()
+    const c = addCharacter(world, playerSpawn(1000))
+    const tick = (i: InputCommand): void => {
+      stepCharacter(c, i, TICK_DT, tuning)
+      world.step(TICK_DT)
+    }
+    for (let i = 0; i < 30; i++) tick(cmd(0, 0))
+    tick(cmd(0, 0, true))
+    c.vx = launch
+    const from = c.body.translation()
+    let peak = Math.hypot(c.vx, c.vz)
+    let n = 1
+    while (!c.grounded && n < 100) {
+      tick({ ...input, jump: c.vy > 0 }) // held, so the release-cut does not shorten the flight
+      peak = Math.max(peak, Math.hypot(c.vx, c.vz))
+      n++
+    }
+    const to = c.body.translation()
+    world.free()
+    return { dist: Math.hypot(to.x - from.x, to.z - from.z), end: Math.hypot(c.vx, c.vz), peak }
+  }
+
+  it('air control does not brake a character flying faster than moveSpeed', () => {
+    // The bug this replaced: `approach` pulled `vx` toward a moveSpeed-sized target from either side, so
+    // holding the direction of flight was a brake. Measured 5.02 m against 8.40 m for letting go.
+    const held = flungJump(cmd(1, 0))
+    const coasting = flungJump(cmd(0, 0))
+    expect(held.end).toBeCloseTo(coasting.end, 6)
+    expect(held.dist).toBeCloseTo(coasting.dist, 6)
+  })
+
+  it('air control never raises speed above what you came in with', () => {
+    // What separates this from Quake-style air-strafing, and what keeps docs/obstacles.md honest.
+    for (const input of [cmd(1, 0), cmd(0.7, 0.7), cmd(0, 1), cmd(-0.7, 0.7), cmd(-1, 0)])
+      expect(flungJump(input).peak, `input ${input.moveX},${input.moveZ}`).toBeLessThanOrEqual(12 + 1e-6)
+  })
+
+  it('turning still costs distance, the more the further you turn', () => {
+    const straight = flungJump(cmd(1, 0)).dist
+    const diagonal = flungJump(cmd(0.7, 0.7)).dist
+    const sideways = flungJump(cmd(0, 1)).dist
+    const reversed = flungJump(cmd(-1, 0)).dist
+    expect(diagonal).toBeLessThan(straight)
+    expect(sideways).toBeLessThan(diagonal)
+    expect(reversed).toBeLessThan(sideways)
+  })
+
+  it('pressing against the flight still brakes hard', () => {
+    expect(flungJump(cmd(-1, 0)).end).toBeLessThan(1)
+  })
+
+  it('below moveSpeed the air solve is untouched — it still accelerates to the cap', () => {
+    // The excess branch must not fire at all here, or every ordinary jump changed.
+    expect(flungJump(cmd(1, 0), 4).end).toBeCloseTo(DEFAULT_TUNING.moveSpeed, 6)
+    expect(flungJump(cmd(0, 0), 4).end).toBeCloseTo(4, 6)
   })
 })

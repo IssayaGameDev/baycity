@@ -251,4 +251,39 @@ describe('createTouchControls', () => {
       expect(c.movement()).toEqual({ x: 0, z: 0 })
     }
   })
+
+
+  it('latches a jump press, so a tap shorter than one tick is not lost', () => {
+    const c = make()
+    const j = c.jumpButton()
+    c.pointerDown(1, j.x, j.y)
+    c.pointerUp(1)
+    // The button is no longer held, and a tick sampling `jump()` alone would see nothing at all.
+    expect(c.jump()).toBe(false)
+    expect(c.drainJumpPress()).toBe(true)
+  })
+
+  it('drains the jump press once, so one tap is one jump', () => {
+    const c = make()
+    const j = c.jumpButton()
+    c.pointerDown(1, j.x, j.y)
+    expect(c.drainJumpPress()).toBe(true)
+    expect(c.drainJumpPress()).toBe(false)
+  })
+
+  it('does not latch a press outside the jump zone', () => {
+    const c = make()
+    c.pointerDown(1, LOOK.x, LOOK.y)
+    expect(c.drainJumpPress()).toBe(false)
+  })
+
+  it('latches a second tap after the first finger lifts', () => {
+    const c = make()
+    const j = c.jumpButton()
+    c.pointerDown(1, j.x, j.y)
+    expect(c.drainJumpPress()).toBe(true)
+    c.pointerUp(1)
+    c.pointerDown(2, j.x, j.y)
+    expect(c.drainJumpPress()).toBe(true)
+  })
 })

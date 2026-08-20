@@ -35,7 +35,9 @@ const attemptGap = (gap: number, rise: number): boolean => {
     const p = c.body.translation()
     const want = !jumped && c.grounded && p.x > 6 - 0.45
     if (want) jumped = true
-    stepCharacter(c, { moveX: 1, moveZ: 0, jump: want }, TICK_DT)
+    // Held while rising, not tapped: `jumpCutScale` is live in DEFAULT_TUNING, so a one-tick press is a
+    // deliberate short hop and would measure the *minimum* jump. The envelope is the maximum.
+    stepCharacter(c, { moveX: 1, moveZ: 0, jump: want || c.vy > 0 }, TICK_DT)
     w.step(TICK_DT)
     const n = c.body.translation()
     if (jumped && c.grounded && n.x > 6 + gap + 0.3 && Math.abs(n.y - (rise + T + STAND)) < 0.3) {

@@ -113,7 +113,7 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
   `modes/parkour/src/gym.test.ts`: worst single-tick slip **< 5 mm** at 1/3/4.5/9 m/s, no creep over
   8 s, turntable riders orbit at constant radius, elevator feet stay within 15 cm.
 
-  Four things it depends on, each of which was a real failure when violated:
+  Six things it depends on, each of which was a real failure when violated:
   1. **The ridden piece — and only that one — is posed with zero derived velocity** (set the pose
      *and* target the same pose; pass `CharacterState.base?.colliderHandle` to `LoadedLevel.update`).
      A kinematic body with a velocity makes the controller add that velocity to a rider itself, on
@@ -130,9 +130,21 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
   3. **Only the horizontal is handed to the controller as movement; the vertical is the surface's
      alone, with gravity suppressed while riding.** Gravity fighting a rising platform loses by the
      difference each tick and the rider is left behind (measured: falls to y ≈ −1085).
-  4. **The ride is never a teleport.** Moving the collider behind the controller's back leaves
+  4. **Footing is not just a downward ray, and rising is not standing** (ADR 0042). Three separate
+     failures on fast vertical movers, all measured. The probe reaches the snap distance past the feet
+     (0.4 m) while a rider sits about a tick of travel behind a descending deck, so from ~7 m/s down it
+     lost the surface and bounce-fell after it — fixed by a second, longer probe, bounded by how far the
+     stored anchor point actually dropped and accepted only for the same collider. `move` reports
+     `grounded` before that ray can reach a surface dropping away, so the fall was clamped to zero with
+     no base gained — fixed by taking the base from `collisions()` when the ray misses. And a riser stays
+     inside the probe's reach after take-off, so it re-collected the character mid-climb — fixed by gating
+     footing and the base on `vy <= 0`.
+  5. **The ride is never a teleport.** Moving the collider behind the controller's back leaves
      Rapier's query pipeline stale and `computeColliderMovement` then resolves to *nothing* — the
      character silently cannot walk, and gets pushed through walls.
+- `probeGround(extraReach?)` lengthens the ray past the snap distance, for a caller tracking a surface
+  that moves further in one tick than the default reach covers. A longer ray also reaches floors the
+  character is not standing on, so the caller must check the returned `colliderHandle` (ADR 0042).
 - Jumping off a mover inherits its velocity (the ride distance over dt) — the engine hands over
   nothing here either. See `docs/netcode.md` for the feel values.
 - Platform time advances **one fixed step per sim step** (`createSimClock`): a multi-tick loop wake

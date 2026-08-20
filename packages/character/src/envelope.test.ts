@@ -27,7 +27,9 @@ const attemptGap = (gap: number, runUp: number): boolean => {
     const p = c.body.translation()
     const wantJump = !jumped && c.grounded && p.x > 6 - 0.45
     if (wantJump) jumped = true
-    stepCharacter(c, { moveX: 1, moveZ: 0, jump: wantJump }, TICK_DT)
+    // Held while rising, not tapped: `jumpCutScale` is live in DEFAULT_TUNING, so a one-tick press is a
+    // deliberate short hop and would measure the *minimum* jump. The envelope is the maximum.
+    stepCharacter(c, { moveX: 1, moveZ: 0, jump: wantJump || c.vy > 0 }, TICK_DT)
     world.step(TICK_DT)
     const now = c.body.translation()
     // Stop the moment it is standing safely past the far edge — otherwise it keeps running and
@@ -56,7 +58,8 @@ const attemptStepUp = (rise: number, withJump: boolean): boolean => {
     const p = c.body.translation()
     const wantJump = withJump && !jumped && c.grounded && p.x > 3.2
     if (wantJump) jumped = true
-    stepCharacter(c, { moveX: 1, moveZ: 0, jump: wantJump }, TICK_DT)
+    // Held while rising — see the note in `attemptGap`.
+    stepCharacter(c, { moveX: 1, moveZ: 0, jump: wantJump || (withJump && c.vy > 0) }, TICK_DT)
     world.step(TICK_DT)
     const now = c.body.translation()
     // Standing on the ledge, past its near face — stop before it runs off the far end.
