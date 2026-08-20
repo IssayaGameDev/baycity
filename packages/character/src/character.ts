@@ -56,7 +56,10 @@ export const DEFAULT_TUNING: CharacterTuning = {
   gravity: 55,
   groundAccelTime: 0.1,
   groundStopTime: 0.08,
-  airControl: 0.3,
+  // 1.0 = air accel equals ground accel, which is the Roblox model: `TurnSpeedFactor` is 1 in both its
+  // GroundController and its AirController, so it does not restrict air steering at all, and
+  // `MaintainLinearMomentum` (true) keeps your speed when you let go. Kodjo's call.
+  airControl: 1,
   // A safety net, not a feel value — deliberately above anything the shipped levels can reach (the
   // longest fall to a kill plane peaks near 30 m/s), so today it never engages. It exists for a
   // `physical-fall` level, which has no kill plane at all: there the fall grows without bound, and at

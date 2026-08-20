@@ -418,7 +418,7 @@ describe('character controller', () => {
     input: InputCommand,
     launch = 12,
     tuning: CharacterTuning = DEFAULT_TUNING,
-  ): { dist: number; end: number; peak: number } => {
+  ): { dist: number; end: number; peak: number; along: number } => {
     const world = makeWorld()
     const c = addCharacter(world, playerSpawn(1000))
     const tick = (i: InputCommand): void => {
@@ -438,7 +438,10 @@ describe('character controller', () => {
     }
     const to = c.body.translation()
     world.free()
-    return { dist: Math.hypot(to.x - from.x, to.z - from.z), end: Math.hypot(c.vx, c.vz), peak }
+    // `along` is signed, on the axis it was flung down. `end` is a magnitude and so cannot tell a stop
+    // from a completed reversal — at full air control the character does reverse, and 5.5 m/s backwards
+    // has the same magnitude as 5.5 m/s forwards.
+    return { dist: Math.hypot(to.x - from.x, to.z - from.z), end: Math.hypot(c.vx, c.vz), peak, along: c.vx }
   }
 
   it('air control does not brake a character flying faster than moveSpeed', () => {
@@ -467,7 +470,8 @@ describe('character controller', () => {
   })
 
   it('pressing against the flight still brakes hard', () => {
-    expect(flungJump(cmd(-1, 0)).end).toBeLessThan(1)
+    // Measured on the signed axis: it comes in at 12 m/s and ends going the other way.
+    expect(flungJump(cmd(-1, 0)).along).toBeLessThan(0)
   })
 
   it('below moveSpeed the air solve is untouched — it still accelerates to the cap', () => {

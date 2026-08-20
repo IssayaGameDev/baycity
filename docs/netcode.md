@@ -94,6 +94,11 @@ Colyseus message layer instead.
 - `interpolationDelayMs` — how far in the past peers render. **100 ms**, provisional; tunable.
 - `CharacterTuning` (speed, jump apex, gravity, accel/stop times, air control) — Roblox-derived
   defaults, live-tunable in the demo (ADR 0012). Client-side only under client authority.
+- `airControl` — **1**: air accel equals ground accel (55 m/s²). Kodjo asked for Roblox's feel and this is
+  it — Roblox uses `TurnSpeedFactor` 1 in *both* its GroundController and its AirController, so it does
+  not restrict air steering at all, and `MaintainLinearMomentum` (true) keeps your speed on release,
+  which this already did. Stopping costs 0.17 s and a full reversal 0.23 s inside a 0.73 s hang. It put
+  the measured standing gap past the running gap — see `obstacles.md`.
 - `coyoteTime` — jump grace after losing footing, **100 ms** (3 ticks at 30 Hz), live-tunable; 0 turns it
   off. Spent on the way out, so one ledge is one jump however long the button is held. Not on the wire:
   `STATE_GROUNDED` still means real footing (ADR 0034).

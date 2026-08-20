@@ -202,7 +202,14 @@ describe('platform carry', () => {
     }
     const p = c.body.translation()
     // Carried in x with the platform, and moved in z under its own power.
-    expect(Math.abs(p.x - (-2 + x))).toBeLessThan(0.1)
+    //
+    // 0.15, not 0.1. About 0.10 of that is structural — the base is acquired at the *end* of the first
+    // tick, so tick one is never carried — and the rest is contact-resolve jitter that depends on where
+    // on the deck the capsule happens to be: walking the same 3 m/s platform from z = 0.11 instead of
+    // z = 0 moves the worst offset from 0.1000 to 0.1169 with nothing else changed. The tight bound this
+    // replaced was luck about a starting position, not a guarantee. Per-tick slip has its own tests
+    // above (1/3/4.5/9 m/s), and those are the ones that would catch a real carry regression.
+    expect(Math.abs(p.x - (-2 + x))).toBeLessThan(0.15)
     expect(p.z).toBeGreaterThan(1)
     expect(c.grounded).toBe(true)
     world.free()
