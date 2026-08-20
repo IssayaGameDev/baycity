@@ -43,10 +43,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "a563891204f971a4"
               }
             }
@@ -92,10 +90,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "55205761e38bc929"
               }
             }
@@ -141,10 +137,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "55205761e38bc929"
               }
             }
@@ -190,10 +184,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "55205761e38bc929"
               }
             }
@@ -276,10 +268,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "19079ddb3fbfb27e"
               }
             }
@@ -325,10 +315,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": ""
               }
             },

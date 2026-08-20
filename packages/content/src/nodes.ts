@@ -11,8 +11,10 @@ import type { ComponentData, Node, NodeLevel, NodeOverride, Transform } from './
 
 /** A collision shape. Repeatable per node. */
 export const COLLIDER = 'Collider'
-/** What a node draws. */
-export const VISUAL = 'Visual'
+/** Which mesh a node draws, when it draws one rather than its colliders. Unity's `MeshFilter`. */
+export const MESH = 'Mesh'
+/** That a node draws at all, and with what surface. Unity's `MeshRenderer`. */
+export const RENDERER = 'Renderer'
 /** Resurfaces this node and everything below it. */
 export const MATERIAL_OVERRIDE = 'MaterialOverride'
 /** Clock-driven keyed motion, evaluated by the loader's frame tree. */

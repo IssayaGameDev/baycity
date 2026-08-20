@@ -2,7 +2,7 @@ import { poseAt, type Keyframe } from '@mp/content'
 import { vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
-import { deleteKey, keyNear, keyRows, moveKey, nudgeKey, pathPoints, putKey, setEasing, setKeyPose, snapTime, sortedKeys, trackFrom } from './trackEdit'
+import { deleteKey, keyNear, keyRows, moveKey, nudgeKey, pathPoints, putKey, setEasing, setKeyPose, snapTime, sortedKeys, oneKeyAt } from './trackEdit'
 
 const at = (t: number, y = 0): Keyframe => ({ t, position: vec3(0, y, 0) })
 const times = (keys: readonly Keyframe[]): number[] => keys.map((k) => k.t)
@@ -151,18 +151,16 @@ describe('nudgeKey', () => {
   })
 })
 
-describe('trackFrom', () => {
+describe('oneKeyAt', () => {
   it('is a single held key, so no duration is invented', () => {
-    const track = trackFrom({ position: vec3(1, 2, 3), rotation: vec3(0, 0.5, 0) })
-    expect(track.keys).toHaveLength(1)
-    expect(track.keys[0]!.t).toBe(0)
-    expect(track.loop).toBe('loop')
-    expect(track.phaseMs).toBe(0)
+    const keys = oneKeyAt({ position: vec3(1, 2, 3), rotation: vec3(0, 0.5, 0) })
+    expect(keys).toHaveLength(1)
+    expect(keys[0]!.t).toBe(0)
   })
 
   it('holds the pose it was given, at any time', () => {
-    const track = trackFrom({ position: vec3(1, 2, 3), rotation: vec3(0, 0, 0) })
-    const pose = poseAt({ kind: 'track', keys: track.keys, loop: track.loop }, { position: vec3(0, 0, 0) }, 12_345)
+    const keys = oneKeyAt({ position: vec3(1, 2, 3), rotation: vec3(0, 0, 0) })
+    const pose = poseAt({ kind: 'track', keys, loop: 'loop' }, { position: vec3(0, 0, 0) }, 12_345)
     expect(pose.position).toEqual(vec3(1, 2, 3))
   })
 })

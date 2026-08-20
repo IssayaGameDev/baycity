@@ -6,7 +6,8 @@ import {
   COLLIDER,
   MATERIAL_OVERRIDE,
   TRACK,
-  VISUAL,
+  MESH,
+  RENDERER,
   instantiateLegacyLevel,
   instantiateNodeLevel,
   validateLevel,
@@ -151,9 +152,19 @@ describe('what each legacy field becomes', () => {
     instances: [{ prefab: 'pad', transform: { position: { x: 0, y: 0, z: 0 } } }],
   }
 
-  it('gives every piece a Collider and a Visual, since an omitted visual used to greybox', () => {
+  it('gives every piece a Collider and a Renderer, since an omitted visual used to greybox', () => {
     const out = nodeLevelFromLegacy(base)
-    expect(typesOf(findNode(out, 'padPiece'))).toEqual([COLLIDER, VISUAL])
+    expect(typesOf(findNode(out, 'padPiece'))).toEqual([COLLIDER, RENDERER])
+  })
+
+  // A `Mesh` only where one was named: its absence is what says "draw the colliders" (ADR 0039).
+  it('adds a Mesh only for a piece that drew a model', () => {
+    const level = structuredClone(base)
+    level.prefabs!.pad!.pieces[0]!.visual = { kind: 'model', asset: 'mesh1', material: 'mat1' }
+    const node = findNode(nodeLevelFromLegacy(level), 'padPiece')
+    expect(typesOf(node)).toEqual([COLLIDER, MESH, RENDERER])
+    expect(node?.components[1]?.params.model).toBe('mesh1')
+    expect(node?.components[2]?.params.material).toBe('mat1')
   })
 
   it('keeps a piece id as its node id, so existing override keys still point at it', () => {
@@ -188,7 +199,7 @@ describe('what each legacy field becomes', () => {
     level.instances[0]!.overrides = { padPiece: { material: 'mat2', transform: { position: { x: 5, y: 0, z: 0 } } } }
     const over = nodeLevelFromLegacy(level).nodes[0]?.overrides?.padPiece
     expect(over?.transform?.position).toEqual({ x: 5, y: 0, z: 0 })
-    // The material lands on the Visual's own parameters, not on a field of the override.
+    // The material lands on the Renderer's own parameters, not on a field of the override.
     expect(Object.values(over?.params ?? {})).toEqual([{ material: 'mat2' }])
   })
 
@@ -225,7 +236,7 @@ describe('what each legacy field becomes', () => {
     const out = nodeLevelFromLegacy(level)
     expect(out.nodes[0]?.prefab).toBeUndefined()
     expect(out.nodes[0]?.overrides).toBeUndefined()
-    expect(typesOf(findNode(out, 'n0-ball'))).toEqual([COLLIDER, VISUAL])
+    expect(typesOf(findNode(out, 'n0-ball'))).toEqual([COLLIDER, RENDERER])
   })
 
   it('bakes an inline definition’s overrides in, since there is nothing left to override against', () => {

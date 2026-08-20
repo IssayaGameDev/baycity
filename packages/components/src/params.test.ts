@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { ComponentError, defaultsOf, readParams, type ParamDecls } from './params'
+import { ComponentError, defaultsOf, readParams, visibleParams, type ParamDecls } from './params'
 import { Bumper, Track } from './gameplay'
-import { Collider, Visual } from './engine'
+import { Collider, Renderer } from './engine'
 
 const at = 'node[0].components[0]'
 const vec = (n: number): { x: number; y: number; z: number } => ({ x: n, y: n, z: n })
@@ -114,7 +114,38 @@ describe('the declaration drives the value type', () => {
   it('keeps a number a number and an enum its own literal union', () => {
     const power: number = readParams(Bumper.params, { power: 30 }, at).power
     const loop: 'loop' | 'pingPong' | 'once' = readParams(Track.params, {}, at).loop
-    const source: 'collider' | 'model' = readParams(Visual.params, {}, at).source
-    expect([power, loop, source]).toEqual([30, 'loop', 'collider'])
+    const material: string = readParams(Renderer.params, {}, at).material
+    expect([power, loop, material]).toEqual([30, 'loop', ''])
+  })
+})
+
+describe('which parameters are worth showing', () => {
+  const decls = {
+    source: { kind: 'enum', options: ['collider', 'model'], default: 'collider' },
+    model: { kind: 'asset', of: 'model', default: '', when: { param: 'source', is: ['model'] } },
+    material: { kind: 'asset', of: 'material', default: '' },
+  } satisfies ParamDecls
+
+  it('hides a parameter its condition rules out', () => {
+    expect(visibleParams(decls, { source: 'collider' })).toEqual(['source', 'material'])
+  })
+
+  it('shows it once the condition holds', () => {
+    expect(visibleParams(decls, { source: 'model' })).toEqual(['source', 'model', 'material'])
+  })
+
+  it('reads the condition against the default when nothing is stored', () => {
+    expect(visibleParams(decls, {})).toEqual(['source', 'material'])
+  })
+
+  // Hiding is presentation only. The value stays, so switching back finds it where it was left.
+  it('says nothing about the data: a hidden parameter is still read and defaulted', () => {
+    expect(readParams(decls, { source: 'collider', model: 'mesh1' }, at).model).toBe('mesh1')
+  })
+
+  // A typo in a declaration should not make a control vanish with no explanation.
+  it('shows a parameter whose condition names something that does not exist', () => {
+    const bad = { a: { kind: 'bool', default: true }, b: { kind: 'bool', default: true, when: { param: 'ghost', is: [true] } } } satisfies ParamDecls
+    expect(visibleParams(bad, {})).toEqual(['a', 'b'])
   })
 })

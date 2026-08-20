@@ -1,4 +1,4 @@
-import { COLLIDER, VISUAL, stringParam, vec3Param, type AssetDatabase, type ColliderDesc, type MaterialAsset, type Node } from '@mp/content'
+import { COLLIDER, MESH, RENDERER, stringParam, vec3Param, type AssetDatabase, type ColliderDesc, type MaterialAsset, type Node } from '@mp/content'
 import { createGreyboxMaterial, createThumbnailer, geometryForCollider, THREE, type AssetRuntime, type Thumbnailer } from '@mp/render-three'
 
 /**
@@ -73,11 +73,12 @@ export const createPreviews = (host: PreviewHost): Previews => {
       parent.add(holder)
 
       const enabled = node.components.filter((c) => c.enabled !== false)
-      const vis = enabled.find((c) => c.type === VISUAL)
-      if (vis !== undefined) {
-        const materialId = stringParam(vis, 'material', '')
+      const renderer = enabled.find((c) => c.type === RENDERER)
+      if (renderer !== undefined) {
+        const materialId = stringParam(renderer, 'material', '')
         const material = materialId === '' ? undefined : runtime?.material(materialId)
-        const modelId = stringParam(vis, 'source', 'collider') === 'model' ? stringParam(vis, 'model', '') : ''
+        const mesh = enabled.find((c) => c.type === MESH)
+        const modelId = mesh === undefined ? '' : stringParam(mesh, 'model', '')
         const model = modelId === '' ? undefined : runtime?.model(modelId)
         if (model != null) {
           holder.add(model)

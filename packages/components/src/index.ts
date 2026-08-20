@@ -9,7 +9,7 @@
  */
 export const COMPONENTS_VERSION = '0.0.0' as const
 
-export { ComponentError, defaultsOf, readParams } from './params'
+export { ComponentError, defaultsOf, readParams, visibleParams } from './params'
 export type {
   AssetSpec,
   BoolSpec,
@@ -21,6 +21,7 @@ export type {
   ParamDecls,
   Params,
   ParamSpec,
+  ParamWhen,
   RawParams,
   StringSpec,
   ValueOf,
@@ -32,7 +33,7 @@ export { characterAccess, createComponentRuntime, hasHooks } from './runtime'
 export type { CharacterAccess, ComponentRuntime, Ctx, Effects, ErasedHooks, Hit, Self } from './runtime'
 export { createRegistry } from './registry'
 export type { AnyComponentDef, Registry } from './registry'
-export { Collider, ENGINE_COMPONENTS, MaterialOverride, Spawn, Visual } from './engine'
+export { Collider, ENGINE_COMPONENTS, MaterialOverride, Mesh, Renderer, Spawn } from './engine'
 export { Bumper, Checkpoint, GAMEPLAY_COMPONENTS, Goal, Hazard, RULE_KINDS, Track } from './gameplay'
 export { DEFAULT_REGISTRY } from './defaults'
 export { componentOn, hasComponent } from './read'

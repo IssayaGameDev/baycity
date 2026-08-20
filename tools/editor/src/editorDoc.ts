@@ -8,9 +8,13 @@ import {
   COLLIDER,
   MATERIAL_OVERRIDE,
   TRACK,
-  VISUAL,
+  MESH,
+  RENDERER,
+  type Behavior,
   type ColliderDesc,
   type ComponentData,
+  type Keyframe,
+  type LoopMode,
   type Node,
   type NodeLevel,
   type NodeOverride,
@@ -20,7 +24,7 @@ import {
 import { DEFAULT_REGISTRY, type Registry } from '@mp/components'
 import { vec3, type Vec3 } from '@mp/core'
 
-import { sortedKeys, type TrackEdit } from './trackEdit'
+import { sortedKeys } from './trackEdit'
 
 /**
  * Editor document abstraction, over a **node tree** (PLAN-component-system, stage C1).
@@ -158,6 +162,14 @@ export interface Doc {
   setParams: (i: number, componentId: string, patch: Record<string, unknown>) => void
   setComponentEnabled: (i: number, componentId: string, on: boolean) => void
   /**
+   * Move a component one place up or down its node's list.
+   *
+   * Order is not cosmetic: it is the order hooks run in (ADR 0036) and the order several colliders draw in.
+   * Refused on an inherited node — the list belongs to the prefab, and a reordering is not something a
+   * per-placement override can express.
+   */
+  moveComponent: (i: number, componentId: string, delta: number) => void
+  /**
    * Nodes a `nodeRef` on this node may point at, in tree order (stage C4).
    *
    * **Scoped, not everything.** A reference is stored where the node is authored: one on an own node lands in
@@ -178,11 +190,19 @@ export interface Doc {
   /** Push this placement's overrides into the shared prefab, so every placement gets them and this one is clean. */
   applyToPrefab: (i: number) => void
 
-  // ---- motion -------------------------------------------------------------------------------------
-  /** The node's keyframe track, or `null` when it does not move. */
-  trackOf: (i: number) => TrackEdit | null
-  /** Replace the track. `null` removes the motion, which is what "does not move" is. */
-  setTrack: (i: number, track: TrackEdit | null) => void
+  // ---- keyframes ----------------------------------------------------------------------------------
+  /**
+   * Every keyframe parameter on this node — what a timeline can edit.
+   *
+   * Addressed by **component and parameter name**, not as "the node's Track". A `keys` parameter is a
+   * declaration like any other, so the timeline is the editor for that *kind of parameter* rather than for
+   * one privileged component type. `Track` is the only component that declares one today.
+   */
+  keyEditors: (i: number) => readonly KeyEditor[]
+  /** The keys of one such parameter, or `null` when the component is no longer there. */
+  keysOf: (i: number, editor: KeyEditor) => readonly Keyframe[] | null
+  /** Replace them. Sorted on the way in, so the strip and the evaluator agree on order. */
+  setKeys: (i: number, editor: KeyEditor, keys: readonly Keyframe[]) => void
   /** The node's local pose at a track time — what a scrub draws, and what the gizmo writes into a key. */
   poseOf: (i: number, timeMs: number) => Pose
 
@@ -202,6 +222,19 @@ export interface Doc {
   toJSON: () => NodeLevel | Node
   /** Save writes under a file name; the id follows it, or the two silently diverge. */
   setId: (id: string) => void
+}
+
+/**
+ * Which keyframe parameter a timeline is editing: a component on a node, and one of its `keys` parameters.
+ *
+ * Two names rather than one, because a component may in principle declare more than one keyframe parameter,
+ * and because a component id alone would not say which of them the strip has open.
+ */
+export interface KeyEditor {
+  readonly componentId: string
+  /** The component's registry type, for the strip's heading. */
+  readonly type: string
+  readonly param: string
 }
 
 /**
@@ -238,24 +271,35 @@ const typeOfComponent = (root: Node, componentId: string): string | undefined =>
   return undefined
 }
 
-/** A solid, visible node — what placing a primitive or a model produces. */
-const solidNode = (shape: ColliderDesc, transform: Transform, visual: Record<string, unknown>, name?: string): Node => ({
+/**
+ * A solid, visible node — what placing a primitive or a model produces.
+ *
+ * `model` given adds a `Mesh` between the collider and the renderer, in that reading order: what it collides
+ * as, what it looks like, that it draws. Omitted, the `Renderer` alone draws the collider shape (ADR 0039).
+ */
+const solidNode = (shape: ColliderDesc, transform: Transform, name?: string, model?: string): Node => ({
   id: freshId(),
   ...(name !== undefined ? { name } : {}),
   transform,
-  components: [component(COLLIDER, { shape, center: ZERO }), component(VISUAL, visual)],
+  components: [
+    component(COLLIDER, { shape, center: ZERO }),
+    ...(model !== undefined ? [component(MESH, { model })] : []),
+    component(RENDERER, { material: '' }),
+  ],
 })
 
-/** The behavior as the timeline edits it, or `null` when the node does not move. */
-const readTrack = (c: ComponentData | undefined): TrackEdit | null => {
-  if (c === undefined) return null
+/** The `Behavior` a `Track` component describes, for posing a node at a track time. */
+const behaviorOf = (c: ComponentData | undefined): Behavior => {
+  if (c === undefined) return { kind: 'static' }
   const keys = c.params.keys
-  if (!Array.isArray(keys) || keys.length === 0) return null
-  return { keys, loop: stringParam(c, 'loop', 'loop') as TrackEdit['loop'], phaseMs: Number(c.params.phaseMs ?? 0) }
+  if (!Array.isArray(keys) || keys.length === 0) return { kind: 'static' }
+  return {
+    kind: 'track',
+    keys: keys as readonly Keyframe[],
+    loop: stringParam(c, 'loop', 'loop') as LoopMode,
+    phaseMs: Number(c.params.phaseMs ?? 0),
+  }
 }
-
-/** A track as component parameters, keys sorted so the timeline and the evaluator agree on order. */
-const writeTrack = (t: TrackEdit): Record<string, unknown> => ({ keys: sortedKeys(t.keys), loop: t.loop, phaseMs: t.phaseMs })
 
 /**
  * Splice `arr`'s item at `from` so it lands *before* the original index `to`. `to` is expressed against the
@@ -503,20 +547,18 @@ const docOver = (level: NodeLevel, opts: { mode: Mode; library: Record<string, N
     params[componentId] = { ...params[componentId], ...patch }
   }
 
-  const setTrack = (i: number, track: TrackEdit | null): void => {
+  /** Keyframe parameters on a node, in component order then declaration order. */
+  const keyEditors = (i: number): KeyEditor[] => {
     const n = node(i)
-    if (n === undefined) return
-    const existing = n.view.components.find((c) => c.type === TRACK)
-    if (track === null) {
-      if (existing !== undefined) removeComponent(i, existing.id)
-      return
+    if (n === undefined) return []
+    const out: KeyEditor[] = []
+    for (const c of n.view.components) {
+      if (c.enabled === false) continue
+      const def = registry.get(c.type)
+      if (def === undefined) continue
+      for (const [param, spec] of Object.entries(def.params)) if (spec.kind === 'keys') out.push({ componentId: c.id, type: c.type, param })
     }
-    if (existing === undefined) {
-      const id = addComponent(i, TRACK)
-      if (id !== null) patchParams(i, id, writeTrack(track))
-      return
-    }
-    patchParams(i, existing.id, writeTrack(track))
+    return out
   }
 
   const canAdd = (i: number, type: string): boolean => {
@@ -537,6 +579,17 @@ const docOver = (level: NodeLevel, opts: { mode: Mode; library: Record<string, N
     const over = overrideFor(n, true)!
     ;(over.added ??= []).push(fresh)
     return fresh.id
+  }
+
+  const moveComponent = (i: number, componentId: string, delta: number): void => {
+    const n = node(i)
+    if (n === undefined || n.owner !== undefined) return
+    const list = n.authored.components
+    const from = list.findIndex((c) => c.id === componentId)
+    const to = from + delta
+    if (from < 0 || to < 0 || to >= list.length) return
+    const [moved] = list.splice(from, 1)
+    list.splice(to, 0, moved as ComponentData)
   }
 
   const removeComponent = (i: number, componentId: string): void => {
@@ -574,17 +627,21 @@ const docOver = (level: NodeLevel, opts: { mode: Mode; library: Record<string, N
     },
     /**
      * One mesh per enabled `Collider`, at its own offset — which is what makes several colliders on one node
-     * worth having. A `Visual` drawing a model replaces them all with a single mesh, since the model is the
-     * whole object's appearance and the colliders are only how it collides.
+     * worth having. A `Mesh` replaces them all with a single model, since the model is the whole object's
+     * appearance and the colliders are only how it collides.
+     *
+     * A `Renderer` is what makes any of it visible: without one this draws nothing, the way a `MeshFilter`
+     * with no `MeshRenderer` shows nothing (ADR 0039).
      */
     meshSpecs: (i) => {
       const n = node(i)
       if (n === undefined) return []
-      const vis = n.view.components.find((c) => c.type === VISUAL && enabledOf(c))
-      if (vis === undefined) return []
-      const material = inheritedMaterial(i) ?? stringParam(vis, 'material', '')
+      const renderer = n.view.components.find((c) => c.type === RENDERER && enabledOf(c))
+      if (renderer === undefined) return []
+      const material = inheritedMaterial(i) ?? stringParam(renderer, 'material', '')
       const surfaced = material === '' ? undefined : material
-      const model = stringParam(vis, 'source', 'collider') === 'model' ? stringParam(vis, 'model', '') : ''
+      const mesh = n.view.components.find((c) => c.type === MESH && enabledOf(c))
+      const model = mesh === undefined ? '' : stringParam(mesh, 'model', '')
       if (model !== '') {
         return [{ collider: { kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) }, transform: { position: vec3(0, 0, 0) }, name: n.view.name, model, material: surfaced }]
       }
@@ -606,7 +663,7 @@ const docOver = (level: NodeLevel, opts: { mode: Mode; library: Record<string, N
     place: (name, position) => {
       if (mode === 'prefab') {
         const make = PRIMITIVES[name] ?? PRIMITIVES['box']!
-        const fresh = solidNode(make(), { position }, { source: 'collider', model: '', material: '' }, name)
+        const fresh = solidNode(make(), { position }, name)
         const host = roots[0]
         if (host === undefined) return -1
         ;(host.children ??= []).push(fresh)
@@ -646,7 +703,7 @@ const docOver = (level: NodeLevel, opts: { mode: Mode; library: Record<string, N
       return indexOf(placed)
     },
     placeModel: (assetId, position) => {
-      const fresh = solidNode({ kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) }, { position }, { source: 'model', model: assetId, material: '' })
+      const fresh = solidNode({ kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) }, { position }, undefined, assetId)
       if (mode === 'prefab') {
         const host = roots[0]
         if (host === undefined) return -1
@@ -657,7 +714,7 @@ const docOver = (level: NodeLevel, opts: { mode: Mode; library: Record<string, N
     prefabForPalette: (name) => {
       if (mode === 'prefab') {
         const make = PRIMITIVES[name]
-        return make === undefined ? undefined : { id: name, name, transform: { position: vec3(0, 0, 0) }, components: [], children: [solidNode(make(), { position: vec3(0, 0, 0) }, { source: 'collider', model: '', material: '' }, name)] }
+        return make === undefined ? undefined : { id: name, name, transform: { position: vec3(0, 0, 0) }, components: [], children: [solidNode(make(), { position: vec3(0, 0, 0) }, name)] }
       }
       return level.prefabs?.[name] ?? library[name]
     },
@@ -734,12 +791,10 @@ const docOver = (level: NodeLevel, opts: { mode: Mode; library: Record<string, N
       const ids = new Set<string>()
       const add = (components: readonly ComponentData[]): void => {
         for (const c of components) {
-          if (c.type === VISUAL) {
+          if (c.type === MESH) {
             const model = stringParam(c, 'model', '')
-            const material = stringParam(c, 'material', '')
             if (model !== '') ids.add(model)
-            if (material !== '') ids.add(material)
-          } else if (c.type === MATERIAL_OVERRIDE) {
+          } else if (c.type === RENDERER || c.type === MATERIAL_OVERRIDE) {
             const material = stringParam(c, 'material', '')
             if (material !== '') ids.add(material)
           }
@@ -780,6 +835,7 @@ const docOver = (level: NodeLevel, opts: { mode: Mode; library: Record<string, N
     addComponent,
     removeComponent,
     setParams: patchParams,
+    moveComponent,
     setComponentEnabled: (i, componentId, on) => {
       const n = node(i)
       if (n === undefined) return
@@ -879,16 +935,17 @@ const docOver = (level: NodeLevel, opts: { mode: Mode; library: Record<string, N
       tidyOverride(n)
     },
 
-    trackOf: (i) => {
-      const n = node(i)
-      return n === undefined ? null : readTrack(trackComponent(n))
+    keyEditors,
+    keysOf: (i, editor) => {
+      const c = node(i)?.view.components.find((x) => x.id === editor.componentId)
+      const keys = c?.params[editor.param]
+      return Array.isArray(keys) ? (keys as readonly Keyframe[]) : c === undefined ? null : []
     },
-    setTrack,
+    setKeys: (i, editor, keys) => patchParams(i, editor.componentId, { [editor.param]: sortedKeys(keys) }),
     poseOf: (i, timeMs) => {
       const n = node(i)
       if (n === undefined) return { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) }
-      const track = readTrack(trackComponent(n))
-      return poseAt(track === null ? { kind: 'static' } : { kind: 'track', keys: track.keys, loop: track.loop, phaseMs: track.phaseMs }, n.view.transform, timeMs)
+      return poseAt(behaviorOf(trackComponent(n)), n.view.transform, timeMs)
     },
 
     /** Takes the *resolved* definitions rather than the keys alone, including nested children's. */

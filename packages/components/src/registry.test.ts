@@ -4,7 +4,7 @@ import { defineComponent } from './define'
 import { ComponentError } from './params'
 import { DEFAULT_REGISTRY } from './defaults'
 import { Bumper, GAMEPLAY_COMPONENTS, RULE_KINDS, Track } from './gameplay'
-import { Collider, Visual } from './engine'
+import { Collider, Mesh, Renderer } from './engine'
 
 const Fake = defineComponent({ type: 'Fake', params: { n: { kind: 'number', default: 1 } } })
 const Other = defineComponent({ type: 'Other', params: {} })
@@ -46,10 +46,11 @@ describe('the registry', () => {
 })
 
 describe('the built-in registry', () => {
-  it('holds the nine components C1 migrates onto, engine first', () => {
+  it('holds the ten built-in components, engine first', () => {
     expect(DEFAULT_REGISTRY.all().map((d) => d.type)).toEqual([
       'Collider',
-      'Visual',
+      'Mesh',
+      'Renderer',
       'MaterialOverride',
       'Spawn',
       'Checkpoint',
@@ -62,7 +63,7 @@ describe('the built-in registry', () => {
 
   it('makes a collider repeatable and everything else at most one per node', () => {
     expect(Collider.singleton).toBeUndefined()
-    for (const type of ['Visual', 'MaterialOverride', 'Spawn', 'Checkpoint', 'Goal', 'Hazard', 'Bumper', 'Track'])
+    for (const type of ['Mesh', 'Renderer', 'MaterialOverride', 'Spawn', 'Checkpoint', 'Goal', 'Hazard', 'Bumper', 'Track'])
       expect(DEFAULT_REGISTRY.get(type)?.singleton, type).toBe(true)
   })
 
@@ -71,8 +72,11 @@ describe('the built-in registry', () => {
     expect(DEFAULT_REGISTRY.defaults('Bumper').power).toBeGreaterThan(Math.sqrt(2 * 55 * 3))
   })
 
-  it('starts a visual unsurfaced and drawing its collider, which is what greybox means', () => {
-    expect(DEFAULT_REGISTRY.defaults('Visual')).toEqual({ source: 'collider', model: '', material: '' })
+  // Unsurfaced and with no mesh: a fresh Renderer draws the node's colliders in grey, which is what greybox
+  // means and what almost every authored object is.
+  it('starts a renderer unsurfaced, and a mesh naming nothing', () => {
+    expect(DEFAULT_REGISTRY.defaults('Renderer')).toEqual({ material: '' })
+    expect(DEFAULT_REGISTRY.defaults('Mesh')).toEqual({ model: '' })
   })
 
   it('starts a track empty and looping, so adding one moves nothing until keys exist', () => {
@@ -81,8 +85,8 @@ describe('the built-in registry', () => {
   })
 
   it('offers only material assets where a material belongs', () => {
-    expect(Visual.params.material.of).toBe('material')
-    expect(Visual.params.model.of).toBe('model')
+    expect(Renderer.params.material.of).toBe('material')
+    expect(Mesh.params.model.of).toBe('model')
   })
 
   it('carries the bumper default in the schema, not in the editor', () => {

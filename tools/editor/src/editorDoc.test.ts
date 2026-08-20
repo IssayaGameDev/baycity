@@ -5,7 +5,8 @@ import {
   MATERIAL_OVERRIDE,
   SPAWN,
   TRACK,
-  VISUAL,
+  MESH,
+  RENDERER,
   instantiateNodeLevel,
   moveTrack,
   validateNodeLevel,
@@ -39,7 +40,7 @@ const solid = (id: string, position: Vec3): Node => ({
   id,
   name: id,
   transform: { position },
-  components: [comp(`${id}-col`, COLLIDER, { shape: BOX, center: ZERO }), comp(`${id}-vis`, VISUAL, { source: 'collider', model: '', material: '' })],
+  components: [comp(`${id}-col`, COLLIDER, { shape: BOX, center: ZERO }), comp(`${id}-vis`, RENDERER, { material: '' })],
 })
 
 const blank = (): NodeLevel => ({ id: 'lv', config: { fallBehavior: 'respawn-checkpoint', fallY: -10 }, nodes: [] })
@@ -158,9 +159,9 @@ describe('placing', () => {
   it('places a model as a node with the mesh and an authored box', () => {
     const doc = levelDoc(blank(), {})
     const i = doc.placeModel('modelasset', vec3(0, 0, 0))
-    expect(typesOn(doc, i)).toEqual([COLLIDER, VISUAL])
-    expect(paramOn(doc, i, VISUAL, 'source'), 'visual is not collision (ADR 0014)').toBe('model')
-    expect(paramOn(doc, i, VISUAL, 'model')).toBe('modelasset')
+    // What it collides as, what it looks like, that it draws (ADR 0039). Visual is not collision (ADR 0014).
+    expect(typesOn(doc, i)).toEqual([COLLIDER, MESH, RENDERER])
+    expect(paramOn(doc, i, MESH, 'model')).toBe('modelasset')
   })
 
   it('offers only this level’s own table in the palette', () => {
@@ -249,8 +250,8 @@ describe('components', () => {
   it('refuses a second singleton and allows a second collider', () => {
     const doc = levelDoc(blank(), {})
     const i = doc.placeModel('m', vec3(0, 0, 0))
-    expect(doc.canAdd(i, VISUAL), 'already has one').toBe(false)
-    expect(doc.addComponent(i, VISUAL)).toBeNull()
+    expect(doc.canAdd(i, RENDERER), 'already has one').toBe(false)
+    expect(doc.addComponent(i, RENDERER)).toBeNull()
     expect(doc.canAdd(i, COLLIDER), 'a node holds as many as it likes').toBe(true)
     expect(doc.addComponent(i, COLLIDER)).not.toBeNull()
     expect(typesOn(doc, i).filter((t) => t === COLLIDER)).toHaveLength(2)
@@ -259,22 +260,39 @@ describe('components', () => {
   it('patches some parameters and leaves the rest', () => {
     const doc = levelDoc(blank(), {})
     const i = doc.placeModel('m', vec3(0, 0, 0))
-    doc.setParams(i, idOf(doc, i, VISUAL), { material: MAT_A })
-    expect(paramOn(doc, i, VISUAL, 'material')).toBe(MAT_A)
-    expect(paramOn(doc, i, VISUAL, 'model'), 'untouched').toBe('m')
+    doc.setParams(i, idOf(doc, i, RENDERER), { material: MAT_A })
+    expect(paramOn(doc, i, RENDERER, 'material')).toBe(MAT_A)
+    expect(paramOn(doc, i, MESH, 'model'), 'a different component, untouched').toBe('m')
   })
 
   it('removes one', () => {
     const doc = levelDoc(blank(), {})
     const i = doc.placeModel('m', vec3(0, 0, 0))
-    doc.removeComponent(i, idOf(doc, i, VISUAL))
-    expect(typesOn(doc, i)).toEqual([COLLIDER])
+    doc.removeComponent(i, idOf(doc, i, RENDERER))
+    expect(typesOn(doc, i)).toEqual([COLLIDER, MESH])
+  })
+
+  // Unity's rule: geometry with nothing to render it shows nothing (ADR 0039).
+  it('draws nothing once the Renderer is gone, even with a Mesh still there', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    expect(doc.meshSpecs(i)).toHaveLength(1)
+    doc.removeComponent(i, idOf(doc, i, RENDERER))
+    expect(doc.meshSpecs(i)).toEqual([])
+  })
+
+  it('draws the colliders once the Mesh is gone, since the Renderer still says to draw', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    doc.removeComponent(i, idOf(doc, i, MESH))
+    expect(doc.meshSpecs(i)).toHaveLength(1)
+    expect(doc.meshSpecs(i)[0]?.model, 'the collider shape, not a model').toBeUndefined()
   })
 
   it('switches one off without deleting it', () => {
     const doc = levelDoc(blank(), {})
     const i = doc.placeModel('m', vec3(0, 0, 0))
-    doc.setParams(i, idOf(doc, i, VISUAL), { source: 'collider' })
+    doc.removeComponent(i, idOf(doc, i, MESH))
     const collider = idOf(doc, i, COLLIDER)
     doc.setComponentEnabled(i, collider, false)
     expect(doc.components(i).find((c) => c.id === collider)?.enabled).toBe(false)
@@ -286,7 +304,7 @@ describe('components', () => {
   it('draws one mesh per collider, each at its own centre', () => {
     const doc = levelDoc(blank(), {})
     const i = doc.placeModel('m', vec3(0, 0, 0))
-    doc.setParams(i, idOf(doc, i, VISUAL), { source: 'collider' })
+    doc.removeComponent(i, idOf(doc, i, MESH))
     const second = doc.addComponent(i, COLLIDER)!
     doc.setParams(i, second, { center: vec3(3, 0, 0) })
     expect(doc.meshSpecs(i).map((m) => m.transform.position)).toEqual([ZERO, vec3(3, 0, 0)])
@@ -299,13 +317,14 @@ describe('components', () => {
     doc.setParams(parent, idOf(doc, parent, MATERIAL_OVERRIDE), { material: MAT_B })
     const child = doc.placeModel('m', vec3(1, 0, 0))
     const moved = doc.reparent(child, parent, 0)
-    doc.setParams(moved, idOf(doc, moved, VISUAL), { source: 'collider', material: MAT_A })
+    doc.removeComponent(moved, idOf(doc, moved, MESH))
+    doc.setParams(moved, idOf(doc, moved, RENDERER), { material: MAT_A })
     expect(doc.meshSpecs(moved)[0]?.material).toBe(MAT_B)
   })
 
   it('collects every asset the document references, definitions included', () => {
     const { doc } = placed()
-    doc.setParams(1, idOf(doc, 1, VISUAL), { material: MAT_A })
+    doc.setParams(1, idOf(doc, 1, RENDERER), { material: MAT_A })
     doc.addComponent(0, MATERIAL_OVERRIDE)
     doc.setParams(0, idOf(doc, 0, MATERIAL_OVERRIDE), { material: MAT_B })
     expect(new Set(doc.assetIds())).toEqual(new Set([MAT_A, MAT_B]))
@@ -315,9 +334,9 @@ describe('components', () => {
 describe('editing an inherited node writes an override', () => {
   it('changes this placement and not the prefab', () => {
     const { level, doc } = placed()
-    doc.setParams(1, idOf(doc, 1, VISUAL), { material: MAT_A })
+    doc.setParams(1, idOf(doc, 1, RENDERER), { material: MAT_A })
 
-    expect(paramOn(doc, 1, VISUAL, 'material'), 'reads back its own value').toBe(MAT_A)
+    expect(paramOn(doc, 1, RENDERER, 'material'), 'reads back its own value').toBe(MAT_A)
     expect(doc.prefabAt('pad')!.children![0]!.components[1]!.params.material, 'the definition is untouched').toBe('')
     expect(level.nodes[0]!.overrides, 'stored against the placement').toBeDefined()
   })
@@ -326,9 +345,9 @@ describe('editing an inherited node writes an override', () => {
     const doc = levelDoc(blank(), library())
     doc.place('pad', vec3(0, 0, 0))
     doc.place('pad', vec3(8, 0, 0))
-    doc.setParams(1, idOf(doc, 1, VISUAL), { material: MAT_A })
-    expect(paramOn(doc, 1, VISUAL, 'material')).toBe(MAT_A)
-    expect(paramOn(doc, 3, VISUAL, 'material'), 'the sibling placement still matches the prefab').toBe('')
+    doc.setParams(1, idOf(doc, 1, RENDERER), { material: MAT_A })
+    expect(paramOn(doc, 1, RENDERER, 'material')).toBe(MAT_A)
+    expect(paramOn(doc, 3, RENDERER, 'material'), 'the sibling placement still matches the prefab').toBe('')
   })
 
   it('records a transform, a name, an added component and a removal', () => {
@@ -348,7 +367,7 @@ describe('editing an inherited node writes an override', () => {
 
   it('marks which parameters differ, so the panel can say so', () => {
     const { doc } = placed()
-    const visual = idOf(doc, 1, VISUAL)
+    const visual = idOf(doc, 1, RENDERER)
     doc.setParams(1, visual, { material: MAT_A })
     expect(doc.components(1).find((c) => c.id === visual)?.overridden).toEqual(['material'])
   })
@@ -397,14 +416,14 @@ describe('editing an inherited node writes an override', () => {
     const doc = levelDoc(level, library())
     doc.place('pad', vec3(0, 0, 0))
     doc.place('pad', vec3(8, 0, 0))
-    doc.setParams(1, idOf(doc, 1, VISUAL), { material: MAT_A })
+    doc.setParams(1, idOf(doc, 1, RENDERER), { material: MAT_A })
     doc.addComponent(1, Checkpoint.type)
 
     doc.applyToPrefab(1)
 
     expect(doc.overridesOf(1), 'no longer an override').toEqual([])
-    expect(paramOn(doc, 1, VISUAL, 'material'), 'still what was chosen').toBe(MAT_A)
-    expect(paramOn(doc, 3, VISUAL, 'material'), 'and the other placement followed').toBe(MAT_A)
+    expect(paramOn(doc, 1, RENDERER, 'material'), 'still what was chosen').toBe(MAT_A)
+    expect(paramOn(doc, 3, RENDERER, 'material'), 'and the other placement followed').toBe(MAT_A)
     expect(typesOn(doc, 3)).toContain(Checkpoint.type)
     expect('overrides' in level.nodes[0]!).toBe(false)
   })
@@ -418,56 +437,123 @@ describe('editing an inherited node writes an override', () => {
   })
 })
 
-describe('motion', () => {
-  const track = (): { keys: ReturnType<typeof moveTrack>; loop: 'loop'; phaseMs: number } => ({
-    keys: moveTrack(ZERO, vec3(0, 1, 0), 3, 1000),
-    loop: 'loop',
-    phaseMs: 0,
-  })
+describe('keyframes', () => {
+  const keys = (): ReturnType<typeof moveTrack> => moveTrack(ZERO, vec3(0, 1, 0), 3, 1000)
 
-  it('adds a Track when a track is set, and removes it when cleared', () => {
+  /** The one keyframe parameter on a node — what the timeline would open. */
+  const editor = (doc: Doc, i: number) => {
+    const found = doc.keyEditors(i)[0]
+    if (found === undefined) throw new Error(`nothing animatable on node ${i}`)
+    return found
+  }
+
+  /**
+   * The timeline addresses a **component and a parameter**, not "the node's Track". A `keys` parameter is a
+   * declaration like any other, so a second animatable component would be editable by the same strip with no
+   * new plumbing.
+   */
+  it('reports a keyframe parameter only once a component declares one', () => {
     const doc = levelDoc(blank(), {})
     const i = doc.placeModel('m', vec3(0, 0, 0))
-    expect(doc.trackOf(i)).toBeNull()
-    doc.setTrack(i, track())
-    expect(typesOn(doc, i)).toContain(TRACK)
-    expect(doc.trackOf(i)?.keys).toHaveLength(3)
-    doc.setTrack(i, null)
-    expect(typesOn(doc, i)).not.toContain(TRACK)
+    expect(doc.keyEditors(i)).toEqual([])
+    doc.addComponent(i, TRACK)
+    expect(doc.keyEditors(i)).toEqual([{ componentId: idOf(doc, i, TRACK), type: TRACK, param: 'keys' }])
   })
 
-  it('poses a node along its track, and at its authored transform when static', () => {
+  it('starts a fresh Track empty, so adding one moves nothing', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    doc.addComponent(i, TRACK)
+    expect(doc.keysOf(i, editor(doc, i))).toEqual([])
+    expect(doc.poseOf(i, 500).position, 'no keys means static').toEqual(ZERO)
+  })
+
+  it('writes keys through the component, leaving its other parameters alone', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    doc.addComponent(i, TRACK)
+    const e = editor(doc, i)
+    doc.setParams(i, e.componentId, { loop: 'pingPong', phaseMs: 250 })
+
+    doc.setKeys(i, e, keys())
+
+    expect(doc.keysOf(i, e)).toHaveLength(3)
+    expect(paramOn(doc, i, TRACK, 'loop'), 'a keys edit is not a whole-component write').toBe('pingPong')
+    expect(paramOn(doc, i, TRACK, 'phaseMs')).toBe(250)
+  })
+
+  it('sorts keys on the way in, so the strip and the evaluator agree on order', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    doc.addComponent(i, TRACK)
+    doc.setKeys(i, editor(doc, i), [{ t: 900 }, { t: 100 }, { t: 500 }])
+    expect((doc.keysOf(i, editor(doc, i)) ?? []).map((k) => k.t)).toEqual([100, 500, 900])
+  })
+
+  it('poses a node along its keys, and at its authored transform without them', () => {
     const doc = levelDoc(blank(), {})
     const i = doc.placeModel('m', vec3(0, 0, 0))
     expect(doc.poseOf(i, 500).position).toEqual(ZERO)
-    doc.setTrack(i, track())
+    doc.addComponent(i, TRACK)
+    doc.setKeys(i, editor(doc, i), keys())
     expect(doc.poseOf(i, 500).position.y).toBeCloseTo(3, 9)
   })
 
-  it('overrides a track on one placement without moving the others', () => {
+  it('honours loop mode when posing, since that is the component’s parameter', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    doc.addComponent(i, TRACK)
+    const e = editor(doc, i)
+    doc.setKeys(i, e, keys())
+    doc.setParams(i, e.componentId, { phaseMs: 500 })
+    // Phase shifts the clock, so t=0 now reads what t=500 used to.
+    expect(doc.poseOf(i, 0).position.y).toBeCloseTo(3, 9)
+  })
+
+  it('keys one placement without moving the others', () => {
     const doc = levelDoc(blank(), library())
     doc.place('pad', vec3(0, 0, 0))
     doc.place('pad', vec3(8, 0, 0))
-    doc.setTrack(1, track())
+    doc.addComponent(1, TRACK)
+    doc.setKeys(1, editor(doc, 1), keys())
     expect(doc.poseOf(1, 500).position.y, 'this one moves').toBeCloseTo(3, 9)
     expect(doc.poseOf(3, 500).position.y, 'that one does not').toBeCloseTo(0, 9)
+    expect(doc.overridesOf(1).some((x) => x.includes('added')), 'as a structural override').toBe(true)
   })
 
-  // Absence means inherit, so "does not move here" has to remove the inherited component.
-  it('says nothing moves here by removing the prefab’s Track on this placement', () => {
+  // Absence means inherit, so "does not move here" is removing the inherited component — emptying its keys
+  // says something different and weaker, and both are now expressible.
+  it('tells emptying the keys apart from removing the component', () => {
     const lib = library()
     lib['pad']!.children![0]!.components.push(comp('t0', TRACK, { keys: moveTrack(ZERO, vec3(0, 1, 0), 3, 1000), loop: 'loop', phaseMs: 0 }))
     const doc = levelDoc(blank(), lib)
     doc.place('pad', vec3(0, 0, 0))
-    expect(doc.trackOf(1)).not.toBeNull()
+    expect(doc.keysOf(1, editor(doc, 1))).toHaveLength(3)
 
-    doc.setTrack(1, null)
+    doc.setKeys(1, editor(doc, 1), [])
+    expect(doc.poseOf(1, 500).position.y, 'no keys, so static').toBeCloseTo(0, 9)
+    expect(typesOn(doc, 1), 'but the component is still there to add keys back to').toContain(TRACK)
 
-    expect(doc.trackOf(1), 'no motion here').toBeNull()
-    expect(
-      doc.overridesOf(1).some((s) => s.includes('removed')),
-      'recorded as an override, not as silence',
-    ).toBe(true)
+    doc.removeComponent(1, editor(doc, 1).componentId)
+    expect(typesOn(doc, 1)).not.toContain(TRACK)
+    expect(doc.overridesOf(1).some((x) => x.includes('removed'))).toBe(true)
+  })
+
+  it('reads nothing for a component that is no longer there', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    doc.addComponent(i, TRACK)
+    const e = editor(doc, i)
+    doc.removeComponent(i, e.componentId)
+    expect(doc.keysOf(i, e)).toBeNull()
+  })
+
+  it('ignores a component that is switched off, since the strip cannot edit what does not run', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    doc.addComponent(i, TRACK)
+    doc.setComponentEnabled(i, idOf(doc, i, TRACK), false)
+    expect(doc.keyEditors(i)).toEqual([])
   })
 })
 
@@ -515,7 +601,7 @@ describe('references', () => {
     expect(doc.extract(i)).toBe('lamp')
     expect(doc.refOf(i)).toBe('lamp')
     expect(doc.transformOf(i).position, 'the placement keeps its transform').toEqual(vec3(5, 0, 0))
-    expect(typesOn(doc, i), 'and reads its contents through the reference').toEqual([COLLIDER, VISUAL])
+    expect(typesOn(doc, i), 'and reads its contents through the reference').toEqual([COLLIDER, MESH, RENDERER])
   })
 
   it('refuses to extract something that is already a reference', () => {
@@ -536,7 +622,7 @@ describe('prefab mode', () => {
     expect(doc.palette()).toContain('platform')
     const i = doc.place('platform', vec3(0, 1, 0))
     expect(doc.parentOf(i)).toBe(0)
-    expect(typesOn(doc, i)).toEqual([COLLIDER, VISUAL])
+    expect(typesOn(doc, i)).toEqual([COLLIDER, RENDERER])
   })
 
   it('protects the root, which is the file', () => {
@@ -569,7 +655,7 @@ describe('what it writes is what the game loads', () => {
     doc.addComponent(1, Bumper.type)
     doc.setParams(1, idOf(doc, 1, Bumper.type), { power: 40 })
     const spawn = doc.placeModel('m', vec3(0, 0, 0))
-    doc.removeComponent(spawn, idOf(doc, spawn, VISUAL))
+    doc.removeComponent(spawn, idOf(doc, spawn, RENDERER))
     doc.removeComponent(spawn, idOf(doc, spawn, COLLIDER))
     doc.addComponent(spawn, SPAWN)
 
@@ -662,5 +748,36 @@ describe('node references (stage C4)', () => {
     const refOf = (n: Node): unknown => n.components.find((c) => c.type === Linked.type)?.params.target
     // The anchor is a sibling, not inside the copied subtree, so both still name it.
     expect(refOf(level.nodes[0]!)).toBe(refOf(level.nodes[1]!))
+  })
+})
+
+describe('component order', () => {
+  it('moves a component up and down its own list', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    doc.addComponent(i, Bumper.type)
+    expect(typesOn(doc, i)).toEqual([COLLIDER, MESH, RENDERER, Bumper.type])
+
+    doc.moveComponent(i, idOf(doc, i, Bumper.type), -1)
+    expect(typesOn(doc, i)).toEqual([COLLIDER, MESH, Bumper.type, RENDERER])
+
+    doc.moveComponent(i, idOf(doc, i, Bumper.type), 1)
+    expect(typesOn(doc, i)).toEqual([COLLIDER, MESH, RENDERER, Bumper.type])
+  })
+
+  it('does nothing at either end', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    doc.moveComponent(i, idOf(doc, i, COLLIDER), -1)
+    doc.moveComponent(i, idOf(doc, i, RENDERER), 1)
+    expect(typesOn(doc, i)).toEqual([COLLIDER, MESH, RENDERER])
+  })
+
+  // The list belongs to the prefab, and a reordering is not something a per-placement override can express.
+  it('refuses on an inherited node', () => {
+    const { doc } = placed()
+    const before = typesOn(doc, 1)
+    doc.moveComponent(1, idOf(doc, 1, RENDERER), -1)
+    expect(typesOn(doc, 1)).toEqual(before)
   })
 })

@@ -9,7 +9,7 @@ import type { Ctx, ErasedHooks, Hit, Self } from './runtime'
  * place that knows a definition's `D` and `S` agree with its own hooks, so it is the one place that casts.
  */
 export interface ComponentDef<D extends ParamDecls = ParamDecls> {
-  /** Registry key, and what lands in JSON. Capitalised like Unity's own (`Collider`, `Visual`). */
+  /** Registry key, and what lands in JSON. Capitalised like Unity's own (`Collider`, `Renderer`). */
   readonly type: string
   readonly params: D
   /** Inspector heading. Falls back to `type`. */
@@ -17,8 +17,8 @@ export interface ComponentDef<D extends ParamDecls = ParamDecls> {
   /**
    * At most one per node — the add menu offers it greyed out once present.
    *
-   * Set only where a second copy is *meaningless*, never as a taste call: two `Visual`s draw two meshes at
-   * one transform, two `Spawn`s name one point twice. Colliders and gameplay rules are repeatable on
+   * Set only where a second copy is *meaningless*, never as a taste call: two `Renderer`s draw one node
+   * twice, two `Spawn`s name one point twice. Colliders and gameplay rules are repeatable on
    * purpose, which is half the reason for a list instead of a field.
    */
   readonly singleton?: boolean

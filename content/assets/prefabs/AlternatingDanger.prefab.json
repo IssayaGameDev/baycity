@@ -41,10 +41,8 @@
         },
         {
           "id": "c1",
-          "type": "Visual",
+          "type": "Renderer",
           "params": {
-            "source": "collider",
-            "model": "",
             "material": ""
           }
         }
@@ -81,10 +79,8 @@
         },
         {
           "id": "c1",
-          "type": "Visual",
+          "type": "Renderer",
           "params": {
-            "source": "collider",
-            "model": "",
             "material": "4a11d049f9f8e5ac"
           }
         },
@@ -126,10 +122,8 @@
         },
         {
           "id": "c1",
-          "type": "Visual",
+          "type": "Renderer",
           "params": {
-            "source": "collider",
-            "model": "",
             "material": ""
           }
         }
@@ -166,10 +160,8 @@
         },
         {
           "id": "c1",
-          "type": "Visual",
+          "type": "Renderer",
           "params": {
-            "source": "collider",
-            "model": "",
             "material": ""
           }
         }
@@ -206,10 +198,8 @@
         },
         {
           "id": "c1",
-          "type": "Visual",
+          "type": "Renderer",
           "params": {
-            "source": "collider",
-            "model": "",
             "material": "4a11d049f9f8e5ac"
           }
         },
@@ -251,10 +241,8 @@
         },
         {
           "id": "c1",
-          "type": "Visual",
+          "type": "Renderer",
           "params": {
-            "source": "collider",
-            "model": "",
             "material": "4a11d049f9f8e5ac"
           }
         },
@@ -296,10 +284,8 @@
         },
         {
           "id": "c1",
-          "type": "Visual",
+          "type": "Renderer",
           "params": {
-            "source": "collider",
-            "model": "",
             "material": ""
           }
         }
@@ -336,10 +322,8 @@
         },
         {
           "id": "c1",
-          "type": "Visual",
+          "type": "Renderer",
           "params": {
-            "source": "collider",
-            "model": "",
             "material": ""
           }
         }
@@ -376,10 +360,8 @@
         },
         {
           "id": "c1",
-          "type": "Visual",
+          "type": "Renderer",
           "params": {
-            "source": "collider",
-            "model": "",
             "material": "4a11d049f9f8e5ac"
           }
         },

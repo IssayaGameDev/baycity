@@ -8,7 +8,8 @@ import {
   MATERIAL_OVERRIDE,
   SPAWN,
   TRACK,
-  VISUAL,
+  MESH,
+  RENDERER,
   componentsOfType,
   effectiveNode,
   firstOfType,
@@ -258,17 +259,28 @@ export const instantiateNodeLevel = (world: PhysicsWorld, level: NodeLevel, type
     }
 
     const colliders = componentsOfType(r.components, COLLIDER)
-    const vis = firstOfType(r.components, VISUAL)
-    const modelSource = vis !== undefined && stringParam(vis, 'source', 'collider') === 'model'
-    const model = modelSource ? stringParam(vis, 'model', '') : ''
-    const surfaced = material ?? (vis === undefined ? '' : stringParam(vis, 'material', ''))
+    /**
+     * `Renderer` says *that* this node draws; `Mesh` says *what* (ADR 0039). Unity's split, and its rule:
+     *
+     * - a `Renderer` with no `Mesh` draws the node's colliders — the greybox case, and most content
+     * - a `Renderer` with a `Mesh` draws the mesh
+     * - a `Mesh` with no `Renderer` draws nothing, exactly as a `MeshFilter` without a `MeshRenderer`
+     *
+     * A `Mesh` whose `model` is empty falls back to the colliders, which is the same fallback the old
+     * `source: 'model'` with no asset had.
+     */
+    const renderer = firstOfType(r.components, RENDERER)
+    const mesh = firstOfType(r.components, MESH)
+    const model = mesh === undefined ? '' : stringParam(mesh, 'model', '')
+    const drawsModel = renderer !== undefined && model !== ''
+    const surfaced = material ?? (renderer === undefined ? '' : stringParam(renderer, 'material', ''))
 
     const item = (collider: ColliderDesc, at: Vec3): VisualItem => {
       const v: VisualItem = {
         collider,
         position: { ...at },
         rotation: { ...f.worldRot },
-        model: modelSource && model !== '' ? model : undefined,
+        model: drawsModel ? model : undefined,
         material: surfaced === '' ? undefined : surfaced,
       }
       visuals.push(v)
@@ -293,16 +305,16 @@ export const instantiateNodeLevel = (world: PhysicsWorld, level: NodeLevel, type
         handles.push(body.colliderHandle)
         // A model draws once for the whole node and rides the first body, so a single-collider node still
         // produces exactly one dynamic with both fields — the shape every existing piece has.
-        const paired = vis === undefined ? undefined : modelSource ? (n === 0 ? item(collider, at) : undefined) : item(collider, at)
+        const paired = renderer === undefined ? undefined : drawsModel ? (n === 0 ? item(collider, at) : undefined) : item(collider, at)
         if (f.animated) addDynamic(f, body, paired, offset)
       })
-    } else if (modelSource && model !== '') {
+    } else if (drawsModel) {
       /**
        * Drawn but not solid — impossible for a `Piece`, whose collider was mandatory.
        *
-       * Only a model reaches here. `source: 'collider'` with no collider has **nothing to draw**, and
+       * Only a mesh reaches here. A `Renderer` with no `Mesh` and no collider has **nothing to draw**, and
        * inventing a unit box for it would put a shape in the world that no data asked for. That case is
-       * reachable two ways, and both should be invisible: a Visual added before a Collider, and a Collider
+       * reachable two ways, and both should be invisible: a Renderer added before a Collider, and a Collider
        * switched off.
        */
       const only = item(UNIT_BOX, f.worldPos)

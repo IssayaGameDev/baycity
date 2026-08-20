@@ -1,4 +1,4 @@
-import { trackDuration, type Easing, type Keyframe, type LoopMode, type Pose } from '@mp/content'
+import { trackDuration, type Easing, type Keyframe, type Pose } from '@mp/content'
 import { vec3, type Vec3 } from '@mp/core'
 
 /**
@@ -12,15 +12,7 @@ import { vec3, type Vec3 } from '@mp/core'
  * assignment rather than a mutation somebody else might be mid-read of.
  */
 
-/** A track as the editor holds it: keys plus how it repeats. */
-export interface TrackEdit {
-  keys: readonly Keyframe[]
-  loop: LoopMode
-  phaseMs: number
-}
-
 export const EASINGS: readonly Easing[] = ['linear', 'in', 'out', 'inOut', 'step']
-export const LOOP_MODES: readonly LoopMode[] = ['loop', 'pingPong', 'once']
 
 /**
  * Cardinal axes, offered so the common presets need no vector typing. Moved here from the Inspector with
@@ -149,11 +141,7 @@ export const nudgeKey = (keys: readonly Keyframe[], index: number): Keyframe[] =
  * One key rather than two, because a two-key track invents a duration nobody chose. One key is a held pose,
  * which is honest — the loader treats it as static — and the second key is the author's first real decision.
  */
-export const trackFrom = (pose: Pose): TrackEdit => ({
-  keys: [{ t: 0, position: pose.position, rotation: pose.rotation, easing: 'inOut' }],
-  loop: 'loop',
-  phaseMs: 0,
-})
+export const oneKeyAt = (pose: Pose): Keyframe[] => [{ t: 0, position: pose.position, rotation: pose.rotation, easing: 'inOut' }]
 
 /** What a row in the timeline needs to draw one key. */
 export interface KeyRow {

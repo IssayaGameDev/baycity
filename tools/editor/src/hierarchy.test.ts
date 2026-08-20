@@ -1,4 +1,4 @@
-import { COLLIDER, VISUAL, type ComponentData, type Node, type NodeLevel } from '@mp/content'
+import { COLLIDER, RENDERER, type ComponentData, type Node, type NodeLevel } from '@mp/content'
 import { vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
@@ -16,7 +16,7 @@ const solid = (id: string, position: { x: number; y: number; z: number }, half =
   transform: { position },
   components: [
     comp(`${id}-col`, COLLIDER, { shape: { kind: 'box', halfExtents: vec3(half, half, half) }, center: vec3(0, 0, 0) }),
-    comp(`${id}-vis`, VISUAL, { source: 'collider', model: '', material: '' }),
+    comp(`${id}-vis`, RENDERER, { material: '' }),
   ],
 })
 
@@ -31,7 +31,7 @@ const ball = (id: string, position: { x: number; y: number; z: number }): Node =
   transform: { position },
   components: [
     comp(`${id}-col`, COLLIDER, { shape: { kind: 'ball', radius: 0.5 }, center: vec3(0, 0, 0) }),
-    comp(`${id}-vis`, VISUAL, { source: 'collider', model: '', material: '' }),
+    comp(`${id}-vis`, RENDERER, { material: '' }),
   ],
 })
 

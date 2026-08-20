@@ -4,7 +4,8 @@ import {
   MATERIAL_OVERRIDE,
   SPAWN,
   TRACK,
-  VISUAL,
+  MESH,
+  RENDERER,
   visualMaterial,
   visualModel,
   type Behavior,
@@ -58,16 +59,20 @@ const ruleParams = (t: Trigger): Record<string, unknown> => (t.kind === 'bumper'
 /**
  * A piece's four fields as components.
  *
- * The `Visual` is **always** written, even where the piece had none: an omitted `Piece.visual` greyboxed the
- * collider, and a node with no `Visual` draws nothing. Absent has to mean absent once it is a component, so
- * the old default becomes explicit data here rather than a rule in the renderer.
+ * A `Renderer` is **always** written, even where the piece had no visual: an omitted `Piece.visual` greyboxed
+ * the collider, and a node with no `Renderer` draws nothing. Absent has to mean absent once it is a component,
+ * so the old default becomes explicit data here rather than a rule in the renderer.
+ *
+ * A `Mesh` is written only for a piece that named one — its absence is what says "draw the colliders", where
+ * the first cut of this schema used a `source` enum for the same thing (ADR 0039).
  */
 const componentsOfPiece = (piece: Piece): ComponentData[] => {
   const id = counter('c')
   const out: ComponentData[] = [comp(id(), COLLIDER, { shape: piece.collider })]
   const model = visualModel(piece.visual)
   const material = visualMaterial(piece.visual) ?? ''
-  out.push(comp(id(), VISUAL, model === undefined ? { source: 'collider', model: '', material } : { source: 'model', model, material }))
+  if (model !== undefined) out.push(comp(id(), MESH, { model }))
+  out.push(comp(id(), RENDERER, { material }))
   if (piece.trigger !== undefined) out.push(comp(id(), RULE[piece.trigger.kind].type, ruleParams(piece.trigger)))
   const track = trackParams(piece.behavior)
   if (track !== undefined) out.push(comp(id(), TRACK, track))
@@ -140,7 +145,7 @@ const findComponent = (node: Node, pick: (c: ComponentData) => boolean): Compone
  * One `PieceOverride` as a `NodeOverride`.
  *
  * The interesting cases are the two sentinels ADR 0033 needed. `material: ''` stays a value, because
- * `Visual.material` already spells "unsurfaced" that way. `trigger: { kind: 'none' }` and
+ * `Renderer.material` already spells "unsurfaced" that way. `trigger: { kind: 'none' }` and
  * `behavior: { kind: 'static' }` become **structural removals**, which is the honest translation: absence
  * of a component is what "not a trigger here" means once rules are components, and it is why `removed`
  * exists in the schema from C1 rather than waiting for C3.
@@ -152,9 +157,9 @@ const nodeOverride = (over: PieceOverride, target: Node): NodeOverride => {
   const addId = counter('a')
 
   if (over.material !== undefined) {
-    const visual = findComponent(target, (c) => c.type === VISUAL)
-    if (visual !== undefined) params[visual.id] = { material: over.material }
-    else added.push(comp(addId(), VISUAL, { source: 'collider', model: '', material: over.material }))
+    const renderer = findComponent(target, (c) => c.type === RENDERER)
+    if (renderer !== undefined) params[renderer.id] = { material: over.material }
+    else added.push(comp(addId(), RENDERER, { material: over.material }))
   }
 
   if (over.trigger !== undefined) {

@@ -1,19 +1,6 @@
-import { trackDuration, type Pose } from '@mp/content'
+import { trackDuration, type Keyframe, type Pose } from '@mp/content'
 
-import {
-  DIRS,
-  EASINGS,
-  LOOP_MODES,
-  deleteKey,
-  keyRows,
-  moveKey,
-  nudgeKey,
-  putKey,
-  setEasing,
-  snapTime,
-  sortedKeys,
-  type TrackEdit,
-} from './trackEdit'
+import { DIRS, EASINGS, deleteKey, keyRows, moveKey, nudgeKey, putKey, setEasing, snapTime, sortedKeys } from './trackEdit'
 
 /**
  * The Animation panel: the timeline strip (ADR 0029).
@@ -25,16 +12,24 @@ import {
  *
  * Rebuilt wholesale on `render`, like the Hierarchy: a track is a handful of keys, and diffing would buy
  * nothing but a class of stale-node bugs.
+ *
+ * **It edits one component's `keys` parameter**, named in its heading and opened from that component's section
+ * in the Inspector. It used to float beside the Project browser and address "the selection's track", which made
+ * an animation the one thing in the editor that was not a component you could point at. The strip stays a wide
+ * strip because a timeline needs horizontal room, and Unity keeps its Animation window out of the Inspector for
+ * the same reason — but what it edits is a declared parameter like any other. So `loop` and `phase` are gone
+ * from here: they are ordinary fields in the component's own section, and a second copy was the duplication
+ * worth deleting.
  */
 
 export interface TimelineHost {
-  /** The selected item's track, or `null` when it has none (or nothing is selected). */
-  track: () => TrackEdit | null
-  /** Replace the track; `null` clears the animation. */
-  setTrack: (t: TrackEdit | null) => void
+  /** The keys being edited, or `null` when the selection has no keyframe parameter open. */
+  keys: () => readonly Keyframe[] | null
+  /** Replace them. */
+  setKeys: (keys: readonly Keyframe[]) => void
   /** Whether anything is selected at all — the panel has nothing to show otherwise. */
   hasSelection: () => boolean
-  /** A label for what is selected, so the panel says whose track this is. */
+  /** Whose keys these are: the node and the component, so the strip says what it is editing. */
   label: () => string
   /** Playhead, in milliseconds into the track. */
   time: () => number
@@ -49,9 +44,9 @@ export interface TimelineHost {
   poseNow: () => Pose | null
   /** Grid to snap dragged keys and the playhead to, in ms. 0 for none. */
   snapMs: () => number
-  /** Create a track from the item's current pose. */
-  addTrack: () => void
-  /** Overwrite the track with a preset built from the item's current pose. */
+  /** Give the selection a keyframe component, for when it has none. */
+  addKeyComponent: () => void
+  /** Overwrite the keys with a preset built from the item's current pose. */
   applyMovePreset: (dir: string, distance: number, periodMs: number) => void
   applySpinPreset: (dir: string, periodMs: number) => void
 }
@@ -111,8 +106,8 @@ export const createTimeline = (root: HTMLElement, host: TimelineHost): Timeline 
   /** Right-click on a key: everything that happens to one key but not on a drag. */
   const openKeyMenu = (index: number, x: number, y: number): void => {
     closeMenu()
-    const track = host.track()
-    if (track === null) return
+    const keys = host.keys()
+    if (keys === null) return
     const box = el('div', 'menu')
     box.style.left = `${x}px`
     box.style.top = `${y}px`
@@ -126,13 +121,13 @@ export const createTimeline = (root: HTMLElement, host: TimelineHost): Timeline 
       box.append(b)
     }
 
-    box.append(el('div', 'menu-head', `key at ${secs(keyRows(track.keys)[index]?.t ?? 0)}`))
+    box.append(el('div', 'menu-head', `key at ${secs(keyRows(keys)[index]?.t ?? 0)}`))
     for (const easing of EASINGS) {
-      item(`ease out: ${easing}`, () => host.setTrack({ ...track, keys: setEasing(track.keys, index, easing) }))
+      item(`ease out: ${easing}`, () => host.setKeys(setEasing(keys, index, easing)))
     }
-    item('duplicate 1ms later (instant jump)', () => host.setTrack({ ...track, keys: nudgeKey(track.keys, index) }))
+    item('duplicate 1ms later (instant jump)', () => host.setKeys(nudgeKey(keys, index)))
     item('delete key', () => {
-      host.setTrack({ ...track, keys: deleteKey(track.keys, index) })
+      host.setKeys(deleteKey(keys, index))
       host.setActiveKey(null)
     })
     document.body.append(box)
@@ -154,24 +149,28 @@ export const createTimeline = (root: HTMLElement, host: TimelineHost): Timeline 
       return
     }
 
-    const track = host.track()
-    root.append(buildToolbar(track))
-    if (track === null) {
-      root.append(el('p', 'hint', 'No animation on this one. Add one, or start from a preset.'))
+    const keys = host.keys()
+    root.append(buildToolbar(keys))
+    if (keys === null) {
+      root.append(el('p', 'hint', 'Nothing animatable selected. Add a Track in the Inspector, or start from a preset.'))
       return
     }
-    root.append(buildStrip(track))
+    if (keys.length === 0) {
+      root.append(el('p', 'hint', 'No keys yet. Pose the object and press + key, or start from a preset.'))
+      return
+    }
+    root.append(buildStrip(keys))
   }
 
-  /** Everything above the strip: preview, loop mode, phase, duration, and the two presets. */
-  const buildToolbar = (track: TrackEdit | null): HTMLElement => {
+  /** Everything above the strip: preview, the key tools, the duration, and the two presets. */
+  const buildToolbar = (keys: readonly Keyframe[] | null): HTMLElement => {
     const bar = el('div', 'tl-bar')
     bar.append(el('span', 'tl-who', host.label()))
 
-    if (track === null) {
-      const add = el('button', 'ctl', '+ Add animation')
-      add.title = 'a single key holding the current pose — the rest is yours'
-      add.addEventListener('click', host.addTrack)
+    if (keys === null) {
+      const add = el('button', 'ctl', '+ Add Track')
+      add.title = 'give this object a Track component — the same thing the Inspector adds'
+      add.addEventListener('click', host.addKeyComponent)
       bar.append(add, presetControls())
       return bar
     }
@@ -182,53 +181,28 @@ export const createTimeline = (root: HTMLElement, host: TimelineHost): Timeline 
     play.classList.toggle('on', host.previewing())
     play.addEventListener('click', () => host.setPreviewing(!host.previewing()))
 
-    const loop = el('select', 'ctl')
-    for (const mode of LOOP_MODES) {
-      const opt = el('option', undefined, mode)
-      opt.value = mode
-      loop.append(opt)
-    }
-    loop.value = track.loop
-    loop.title = 'loop restarts · pingPong runs back · once holds the last pose'
-    loop.addEventListener('change', () => host.setTrack({ ...track, loop: loop.value as TrackEdit['loop'] }))
-
-    const phase = el('input', 'ctl num')
-    phase.type = 'number'
-    phase.step = '50'
-    phase.value = String(track.phaseMs)
-    phase.title = 'phase offset in ms — what makes two identical tracks run out of step'
-    phase.addEventListener('change', () => host.setTrack({ ...track, phaseMs: Number(phase.value) || 0 }))
-
     const addKey = el('button', 'ctl', '+ key')
     addKey.title = 'record the current pose at the playhead'
     addKey.addEventListener('click', () => {
       const pose = host.poseNow()
       if (pose === null) return
       const t = host.time()
-      const keys = putKey(track.keys, { t, position: pose.position, rotation: pose.rotation })
-      host.setTrack({ ...track, keys })
+      const next = putKey(keys, { t, position: pose.position, rotation: pose.rotation })
+      host.setKeys(next)
       // Select what was just recorded, so the gizmo is immediately editing that key rather than the object.
-      host.setActiveKey(sortedKeys(keys).findIndex((k) => k.t === t))
+      host.setActiveKey(sortedKeys(next).findIndex((k) => k.t === t))
     })
 
-    const clear = el('button', 'ctl', 'Clear')
-    clear.title = 'remove the animation; the item keeps its authored transform'
+    const clear = el('button', 'ctl', 'Clear keys')
+    clear.title = 'empty the track; the object keeps its authored transform and the component stays'
     clear.addEventListener('click', () => {
-      host.setTrack(null)
+      host.setKeys([])
       host.setActiveKey(null)
     })
 
-    bar.append(
-      play,
-      el('span', 'tl-lbl', 'loop'),
-      loop,
-      el('span', 'tl-lbl', 'phase'),
-      phase,
-      addKey,
-      clear,
-      el('span', 'tl-dur', `${secs(trackDuration(track.keys))} · ${track.keys.length} keys`),
-      presetControls(),
-    )
+    // No `loop` or `phase` here: they are declared parameters of the component, edited in its own Inspector
+    // section. A second copy in this bar is what made an animation feel like it lived somewhere else.
+    bar.append(play, addKey, clear, el('span', 'tl-dur', `${secs(trackDuration(keys))} · ${keys.length} keys`), presetControls())
     return bar
   }
 
@@ -268,11 +242,11 @@ export const createTimeline = (root: HTMLElement, host: TimelineHost): Timeline 
   }
 
   /** The ruler, the key row and the playhead. */
-  const buildStrip = (track: TrackEdit): HTMLElement => {
+  const buildStrip = (keys: readonly Keyframe[]): HTMLElement => {
     const strip = el('div', 'tl-strip')
-    const duration = trackDuration(track.keys)
+    const duration = trackDuration(keys)
     const span = visibleSpan(duration)
-    const rows = keyRows(track.keys)
+    const rows = keyRows(keys)
 
     const pct = (t: number): number => (t / span) * 100
 
@@ -308,7 +282,7 @@ export const createTimeline = (root: HTMLElement, host: TimelineHost): Timeline 
       seg.addEventListener('click', (e) => {
         e.stopPropagation()
         const next = EASINGS[(EASINGS.indexOf(a.easing) + 1) % EASINGS.length]!
-        host.setTrack({ ...track, keys: setEasing(track.keys, i, next) })
+        host.setKeys(setEasing(keys, i, next))
       })
       row.append(seg)
     }
@@ -334,10 +308,9 @@ export const createTimeline = (root: HTMLElement, host: TimelineHost): Timeline 
           const t = snapTime(timeAtPointer(m, strip, span), host.snapMs())
           if (!moved && Math.abs(t - key.t) < 1) return
           moved = true
-          const next = moveKey(host.track()?.keys ?? track.keys, index, t)
+          const next = moveKey(host.keys() ?? keys, index, t)
           index = next.index
-          const current = host.track()
-          if (current !== null) host.setTrack({ ...current, keys: next.keys })
+          if (host.keys() !== null) host.setKeys(next.keys)
           host.setActiveKey(index)
           host.setTime(t)
         }

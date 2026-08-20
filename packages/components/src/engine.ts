@@ -1,4 +1,4 @@
-import { COLLIDER, MATERIAL_OVERRIDE, SPAWN, VISUAL } from '@mp/content'
+import { COLLIDER, MATERIAL_OVERRIDE, MESH, RENDERER, SPAWN } from '@mp/content'
 import { defineComponent } from './define'
 
 /**
@@ -31,34 +31,55 @@ export const Collider = defineComponent({
 })
 
 /**
- * What this node draws.
+ * **What** shape this node draws, when it is not its colliders. Unity's `MeshFilter`.
  *
- * `source: 'collider'` draws **every** `Collider` on this node — the generalisation of today's one-piece,
- * one-mesh pairing. `source: 'model'` draws the mesh asset instead, and the colliders stay authored, so a
- * detailed prop still collides as the box somebody chose (ADR 0014).
+ * Geometry only: a mesh with no `Renderer` beside it shows nothing, exactly as in Unity. The collider stays
+ * authored, so a detailed prop still collides as the box somebody chose (ADR 0014).
  *
- * `material: ''` means unsurfaced, which the renderer greyboxes.
- *
- * **A node with no `Visual` draws nothing.** Today an omitted `Piece.visual` still greyboxes the collider;
- * as a component, absent has to mean absent, the way a GameObject with no renderer is invisible. Migration
- * therefore writes an explicit `Visual` onto every piece that relied on the old default, so nothing that
- * exists changes appearance.
+ * Its absence is meaningful, which is why this replaced a `source` enum on the old combined `Visual`: having a
+ * `Mesh` *is* the answer to "does this draw a model or its colliders", so the enum — and the conditional field
+ * that hid `model` when the answer was "colliders" — both went away (ADR 0039).
  */
-export const Visual = defineComponent({
-  type: VISUAL,
+export const Mesh = defineComponent({
+  type: MESH,
   params: {
-    source: { kind: 'enum', options: ['collider', 'model'], default: 'collider' },
     model: { kind: 'asset', of: 'model', default: '', label: 'model' },
+  },
+  singleton: true,
+})
+
+/**
+ * **That** this node draws, and with what surface. Unity's `MeshRenderer`.
+ *
+ * `Renderer` rather than `Material`, even though a material is its only parameter today: it is the *role* that
+ * is being declared, and naming a component after one of its fields is the mistake `MaterialOverride` was
+ * already making. Shadow-casting and a render layer are the realistic next fields, and neither belongs to
+ * something called `Material`.
+ *
+ * - `Renderer`, no `Mesh` — draws **every** `Collider` on this node, each at its own centre. The greybox case,
+ *   and most of the authored content.
+ * - `Renderer` + `Mesh` — draws the mesh.
+ * - `Mesh`, no `Renderer` — draws nothing. Unity's `MeshFilter` without a `MeshRenderer`.
+ * - neither — draws nothing.
+ *
+ * `material: ''` means unsurfaced, which the viewport greyboxes.
+ */
+export const Renderer = defineComponent({
+  type: RENDERER,
+  params: {
     material: { kind: 'asset', of: 'material', default: '', label: 'material' },
   },
   singleton: true,
 })
 
 /**
- * Resurfaces this node and everything below it, beating each `Visual`'s own material.
+ * Resurfaces this node and everything below it, beating each `Renderer`'s own material.
  *
  * This is `PrefabInstance.material` (ADR 0028) as a component, kept because it is the fastest thing in the
  * editor: one click restyles a whole placement. Kodjo confirmed keeping it when the plan was approved.
+ *
+ * Its name only started telling the truth once `Renderer` existed to be overridden — before that it was the
+ * only way an object got a material at all, named as though it were an exception (ADR 0039).
  */
 export const MaterialOverride = defineComponent({
   type: MATERIAL_OVERRIDE,
@@ -75,4 +96,4 @@ export const Spawn = defineComponent({
   singleton: true,
 })
 
-export const ENGINE_COMPONENTS = [Collider, Visual, MaterialOverride, Spawn]
+export const ENGINE_COMPONENTS = [Collider, Mesh, Renderer, MaterialOverride, Spawn]

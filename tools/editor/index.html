@@ -741,6 +741,179 @@
         padding: 2px 6px;
       }
 
+      #insp-head .multi {
+        margin-top: 5px;
+        padding: 2px 5px;
+        font-size: 11px;
+        border-radius: 3px;
+        background: #2b3038;
+        color: var(--dim);
+      }
+
+      /*
+        ---- inspector: our chrome around tweakpane's widgets (ADR 0038) ----
+
+        A section is a header row we draw plus a body that holds one small tweakpane. The header carries what
+        tweakpane's folder title could only spell into a string: the enable checkbox, a badge, and a menu.
+      */
+      .isec {
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        margin-bottom: 5px;
+        background: #1f2329;
+      }
+      .isec-h {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 4px;
+        background: var(--panel-head);
+        border-radius: 2px 2px 0 0;
+        min-width: 0;
+      }
+      /* An off component is still readable — it is a state, not an error. */
+      .isec.off .isec-h,
+      .isec.off .isec-body {
+        opacity: 0.5;
+      }
+      .isec-tw,
+      .isec-m {
+        flex: 0 0 auto;
+        width: 16px;
+        height: 16px;
+        padding: 0;
+        line-height: 14px;
+        text-align: center;
+        font-size: 10px;
+        color: var(--dim);
+        background: none;
+        border: 0;
+        border-radius: 2px;
+        cursor: pointer;
+      }
+      .isec-m {
+        margin-left: auto;
+        font-size: 13px;
+      }
+      .isec-tw:hover,
+      .isec-m:hover {
+        color: var(--text);
+        background: #3a414c;
+      }
+      .isec-en {
+        flex: 0 0 auto;
+        margin: 0;
+        accent-color: var(--accent);
+      }
+      .isec-t {
+        flex: 0 1 auto;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .isec-badge {
+        flex: 0 0 auto;
+        padding: 0 4px;
+        font-size: 10px;
+        line-height: 15px;
+        border-radius: 7px;
+        color: #0d1014;
+        background: var(--link);
+      }
+      .isec-body {
+        padding: 3px 5px 5px;
+      }
+      /* A section with overrides gets the same left bar its rows do, so it reads at a glance while scrolling. */
+      .isec.over-sec {
+        border-left: 2px solid var(--link);
+      }
+
+      /* A read-only line: a label and a value, and never a bordered box pretending to be a field. */
+      .irow {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 2px 0;
+        min-width: 0;
+      }
+      .irow-l {
+        flex: 0 0 92px;
+        color: var(--dim);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .irow-v {
+        flex: 1 1 auto;
+        color: var(--text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* Unity's cue for an overridden value: a bar down the left edge of the row. */
+      #inspector .over,
+      .isec-body .irow.over {
+        position: relative;
+      }
+      #inspector .over::before,
+      .isec-body .irow.over::before {
+        content: '';
+        position: absolute;
+        left: -5px;
+        top: 1px;
+        bottom: 1px;
+        width: 2px;
+        background: var(--link);
+      }
+
+      .iover {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin-bottom: 5px;
+        padding: 3px 5px;
+        font-size: 11px;
+        border-radius: 3px;
+        color: var(--dim);
+        background: #23272e;
+      }
+      .iover.on {
+        color: var(--link);
+        background: #1e2937;
+      }
+      .iover-t {
+        flex: 1 1 auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ctl.tiny {
+        flex: 0 0 auto;
+        padding: 1px 5px;
+        font-size: 11px;
+      }
+      .ctl.wide {
+        width: 100%;
+        padding: 4px;
+      }
+      .ctl.danger:hover:not(:disabled) {
+        border-color: #a2413a;
+        background: #3a2523;
+      }
+      .iadd {
+        margin: 6px 0 5px;
+      }
+      .ifoot {
+        display: flex;
+        gap: 5px;
+      }
+      .ifoot .ctl {
+        flex: 1 1 0;
+        padding: 3px;
+      }
+
       /* ---- inspector (tweakpane mounts here) ---- */
       /*
         Tweakpane lays a row out as a *growing label* beside a *fixed* value column

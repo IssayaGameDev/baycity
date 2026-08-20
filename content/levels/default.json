@@ -44,10 +44,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "d8dcf8f542bebdf7"
               }
             },
@@ -105,10 +103,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": ""
               }
             }
@@ -145,10 +141,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "4a11d049f9f8e5ac"
               }
             },
@@ -190,10 +184,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": ""
               }
             }
@@ -230,10 +222,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": ""
               }
             }
@@ -270,10 +260,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "4a11d049f9f8e5ac"
               }
             },
@@ -315,10 +303,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "4a11d049f9f8e5ac"
               }
             },
@@ -360,10 +346,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": ""
               }
             }
@@ -400,10 +384,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": ""
               }
             }
@@ -440,10 +422,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "4a11d049f9f8e5ac"
               }
             },
@@ -496,10 +476,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "a563891204f971a4"
               }
             }
@@ -545,10 +523,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "55205761e38bc929"
               }
             }
@@ -594,10 +570,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "55205761e38bc929"
               }
             }
@@ -643,10 +617,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "55205761e38bc929"
               }
             }
@@ -692,10 +664,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "55205761e38bc929"
               }
             }
@@ -741,10 +711,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "d67ddcac4f57efc8"
               }
             },
@@ -795,10 +763,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "55205761e38bc929"
               }
             }
@@ -881,10 +847,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "19079ddb3fbfb27e"
               }
             }
@@ -958,10 +922,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "19079ddb3fbfb27e"
               }
             }
@@ -1007,10 +969,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "4a11d049f9f8e5ac"
               }
             },
@@ -1061,10 +1021,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "6bbc0130aff311b5"
               }
             },
@@ -1143,10 +1101,8 @@
             },
             {
               "id": "c1",
-              "type": "Visual",
+              "type": "Renderer",
               "params": {
-                "source": "collider",
-                "model": "",
                 "material": "19079ddb3fbfb27e"
               }
             }
@@ -1203,7 +1159,7 @@
       "transform": {
         "position": {
           "x": 0,
-          "y": 0,
+          "y": 3.5,
           "z": 0
         }
       },

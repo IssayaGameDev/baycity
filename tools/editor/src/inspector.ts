@@ -1,28 +1,28 @@
 import { vec3, type Vec3 } from '@mp/core'
 import type { ColliderDesc } from '@mp/content'
-import type { ParamSpec } from '@mp/components'
+import { visibleParams, type ParamSpec } from '@mp/components'
 import { Pane } from 'tweakpane'
 
 import type { ComponentView, Doc } from './editorDoc'
 
 /**
- * The Inspector panel — transform, then **one section per component**, with the fields generated from each
- * component's declared parameters (PLAN-component-system, stage C1).
+ * The Inspector panel: a stack of **sections**, one per component, with the fields inside each generated from
+ * that component's declared parameters.
  *
- * Nothing in here knows what a bumper is. It reads `registry.get(type).params`, maps each declaration to a
- * control, and writes values back by key. That is the whole point of declaring parameters instead of
- * reflecting them: adding a component type puts its fields in this panel without touching this file, where
- * the `trigger` field it replaces needed five separate edits here (a state field, a write-back, a read-back,
- * a picker entry, and a conditional block for the one kind that carried a number).
+ * The chrome is ours; the value widgets are Tweakpane's (ADR 0038). Tweakpane is genuinely good at one thing —
+ * a labelled number you can drag to scrub — and bad at the rest of what a component list needs. Its folder
+ * title is a plain string, so component state had to be spelled into it (`Track (added here) — off`); every
+ * control is a full-width row, so an `enabled` checkbox and a `Remove` button cost two of them per component,
+ * which on a four-component node was 8 of 30 rows; and a folder cannot remember whether it was open across a
+ * rebuild, which every enum change forces.
  *
- * Still Tweakpane, deliberately: a property grid of labelled numbers with point-and-drag editing is exactly
- * what it is good at, and `PaneConfig.container` mounts it inside a real panel. Its one weakness — a
- * conditional field can only be expressed by disposing the controls and re-adding them — is now confined to
- * this panel, where the rebuild costs nothing anyone can see.
+ * So: a header row we draw (twist, enable checkbox, name, badge, ⋯ menu), a Tweakpane pane per section for the
+ * fields, and the state that has to survive a rebuild — which sections are shut, where the panel was scrolled —
+ * kept here rather than inside a widget library.
  *
  * Holds no Three.js: the host reads and writes the selection's transform, so this file knows only about
- * documents and numbers. Holds no *animation* either (ADR 0029): a track is edited on the timeline, and a
- * property grid can only show one instant of it.
+ * documents and numbers. Holds no *animation* either (ADR 0029/0037): a `keys` parameter shows its count and a
+ * button to the timeline, because a property grid can only show one instant of a track.
  */
 export interface TransformValues {
   position: Vec3
@@ -34,6 +34,8 @@ export interface TransformValues {
 export interface InspectorHost {
   doc: () => Doc | null
   selected: () => number | null
+  /** How many objects are selected. The panel edits one and has to say so when there are more. */
+  selectionCount: () => number
   /** The selection's current transform, or `null` if there isn't one. */
   readTransform: () => TransformValues | null
   writeTransform: (t: TransformValues) => void
@@ -49,7 +51,9 @@ export interface InspectorHost {
   materials: () => Record<string, string>
   /** Model assets to offer, same shape. */
   models: () => Record<string, string>
-  /** Revert one override on the selection, or all of them. */
+  /** Open the timeline on this component's keyframe parameter (ADR 0037). */
+  editKeys: (componentId: string, param: string) => void
+  /** Revert one override — `'transform'`, `'name'`, or a component id — or all of them. */
   revertOverride: (field?: string) => void
   /** Push the selection's overrides into the shared prefab, so every placement of it follows. */
   applyOverrides: () => void
@@ -66,10 +70,8 @@ export interface Inspector {
 
 const r4 = (n: number): number => Math.round(n * 1e4) / 1e4
 
-/** What Tweakpane calls a disposable. Folders dispose their own contents, so only the folder is tracked. */
-interface Disposable {
-  dispose: () => void
-}
+/** The transform section's key in the collapse set. Not a component id, so it cannot collide with one. */
+const TRANSFORM = '@transform'
 
 /**
  * Shapes offered for a `Collider`. **No cylinder**: the physics wrapper has no cylinder shape and the loader
@@ -91,17 +93,25 @@ const defaultShape = (kind: string, was: ColliderDesc): ColliderDesc => {
   }
 }
 
-export const createInspector = (head: HTMLElement, container: HTMLElement, host: InspectorHost): Inspector => {
-  // No title: the panel's own header names it, and a second collapsible header inside would be noise.
-  const pane = new Pane({ container })
+const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] => {
+  const node = document.createElement(tag)
+  if (className !== undefined) node.className = className
+  if (text !== undefined) node.textContent = text
+  return node
+}
 
+interface MenuItem {
+  readonly text: string
+  readonly run: () => void
+}
+
+export const createInspector = (head: HTMLElement, container: HTMLElement, host: InspectorHost): Inspector => {
   /**
    * The header is ours, not Tweakpane's: Unity's name field is full-width and prominent, and a Tweakpane
-   * binding would put it in the 92px label column like any other property.
+   * binding would put it in the label column like any other property.
    */
-  const nameInput = document.createElement('input')
+  const nameInput = el('input', 'ctl name')
   nameInput.type = 'text'
-  nameInput.className = 'ctl name'
   nameInput.spellcheck = false
   nameInput.title = 'name — blank falls back to what the object is'
   const commitName = (): void => {
@@ -117,16 +127,14 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     if (e.key === 'Enter') nameInput.blur() // blur fires `change`
   })
 
-  const linkRow = document.createElement('div')
-  linkRow.className = 'link'
-  const linkWho = document.createElement('span')
-  linkWho.className = 'who'
-  const linkButton = document.createElement('button')
-  linkButton.className = 'ctl'
+  const linkRow = el('div', 'link')
+  const linkWho = el('span', 'who')
+  const linkButton = el('button', 'ctl')
   linkRow.append(linkWho, linkButton)
-  head.append(nameInput, linkRow)
+  const multiNote = el('div', 'multi')
+  head.append(nameInput, linkRow, multiNote)
 
-  /** Name + prefab link. Separate from `rebuild` so renaming does not tear down the property grid. */
+  /** Name, prefab link, and the multi-selection note. Separate from `rebuild` so renaming is cheap. */
   const renderHead = (): void => {
     const doc = host.doc()
     const at = host.selected()
@@ -140,6 +148,12 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     // being written into the JSON.
     if (document.activeElement !== nameInput) nameInput.value = doc.nameOf(at)
     nameInput.placeholder = doc.label(at)
+
+    // Selecting several and editing one was visible only in the status bar, which is the wrong place to learn
+    // that the panel is not showing you everything you picked.
+    const count = host.selectionCount()
+    multiNote.hidden = count < 2
+    multiNote.textContent = count < 2 ? '' : `${count} selected · editing ${doc.label(at)}`
 
     const ref = doc.refOf(at)
     linkRow.classList.toggle('linked', ref !== null)
@@ -164,30 +178,52 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
 
   const sel: TransformValues = { position: vec3(0, 0, 0), rotationDeg: vec3(0, 0, 0), scale: vec3(1, 1, 1) }
 
-  let blades: Disposable[] = []
+  /**
+   * Which sections are shut, and it survives rebuilds *and* selections: somebody who collapses `Collider`
+   * because they are working on a `Bumper` means it for the session, not until the next dropdown change.
+   *
+   * Keyed by component id rather than by type, so two colliders on one node collapse independently.
+   */
+  const shut = new Set<string>()
+
+  /** Every pane this build created, torn down on the next one. */
+  let panes: Pane[] = []
+  /** The transform pane, which is the only one `sync` has to refresh. */
+  let transformPane: Pane | null = null
+  let menu: HTMLElement | null = null
+
+  const closeMenu = (): void => {
+    menu?.remove()
+    menu = null
+  }
+  window.addEventListener('pointerdown', (e) => {
+    if (menu !== null && !menu.contains(e.target as Node)) closeMenu()
+  })
 
   /**
-   * True while `sync` (or a build) is pushing values *into* the pane, so a refresh is not mistaken for a
-   * person typing.
+   * True while a build or `sync` is pushing values *into* a pane, so a refresh is not mistaken for a person
+   * typing.
    *
    * Tweakpane's `refresh()` calls `fetch()`, which assigns `rawValue` — and that emits `change` exactly as a
-   * keystroke does. So `sync()` fires every handler registered below it. During a gizmo drag that meant each
-   * frame's refresh re-entered `writeTransform`, which re-posed the item from the document and threw away the
-   * drag's starting snapshot; a multi-selection then stopped following the primary after the first frame. There
-   * is no option to suppress it, so the guard is here, where the code knows it is the one writing.
+   * keystroke does. During a gizmo drag that meant each frame's refresh re-entered `writeTransform`, which
+   * re-posed the item from the document and threw away the drag's starting snapshot; a multi-selection then
+   * stopped following the primary after the first frame. There is no option to suppress it, so the guard is
+   * here, where the code knows it is the one writing.
    */
   let syncDepth = 0
   const syncing = (): boolean => syncDepth > 0
 
   const sync = (): void => {
     const t = host.readTransform()
-    if (t === null) return
+    if (t === null || transformPane === null) return
     sel.position = vec3(r4(t.position.x), r4(t.position.y), r4(t.position.z))
     sel.rotationDeg = vec3(r4(t.rotationDeg.x), r4(t.rotationDeg.y), r4(t.rotationDeg.z))
     sel.scale = vec3(r4(t.scale.x), r4(t.scale.y), r4(t.scale.z))
     syncDepth++
     try {
-      pane.refresh()
+      // Only the transform pane. The component panes are bound to their own snapshots and nothing a gizmo does
+      // touches them, so refreshing them was work that also risked firing their handlers.
+      transformPane.refresh()
     } finally {
       syncDepth--
     }
@@ -203,11 +239,132 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     })
   }
 
-  /** A change a person made, as opposed to one `sync` pushed in. */
+  /** A change a person made, as opposed to one a refresh pushed in. */
   const edited = (write: () => void): void => {
     if (syncing()) return
     write()
     host.onPropsChanged()
+  }
+
+  /**
+   * Rebuild, keeping the scroll position — every rebuild used to jump the panel back to the top, and a rebuild
+   * happens on every enum change.
+   *
+   * The scroller is the panel's body, not our container: `#inspector` is a plain block inside it, and making it
+   * a second scroller would nest two.
+   */
+  const scroller = (): HTMLElement => container.closest('.panel-body') ?? container
+  const rebuildKeepingScroll = (): void => {
+    const at = scroller()
+    const top = at.scrollTop
+    rebuild()
+    at.scrollTop = top
+  }
+
+  const openMenu = (at: HTMLElement, items: readonly MenuItem[]): void => {
+    closeMenu()
+    const box = el('div', 'menu')
+    const rect = at.getBoundingClientRect()
+    box.style.left = `${Math.round(Math.max(4, rect.right - 180))}px`
+    box.style.top = `${Math.round(rect.bottom + 2)}px`
+    for (const item of items) {
+      const b = el('button', undefined, item.text)
+      b.addEventListener('click', () => {
+        closeMenu()
+        item.run()
+      })
+      box.append(b)
+    }
+    document.body.append(box)
+    menu = box
+  }
+
+  /**
+   * A section's body, and how rows get into it in **declaration order**.
+   *
+   * Tweakpane owns one element per pane and appends inside it, so a row of ours emitted after a pane would
+   * land after everything that pane ever holds. `pane()` therefore hands out the *current* pane and `row()`
+   * retires it, so the next binding starts a fresh one further down. A `Track` comes out as `keys` (ours) then
+   * `loop`/`phase` (Tweakpane's), which is the order they are declared in.
+   */
+  interface Section {
+    readonly root: HTMLElement
+    /** The pane to bind into, created on demand. */
+    readonly pane: () => Pane
+    /** Append one of our own rows, and end the current pane's run. */
+    readonly row: (label: string, value: string) => HTMLElement
+  }
+
+  /**
+   * One collapsible section, ours.
+   *
+   * The header is a row of small controls rather than a title string, which is the whole reason this is not a
+   * Tweakpane folder: an enable checkbox and a ⋯ menu belong beside the name, not as two more full-width rows
+   * inside it.
+   */
+  const addSection = (
+    key: string,
+    opts: { title: string; badge?: string; off?: boolean; enable?: (on: boolean) => void; menu?: readonly MenuItem[] },
+  ): Section => {
+    const root = el('div', 'isec')
+    const header = el('div', 'isec-h')
+    const collapsed = shut.has(key)
+
+    const twist = el('button', 'isec-tw', collapsed ? '▸' : '▾')
+    twist.title = collapsed ? 'expand' : 'collapse'
+    twist.addEventListener('click', () => {
+      if (shut.has(key)) shut.delete(key)
+      else shut.add(key)
+      rebuildKeepingScroll()
+    })
+    header.append(twist)
+
+    if (opts.enable !== undefined) {
+      const box = el('input', 'isec-en')
+      box.type = 'checkbox'
+      box.checked = opts.off !== true
+      box.title = 'enabled — an off component is skipped by the loader and by the runtime'
+      box.addEventListener('change', () => opts.enable?.(box.checked))
+      header.append(box)
+    }
+
+    header.append(el('span', 'isec-t', opts.title))
+    if (opts.badge !== undefined && opts.badge !== '') header.append(el('span', 'isec-badge', opts.badge))
+
+    if (opts.menu !== undefined && opts.menu.length > 0) {
+      const dots = el('button', 'isec-m', '⋯')
+      dots.title = 'more'
+      const items = opts.menu
+      dots.addEventListener('click', (e) => {
+        e.stopPropagation()
+        openMenu(dots, items)
+      })
+      header.append(dots)
+    }
+
+    root.append(header)
+    root.classList.toggle('off', opts.off === true)
+    const body = el('div', 'isec-body')
+    body.hidden = collapsed
+    root.append(body)
+    container.append(root)
+
+    let current: Pane | null = null
+    const pane = (): Pane => {
+      if (current === null) {
+        current = new Pane({ container: body })
+        panes.push(current)
+      }
+      return current
+    }
+    const row = (label: string, value: string): HTMLElement => {
+      current = null
+      const line = el('div', 'irow')
+      line.append(el('span', 'irow-l', label), el('span', 'irow-v', value))
+      body.append(line)
+      return line
+    }
+    return { root, pane, row }
   }
 
   /**
@@ -217,7 +374,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
    * component still has something to bind to in a level authored before it existed.
    */
   const addParam = (
-    folder: { addBinding: Pane['addBinding']; addBlade: Pane['addBlade'] },
+    section: Section,
     doc: Doc,
     at: number,
     view: ComponentView,
@@ -226,216 +383,293 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     spec: ParamSpec,
   ): void => {
     const label = spec.label ?? key
-    const overridden = view.overridden.includes(key)
-    // Tweakpane owns its label markup, so an overridden parameter is marked by a leading dot rather than by
-    // reaching into its DOM — the same reasoning that kept the override list a list (ADR 0033).
-    const shown = overridden ? `• ${label}` : label
     const write = (patch: Record<string, unknown>): void => edited(() => doc.setParams(at, view.id, patch))
+    /**
+     * Mark an overridden row with a class, which CSS turns into a bar down its left edge — Unity's cue.
+     *
+     * `element` is Tweakpane's own public accessor for the row it built, so this is its API rather than a reach
+     * into its internals. It replaced a `•` prefixed onto the label, which ate label width and was easy to
+     * miss.
+     */
+    const mark = (blade: { element: HTMLElement }): void => {
+      if (view.overridden.includes(key)) blade.element.classList.add('over')
+    }
 
     switch (spec.kind) {
       case 'number': {
-        const opts: Record<string, unknown> = { label: shown }
+        const opts: Record<string, unknown> = { label }
         if (spec.step !== undefined) opts.step = spec.step
         if (spec.min !== undefined) opts.min = spec.min
         if (spec.max !== undefined) opts.max = spec.max
-        folder.addBinding(state, key, opts).on('change', () => write({ [key]: state[key] }))
+        mark(section.pane().addBinding(state, key, opts).on('change', () => write({ [key]: state[key] })))
         return
       }
       case 'bool':
       case 'string':
-        folder.addBinding(state, key, { label: shown }).on('change', () => write({ [key]: state[key] }))
+        mark(section.pane().addBinding(state, key, { label }).on('change', () => write({ [key]: state[key] })))
         return
       case 'enum': {
         const options: Record<string, string> = {}
         for (const o of spec.options) options[o] = o
-        folder.addBinding(state, key, { label: shown, options }).on('change', () => {
-          write({ [key]: state[key] })
-          rebuild() // an enum can gate other fields (a Visual's source picks model or material)
-        })
+        mark(
+          section.pane().addBinding(state, key, { label, options }).on('change', () => {
+            write({ [key]: state[key] })
+            // An enum can gate other parameters (`Visual.source` decides whether `model` is relevant), so the
+            // set of rows may have changed. Scroll survives it now.
+            rebuildKeepingScroll()
+          }),
+        )
         return
       }
       case 'vec3': {
         const step = { step: 0.1 }
-        folder.addBinding(state, key, { label: shown, x: step, y: step, z: step }).on('change', () => write({ [key]: state[key] }))
+        mark(section.pane().addBinding(state, key, { label, x: step, y: step, z: step }).on('change', () => write({ [key]: state[key] })))
         return
       }
       case 'asset': {
         const options = spec.of === 'material' ? host.materials() : host.models()
-        folder.addBinding(state, key, { label: shown, options }).on('change', () => write({ [key]: state[key] }))
+        mark(section.pane().addBinding(state, key, { label, options }).on('change', () => write({ [key]: state[key] })))
         return
       }
       case 'collider': {
         const shape = (state[key] ?? spec.default) as ColliderDesc
         const picker = { kind: shape.kind as string }
-        folder.addBinding(picker, 'kind', { label: shown, options: SHAPE_OPTIONS }).on('change', () => {
-          write({ [key]: defaultShape(picker.kind, shape) })
-          rebuild()
-        })
+        mark(
+          section.pane().addBinding(picker, 'kind', { label, options: SHAPE_OPTIONS }).on('change', () => {
+            write({ [key]: defaultShape(picker.kind, shape) })
+            rebuildKeepingScroll()
+          }),
+        )
         const dims: Record<string, unknown> = { ...shape }
         const step = { step: 0.05 }
         if (shape.kind === 'box') {
-          folder.addBinding(dims, 'halfExtents', { label: 'half extents', x: step, y: step, z: step }).on('change', () =>
+          section.pane().addBinding(dims, 'halfExtents', { label: 'half extents', x: step, y: step, z: step }).on('change', () =>
             write({ [key]: { kind: 'box', halfExtents: dims.halfExtents } }),
           )
         } else if (shape.kind === 'ball') {
-          folder.addBinding(dims, 'radius', { label: 'radius', step: 0.05, min: 0.01 }).on('change', () => write({ [key]: { kind: 'ball', radius: dims.radius } }))
+          section.pane().addBinding(dims, 'radius', { label: 'radius', step: 0.05, min: 0.01 }).on('change', () => write({ [key]: { kind: 'ball', radius: dims.radius } }))
         } else if (shape.kind === 'capsule' || shape.kind === 'cylinder') {
           const kind = shape.kind
           const push = (): void => write({ [key]: { kind, halfHeight: dims.halfHeight, radius: dims.radius } })
-          folder.addBinding(dims, 'halfHeight', { label: 'half height', step: 0.05, min: 0.01 }).on('change', push)
-          folder.addBinding(dims, 'radius', { label: 'radius', step: 0.05, min: 0.01 }).on('change', push)
+          section.pane().addBinding(dims, 'halfHeight', { label: 'half height', step: 0.05, min: 0.01 }).on('change', push)
+          section.pane().addBinding(dims, 'radius', { label: 'radius', step: 0.05, min: 0.01 }).on('change', push)
         } else {
           // A hull is authored by whatever generated it (ADR 0017); there is no useful grid control for a
-          // point cloud, so this says what is there and leaves it alone.
-          folder.addBlade({ view: 'text', label: 'hull', parse: (v: string) => v, value: `${shape.points.length} points`, disabled: true })
+          // point cloud, so this states what is there and leaves it alone.
+          section.row('hull', `${shape.points.length} points`)
         }
         return
       }
       case 'keys': {
-        const keys = Array.isArray(state[key]) ? (state[key] as unknown[]).length : 0
-        // The timeline owns keys. A property grid can show one instant of a track, which is exactly the
-        // mistake ADR 0029 removed.
-        folder.addBlade({ view: 'text', label: shown, parse: (v: string) => v, value: `${keys} keys — edit on the timeline`, disabled: true })
+        const count = Array.isArray(state[key]) ? (state[key] as unknown[]).length : 0
+        // The timeline owns keys (ADR 0037). What this owes the reader is how many there are and a way there.
+        const row = section.row(label, count === 0 ? 'none yet' : `${count} keys`)
+        const go = el('button', 'ctl tiny', count === 0 ? 'Add' : 'Edit')
+        go.title = 'open the timeline on these keys'
+        go.addEventListener('click', () => host.editKeys(view.id, key))
+        row.append(go)
+        if (view.overridden.includes(key)) row.classList.add('over')
         return
       }
       case 'nodeRef': {
         /**
          * A dropdown of the nodes this one may name, rather than Unity's drag-an-object-into-the-field: the
-         * scope is already narrow (`nodeChoices` refuses anything that would author a dangling reference), and
-         * a picker cannot express a target the document does not have.
+         * scope is already narrow (`nodeChoices` refuses anything that would author a dangling reference), and a
+         * picker cannot express a target the document does not have.
          *
-         * `''` is the stored value for "none" so the binding has something to select; the schema's value for
-         * it is `null`, and that is what gets written.
+         * `''` is the value for "none" so the binding has something to select; the schema's is `null`.
          */
         const options: Record<string, string> = { '(none)': '' }
         for (const choice of doc.nodeChoices(at)) options[`${choice.label} · ${choice.id.slice(0, 6)}`] = choice.id
-        const current = typeof state[key] === 'string' ? (state[key] as string) : ''
-        const pick = { ref: options['(none)'] === current || current === '' ? '' : current }
-        folder.addBinding(pick, 'ref', { label: shown, options }).on('change', () => write({ [key]: pick.ref === '' ? null : pick.ref }))
+        const pick = { ref: typeof state[key] === 'string' ? (state[key] as string) : '' }
+        mark(section.pane().addBinding(pick, 'ref', { label, options }).on('change', () => write({ [key]: pick.ref === '' ? null : pick.ref })))
         return
       }
     }
   }
 
-  /** One collapsible section per component: what it is, whether it is on, its fields, and Remove. */
-  const addComponent = (doc: Doc, at: number, view: ComponentView): void => {
+  const moveAndRebuild = (doc: Doc, at: number, componentId: string, delta: number): void => {
+    doc.moveComponent(at, componentId, delta)
+    host.onPropsChanged()
+    rebuildKeepingScroll()
+  }
+
+  /** One section per component: header controls, then its visible parameters. */
+  const addComponentSection = (doc: Doc, at: number, view: ComponentView): void => {
     const def = doc.registry.get(view.type)
-    const title = `${def?.label ?? view.type}${view.added ? ' (added here)' : ''}${view.enabled ? '' : ' — off'}`
-    const folder = pane.addFolder({ title, expanded: true })
-    blades.push(folder)
+    const inherited = doc.kindOf(at) === 'inherited'
+    const overridden = view.overridden.length > 0
+    const items: MenuItem[] = []
+    /**
+     * Reset and Revert are the same gesture pointed at different baselines, and only one of them applies at a
+     * time. On an own component the baseline is the declaration's defaults. On an inherited one it is the
+     * prefab — and offering "reset to defaults" there would *write* an override for every parameter, which is
+     * the opposite of what somebody reaching for it wants.
+     */
+    if (inherited) {
+      if (overridden) items.push({ text: 'Revert to prefab', run: () => host.revertOverride(view.id) })
+    } else if (def !== undefined) {
+      items.push({
+        text: 'Reset to defaults',
+        run: () => {
+          edited(() => doc.setParams(at, view.id, { ...doc.registry.defaults(view.type) }))
+          rebuildKeepingScroll()
+        },
+      })
+    }
+    if (!inherited) {
+      items.push({ text: 'Move up', run: () => moveAndRebuild(doc, at, view.id, -1) })
+      items.push({ text: 'Move down', run: () => moveAndRebuild(doc, at, view.id, 1) })
+    }
+    items.push({
+      text: inherited ? (view.added ? 'Remove (undo add)' : 'Remove here') : 'Remove',
+      run: () => {
+        doc.removeComponent(at, view.id)
+        host.onPropsChanged()
+        rebuildKeepingScroll()
+      },
+    })
+
+    const section = addSection(view.id, {
+      title: def?.label ?? view.type,
+      // What used to be spelled into the folder's title string, as a badge that cannot push the name out.
+      badge: view.added ? 'added' : overridden ? String(view.overridden.length) : '',
+      off: !view.enabled,
+      enable: (on) => {
+        edited(() => doc.setComponentEnabled(at, view.id, on))
+        rebuildKeepingScroll()
+      },
+      menu: items,
+    })
+    if (overridden) section.root.classList.add('over-sec')
 
     if (def === undefined) {
       // A level authored by a build that had a component this one does not. Saying so beats showing nothing
       // and silently dropping it on the next save.
-      folder.addBlade({ view: 'text', label: 'unknown', parse: (v: string) => v, value: `no '${view.type}' in this build`, disabled: true })
+      section.row('unknown', `no '${view.type}' in this build`)
       return
     }
 
-    const toggle = { enabled: view.enabled }
-    folder.addBinding(toggle, 'enabled', { label: view.overridden.includes('enabled') ? '• enabled' : 'enabled' }).on('change', () =>
-      edited(() => doc.setComponentEnabled(at, view.id, toggle.enabled)),
-    )
-
     const state: Record<string, unknown> = { ...doc.registry.defaults(view.type), ...view.params }
-    for (const [key, spec] of Object.entries(def.params)) addParam(folder, doc, at, view, state, key, spec)
-
-    folder.addButton({ title: view.inherited ? 'Remove here' : 'Remove' }).on('click', () => {
-      doc.removeComponent(at, view.id)
-      host.onPropsChanged()
-      rebuild()
-    })
-  }
-
-  const rebuild = (): void => {
-    for (const b of blades) b.dispose()
-    blades = []
-    renderHead()
-    const doc = host.doc()
-    const at = host.selected()
-    if (doc === null || at === null) return
-
-    // Building a binding reads its target, which can emit `change` before anything is user-driven. A depth
-    // counter rather than a flag, because `sync` runs inside this span and clears its own; and `finally`
-    // rather than a bare decrement, because a leaked count would leave the panel ignoring input for good.
+    const shown = visibleParams(def.params, state)
     syncDepth++
     try {
-      buildBlades(doc, at)
+      for (const key of shown) {
+        const spec = def.params[key]
+        if (spec !== undefined) addParam(section, doc, at, view, state, key, spec)
+      }
+    } finally {
+      syncDepth--
+    }
+    if (shown.length === 0) section.row('', 'no parameters')
+  }
+
+  /** The transform, as a section like any other — it used to be three rows floating with no owner. */
+  const addTransformSection = (doc: Doc, at: number): void => {
+    const overridden = doc.overridesOf(at).includes('transform')
+    const items: MenuItem[] = overridden ? [{ text: 'Revert to prefab', run: () => host.revertOverride('transform') }] : []
+    const section = addSection(TRANSFORM, { title: 'Transform', badge: overridden ? '1' : '', menu: items })
+    const pane = section.pane()
+    transformPane = pane
+    if (overridden) section.root.classList.add('over-sec')
+
+    const pos = { step: 0.1 }
+    const rot = { step: 1 }
+    const scl = { step: 0.05 }
+    syncDepth++
+    try {
+      const p = pane.addBinding(sel, 'position', { label: 'position', x: pos, y: pos, z: pos }).on('change', applyTransform)
+      if (overridden) p.element.classList.add('over')
+      pane.addBinding(sel, 'rotationDeg', { label: 'rotation °', x: rot, y: rot, z: rot }).on('change', applyTransform)
+      pane.addBinding(sel, 'scale', { label: 'scale', x: scl, y: scl, z: scl }).on('change', applyTransform)
     } finally {
       syncDepth--
     }
   }
 
-  /** The property grid itself. Split out so the sync guard around it is a single `try`. */
-  const buildBlades = (doc: Doc, at: number): void => {
-    sync()
-
-    const pos = { step: 0.1 }
-    const rot = { step: 1 }
-    const scl = { step: 0.05 }
-    const marked = (field: string, label: string): string => (doc.overridesOf(at).includes(field) ? `• ${label}` : label)
-    blades.push(
-      pane.addBinding(sel, 'position', { label: marked('transform', 'position'), x: pos, y: pos, z: pos }).on('change', applyTransform),
-      pane.addBinding(sel, 'rotationDeg', { label: 'rotation °', x: rot, y: rot, z: rot }).on('change', applyTransform),
-      pane.addBinding(sel, 'scale', { label: 'scale', x: scl, y: scl, z: scl }).on('change', applyTransform),
-    )
-
-    for (const view of doc.components(at)) addComponent(doc, at, view)
-
-    /**
-     * Add component. A dropdown plus a button rather than a search popup: there are nine types, and a
-     * singleton the node already has is simply not offered — which is the honest reading of `canAdd`.
-     */
+  /** One button opening a filtered list, where a dropdown plus a button cost two rows and two clicks. */
+  const addAddButton = (doc: Doc, at: number): void => {
     const addable = doc.registry
       .all()
       .map((d) => d.type)
       .filter((type) => doc.canAdd(at, type))
-    if (addable.length > 0) {
-      const options: Record<string, string> = {}
-      for (const type of addable) options[type] = type
-      const pick = { type: addable[0]! }
-      blades.push(pane.addBinding(pick, 'type', { label: 'add', options }))
-      blades.push(
-        pane.addButton({ title: 'Add component' }).on('click', () => {
-          doc.addComponent(at, pick.type)
-          host.onPropsChanged()
-          rebuild()
-        }),
+    const row = el('div', 'iadd')
+    const button = el('button', 'ctl wide', 'Add Component')
+    button.disabled = addable.length === 0
+    button.title = addable.length === 0 ? 'this object already has one of everything' : 'add a component to this object'
+    button.addEventListener('click', (e) => {
+      e.stopPropagation()
+      openMenu(
+        button,
+        addable.map((type) => ({
+          text: type,
+          run: () => {
+            const id = doc.addComponent(at, type)
+            host.onPropsChanged()
+            if (id !== null) shut.delete(id) // what you just added should be open
+            rebuildKeepingScroll()
+          },
+        })),
       )
-    }
+    })
+    row.append(button)
+    container.append(row)
+  }
 
-    /**
-     * What this placement changes about the prefab's node, with the two actions beside it.
-     *
-     * Listed as well as marked in place: the dots above say *which* field, and this says *how many* and lets
-     * one of them be put back without hunting for it.
-     */
-    if (doc.kindOf(at) === 'inherited') {
-      const overridden = doc.overridesOf(at)
-      blades.push(
-        pane.addBlade({
-          view: 'text',
-          label: 'overridden',
-          parse: (v: string) => v,
-          value: overridden.length > 0 ? overridden.join(', ') : 'nothing — matches the prefab',
-          disabled: true,
-        }) as Disposable,
-      )
-      if (overridden.length > 0) {
-        blades.push(
-          pane.addButton({ title: 'Revert to prefab' }).on('click', () => host.revertOverride()),
-          pane.addButton({ title: 'Apply to prefab (all placements)' }).on('click', host.applyOverrides),
-        )
-      }
+  /** The placement-wide override strip, right under the header where it describes what follows. */
+  const addOverrideStrip = (doc: Doc, at: number): void => {
+    if (doc.kindOf(at) !== 'inherited') return
+    const overridden = doc.overridesOf(at)
+    const strip = el('div', 'iover')
+    if (overridden.length === 0) {
+      strip.append(el('span', 'iover-t', 'matches the prefab'))
+      container.append(strip)
+      return
     }
+    strip.classList.add('on')
+    strip.append(el('span', 'iover-t', `${overridden.length} override${overridden.length === 1 ? '' : 's'}`))
+    const revert = el('button', 'ctl tiny', 'Revert all')
+    revert.title = `drop every override on this object (${overridden.join(', ')})`
+    revert.addEventListener('click', () => host.revertOverride())
+    const apply = el('button', 'ctl tiny', 'Apply')
+    apply.title = 'push these into the shared prefab — every placement of it follows'
+    apply.addEventListener('click', host.applyOverrides)
+    strip.append(revert, apply)
+    container.append(strip)
+  }
 
-    // Open/Extract live in the header's prefab-link row, where Unity puts them. Structural actions are
-    // refused on an inherited node, so they are not offered there either.
-    if (doc.kindOf(at) === 'own') {
-      blades.push(
-        pane.addButton({ title: 'Duplicate (Ctrl+D)' }).on('click', host.duplicate),
-        pane.addButton({ title: 'Delete (Del)' }).on('click', host.remove),
-      )
-    }
+  /** Object-level actions, compact and last: they are about the object, not about any component. */
+  const addFooter = (doc: Doc, at: number): void => {
+    if (doc.kindOf(at) !== 'own') return
+    const row = el('div', 'ifoot')
+    const dup = el('button', 'ctl', 'Duplicate')
+    dup.title = 'Ctrl+D'
+    dup.addEventListener('click', host.duplicate)
+    const del = el('button', 'ctl danger', 'Delete')
+    del.title = 'Del'
+    del.addEventListener('click', host.remove)
+    row.append(dup, del)
+    container.append(row)
+  }
+
+  const rebuild = (): void => {
+    closeMenu()
+    for (const pane of panes) pane.dispose()
+    panes = []
+    transformPane = null
+    container.replaceChildren()
+    renderHead()
+
+    const doc = host.doc()
+    const at = host.selected()
+    if (doc === null || at === null) return
+
+    addOverrideStrip(doc, at)
+    addTransformSection(doc, at)
+    for (const view of doc.components(at)) addComponentSection(doc, at, view)
+    addAddButton(doc, at)
+    addFooter(doc, at)
+    sync()
   }
 
   return { rebuild, sync, renderHead }

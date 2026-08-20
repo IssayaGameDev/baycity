@@ -3,7 +3,7 @@ import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { instantiateNodeLevel } from './nodeLoader'
-import { effectiveNode, COLLIDER, MATERIAL_OVERRIDE, SPAWN, TRACK, VISUAL, type TypeInfo } from './nodes'
+import { effectiveNode, COLLIDER, MATERIAL_OVERRIDE, MESH, RENDERER, SPAWN, TRACK, type TypeInfo } from './nodes'
 import { moveTrack } from './track'
 import type { ComponentData, Node, NodeLevel } from './types'
 
@@ -48,7 +48,7 @@ describe('a node with more than one collider', () => {
           components: [
             comp('c0', COLLIDER, { ...box(), center: vec3(-2, 0, 0) }),
             comp('c1', COLLIDER, { ...box(), center: vec3(2, 0, 0) }),
-            comp('c2', VISUAL, { source: 'collider', model: '', material: '' }),
+            comp('c2', RENDERER, { material: '' }),
           ],
         },
       ]),
@@ -77,7 +77,7 @@ describe('a node with more than one collider', () => {
         {
           id: 'n0',
           transform: { position: vec3(0, 0, 0), rotation: vec3(0, Math.PI / 2, 0) },
-          components: [comp('c0', COLLIDER, { ...box(), center: vec3(2, 0, 0) }), comp('c1', VISUAL, { source: 'collider', model: '', material: '' })],
+          components: [comp('c0', COLLIDER, { ...box(), center: vec3(2, 0, 0) }), comp('c1', RENDERER, { material: '' })],
         },
       ]),
     )
@@ -88,7 +88,7 @@ describe('a node with more than one collider', () => {
 })
 
 describe('a node draws only what it says it draws', () => {
-  it('draws nothing without a Visual, the way a GameObject with no renderer is invisible', () => {
+  it('draws nothing without a Renderer, the way a GameObject with no renderer is invisible', () => {
     const loaded = load(levelOf([{ id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', COLLIDER, box())] }]))
     expect(loaded.visuals).toEqual([])
     expect(loaded.nodes, 'still solid, and still something a rule can sit on').toHaveLength(1)
@@ -96,19 +96,43 @@ describe('a node draws only what it says it draws', () => {
 
   it('draws a model without colliding, which no Piece could do', () => {
     const loaded = load(
-      levelOf([{ id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', VISUAL, { source: 'model', model: 'mesh1', material: '' })] }]),
+      levelOf([
+        { id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', MESH, { model: 'mesh1' }), comp('c1', RENDERER, { material: '' })] },
+      ]),
     )
     expect(loaded.visuals).toHaveLength(1)
+    expect(loaded.visuals[0]?.model).toBe('mesh1')
     expect(loaded.nodes, 'nothing to touch').toEqual([])
   })
 
-  // `source: 'collider'` with no collider has nothing to draw. Inventing a box for it would put geometry in
-  // the world that no data asked for.
-  it('draws nothing for a collider-source Visual with no collider', () => {
+  // A Renderer with nothing to render has nothing to draw. Inventing a box for it would put geometry in the
+  // world that no data asked for.
+  it('draws nothing for a Renderer with no mesh and no collider', () => {
+    const loaded = load(levelOf([{ id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', RENDERER, { material: 'mat' })] }]))
+    expect(loaded.visuals).toEqual([])
+  })
+
+  /** Unity's rule, and the reason the two are separate components (ADR 0039). */
+  it('draws nothing for a Mesh with no Renderer, the way a MeshFilter alone shows nothing', () => {
     const loaded = load(
-      levelOf([{ id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', VISUAL, { source: 'collider', model: '', material: 'mat' })] }]),
+      levelOf([{ id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', COLLIDER, box()), comp('c1', MESH, { model: 'mesh1' })] }]),
     )
     expect(loaded.visuals).toEqual([])
+    expect(loaded.nodes, 'still solid').toHaveLength(1)
+  })
+
+  it('falls back to the colliders when a Mesh names no model', () => {
+    const loaded = load(
+      levelOf([
+        {
+          id: 'n0',
+          transform: { position: vec3(0, 0, 0) },
+          components: [comp('c0', COLLIDER, box()), comp('c1', MESH, { model: '' }), comp('c2', RENDERER, { material: 'mat' })],
+        },
+      ]),
+    )
+    expect(loaded.visuals).toHaveLength(1)
+    expect(loaded.visuals[0]?.model, 'no mesh asset, so the collider shape').toBeUndefined()
   })
 
   it('ignores a component that is switched off', () => {
@@ -117,12 +141,12 @@ describe('a node draws only what it says it draws', () => {
         {
           id: 'n0',
           transform: { position: vec3(0, 0, 0) },
-          components: [{ ...comp('c0', COLLIDER, box()), enabled: false }, comp('c1', VISUAL, { source: 'collider', model: '', material: '' })],
+          components: [{ ...comp('c0', COLLIDER, box()), enabled: false }, comp('c1', RENDERER, { material: '' })],
         },
       ]),
     )
     expect(loaded.nodes, 'no body, so nothing can touch it').toEqual([])
-    expect(loaded.visuals, 'and the Visual has no collider left to draw').toEqual([])
+    expect(loaded.visuals, 'and the Renderer has no collider left to draw').toEqual([])
   })
 })
 
@@ -136,7 +160,7 @@ describe('a material that cascades', () => {
         {
           id: 'kid',
           transform: { position: vec3(1, 0, 0) },
-          components: [comp('c0', COLLIDER, box()), comp('c1', VISUAL, { source: 'collider', model: '', material: 'plain' })],
+          components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: 'plain' })],
         },
       ],
     },
@@ -189,7 +213,7 @@ describe('resolving a placement against its prefab', () => {
       {
         id: 'p0',
         transform: { position: vec3(0, 0, 0) },
-        components: [comp('c0', COLLIDER, box()), comp('c1', VISUAL, { source: 'collider', model: '', material: 'plain' })],
+        components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: 'plain' })],
       },
     ],
   }
@@ -270,7 +294,7 @@ describe('resolving a placement against its prefab', () => {
         {
           id: 'mine',
           transform: { position: vec3(0, 1, 0) },
-          components: [comp('c0', COLLIDER, box()), comp('c1', VISUAL, { source: 'collider', model: '', material: '' })],
+          components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: '' })],
         },
       ],
     })

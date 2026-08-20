@@ -13,58 +13,74 @@ import type { ColliderDesc, Keyframe } from '@mp/content'
 /** Thrown when authored parameters do not match a component's declaration. */
 export class ComponentError extends Error {}
 
-export interface NumberSpec {
+/**
+ * Show a parameter only while another parameter of the same component holds one of these values.
+ *
+ * Presentation, like `label` and `min` — but presentation the Inspector cannot infer: showing an editable
+ * field that the component's own mode ignores is a worse lie than hiding it, and the value is kept either way,
+ * so switching the mode back finds it where you left it.
+ *
+ * **Nothing built in uses this.** Its one user was the old combined `Visual`, whose `source` enum decided
+ * whether its `model` mattered — and splitting that into `Mesh` and `Renderer` removed the mode rather than
+ * hiding a field around it (ADR 0039). Kept because the mechanism is right for a component that genuinely has
+ * a mode, and because deleting it would only mean writing it again.
+ */
+export interface ParamWhen {
+  readonly param: string
+  readonly is: readonly (string | number | boolean)[]
+}
+
+/** What every parameter declaration carries, whatever its kind. */
+interface SpecBase {
+  /** Inspector label. Falls back to the parameter's own name. */
+  readonly label?: string
+  /** Hide this parameter unless another one says otherwise. */
+  readonly when?: ParamWhen
+}
+
+export interface NumberSpec extends SpecBase {
   readonly kind: 'number'
   readonly default: number
   /** Inspector bounds and step. **Hints, not constraints** — see `readParams`. */
   readonly min?: number
   readonly max?: number
   readonly step?: number
-  readonly label?: string
 }
-export interface BoolSpec {
+export interface BoolSpec extends SpecBase {
   readonly kind: 'bool'
   readonly default: boolean
-  readonly label?: string
 }
-export interface StringSpec {
+export interface StringSpec extends SpecBase {
   readonly kind: 'string'
   readonly default: string
-  readonly label?: string
 }
-export interface EnumSpec<O extends string = string> {
+export interface EnumSpec<O extends string = string> extends SpecBase {
   readonly kind: 'enum'
   readonly options: readonly O[]
   readonly default: O
-  readonly label?: string
 }
-export interface Vec3Spec {
+export interface Vec3Spec extends SpecBase {
   readonly kind: 'vec3'
   readonly default: Vec3
-  readonly label?: string
 }
 /** An asset id, restricted to one kind so the Inspector can offer the right list. `''` means none. */
-export interface AssetSpec {
+export interface AssetSpec extends SpecBase {
   readonly kind: 'asset'
   readonly of: 'material' | 'model'
   readonly default: string
-  readonly label?: string
 }
 /** A collision shape. Its own kind rather than a bag of numbers, so the Inspector can switch shape. */
-export interface ColliderSpec {
+export interface ColliderSpec extends SpecBase {
   readonly kind: 'collider'
   readonly default: ColliderDesc
-  readonly label?: string
 }
 /** A keyframe track, edited by the existing timeline (ADR 0029). Always defaults to empty. */
-export interface KeysSpec {
+export interface KeysSpec extends SpecBase {
   readonly kind: 'keys'
-  readonly label?: string
 }
 /** A pointer to another node, by id. Always defaults to `null`. Resolution lands in stage C4. */
-export interface NodeRefSpec {
+export interface NodeRefSpec extends SpecBase {
   readonly kind: 'nodeRef'
-  readonly label?: string
 }
 
 export type ParamSpec = NumberSpec | BoolSpec | StringSpec | EnumSpec | Vec3Spec | AssetSpec | ColliderSpec | KeysSpec | NodeRefSpec
@@ -204,6 +220,24 @@ const checkOne = (spec: ParamSpec, value: unknown, at: string): void => {
  * data (a script or a hand edit meant it) and rejecting it at load would make the bounds a schema change.
  * Non-finite numbers are rejected, because `NaN` reaches the character as a position and disappears it.
  */
+/**
+ * Which parameters to show, given the values a component currently holds. Declaration order.
+ *
+ * A hidden parameter is still *stored* and still validated — this says nothing about the data, only about what
+ * is worth putting in front of somebody. A `when` naming a parameter that does not exist shows the field,
+ * which is the safe direction: a typo in a declaration should not make a control vanish silently.
+ */
+export const visibleParams = <D extends ParamDecls>(decls: D, values: RawParams): string[] =>
+  Object.entries(decls)
+    .filter(([, spec]) => {
+      const when = spec.when
+      if (when === undefined) return true
+      if (!(when.param in decls)) return true
+      const held = values[when.param] ?? defaultFor(decls[when.param]!)
+      return when.is.includes(held as string | number | boolean)
+    })
+    .map(([key]) => key)
+
 export const readParams = <D extends ParamDecls>(decls: D, raw: RawParams | undefined, at: string): Params<D> => {
   const out: RawParams = {}
   for (const [key, spec] of Object.entries(decls)) {

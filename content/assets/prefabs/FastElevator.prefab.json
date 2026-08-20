@@ -36,10 +36,8 @@
         },
         {
           "id": "c1",
-          "type": "Visual",
+          "type": "Renderer",
           "params": {
-            "source": "collider",
-            "model": "",
             "material": ""
           }
         },
