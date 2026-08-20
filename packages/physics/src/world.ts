@@ -131,8 +131,13 @@ export interface CharacterBody {
   /** Apply a desired translation this step (collision-resolved); returns grounded plus the
    * translation the controller actually resolved to (`applied`), which differs from `desired`
    * wherever it was blocked, slid, snapped — or *added to*, e.g. by the surface underfoot
-   * moving. Comparing the two is the only way to see what the controller did with a step. */
-  move: (desired: Vec3) => { grounded: boolean; applied: Vec3 }
+   * moving. Comparing the two is the only way to see what the controller did with a step.
+   *
+   * `ceiling` is the vertical counterpart of `grounded`: the step asked to rise and something
+   * overhead was in the way. Read off contact normals rather than by comparing `applied.y` to
+   * `desired.y`, because autostep and snap-to-ground both move the capsule vertically on their
+   * own and a shortfall alone cannot tell a roof from either of those. */
+  move: (desired: Vec3) => { grounded: boolean; applied: Vec3; ceiling: boolean }
   /**
    * Cast straight down from the capsule's centre to find the surface it is standing on —
    * which collider, and where. Independent of `move`: the KCC only reports the contacts it
@@ -199,6 +204,12 @@ export interface PhysicsWorld {
 // steeper is a wall, not something to stand on (or be carried by).
 const MAX_SLOPE_CLIMB_RAD = (50 * Math.PI) / 180
 const GROUND_NORMAL_MIN_Y = Math.cos(MAX_SLOPE_CLIMB_RAD)
+/**
+ * A contact counts as a roof when the surface's outward face points down at least this steeply.
+ * Anything shallower is a wall or a slope, and neither of those should stop a rise: a capsule
+ * pressed against a wall on the way up is still going up.
+ */
+const CEILING_NORMAL_MAX_Y = -0.5
 // Fallback probe reach below the feet when snap-to-ground is disabled.
 const GROUND_PROBE_FALLBACK = 0.05
 // Default gap kept between the capsule and its surroundings.
@@ -405,15 +416,20 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
         const t = body.translation()
         body.setNextKinematicTranslation({ x: t.x + c.x, y: t.y + c.y, z: t.z + c.z })
         // Record what the capsule actually pushed against this step — the real contacts
-        // that gameplay triggers key off (not a distance heuristic).
+        // that gameplay triggers key off (not a distance heuristic). The same pass answers whether
+        // a rise was stopped from above, since that is the same contact list seen from another angle.
         lastCollisions.length = 0
+        let ceiling = false
         const n = controller.numComputedCollisions()
         for (let i = 0; i < n; i++) {
           const hit = controller.computedCollision(i)
           const h = hit?.collider?.handle
           if (h !== undefined && h !== null) lastCollisions.push(h)
+          // Only while rising: grazing an overhang on the way *down* is not a roof stopping us, and
+          // reporting it as one would stop the fall.
+          if (desired.y > 0 && hit !== null && hit.normal1.y < CEILING_NORMAL_MAX_Y) ceiling = true
         }
-        return { grounded, applied: c }
+        return { grounded, applied: c, ceiling }
       },
       probeGround: () => {
         freshenQueries()

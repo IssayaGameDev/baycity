@@ -71,6 +71,12 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
 - `move` returns `applied`, the translation actually resolved. It differs from what was asked
   wherever the step was blocked or slid, and it is how a caller can tell what the controller did.
   `move` also **retries once** when it discards an entire step while resting (see `CONTACT_NUDGE`).
+- `move` returns `ceiling` alongside `grounded`: the step asked to rise and a contact overhead
+  (outward normal pointing down past `CEILING_NORMAL_MAX_Y`) was in the way. Read off contact normals
+  rather than from `applied.y` falling short of `desired.y`, because autostep and snap-to-ground both
+  move the capsule vertically on their own, so a shortfall alone cannot tell a roof from either.
+  `@mp/character` uses it to end a jump's rise — without it `vy` stays positive under the roof and the
+  character hangs there for the rest of its hang time.
 
 `rapier3d-compat`'s inlined WASM makes the same wrapper work in the browser and Node.
 

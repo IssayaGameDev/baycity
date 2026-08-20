@@ -94,6 +94,14 @@ Colyseus message layer instead.
 - `interpolationDelayMs` — how far in the past peers render. **100 ms**, provisional; tunable.
 - `CharacterTuning` (speed, jump apex, gravity, accel/stop times, air control) — Roblox-derived
   defaults, live-tunable in the demo (ADR 0012). Client-side only under client authority.
+- `coyoteTime` — jump grace after losing footing, **100 ms** (3 ticks at 30 Hz), live-tunable; 0 turns it
+  off. Spent on the way out, so one ledge is one jump however long the button is held. A coyote jump off a
+  moving platform does **not** inherit the platform's velocity — the movement base is already released
+  (ADR 0034). Not on the wire: `STATE_GROUNDED` still means real footing.
+- `maxFallSpeed` — terminal velocity, **60 m/s**, live-tunable with the rest. Set as a safety net
+  rather than for feel: above anything the shipped levels reach (~30 m/s to a kill plane), and 2 m of
+  travel per tick at 30 Hz, which keeps a fall inside what the swept resolve handles on a
+  `physical-fall` level that has no kill plane. Lowering it is a feel change — Kodjo's number.
 - Camera feel (distance, sensitivity) — client-only, tunable in the demo.
 - **Platform carry** — standing on a moving piece tracks it exactly (translation and spin), and
   walking on it composes normally. Implemented in the stack, not inherited from the engine; the

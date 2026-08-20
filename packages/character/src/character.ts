@@ -22,6 +22,8 @@ export interface CharacterTuning {
   groundAccelTime: number // s to reach full speed from rest
   groundStopTime: number // s to brake to a stop when input is released
   airControl: number // 0..1 air steering strength relative to ground accel
+  maxFallSpeed: number // m/s cap on downward speed (terminal velocity); rising is never capped
+  coyoteTime: number // s of grace after losing footing in which a jump still fires (0 = off)
 }
 
 /**
@@ -36,6 +38,15 @@ export const DEFAULT_TUNING: CharacterTuning = {
   groundAccelTime: 0.1,
   groundStopTime: 0.08,
   airControl: 0.3,
+  // A safety net, not a feel value — deliberately above anything the shipped levels can reach (the
+  // longest fall to a kill plane peaks near 30 m/s), so today it never engages. It exists for a
+  // `physical-fall` level, which has no kill plane at all: there the fall grows without bound, and at
+  // 30 Hz a step of 2 m is already past the controller's snap-to-ground reach and thicker than most
+  // slabs, leaving the swept resolve as the only thing between the character and the floor.
+  // 60 m/s is that 2 m/tick. Lower is safer and changes how a long drop feels — Kodjo's number.
+  maxFallSpeed: 60,
+  // 100 ms, three ticks at 30 Hz. The standard grace; Kodjo's number, live on the pane.
+  coyoteTime: 0.1,
 }
 
 /** World pose of a moving surface — the frame a rider's position is kept in. */
@@ -91,6 +102,15 @@ export interface CharacterState {
    * Consumed rather than latched so a single contact fires once, and 0 means nothing pending.
    */
   launch: number
+  /**
+   * Seconds of jump grace left — coyote time. Refilled to `coyoteTime` on every tick that has footing,
+   * counted down on every tick that does not, and **spent to 0** the moment a jump or a launch leaves the
+   * surface. That last part is what stops one ledge from yielding two jumps to a held button.
+   *
+   * Separate from `grounded`, which stays the honest answer to "is there ground under us" — it is what the
+   * animation and the wire flag read (`STATE_GROUNDED`), and a character in its coyote window is in the air.
+   */
+  coyote: number
 }
 
 const addVec = (a: Vec3, b: Vec3): Vec3 => vec3(a.x + b.x, a.y + b.y, a.z + b.z)
@@ -115,6 +135,7 @@ export const addCharacterWith = (world: PhysicsWorld, spawn: Vec3, opts: Partial
   vz: 0,
   vy: 0,
   launch: 0,
+  coyote: 0,
   grounded: false,
   base: undefined,
   carry: vec3(0, 0, 0),
@@ -132,6 +153,7 @@ export const addCharacter = (world: PhysicsWorld, spawn: Vec3, layers?: Collisio
   vz: 0,
   vy: 0,
   launch: 0,
+  coyote: 0,
   grounded: false,
   base: undefined,
   carry: vec3(0, 0, 0),
@@ -145,7 +167,8 @@ const approach = (cur: number, target: number, maxDelta: number): number => {
 
 /**
  * Advance one character by one fixed step (ADR 0012). Deterministic.
- * - Jump: fixed-apex impulse, v₀ = √(2·g·h) → reaches exactly `jumpHeight`.
+ * - Jump: fixed-apex impulse, v₀ = √(2·g·h) → reaches exactly `jumpHeight`. Still fires for
+ *   `coyoteTime` after footing is lost, spent on the way out so one ledge is one jump.
  * - Ground: eases toward the input over `groundAccelTime`; brakes over `groundStopTime`.
  * - Air: `airControl`× steering, momentum otherwise preserved.
  * - Jumping off a moving platform inherits its velocity, so a jump from a fast mover is flung
@@ -191,11 +214,18 @@ export const stepCharacter = (
     ride = subVec(toWorld(frame, state.base.localPos), state.body.translation())
   }
 
-  const jumping = cmd.jump && state.grounded
+  // Coyote time: for `coyoteTime` after footing is lost, a jump still fires. Without it a press at the
+  // very edge of a ledge is simply gone — one tick is 33 ms at 30 Hz and the gate below reads footing as
+  // of the end of the previous step, so there is no grace at all. `coyote` is refreshed at the bottom of
+  // this function alongside `grounded`, so both describe the same instant.
+  const jumping = cmd.jump && (state.grounded || state.coyote > 0)
   // A launch leaves the surface exactly as a jump does, so every decision below keys off `leaving` rather than
   // off `jumping`. A bumper does not require footing: you can be thrown by clipping one in the air.
   const launching = state.launch > 0
   const leaving = jumping || launching
+  // Spend the grace on the way out. Without this the counter keeps running while airborne and a held
+  // button gets a second jump out of the same ledge, two ticks after the first.
+  if (leaving) state.coyote = 0
   const riding = ride !== undefined && !leaving
 
   // A launch outranks a jump on the tick both land: the bumper is the bigger, more deliberate event, and
@@ -208,6 +238,9 @@ export const stepCharacter = (
   // (measured: applying gravity while riding a 3 m/s elevator falls through to y ≈ −1085).
   if (riding) state.vy = 0
   else state.vy -= tuning.gravity * dt
+  // Terminal velocity. Clamped after gravity and before the ride inherit below, so it bounds the fall
+  // itself and never clips a launch or a jump — both of those are a positive `vy`.
+  if (state.vy < -tuning.maxFallSpeed) state.vy = -tuning.maxFallSpeed
 
   const len = Math.hypot(cmd.moveX, cmd.moveZ)
   const scale = len > 1 ? 1 / len : 1
@@ -247,7 +280,7 @@ export const stepCharacter = (
     z: state.vz * dt + (riding ? ride!.z : 0),
   }
 
-  const { grounded, applied } = state.body.move(desired)
+  const { grounded, applied, ceiling } = state.body.move(desired)
 
   // Everything the controller resolved horizontally that locomotion did not ask for: the ride, a
   // sweeping piece's shove, and a wall taking momentum away. Vertically it is the ride alone —
@@ -260,7 +293,18 @@ export const stepCharacter = (
   // covers surfaces the probe's narrow ray misses (standing on an edge, wedged against geometry).
   // The probe was taken before this step ran, so it must not vouch for a tick that jumped away.
   state.grounded = grounded || (under !== undefined && !leaving)
+  // Refill the grace whenever there is footing, count it down otherwise. Not while leaving: the first tick
+  // of a jump can still report footing (the sweep starts on the surface it is pushing off), and refilling
+  // there would hand a held button that second jump the line above just took away.
+  state.coyote = state.grounded && !leaving ? tuning.coyoteTime : Math.max(0, state.coyote - dt)
   if (state.grounded && state.vy < 0) state.vy = 0
+  // A roof ends the rise, the way footing ends the fall on the line above. Without it `vy` stays
+  // positive with nowhere to go: the character hangs under the ceiling for the rest of its hang time,
+  // pushing into it every tick, and reports itself as rising the whole way up (the `STATE_RISING`
+  // flag, so the animation says so too). Skipped while riding — there the vertical belongs to the
+  // surface and `vy` is already 0, so a rising platform pressing us into a roof is the surface's
+  // problem to resolve, not a jump to cancel.
+  if (ceiling && !riding && state.vy > 0) state.vy = 0
 
   // Re-anchor in the base's frame. `move` only sets the body's target for this tick's step, so the
   // final position is where we are plus what it resolved. Doing this every tick is what lets

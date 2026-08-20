@@ -427,6 +427,8 @@ mv.addBinding(tuning, 'gravity', { min: 10, max: 100, step: 1, label: 'gravity m
 mv.addBinding(tuning, 'groundAccelTime', { min: 0, max: 0.5, step: 0.01, label: 'accel s' })
 mv.addBinding(tuning, 'groundStopTime', { min: 0, max: 0.5, step: 0.01, label: 'stop s' })
 mv.addBinding(tuning, 'airControl', { min: 0, max: 1, step: 0.05, label: 'air control' })
+mv.addBinding(tuning, 'maxFallSpeed', { min: 10, max: 100, step: 1, label: 'max fall m/s' })
+mv.addBinding(tuning, 'coyoteTime', { min: 0, max: 0.4, step: 0.01, label: 'coyote s' })
 
 // Live render tuning (content C3) — the greybox polish is data, so you can dial it here.
 const renderParams = { exposure: 1.0, bloom: true, bloomStrength: 0.1 }
