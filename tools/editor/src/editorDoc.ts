@@ -135,11 +135,15 @@ export interface Doc {
    */
   placeModel: (assetId: string, position: Vec3) => number
   /**
-   * Place a prefab that came from a file. The prefab is **interned as a copy** into `Level.prefabs`, exactly
-   * as a kit piece is, so the level stays self-contained: moving or deleting the prefab *file* afterwards can
-   * never leave the level without geometry. The asset id names the file; the table id names this copy.
+   * Place a prefab that came from a file. The prefab is **interned as a copy** into `Level.prefabs`, so the
+   * level stays self-contained: moving or deleting the prefab *file* afterwards can never leave the level
+   * without geometry.
+   *
+   * `name` is the file's name, and it becomes the table id — **not** the `id` stored inside the file, which is
+   * whatever the prefab happened to be called when it was saved and is routinely stale (`AlternatingDanger`
+   * shipped carrying `"id": "FastElevator"`). Same rule `place` already followed for the palette.
    */
-  placePrefab: (prefab: Prefab, position: Vec3) => number
+  placePrefab: (prefab: Prefab, name: string, position: Vec3) => number
   /**
    * The prefab a palette entry would place, without placing it — what a Project tile previews. Resolved
    * through the same sources as `place`, so a tile cannot show something other than what it will put down.
@@ -495,8 +499,10 @@ export const levelDoc = (level: Level, library: Record<string, Prefab>): Doc => 
       level.instances.push(inst)
       return indexOfInstance(inst)
     },
-    placePrefab: (prefab, position) => {
-      const id = intern(structuredClone(prefab))
+    placePrefab: (prefab, name, position) => {
+      const copy = structuredClone(prefab)
+      copy.id = name // a prefab file is known by its file name; the stored id may be stale
+      const id = intern(copy)
       const inst: PrefabInstance = { prefab: id, transform: { position } }
       level.instances.push(inst)
       return indexOfInstance(inst)
@@ -808,8 +814,9 @@ export const prefabDoc = (prefab: Prefab): Doc => {
       pieces.push(piece)
       return pieces.length - 1
     },
-    // A prefab holds pieces, never prefabs (ADR 0014), so placing one here appends its pieces.
-    placePrefab: (prefab, position) => {
+    // A prefab holds pieces, never prefabs (ADR 0014), so placing one here appends its pieces. The name is
+    // irrelevant: nothing is interned, so nothing needs an id.
+    placePrefab: (prefab, _name, position) => {
       for (const piece of prefab.pieces) {
         const copy = structuredClone(piece)
         copy.transform = { ...copy.transform, position: vec3(position.x + copy.transform.position.x, position.y + copy.transform.position.y, position.z + copy.transform.position.z) }

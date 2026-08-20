@@ -886,7 +886,7 @@ canvas.addEventListener('pointerup', (e) => {
         : placing.kind === 'model'
           ? doc.placeModel(placing.assetId, at)
           : prefabAsset !== undefined
-            ? doc.placePrefab(prefabAsset, at)
+            ? doc.placePrefab(prefabAsset, assets?.db.byId[placing.assetId]?.name ?? prefabAsset.id, at)
             : -1
     if (idx < 0) {
       setStatus('that prefab did not load')

@@ -144,6 +144,34 @@ describe('levelDoc: placing references, not copies', () => {
     expect(doc.refCount('platform')).toBe(2)
   })
 
+  /**
+   * The bug this covers: placing from the Project explorer interned by the prefab's *stored* id, so
+   * `AlternatingDanger.prefab.json` — which shipped carrying `"id": "FastElevator"` — placed an object named
+   * FastElevator. `place` already took the file name; `placePrefab` did not, and nothing tested it.
+   */
+  it('places a prefab file under its file name, not the id stored in the file', () => {
+    const level = blank()
+    const doc = levelDoc(level, {})
+    const fromFile = inlineInstance('FastElevator') // a stale id, as authored files really carry
+
+    const at = doc.placePrefab(fromFile, 'AlternatingDanger', vec3(0, 0, 0))
+
+    expect(doc.label(at)).toBe('AlternatingDanger')
+    expect(doc.refOf(at)).toBe('AlternatingDanger')
+    expect(Object.keys(level.prefabs ?? {})).toEqual(['AlternatingDanger'])
+    expect(doc.prefabAt('AlternatingDanger')!.id).toBe('AlternatingDanger')
+  })
+
+  it('places two different files whose stored ids collide as two entries', () => {
+    const level = blank()
+    const doc = levelDoc(level, {})
+    // Both authored with the same stale id, and genuinely different shapes.
+    doc.placePrefab(inlineInstance('untitled', vec3(1, 1, 1)), 'Ramp', vec3(0, 0, 0))
+    doc.placePrefab(inlineInstance('untitled', vec3(2, 2, 2)), 'Slab', vec3(4, 0, 0))
+
+    expect(Object.keys(level.prefabs ?? {})).toEqual(['Ramp', 'Slab'])
+  })
+
   it('places a library prefab under its file name, not the id stored in the file', () => {
     const level = blank()
     // The real case: content/prefabs/FastElevator.json carries "id": "untitled".
