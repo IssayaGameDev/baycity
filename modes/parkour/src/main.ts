@@ -29,11 +29,14 @@ import {
 import { createPhysicsWorld, initPhysics, type PhysicsBody, type PhysicsWorld } from '@mp/physics'
 import {
   addLevel,
+  addLights,
   applyGreyboxEnvironment,
   assetIdsIn,
   createAssetRuntime,
   createPostFX,
   createThreeStage,
+  loadSky,
+  type ContentLights,
   type LevelView,
 } from '@mp/render-three'
 import {
@@ -130,7 +133,12 @@ const stage = createThreeStage({ canvas, cameraPosition: [0, 6, 10], lookAt: [0,
 // Polished greybox pipeline (content pipeline C3): IBL + ACES + soft shadows, with GTAO +
 // SMAA post-FX. Level meshes, materials (the "High-contrast dev" palette) and markers are
 // realized by the shared @mp/render-three renderer — same code the viewer uses.
-applyGreyboxEnvironment(stage.renderer, stage.scene, { shadowRadius: 30, sunIntensity: 2.4 })
+const env = applyGreyboxEnvironment(stage.renderer, stage.scene, { shadowRadius: 30, sunIntensity: 2.4 })
+// The photographic sky stays loaded as the control to judge the procedural one against (ADR 0046). It swaps
+// the **background only** — the lighting keeps coming from the procedural bake either way, so flipping the
+// toggle compares two backdrops rather than two whole looks. Deleted once the comparison is settled.
+const photoSky = await loadSky(stage.scene, assetUrlOf('textures/sky_110_2k.webp'))
+if (photoSky !== null && env.sky !== null) stage.scene.background = env.sky.background
 const postfx = createPostFX(stage.renderer, stage.scene, stage.camera, { ao: true, bloom: true, bloomStrength: 0.1 })
 
 // Nametags live on an overlay layer drawn AFTER post-FX. GTAO renders the scene into its
@@ -430,6 +438,45 @@ cam.addBinding(params, 'camReturnSmooth', { min: 0, max: 1, step: 0.01, label: '
 cam.addBinding(params, 'camHideMargin', { min: 0, max: 1, step: 0.01, label: 'rig hide m' })
 cam.addBinding(params, 'sensitivity', { min: 0.0005, max: 0.006, step: 0.0005, label: 'sensitivity' })
 
+// Sky + sun (ADR 0046). Every one of these needs an eye rather than a value, so they all live here. The sun
+// angles drive the key light, its shadow frustum and the sky bake together, which is why there is no separate
+// light direction to set. The sky is a designed gradient rather than atmospheric scattering, because the shape
+// wanted here (light at the top, darkening all the way down) is the inverse of what scattering produces.
+const skyFolder = pane.addFolder({ title: 'Sky' })
+const skyView = { source: 'procedural' as 'procedural' | 'photo', fill: 0.4, sunIntensity: 2.4 }
+if (env.sky !== null) {
+  const rebake = (): void => env.refresh()
+  skyFolder.addBinding(env.sunAngles, 'elevationDeg', { min: 1, max: 89, step: 1, label: 'sun elev °' }).on('change', rebake)
+  skyFolder.addBinding(env.sunAngles, 'azimuthDeg', { min: -180, max: 180, step: 1, label: 'sun azim °' }).on('change', rebake)
+  // The gradient. Two ends and a curve, so it is monotonic whatever you set: light at the top falling to dark
+  // at the bottom, with no way to produce a bright band in the middle.
+  skyFolder.addBinding(env.skyParams, 'topColor', { label: 'top' }).on('change', rebake)
+  skyFolder.addBinding(env.skyParams, 'bottomColor', { label: 'bottom' }).on('change', rebake)
+  skyFolder.addBinding(env.skyParams, 'gradientBias', { min: 0.3, max: 3, step: 0.05, label: 'ramp bias' }).on('change', rebake)
+  skyFolder.addBinding(env.skyParams, 'gain', { min: 0.1, max: 6, step: 0.05, label: 'sky gain' }).on('change', rebake)
+  // The sun. Push `glow` and the white patch comes back, which is why it starts low.
+  skyFolder.addBinding(env.skyParams, 'glowColor', { label: 'sun tint' }).on('change', rebake)
+  skyFolder.addBinding(env.skyParams, 'glowStrength', { min: 0, max: 2, step: 0.01, label: 'glow' }).on('change', rebake)
+  skyFolder.addBinding(env.skyParams, 'glowSharpness', { min: 4, max: 600, step: 4, label: 'glow tight' }).on('change', rebake)
+  skyFolder.addBinding(env.skyParams, 'sunDiskIntensity', { min: 0, max: 2000, step: 10, label: 'sun disc' }).on('change', rebake)
+  skyFolder.addBinding(skyView, 'sunIntensity', { min: 0, max: 5, step: 0.05, label: 'sun W' }).on('change', () => {
+    env.sun.intensity = skyView.sunIntensity
+  })
+  // How hard the sky lights the level, and the neutral counterweight to its colour cast. At full strength the
+  // sky's ambient measures blue twenty-one times red and beats the key light, which washes everything blue and
+  // flattens the shadows. `env light` is `scene.environmentIntensity`, which is independent of
+  // `backgroundIntensity` — turning it down does not dim the sky you look at.
+  skyFolder.addBinding(stage.scene, 'environmentIntensity', { min: 0, max: 1.5, step: 0.01, label: 'env light' })
+  skyFolder.addBinding(skyView, 'fill', { min: 0, max: 2, step: 0.01, label: 'neutral fill' }).on('change', () => {
+    env.fill.intensity = skyView.fill
+  })
+  if (photoSky !== null) {
+    skyFolder.addBinding(skyView, 'source', { options: { procedural: 'procedural', photo: 'photo' }, label: 'backdrop' }).on('change', () => {
+      stage.scene.background = skyView.source === 'photo' ? photoSky.texture : env.sky?.background ?? null
+    })
+  }
+}
+
 // Touch controls (ADR 0022). Kodjo keeps the pane on phones, and these are the numbers that need a thumb
 // to judge. `anchor` is the one to try first: `recentre` moves the stick's centre to wherever the zone was
 // touched and starts from a standstill, `fixed` keeps it at the drawn home and deflects on contact.
@@ -588,6 +635,7 @@ let ownFacing = 0
 let room: Room | null = null
 let loaded: LoadedLevel | null = null // the instantiated level (colliders + markers + visuals)
 let levelView: LevelView | null = null // Three meshes for the level; sync() re-poses moving pieces
+let levelLights: ContentLights | null = null // content lights (ADR 0047); the sun is the sky's, not one of these
 let lastSimTickAt = 0 // wall-clock of the last fixed tick, for render-interpolating clock-driven pieces
 let requestRespawn: (() => void) | null = null // set once the local sim exists; used by the pause menu's Restart
 let requestDeath: (() => void) | null = null // set once the local sim exists; the death path, for the ragdoll
@@ -656,6 +704,9 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   const assets = createAssetRuntime({ db: ASSET_DB, urlOf: assetUrlOf, materialOf })
   await assets.load(assetIdsIn(loaded.visuals))
   levelView = addLevel(stage.scene, loaded.visuals, { assets })
+  levelLights = addLights(stage.scene, loaded.lights)
+  // The level owns its sun, and moving it rebakes the sky so the two cannot disagree (ADR 0048).
+  env.applyEnvironment(loaded.config.environment)
   /**
    * **The rules run themselves.** `Bumper`, `Checkpoint` and `Hazard` carry their own `onContact`, so this
    * mode supplies only what dying and making progress *mean* here, and the branches that used to sit in the
@@ -979,6 +1030,7 @@ stage.start(() => {
   if (loaded !== null) {
     loaded.render(tickAlpha)
     levelView?.sync()
+    levelLights?.sync()
   }
 
   // Own character: our authoritative local sim, render-smoothed. Peers: interpolated.

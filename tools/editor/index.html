@@ -511,6 +511,12 @@
       .row.sel {
         background: var(--sel);
       }
+      /* The Environment row is a level setting, not an object, so it sits above the tree with a rule under it
+         rather than being indented into it (ADR 0048). */
+      .row.env {
+        border-bottom: 1px solid var(--line, #2a3344);
+        opacity: 0.9;
+      }
       /* One of a multi-selection is the primary: the one the Inspector shows and the one a Shift-range anchors
          on. Marked with an edge rather than a different fill, so the row still reads as selected. */
       .row.primary {

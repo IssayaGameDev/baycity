@@ -15,13 +15,15 @@ import { createSimClock, startFixedLoop, type LoopHandle, type Vec3 } from '@mp/
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
   addLevel,
+  addLights,
   applyGreyboxEnvironment,
   colorForMarker,
   createPostFX,
   createThreeStage,
-  geometryForCollider,
   OrbitControls,
+  outlineGeometryForCollider,
   THREE,
+  type ContentLights,
   type LevelView,
 } from '@mp/render-three'
 import { Pane } from 'tweakpane'
@@ -33,7 +35,7 @@ const titleEl = document.querySelector<HTMLDivElement>('#title')!
 
 // --- scene + polished pipeline (same renderer the game uses) ---
 const stage = createThreeStage({ canvas, cameraPosition: [10, 9, 14], lookAt: [0, 1, 0] })
-applyGreyboxEnvironment(stage.renderer, stage.scene, { shadowRadius: 40, sunIntensity: 2.4 })
+const env = applyGreyboxEnvironment(stage.renderer, stage.scene, { shadowRadius: 40, sunIntensity: 2.4 })
 const postfx = createPostFX(stage.renderer, stage.scene, stage.camera, { ao: true, bloom: true, bloomStrength: 0.3 })
 stage.setRenderStep(postfx.render)
 
@@ -56,6 +58,7 @@ const overlayLine = (color: number): THREE.LineBasicMaterial =>
 let world: PhysicsWorld | null = null
 let loaded: LoadedLevel | null = null
 let levelView: LevelView | null = null
+let levelLights: ContentLights | null = null
 const colliderGroup = new THREE.Group()
 const markerGroup = new THREE.Group()
 const colliderPairs: { v: VisualItem; line: THREE.LineSegments }[] = [] // re-posed each frame
@@ -97,8 +100,10 @@ const buildOverlays = (): void => {
 
   // Colliders as x-ray wireframes (visual == collider for greybox, so this outlines them).
   // Paired with their visual so clock-driven pieces (moving/rotating) re-pose each frame.
+  // Built from the *sharp* shape: the collider really is a hard box, and the drawn mesh's bevel seams would
+  // come out of EdgesGeometry as hatching (ADR 0044).
   for (const v of loaded.visuals) {
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometryForCollider(v.collider)), overlayLine(0x38bdf8))
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(outlineGeometryForCollider(v.collider)), overlayLine(0x38bdf8))
     edges.position.set(v.position.x, v.position.y, v.position.z)
     edges.quaternion.set(v.rotation.x, v.rotation.y, v.rotation.z, v.rotation.w)
     colliderGroup.add(edges)
@@ -252,6 +257,8 @@ const load = (entry: Entry): void => {
   world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }) // character integrates its own gravity
   loaded = instantiateLevel(world, entry.level, DEFAULT_REGISTRY)
   levelView = addLevel(stage.scene, loaded.visuals)
+  levelLights = addLights(stage.scene, loaded.lights)
+  env.applyEnvironment(loaded.config.environment)
   buildOverlays()
   applyShow()
   titleEl.textContent = `${entry.group}: ${entry.name}`
@@ -311,6 +318,7 @@ stage.start(() => {
   if (loaded !== null) {
     loaded.update(performance.now())
     levelView?.sync()
+    levelLights?.sync()
     // Keep the collider wireframes on the clock-driven pieces (moving/rotating).
     if (colliderGroup.visible)
       for (const { v, line } of colliderPairs) {

@@ -35,18 +35,23 @@ import { createSimClock, eulerToQuat, quat, startFixedLoop, vec3, type EntityId,
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
   addLevel,
+  addLights,
   applyGreyboxEnvironment,
   colorForMarker,
+  createLight,
   createPostFX,
   createGreyboxMaterial,
   createThreeStage,
   geometryForCollider,
+  lightAims,
   OrbitControls,
   createAssetRuntime,
   THREE,
   TransformControls,
   type AssetRuntime,
+  type ContentLights,
   type LevelView,
+  type LightDesc,
 } from '@mp/render-three'
 import { levelDoc, prefabDoc, type ClipItem, type Doc, type KeyEditor, type Mode } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
@@ -71,7 +76,8 @@ const canvas = $<HTMLCanvasElement>('#view')
 
 // --- scene + polished pipeline (same renderer the game/viewer use) ---
 const stage = createThreeStage({ canvas, cameraPosition: [12, 10, 16], lookAt: [0, 1, 0] })
-applyGreyboxEnvironment(stage.renderer, stage.scene, { shadowRadius: 40, sunIntensity: 2.4 })
+// Same sky and same sun the game runs, so what is authored here is lit the way it ships (ADR 0046).
+const env = applyGreyboxEnvironment(stage.renderer, stage.scene, { shadowRadius: 40, sunIntensity: 2.4 })
 const postfx = createPostFX(stage.renderer, stage.scene, stage.camera, { ao: true, bloom: true, bloomStrength: 0.3 })
 stage.setRenderStep(postfx.render)
 
@@ -116,6 +122,12 @@ let instanceGroups: THREE.Group[] = []
  */
 let selection: number[] = []
 let selected: number | null = null
+/**
+ * The Environment row is picked rather than a node (ADR 0048). Its own flag rather than a sentinel index in
+ * `selection`, because every structural operation reads that list — delete, duplicate, reparent — and a fake
+ * index in it would eventually be handed to one of them.
+ */
+let envSelected = false
 /**
  * What a viewport click will place. `own` is a prefab this level defines in its own table, named; a model or a
  * prefab file is an asset id, and
@@ -209,6 +221,42 @@ const buildMarkers = (): void => {
  */
 const meshHolderOf = (g: THREE.Group): THREE.Group => g.userData.meshes as THREE.Group
 
+/**
+ * Shadow cap for the authored viewport (ADR 0047). Three renders forward, so each caster is an extra scene
+ * render per frame and a point light is six of them. Reset per rebuild, and counted in document order so the
+ * same lights win each time rather than flickering between rebuilds.
+ */
+const EDITOR_SHADOW_CAP = 4
+let editorShadowCasters = 0
+
+/**
+ * A pickable wireframe for a light. Chrome, not content: it never casts, never writes depth, and is not
+ * tone-mapped, so it reads the same against a bright sky as a dark one.
+ *
+ * Shape says the kind at a glance — a sphere for the omnidirectional ones, a cone down -Z for a spot, a
+ * line down -Z for a directional. Tinted with the light's own colour so a wall of them is still legible.
+ */
+const lightGizmo = (light: LightDesc): THREE.Object3D => {
+  const color = new THREE.Color().setStyle(light.color, THREE.SRGBColorSpace)
+  const material = new THREE.MeshBasicMaterial({ color, wireframe: true, depthWrite: false, toneMapped: false })
+  const group = new THREE.Group()
+  if (light.kind === 'spot') {
+    const h = 1.2
+    const r = Math.tan(THREE.MathUtils.degToRad(light.angleDeg)) * h
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(r, h, 12, 1, true), material)
+    // ConeGeometry points up +Y with its apex at the top; put the apex on the node and lay it down -Z.
+    cone.rotation.x = -Math.PI / 2
+    cone.position.z = -h / 2
+    group.add(cone)
+  } else {
+    group.add(new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 6), material))
+  }
+  if (light.kind === 'directional') {
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1.6)]), new THREE.LineBasicMaterial({ color, toneMapped: false })))
+  }
+  return group
+}
+
 const buildItemMeshes = (g: THREE.Group, i: number): void => {
   if (doc === null) return
   const holder = meshHolderOf(g)
@@ -234,11 +282,39 @@ const buildItemMeshes = (g: THREE.Group, i: number): void => {
     })
     holder.add(object)
   }
+
+  /**
+   * The node's light, if it has one (ADR 0047). Two objects, both parented into the node's own group so its
+   * transform places and aims them with no extra bookkeeping:
+   *
+   * - the real `THREE.Light`, so the viewport shows what the level will actually look like
+   * - a wireframe **gizmo**, because a light node has no `Renderer` and no `Collider`, so without one there is
+   *   nothing under the cursor to click. It sits inside the group that carries `userData.index`, so the
+   *   existing pick walk finds it for free.
+   */
+  const light = doc.lightSpec(i)
+  if (light !== undefined) {
+    const casts = light.castShadow && light.kind !== 'ambient' && editorShadowCasters < EDITOR_SHADOW_CAP
+    if (casts) editorShadowCasters += 1
+    const object = createLight(light, casts)
+    holder.add(object)
+    if (lightAims(light.kind)) {
+      // Aimed down the group's -Z, which is the node's forward. Three needs the target in the graph.
+      const target = new THREE.Object3D()
+      target.position.set(0, 0, -1)
+      holder.add(target)
+      ;(object as THREE.SpotLight | THREE.DirectionalLight).target = target
+    }
+    holder.add(lightGizmo(light))
+  }
 }
 
 const buildItems = (): void => {
   disposeMeshes(instanceRoot)
   instanceGroups = []
+  // Counted fresh each rebuild, in document order, so the same lights keep their shadows instead of the cap
+  // handing them to whichever node happened to rebuild first.
+  editorShadowCasters = 0
   if (doc === null) return
   // Depth-first order, so a parent's group always exists before its children ask for it.
   for (let i = 0; i < doc.count(); i++) {
@@ -422,7 +498,11 @@ const breadcrumb = (): string => {
  * prefab edit is what makes every instance of it move at once. */
 const showDoc = (): void => {
   deselect()
+  envSelected = false
   doc = docStack[docStack.length - 1]?.doc ?? null
+  // The level owns its sun (ADR 0048), so opening one relights the viewport and rebakes the sky. A prefab has
+  // none, which `sun()` reports as `undefined`, and that falls back to the renderer's defaults.
+  env.applyEnvironment(doc?.environment())
   buildItems()
   rebuildLoaded()
   statusMsg = '' // a message about the old document would be a lie about this one
@@ -1193,6 +1273,8 @@ let char: CharacterState | null = null
 let controller: LocalController | null = null
 let playLoop: LoopHandle | null = null
 let playView: LevelView | null = null
+// Play mode hides instanceRoot, which hides the authored lights with it, so it needs its own (ADR 0047).
+let playLights: ContentLights | null = null
 let ownPos: Vec3 = { x: 0, y: 1, z: 0 }
 
 // The game's third-person camera: mouselook (pointer lock) yaw/pitch orbit at a fixed distance.
@@ -1293,6 +1375,7 @@ const startPlay = (): void => {
 
   instanceRoot.visible = false
   playView = addLevel(stage.scene, loaded.visuals)
+  playLights = addLights(stage.scene, loaded.lights)
   charMesh.visible = true
   playing = true
   controls.enabled = false // editor orbit off; the player camera takes over
@@ -1331,6 +1414,8 @@ const stopPlay = (): void => {
   controller = null
   playView?.dispose()
   playView = null
+  playLights?.dispose()
+  playLights = null
   charMesh.visible = false
   instanceRoot.visible = true
   playing = false
@@ -1502,7 +1587,19 @@ const contextMenu: ContextMenu = createContextMenu()
 const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
   doc: () => doc,
   selection: () => selection,
-  onSelect: selectWith,
+  envSelected: () => envSelected,
+  onSelectEnv: () => {
+    // Mutually exclusive with a node selection: the Inspector shows one or the other, and leaving a node
+    // marked while editing the sun would say the gizmo still applies to it.
+    // Set before deselecting: `deselect` rebuilds the Inspector, and by then it has to know to show the sun.
+    envSelected = true
+    deselect()
+    hierarchy.render()
+  },
+  onSelect: (index, mode, order) => {
+    envSelected = false
+    selectWith(index, mode, order)
+  },
   onRename: (index, name) => {
     doc?.setName(index, name)
     recordEdit('rename')
@@ -2213,6 +2310,13 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   menu: contextMenu,
   doc: () => doc,
   selected: () => selected,
+  envSelected: () => envSelected,
+  onEnvironmentChanged: () => {
+    // Elevation and azimuth move the sky as well as the light, so this rebakes rather than just relighting.
+    env.applyEnvironment(doc?.environment())
+    recordEdit('environment')
+    uiChanged()
+  },
   selectionCount: () => selection.length,
   readTransform: () => {
     if (selected === null) return null
@@ -2402,6 +2506,7 @@ stage.start(() => {
     const alpha = Math.min(1, Math.max(0, (performance.now() - lastSimTickAt) / (1000 / TICK_RATE_HZ)))
     loaded.render(alpha)
     playView?.sync()
+    playLights?.sync()
     ownPos = controller.renderPositions().get(PLAYER_ID) ?? ownPos
     charMesh.position.set(ownPos.x, ownPos.y, ownPos.z)
     const tx = ownPos.x

@@ -3,7 +3,7 @@ import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { instantiateLevel } from './loader'
-import { effectiveNode, COLLIDER, MATERIAL_OVERRIDE, MESH, RENDERER, SPAWN, TRACK, type TypeInfo } from './nodes'
+import { effectiveNode, COLLIDER, LIGHT, MATERIAL_OVERRIDE, MESH, RENDERER, SPAWN, TRACK, type TypeInfo } from './nodes'
 import { moveTrack } from './track'
 import type { ComponentData, Node, Level } from './types'
 
@@ -303,5 +303,92 @@ describe('resolving a placement against its prefab', () => {
     // Two visuals: the prefab's own piece at the root's pose, then the placement's child one metre above it.
     expect(loaded.visuals[0]!.position.y, 'the track lifted the prefab piece by 2').toBeCloseTo(2, 6)
     expect(loaded.visuals[1]!.position.y, 'and the rider went with it, keeping its own 1').toBeCloseTo(3, 6)
+  })
+})
+
+/**
+ * Lights (ADR 0047). The loader's job is to surface them as data and to carry them on the frame tree; what a
+ * light *is* belongs to the renderer, and this package never learns.
+ */
+describe('a Light component', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  it('surfaces one light per component, at the node world position', () => {
+    const loaded = load(
+      levelOf([
+        {
+          id: 'lamp',
+          transform: { position: vec3(2, 3, 4) },
+          components: [comp('c0', LIGHT, { kind: 'point', color: '#ff8800', intensity: 7, range: 9 })],
+        },
+      ]),
+    )
+    expect(loaded.lights).toHaveLength(1)
+    const light = loaded.lights[0]!
+    expect(light.kind).toBe('point')
+    expect(light.color).toBe('#ff8800')
+    expect(light.intensity).toBe(7)
+    expect(light.range).toBe(9)
+    expect(light.position).toEqual(vec3(2, 3, 4))
+    expect(light.node).toBe('lamp')
+  })
+
+  it('needs no collider and no renderer, so a light is not a solid', () => {
+    const loaded = load(levelOf([{ id: 'l', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', LIGHT)] }]))
+    expect(loaded.lights).toHaveLength(1)
+    expect(loaded.visuals).toHaveLength(0)
+    // Nothing to touch, so it is not in the touchable list — but it is still a node.
+    expect(loaded.nodes).toHaveLength(0)
+    expect(loaded.allNodes).toHaveLength(1)
+  })
+
+  it('defaults shadows off, whatever else is authored', () => {
+    const loaded = load(levelOf([{ id: 'l', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', LIGHT, { intensity: 50 })] }]))
+    expect(loaded.lights[0]!.castShadow).toBe(false)
+  })
+
+  it('honours a light that does ask to cast', () => {
+    const loaded = load(levelOf([{ id: 'l', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', LIGHT, { castShadow: true })] }]))
+    expect(loaded.lights[0]!.castShadow).toBe(true)
+  })
+
+  it('skips a switched-off light, like any other disabled component', () => {
+    const loaded = load(
+      levelOf([{ id: 'l', transform: { position: vec3(0, 0, 0) }, components: [{ id: 'c0', type: LIGHT, params: {}, enabled: false }] }]),
+    )
+    expect(loaded.lights).toHaveLength(0)
+  })
+
+  it('inherits its parent transform, so a lamp under a group moves with it', () => {
+    const loaded = load(
+      levelOf([
+        {
+          id: 'group',
+          transform: { position: vec3(10, 0, 0) },
+          components: [],
+          children: [{ id: 'lamp', transform: { position: vec3(0, 2, 0) }, components: [comp('c0', LIGHT)] }],
+        },
+      ]),
+    )
+    expect(loaded.lights[0]!.position).toEqual(vec3(10, 2, 0))
+  })
+
+  /** The reason a light gets its own `Dynamic`: a moving lamp has no collider to ride along with. */
+  it('rides a moving node even with no collider of its own', () => {
+    const loaded = load(
+      levelOf([
+        {
+          id: 'lamp',
+          transform: { position: vec3(0, 0, 0) },
+          components: [comp('c0', LIGHT), comp('c1', TRACK, { keys: moveTrack(vec3(0, 0, 0), vec3(0, 1, 0), 4, 1000), loop: 'loop', phaseMs: 0 })],
+        },
+      ]),
+    )
+    const start = { ...loaded.lights[0]!.position }
+    loaded.update(250)
+    loaded.render(1)
+    expect(loaded.lights[0]!.position.y).not.toBe(start.y)
   })
 })

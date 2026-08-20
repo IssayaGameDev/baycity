@@ -1,6 +1,7 @@
 import { vec3, type Vec3 } from '@mp/core'
 import type { ColliderDesc } from '@mp/content'
 import { visibleParams, type ParamSpec } from '@mp/components'
+import { DEFAULT_SKY_PARAMS } from '@mp/render-three'
 import { Pane } from 'tweakpane'
 
 import type { ComponentView, Doc } from './editorDoc'
@@ -35,6 +36,13 @@ export interface TransformValues {
 export interface InspectorHost {
   doc: () => Doc | null
   selected: () => number | null
+  /**
+   * The Environment row is selected instead of a node (ADR 0048). The panel then edits the level's sun, which
+   * is a level setting rather than a component because the sun and the sky are one input (ADR 0046).
+   */
+  envSelected: () => boolean
+  /** The environment changed: rebake the sky and relight, since sun, ambient and sky move together. */
+  onEnvironmentChanged: () => void
   /** How many objects are selected. The panel edits one and has to say so when there are more. */
   selectionCount: () => number
   /** The selection's current transform, or `null` if there isn't one. */
@@ -390,6 +398,18 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       case 'string':
         mark(section.pane().addBinding(state, key, { label }).on('change', () => write({ [key]: state[key] })))
         return
+      case 'color':
+        /**
+         * No `view` option: Tweakpane's string-colour plugin picks the picker up from the **value's format**
+         * (`detectStringColorFormat`), and only declines when told `view: 'text'`. Passing `view: 'color'` reads
+         * as forcing it but is a no-op — `BaseInputParams` extends `Record<string, unknown>`, so any key,
+         * including a typo, typechecks and is then ignored.
+         *
+         * What keeps this working is the declaration layer rejecting anything that is not `#rrggbb`, which is
+         * exactly the format the plugin detects.
+         */
+        mark(section.pane().addBinding(state, key, { label }).on('change', () => write({ [key]: state[key] })))
+        return
       case 'enum': {
         const options: Record<string, string> = {}
         for (const o of spec.options) options[o] = o
@@ -466,6 +486,15 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         const pick = { ref: typeof state[key] === 'string' ? (state[key] as string) : '' }
         mark(section.pane().addBinding(pick, 'ref', { label, options }).on('change', () => write({ [key]: pick.ref === '' ? null : pick.ref })))
         return
+      }
+      default: {
+        /**
+         * Exhaustiveness guard. A parameter kind with no case here renders **nothing** — the field simply is
+         * not there, with no error anywhere, which is exactly how `color` shipped invisible. Now adding a kind
+         * to `ParamSpec` fails typecheck until this switch handles it.
+         */
+        const unhandled: never = spec
+        throw new Error(`inspector: no widget for parameter kind ${JSON.stringify(unhandled)}`)
       }
     }
   }
@@ -634,6 +663,61 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     container.append(row)
   }
 
+  /**
+   * The level's sun (ADR 0048), shown when the Environment row is selected.
+   *
+   * Hand-built rather than generated from declarations, because the sun is not a component: it is
+   * `LevelConfig.sun`, sitting with the sky because the two are one input (ADR 0046). Every edit calls
+   * `onSunChanged`, which rebakes the sky — moving the sun without rebaking is exactly how the light and the
+   * sky would come to disagree again.
+   */
+  const addEnvironmentSections = (doc: Doc): void => {
+    if (doc.mode === 'prefab') {
+      addSection('@env', { title: 'Environment' }).row('', 'a prefab has no environment of its own')
+      return
+    }
+
+    /**
+     * The three blocks are written back **together**, because they are one field on the level and because they
+     * are coupled: the sun's angles move the sky's glow, and `ambient` is the strength of the map the sky bakes
+     * (ADR 0048). Writing one at a time would drop the others on a fresh level, which has none of them.
+     */
+    const current = doc.environment() ?? {}
+    const sun = { ...(current.sun ?? { elevation: 30, azimuth: 38, intensity: 2.4, color: '#ffffff', shadows: true }) }
+    const ambient = { ...(current.ambient ?? { intensity: 0.2 }) }
+    const sky = { ...(current.sky ?? DEFAULT_SKY_PARAMS) }
+    const write = (): void => {
+      doc.setEnvironment({ sun: { ...sun }, ambient: { ...ambient }, sky: { ...sky } })
+      host.onEnvironmentChanged()
+    }
+
+    const sunSection = addSection('@env-sun', { title: 'Sun' })
+    sunSection.pane().addBinding(sun, 'elevation', { min: 1, max: 89, step: 1, label: 'elevation °' }).on('change', write)
+    sunSection.pane().addBinding(sun, 'azimuth', { min: -180, max: 180, step: 1, label: 'azimuth °' }).on('change', write)
+    sunSection.pane().addBinding(sun, 'intensity', { min: 0, max: 10, step: 0.05, label: 'intensity' }).on('change', write)
+    sunSection.pane().addBinding(sun, 'color', { label: 'colour' }).on('change', write)
+    sunSection.pane().addBinding(sun, 'shadows', { label: 'shadows' }).on('change', write)
+    sunSection.row('', 'elevation and azimuth also move the sky')
+
+    /**
+     * The sky's own light, and the reason it needs a control: it is image-based, not a light object, so turning
+     * every light off leaves it lighting the scene. At 1 this sky's irradiance is blue twenty-one times red.
+     */
+    const ambientSection = addSection('@env-ambient', { title: 'Ambient' })
+    ambientSection.pane().addBinding(ambient, 'intensity', { min: 0, max: 1.5, step: 0.01, label: 'from the sky' }).on('change', write)
+    ambientSection.row('', 'the sky lighting the level, not a light')
+
+    const skySection = addSection('@env-sky', { title: 'Sky' })
+    skySection.pane().addBinding(sky, 'topColor', { label: 'top' }).on('change', write)
+    skySection.pane().addBinding(sky, 'bottomColor', { label: 'bottom' }).on('change', write)
+    skySection.pane().addBinding(sky, 'gradientBias', { min: 0.3, max: 3, step: 0.05, label: 'ramp bias' }).on('change', write)
+    skySection.pane().addBinding(sky, 'gain', { min: 0.1, max: 6, step: 0.05, label: 'gain' }).on('change', write)
+    skySection.pane().addBinding(sky, 'glowColor', { label: 'sun tint' }).on('change', write)
+    skySection.pane().addBinding(sky, 'glowStrength', { min: 0, max: 2, step: 0.01, label: 'glow' }).on('change', write)
+    skySection.pane().addBinding(sky, 'glowSharpness', { min: 4, max: 600, step: 4, label: 'glow tight' }).on('change', write)
+    skySection.pane().addBinding(sky, 'sunDiskIntensity', { min: 0, max: 2000, step: 10, label: 'sun disc' }).on('change', write)
+  }
+
   const rebuild = (): void => {
     for (const pane of panes) pane.dispose()
     panes = []
@@ -642,6 +726,10 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     renderHead()
 
     const doc = host.doc()
+    if (doc !== null && host.envSelected()) {
+      addEnvironmentSections(doc)
+      return
+    }
     const at = host.selected()
     if (doc === null || at === null) return
 

@@ -159,3 +159,67 @@ describe('parameters, when a registry is supplied', () => {
     expect(() => validateLevel(level([], { pad }), checker)).toThrow(/level\.prefabs\['pad'\]\.components\[0\]/)
   })
 })
+
+/**
+ * The environment block (ADR 0048): sun, ambient, sky, all optional.
+ *
+ * Optionality is the load-bearing part. A level that pins only its sun must keep the renderer's sky, and a
+ * level written before this existed must still load — so absent is never an error and malformed always is.
+ */
+describe('the environment block', () => {
+  const withEnv = (environment: unknown): unknown => ({
+    id: 'l',
+    config: { fallBehavior: 'physical-fall', fallY: -1, environment },
+    nodes: [],
+  })
+  const sun = { elevation: 30, azimuth: 38, intensity: 2.4, color: '#ffffff', shadows: true }
+  const sky = {
+    topColor: '#2f86cc',
+    bottomColor: '#0a1424',
+    gradientBias: 1.15,
+    gain: 2.6,
+    glowColor: '#ffe6c0',
+    glowSharpness: 200,
+    glowStrength: 0.25,
+    sunDiskIntensity: 400,
+  }
+
+  it('accepts a full one', () => {
+    expect(() => validateLevel(withEnv({ sun, ambient: { intensity: 0.2 }, sky }))).not.toThrow()
+  })
+
+  it('accepts a level with no environment at all', () => {
+    expect(() => validateLevel({ id: 'l', config: { fallBehavior: 'physical-fall', fallY: -1 }, nodes: [] })).not.toThrow()
+  })
+
+  // The point of Partial: pinning the sun must not force you to restate a sky you have no opinion about.
+  it('accepts any one part on its own', () => {
+    expect(() => validateLevel(withEnv({ sun }))).not.toThrow()
+    expect(() => validateLevel(withEnv({ ambient: { intensity: 0 } }))).not.toThrow()
+    expect(() => validateLevel(withEnv({ sky }))).not.toThrow()
+    expect(() => validateLevel(withEnv({}))).not.toThrow()
+  })
+
+  it('rejects a non-finite sun angle, which would aim the sun nowhere in silence', () => {
+    expect(() => validateLevel(withEnv({ sun: { ...sun, elevation: Number.NaN } }))).toThrow(/environment\.sun\.elevation/)
+    expect(() => validateLevel(withEnv({ sun: { ...sun, azimuth: 'south' } }))).toThrow(/environment\.sun\.azimuth/)
+  })
+
+  it('rejects a colour that is not #rrggbb, the same rule the component layer applies', () => {
+    expect(() => validateLevel(withEnv({ sun: { ...sun, color: 'white' } }))).toThrow(/#rrggbb/)
+    expect(() => validateLevel(withEnv({ sky: { ...sky, topColor: '#fff' } }))).toThrow(/topColor/)
+  })
+
+  it('rejects a non-boolean shadows flag', () => {
+    expect(() => validateLevel(withEnv({ sun: { ...sun, shadows: 'on' } }))).toThrow(/environment\.sun\.shadows/)
+  })
+
+  it('rejects a bad sky number, naming which one', () => {
+    expect(() => validateLevel(withEnv({ sky: { ...sky, gain: 'lots' } }))).toThrow(/environment\.sky\.gain/)
+  })
+
+  it('rejects parts that are not objects', () => {
+    expect(() => validateLevel(withEnv(30))).toThrow(/config\.environment/)
+    expect(() => validateLevel(withEnv({ ambient: 0.2 }))).toThrow(/environment\.ambient/)
+  })
+})

@@ -2,6 +2,8 @@ import { PART_NAMES, RIG, type PartName, type Pose } from '@mp/character'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 
+import { BEVEL_RADIUS, BEVEL_SEGMENTS, bevelFor } from './materials'
+
 /**
  * Realizes `@mp/character`'s rig data as Three.js nodes and applies a `Pose`. The same split the
  * level pipeline uses: the headless package decides shape and motion, this one only draws it.
@@ -11,7 +13,10 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
  * therefore ten quaternion writes and one vector — no skinning, no morphs, no clips.
  */
 export interface CharacterRigOptions {
-  /** Corner radius (m). 0 gives hard edges; ~0.03 reads as a soft blocky toy. */
+  /**
+   * Corner radius (m). 0 gives hard edges. Defaults to the world's `BEVEL_RADIUS`, which is the point: the
+   * character is beveled by the same number as every box in the level (ADR 0044).
+   */
   cornerRadius?: number
   /** Per-style colours, so self and peers can be tinted apart. */
   colors?: Partial<Record<RigStyle, number>>
@@ -42,7 +47,7 @@ export interface CharacterRig {
  * to hand back. Shared so a ragdoll's loose parts cannot drift from the rig's own look.
  */
 const buildParts = (opts: CharacterRigOptions): { mesh: Record<PartName, THREE.Mesh>; owned: (THREE.BufferGeometry | THREE.Material)[] } => {
-  const radius = opts.cornerRadius ?? 0.03
+  const radius = opts.cornerRadius ?? BEVEL_RADIUS
   const colors = { ...DEFAULT_COLORS, ...opts.colors }
   const castShadow = opts.castShadow ?? true
   const owned: (THREE.BufferGeometry | THREE.Material)[] = []
@@ -61,9 +66,12 @@ const buildParts = (opts: CharacterRigOptions): { mesh: Record<PartName, THREE.M
   const mesh = {} as Record<PartName, THREE.Mesh>
   for (const name of PART_NAMES) {
     const part = RIG[name]
+    // Same clamp the level's boxes get, so a raised BEVEL_RADIUS turns the thinnest limb into a soft box and
+    // never into a pill. At the default the cap does not bind: the narrowest part is 0.15 m.
+    const r = bevelFor(part.size.x, part.size.y, part.size.z, radius)
     const geo =
-      radius > 0
-        ? new RoundedBoxGeometry(part.size.x, part.size.y, part.size.z, 2, Math.min(radius, Math.min(part.size.x, part.size.y, part.size.z) / 2 - 1e-3))
+      r > 0
+        ? new RoundedBoxGeometry(part.size.x, part.size.y, part.size.z, BEVEL_SEGMENTS, r)
         : new THREE.BoxGeometry(part.size.x, part.size.y, part.size.z)
     owned.push(geo)
     const m = new THREE.Mesh(geo, materialFor(part.style))

@@ -1,11 +1,14 @@
 import {
   bakeOverrides,
+  boolParam,
   effectiveNode,
   freeTableKey,
+  numberParam,
   poseAt,
   vec3Param,
   stringParam,
   COLLIDER,
+  LIGHT,
   MATERIAL_OVERRIDE,
   TRACK,
   MESH,
@@ -19,9 +22,11 @@ import {
   type Level,
   type NodeOverride,
   type Pose,
+  type EnvironmentConfig,
   type Transform,
 } from '@mp/content'
 import { DEFAULT_REGISTRY, type Registry } from '@mp/components'
+import type { LightDesc } from '@mp/render-three'
 import { vec3, type Vec3 } from '@mp/core'
 
 import { sortedKeys } from './trackEdit'
@@ -107,6 +112,11 @@ export interface Doc {
    */
   setTransform: (i: number, t: Transform) => void
   meshSpecs: (i: number) => MeshSpec[]
+  /**
+   * The node's light, or `undefined` (ADR 0047). Position is deliberately absent: the caller parents the light
+   * into the node's own group, which already carries its transform.
+   */
+  lightSpec: (i: number) => LightDesc | undefined
   palette: () => string[]
   /** Place a palette entry. `-1` when the name is not in the library or this document's table. */
   place: (name: string, position: Vec3) => number
@@ -228,6 +238,15 @@ export interface Doc {
   /** A level to instantiate for spawn gizmos and physics (prefab mode → wrapped at the origin). */
   asLevel: () => Level
   toJSON: () => Level | Node
+  /**
+   * The level's sun (ADR 0048), or `undefined` when it has none and the renderer's defaults apply.
+   *
+   * A level setting rather than a node, because the sun and the sky are one input (ADR 0046). In prefab mode
+   * this reads the throwaway wrapper's config, so it is always `undefined` and setting it is a no-op — a prefab
+   * has no sun of its own.
+   */
+  environment: () => Partial<EnvironmentConfig> | undefined
+  setEnvironment: (env: Partial<EnvironmentConfig>) => void
   /** Save writes under a file name; the id follows it, or the two silently diverge. */
   setId: (id: string) => void
 }
@@ -663,6 +682,24 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
           material: surfaced,
         }))
     },
+    lightSpec: (i) => {
+      const n = node(i)
+      if (n === undefined) return undefined
+      const c = n.view.components.find((x) => x.type === LIGHT && enabledOf(x))
+      if (c === undefined) return undefined
+      const kind = stringParam(c, 'kind', 'point')
+      return {
+        kind: kind === 'spot' || kind === 'directional' || kind === 'ambient' || kind === 'hemisphere' ? kind : 'point',
+        color: stringParam(c, 'color', '#ffffff'),
+        groundColor: stringParam(c, 'groundColor', '#808080'),
+        intensity: numberParam(c, 'intensity', 4),
+        range: numberParam(c, 'range', 12),
+        decay: numberParam(c, 'decay', 2),
+        angleDeg: numberParam(c, 'angle', 40),
+        penumbra: numberParam(c, 'penumbra', 0.3),
+        castShadow: boolParam(c, 'castShadow', false),
+      }
+    },
     /**
      * In level mode, only what *this level* defines: prefab **files** are placed from the Project explorer by
      * asset id, and listing them here as well is what made one prefab appear twice. In prefab mode, primitives.
@@ -1049,6 +1086,13 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
       return count
     },
     asLevel: () => level,
+    environment: () => level.config.environment,
+    setEnvironment: (env) => {
+      // Prefab mode edits a throwaway wrapper level, so its config is not saved anywhere. Refusing here beats
+      // writing a sun into a file that has no place to keep it.
+      if (mode === 'prefab') return
+      level.config = { ...level.config, environment: env }
+    },
     toJSON: opts.json,
     setId: (id) => {
       level.id = id

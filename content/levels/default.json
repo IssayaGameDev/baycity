@@ -2,7 +2,36 @@
   "id": "default",
   "config": {
     "fallBehavior": "respawn-checkpoint",
-    "fallY": -6
+    "fallY": -6,
+    "sun": {
+      "elevation": 30,
+      "azimuth": 38,
+      "intensity": 0,
+      "color": "#ffffff",
+      "shadows": true
+    },
+    "environment": {
+      "sun": {
+        "elevation": 30,
+        "azimuth": 38,
+        "intensity": 1.2,
+        "color": "#ffffff",
+        "shadows": true
+      },
+      "ambient": {
+        "intensity": 0.2
+      },
+      "sky": {
+        "topColor": "#2f86cc",
+        "bottomColor": "#0a1424",
+        "gradientBias": 1.15,
+        "gain": 2.6,
+        "glowColor": "#ffe6c0",
+        "glowSharpness": 200,
+        "glowStrength": 0.25,
+        "sunDiskIntensity": 400
+      }
+    }
   },
   "prefabs": {
     "Trampoline": {
@@ -439,6 +468,29 @@
   },
   "nodes": [
     {
+      "id": "env-fill",
+      "name": "Hemisphere Fill",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "components": [
+        {
+          "id": "env-fill-c0",
+          "type": "Light",
+          "params": {
+            "kind": "hemisphere",
+            "color": "#ffffff",
+            "groundColor": "#808080",
+            "intensity": 1
+          }
+        }
+      ]
+    },
+    {
       "id": "n0",
       "name": "ground",
       "transform": {
@@ -501,9 +553,9 @@
           "id": "n1-p0",
           "transform": {
             "position": {
-              "x": 0,
+              "x": -6.5,
               "y": 0,
-              "z": 0
+              "z": -7.5
             }
           },
           "components": [
@@ -527,6 +579,117 @@
               "params": {
                 "material": "55205761e38bc929"
               }
+            },
+            {
+              "id": "893c75f8",
+              "type": "Track",
+              "params": {
+                "keys": [
+                  {
+                    "t": 0,
+                    "position": {
+                      "x": 7,
+                      "y": -0.2,
+                      "z": -7.5
+                    },
+                    "easing": "inOut"
+                  },
+                  {
+                    "t": 1000,
+                    "position": {
+                      "x": 7,
+                      "y": 9.8,
+                      "z": -7.5
+                    },
+                    "easing": "inOut"
+                  },
+                  {
+                    "t": 2000,
+                    "position": {
+                      "x": 7,
+                      "y": -0.2,
+                      "z": -7.5
+                    }
+                  }
+                ],
+                "loop": "loop",
+                "phaseMs": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "n8",
+          "name": "turntable",
+          "transform": {
+            "position": {
+              "x": 7,
+              "y": 0.3,
+              "z": -7.5
+            }
+          },
+          "components": [
+            {
+              "id": "o0",
+              "type": "Track",
+              "params": {
+                "keys": [
+                  {
+                    "t": 0,
+                    "rotation": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "easing": "linear"
+                  },
+                  {
+                    "t": 6000,
+                    "rotation": {
+                      "x": 0,
+                      "y": 6.2832,
+                      "z": 0
+                    }
+                  }
+                ],
+                "loop": "loop",
+                "phaseMs": 0
+              }
+            }
+          ],
+          "children": [
+            {
+              "id": "n8-p0",
+              "transform": {
+                "position": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              },
+              "components": [
+                {
+                  "id": "c0",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 3,
+                        "y": 0.15,
+                        "z": 0.6
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "c1",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "19079ddb3fbfb27e"
+                  }
+                }
+              ]
             }
           ]
         }
@@ -841,81 +1004,6 @@
                     "x": 1.5,
                     "y": 0.15,
                     "z": 1.5
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "19079ddb3fbfb27e"
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "n8",
-      "name": "turntable",
-      "transform": {
-        "position": {
-          "x": 10,
-          "y": 0.5,
-          "z": 5
-        }
-      },
-      "components": [
-        {
-          "id": "o0",
-          "type": "Track",
-          "params": {
-            "keys": [
-              {
-                "t": 0,
-                "rotation": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 0
-                },
-                "easing": "linear"
-              },
-              {
-                "t": 6000,
-                "rotation": {
-                  "x": 0,
-                  "y": 6.2832,
-                  "z": 0
-                }
-              }
-            ],
-            "loop": "loop",
-            "phaseMs": 0
-          }
-        }
-      ],
-      "children": [
-        {
-          "id": "n8-p0",
-          "transform": {
-            "position": {
-              "x": 0,
-              "y": 0,
-              "z": 0
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 3,
-                    "y": 0.15,
-                    "z": 0.6
                   }
                 }
               }

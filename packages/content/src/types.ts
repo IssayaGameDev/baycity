@@ -106,10 +106,88 @@ export type Behavior =
  * `physical-fall` lets the player fall (a tower). `gravity` optionally overrides the
  * character's gravity for this level.
  */
+/**
+ * The level's sun (ADR 0048).
+ *
+ * A **level setting**, not a node, because the sun and the sky are one input: elevation and azimuth drive the
+ * key light, its shadow frustum and the sky's own glow together (ADR 0046). Putting it here keeps it beside the
+ * sky parameters it is coupled to, instead of making the sky chase a node somebody can drag.
+ *
+ * There is exactly one, and it is the only light that casts a level-wide shadow. Content lights — including the
+ * hemisphere fill — are nodes with a `Light` component (ADR 0047).
+ */
+export interface SunConfig {
+  /** Degrees above the horizon. */
+  elevation: number
+  /** Degrees about +Y from +X toward +Z, matching three's `equirectUv`. */
+  azimuth: number
+  intensity: number
+  /** sRGB `#rrggbb`. */
+  color: string
+  /** The level-wide shadow. Off makes the whole level unshadowed, whatever a content light asks for. */
+  shadows: boolean
+}
+
+/** How hard the sky's own environment map lights the level (`scene.environmentIntensity`). */
+export interface AmbientConfig {
+  /**
+   * At 1 this sky's irradiance on an up-facing surface measures `[0.19, 1.59, 4.03]` — blue twenty-one times
+   * red, and stronger than the key light. 0.2 is a cool cast; 0 is off.
+   */
+  intensity: number
+}
+
+/**
+ * The sky's appearance (ADR 0046). A designed gradient, not atmospheric scattering.
+ *
+ * Declared here rather than in the renderer because it is **level data** now, and `@mp/content` is headless and
+ * never imports rendering. `@mp/render-three` aliases its `SkyParams` to this and owns the *defaults*, which are
+ * a renderer opinion rather than a schema.
+ */
+export interface SkyConfig {
+  /** sRGB hex at the zenith. */
+  topColor: string
+  /** sRGB hex straight down. The horizon is a point on the way between the two. */
+  bottomColor: string
+  /** Ramp shape. Above 1 pulls the light end toward the zenith. Cannot break monotonicity. */
+  gradientBias: number
+  /** Master multiplier on the sky, glow and disc included. */
+  gain: number
+  /** sRGB hex of the halo around the sun, and of the disc. */
+  glowColor: string
+  /** Angular tightness of the halo. Higher is tighter. */
+  glowSharpness: number
+  /** Brightness of the halo. Push it and the sky washes out around the sun. */
+  glowStrength: number
+  /** Radiance of the solar disc. Large on purpose — it should clip to white. */
+  sunDiskIntensity: number
+}
+
+/**
+ * Everything about how a level is lit and what is behind it (ADR 0048).
+ *
+ * One block because these three are one subject and are tuned against each other: the sun's angles move the
+ * sky's glow (ADR 0046), and `ambient` is the strength of the environment map the sky itself bakes. Splitting
+ * them across the config would mean balancing coupled numbers in three places.
+ *
+ * The hemisphere fill is deliberately **not** here — it is a node with a `Light` component, because unlike
+ * these it is something a level can have several of, or none.
+ */
+export interface EnvironmentConfig {
+  sun: SunConfig
+  ambient: AmbientConfig
+  sky: SkyConfig
+}
+
 export interface LevelConfig {
   fallBehavior: 'respawn-checkpoint' | 'physical-fall'
   fallY: number
   gravity?: number
+  /**
+   * Sun, ambient and sky. Absent, or any part of it absent, falls back to the renderer's defaults — so a level
+   * authored before this existed still loads and still looks the way it did.
+   */
+  environment?: Partial<EnvironmentConfig>
 }
 
 /**

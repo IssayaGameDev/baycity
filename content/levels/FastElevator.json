@@ -2,9 +2,54 @@
   "id": "FastElevator",
   "config": {
     "fallBehavior": "respawn-checkpoint",
-    "fallY": -3
+    "fallY": -3,
+    "environment": {
+      "sun": {
+        "elevation": 30,
+        "azimuth": 38,
+        "intensity": 2.4,
+        "color": "#ffffff",
+        "shadows": true
+      },
+      "ambient": {
+        "intensity": 0.2
+      },
+      "sky": {
+        "topColor": "#2f86cc",
+        "bottomColor": "#0a1424",
+        "gradientBias": 1.15,
+        "gain": 2.6,
+        "glowColor": "#ffe6c0",
+        "glowSharpness": 200,
+        "glowStrength": 0.25,
+        "sunDiskIntensity": 400
+      }
+    }
   },
   "nodes": [
+    {
+      "id": "env-fill",
+      "name": "Hemisphere Fill",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "components": [
+        {
+          "id": "env-fill-c0",
+          "type": "Light",
+          "params": {
+            "kind": "hemisphere",
+            "color": "#ffffff",
+            "groundColor": "#808080",
+            "intensity": 0.4
+          }
+        }
+      ]
+    },
     {
       "id": "n0",
       "name": "ground",

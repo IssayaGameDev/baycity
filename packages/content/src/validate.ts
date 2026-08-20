@@ -23,7 +23,54 @@ const validateConfig = (c: unknown): LevelConfig => {
     throw new LevelError("level.config.fallBehavior: expected 'respawn-checkpoint' | 'physical-fall'")
   if (typeof c.fallY !== 'number') throw new LevelError('level.config.fallY: expected number')
   if (c.gravity !== undefined && typeof c.gravity !== 'number') throw new LevelError('level.config.gravity: expected number')
+  if (c.environment !== undefined) validateEnvironment(c.environment)
   return c as unknown as LevelConfig
+}
+
+const HEX = /^#[0-9a-fA-F]{6}$/
+
+/** Same rule the component layer's `color` kind applies, so a colour means one thing everywhere. */
+const checkColor = (v: unknown, at: string): void => {
+  if (typeof v !== 'string' || !HEX.test(v)) throw new LevelError(`${at}: expected an sRGB colour as #rrggbb`)
+}
+
+const checkNumbers = (o: Record<string, unknown>, keys: readonly string[], at: string): void => {
+  for (const key of keys) {
+    const v = o[key]
+    if (typeof v !== 'number' || !Number.isFinite(v)) throw new LevelError(`${at}.${key}: expected a finite number`)
+  }
+}
+
+/**
+ * The environment block (ADR 0048): sun, ambient, sky.
+ *
+ * Every part is optional, and so is the block. A level written before this existed, or one that only pins its
+ * sun, still loads — the renderer fills the rest from its defaults. Present-but-malformed is the error case;
+ * absent is not.
+ */
+const validateEnvironment = (e: unknown): void => {
+  if (!isObj(e)) throw new LevelError('level.config.environment: expected object')
+
+  if (e.sun !== undefined) {
+    const at = 'level.config.environment.sun'
+    if (!isObj(e.sun)) throw new LevelError(`${at}: expected object`)
+    checkNumbers(e.sun, ['elevation', 'azimuth', 'intensity'], at)
+    checkColor(e.sun.color, `${at}.color`)
+    if (typeof e.sun.shadows !== 'boolean') throw new LevelError(`${at}.shadows: expected true or false`)
+  }
+
+  if (e.ambient !== undefined) {
+    const at = 'level.config.environment.ambient'
+    if (!isObj(e.ambient)) throw new LevelError(`${at}: expected object`)
+    checkNumbers(e.ambient, ['intensity'], at)
+  }
+
+  if (e.sky !== undefined) {
+    const at = 'level.config.environment.sky'
+    if (!isObj(e.sky)) throw new LevelError(`${at}: expected object`)
+    checkNumbers(e.sky, ['gradientBias', 'gain', 'glowSharpness', 'glowStrength', 'sunDiskIntensity'], at)
+    for (const key of ['topColor', 'bottomColor', 'glowColor']) checkColor(e.sky[key], `${at}.${key}`)
+  }
 }
 
 /** The capability this validator wants from a component registry. `Registry` satisfies it structurally. */

@@ -149,3 +149,23 @@ describe('which parameters are worth showing', () => {
     expect(visibleParams(bad, {})).toEqual(['a', 'b'])
   })
 })
+
+/** The `color` kind, added for `Light` (ADR 0047). */
+describe('a colour parameter', () => {
+  const decls = { tint: { kind: 'color', default: '#ffffff' } } as const
+
+  it('accepts #rrggbb', () => {
+    expect(readParams(decls, { tint: '#ff8800' }, 'at').tint).toBe('#ff8800')
+  })
+
+  // The failure a plain string allows: a bad value reaching a shader as black, with nothing said.
+  it('rejects anything that is not a hex colour', () => {
+    for (const bad of ['reddish', '#fff', 'ff8800', '#gggggg', '#ff88000', 12]) {
+      expect(() => readParams(decls, { tint: bad }, 'at')).toThrow(/#rrggbb/)
+    }
+  })
+
+  it('falls back to its default when absent', () => {
+    expect(readParams(decls, {}, 'at').tint).toBe('#ffffff')
+  })
+})

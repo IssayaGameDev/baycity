@@ -54,6 +54,17 @@ export interface StringSpec extends SpecBase {
   readonly kind: 'string'
   readonly default: string
 }
+/**
+ * An sRGB colour as `#rrggbb`.
+ *
+ * Its own kind rather than a `string`, for the same reason `asset` is: the Inspector can offer a picker, and
+ * the validator can reject `"reddish"` at load instead of letting it reach a shader as black. Materials have
+ * had a colour kind since ADR 0026, but that is the *shader* parameter system; this is the component one.
+ */
+export interface ColorSpec extends SpecBase {
+  readonly kind: 'color'
+  readonly default: string
+}
 export interface EnumSpec<O extends string = string> extends SpecBase {
   readonly kind: 'enum'
   readonly options: readonly O[]
@@ -83,7 +94,7 @@ export interface NodeRefSpec extends SpecBase {
   readonly kind: 'nodeRef'
 }
 
-export type ParamSpec = NumberSpec | BoolSpec | StringSpec | EnumSpec | Vec3Spec | AssetSpec | ColliderSpec | KeysSpec | NodeRefSpec
+export type ParamSpec = NumberSpec | BoolSpec | StringSpec | ColorSpec | EnumSpec | Vec3Spec | AssetSpec | ColliderSpec | KeysSpec | NodeRefSpec
 
 /**
  * Runtime value per spec kind. A lookup table keyed on `kind` rather than a chain of `S extends …`,
@@ -94,6 +105,7 @@ interface ValueByKind {
   number: number
   bool: boolean
   string: string
+  color: string
   enum: string
   vec3: Vec3
   asset: string
@@ -186,6 +198,11 @@ const checkOne = (spec: ParamSpec, value: unknown, at: string): void => {
     case 'string':
     case 'asset':
       if (typeof value !== 'string') throw new ComponentError(`${at}: expected a string`)
+      return
+    case 'color':
+      // Rejected at load rather than reaching a shader as black, which is the failure a plain string allows.
+      if (typeof value !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(value))
+        throw new ComponentError(`${at}: expected an sRGB colour as #rrggbb`)
       return
     case 'enum':
       if (typeof value !== 'string' || !spec.options.includes(value))

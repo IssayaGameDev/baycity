@@ -154,6 +154,10 @@ export interface HierarchyHost {
    * panel knows which rows are on screen.
    */
   onSelect: (index: number, mode: SelectMode, order: readonly number[]) => void
+  /** Whether the Environment row is the current selection (ADR 0048). */
+  envSelected: () => boolean
+  /** The Environment row was clicked. */
+  onSelectEnv: () => void
   onRename: (index: number, name: string) => void
   /** Re-parent `from` under `parent` (`null` = top level) at sibling position `at`. */
   onReparent: (from: number, parent: number | null, at: number) => void
@@ -199,6 +203,23 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
   const render = (): void => {
     const doc = host.doc()
     container.replaceChildren()
+
+    /**
+     * The level's environment: not a node, so it sits above the tree rather than in it (ADR 0048). A row rather
+     * than a menu item because it has to be *discoverable* — the sun was unreachable before this existed, and
+     * a thing you cannot find is not much better.
+     *
+     * Drawn even when the document is empty: a level with nothing in it still has a sun.
+     */
+    if (doc !== null && doc.mode === 'level') {
+      const env = document.createElement('div')
+      env.className = `row env${host.envSelected() ? ' sel' : ''}`
+      env.textContent = '☀ Environment'
+      env.title = 'sun and sky for this level'
+      env.addEventListener('pointerdown', () => host.onSelectEnv())
+      container.append(env)
+    }
+
     if (doc === null || doc.count() === 0) {
       const empty = document.createElement('div')
       empty.className = 'empty'

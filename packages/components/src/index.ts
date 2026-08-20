@@ -23,6 +23,7 @@ export type {
   ParamSpec,
   ParamWhen,
   RawParams,
+  ColorSpec,
   StringSpec,
   ValueOf,
   Vec3Spec,

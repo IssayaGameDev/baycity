@@ -4,14 +4,17 @@ import type { PhysicsBody, PhysicsWorld, ShapeDesc } from '@mp/physics'
 import { isAnimated, poseAt } from './track'
 import {
   COLLIDER,
+  LIGHT,
   MATERIAL_OVERRIDE,
   SPAWN,
   TRACK,
   MESH,
   RENDERER,
+  boolParam,
   componentsOfType,
   effectiveNode,
   firstOfType,
+  numberParam,
   stringParam,
   vec3Param,
   type TypeInfo,
@@ -20,10 +23,10 @@ import type { Behavior, ColliderDesc, ComponentData, Keyframe, LevelConfig, Loop
 
 /**
  * Turns a **node tree** into a live world (PLAN-component-system, stage C1): Rapier colliders from every
- * `Collider` component, a renderer-agnostic visual list from every `Visual`, and the same clock-driven
- * `update`/`render` as before.
+ * `Collider`, a renderer-agnostic draw list from `Renderer`/`Mesh`, a light list from every `Light`, and the
+ * clock-driven `update`/`render` that carries all of them.
  *
- * It reads five component types, all of them the engine's own, and **no gameplay names at all**. What a
+ * It reads seven component types, all of them the engine's own, and **no gameplay names at all**. What a
  * checkpoint or a bumper means is the mode's business: this hands out every component on the node that owns
  * a collider and lets the mode recognise what it knows. Adding a rule therefore never touches this file,
  * which is the difference between a component system and a switch statement.
@@ -47,6 +50,34 @@ export interface VisualItem {
   model: string | undefined
   /** Material asset id. Absent means nobody has chosen a surface, and the renderer greyboxes it. */
   material: string | undefined
+}
+
+/**
+ * One light to realize (ADR 0047). Headless data: which kind, how it looks, and where it is — the renderer
+ * turns it into a `THREE.Light`, and this package never learns what one is.
+ *
+ * `position`/`rotation` are mutated by `render`, like `VisualItem`, so a lamp parented to a moving platform
+ * travels with it.
+ */
+export interface WorldLight {
+  /** The node that owns it, so the editor can map a gizmo back to a selection. */
+  readonly node: string
+  readonly kind: 'point' | 'spot' | 'directional' | 'ambient' | 'hemisphere'
+  /** sRGB `#rrggbb`. */
+  readonly color: string
+  /** The upward half of a `hemisphere` light; ignored by every other kind. */
+  readonly groundColor: string
+  readonly intensity: number
+  /** Falloff distance for `point`/`spot`. 0 is unbounded. */
+  readonly range: number
+  readonly decay: number
+  /** Spot cone half-angle, degrees. */
+  readonly angleDeg: number
+  readonly penumbra: number
+  readonly castShadow: boolean
+  position: Vec3
+  /** `directional` and `spot` shine along the node's forward; the others ignore this. */
+  rotation: Quat
 }
 
 /** Which of a clock-driven node's three known poses to read — see `LoadedLevel.basePoseOf`. */
@@ -142,6 +173,8 @@ interface Dynamic {
   frame: Frame
   body: PhysicsBody | undefined
   visual: VisualItem | undefined
+  /** A light riding this frame. Its own entry, since a node's light is independent of its collider count. */
+  light: WorldLight | undefined
   /**
    * The collider's own offset from the frame, already scaled — `undefined` when it sits on the origin, which
    * is every migrated piece. Re-applied each tick, since the frame pose is what moves.
@@ -172,6 +205,8 @@ export interface LoadedLevel {
   /** The node owning a collider handle — how contact becomes a gameplay rule. */
   nodeOf: (colliderHandle: number) => WorldNode | undefined
   visuals: VisualItem[]
+  /** Every `Light` component in the tree, in creation order (ADR 0047). Visual only, nothing on the wire. */
+  lights: WorldLight[]
   /**
    * The node a `nodeRef` on `from` points at, or `undefined`.
    *
@@ -218,6 +253,7 @@ const shapeOf = (c: ComponentData): ColliderDesc => {
 export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeInfo): LoadedLevel => {
   const visuals: VisualItem[] = []
   const markers: WorldMarker[] = []
+  const lights: WorldLight[] = []
   const nodes: WorldNode[] = []
   const allNodes: WorldNode[] = []
   const nodeByCollider = new Map<number, WorldNode>()
@@ -262,13 +298,20 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
   const placeAt = (f: Frame, offset: Vec3 | undefined): Vec3 =>
     offset === undefined ? f.worldPos : add(f.worldPos, rotateVec3(f.worldRot, offset))
 
-  const addDynamic = (frame: Frame, body: PhysicsBody | undefined, visual: VisualItem | undefined, offset: Vec3 | undefined): void => {
+  const addDynamic = (
+    frame: Frame,
+    body: PhysicsBody | undefined,
+    visual: VisualItem | undefined,
+    offset: Vec3 | undefined,
+    light: WorldLight | undefined = undefined,
+  ): void => {
     if (body !== undefined) dynamicByCollider.set(body.colliderHandle, dynamics.length)
     const at = placeAt(frame, offset)
     dynamics.push({
       frame,
       body,
       visual,
+      light,
       offset,
       prevPos: { ...at },
       prevRot: { ...frame.worldRot },
@@ -298,6 +341,28 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     const material = own === undefined ? inheritedMaterial : stringParam(own, 'material', '')
 
     if (firstOfType(r.components, SPAWN) !== undefined) markers.push({ kind: 'spawn', position: { ...f.worldPos } })
+
+    const lightOn = firstOfType(r.components, LIGHT)
+    if (lightOn !== undefined) {
+      const kind = stringParam(lightOn, 'kind', 'point')
+      const light: WorldLight = {
+        node: r.id,
+        kind: kind === 'spot' || kind === 'directional' || kind === 'ambient' || kind === 'hemisphere' ? kind : 'point',
+        color: stringParam(lightOn, 'color', '#ffffff'),
+        groundColor: stringParam(lightOn, 'groundColor', '#808080'),
+        intensity: numberParam(lightOn, 'intensity', 4),
+        range: numberParam(lightOn, 'range', 12),
+        decay: numberParam(lightOn, 'decay', 2),
+        angleDeg: numberParam(lightOn, 'angle', 40),
+        penumbra: numberParam(lightOn, 'penumbra', 0.3),
+        castShadow: boolParam(lightOn, 'castShadow', false),
+        position: { ...f.worldPos },
+        rotation: { ...f.worldRot },
+      }
+      lights.push(light)
+      // Its own dynamic, so a light rides a moving frame whether or not the node has a collider.
+      if (f.animated) addDynamic(f, undefined, undefined, undefined, light)
+    }
 
     const handles: number[] = []
     const worldNode: WorldNode = { id: r.id, name: r.name, components: r.components, position: { ...f.worldPos }, colliderHandles: handles, scope: inner }
@@ -436,6 +501,10 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         d.visual.position = d.renderPos
         d.visual.rotation = d.renderRot
       }
+      if (d.light !== undefined) {
+        d.light.position = d.renderPos
+        d.light.rotation = d.renderRot
+      }
     }
   }
 
@@ -475,6 +544,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     nodeOf: (colliderHandle) => nodeByCollider.get(colliderHandle),
     findNode: (from, id) => byScope.get(from.scope)?.get(id) ?? byScope.get(0)?.get(id),
     visuals,
+    lights,
     update,
     render,
     basePose,

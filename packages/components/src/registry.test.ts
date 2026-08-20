@@ -46,13 +46,14 @@ describe('the registry', () => {
 })
 
 describe('the built-in registry', () => {
-  it('holds the ten built-in components, engine first', () => {
+  it('holds the eleven built-in components, engine first', () => {
     expect(DEFAULT_REGISTRY.all().map((d) => d.type)).toEqual([
       'Collider',
       'Mesh',
       'Renderer',
       'MaterialOverride',
       'Spawn',
+      'Light',
       'Checkpoint',
       'Goal',
       'Hazard',

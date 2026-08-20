@@ -13,13 +13,19 @@ export type { ThreeStage, ThreeStageOptions } from './stage'
 export { createThreeStage } from './stage'
 
 // Polished greybox pipeline (content pipeline C3) — shared by the game and the viewer.
-export { MARKER_COLORS, colorForMarker, createGreyboxMaterial, geometryForCollider } from './materials'
+export { BEVEL_RADIUS, BEVEL_SEGMENTS, MARKER_COLORS, bevelFor, colorForMarker, createGreyboxMaterial, geometryForCollider, outlineGeometryForCollider } from './materials'
 export type { GizmoKind } from './materials'
-export type { GreyboxEnvironment, GreyboxEnvironmentOptions } from './environment'
-export { applyGreyboxEnvironment } from './environment'
+export type { GreyboxEnvironment, GreyboxEnvironmentOptions, Sky } from './environment'
+export { applyGreyboxEnvironment, installSky, loadSky } from './environment'
+// The sky (ADR 0046): a designed vertical gradient baked to a cubemap that is both background and IBL source.
+export type { ProceduralSky, SkyParams, SunAngles } from './sky'
+export { createProceduralSky, DEFAULT_SKY_PARAMS, skyUniformValues, sunDirection } from './sky'
 export type { PostFX, PostFXOptions } from './postfx'
 export { createPostFX } from './postfx'
 export type { LevelView, LevelViewOptions, MarkersView } from './levelView'
+// Content lights (ADR 0047): the loader says what lights exist, this realizes them. The sun is not one.
+export type { ContentLights, ContentLightsOptions, LightDesc } from './lights'
+export { addLights, createLight, lightAims, shadowPassesFor } from './lights'
 // Assets: shaders + materials (parameterising Three, not an engine) and the preload runtime.
 export { BUILTIN_SHADERS, compileMaterial, defaultParams, registerShader, shaderDef } from './shaders'
 export type { ParamReader, ShaderDef, ShaderParam, ShaderParamKind } from './shaders'

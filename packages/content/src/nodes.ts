@@ -21,6 +21,8 @@ export const MATERIAL_OVERRIDE = 'MaterialOverride'
 export const TRACK = 'Track'
 /** Where players enter. */
 export const SPAWN = 'Spawn'
+/** A light. Realized by the renderer, but the loader has to surface it, so the engine knows the name. */
+export const LIGHT = 'Light'
 
 /**
  * The one thing resolution needs to know about a component type, and the only reason this package needs
@@ -78,6 +80,12 @@ export const vec3Param = (c: ComponentData | undefined, key: string, fallback: V
 export const stringParam = (c: ComponentData | undefined, key: string, fallback: string): string => {
   const v = c?.params[key]
   return typeof v === 'string' ? v : fallback
+}
+
+/** A boolean parameter, or the fallback. */
+export const boolParam = (c: ComponentData | undefined, key: string, fallback: boolean): boolean => {
+  const v = c?.params[key]
+  return typeof v === 'boolean' ? v : fallback
 }
 
 /** What a node is once its prefab reference, its overrides and its own layer have been resolved. */
