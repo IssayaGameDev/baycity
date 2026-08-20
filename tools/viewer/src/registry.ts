@@ -1,4 +1,5 @@
-import { validateLevel, type Level } from '@mp/content'
+import { validateNodeLevel, type NodeLevel } from '@mp/content'
+import { DEFAULT_REGISTRY } from '@mp/components'
 
 import level1 from '../../../content/levels/level1.json'
 
@@ -12,7 +13,7 @@ import level1 from '../../../content/levels/level1.json'
 export interface Entry {
   name: string
   group: 'element' | 'level'
-  level: Level
+  level: NodeLevel
 }
 
-export const ENTRIES: Entry[] = [{ name: 'level1', group: 'level', level: validateLevel(level1) }]
+export const ENTRIES: Entry[] = [{ name: 'level1', group: 'level', level: validateNodeLevel(level1, DEFAULT_REGISTRY) }]

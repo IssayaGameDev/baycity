@@ -51,7 +51,8 @@ import {
   partTransforms,
   type GaitTuning,
 } from '@mp/character'
-import { instantiateLevel, type LoadedLevel } from '@mp/content'
+import { instantiateNodeLevel, type LoadedNodeLevel } from '@mp/content'
+import { Checkpoint, DEFAULT_REGISTRY, characterAccess, createComponentRuntime, hasComponent, type ComponentRuntime } from '@mp/components'
 import { getLocale, matchLocale, onLocaleChange, setLocale, t, type TranslationKey } from '@mp/i18n'
 import { createTouchHud, createUiOverlay, uiButton, type ListItem, type TouchHud } from '@mp/render-pixi'
 import { Client, type Room } from 'colyseus.js'
@@ -550,7 +551,7 @@ let myId: EntityId | null = null
 let controller: LocalController | null = null
 let ownFacing = 0
 let room: Room | null = null
-let loaded: LoadedLevel | null = null // the instantiated level (colliders + markers + visuals)
+let loaded: LoadedNodeLevel | null = null // the instantiated level (colliders + markers + visuals)
 let levelView: LevelView | null = null // Three meshes for the level; sync() re-poses moving pieces
 let lastSimTickAt = 0 // wall-clock of the last fixed tick, for render-interpolating clock-driven pieces
 let requestRespawn: (() => void) | null = null // set once the local sim exists; used by the pause menu's Restart
@@ -611,7 +612,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   // them down. It was zero here, which left a corpse coasting off in a straight line for ever.
   const world = createPhysicsWorld({ gravity: { x: 0, y: -tuning.gravity, z: 0 } })
   physicsWorld = world // the render loop builds peers' corpses in it
-  loaded = instantiateLevel(world, levelData)
+  loaded = instantiateNodeLevel(world, levelData, DEFAULT_REGISTRY)
 
   // Build the level's greybox meshes via the shared renderer (content C3). Marker pads are
   // just their (colour-coded) box here; radius/overlay visualization belongs in the viewer.
@@ -620,15 +621,16 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   const assets = createAssetRuntime({ db: ASSET_DB, urlOf: assetUrlOf, materialOf })
   await assets.load(assetIdsIn(loaded.visuals))
   levelView = addLevel(stage.scene, loaded.visuals, { assets })
-  // Gameplay triggers are the pads' own colliders (content C5 seam): the engine reports
-  // real contact via char.body.collisions() — no distance heuristics.
-  const checkpointTriggers = loaded.triggers.filter((t) => t.kind === 'checkpoint')
-  const hazardHandles = new Set(loaded.triggers.filter((t) => t.kind === 'hazard').map((t) => t.colliderHandle))
-  // Bumpers carry their own launch speed, so this is a handle → power map rather than a set of handles
-  // (ADR 0032). Two bumpers in one level can throw by different amounts, which is the whole reason the
-  // trigger schema stopped being a bare string.
-  const bumperPower = new Map<number, number>()
-  for (const t of loaded.triggers) if (t.kind === 'bumper') bumperPower.set(t.colliderHandle, t.power)
+  /**
+   * **The rules run themselves.** `Bumper`, `Checkpoint` and `Hazard` carry their own `onContact`, so this
+   * mode supplies only what dying and making progress *mean* here, and the branches that used to sit in the
+   * tick — a checkpoint loop, a `Math.max` over bumper powers, a hazard `Set` — are gone.
+   *
+   * Adding a rule is now a component definition and nothing here at all, which is the difference between a
+   * component system and a switch statement. Nothing in this file names `Bumper` any more.
+   */
+  const checkpointNodes = loaded.nodes.filter((n) => hasComponent(n.components, Checkpoint))
+  let killedByRule = false
   const { fallBehavior, fallY } = loaded.config
 
   // Markers sit on a surface; the capsule's *centre* must clear it by its stand height so
@@ -641,8 +643,8 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   const playerState = persistence.load()
   const a = id * 2.399963
   const cp =
-    playerState.checkpoint >= 0 && playerState.checkpoint < checkpointTriggers.length
-      ? checkpointTriggers[playerState.checkpoint]!.position
+    playerState.checkpoint >= 0 && playerState.checkpoint < checkpointNodes.length
+      ? checkpointNodes[playerState.checkpoint]!.position
       : undefined
   const spawn =
     cp !== undefined
@@ -684,6 +686,36 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
     startAssembly()
   }
   requestRespawn = respawn // let the pause menu's Restart reach it
+
+  /**
+   * The live components, and the two things this mode lets a rule ask for.
+   *
+   * `progress` takes the node rather than an index, because what counts as progress is the mode's business:
+   * the ordered list a saved index means anything against lives here, and **only touchable nodes are in it** —
+   * a checkpoint nothing can reach is not a step in a progression.
+   *
+   * `kill` sets a flag instead of calling `die()` directly, because death is gated on not already being dead
+   * and on the fall plane in the same breath, and one place deciding that is one place to read.
+   */
+  const components: ComponentRuntime = createComponentRuntime(loaded, DEFAULT_REGISTRY, {
+    character: characterAccess(char),
+    effects: {
+      kill: () => void (killedByRule = true),
+      // Progress only advances: touching an earlier checkpoint never lowers your saved index.
+      progress: (node) => {
+        const i = checkpointNodes.indexOf(node)
+        if (i < 0 || i <= playerState.checkpoint) return
+        playerState.checkpoint = i
+        persistence.save(playerState)
+        respawnPos = { x: node.position.x, y: node.position.y + STAND_OFFSET, z: node.position.z }
+      },
+    },
+  })
+  // Tick 0 at level time 0: the clock has not started, and a component that wants "now" gets it in
+  // `onFixedUpdate`. Counted here rather than read off the clock so the number a component sees is the
+  // number of steps this level has run, which is what a deterministic fold is indexed by.
+  let tickCount = 0
+  components.attach(tickCount, 0, TICK_DT)
 
   /**
    * Death: the animated rig is replaced by one dynamic body per part in exactly the pose it was in, and the
@@ -731,7 +763,11 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
       // kinematic and move to a pose the loader sets rather than by integration, and the character's own
       // translation is computed by `stepCharacter` from the full `TICK_DT` and applied through `move`.
       const half = TICK_DT / 2
-      loaded?.update(simClock.tick(), char.base?.colliderHandle)
+      const nowMs = simClock.tick()
+      loaded?.update(nowMs, char.base?.colliderHandle)
+      // Components run on the synced clock, before physics, so what one of them writes is what this tick
+      // resolves against. Nothing built in uses it yet; an authored component would.
+      components.fixedUpdate(++tickCount, nowMs, TICK_DT)
       world.step(half) // (A) platforms move
       stepCharacter(char, cmd, TICK_DT, tuning, loaded?.basePose) // rides whatever it stands on
       world.step(half) // (B) character resolves against the moved platforms
@@ -819,31 +855,15 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
             }),
           ),
         )
-        // Real contact: the colliders the capsule pushed against this tick.
-        const hits = new Set(char.body.collisions())
+        // Real contact: the colliders the capsule pushed against this tick. Handed straight to the
+        // components on whatever nodes own them — a corpse triggers nothing, which is why this is gated.
+        killedByRule = false
+        if (!dead) components.contact(char.body.collisions())
         // Checkpoint touched → it becomes the respawn point (persisted). Progress only
         // advances: touching an earlier checkpoint never lowers your saved index.
-        for (let i = 0; i < checkpointTriggers.length; i++) {
-          const t = checkpointTriggers[i]!
-          if (hits.has(t.colliderHandle) && i > playerState.checkpoint) {
-            playerState.checkpoint = i
-            persistence.save(playerState)
-            respawnPos = { x: t.position.x, y: t.position.y + STAND_OFFSET, z: t.position.z }
-            break
-          }
-        }
-        // Bumper touched → launch on the next step. The strongest one wins if several are touched at once,
-        // which is the reading that cannot surprise anybody. `char.launch` is consumed by `stepCharacter`, so
-        // holding still on a trampoline bounces once per landing rather than pinning you in the air.
-        if (!dead) {
-          let power = 0
-          for (const h of hits) power = Math.max(power, bumperPower.get(h) ?? 0)
-          if (power > 0) char.launch = power
-        }
-        // Hazard touched (any side), or fell below the kill plane → die. Gated on `dead`, or a corpse
-        // still falling past the plane would re-trigger every tick.
-        const hitHazard = [...hits].some((h) => hazardHandles.has(h))
-        if (!dead && (hitHazard || (fallBehavior === 'respawn-checkpoint' && p.y < fallY))) die()
+        // A rule killed us, or we fell below the kill plane. Gated on `dead`, or a corpse still falling past
+        // the plane would re-trigger every tick.
+        if (!dead && (killedByRule || (fallBehavior === 'respawn-checkpoint' && p.y < fallY))) die()
       }
     },
   })

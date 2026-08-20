@@ -12,18 +12,25 @@ import {
 import { createLocalController, type LocalController, type LocalWorld } from '@mp/client'
 import {
   assetsOfKind,
-  instantiateLevel,
+  instantiateNodeLevel,
   moveTrack,
   spinTrack,
   trackDuration,
+  COLLIDER,
+  SPAWN,
+  VISUAL,
   type AssetEntry,
+  type ComponentData,
   type Keyframe,
-  type Level,
-  type LoadedLevel,
+  type LoadedNodeLevel,
+  // Aliased: this file is DOM-heavy and `Node` is taken. A scene node is not a DOM node, and the day the two
+  // are confused the error is a type error somewhere unrelated.
+  type Node as SceneNode,
+  type NodeLevel,
   type Pose,
-  type Prefab,
   type Transform,
 } from '@mp/content'
+import { Checkpoint, DEFAULT_REGISTRY, RULE_KINDS, characterAccess, createComponentRuntime, hasComponent, type ComponentRuntime } from '@mp/components'
 import { createSimClock, eulerToQuat, quat, startFixedLoop, vec3, type EntityId, type LoopHandle, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
@@ -79,7 +86,7 @@ stage.scene.add(grid, axes)
 
 // --- editor state ---
 let world: PhysicsWorld | null = null
-let loaded: LoadedLevel | null = null // for marker/trigger gizmos (+ physics validity)
+let loaded: LoadedNodeLevel | null = null // for marker/trigger gizmos (+ physics validity)
 let doc: Doc | null = null // the doc being edited — always the top of the stack
 /**
  * The editing context. `[0]` is the open file; a deeper entry is a prefab opened *from* an instance,
@@ -87,7 +94,7 @@ let doc: Doc | null = null // the doc being edited — always the top of the sta
  * instance follows on the way back out. Save always writes `[0]`, never the prefab being inspected.
  */
 const docStack: { doc: Doc; label: string }[] = []
-const userPrefabs: Record<string, Prefab> = {} // authored prefab library (for the level palette)
+const userPrefabs: Record<string, SceneNode> = {} // authored prefab library (for the level palette)
 // The panels are built further down (and after a top-level `await`), so the editing code above them
 // reaches the UI through these. Harmless no-ops until then, which is what makes boot order a non-issue.
 let uiChanged: () => void = () => {}
@@ -181,7 +188,13 @@ const buildMarkers = (): void => {
   disposeMeshes(markerGroup)
   if (loaded === null) return
   for (const m of loaded.markers) if (m.kind === 'spawn') markerGroup.add(markerGizmo(m.position, colorForMarker('spawn')))
-  for (const t of loaded.triggers) markerGroup.add(markerGizmo(t.position, colorForMarker(t.kind)))
+  // A gizmo per gameplay rule, on the node that owns the collider you would touch. `RULE_KINDS` is the only
+  // place the editor names a rule at all: everything else about a component comes from its declaration.
+  for (const n of loaded.nodes)
+    for (const c of n.components) {
+      const kind = RULE_KINDS[c.type]
+      if (kind !== undefined) markerGroup.add(markerGizmo(n.position, colorForMarker(kind)))
+    }
 }
 
 // --- editable item meshes ---
@@ -380,7 +393,7 @@ const rebuildLoaded = (): void => {
   world?.free()
   world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
   try {
-    loaded = instantiateLevel(world, doc.asLevel())
+    loaded = instantiateNodeLevel(world, doc.asLevel(), DEFAULT_REGISTRY)
     buildMarkers()
   } catch (e) {
     loaded = null
@@ -448,33 +461,50 @@ const closePrefab = (): void => {
   showDoc()
 }
 
-const blankLevel = (id: string): Level => ({
+/** A component with a stable id — blank documents are authored here, so the ids may as well read plainly. */
+const comp = (id: string, type: string, params: Record<string, unknown>): ComponentData => ({ id, type, params })
+
+/**
+ * No material on the slab: greybox is what "nobody has surfaced this yet" looks like, and it is truthful for
+ * something a new level got for free. Hardcoding a material id here would also be a tool-source reference to
+ * a content file somebody is free to delete.
+ */
+const blankLevel = (id: string): NodeLevel => ({
   id,
   config: { fallBehavior: 'respawn-checkpoint', fallY: -10 },
-  // A literal ground slab: there are no makers to call any more (ADR 0027), and a new level still has to
-  // have something to stand on.
-  instances: [
+  // A literal ground slab: there are no makers to call any more (ADR 0027), and a new level still has to have
+  // something to stand on.
+  nodes: [
     {
-      prefab: {
-        id: 'ground',
-        pieces: [
-          {
-            collider: { kind: 'box', halfExtents: vec3(10, 0.5, 10) },
-            transform: { position: vec3(0, 0, 0) },
-            // No material: greybox is what "nobody has surfaced this yet" looks like, and it is truthful for
-            // a slab a new level got for free. Hardcoding a material id here would also be a tool-source
-            // reference to a content file somebody is free to delete.
-          },
-        ],
-      },
+      id: 'ground',
+      name: 'ground',
       transform: { position: vec3(0, -0.5, 0) },
+      components: [
+        comp('c0', COLLIDER, { shape: { kind: 'box', halfExtents: vec3(10, 0.5, 10) }, center: vec3(0, 0, 0) }),
+        comp('c1', VISUAL, { source: 'collider', model: '', material: '' }),
+      ],
+    },
+    { id: 'spawn', name: 'spawn', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', SPAWN, {})] },
+  ],
+})
+
+/** A new prefab: a root that carries only a transform, and one pad under it that carries the geometry. */
+const blankPrefab = (id: string): SceneNode => ({
+  id: 'root',
+  name: id,
+  transform: { position: vec3(0, 0, 0) },
+  components: [],
+  children: [
+    {
+      id: 'pad',
+      name: 'pad',
+      transform: { position: vec3(0, 0, 0) },
+      components: [
+        comp('c0', COLLIDER, { shape: { kind: 'box', halfExtents: vec3(1.5, 0.15, 1.5) }, center: vec3(0, 0, 0) }),
+        comp('c1', VISUAL, { source: 'collider', model: '', material: '' }),
+      ],
     },
   ],
-  markers: [{ kind: 'spawn', transform: { position: vec3(0, 0, 0) } }],
-})
-const blankPrefab = (id: string): Prefab => ({
-  id,
-  pieces: [{ collider: { kind: 'box', halfExtents: vec3(1.5, 0.15, 1.5) }, transform: { position: vec3(0, 0, 0) } }],
 })
 
 // --- selection + transform gizmo ---
@@ -886,7 +916,7 @@ canvas.addEventListener('pointerup', (e) => {
         : placing.kind === 'model'
           ? doc.placeModel(placing.assetId, at)
           : prefabAsset !== undefined
-            ? doc.placePrefab(prefabAsset, assets?.db.byId[placing.assetId]?.name ?? prefabAsset.id, at)
+            ? doc.placePrefab(prefabAsset, assets?.db.byId[placing.assetId]?.name ?? prefabAsset.name ?? prefabAsset.id, at)
             : -1
     if (idx < 0) {
       setStatus('that prefab did not load')
@@ -1121,6 +1151,9 @@ const worldMove = (): { x: number; z: number } => {
   return { x, z }
 }
 
+/** The live components while playing. Detached on stop, so a component's teardown runs like the game's. */
+let playComponents: ComponentRuntime | null = null
+
 const startPlay = (): void => {
   if (doc === null || playing) return
   // Two clocks running at once would be two answers to "where is this platform". Play wins: it is the real
@@ -1134,9 +1167,29 @@ const startPlay = (): void => {
   char = addCharacter(world, spawn)
   let respawnPos: Vec3 = { ...spawn }
   let cpIndex = -1
-  const checkpoints = loaded.triggers.filter((t) => t.kind === 'checkpoint')
-  const hazards = new Set(loaded.triggers.filter((t) => t.kind === 'hazard').map((t) => t.colliderHandle))
+  let killed = false
   const fallY = loaded.config.fallY
+
+  /**
+   * Play-in-place runs **the same components the game runs** — the rules are theirs now, so this probe cannot
+   * drift from the mode by forgetting to mirror a branch. It differs only in what dying means: no ragdoll, no
+   * persistence, just a teleport back.
+   */
+  const checkpoints = loaded.nodes.filter((n) => hasComponent(n.components, Checkpoint))
+  playComponents = createComponentRuntime(loaded, DEFAULT_REGISTRY, {
+    character: characterAccess(char),
+    effects: {
+      kill: () => void (killed = true),
+      progress: (node) => {
+        const i = checkpoints.indexOf(node)
+        if (i < 0 || i <= cpIndex) return
+        cpIndex = i
+        respawnPos = { x: node.position.x, y: node.position.y + STAND_OFFSET, z: node.position.z }
+      },
+    },
+  })
+  let playTick = 0
+  playComponents.attach(playTick, 0, TICK_DT)
 
   // One fixed step of platform time per fixed step — see @mp/core simClock (reading the wall
   // clock inside the tick stalls the platforms during a multi-tick wake and jitters carry).
@@ -1145,7 +1198,9 @@ const startPlay = (): void => {
   const local: LocalWorld = {
     applyInput: (cmd) => {
       if (world === null || loaded === null || char === null) return
-      loaded.update(simClock.tick(), char.base?.colliderHandle) // only the ridden piece is frozen
+      const nowMs = simClock.tick()
+      loaded.update(nowMs, char.base?.colliderHandle) // only the ridden piece is frozen
+      playComponents?.fixedUpdate(++playTick, nowMs, TICK_DT)
       world.step(TICK_DT) // (A) platforms move
       stepCharacter(char, cmd, TICK_DT, tuning, loaded.basePose) // rides whatever it stands on
       world.step(TICK_DT) // (B) character resolves against the moved platforms
@@ -1170,17 +1225,10 @@ const startPlay = (): void => {
       if (char === null || controller === null) return
       const m = worldMove()
       controller.step(m.x, m.z, keys.has('Space'))
-      const hits = new Set(char.body.collisions())
-      for (let i = 0; i < checkpoints.length; i++) {
-        const t = checkpoints[i]!
-        if (hits.has(t.colliderHandle) && i > cpIndex) {
-          cpIndex = i
-          respawnPos = { x: t.position.x, y: t.position.y + STAND_OFFSET, z: t.position.z }
-          break
-        }
-      }
+      killed = false
+      playComponents?.contact(char.body.collisions())
       const p = char.body.translation()
-      if ([...hits].some((h) => hazards.has(h)) || p.y < fallY) {
+      if (killed || p.y < fallY) {
         char.body.setPosition(respawnPos)
         char.vx = 0
         char.vy = 0
@@ -1195,6 +1243,8 @@ const stopPlay = (): void => {
   if (!playing) return
   playLoop?.stop()
   playLoop = null
+  playComponents?.detach()
+  playComponents = null
   char?.body.remove()
   char = null
   controller = null
@@ -1305,7 +1355,7 @@ const toolbar: Toolbar = createToolbar(
           await saveFile('levels', fileState.name, root.toJSON())
           return
         }
-        const prefab = root.toJSON() as Prefab
+        const prefab = root.toJSON() as SceneNode
         // Overwrite the asset it came from, or create one when this prefab has never been saved.
         if (openPrefabAsset !== null) await assets?.savePrefab(openPrefabAsset, prefab)
         else {
@@ -1505,7 +1555,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
  * file is the thing a person expects Ctrl+Z to walk.
  */
 interface EditSnapshot {
-  data: Level | Prefab
+  data: NodeLevel | SceneNode
   mode: Mode
   /** Sibling paths of the selection (`"0/2"`), primary last — these survive renumbering where indices do not. */
   selectedPaths: string[]
@@ -1570,7 +1620,7 @@ const indexOfPath = (path: string | null): number | null => {
 
 const restore = (snapshot: EditSnapshot): void => {
   const data = structuredClone(snapshot.data)
-  const next = snapshot.mode === 'level' ? levelDoc(data as Level, userPrefabs) : prefabDoc(data as Prefab)
+  const next = snapshot.mode === 'level' ? levelDoc(data as NodeLevel, userPrefabs) : prefabDoc(data as SceneNode)
   // Straight into the stack rather than through `setDoc`, which would reset the history we are walking.
   docStack.length = 0
   docStack.push({ doc: next, label: `${next.mode}: ${fileState.name}` })
@@ -1827,6 +1877,12 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     if (db !== undefined) for (const m of assetsOfKind(db, 'material')) options[m.name] = m.id
     return options
   },
+  models: () => {
+    const options: Record<string, string> = { '(none)': '' }
+    const db = assets?.db
+    if (db !== undefined) for (const m of assetsOfKind(db, 'model')) options[m.name] = m.id
+    return options
+  },
 })
 
 // --- status bar ---
@@ -1864,7 +1920,7 @@ const renderStatus = (): void => {
   // changes with every edit. The clipboard likewise: a paste that silently does nothing reads as broken.
   const depth = history.depth()
   if (depth.undo > 0 || depth.redo > 0) parts.push(`undo ${depth.undo}${depth.redo > 0 ? ` · redo ${depth.redo}` : ''}`)
-  if (clipboard.length > 0) parts.push(`clipboard: ${clipboard.length} ${clipboard[0]!.kind}${clipboard.length > 1 ? 's' : ''}`)
+  if (clipboard.length > 0) parts.push(`clipboard: ${clipboard.length} object${clipboard.length > 1 ? 's' : ''}`)
   if (statusMsg !== '') parts.push(statusMsg)
   if (problemMsg !== '') parts.push(`<span class="problem">${problemMsg}</span>`)
   statusBar.innerHTML = parts.filter((p) => p !== '').join(' · ')

@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@mp/character": "workspace:*",
+    "@mp/components": "workspace:*",
     "@mp/content": "workspace:*",
     "@mp/core": "workspace:*",
     "@mp/physics": "workspace:*",

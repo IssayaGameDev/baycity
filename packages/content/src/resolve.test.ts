@@ -2,7 +2,7 @@ import { vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { instantiateLevel } from './loader'
+import { instantiateLegacyLevel } from './loader'
 import { effectivePieces, freeTableId, instancesOf, overriddenFields, resolvePrefab, walkInstances } from './resolve'
 import { validateLevel } from './validate'
 import type { Level, Prefab } from './types'
@@ -92,7 +92,7 @@ describe('prefab references', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
     // The point of a reference: one edit to the table entry, and all three pieces are 2 m thick.
     level.prefabs!['pad']!.pieces[0]!.collider = { kind: 'box', halfExtents: vec3(1, 1, 1) }
-    const loaded = instantiateLevel(world, level)
+    const loaded = instantiateLegacyLevel(world, level)
     expect(loaded.visuals).toHaveLength(3)
     for (const v of loaded.visuals) expect(v.collider).toEqual({ kind: 'box', halfExtents: vec3(1, 1, 1) })
     world.free()
@@ -100,7 +100,7 @@ describe('prefab references', () => {
 
   it("an instance's material override beats the prefab's, and only for that instance", () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLevel(world, referenced)
+    const loaded = instantiateLegacyLevel(world, referenced)
     expect(loaded.visuals.map((v) => v.material)).toEqual(['mat-platform', 'mat-platform', 'mat-hazard'])
     expect(referenced.prefabs!['pad']!.pieces[0]!.visual, 'the shared definition is untouched').toEqual({
       kind: 'primitive',

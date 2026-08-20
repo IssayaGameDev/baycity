@@ -9,7 +9,8 @@ strict, source-first (no build step at this stage).
 - `packages/net` — schemas, binary serialization, quantization, clock sync. → core
 - `packages/physics` — Rapier3d wrapper (`@dimforge/rapier3d-compat`), bodies (position+rotation) + kinematic character controller, headless. → core
 - `packages/character` — the stack-level kinematic character controller (`stepCharacter`, `CharacterTuning`; ADR 0012), mode-agnostic, plus the blocky 11-part **rig** and **procedural animator** (renderer-agnostic: emits a `Pose`). → core, net, physics
-- `packages/content` — data-driven content: schema, validation, prefab resolution, the loader (`instantiateLevel`), the keyframe-track evaluator (`track.ts`, ADR 0029) and the asset layer (`assets.ts`, ADR 0026). Headless, no rendering. The kit and its generators were deleted in ADR 0027: nothing here produces geometry. → core, net, physics
+- `packages/content` — data-driven content: the **node/component schema** (ADR 0035), validation, prefab resolution, the loader (`instantiateNodeLevel`), the keyframe-track evaluator (`track.ts`, ADR 0029) and the asset layer (`assets.ts`, ADR 0026). Headless, no rendering. The kit and its generators were deleted in ADR 0027: nothing here produces geometry. **Never imports `@mp/components`** — where it needs a component's declaration it takes a registry as an argument. → core, net, physics
+- `packages/components` — the component system (ADR 0035): the parameter-declaration layer, the registry, and the built-in definitions (engine: `Collider`/`Visual`/`MaterialOverride`/`Spawn`; gameplay: `Checkpoint`/`Goal`/`Hazard`/`Bumper`/`Track`). Headless. → content, core (physics in tests only, for the migration's equivalence pass)
 - `packages/i18n` — tiny dependency-free localization (ADR 0016): typed `t()`, per-language tables, browser-locale match + runtime switch. Headless. → (none)
 - `packages/server` — Colyseus `Server` + `ParkourRoom`: per-client snapshot relay (no simulation, no schema), auto-join, roster. Content-free. → core, net, `colyseus`
 - `packages/client` — local authoritative sim, interpolation, clock sync, input; headless-capable (bots). → core, net, physics
@@ -17,11 +18,11 @@ strict, source-first (no build step at this stage).
 - `packages/render-three` — Three.js WebGL2 stage + polished greybox pipeline (IBL, ACES, soft shadows, GTAO/SMAA/bloom, material assets compiled from shader definitions, level-view) + `createCharacterRig` (realizes `@mp/character`'s rig data, applies a `Pose`). Browser (DOM lib). → character (rig data, types only at runtime), core, content (types), three
 - `tools/netsim` — latency/jitter/loss `ClientTransport` wrapper, headless. → core. (Not wired into the current client — ADR 0013.)
 - `tools/bots` — headless `colyseus.js` load clients + `load` harness (budgets 2 & 3; live integration check). → net, server, `colyseus.js`
-- `tools/viewer` — localhost content inspector (`pnpm dev:viewer`): picker, orbit, overlays, jump gizmo, play-in-place (ADR 0014). → character, content, core, physics, render-three
-- `tools/editor` — localhost level/prefab editor (`pnpm dev:editor`; ADR 0023 authoring, ADR 0024 UI): fixed-panel DOM shell (toolbar/hierarchy/viewport/inspector/palette/status, CSS grid + hand-rolled splitters), prefab references + instance overrides, play-in-place on the real controller. Tweakpane is the Inspector panel only. Reads/writes `content/` through a Vite dev-server file API (`vite.config.ts`), so it is a dev tool only. → character, client, content, core, physics, render-three
+- `tools/viewer` — localhost content inspector (`pnpm dev:viewer`): picker, orbit, overlays, jump gizmo, play-in-place (ADR 0014). → character, components, content, core, physics, render-three
+- `tools/editor` — localhost level/prefab editor (`pnpm dev:editor`; ADR 0023 authoring, ADR 0024 UI): fixed-panel DOM shell (toolbar/hierarchy/viewport/inspector/palette/status, CSS grid + hand-rolled splitters), prefab references + per-node component overrides, an Inspector generated from each component's declared parameters (ADR 0035), play-in-place on the real controller. Tweakpane is the Inspector panel only. Reads/writes `content/` through a Vite dev-server file API (`vite.config.ts`), so it is a dev tool only. → character, client, components, content, core, physics, render-three
 - `tools/share` — opt-in remote debugging (`pnpm share`): relay + page behind two Cloudflare quick tunnels, prints one link. No workspace deps; shells out to `cloudflared`.
-- `modes/parkour` — the parkour mode on Colyseus rooms (`colyseus.js`): Roblox-like controller, auto-join, nametags, data-driven levels (`default.json`, or any file by name), physics-trigger checkpoints/hazard/fall + persistence adapter. (Rename of `games/tps`.) → character, client, content, core, net, physics, render-three
-- `content/` — level JSON (`levels/`) and the **asset tree** (`assets/`: textures, models, materials, shaders, sounds, fonts, each with a `.meta` sidecar holding its id — ADR 0026). What `tools/editor` reads and writes, and what the parkour mode loads by name (`?level=<file>`; no param → the code gym). Shared content, not a package. See ADR 0023.
+- `modes/parkour` — the parkour mode on Colyseus rooms (`colyseus.js`): Roblox-like controller, auto-join, nametags, data-driven levels (`default.json`, or any file by name), checkpoints/hazard/fall read as **components on the node whose collider was touched** (ADR 0035) + persistence adapter. (Rename of `games/tps`.) → character, client, components, content, core, net, physics, render-three
+- `content/` — level JSON as **node trees** (`levels/`; prefab files under `assets/prefabs/` are root nodes — ADR 0035) and the **asset tree** (`assets/`: textures, models, materials, shaders, sounds, fonts, each with a `.meta` sidecar holding its id — ADR 0026). What `tools/editor` reads and writes, and what the parkour mode loads by name (`?level=<file>`; no param → the code gym). Shared content, not a package. See ADR 0023.
 - `infra/` — empty placeholder; populated later (SEED §7).
 
 The server is a client-authoritative relay (ADR 0011) hosted on **Colyseus** (ADR 0013,
@@ -37,7 +38,7 @@ Subpaths (secondary entry points, each with its own tsconfig where the lib diffe
 ## Dependency laws (SEED §6)
 
 1. **One-way flow:** `modes/tools → packages`, never the reverse. `core` imports no sibling.
-2. **Simulation never imports rendering.** `core`, `net`, `physics`, `character`, `content`,
+2. **Simulation never imports rendering.** `core`, `net`, `physics`, `character`, `content`, `components`,
    `server`, `client` are headless — their tsconfig `lib` is `ES2022` only (no DOM). Only
    `render-*` (and browser apps under `modes`/`tools`) add the DOM lib. A headless package that
    reaches for a DOM type fails typecheck. This is what makes bots + the loader free.

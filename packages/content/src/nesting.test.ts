@@ -2,7 +2,7 @@ import { vec3, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { instantiateLevel } from './loader'
+import { instantiateLegacyLevel } from './loader'
 import { moveTrack, spinTrack } from './track'
 import type { Behavior, Level, PrefabInstance, Prefab } from './types'
 
@@ -62,9 +62,9 @@ describe('nested placement', () => {
     await initPhysics()
   })
 
-  const load = (instances: PrefabInstance[]): ReturnType<typeof instantiateLevel> => {
+  const load = (instances: PrefabInstance[]): ReturnType<typeof instantiateLegacyLevel> => {
     world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    return instantiateLevel(world, levelOf(instances))
+    return instantiateLegacyLevel(world, levelOf(instances))
   }
 
   it('places a child against its parent, rotation and all', () => {

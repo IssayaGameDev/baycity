@@ -1,4 +1,5 @@
-import { validateLevel, type Level } from '@mp/content'
+import { validateNodeLevel, type NodeLevel } from '@mp/content'
+import { DEFAULT_REGISTRY } from '@mp/components'
 
 /**
  * Client for the dev-server level API (see vite.config.ts).
@@ -16,7 +17,9 @@ const req = async (kind: FileKind, path = '', init?: RequestInit): Promise<Respo
 
 export const listFiles = async (kind: FileKind): Promise<string[]> => (await req(kind)).json() as Promise<string[]>
 
-export const loadLevel = async (name: string): Promise<Level> => validateLevel(await (await req('levels', `/${name}`)).json())
+/** Validated **with the registry**, so a bad component parameter is a load error rather than a broken panel. */
+export const loadLevel = async (name: string): Promise<NodeLevel> =>
+  validateNodeLevel(await (await req('levels', `/${name}`)).json(), DEFAULT_REGISTRY)
 
 export const saveFile = async (kind: FileKind, name: string, data: unknown): Promise<void> => {
   await req(kind, `/${name}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) })

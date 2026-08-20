@@ -2,7 +2,7 @@ import { axisAngleToQuat, eulerToQuat, rotateVec3, vec3, type Vec3 } from '@mp/c
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { instantiateLevel } from './loader'
+import { instantiateLegacyLevel } from './loader'
 import { moveTrack, spinTrack } from './track'
 import type { Behavior, Level } from './types'
 
@@ -50,14 +50,14 @@ const fixture: Level = {
   ],
 }
 
-describe('instantiateLevel', () => {
+describe('instantiateLegacyLevel', () => {
   beforeAll(async () => {
     await initPhysics()
   })
 
   it('builds colliders + markers and moves clock-driven pieces', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLevel(world, fixture)
+    const loaded = instantiateLegacyLevel(world, fixture)
 
     expect(loaded.visuals).toHaveLength(2)
     expect(loaded.markers.filter((m) => m.kind === 'spawn')).toHaveLength(1)
@@ -88,7 +88,7 @@ describe('instantiateLevel', () => {
         },
       ],
     }
-    const loaded = instantiateLevel(world, level)
+    const loaded = instantiateLegacyLevel(world, level)
     const v = loaded.visuals[0]!
     expect(v.collider).toEqual({ kind: 'box', halfExtents: vec3(2, 3, 4) }) // dims × scale
     expect(v.position).toEqual(vec3(2, 0, 0)) // local offset (1,0,0) × instance scale x=2
@@ -113,7 +113,7 @@ describe('instantiateLevel', () => {
         },
       ],
     }
-    const loaded = instantiateLevel(world, level)
+    const loaded = instantiateLegacyLevel(world, level)
     const mover = loaded.visuals[0]!
     const stat = loaded.visuals[1]!
     loaded.update(0)
@@ -140,7 +140,7 @@ describe('instantiateLevel', () => {
         },
       ],
     }
-    const loaded = instantiateLevel(world, level)
+    const loaded = instantiateLegacyLevel(world, level)
     const trig = loaded.triggers.find((t) => t.kind === 'hazard')
     expect(trig).toBeDefined()
 
@@ -157,7 +157,7 @@ describe('instantiateLevel', () => {
 
   it('render(alpha) interpolates a moving piece between the last two sim poses', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLevel(world, fixture)
+    const loaded = instantiateLegacyLevel(world, fixture)
     loaded.update(0) // prev = curr = pose(0)
     const a = loaded.visuals.find((v) => v.material === MOVING_MAT)!.position.y
     loaded.update(1000) // prev = pose(0), curr = pose(1000)
@@ -177,7 +177,7 @@ describe('instantiateLevel', () => {
   it('applies a rotated static collider (ramp)', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
     const tilt = vec3(0, 0, Math.PI / 6)
-    const loaded = instantiateLevel(world, {
+    const loaded = instantiateLegacyLevel(world, {
       id: 'ramp',
       config: { fallBehavior: 'physical-fall', fallY: -3 },
       instances: [
@@ -195,7 +195,7 @@ describe('instantiateLevel', () => {
 
   it('spins a rotate-behavior piece over time', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLevel(world, {
+    const loaded = instantiateLegacyLevel(world, {
       id: 'bar',
       config: { fallBehavior: 'physical-fall', fallY: -3 },
       instances: [
@@ -218,7 +218,7 @@ describe('instantiateLevel', () => {
   // fixtures tag the moving piece as a hazard to get at it (a moving hazard is real content).
   it('basePose reports a moving piece pose, and nothing for a static collider', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLevel(world, {
+    const loaded = instantiateLegacyLevel(world, {
       id: 'lift',
       config: { fallBehavior: 'physical-fall', fallY: -3 },
       instances: [
@@ -253,7 +253,7 @@ describe('instantiateLevel', () => {
 
   it('basePose follows a spinning piece orientation', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLevel(world, {
+    const loaded = instantiateLegacyLevel(world, {
       id: 'disc',
       config: { fallBehavior: 'physical-fall', fallY: -3 },
       instances: [
@@ -291,7 +291,7 @@ describe('instantiateLevel', () => {
       vec3(2, 0.25, -1),
       vec3(2, 0.25, 1),
     ]
-    const loaded = instantiateLevel(world, {
+    const loaded = instantiateLegacyLevel(world, {
       id: 'convex',
       config: { fallBehavior: 'physical-fall', fallY: -10 },
       instances: [{ prefab: { id: 'wedge', pieces: [{ collider: { kind: 'convex', points }, transform: { position: vec3(0, 0, 0) } }] }, transform: { position: vec3(0, 0, 0) } }],
@@ -312,7 +312,7 @@ describe('instantiateLevel', () => {
   it('bakes scale into convex points exactly, unlike ball and capsule', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
     const points = [vec3(-1, -1, -1), vec3(1, -1, -1), vec3(-1, 1, -1), vec3(1, 1, -1), vec3(-1, -1, 1), vec3(1, -1, 1), vec3(-1, 1, 1), vec3(1, 1, 1)]
-    const loaded = instantiateLevel(world, {
+    const loaded = instantiateLegacyLevel(world, {
       id: 'scaled-convex',
       config: { fallBehavior: 'physical-fall', fallY: -10 },
       instances: [
@@ -338,7 +338,7 @@ describe('instantiateLevel', () => {
     // resolved against. Getting that distinction wrong is the whole bug this replaced: the rider ends up
     // 100 ms behind the deck and slides across it whenever the platform turns around.
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLevel(world, {
+    const loaded = instantiateLegacyLevel(world, {
       id: 'bases',
       config: { fallBehavior: 'physical-fall', fallY: -3 },
       instances: [
@@ -417,7 +417,7 @@ describe('instantiateLevel', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
     const T = 4000
     const DIST = 8
-    const loaded = instantiateLevel(world, {
+    const loaded = instantiateLegacyLevel(world, {
       id: 'carry',
       config: { fallBehavior: 'physical-fall', fallY: -3 },
       instances: [
@@ -476,7 +476,7 @@ describe('instantiateLevel', () => {
 
   it('rotates child piece positions by the instance rotation', () => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
-    const loaded = instantiateLevel(world, {
+    const loaded = instantiateLegacyLevel(world, {
       id: 'inst-rot',
       config: { fallBehavior: 'physical-fall', fallY: -3 },
       instances: [

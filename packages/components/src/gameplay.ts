@@ -1,0 +1,109 @@
+import { TRACK, type TriggerKind } from '@mp/content'
+import { defineComponent } from './define'
+
+/**
+ * Gameplay rules and motion — what a **mode** reads. The loader never looks at these.
+ *
+ * Three of them **own their own reaction** since stage C2: `onContact` fires when a collider on the same node
+ * is touched, and the mode supplies only what dying and making progress mean for it (`Effects`). The branches
+ * that used to sit in `modes/parkour/src/main.ts` are gone.
+ *
+ * `Goal` has no hook, because the mode has no goal rule — nothing ends a run yet, and writing one here would
+ * be a design decision wearing an implementation's clothes.
+ *
+ * `Track` has no hook either, and that is not an omission: the loader's frame tree evaluates it as a pure
+ * function of the synced clock, so a late joiner needs no catch-up and a static subtree costs nothing. An
+ * accumulating hook would trade both away for nothing.
+ *
+ * A rule fires on **contact with any `Collider` on the same node**, no wiring between the two. That is
+ * Unity's model: the contact is delivered to the node and every component on it hears about it. The
+ * rejected alternative — a rule holding a pointer to its collider — has a dangling state this cannot have.
+ *
+ * The rules are `singleton` because a second copy on one node is redundant rather than expressive (two
+ * hazards kill once; two bumpers resolve to the stronger, which is the same as deleting the weaker).
+ * Colliders are the repeatable ones. Reversible if a rule ever grows a per-copy parameter that stacks.
+ */
+
+/** Touching it saves this as the respawn point. Ordered by tree walk, which is what indexes them. */
+export const Checkpoint = defineComponent({
+  type: 'Checkpoint',
+  params: {},
+  singleton: true,
+  // The node, not an index: what counts as progress is the mode's business, and it is the mode that holds the
+  // ordered list a saved index means anything against.
+  onContact: (_self, ctx, hit) => ctx.effects.progress(hit.node),
+})
+
+/** Touching it completes the level. No hook: the mode has no goal rule yet. */
+export const Goal = defineComponent({
+  type: 'Goal',
+  params: {},
+  singleton: true,
+})
+
+/** Touching it kills. Distinct from falling past the level's `fallY`, which is config, not a component. */
+export const Hazard = defineComponent({
+  type: 'Hazard',
+  params: {},
+  singleton: true,
+  onContact: (_self, ctx) => ctx.effects.kill(),
+})
+
+/**
+ * Launches whatever lands on it.
+ *
+ * `power` is an upward speed in m/s, replacing the character's vertical velocity. Apex is
+ * `power² / (2·gravity)`; at the tuned gravity of 55 a jump leaves the ground at `√(2·55·3) ≈ 18.2` m/s,
+ * so **anything below 18 throws you lower than your own jump**. 26 gives about 6.1 m, roughly twice a
+ * jump (ADR 0032).
+ *
+ * The default lives here rather than in the editor, which is where `DEFAULT_BUMPER_POWER` sat: a schema
+ * value defaulted by the tool means hand-written JSON has no default at all.
+ */
+export const Bumper = defineComponent({
+  type: 'Bumper',
+  params: {
+    power: { kind: 'number', default: 26, min: 1, max: 60, step: 1, label: 'launch (m/s)' },
+  },
+  singleton: true,
+  /**
+   * `self.params.power` is a `number` here with no cast and no lookup — the payoff of declaring parameters.
+   *
+   * The request goes through the character's `launch` field rather than onto `vy`, because leaving a surface
+   * is five decisions in `stepCharacter` and not one (ADR 0032). `CharacterAccess.launch` keeps the strongest
+   * request in a tick, so a stack of bumpers throws you as hard as the hardest one.
+   */
+  onContact: (self, ctx) => ctx.character.launch(self.params.power),
+})
+
+/**
+ * Clock-driven keyed motion — a pure function of synced time, so no per-object networking (ADR 0013/0021,
+ * ADR 0029). Replaces the node's local pose per channel rather than adding to it, Unity's model.
+ *
+ * `keys` is edited by the existing timeline. Duration is the last key's `t`, derived rather than stored so
+ * the two cannot disagree. `phaseMs` shifts this track's clock, which is what staggers a row of pistons.
+ */
+export const Track = defineComponent({
+  type: TRACK,
+  params: {
+    keys: { kind: 'keys' },
+    loop: { kind: 'enum', options: ['loop', 'pingPong', 'once'], default: 'loop' },
+    phaseMs: { kind: 'number', default: 0, step: 50, label: 'phase (ms)' },
+  },
+  singleton: true,
+})
+
+export const GAMEPLAY_COMPONENTS = [Checkpoint, Goal, Hazard, Bumper, Track]
+
+/**
+ * Rule component type → the gizmo colour key the renderer already has (`colorForMarker`).
+ *
+ * A table rather than lowercasing the type name, which would work for these four by coincidence and break
+ * on the first two-word rule. Kept honest by a test that asserts it covers exactly the rule components.
+ */
+export const RULE_KINDS: Record<string, TriggerKind> = {
+  [Checkpoint.type]: 'checkpoint',
+  [Goal.type]: 'goal',
+  [Hazard.type]: 'hazard',
+  [Bumper.type]: 'bumper',
+}

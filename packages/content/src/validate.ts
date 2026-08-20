@@ -9,9 +9,9 @@ import type { Level, LevelConfig } from './types'
  */
 export class LevelError extends Error {}
 
-const isObj = (v: unknown): v is Record<string, unknown> =>
+export const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
-const isVec3 = (v: unknown): boolean =>
+export const isVec3 = (v: unknown): boolean =>
   isObj(v) && typeof v.x === 'number' && typeof v.y === 'number' && typeof v.z === 'number'
 
 const EASINGS = new Set(['linear', 'in', 'out', 'inOut', 'step'])
@@ -102,7 +102,7 @@ const checkPieces = (prefab: unknown, at: string): void => {
   })
 }
 
-const validateConfig = (c: unknown): LevelConfig => {
+export const validateConfig = (c: unknown): LevelConfig => {
   if (!isObj(c)) throw new LevelError('level.config: expected object')
   if (c.fallBehavior !== 'respawn-checkpoint' && c.fallBehavior !== 'physical-fall')
     throw new LevelError("level.config.fallBehavior: expected 'respawn-checkpoint' | 'physical-fall'")

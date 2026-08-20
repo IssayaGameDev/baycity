@@ -112,6 +112,26 @@ export const instancesOf = (level: Level, id: string): PrefabInstance[] =>
  * same id, different content takes a numeric suffix. Content compared with the id blanked, since
  * the id is exactly what is allowed to differ.
  */
+/**
+ * A free key in a table for `entry`, wanting `key` — reusing an existing entry that is **identical**, so
+ * placing the same prefab twice shares one entry instead of filling the table with copies.
+ *
+ * The node-shaped counterpart of `freeTableId` below, which keyed off `Prefab.id`. A node's wanted key is
+ * passed in rather than read off the value, because the key is the *file name* and a stored id is routinely
+ * stale (commit 0fc0b9f).
+ */
+export const freeTableKey = <T>(table: Record<string, T>, key: string, entry: T): string => {
+  const body = JSON.stringify(entry)
+  const same = (a: T): boolean => JSON.stringify(a) === body
+  const at = table[key]
+  if (at === undefined || same(at)) return key
+  for (let n = 2; ; n++) {
+    const id = `${key}-${n}`
+    const other = table[id]
+    if (other === undefined || same(other)) return id
+  }
+}
+
 export const freeTableId = (table: Record<string, Prefab>, prefab: Prefab): string => {
   const body = JSON.stringify({ ...prefab, id: '' })
   const same = (a: Prefab): boolean => JSON.stringify({ ...a, id: '' }) === body

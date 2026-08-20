@@ -4,34 +4,34 @@ import { modeFor, type SelectMode } from './selection'
 /**
  * The Hierarchy panel: the document as a tree of selectable, renameable, reorderable, re-parentable rows.
  *
- * A level's instances nest to any depth, so a row's children are the instances placed *relative to it* —
- * dragging one onto another changes what its transform is measured against, and at runtime motion composes
- * down the chain (a bar spinning on a moving deck).
+ * Nodes nest to any depth, so a row's children are what is placed *relative to it* — dragging one onto
+ * another changes what its transform is measured against, and at runtime motion composes down the chain (a
+ * bar spinning on a moving deck).
  *
- * A row's **contents** are its prefab's pieces followed by its child instances, and one twist hides both
- * (ADR 0033). A piece is an object like any other here — it carries the visuals, the collider and the trigger,
- * so it is what the Inspector shows and what the gizmo moves. What it is *not* is independently placeable: it
- * belongs to the shared prefab, so it cannot be dragged, re-ordered or deleted through a placement, and
- * editing it changes every instance of that prefab.
+ * A row's **contents** are what it inherits from its prefab followed by its own children, and one twist hides
+ * both (ADR 0033, ADR 0035). An inherited row is an object like any other here — it carries the components, so
+ * it is what the Inspector shows and what the gizmo moves. What it is *not* is independently placeable: its
+ * position belongs to the shared prefab, so it cannot be dragged, re-ordered or deleted through a placement,
+ * and what you change about it becomes an override on that placement.
  *
- * Everything starts **shut**, so opening a level shows its top-level objects rather than every piece at once.
+ * Everything starts **shut**, so opening a level shows its top-level objects rather than every node at once.
  * Openness is keyed by `Doc.pathOf` rather than by row index, so editing one part of the tree does not shuffle
  * the state of another.
  *
- * Reordering is not cosmetic: checkpoint progression follows instance order, and so does the movement-base
- * index a rider replicates (ADR 0021).
+ * Reordering is not cosmetic: checkpoint progression follows node order, and so does the movement-base index
+ * a rider replicates (ADR 0021).
  */
 export interface Row {
-  kind: 'item' | 'piece'
+  kind: 'item' | 'inherited'
   /** Depth-first index of this node in the document. */
   index: number
-  /** Index of a piece within its prefab; `-1` on item rows. */
+  /** Sibling index within the prefab it is inherited from; `-1` on own rows. */
   pieceIndex: number
-  /** Nesting depth; piece rows sit one deeper than their owner. */
+  /** Nesting depth; an inherited row sits one deeper than the placement that owns it. */
   depth: number
   /** Stable-ish key for UI state — see the note above. */
   path: string
-  /** Depth-first index of the parent item, or `null` at the top level. */
+  /** Depth-first index of the parent, or `null` at the top level. */
   parent: number | null
   /** Position within its own sibling list — what a drop above/below this row inserts at. */
   siblingIndex: number
@@ -41,7 +41,7 @@ export interface Row {
   /** References a prefab — Unity tints these, and it is the distinction that matters most here. */
   linked: boolean
   hasChildren: boolean
-  /** Something can be opened under this row: pieces, child instances, or both. */
+  /** Something can be opened under this row: inherited nodes, own children, or both. */
   expandable: boolean
   expanded: boolean
 }
@@ -77,8 +77,8 @@ export const rowsOf = (doc: Doc, open: Openness): Row[] => {
     if (depth > hideBelow) continue
     hideBelow = Number.POSITIVE_INFINITY
 
-    // Every row is a node the document addresses, pieces included (ADR 0033). This used to synthesize piece
-    // rows from the owning instance's meshes, which is why they could be shown but never selected.
+    // Every row is a node the document addresses, inherited ones included. This used to synthesize piece rows
+    // from the owning instance's meshes, which is why they could be shown but never selected.
     const kind = doc.kindOf(i)
     const path = doc.pathOf(i)
     const ref = doc.refOf(i)
@@ -87,15 +87,15 @@ export const rowsOf = (doc: Doc, open: Openness): Row[] => {
     const shared = ref !== null ? doc.refCount(ref) : 0
 
     rows.push({
-      kind: kind === 'piece' ? 'piece' : 'item',
+      kind: kind === 'inherited' ? 'inherited' : 'item',
       index: i,
-      pieceIndex: kind === 'piece' ? doc.siblingIndexOf(i) : -1,
+      pieceIndex: kind === 'inherited' ? doc.siblingIndexOf(i) : -1,
       depth,
       path,
       parent: doc.parentOf(i),
       siblingIndex: doc.siblingIndexOf(i),
       label: doc.label(i),
-      badge: shared > 1 ? `×${shared}` : ref === null && kind !== 'piece' ? 'inline' : '',
+      badge: shared > 1 ? `×${shared}` : ref === null && kind !== 'inherited' ? 'inline' : '',
       linked: ref !== null,
       hasChildren: contents > 0,
       expandable: contents > 0,
@@ -182,7 +182,7 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
       const el = document.createElement('div')
       el.className = [
         'row',
-        row.kind === 'piece' ? 'piece' : '',
+        row.kind === 'inherited' ? 'inherited' : '',
         row.linked ? 'linked' : '',
         selection.includes(row.index) ? 'sel' : '',
         // The primary is marked apart, because it is the one the Inspector shows and the one a range anchors

@@ -1,4 +1,4 @@
-import { buildDatabase, type AssetDatabase, type AssetEntry, type MaterialAsset, type Prefab } from '@mp/content'
+import { buildDatabase, type AssetDatabase, type AssetEntry, type MaterialAsset, type Node } from '@mp/content'
 
 /**
  * Client for the dev server's asset routes (see vite.config.ts).
@@ -17,13 +17,13 @@ export interface AssetLibrary {
   /** A loaded material's JSON, by asset id. */
   materialOf: (assetId: string) => MaterialAsset | undefined
   /** A loaded prefab asset's JSON, by asset id. */
-  prefabOf: (assetId: string) => Prefab | undefined
+  prefabOf: (assetId: string) => Node | undefined
   /** Overwrite a material on disk and in memory. */
   saveMaterial: (assetId: string, material: MaterialAsset) => Promise<void>
   /** Overwrite a prefab asset on disk and in memory. */
-  savePrefab: (assetId: string, prefab: Prefab) => Promise<void>
+  savePrefab: (assetId: string, prefab: Node) => Promise<void>
   /** Write a prefab to a path under the assets root, creating it. Returns its entry after a rescan. */
-  createPrefab: (path: string, prefab: Prefab) => Promise<AssetEntry | undefined>
+  createPrefab: (path: string, prefab: Node) => Promise<AssetEntry | undefined>
   mkdir: (parent: string, name: string) => Promise<void>
   /** Rename or move. The sidecar goes with it, so ids survive. */
   move: (from: string, to: string) => Promise<void>
@@ -43,8 +43,9 @@ const fetchJson = async <T>(url: string): Promise<T> => {
 const isMaterial = (v: unknown): v is MaterialAsset =>
   typeof v === 'object' && v !== null && typeof (v as { shader?: unknown }).shader === 'string'
 
-const isPrefab = (v: unknown): v is Prefab =>
-  typeof v === 'object' && v !== null && Array.isArray((v as { pieces?: unknown }).pieces)
+/** A prefab file is a **root node** since stage C1: a `components` array is what tells it from a material. */
+const isPrefab = (v: unknown): v is Node =>
+  typeof v === 'object' && v !== null && Array.isArray((v as { components?: unknown }).components)
 
 const post = async (route: string, body: unknown): Promise<void> => {
   const r = await fetch(`/api/assets/${route}`, {
@@ -63,7 +64,7 @@ export const loadAssetLibrary = async (): Promise<AssetLibrary> => {
   const { entries, folders } = await fetchJson<{ entries: AssetEntry[]; folders: string[] }>('/api/assets')
   const db = buildDatabase(entries)
   const materials = new Map<string, MaterialAsset>()
-  const prefabs = new Map<string, Prefab>()
+  const prefabs = new Map<string, Node>()
 
   // Materials and prefabs are small JSON and both are needed synchronously — a material to compile, a
   // prefab to preview or place — so they are fetched up front rather than on demand.

@@ -1,28 +1,28 @@
 import { vec3, type Vec3 } from '@mp/core'
+import type { ColliderDesc } from '@mp/content'
+import type { ParamSpec } from '@mp/components'
 import { Pane } from 'tweakpane'
 
-import { DEFAULT_BUMPER_POWER, type Doc, type ItemProps, type TriggerChoice } from './editorDoc'
+import type { ComponentView, Doc } from './editorDoc'
 
 /**
- * The Inspector panel — transform, material, trigger, and the prefab actions.
+ * The Inspector panel — transform, then **one section per component**, with the fields generated from each
+ * component's declared parameters (PLAN-component-system, stage C1).
  *
- * Still Tweakpane, deliberately: a property grid of labelled numbers with point-and-drag editing is
- * exactly what it is good at, and `PaneConfig.container` mounts it inside a real panel. What changed is
- * scope. It used to *be* the editor, so its one weakness — conditional fields can only be expressed by
- * disposing every control and re-adding them — took the whole UI with it: the file picker, the palette
- * and the play toggle all flickered whenever a behavior dropdown changed. Confined to this panel, the
- * rebuild costs nothing anyone can see.
+ * Nothing in here knows what a bumper is. It reads `registry.get(type).params`, maps each declaration to a
+ * control, and writes values back by key. That is the whole point of declaring parameters instead of
+ * reflecting them: adding a component type puts its fields in this panel without touching this file, where
+ * the `trigger` field it replaces needed five separate edits here (a state field, a write-back, a read-back,
+ * a picker entry, and a conditional block for the one kind that carried a number).
+ *
+ * Still Tweakpane, deliberately: a property grid of labelled numbers with point-and-drag editing is exactly
+ * what it is good at, and `PaneConfig.container` mounts it inside a real panel. Its one weakness — a
+ * conditional field can only be expressed by disposing the controls and re-adding them — is now confined to
+ * this panel, where the rebuild costs nothing anyone can see.
  *
  * Holds no Three.js: the host reads and writes the selection's transform, so this file knows only about
- * documents and numbers.
- *
- * A piece selected in a level is the shared prefab's, so what this panel writes there is an **override** on
- * that one placement, and the fields that differ from the prefab are listed with a Revert and an Apply
- * (ADR 0033).
- *
- * Holds no *animation* either, since ADR 0029. Motion is a keyframe track, and a track is edited on a
- * timeline — a property grid can only show one instant of it, which is what made the old
- * behavior/direction/travel/cycle form the worst part of this panel. The Animation tab owns it now.
+ * documents and numbers. Holds no *animation* either (ADR 0029): a track is edited on the timeline, and a
+ * property grid can only show one instant of it.
  */
 export interface TransformValues {
   position: Vec3
@@ -47,9 +47,11 @@ export interface InspectorHost {
   openPrefab: () => void
   /** Material assets to offer, as Tweakpane options (label → asset id; `''` for none). */
   materials: () => Record<string, string>
-  /** Revert one overridden field on the selection, or all of them (ADR 0033). */
+  /** Model assets to offer, same shape. */
+  models: () => Record<string, string>
+  /** Revert one override on the selection, or all of them. */
   revertOverride: (field?: string) => void
-  /** Push the selection's overrides into the shared prefab, so every instance of it follows. */
+  /** Push the selection's overrides into the shared prefab, so every placement of it follows. */
   applyOverrides: () => void
 }
 
@@ -64,19 +66,44 @@ export interface Inspector {
 
 const r4 = (n: number): number => Math.round(n * 1e4) / 1e4
 
+/** What Tweakpane calls a disposable. Folders dispose their own contents, so only the folder is tracked. */
+interface Disposable {
+  dispose: () => void
+}
+
+/**
+ * Shapes offered for a `Collider`. **No cylinder**: the physics wrapper has no cylinder shape and the loader
+ * throws on one, so offering it here would let the editor author a level that cannot load.
+ */
+const SHAPE_OPTIONS: Record<string, string> = { box: 'box', ball: 'ball', capsule: 'capsule', convex: 'convex' }
+
+/** A fresh shape of a kind, for when the picker changes. Convex keeps whatever points it had, if any. */
+const defaultShape = (kind: string, was: ColliderDesc): ColliderDesc => {
+  switch (kind) {
+    case 'ball':
+      return { kind: 'ball', radius: 0.5 }
+    case 'capsule':
+      return { kind: 'capsule', halfHeight: 0.5, radius: 0.4 }
+    case 'convex':
+      return was.kind === 'convex' ? was : { kind: 'convex', points: [vec3(-0.5, 0, -0.5), vec3(0.5, 0, -0.5), vec3(0, 0, 0.5), vec3(0, 1, 0)] }
+    default:
+      return { kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) }
+  }
+}
+
 export const createInspector = (head: HTMLElement, container: HTMLElement, host: InspectorHost): Inspector => {
   // No title: the panel's own header names it, and a second collapsible header inside would be noise.
   const pane = new Pane({ container })
 
   /**
-   * The header is ours, not Tweakpane's: Unity's name field is full-width and prominent, and a
-   * Tweakpane binding would put it in the 92px label column like any other property.
+   * The header is ours, not Tweakpane's: Unity's name field is full-width and prominent, and a Tweakpane
+   * binding would put it in the 92px label column like any other property.
    */
   const nameInput = document.createElement('input')
   nameInput.type = 'text'
   nameInput.className = 'ctl name'
   nameInput.spellcheck = false
-  nameInput.title = 'name — blank falls back to what the item is'
+  nameInput.title = 'name — blank falls back to what the object is'
   const commitName = (): void => {
     const doc = host.doc()
     const at = host.selected()
@@ -109,8 +136,8 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     }
     head.hidden = false
 
-    // Value = the typed name; placeholder = the fallback, so a clean file shows a sensible name
-    // without one being written into the JSON.
+    // Value = the typed name; placeholder = the fallback, so a clean file shows a sensible name without one
+    // being written into the JSON.
     if (document.activeElement !== nameInput) nameInput.value = doc.nameOf(at)
     nameInput.placeholder = doc.label(at)
 
@@ -118,41 +145,36 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     linkRow.classList.toggle('linked', ref !== null)
     if (ref !== null) {
       const n = doc.refCount(ref)
-      linkWho.textContent = `prefab: ${ref} · ${n} instance${n === 1 ? '' : 's'}`
+      linkWho.textContent = `prefab: ${ref} · ${n} placement${n === 1 ? '' : 's'}`
       linkButton.textContent = 'Open'
-      linkButton.title = 'edit the shared definition — every instance follows'
+      linkButton.title = 'edit the shared definition — every placement follows'
       linkButton.onclick = host.openPrefab
       linkButton.hidden = false
-    } else if (doc.mode === 'level') {
+    } else if (doc.mode === 'level' && doc.kindOf(at) === 'own') {
       linkWho.textContent = 'not linked to a prefab'
       linkButton.textContent = 'Extract'
       linkButton.title = 'promote this one-off into a shared prefab'
       linkButton.onclick = host.extract
       linkButton.hidden = false
     } else {
-      linkWho.textContent = 'piece of this prefab'
+      linkWho.textContent = doc.kindOf(at) === 'inherited' ? 'part of a prefab — edits become overrides' : 'part of this prefab'
       linkButton.hidden = true
     }
   }
 
   const sel: TransformValues = { position: vec3(0, 0, 0), rotationDeg: vec3(0, 0, 0), scale: vec3(1, 1, 1) }
-  const prop = {
-    trigger: 'none' as TriggerChoice,
-    bumperPower: DEFAULT_BUMPER_POWER,
-    material: '',
-  }
 
-  let blades: { dispose: () => void }[] = []
+  let blades: Disposable[] = []
 
   /**
-   * True while `sync` is pushing values *into* the pane, so a refresh is not mistaken for a person typing.
+   * True while `sync` (or a build) is pushing values *into* the pane, so a refresh is not mistaken for a
+   * person typing.
    *
    * Tweakpane's `refresh()` calls `fetch()`, which assigns `rawValue` — and that emits `change` exactly as a
    * keystroke does. So `sync()` fires every handler registered below it. During a gizmo drag that meant each
    * frame's refresh re-entered `writeTransform`, which re-posed the item from the document and threw away the
-   * drag's starting snapshot; a multi-selection then stopped following the primary after the first frame, and a
-   * small rotation was rounded to zero and snapped back. There is no option to suppress it, so the guard is
-   * here, where the code knows it is the one writing.
+   * drag's starting snapshot; a multi-selection then stopped following the primary after the first frame. There
+   * is no option to suppress it, so the guard is here, where the code knows it is the one writing.
    */
   let syncDepth = 0
   const syncing = (): boolean => syncDepth > 0
@@ -181,19 +203,147 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     })
   }
 
-  const applyProps = (): void => {
+  /** A change a person made, as opposed to one `sync` pushed in. */
+  const edited = (write: () => void): void => {
     if (syncing()) return
-    const doc = host.doc()
-    const at = host.selected()
-    if (doc === null || at === null) return
-    const p: ItemProps = {
-      pieceLevel: doc.mode === 'prefab',
-      trigger: prop.trigger,
-      bumperPower: prop.bumperPower,
-      material: prop.material,
-    }
-    doc.setProps(at, p)
+    write()
     host.onPropsChanged()
+  }
+
+  /**
+   * One control per declared parameter.
+   *
+   * `state` is the component's values, completed with the declaration's defaults so a parameter added to a
+   * component still has something to bind to in a level authored before it existed.
+   */
+  const addParam = (
+    folder: { addBinding: Pane['addBinding']; addBlade: Pane['addBlade'] },
+    doc: Doc,
+    at: number,
+    view: ComponentView,
+    state: Record<string, unknown>,
+    key: string,
+    spec: ParamSpec,
+  ): void => {
+    const label = spec.label ?? key
+    const overridden = view.overridden.includes(key)
+    // Tweakpane owns its label markup, so an overridden parameter is marked by a leading dot rather than by
+    // reaching into its DOM — the same reasoning that kept the override list a list (ADR 0033).
+    const shown = overridden ? `• ${label}` : label
+    const write = (patch: Record<string, unknown>): void => edited(() => doc.setParams(at, view.id, patch))
+
+    switch (spec.kind) {
+      case 'number': {
+        const opts: Record<string, unknown> = { label: shown }
+        if (spec.step !== undefined) opts.step = spec.step
+        if (spec.min !== undefined) opts.min = spec.min
+        if (spec.max !== undefined) opts.max = spec.max
+        folder.addBinding(state, key, opts).on('change', () => write({ [key]: state[key] }))
+        return
+      }
+      case 'bool':
+      case 'string':
+        folder.addBinding(state, key, { label: shown }).on('change', () => write({ [key]: state[key] }))
+        return
+      case 'enum': {
+        const options: Record<string, string> = {}
+        for (const o of spec.options) options[o] = o
+        folder.addBinding(state, key, { label: shown, options }).on('change', () => {
+          write({ [key]: state[key] })
+          rebuild() // an enum can gate other fields (a Visual's source picks model or material)
+        })
+        return
+      }
+      case 'vec3': {
+        const step = { step: 0.1 }
+        folder.addBinding(state, key, { label: shown, x: step, y: step, z: step }).on('change', () => write({ [key]: state[key] }))
+        return
+      }
+      case 'asset': {
+        const options = spec.of === 'material' ? host.materials() : host.models()
+        folder.addBinding(state, key, { label: shown, options }).on('change', () => write({ [key]: state[key] }))
+        return
+      }
+      case 'collider': {
+        const shape = (state[key] ?? spec.default) as ColliderDesc
+        const picker = { kind: shape.kind as string }
+        folder.addBinding(picker, 'kind', { label: shown, options: SHAPE_OPTIONS }).on('change', () => {
+          write({ [key]: defaultShape(picker.kind, shape) })
+          rebuild()
+        })
+        const dims: Record<string, unknown> = { ...shape }
+        const step = { step: 0.05 }
+        if (shape.kind === 'box') {
+          folder.addBinding(dims, 'halfExtents', { label: 'half extents', x: step, y: step, z: step }).on('change', () =>
+            write({ [key]: { kind: 'box', halfExtents: dims.halfExtents } }),
+          )
+        } else if (shape.kind === 'ball') {
+          folder.addBinding(dims, 'radius', { label: 'radius', step: 0.05, min: 0.01 }).on('change', () => write({ [key]: { kind: 'ball', radius: dims.radius } }))
+        } else if (shape.kind === 'capsule' || shape.kind === 'cylinder') {
+          const kind = shape.kind
+          const push = (): void => write({ [key]: { kind, halfHeight: dims.halfHeight, radius: dims.radius } })
+          folder.addBinding(dims, 'halfHeight', { label: 'half height', step: 0.05, min: 0.01 }).on('change', push)
+          folder.addBinding(dims, 'radius', { label: 'radius', step: 0.05, min: 0.01 }).on('change', push)
+        } else {
+          // A hull is authored by whatever generated it (ADR 0017); there is no useful grid control for a
+          // point cloud, so this says what is there and leaves it alone.
+          folder.addBlade({ view: 'text', label: 'hull', parse: (v: string) => v, value: `${shape.points.length} points`, disabled: true })
+        }
+        return
+      }
+      case 'keys': {
+        const keys = Array.isArray(state[key]) ? (state[key] as unknown[]).length : 0
+        // The timeline owns keys. A property grid can show one instant of a track, which is exactly the
+        // mistake ADR 0029 removed.
+        folder.addBlade({ view: 'text', label: shown, parse: (v: string) => v, value: `${keys} keys — edit on the timeline`, disabled: true })
+        return
+      }
+      case 'nodeRef': {
+        /**
+         * A dropdown of the nodes this one may name, rather than Unity's drag-an-object-into-the-field: the
+         * scope is already narrow (`nodeChoices` refuses anything that would author a dangling reference), and
+         * a picker cannot express a target the document does not have.
+         *
+         * `''` is the stored value for "none" so the binding has something to select; the schema's value for
+         * it is `null`, and that is what gets written.
+         */
+        const options: Record<string, string> = { '(none)': '' }
+        for (const choice of doc.nodeChoices(at)) options[`${choice.label} · ${choice.id.slice(0, 6)}`] = choice.id
+        const current = typeof state[key] === 'string' ? (state[key] as string) : ''
+        const pick = { ref: options['(none)'] === current || current === '' ? '' : current }
+        folder.addBinding(pick, 'ref', { label: shown, options }).on('change', () => write({ [key]: pick.ref === '' ? null : pick.ref }))
+        return
+      }
+    }
+  }
+
+  /** One collapsible section per component: what it is, whether it is on, its fields, and Remove. */
+  const addComponent = (doc: Doc, at: number, view: ComponentView): void => {
+    const def = doc.registry.get(view.type)
+    const title = `${def?.label ?? view.type}${view.added ? ' (added here)' : ''}${view.enabled ? '' : ' — off'}`
+    const folder = pane.addFolder({ title, expanded: true })
+    blades.push(folder)
+
+    if (def === undefined) {
+      // A level authored by a build that had a component this one does not. Saying so beats showing nothing
+      // and silently dropping it on the next save.
+      folder.addBlade({ view: 'text', label: 'unknown', parse: (v: string) => v, value: `no '${view.type}' in this build`, disabled: true })
+      return
+    }
+
+    const toggle = { enabled: view.enabled }
+    folder.addBinding(toggle, 'enabled', { label: view.overridden.includes('enabled') ? '• enabled' : 'enabled' }).on('change', () =>
+      edited(() => doc.setComponentEnabled(at, view.id, toggle.enabled)),
+    )
+
+    const state: Record<string, unknown> = { ...doc.registry.defaults(view.type), ...view.params }
+    for (const [key, spec] of Object.entries(def.params)) addParam(folder, doc, at, view, state, key, spec)
+
+    folder.addButton({ title: view.inherited ? 'Remove here' : 'Remove' }).on('click', () => {
+      doc.removeComponent(at, view.id)
+      host.onPropsChanged()
+      rebuild()
+    })
   }
 
   const rebuild = (): void => {
@@ -205,7 +355,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     if (doc === null || at === null) return
 
     // Building a binding reads its target, which can emit `change` before anything is user-driven. A depth
-    // counter rather than a flag, because `sync` below runs inside this span and clears its own; and `finally`
+    // counter rather than a flag, because `sync` runs inside this span and clears its own; and `finally`
     // rather than a bare decrement, because a leaked count would leave the panel ignoring input for good.
     syncDepth++
     try {
@@ -218,88 +368,74 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   /** The property grid itself. Split out so the sync guard around it is a single `try`. */
   const buildBlades = (doc: Doc, at: number): void => {
     sync()
-    const p = doc.props(at)
-    prop.trigger = p.trigger
-    prop.bumperPower = p.bumperPower
-    prop.material = p.material
 
     const pos = { step: 0.1 }
     const rot = { step: 1 }
     const scl = { step: 0.05 }
+    const marked = (field: string, label: string): string => (doc.overridesOf(at).includes(field) ? `• ${label}` : label)
     blades.push(
-      pane.addBinding(sel, 'position', { label: 'position', x: pos, y: pos, z: pos }).on('change', applyTransform),
+      pane.addBinding(sel, 'position', { label: marked('transform', 'position'), x: pos, y: pos, z: pos }).on('change', applyTransform),
       pane.addBinding(sel, 'rotationDeg', { label: 'rotation °', x: rot, y: rot, z: rot }).on('change', applyTransform),
       pane.addBinding(sel, 'scale', { label: 'scale', x: scl, y: scl, z: scl }).on('change', applyTransform),
     )
 
-    // Material is editable either way — the piece's own inside a prefab, an instance-wide override in a
-    // level. Both levels, because the override is the only per-placement visual there is, and until now
-    // the capable system (materials) was the one you could not override while the weak one (styles) was
-    // (ADR 0028). A trigger belongs to a piece's collider, so it is only offered where pieces are edited.
-    blades.push(
-      pane
-        .addBinding(prop, 'material', { label: p.pieceLevel ? 'material' : 'material override', options: host.materials() })
-        .on('change', applyProps),
-    )
-    if (p.pieceLevel) {
+    for (const view of doc.components(at)) addComponent(doc, at, view)
+
+    /**
+     * Add component. A dropdown plus a button rather than a search popup: there are nine types, and a
+     * singleton the node already has is simply not offered — which is the honest reading of `canAdd`.
+     */
+    const addable = doc.registry
+      .all()
+      .map((d) => d.type)
+      .filter((type) => doc.canAdd(at, type))
+    if (addable.length > 0) {
+      const options: Record<string, string> = {}
+      for (const type of addable) options[type] = type
+      const pick = { type: addable[0]! }
+      blades.push(pane.addBinding(pick, 'type', { label: 'add', options }))
       blades.push(
-        pane
-          .addBinding(prop, 'trigger', {
-            label: 'trigger',
-            options: { none: 'none', checkpoint: 'checkpoint', goal: 'goal', hazard: 'hazard', bumper: 'bumper' },
-          })
-          .on('change', () => {
-            applyProps()
-            rebuild() // show or hide the bumper's own field
-          }),
+        pane.addButton({ title: 'Add component' }).on('click', () => {
+          doc.addComponent(at, pick.type)
+          host.onPropsChanged()
+          rebuild()
+        }),
       )
-      // A trigger kind that carries a parameter is why the schema stopped being a bare string (ADR 0032). The
-      // field only exists while `bumper` is chosen, which is the conditional-field pattern this panel has
-      // always had to express by rebuilding.
-      if (prop.trigger === 'bumper') {
+    }
+
+    /**
+     * What this placement changes about the prefab's node, with the two actions beside it.
+     *
+     * Listed as well as marked in place: the dots above say *which* field, and this says *how many* and lets
+     * one of them be put back without hunting for it.
+     */
+    if (doc.kindOf(at) === 'inherited') {
+      const overridden = doc.overridesOf(at)
+      blades.push(
+        pane.addBlade({
+          view: 'text',
+          label: 'overridden',
+          parse: (v: string) => v,
+          value: overridden.length > 0 ? overridden.join(', ') : 'nothing — matches the prefab',
+          disabled: true,
+        }) as Disposable,
+      )
+      if (overridden.length > 0) {
         blades.push(
-          pane
-            .addBinding(prop, 'bumperPower', { label: 'launch (m/s)', step: 1, min: 1, max: 60 })
-            .on('change', applyProps),
+          pane.addButton({ title: 'Revert to prefab' }).on('click', () => host.revertOverride()),
+          pane.addButton({ title: 'Apply to prefab (all placements)' }).on('click', host.applyOverrides),
         )
       }
     }
 
-    // ---- prefab overrides (ADR 0033) --------------------------------------------------------------------
-    /**
-     * A piece belongs to the shared prefab, so an edit here is an **override** on this one placement. The
-     * fields that differ are listed, because the alternative is a panel that cannot tell you whether the
-     * number you are reading is this object's or every object's — and that is the whole reason Unity bolds
-     * an overridden label.
-     *
-     * Listed rather than marked in place: Tweakpane owns its label markup, so bolding one would mean reaching
-     * into its DOM. A list of names with the two actions beside it says the same thing and cannot break when
-     * Tweakpane's internals change.
-     */
-    const overridden = doc.overridesOf(at)
-    if (overridden.length > 0) {
+    // Open/Extract live in the header's prefab-link row, where Unity puts them. Structural actions are
+    // refused on an inherited node, so they are not offered there either.
+    if (doc.kindOf(at) === 'own') {
       blades.push(
-        pane.addBlade({ view: 'text', label: 'overridden', parse: (v: string) => v, value: overridden.join(', '), disabled: true }) as {
-          dispose: () => void
-        },
-      )
-      blades.push(
-        pane.addButton({ title: 'Revert to prefab' }).on('click', () => host.revertOverride()),
-        pane.addButton({ title: 'Apply to prefab (all instances)' }).on('click', host.applyOverrides),
-      )
-    } else if (p.pieceLevel && doc.mode === 'level') {
-      blades.push(
-        pane.addBlade({ view: 'text', label: 'overridden', parse: (v: string) => v, value: 'nothing — matches the prefab', disabled: true }) as {
-          dispose: () => void
-        },
+        pane.addButton({ title: 'Duplicate (Ctrl+D)' }).on('click', host.duplicate),
+        pane.addButton({ title: 'Delete (Del)' }).on('click', host.remove),
       )
     }
-
-    // Open/Extract live in the header's prefab-link row, where Unity puts them.
-    blades.push(
-      pane.addButton({ title: 'Duplicate (Ctrl+D)' }).on('click', host.duplicate),
-      pane.addButton({ title: 'Delete (Del)' }).on('click', host.remove),
-    )
   }
 
   return { rebuild, sync, renderHead }

@@ -1,0 +1,411 @@
+import { eulerToQuat, lerpVec3, mulQuat, quat, rotateVec3, slerpQuat, vec3, type Quat, type Vec3 } from '@mp/core'
+import type { PhysicsBody, PhysicsWorld } from '@mp/physics'
+
+import { isAnimated, poseAt } from './track'
+import { add, mul, scaleCollider, scaleOf, toShape, type BasePhase, type VisualItem, type WorldMarker } from './loader'
+import {
+  COLLIDER,
+  MATERIAL_OVERRIDE,
+  SPAWN,
+  TRACK,
+  VISUAL,
+  componentsOfType,
+  effectiveNode,
+  firstOfType,
+  stringParam,
+  vec3Param,
+  type TypeInfo,
+} from './nodes'
+import type { Behavior, ColliderDesc, ComponentData, Keyframe, LevelConfig, LoopMode, Node, NodeLevel, Transform } from './types'
+
+/**
+ * Turns a **node tree** into a live world (PLAN-component-system, stage C1): Rapier colliders from every
+ * `Collider` component, a renderer-agnostic visual list from every `Visual`, and the same clock-driven
+ * `update`/`render` as before.
+ *
+ * It reads five component types, all of them the engine's own, and **no gameplay names at all**. What a
+ * checkpoint or a bumper means is the mode's business: this hands out every component on the node that owns
+ * a collider and lets the mode recognise what it knows. Adding a rule therefore never touches this file,
+ * which is the difference between a component system and a switch statement.
+ */
+
+/** A node that owns at least one collider, and everything a mode needs to act on contact with it. */
+export interface WorldNode {
+  readonly id: string
+  readonly name: string | undefined
+  /** Every resolved component on the node, overrides applied. The mode filters for the ones it knows. */
+  readonly components: readonly ComponentData[]
+  /** World centre at load — what a respawn point wants. */
+  readonly position: Vec3
+  /**
+   * The colliders this node owns, in order. The inverse of `nodeOf`.
+   *
+   * Opaque numbers: Rapier packs a generation into a handle, so they are **not** small sequential integers
+   * (the second fixed body in a world reads as `5e-324`). Only ever compare them or use them as keys — which
+   * is also why the wire uses `baseIndex` and not a handle (ADR 0021).
+   */
+  readonly colliderHandles: readonly number[]
+  /**
+   * Which **reference scope** this node belongs to: `0` for the level itself, and one per placement for the
+   * nodes a placement inherited from its prefab (stage C4).
+   *
+   * A `nodeRef` authored inside a prefab names a node in that prefab, and two placements of it must resolve
+   * the same authored id to *their own* copy. That is what a scope is for; `findNode` is where it is used.
+   */
+  readonly scope: number
+}
+
+interface Frame {
+  base: Transform
+  parentScale: Vec3
+  scale: Vec3
+  behavior: Behavior
+  parent: Frame | null
+  animated: boolean
+  worldPos: Vec3
+  worldRot: Quat
+}
+
+/**
+ * Something whose world pose changes over time: a body to pose, a visual to move, or both.
+ *
+ * Both optional, unlike the piece-shaped version this replaces, because a node no longer pairs one collider
+ * with one mesh. A node drawing a model still needs its visual carried while its colliders are posed, and a
+ * node with two colliders needs two bodies against one frame. A single-collider node — every piece that
+ * exists today — still produces exactly one of these, with both fields set, so the index a rider puts on
+ * the wire (ADR 0021) is unchanged by the migration.
+ */
+interface Dynamic {
+  frame: Frame
+  body: PhysicsBody | undefined
+  visual: VisualItem | undefined
+  /**
+   * The collider's own offset from the frame, already scaled — `undefined` when it sits on the origin, which
+   * is every migrated piece. Re-applied each tick, since the frame pose is what moves.
+   */
+  offset: Vec3 | undefined
+  prevPos: Vec3
+  prevRot: Quat
+  currPos: Vec3
+  currRot: Quat
+  renderPos: Vec3
+  renderRot: Quat
+}
+
+export interface LoadedNodeLevel {
+  config: LevelConfig
+  markers: WorldMarker[]
+  /**
+   * Every node that owns an enabled collider, in creation order (depth-first, parents before children) —
+   * the **touchable** ones. What a mode indexes: a checkpoint nothing can touch is not a checkpoint in a
+   * progression, and putting one in this list would shift every saved index after it.
+   */
+  nodes: WorldNode[]
+  /**
+   * Every node, touchable or not, in the same order. What a component runner needs: a component with an
+   * `onFixedUpdate` and no collider still has to run.
+   */
+  allNodes: WorldNode[]
+  /** The node owning a collider handle — how contact becomes a gameplay rule. */
+  nodeOf: (colliderHandle: number) => WorldNode | undefined
+  visuals: VisualItem[]
+  /**
+   * The node a `nodeRef` on `from` points at, or `undefined`.
+   *
+   * Resolved in `from`'s own scope first, then in the level. Both steps are needed: a reference authored
+   * inside a prefab means "my copy of that node", and one authored as an override on a placement is written
+   * in the level and may name a level node.
+   */
+  findNode: (from: WorldNode, id: string) => WorldNode | undefined
+  update: (nowMs: number, ridingColliderHandle?: number) => void
+  render: (alpha: number) => void
+  basePose: (colliderHandle: number) => { position: Vec3; rotation: Quat } | undefined
+  baseIndex: (colliderHandle: number) => number | undefined
+  basePoseOf: (index: number, phase: BasePhase) => { position: Vec3; rotation: Quat } | undefined
+  baseCarry: (index: number, localPos: Vec3) => Vec3 | undefined
+}
+
+const LOOPS = new Set<string>(['loop', 'pingPong', 'once'])
+
+/** A `Track` component as the `Behavior` the frame tree already evaluates. No keys means no motion. */
+const behaviorOf = (track: ComponentData | undefined): Behavior => {
+  if (track === undefined) return { kind: 'static' }
+  const keys = track.params.keys
+  if (!Array.isArray(keys) || keys.length === 0) return { kind: 'static' }
+  const loop = track.params.loop
+  const phaseMs = track.params.phaseMs
+  return {
+    kind: 'track',
+    keys: keys as readonly Keyframe[],
+    ...(typeof loop === 'string' && LOOPS.has(loop) ? { loop: loop as LoopMode } : {}),
+    ...(typeof phaseMs === 'number' && Number.isFinite(phaseMs) ? { phaseMs } : {}),
+  }
+}
+
+const UNIT_BOX: ColliderDesc = { kind: 'box', halfExtents: { x: 0.5, y: 0.5, z: 0.5 } }
+const ZERO: Vec3 = { x: 0, y: 0, z: 0 }
+
+const shapeOf = (c: ComponentData): ColliderDesc => {
+  const shape = c.params.shape
+  // Validated by `readParams` when a registry was supplied. The fallback keeps a hand-edited file loadable
+  // rather than throwing from inside the physics wrapper, which is where an unvalidated shape used to land.
+  return shape !== null && typeof shape === 'object' && 'kind' in shape ? (shape as ColliderDesc) : UNIT_BOX
+}
+
+export const instantiateNodeLevel = (world: PhysicsWorld, level: NodeLevel, types: TypeInfo): LoadedNodeLevel => {
+  const visuals: VisualItem[] = []
+  const markers: WorldMarker[] = []
+  const nodes: WorldNode[] = []
+  const allNodes: WorldNode[] = []
+  const nodeByCollider = new Map<number, WorldNode>()
+  /** scope -> node id -> node. Scope 0 is the level; each placement gets one for what it inherited. */
+  const byScope = new Map<number, Map<string, WorldNode>>()
+  let nextScope = 0
+  const frames: Frame[] = []
+  const dynamics: Dynamic[] = []
+  const dynamicByCollider = new Map<number, number>()
+
+  const evaluate = (f: Frame, nowMs: number): void => {
+    const pose = poseAt(f.behavior, f.base, nowMs)
+    const localPos = pose.position
+    const localRot = eulerToQuat(pose.rotation)
+    if (f.parent === null) {
+      f.worldPos = localPos
+      f.worldRot = localRot
+      return
+    }
+    f.worldPos = add(f.parent.worldPos, rotateVec3(f.parent.worldRot, mul(f.parentScale, localPos)))
+    f.worldRot = mulQuat(f.parent.worldRot, localRot)
+  }
+
+  const makeFrame = (t: Transform, behavior: Behavior, parent: Frame | null): Frame => {
+    const parentScale = parent?.scale ?? vec3(1, 1, 1)
+    const f: Frame = {
+      base: t,
+      parentScale,
+      scale: mul(parentScale, scaleOf(t)),
+      behavior,
+      parent,
+      animated: isAnimated(behavior) || (parent?.animated ?? false),
+      worldPos: vec3(0, 0, 0),
+      worldRot: quat(),
+    }
+    frames.push(f)
+    evaluate(f, 0)
+    return f
+  }
+
+  /** Where a collider actually sits: the frame's pose, plus its own offset rotated and scaled into it. */
+  const placeAt = (f: Frame, offset: Vec3 | undefined): Vec3 =>
+    offset === undefined ? f.worldPos : add(f.worldPos, rotateVec3(f.worldRot, offset))
+
+  const addDynamic = (frame: Frame, body: PhysicsBody | undefined, visual: VisualItem | undefined, offset: Vec3 | undefined): void => {
+    if (body !== undefined) dynamicByCollider.set(body.colliderHandle, dynamics.length)
+    const at = placeAt(frame, offset)
+    dynamics.push({
+      frame,
+      body,
+      visual,
+      offset,
+      prevPos: { ...at },
+      prevRot: { ...frame.worldRot },
+      currPos: { ...at },
+      currRot: { ...frame.worldRot },
+      renderPos: { ...at },
+      renderRot: { ...frame.worldRot },
+    })
+  }
+
+  /**
+   * One node: its frame, its colliders, its visual, then its children.
+   *
+   * `inheritedMaterial` carries a `MaterialOverride` down the subtree — `undefined` means nothing above has
+   * an opinion, and `''` is an opinion ("unsurfaced"), which is why it is not folded into one falsy check.
+   * It cascades to children, where `PrefabInstance.material` stopped at the instance's own pieces; there is
+   * no longer a distinction between a node's pieces and its children to stop at.
+   */
+  const build = (node: Node, parent: Frame | null, inheritedMaterial: string | undefined, scope: number): void => {
+    const r = effectiveNode(level, node, types)
+    const f = makeFrame(r.transform, behaviorOf(firstOfType(r.components, TRACK)), parent)
+    // A placement opens a scope: everything it inherits from its prefab resolves references among itself.
+    // The placement node is the prefab's root, so it belongs to that scope too.
+    const inner = r.inheritedCount > 0 ? ++nextScope : scope
+
+    const own = firstOfType(r.components, MATERIAL_OVERRIDE)
+    const material = own === undefined ? inheritedMaterial : stringParam(own, 'material', '')
+
+    if (firstOfType(r.components, SPAWN) !== undefined) markers.push({ kind: 'spawn', position: { ...f.worldPos } })
+
+    const handles: number[] = []
+    const worldNode: WorldNode = { id: r.id, name: r.name, components: r.components, position: { ...f.worldPos }, colliderHandles: handles, scope: inner }
+    allNodes.push(worldNode)
+    /**
+     * Registered under the id whoever might name it would use, which for a placement is **two** ids: its own,
+     * to the level that placed it, and the prefab root's, to a reference authored inside that prefab.
+     *
+     * First writer wins, so two placements of one prefab do not overwrite each other where their scopes meet.
+     */
+    const register = (where: number, id: string): void => {
+      const scoped = byScope.get(where) ?? new Map<string, WorldNode>()
+      if (!scoped.has(id)) scoped.set(id, worldNode)
+      byScope.set(where, scoped)
+    }
+    register(scope, r.id)
+    if (inner !== scope) {
+      register(inner, r.id)
+      const rootId = node.prefab === undefined ? undefined : level.prefabs?.[node.prefab]?.id
+      if (rootId !== undefined) register(inner, rootId)
+    }
+
+    const colliders = componentsOfType(r.components, COLLIDER)
+    const vis = firstOfType(r.components, VISUAL)
+    const modelSource = vis !== undefined && stringParam(vis, 'source', 'collider') === 'model'
+    const model = modelSource ? stringParam(vis, 'model', '') : ''
+    const surfaced = material ?? (vis === undefined ? '' : stringParam(vis, 'material', ''))
+
+    const item = (collider: ColliderDesc, at: Vec3): VisualItem => {
+      const v: VisualItem = {
+        collider,
+        position: { ...at },
+        rotation: { ...f.worldRot },
+        model: modelSource && model !== '' ? model : undefined,
+        material: surfaced === '' ? undefined : surfaced,
+      }
+      visuals.push(v)
+      return v
+    }
+
+    if (colliders.length > 0) {
+      nodes.push(worldNode)
+      colliders.forEach((c, n) => {
+        const collider = scaleCollider(shapeOf(c), f.scale)
+        const shape = toShape(collider)
+        const centre = vec3Param(c, 'center', ZERO)
+        // Scaled like any local offset, so a scaled node moves its colliders apart by the same factor.
+        const offset = centre.x === 0 && centre.y === 0 && centre.z === 0 ? undefined : mul(f.scale, centre)
+        const at = placeAt(f, offset)
+        // Kinematic if anything above it moves, not just if *it* moves: a static node parented to a moving
+        // platform travels through the world and a fixed body would leave it behind.
+        const body = f.animated
+          ? world.addKinematicBody({ position: at, rotation: f.worldRot, shape })
+          : world.addFixedBody({ position: at, rotation: f.worldRot, shape })
+        nodeByCollider.set(body.colliderHandle, worldNode)
+        handles.push(body.colliderHandle)
+        // A model draws once for the whole node and rides the first body, so a single-collider node still
+        // produces exactly one dynamic with both fields — the shape every existing piece has.
+        const paired = vis === undefined ? undefined : modelSource ? (n === 0 ? item(collider, at) : undefined) : item(collider, at)
+        if (f.animated) addDynamic(f, body, paired, offset)
+      })
+    } else if (modelSource && model !== '') {
+      /**
+       * Drawn but not solid — impossible for a `Piece`, whose collider was mandatory.
+       *
+       * Only a model reaches here. `source: 'collider'` with no collider has **nothing to draw**, and
+       * inventing a unit box for it would put a shape in the world that no data asked for. That case is
+       * reachable two ways, and both should be invisible: a Visual added before a Collider, and a Collider
+       * switched off.
+       */
+      const only = item(UNIT_BOX, f.worldPos)
+      if (f.animated) addDynamic(f, undefined, only, undefined)
+    }
+
+    r.children.forEach((child, n) => build(child, f, material, n < r.inheritedCount ? inner : scope))
+  }
+
+  for (const node of level.nodes) build(node, null, undefined, 0)
+
+  let primed = false
+
+  const pose = (body: PhysicsBody, position: Vec3, rotation: Quat): void => {
+    body.setNextKinematicTranslation(position)
+    body.setNextKinematicRotation(rotation)
+  }
+
+  /** Pose with zero derived velocity — only for the body a character is riding. See `update`. */
+  const poseFrozen = (body: PhysicsBody, position: Vec3, rotation: Quat): void => {
+    body.setPosition(position)
+    body.setRotation(rotation)
+    pose(body, position, rotation)
+  }
+
+  let prevMs = 0
+  let currMs = 0
+
+  const update = (nowMs: number, ridingColliderHandle?: number): void => {
+    prevMs = primed ? currMs : nowMs
+    currMs = nowMs
+    for (const f of frames) if (f.animated) evaluate(f, nowMs)
+
+    for (const d of dynamics) {
+      const at = placeAt(d.frame, d.offset)
+      if (d.body !== undefined) {
+        const poseIt = d.body.colliderHandle === ridingColliderHandle ? poseFrozen : pose
+        poseIt(d.body, at, d.frame.worldRot)
+      }
+      d.prevPos = primed ? d.currPos : at
+      d.prevRot = primed ? d.currRot : d.frame.worldRot
+      d.currPos = at
+      d.currRot = d.frame.worldRot
+      if (d.visual !== undefined) {
+        d.visual.position = d.currPos
+        d.visual.rotation = d.currRot
+      }
+    }
+    primed = true
+  }
+
+  const render = (alpha: number): void => {
+    for (const d of dynamics) {
+      d.renderPos = lerpVec3(d.prevPos, d.currPos, alpha)
+      d.renderRot = slerpQuat(d.prevRot, d.currRot, alpha)
+      if (d.visual !== undefined) {
+        d.visual.position = d.renderPos
+        d.visual.rotation = d.renderRot
+      }
+    }
+  }
+
+  const basePose = (colliderHandle: number): { position: Vec3; rotation: Quat } | undefined => {
+    const i = dynamicByCollider.get(colliderHandle)
+    if (i === undefined) return undefined
+    const d = dynamics[i]!
+    return { position: d.currPos, rotation: d.currRot }
+  }
+
+  const baseIndex = (colliderHandle: number): number | undefined => dynamicByCollider.get(colliderHandle)
+
+  const basePoseOf = (index: number, phase: BasePhase): { position: Vec3; rotation: Quat } | undefined => {
+    const d = dynamics[index]
+    if (d === undefined) return undefined
+    if (phase === 'render') return { position: d.renderPos, rotation: d.renderRot }
+    if (phase === 'tick') return { position: d.currPos, rotation: d.currRot }
+    return { position: d.prevPos, rotation: d.prevRot }
+  }
+
+  const baseCarry = (index: number, localPos: Vec3): Vec3 | undefined => {
+    const now = basePoseOf(index, 'tick')
+    const before = basePoseOf(index, 'prev')
+    if (now === undefined || before === undefined) return undefined
+    const dt = (currMs - prevMs) / 1000
+    if (dt <= 0) return vec3(0, 0, 0)
+    const a = add(before.position, rotateVec3(before.rotation, localPos))
+    const b = add(now.position, rotateVec3(now.rotation, localPos))
+    return vec3((b.x - a.x) / dt, (b.y - a.y) / dt, (b.z - a.z) / dt)
+  }
+
+  return {
+    config: level.config,
+    markers,
+    nodes,
+    allNodes,
+    nodeOf: (colliderHandle) => nodeByCollider.get(colliderHandle),
+    findNode: (from, id) => byScope.get(from.scope)?.get(id) ?? byScope.get(0)?.get(id),
+    visuals,
+    update,
+    render,
+    basePose,
+    baseIndex,
+    basePoseOf,
+    baseCarry,
+  }
+}

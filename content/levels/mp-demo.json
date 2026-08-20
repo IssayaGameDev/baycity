@@ -4,34 +4,10 @@
     "fallBehavior": "respawn-checkpoint",
     "fallY": -10
   },
-  "instances": [
+  "nodes": [
     {
-      "prefab": {
-        "id": "D_ramp",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.5
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "3e89ca95facf1fe9"
-            }
-          }
-        ]
-      },
+      "id": "n0",
+      "name": "D_ramp",
       "transform": {
         "position": {
           "x": 2,
@@ -48,70 +24,98 @@
           "y": 0.5,
           "z": 1
         }
-      }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n0-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "3e89ca95facf1fe9"
+              }
+            }
+          ]
+        }
+      ]
     },
     {
-      "prefab": {
-        "id": "C_up",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.5
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "55205761e38bc929"
-            }
-          }
-        ]
-      },
+      "id": "n1",
+      "name": "C_up",
       "transform": {
         "position": {
           "x": 0,
           "y": 3,
           "z": 0
         }
-      }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n1-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        }
+      ]
     },
     {
-      "prefab": {
-        "id": "Ground",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.5
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "a563891204f971a4"
-            }
-          }
-        ]
-      },
+      "id": "n2",
+      "name": "Ground",
       "transform": {
         "position": {
           "x": 0,
@@ -123,171 +127,228 @@
           "y": 1,
           "z": 30
         }
-      }
-    },
-    {
-      "prefab": {
-        "id": "G_mover",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.5
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "19079ddb3fbfb27e"
-            },
-            "behavior": {
-              "kind": "track",
-              "keys": [
-                {
-                  "t": 0,
-                  "position": {
-                    "x": 0,
-                    "y": 0,
-                    "z": 0
-                  },
-                  "easing": "inOut"
-                },
-                {
-                  "t": 2000.0,
-                  "position": {
-                    "x": 0.0,
-                    "y": 3.0,
-                    "z": 0.0
-                  },
-                  "easing": "inOut"
-                },
-                {
-                  "t": 4000,
-                  "position": {
-                    "x": 0,
-                    "y": 0,
-                    "z": 0
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n2-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
-              ],
-              "loop": "loop"
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "a563891204f971a4"
+              }
             }
-          }
-        ]
-      },
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n3",
+      "name": "G_mover",
       "transform": {
         "position": {
           "x": 6,
           "y": 1,
           "z": 0
         }
-      }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n3-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "19079ddb3fbfb27e"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Track",
+              "params": {
+                "keys": [
+                  {
+                    "t": 0,
+                    "position": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "easing": "inOut"
+                  },
+                  {
+                    "t": 2000,
+                    "position": {
+                      "x": 0,
+                      "y": 3,
+                      "z": 0
+                    },
+                    "easing": "inOut"
+                  },
+                  {
+                    "t": 4000,
+                    "position": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                ],
+                "loop": "loop",
+                "phaseMs": 0
+              }
+            }
+          ]
+        }
+      ]
     },
     {
-      "prefab": {
-        "id": "B_north",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.5
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "55205761e38bc929"
-            }
-          }
-        ]
-      },
+      "id": "n4",
+      "name": "B_north",
       "transform": {
         "position": {
           "x": 0,
           "y": 0.5,
           "z": -4
         }
-      }
-    },
-    {
-      "prefab": {
-        "id": "E_ball",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "ball",
-              "radius": 0.5
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n4-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
               }
             },
-            "visual": {
-              "kind": "primitive",
-              "material": "55205761e38bc929"
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "55205761e38bc929"
+              }
             }
-          }
-        ]
-      },
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n5",
+      "name": "E_ball",
       "transform": {
         "position": {
           "x": -4,
           "y": 1,
           "z": 0
         }
-      }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n5-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "ball",
+                  "radius": 0.5
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        }
+      ]
     },
     {
-      "prefab": {
-        "id": "F_checkpoint",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.5
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "d67ddcac4f57efc8"
-            },
-            "trigger": {
-              "kind": "checkpoint"
-            }
-          }
-        ]
-      },
+      "id": "n6",
+      "name": "F_checkpoint",
       "transform": {
         "position": {
           "x": 0,
@@ -299,54 +360,116 @@
           "y": 0.4,
           "z": 3
         }
-      }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n6-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "d67ddcac4f57efc8"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Checkpoint",
+              "params": {}
+            }
+          ]
+        }
+      ]
     },
     {
-      "prefab": {
-        "id": "A_east",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.5
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "55205761e38bc929"
-            }
-          }
-        ]
-      },
+      "id": "n7",
+      "name": "A_east",
       "transform": {
         "position": {
           "x": 4,
           "y": 0.5,
           "z": 0
         }
-      }
-    }
-  ],
-  "markers": [
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n7-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        }
+      ]
+    },
     {
-      "kind": "spawn",
+      "id": "m0",
       "transform": {
         "position": {
           "x": 0,
           "y": 1,
           "z": 0
         }
-      }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Spawn",
+          "params": {}
+        }
+      ]
     }
   ]
 }

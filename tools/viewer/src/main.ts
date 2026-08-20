@@ -9,7 +9,8 @@ import {
   type CharacterState,
   type CharacterTuning,
 } from '@mp/character'
-import { instantiateLevel, type LoadedLevel, type VisualItem } from '@mp/content'
+import { instantiateNodeLevel, type LoadedNodeLevel, type VisualItem } from '@mp/content'
+import { DEFAULT_REGISTRY, RULE_KINDS } from '@mp/components'
 import { createSimClock, startFixedLoop, type LoopHandle, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
@@ -53,7 +54,7 @@ const overlayLine = (color: number): THREE.LineBasicMaterial =>
 
 // --- current entry state ---
 let world: PhysicsWorld | null = null
-let loaded: LoadedLevel | null = null
+let loaded: LoadedNodeLevel | null = null
 let levelView: LevelView | null = null
 const colliderGroup = new THREE.Group()
 const markerGroup = new THREE.Group()
@@ -106,7 +107,12 @@ const buildOverlays = (): void => {
 
   // Spawn markers + trigger colliders, coloured by kind.
   for (const m of loaded.markers) if (m.kind === 'spawn') markerGroup.add(markerGizmo(m.position, colorForMarker('spawn')))
-  for (const t of loaded.triggers) markerGroup.add(markerGizmo(t.position, colorForMarker(t.kind)))
+  // A gizmo per gameplay rule, wherever it sits: the node that owns the collider you would touch.
+  for (const n of loaded.nodes)
+    for (const c of n.components) {
+      const kind = RULE_KINDS[c.type]
+      if (kind !== undefined) markerGroup.add(markerGizmo(n.position, colorForMarker(kind)))
+    }
 }
 
 // --- jump-reachability gizmo (from the character tuning) ---
@@ -244,7 +250,7 @@ const load = (entry: Entry): void => {
   const wasPlaying = playLoop !== null
   disposeCurrent()
   world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }) // character integrates its own gravity
-  loaded = instantiateLevel(world, entry.level)
+  loaded = instantiateNodeLevel(world, entry.level, DEFAULT_REGISTRY)
   levelView = addLevel(stage.scene, loaded.visuals)
   buildOverlays()
   applyShow()

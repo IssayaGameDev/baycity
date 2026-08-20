@@ -1,4 +1,4 @@
-import type { AssetDatabase, MaterialAsset, Prefab } from '@mp/content'
+import { COLLIDER, VISUAL, stringParam, vec3Param, type AssetDatabase, type ColliderDesc, type MaterialAsset, type Node } from '@mp/content'
 import { createGreyboxMaterial, createThumbnailer, geometryForCollider, THREE, type AssetRuntime, type Thumbnailer } from '@mp/render-three'
 
 /**
@@ -18,7 +18,7 @@ export interface PreviewHost {
   materialOf: (assetId: string) => MaterialAsset | undefined
   urlOf: (path: string) => string
   /** Build the prefab behind a palette name, for a prefab tile. */
-  prefabFor: (name: string) => Prefab | undefined
+  prefabFor: (name: string) => Node | undefined
   /**
    * Fetch an asset a preview needs but the runtime does not have. The runtime only preloads what the open
    * *document* references, and the Project panel shows the whole library — so a material nothing has placed
@@ -51,36 +51,53 @@ export const createPreviews = (host: PreviewHost): Previews => {
   let thumbnailer: Thumbnailer | null = null
   const lazy = (): Thumbnailer => (thumbnailer ??= createThumbnailer({ size: 96, fill: 0.8 }))
 
-  /** A prefab's pieces as one group, drawn the way the editor draws them. */
-  const prefabSubject = (prefab: Prefab): THREE.Object3D | null => {
+  /**
+   * A prefab's node tree as one group, drawn the way the editor draws it.
+   *
+   * Walks the tree rather than a flat piece list, and reads the `Collider` and `Visual` components: a node
+   * with several colliders draws several meshes, each at its own centre. Transforms compose through
+   * `THREE.Group` nesting, so the arithmetic stays where Three already does it.
+   */
+  const prefabSubject = (root: Node): THREE.Object3D | null => {
     const runtime = host.runtime()
     const group = new THREE.Group()
     const disposables: THREE.BufferGeometry[] = []
     const owned: THREE.Material[] = []
 
-    for (const piece of prefab.pieces) {
-      const modelId = piece.visual?.kind === 'model' ? piece.visual.asset : undefined
-      const materialId = piece.visual?.material
-      const material = materialId !== undefined ? runtime?.material(materialId) : undefined
-      const model = modelId !== undefined ? runtime?.model(modelId) : undefined
+    const walk = (node: Node, parent: THREE.Object3D): void => {
+      const holder = new THREE.Group()
+      const t = node.transform
+      holder.position.set(t.position.x, t.position.y, t.position.z)
+      if (t.rotation !== undefined) holder.rotation.set(t.rotation.x, t.rotation.y, t.rotation.z)
+      if (t.scale !== undefined) holder.scale.set(t.scale.x, t.scale.y, t.scale.z)
+      parent.add(holder)
 
-      let object: THREE.Object3D
-      if (model != null) object = model
-      else {
-        const geometry = geometryForCollider(piece.collider)
-        disposables.push(geometry)
-        const mat = material ?? createGreyboxMaterial()
-        if (material == null) owned.push(mat)
-        object = new THREE.Mesh(geometry, mat)
+      const enabled = node.components.filter((c) => c.enabled !== false)
+      const vis = enabled.find((c) => c.type === VISUAL)
+      if (vis !== undefined) {
+        const materialId = stringParam(vis, 'material', '')
+        const material = materialId === '' ? undefined : runtime?.material(materialId)
+        const modelId = stringParam(vis, 'source', 'collider') === 'model' ? stringParam(vis, 'model', '') : ''
+        const model = modelId === '' ? undefined : runtime?.model(modelId)
+        if (model != null) {
+          holder.add(model)
+        } else {
+          for (const c of enabled.filter((x) => x.type === COLLIDER)) {
+            const geometry = geometryForCollider(c.params.shape as ColliderDesc)
+            disposables.push(geometry)
+            const mat = material ?? createGreyboxMaterial()
+            if (material == null) owned.push(mat)
+            const mesh = new THREE.Mesh(geometry, mat)
+            const centre = vec3Param(c, 'center', { x: 0, y: 0, z: 0 })
+            mesh.position.set(centre.x, centre.y, centre.z)
+            holder.add(mesh)
+          }
+        }
       }
-      const t = piece.transform
-      object.position.set(t.position.x, t.position.y, t.position.z)
-      if (t.rotation !== undefined) object.rotation.set(t.rotation.x, t.rotation.y, t.rotation.z)
-      if (t.scale !== undefined) object.scale.set(t.scale.x, t.scale.y, t.scale.z)
-      group.add(object)
+      for (const kid of node.children ?? []) walk(kid, holder)
     }
-    if (group.children.length === 0) return null
-
+    walk(root, group)
+    if (group.getObjectByProperty('type', 'Mesh') === undefined) return null
     // Everything this built is thrown away after the shot; the runtime's cached models and materials are
     // not ours to free, which is why only what we created is tracked.
     group.userData.dispose = (): void => {

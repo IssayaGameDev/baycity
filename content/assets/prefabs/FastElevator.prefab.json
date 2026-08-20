@@ -1,15 +1,17 @@
 {
-  "id": "FastElevator",
-  "pieces": [
+  "id": "root",
+  "name": "FastElevator",
+  "transform": {
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    }
+  },
+  "components": [],
+  "children": [
     {
-      "collider": {
-        "kind": "box",
-        "halfExtents": {
-          "x": 1.5,
-          "y": 0.15,
-          "z": 1.5
-        }
-      },
+      "id": "p0",
       "transform": {
         "position": {
           "x": 0,
@@ -17,38 +19,67 @@
           "z": 0
         }
       },
-      "behavior": {
-        "kind": "track",
-        "keys": [
-          {
-            "t": 0,
-            "position": {
-              "x": 0,
-              "y": 0,
-              "z": 0
-            },
-            "easing": "inOut"
-          },
-          {
-            "t": 2000.0,
-            "position": {
-              "x": 0.0,
-              "y": 10.1,
-              "z": 0.0
-            },
-            "easing": "inOut"
-          },
-          {
-            "t": 4000,
-            "position": {
-              "x": 0,
-              "y": 0,
-              "z": 0
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.15,
+                "z": 1.5
+              }
             }
           }
-        ],
-        "loop": "loop"
-      }
+        },
+        {
+          "id": "c1",
+          "type": "Visual",
+          "params": {
+            "source": "collider",
+            "model": "",
+            "material": ""
+          }
+        },
+        {
+          "id": "c2",
+          "type": "Track",
+          "params": {
+            "keys": [
+              {
+                "t": 0,
+                "position": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                },
+                "easing": "inOut"
+              },
+              {
+                "t": 2000,
+                "position": {
+                  "x": 0,
+                  "y": 10.1,
+                  "z": 0
+                },
+                "easing": "inOut"
+              },
+              {
+                "t": 4000,
+                "position": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            ],
+            "loop": "loop",
+            "phaseMs": 0
+          }
+        }
+      ]
     }
   ]
 }

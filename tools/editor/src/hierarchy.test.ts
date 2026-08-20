@@ -1,27 +1,51 @@
-import type { Level, Prefab } from '@mp/content'
+import { COLLIDER, VISUAL, type ComponentData, type Node, type NodeLevel } from '@mp/content'
 import { vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
 import { levelDoc, prefabDoc, type Doc } from './editorDoc'
 import { dropTarget, rowsOf, zoneFor, type Openness, type Row } from './hierarchy'
 
-const blank = (): Level => ({ id: 'l', config: { fallBehavior: 'physical-fall', fallY: -20 }, instances: [] })
+const blank = (): NodeLevel => ({ id: 'l', config: { fallBehavior: 'physical-fall', fallY: -20 }, nodes: [] })
 
-/** Prefab files the palette offers — generators are gone (ADR 0027), so a placeable thing is data. */
-const LIBRARY: Record<string, Prefab> = {
-  platform: {
-    id: 'platform',
-    pieces: [{ collider: { kind: 'box', halfExtents: vec3(1.5, 0.15, 1.5) }, transform: { position: vec3(0, 0, 0) } }],
-  },
-}
+const comp = (id: string, type: string, params: Record<string, unknown> = {}): ComponentData => ({ id, type, params })
 
-const twoPieces = (id: string): Prefab => ({
+/** A solid, visible node. */
+const solid = (id: string, position: { x: number; y: number; z: number }, half = 1, name?: string): Node => ({
   id,
-  pieces: [
-    { collider: { kind: 'box', halfExtents: vec3(1, 1, 1) }, transform: { position: vec3(0, 0, 0) }, name: 'left rail' },
-    { collider: { kind: 'ball', radius: 0.5 }, transform: { position: vec3(2, 0, 0) } },
+  ...(name !== undefined ? { name } : {}),
+  transform: { position },
+  components: [
+    comp(`${id}-col`, COLLIDER, { shape: { kind: 'box', halfExtents: vec3(half, half, half) }, center: vec3(0, 0, 0) }),
+    comp(`${id}-vis`, VISUAL, { source: 'collider', model: '', material: '' }),
   ],
 })
+
+/** Prefab files the palette offers — generators are gone (ADR 0027), so a placeable thing is data. */
+const LIBRARY: Record<string, Node> = {
+  platform: { id: 'root', name: 'platform', transform: { position: vec3(0, 0, 0) }, components: [], children: [solid('slab', vec3(0, 0, 0), 1.5)] },
+}
+
+/** A ball, so a row's fallback label is distinguishable from a box's. */
+const ball = (id: string, position: { x: number; y: number; z: number }): Node => ({
+  id,
+  transform: { position },
+  components: [
+    comp(`${id}-col`, COLLIDER, { shape: { kind: 'ball', radius: 0.5 }, center: vec3(0, 0, 0) }),
+    comp(`${id}-vis`, VISUAL, { source: 'collider', model: '', material: '' }),
+  ],
+})
+
+/** A prefab whose root carries only a transform, with two nodes under it. */
+const twoNodes = (id: string): Node => ({
+  id: 'root',
+  name: id,
+  transform: { position: vec3(0, 0, 0) },
+  components: [],
+  children: [solid('left', vec3(0, 0, 0), 1, 'left rail'), ball('right', vec3(2, 0, 0))],
+})
+
+/** A one-off: the same contents inline, with nothing to reference. */
+const inline = (id: string): Node => ({ ...twoNodes(id), id })
 
 /** Nothing expanded, which is what a freshly opened level looks like. */
 const SHUT: Openness = { expanded: new Set() }
@@ -34,8 +58,9 @@ const shape = (doc: Doc, o?: Openness): string[] =>
   rowsOf(doc, o ?? allOpen(doc)).map((r) => `${'  '.repeat(r.depth)}${r.label}`)
 
 /**
- * Just the instance rows. Pieces show by default since ADR 0033, so the tests about *tree structure* say so
- * explicitly rather than being written around prefabs that happen to have one piece each.
+ * Just the rows this document owns. What a placement inherits from its prefab shows by default, so the tests
+ * about *tree structure* say so explicitly rather than being written around prefabs that happen to have one
+ * node each.
  */
 const items = (doc: Doc, o?: Openness): string[] =>
   rowsOf(doc, o ?? allOpen(doc))
@@ -50,14 +75,14 @@ const four = (): Doc => {
 }
 
 /**
- * The index of the instance called `name`.
+ * The index of the placement called `name`.
  *
- * Looked up rather than written as a literal, because indices address **pieces as well as instances** since
- * ADR 0033 — a level of four one-piece platforms numbers 0,2,4,6 — and every structural edit renumbers.
+ * Looked up rather than written as a literal, because indices address inherited nodes too — a level of four
+ * one-node platforms numbers 0,2,4,6 — and every structural edit renumbers.
  */
 const idx = (doc: Doc, name: string): number => {
-  for (let i = 0; i < doc.count(); i++) if (doc.kindOf(i) === 'instance' && doc.label(i) === name) return i
-  throw new Error(`no instance named ${name}`)
+  for (let i = 0; i < doc.count(); i++) if (doc.kindOf(i) === 'own' && doc.label(i) === name) return i
+  throw new Error(`no placement named ${name}`)
 }
 
 describe('rowsOf: the tree', () => {
@@ -110,59 +135,51 @@ describe('rowsOf: prefab pieces', () => {
     expect(shape(doc)).toEqual(['a', '  box', 'b', '  box', 'c', '  box', 'd', '  box'])
   })
 
-  it('addresses a piece row by item and piece index', () => {
-    const level = blank()
-    level.instances.push({ prefab: twoPieces('x'), transform: { position: vec3(0, 0, 0) } })
-    const doc = levelDoc(level, LIBRARY)
+  it('addresses an inherited row by its own index, under the placement it belongs to', () => {
+    const doc = levelDoc(blank(), { ...LIBRARY, pair: twoNodes('pair') })
+    doc.place('pair', vec3(0, 0, 0))
 
     const rows = rowsOf(doc, allOpen(doc))
-    // `index` is the node's *own* index — a piece is addressable now, so it is no longer its owner's index
-    // with a piece number beside it. `parent` is what says whose piece it is.
-    expect(rows.map((r) => `${r.kind}:${r.index}.${r.pieceIndex}@${r.depth}`)).toEqual([
-      'item:0.-1@0',
-      'piece:1.0@1',
-      'piece:2.1@1',
-    ])
-    expect(rows.slice(1).every((r) => r.parent === 0), 'both pieces belong to the instance').toBe(true)
-    // The authored name, falling back to the collider kind. It used to be `box · <style>`, which stopped
+    // `index` is the node's *own* index: an inherited node is addressable, so it is no longer its owner's
+    // index with a child number beside it. `parent` is what says whose it is.
+    expect(rows.map((r) => `${r.kind}:${r.index}.${r.pieceIndex}@${r.depth}`)).toEqual(['item:0.-1@0', 'inherited:1.0@1', 'inherited:2.1@1'])
+    expect(
+      rows.slice(1).every((r) => r.parent === 0),
+      'both belong to the placement',
+    ).toBe(true)
+    // The authored name, falling back to the collider shape. It used to be `box · <style>`, which stopped
     // meaning anything when style died (ADR 0028) — and a name is what distinguishes three boxes anyway.
-    expect(rows[1]!.label, 'the piece name when it has one').toBe('left rail')
-    expect(rows[2]!.label, 'the collider kind when it does not').toBe('ball')
+    expect(rows[1]!.label, 'the name when it has one').toBe('left rail')
+    expect(rows[2]!.label, 'the collider shape when it does not').toBe('ball')
   })
 
-  it('offers no piece rows in prefab mode, where the item already *is* the piece', () => {
-    const doc = prefabDoc(twoPieces('p'))
-    const rows = rowsOf(doc, allOpen(doc))
-    expect(rows).toHaveLength(2)
-    expect(rows.every((r) => !r.expandable)).toBe(true)
+  it('has nothing inherited in prefab mode, where every node is the definition', () => {
+    const rows = rowsOf(prefabDoc(twoNodes('p')), allOpen(prefabDoc(twoNodes('p'))))
+    expect(rows.every((r) => r.kind === 'item'), 'no row is a reference into something else').toBe(true)
+    expect(rows).toHaveLength(3) // the root and its two nodes
   })
 
   /**
    * The bug this replaced. One twist wrote to whichever of two sets the row happened to need, so an instance
    * that gained a child stopped writing to the pieces set — and its pieces could never be shown again.
    */
-  it('shows pieces and children together, so a child cannot hide the pieces', () => {
-    const level = blank()
-    level.instances.push({
-      prefab: twoPieces('x'),
-      transform: { position: vec3(0, 0, 0) },
-      children: [{ prefab: twoPieces('y'), transform: { position: vec3(0, 1, 0) } }],
-    })
-    const doc = levelDoc(level, LIBRARY)
+  it('shows inherited nodes and children together, so a child cannot hide them', () => {
+    const doc = levelDoc(blank(), { ...LIBRARY, pair: twoNodes('pair') })
+    const placement = doc.place('pair', vec3(0, 0, 0))
+    doc.reparent(doc.place('pair', vec3(0, 1, 0)), placement, 0)
 
     const rows = rowsOf(doc, allOpen(doc))
-    expect(rows.filter((r) => r.kind === 'piece' && r.parent === 0)).toHaveLength(2)
-    expect(rows.some((r) => r.kind === 'item' && r.depth === 1), 'and the child is there too').toBe(true)
+    expect(rows.filter((r) => r.kind === 'inherited' && r.parent === 0)).toHaveLength(2)
+    expect(
+      rows.some((r) => r.kind === 'item' && r.depth === 1),
+      'and the child is there too',
+    ).toBe(true)
   })
 
-  it('hides pieces and children behind the one twist', () => {
-    const level = blank()
-    level.instances.push({
-      prefab: twoPieces('x'),
-      transform: { position: vec3(0, 0, 0) },
-      children: [{ prefab: twoPieces('y'), transform: { position: vec3(0, 1, 0) } }],
-    })
-    const doc = levelDoc(level, LIBRARY)
+  it('hides inherited nodes and children behind the one twist', () => {
+    const doc = levelDoc(blank(), { ...LIBRARY, pair: twoNodes('pair') })
+    const placement = doc.place('pair', vec3(0, 0, 0))
+    doc.reparent(doc.place('pair', vec3(0, 1, 0)), placement, 0)
 
     const rows = rowsOf(doc, SHUT)
     expect(rows).toHaveLength(1)
@@ -179,7 +196,7 @@ describe('rowsOf: annotations', () => {
     expect(badged.every((r) => r.badge === '×4')).toBe(true)
 
     const level = blank()
-    level.instances.push({ prefab: twoPieces('oneoff'), transform: { position: vec3(0, 0, 0) } })
+    level.nodes.push(inline('oneoff'))
     expect(rowsOf(levelDoc(level, LIBRARY), { expanded: new Set(['0']) })[0]!.badge).toBe('inline')
   })
 

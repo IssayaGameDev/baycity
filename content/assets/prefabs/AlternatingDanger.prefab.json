@@ -1,15 +1,17 @@
 {
-  "id": "AlternatingDanger",
-  "pieces": [
+  "id": "root",
+  "name": "AlternatingDanger",
+  "transform": {
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    }
+  },
+  "components": [],
+  "children": [
     {
-      "collider": {
-        "kind": "box",
-        "halfExtents": {
-          "x": 1.5,
-          "y": 0.15,
-          "z": 1.5
-        }
-      },
+      "id": "p0",
       "transform": {
         "position": {
           "x": 0,
@@ -21,17 +23,35 @@
           "y": 2,
           "z": 1
         }
-      }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.15,
+                "z": 1.5
+              }
+            }
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Visual",
+          "params": {
+            "source": "collider",
+            "model": "",
+            "material": ""
+          }
+        }
+      ]
     },
     {
-      "collider": {
-        "kind": "box",
-        "halfExtents": {
-          "x": 1.5,
-          "y": 0.15,
-          "z": 1.5
-        }
-      },
+      "id": "p1",
       "transform": {
         "position": {
           "x": 1.5,
@@ -44,23 +64,39 @@
           "z": 1
         }
       },
-      "trigger": {
-        "kind": "hazard"
-      },
-      "visual": {
-        "kind": "primitive",
-        "material": "4a11d049f9f8e5ac"
-      }
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.15,
+                "z": 1.5
+              }
+            }
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Visual",
+          "params": {
+            "source": "collider",
+            "model": "",
+            "material": "4a11d049f9f8e5ac"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "Hazard",
+          "params": {}
+        }
+      ]
     },
     {
-      "collider": {
-        "kind": "box",
-        "halfExtents": {
-          "x": 1.5,
-          "y": 0.15,
-          "z": 1.5
-        }
-      },
+      "id": "p2",
       "transform": {
         "position": {
           "x": 3,
@@ -72,17 +108,35 @@
           "y": 2,
           "z": 1
         }
-      }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.15,
+                "z": 1.5
+              }
+            }
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Visual",
+          "params": {
+            "source": "collider",
+            "model": "",
+            "material": ""
+          }
+        }
+      ]
     },
     {
-      "collider": {
-        "kind": "box",
-        "halfExtents": {
-          "x": 1.5,
-          "y": 0.15,
-          "z": 1.5
-        }
-      },
+      "id": "p3",
       "transform": {
         "position": {
           "x": 6,
@@ -94,17 +148,35 @@
           "y": 2,
           "z": 1
         }
-      }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.15,
+                "z": 1.5
+              }
+            }
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Visual",
+          "params": {
+            "source": "collider",
+            "model": "",
+            "material": ""
+          }
+        }
+      ]
     },
     {
-      "collider": {
-        "kind": "box",
-        "halfExtents": {
-          "x": 1.5,
-          "y": 0.15,
-          "z": 1.5
-        }
-      },
+      "id": "p4",
       "transform": {
         "position": {
           "x": 4.5,
@@ -117,23 +189,39 @@
           "z": 1
         }
       },
-      "trigger": {
-        "kind": "hazard"
-      },
-      "visual": {
-        "kind": "primitive",
-        "material": "4a11d049f9f8e5ac"
-      }
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.15,
+                "z": 1.5
+              }
+            }
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Visual",
+          "params": {
+            "source": "collider",
+            "model": "",
+            "material": "4a11d049f9f8e5ac"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "Hazard",
+          "params": {}
+        }
+      ]
     },
     {
-      "collider": {
-        "kind": "box",
-        "halfExtents": {
-          "x": 1.5,
-          "y": 0.15,
-          "z": 1.5
-        }
-      },
+      "id": "p5",
       "transform": {
         "position": {
           "x": 7.5,
@@ -146,23 +234,39 @@
           "z": 1
         }
       },
-      "trigger": {
-        "kind": "hazard"
-      },
-      "visual": {
-        "kind": "primitive",
-        "material": "4a11d049f9f8e5ac"
-      }
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.15,
+                "z": 1.5
+              }
+            }
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Visual",
+          "params": {
+            "source": "collider",
+            "model": "",
+            "material": "4a11d049f9f8e5ac"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "Hazard",
+          "params": {}
+        }
+      ]
     },
     {
-      "collider": {
-        "kind": "box",
-        "halfExtents": {
-          "x": 1.5,
-          "y": 0.15,
-          "z": 1.5
-        }
-      },
+      "id": "p6",
       "transform": {
         "position": {
           "x": 9,
@@ -174,17 +278,35 @@
           "y": 2,
           "z": 1
         }
-      }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.15,
+                "z": 1.5
+              }
+            }
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Visual",
+          "params": {
+            "source": "collider",
+            "model": "",
+            "material": ""
+          }
+        }
+      ]
     },
     {
-      "collider": {
-        "kind": "box",
-        "halfExtents": {
-          "x": 1.5,
-          "y": 0.15,
-          "z": 1.5
-        }
-      },
+      "id": "p7",
       "transform": {
         "position": {
           "x": 12,
@@ -196,17 +318,35 @@
           "y": 2,
           "z": 1
         }
-      }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.15,
+                "z": 1.5
+              }
+            }
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Visual",
+          "params": {
+            "source": "collider",
+            "model": "",
+            "material": ""
+          }
+        }
+      ]
     },
     {
-      "collider": {
-        "kind": "box",
-        "halfExtents": {
-          "x": 1.5,
-          "y": 0.15,
-          "z": 1.5
-        }
-      },
+      "id": "p8",
       "transform": {
         "position": {
           "x": 10.5,
@@ -219,13 +359,36 @@
           "z": 1
         }
       },
-      "trigger": {
-        "kind": "hazard"
-      },
-      "visual": {
-        "kind": "primitive",
-        "material": "4a11d049f9f8e5ac"
-      }
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.15,
+                "z": 1.5
+              }
+            }
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Visual",
+          "params": {
+            "source": "collider",
+            "model": "",
+            "material": "4a11d049f9f8e5ac"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "Hazard",
+          "params": {}
+        }
+      ]
     }
   ]
 }

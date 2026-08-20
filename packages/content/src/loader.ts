@@ -13,6 +13,10 @@ import type { Behavior, ColliderDesc, Level, LevelConfig, Marker, PrefabInstance
  * and rotating bodies + their visuals) — a pure function of synced time, so all clients
  * agree. Headless (no rendering); shared by the game, bots, and the viewer.
  *
+ * **Being replaced.** `nodeLoader.ts` does this for a node tree (PLAN-component-system, C1); this file is
+ * kept only so the equivalence tests can load the same content both ways, and goes with the legacy schema
+ * in stage C1.4. The pure helpers below (`scaleCollider`, `toShape`, …) are shared, not duplicated.
+ *
  * Transforms carry rotation (euler radians, XYZ): an instance's rotation composes with
  * each piece's, so a whole prefab can be placed rotated and a ramp is a tilted box. The
  * `rotate` behavior spins a kinematic body about a world axis.
@@ -156,13 +160,13 @@ export interface LoadedLevel {
   baseCarry: (index: number, localPos: Vec3) => Vec3 | undefined
 }
 
-const add = (a: Vec3, b: Vec3): Vec3 => vec3(a.x + b.x, a.y + b.y, a.z + b.z)
-const mul = (a: Vec3, b: Vec3): Vec3 => vec3(a.x * b.x, a.y * b.y, a.z * b.z)
-const scaleOf = (t: Transform): Vec3 => t.scale ?? vec3(1, 1, 1)
+export const add = (a: Vec3, b: Vec3): Vec3 => vec3(a.x + b.x, a.y + b.y, a.z + b.z)
+export const mul = (a: Vec3, b: Vec3): Vec3 => vec3(a.x * b.x, a.y * b.y, a.z * b.z)
+export const scaleOf = (t: Transform): Vec3 => t.scale ?? vec3(1, 1, 1)
 
 // Bake a per-axis scale into a collider's dimensions (Unity's lossy-scale → shape bake). Ball
 // and capsule can't represent non-uniform scale, so they take a uniform-ish approximation.
-const scaleCollider = (c: ColliderDesc, s: Vec3): ColliderDesc => {
+export const scaleCollider = (c: ColliderDesc, s: Vec3): ColliderDesc => {
   switch (c.kind) {
     case 'box':
       return { kind: 'box', halfExtents: mul(c.halfExtents, s) }
@@ -178,7 +182,7 @@ const scaleCollider = (c: ColliderDesc, s: Vec3): ColliderDesc => {
   }
 }
 
-const toShape = (c: ColliderDesc): ShapeDesc => {
+export const toShape = (c: ColliderDesc): ShapeDesc => {
   switch (c.kind) {
     case 'box':
       return { kind: 'cuboid', halfExtents: c.halfExtents }
@@ -193,7 +197,7 @@ const toShape = (c: ColliderDesc): ShapeDesc => {
   }
 }
 
-export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel => {
+export const instantiateLegacyLevel = (world: PhysicsWorld, level: Level): LoadedLevel => {
   const visuals: VisualItem[] = []
   const markers: WorldMarker[] = []
   const triggers: WorldTrigger[] = []

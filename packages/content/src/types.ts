@@ -272,3 +272,84 @@ export interface Level {
   instances: PrefabInstance[]
   markers?: Marker[]
 }
+
+// ---------------------------------------------------------------------------------------------------
+// The component schema (PLAN-component-system, stage C1). Lives beside the shapes above while the
+// loader is moved over; `legacy.ts` converts one into the other and both are deleted in stage C1.4.
+// ---------------------------------------------------------------------------------------------------
+
+/**
+ * One component on a node: a registry type plus its authored parameters.
+ *
+ * `params` is `unknown`-valued here because the schema layer does not know the declarations —
+ * `@mp/components` owns those, and depends on this package rather than the reverse. `validateNodeLevel`
+ * takes a registry when it wants them checked.
+ */
+export interface ComponentData {
+  /** Stable, so an override can name this component. Minted on demand, like `Piece.id` before it. */
+  id: string
+  /** Registry key: `'Collider'`, `'Bumper'`, … */
+  type: string
+  params: Record<string, unknown>
+  /** Absent means enabled. Present and false means the runtime skips it and the editor greys it. */
+  enabled?: boolean
+}
+
+/**
+ * A scene object: a transform, a **list** of components, and children.
+ *
+ * This one type replaces `Piece` and `PrefabInstance`, which is what makes a piece a real object rather
+ * than a half-addressable thing inside one (the whole subject of ADR 0033). It also absorbs `Marker`: a
+ * checkpoint marker with a radius is a node with a ball `Collider` and a `Checkpoint`.
+ *
+ * `prefab` set means this node's components and children come from the shared definition of that name.
+ * The placement keeps its own `id`, `name` and `transform` — Unity's model, where the instance root *is*
+ * the asset's root wearing the placement's transform.
+ */
+export interface Node {
+  id: string
+  name?: string
+  transform: Transform
+  components: ComponentData[]
+  children?: Node[]
+  /**
+   * Prefab table key. A node inside a prefab may **not** carry one: prefab-in-prefab stays out (as it was
+   * under ADR 0023), because a reference graph needs cycle detection that a tree of plain nodes does not.
+   */
+  prefab?: string
+  /** Per-node overrides on this placement, keyed by the *referenced* tree's node ids, at any depth. */
+  overrides?: Record<string, NodeOverride>
+}
+
+/**
+ * What one placement changes about one node of the tree it references.
+ *
+ * Absent means inherit, which is what makes an override sparse and "revert" meaningful. Unlike
+ * `PieceOverride` before it, this can be **structural**: `added` and `removed` are Unity's added and
+ * removed components, which a component system needs because "this one placement also bounces" is the
+ * ordinary case rather than an exotic one.
+ */
+export interface NodeOverride {
+  transform?: Transform
+  name?: string
+  /** Component id → the parameters that differ. Sparse: only the changed keys appear. */
+  params?: Record<string, Record<string, unknown>>
+  added?: ComponentData[]
+  /** Component ids of the referenced tree's components this placement does without. */
+  removed?: string[]
+  /**
+   * Component id → enabled, for switching an inherited component off (or back on) on this placement only.
+   *
+   * Separate from `params` because `enabled` is not a parameter — it sits on `ComponentData` beside them, and
+   * folding it in would make a component that happens to declare a parameter called `enabled` collide with it.
+   */
+  enabled?: Record<string, boolean>
+}
+
+/** A level as a node tree. `prefabs` maps a table key to the **root node** of a shared definition. */
+export interface NodeLevel {
+  id: string
+  config: LevelConfig
+  prefabs?: Record<string, Node>
+  nodes: Node[]
+}

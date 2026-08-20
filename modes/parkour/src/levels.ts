@@ -1,4 +1,5 @@
-import { validateLevel, type Level } from '@mp/content'
+import { validateNodeLevel, type NodeLevel } from '@mp/content'
+import { DEFAULT_REGISTRY } from '@mp/components'
 
 /**
  * What this mode can load: **level files**, and nothing else.
@@ -33,7 +34,7 @@ export const levelNames = (): string[] => {
  * The level called `name`, or the default for `null`. Throws for a name that is not there, listing what is —
  * the caller decides whether a typo should be fatal.
  */
-export const levelByName = (name: string | null): Level => {
+export const levelByName = (name: string | null): NodeLevel => {
   const wanted = name ?? DEFAULT_NAME
   const found = Object.entries(FILES).find(([path]) => nameOf(path) === wanted)
   if (found === undefined) {
@@ -41,5 +42,7 @@ export const levelByName = (name: string | null): Level => {
     // and saying so beats booting into an empty void with no explanation.
     throw new Error(`no level "${wanted}" — have: ${levelNames().join(', ') || '(none)'}`)
   }
-  return validateLevel(found[1])
+  // Validated **with the registry**, so a bad component parameter is a load error rather than a surprise
+  // mid-frame.
+  return validateNodeLevel(found[1], DEFAULT_REGISTRY)
 }

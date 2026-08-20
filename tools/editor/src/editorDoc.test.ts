@@ -1,867 +1,666 @@
-import { instantiateLevel, moveTrack, validateLevel, type Level, type Prefab } from '@mp/content'
-import { vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
+import {
+  COLLIDER,
+  MATERIAL_OVERRIDE,
+  SPAWN,
+  TRACK,
+  VISUAL,
+  instantiateNodeLevel,
+  moveTrack,
+  validateNodeLevel,
+  type ComponentData,
+  type Node,
+  type NodeLevel,
+} from '@mp/content'
+import { Bumper, Checkpoint, DEFAULT_REGISTRY, ENGINE_COMPONENTS, GAMEPLAY_COMPONENTS, Hazard, createRegistry, defineComponent } from '@mp/components'
+import { vec3, type Vec3 } from '@mp/core'
 
-import { DEFAULT_BUMPER_POWER, levelDoc, prefabDoc, type Doc, type ItemProps } from './editorDoc'
-
-const blank = (): Level => ({ id: 'untitled', config: { fallBehavior: 'physical-fall', fallY: -20 }, instances: [] })
-
-const props = (over: Partial<ItemProps> = {}): ItemProps => ({
-  pieceLevel: false,
-  trigger: 'none',
-  bumperPower: DEFAULT_BUMPER_POWER,
-  material: '',
-  ...over,
-})
+import { levelDoc, prefabDoc, type Doc } from './editorDoc'
 
 /**
- * The nth *instance* index. Indices address pieces as well as instances since ADR 0033, so four one-piece
- * platforms number 0, 2, 4, 6 — and every structural edit renumbers. Written as a lookup so the tests say what
- * they mean rather than encoding the interleaving.
+ * The editor document over a node tree (PLAN-component-system, stage C1).
+ *
+ * Nodes are looked up **by name** rather than by literal index wherever the shape is not the point. Indices
+ * interleave what a node inherits from its prefab with its own children, so a literal is a claim about tree
+ * shape that any structural edit invalidates — which is exactly how the piece-shaped version of these tests
+ * broke when pieces became addressable.
  */
-const nth = (doc: Doc, n: number): number => {
-  let seen = 0
-  for (let i = 0; i < doc.count(); i++) {
-    if (doc.kindOf(i) !== 'instance') continue
-    if (seen === n) return i
-    seen += 1
-  }
-  throw new Error(`no instance #${n}`)
-}
 
-/** The instance called `name`. */
-const byName = (doc: Doc, name: string): number => {
-  for (let i = 0; i < doc.count(); i++) if (doc.kindOf(i) === 'instance' && doc.label(i) === name) return i
-  throw new Error(`no instance named ${name}`)
-}
+const ZERO: Vec3 = { x: 0, y: 0, z: 0 }
+const BOX = { kind: 'box', halfExtents: vec3(1, 0.5, 1) }
+const MAT_A = 'aaaaaaaaaaaaaaaa'
+const MAT_B = 'bbbbbbbbbbbbbbbb'
 
-/** The first piece of an instance: a node's pieces follow it immediately in the walk. */
-const pieceOf = (_doc: Doc, instance: number, p = 0): number => instance + 1 + p
+const comp = (id: string, type: string, params: Record<string, unknown> = {}): ComponentData => ({ id, type, params })
 
-/** Instance labels, indented by depth — the shape these tests are about, with pieces left out. */
-const instanceOrder = (doc: Doc): string[] => {
-  const out: string[] = []
-  for (let i = 0; i < doc.count(); i++) {
-    if (doc.kindOf(i) === 'instance') out.push(`${'  '.repeat(doc.depthOf(i))}${doc.label(i)}`)
-  }
-  return out
-}
-
-/** How many placements the level holds, pieces excluded. */
-const instanceCount = (doc: Doc): number => {
-  let n = 0
-  for (let i = 0; i < doc.count(); i++) if (doc.kindOf(i) === 'instance') n += 1
-  return n
-}
-
-
-/** A two-piece prefab, so a test can tell "this piece" from "that piece". */
-const twoPieceLibrary = (): Prefab => ({
-  id: 'pad',
-  pieces: [
-    { collider: { kind: 'box', halfExtents: vec3(1.5, 0.15, 1.5) }, transform: { position: vec3(0, 0, 0) } },
-    { collider: { kind: 'box', halfExtents: vec3(0.5, 1, 0.5) }, transform: { position: vec3(0, 1, 0) } },
-  ],
-})
-
-const inlineInstance = (id: string, half = vec3(1, 0.5, 1)): Prefab => ({
+/** A solid, visible node — the shape every migrated piece became. */
+const solid = (id: string, position: Vec3): Node => ({
   id,
-  pieces: [{ collider: { kind: 'box', halfExtents: half }, transform: { position: vec3(0, 0, 0) } }],
+  name: id,
+  transform: { position },
+  components: [comp(`${id}-col`, COLLIDER, { shape: BOX, center: ZERO }), comp(`${id}-vis`, VISUAL, { source: 'collider', model: '', material: '' })],
 })
 
-/**
- * The prefab files a level's palette offers. Generators are gone (ADR 0027), so everything placeable is
- * data — which is what these stand in for.
- */
-// Material asset ids the fixtures reference. Any string works: the doc stores ids and never resolves
-// them, which is the point of referencing an asset rather than naming a palette entry.
-const MAT_MOVING = 'mat-moving'
-const MAT_CHECKPOINT = 'mat-checkpoint'
-const MAT_HAZARD = 'mat-hazard'
+const blank = (): NodeLevel => ({ id: 'lv', config: { fallBehavior: 'respawn-checkpoint', fallY: -10 }, nodes: [] })
 
-const LIBRARY: Record<string, Prefab> = {
-  platform: inlineInstance('platform', vec3(1.5, 0.15, 1.5)),
-  ramp: inlineInstance('ramp', vec3(1.5, 0.15, 2)),
-  'moving platform': {
-    id: 'moving platform',
-    pieces: [
-      {
-        collider: { kind: 'box', halfExtents: vec3(1.5, 0.15, 1.5) },
-        transform: { position: vec3(0, 0, 0) },
-        visual: { kind: 'primitive', material: MAT_MOVING },
-      },
-    ],
-    behavior: { kind: 'track', keys: moveTrack(vec3(0, 0, 0), vec3(0, 1, 0), 1.5, 4000) },
-  },
-  'checkpoint pad': {
-    id: 'checkpoint pad',
-    pieces: [
-      {
-        collider: { kind: 'box', halfExtents: vec3(1.5, 0.1, 1.5) },
-        transform: { position: vec3(0, 0, 0) },
-        visual: { kind: 'primitive', material: MAT_CHECKPOINT },
-        trigger: { kind: 'checkpoint' },
-      },
-    ],
-  },
+/** A two-node prefab: a root carrying only a transform, and a pad under it carrying the geometry. */
+const padPrefab = (): Node => ({ id: 'root', name: 'pad', transform: { position: ZERO }, components: [], children: [solid('pad', ZERO)] })
+
+const library = (): Record<string, Node> => ({ pad: padPrefab() })
+
+const named = (doc: Doc, name: string): number => {
+  for (let i = 0; i < doc.count(); i++) if (doc.label(i) === name) return i
+  throw new Error(`no node named ${name}`)
+}
+const labels = (doc: Doc): string[] => Array.from({ length: doc.count() }, (_, i) => doc.label(i))
+const typesOn = (doc: Doc, i: number): string[] => doc.components(i).map((c) => c.type)
+const idOf = (doc: Doc, i: number, type: string): string => {
+  const found = doc.components(i).find((c) => c.type === type)
+  if (found === undefined) throw new Error(`no ${type} on node ${i}`)
+  return found.id
+}
+const paramOn = (doc: Doc, i: number, type: string, key: string): unknown => doc.components(i).find((c) => c.type === type)?.params[key]
+
+/** A level with one placement of `pad`: index 0 is the placement, index 1 the pad it inherits. */
+const placed = (): { level: NodeLevel; doc: Doc } => {
+  const level = blank()
+  const doc = levelDoc(level, library())
+  doc.place('pad', vec3(0, 0, 0))
+  return { level, doc }
 }
 
-describe('levelDoc: placing references, not copies', () => {
-  it('places two of the same prefab as one table entry and two references', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-    doc.place('platform', vec3(4, 0, 0))
-
-    expect(Object.keys(level.prefabs ?? {}), 'one shared definition').toEqual(['platform'])
-    expect(level.instances.map((i) => i.prefab)).toEqual(['platform', 'platform'])
-    expect(doc.refCount('platform')).toBe(2)
-  })
-
-  it('lets an edit to the shared definition through to every instance', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-    doc.place('platform', vec3(4, 0, 0))
-
-    // Exactly what "Edit prefab" does: a prefabDoc over the table object the instances reference.
-    const shared = doc.prefabAt('platform')!
-    prefabDoc(shared).setProps(0, props({ pieceLevel: true, material: MAT_HAZARD }))
-
-    // A piece draws itself now, so the mesh comes from the piece node rather than from its placement.
-    expect(doc.meshSpecs(pieceOf(doc, nth(doc, 0)))[0]!.material).toBe(MAT_HAZARD)
-    expect(doc.meshSpecs(pieceOf(doc, nth(doc, 1)))[0]!.material, 'the second instance followed untouched').toBe(MAT_HAZARD)
-  })
-
-  it('keeps the reference when an instance is duplicated', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-    doc.duplicate(nth(doc, 0))
-
-    expect(level.instances[1]!.prefab, 'still an id, not an inlined clone').toBe('platform')
-    expect(doc.refCount('platform')).toBe(2)
-  })
-
-  /**
-   * The bug this covers: placing from the Project explorer interned by the prefab's *stored* id, so
-   * `AlternatingDanger.prefab.json` — which shipped carrying `"id": "FastElevator"` — placed an object named
-   * FastElevator. `place` already took the file name; `placePrefab` did not, and nothing tested it.
-   */
-  it('places a prefab file under its file name, not the id stored in the file', () => {
-    const level = blank()
-    const doc = levelDoc(level, {})
-    const fromFile = inlineInstance('FastElevator') // a stale id, as authored files really carry
-
-    const at = doc.placePrefab(fromFile, 'AlternatingDanger', vec3(0, 0, 0))
-
-    expect(doc.label(at)).toBe('AlternatingDanger')
-    expect(doc.refOf(at)).toBe('AlternatingDanger')
-    expect(Object.keys(level.prefabs ?? {})).toEqual(['AlternatingDanger'])
-    expect(doc.prefabAt('AlternatingDanger')!.id).toBe('AlternatingDanger')
-  })
-
-  it('places two different files whose stored ids collide as two entries', () => {
-    const level = blank()
-    const doc = levelDoc(level, {})
-    // Both authored with the same stale id, and genuinely different shapes.
-    doc.placePrefab(inlineInstance('untitled', vec3(1, 1, 1)), 'Ramp', vec3(0, 0, 0))
-    doc.placePrefab(inlineInstance('untitled', vec3(2, 2, 2)), 'Slab', vec3(4, 0, 0))
-
-    expect(Object.keys(level.prefabs ?? {})).toEqual(['Ramp', 'Slab'])
-  })
-
-  it('places a library prefab under its file name, not the id stored in the file', () => {
-    const level = blank()
-    // The real case: content/prefabs/FastElevator.json carries "id": "untitled".
-    const doc = levelDoc(level, { FastElevator: inlineInstance('untitled') })
-    doc.place('FastElevator', vec3(0, 0, 0))
-
-    expect(Object.keys(level.prefabs ?? {})).toEqual(['FastElevator'])
-    expect(level.prefabs!['FastElevator']!.id).toBe('FastElevator')
-  })
-
-  // The palette is only what *this level* defines. Prefab files are placed from the Project explorer by
-  // asset id; listing them here too is what made one prefab appear in two places (ADR 0027).
-  it("offers only the level's own table entries in the palette", () => {
-    const level = blank()
-    const doc = levelDoc(level, { ...LIBRARY, MyRamp: inlineInstance('MyRamp') })
-
-    expect(doc.palette(), 'nothing placed yet, so nothing of its own').toEqual([])
-
-    doc.place('platform', vec3(0, 0, 0))
-
-    expect(doc.palette(), 'now it has one').toEqual(['platform'])
-    expect(doc.palette(), "an unplaced prefab file is the explorer's to offer").not.toContain('MyRamp')
-  })
-
-  it('extracts an inline one-off into a shared entry, keeping its geometry', () => {
-    const level = blank()
-    level.instances.push({ prefab: inlineInstance('slab', vec3(2, 0.25, 2)), transform: { position: vec3(1, 2, 3) } })
-    const doc = levelDoc(level, LIBRARY)
-
-    expect(doc.refOf(0), 'inline to start with').toBeNull()
-    const id = doc.extract(0)
-
-    expect(id).toBe('slab')
-    expect(doc.refOf(0)).toBe('slab')
-    expect(doc.refCount('slab')).toBe(1)
-    expect(doc.meshSpecs(pieceOf(doc, 0))[0]!.collider).toEqual({ kind: 'box', halfExtents: vec3(2, 0.25, 2) })
-    expect(level.instances[0]!.transform.position, 'placement untouched').toEqual(vec3(1, 2, 3))
-    expect(doc.extract(0), 'already a reference — nothing to do').toBeNull()
-  })
-
-  it('suffixes an extracted prefab whose id is taken by different content', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-    // A different shape claiming the name the placed prefab already holds.
-    level.instances.push({ prefab: inlineInstance('platform', vec3(9, 9, 9)), transform: { position: vec3(0, 0, 0) } })
-
-    expect(doc.extract(nth(doc, 1))).toBe('platform-2')
-    expect(doc.prefabAt('platform')!.pieces[0]!.collider, 'the existing entry is not overwritten').not.toEqual({
-      kind: 'box',
-      halfExtents: vec3(9, 9, 9),
-    })
-  })
-})
-
-describe('nesting', () => {
-  /** Four top-level platforms named a..d, the shape most of these start from. */
-  const four = (): { doc: ReturnType<typeof levelDoc>; level: Level } => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    for (const n of ['a', 'b', 'c', 'd']) doc.setName(doc.place('platform', vec3(0, 0, 0)), n)
-    return { doc, level }
-  }
-  const order = instanceOrder
-
-  it('parents one instance under another, and the index follows the depth-first walk', () => {
-    const { doc, level } = four()
-    // Drop `c` onto `a` as its first child.
-    const landed = doc.reparent(byName(doc, 'c'), byName(doc, 'a'), 0)
-
-    // `a` is 0, its own piece is 1, so its first child lands at 2.
-    expect(landed, "after its new parent and that parent's pieces").toBe(2)
-    expect(order(doc)).toEqual(['a', '  c', 'b', 'd'])
-    expect(doc.depthOf(landed)).toBe(1)
-    expect(doc.parentOf(landed)).toBe(0)
-    expect(doc.childCount(0), 'one piece and one child').toBe(2)
-    expect(level.instances).toHaveLength(3)
-  })
-
-  it('keeps the local transform, so the child sits at that offset from its parent', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(10, 0, 0))
-    const child = doc.place('platform', vec3(3, 0, 0))
-    const landed = doc.reparent(child, nth(doc, 0), 0)
-
-    // Unchanged numbers, new meaning: 3 m along the parent, not 3 m along the world.
-    expect(doc.transformOf(landed).position).toEqual(vec3(3, 0, 0))
-  })
-
-  it('removes the `children` key it emptied, and creates it only when needed', () => {
-    const { doc, level } = four()
-    expect('children' in level.instances[0]!, 'nothing nested yet').toBe(false)
-
-    const landed = doc.reparent(byName(doc, 'b'), byName(doc, 'a'), 0)
-    expect(level.instances[0]!.children).toHaveLength(1)
-
-    doc.reparent(landed, null, 4) // back out to the top level
-    expect('children' in level.instances[0]!, 'emptied, so the key goes').toBe(false)
-  })
-
-  it('refuses to make an instance its own descendant', () => {
-    const { doc } = four()
-    doc.reparent(byName(doc, 'b'), byName(doc, 'a'), 0)
-    doc.reparent(byName(doc, 'c'), byName(doc, 'b'), 0) //  a > b > c
-    const [a, b, c] = [byName(doc, 'a'), byName(doc, 'b'), byName(doc, 'c')]
-
-    expect(doc.canReparent(a, a), 'onto itself').toBe(false)
-    expect(doc.canReparent(a, b), 'onto its own child').toBe(false)
-    expect(doc.canReparent(a, c), 'onto its own grandchild').toBe(false)
-    expect(doc.canReparent(b, c), 'a middle node onto its own child').toBe(false)
-    expect(doc.canReparent(c, a), 'a grandchild onto its grandparent is fine').toBe(true)
-    expect(doc.canReparent(a, null), 'to the top level, always').toBe(true)
-    // A piece is not a placement: it can be neither moved nor made a parent.
-    expect(doc.canReparent(pieceOf(doc, a), null), 'a piece cannot be re-parented').toBe(false)
-    expect(doc.canReparent(b, pieceOf(doc, a)), 'nor can anything be parented to one').toBe(false)
-
-    const before = order(doc)
-    expect(doc.reparent(a, c, 0), 'an illegal move is a no-op').toBe(a)
-    expect(order(doc)).toEqual(before)
-  })
-
-  it('takes the whole subtree when an instance is removed', () => {
-    const { doc } = four()
-    doc.reparent(byName(doc, 'b'), byName(doc, 'a'), 0)
-    doc.reparent(byName(doc, 'c'), byName(doc, 'b'), 0)
-    expect(instanceCount(doc)).toBe(4)
-
-    doc.remove(byName(doc, 'a')) // a, and everything under it
-    expect(order(doc)).toEqual(['d'])
-  })
-
-  it('duplicates an instance with its children', () => {
-    const { doc } = four()
-    doc.reparent(byName(doc, 'b'), byName(doc, 'a'), 0)
-
-    const copy = doc.duplicate(byName(doc, 'a'))
-    expect(order(doc)).toEqual(['a', '  b', 'a', '  b', 'c', 'd'])
-    expect(doc.childCount(copy), 'the copy has its own piece and child').toBe(2)
-  })
-
-  it('reorders within one parent when reparented to where it already is', () => {
-    const { doc } = four()
-    doc.reparent(byName(doc, 'c'), byName(doc, 'a'), 0)
-    doc.reparent(byName(doc, 'd'), byName(doc, 'a'), 1)
-    expect(order(doc)).toEqual(['a', '  c', '  d', 'b'])
-
-    doc.reparent(byName(doc, 'd'), byName(doc, 'a'), 0)
-    expect(order(doc)).toEqual(['a', '  d', '  c', 'b'])
-  })
-
-  it('moves a child out to the top level', () => {
-    const { doc, level } = four()
-    doc.reparent(byName(doc, 'b'), byName(doc, 'a'), 0)
-    expect(level.instances).toHaveLength(3)
-
-    doc.reparent(byName(doc, 'b'), null, 0)
-    expect(order(doc)).toEqual(['b', 'a', 'c', 'd'])
-    expect(level.instances).toHaveLength(4)
-  })
-
-  it('is flat in prefab mode: nothing to parent, nothing to nest', () => {
-    const doc = prefabDoc(inlineInstance('p'))
+describe('addressing a node tree', () => {
+  it('lists a placement, then what it inherits, then its own children', () => {
+    const { doc } = placed()
+    doc.paste(doc.copy(0)!, 0)
+    expect(doc.count(), 'placement, inherited pad, pasted child, its inherited pad').toBe(4)
     expect(doc.depthOf(0)).toBe(0)
+    expect(doc.depthOf(1)).toBe(1)
+    expect(doc.parentOf(1)).toBe(0)
     expect(doc.parentOf(0)).toBeNull()
-    expect(doc.childCount(0)).toBe(0)
-    expect(doc.canReparent(0, null)).toBe(false)
-  })
-})
-
-describe('names', () => {
-  it('falls back to the prefab id until one is typed, and keeps the JSON clean', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-
-    expect(doc.nameOf(0), 'nothing typed').toBe('')
-    expect(doc.label(0), 'so the display name is what it is').toBe('platform')
-    expect('name' in level.instances[0]!, 'and nothing is written').toBe(false)
   })
 
-  it('shows a typed name and stores it on the instance', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-    doc.place('platform', vec3(4, 0, 0))
+  it('calls an inherited node inherited, and a placement its own', () => {
+    const { doc } = placed()
+    expect(doc.kindOf(0)).toBe('own')
+    expect(doc.kindOf(1)).toBe('inherited')
+  })
 
+  it('counts what one twist opens: the prefab’s nodes and the placement’s children alike', () => {
+    const { doc } = placed()
+    expect(doc.childCount(0), 'one inherited pad').toBe(1)
+    expect(doc.childCount(1), 'and nothing under the pad').toBe(0)
+  })
+
+  it('keys UI state by a sibling path, so an edit elsewhere does not shuffle it', () => {
+    const { doc } = placed()
+    expect(doc.pathOf(0)).toBe('0')
+    expect(doc.pathOf(1)).toBe('0#0')
+  })
+
+  it('falls back to the prefab key when nothing is named, and back again when a name is cleared', () => {
+    const { doc } = placed()
+    expect(doc.label(0), 'the placement shows the prefab it references').toBe('pad')
     doc.setName(0, 'first gap')
-
-    expect(doc.nameOf(0)).toBe('first gap')
     expect(doc.label(0)).toBe('first gap')
-    expect(level.instances[0]!.name).toBe('first gap')
-    // The whole point of naming per instance: two placements of one prefab are now distinguishable.
-    expect(doc.label(nth(doc, 1)), 'the sibling is untouched').toBe('platform')
-    expect(doc.prefabAt('platform')!.id, 'and the shared definition is not renamed').toBe('platform')
-  })
-
-  it('reverts to the fallback when the name is cleared', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('ramp', vec3(0, 0, 0))
-
-    doc.setName(0, 'entry ramp')
+    expect(doc.nameOf(0), 'the typed name, so the field can show the fallback as a placeholder').toBe('first gap')
     doc.setName(0, '')
-
-    expect(doc.nameOf(0)).toBe('')
-    expect(doc.label(0)).toBe('ramp')
-    expect('name' in level.instances[0]!, 'the key is removed, not blanked').toBe(false)
+    expect(doc.label(0)).toBe('pad')
   })
 
-  it('names a piece too, so a prefab of three boxes is readable', () => {
-    const doc = prefabDoc(inlineInstance('rails'))
-    expect(doc.label(0), 'fallback is the collider kind').toBe('box')
-    doc.setName(0, 'left rail')
-    expect(doc.label(0)).toBe('left rail')
-    expect(doc.toJSON()).toMatchObject({ pieces: [{ name: 'left rail' }] })
-  })
-
-  it('survives a round trip through validate + JSON', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-    doc.setName(0, 'start pad')
-
-    const parsed = validateLevel(JSON.parse(JSON.stringify(doc.toJSON())))
-    expect(parsed.instances[0]!.name).toBe('start pad')
+  it('falls back to the collider shape for a node with no name', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    expect(doc.label(i)).toBe('box')
   })
 })
 
-describe('reordering', () => {
-  const named = (): ReturnType<typeof levelDoc> => {
+describe('placing', () => {
+  it('interns the prefab as a copy, so deleting the file cannot empty the level', () => {
+    const lib = library()
+    const doc = levelDoc(blank(), lib)
+    doc.place('pad', vec3(1, 0, 0))
+    delete lib['pad']
+    expect(doc.prefabAt('pad'), 'the level carries its own copy').toBeDefined()
+  })
+
+  it('shares one table entry when the same thing is placed twice', () => {
     const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    for (const n of ['a', 'b', 'c', 'd']) {
-      const i = doc.place('platform', vec3(0, 0, 0))
-      doc.setName(i, n)
-    }
-    return doc
-  }
-  const order = (doc: Doc): string[] => instanceOrder(doc)
-
-  // `to` is an insertion point against the array as it was, which is what a drop between two rows
-  // gives. Moving down therefore shifts by one, because removing the item first pulls later indices back.
-  it('moves an item down to sit before the given original index', () => {
-    const doc = named()
-    // `to` is a *sibling* position; the return is a node index, and `a` is the second instance afterwards.
-    expect(doc.move(nth(doc, 0), 2)).toBe(nth(doc, 1))
-    expect(order(doc)).toEqual(['b', 'a', 'c', 'd'])
+    const doc = levelDoc(level, library())
+    doc.place('pad', vec3(0, 0, 0))
+    doc.place('pad', vec3(4, 0, 0))
+    expect(Object.keys(level.prefabs ?? {})).toEqual(['pad'])
+    expect(doc.refCount('pad')).toBe(2)
   })
 
-  it('moves an item up', () => {
-    const doc = named()
-    expect(doc.move(nth(doc, 3), 0)).toBe(0)
-    expect(order(doc)).toEqual(['d', 'a', 'b', 'c'])
+  it('refuses a name the library no longer has, rather than throwing', () => {
+    expect(levelDoc(blank(), {}).place('ghost', vec3(0, 0, 0))).toBe(-1)
   })
 
-  it('appends when dropped past the last row', () => {
-    const doc = named()
-    expect(doc.move(nth(doc, 0), 4)).toBe(nth(doc, 3))
-    expect(order(doc)).toEqual(['b', 'c', 'd', 'a'])
+  // The bug behind commit 0fc0b9f: a prefab file shipped carrying someone else's name.
+  it('names a placed prefab by its file, not by a name stored inside it', () => {
+    const doc = levelDoc(blank(), {})
+    doc.placePrefab({ ...padPrefab(), name: 'FastElevator' }, 'AlternatingDanger', vec3(0, 0, 0))
+    expect(doc.prefabAt('AlternatingDanger')).toBeDefined()
+    expect(doc.prefabAt('FastElevator')).toBeUndefined()
+    expect(doc.refOf(0)).toBe('AlternatingDanger')
   })
 
-  it('is a no-op when dropped either side of its own slot', () => {
-    const doc = named()
-    expect(doc.move(nth(doc, 1), 1)).toBe(nth(doc, 1))
-    expect(order(doc)).toEqual(['a', 'b', 'c', 'd'])
-    expect(doc.move(nth(doc, 1), 2), 'inserting before the next row is where it already is').toBe(nth(doc, 1))
-    expect(order(doc)).toEqual(['a', 'b', 'c', 'd'])
+  it('gives two files with colliding stored names two table entries', () => {
+    const doc = levelDoc(blank(), {})
+    doc.placePrefab({ ...padPrefab(), name: 'stale' }, 'one', vec3(0, 0, 0))
+    doc.placePrefab({ ...padPrefab(), name: 'stale', children: [solid('other', ZERO)] }, 'two', vec3(4, 0, 0))
+    expect(doc.prefabAt('one')).toBeDefined()
+    expect(doc.prefabAt('two')).toBeDefined()
   })
 
-  it('ignores an out-of-range source', () => {
-    const doc = named()
-    expect(doc.move(9, 0)).toBe(9)
-    expect(order(doc)).toEqual(['a', 'b', 'c', 'd'])
+  it('places a model as a node with the mesh and an authored box', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('modelasset', vec3(0, 0, 0))
+    expect(typesOn(doc, i)).toEqual([COLLIDER, VISUAL])
+    expect(paramOn(doc, i, VISUAL, 'source'), 'visual is not collision (ADR 0014)').toBe('model')
+    expect(paramOn(doc, i, VISUAL, 'model')).toBe('modelasset')
   })
 
-  it('reorders pieces in prefab mode too', () => {
-    const doc = prefabDoc({
-      id: 'p',
-      pieces: [
-        { collider: { kind: 'box', halfExtents: vec3(1, 1, 1) }, transform: { position: vec3(0, 0, 0) }, name: 'x' },
-        { collider: { kind: 'ball', radius: 1 }, transform: { position: vec3(0, 0, 0) }, name: 'y' },
-      ],
-    })
-    expect(doc.move(1, 0)).toBe(0)
-    expect([doc.label(0), doc.label(1)]).toEqual(['y', 'x'])
-  })
-
-  // Order is load-bearing: checkpoint progression and the movement-base index both follow it.
-  it('changes the order the loader sees', () => {
-    const doc = named()
-    doc.move(nth(doc, 3), 0)
-    const level = doc.toJSON() as { instances: { name?: string }[] }
-    expect(level.instances.map((i) => i.name)).toEqual(['d', 'a', 'b', 'c'])
+  it('offers only this level’s own table in the palette', () => {
+    expect(placed().doc.palette()).toEqual(['pad'])
   })
 })
 
-describe('levelDoc: instance overrides', () => {
-  it('round-trips a material override without touching the shared definition', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-    doc.place('platform', vec3(4, 0, 0))
-
-    const [first, second] = [nth(doc, 0), nth(doc, 1)]
-    doc.setProps(first, props({ material: MAT_HAZARD }))
-
-    expect(doc.props(first).material).toBe(MAT_HAZARD)
-    expect(level.instances[0]!.material).toBe(MAT_HAZARD)
-    // The override reaches the piece's mesh, which is where the material is actually read.
-    expect(doc.meshSpecs(pieceOf(doc, first))[0]!.material).toBe(MAT_HAZARD)
-    expect(doc.meshSpecs(pieceOf(doc, second))[0]!.material, "the other instance keeps the prefab's").not.toBe(MAT_HAZARD)
+describe('structure', () => {
+  it('takes the subtree with a deleted node', () => {
+    const { doc } = placed()
+    doc.paste(doc.copy(0)!, 0)
+    expect(doc.count()).toBe(4)
+    doc.remove(0)
+    expect(doc.count()).toBe(0)
   })
 
-  it('drops the override rather than writing an empty string', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-
-    doc.setProps(0, props({ material: MAT_HAZARD }))
-    doc.setProps(0, props({ material: '' }))
-
-    expect('material' in level.instances[0]!, 'no empty key left in the JSON').toBe(false)
+  it('refuses to delete, reorder or copy an inherited node', () => {
+    const { doc } = placed()
+    expect(doc.kindOf(1)).toBe('inherited')
+    doc.remove(1)
+    expect(doc.count(), 'still there — its place belongs to the prefab').toBe(2)
+    expect(doc.duplicate(1)).toBe(1)
+    expect(doc.copy(1)).toBeNull()
+    expect(doc.canReparent(1, null)).toBe(false)
   })
 
-  it('writes a track onto the instance, not the prefab', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-    doc.place('platform', vec3(4, 0, 0))
-
-    doc.setTrack(nth(doc, 1), { keys: moveTrack(vec3(4, 0, 0), vec3(1, 0, 0), 5, 2000), loop: 'loop', phaseMs: 0 })
-
-    expect(level.instances[1]!.behavior).toMatchObject({ kind: 'track' })
-    expect(level.instances[0]!.behavior, 'the first instance stays static').toBeUndefined()
-    expect(doc.prefabAt('platform')!.behavior, 'and the shared definition is untouched').toBeUndefined()
+  it('re-mints ids when duplicating, so the copy is a distinct node', () => {
+    const { level, doc } = placed()
+    doc.duplicate(0)
+    expect(new Set(level.nodes.map((n) => n.id)).size, 'two placements, two ids').toBe(2)
   })
 
-  // `loop` and `phaseMs` at their defaults carry no information, so writing them would put noise in every
-  // authored file. Round-tripping through `trackOf` has to give them back anyway.
-  it('leaves default loop and phase out of the JSON but reads them back', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-
-    doc.setTrack(0, { keys: [{ t: 0 }, { t: 1000, position: vec3(0, 2, 0) }], loop: 'loop', phaseMs: 0 })
-    expect(Object.keys(level.instances[0]!.behavior!)).toEqual(['kind', 'keys'])
-    expect(doc.trackOf(0)).toMatchObject({ loop: 'loop', phaseMs: 0 })
-
-    doc.setTrack(0, { keys: [{ t: 0 }, { t: 1000, position: vec3(0, 2, 0) }], loop: 'pingPong', phaseMs: 250 })
-    expect(level.instances[0]!.behavior).toMatchObject({ loop: 'pingPong', phaseMs: 250 })
+  it('keeps a duplicate pointing at the same shared definition', () => {
+    const { doc } = placed()
+    doc.duplicate(0)
+    expect(doc.refCount('pad')).toBe(2)
   })
 
-  it('stores keys in time order however they arrive, since the timeline drags them past each other', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-
-    doc.setTrack(0, { keys: [{ t: 900 }, { t: 0 }, { t: 400 }], loop: 'loop', phaseMs: 0 })
-    expect(doc.trackOf(0)!.keys.map((k) => k.t)).toEqual([0, 400, 900])
+  it('never lets a node become its own ancestor', () => {
+    const doc = levelDoc(blank(), {})
+    doc.placeModel('m', vec3(0, 0, 0))
+    doc.placeModel('m', vec3(4, 0, 0))
+    doc.reparent(1, 0, 0)
+    expect(doc.canReparent(0, 1), 'a parent cannot move under its own child').toBe(false)
+    expect(doc.canReparent(0, 0)).toBe(false)
   })
 
-  it('removes the behavior for a null track rather than writing an empty one', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-
-    doc.setTrack(0, { keys: [{ t: 0 }, { t: 500, position: vec3(0, 1, 0) }], loop: 'loop', phaseMs: 0 })
-    doc.setTrack(0, null)
-    expect('behavior' in level.instances[0]!, 'no empty key left in the JSON').toBe(false)
-    expect(doc.trackOf(0)).toBeNull()
+  it('keeps the local transform when re-parenting, so the node lands at that offset', () => {
+    const doc = levelDoc(blank(), {})
+    doc.placeModel('m', vec3(0, 0, 0))
+    doc.placeModel('m', vec3(4, 0, 0))
+    const moved = doc.reparent(1, 0, 0)
+    expect(doc.transformOf(moved).position).toEqual(vec3(4, 0, 0))
+    expect(doc.parentOf(moved)).toBe(0)
   })
 
-  // The scrub, and what the gizmo writes back into a key.
-  it('poses an item at a track time, and at its authored transform when static', () => {
+  it('leaves no empty children array behind after a move out', () => {
     const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(3, 0, 0))
-
-    expect(doc.poseOf(0, 1234).position, 'static: the authored transform').toEqual(vec3(3, 0, 0))
-
-    doc.setTrack(0, { keys: moveTrack(vec3(3, 0, 0), vec3(0, 1, 0), 4, 1000), loop: 'loop', phaseMs: 0 })
-    expect(doc.poseOf(0, 500).position.y, 'half a period is full travel').toBeCloseTo(4, 9)
-    expect(doc.poseOf(0, 0).position.y, 'and it starts home').toBeCloseTo(0, 9)
+    const doc = levelDoc(level, {})
+    doc.placeModel('m', vec3(0, 0, 0))
+    doc.placeModel('m', vec3(4, 0, 0))
+    doc.reparent(1, 0, 0)
+    doc.reparent(1, null, 0)
+    expect('children' in (level.nodes[0] ?? {}), 'the husk goes too').toBe(false)
   })
 
-  it('reads a piece track in prefab mode', () => {
-    const prefab = inlineInstance('p')
-    const doc = prefabDoc(prefab)
-    expect(doc.trackOf(0)).toBeNull()
-
-    doc.setTrack(0, { keys: [{ t: 0, position: vec3(0, 0, 0) }, { t: 800, position: vec3(0, 2, 0) }], loop: 'pingPong', phaseMs: 0 })
-    expect(prefab.pieces[0]!.behavior).toMatchObject({ kind: 'track', loop: 'pingPong' })
-    expect(doc.poseOf(0, 800).position.y).toBeCloseTo(2, 9)
+  it('reorders within a sibling list, which decides checkpoint progression', () => {
+    const doc = levelDoc(blank(), {})
+    doc.placeModel('a', vec3(0, 0, 0))
+    doc.placeModel('b', vec3(1, 0, 0))
+    doc.setName(0, 'a')
+    doc.setName(1, 'b')
+    doc.move(1, 0)
+    expect(labels(doc)).toEqual(['b', 'a'])
   })
 })
 
-describe('what the editor writes is what the game loads', () => {
-  beforeAll(async () => {
-    await initPhysics()
+describe('components', () => {
+  it('adds one at its declared defaults', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    doc.addComponent(i, Bumper.type)
+    expect(paramOn(doc, i, Bumper.type, 'power'), 'the schema owns the default, not the editor').toBe(26)
   })
 
-  it('validates and instantiates, references and overrides included', () => {
+  it('refuses a second singleton and allows a second collider', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    expect(doc.canAdd(i, VISUAL), 'already has one').toBe(false)
+    expect(doc.addComponent(i, VISUAL)).toBeNull()
+    expect(doc.canAdd(i, COLLIDER), 'a node holds as many as it likes').toBe(true)
+    expect(doc.addComponent(i, COLLIDER)).not.toBeNull()
+    expect(typesOn(doc, i).filter((t) => t === COLLIDER)).toHaveLength(2)
+  })
+
+  it('patches some parameters and leaves the rest', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    doc.setParams(i, idOf(doc, i, VISUAL), { material: MAT_A })
+    expect(paramOn(doc, i, VISUAL, 'material')).toBe(MAT_A)
+    expect(paramOn(doc, i, VISUAL, 'model'), 'untouched').toBe('m')
+  })
+
+  it('removes one', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    doc.removeComponent(i, idOf(doc, i, VISUAL))
+    expect(typesOn(doc, i)).toEqual([COLLIDER])
+  })
+
+  it('switches one off without deleting it', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    doc.setParams(i, idOf(doc, i, VISUAL), { source: 'collider' })
+    const collider = idOf(doc, i, COLLIDER)
+    doc.setComponentEnabled(i, collider, false)
+    expect(doc.components(i).find((c) => c.id === collider)?.enabled).toBe(false)
+    expect(doc.meshSpecs(i), 'nothing left for the Visual to draw').toEqual([])
+    doc.setComponentEnabled(i, collider, true)
+    expect(doc.components(i).find((c) => c.id === collider)?.enabled).toBe(true)
+  })
+
+  it('draws one mesh per collider, each at its own centre', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    doc.setParams(i, idOf(doc, i, VISUAL), { source: 'collider' })
+    const second = doc.addComponent(i, COLLIDER)!
+    doc.setParams(i, second, { center: vec3(3, 0, 0) })
+    expect(doc.meshSpecs(i).map((m) => m.transform.position)).toEqual([ZERO, vec3(3, 0, 0)])
+  })
+
+  it('lets a MaterialOverride above a node beat that node’s own material', () => {
+    const doc = levelDoc(blank(), {})
+    const parent = doc.placeModel('m', vec3(0, 0, 0))
+    doc.addComponent(parent, MATERIAL_OVERRIDE)
+    doc.setParams(parent, idOf(doc, parent, MATERIAL_OVERRIDE), { material: MAT_B })
+    const child = doc.placeModel('m', vec3(1, 0, 0))
+    const moved = doc.reparent(child, parent, 0)
+    doc.setParams(moved, idOf(doc, moved, VISUAL), { source: 'collider', material: MAT_A })
+    expect(doc.meshSpecs(moved)[0]?.material).toBe(MAT_B)
+  })
+
+  it('collects every asset the document references, definitions included', () => {
+    const { doc } = placed()
+    doc.setParams(1, idOf(doc, 1, VISUAL), { material: MAT_A })
+    doc.addComponent(0, MATERIAL_OVERRIDE)
+    doc.setParams(0, idOf(doc, 0, MATERIAL_OVERRIDE), { material: MAT_B })
+    expect(new Set(doc.assetIds())).toEqual(new Set([MAT_A, MAT_B]))
+  })
+})
+
+describe('editing an inherited node writes an override', () => {
+  it('changes this placement and not the prefab', () => {
+    const { level, doc } = placed()
+    doc.setParams(1, idOf(doc, 1, VISUAL), { material: MAT_A })
+
+    expect(paramOn(doc, 1, VISUAL, 'material'), 'reads back its own value').toBe(MAT_A)
+    expect(doc.prefabAt('pad')!.children![0]!.components[1]!.params.material, 'the definition is untouched').toBe('')
+    expect(level.nodes[0]!.overrides, 'stored against the placement').toBeDefined()
+  })
+
+  it('does not touch a second placement of the same prefab', () => {
+    const doc = levelDoc(blank(), library())
+    doc.place('pad', vec3(0, 0, 0))
+    doc.place('pad', vec3(8, 0, 0))
+    doc.setParams(1, idOf(doc, 1, VISUAL), { material: MAT_A })
+    expect(paramOn(doc, 1, VISUAL, 'material')).toBe(MAT_A)
+    expect(paramOn(doc, 3, VISUAL, 'material'), 'the sibling placement still matches the prefab').toBe('')
+  })
+
+  it('records a transform, a name, an added component and a removal', () => {
+    const { doc } = placed()
+    doc.setTransform(1, { position: vec3(1, 2, 3) })
+    doc.setName(1, 'moved')
+    doc.addComponent(1, Bumper.type)
+    doc.removeComponent(1, idOf(doc, 1, COLLIDER))
+
+    const listed = doc.overridesOf(1)
+    expect(listed).toContain('transform')
+    expect(listed).toContain('name')
+    expect(listed.some((s) => s.includes('added'))).toBe(true)
+    expect(listed.some((s) => s.includes('removed'))).toBe(true)
+    expect(doc.transformOf(1).position).toEqual(vec3(1, 2, 3))
+  })
+
+  it('marks which parameters differ, so the panel can say so', () => {
+    const { doc } = placed()
+    const visual = idOf(doc, 1, VISUAL)
+    doc.setParams(1, visual, { material: MAT_A })
+    expect(doc.components(1).find((c) => c.id === visual)?.overridden).toEqual(['material'])
+  })
+
+  it('marks a component this placement added as added, not inherited', () => {
+    const { doc } = placed()
+    const added = doc.addComponent(1, Hazard.type)!
+    const view = doc.components(1).find((c) => c.id === added)
+    expect(view?.added).toBe(true)
+    expect(view?.inherited).toBe(false)
+  })
+
+  it('reverts one field and leaves the others', () => {
+    const { doc } = placed()
+    doc.setTransform(1, { position: vec3(1, 2, 3) })
+    doc.setName(1, 'moved')
+
+    doc.revert(1, 'transform')
+
+    expect(doc.overridesOf(1)).not.toContain('transform')
+    expect(doc.overridesOf(1)).toContain('name')
+    expect(doc.transformOf(1).position, 'back to what the prefab says').toEqual(ZERO)
+  })
+
+  it('reverts everything and leaves no husk in the JSON', () => {
+    const { level, doc } = placed()
+    doc.setTransform(1, { position: vec3(1, 2, 3) })
+    doc.addComponent(1, Hazard.type)
+
+    doc.revert(1)
+
+    expect(doc.overridesOf(1)).toEqual([])
+    expect('overrides' in level.nodes[0]!, 'the empty map goes too').toBe(false)
+  })
+
+  it('treats removing a component it added as an undo, not as a removal', () => {
+    const { level, doc } = placed()
+    const added = doc.addComponent(1, Bumper.type)!
+    doc.removeComponent(1, added)
+    expect(doc.overridesOf(1)).toEqual([])
+    expect('overrides' in level.nodes[0]!).toBe(false)
+  })
+
+  it('applies overrides to the prefab, so every placement follows and this one is clean', () => {
     const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-    doc.place('platform', vec3(4, 0, 0))
-    doc.place('moving platform', vec3(8, 2, 0))
-    doc.place('checkpoint pad', vec3(12, 0, 0))
-    doc.setProps(1, props({ material: MAT_HAZARD }))
-    doc.setId('gym')
+    const doc = levelDoc(level, library())
+    doc.place('pad', vec3(0, 0, 0))
+    doc.place('pad', vec3(8, 0, 0))
+    doc.setParams(1, idOf(doc, 1, VISUAL), { material: MAT_A })
+    doc.addComponent(1, Checkpoint.type)
 
-    const json: unknown = JSON.parse(JSON.stringify(doc.toJSON()))
-    const parsed = validateLevel(json)
-    expect(parsed.id, 'the id follows the save name').toBe('gym')
+    doc.applyToPrefab(1)
 
-    const world = createPhysicsWorld({ gravity: { x: 0, y: -30, z: 0 } })
-    const loaded = instantiateLevel(world, parsed)
-    expect(loaded.visuals.length).toBeGreaterThanOrEqual(4)
-    expect(loaded.visuals.some((v) => v.material === MAT_HAZARD), 'the override survived the round trip').toBe(true)
-    expect(loaded.triggers.map((t) => t.kind)).toContain('checkpoint')
-    expect(loaded.baseIndex(loaded.triggers[0]!.colliderHandle), 'a static pad is no movement base').toBeUndefined()
-    world.free()
+    expect(doc.overridesOf(1), 'no longer an override').toEqual([])
+    expect(paramOn(doc, 1, VISUAL, 'material'), 'still what was chosen').toBe(MAT_A)
+    expect(paramOn(doc, 3, VISUAL, 'material'), 'and the other placement followed').toBe(MAT_A)
+    expect(typesOn(doc, 3)).toContain(Checkpoint.type)
+    expect('overrides' in level.nodes[0]!).toBe(false)
+  })
+
+  it('has nothing to override in prefab mode, where the node is the definition', () => {
+    const doc = prefabDoc(padPrefab())
+    expect(doc.overridesOf(1)).toEqual([])
+    doc.revert(1)
+    doc.applyToPrefab(1)
+    expect(doc.count(), 'and neither is a no-op that breaks anything').toBe(2)
+  })
+})
+
+describe('motion', () => {
+  const track = (): { keys: ReturnType<typeof moveTrack>; loop: 'loop'; phaseMs: number } => ({
+    keys: moveTrack(ZERO, vec3(0, 1, 0), 3, 1000),
+    loop: 'loop',
+    phaseMs: 0,
+  })
+
+  it('adds a Track when a track is set, and removes it when cleared', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    expect(doc.trackOf(i)).toBeNull()
+    doc.setTrack(i, track())
+    expect(typesOn(doc, i)).toContain(TRACK)
+    expect(doc.trackOf(i)?.keys).toHaveLength(3)
+    doc.setTrack(i, null)
+    expect(typesOn(doc, i)).not.toContain(TRACK)
+  })
+
+  it('poses a node along its track, and at its authored transform when static', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(0, 0, 0))
+    expect(doc.poseOf(i, 500).position).toEqual(ZERO)
+    doc.setTrack(i, track())
+    expect(doc.poseOf(i, 500).position.y).toBeCloseTo(3, 9)
+  })
+
+  it('overrides a track on one placement without moving the others', () => {
+    const doc = levelDoc(blank(), library())
+    doc.place('pad', vec3(0, 0, 0))
+    doc.place('pad', vec3(8, 0, 0))
+    doc.setTrack(1, track())
+    expect(doc.poseOf(1, 500).position.y, 'this one moves').toBeCloseTo(3, 9)
+    expect(doc.poseOf(3, 500).position.y, 'that one does not').toBeCloseTo(0, 9)
+  })
+
+  // Absence means inherit, so "does not move here" has to remove the inherited component.
+  it('says nothing moves here by removing the prefab’s Track on this placement', () => {
+    const lib = library()
+    lib['pad']!.children![0]!.components.push(comp('t0', TRACK, { keys: moveTrack(ZERO, vec3(0, 1, 0), 3, 1000), loop: 'loop', phaseMs: 0 }))
+    const doc = levelDoc(blank(), lib)
+    doc.place('pad', vec3(0, 0, 0))
+    expect(doc.trackOf(1)).not.toBeNull()
+
+    doc.setTrack(1, null)
+
+    expect(doc.trackOf(1), 'no motion here').toBeNull()
+    expect(
+      doc.overridesOf(1).some((s) => s.includes('removed')),
+      'recorded as an override, not as silence',
+    ).toBe(true)
   })
 })
 
 describe('clipboard', () => {
-  it('copies an instance detached from the document', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(1, 2, 3))
-    doc.setName(0, 'first')
+  it('carries the definitions the subtree references, so a paste is self-contained', () => {
+    expect(Object.keys(placed().doc.copy(0)!.prefabs)).toEqual(['pad'])
+  })
 
+  it('re-mints ids, so two pastes of one clipboard are two nodes', () => {
+    const { level, doc } = placed()
     const item = doc.copy(0)!
-    doc.remove(0)
-
-    expect(doc.count(), 'the original is gone').toBe(0)
-    expect(item.kind).toBe('instance')
-    expect(doc.paste(item, null), 'and the copy still pastes').toBe(0)
-    expect(doc.nameOf(0)).toBe('first')
-    expect(doc.transformOf(0).position).toEqual(vec3(1, 2, 3))
+    doc.paste(item, null)
+    doc.paste(item, null)
+    expect(new Set(level.nodes.map((n) => n.id)).size).toBe(3)
   })
 
-  it('copies the whole subtree, not just the root', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-    const second = doc.place('platform', vec3(4, 0, 0))
-    doc.reparent(second, nth(doc, 0), 0)
-
-    const item = doc.copy(nth(doc, 0))!
-    const pasted = doc.paste(item, null)
-
-    // Original parent + child, then the pasted parent + its child.
-    expect(instanceCount(doc)).toBe(4)
-    expect(doc.childCount(pasted), 'the pasted copy kept its piece and its child').toBe(2)
+  it('reuses an identical table entry rather than filling the table with copies', () => {
+    const { level, doc } = placed()
+    doc.paste(doc.copy(0)!, null)
+    expect(Object.keys(level.prefabs ?? {})).toEqual(['pad'])
   })
 
-  /**
-   * The reason a clip carries prefab definitions. Without them, pasting into a level whose table has no such
-   * id would leave a reference nothing resolves — and `validateLevel` rejects exactly that.
-   */
-  it('pastes into another level, carrying the prefab it references', () => {
-    const source = blank()
-    const from = levelDoc(source, LIBRARY)
-    from.place('moving platform', vec3(0, 0, 0))
-    const item = from.copy(nth(from, 0))!
-
-    const target = blank()
-    const to = levelDoc(target, {})
-    expect(to.paste(item, null)).toBe(0)
-
-    expect(() => validateLevel(structuredClone(target)), 'every reference resolves').not.toThrow()
-    expect(to.refOf(0), 'and it is still a reference, not inlined').not.toBeNull()
-    expect(to.meshSpecs(pieceOf(to, 0)).length, 'and its piece draws').toBeGreaterThan(0)
+  it('pastes into a node when given a parent', () => {
+    const { doc } = placed()
+    expect(doc.parentOf(doc.paste(doc.copy(0)!, 0))).toBe(0)
   })
 
-  it('reuses the table entry when pasting back into the level it came from', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-    const before = Object.keys(level.prefabs ?? {}).length
-
-    doc.paste(doc.copy(nth(doc, 0))!, null)
-
-    expect(Object.keys(level.prefabs ?? {}).length, 'an identical definition is not duplicated').toBe(before)
-    expect(doc.refOf(nth(doc, 1))).toBe(doc.refOf(nth(doc, 0)))
-  })
-
-  it('pastes into an instance as a child when given one', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-    const item = doc.copy(0)!
-
-    const pasted = doc.paste(item, 0)
-
-    expect(doc.parentOf(pasted)).toBe(0)
-    expect(doc.depthOf(pasted)).toBe(1)
-  })
-
-  it('refuses a paste of the wrong kind rather than guessing', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-    const instance = doc.copy(0)!
-
-    const prefab = inlineInstance('p')
-    const pieces = prefabDoc(prefab)
-    expect(pieces.paste(instance, null), 'an instance is not a piece').toBe(-1)
-    expect(prefab.pieces).toHaveLength(1)
-
-    const piece = pieces.copy(0)!
-    expect(doc.paste(piece, null), 'nor the other way round').toBe(-1)
-  })
-
-  it('copies and pastes a piece in prefab mode', () => {
-    const prefab = inlineInstance('p')
-    const doc = prefabDoc(prefab)
-    doc.setName(0, 'rail')
-
-    const pasted = doc.paste(doc.copy(0)!, null)
-
-    expect(doc.count()).toBe(2)
-    expect(pasted).toBe(1)
-    expect(doc.nameOf(1)).toBe('rail')
-  })
-
-  it('returns null for an index that is not there', () => {
-    const doc = levelDoc(blank(), LIBRARY)
-    expect(doc.copy(0)).toBeNull()
-  })
-
-  it('carries a track along, since a copied mover has to keep moving', () => {
-    const level = blank()
-    const doc = levelDoc(level, LIBRARY)
-    doc.place('platform', vec3(0, 0, 0))
-    doc.setTrack(nth(doc, 0), { keys: moveTrack(vec3(0, 0, 0), vec3(0, 1, 0), 2, 1000), loop: 'pingPong', phaseMs: 100 })
-
-    doc.paste(doc.copy(nth(doc, 0))!, null)
-    const copy = nth(doc, 1)
-
-    expect(doc.trackOf(copy)).toMatchObject({ loop: 'pingPong', phaseMs: 100 })
-    // The far key is at 500ms and the phase shifts the clock forward by 100, so the peak arrives at 400.
-    expect(doc.poseOf(copy, 400).position.y).toBeCloseTo(2, 9)
-    expect(doc.poseOf(copy, 500).position.y, 'and it is on the way back by 500').toBeLessThan(2)
+  it('refuses a placement pasted into a prefab, which holds no prefabs', () => {
+    const { doc } = placed()
+    expect(prefabDoc(padPrefab()).paste(doc.copy(0)!, null)).toBe(-1)
   })
 })
 
-describe('per-instance prefab overrides (ADR 0033)', () => {
-  /** One placement of a two-piece prefab, with the indices worth naming. */
-  const placed = () => {
+describe('references', () => {
+  it('says what a node references, and nothing for a one-off', () => {
+    const { doc } = placed()
+    expect(doc.refOf(0)).toBe('pad')
+    expect(doc.refOf(doc.placeModel('m', vec3(0, 0, 0)))).toBeNull()
+  })
+
+  it('extracts a one-off into a shared entry and points the node at it', () => {
+    const doc = levelDoc(blank(), {})
+    const i = doc.placeModel('m', vec3(5, 0, 0))
+    doc.setName(i, 'lamp')
+    expect(doc.extract(i)).toBe('lamp')
+    expect(doc.refOf(i)).toBe('lamp')
+    expect(doc.transformOf(i).position, 'the placement keeps its transform').toEqual(vec3(5, 0, 0))
+    expect(typesOn(doc, i), 'and reads its contents through the reference').toEqual([COLLIDER, VISUAL])
+  })
+
+  it('refuses to extract something that is already a reference', () => {
+    expect(placed().doc.extract(0)).toBeNull()
+  })
+})
+
+describe('prefab mode', () => {
+  it('edits one root and the nodes under it', () => {
+    const doc = prefabDoc(padPrefab())
+    expect(doc.mode).toBe('prefab')
+    expect(labels(doc)).toEqual(['pad', 'pad'])
+    expect(doc.kindOf(1), 'inside a prefab everything is the definition').toBe('own')
+  })
+
+  it('offers primitives, and appends one under the root', () => {
+    const doc = prefabDoc(padPrefab())
+    expect(doc.palette()).toContain('platform')
+    const i = doc.place('platform', vec3(0, 1, 0))
+    expect(doc.parentOf(i)).toBe(0)
+    expect(typesOn(doc, i)).toEqual([COLLIDER, VISUAL])
+  })
+
+  it('protects the root, which is the file', () => {
+    const doc = prefabDoc(padPrefab())
+    doc.remove(0)
+    expect(doc.count()).toBe(2)
+    expect(doc.duplicate(0)).toBe(0)
+  })
+
+  it('returns the root node as its JSON, not a level', () => {
+    const root = padPrefab()
+    expect(prefabDoc(root).toJSON()).toBe(root)
+  })
+
+  it('renames the root when the file is renamed, so the two cannot diverge', () => {
+    const root = padPrefab()
+    prefabDoc(root).setId('Trampoline')
+    expect(root.name).toBe('Trampoline')
+  })
+})
+
+describe('what it writes is what the game loads', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  it('survives a round trip through validate, and instantiates', () => {
+    const { doc } = placed()
+    doc.setTransform(1, { position: vec3(1, 2, 3) })
+    doc.addComponent(1, Bumper.type)
+    doc.setParams(1, idOf(doc, 1, Bumper.type), { power: 40 })
+    const spawn = doc.placeModel('m', vec3(0, 0, 0))
+    doc.removeComponent(spawn, idOf(doc, spawn, VISUAL))
+    doc.removeComponent(spawn, idOf(doc, spawn, COLLIDER))
+    doc.addComponent(spawn, SPAWN)
+
+    const parsed = validateNodeLevel(JSON.parse(JSON.stringify(doc.toJSON())), DEFAULT_REGISTRY)
+    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+    const loaded = instantiateNodeLevel(world, parsed, DEFAULT_REGISTRY)
+
+    expect(loaded.visuals).toHaveLength(1)
+    expect(loaded.visuals[0]!.position, 'the override moved it').toEqual(vec3(1, 2, 3))
+    expect(loaded.markers).toEqual([{ kind: 'spawn', position: ZERO }])
+    expect(loaded.nodes[0]!.components.find((c) => c.type === Bumper.type)?.params.power, 'the parameter reached the world').toBe(40)
+    world.free()
+  })
+
+  it('reopens with the same overrides after a round trip', () => {
+    const { doc } = placed()
+    doc.setName(1, 'moved')
+    const parsed = validateNodeLevel(JSON.parse(JSON.stringify(doc.toJSON())), DEFAULT_REGISTRY)
+    const reopened = levelDoc(parsed, {})
+    expect(reopened.overridesOf(1)).toContain('name')
+    expect(reopened.label(1)).toBe('moved')
+  })
+})
+
+describe('node references (stage C4)', () => {
+  const Linked = defineComponent({ type: 'Linked', params: { target: { kind: 'nodeRef' } } })
+  const REG = createRegistry([...ENGINE_COMPONENTS, ...GAMEPLAY_COMPONENTS, Linked])
+
+  const linked = (): { level: NodeLevel; doc: Doc } => {
     const level = blank()
-    const doc = levelDoc(level, { pad: twoPieceLibrary() })
-    doc.place('pad', vec3(0, 0, 0))
-    const instance = nth(doc, 0)
-    return { level, doc, instance, piece: pieceOf(doc, instance) }
+    const doc = levelDoc(level, library(), REG)
+    const a = doc.placeModel('m', vec3(0, 0, 0))
+    doc.setName(a, 'watcher')
+    const b = doc.placeModel('m', vec3(3, 0, 0))
+    doc.setName(b, 'anchor')
+    doc.addComponent(a, Linked.type)
+    doc.setParams(a, idOf(doc, a, Linked.type), { target: level.nodes[1]!.id })
+    return { level, doc }
   }
 
-  it('writes a material edit onto the placement, not the shared prefab', () => {
-    const { level, doc, piece } = placed()
-    doc.setProps(piece, props({ pieceLevel: true, material: MAT_HAZARD }))
-
-    expect(doc.props(piece).material, 'the piece reads back its own value').toBe(MAT_HAZARD)
-    expect(doc.prefabAt('pad')!.pieces[0]!.visual, 'and the prefab is untouched').toBeUndefined()
-    expect(level.instances[0]!.overrides, 'stored against the placement').toBeDefined()
+  it('offers the level’s own nodes to an own node, labelled', () => {
+    const { doc } = linked()
+    expect(doc.nodeChoices(0).map((c) => c.label)).toEqual(['watcher', 'anchor'])
   })
 
-  it('does not touch a second placement of the same prefab', () => {
+  /**
+   * A reference authored inside a prefab is stored in the prefab file, so offering a level node there would
+   * author something that dangles in every other level the prefab is used in.
+   */
+  it('offers a node inside a prefab only its own siblings, plus the level for an override', () => {
     const level = blank()
-    const doc = levelDoc(level, { pad: twoPieceLibrary() })
+    const doc = levelDoc(level, library(), REG)
     doc.place('pad', vec3(0, 0, 0))
-    doc.place('pad', vec3(8, 0, 0))
-    const [a, b] = [nth(doc, 0), nth(doc, 1)]
-
-    doc.setProps(pieceOf(doc, a), props({ pieceLevel: true, material: MAT_HAZARD }))
-
-    expect(doc.props(pieceOf(doc, a)).material).toBe(MAT_HAZARD)
-    expect(doc.props(pieceOf(doc, b)).material, 'the sibling placement still matches the prefab').toBe('')
+    doc.placeModel('m', vec3(5, 0, 0))
+    expect(doc.nodeChoices(1), 'the inherited pad, plus the two level nodes').toHaveLength(3)
+    // The other direction: an own node is not offered anything living inside a prefab.
+    const inheritedId = doc.prefabAt('pad')!.children![0]!.id
+    expect(doc.nodeChoices(2).map((c) => c.id)).not.toContain(inheritedId)
   })
 
-  // Minting on demand is why no authored content had to migrate: a piece becomes referenceable exactly when
-  // something first refers to it.
-  it('mints a piece id when the first override needs a name', () => {
-    const { doc, piece } = placed()
-    expect(doc.prefabAt('pad')!.pieces[0]!.id, 'no id until something refers to it').toBeUndefined()
+  it('re-points a reference when the subtree carrying it is duplicated', () => {
+    const { level, doc } = linked()
+    const watcher = named(doc, 'watcher')
+    const anchor = named(doc, 'anchor')
+    // Park the anchor under the watcher, so a duplicate copies both and the reference is internal.
+    doc.reparent(anchor, watcher, 0)
+    const copy = doc.duplicate(named(doc, 'watcher'))
 
-    doc.setProps(piece, props({ pieceLevel: true, material: MAT_HAZARD }))
-
-    const id = doc.prefabAt('pad')!.pieces[0]!.id
-    expect(id).toBeDefined()
-    const json = doc.toJSON() as Level
-    expect(Object.keys(json.instances[0]!.overrides!), 'and the override is keyed by it').toEqual([id!])
+    const original = level.nodes[0]!
+    const duplicate = level.nodes[1]!
+    const refOf = (n: Node): unknown => n.components.find((c) => c.type === Linked.type)?.params.target
+    expect(refOf(original), 'still its own child').toBe(original.children![0]!.id)
+    expect(refOf(duplicate), 'and the copy points at the copy').toBe(duplicate.children![0]!.id)
+    expect(refOf(original)).not.toBe(refOf(duplicate))
+    expect(copy).toBeGreaterThan(0)
   })
 
-  it('lists which fields are overridden, and nothing before any edit', () => {
-    const { doc, piece } = placed()
-    expect(doc.overridesOf(piece)).toEqual([])
-
-    doc.setProps(piece, props({ pieceLevel: true, material: MAT_HAZARD }))
-    // `setProps` writes both of the fields it owns, so a material edit records the trigger too.
-    expect(doc.overridesOf(piece)).toEqual(['material', 'trigger'])
-
-    doc.setTransform(piece, { position: vec3(1, 2, 3) })
-    expect(doc.overridesOf(piece)).toEqual(['transform', 'material', 'trigger'])
+  it('re-points a reference when the subtree carrying it is pasted', () => {
+    const { level, doc } = linked()
+    doc.reparent(named(doc, 'anchor'), named(doc, 'watcher'), 0)
+    doc.paste(doc.copy(named(doc, 'watcher'))!, null)
+    const refOf = (n: Node): unknown => n.components.find((c) => c.type === Linked.type)?.params.target
+    expect(refOf(level.nodes[1]!)).toBe(level.nodes[1]!.children![0]!.id)
+    expect(refOf(level.nodes[0]!)).not.toBe(refOf(level.nodes[1]!))
   })
 
-  it('reverts one field and leaves the others', () => {
-    const { doc, piece } = placed()
-    doc.setProps(piece, props({ pieceLevel: true, material: MAT_HAZARD }))
-    doc.setTransform(piece, { position: vec3(1, 2, 3) })
-
-    doc.revert(piece, 'transform')
-
-    expect(doc.overridesOf(piece)).not.toContain('transform')
-    expect(doc.overridesOf(piece)).toContain('material')
-    expect(doc.transformOf(piece).position, 'back to what the prefab says').toEqual(vec3(0, 0, 0))
-  })
-
-  it('reverts everything, and leaves no husk in the JSON', () => {
-    const { level, doc, piece } = placed()
-    doc.setProps(piece, props({ pieceLevel: true, material: MAT_HAZARD }))
-    doc.setTransform(piece, { position: vec3(1, 2, 3) })
-
-    doc.revert(piece)
-
-    expect(doc.overridesOf(piece)).toEqual([])
-    expect('overrides' in level.instances[0]!, 'the empty map goes too').toBe(false)
-  })
-
-  it('applies an override to the prefab, so every instance follows and this one is clean', () => {
-    const level = blank()
-    const doc = levelDoc(level, { pad: twoPieceLibrary() })
-    doc.place('pad', vec3(0, 0, 0))
-    doc.place('pad', vec3(8, 0, 0))
-    const [a, b] = [nth(doc, 0), nth(doc, 1)]
-    doc.setProps(pieceOf(doc, a), props({ pieceLevel: true, material: MAT_HAZARD }))
-
-    doc.applyToPrefab(pieceOf(doc, a))
-
-    expect(doc.overridesOf(pieceOf(doc, a)), 'no longer an override').toEqual([])
-    expect(doc.props(pieceOf(doc, a)).material, 'still what was chosen').toBe(MAT_HAZARD)
-    expect(doc.props(pieceOf(doc, b)).material, 'and the other instance followed').toBe(MAT_HAZARD)
-    expect('overrides' in level.instances[0]!).toBe(false)
-  })
-
-  it('overrides a track on one placement without moving the others', () => {
-    const level = blank()
-    const doc = levelDoc(level, { pad: twoPieceLibrary() })
-    doc.place('pad', vec3(0, 0, 0))
-    doc.place('pad', vec3(8, 0, 0))
-    const [a, b] = [nth(doc, 0), nth(doc, 1)]
-
-    doc.setTrack(pieceOf(doc, a), { keys: moveTrack(vec3(0, 0, 0), vec3(0, 1, 0), 3, 1000), loop: 'loop', phaseMs: 0 })
-
-    expect(doc.poseOf(pieceOf(doc, a), 500).position.y, 'this one moves').toBeCloseTo(3, 9)
-    expect(doc.poseOf(pieceOf(doc, b), 500).position.y, 'that one does not').toBeCloseTo(0, 9)
-  })
-
-  // Absence means inherit, so "does not move here" needs a value of its own.
-  it('says static rather than nothing when a track is cleared on a placement', () => {
-    const level = blank()
-    const doc = levelDoc(level, { pad: twoPieceLibrary() })
-    doc.place('pad', vec3(0, 0, 0))
-    const piece = pieceOf(doc, nth(doc, 0))
-    doc.prefabAt('pad')!.pieces[0]!.behavior = { kind: 'track', keys: moveTrack(vec3(0, 0, 0), vec3(0, 1, 0), 3, 1000) }
-
-    doc.setTrack(piece, null)
-
-    expect(doc.trackOf(piece), 'no motion here').toBeNull()
-    expect(doc.overridesOf(piece), 'recorded as an override, not as silence').toContain('behavior')
-  })
-
-  it('survives a round trip through validate and JSON', () => {
-    const { doc, piece } = placed()
-    doc.setProps(piece, props({ pieceLevel: true, material: MAT_HAZARD }))
-    doc.setTransform(piece, { position: vec3(1, 2, 3) })
-
-    const parsed = validateLevel(JSON.parse(JSON.stringify(doc.toJSON())))
-    const reopened = levelDoc(parsed, {})
-    const reopenedPiece = pieceOf(reopened, nth(reopened, 0))
-    expect(reopened.overridesOf(reopenedPiece)).toEqual(['transform', 'material', 'trigger'])
-    expect(reopened.transformOf(reopenedPiece).position).toEqual(vec3(1, 2, 3))
-  })
-
-  it('has nothing to override in prefab mode, where the piece is the definition', () => {
-    const doc = prefabDoc(twoPieceLibrary())
-    expect(doc.overridesOf(0)).toEqual([])
-    doc.revert(0)
-    doc.applyToPrefab(0)
-    expect(doc.count(), 'and neither is a no-op that breaks anything').toBe(2)
+  it('leaves a reference to something outside the copy pointing where it did', () => {
+    const { level, doc } = linked()
+    doc.duplicate(named(doc, 'watcher'))
+    const refOf = (n: Node): unknown => n.components.find((c) => c.type === Linked.type)?.params.target
+    // The anchor is a sibling, not inside the copied subtree, so both still name it.
+    expect(refOf(level.nodes[0]!)).toBe(refOf(level.nodes[1]!))
   })
 })

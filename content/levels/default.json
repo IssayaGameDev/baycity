@@ -4,558 +4,22 @@
     "fallBehavior": "respawn-checkpoint",
     "fallY": -6
   },
-  "instances": [
-    {
-      "prefab": {
-        "id": "ground",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 20,
-                "y": 0.5,
-                "z": 20
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "a563891204f971a4"
-            }
-          }
-        ]
-      },
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": -0.5,
-          "z": 0
-        }
-      }
-    },
-    {
-      "prefab": {
-        "id": "step",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 2,
-                "y": 0.2,
-                "z": 2
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "55205761e38bc929"
-            }
-          }
-        ]
-      },
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 0.2,
-          "z": 6
-        }
-      }
-    },
-    {
-      "prefab": {
-        "id": "rise-1",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 1.5,
-                "y": 0.15,
-                "z": 1.5
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "55205761e38bc929"
-            }
-          }
-        ]
-      },
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 1.2,
-          "z": 11
-        }
-      }
-    },
-    {
-      "prefab": {
-        "id": "rise-2",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 1.5,
-                "y": 0.15,
-                "z": 1.5
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "55205761e38bc929"
-            }
-          }
-        ]
-      },
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 2.4,
-          "z": 16
-        }
-      }
-    },
-    {
-      "prefab": {
-        "id": "rise-3",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 1.5,
-                "y": 0.15,
-                "z": 1.5
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "55205761e38bc929"
-            }
-          }
-        ]
-      },
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 3.6,
-          "z": 21
-        }
-      }
-    },
-    {
-      "prefab": {
-        "id": "checkpoint",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 1.5,
-                "y": 0.1,
-                "z": 1.5
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "d67ddcac4f57efc8"
-            },
-            "trigger": {
-              "kind": "checkpoint"
-            }
-          }
-        ]
-      },
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 3.7,
-          "z": 26
-        }
-      }
-    },
-    {
-      "prefab": {
-        "id": "landing",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 2,
-                "y": 0.15,
-                "z": 2
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "55205761e38bc929"
-            }
-          }
-        ]
-      },
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 3.6,
-          "z": 32
-        }
-      }
-    },
-    {
-      "prefab": {
-        "id": "elevator",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 1.5,
-                "y": 0.15,
-                "z": 1.5
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "19079ddb3fbfb27e"
-            }
-          }
-        ]
-      },
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 3.6,
-          "z": 37
-        }
-      },
-      "behavior": {
-        "kind": "track",
-        "keys": [
-          {
-            "t": 0,
-            "position": {
-              "x": 0,
-              "y": 3.6,
-              "z": 37
-            },
-            "easing": "inOut"
-          },
-          {
-            "t": 2000,
-            "position": {
-              "x": 0,
-              "y": 6.6,
-              "z": 37
-            },
-            "easing": "inOut"
-          },
-          {
-            "t": 4000,
-            "position": {
-              "x": 0,
-              "y": 3.6,
-              "z": 37
-            }
-          }
-        ],
-        "loop": "loop"
-      }
-    },
-    {
-      "prefab": {
-        "id": "turntable",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 3,
-                "y": 0.15,
-                "z": 0.6
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "19079ddb3fbfb27e"
-            }
-          }
-        ]
-      },
-      "transform": {
-        "position": {
-          "x": 10,
-          "y": 0.5,
-          "z": 5
-        }
-      },
-      "behavior": {
-        "kind": "track",
-        "keys": [
-          {
-            "t": 0,
-            "rotation": {
-              "x": 0,
-              "y": 0,
-              "z": 0
-            },
-            "easing": "linear"
-          },
-          {
-            "t": 6000,
-            "rotation": {
-              "x": 0,
-              "y": 6.2832,
-              "z": 0
-            }
-          }
-        ]
-      }
-    },
-    {
-      "prefab": {
-        "id": "hazard",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 1.5,
-                "y": 0.1,
-                "z": 1.5
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "4a11d049f9f8e5ac"
-            },
-            "trigger": {
-              "kind": "hazard"
-            }
-          }
-        ]
-      },
-      "transform": {
-        "position": {
-          "x": -6,
-          "y": 0.1,
-          "z": 6
-        }
-      }
-    },
-    {
-      "prefab": {
-        "id": "goal",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 2,
-                "y": 0.15,
-                "z": 2
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "6bbc0130aff311b5"
-            },
-            "trigger": {
-              "kind": "goal"
-            }
-          }
-        ]
-      },
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 6.7,
-          "z": 42
-        }
-      }
-    },
-    {
-      "prefab": {
-        "id": "turntable",
-        "pieces": [
-          {
-            "collider": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 3,
-                "y": 0.15,
-                "z": 0.6
-              }
-            },
-            "transform": {
-              "position": {
-                "x": 0,
-                "y": 0,
-                "z": 0
-              }
-            },
-            "visual": {
-              "kind": "primitive",
-              "material": "19079ddb3fbfb27e"
-            }
-          }
-        ]
-      },
-      "transform": {
-        "position": {
-          "x": 10,
-          "y": 0.5,
-          "z": 14.5
-        }
-      },
-      "behavior": {
-        "kind": "track",
-        "keys": [
-          {
-            "t": 0,
-            "rotation": {
-              "x": 0,
-              "y": 0,
-              "z": 0
-            },
-            "easing": "linear"
-          },
-          {
-            "t": 6000,
-            "rotation": {
-              "x": 0,
-              "y": 6.2832,
-              "z": 0
-            }
-          }
-        ]
-      }
-    },
-    {
-      "prefab": "Trampoline",
-      "transform": {
-        "position": {
-          "x": -6,
-          "y": 0.15,
-          "z": 4
-        }
-      },
-      "name": "trampoline",
-      "overrides": {
-        "91521042": {
-          "material": "d8dcf8f542bebdf7",
-          "trigger": {
-            "kind": "bumper",
-            "power": 60
-          }
-        }
-      }
-    }
-  ],
-  "markers": [
-    {
-      "kind": "spawn",
+  "prefabs": {
+    "Trampoline": {
+      "id": "root",
+      "name": "Trampoline",
       "transform": {
         "position": {
           "x": 0,
           "y": 0,
           "z": 0
         }
-      }
-    }
-  ],
-  "prefabs": {
-    "Trampoline": {
-      "id": "Trampoline",
-      "pieces": [
+      },
+      "components": [],
+      "children": [
         {
-          "collider": {
-            "kind": "box",
-            "halfExtents": {
-              "x": 1.5,
-              "y": 0.15,
-              "z": 1.5
-            }
-          },
+          "id": "91521042",
+          "name": "pad",
           "transform": {
             "position": {
               "x": 0,
@@ -563,18 +27,1193 @@
               "z": 0
             }
           },
-          "visual": {
-            "kind": "primitive",
-            "material": "d8dcf8f542bebdf7"
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "d8dcf8f542bebdf7"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Bumper",
+              "params": {
+                "power": 26
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "FastElevator": {
+      "id": "root",
+      "name": "FastElevator",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0.5
+            },
+            "scale": {
+              "x": 0.5,
+              "y": 2,
+              "z": 1
+            }
           },
-          "trigger": {
-            "kind": "bumper",
-            "power": 26
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "p1",
+          "transform": {
+            "position": {
+              "x": 1.5,
+              "y": 0,
+              "z": 0.5
+            },
+            "scale": {
+              "x": 0.5,
+              "y": 2,
+              "z": 1
+            }
           },
-          "name": "pad",
-          "id": "91521042"
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "4a11d049f9f8e5ac"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Hazard",
+              "params": {}
+            }
+          ]
+        },
+        {
+          "id": "p2",
+          "transform": {
+            "position": {
+              "x": 3,
+              "y": 0,
+              "z": 0.5
+            },
+            "scale": {
+              "x": 0.5,
+              "y": 2,
+              "z": 1
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "p3",
+          "transform": {
+            "position": {
+              "x": 6,
+              "y": 0,
+              "z": 0.5
+            },
+            "scale": {
+              "x": 0.5,
+              "y": 2,
+              "z": 1
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "p4",
+          "transform": {
+            "position": {
+              "x": 4.5,
+              "y": 0,
+              "z": 0.5
+            },
+            "scale": {
+              "x": 0.5,
+              "y": 2,
+              "z": 1
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "4a11d049f9f8e5ac"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Hazard",
+              "params": {}
+            }
+          ]
+        },
+        {
+          "id": "p5",
+          "transform": {
+            "position": {
+              "x": 7.5,
+              "y": 0,
+              "z": 0.5
+            },
+            "scale": {
+              "x": 0.5,
+              "y": 2,
+              "z": 1
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "4a11d049f9f8e5ac"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Hazard",
+              "params": {}
+            }
+          ]
+        },
+        {
+          "id": "p6",
+          "transform": {
+            "position": {
+              "x": 9,
+              "y": 0,
+              "z": 0.5
+            },
+            "scale": {
+              "x": 0.5,
+              "y": 2,
+              "z": 1
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "p7",
+          "transform": {
+            "position": {
+              "x": 12,
+              "y": 0,
+              "z": 0.5
+            },
+            "scale": {
+              "x": 0.5,
+              "y": 2,
+              "z": 1
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "p8",
+          "transform": {
+            "position": {
+              "x": 10.5,
+              "y": 0,
+              "z": 0.5
+            },
+            "scale": {
+              "x": 0.5,
+              "y": 2,
+              "z": 1
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "4a11d049f9f8e5ac"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Hazard",
+              "params": {}
+            }
+          ]
         }
       ]
     }
-  }
+  },
+  "nodes": [
+    {
+      "id": "n0",
+      "name": "ground",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -0.5,
+          "z": 0
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n0-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 20,
+                    "y": 0.5,
+                    "z": 20
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "a563891204f971a4"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n1",
+      "name": "step",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0.2,
+          "z": 6
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n1-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 2,
+                    "y": 0.2,
+                    "z": 2
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n2",
+      "name": "rise-1",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 1.2,
+          "z": 11
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n2-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n3",
+      "name": "rise-2",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 2.4,
+          "z": 16
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n3-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n4",
+      "name": "rise-3",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 3.6,
+          "z": 21
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n4-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n5",
+      "name": "checkpoint",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 3.7,
+          "z": 26
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n5-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.1,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "d67ddcac4f57efc8"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Checkpoint",
+              "params": {}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n6",
+      "name": "landing",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 3.6,
+          "z": 32
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n6-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 2,
+                    "y": 0.15,
+                    "z": 2
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n7",
+      "name": "elevator",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 3.6,
+          "z": 37
+        }
+      },
+      "components": [
+        {
+          "id": "o0",
+          "type": "Track",
+          "params": {
+            "keys": [
+              {
+                "t": 0,
+                "position": {
+                  "x": 0,
+                  "y": 3.6,
+                  "z": 37
+                },
+                "easing": "inOut"
+              },
+              {
+                "t": 2000,
+                "position": {
+                  "x": 0,
+                  "y": 6.6,
+                  "z": 37
+                },
+                "easing": "inOut"
+              },
+              {
+                "t": 4000,
+                "position": {
+                  "x": 0,
+                  "y": 3.6,
+                  "z": 37
+                }
+              }
+            ],
+            "loop": "loop",
+            "phaseMs": 0
+          }
+        }
+      ],
+      "children": [
+        {
+          "id": "n7-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "19079ddb3fbfb27e"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n8",
+      "name": "turntable",
+      "transform": {
+        "position": {
+          "x": 10,
+          "y": 0.5,
+          "z": 5
+        }
+      },
+      "components": [
+        {
+          "id": "o0",
+          "type": "Track",
+          "params": {
+            "keys": [
+              {
+                "t": 0,
+                "rotation": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                },
+                "easing": "linear"
+              },
+              {
+                "t": 6000,
+                "rotation": {
+                  "x": 0,
+                  "y": 6.2832,
+                  "z": 0
+                }
+              }
+            ],
+            "loop": "loop",
+            "phaseMs": 0
+          }
+        }
+      ],
+      "children": [
+        {
+          "id": "n8-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 3,
+                    "y": 0.15,
+                    "z": 0.6
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "19079ddb3fbfb27e"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n9",
+      "name": "hazard",
+      "transform": {
+        "position": {
+          "x": -6,
+          "y": 0.1,
+          "z": 6
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n9-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.1,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "4a11d049f9f8e5ac"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Hazard",
+              "params": {}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n10",
+      "name": "goal",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 6.7,
+          "z": 42
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n10-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 2,
+                    "y": 0.15,
+                    "z": 2
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "6bbc0130aff311b5"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Goal",
+              "params": {}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n11",
+      "name": "turntable",
+      "transform": {
+        "position": {
+          "x": 10,
+          "y": 0.5,
+          "z": 14.5
+        }
+      },
+      "components": [
+        {
+          "id": "o0",
+          "type": "Track",
+          "params": {
+            "keys": [
+              {
+                "t": 0,
+                "rotation": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                },
+                "easing": "linear"
+              },
+              {
+                "t": 6000,
+                "rotation": {
+                  "x": 0,
+                  "y": 6.2832,
+                  "z": 0
+                }
+              }
+            ],
+            "loop": "loop",
+            "phaseMs": 0
+          }
+        }
+      ],
+      "children": [
+        {
+          "id": "n11-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 3,
+                    "y": 0.15,
+                    "z": 0.6
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Visual",
+              "params": {
+                "source": "collider",
+                "model": "",
+                "material": "19079ddb3fbfb27e"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "n12",
+      "name": "trampoline",
+      "transform": {
+        "position": {
+          "x": -6,
+          "y": 0.15,
+          "z": 4
+        }
+      },
+      "components": [],
+      "prefab": "Trampoline",
+      "overrides": {
+        "91521042": {
+          "transform": {
+            "position": {
+              "x": 24.5,
+              "y": 0,
+              "z": -5.5
+            }
+          },
+          "params": {
+            "c1": {
+              "material": "d8dcf8f542bebdf7"
+            },
+            "c2": {
+              "power": 60
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "n13",
+      "transform": {
+        "position": {
+          "x": 2,
+          "y": 0,
+          "z": -8
+        }
+      },
+      "components": [],
+      "prefab": "FastElevator"
+    },
+    {
+      "id": "m0",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Spawn",
+          "params": {}
+        }
+      ]
+    }
+  ]
 }
