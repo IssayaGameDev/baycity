@@ -79,6 +79,18 @@ export interface CharacterState {
    * this appears in `vx`/`vy`/`vz`.
    */
   carry: Vec3
+  /**
+   * An upward speed (m/s) something outside locomotion wants applied on the next step, then **consumed**.
+   *
+   * The mode sets it when the character's contacts include a bumper (ADR 0032). It has to go through the step
+   * rather than being written onto `vy` from outside, because leaving a surface is five decisions here and not
+   * one: the ride must stop owning the vertical, gravity must apply, footing must be released, and the movement
+   * base must be dropped. `jumping` already threads all five, so a launch joins it — otherwise a trampoline
+   * mounted on a moving platform would have its bounce zeroed by the ride on the very next tick.
+   *
+   * Consumed rather than latched so a single contact fires once, and 0 means nothing pending.
+   */
+  launch: number
 }
 
 const addVec = (a: Vec3, b: Vec3): Vec3 => vec3(a.x + b.x, a.y + b.y, a.z + b.z)
@@ -102,6 +114,7 @@ export const addCharacterWith = (world: PhysicsWorld, spawn: Vec3, opts: Partial
   vx: 0,
   vz: 0,
   vy: 0,
+  launch: 0,
   grounded: false,
   base: undefined,
   carry: vec3(0, 0, 0),
@@ -118,6 +131,7 @@ export const addCharacter = (world: PhysicsWorld, spawn: Vec3, layers?: Collisio
   vx: 0,
   vz: 0,
   vy: 0,
+  launch: 0,
   grounded: false,
   base: undefined,
   carry: vec3(0, 0, 0),
@@ -178,9 +192,17 @@ export const stepCharacter = (
   }
 
   const jumping = cmd.jump && state.grounded
-  const riding = ride !== undefined && !jumping
+  // A launch leaves the surface exactly as a jump does, so every decision below keys off `leaving` rather than
+  // off `jumping`. A bumper does not require footing: you can be thrown by clipping one in the air.
+  const launching = state.launch > 0
+  const leaving = jumping || launching
+  const riding = ride !== undefined && !leaving
 
-  if (jumping) state.vy = Math.sqrt(2 * tuning.gravity * tuning.jumpHeight)
+  // A launch outranks a jump on the tick both land: the bumper is the bigger, more deliberate event, and
+  // taking the larger of the two would let a jump silently weaken a weak bumper.
+  if (launching) state.vy = state.launch
+  else if (jumping) state.vy = Math.sqrt(2 * tuning.gravity * tuning.jumpHeight)
+  state.launch = 0
   // While riding, the surface owns our vertical. Gravity must not fight a rising platform: it
   // loses by the difference each tick, and the character is left behind and drops off the edge
   // (measured: applying gravity while riding a 3 m/s elevator falls through to y ≈ −1085).
@@ -209,7 +231,7 @@ export const stepCharacter = (
   // would let the ground brake (no input → stop in `groundStopTime`) eat most of it again. The
   // ride is then dropped for this tick: velocity carries the motion instead, and doing both would
   // move us twice.
-  if (jumping && ride !== undefined) {
+  if (leaving && ride !== undefined) {
     state.vx += ride.x / dt
     state.vy += ride.y / dt
     state.vz += ride.z / dt
@@ -237,7 +259,7 @@ export const stepCharacter = (
   // Either signal counts as footing: the probe covers the controller's flicker, and the controller
   // covers surfaces the probe's narrow ray misses (standing on an edge, wedged against geometry).
   // The probe was taken before this step ran, so it must not vouch for a tick that jumped away.
-  state.grounded = grounded || (under !== undefined && !jumping)
+  state.grounded = grounded || (under !== undefined && !leaving)
   if (state.grounded && state.vy < 0) state.vy = 0
 
   // Re-anchor in the base's frame. `move` only sets the body's target for this tick's step, so the
@@ -245,7 +267,7 @@ export const stepCharacter = (
   // walking (and being pushed, and being blocked by a wall) change where on the platform we stand,
   // while the ride itself stays exact. A jump releases the base outright; otherwise it lives as
   // long as the probe still finds that surface underfoot.
-  if (frame !== undefined && under !== undefined && !jumping) {
+  if (frame !== undefined && under !== undefined && !leaving) {
     const finalPos = addVec(state.body.translation(), applied)
     state.base = { colliderHandle: under.colliderHandle, localPos: toLocal(frame, finalPos) }
   } else {

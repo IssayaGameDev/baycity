@@ -22,6 +22,7 @@ import {
   type LoadedLevel,
   type Pose,
   type Prefab,
+  type Transform,
 } from '@mp/content'
 import { createSimClock, eulerToQuat, quat, startFixedLoop, vec3, type EntityId, type LoopHandle, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
@@ -40,15 +41,18 @@ import {
   type AssetRuntime,
   type LevelView,
 } from '@mp/render-three'
-import { levelDoc, prefabDoc, type Doc, type Mode } from './editorDoc'
+import { levelDoc, prefabDoc, type ClipItem, type Doc, type Mode } from './editorDoc'
 import { listFiles, loadLevel, saveFile } from './filesApi'
 import { createHierarchy, type Hierarchy } from './hierarchy'
+import { createHistory } from './history'
 import { createInspector, type Inspector } from './inspector'
 import { createAssetInspector, type AssetInspector } from './assetInspector'
 import { loadAssetLibrary, type AssetLibrary } from './assetsApi'
 import { canMoveFolder, movedInto, renamedTo } from './assetTree'
 import { createPreviews, type Previews } from './previews'
 import { createProjectPanel, type Project } from './projectPanel'
+import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
+import { createShortcuts } from './shortcuts'
 import { createSplitter, readPx, writePx } from './splitter'
 import { createTimeline, type Timeline } from './timeline'
 import { DIRS, keyRows, pathPoints, setKeyPose, trackFrom, type TrackEdit } from './trackEdit'
@@ -94,6 +98,15 @@ const instanceRoot = new THREE.Group() // one Group per editable item (userData.
 const markerGroup = new THREE.Group()
 stage.scene.add(instanceRoot, markerGroup)
 let instanceGroups: THREE.Group[] = []
+/**
+ * Every selected item, primary last (ADR 0031).
+ *
+ * `selected` below is derived from it and is the **primary** — the last clicked. Keeping both is what let
+ * multi-selection arrive without touching the Inspector, the timeline or the track helper: each of those has
+ * exactly one subject, and the primary is it. Only the operations that genuinely mean "all of them" —
+ * transform, delete, duplicate, copy — read the list.
+ */
+let selection: number[] = []
 let selected: number | null = null
 /**
  * What a viewport click will place. `own` is a prefab this level defines in its own table, named; a model or a
@@ -413,6 +426,8 @@ const setDoc = (next: Doc, name: string): void => {
   docStack.push({ doc: next, label: `${next.mode}: ${name}` })
   fileState.name = name
   showDoc()
+  // Another file's edits are not this one's, and its snapshots would restore the wrong document entirely.
+  resetHistory()
 }
 
 /** Step into the shared definition behind a referencing instance. */
@@ -502,10 +517,19 @@ let previewLastFrame = 0
  */
 let activeKey: number | null = null
 /**
- * Snapshot taken when a drag begins on an animated item with no key selected, so the drag **offsets every
- * key** by one delta instead of accumulating one per pointer event.
+ * What each selected item looked like when the current drag began.
+ *
+ * Two jobs, both needing the *starting* state rather than the running one. An animated item with no key
+ * selected has its whole track offset by one delta, so accumulating per pointer event would multiply it. And a
+ * multi-selection mirrors the primary's delta onto everything else, which is meaningless without the pose each
+ * of them started from (ADR 0031).
  */
-let dragFrom: { pose: Pose; keys: readonly Keyframe[] } | null = null
+interface DragStart {
+  pose: Pose
+  scale: Vec3
+  keys: readonly Keyframe[] | null
+}
+let dragStart = new Map<number, DragStart>()
 
 /** Pose every item from its track at the playhead. Static items sit at their authored transform. */
 const applyPreviewPoses = (): void => {
@@ -556,6 +580,7 @@ const selectedTrack = (): TrackEdit | null => (selected === null || doc === null
 const setSelectedTrack = (track: TrackEdit | null): void => {
   if (selected === null || doc === null) return
   doc.setTrack(selected, track)
+  recordEdit('animation')
   applyPreviewPoses()
   updateTrackHelper()
   scheduleRebuild()
@@ -565,24 +590,114 @@ const setSelectedTrack = (track: TrackEdit | null): void => {
 }
 
 let gizmoDragged = false
+/**
+ * A drag is in flight, so the gizmo owns the selection's pose.
+ *
+ * Separate from `gizmoDragged`, which latches for the click handler. This one gates the *other* way into a
+ * transform — the Inspector's numeric fields — because a typed value cannot legitimately arrive from a person
+ * mid-drag, and letting one through mid-drag re-poses the item from the document underneath the drag.
+ */
+let gizmoDragging = false
 gizmo.addEventListener('dragging-changed', (event) => {
   const dragging = event.value as boolean
   controls.enabled = !dragging
+  gizmoDragging = dragging
   if (dragging) {
     gizmoDragged = true
-    // Dragging an animated item as a whole moves its *whole path*, which needs the pose it started from.
-    const track = selectedTrack()
-    dragFrom = track !== null && activeKey === null && selected !== null && doc !== null ? { pose: doc.poseOf(selected, previewMs), keys: track.keys } : null
+    // One history entry per drag, recorded when it ends. `coalescing` suppresses the hundred notifications in
+    // between, which is also what leaves `baseline` sitting on the pre-drag state for that one record to use.
+    coalescing = true
+    dragStart = new Map()
+    if (doc !== null) {
+      for (const i of selection) {
+        const g = instanceGroups[i]
+        if (g === undefined) continue
+        const track = doc.trackOf(i)
+        dragStart.set(i, {
+          // Read off the group, not from `poseOf`, though at this instant they agree: every value compared
+          // against it later is also read off a group, so both sides share one rounding and one euler branch.
+          // Mixing the stored euler with a re-derived one leaves a residue in the delta that accumulates.
+          pose: groupPose(g),
+          scale: vec3(g.scale.x, g.scale.y, g.scale.z),
+          // Only when the whole track is being moved: with a key selected the gizmo writes that key outright.
+          keys: track !== null && activeKey === null ? track.keys : null,
+        })
+      }
+    }
   } else {
-    dragFrom = null
+    coalescing = false
+    recordEdit(selection.length > 1 ? `${edit.mode} ${selection.length}` : edit.mode)
+    dragStart = new Map()
     rebuildLoaded()
   }
 })
 gizmo.addEventListener('objectChange', () => {
   writeBackSelected()
+  mirrorDragToSelection()
   inspectorSync()
   updateTrackHelper()
 })
+
+/**
+ * Apply the primary's drag delta to every other selected item (ADR 0031).
+ *
+ * Translation is a shared world delta, which is the obvious reading of dragging five platforms. Rotation and
+ * scale apply the same **local** delta to each item about its own origin — they do *not* orbit the selection
+ * about a shared pivot, which is what Unity does and what this deliberately is not: orbiting needs a pivot
+ * object and a decision about where the pivot goes, and moving five things by the same amount is the case
+ * that actually comes up when laying out a level.
+ */
+const mirrorDragToSelection = (): void => {
+  if (selection.length < 2 || selected === null || doc === null) return
+  // Dragging a keyframe is single-item by nature: `activeKey` indexes the *primary's* track, and applying that
+  // index to another item's keys would rewrite whichever key happened to sit at that position.
+  if (activeKey !== null) return
+  const primaryStart = dragStart.get(selected)
+  const primaryGroup = instanceGroups[selected]
+  if (primaryStart === undefined || primaryGroup === undefined) return
+
+  const now = groupPose(primaryGroup)
+  // Rotation as a local delta about each item's own origin, and scale as a ratio — a difference would be
+  // meaningless for scale, and a zero start would make the ratio meaningless too.
+  const dr = vec3(now.rotation.x - primaryStart.pose.rotation.x, now.rotation.y - primaryStart.pose.rotation.y, now.rotation.z - primaryStart.pose.rotation.z)
+  const ds = vec3(
+    primaryStart.scale.x === 0 ? 1 : primaryGroup.scale.x / primaryStart.scale.x,
+    primaryStart.scale.y === 0 ? 1 : primaryGroup.scale.y / primaryStart.scale.y,
+    primaryStart.scale.z === 0 ? 1 : primaryGroup.scale.z / primaryStart.scale.z,
+  )
+
+  /**
+   * Translation is shared in **world** space, then converted into each item's own parent frame.
+   *
+   * A local delta would only be right for items that share a parent. Selecting a top-level platform and a crate
+   * nested under a moving deck is ordinary, and their local frames differ by the deck's whole transform — so a
+   * local delta would send the crate somewhere unrelated to the drag.
+   */
+  const worldOf = (group: THREE.Object3D, local: Vec3): THREE.Vector3 => {
+    const parent = group.parent ?? instanceRoot
+    parent.updateWorldMatrix(true, false)
+    return parent.localToWorld(new THREE.Vector3(local.x, local.y, local.z))
+  }
+  const worldDelta = worldOf(primaryGroup, now.position).sub(worldOf(primaryGroup, primaryStart.pose.position))
+
+  for (const i of selection) {
+    if (i === selected) continue
+    const g = instanceGroups[i]
+    const start = dragStart.get(i)
+    if (g === undefined || start === undefined) continue
+
+    // Posed from the *start* pose plus the delta, never from the running one: a hundred pointer events during
+    // one drag must produce one offset, not a hundred compounding ones.
+    const parent = g.parent ?? instanceRoot
+    parent.updateWorldMatrix(true, false)
+    const target = parent.worldToLocal(worldOf(g, start.pose.position).add(worldDelta))
+    g.position.copy(target)
+    const q = eulerToQuat(vec3(start.pose.rotation.x + dr.x, start.pose.rotation.y + dr.y, start.pose.rotation.z + dr.z))
+    g.quaternion.set(q.x, q.y, q.z, q.w)
+    g.scale.set(start.scale.x * ds.x, start.scale.y * ds.y, start.scale.z * ds.z)
+    writeBackItem(i)
+  }
+}
 
 /**
  * Where a gizmo drag lands, which depends on whether the item is animated (ADR 0029).
@@ -598,22 +713,37 @@ gizmo.addEventListener('objectChange', () => {
  * A channel the track does not animate falls through to the authored transform, so rotating a
  * translation-only lift tilts the lift rather than inventing a one-key rotation channel that would freeze it.
  */
-const writeBackSelected = (): void => {
-  if (selected === null || doc === null) return
-  const g = instanceGroups[selected]
+const writeBackItem = (index: number): void => {
+  if (doc === null) return
+  const g = instanceGroups[index]
   if (g === undefined) return
-  const track = doc.trackOf(selected)
+  const track = doc.trackOf(index)
   if (track !== null) {
-    writeBackIntoTrack(selected, track, g)
+    writeBackIntoTrack(index, track, g)
     return
   }
-  const t = doc.transformOf(selected)
-  t.position = vec3(r4(g.position.x), r4(g.position.y), r4(g.position.z))
+  doc.setTransform(index, transformOfGroup(g))
+}
+
+/** The primary's own write-back — what a gizmo drag or a typed Inspector value lands on first. */
+const writeBackSelected = (): void => {
+  if (selected !== null) writeBackItem(selected)
+}
+
+/**
+ * A group's local pose as a `Transform`, with `rotation`/`scale` left out when they are the identity.
+ *
+ * Built and handed to `doc.setTransform` rather than mutating what `transformOf` returned: for an overridden
+ * piece those are different objects, since reading gives the prefab's value and writing creates the
+ * placement's own (ADR 0033).
+ */
+const transformOfGroup = (g: THREE.Group): Transform => {
   const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
-  if (isZeroRot(e)) delete t.rotation
-  else t.rotation = vec3(r4(e.x), r4(e.y), r4(e.z))
-  if (isOne(g.scale)) delete t.scale
-  else t.scale = vec3(r4(g.scale.x), r4(g.scale.y), r4(g.scale.z))
+  return {
+    position: vec3(r4(g.position.x), r4(g.position.y), r4(g.position.z)),
+    ...(isZeroRot(e) ? {} : { rotation: vec3(r4(e.x), r4(e.y), r4(e.z)) }),
+    ...(isOne(g.scale) ? {} : { scale: vec3(r4(g.scale.x), r4(g.scale.y), r4(g.scale.z)) }),
+  }
 }
 
 const groupPose = (g: THREE.Group): Pose => {
@@ -628,15 +758,15 @@ const writeBackIntoTrack = (index: number, track: TrackEdit, g: THREE.Group): vo
   const usesRotation = track.keys.some((k) => k.rotation !== undefined)
 
   // Scale is never animated, so it always belongs to the authored transform. Same for a channel with no
-  // keys: there is nothing to write it into.
-  const t = doc.transformOf(index)
-  if (isOne(g.scale)) delete t.scale
-  else t.scale = vec3(r4(g.scale.x), r4(g.scale.y), r4(g.scale.z))
-  if (!usesRotation) {
-    if (isZeroRot(new THREE.Euler(pose.rotation.x, pose.rotation.y, pose.rotation.z))) delete t.rotation
-    else t.rotation = pose.rotation
-  }
-  if (!usesPosition) t.position = pose.position
+  // keys: there is nothing to write it into. Anything the track *does* animate keeps whatever the transform
+  // already said, since the track overrides it.
+  const authored = doc.transformOf(index)
+  const rot = new THREE.Euler(pose.rotation.x, pose.rotation.y, pose.rotation.z)
+  doc.setTransform(index, {
+    position: usesPosition ? authored.position : pose.position,
+    ...(usesRotation ? (authored.rotation !== undefined ? { rotation: authored.rotation } : {}) : isZeroRot(rot) ? {} : { rotation: pose.rotation }),
+    ...(isOne(g.scale) ? {} : { scale: vec3(r4(g.scale.x), r4(g.scale.y), r4(g.scale.z)) }),
+  })
 
   if (activeKey !== null) {
     doc.setTrack(index, {
@@ -649,10 +779,10 @@ const writeBackIntoTrack = (index: number, track: TrackEdit, g: THREE.Group): vo
     return
   }
 
-  // No key selected: offset the whole track, against the drag's *starting* snapshot — so a hundred pointer
+  // No key selected: offset the whole track, against this item's *starting* snapshot — so a hundred pointer
   // events during one drag produce one offset rather than a hundred compounding ones.
-  const from = dragFrom
-  if (from === null) return
+  const from = dragStart.get(index)
+  if (from === undefined || from.keys === null) return
   const dp = vec3(pose.position.x - from.pose.position.x, pose.position.y - from.pose.position.y, pose.position.z - from.pose.position.z)
   const dr = vec3(pose.rotation.x - from.pose.rotation.x, pose.rotation.y - from.pose.rotation.y, pose.rotation.z - from.pose.rotation.z)
   doc.setTrack(index, {
@@ -665,28 +795,50 @@ const writeBackIntoTrack = (index: number, track: TrackEdit, g: THREE.Group): vo
   })
 }
 
-const select = (index: number): void => {
-  // Editing is suspended during play, and the item meshes are hidden — attaching a gizmo to one would
-  // put a handle in mid-air over a level you are walking. The Hierarchy panel can reach here too, so the
-  // guard belongs on the selection itself rather than on the viewport's click handler alone.
+/**
+ * Point the editor at a selection. Everything derived from it is refreshed here, so no caller has to remember
+ * the list: the gizmo goes on the primary, the Inspector and the timeline follow it, and the track helper
+ * redraws.
+ */
+const applySelection = (next: readonly number[]): void => {
+  // Editing is suspended during play, and the item meshes are hidden — attaching a gizmo to one would put a
+  // handle in mid-air over a level you are walking. The Hierarchy panel can reach here too, so the guard
+  // belongs on the selection itself rather than on the viewport's click handler alone.
   if (playing) return
   // The Inspector shows one thing: a scene item or an asset, never both.
-  if (selectedAsset !== null) {
+  if (selectedAsset !== null && next.length > 0) {
     selectedAsset = null
     assetInspector.show(null)
   }
-  const g = instanceGroups[index]
-  if (g === undefined || doc === null) return
-  selected = index
-  gizmo.attach(g)
+  selection = clampTo(next, doc?.count() ?? 0)
+  const primary = primaryOf(selection)
+  selected = primary
   activeKey = null // a fresh selection edits the object, not whichever key the last one was on
+
+  const g = primary === null ? undefined : instanceGroups[primary]
+  if (g === undefined) gizmo.detach()
+  else gizmo.attach(g)
+
   inspectorRebuild()
   updateTrackHelper()
   timeline.render()
   uiChanged()
 }
 
+/** Select one item outright — the plain click, and what every command that lands on a new item does. */
+const select = (index: number): void => {
+  if (instanceGroups[index] === undefined || doc === null) return
+  applySelection([index])
+}
+
+/** A click that carries modifiers: Ctrl toggles one, Shift extends a range over `order`. */
+const selectWith = (index: number, mode: SelectMode, order: readonly number[]): void => {
+  if (instanceGroups[index] === undefined || doc === null) return
+  applySelection(applySelect(selection, index, mode, order))
+}
+
 const deselect = (): void => {
+  selection = []
   selected = null
   activeKey = null
   gizmo.detach()
@@ -742,6 +894,7 @@ canvas.addEventListener('pointerup', (e) => {
       return
     }
     placing = null
+    recordEdit('place')
     buildItems()
     rebuildLoaded()
     select(idx)
@@ -768,58 +921,139 @@ canvas.addEventListener('pointerup', (e) => {
 
   const hit = raycaster.intersectObjects(instanceRoot.children, true)[0]?.object
   if (hit === undefined) {
-    deselect()
+    // Ctrl-clicking empty space is a miss, not "clear everything": losing a five-item selection to a stray
+    // click is the kind of thing that makes people stop using multi-select.
+    if (!e.ctrlKey && !e.metaKey) deselect()
     return
   }
   let o: THREE.Object3D | null = hit
   while (o !== null && o.userData.index === undefined) o = o.parent
-  if (o !== null && typeof o.userData.index === 'number') select(o.userData.index)
+  if (o !== null && typeof o.userData.index === 'number') {
+    // Ctrl toggles in the viewport, as it does in the Hierarchy. Shift is *not* offered here: a range needs an
+    // order, and the viewport has none — what looks adjacent on screen is an accident of the camera.
+    const mode = modeFor(e)
+    selectWith(o.userData.index, mode === 'range' ? 'toggle' : mode, [])
+  }
 })
 
-window.addEventListener('keydown', (e) => {
-  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-  if (playing) {
-    if (e.code === 'Escape') stopPlay()
-    return // WASD/Space handled by the play key listener; editing shortcuts off
-  }
-  if (e.code === 'KeyT' || e.code === 'KeyG') setMode('translate')
-  else if (e.code === 'KeyR') setMode('rotate')
-  else if (e.code === 'KeyS') setMode('scale')
-  else if (e.code === 'Delete' || e.code === 'Backspace') deleteSelected()
-  else if (e.code === 'KeyD' && (e.ctrlKey || e.metaKey)) {
-    e.preventDefault()
-    duplicateSelected()
-  } else if (e.code === 'Escape') {
-    if (placing !== null) {
-      placing = null
-      setStatus('placement cancelled')
-    } else deselect()
-  }
-})
+/**
+ * The selection reduced to what a structural operation should act on: **roots only**, highest index first.
+ *
+ * Roots, because deleting a parent takes its children with it and duplicating both would produce the child
+ * twice. Descending, because removing or inserting only shifts the indices *after* the node touched — so
+ * working from the bottom up leaves every index still to be processed valid, with no bookkeeping.
+ */
+const selectionRoots = (): number[] => {
+  const open = doc
+  return open === null ? [] : rootsOf(selection, (i) => open.depthOf(i)).sort((a, b) => b - a)
+}
 
 const deleteSelected = (): void => {
-  if (selected === null || doc === null) return
-  doc.remove(selected)
+  if (doc === null || selection.length === 0) return
+  const roots = selectionRoots()
+  for (const i of roots) doc.remove(i)
+  recordEdit(roots.length > 1 ? `delete ${roots.length}` : 'delete')
   deselect()
   buildItems()
   rebuildLoaded()
 }
+
 const duplicateSelected = (): void => {
-  if (selected === null || doc === null) return
-  const idx = doc.duplicate(selected)
+  if (doc === null || selection.length === 0) return
+  const made: number[] = []
+  for (const i of selectionRoots()) {
+    const before = doc.count()
+    const at = doc.duplicate(i)
+    // A copy is a whole subtree, so it inserts more than one node. Everything already recorded sits after this
+    // insertion point (we are working downward), so it shifts by however many nodes went in.
+    const inserted = doc.count() - before
+    for (let n = 0; n < made.length; n++) made[n]! += inserted
+    made.push(at)
+  }
+  recordEdit(made.length > 1 ? `duplicate ${made.length}` : 'duplicate')
   buildItems()
   rebuildLoaded()
-  select(idx)
+  // Reversed, so the primary ends up on the copy of what was the primary rather than on the lowest one.
+  applySelection(made.reverse())
 }
 /** Give an inline one-off a shared identity, so it can be referenced and edited in one place. */
 const extractSelected = (): void => {
   if (selected === null || doc === null) return
   const id = doc.extract(selected)
   if (id === null) return
+  recordEdit('extract to prefab')
   inspectorRebuild() // the link row flips from "not linked" to the new prefab
   uiChanged() // the level's own entries are placeable too, and the row gains a badge
   setStatus(`extracted to prefab "${id}"`)
 }
+
+/**
+ * The editor's shortcuts (ADR 0030).
+ *
+ * Matched by the **character** each key produces, not by its physical position, so Ctrl+Z is the key marked Z
+ * on QWERTY, AZERTY, Dvorak and the rest. `shortcuts.ts` carries the reasoning and the fallback for layouts
+ * where the character cannot answer.
+ *
+ * Declared as data rather than as an if-chain so the table is the single answer to "what does this key do",
+ * duplicates fail loudly instead of one silently losing, and a cheat sheet can be generated from it.
+ */
+const editorShortcuts = createShortcuts([
+  { id: 'undo', chords: ['mod+z'], label: 'Undo', run: () => undo(), enabled: () => !playing },
+  // Both spellings: Ctrl+Y is the Windows convention and Ctrl+Shift+Z the one every other editor also takes.
+  { id: 'redo', chords: ['mod+y', 'mod+shift+z'], label: 'Redo', run: () => redo(), enabled: () => !playing },
+  { id: 'copy', chords: ['mod+c'], label: 'Copy', run: () => copySelected(), enabled: () => !playing && selection.length > 0 },
+  { id: 'cut', chords: ['mod+x'], label: 'Cut', run: () => cutSelected(), enabled: () => !playing && selection.length > 0 },
+  { id: 'paste', chords: ['mod+v'], label: 'Paste', run: () => pasteClipboard(false), enabled: () => !playing && clipboard.length > 0 },
+  {
+    id: 'paste-child',
+    chords: ['mod+shift+v'],
+    label: 'Paste as child',
+    run: () => pasteClipboard(true),
+    enabled: () => !playing && clipboard.length > 0 && selected !== null,
+  },
+  { id: 'duplicate', chords: ['mod+d'], label: 'Duplicate', run: () => duplicateSelected(), enabled: () => !playing && selection.length > 0 },
+  {
+    id: 'delete',
+    chords: ['delete', 'backspace'],
+    label: 'Delete',
+    run: () => deleteSelected(),
+    enabled: () => !playing && selection.length > 0,
+  },
+  {
+    id: 'select-all',
+    chords: ['mod+a'],
+    label: 'Select all',
+    run: () => applySelection(doc === null ? [] : Array.from({ length: doc.count() }, (_, i) => i)),
+    enabled: () => !playing && doc !== null && doc.count() > 0,
+  },
+  { id: 'translate', chords: ['t', 'g'], label: 'Translate tool', run: () => setMode('translate'), enabled: () => !playing },
+  { id: 'rotate', chords: ['r'], label: 'Rotate tool', run: () => setMode('rotate'), enabled: () => !playing },
+  { id: 'scale', chords: ['s'], label: 'Scale tool', run: () => setMode('scale'), enabled: () => !playing },
+  {
+    id: 'cancel',
+    chords: ['escape'],
+    label: 'Cancel / deselect',
+    run: () => {
+      if (playing) {
+        stopPlay()
+        return
+      }
+      if (placing !== null) {
+        placing = null
+        setStatus('placement cancelled')
+        refreshUi()
+      } else deselect()
+    },
+    // The only binding that stays live during play, because it is the way out of it.
+    enabled: () => true,
+  },
+])
+
+window.addEventListener('keydown', (e) => {
+  editorShortcuts.handle(e)
+})
+
+
 
 // ============================ play-in-place (identical to the game) ============================
 // Same building blocks as modes/parkour: createLocalController (fixed tick + render interpolation),
@@ -1127,16 +1361,11 @@ const toolbar: Toolbar = createToolbar(
 // --- hierarchy ---
 const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
   doc: () => doc,
-  selected: () => selected,
-  onSelect: select,
-  // A piece belongs to the prefab, not to the instance you clicked it under, so opening it means
-  // stepping into the shared definition — with that piece already selected.
-  onOpenPiece: (index, pieceIndex) => {
-    openPrefabOf(index)
-    if (doc !== null && pieceIndex < doc.count()) select(pieceIndex)
-  },
+  selection: () => selection,
+  onSelect: selectWith,
   onRename: (index, name) => {
     doc?.setName(index, name)
+    recordEdit('rename')
     inspectorRebuild() // the inspector's own name field mirrors this one
     uiChanged()
   },
@@ -1149,14 +1378,15 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
     const wasSelected = selected === from
 
     const landed = doc.reparent(from, parent, at)
+    recordEdit(parent === doc.parentOf(landed) ? 'reorder' : 'reparent')
     if (local !== null) {
-      const t = doc.transformOf(landed)
-      t.position = local.position
       const rot = new THREE.Euler(local.rotation.x, local.rotation.y, local.rotation.z, 'XYZ')
-      if (isZeroRot(rot)) delete t.rotation
-      else t.rotation = vec3(r4(local.rotation.x), r4(local.rotation.y), r4(local.rotation.z))
-      if (isOne(new THREE.Vector3(local.scale.x, local.scale.y, local.scale.z))) delete t.scale
-      else t.scale = vec3(r4(local.scale.x), r4(local.scale.y), r4(local.scale.z))
+      const scale = new THREE.Vector3(local.scale.x, local.scale.y, local.scale.z)
+      doc.setTransform(landed, {
+        position: local.position,
+        ...(isZeroRot(rot) ? {} : { rotation: vec3(r4(local.rotation.x), r4(local.rotation.y), r4(local.rotation.z)) }),
+        ...(isOne(scale) ? {} : { scale: vec3(r4(local.scale.x), r4(local.scale.y), r4(local.scale.z)) }),
+      })
     }
 
     // Depth-first indices *are* the identity here (meshes, selection, the gizmo's target) and a reparent
@@ -1266,6 +1496,162 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
 })
 
 
+// ============================== undo/redo and the clipboard (ADR 0030) ==============================
+/**
+ * A snapshot of the whole open file, plus where the selection was.
+ *
+ * The **root** document, always — `docStack[0]` — not whichever prefab is open on top of it. Editing a prefab
+ * from a level mutates that level's own table entry, so a root snapshot already covers it, and one history per
+ * file is the thing a person expects Ctrl+Z to walk.
+ */
+interface EditSnapshot {
+  data: Level | Prefab
+  mode: Mode
+  /** Sibling paths of the selection (`"0/2"`), primary last — these survive renumbering where indices do not. */
+  selectedPaths: string[]
+}
+
+const snapshotNow = (): EditSnapshot => {
+  const root = docStack[0]
+  const rootDoc = root?.doc ?? null
+  return {
+    data: structuredClone(rootDoc?.toJSON() ?? blankLevel('untitled')),
+    mode: rootDoc?.mode ?? 'level',
+    // Only meaningful when the selection is in the root document; inside a prefab it names a piece of
+    // something else, and restoring drops back to the root anyway.
+    selectedPaths: docStack.length === 1 && rootDoc !== null && rootDoc === doc ? selection.map((i) => rootDoc.pathOf(i)) : [],
+  }
+}
+
+const history = createHistory<EditSnapshot>({ clone: (v) => ({ ...v, data: structuredClone(v.data) }) })
+
+/**
+ * What the document looked like before the edit currently being reported.
+ *
+ * Held as a clone rather than snapshotting at each mutation site, because most mutations reach this file as a
+ * *notification* — the Inspector and the Hierarchy call `doc.setName`/`setProps` themselves and then tell us —
+ * so by then the old state is already gone. Keeping one clone ahead costs a clone per edit and removes the
+ * need for every call site to remember to snapshot first.
+ */
+let baseline: EditSnapshot | null = null
+/** True while a gizmo drag is in flight: one history entry per drag, not one per pointer event. */
+let coalescing = false
+
+/**
+ * Record that an edit just happened. `baseline` is the state before it.
+ *
+ * Silently drops an edit that changed nothing, which is not a nicety: a click on a gizmo handle, or picking the
+ * material a piece already had, both notify exactly like a real edit. Without this, Ctrl+Z would need pressing
+ * two or three times to undo one visible change, which is the way undo stops being trusted. The comparison is
+ * a stringify of a document measured in kilobytes, against a rebuild of the whole scene — it is not the
+ * expensive part of an edit.
+ */
+const recordEdit = (label: string): void => {
+  if (coalescing || baseline === null) return
+  const now = snapshotNow()
+  if (JSON.stringify(now.data) === JSON.stringify(baseline.data)) return
+  history.push(baseline, label)
+  baseline = now
+  renderStatus()
+}
+
+/** Start a fresh history: a different file's edits are not this one's. */
+const resetHistory = (): void => {
+  history.clear()
+  baseline = snapshotNow()
+}
+
+/** The index whose sibling path matches, or `null` — how a selection survives a restore. */
+const indexOfPath = (path: string | null): number | null => {
+  if (path === null || doc === null) return null
+  for (let i = 0; i < doc.count(); i++) if (doc.pathOf(i) === path) return i
+  return null
+}
+
+const restore = (snapshot: EditSnapshot): void => {
+  const data = structuredClone(snapshot.data)
+  const next = snapshot.mode === 'level' ? levelDoc(data as Level, userPrefabs) : prefabDoc(data as Prefab)
+  // Straight into the stack rather than through `setDoc`, which would reset the history we are walking.
+  docStack.length = 0
+  docStack.push({ doc: next, label: `${next.mode}: ${fileState.name}` })
+  showDoc()
+  const restored = snapshot.selectedPaths.map(indexOfPath).filter((i): i is number => i !== null)
+  if (restored.length > 0) applySelection(restored)
+  baseline = snapshotNow()
+}
+
+const undo = (): void => {
+  const entry = history.undo(snapshotNow())
+  if (entry === null) {
+    setStatus('nothing to undo')
+    return
+  }
+  restore(entry.data)
+  setStatus(`undid: ${entry.label}`)
+}
+
+const redo = (): void => {
+  const entry = history.redo(snapshotNow())
+  if (entry === null) {
+    setStatus('nothing to redo')
+    return
+  }
+  restore(entry.data)
+  setStatus(`redid: ${entry.label}`)
+}
+
+/**
+ * The clipboard: one item, in memory.
+ *
+ * Not the system clipboard. Reading it needs a permission prompt or a paste event, and a scene object is not
+ * text anybody would paste elsewhere — so a copy here would be a permission dialog in exchange for nothing.
+ * The cost is that copying between two browser tabs of the editor does not work.
+ */
+let clipboard: ClipItem[] = []
+
+const copySelected = (): void => {
+  if (doc === null || selection.length === 0) return
+  // Ascending, so pasting a multi-item copy puts things back in the order they were in.
+  const open = doc
+  const roots = selectionRoots().reverse()
+  const items = roots.map((i) => open.copy(i)).filter((item): item is ClipItem => item !== null)
+  if (items.length === 0) return
+  clipboard = items
+  setStatus(items.length > 1 ? `copied ${items.length} items` : `copied ${doc.label(roots[0]!)}`)
+  refreshUi()
+}
+
+const pasteClipboard = (asChild: boolean): void => {
+  if (doc === null || clipboard.length === 0) return
+  // A sibling of the selection by default, which is what every editor does; into it on the Shift variant,
+  // since nesting is a placement decision and worth its own gesture (ADR 0025).
+  const parent = selected === null ? null : asChild ? selected : doc.parentOf(selected)
+  const landed: number[] = []
+  for (const item of clipboard) {
+    const at = doc.paste(item, parent)
+    if (at >= 0) landed.push(at)
+  }
+  if (landed.length === 0) {
+    setStatus(doc.mode === 'level' ? 'the clipboard holds prefab pieces, not instances' : 'the clipboard holds instances, not pieces')
+    return
+  }
+  recordEdit(landed.length > 1 ? `paste ${landed.length}` : 'paste')
+  buildItems()
+  rebuildLoaded()
+  applySelection(landed)
+  // A pasted item can name a material this document had never referenced.
+  loadNewReferences(() => {
+    buildItems()
+    applySelection(landed)
+  })
+}
+
+const cutSelected = (): void => {
+  if (doc === null || selection.length === 0) return
+  copySelected()
+  deleteSelected()
+}
+
 // --- animation panel (Animation tab, beside Project in the bottom row) ---
 /**
  * `setPreviewing` lives here rather than beside the other animation state because it is the one piece that
@@ -1374,26 +1760,30 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     }
   },
   writeTransform: (t) => {
-    if (selected === null) return
+    // The gizmo is the authority while it is dragging: see `gizmoDragging`.
+    if (selected === null || gizmoDragging) return
     const g = instanceGroups[selected]
     if (g === undefined) return
     // A typed edit is a one-shot drag: `writeBackSelected` offsets an animated item's whole track against the
     // pose it started from, and without a snapshot here there is nothing to offset against — the number would
     // be accepted and change nothing, which is worse than refusing it.
     const track = doc?.trackOf(selected) ?? null
-    if (track !== null && activeKey === null && doc !== null) dragFrom = { pose: doc.poseOf(selected, previewMs), keys: track.keys }
+    // Snapshot before the group moves — the same basis the drag path uses, for the same reason.
+    if (track !== null && activeKey === null) dragStart.set(selected, { pose: groupPose(g), scale: vec3(g.scale.x, g.scale.y, g.scale.z), keys: track.keys })
     g.position.set(t.position.x, t.position.y, t.position.z)
     const q = eulerToQuat(vec3(THREE.MathUtils.degToRad(t.rotationDeg.x), THREE.MathUtils.degToRad(t.rotationDeg.y), THREE.MathUtils.degToRad(t.rotationDeg.z)))
     g.quaternion.set(q.x, q.y, q.z, q.w)
     g.scale.set(t.scale.x, t.scale.y, t.scale.z)
     writeBackSelected()
-    dragFrom = null
+    recordEdit('transform')
+    dragStart.delete(selected)
     applyPreviewPoses() // the track moved, so the item's drawn pose at the playhead moved with it
     scheduleRebuild()
     updateTrackHelper()
   },
   onPropsChanged: () => {
     const item = selected
+    recordEdit('properties')
     rebuildSelectedMeshes()
     scheduleRebuild()
     updateTrackHelper()
@@ -1403,12 +1793,33 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   },
   // A rename only changes a label: redraw the chrome, leave the property grid and the meshes alone.
   // Called through the hook, since `refreshUi` is declared below this block.
-  onRenamed: () => uiChanged(),
+  onRenamed: () => {
+    recordEdit('rename')
+    uiChanged()
+  },
   duplicate: duplicateSelected,
   remove: deleteSelected,
   extract: extractSelected,
   openPrefab: () => {
     if (selected !== null) openPrefabOf(selected)
+  },
+  revertOverride: (field) => {
+    if (selected === null || doc === null) return
+    doc.revert(selected, field)
+    recordEdit(field === undefined ? 'revert overrides' : `revert ${field}`)
+    buildItems()
+    rebuildLoaded()
+    applySelection(selection)
+    setStatus('reverted to the prefab')
+  },
+  applyOverrides: () => {
+    if (selected === null || doc === null) return
+    doc.applyToPrefab(selected)
+    recordEdit('apply to prefab')
+    buildItems()
+    rebuildLoaded()
+    applySelection(selection)
+    setStatus('applied to the prefab — every instance follows')
   },
   materials: () => {
     const options: Record<string, string> = { '(none)': '' }
@@ -1437,7 +1848,9 @@ const setProblem = (msg: string): void => {
 }
 const renderStatus = (): void => {
   const parts: string[] = [breadcrumb()]
-  if (selected !== null && doc !== null) parts.push(`selected #${selected} (${doc.label(selected)})`)
+  if (selected !== null && doc !== null) {
+    parts.push(selection.length > 1 ? `${selection.length} selected · editing ${doc.label(selected)}` : `selected #${selected} (${doc.label(selected)})`)
+  }
   // What the gizmo is about to move is not otherwise visible, and it is the difference between dragging one
   // key and dragging a whole path.
   if (selected !== null && doc?.trackOf(selected) != null) {
@@ -1447,6 +1860,11 @@ const renderStatus = (): void => {
     const what = placing.kind === 'own' ? placing.name : (assets?.db.byId[placing.assetId]?.name ?? 'asset')
     parts.push(`click in the viewport to place <b>${what}</b>`)
   }
+  // Undo depth in the status bar because nothing else says whether Ctrl+Z will do anything, and the answer
+  // changes with every edit. The clipboard likewise: a paste that silently does nothing reads as broken.
+  const depth = history.depth()
+  if (depth.undo > 0 || depth.redo > 0) parts.push(`undo ${depth.undo}${depth.redo > 0 ? ` · redo ${depth.redo}` : ''}`)
+  if (clipboard.length > 0) parts.push(`clipboard: ${clipboard.length} ${clipboard[0]!.kind}${clipboard.length > 1 ? 's' : ''}`)
   if (statusMsg !== '') parts.push(statusMsg)
   if (problemMsg !== '') parts.push(`<span class="problem">${problemMsg}</span>`)
   statusBar.innerHTML = parts.filter((p) => p !== '').join(' · ')

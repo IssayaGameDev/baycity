@@ -47,11 +47,58 @@ const checkBehavior = (b: unknown, at: string): void => {
   })
 }
 
-/** A prefab's pieces, only far enough to reach their behaviors. */
+const TRIGGERS = new Set(['checkpoint', 'goal', 'hazard', 'bumper'])
+
+/**
+ * A trigger, which stopped being a bare string when `bumper` needed a number (ADR 0032).
+ *
+ * `power` is checked rather than defaulted because a missing one is worse than a load error: it reaches the
+ * character as `NaN`, and `vy = NaN` puts the player nowhere with no message.
+ */
+const checkTrigger = (t: unknown, at: string): void => {
+  if (t === undefined) return
+  if (typeof t === 'string') throw new LevelError(`${at}: expected an object like { kind: '${t}' }, not a bare string`)
+  if (!isObj(t)) throw new LevelError(`${at}: expected an object`)
+  if (typeof t.kind !== 'string' || !TRIGGERS.has(t.kind))
+    throw new LevelError(`${at}.kind: expected 'checkpoint' | 'goal' | 'hazard' | 'bumper'`)
+  if (t.kind === 'bumper' && (typeof t.power !== 'number' || !Number.isFinite(t.power) || t.power <= 0))
+    throw new LevelError(`${at}.power: expected a launch speed in m/s above zero`)
+}
+
+/**
+ * Per-piece overrides (ADR 0033). Keys are piece ids and are not checked against the prefab: an override for a
+ * piece that no longer exists is inert by design, which is what lets a prefab lose a piece without every
+ * placement that touched it failing to load.
+ */
+const checkOverrides = (value: unknown, at: string): void => {
+  if (value === undefined) return
+  if (!isObj(value)) throw new LevelError(`${at}: expected an object keyed by piece id`)
+  for (const [id, over] of Object.entries(value)) {
+    const oAt = `${at}['${id}']`
+    if (!isObj(over)) throw new LevelError(`${oAt}: expected an object`)
+    if (over.material !== undefined && typeof over.material !== 'string')
+      throw new LevelError(`${oAt}.material: expected a material asset id, or '' for none`)
+    if (over.name !== undefined && typeof over.name !== 'string') throw new LevelError(`${oAt}.name: expected a string`)
+    if (over.transform !== undefined) {
+      if (!isObj(over.transform) || !isVec3(over.transform.position)) throw new LevelError(`${oAt}.transform.position: expected a Vec3`)
+      if (over.transform.rotation !== undefined && !isVec3(over.transform.rotation))
+        throw new LevelError(`${oAt}.transform.rotation: expected a Vec3`)
+      if (over.transform.scale !== undefined && !isVec3(over.transform.scale)) throw new LevelError(`${oAt}.transform.scale: expected a Vec3`)
+    }
+    // `none` is the override's own sentinel for "not a trigger here", so it is valid where it would not be
+    // on a piece.
+    if (over.trigger !== undefined && !(isObj(over.trigger) && over.trigger.kind === 'none')) checkTrigger(over.trigger, `${oAt}.trigger`)
+    checkBehavior(over.behavior, `${oAt}.behavior`)
+  }
+}
+
+/** A prefab's pieces, only far enough to reach their behaviors and triggers. */
 const checkPieces = (prefab: unknown, at: string): void => {
   if (!isObj(prefab) || !Array.isArray(prefab.pieces)) return
   prefab.pieces.forEach((piece: unknown, n: number) => {
-    if (isObj(piece)) checkBehavior(piece.behavior, `${at}.pieces[${n}].behavior`)
+    if (!isObj(piece)) return
+    checkBehavior(piece.behavior, `${at}.pieces[${n}].behavior`)
+    checkTrigger(piece.trigger, `${at}.pieces[${n}].trigger`)
   })
 }
 
@@ -93,6 +140,7 @@ export const validateLevel = (data: unknown): Level => {
     if (inst.name !== undefined && typeof inst.name !== 'string')
       throw new LevelError(`${at}.name: expected a string (an author-facing label)`)
     checkBehavior(inst.behavior, `${at}.behavior`)
+    checkOverrides(inst.overrides, `${at}.overrides`)
     checkPieces(typeof prefab === 'string' ? table[prefab] : prefab, at)
     if (inst.children !== undefined) {
       if (!Array.isArray(inst.children)) throw new LevelError(`${at}.children: expected an array of instances`)

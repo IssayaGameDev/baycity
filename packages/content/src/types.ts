@@ -52,9 +52,36 @@ export type Visual =
   | { readonly kind: 'primitive'; readonly material?: string }
   | { readonly kind: 'model'; readonly asset: string; readonly material?: string }
 
-/** Gameplay triggers fired by real contact with a piece's collider — the mode decides the
- * rule (save checkpoint / reach goal / respawn on hazard). */
-export type TriggerKind = 'checkpoint' | 'goal' | 'hazard'
+/** Every trigger kind, for a picker and for validation. */
+export type TriggerKind = 'checkpoint' | 'goal' | 'hazard' | 'bumper'
+
+/**
+ * A gameplay rule fired by real contact with a piece's collider — the mode decides what each one means
+ * (save a checkpoint, reach the goal, respawn on a hazard, launch off a bumper).
+ *
+ * A **discriminated union rather than a bare string**, because the moment a rule needed a number the string
+ * had nowhere to put it (ADR 0032). The three original kinds carry nothing and still carry nothing; `bumper`
+ * carries how hard it throws.
+ *
+ * Contact, not proximity: the collider is solid and the mode matches handles against what the character
+ * controller actually collided with. So a trampoline is something you land on, not a zone you enter.
+ */
+export type Trigger =
+  | { readonly kind: 'checkpoint' }
+  | { readonly kind: 'goal' }
+  | { readonly kind: 'hazard' }
+  | {
+      readonly kind: 'bumper'
+      /**
+       * Upward launch speed in m/s, replacing whatever vertical velocity the character had.
+       *
+       * Apex is `power² / (2·gravity)`. At the tuned gravity of 55 a jump leaves the ground at
+       * `√(2·55·3) ≈ 18.2` m/s for its 3 m, so **anything below 18 throws you lower than your own jump** and is
+       * only useful as a soft catch. 26 gives about 6.1 m, roughly twice a jump, which is what a trampoline
+       * should feel like.
+       */
+      readonly power: number
+    }
 
 /** One collider + visual at a local transform in a prefab. `visual` defaults to a
  * greybox primitive matching the collider when omitted. `trigger` marks this piece's
@@ -65,13 +92,42 @@ export interface Piece {
   collider: ColliderDesc
   transform: Transform
   visual?: Visual
-  trigger?: TriggerKind
+  trigger?: Trigger
   behavior?: Behavior
   /**
    * Author-facing label, like a GameObject's name. Editor-only: the loader ignores it, nothing derives
    * behaviour from it, and it is absent unless somebody typed one — a prefab of three boxes reads as
    * "left rail / floor / right rail" in the hierarchy instead of "box / box / box".
    */
+  name?: string
+  /**
+   * Stable identity, for a placement to name this piece when it overrides it (ADR 0033).
+   *
+   * **Not the array index.** An index re-targets silently the moment a piece is inserted above it, which is the
+   * same failure the asset layer avoided with sidecar ids (ADR 0026) — except here the symptom is one
+   * instance's override quietly landing on a different piece. Minted on demand: a piece gains an id the first
+   * time something needs to refer to it, so nothing has to migrate.
+   */
+  id?: string
+}
+
+/**
+ * What one placement changes about one piece of the prefab it references (ADR 0033).
+ *
+ * Absent field means inherit. That is what makes an override sparse and what makes "revert" mean something: the
+ * prefab stays the source of truth and this is the difference.
+ *
+ * Clearing rather than inheriting needs a value, not an absence, so the two cases stay distinguishable:
+ * `material: ''` is "no material here", and `trigger: { kind: 'none' }` is "not a trigger here". Motion needs no
+ * sentinel because `Behavior` already has one in `{ kind: 'static' }`.
+ */
+export interface PieceOverride {
+  transform?: Transform
+  /** Material asset id, or `''` for explicitly none. */
+  material?: string
+  /** A trigger, or `{ kind: 'none' }` to remove the prefab's. */
+  trigger?: Trigger | { readonly kind: 'none' }
+  behavior?: Behavior
   name?: string
 }
 
@@ -172,6 +228,13 @@ export interface PrefabInstance {
   behavior?: Behavior
   /** Material asset id applied to every piece of this placement, beating each piece's own. */
   material?: string
+  /**
+   * Per-piece overrides, keyed by `Piece.id` (ADR 0033). The fine-grained counterpart to `material` above,
+   * which is the blunt "resurface all of it" version and still wins over a piece's own.
+   *
+   * Keyed rather than positional so inserting a piece into the prefab cannot silently re-target them.
+   */
+  overrides?: Record<string, PieceOverride>
   /**
    * Author-facing label, like a GameObject's name — per *instance*, so two placements of one prefab can
    * be told apart ("first gap" / "last gap"). Editor-only, ignored by the loader, and absent unless

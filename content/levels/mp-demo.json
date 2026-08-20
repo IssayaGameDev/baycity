@@ -282,7 +282,9 @@
               "kind": "primitive",
               "material": "d67ddcac4f57efc8"
             },
-            "trigger": "checkpoint"
+            "trigger": {
+              "kind": "checkpoint"
+            }
           }
         ]
       },

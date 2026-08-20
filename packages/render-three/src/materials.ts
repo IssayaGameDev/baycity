@@ -1,4 +1,4 @@
-import type { ColliderDesc, WorldMarker } from '@mp/content'
+import type { ColliderDesc, TriggerKind, WorldMarker } from '@mp/content'
 import * as THREE from 'three'
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js'
 
@@ -13,14 +13,21 @@ import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js'
  * (spawn/checkpoint/goal/hazard pads and their editor wireframes) are debug chrome nobody authors, and the
  * grey a primitive draws in when no material has been chosen.
  */
-export const MARKER_COLORS: Record<WorldMarker['kind'], number> = {
+/**
+ * Keyed by marker kinds **and** trigger kinds, since the editor draws a wireframe for both and they overlap
+ * everywhere but `spawn` (a marker only) and `bumper` (a trigger only).
+ */
+export type GizmoKind = WorldMarker['kind'] | TriggerKind
+
+export const MARKER_COLORS: Record<GizmoKind, number> = {
   spawn: 0x2979ff,
   checkpoint: 0x00e676,
   goal: 0xffea00,
   hazard: 0xff1744,
+  bumper: 0xff9100,
 }
 
-export const colorForMarker = (kind: WorldMarker['kind']): number => MARKER_COLORS[kind]
+export const colorForMarker = (kind: GizmoKind): number => MARKER_COLORS[kind]
 
 /** The unauthored surface: flat matte grey, which is what "no material chosen" looks like. */
 const GREYBOX_COLOR = 0x475569

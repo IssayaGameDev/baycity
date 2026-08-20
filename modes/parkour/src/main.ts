@@ -622,6 +622,11 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   // real contact via char.body.collisions() — no distance heuristics.
   const checkpointTriggers = loaded.triggers.filter((t) => t.kind === 'checkpoint')
   const hazardHandles = new Set(loaded.triggers.filter((t) => t.kind === 'hazard').map((t) => t.colliderHandle))
+  // Bumpers carry their own launch speed, so this is a handle → power map rather than a set of handles
+  // (ADR 0032). Two bumpers in one level can throw by different amounts, which is the whole reason the
+  // trigger schema stopped being a bare string.
+  const bumperPower = new Map<number, number>()
+  for (const t of loaded.triggers) if (t.kind === 'bumper') bumperPower.set(t.colliderHandle, t.power)
   const { fallBehavior, fallY } = loaded.config
 
   // Markers sit on a surface; the capsule's *centre* must clear it by its stand height so
@@ -824,6 +829,14 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
             respawnPos = { x: t.position.x, y: t.position.y + STAND_OFFSET, z: t.position.z }
             break
           }
+        }
+        // Bumper touched → launch on the next step. The strongest one wins if several are touched at once,
+        // which is the reading that cannot surprise anybody. `char.launch` is consumed by `stepCharacter`, so
+        // holding still on a trampoline bounces once per landing rather than pinning you in the air.
+        if (!dead) {
+          let power = 0
+          for (const h of hits) power = Math.max(power, bumperPower.get(h) ?? 0)
+          if (power > 0) char.launch = power
         }
         // Hazard touched (any side), or fell below the kill plane → die. Gated on `dead`, or a corpse
         // still falling past the plane would re-trigger every tick.

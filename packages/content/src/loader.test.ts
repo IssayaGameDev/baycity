@@ -134,7 +134,7 @@ describe('instantiateLevel', () => {
         {
           prefab: {
             id: 'pad',
-            pieces: [{ collider: { kind: 'box', halfExtents: vec3(3, 0.25, 3) }, transform: { position: vec3(0, 0, 0) }, trigger: 'hazard' }],
+            pieces: [{ collider: { kind: 'box', halfExtents: vec3(3, 0.25, 3) }, transform: { position: vec3(0, 0, 0) }, trigger: { kind: 'hazard' } }],
           },
           transform: { position: vec3(0, 0, 0) },
         },
@@ -223,11 +223,11 @@ describe('instantiateLevel', () => {
       config: { fallBehavior: 'physical-fall', fallY: -3 },
       instances: [
         {
-          prefab: { id: 'g', pieces: [{ collider: { kind: 'box', halfExtents: vec3(5, 0.1, 5) }, transform: { position: vec3(0, -2, 0) }, trigger: 'checkpoint' }] },
+          prefab: { id: 'g', pieces: [{ collider: { kind: 'box', halfExtents: vec3(5, 0.1, 5) }, transform: { position: vec3(0, -2, 0) }, trigger: { kind: 'checkpoint' } }] },
           transform: { position: vec3(0, 0, 0) },
         },
         {
-          prefab: { id: 'l', pieces: [{ collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(0, 0, 0) }, trigger: 'hazard' }] },
+          prefab: { id: 'l', pieces: [{ collider: { kind: 'box', halfExtents: vec3(1, 0.2, 1) }, transform: { position: vec3(0, 0, 0) }, trigger: { kind: 'hazard' } }] },
           transform: { position: vec3(0, 2, 0) },
           behavior: moves(vec3(0, 2, 0), vec3(0, 1, 0), 2, 4000),
         },
@@ -258,7 +258,7 @@ describe('instantiateLevel', () => {
       config: { fallBehavior: 'physical-fall', fallY: -3 },
       instances: [
         {
-          prefab: { id: 'd', pieces: [{ collider: { kind: 'box', halfExtents: vec3(3, 0.2, 3) }, transform: { position: vec3(0, 0, 0) }, trigger: 'hazard' }] },
+          prefab: { id: 'd', pieces: [{ collider: { kind: 'box', halfExtents: vec3(3, 0.2, 3) }, transform: { position: vec3(0, 0, 0) }, trigger: { kind: 'hazard' } }] },
           transform: { position: vec3(0, 0, 0) },
           behavior: spins(vec3(0, 0, 0), vec3(0, 1, 0), 4000),
         },
@@ -344,16 +344,16 @@ describe('instantiateLevel', () => {
       instances: [
         // A static piece first, to prove the index counts clock-driven pieces rather than all of them.
         {
-          prefab: { id: 's', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: 'checkpoint' }] },
+          prefab: { id: 's', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: { kind: 'checkpoint' } }] },
           transform: { position: vec3(0, 0, 0) },
         },
         {
-          prefab: { id: 'm', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: 'hazard' }] },
+          prefab: { id: 'm', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: { kind: 'hazard' } }] },
           transform: { position: vec3(0, 1, 0) },
           behavior: moves(vec3(0, 1, 0), vec3(1, 0, 0), 8, 4000),
         },
         {
-          prefab: { id: 'r', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: 'goal' }] },
+          prefab: { id: 'r', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: { kind: 'goal' } }] },
           transform: { position: vec3(0, 3, 0) },
           behavior: spins(vec3(0, 0, 0), vec3(0, 1, 0), 8000),
         },
@@ -422,12 +422,12 @@ describe('instantiateLevel', () => {
       config: { fallBehavior: 'physical-fall', fallY: -3 },
       instances: [
         {
-          prefab: { id: 'm', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: 'hazard' }] },
+          prefab: { id: 'm', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: { kind: 'hazard' } }] },
           transform: { position: vec3(0, 1, 0) },
           behavior: moves(vec3(0, 1, 0), vec3(1, 0, 0), DIST, T),
         },
         {
-          prefab: { id: 'r', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: 'goal' }] },
+          prefab: { id: 'r', pieces: [{ collider: { kind: 'box', halfExtents: vec3(2, 0.2, 2) }, transform: { position: vec3(0, 0, 0) }, trigger: { kind: 'goal' } }] },
           transform: { position: vec3(0, 3, 0) },
           behavior: spins(vec3(0, 0, 0), vec3(0, 1, 0), T),
         },

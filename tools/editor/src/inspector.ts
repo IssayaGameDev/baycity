@@ -1,7 +1,7 @@
 import { vec3, type Vec3 } from '@mp/core'
 import { Pane } from 'tweakpane'
 
-import type { Doc, ItemProps, TriggerChoice } from './editorDoc'
+import { DEFAULT_BUMPER_POWER, type Doc, type ItemProps, type TriggerChoice } from './editorDoc'
 
 /**
  * The Inspector panel — transform, material, trigger, and the prefab actions.
@@ -15,6 +15,10 @@ import type { Doc, ItemProps, TriggerChoice } from './editorDoc'
  *
  * Holds no Three.js: the host reads and writes the selection's transform, so this file knows only about
  * documents and numbers.
+ *
+ * A piece selected in a level is the shared prefab's, so what this panel writes there is an **override** on
+ * that one placement, and the fields that differ from the prefab are listed with a Revert and an Apply
+ * (ADR 0033).
  *
  * Holds no *animation* either, since ADR 0029. Motion is a keyframe track, and a track is edited on a
  * timeline — a property grid can only show one instant of it, which is what made the old
@@ -43,6 +47,10 @@ export interface InspectorHost {
   openPrefab: () => void
   /** Material assets to offer, as Tweakpane options (label → asset id; `''` for none). */
   materials: () => Record<string, string>
+  /** Revert one overridden field on the selection, or all of them (ADR 0033). */
+  revertOverride: (field?: string) => void
+  /** Push the selection's overrides into the shared prefab, so every instance of it follows. */
+  applyOverrides: () => void
 }
 
 export interface Inspector {
@@ -130,10 +138,24 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   const sel: TransformValues = { position: vec3(0, 0, 0), rotationDeg: vec3(0, 0, 0), scale: vec3(1, 1, 1) }
   const prop = {
     trigger: 'none' as TriggerChoice,
+    bumperPower: DEFAULT_BUMPER_POWER,
     material: '',
   }
 
   let blades: { dispose: () => void }[] = []
+
+  /**
+   * True while `sync` is pushing values *into* the pane, so a refresh is not mistaken for a person typing.
+   *
+   * Tweakpane's `refresh()` calls `fetch()`, which assigns `rawValue` — and that emits `change` exactly as a
+   * keystroke does. So `sync()` fires every handler registered below it. During a gizmo drag that meant each
+   * frame's refresh re-entered `writeTransform`, which re-posed the item from the document and threw away the
+   * drag's starting snapshot; a multi-selection then stopped following the primary after the first frame, and a
+   * small rotation was rounded to zero and snapped back. There is no option to suppress it, so the guard is
+   * here, where the code knows it is the one writing.
+   */
+  let syncDepth = 0
+  const syncing = (): boolean => syncDepth > 0
 
   const sync = (): void => {
     const t = host.readTransform()
@@ -141,10 +163,16 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     sel.position = vec3(r4(t.position.x), r4(t.position.y), r4(t.position.z))
     sel.rotationDeg = vec3(r4(t.rotationDeg.x), r4(t.rotationDeg.y), r4(t.rotationDeg.z))
     sel.scale = vec3(r4(t.scale.x), r4(t.scale.y), r4(t.scale.z))
-    pane.refresh()
+    syncDepth++
+    try {
+      pane.refresh()
+    } finally {
+      syncDepth--
+    }
   }
 
   const applyTransform = (): void => {
+    if (syncing()) return
     host.writeTransform({
       position: sel.position,
       rotationDeg: sel.rotationDeg,
@@ -154,12 +182,14 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   }
 
   const applyProps = (): void => {
+    if (syncing()) return
     const doc = host.doc()
     const at = host.selected()
     if (doc === null || at === null) return
     const p: ItemProps = {
       pieceLevel: doc.mode === 'prefab',
       trigger: prop.trigger,
+      bumperPower: prop.bumperPower,
       material: prop.material,
     }
     doc.setProps(at, p)
@@ -174,9 +204,23 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     const at = host.selected()
     if (doc === null || at === null) return
 
+    // Building a binding reads its target, which can emit `change` before anything is user-driven. A depth
+    // counter rather than a flag, because `sync` below runs inside this span and clears its own; and `finally`
+    // rather than a bare decrement, because a leaked count would leave the panel ignoring input for good.
+    syncDepth++
+    try {
+      buildBlades(doc, at)
+    } finally {
+      syncDepth--
+    }
+  }
+
+  /** The property grid itself. Split out so the sync guard around it is a single `try`. */
+  const buildBlades = (doc: Doc, at: number): void => {
     sync()
     const p = doc.props(at)
     prop.trigger = p.trigger
+    prop.bumperPower = p.bumperPower
     prop.material = p.material
 
     const pos = { step: 0.1 }
@@ -200,8 +244,54 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     if (p.pieceLevel) {
       blades.push(
         pane
-          .addBinding(prop, 'trigger', { label: 'trigger', options: { none: 'none', checkpoint: 'checkpoint', goal: 'goal', hazard: 'hazard' } })
-          .on('change', applyProps),
+          .addBinding(prop, 'trigger', {
+            label: 'trigger',
+            options: { none: 'none', checkpoint: 'checkpoint', goal: 'goal', hazard: 'hazard', bumper: 'bumper' },
+          })
+          .on('change', () => {
+            applyProps()
+            rebuild() // show or hide the bumper's own field
+          }),
+      )
+      // A trigger kind that carries a parameter is why the schema stopped being a bare string (ADR 0032). The
+      // field only exists while `bumper` is chosen, which is the conditional-field pattern this panel has
+      // always had to express by rebuilding.
+      if (prop.trigger === 'bumper') {
+        blades.push(
+          pane
+            .addBinding(prop, 'bumperPower', { label: 'launch (m/s)', step: 1, min: 1, max: 60 })
+            .on('change', applyProps),
+        )
+      }
+    }
+
+    // ---- prefab overrides (ADR 0033) --------------------------------------------------------------------
+    /**
+     * A piece belongs to the shared prefab, so an edit here is an **override** on this one placement. The
+     * fields that differ are listed, because the alternative is a panel that cannot tell you whether the
+     * number you are reading is this object's or every object's — and that is the whole reason Unity bolds
+     * an overridden label.
+     *
+     * Listed rather than marked in place: Tweakpane owns its label markup, so bolding one would mean reaching
+     * into its DOM. A list of names with the two actions beside it says the same thing and cannot break when
+     * Tweakpane's internals change.
+     */
+    const overridden = doc.overridesOf(at)
+    if (overridden.length > 0) {
+      blades.push(
+        pane.addBlade({ view: 'text', label: 'overridden', parse: (v: string) => v, value: overridden.join(', '), disabled: true }) as {
+          dispose: () => void
+        },
+      )
+      blades.push(
+        pane.addButton({ title: 'Revert to prefab' }).on('click', () => host.revertOverride()),
+        pane.addButton({ title: 'Apply to prefab (all instances)' }).on('click', host.applyOverrides),
+      )
+    } else if (p.pieceLevel && doc.mode === 'level') {
+      blades.push(
+        pane.addBlade({ view: 'text', label: 'overridden', parse: (v: string) => v, value: 'nothing — matches the prefab', disabled: true }) as {
+          dispose: () => void
+        },
       )
     }
 

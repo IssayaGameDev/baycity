@@ -1,27 +1,31 @@
 import type { Doc } from './editorDoc'
+import { modeFor, type SelectMode } from './selection'
 
 /**
  * The Hierarchy panel: the document as a tree of selectable, renameable, reorderable, re-parentable rows.
  *
  * A level's instances nest to any depth, so a row's children are the instances placed *relative to it* —
  * dragging one onto another changes what its transform is measured against, and at runtime motion composes
- * down the chain (a bar spinning on a moving deck). A row can also be opened to show the **pieces** of the
- * prefab it references; those are a way *in* (double-click opens the shared definition with that piece
- * selected) rather than editable here, because a piece belongs to the prefab, not to this placement.
+ * down the chain (a bar spinning on a moving deck).
  *
- * Two kinds of openness, with opposite defaults, matching what each is for: child instances show by
- * default (the tree is the point), prefab pieces stay shut (they are detail). Both are keyed by
- * `Doc.pathOf` rather than by row index, so editing one part of the tree does not shuffle the collapse
- * state of another.
+ * A row's **contents** are its prefab's pieces followed by its child instances, and one twist hides both
+ * (ADR 0033). A piece is an object like any other here — it carries the visuals, the collider and the trigger,
+ * so it is what the Inspector shows and what the gizmo moves. What it is *not* is independently placeable: it
+ * belongs to the shared prefab, so it cannot be dragged, re-ordered or deleted through a placement, and
+ * editing it changes every instance of that prefab.
+ *
+ * Everything starts **shut**, so opening a level shows its top-level objects rather than every piece at once.
+ * Openness is keyed by `Doc.pathOf` rather than by row index, so editing one part of the tree does not shuffle
+ * the state of another.
  *
  * Reordering is not cosmetic: checkpoint progression follows instance order, and so does the movement-base
  * index a rider replicates (ADR 0021).
  */
 export interface Row {
   kind: 'item' | 'piece'
-  /** Depth-first index of the item (or, for a piece row, of its owning item). */
+  /** Depth-first index of this node in the document. */
   index: number
-  /** Index of the piece within the item's prefab; `-1` on item rows. */
+  /** Index of a piece within its prefab; `-1` on item rows. */
   pieceIndex: number
   /** Nesting depth; piece rows sit one deeper than their owner. */
   depth: number
@@ -37,16 +41,25 @@ export interface Row {
   /** References a prefab — Unity tints these, and it is the distinction that matters most here. */
   linked: boolean
   hasChildren: boolean
-  /** Something can be opened under this row (children, or the prefab's pieces). */
+  /** Something can be opened under this row: pieces, child instances, or both. */
   expandable: boolean
   expanded: boolean
 }
 
+/**
+ * One collapse state per row, covering everything under it (ADR 0033).
+ *
+ * There used to be two sets: `collapsed` for child instances and `piecesOpen` for the prefab's pieces, with the
+ * twist writing to whichever the row happened to need. That made one control mean two things, and it had a bug
+ * with no workaround: the moment an instance gained a child the twist wrote only to `collapsed`, so
+ * `piecesOpen` could never be set again and the pieces became **unreachable**.
+ */
 export interface Openness {
-  /** Item paths whose child instances are hidden. Absent = shown. */
-  collapsed: ReadonlySet<string>
-  /** Item paths whose prefab pieces are shown. Absent = hidden. */
-  piecesOpen: ReadonlySet<string>
+  /**
+   * Item paths whose contents — pieces and child instances alike — are shown. **Absent means collapsed**, so a
+   * level opens as a list of top-level objects rather than as everything at once.
+   */
+  expanded: ReadonlySet<string>
 }
 
 /**
@@ -64,53 +77,32 @@ export const rowsOf = (doc: Doc, open: Openness): Row[] => {
     if (depth > hideBelow) continue
     hideBelow = Number.POSITIVE_INFINITY
 
+    // Every row is a node the document addresses, pieces included (ADR 0033). This used to synthesize piece
+    // rows from the owning instance's meshes, which is why they could be shown but never selected.
+    const kind = doc.kindOf(i)
     const path = doc.pathOf(i)
     const ref = doc.refOf(i)
-    const specs = doc.meshSpecs(i)
-    const hasChildren = doc.childCount(i) > 0
-    const canOpenPieces = doc.mode === 'level' && specs.length > 0
-    const childrenShown = hasChildren && !open.collapsed.has(path)
-    const piecesShown = canOpenPieces && open.piecesOpen.has(path)
+    const contents = doc.childCount(i)
+    const shown = open.expanded.has(path)
     const shared = ref !== null ? doc.refCount(ref) : 0
 
     rows.push({
-      kind: 'item',
+      kind: kind === 'piece' ? 'piece' : 'item',
       index: i,
-      pieceIndex: -1,
+      pieceIndex: kind === 'piece' ? doc.siblingIndexOf(i) : -1,
       depth,
       path,
       parent: doc.parentOf(i),
       siblingIndex: doc.siblingIndexOf(i),
       label: doc.label(i),
-      badge: shared > 1 ? `×${shared}` : ref === null ? 'inline' : '',
+      badge: shared > 1 ? `×${shared}` : ref === null && kind !== 'piece' ? 'inline' : '',
       linked: ref !== null,
-      hasChildren,
-      expandable: hasChildren || canOpenPieces,
-      // "Open" means the twist is down: children showing, or pieces showing when there are no children.
-      expanded: hasChildren ? childrenShown : piecesShown,
+      hasChildren: contents > 0,
+      expandable: contents > 0,
+      expanded: contents > 0 && shown,
     })
 
-    if (hasChildren && !childrenShown) hideBelow = depth
-
-    if (!piecesShown) continue
-    for (let p = 0; p < specs.length; p++) {
-      const spec = specs[p]!
-      rows.push({
-        kind: 'piece',
-        index: i,
-        pieceIndex: p,
-        depth: depth + 1,
-        path: `${path}#${p}`,
-        parent: i,
-        siblingIndex: p,
-        label: spec.name ?? spec.collider.kind,
-        badge: '',
-        linked: false,
-        hasChildren: false,
-        expandable: false,
-        expanded: false,
-      })
-    }
+    if (contents > 0 && !shown) hideBelow = depth
   }
   return rows
 }
@@ -138,10 +130,17 @@ export const dropTarget = (row: Row, zone: DropZone): { parent: number | null; a
 
 export interface HierarchyHost {
   doc: () => Doc | null
-  selected: () => number | null
-  onSelect: (index: number) => void
-  /** A piece row was activated: open the prefab behind `index` and select piece `pieceIndex`. */
-  onOpenPiece: (index: number, pieceIndex: number) => void
+  /**
+   * Every selected index, primary last (ADR 0031). The panel needs the whole list to mark the rows, and the
+   * primary to anchor a Shift-range from.
+   */
+  selection: () => readonly number[]
+  /**
+   * A row was clicked. `order` is the indices of the **visible item rows**, top to bottom — which is what a
+   * Shift-range means to the eye. With a subtree collapsed those indices are not contiguous, and only this
+   * panel knows which rows are on screen.
+   */
+  onSelect: (index: number, mode: SelectMode, order: readonly number[]) => void
   onRename: (index: number, name: string) => void
   /** Re-parent `from` under `parent` (`null` = top level) at sibling position `at`. */
   onReparent: (from: number, parent: number | null, at: number) => void
@@ -153,8 +152,7 @@ export interface Hierarchy {
 }
 
 export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hierarchy => {
-  const collapsed = new Set<string>()
-  const piecesOpen = new Set<string>()
+  const expanded = new Set<string>()
   let dragFrom: number | null = null
   let editing: number | null = null
 
@@ -173,14 +171,23 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
       return
     }
 
-    const selected = host.selected()
-    for (const row of rowsOf(doc, { collapsed, piecesOpen })) {
+    const selection = host.selection()
+    const primary = selection[selection.length - 1] ?? null
+    const rows = rowsOf(doc, { expanded })
+    // Every visible row in draw order: what a Shift-range runs over. Pieces are selectable too, so they are
+    // in it — a range that skipped them would jump over what the eye sees between two rows.
+    const order = rows.map((r) => r.index)
+
+    for (const row of rows) {
       const el = document.createElement('div')
       el.className = [
         'row',
         row.kind === 'piece' ? 'piece' : '',
         row.linked ? 'linked' : '',
-        row.kind === 'item' && row.index === selected ? 'sel' : '',
+        selection.includes(row.index) ? 'sel' : '',
+        // The primary is marked apart, because it is the one the Inspector shows and the one a range anchors
+        // on: "which of these five am I editing" has to be answerable at a glance.
+        row.index === primary && selection.length > 1 ? 'primary' : '',
       ]
         .filter((c) => c !== '')
         .join(' ')
@@ -193,16 +200,14 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
       if (row.expandable) {
         twist.addEventListener('pointerdown', (e) => {
           e.stopPropagation() // opening is not selecting
-          // Children take the twist when there are any; pieces get it only when there are none.
-          const set = row.hasChildren ? collapsed : piecesOpen
-          if (set.has(row.path)) set.delete(row.path)
-          else set.add(row.path)
+          if (expanded.has(row.path)) expanded.delete(row.path)
+          else expanded.add(row.path)
           render()
         })
       }
       el.append(twist)
 
-      if (row.kind === 'item' && editing === row.index) {
+      if (editing === row.index) {
         // Inline rename. Blank commits as "no name", which reverts the label to the fallback.
         const input = document.createElement('input')
         input.type = 'text'
@@ -246,12 +251,17 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
         el.append(badge)
       }
 
+      // Selecting and renaming work on every row, pieces included: a piece is an object now (ADR 0033), so it
+      // is what the Inspector shows and what the gizmo moves.
+      el.addEventListener('pointerdown', (e) => host.onSelect(row.index, modeFor(e), order))
+      el.addEventListener('dblclick', () => {
+        editing = row.index
+        render()
+      })
+
+      // Dragging stays instance-only: where a piece sits is the prefab's decision, not this placement's, so a
+      // drag would have to mean moving it in every instance of that prefab.
       if (row.kind === 'item') {
-        el.addEventListener('pointerdown', () => host.onSelect(row.index))
-        el.addEventListener('dblclick', () => {
-          editing = row.index
-          render()
-        })
         el.draggable = true
         el.addEventListener('dragstart', (e) => {
           dragFrom = row.index
@@ -267,7 +277,7 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
           clearDropMarks()
         })
       } else {
-        el.addEventListener('dblclick', () => host.onOpenPiece(row.index, row.pieceIndex))
+        el.title = 'piece of the shared prefab: editing it changes every instance of that prefab'
       }
 
       // Any row is a drop *neighbour* (insert above/below among its siblings); only an item row can be

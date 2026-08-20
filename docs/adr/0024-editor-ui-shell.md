@@ -40,6 +40,11 @@ layout is one CSS grid, docking is an engine you do not hand-write.
   unchanged: conditional fields still mean disposing and re-adding. But confined to one panel, that
   rebuild is invisible — and a property grid of labelled, drag-editable numbers is exactly what it is
   best at. Replacing it would have meant hand-writing that, for nothing.
+  - A second weakness surfaced later and is worth recording here, since it is a property of this choice:
+    **`refresh()` is indistinguishable from user input.** It calls `fetch()`, which assigns `rawValue`, which
+    emits `change` whenever the value differs. So pushing values *into* the pane fires every handler bound to
+    it, and there is no option to suppress that. `inspector.ts` holds a depth counter around its refresh and
+    ignores changes raised while it is set. ADR 0031 has what that cost before it was found.
 - **Toolbar and hierarchy build their DOM once and only update values.** That is the fix for the flicker,
   not a side effect of it: `setOptions` even leaves an unchanged `<select>` alone, since rebuilding its
   options closes an open popup, and the name field is skipped while focused.

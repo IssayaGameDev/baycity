@@ -463,6 +463,11 @@
       .row.sel {
         background: var(--sel);
       }
+      /* One of a multi-selection is the primary: the one the Inspector shows and the one a Shift-range anchors
+         on. Marked with an edge rather than a different fill, so the row still reads as selected. */
+      .row.primary {
+        box-shadow: inset 2px 0 0 var(--accent);
+      }
       .row .twist {
         width: 12px;
         color: var(--dim);

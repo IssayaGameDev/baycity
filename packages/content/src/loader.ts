@@ -3,8 +3,8 @@ import type { PhysicsBody, PhysicsWorld, ShapeDesc } from '@mp/physics'
 
 import { visualMaterial, visualModel } from './assets'
 import { isAnimated, poseAt } from './track'
-import { resolvePrefab } from './resolve'
-import type { Behavior, ColliderDesc, Level, LevelConfig, Marker, PrefabInstance, Transform, TriggerKind } from './types'
+import { effectivePieces, resolvePrefab } from './resolve'
+import type { Behavior, ColliderDesc, Level, LevelConfig, Marker, PrefabInstance, Transform, Trigger } from './types'
 
 /**
  * Turns level data into a live world: adds Rapier colliders (fixed for static pieces,
@@ -23,11 +23,15 @@ export interface WorldMarker {
   radius?: number
 }
 
-/** A gameplay trigger = a piece's own solid collider. The mode detects real contact by
- * matching `colliderHandle` against `CharacterBody.collisions()` each tick — no distance math.
- * `position` is the piece's world centre (e.g. for placing a respawn). */
-export interface WorldTrigger {
-  kind: TriggerKind
+/**
+ * A gameplay trigger = a piece's own solid collider. The mode detects real contact by matching
+ * `colliderHandle` against `CharacterBody.collisions()` each tick — no distance math. `position` is the
+ * piece's world centre (e.g. for placing a respawn).
+ *
+ * An intersection with `Trigger` rather than a copy of its fields: `t.kind` still reads the same everywhere,
+ * and narrowing on it gives the kind's own parameters (a bumper's `power`) with no second lookup.
+ */
+export type WorldTrigger = Trigger & {
   colliderHandle: number
   position: Vec3
 }
@@ -260,7 +264,8 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
     // than each piece animating on its own path. A piece's own behavior composes on top of it.
     const node = makeFrame(inst.transform, inst.behavior ?? prefab.behavior ?? { kind: 'static' }, parent)
 
-    for (const piece of prefab.pieces) {
+    // The placement's view of the prefab: its own pieces with this instance's overrides applied (ADR 0033).
+    for (const piece of effectivePieces(level, inst)) {
       const pf = makeFrame(piece.transform, piece.behavior ?? { kind: 'static' }, node)
       const collider = scaleCollider(piece.collider, pf.scale)
       const shape = toShape(collider)
@@ -269,10 +274,10 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
         position: { ...pf.worldPos },
         rotation: { ...pf.worldRot },
         model: visualModel(piece.visual),
-        // An instance's material override beats the prefab's own — that is what an override is, and it
-        // applies to every piece, so resurfacing a placed pad resurfaces all of it. It does not cascade
-        // to children: a child is its own placement with its own override.
-        material: inst.material ?? visualMaterial(piece.visual),
+        // Already resolved: `effectivePieces` applied the per-piece override and then the instance-wide
+        // `material`, which is the coarser statement and wins. Neither cascades to children — a child is its
+        // own placement with its own overrides.
+        material: visualMaterial(piece.visual),
       }
       visuals.push(visual)
 
@@ -299,7 +304,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level): LoadedLevel
 
       // A trigger piece exposes its collider so the mode can detect real contact with it.
       if (piece.trigger !== undefined)
-        triggers.push({ kind: piece.trigger, colliderHandle: body.colliderHandle, position: { ...pf.worldPos } })
+        triggers.push({ ...piece.trigger, colliderHandle: body.colliderHandle, position: { ...pf.worldPos } })
     }
 
     for (const m of prefab.markers ?? []) pushMarker(m, node)

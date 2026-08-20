@@ -44,7 +44,9 @@
           "z": 1
         }
       },
-      "trigger": "hazard",
+      "trigger": {
+        "kind": "hazard"
+      },
       "visual": {
         "kind": "primitive",
         "material": "4a11d049f9f8e5ac"
@@ -115,7 +117,9 @@
           "z": 1
         }
       },
-      "trigger": "hazard",
+      "trigger": {
+        "kind": "hazard"
+      },
       "visual": {
         "kind": "primitive",
         "material": "4a11d049f9f8e5ac"
@@ -142,7 +146,9 @@
           "z": 1
         }
       },
-      "trigger": "hazard",
+      "trigger": {
+        "kind": "hazard"
+      },
       "visual": {
         "kind": "primitive",
         "material": "4a11d049f9f8e5ac"
@@ -213,7 +219,9 @@
           "z": 1
         }
       },
-      "trigger": "hazard",
+      "trigger": {
+        "kind": "hazard"
+      },
       "visual": {
         "kind": "primitive",
         "material": "4a11d049f9f8e5ac"

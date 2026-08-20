@@ -10,6 +10,7 @@ export type {
   ColliderDesc,
   Visual,
   Piece,
+  PieceOverride,
   Marker,
   Behavior,
   Easing,
@@ -22,7 +23,7 @@ export type {
   TriggerKind,
 } from './types'
 export { validateLevel, LevelError } from './validate'
-export { resolvePrefab, instancesOf, freeTableId, walkInstances } from './resolve'
+export { resolvePrefab, effectivePieces, overriddenFields, instancesOf, freeTableId, walkInstances } from './resolve'
 export { ASSET_KINDS, assetsOfKind, buildDatabase, entriesFrom, entryFor, kindForPath, materialDependencies, META_SUFFIX, nameForPath, visualMaterial, visualModel } from './assets'
 export type { AssetDatabase, AssetEntry, AssetKind, AssetMeta, MaterialAsset, MaterialValue } from './assets'
 export type { InstanceVisit } from './resolve'

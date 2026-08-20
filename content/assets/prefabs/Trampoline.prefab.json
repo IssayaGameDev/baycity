@@ -1,0 +1,31 @@
+{
+  "id": "Trampoline",
+  "pieces": [
+    {
+      "collider": {
+        "kind": "box",
+        "halfExtents": {
+          "x": 1.5,
+          "y": 0.15,
+          "z": 1.5
+        }
+      },
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "visual": {
+        "kind": "primitive",
+        "material": "d8dcf8f542bebdf7"
+      },
+      "trigger": {
+        "kind": "bumper",
+        "power": 26
+      },
+      "name": "pad"
+    }
+  ]
+}

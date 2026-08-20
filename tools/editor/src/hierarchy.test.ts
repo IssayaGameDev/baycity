@@ -23,12 +23,24 @@ const twoPieces = (id: string): Prefab => ({
   ],
 })
 
-const ALL_OPEN: Openness = { collapsed: new Set(), piecesOpen: new Set() }
-const open = (over: Partial<Openness> = {}): Openness => ({ ...ALL_OPEN, ...over })
+/** Nothing expanded, which is what a freshly opened level looks like. */
+const SHUT: Openness = { expanded: new Set() }
+/** Every row expanded, for the tests that are about what nesting looks like when you can see it. */
+const allOpen = (doc: Doc): Openness => ({ expanded: new Set(Array.from({ length: doc.count() }, (_, i) => doc.pathOf(i))) })
+const open = (over: Partial<Openness> = {}): Openness => ({ ...SHUT, ...over })
 
 /** Rows as `indent + label`, which is what the panel actually shows. */
-const shape = (doc: Doc, o: Openness = ALL_OPEN): string[] =>
-  rowsOf(doc, o).map((r) => `${'  '.repeat(r.depth)}${r.label}`)
+const shape = (doc: Doc, o?: Openness): string[] =>
+  rowsOf(doc, o ?? allOpen(doc)).map((r) => `${'  '.repeat(r.depth)}${r.label}`)
+
+/**
+ * Just the instance rows. Pieces show by default since ADR 0033, so the tests about *tree structure* say so
+ * explicitly rather than being written around prefabs that happen to have one piece each.
+ */
+const items = (doc: Doc, o?: Openness): string[] =>
+  rowsOf(doc, o ?? allOpen(doc))
+    .filter((r) => r.kind === 'item')
+    .map((r) => `${'  '.repeat(r.depth)}${r.label}`)
 
 /** Four top-level platforms named a..d. */
 const four = (): Doc => {
@@ -37,63 +49,81 @@ const four = (): Doc => {
   return doc
 }
 
+/**
+ * The index of the instance called `name`.
+ *
+ * Looked up rather than written as a literal, because indices address **pieces as well as instances** since
+ * ADR 0033 — a level of four one-piece platforms numbers 0,2,4,6 — and every structural edit renumbers.
+ */
+const idx = (doc: Doc, name: string): number => {
+  for (let i = 0; i < doc.count(); i++) if (doc.kindOf(i) === 'instance' && doc.label(i) === name) return i
+  throw new Error(`no instance named ${name}`)
+}
+
 describe('rowsOf: the tree', () => {
   it('gives one row per instance, indented by depth', () => {
     const doc = four()
-    doc.reparent(1, 0, 0) // b under a
-    doc.reparent(2, 1, 0) // c under b
+    doc.reparent(idx(doc, 'b'), idx(doc, 'a'), 0)
+    doc.reparent(idx(doc, 'c'), idx(doc, 'b'), 0)
 
-    expect(shape(doc)).toEqual(['a', '  b', '    c', 'd'])
+    expect(items(doc)).toEqual(['a', '  b', '    c', 'd'])
   })
 
-  it('shows child instances by default — the tree is the point', () => {
+  it('reports a row with contents as expanded when it is open', () => {
     const doc = four()
-    doc.reparent(1, 0, 0)
-    expect(rowsOf(doc, ALL_OPEN)[0]!.expanded).toBe(true)
+    doc.reparent(idx(doc, 'b'), idx(doc, 'a'), 0)
+    expect(rowsOf(doc, allOpen(doc))[0]!.expanded).toBe(true)
   })
 
-  it('hides a collapsed row\'s whole subtree, however deep', () => {
+  it('hides a shut row\'s whole subtree, however deep', () => {
     const doc = four()
-    doc.reparent(1, 0, 0) // b under a
-    doc.reparent(2, 1, 0) // c under b
+    doc.reparent(idx(doc, 'b'), idx(doc, 'a'), 0)
+    doc.reparent(idx(doc, 'c'), idx(doc, 'b'), 0)
 
-    expect(shape(doc, open({ collapsed: new Set([doc.pathOf(0)]) })), 'a shut, so b and c go too').toEqual(['a', 'd'])
-    expect(shape(doc, open({ collapsed: new Set([doc.pathOf(1)]) })), 'b shut hides only c').toEqual(['a', '  b', 'd'])
+    expect(items(doc, SHUT), 'nothing expanded, so only the top level').toEqual(['a', 'd'])
+    // `a` expanded but `b` still shut: `b` appears, `c` does not.
+    expect(items(doc, open({ expanded: new Set([doc.pathOf(idx(doc, 'a'))]) }))).toEqual(['a', '  b', 'd'])
   })
 
-  it('comes back out of a collapsed subtree at the right depth', () => {
+  it('comes back out of a shut subtree at the right depth', () => {
     const doc = four()
-    doc.reparent(1, 0, 0) // b under a
-    // `d` is a sibling of `a`, so collapsing `a` must not hide it.
-    expect(shape(doc, open({ collapsed: new Set([doc.pathOf(0)]) }))).toEqual(['a', 'c', 'd'])
+    doc.reparent(idx(doc, 'b'), idx(doc, 'a'), 0)
+    // `d` is a sibling of `a`, so `a` being shut must not hide it.
+    expect(items(doc, SHUT)).toEqual(['a', 'c', 'd'])
   })
 
   it('keys openness by path, so editing elsewhere does not shuffle it', () => {
     const doc = four()
-    doc.reparent(1, 0, 0)
-    // Second top-level instance's path, whatever its depth-first index becomes.
-    expect(doc.pathOf(2)).toBe('1')
-    expect(doc.pathOf(1), "a's first child").toBe('0/0')
+    doc.reparent(idx(doc, 'b'), idx(doc, 'a'), 0)
+    expect(doc.pathOf(idx(doc, 'c')), 'second top-level instance').toBe('1')
+    expect(doc.pathOf(idx(doc, 'b')), "a's first child").toBe('0/0')
+    // A piece hangs off its owner's path, so UI state keyed by path tells them apart.
+    expect(doc.pathOf(idx(doc, 'a') + 1), "a's own piece").toBe('0#0')
   })
 })
 
 describe('rowsOf: prefab pieces', () => {
-  it('keeps pieces shut by default — they are detail, not structure', () => {
+  // Reversed by ADR 0033. A piece carries the visuals, the collider and the trigger, so hiding it by default
+  // was hiding the object you came to edit — and reaching it took two clicks through an overloaded twist.
+  it('shows pieces by default, under the instance they belong to', () => {
     const doc = four()
-    expect(shape(doc)).toEqual(['a', 'b', 'c', 'd'])
+    expect(shape(doc)).toEqual(['a', '  box', 'b', '  box', 'c', '  box', 'd', '  box'])
   })
 
-  it('reveals pieces when opened, addressed by item and piece index', () => {
+  it('addresses a piece row by item and piece index', () => {
     const level = blank()
     level.instances.push({ prefab: twoPieces('x'), transform: { position: vec3(0, 0, 0) } })
     const doc = levelDoc(level, LIBRARY)
 
-    const rows = rowsOf(doc, open({ piecesOpen: new Set([doc.pathOf(0)]) }))
+    const rows = rowsOf(doc, allOpen(doc))
+    // `index` is the node's *own* index — a piece is addressable now, so it is no longer its owner's index
+    // with a piece number beside it. `parent` is what says whose piece it is.
     expect(rows.map((r) => `${r.kind}:${r.index}.${r.pieceIndex}@${r.depth}`)).toEqual([
       'item:0.-1@0',
-      'piece:0.0@1',
-      'piece:0.1@1',
+      'piece:1.0@1',
+      'piece:2.1@1',
     ])
+    expect(rows.slice(1).every((r) => r.parent === 0), 'both pieces belong to the instance').toBe(true)
     // The authored name, falling back to the collider kind. It used to be `box · <style>`, which stopped
     // meaning anything when style died (ADR 0028) — and a name is what distinguishes three boxes anyway.
     expect(rows[1]!.label, 'the piece name when it has one').toBe('left rail')
@@ -102,26 +132,62 @@ describe('rowsOf: prefab pieces', () => {
 
   it('offers no piece rows in prefab mode, where the item already *is* the piece', () => {
     const doc = prefabDoc(twoPieces('p'))
-    const rows = rowsOf(doc, open({ piecesOpen: new Set(['0', '1']) }))
+    const rows = rowsOf(doc, allOpen(doc))
     expect(rows).toHaveLength(2)
     expect(rows.every((r) => !r.expandable)).toBe(true)
+  })
+
+  /**
+   * The bug this replaced. One twist wrote to whichever of two sets the row happened to need, so an instance
+   * that gained a child stopped writing to the pieces set — and its pieces could never be shown again.
+   */
+  it('shows pieces and children together, so a child cannot hide the pieces', () => {
+    const level = blank()
+    level.instances.push({
+      prefab: twoPieces('x'),
+      transform: { position: vec3(0, 0, 0) },
+      children: [{ prefab: twoPieces('y'), transform: { position: vec3(0, 1, 0) } }],
+    })
+    const doc = levelDoc(level, LIBRARY)
+
+    const rows = rowsOf(doc, allOpen(doc))
+    expect(rows.filter((r) => r.kind === 'piece' && r.parent === 0)).toHaveLength(2)
+    expect(rows.some((r) => r.kind === 'item' && r.depth === 1), 'and the child is there too').toBe(true)
+  })
+
+  it('hides pieces and children behind the one twist', () => {
+    const level = blank()
+    level.instances.push({
+      prefab: twoPieces('x'),
+      transform: { position: vec3(0, 0, 0) },
+      children: [{ prefab: twoPieces('y'), transform: { position: vec3(0, 1, 0) } }],
+    })
+    const doc = levelDoc(level, LIBRARY)
+
+    const rows = rowsOf(doc, SHUT)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.expandable, 'still openable').toBe(true)
+    expect(rows[0]!.expanded).toBe(false)
   })
 })
 
 describe('rowsOf: annotations', () => {
   it('badges a shared prefab with its count, and marks an inline one-off', () => {
     const doc = four()
-    expect(rowsOf(doc, ALL_OPEN).every((r) => r.badge === '×4')).toBe(true)
+    const badged = rowsOf(doc, allOpen(doc)).filter((r) => r.kind === 'item')
+    expect(badged).toHaveLength(4)
+    expect(badged.every((r) => r.badge === '×4')).toBe(true)
 
     const level = blank()
     level.instances.push({ prefab: twoPieces('oneoff'), transform: { position: vec3(0, 0, 0) } })
-    expect(rowsOf(levelDoc(level, LIBRARY), ALL_OPEN)[0]!.badge).toBe('inline')
+    expect(rowsOf(levelDoc(level, LIBRARY), { expanded: new Set(['0']) })[0]!.badge).toBe('inline')
   })
 
   it('reports the parent and sibling index a drop needs', () => {
     const doc = four()
-    doc.reparent(2, 0, 0) // c under a
-    const rows = rowsOf(doc, ALL_OPEN)
+    doc.reparent(idx(doc, 'c'), idx(doc, 'a'), 0)
+    // Instance rows only: a drop targets an instance, and piece rows now sit between them (ADR 0033).
+    const rows = rowsOf(doc, allOpen(doc)).filter((r) => r.kind === 'item')
 
     expect(rows[1]!.parent, "c's parent is a").toBe(0)
     expect(rows[1]!.siblingIndex).toBe(0)

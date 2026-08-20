@@ -19,7 +19,7 @@ const box = (id: string, half = vec3(1, 0.5, 1), trigger = false): Prefab => ({
     {
       collider: { kind: 'box', halfExtents: half },
       transform: { position: vec3(0, 0, 0) },
-      ...(trigger ? { trigger: 'goal' as const } : {}),
+      ...(trigger ? { trigger: { kind: 'goal' as const } } : {}),
     },
   ],
 })

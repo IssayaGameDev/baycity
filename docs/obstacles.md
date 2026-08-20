@@ -17,6 +17,11 @@ Tuning: `moveSpeed 5.5`, `jumpHeight 3`, `gravity 55` (Kodjo's values, above the
 | Step-up without jumping | **0.40 m** (autostep) |
 | Step-up jumping | **3.0 m** |
 | Walkable slope | ≤44°; ≥48° slides off |
+| Jump leaves the ground at | 18.2 m/s (`√(2·gravity·jumpHeight)`) |
+| Bumper reach | `power² / (2·gravity)`, so 26 m/s ≈ **6.1 m** (ADR 0032) |
+
+A bumper's `power` is a launch *speed*, and the jump speed above is the number that makes it legible: anything
+below 18.2 throws lower than the player's own jump. Measured in `packages/character/src/bumper.test.ts`.
 
 ### Max gap, edge to edge
 
