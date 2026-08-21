@@ -547,9 +547,9 @@
           "id": "n2-p0",
           "transform": {
             "position": {
-              "x": 0,
+              "x": 3.5,
               "y": 0,
-              "z": 0
+              "z": -5
             }
           },
           "components": [
@@ -594,9 +594,85 @@
           "id": "n3-p0",
           "transform": {
             "position": {
+              "x": -6,
+              "y": 1.6,
+              "z": -5
+            },
+            "scale": {
+              "x": 1,
+              "y": 9.8,
+              "z": 1
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        },
+        {
+          "id": "b7a0c463",
+          "transform": {
+            "position": {
+              "x": 3.5,
+              "y": 0,
+              "z": 3
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        },
+        {
+          "id": "162e680d",
+          "transform": {
+            "position": {
+              "x": 5,
+              "y": -1.4,
+              "z": -5
+            },
+            "rotation": {
               "x": 0,
               "y": 0,
-              "z": 0
+              "z": -1.5708
             }
           },
           "components": [

@@ -11,7 +11,7 @@
     },
     "roughness": {
       "kind": "number",
-      "value": 0.85
+      "value": 1
     }
   }
 }

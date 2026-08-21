@@ -11,15 +11,26 @@
     },
     "roughness": {
       "kind": "number",
-      "value": 0.85
+      "value": 1
     },
     "emissive": {
       "kind": "color",
-      "value": "#ff1744"
+      "value": "#000000"
     },
     "emissiveIntensity": {
       "kind": "number",
-      "value": 0.14
+      "value": 1
+    },
+    "albedo": {
+      "kind": "texture",
+      "value": null
+    },
+    "tiling": {
+      "kind": "vec2",
+      "value": {
+        "x": 1,
+        "y": 1
+      }
     }
   }
 }
