@@ -1,8 +1,7 @@
 # ADR 0056 — The game client is a package, not a game's `main.ts`
 
-Status: accepted. `@mp/camera` and `@mp/game-client` have both landed. `client.ts` was **moved, not
-redesigned** — breaking it into scene / netcode / render modules is a follow-up, now safe to do incrementally
-because callers only see `startGameClient`.
+Status: accepted. `@mp/camera` and `@mp/game-client` have landed, and the first decomposition pass with
+them. What remains in one file is the stateful core; see Known open.
 
 ## Context
 
@@ -81,13 +80,30 @@ before. `levelsFor(mode, registry)` replaces a module-level `MODE_NAME`.
 - Its `package.json` went from 12 workspace dependencies to 8. A game no longer depends on `@mp/client`,
   `@mp/net`, `@mp/render-pixi`, `@mp/i18n`, `colyseus.js` or `tweakpane` — it cannot reach the netcode or
   the UI toolkit, which is the dependency law made structural rather than advisory.
-- `client.ts` is 1239 lines in one function. That is the cost of moving without redesigning, taken knowingly.
+- `client.ts` is 870 lines, having arrived at 1239. It was moved first and split second, deliberately: one
+  commit that relocates and one that decomposes, each validated on its own, rather than a single change where
+  a behaviour regression and a bad cut are indistinguishable.
+- Four modules came out of it, and what they have in common is that none of them owns game state:
+  `pane.ts` (256) is every live tunable and came out whole, since it is pure wiring — each folder binds an
+  object somebody else owns; `inputs.ts` (148) is keyboard, pointer lock, wheel and touch, and is what lets
+  the camera stay DOM-free; `scene.ts` (78) builds the stage, pipeline, sky, post-FX and the nametag render
+  step; `status.ts` (47) is the status line **and** the locale, one module because the line holds a
+  translation key rather than a string and so has to re-render when the language changes.
 - The debug pane's camera block went from 16 hand-written bindings to a three-line loop.
 - `@mp/camera` imports both `@mp/render-three` and (structurally) physics's query shapes without depending on
   the package. It is browser-side view code, so this breaks no dependency law: simulation still never imports
   rendering.
 - The editor could use this for its play-in-place camera, which today is `OrbitControls`. Not done, not
   needed, worth knowing.
+
+## Known open
+
+- **`client.ts` is still 870 lines**: the netcode block, the local sim and the render loop, which share a
+  dozen pieces of mutable state (the room, the level, the local character, death, ragdolls, peer assemblies).
+  Splitting those means threading a state object between them, which is a redesign rather than a move, so it
+  is its own step rather than a rider on this one.
+- `@mp/game-client` has no tests of its own beyond `persistence.test.ts`. A composition root resists them
+  by nature, which is exactly why the pieces that *can* be tested were moved into packages that test them.
 
 ## Rejected
 
