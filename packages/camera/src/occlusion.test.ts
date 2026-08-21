@@ -1,7 +1,7 @@
 import type { Vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
-import { occlusionFor, type Hit, type OcclusionQueries } from './cameraOcclusion'
+import { occlusionFor, type Hit, type OcclusionQueries } from './occlusion'
 
 /**
  * The decision, with the world faked as slabs along the boom. The boom runs +Z, 10 m long, so a slab is

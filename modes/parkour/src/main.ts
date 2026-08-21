@@ -33,7 +33,6 @@ import {
   applyGreyboxEnvironment,
   assetIdsIn,
   createAssetRuntime,
-  createCutoutMask,
   createPostFX,
   createThreeStage,
   loadSky,
@@ -54,6 +53,7 @@ import {
   partTransforms,
   type GaitTuning,
 } from '@mp/character'
+import { CAMERA_TUNABLES, createOrbitCamera, type OcclusionQueries } from '@mp/camera'
 import { instantiateLevel, type LoadedLevel } from '@mp/content'
 import { characterAccess, createComponentRuntime, type ComponentRuntime } from '@mp/components'
 import { getLocale, matchLocale, onLocaleChange, setLocale, t, type TranslationKey } from '@mp/i18n'
@@ -62,7 +62,6 @@ import { Client, type Room } from 'colyseus.js'
 import { Pane } from 'tweakpane'
 
 import { createAssembly, type Assembly, type AssemblyTiming } from './assemble'
-import { occlusionFor, type Occlusion, type OcclusionView } from './cameraOcclusion'
 import { createCharacterViews, PEER_COLORS, SELF_COLORS } from './characterView'
 import { BODY_LAYERS } from './layers'
 import { OVERLAY_LAYER } from './nametag'
@@ -184,59 +183,15 @@ const views = createCharacterViews(stage.scene, gait)
 const assembleTiming: AssemblyTiming = { stagger: 0.05, fall: 0.18, height: 2.5 }
 
 // --- camera orbit (mouselook via pointer lock) ---
-const camera = stage.camera
-let camYaw = 0
-let camPitch = 0.35
 /**
- * Top pitch limit (rad, positive = camera above the character looking down): 90°, straight over the
- * head. Exactly 90° is fine because the orientation is built from the angles — with `lookAt` it was
- * not, since there the view direction goes parallel to `camera.up` and the roll becomes undefined.
- * The bottom limit is a tunable (`params.pitchMinDeg`): nothing structural stops the camera going
- * under the character now that the ground pulls it in.
- */
-const PITCH_MAX = Math.PI / 2
-const DEG = Math.PI / 180
-/**
- * Radius of the sphere swept from the character to the camera to find obstructions. It is the
- * clearance the camera keeps from whatever stopped it, and it has to beat the near plane (0.1 m at
- * 60° vertical FOV = 0.12 m to the near plane's corner) or the wall it stopped at cuts through the
- * frame anyway.
- */
-const CAM_PROBE_RADIUS = 0.25
-/** Boom height above the orbit sphere — the camera looks slightly down at the target. */
-const CAM_RISE = 0.5
-/**
- * How far above the capsule's centre the camera aims, in metres. The capsule is 2 m tall, so this is level
- * with the top of the head — the framing everyone expects, and the reason the occlusion probes below exist:
- * a sightline to *this* point is not a sightline to the body.
- */
-const CAM_AIM_RISE = 1
-/**
- * The points the camera checks are visible, given where it is aiming: the aim point itself, the capsule's
- * centre, and the bottom of its spine. Three sightlines down the body, because one to the head says
- * "clear" with a platform lying across the chest (ADR 0055).
+ * The whole camera is `@mp/camera` now (ADR 0056): boom, zoom, occlusion, the see-through hole, the landing
+ * dip and the own-rig hide. It used to be some 300 lines here, which a second game would have had to copy
+ * and every fix would have had to be made twice.
  *
- * The spine, not the capsule's ends: the probe sphere's own radius covers the caps.
+ * What stays in this file is what a *host* owes it: the DOM events it has no business knowing about, the
+ * physics queries once a world exists, and the character position to orbit.
  */
-const bodyProbes = (aim: Vec3): readonly Vec3[] => [
-  vec3(aim.x, aim.y - CAM_AIM_RISE, aim.z),
-  vec3(aim.x, aim.y - CAM_AIM_RISE - CHAR_HALF_HEIGHT, aim.z),
-]
-/**
- * Half-life (s) for the turn and travel rates that drive the lookahead probe. Mouse movement arrives
- * in bursts, so the raw per-frame rate is spiky; this is short enough to answer a flick and long
- * enough that the predicted boom does not jitter. Move it before touching `camLookahead` if the soft
- * limit ever looks nervous.
- */
-const CAM_RATE_HALFLIFE = 0.05
-/** The orbit distance the boom has room for, chasing the soft limit. `null` until the first frame. */
-let camBoom: number | null = null
-let camYawPrev = 0
-let camPitchPrev = 0.35
-let camYawRate = 0
-let camPitchRate = 0
-let camTargetPrev: Vec3 = { x: 0, y: 1, z: 0 }
-let camVel: Vec3 = vec3()
+const orbit = createOrbitCamera(stage.camera)
 /**
  * A peer's world transform from what the wire carried (v10, ADR 0021). While `base` is non-zero the
  * position and facing are in that clock-driven piece's frame, so they have to be brought back out
@@ -257,104 +212,8 @@ const worldFromBase = (e: { position: Vec3; yaw: number; base: number }, rendere
   }
 }
 
-/** Frame-rate-independent chase toward `to`: `halfLife` is the time to close half the gap. 0 snaps. */
-const chase = (from: number, to: number, dt: number, halfLife: number): number =>
-  halfLife > 0 ? from + (to - from) * (1 - Math.pow(2, -dt / halfLife)) : to
-/**
- * What the camera does about an obstruction on a given boom — move in, or stay put and let the shader
- * dither a hole (ADR 0055). Set once the local sim exists, since that owns the physics world; until then
- * the camera just uses its zoom.
- */
-let camOcclude: ((target: Vec3, boom: Vec3, len: number, view?: OcclusionView) => Occlusion) | null = null
-/**
- * Landing strength for the camera dip, in units of a plain jump's landing speed: 1 is landing your own
- * jump, more is a longer drop. Set on the sim tick that finds footing, eased back to 0 in the render loop.
- */
-let landImpact = 0
-const params = {
-  /** Zoom goal (m) — what the wheel sets. What renders is `camDistance`, which chases this. */
-  camZoom: 7,
-  camZoomMin: 3,
-  camZoomMax: 14,
-  /** Metres one notch moves at zero zoom. It grows with the current zoom — see the wheel handler. */
-  camZoomStep: 0.5,
-  camZoomGrowth: 0.04,
-  /** Half-life (s) of the rendered distance chasing the goal. 0 snaps. */
-  camZoomSmooth: 0.08,
-  /** Lowest pitch (degrees below the eyeline). The ground no longer stops the camera, it pulls it in. */
-  pitchMinDeg: -80,
-  /**
-   * Lookahead (s) for the soft limit — how far into the future the second probe is aimed. Longer gives
-   * the camera more warning and so a smoother move in, at the cost of reacting to obstructions it may
-   * never actually reach. 0 turns the soft limit off, leaving the hard clamp: instant pull-in.
-   */
-  camLookahead: 0.15,
-  /** Half-life (s) of the camera moving in toward the soft limit. */
-  camPushInSmooth: 0.06,
-  /**
-   * Camera dip on landing (m at an impact of 1, i.e. landing your own jump). The one piece of jump feel
-   * that lives in the view rather than the controller: the character stops dead on contact and the camera
-   * carrying on down for a moment is what sells the weight. 0 turns it off; 0.12 is the middle of the
-   * 0.10-0.15 range that reads as impact rather than as a bob.
-   */
-  landKick: 0.12,
-  /** Ceiling on the impact multiplier, so a fall from the skybox does not throw the camera through the floor. */
-  landKickMax: 2.5,
-  /** Half-life (s) of the dip easing back out. Short enough to read as an impact, not a bob. */
-  landKickRecovery: 0.12,
-  /** Half-life (s) of the camera easing back out once an obstruction clears. */
-  camReturnSmooth: 0.18,
-  /**
-   * Clearance (m) the camera must keep from your own capsule before your rig is hidden. Below it you
-   * would be looking at the inside of your own head. 0.12 m is the near plane's corner at a 60° FOV,
-   * so anything under that is already cutting into the frame.
-   */
-  camHideMargin: 0.15,
-  /** Hole radius (m) at the character. The capsule is 0.8 m wide and 2 m tall, so this clears it. */
-  camMaskRadius: 1.3,
-  /** Soft edge of the hole, as a fraction of its radius. The dither ramps out across it. */
-  camMaskFeather: 0.5,
-  /** Half-life (s) of the hole opening and closing. Keeps a passing beam from popping. */
-  camMaskSmooth: 0.03,
-  /**
-   * Both on, both here only so a shading artifact can be told from a geometric one. A hole in a surface
-   * leaves behind whatever *shading* that surface was responsible for, and there is no way to tell which
-   * pass is doing it by looking.
-   */
-  sunShadows: true,
-  ambientOcclusion: true,
-  sensitivity: 0.0025,
-  /**
-   * Look sensitivity for a **finger** (rad per CSS pixel). Its own number, and far larger than the mouse
-   * one: `movementX` from a mouse is a raw device delta, while a thumb crosses a few hundred CSS pixels
-   * for a whole turn (ADR 0022).
-   */
-  touchSensitivity: 0.006,
-  /** Pinch: metres of zoom per CSS pixel of finger separation. A pinch is ~300 px for the whole range. */
-  pinchZoom: 0.02,
-}
-/** The orbit distance actually rendered: `camZoom` smoothed, so a notch glides instead of jumping. */
-let camDistance = params.camZoom
-/**
- * The see-through hole (ADR 0055). Created here because the level view has to be handed it at build time —
- * it patches the shader of every surface it draws — and driven from the render loop, which is the only
- * place that knows where the eye and the character ended up.
- */
-const cutout = createCutoutMask({
-  camera: vec3(),
-  target: vec3(),
-  radius: params.camMaskRadius,
-  feather: params.camMaskFeather,
-  strength: 0,
-})
-/** How far open the aperture is, 0 to 1, chased so it grows and shrinks rather than popping. */
-let maskOpen = 0
-/**
- * The surfaces the hole is currently cut in, held while the aperture closes. Handing the level view an
- * empty list the frame the obstruction clears would put its plain material back at once, which is the hole
- * snapping shut and `camMaskSmooth` being a lie.
- */
-let maskOccluders: readonly number[] = []
+/** Post-processing switches, kept because a hole in a surface leaves its *shading* behind (ADR 0055). */
+const debug = { sunShadows: true, ambientOcclusion: true }
 /**
  * Touch controls (ADR 0022): stick bottom-left, jump bottom-right, look everywhere else. Bound to the
  * canvas, so its rect is the coordinate frame the HUD draws in. `active()` stays false until a real touch
@@ -414,8 +273,7 @@ canvas.addEventListener('mousedown', (e) => {
 })
 window.addEventListener('mousemove', (e) => {
   if (document.pointerLockElement !== canvas) return
-  camYaw -= e.movementX * params.sensitivity
-  camPitch = clamp(camPitch + e.movementY * params.sensitivity, params.pitchMinDeg * DEG, PITCH_MAX)
+  orbit.lookMouse(e.movementX, e.movementY)
 })
 // Wheel zoom. One notch per event whatever the device reports — `deltaY` is ±100 on one mouse, ±3 on
 // another and a page height on a third, so only the sign is portable. The step grows with the current
@@ -426,13 +284,7 @@ window.addEventListener(
   (e) => {
     if (document.pointerLockElement !== canvas) return
     e.preventDefault()
-    const dir = Math.sign(e.deltaY)
-    if (dir === 0) return
-    params.camZoom = clamp(
-      params.camZoom + dir * params.camZoomStep * (1 + params.camZoom * params.camZoomGrowth),
-      params.camZoomMin,
-      params.camZoomMax,
-    )
+    orbit.zoomNotch(Math.sign(e.deltaY))
   },
   { passive: false },
 )
@@ -461,8 +313,9 @@ const worldMove = (): { x: number; z: number } => {
   const stick = touch.movement()
   const { x: rawX, z: rawZ } = k.x !== 0 || k.z !== 0 ? k : stick
   if (rawX === 0 && rawZ === 0) return { x: 0, z: 0 }
-  const fwdX = -Math.sin(camYaw)
-  const fwdZ = -Math.cos(camYaw)
+  const facing = orbit.yaw()
+  const fwdX = -Math.sin(facing)
+  const fwdZ = -Math.cos(facing)
   const rightX = -fwdZ
   const rightZ = fwdX
   let x = fwdX * -rawZ + rightX * rawX
@@ -486,37 +339,25 @@ document.body.appendChild(paneHost)
 touchIgnore.push(paneHost) // see `touchIgnore`
 const pane = new Pane({ title: 'Debug', container: paneHost })
 const cam = pane.addFolder({ title: 'Camera' })
-// No slider for the zoom itself — the wheel owns it, and tweakpane does not track a value changed
-// from outside. These are its bounds and its feel instead.
-cam.addBinding(params, 'camZoomMin', { min: 0.5, max: 10, step: 0.5, label: 'zoom min m' })
-cam.addBinding(params, 'camZoomMax', { min: 4, max: 40, step: 0.5, label: 'zoom max m' })
-cam.addBinding(params, 'camZoomStep', { min: 0.1, max: 3, step: 0.1, label: 'notch m' })
-cam.addBinding(params, 'camZoomGrowth', { min: 0, max: 0.2, step: 0.005, label: 'notch growth' })
-cam.addBinding(params, 'camZoomSmooth', { min: 0, max: 0.4, step: 0.01, label: 'zoom smooth s' })
-cam.addBinding(params, 'landKick', { min: 0, max: 0.4, step: 0.01, label: 'land dip m' })
-cam.addBinding(params, 'landKickRecovery', { min: 0.02, max: 0.5, step: 0.01, label: 'land dip s' })
-cam.addBinding(params, 'pitchMinDeg', { min: -89, max: 0, step: 1, label: 'pitch floor °' })
-cam.addBinding(params, 'camLookahead', { min: 0, max: 0.5, step: 0.01, label: 'lookahead s' })
-cam.addBinding(params, 'camPushInSmooth', { min: 0, max: 0.5, step: 0.01, label: 'push-in s' })
-cam.addBinding(params, 'camReturnSmooth', { min: 0, max: 1, step: 0.01, label: 'pull-out s' })
-cam.addBinding(params, 'camHideMargin', { min: 0, max: 1, step: 0.01, label: 'rig hide m' })
-cam.addBinding(params, 'camMaskRadius', { min: 0.2, max: 4, step: 0.05, label: 'hole m' })
-cam.addBinding(params, 'camMaskFeather', { min: 0, max: 2, step: 0.05, label: 'hole edge' })
-cam.addBinding(params, 'camMaskSmooth', { min: 0, max: 0.5, step: 0.01, label: 'hole open s' })
+/**
+ * The camera describes its own knobs (`CAMERA_TUNABLES`) and this builds them, so a camera parameter is
+ * added in one place instead of two and cannot ship without a slider. No entry for the zoom itself — the
+ * wheel owns it, and tweakpane does not track a value changed from outside.
+ */
+for (const t of CAMERA_TUNABLES)
+  cam.addBinding(orbit.params, t.key, { min: t.min, max: t.max, step: t.step, label: t.label })
 /**
  * Two switches for telling shading apart from geometry. A hole in a surface leaves the *shading* it was
  * responsible for behind — the sun shadow it casts on whatever it covered, and the ambient occlusion the
  * AO pass reads from a depth buffer that never heard about the discard — and both read as the surface
  * having failed to disappear. Guessing which one is which from a screenshot does not work; toggling does.
  */
-cam.addBinding(params, 'sunShadows', { label: 'sun shadows' }).on('change', (e) => {
+cam.addBinding(debug, 'sunShadows', { label: 'sun shadows' }).on('change', (e) => {
   env.sun.castShadow = e.value
 })
-cam.addBinding(params, 'ambientOcclusion', { label: 'ambient occl.' }).on('change', (e) => {
+cam.addBinding(debug, 'ambientOcclusion', { label: 'ambient occl.' }).on('change', (e) => {
   if (postfx.ao !== null) postfx.ao.enabled = e.value
 })
-cam.addBinding(params, 'sensitivity', { min: 0.0005, max: 0.006, step: 0.0005, label: 'sensitivity' })
-
 // Sky + sun (ADR 0046). Every one of these needs an eye rather than a value, so they all live here. The sun
 // angles drive the key light, its shadow frustum and the sky bake together, which is why there is no separate
 // light direction to set. The sky is a designed gradient rather than atmospheric scattering, because the shape
@@ -568,8 +409,8 @@ tc.addBinding(touchLayout, 'deadZone', { min: 0, max: 0.4, step: 0.01, label: 'd
 tc.addBinding(touchLayout, 'jumpRadius', { min: 24, max: 96, step: 2, label: 'jump r px' })
 tc.addBinding(touchLayout, 'topStrip', { min: 0, max: 140, step: 4, label: 'top strip px' })
 tc.addBinding(touchLayout, 'tapSlop', { min: 2, max: 40, step: 1, label: 'tap slop px' })
-tc.addBinding(params, 'touchSensitivity', { min: 0.001, max: 0.02, step: 0.0005, label: 'look rad/px' })
-tc.addBinding(params, 'pinchZoom', { min: 0, max: 0.08, step: 0.002, label: 'pinch m/px' })
+tc.addBinding(orbit.params, 'touchSensitivity', { min: 0.001, max: 0.02, step: 0.0005, label: 'look rad/px' })
+tc.addBinding(orbit.params, 'pinchZoom', { min: 0, max: 0.08, step: 0.002, label: 'pinch m/px' })
 
 // Live locomotion feel (client-authoritative, so tuning is purely local — ADR 0011/0012).
 const tuning: CharacterTuning = { ...DEFAULT_TUNING }
@@ -782,7 +623,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   // models still arriving. Anything unreferenced is never fetched, so a greybox level costs nothing.
   const assets = createAssetRuntime({ db: ASSET_DB, urlOf: assetUrlOf, materialOf })
   await assets.load(assetIdsIn(loaded.visuals))
-  levelView = addLevel(stage.scene, loaded.visuals, { assets, cutout })
+  levelView = addLevel(stage.scene, loaded.visuals, { assets, cutout: orbit.cutout })
   levelLights = addLights(stage.scene, loaded.lights)
   // The level owns its sun, and moving it rebakes the sky so the two cannot disagree (ADR 0048).
   env.applyEnvironment(loaded.config.environment)
@@ -817,38 +658,39 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   ownState = char // the render loop reads velocity/grounded straight off the sim for our own rig
 
   /**
-   * Camera occlusion: sweep a sphere from the character's head out along the boom and report how far it
-   * got. Everything in the level is a collider already — including the hazard and checkpoint pads, which
-   * are solid pieces you stand on, so the camera treating them as geometry is right.
+   * Camera occlusion: the two queries `@mp/camera` needs, against this client's own world. Everything in
+   * the level is a collider already — including the hazard and checkpoint pads, which are solid pieces you
+   * stand on, so the camera treating them as geometry is right.
    *
    * Excluded: ourselves. The boom starts at the capsule's crown, so the probe overlaps the capsule every
    * single frame and would report zero clearance; and while dead the ragdoll's parts are our own body too,
    * not scenery to be shoved away from.
    */
-  camOcclude = (target, boom, len, view) => {
+  /**
+   * What the camera must not be shoved by: our own capsule, our own corpse, and **every** corpse. A living
+   * peer is mirrored as a kinematic capsule here, so they do move the camera — but a ragdoll is a visual
+   * whose position no two clients agree on, and ten cuboids tumbling round your feet because someone died
+   * next to you should not shove your view. Read fresh per query, since the ragdoll comes and goes.
+   */
+  const selfColliders = (): number[] => {
     const skip = [char.body.colliderHandle, ...(ragdoll?.colliders ?? [])]
-    // Every corpse, not only our own. A living peer is mirrored as a kinematic capsule here, so they do
-    // move the camera — but a ragdoll is a visual whose position no two clients agree on, and ten cuboids
-    // tumbling around your feet because someone died next to you should not shove your view.
     for (const corpse of peerRagdolls.values()) skip.push(...corpse.colliders)
-    return occlusionFor(
-      {
-        cast: (origin, direction, maxDistance, more) =>
-          world.castSphere({
-            origin,
-            direction,
-            maxDistance,
-            radius: CAM_PROBE_RADIUS,
-            exclude: more === undefined ? skip : [...skip, ...more],
-          }),
-        occupied: (point) => world.sphereOverlaps({ center: point, radius: CAM_PROBE_RADIUS, exclude: skip }),
-      },
-      target,
-      boom,
-      len,
-      view,
-    )
+    return skip
   }
+  const queries: OcclusionQueries = {
+    cast: (origin, direction, maxDistance, more) => {
+      const skip = selfColliders()
+      return world.castSphere({
+        origin,
+        direction,
+        maxDistance,
+        radius: orbit.probeRadius,
+        exclude: more === undefined ? skip : [...skip, ...more],
+      })
+    },
+    occupied: (point) => world.sphereOverlaps({ center: point, radius: orbit.probeRadius, exclude: selfColliders() }),
+  }
+  orbit.observe(queries)
 
   // Respawn: teleport to wherever the rules say (the last checkpoint, or the spawn) and kill momentum.
   // Triggered by touching a hazard pad or falling below the kill plane — both are `takeDeath`'s call now.
@@ -994,7 +836,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
       // so a normal landing is 1 and a long drop is more.
       if (!groundedBefore && char.grounded && vyBefore < 0) {
         const ref = Math.sqrt(2 * tuning.gravity * tuning.jumpHeight)
-        landImpact = Math.min(-vyBefore / ref, params.landKickMax)
+        orbit.land(-vyBefore / ref)
       }
       // After the world has stepped: a ragdoll's bodies only move on a tick, so this is where their new
       // pose is taken. The render loop interpolates between the last two. Peers' corpses are bodies in
@@ -1266,10 +1108,8 @@ stage.start(() => {
     // The menu owns the screen while it is open: no routing, no camera swing, nothing held.
     touch.setEnabled(!menuOpen())
     const t = touch.drainLook()
-    camYaw -= t.dx * params.touchSensitivity
-    camPitch = clamp(camPitch + t.dy * params.touchSensitivity, params.pitchMinDeg * DEG, PITCH_MAX)
-    if (t.pinch !== 0)
-      params.camZoom = clamp(params.camZoom - t.pinch * params.pinchZoom, params.camZoomMin, params.camZoomMax)
+    orbit.lookTouch(t.dx, t.dy)
+    if (t.pinch !== 0) orbit.zoomPinch(t.pinch)
     // Tap in the look region = the mobile respawn, matching desktop's left click.
     if (t.tapped && dead && !menuOpen()) requestRespawn?.()
     if (touchHud !== null) {
@@ -1278,128 +1118,20 @@ stage.start(() => {
     }
   }
 
-  // orbit camera around the own character, dipped by whatever is left of the last landing
-  landImpact = chase(landImpact, 0, frameDt, params.landKickRecovery)
-  const target = { x: ownPos.x, y: ownPos.y + CAM_AIM_RISE - landImpact * params.landKick, z: ownPos.z }
-  // Re-clamped every frame, because the range itself is tunable in the pane while playing.
-  params.camZoom = clamp(params.camZoom, params.camZoomMin, params.camZoomMax)
-  camDistance = chase(camDistance, params.camZoom, frameDt, params.camZoomSmooth)
-
-  // Rates, for the lookahead probe below: how fast the mouse is turning the boom and how fast the
-  // character is carrying it. Both are differenced per frame and smoothed — mouse deltas arrive in
-  // bursts, and an unsmoothed rate makes the predicted boom jitter, which the soft limit then chases.
-  if (frameDt > 0) {
-    camYawRate = chase(camYawRate, (camYaw - camYawPrev) / frameDt, frameDt, CAM_RATE_HALFLIFE)
-    camPitchRate = chase(camPitchRate, (camPitch - camPitchPrev) / frameDt, frameDt, CAM_RATE_HALFLIFE)
-    camVel = vec3(
-      chase(camVel.x, (target.x - camTargetPrev.x) / frameDt, frameDt, CAM_RATE_HALFLIFE),
-      chase(camVel.y, (target.y - camTargetPrev.y) / frameDt, frameDt, CAM_RATE_HALFLIFE),
-      chase(camVel.z, (target.z - camTargetPrev.z) / frameDt, frameDt, CAM_RATE_HALFLIFE),
-    )
-  }
-  camYawPrev = camYaw
-  camPitchPrev = camPitch
-  camTargetPrev = target
-
-  // The boom: where the camera would sit with the world empty. Everything below moves it along this
-  // line, never off it, so what the probe cleared is where the camera lands.
-  const boomX = Math.sin(camYaw) * Math.cos(camPitch) * camDistance
-  const boomY = Math.sin(camPitch) * camDistance + CAM_RISE
-  const boomZ = Math.cos(camYaw) * Math.cos(camPitch) * camDistance
-  const boom = Math.hypot(boomX, boomY, boomZ)
-  // Hard limit: how far the boom has room for *now*. The camera is clamped to it unconditionally, and
-  // that clamp is the whole no-clipping guarantee. `seeThrough` is the case where there *is* something in
-  // the way but it is thin and the camera is in clear air, so the limit is the full boom and the shader
-  // takes over (ADR 0055).
-  // Anything the boom meets below the feet is floor: it stops the camera as it always did, rather than
-  // being holed, because a hole in the floor is a view of the level's underside (ADR 0055). Always, not
-  // only while grounded — falling and looking down puts the camera under the ground just the same.
-  const feetY = ownPos.y - (CHAR_HALF_HEIGHT + CHAR_RADIUS)
-  const live = camOcclude?.(target, vec3(boomX, boomY, boomZ), boom, { probes: bodyProbes(target), feetY }) ?? {
-    limit: boom,
-    seeThrough: false,
-    occluders: [],
-  }
-  const hard = live.limit
-  // Soft limit: the same probe, of the same radius, run where the boom *will* be `lookahead` from now —
-  // the character has moved on and the mouse has kept turning. An obstruction about to cross the sight
-  // line shows up there before it shows up here, which is the head start the ease needs to arrive
-  // before the clamp has to bite. Widening the probe instead would also see it early, and would collapse
-  // the camera every time a surface merely runs alongside the boom (ADR 0020).
-  let soft = hard
-  if (params.camLookahead > 0 && camOcclude !== null) {
-    const t = params.camLookahead
-    const yaw = camYaw + camYawRate * t
-    const pitch = clamp(camPitch + camPitchRate * t, params.pitchMinDeg * DEG, PITCH_MAX)
-    const aheadBoom = vec3(
-      Math.sin(yaw) * Math.cos(pitch) * camDistance,
-      Math.sin(pitch) * camDistance + CAM_RISE,
-      Math.cos(yaw) * Math.cos(pitch) * camDistance,
-    )
-    const aheadTarget = vec3(target.x + camVel.x * t, target.y + camVel.y * t, target.z + camVel.z * t)
-    const aheadLen = Math.hypot(aheadBoom.x, aheadBoom.y, aheadBoom.z)
-    soft = Math.min(hard, camOcclude(aheadTarget, aheadBoom, aheadLen).limit)
-  }
-  // Move toward the soft limit on a half-life — in on one, back out on another — then clamp to the hard
-  // limit. `null` on the first frame only, where there is nothing to interpolate from.
-  camBoom =
-    camBoom === null
-      ? soft
-      : chase(camBoom, soft, frameDt, soft < camBoom ? params.camPushInSmooth : params.camReturnSmooth)
-  const reach = Math.min(camBoom, hard) / boom
-  camera.position.set(target.x + boomX * reach, target.y + boomY * reach, target.z + boomZ * reach)
-  // Orientation from the boom's *direction*, not from `lookAt`. A fully squeezed boom puts the camera
-  // exactly on its target, and lookAt then has a zero-length direction to build a basis from: three
-  // falls back to looking along world -Z, which is a fixed heading that ignores the mouse entirely.
-  // The direction is known whatever the length is. YXZ order — yaw about Y, then pitch about X — is the
-  // one that keeps the horizon level, and it stays defined at straight-up, where lookAt does not.
-  camera.rotation.set(-Math.atan2(boomY, Math.hypot(boomX, boomZ)), camYaw, 0, 'YXZ')
 
   /**
-   * The see-through hole (ADR 0055). Driven from the *live* probe, not the lookahead one: the hole has to
-   * agree with what is actually in frame, and it has its own ease. Written every frame because the shape is
-   * tunable in the pane while playing, and because the eye and the target move every frame anyway.
-   *
-   * The ease drives the **radius**, not the dither's strength. Ramping the strength puts the whole disc
-   * through a stipple on the way in and on the way out, which is a lot of crawling noise across a wide
-   * surface; growing the radius keeps the interior fully cut from the first frame, so stipple only ever
-   * lives in the thin feather ring and the hole reads as an aperture opening around the character.
+   * The camera, and with it the see-through hole and the visibility of your own rig. One call, because all
+   * of it is `@mp/camera`'s now (ADR 0056) — what it needs from here is the character's capsule centre and
+   * somewhere to report the surfaces it wants holed.
    */
-  maskOpen = chase(maskOpen, live.seeThrough ? 1 : 0, frameDt, params.camMaskSmooth)
-  if (live.seeThrough) maskOccluders = live.occluders
-  else if (maskOpen < 0.004) maskOccluders = [] // shut: hand the plain materials back
-  levelView?.setOccluders(maskOccluders)
-  cutout.set({
-    camera: vec3(camera.position.x, camera.position.y, camera.position.z),
-    // The capsule's centre, *not* the camera's look target: that one is a metre higher, at the top of the
-    // head, so the hole would be centred there and the feet would fall outside it. It also carries the
-    // landing dip, which the hole has no business following.
-    target: vec3(ownPos.x, ownPos.y, ownPos.z),
-    radius: params.camMaskRadius * maskOpen,
-    feather: params.camMaskFeather,
-    // Full strength whenever there is any hole at all: the aperture is the animation.
-    strength: maskOpen > 0 ? 1 : 0,
-  })
-
-  // Your own rig's visibility, decided here because three things want a say and the third needs the
-  // camera placed first: death (the ragdoll has the floor), the spawn assembly (the body has not landed
-  // yet), and the camera being inside you.
-  //
-  // The probe deliberately ignores your own body, so nothing stops a low ceiling squeezing the camera
-  // into your head — a minimum boom length would instead push the camera *through* the ceiling, which
-  // trades your body for the whole world. So the body goes rather than the collision (ADR 0020).
-  // Measured against the capsule, whose height and width the rig is built from, so it hides only when
-  // the camera is genuinely inside the mesh and not on every close pass: distance from the camera to
-  // the capsule's spine, less its radius. Peers are unaffected — they always see you.
-  if (myId !== null) {
-    const spineY = clamp(camera.position.y - ownPos.y, -CHAR_HALF_HEIGHT, CHAR_HALF_HEIGHT)
-    const gap =
-      Math.hypot(camera.position.x - ownPos.x, camera.position.y - ownPos.y - spineY, camera.position.z - ownPos.z) -
-      CHAR_RADIUS
-    views.setVisible(myId, !dead && assembly === null && gap >= params.camHideMargin)
-  }
+  const placed = orbit.update(frameDt, ownPos, (handles: readonly number[]) => levelView?.setOccluders(handles))
+  /**
+   * Three things want a say in whether your rig is drawn, and the third needs the camera placed first:
+   * death (the ragdoll has the floor), the spawn assembly (the body has not landed yet), and the camera
+   * being inside you. Peers are unaffected — they always see you.
+   */
+  if (myId !== null) views.setVisible(myId, !dead && assembly === null && placed.rigVisible)
 })
-
 // --- pause screen (Pixi UI, ADR 0015) ---
 // A transparent Pixi canvas stacked over the Three canvas. The pause screen composition
 // lives in pauseMenu.ts; this wires it to the game (params, roster, respawn) and manages the
@@ -1430,9 +1162,9 @@ const pause = createPauseMenu(ui, {
     resumePlay()
   },
   sensitivity: {
-    get: () => (params.sensitivity - SENS_MIN) / (SENS_MAX - SENS_MIN),
+    get: () => (orbit.params.sensitivity - SENS_MIN) / (SENS_MAX - SENS_MIN),
     set: (t) => {
-      params.sensitivity = SENS_MIN + t * (SENS_MAX - SENS_MIN)
+      orbit.params.sensitivity = SENS_MIN + t * (SENS_MAX - SENS_MIN)
     },
   },
   players: () => {
