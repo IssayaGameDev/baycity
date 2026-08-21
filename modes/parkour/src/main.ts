@@ -44,7 +44,6 @@ import {
   CHAR_HALF_HEIGHT,
   CHAR_RADIUS,
   DEFAULT_TUNING,
-  playerSpawn,
   stepCharacter,
   TICK_DT,
   TICK_RATE_HZ,
@@ -55,7 +54,7 @@ import {
   type GaitTuning,
 } from '@mp/character'
 import { instantiateLevel, type LoadedLevel } from '@mp/content'
-import { Checkpoint, DEFAULT_REGISTRY, characterAccess, createComponentRuntime, hasComponent, type ComponentRuntime } from '@mp/components'
+import { characterAccess, createComponentRuntime, type ComponentRuntime } from '@mp/components'
 import { getLocale, matchLocale, onLocaleChange, setLocale, t, type TranslationKey } from '@mp/i18n'
 import { createTouchHud, createUiOverlay, uiButton, type ListItem, type TouchHud } from '@mp/render-pixi'
 import { Client, type Room } from 'colyseus.js'
@@ -70,6 +69,8 @@ import { createRagdoll, type Ragdoll } from './ragdoll'
 import { ASSET_DB, CLIP_SOURCE, assetUrlOf, materialOf } from './assets'
 import { DEFAULT_NAME, levelByName } from './levels'
 import { localParkourPersistence } from './persistence'
+import { PARKOUR_MODE } from './editorMode'
+import { PARKOUR_REGISTRY, parkourSession, spawnFor } from './rules'
 
 // Relay endpoint. Defaults to the dev host on :9200. `?server=wss://host` overrides it, so a
 // tunnelled page (served from a different origin than the relay) can point at its own relay URL.
@@ -695,7 +696,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   // them down. It was zero here, which left a corpse coasting off in a straight line for ever.
   const world = createPhysicsWorld({ gravity: { x: 0, y: -tuning.gravity, z: 0 } })
   physicsWorld = world // the render loop builds peers' corpses in it
-  loaded = instantiateLevel(world, levelData, DEFAULT_REGISTRY, CLIP_SOURCE)
+  loaded = instantiateLevel(world, levelData, PARKOUR_REGISTRY, CLIP_SOURCE)
 
   // Build the level's greybox meshes via the shared renderer (content C3). Marker pads are
   // just their (colour-coded) box here; radius/overlay visualization belongs in the viewer.
@@ -715,29 +716,25 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
    * Adding a rule is now a component definition and nothing here at all, which is the difference between a
    * component system and a switch statement. Nothing in this file names `Bumper` any more.
    */
-  const checkpointNodes = loaded.nodes.filter((n) => hasComponent(n.components, Checkpoint))
-  let killedByRule = false
-  const { fallBehavior, fallY } = loaded.config
-
-  // Markers sit on a surface; the capsule's *centre* must clear it by its stand height so
-  // the player rests on top rather than sinking in.
-  const STAND_OFFSET = CHAR_HALF_HEIGHT + CHAR_RADIUS
-
-  // Spawn: last checkpoint touched (persisted), else the level's spawn marker (spread a
-  // little by id so players don't stack), else a fallback.
-  const spawnMarker = loaded.markers.find((m) => m.kind === 'spawn')?.position
+  /**
+   * The rules themselves live in `rules.ts` (ADR 0052), headless, so the editor's play-in-place runs *these*
+   * instead of a second hand-written copy. They had already drifted: the editor died on any fall, ignoring
+   * `fallBehavior`, so a tower level killed you there and let you fall here.
+   *
+   * What stays in this file is what a *client* does about it — persistence, ragdolls, assembly, the camera.
+   */
   const playerState = persistence.load()
-  const a = id * 2.399963
-  const cp =
-    playerState.checkpoint >= 0 && playerState.checkpoint < checkpointNodes.length
-      ? checkpointNodes[playerState.checkpoint]!.position
-      : undefined
-  const spawn =
-    cp !== undefined
-      ? { x: cp.x, y: cp.y + STAND_OFFSET, z: cp.z }
-      : spawnMarker !== undefined
-        ? { x: spawnMarker.x + Math.cos(a) * 2, y: spawnMarker.y + STAND_OFFSET, z: spawnMarker.z + Math.sin(a) * 2 }
-        : playerSpawn(id)
+  const rules = parkourSession(loaded, {
+    from: playerState.checkpoint,
+    onProgress: (progress) => {
+      playerState.checkpoint = progress
+      persistence.save(playerState)
+    },
+  })
+
+  // Spawn: wherever the rules resumed to (a persisted checkpoint), else this game's spawn rule, which
+  // spreads arrivals around the marker by id so two players do not stack.
+  const spawn = playerState.checkpoint >= 0 ? rules.respawnAt() : spawnFor(loaded, id)
   const char: CharacterState = addCharacter(world, spawn, BODY_LAYERS)
   ownState = char // the render loop reads velocity/grounded straight off the sim for our own rig
 
@@ -759,12 +756,11 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
     return world.castSphere({ origin, direction, maxDistance: want, radius: CAM_PROBE_RADIUS, exclude: skip })?.distance ?? want
   }
 
-  // Respawn: teleport to the last checkpoint (or spawn) and kill momentum. Triggered by
-  // touching a hazard pad or falling below the level's kill plane (mode config).
-  let respawnPos: Vec3 = { ...spawn }
+  // Respawn: teleport to wherever the rules say (the last checkpoint, or the spawn) and kill momentum.
+  // Triggered by touching a hazard pad or falling below the kill plane — both are `takeDeath`'s call now.
   const respawn = (): void => {
     clearRagdoll()
-    char.body.setPosition(respawnPos)
+    char.body.setPosition(rules.respawnAt())
     char.vx = 0
     char.vy = 0
     char.vz = 0
@@ -783,19 +779,9 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
    * `kill` sets a flag instead of calling `die()` directly, because death is gated on not already being dead
    * and on the fall plane in the same breath, and one place deciding that is one place to read.
    */
-  const components: ComponentRuntime = createComponentRuntime(loaded, DEFAULT_REGISTRY, {
+  const components: ComponentRuntime = createComponentRuntime(loaded, PARKOUR_REGISTRY, {
     character: characterAccess(char),
-    effects: {
-      kill: () => void (killedByRule = true),
-      // Progress only advances: touching an earlier checkpoint never lowers your saved index.
-      progress: (node) => {
-        const i = checkpointNodes.indexOf(node)
-        if (i < 0 || i <= playerState.checkpoint) return
-        playerState.checkpoint = i
-        persistence.save(playerState)
-        respawnPos = { x: node.position.x, y: node.position.y + STAND_OFFSET, z: node.position.z }
-      },
-    },
+    effects: rules.effects,
   })
   // Tick 0 at level time 0: the clock has not started, and a component that wants "now" gets it in
   // `onFixedUpdate`. Counted here rather than read off the clock so the number a component sees is the
@@ -958,13 +944,11 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
         )
         // Real contact: the colliders the capsule pushed against this tick. Handed straight to the
         // components on whatever nodes own them — a corpse triggers nothing, which is why this is gated.
-        killedByRule = false
         if (!dead) components.contact(char.body.collisions())
-        // Checkpoint touched → it becomes the respawn point (persisted). Progress only
-        // advances: touching an earlier checkpoint never lowers your saved index.
-        // A rule killed us, or we fell below the kill plane. Gated on `dead`, or a corpse still falling past
-        // the plane would re-trigger every tick.
-        if (!dead && (killedByRule || (fallBehavior === 'respawn-checkpoint' && p.y < fallY))) die()
+        // A rule killed us — a hazard pad, or the hazard plane under the level (ADR 0053). One question,
+        // asked of the rules, which also consumes the flag. Gated on `dead`, because a corpse still resting
+        // on the plane keeps generating contacts.
+        if (rules.takeDeath() && !dead) die()
       }
     },
   })
@@ -998,9 +982,10 @@ const onNet = (m: Uint8Array): void => {
 // performs the HTTP seat reservation then upgrades.
 const connect = async (): Promise<void> => {
   try {
-    // `level` is a matchmaking filter (server: `.filterBy(['level'])`), so a room only ever holds
-    // players on the same level — see the note on `levelName`.
-    room = await new Client(SERVER_URL).joinOrCreate('parkour', { name: myName, level: levelName })
+    // `game` and `level` are matchmaking filters (server: `.filterBy(['game', 'level'])`), so a room only ever
+    // holds players in the same game on the same level. One room type serves every game on the platform; which
+    // game it is is a filter, not a room name (ADR 0052) — see the note on `levelName`.
+    room = await new Client(SERVER_URL).joinOrCreate('game', { name: myName, game: PARKOUR_MODE.name, level: levelName })
   } catch {
     setStatus('status.offline')
     return

@@ -10,7 +10,7 @@ Rooms run on **Colyseus** (ADR 0013): it owns the transport (default `ws`), room
 matchmaking and the scale-out path; our binary relay is the payload inside each room — **no
 `@colyseus/schema`**. Clients `joinOrCreate('parkour', { name, level })` (fill-then-create, `maxClients = 20`,
 solo → own room); `joinById` handles join-by-code. Matchmaking is **filtered by `level`**
-(`define(...).filterBy(['level'])`): a room only ever holds clients on the same level, because
+(`define('game', GameRoom).filterBy(['game', 'level'])`): a room only ever holds clients on the same level, because
 geometry and the movement-base index a rider replicates (ADR 0021) are both positional and would
 otherwise disagree. Filtering is per *supplied* option — a client that omits `level` matches any
 room, so every client here names one — the browser defaults to `default` (`content/levels/default.json`) and bots take
@@ -38,7 +38,7 @@ nobody can see. The server still loads no content; it never learns what a level 
 
 ## Server (`packages/server`) — Colyseus relay room (`rooms.ts`)
 
-- **`ParkourRoom`** (a Colyseus `Room`, `maxClients = 20`, no `@colyseus/schema`): on `onJoin` it
+- **`GameRoom`** (a Colyseus `Room`, `maxClients = 20`, no `@colyseus/schema`): on `onJoin` it
   assigns an `EntityId`, stores the join name, sends `WELCOME`, and broadcasts the `ROSTER`.
   `onMessage(NET_CHANNEL)` receives our binary frames: `STATE` → store the client's last
   position (it owns its own body); `PING` → `PONG`. `onLeave` drops the player and re-broadcasts

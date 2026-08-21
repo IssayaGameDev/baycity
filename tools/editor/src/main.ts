@@ -7,7 +7,6 @@ import {
   TICK_DT,
   TICK_RATE_HZ,
   type CharacterState,
-  type CharacterTuning,
 } from '@mp/character'
 import { createLocalController, type LocalController, type LocalWorld } from '@mp/client'
 import {
@@ -31,7 +30,8 @@ import {
   type Pose,
   type Transform,
 } from '@mp/content'
-import { Checkpoint, DEFAULT_REGISTRY, RULE_KINDS, characterAccess, createComponentRuntime, hasComponent, type ComponentRuntime } from '@mp/components'
+import { DEFAULT_REGISTRY, characterAccess, createComponentRuntime, type ComponentRuntime, type Registry } from '@mp/components'
+import type { ModeDescriptor } from '@mp/mode'
 import { createSimClock, eulerToQuat, quat, startFixedLoop, vec3, type EntityId, type LoopHandle, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
@@ -56,7 +56,7 @@ import {
 } from '@mp/render-three'
 import { levelDoc, prefabDoc, type ClipItem, type Doc, type KeyEditor, type Mode } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
-import { listFiles, loadLevel, saveFile } from './filesApi'
+import { listFiles, loadLevel, saveFile, type FileEntry } from './filesApi'
 import { createHierarchy, type Hierarchy } from './hierarchy'
 import { createHistory } from './history'
 import { createInspector, type Inspector } from './inspector'
@@ -68,6 +68,7 @@ import { createProjectPanel, type Project } from './projectPanel'
 import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
 import { createShortcuts } from './shortcuts'
 import { createSplitter, readPx, writePx } from './splitter'
+import { MODES, MODE_LIST, modeOf, soleMode } from './modes'
 import { createTimeline, type Timeline } from './timeline'
 import { DIRS, pathPoints, putChannel, restKeys, setKeyPose, sortedKeys } from './trackEdit'
 import { createToolbar, type GizmoMode, type GizmoSpace, type Toolbar } from './toolbar'
@@ -130,6 +131,11 @@ let selected: number | null = null
  */
 let envSelected = false
 /**
+ * The Game row is picked rather than a node (ADR 0052). Its own flag, beside `envSelected`, for the same
+ * reason: a sentinel index in `selection` would eventually reach a structural operation that reads that list.
+ */
+let gameSelected = false
+/**
  * What a viewport click will place. `own` is a prefab this level defines in its own table, named; a model or a
  * prefab file is an asset id, and
  * placing one wraps it in a one-piece inline prefab whose collider is authored — visual is not collision,
@@ -140,6 +146,22 @@ type Placing =
   | { kind: 'model'; assetId: string }
   | { kind: 'prefabAsset'; assetId: string }
 let placing: Placing | null = null
+/**
+ * The game being authored for (ADR 0052).
+ *
+ * Everything the editor cannot answer for itself comes from here: which components exist, what the level's own
+ * settings mean, which rules get a gizmo, and what play-in-place does when you touch something. All of that
+ * used to be parkour, hardcoded.
+ *
+ * `undefined` means the open level names no game, or names one this build does not have. The editor stays
+ * usable — you can look at geometry, move it and save it — with the game-shaped parts switched off, because a
+ * level must not become unopenable through a sibling app being absent.
+ */
+let activeMode: ModeDescriptor | undefined = soleMode()
+
+/** The component set the open document is validated and edited against. */
+const registry = (): Registry => activeMode?.registry ?? DEFAULT_REGISTRY
+
 /** Loaded assets. Both arrive at boot, before any document is opened. */
 let assets: AssetLibrary | null = null
 
@@ -210,14 +232,22 @@ const markerGizmo = (position: Vec3, color: number): THREE.Group => {
 const buildMarkers = (): void => {
   disposeMeshes(markerGroup)
   if (loaded === null) return
+  // Spawn is the engine's: every game starts a player somewhere, and `Spawn` is an engine component.
   for (const m of loaded.markers) if (m.kind === 'spawn') markerGroup.add(markerGizmo(m.position, colorForMarker('spawn')))
-  // A gizmo per gameplay rule, on the node that owns the collider you would touch. `RULE_KINDS` is the only
-  // place the editor names a rule at all: everything else about a component comes from its declaration.
-  for (const n of loaded.nodes)
-    for (const c of n.components) {
-      const kind = RULE_KINDS[c.type]
-      if (kind !== undefined) markerGroup.add(markerGizmo(n.position, colorForMarker(kind)))
-    }
+  /**
+   * A gizmo per gameplay rule, on the node that owns the collider you would touch — coloured by **the game's**
+   * table (ADR 0052), so a new game's rules get markers without touching this file.
+   *
+   * This was `RULE_KINDS` from `@mp/components`, which covered exactly parkour's four because they were the
+   * only rules that existed. The editor no longer names a rule anywhere.
+   */
+  const gizmos = activeMode?.gizmos
+  if (gizmos !== undefined)
+    for (const n of loaded.nodes)
+      for (const c of n.components) {
+        const color = gizmos[c.type]
+        if (color !== undefined) markerGroup.add(markerGizmo(n.position, color))
+      }
 }
 
 // --- editable item meshes ---
@@ -481,7 +511,7 @@ const rebuildLoaded = (): void => {
   world?.free()
   world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
   try {
-    loaded = instantiateLevel(world, doc.asLevel(), DEFAULT_REGISTRY, editorClips)
+    loaded = instantiateLevel(world, doc.asLevel(), registry(), editorClips)
     buildMarkers()
   } catch (e) {
     loaded = null
@@ -510,6 +540,7 @@ const breadcrumb = (): string => {
 const showDoc = (): void => {
   deselect()
   envSelected = false
+  gameSelected = false
   doc = docStack[docStack.length - 1]?.doc ?? null
   // The level owns its sun (ADR 0048), so opening one relights the viewport and rebakes the sky. A prefab has
   // none, which `sun()` reports as `undefined`, and that falls back to the renderer's defaults.
@@ -526,6 +557,22 @@ const showDoc = (): void => {
 }
 
 /** Open a file — the stack starts over at its root. */
+/**
+ * Rebuild the open level's document against the active game's registry (ADR 0052).
+ *
+ * A `Doc` captures its registry at construction — the Inspector's fields, the Add Component menu and
+ * `effectiveNode`'s singleton rules all read it — so reassigning a level to another game means a new document
+ * over the same level object. Rare and deliberate, which is why recreating it beats making the registry live.
+ *
+ * Refuses while a prefab is open on top: a prefab belongs to no game, so there is nothing to reassign.
+ */
+const reopenWithRegistry = (): void => {
+  const root = docStack[0]
+  if (root === undefined || docStack.length > 1) return
+  docStack[0] = { doc: levelDoc(root.doc.asLevel(), userPrefabs, registry(), editorClips), label: root.label }
+  showDoc()
+}
+
 const setDoc = (next: Doc, name: string): void => {
   docStack.length = 0
   docStack.push({ doc: next, label: `${next.mode}: ${name}` })
@@ -543,7 +590,7 @@ const openPrefabOf = (index: number): void => {
   const prefab = doc.prefabAt(id)
   if (prefab === undefined) return
   const n = doc.refCount(id)
-  docStack.push({ doc: prefabDoc(prefab, DEFAULT_REGISTRY, editorClips), label: `${id} (${n} instance${n === 1 ? '' : 's'})` })
+  docStack.push({ doc: prefabDoc(prefab, registry(), editorClips), label: `${id} (${n} instance${n === 1 ? '' : 's'})` })
   showDoc()
 }
 
@@ -563,7 +610,9 @@ const comp = (id: string, type: string, params: Record<string, unknown>): Compon
  */
 const blankLevel = (id: string): Level => ({
   id,
-  config: { fallBehavior: 'respawn-checkpoint', fallY: -10 },
+  // Whichever game is active, so a new level is authored *for* something. Its settings are that game's
+  // defaults, filled in by `modeParams` on read rather than written out here (ADR 0052).
+  config: activeMode === undefined ? {} : { mode: { name: activeMode.name } },
   // A literal ground slab: there are no makers to call any more (ADR 0027), and a new level still has to have
   // something to stand on.
   nodes: [
@@ -1454,7 +1503,6 @@ window.addEventListener('keydown', (e) => {
 // the two-phase step (move platforms, then resolve the character against them), and stepCharacter
 // with DEFAULT_TUNING. The viewer skipped the controller/interpolation, which is why it felt off.
 const PLAYER_ID = 0 as EntityId
-const STAND_OFFSET = CHAR_HALF_HEIGHT + CHAR_RADIUS
 
 const keys = new Set<string>()
 window.addEventListener('keydown', (e) => {
@@ -1471,7 +1519,6 @@ charMesh.castShadow = true
 charMesh.visible = false
 stage.scene.add(charMesh)
 
-const tuning: CharacterTuning = { ...DEFAULT_TUNING }
 let char: CharacterState | null = null
 let controller: LocalController | null = null
 let playLoop: LoopHandle | null = null
@@ -1528,34 +1575,27 @@ const startPlay = (): void => {
   rebuildLoaded() // fresh world + loaded from the current data
   if (loaded === null || world === null) return
   deselect()
-  const sm = loaded.markers.find((m) => m.kind === 'spawn')?.position
-  const spawn: Vec3 = sm !== undefined ? { x: sm.x, y: sm.y + STAND_OFFSET, z: sm.z } : { x: 0, y: 3, z: 0 }
-  char = addCharacter(world, spawn)
-  let respawnPos: Vec3 = { ...spawn }
-  let cpIndex = -1
-  let killed = false
-  const fallY = loaded.config.fallY
-
   /**
-   * Play-in-place runs **the same components the game runs** — the rules are theirs now, so this probe cannot
-   * drift from the mode by forgetting to mirror a branch. It differs only in what dying means: no ragdoll, no
-   * persistence, just a teleport back.
+   * Play-in-place runs **the game's own rules**, not a copy of them (ADR 0052).
+   *
+   * `mode.session` is the same function the game's client calls, so spawn, progress and death cannot drift
+   * from it. They had: this used to die on any fall, ignoring `fallBehavior`, so a `physical-fall` tower
+   * killed you here and let you fall in the game. The only difference left is what a client *does* about a
+   * death — no ragdoll, no persistence, just a teleport back.
+   *
+   * With no game (an unassigned level, or one whose game is missing) there are no rules to run: you get the
+   * character and the geometry, which is still the useful half of a play-test.
    */
-  const checkpoints = loaded.nodes.filter((n) => hasComponent(n.components, Checkpoint))
-  playComponents = createComponentRuntime(loaded, DEFAULT_REGISTRY, {
-    character: characterAccess(char),
-    effects: {
-      kill: () => void (killed = true),
-      progress: (node) => {
-        const i = checkpoints.indexOf(node)
-        if (i < 0 || i <= cpIndex) return
-        cpIndex = i
-        respawnPos = { x: node.position.x, y: node.position.y + STAND_OFFSET, z: node.position.z }
-      },
-    },
-  })
+  const mode = activeMode
+  const spawn: Vec3 = mode?.spawn(loaded) ?? { x: 0, y: 3, z: 0 }
+  char = addCharacter(world, spawn)
+  const rules = mode?.session(loaded)
+  playComponents =
+    rules === undefined
+      ? null
+      : createComponentRuntime(loaded, registry(), { character: characterAccess(char), effects: rules.effects })
   let playTick = 0
-  playComponents.attach(playTick, 0, TICK_DT)
+  playComponents?.attach(playTick, 0, TICK_DT)
 
   // One fixed step of platform time per fixed step — see @mp/core simClock (reading the wall
   // clock inside the tick stalls the platforms during a multi-tick wake and jitters carry).
@@ -1568,7 +1608,9 @@ const startPlay = (): void => {
       loaded.update(nowMs, char.base?.colliderHandle) // only the ridden piece is frozen
       playComponents?.fixedUpdate(++playTick, nowMs, TICK_DT)
       world.step(TICK_DT) // (A) platforms move
-      stepCharacter(char, cmd, TICK_DT, tuning, loaded.basePose) // rides whatever it stands on
+      // The game's own locomotion, not the stack default: a game with a different controller feels like
+      // itself in a play-test (ADR 0052).
+      stepCharacter(char, cmd, TICK_DT, mode?.tuning ?? DEFAULT_TUNING, loaded.basePose) // rides what it stands on
       world.step(TICK_DT) // (B) character resolves against the moved platforms
       lastSimTickAt = performance.now()
     },
@@ -1592,11 +1634,10 @@ const startPlay = (): void => {
       if (char === null || controller === null) return
       const m = worldMove()
       controller.step(m.x, m.z, keys.has('Space'))
-      killed = false
       playComponents?.contact(char.body.collisions())
-      const p = char.body.translation()
-      if (killed || p.y < fallY) {
-        char.body.setPosition(respawnPos)
+      // One question, asked of the game's rules, which also consume the flag. A level with no game never dies.
+      if (rules?.takeDeath() === true) {
+        char.body.setPosition(rules.respawnAt())
         char.vx = 0
         char.vy = 0
         char.vz = 0
@@ -1648,7 +1689,17 @@ const openFile = async (name: string): Promise<void> => {
   try {
     if (fileState.mode === 'level') {
       openPrefabAsset = null
-      setDoc(levelDoc(await loadLevel(name), userPrefabs, DEFAULT_REGISTRY, editorClips), name)
+      /**
+       * The level says which game it is for, and that decides the registry it is validated against — so
+       * opening a level that uses a component its game does not declare is a clear load error rather than a
+       * silently broken Inspector (ADR 0052).
+       *
+       * Read before validating, which is why `loadLevel` takes a resolver: the mode has to be known to pick
+       * the registry, and the registry is what checks the parameters.
+       */
+      const level = await loadLevel(name, (mode) => MODES[mode]?.registry)
+      activeMode = modeOf(level) ?? soleMode()
+      setDoc(levelDoc(level, userPrefabs, registry(), editorClips), name)
       return
     }
     // A prefab is an asset now, so it is opened by id and saved back to its own path.
@@ -1659,7 +1710,7 @@ const openFile = async (name: string): Promise<void> => {
       return
     }
     openPrefabAsset = entry.id
-    setDoc(prefabDoc(prefab, DEFAULT_REGISTRY, editorClips), name)
+    setDoc(prefabDoc(prefab, registry(), editorClips), name)
   } catch (e) {
     setStatus(`load failed: ${String(e)}`)
   }
@@ -1678,8 +1729,26 @@ const refreshPrefabLibrary = (): void => {
   }
 }
 
+/** Every level on disk with the game it declares, so the list can be narrowed to one game (ADR 0052). */
+let levelEntries: FileEntry[] = []
+
+/**
+ * The levels worth offering: the ones for the game being authored for.
+ *
+ * A level naming **no** game is always offered, because it is not another game's — it is unassigned, and
+ * hiding it would make a file you can see on disk unreachable in the tool that is supposed to fix it. With no
+ * active game, everything is offered.
+ */
+const visibleLevels = (): string[] =>
+  levelEntries.filter((e) => activeMode === undefined || e.mode === undefined || e.mode === activeMode.name).map((e) => e.name)
+
 const refreshFileList = async (): Promise<void> => {
-  fileNames = fileState.mode === 'level' ? await listFiles('levels').catch(() => [] as string[]) : prefabEntries().map((e) => e.name)
+  if (fileState.mode === 'level') {
+    levelEntries = await listFiles('levels').catch(() => [] as FileEntry[])
+    fileNames = visibleLevels()
+  } else {
+    fileNames = prefabEntries().map((e) => e.name)
+  }
   toolbar?.render()
 }
 
@@ -1687,7 +1756,7 @@ const enterMode = async (mode: Mode): Promise<void> => {
   fileState.mode = mode
   await refreshFileList()
   if (fileNames[0] !== undefined) await openFile(fileNames[0])
-  else setDoc(mode === 'level' ? levelDoc(blankLevel('untitled'), userPrefabs, DEFAULT_REGISTRY, editorClips) : prefabDoc(blankPrefab('untitled'), DEFAULT_REGISTRY, editorClips), 'untitled')
+  else setDoc(mode === 'level' ? levelDoc(blankLevel('untitled'), userPrefabs, registry(), editorClips) : prefabDoc(blankPrefab('untitled'), registry(), editorClips), 'untitled')
 }
 
 // --- toolbar ---
@@ -1695,6 +1764,8 @@ const toolbar: Toolbar = createToolbar(
   $<HTMLDivElement>('#toolbar'),
   () => ({
     mode: fileState.mode,
+    game: activeMode?.name ?? '',
+    games: MODE_LIST.map((m) => ({ name: m.name, label: m.label })),
     name: fileState.name,
     files: fileNames,
     gizmo: edit.mode,
@@ -1708,6 +1779,13 @@ const toolbar: Toolbar = createToolbar(
   }),
   {
     setMode: (m) => void enterMode(m),
+    setGame: (name) => {
+      // The authoring context, not the open level's tag: retagging happens in the Game row, where the
+      // consequences of changing a level's game are in front of you (ADR 0052).
+      activeMode = MODES[name]
+      void refreshFileList()
+      refreshUi()
+    },
     open: (name) => void openFile(name),
     setName: (name) => {
       fileState.name = name === '' ? 'untitled' : name
@@ -1746,7 +1824,7 @@ const toolbar: Toolbar = createToolbar(
     newBlank: () => {
       const name = fileState.name || 'untitled'
       openPrefabAsset = null // a new prefab has no asset yet; the first Save creates one
-      setDoc(fileState.mode === 'level' ? levelDoc(blankLevel(name), userPrefabs, DEFAULT_REGISTRY, editorClips) : prefabDoc(blankPrefab(name), DEFAULT_REGISTRY, editorClips), name)
+      setDoc(fileState.mode === 'level' ? levelDoc(blankLevel(name), userPrefabs, registry(), editorClips) : prefabDoc(blankPrefab(name), registry(), editorClips), name)
     },
     back: closePrefab,
     setGizmo: setMode,
@@ -1796,11 +1874,30 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
     // marked while editing the sun would say the gizmo still applies to it.
     // Set before deselecting: `deselect` rebuilds the Inspector, and by then it has to know to show the sun.
     envSelected = true
+    gameSelected = false
+    deselect()
+    hierarchy.render()
+  },
+  gameSelected: () => gameSelected,
+  /**
+   * What the row reads. Three states worth telling apart: no game, a game that is installed, and a game the
+   * level names that this build does not have — the last one being the case a person needs to *see*, because
+   * it explains why the rules and the rule gizmos are missing.
+   */
+  gameLabel: () => {
+    const ref = doc?.modeRef()
+    if (ref === undefined) return 'No game'
+    return MODES[ref.name]?.label ?? `${ref.name} (not installed)`
+  },
+  onSelectGame: () => {
+    gameSelected = true
+    envSelected = false
     deselect()
     hierarchy.render()
   },
   onSelect: (index, mode, order) => {
     envSelected = false
+    gameSelected = false
     selectWith(index, mode, order)
   },
   onRename: (index, name) => {
@@ -2308,7 +2405,7 @@ const indexOfPath = (path: string | null): number | null => {
 
 const restore = (snapshot: EditSnapshot): void => {
   const data = structuredClone(snapshot.data)
-  const next = snapshot.mode === 'level' ? levelDoc(data as Level, userPrefabs, DEFAULT_REGISTRY, editorClips) : prefabDoc(data as SceneNode, DEFAULT_REGISTRY, editorClips)
+  const next = snapshot.mode === 'level' ? levelDoc(data as Level, userPrefabs, registry(), editorClips) : prefabDoc(data as SceneNode, registry(), editorClips)
   // Straight into the stack rather than through `setDoc`, which would reset the history we are walking.
   docStack.length = 0
   docStack.push({ doc: next, label: `${next.mode}: ${fileState.name}` })
@@ -2536,6 +2633,15 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   doc: () => doc,
   selected: () => selected,
   envSelected: () => envSelected,
+  gameSelected: () => gameSelected,
+  games: () => MODE_LIST.map((m) => ({ name: m.name, label: m.label })),
+  onModeChanged: () => {
+    // The registry changed with the game, so everything derived from it is stale: the document's own registry,
+    // the Add Component menu, the rule gizmos and the physics instance.
+    activeMode = doc === null ? activeMode : (modeOf(doc.asLevel()) ?? soleMode())
+    reopenWithRegistry()
+    void refreshFileList()
+  },
   onEnvironmentChanged: () => {
     // Elevation and azimuth move the sky as well as the light, so this rebakes rather than just relighting.
     env.applyEnvironment(doc?.environment())

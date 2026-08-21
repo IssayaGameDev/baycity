@@ -1,5 +1,5 @@
 import { validateLevel, type Level } from '@mp/content'
-import { DEFAULT_REGISTRY } from '@mp/components'
+import { PARKOUR_REGISTRY } from './rules'
 
 /**
  * What this mode can load: **level files**, and nothing else.
@@ -44,5 +44,5 @@ export const levelByName = (name: string | null): Level => {
   }
   // Validated **with the registry**, so a bad component parameter is a load error rather than a surprise
   // mid-frame.
-  return validateLevel(found[1], DEFAULT_REGISTRY)
+  return validateLevel(found[1], PARKOUR_REGISTRY)
 }

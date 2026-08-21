@@ -24,6 +24,7 @@ import {
   type NodeOverride,
   type Pose,
   type EnvironmentConfig,
+  type ModeRef,
   type Transform,
 } from '@mp/content'
 import { DEFAULT_REGISTRY, type Registry } from '@mp/components'
@@ -248,6 +249,13 @@ export interface Doc {
    */
   environment: () => Partial<EnvironmentConfig> | undefined
   setEnvironment: (env: Partial<EnvironmentConfig>) => void
+  /**
+   * Which game this level is for (ADR 0052). `undefined` for an unassigned level, and always for a prefab —
+   * a prefab belongs to no game.
+   */
+  modeRef: () => ModeRef | undefined
+  /** Reassign the level to a game, or to none. */
+  setMode: (name: string | null) => void
   /** Save writes under a file name; the id follows it, or the two silently diverge. */
   setId: (id: string) => void
 }
@@ -1115,6 +1123,12 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
       if (mode === 'prefab') return
       level.config = { ...level.config, environment: env }
     },
+    modeRef: () => (mode === 'prefab' ? undefined : level.config.mode),
+    setMode: (name) => {
+      if (mode === 'prefab') return // a prefab belongs to no game, for the same reason it has no sun
+      const { mode: _dropped, ...rest } = level.config
+      level.config = name === null ? rest : { ...rest, mode: { name } }
+    },
     toJSON: opts.json,
     setId: (id) => {
       level.id = id
@@ -1130,11 +1144,15 @@ export const levelDoc = (level: Level, library: Record<string, Node>, registry: 
  * A prefab, edited as a document of one root node.
  *
  * Wrapped in a throwaway level so there is one implementation instead of two: a prefab is a node tree, and a
- * level is a node tree with a table. `physical-fall` and a distant `fallY` keep the wrapper from killing the
- * test character while previewing a prefab in mid-air.
+ * level is a node tree with a table.
+ *
+ * Its config is **empty**, and that is now the honest answer: a prefab belongs to no game, so it declares no
+ * game's settings. It used to have to spell out `physical-fall` and a distant `fallY` purely to stop parkour's
+ * kill plane from deleting the test character — a wrapper working around a rule it had no business carrying
+ * (ADR 0052).
  */
 export const prefabDoc = (root: Node, registry: Registry = DEFAULT_REGISTRY, clips?: ClipSource): Doc =>
   docOver(
-    { id: root.name ?? root.id, config: { fallBehavior: 'physical-fall', fallY: -999 }, nodes: [root] },
+    { id: root.name ?? root.id, config: {}, nodes: [root] },
     { mode: 'prefab', library: {}, registry, ...(clips !== undefined ? { clips } : {}), json: () => root },
   )

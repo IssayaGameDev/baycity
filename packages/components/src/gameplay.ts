@@ -103,16 +103,3 @@ export const Track = defineComponent({
 })
 
 export const GAMEPLAY_COMPONENTS = [Checkpoint, Goal, Hazard, Bumper, Track]
-
-/**
- * Rule component type → the gizmo colour key the renderer already has (`colorForMarker`).
- *
- * A table rather than lowercasing the type name, which would work for these four by coincidence and break
- * on the first two-word rule. Kept honest by a test that asserts it covers exactly the rule components.
- */
-export const RULE_KINDS: Record<string, 'checkpoint' | 'goal' | 'hazard' | 'bumper'> = {
-  [Checkpoint.type]: 'checkpoint',
-  [Goal.type]: 'goal',
-  [Hazard.type]: 'hazard',
-  [Bumper.type]: 'bumper',
-}

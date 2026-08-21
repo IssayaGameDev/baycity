@@ -13,6 +13,15 @@ export type GizmoSpace = 'world' | 'local'
 
 export interface ToolbarState {
   mode: Mode
+  /**
+   * The **game** being authored for, by `ModeDescriptor.name`, or `''` for none (ADR 0052).
+   *
+   * Called `game` and not `mode` on purpose: `mode` in this editor already means level-versus-prefab, and two
+   * meanings for one word in the same interface is how the wrong one gets read.
+   */
+  game: string
+  /** The installed games, for the picker. */
+  games: readonly { name: string; label: string }[]
   name: string
   files: readonly string[]
   gizmo: GizmoMode
@@ -28,6 +37,8 @@ export interface ToolbarState {
 
 export interface ToolbarActions {
   setMode: (m: Mode) => void
+  /** Author for this game from now on: narrows the level list and decides what a new level is for. */
+  setGame: (name: string) => void
   open: (name: string) => void
   setName: (name: string) => void
   save: () => void
@@ -102,6 +113,14 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
   }
   modeSelect.addEventListener('change', () => actions.setMode(modeSelect.value === 'prefab' ? 'prefab' : 'level'))
 
+  /**
+   * Which game is being authored for. The level list narrows to it and a new level is made for it — it does
+   * **not** retag the open level, which happens in the Game row where the consequences are visible.
+   */
+  const gameSelect = el('select')
+  gameSelect.title = 'the game being authored for — narrows the level list and decides what a new level is for'
+  gameSelect.addEventListener('change', () => actions.setGame(gameSelect.value))
+
   const openSelect = el('select')
   openSelect.addEventListener('change', () => {
     if (openSelect.value !== '') actions.open(openSelect.value)
@@ -172,7 +191,7 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
 
   const markerButton = el('button')
   markerButton.textContent = 'Markers'
-  markerButton.title = 'spawn / checkpoint / goal / hazard gizmos'
+  markerButton.title = 'spawn and gameplay-rule gizmos'
   markerButton.addEventListener('click', () => actions.setMarkers(!state().markers))
 
   // --- play ---
@@ -180,6 +199,8 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
   playButton.addEventListener('click', () => actions.setPlaying(!state().playing))
 
   container.append(
+    group(label('game'), gameSelect),
+    el('div', 'tb-sep'),
     group(label('file'), modeSelect, openSelect, nameInput, saveButton, newButton, backButton),
     el('div', 'tb-sep'),
     group(seg, spaceButton, snapBox, snapLabel, stepInput),
@@ -192,6 +213,22 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
   const render = (): void => {
     const s = state()
     modeSelect.value = s.mode
+    /**
+     * `(none)` is offered and is not a placeholder: a level may legitimately belong to no game, and picking it
+     * is how you see every level at once. A build with one game still shows the picker, because *which* game
+     * you are authoring for should never be something you have to infer.
+     */
+    if (gameSelect.dataset['games'] !== s.games.map((g) => g.name).join(' ')) {
+      gameSelect.replaceChildren()
+      for (const g of [{ name: '', label: '(none)' }, ...s.games]) {
+        const opt = el('option')
+        opt.value = g.name
+        opt.textContent = g.label
+        gameSelect.append(opt)
+      }
+      gameSelect.dataset['games'] = s.games.map((g) => g.name).join(' ')
+    }
+    gameSelect.value = s.game
     setOptions(openSelect, s.files, s.name)
     // Never fight the user's cursor: leave the field alone while it has focus.
     if (document.activeElement !== nameInput) nameInput.value = s.name
@@ -209,7 +246,7 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
     playButton.textContent = s.playing ? '■ Stop' : '▶ Play'
     playButton.classList.toggle('on', s.playing)
     // Editing is suspended during play; the controls would lie about what they do.
-    for (const control of [modeSelect, openSelect, nameInput, saveButton, newButton, stepInput, snapBox]) {
+    for (const control of [modeSelect, gameSelect, openSelect, nameInput, saveButton, newButton, stepInput, snapBox]) {
       control.disabled = s.playing
     }
     for (const button of gizmoButtons.values()) button.disabled = s.playing

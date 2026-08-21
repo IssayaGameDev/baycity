@@ -10,10 +10,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mode/parkour": "workspace:*",
     "@mp/character": "workspace:*",
     "@mp/components": "workspace:*",
     "@mp/content": "workspace:*",
     "@mp/core": "workspace:*",
+    "@mp/mode": "workspace:*",
     "@mp/physics": "workspace:*",
     "@mp/render-three": "workspace:*",
     "tweakpane": "^4.0.5"

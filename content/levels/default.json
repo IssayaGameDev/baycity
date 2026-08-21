@@ -1,14 +1,8 @@
 {
   "id": "default",
   "config": {
-    "fallBehavior": "respawn-checkpoint",
-    "fallY": -6,
-    "sun": {
-      "elevation": 30,
-      "azimuth": 38,
-      "intensity": 0,
-      "color": "#ffffff",
-      "shadows": true
+    "mode": {
+      "name": "parkour"
     },
     "environment": {
       "sun": {
@@ -1351,6 +1345,47 @@
               ]
             }
           ]
+        }
+      ]
+    },
+    {
+      "id": "kill-plane",
+      "name": "kill plane",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -9,
+          "z": 0
+        }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 120,
+                "y": 3,
+                "z": 120
+              }
+            }
+          },
+          "enabled": false
+        },
+        {
+          "id": "c1",
+          "type": "Renderer",
+          "params": {
+            "material": "4a11d049f9f8e5ac"
+          },
+          "enabled": false
+        },
+        {
+          "id": "c2",
+          "type": "Hazard",
+          "params": {}
         }
       ]
     }

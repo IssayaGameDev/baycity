@@ -154,6 +154,12 @@ export interface HierarchyHost {
    * panel knows which rows are on screen.
    */
   onSelect: (index: number, mode: SelectMode, order: readonly number[]) => void
+  /** Whether the Game row is the current selection (ADR 0052). */
+  gameSelected: () => boolean
+  /** What the Game row reads: the game's label, or that the level has none. */
+  gameLabel: () => string
+  /** The Game row was clicked. */
+  onSelectGame: () => void
   /** Whether the Environment row is the current selection (ADR 0048). */
   envSelected: () => boolean
   /** The Environment row was clicked. */
@@ -212,6 +218,18 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
      * Drawn even when the document is empty: a level with nothing in it still has a sun.
      */
     if (doc !== null && doc.mode === 'level') {
+      /**
+       * Which game this level is for, and that game's own settings (ADR 0052). A sibling of Environment rather
+       * than a section inside it: they are two subjects, and the game decides what the level *is* where the
+       * sun decides what it looks like.
+       */
+      const game = document.createElement('div')
+      game.className = `row env${host.gameSelected() ? ' sel' : ''}`
+      game.textContent = `🎮 ${host.gameLabel()}`
+      game.title = 'which game this level is for, and its settings'
+      game.addEventListener('pointerdown', () => host.onSelectGame())
+      container.append(game)
+
       const env = document.createElement('div')
       env.className = `row env${host.envSelected() ? ' sel' : ''}`
       env.textContent = '☀ Environment'

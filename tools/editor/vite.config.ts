@@ -64,7 +64,7 @@ const readBody = async (req: IncomingMessage): Promise<string> =>
 
 /**
  * Dev-server file API for editing content on disk:
- *   GET  /api/levels        → string[] of names (filenames without .json)
+ *   GET  /api/levels        → [{ name, mode? }] — the file name, and the game it declares (ADR 0052)
  *   GET  /api/levels/:name  → the JSON
  *   PUT  /api/levels/:name  → write the JSON (pretty-printed)
  *
@@ -168,10 +168,27 @@ const filesApi = (): Plugin => ({
       const dir = DIRS[m[1]!]!
       const name = m[2]
       if (req.method === 'GET' && name === undefined) {
-        const names = readdirSync(dir)
+        /**
+         * Name **and which game it is for** (ADR 0052), so the picker can group the list without the editor
+         * fetching every level to find out. Reading `config.mode.name` per file is cheap at this scale and it
+         * is the one field a listing needs; anything more and the client should just open the file.
+         *
+         * A file that will not parse is listed with no game rather than omitted — you have to be able to see
+         * a broken level in order to fix it.
+         */
+        const entries = readdirSync(dir)
           .filter((f) => f.endsWith('.json'))
-          .map((f) => f.slice(0, -'.json'.length))
-        sendJson(res, 200, names)
+          .map((f) => {
+            const levelName = f.slice(0, -'.json'.length)
+            try {
+              const parsed = JSON.parse(readFileSync(join(dir, f), 'utf8')) as { config?: { mode?: { name?: unknown } } }
+              const mode = parsed.config?.mode?.name
+              return { name: levelName, ...(typeof mode === 'string' && mode !== '' ? { mode } : {}) }
+            } catch {
+              return { name: levelName }
+            }
+          })
+        sendJson(res, 200, entries)
         return
       }
       if (name === undefined) {

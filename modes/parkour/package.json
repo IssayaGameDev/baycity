@@ -3,6 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./editorMode": "./src/editorMode.ts",
+    "./rules": "./src/rules.ts"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -12,16 +16,17 @@
   "dependencies": {
     "@mp/character": "workspace:*",
     "@mp/client": "workspace:*",
+    "@mp/components": "workspace:*",
     "@mp/content": "workspace:*",
     "@mp/core": "workspace:*",
     "@mp/i18n": "workspace:*",
+    "@mp/mode": "workspace:*",
     "@mp/net": "workspace:*",
     "@mp/physics": "workspace:*",
     "@mp/render-pixi": "workspace:*",
     "@mp/render-three": "workspace:*",
     "colyseus.js": "^0.16.22",
-    "tweakpane": "^4.0.5",
-    "@mp/components": "workspace:*"
+    "tweakpane": "^4.0.5"
   },
   "devDependencies": {
     "@tweakpane/core": "^2.0.0",

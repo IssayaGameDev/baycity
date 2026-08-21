@@ -10,7 +10,6 @@ import {
   type CharacterTuning,
 } from '@mp/character'
 import { instantiateLevel, type LoadedLevel, type VisualItem } from '@mp/content'
-import { DEFAULT_REGISTRY, RULE_KINDS } from '@mp/components'
 import { createSimClock, startFixedLoop, type LoopHandle, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
@@ -57,6 +56,8 @@ const overlayLine = (color: number): THREE.LineBasicMaterial =>
 // --- current entry state ---
 let world: PhysicsWorld | null = null
 let loaded: LoadedLevel | null = null
+/** The entry on screen: its level and the game that level belongs to (ADR 0052). */
+let current: Entry | null = null
 let levelView: LevelView | null = null
 let levelLights: ContentLights | null = null
 const colliderGroup = new THREE.Group()
@@ -110,13 +111,16 @@ const buildOverlays = (): void => {
     colliderPairs.push({ v, line: edges })
   }
 
-  // Spawn markers + trigger colliders, coloured by kind.
+  // Spawn is the engine's: every game starts a player somewhere, and `Spawn` is an engine component.
   for (const m of loaded.markers) if (m.kind === 'spawn') markerGroup.add(markerGizmo(m.position, colorForMarker('spawn')))
-  // A gizmo per gameplay rule, wherever it sits: the node that owns the collider you would touch.
+  // A gizmo per gameplay rule, wherever it sits: the node that owns the collider you would touch. Coloured by
+  // **the game's** table (ADR 0052) — `RULE_KINDS` covered exactly parkour's four and nothing else could
+  // have got a marker at all.
+  const gizmos = current?.mode.gizmos ?? {}
   for (const n of loaded.nodes)
     for (const c of n.components) {
-      const kind = RULE_KINDS[c.type]
-      if (kind !== undefined) markerGroup.add(markerGizmo(n.position, colorForMarker(kind)))
+      const color = gizmos[c.type]
+      if (color !== undefined) markerGroup.add(markerGizmo(n.position, color))
     }
 }
 
@@ -200,6 +204,8 @@ const worldMove = (): { x: number; z: number } => {
 let char: CharacterState | null = null
 let playLoop: LoopHandle | null = null
 let spawnPoint: Vec3 = { x: 0, y: 3, z: 0 }
+/** How far below the origin the walk-around probe gives up and puts you back. Debug chrome, not a rule. */
+const CATCH_Y = -50
 
 const startPlay = (): void => {
   if (world === null || loaded === null || playLoop !== null) return
@@ -222,7 +228,15 @@ const startPlay = (): void => {
       const m = worldMove()
       stepCharacter(char, { moveX: m.x, moveZ: m.z, jump: keys.has('Space') }, TICK_DT, tuning, loaded.basePose)
       world.step(TICK_DT) // (B) character resolves against them
-      if (char.body.translation().y < loaded.config.fallY) {
+      /**
+       * A fall-catcher, not a game rule.
+       *
+       * This used to read `config.fallY`, which was parkour's kill plane living in the engine's schema
+       * (ADR 0052). The viewer inspects geometry and runs no game, so what it wants is simply not to lose the
+       * character off the bottom of the world — a fixed depth below the level says that honestly, where
+       * borrowing one game's rule did not.
+       */
+      if (char.body.translation().y < CATCH_Y) {
         char.body.setPosition(spawnPoint)
         char.vx = char.vy = char.vz = 0
         char.grounded = false
@@ -249,13 +263,15 @@ const disposeCurrent = (): void => {
   world?.free()
   world = null
   loaded = null
+  current = null
 }
 
 const load = (entry: Entry): void => {
   const wasPlaying = playLoop !== null
   disposeCurrent()
   world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }) // character integrates its own gravity
-  loaded = instantiateLevel(world, entry.level, DEFAULT_REGISTRY, CLIP_SOURCE)
+  current = entry
+  loaded = instantiateLevel(world, entry.level, entry.mode.registry, CLIP_SOURCE)
   levelView = addLevel(stage.scene, loaded.visuals)
   levelLights = addLights(stage.scene, loaded.lights)
   env.applyEnvironment(loaded.config.environment)

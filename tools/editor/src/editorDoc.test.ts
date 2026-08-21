@@ -43,7 +43,7 @@ const solid = (id: string, position: Vec3): Node => ({
   components: [comp(`${id}-col`, COLLIDER, { shape: BOX, center: ZERO }), comp(`${id}-vis`, RENDERER, { material: '' })],
 })
 
-const blank = (): Level => ({ id: 'lv', config: { fallBehavior: 'respawn-checkpoint', fallY: -10 }, nodes: [] })
+const blank = (): Level => ({ id: 'lv', config: {}, nodes: [] })
 
 /** A two-node prefab: a root carrying only a transform, and a pad under it carrying the geometry. */
 const padPrefab = (): Node => ({ id: 'root', name: 'pad', transform: { position: ZERO }, components: [], children: [solid('pad', ZERO)] })
@@ -779,5 +779,50 @@ describe('component order', () => {
     const before = typesOn(doc, 1)
     doc.moveComponent(1, idOf(doc, 1, RENDERER), -1)
     expect(typesOn(doc, 1)).toEqual(before)
+  })
+})
+
+/**
+ * Which game a level is for, and that game's own settings (ADR 0052).
+ *
+ * `fallBehavior`/`fallY` used to be required fields of `LevelConfig`, so every level of every game declared a
+ * fall rule that might mean nothing to it. They are parkour's parameters now, and this is the door to them.
+ */
+describe('the level’s game', () => {
+  it('is absent on a fresh level, which is what unassigned means', () => {
+    expect(levelDoc(blank(), {}).modeRef()).toBeUndefined()
+  })
+
+  it('is assigned and cleared, and shows up in the saved JSON', () => {
+    const doc = levelDoc(blank(), {})
+    doc.setMode('parkour')
+    expect(doc.modeRef()).toEqual({ name: 'parkour' })
+    expect((doc.toJSON() as Level).config.mode).toEqual({ name: 'parkour' })
+    doc.setMode(null)
+    expect(doc.modeRef()).toBeUndefined()
+    expect((doc.toJSON() as Level).config.mode, 'the key is removed, not left as undefined').toBeUndefined()
+  })
+
+  it('is reassigned outright, since a name is all it holds', () => {
+    const doc = levelDoc(blank(), {})
+    doc.setMode('parkour')
+    doc.setMode('racing')
+    expect(doc.modeRef()).toEqual({ name: 'racing' })
+  })
+
+  it('leaves the environment alone, since they are separate blocks', () => {
+    const doc = levelDoc(blank(), {})
+    doc.setEnvironment({ ambient: { intensity: 0.5 } })
+    doc.setMode('parkour')
+    expect(doc.environment()).toEqual({ ambient: { intensity: 0.5 } })
+    doc.setMode(null)
+    expect(doc.environment(), 'and clearing the game does not clear the sun').toEqual({ ambient: { intensity: 0.5 } })
+  })
+
+  // A prefab is a node tree with no level of its own; its wrapper config is thrown away on save.
+  it('reports and refuses on a prefab, which belongs to no game', () => {
+    const doc = prefabDoc(padPrefab())
+    doc.setMode('parkour')
+    expect(doc.modeRef()).toBeUndefined()
   })
 })

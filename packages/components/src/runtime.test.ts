@@ -19,7 +19,7 @@ import { ENGINE_COMPONENTS } from './engine'
 const comp = (id: string, type: string, params: Record<string, unknown> = {}): ComponentData => ({ id, type, params })
 const box = { shape: { kind: 'box', halfExtents: vec3(1, 1, 1) }, center: vec3(0, 0, 0) }
 
-const levelOf = (nodes: Node[]): Level => ({ id: 'fx', config: { fallBehavior: 'physical-fall', fallY: -999 }, nodes })
+const levelOf = (nodes: Node[]): Level => ({ id: 'fx', config: {}, nodes })
 
 /** Counts every call, so a test can assert order and how often something ran. */
 const log: string[] = []
@@ -343,7 +343,7 @@ describe('node references (stage C4)', () => {
     }
     const level: Level = {
       id: 'fx',
-      config: { fallBehavior: 'physical-fall', fallY: -999 },
+      config: {},
       prefabs: { pair: prefab },
       nodes: [
         { id: 'first', transform: { position: vec3(0, 0, 0) }, components: [], prefab: 'pair' },
@@ -367,7 +367,7 @@ describe('node references (stage C4)', () => {
     const prefab: Node = { id: 'root', name: 'one', transform: { position: vec3(0, 0, 0) }, components: [], children: [{ id: 'inner', transform: { position: vec3(0, 0, 0) }, components: [] }] }
     const level: Level = {
       id: 'fx',
-      config: { fallBehavior: 'physical-fall', fallY: -999 },
+      config: {},
       prefabs: { one: prefab },
       nodes: [
         { id: 'placed', transform: { position: vec3(0, 0, 0) }, components: [], prefab: 'one', overrides: { inner: { added: [comp('a0', Linked.type, { target: 'elsewhere' })] } } },

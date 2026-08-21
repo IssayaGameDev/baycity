@@ -26,7 +26,7 @@ const box = (half = 0.5): ComponentData['params'] => ({ shape: { kind: 'box', ha
 
 const levelOf = (nodes: Node[], prefabs?: Record<string, Node>): Level => ({
   id: 'fx',
-  config: { fallBehavior: 'physical-fall', fallY: -999 },
+  config: {},
   ...(prefabs !== undefined ? { prefabs } : {}),
   nodes,
 })

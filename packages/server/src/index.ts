@@ -1,6 +1,6 @@
 import { Server } from 'colyseus'
 
-import { getRoomStats, ParkourRoom, resetRoomStats, SNAPSHOT_RATE_HZ } from './rooms'
+import { getRoomStats, GameRoom, resetRoomStats, SNAPSHOT_RATE_HZ } from './rooms'
 
 /**
  * @mp/server — client-authoritative multiplayer host (ADR 0011/0013). Colyseus owns
@@ -28,17 +28,27 @@ export interface ServerHandle {
   stop: () => Promise<void>
 }
 
-/** Starts the game server. No side effects at import; call to run. Defines the `tps`
- * room; clients reach it via matchmaking (`joinOrCreate('parkour')`). */
+/**
+ * Starts the game server. No side effects at import; call to run.
+ *
+ * Defines **one** room type, `game`, for every game on the platform; clients reach it via matchmaking
+ * (`joinOrCreate('game', { game, level })`).
+ */
 export const startServer = async (opts: { port?: number } = {}): Promise<ServerHandle> => {
   const port = opts.port ?? DEFAULT_PORT
   resetRoomStats()
   const gameServer = new Server() // default ws transport
-  // Filtered by `level`: matchmaking only ever puts a client into a room whose creator passed the same
-  // level name. The server still loads no content (ADR 0013) — it never learns what a level *is*, only
-  // that two clients claiming different ones must not share a room, because geometry and the
-  // movement-base index a rider replicates (ADR 0021) are both positional and would disagree.
-  gameServer.define('parkour', ParkourRoom).filterBy(['level'])
+  /**
+   * Filtered by `game` **and** `level`: matchmaking only ever puts a client into a room whose creator passed
+   * the same pair. The server still loads no content (ADR 0013) — it never learns what a game or a level *is*,
+   * only that two clients claiming different ones must not share a room.
+   *
+   * `level` because geometry and the movement-base index a rider replicates (ADR 0021) are both positional and
+   * would disagree. `game` because two games may have **different character controllers** (ADR 0052), so
+   * peers would be replicated under the wrong locomotion assumptions — and because a room name per game would
+   * mean this file importing every game, which is the dependency direction the server exists outside of.
+   */
+  gameServer.define('game', GameRoom).filterBy(['game', 'level'])
   await gameServer.listen(port)
 
   return {

@@ -1,5 +1,5 @@
 import { instantiateLevel, materialDependencies } from '@mp/content'
-import { DEFAULT_REGISTRY } from '@mp/components'
+import { PARKOUR_REGISTRY } from './rules'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -24,7 +24,7 @@ describe('content asset references', () => {
 
   it.each(levelNames())('every asset %s references exists', (name) => {
     const world = createPhysicsWorld({ gravity: { x: 0, y: -30, z: 0 } })
-    const loaded = instantiateLevel(world, levelByName(name), DEFAULT_REGISTRY)
+    const loaded = instantiateLevel(world, levelByName(name), PARKOUR_REGISTRY)
 
     // The loader has already applied instance overrides and flattened nesting, so its visuals are the
     // complete set of references — no walk of the level tree here to disagree with the one that matters.

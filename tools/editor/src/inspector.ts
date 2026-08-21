@@ -41,6 +41,12 @@ export interface InspectorHost {
    * is a level setting rather than a component because the sun and the sky are one input (ADR 0046).
    */
   envSelected: () => boolean
+  /** The Game row is picked (ADR 0052): the panel then edits which game the level is for. */
+  gameSelected: () => boolean
+  /** The installed games, for the Game section's picker. */
+  games: () => readonly { name: string; label: string }[]
+  /** The level was reassigned to another game: its registry changed, so panels and the world rebuild. */
+  onModeChanged: () => void
   /** The environment changed: rebake the sky and relight, since sun, ambient and sky move together. */
   onEnvironmentChanged: () => void
   /** How many objects are selected. The panel edits one and has to say so when there are more. */
@@ -194,7 +200,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
 
   /**
    * Which sections are shut, and it survives rebuilds *and* selections: somebody who collapses `Collider`
-   * because they are working on a `Bumper` means it for the session, not until the next dropdown change.
+   * because they are working on one component means it for the session, not until the next dropdown change.
    *
    * Keyed by component id rather than by type, so two colliders on one node collapse independently.
    */
@@ -674,6 +680,45 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
    * `onSunChanged`, which rebakes the sky — moving the sun without rebaking is exactly how the light and the
    * sky would come to disagree again.
    */
+  /**
+   * Which game this level is for (ADR 0052). One field, because that is all a game contributes to a level.
+   *
+   * There were generated setting fields here too, from a `config: ParamDecls` on the descriptor — parkour's
+   * `fallBehavior` and `fallY`. Both went when the kill plane became a `Hazard` on a collider (ADR 0053): a
+   * rule belongs in a component, not in a settings panel, and no game has a level-wide *value* yet.
+   *
+   * Reassigning lives here rather than on the toolbar picker, deliberately: the picker is the authoring
+   * context, and retagging a level is an edit with consequences — its components are validated against the new
+   * game's registry — so it belongs where those consequences are in front of you.
+   */
+  const addGameSection = (doc: Doc): void => {
+    if (doc.mode === 'prefab') {
+      addSection('@game', { title: 'Game' }).row('', 'a prefab belongs to no game')
+      return
+    }
+    const section = addSection('@game', { title: 'Game' })
+    const ref = doc.modeRef()
+    const installed = host.games()
+
+    const options: Record<string, string> = { '(none)': '' }
+    for (const g of installed) options[g.label] = g.name
+    // A game the level names but this build does not have is offered as itself, so selecting something else is
+    // a deliberate change rather than the only thing the dropdown will let you do.
+    if (ref !== undefined && !installed.some((g) => g.name === ref.name)) options[`${ref.name} (not installed)`] = ref.name
+
+    const pick = { game: ref?.name ?? '' }
+    section
+      .pane()
+      .addBinding(pick, 'game', { label: 'game', options })
+      .on('change', () => {
+        edited(() => doc.setMode(pick.game === '' ? null : pick.game))
+        host.onModeChanged()
+      })
+
+    if (ref === undefined) section.row('', 'unassigned — its components are checked against everything this build knows')
+    else if (!installed.some((g) => g.name === ref.name)) section.row('', `'${ref.name}' is not installed: no rules, no rule gizmos`)
+  }
+
   const addEnvironmentSections = (doc: Doc): void => {
     if (doc.mode === 'prefab') {
       addSection('@env', { title: 'Environment' }).row('', 'a prefab has no environment of its own')
@@ -729,6 +774,10 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     renderHead()
 
     const doc = host.doc()
+    if (doc !== null && host.gameSelected()) {
+      addGameSection(doc)
+      return
+    }
     if (doc !== null && host.envSelected()) {
       addEnvironmentSections(doc)
       return

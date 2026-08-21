@@ -107,12 +107,6 @@ export type Behavior =
     }
 
 /**
- * Per-level (and mode) config knobs. `fallBehavior` makes linear-obby vs obby-tower pure
- * data: `respawn-checkpoint` teleports to the last checkpoint on falling below `fallY`;
- * `physical-fall` lets the player fall (a tower). `gravity` optionally overrides the
- * character's gravity for this level.
- */
-/**
  * The level's sun (ADR 0048).
  *
  * A **level setting**, not a node, because the sun and the sky are one input: elevation and azimuth drive the
@@ -185,10 +179,26 @@ export interface EnvironmentConfig {
   sky: SkyConfig
 }
 
+/**
+ * Which game a level belongs to (ADR 0052).
+ *
+ * A name and nothing else. There was a `params` bag for the game's own level settings, and it went when its
+ * only user did: parkour's `fallBehavior`/`fallY` were a **rule** in a setting's clothes, and a rule is a
+ * component here — so the kill plane became a `Hazard` on a collider under the level (ADR 0053).
+ *
+ * A level naming a game this build does not have still loads — a tool can show it, and refusing would make a
+ * level unopenable because a sibling app was not installed.
+ */
+export interface ModeRef {
+  name: string
+}
+
 export interface LevelConfig {
-  fallBehavior: 'respawn-checkpoint' | 'physical-fall'
-  fallY: number
-  gravity?: number
+  /**
+   * The game this level is for. Absent means unassigned, which is what a level authored before games were
+   * explicit looks like, and what a tool shows as "no mode".
+   */
+  mode?: ModeRef
   /**
    * Sun, ambient and sky. Absent, or any part of it absent, falls back to the renderer's defaults — so a level
    * authored before this existed still loads and still looks the way it did.

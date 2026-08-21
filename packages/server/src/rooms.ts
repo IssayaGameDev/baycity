@@ -80,8 +80,13 @@ export const resetRoomStats = (): void => {
  * simulates its own entity and sends STATE; the room stores the latest and relays
  * peers' positions as per-client delta snapshots on its own clock-synced timeline.
  * No `@colyseus/schema` — our binary protocol is the payload.
+ *
+ * **One room type for every game on the platform** (ADR 0052). It was `ParkourRoom`,
+ * which was only ever a name: nothing in here is parkour, or is any game at all — it
+ * relays bytes and never learns what a level is. Which game a room belongs to is a
+ * matchmaking filter, not a subclass.
  */
-export class ParkourRoom extends Room {
+export class GameRoom extends Room {
   override maxClients = 20
   private readonly players = new Map<Client, Player>()
   private nextPlayerId = FIRST_PLAYER_ID

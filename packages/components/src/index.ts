@@ -35,6 +35,6 @@ export type { CharacterAccess, ComponentRuntime, Ctx, Effects, ErasedHooks, Hit,
 export { createRegistry } from './registry'
 export type { AnyComponentDef, Registry } from './registry'
 export { Collider, ENGINE_COMPONENTS, MaterialOverride, Mesh, Renderer, Spawn } from './engine'
-export { Bumper, Checkpoint, GAMEPLAY_COMPONENTS, Goal, Hazard, RULE_KINDS, Track } from './gameplay'
+export { Bumper, Checkpoint, GAMEPLAY_COMPONENTS, Goal, Hazard, Track } from './gameplay'
 export { DEFAULT_REGISTRY } from './defaults'
 export { componentOn, hasComponent } from './read'

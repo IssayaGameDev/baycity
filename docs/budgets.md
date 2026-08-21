@@ -14,7 +14,7 @@ Kodjo's call (SEED §5). Staying comfortably under needs no conversation.
 ## Load validation (budgets 2 & 3)
 
 `pnpm --filter @mp/bots run load` (`BOTS`, `DURATION_MS` env). It starts a Colyseus server,
-connects N headless `colyseus.js` bots that each `joinOrCreate('parkour')` and report a synthetic
+connects N headless `colyseus.js` bots that each `joinOrCreate('game', { game, level })` and report a synthetic
 circular position at the tick rate, then reports downstream kB/s per client and room tick
 avg/max. (This is also the live integration check — a Colyseus server can't boot under vitest.)
 

@@ -41,6 +41,9 @@ importers:
       '@mp/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n
+      '@mp/mode':
+        specifier: workspace:*
+        version: link:../../packages/mode
       '@mp/net':
         specifier: workspace:*
         version: link:../../packages/net
@@ -116,6 +119,21 @@ importers:
 
   packages/i18n: {}
 
+  packages/mode:
+    dependencies:
+      '@mp/character':
+        specifier: workspace:*
+        version: link:../character
+      '@mp/components':
+        specifier: workspace:*
+        version: link:../components
+      '@mp/content':
+        specifier: workspace:*
+        version: link:../content
+      '@mp/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/net:
     dependencies:
       '@mp/core':
@@ -189,6 +207,9 @@ importers:
 
   tools/editor:
     dependencies:
+      '@mode/parkour':
+        specifier: workspace:*
+        version: link:../../modes/parkour
       '@mp/character':
         specifier: workspace:*
         version: link:../../packages/character
@@ -204,6 +225,9 @@ importers:
       '@mp/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@mp/mode':
+        specifier: workspace:*
+        version: link:../../packages/mode
       '@mp/physics':
         specifier: workspace:*
         version: link:../../packages/physics
@@ -234,6 +258,9 @@ importers:
 
   tools/viewer:
     dependencies:
+      '@mode/parkour':
+        specifier: workspace:*
+        version: link:../../modes/parkour
       '@mp/character':
         specifier: workspace:*
         version: link:../../packages/character
@@ -246,6 +273,9 @@ importers:
       '@mp/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@mp/mode':
+        specifier: workspace:*
+        version: link:../../packages/mode
       '@mp/physics':
         specifier: workspace:*
         version: link:../../packages/physics

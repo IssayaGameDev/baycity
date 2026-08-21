@@ -1,8 +1,9 @@
 {
   "id": "mp-cointest",
   "config": {
-    "fallBehavior": "respawn-checkpoint",
-    "fallY": -10,
+    "mode": {
+      "name": "parkour"
+    },
     "environment": {
       "sun": {
         "elevation": 30,
@@ -444,6 +445,45 @@
         {
           "id": "c0",
           "type": "Spawn",
+          "params": {}
+        }
+      ]
+    },
+    {
+      "id": "kill-plane",
+      "name": "kill plane",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -13,
+          "z": 0
+        }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 120,
+                "y": 3,
+                "z": 120
+              }
+            }
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Renderer",
+          "params": {
+            "material": "4a11d049f9f8e5ac"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "Hazard",
           "params": {}
         }
       ]

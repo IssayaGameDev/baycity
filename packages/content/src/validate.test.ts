@@ -16,7 +16,7 @@ const comp = (id: string, type: string, params: Record<string, unknown> = {}): u
 
 const level = (nodes: unknown[], prefabs?: Record<string, unknown>): unknown => ({
   id: 'level1',
-  config: { fallBehavior: 'respawn-checkpoint', fallY: -5 },
+  config: {},
   ...(prefabs !== undefined ? { prefabs } : {}),
   nodes,
 })
@@ -32,12 +32,23 @@ describe('the level itself', () => {
     expect(validateLevel(level([solid('n0')])).id).toBe('level1')
   })
 
-  it('rejects a bad fallBehavior', () => {
-    expect(() => validateLevel({ id: 'l', config: { fallBehavior: 'nope', fallY: 0 }, nodes: [] })).toThrow(/fallBehavior/)
+  /**
+   * The config block is the engine's now (ADR 0052): which game the level is for, and the environment. A
+   * game's rules are components on nodes (ADR 0053), so there is no settings bag to check.
+   */
+  it('rejects a mode block it cannot resolve to a game', () => {
+    expect(() => validateLevel({ id: 'l', config: { mode: {} }, nodes: [] })).toThrow(/mode\.name/)
+    expect(() => validateLevel({ id: 'l', config: { mode: { name: '' } }, nodes: [] })).toThrow(/mode\.name/)
+    expect(() => validateLevel({ id: 'l', config: { mode: 'parkour' }, nodes: [] })).toThrow(/config\.mode/)
+  })
+
+  it('accepts a level with no mode at all, which is what an unassigned one looks like', () => {
+    expect(() => validateLevel({ id: 'l', config: {}, nodes: [] })).not.toThrow()
+    expect(() => validateLevel({ id: 'l', config: { mode: { name: 'parkour' } }, nodes: [] })).not.toThrow()
   })
 
   it('rejects a missing node list, which is what a pre-component file looks like', () => {
-    expect(() => validateLevel({ id: 'l', config: { fallBehavior: 'physical-fall', fallY: -1 }, instances: [] })).toThrow(/level\.nodes/)
+    expect(() => validateLevel({ id: 'l', config: {}, instances: [] })).toThrow(/level\.nodes/)
   })
 
   it('rejects a node with no transform', () => {
@@ -169,7 +180,7 @@ describe('parameters, when a registry is supplied', () => {
 describe('the environment block', () => {
   const withEnv = (environment: unknown): unknown => ({
     id: 'l',
-    config: { fallBehavior: 'physical-fall', fallY: -1, environment },
+    config: { environment },
     nodes: [],
   })
   const sun = { elevation: 30, azimuth: 38, intensity: 2.4, color: '#ffffff', shadows: true }
@@ -189,7 +200,7 @@ describe('the environment block', () => {
   })
 
   it('accepts a level with no environment at all', () => {
-    expect(() => validateLevel({ id: 'l', config: { fallBehavior: 'physical-fall', fallY: -1 }, nodes: [] })).not.toThrow()
+    expect(() => validateLevel({ id: 'l', config: {}, nodes: [] })).not.toThrow()
   })
 
   // The point of Partial: pinning the sun must not force you to restate a sky you have no opinion about.

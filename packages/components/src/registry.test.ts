@@ -3,7 +3,7 @@ import { createRegistry } from './registry'
 import { defineComponent } from './define'
 import { ComponentError } from './params'
 import { DEFAULT_REGISTRY } from './defaults'
-import { Bumper, GAMEPLAY_COMPONENTS, RULE_KINDS, Track } from './gameplay'
+import { Bumper, Track } from './gameplay'
 import { Collider, Mesh, Renderer } from './engine'
 
 const Fake = defineComponent({ type: 'Fake', params: { n: { kind: 'number', default: 1 } } })
@@ -93,11 +93,5 @@ describe('the built-in registry', () => {
 
   it('carries the bumper default in the schema, not in the editor', () => {
     expect(Bumper.params.power.default).toBe(26)
-  })
-
-  // The gizmo table is keyed by strings, so nothing but this stops it drifting from the definitions.
-  it('has a gizmo colour for every rule component and for nothing else', () => {
-    const rules = GAMEPLAY_COMPONENTS.filter((d) => d !== Track).map((d) => d.type)
-    expect(Object.keys(RULE_KINDS).sort()).toEqual([...rules].sort())
   })
 })

@@ -3,10 +3,11 @@ import { Client, type Room } from 'colyseus.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 /**
- * Matchmaking is filtered by level (`filterBy(['level'])`, ADR 0023), and that is a correctness
- * property, not a convenience: two clients on different levels share neither geometry nor the
- * movement-base numbering a rider replicates (assigned in instance order at load, ADR 0021), so a
- * room holding both would place riders on whatever piece happens to sit at that index.
+ * Matchmaking is filtered by game **and** level (`filterBy(['game', 'level'])`, ADR 0023/0052), and that is a
+ * correctness property, not a convenience: two clients on different levels share neither geometry nor the
+ * movement-base numbering a rider replicates (assigned in instance order at load, ADR 0021), so a room holding
+ * both would place riders on whatever piece happens to sit at that index. Two clients in different *games* may
+ * not even share a character controller.
  *
  * The only test in the repo that boots a real server and joins it — which is also why vitest runs
  * `pool: 'forks'`.
@@ -18,9 +19,10 @@ describe('matchmaking separates levels', () => {
   let server: ServerHandle
   const joined: Room[] = []
 
-  const join = async (level?: string): Promise<Room> => {
-    const room = await new Client(URL).joinOrCreate('parkour', {
+  const join = async (level?: string, game = 'parkour'): Promise<Room> => {
+    const room = await new Client(URL).joinOrCreate('game', {
       name: 'test',
+      game,
       ...(level !== undefined ? { level } : {}),
     })
     joined.push(room)
@@ -57,5 +59,16 @@ describe('matchmaking separates levels', () => {
     const gym = await join('gym')
     const unfiltered = await join()
     expect(unfiltered.roomId).toBe(gym.roomId)
+  })
+
+  /**
+   * The reason `game` joined the filter (ADR 0052). One room type serves every game, so without this two
+   * games' clients on same-named levels would share a room — and they may not even share a character
+   * controller, which would replicate every peer under the wrong locomotion.
+   */
+  it('puts two games in different rooms even on the same level name', async () => {
+    const parkour = await join('gym', 'parkour')
+    const other = await join('gym', 'some-other-game')
+    expect(other.roomId).not.toBe(parkour.roomId)
   })
 })

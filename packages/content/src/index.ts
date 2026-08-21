@@ -8,7 +8,7 @@
  */
 export const CONTENT_VERSION = '0.0.0' as const
 
-export type { Behavior, ColliderDesc, ComponentData, Easing, Keyframe, Level, LevelConfig, SunConfig, AmbientConfig, EnvironmentConfig, SkyConfig, LoopMode, Node, NodeOverride, Transform } from './types'
+export type { Behavior, ColliderDesc, ComponentData, Easing, Keyframe, Level, LevelConfig, ModeRef, SunConfig, AmbientConfig, EnvironmentConfig, SkyConfig, LoopMode, Node, NodeOverride, Transform } from './types'
 export {
   COLLIDER,
   LIGHT,

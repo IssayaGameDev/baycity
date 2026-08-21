@@ -18,12 +18,14 @@ const TICK_HZ = 30
 const RADIUS = 5
 
 /**
- * Matchmaking filters rooms by level (`filterBy(['level'])`, ADR 0023), so a bot has to name the same one a
+ * Matchmaking filters rooms by game and level (`filterBy(['game', 'level'])`, ADR 0023/0052), so a bot has to name the same one a
  * browser tab would or it lands in a room of its own — which would silently halve the load test and stop
  * bots being visible from the game. `default` is what an unparameterised page loads (ADR 0027; it was `gym`
  * until that level was deleted, and this is the second time this default has had to follow it).
  */
 const LEVEL = process.env['LEVEL'] ?? 'default'
+/** Which game the bots play. A matchmaking filter, like `LEVEL` (ADR 0052). */
+const GAME = process.env['GAME'] ?? 'parkour'
 
 export const createBot = (url: string, phase = 0): Bot => {
   let bytes = 0
@@ -33,7 +35,7 @@ export const createBot = (url: string, phase = 0): Bot => {
   let timer: ReturnType<typeof setInterval> | null = null
 
   void new Client(url)
-    .joinOrCreate('parkour', { name: 'bot', level: LEVEL })
+    .joinOrCreate('game', { name: 'bot', game: GAME, level: LEVEL })
     .then((r) => {
       room = r
       // Count the relayed payload (our snapshot bytes); Colyseus framing is extra.

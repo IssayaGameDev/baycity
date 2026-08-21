@@ -1,6 +1,11 @@
 # ADR 0023 — Content is authored in the in-browser editor; Unity supplies assets, not levels
 
-Status: accepted. Supersedes ADR 0014's "a full editor is deferred" and its rejection of
+Status: accepted, amended by [ADR 0052](0052-a-game-is-a-descriptor.md) — the matchmaking filter below is
+`filterBy(['game', 'level'])` on a single `GameRoom` now, not `define('parkour', ParkourRoom).filterBy(['level'])`,
+because one room type serves every game on the platform. The reasoning about *why* levels must be filtered is
+unchanged and is why `game` joined it.
+
+Supersedes ADR 0014's "a full editor is deferred" and its rejection of
 "full in-viewer edit/save". Builds on the content pipeline (ADR 0014) and convex colliders (ADR 0017).
 
 ## Context

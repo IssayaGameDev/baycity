@@ -17,12 +17,17 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 
 const isVec3 = (v: unknown): boolean => isObj(v) && typeof v.x === 'number' && typeof v.y === 'number' && typeof v.z === 'number'
 
+/**
+ * The config block: which game the level is for (ADR 0052), and the environment.
+ *
+ * Nothing else. A game's rules are components on nodes, so there is no settings bag to check — see `ModeRef`.
+ */
 const validateConfig = (c: unknown): LevelConfig => {
   if (!isObj(c)) throw new LevelError('level.config: expected object')
-  if (c.fallBehavior !== 'respawn-checkpoint' && c.fallBehavior !== 'physical-fall')
-    throw new LevelError("level.config.fallBehavior: expected 'respawn-checkpoint' | 'physical-fall'")
-  if (typeof c.fallY !== 'number') throw new LevelError('level.config.fallY: expected number')
-  if (c.gravity !== undefined && typeof c.gravity !== 'number') throw new LevelError('level.config.gravity: expected number')
+  if (c.mode !== undefined) {
+    if (!isObj(c.mode)) throw new LevelError('level.config.mode: expected object')
+    if (typeof c.mode.name !== 'string' || c.mode.name === '') throw new LevelError('level.config.mode.name: expected a non-empty string')
+  }
   if (c.environment !== undefined) validateEnvironment(c.environment)
   return c as unknown as LevelConfig
 }
