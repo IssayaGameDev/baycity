@@ -56,6 +56,7 @@ import {
 } from '@mp/render-three'
 import { levelDoc, prefabDoc, type ClipItem, type Doc, type KeyEditor, type Mode } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
+import { askUnsaved } from './confirm'
 import { listFiles, loadLevel, saveFile, type FileEntry } from './filesApi'
 import { createHierarchy, type Hierarchy } from './hierarchy'
 import { createHistory } from './history'
@@ -1779,49 +1780,36 @@ const toolbar: Toolbar = createToolbar(
     markers: markerGroup.visible,
   }),
   {
-    setMode: (m) => void enterMode(m),
+    setMode: (m) => void guardUnsaved().then(async (go) => {
+      if (go) await enterMode(m)
+    }),
     setGame: (name) => {
-      // The authoring context, not the open level's tag: retagging happens in the Game row, where the
-      // consequences of changing a level's game are in front of you (ADR 0052).
-      activeMode = MODES[name]
-      void refreshFileList()
-      refreshUi()
+      /**
+       * The authoring context, not the open level's tag: retagging happens in the Game row, where the
+       * consequences of changing a level's game are in front of you (ADR 0052).
+       *
+       * It **opens that game's first level**, because the file list is filtered by game and leaving the
+       * previous game's document open showed one game's levels while editing another's — and Save writes the
+       * *open* file, so a save after switching to Swing wrote parkour's `default.json`. Harmless with one
+       * game installed, which is why it survived until there were two.
+       */
+      void guardUnsaved().then((go) => {
+        if (!go) return
+        activeMode = MODES[name]
+        void refreshFileList().then(async () => {
+          refreshUi()
+          if (fileNames[0] !== undefined) await openFile(fileNames[0])
+        })
+      })
     },
-    open: (name) => void openFile(name),
+    open: (name) => void guardUnsaved().then(async (go) => {
+      if (go) await openFile(name)
+    }),
     setName: (name) => {
       fileState.name = name === '' ? 'untitled' : name
       refreshUi()
     },
-    save: () => {
-      const root = docStack[0]?.doc
-      if (root === undefined) return
-      // Saving writes the *file*, not whatever prefab is open on top of it, and the id follows the
-      // name. Letting them drift is how content/levels ended up with three files all claiming "level1".
-      root.setId(fileState.name)
-      const write = async (): Promise<void> => {
-        if (fileState.mode === 'level') {
-          await saveFile('levels', fileState.name, root.toJSON())
-          return
-        }
-        const prefab = root.toJSON() as SceneNode
-        // Overwrite the asset it came from, or create one when this prefab has never been saved.
-        if (openPrefabAsset !== null) await assets?.savePrefab(openPrefabAsset, prefab)
-        else {
-          const created = await assets?.createPrefab(`prefabs/${fileState.name}.prefab.json`, prefab)
-          openPrefabAsset = created?.id ?? null
-        }
-      }
-      void write()
-        .then(async () => {
-          setStatus(`saved ${fileState.name}`)
-          previews.invalidate()
-          await reloadAssets()
-          refreshPrefabLibrary()
-          await refreshFileList()
-          refreshUi()
-        })
-        .catch((e: unknown) => setStatus(`save failed: ${String(e)}`))
-    },
+    save: () => void saveNow(),
     newBlank: () => {
       const name = fileState.name || 'untitled'
       openPrefabAsset = null // a new prefab has no asset yet; the first Save creates one
@@ -2372,6 +2360,68 @@ const history = createHistory<EditSnapshot>({ clone: (v) => ({ ...v, data: struc
 let baseline: EditSnapshot | null = null
 /** True while a gizmo drag is in flight: one history entry per drag, not one per pointer event. */
 let coalescing = false
+/**
+ * Are there edits not on disk?
+ *
+ * Set at `recordEdit`, the one seam every mutation already goes through, and cleared by `resetHistory` —
+ * which runs on save and on opening a document, the two moments after which there is nothing to lose. A
+ * separate flag rather than `history.canUndo()`: undo depth survives a save, and asking "can I undo" is not
+ * asking "is this on disk".
+ */
+let dirty = false
+
+/**
+ * Write the open document to disk. Awaitable, because the unsaved-edits prompt has to be able to save
+ * *and then* continue with whatever the person was doing.
+ *
+ * Resolves `true` on success. A failed write resolves `false` rather than throwing, so a caller that was
+ * about to replace the document does not replace it after a save that did not happen.
+ */
+const saveNow = async (): Promise<boolean> => {
+  const root = docStack[0]?.doc
+  if (root === undefined) return false
+  // Saving writes the *file*, not whatever prefab is open on top of it, and the id follows the name. Letting
+  // them drift is how content/levels ended up with three files all claiming "level1".
+  root.setId(fileState.name)
+  try {
+    if (fileState.mode === 'level') await saveFile('levels', fileState.name, root.toJSON())
+    else {
+      const prefab = root.toJSON() as SceneNode
+      // Overwrite the asset it came from, or create one when this prefab has never been saved.
+      if (openPrefabAsset !== null) await assets?.savePrefab(openPrefabAsset, prefab)
+      else {
+        const created = await assets?.createPrefab(`prefabs/${fileState.name}.prefab.json`, prefab)
+        openPrefabAsset = created?.id ?? null
+      }
+    }
+  } catch (e: unknown) {
+    setStatus(`save failed: ${String(e)}`)
+    return false
+  }
+  dirty = false
+  setStatus(`saved ${fileState.name}`)
+  previews.invalidate()
+  await reloadAssets()
+  refreshPrefabLibrary()
+  await refreshFileList()
+  refreshUi()
+  return true
+}
+
+/**
+ * May the open document be replaced? Asks first if it has edits that are not on disk.
+ *
+ * Every path that unloads a document goes through this: switching game, switching between levels and
+ * prefabs, and opening another file. Nothing else may replace `docStack` — the undo history is cleared with
+ * the document, so unsaved work is gone for good rather than one Ctrl+Z away.
+ */
+const guardUnsaved = async (): Promise<boolean> => {
+  if (!dirty) return true
+  const choice = await askUnsaved(fileState.name)
+  if (choice === 'cancel') return false
+  if (choice === 'discard') return true
+  return saveNow()
+}
 
 /**
  * Record that an edit just happened. `baseline` is the state before it.
@@ -2388,6 +2438,7 @@ const recordEdit = (label: string): void => {
   if (JSON.stringify(now.data) === JSON.stringify(baseline.data)) return
   history.push(baseline, label)
   baseline = now
+  dirty = true
   renderStatus()
 }
 
@@ -2395,6 +2446,7 @@ const recordEdit = (label: string): void => {
 const resetHistory = (): void => {
   history.clear()
   baseline = snapshotNow()
+  dirty = false
 }
 
 /** The index whose sibling path matches, or `null` — how a selection survives a restore. */

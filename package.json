@@ -14,6 +14,7 @@
     "check": "pnpm run typecheck && pnpm run test",
     "dev:server": "pnpm --filter @mp/server run dev",
     "dev:parkour": "pnpm --filter @mode/parkour run dev",
+    "dev:swing": "pnpm --filter @mode/swing run dev",
     "dev:viewer": "pnpm --filter @mp/viewer run dev",
     "dev:editor": "pnpm --filter @mp/editor run dev",
     "share": "pnpm --filter @mp/share run share"

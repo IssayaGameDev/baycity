@@ -1,0 +1,17 @@
+{
+  "name": "@mp/camera",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mp/character": "workspace:*",
+    "@mp/core": "workspace:*",
+    "@mp/render-three": "workspace:*"
+  }
+}

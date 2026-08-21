@@ -1,0 +1,29 @@
+{
+  "name": "@mode/template",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./editorMode": "./src/editorMode.ts",
+    "./rules": "./src/rules.ts"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mp/character": "workspace:*",
+    "@mp/components": "workspace:*",
+    "@mp/content": "workspace:*",
+    "@mp/core": "workspace:*",
+    "@mp/game-client": "workspace:*",
+    "@mp/mode": "workspace:*",
+    "@mp/physics": "workspace:*",
+    "@mp/render-three": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}
