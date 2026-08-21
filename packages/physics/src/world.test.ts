@@ -380,4 +380,95 @@ describe('physics world', () => {
     expect(ground.translation()).toEqual({ x: 1, y: 2, z: 3 })
     world.free()
   })
+
+  /**
+   * Triggers (ADR 0054). A sensor is detected on overlap and resolves nothing: it does not block, is not
+   * footing, and does not stop a camera. Each of those is a separate Rapier path, and getting one wrong is
+   * silent — you would stand on a kill plane, or a trigger volume would shove the view.
+   */
+  describe("a trigger collider", () => {
+    const floorAndTrigger = (): ReturnType<typeof createPhysicsWorld> => {
+      const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+      world.addFixedBody({ position: { x: 0, y: 0, z: 0 }, shape: { kind: "cuboid", halfExtents: { x: 10, y: 0.1, z: 10 } } })
+      return world
+    }
+
+    it("does not block a character, where a solid one does", () => {
+      const walkInto = (sensor: boolean): number => {
+        const world = floorAndTrigger()
+        world.addFixedBody({
+          position: { x: 2, y: 1, z: 0 },
+          shape: { kind: "cuboid", halfExtents: { x: 0.1, y: 2, z: 5 } },
+          ...(sensor ? { sensor: true } : {}),
+        })
+        const char = world.addCharacter({ position: { x: 0, y: 1, z: 0 }, radius: 0.4, halfHeight: 0.5 })
+        for (let i = 0; i < 120; i++) {
+          char.move({ x: 0.1, y: 0, z: 0 })
+          world.step(1 / 60)
+        }
+        const x = char.translation().x
+        world.free()
+        return x
+      }
+      expect(walkInto(false), "a solid wall stops it").toBeLessThan(1.7)
+      expect(walkInto(true), "a trigger is walked straight through").toBeGreaterThan(5)
+    })
+
+    it("is reported by overlaps and never by collisions", () => {
+      const world = floorAndTrigger()
+      const trigger = world.addFixedBody({
+        position: { x: 0, y: 1, z: 0 },
+        shape: { kind: "cuboid", halfExtents: { x: 3, y: 3, z: 3 } },
+        sensor: true,
+      })
+      const char = world.addCharacter({ position: { x: 0, y: 1, z: 0 }, radius: 0.4, halfHeight: 0.5 })
+      char.move({ x: 0, y: 0, z: 0 })
+      world.step(1 / 60)
+      expect(char.overlaps()).toContain(trigger.colliderHandle)
+      expect(char.collisions(), "a sensor resolves no movement, so it is not a collision").not.toContain(trigger.colliderHandle)
+      world.free()
+    })
+
+    it("is not reported once the character has left it", () => {
+      const world = floorAndTrigger()
+      const trigger = world.addFixedBody({
+        position: { x: 20, y: 1, z: 0 },
+        shape: { kind: "cuboid", halfExtents: { x: 1, y: 1, z: 1 } },
+        sensor: true,
+      })
+      const char = world.addCharacter({ position: { x: 0, y: 1, z: 0 }, radius: 0.4, halfHeight: 0.5 })
+      char.move({ x: 0, y: 0, z: 0 })
+      world.step(1 / 60)
+      expect(char.overlaps()).not.toContain(trigger.colliderHandle)
+      world.free()
+    })
+
+    // A trigger is empty space with a rule in it. If the ground probe saw one you would stand on a kill plane.
+    it("is not footing", () => {
+      const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+      const plane = world.addFixedBody({
+        position: { x: 0, y: 0, z: 0 },
+        shape: { kind: "cuboid", halfExtents: { x: 10, y: 0.5, z: 10 } },
+        sensor: true,
+      })
+      const char = world.addCharacter({ position: { x: 0, y: 1.4, z: 0 }, radius: 0.4, halfHeight: 0.5 })
+      world.step(1 / 60)
+      expect(char.probeGround()?.colliderHandle, "a trigger under the feet is not ground").not.toBe(plane.colliderHandle)
+      expect(char.probeGround()).toBeUndefined()
+      world.free()
+    })
+
+    // Pulling the camera boom in for a volume you can walk through would shove the view for no visible reason.
+    it("does not stop a sphere cast", () => {
+      const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+      world.addFixedBody({
+        position: { x: 3, y: 0, z: 0 },
+        shape: { kind: "cuboid", halfExtents: { x: 0.5, y: 5, z: 5 } },
+        sensor: true,
+      })
+      world.step(1 / 60)
+      expect(world.castSphere({ origin: { x: 0, y: 0, z: 0 }, direction: { x: 1, y: 0, z: 0 }, maxDistance: 10, radius: 0.2 })).toBeUndefined()
+      world.free()
+    })
+  })
 })

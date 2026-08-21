@@ -34,7 +34,17 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
   **kinematic character controller** (capsule, autostep + snap-to-ground). `move(desired)`
   applies a collision-resolved translation and returns `{ grounded }`; the caller owns vertical
   velocity (gravity/jump). `collisions()` returns the collider handles the capsule contacted
-  during the last `move` — **gameplay triggers key off these** (real contact, not distance; ADR 0014).
+  during the last `move` — **gameplay rules key off these** (real contact, not distance; ADR 0014).
+- `CharacterBody.overlaps()` → the handles of the **sensors** the capsule is inside (ADR 0054).
+  A separate list because it has to be: a sensor resolves no movement, so it never reaches
+  `collisions()`, which is the record of what the capsule *pushed against*. An explicit
+  `intersectionsWithShape` with `EXCLUDE_SOLIDS` — no `step()` needed since the capsule moved, and
+  sensors only, so the two lists are disjoint and a host concatenates them for every contact.
+- **A trigger is `BodyOptions.sensor`** (`Collider.trigger` in content). Detected on overlap,
+  resolving nothing: `EXCLUDE_SENSORS` goes on the controller's `computeColliderMovement` (without
+  it Rapier resolves against sensors and a trigger wall stops the capsule like a solid one — this
+  was measured, not assumed), on `probeGround` (a trigger is not footing) and on `castSphere` (a
+  trigger does not move the camera).
 - `CharacterBody.probeGround()` → `GroundContact | undefined` — a downward ray from the capsule
   centre (`castRayAndGetNormal`, own collider excluded), rejected if the surface normal is steeper
   than the 50° climb angle. Returns which collider is underfoot, the hit point, and the normal.

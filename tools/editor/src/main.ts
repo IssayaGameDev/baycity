@@ -1634,7 +1634,8 @@ const startPlay = (): void => {
       if (char === null || controller === null) return
       const m = worldMove()
       controller.step(m.x, m.z, keys.has('Space'))
-      playComponents?.contact(char.body.collisions())
+      // Solids and triggers both: a sensor resolves no movement, so it is not in `collisions` (ADR 0054).
+      playComponents?.contact([...char.body.collisions(), ...char.body.overlaps()])
       // One question, asked of the game's rules, which also consume the flag. A level with no game never dies.
       if (rules?.takeDeath() === true) {
         char.body.setPosition(rules.respawnAt())

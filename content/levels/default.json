@@ -1370,9 +1370,9 @@
                 "y": 3,
                 "z": 120
               }
-            }
-          },
-          "enabled": false
+            },
+            "trigger": true
+          }
         },
         {
           "id": "c1",

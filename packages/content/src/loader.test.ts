@@ -455,3 +455,48 @@ describe('a Track that names a clip', () => {
     expect(loaded.visuals[0]!.position.y).toBeCloseTo(2, 6)
   })
 })
+
+/**
+ * A `Collider` with `trigger` on becomes a **sensor** (ADR 0054): overlap is detected, nothing is resolved.
+ *
+ * The loader's part is small — pass the flag through — but getting it wrong is silent in both directions. Miss
+ * it and a kill plane is a floor you stand on; apply it too widely and the level has no collision.
+ */
+describe('a trigger collider', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  const wall = (trigger: boolean): Node => ({
+    id: 'wall',
+    transform: { position: vec3(2, 1, 0) },
+    components: [comp('c0', COLLIDER, { shape: { kind: 'box', halfExtents: vec3(0.1, 2, 5) }, trigger }), comp('c1', RENDERER, {})],
+  })
+
+  const walkAt = (trigger: boolean): { x: number; handles: readonly number[] } => {
+    const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+    const loaded = instantiateLevel(world, levelOf([wall(trigger)]), TYPES)
+    const char = world.addCharacter({ position: vec3(0, 1, 0), radius: 0.4, halfHeight: 0.5 })
+    for (let i = 0; i < 120; i++) {
+      char.move(vec3(0.1, 0, 0))
+      world.step(1 / 60)
+    }
+    return { x: char.translation().x, handles: loaded.nodes[0]!.colliderHandles }
+  }
+
+  it('is walked through, where a solid collider blocks', () => {
+    expect(walkAt(false).x, 'solid stops at the wall face').toBeLessThan(1.7)
+    expect(walkAt(true).x, 'a trigger is not in the way').toBeGreaterThan(5)
+  })
+
+  // Still a collider on the node, so a rule sitting beside it fires exactly as before — that is the whole
+  // point. Only the physical response goes away.
+  it('still owns a collider handle, so a rule on the node still has something to fire from', () => {
+    expect(walkAt(true).handles).toHaveLength(1)
+  })
+
+  it('is solid when the flag is absent, so every collider authored before this is unchanged', () => {
+    const loaded = load(levelOf([{ ...wall(false), components: [comp('c0', COLLIDER, box(2))] }]))
+    expect(loaded.nodes[0]!.colliderHandles).toHaveLength(1)
+  })
+})

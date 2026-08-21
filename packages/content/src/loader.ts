@@ -451,11 +451,14 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         // Scaled like any local offset, so a scaled node moves its colliders apart by the same factor.
         const offset = centre.x === 0 && centre.y === 0 && centre.z === 0 ? undefined : mul(f.scale, centre)
         const at = placeAt(f, offset)
+        // A trigger is a sensor: overlap is detected, nothing is resolved (ADR 0054). Still a body and still
+        // in `colliderHandles`, so a rule on this node fires the same way — it is only the physical response
+        // that goes away.
+        const trigger = boolParam(c, 'trigger', false)
         // Kinematic if anything above it moves, not just if *it* moves: a static node parented to a moving
         // platform travels through the world and a fixed body would leave it behind.
-        const body = f.animated
-          ? world.addKinematicBody({ position: at, rotation: f.worldRot, shape })
-          : world.addFixedBody({ position: at, rotation: f.worldRot, shape })
+        const desc = { position: at, rotation: f.worldRot, shape, ...(trigger ? { sensor: true } : {}) }
+        const body = f.animated ? world.addKinematicBody(desc) : world.addFixedBody(desc)
         nodeByCollider.set(body.colliderHandle, worldNode)
         handles.push(body.colliderHandle)
         // A model draws once for the whole node and rides the first body, so a single-collider node still

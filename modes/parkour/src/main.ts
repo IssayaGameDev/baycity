@@ -944,7 +944,9 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
         )
         // Real contact: the colliders the capsule pushed against this tick. Handed straight to the
         // components on whatever nodes own them — a corpse triggers nothing, which is why this is gated.
-        if (!dead) components.contact(char.body.collisions())
+        // Solids the capsule pushed against, plus the triggers it is standing inside (ADR 0054) 2014 a sensor
+        // resolves no movement, so it never appears in `collisions` and has to be asked for.
+        if (!dead) components.contact([...char.body.collisions(), ...char.body.overlaps()])
         // A rule killed us — a hazard pad, or the hazard plane under the level (ADR 0053). One question,
         // asked of the rules, which also consumes the flag. Gated on `dead`, because a corpse still resting
         // on the plane keeps generating contacts.

@@ -80,7 +80,7 @@ describe('the kill plane', () => {
   })
 
   // 60 m/s terminal (`maxFallSpeed`) at a 1/60 s step is one metre travelled per step, so a plane thinner than
-  // that could be passed straight through. Six metres is six steps of overlap.
+  // that could be fallen straight through between two overlap checks. Six metres is six steps of margin.
   it.each(levelNames())('%s has a plane thick and wide enough to catch a fall', (name) => {
     const plane = planeOf(name)
     if (plane === null) return
@@ -88,5 +88,15 @@ describe('the kill plane', () => {
     const half = (node.components.find((c) => c.type === COLLIDER)!.params.shape as { halfExtents: Vec3 }).halfExtents
     expect(half.y * 2, 'thinner than one tick of terminal velocity').toBeGreaterThanOrEqual(2)
     expect(plane.halfXZ, 'narrower than the levels we author').toBeGreaterThanOrEqual(60)
+  })
+
+  /**
+   * A **trigger**, not a solid (ADR 0054). Turn the flag off and the plane becomes a floor: you land on the
+   * thing that is supposed to be empty space with a rule in it, and the level stops being a fall at all.
+   */
+  it.each(levelNames())('%s keeps its plane a trigger, not a floor', (name) => {
+    const node = levelByName(name).nodes.find((n) => n.components.some((c) => c.type === Hazard.type))
+    if (node === undefined) return
+    expect(node.components.find((c) => c.type === COLLIDER)?.params.trigger).toBe(true)
   })
 })

@@ -53,6 +53,15 @@ export interface BodyOptions {
   /** Linear velocity damping — higher makes a pushed body settle sooner. */
   readonly linearDamping?: number
   readonly layers?: CollisionLayers
+  /**
+   * A **sensor**: detected on overlap, with no collision response at all (ADR 0054). Rapier's term for a
+   * trigger volume.
+   *
+   * Deliberately invisible to everything that resolves movement. The character controller's
+   * `computeColliderMovement` skips sensors, so one never pushes the capsule — which also means a sensor
+   * never appears in `CharacterBody.collisions`, and `CharacterBody.overlaps` is how you find it.
+   */
+  readonly sensor?: boolean
 }
 
 export interface PhysicsBody {
@@ -157,6 +166,14 @@ export interface CharacterBody {
    * ground, obstacles it pushed against). The basis for real contact-driven triggers —
    * match against `PhysicsBody.colliderHandle`. */
   collisions: () => number[]
+  /**
+   * Handles of the **sensors** the capsule is currently overlapping (ADR 0054) — trigger volumes, which by
+   * definition do not resolve movement and so never appear in `collisions`.
+   *
+   * Disjoint from `collisions` by construction: that reports solids, this reports sensors. A caller that wants
+   * every contact concatenates them.
+   */
+  overlaps: () => number[]
   remove: () => void
 }
 
@@ -262,10 +279,11 @@ const descFor = (shape: ShapeDesc): RAPIER.ColliderDesc => {
 /** Rapier packs interaction groups into one u32: memberships in the high half, filter in the low half. */
 const packLayers = (l: CollisionLayers): number => ((l.belongsTo & 0xffff) << 16) | (l.collidesWith & 0xffff)
 
-const makeCollider = (shape: ShapeDesc, restitution: number | undefined, layers: CollisionLayers | undefined) => {
+const makeCollider = (shape: ShapeDesc, restitution: number | undefined, layers: CollisionLayers | undefined, sensor: boolean | undefined) => {
   let cd = descFor(shape)
   if (restitution !== undefined) cd = cd.setRestitution(restitution)
   if (layers !== undefined) cd = cd.setCollisionGroups(packLayers(layers))
+  if (sensor === true) cd = cd.setSensor(true)
   return cd
 }
 
@@ -287,6 +305,10 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
     queriesStale = false
   }
 
+  // Reused by every character's `overlaps`, resized per call. Same reasoning as `castBall` below: the query
+  // builds and frees its own raw WASM shape, so holding one JS wrapper costs nothing.
+  const overlapCapsule = new RAPIER.Capsule(0.5, 0.5)
+
   const bodyDescFor = (kind: BodyKind) => {
     if (kind === 'dynamic') return RAPIER.RigidBodyDesc.dynamic()
     if (kind === 'fixed') return RAPIER.RigidBodyDesc.fixed()
@@ -298,7 +320,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
     if (o.rotation !== undefined) desc = desc.setRotation(o.rotation)
     if (o.linearDamping !== undefined) desc = desc.setLinearDamping(o.linearDamping)
     const body = world.createRigidBody(desc)
-    const collider = world.createCollider(makeCollider(o.shape, o.restitution, o.layers), body)
+    const collider = world.createCollider(makeCollider(o.shape, o.restitution, o.layers, o.sensor), body)
     queriesStale = true
     return {
       handle: body.handle,
@@ -352,7 +374,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(o.position.x, o.position.y, o.position.z),
     )
     const collider = world.createCollider(
-      makeCollider({ kind: 'capsule', halfHeight: o.halfHeight, radius: o.radius }, undefined, o.layers),
+      makeCollider({ kind: 'capsule', halfHeight: o.halfHeight, radius: o.radius }, undefined, o.layers, undefined),
       body,
     )
     // The controller's queries take their groups per call rather than reading the collider's, so the
@@ -378,7 +400,15 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
       move: (desired) => {
         // `computedMovement` returns a view into WASM memory that the next call reuses — copy it.
         const resolve = (dy: number): Vec3 => {
-          controller.computeColliderMovement(collider, { x: desired.x, y: dy, z: desired.z }, undefined, queryLayers)
+          // `EXCLUDE_SENSORS` is what makes a trigger a trigger (ADR 0054). Rapier's character controller
+          // resolves against sensors like anything else unless told not to — measured, not assumed: without
+          // this flag a sensor wall stopped the capsule at the same distance a solid one did.
+          controller.computeColliderMovement(
+            collider,
+            { x: desired.x, y: dy, z: desired.z },
+            RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+            queryLayers,
+          )
           const m = controller.computedMovement()
           return vec3(m.x, m.y, m.z)
         }
@@ -450,7 +480,9 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
           new RAPIER.Ray({ x: t.x, y: t.y, z: t.z }, { x: 0, y: -1, z: 0 }),
           reach,
           true,
-          undefined,
+          // A trigger is not a floor (ADR 0054). Without this a kill plane would read as footing, so you
+          // would stand on the thing that is supposed to be empty space with a rule in it.
+          RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
           queryLayers, // a layer the capsule cannot collide with is not footing either
           collider, // never hit ourselves
         )
@@ -462,6 +494,37 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
         }
       },
       collisions: () => lastCollisions.slice(),
+      /**
+       * The **sensors** the capsule is currently inside (ADR 0054).
+       *
+       * A separate pass because it has to be: sensors are skipped by `computeColliderMovement`, so they never
+       * reach `lastCollisions`. That is the whole point of a trigger — it does not resolve movement — and it
+       * means overlap has to be *asked for* rather than reported as a side effect of moving.
+       *
+       * An explicit shape query rather than Rapier's narrow-phase intersection pairs, for two reasons: it
+       * needs no `step()` to have run since the capsule moved, and `EXCLUDE_SOLIDS` makes it return sensors
+       * only, so a caller cannot accidentally re-handle a solid it already saw in `collisions`.
+       */
+      overlaps: () => {
+        freshenQueries()
+        const t = body.translation()
+        const found: number[] = []
+        overlapCapsule.radius = o.radius
+        overlapCapsule.halfHeight = o.halfHeight
+        world.intersectionsWithShape(
+          t,
+          body.rotation(),
+          overlapCapsule,
+          (c) => {
+            found.push(c.handle)
+            return true // keep going: standing in two triggers at once is ordinary
+          },
+          RAPIER.QueryFilterFlags.EXCLUDE_SOLIDS,
+          queryLayers, // a layer the capsule cannot touch is not a trigger it can enter
+          collider, // never ourselves
+        )
+        return found
+      },
       remove: () => {
         world.removeRigidBody(body)
         world.removeCharacterController(controller)
@@ -494,7 +557,9 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
       // collapse onto the character even with its whole boom pointing down and away, clear of everything.
       // Heading *into* the thing it starts inside still reports 0.
       false,
-      undefined,
+      // A trigger does not block a camera either (ADR 0054): pulling the boom in for a volume you can walk
+      // through would shove the view for no visible reason.
+      RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
       undefined,
       undefined,
       undefined,
