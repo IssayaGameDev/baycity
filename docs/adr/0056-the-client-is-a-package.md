@@ -1,7 +1,8 @@
 # ADR 0056 — The game client is a package, not a game's `main.ts`
 
-Status: in progress. `@mp/camera` has landed; the rest of the shell is next. This file records the decision
-and is updated as each piece moves, so it describes what exists rather than what is planned.
+Status: accepted. `@mp/camera` and `@mp/game-client` have both landed. `client.ts` was **moved, not
+redesigned** — breaking it into scene / netcode / render modules is a follow-up, now safe to do incrementally
+because callers only see `startGameClient`.
 
 ## Context
 
@@ -50,9 +51,37 @@ thing it names can drift.
 
 `cameraOcclusion.ts` moved here as `occlusion.ts` with its 16 tests unchanged.
 
+### `@mp/game-client`
+
+`startGameClient(descriptor)` is the whole surface. A game supplies its `ModeDescriptor` and an
+`index.html` with a `#view` canvas and a `#status` line; the stack supplies the Three stage, the post-FX,
+the asset preload, joining a room, interpolation, peer views, nametags, the ragdoll and spawn assembly, the
+pause screen, the debug pane, touch, the camera and the render loop.
+
+The descriptor is the whole of what varies: its registry validates and instantiates the level, its tuning
+drives the controller, its `session` is the rules, its `spawn` places arrivals, and its **name** picks both
+the level list and the save key.
+
+Two things had to change beyond moving files, and both were seams that only made sense for one game:
+
+- **`ModeDescriptor.spawn` takes an optional `seed`.** Parkour had a second exported `spawnFor` for it,
+  because a client spreads several arrivals around one marker and a tool places exactly one body. That is one
+  function with an optional argument, not two.
+- **`localParkourPersistence` became `localProgress(mode)`**, keyed by the game's own name. Two games in one
+  browser sharing `parkour.state` would let a checkpoint in one resume a run in the other. Tested.
+
+**Level and asset bundling moved too.** Both use `import.meta.glob`, whose paths resolve relative to the
+file — and a package's `src` sits at the same depth as a mode's, so the globs find exactly what they found
+before. `levelsFor(mode, registry)` replaces a module-level `MODE_NAME`.
+
 ## Consequences
 
-- `modes/parkour/src/main.ts` is 1219 lines, from 1487, and no longer contains a camera.
+- **`modes/parkour/src/main.ts` is 12 lines**, from 1487. The mode is six files: the descriptor, its rules,
+  that composition, and three test files guarding its own rules, levels and asset references.
+- Its `package.json` went from 12 workspace dependencies to 8. A game no longer depends on `@mp/client`,
+  `@mp/net`, `@mp/render-pixi`, `@mp/i18n`, `colyseus.js` or `tweakpane` — it cannot reach the netcode or
+  the UI toolkit, which is the dependency law made structural rather than advisory.
+- `client.ts` is 1239 lines in one function. That is the cost of moving without redesigning, taken knowingly.
 - The debug pane's camera block went from 16 hand-written bindings to a three-line loop.
 - `@mp/camera` imports both `@mp/render-three` and (structurally) physics's query shapes without depending on
   the package. It is browser-side view code, so this breaks no dependency law: simulation still never imports

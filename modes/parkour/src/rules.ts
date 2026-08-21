@@ -50,9 +50,13 @@ export const checkpointsOf = (loaded: LoadedLevel): readonly WorldNode[] => load
 const standingAt = (at: Vec3): Vec3 => vec3(at.x, at.y + STAND_OFFSET, at.z)
 
 /** The level's spawn marker, or a fallback above the origin when it has none. */
-export const spawnOf = (loaded: LoadedLevel): Vec3 => {
+export const spawnOf = (loaded: LoadedLevel, seed?: number): Vec3 => {
   const marker = loaded.markers.find((m) => m.kind === 'spawn')?.position
-  return marker === undefined ? vec3(0, 3, 0) : standingAt(marker)
+  if (marker === undefined) return vec3(0, 3, 0)
+  if (seed === undefined) return standingAt(marker)
+  // The golden-angle step keeps two arrivals from stacking inside each other.
+  const a = seed * 2.399963
+  return vec3(marker.x + Math.cos(a) * 2, marker.y + STAND_OFFSET, marker.z + Math.sin(a) * 2)
 }
 
 /**
@@ -97,15 +101,3 @@ export const parkourSession = (loaded: LoadedLevel, opts: ModeSessionOptions = {
   }
 }
 
-/**
- * Parkour's *spawn* rule, kept separate from the descriptor because a client spreads several players around
- * one marker and a play-test does not.
- *
- * `seed` is the player id; the golden-angle step keeps two arrivals from stacking inside each other.
- */
-export const spawnFor = (loaded: LoadedLevel, seed: number): Vec3 => {
-  const marker = loaded.markers.find((m) => m.kind === 'spawn')?.position
-  if (marker === undefined) return vec3(0, 3, 0)
-  const a = seed * 2.399963
-  return vec3(marker.x + Math.cos(a) * 2, marker.y + STAND_OFFSET, marker.z + Math.sin(a) * 2)
-}

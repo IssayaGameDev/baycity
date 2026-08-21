@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { localParkourPersistence } from './persistence'
+import { localProgress } from './persistence'
 
 // Minimal in-memory localStorage stub (this runs in the node test env).
 beforeEach(() => {
@@ -15,21 +15,28 @@ beforeEach(() => {
   } as Storage
 })
 
-describe('parkour persistence', () => {
+describe('progress persistence', () => {
   it('defaults to no checkpoint when empty', () => {
-    expect(localParkourPersistence().load()).toEqual({ checkpoint: -1 })
+    expect(localProgress('parkour').load()).toEqual({ checkpoint: -1 })
   })
 
   it('round-trips saved state', () => {
-    const p = localParkourPersistence()
+    const p = localProgress('parkour')
     p.save({ checkpoint: 3 })
     expect(p.load()).toEqual({ checkpoint: 3 })
   })
 
   it('falls back to default on unparseable or invalid data', () => {
     localStorage.setItem('parkour.state', '{not json')
-    expect(localParkourPersistence().load()).toEqual({ checkpoint: -1 })
+    expect(localProgress('parkour').load()).toEqual({ checkpoint: -1 })
     localStorage.setItem('parkour.state', '{"checkpoint":"nope"}')
-    expect(localParkourPersistence().load()).toEqual({ checkpoint: -1 })
+    expect(localProgress('parkour').load()).toEqual({ checkpoint: -1 })
   })
+})
+
+// Two games on one platform, one browser. Sharing a key would let a parkour checkpoint resume a swing run.
+it('keeps each game separate', () => {
+  localProgress('parkour').save({ checkpoint: 3 })
+  expect(localProgress('swing').load()).toEqual({ checkpoint: -1 })
+  expect(localProgress('parkour').load()).toEqual({ checkpoint: 3 })
 })

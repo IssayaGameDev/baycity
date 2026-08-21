@@ -84,7 +84,11 @@ export interface ModeDescriptor {
    */
   readonly gizmos: Readonly<Record<string, number>>
   /** Where the character starts, before any progress. */
-  readonly spawn: (loaded: LoadedLevel) => Vec3
+  /**
+   * Where a player starts. `seed` spreads arrivals so two players do not stack — a player id in the game,
+   * absent in a tool, which has exactly one body to place.
+   */
+  readonly spawn: (loaded: LoadedLevel, seed?: number) => Vec3
   /** Begin a rules session over this level. */
   readonly session: (loaded: LoadedLevel, opts?: ModeSessionOptions) => ModeSession
 }

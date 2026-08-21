@@ -5,7 +5,7 @@ import { createPhysicsWorld, initPhysics } from '@mp/physics'
 
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { PARKOUR_REGISTRY, STAND_OFFSET, checkpointsOf, parkourSession, spawnFor, spawnOf } from './rules'
+import { PARKOUR_REGISTRY, STAND_OFFSET, checkpointsOf, parkourSession, spawnOf } from './rules'
 
 /**
  * Parkour's rules, now that they are a module rather than two hand-written copies (ADR 0052).
@@ -52,8 +52,8 @@ describe('parkour spawning', () => {
   // A client spreads arrivals so two players do not appear inside each other; a play-test does not need to.
   it('spreads several players around the marker, at the same height', () => {
     const loaded = withSpawn()
-    const a = spawnFor(loaded, 1)
-    const b = spawnFor(loaded, 2)
+    const a = spawnOf(loaded, 1)
+    const b = spawnOf(loaded, 2)
     expect(a).not.toEqual(b)
     expect(a.y).toBe(b.y)
     expect(Math.hypot(a.x - 4, a.z - 6)).toBeCloseTo(2, 6)
