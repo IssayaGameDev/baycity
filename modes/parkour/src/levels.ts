@@ -2,7 +2,7 @@ import { validateLevel, type Level } from '@mp/content'
 import { PARKOUR_REGISTRY } from './rules'
 
 /**
- * What this mode can load: **level files**, and nothing else.
+ * What this mode can load: **level files that belong to it**, and nothing else.
  *
  * `content/levels/default.json` is what loads with no `?level=`. It is a file like any other, so the editor
  * opens, edits and saves it — which is the point. It is not *deletable*, because the editor has no delete for
@@ -13,11 +13,26 @@ import { PARKOUR_REGISTRY } from './rules'
  *
  * Bundled with `import.meta.glob` rather than fetched: the file list needs no server, and a level that fails
  * to parse is a build error instead of a blank screen.
+ *
+ * **Filtered by `config.mode.name`.** `content/levels/` is shared by every game on the platform, so without
+ * this a mode offers — and `levelNames()` promises — files built for a different game, whose components it
+ * has never heard of. Unassigned files are included: a level that names no game is one authored before games
+ * were explicit, or a fresh one, and refusing to load it would make a new file unopenable.
  */
-const FILES = import.meta.glob('../../../content/levels/*.json', { eager: true, import: 'default' }) as Record<
+const MODE_NAME = 'parkour'
+
+const ALL = import.meta.glob('../../../content/levels/*.json', { eager: true, import: 'default' }) as Record<
   string,
   unknown
 >
+
+/** Ours, by the name in the file. Read off the raw JSON, since validation needs a level we already own. */
+const FILES: Record<string, unknown> = Object.fromEntries(
+  Object.entries(ALL).filter(([, data]) => {
+    const named = (data as { config?: { mode?: { name?: unknown } } }).config?.mode?.name
+    return named === undefined || named === MODE_NAME
+  }),
+)
 
 /** The level loaded when nothing is asked for. */
 export const DEFAULT_NAME = 'default'
@@ -32,7 +47,7 @@ export const levelNames = (): string[] => {
 
 /**
  * The level called `name`, or the default for `null`. Throws for a name that is not there, listing what is —
- * the caller decides whether a typo should be fatal.
+ * the caller decides whether a typo should be fatal. A level belonging to another game is "not there".
  */
 export const levelByName = (name: string | null): Level => {
   const wanted = name ?? DEFAULT_NAME

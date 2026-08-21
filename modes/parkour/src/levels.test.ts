@@ -100,3 +100,20 @@ describe('the kill plane', () => {
     expect(node.components.find((c) => c.type === COLLIDER)?.params.trigger).toBe(true)
   })
 })
+
+/**
+ * `content/levels/` is shared by every game on the platform, so the list has to be filtered or a mode
+ * offers files built for a different game, whose components it has never heard of.
+ */
+describe('whose levels these are', () => {
+  it('only lists levels that name this game, or name none', () => {
+    for (const name of levelNames()) {
+      const named = levelByName(name).config.mode?.name
+      expect(named ?? 'parkour', `${name} belongs to another game`).toBe('parkour')
+    }
+  })
+
+  it('refuses a name it does not have, whoever owns it', () => {
+    expect(() => levelByName('nope')).toThrow(/no level "nope"/)
+  })
+})
