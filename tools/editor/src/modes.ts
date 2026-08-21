@@ -15,6 +15,15 @@ import type { ModeDescriptor } from '@mp/mode'
  */
 const LOADED = import.meta.glob('../../../modes/*/src/editorMode.ts', { eager: true }) as Record<string, Record<string, unknown>>
 
+/**
+ * A directory whose name starts with `_` is not a game.
+ *
+ * `modes/_template` exists to be copied — it is the acceptance test for `@mp/game-client` (ADR 0056), since
+ * if its `main.ts` cannot be three lines the shell is not finished. But it is not something to author for, and
+ * without this it would sit in the game picker offering to make levels for a game nobody plays.
+ */
+const isTemplate = (path: string): boolean => path.includes('/modes/_')
+
 const isDescriptor = (v: unknown): v is ModeDescriptor =>
   typeof v === 'object' &&
   v !== null &&
@@ -31,6 +40,7 @@ const isDescriptor = (v: unknown): v is ModeDescriptor =>
 export const MODES: Readonly<Record<string, ModeDescriptor>> = (() => {
   const out: Record<string, ModeDescriptor> = {}
   for (const [path, module] of Object.entries(LOADED)) {
+    if (isTemplate(path)) continue
     const found = Object.values(module).filter(isDescriptor)
     if (found.length === 0) console.warn(`${path}: exports no ModeDescriptor`)
     for (const mode of found) {

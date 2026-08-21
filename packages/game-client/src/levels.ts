@@ -19,7 +19,13 @@ const ALL = import.meta.glob('../../../content/levels/*.json', { eager: true, im
   unknown
 >
 
-/** The level loaded when nothing is asked for. */
+/**
+ * The conventional name for a game's starting level, preferred when it exists.
+ *
+ * Only a preference, because a level's name is its **filename** and `content/levels/` is shared: two games
+ * cannot both own `default.json`. So `LevelSource.defaultName` falls back to the game's first level, which
+ * is what lets a second game boot with no `?level=` at all.
+ */
 export const DEFAULT_NAME = 'default'
 
 const nameOf = (path: string): string => path.slice(path.lastIndexOf('/') + 1, -'.json'.length)
@@ -27,6 +33,8 @@ const nameOf = (path: string): string => path.slice(path.lastIndexOf('/') + 1, -
 export interface LevelSource {
   /** Everything loadable, the default first and the rest sorted. */
   names: () => string[]
+  /** What loads with no `?level=`: `default` if this game has one, else its first level. */
+  defaultName: string
   /** The level called `name`, or the default for `null`. Throws for a name this game does not have. */
   byName: (name: string | null) => Level
 }
@@ -53,10 +61,13 @@ export const levelsFor = (mode: string, registry: ParamChecker): LevelSource => 
     return [...(all.includes(DEFAULT_NAME) ? [DEFAULT_NAME] : []), ...all.filter((n) => n !== DEFAULT_NAME).sort()]
   }
 
+  const defaultName = names()[0] ?? DEFAULT_NAME
+
   return {
     names,
+    defaultName,
     byName: (name) => {
-      const wanted = name ?? DEFAULT_NAME
+      const wanted = name ?? defaultName
       const found = files.find(([path]) => nameOf(path) === wanted)
       if (found === undefined) {
         // The default included: if `default.json` has been deleted from disk there is nothing to fall back

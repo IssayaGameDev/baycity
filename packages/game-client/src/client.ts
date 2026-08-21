@@ -58,7 +58,7 @@ import { BODY_LAYERS } from './layers'
 import { createPauseMenu } from './pauseMenu'
 import { createRagdoll, type Ragdoll } from './ragdoll'
 import { ASSET_DB, CLIP_SOURCE, assetUrlOf, materialOf } from './assets'
-import { DEFAULT_NAME, levelsFor } from './levels'
+import { levelsFor } from './levels'
 import { localProgress } from './persistence'
 
 /**
@@ -95,13 +95,13 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
   const levels = levelsFor(mode.name, mode.registry)
   const levelName = ((): string => {
     const requested = new URLSearchParams(location.search).get('level')
-    if (requested === null) return DEFAULT_NAME
+    if (requested === null) return levels.defaultName
     try {
       levels.byName(requested)
       return requested
     } catch (e) {
-      console.error(`${String(e)} — falling back to ${DEFAULT_NAME}`)
-      return DEFAULT_NAME
+      console.error(`${String(e)} — falling back to ${levels.defaultName}`)
+      return levels.defaultName
     }
   })()
   const levelData = levels.byName(levelName)

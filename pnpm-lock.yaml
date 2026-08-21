@@ -21,7 +21,69 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.1)(tsx@4.23.1)
 
+  modes/_template:
+    dependencies:
+      '@mp/character':
+        specifier: workspace:*
+        version: link:../../packages/character
+      '@mp/components':
+        specifier: workspace:*
+        version: link:../../packages/components
+      '@mp/content':
+        specifier: workspace:*
+        version: link:../../packages/content
+      '@mp/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@mp/game-client':
+        specifier: workspace:*
+        version: link:../../packages/game-client
+      '@mp/mode':
+        specifier: workspace:*
+        version: link:../../packages/mode
+      '@mp/physics':
+        specifier: workspace:*
+        version: link:../../packages/physics
+      '@mp/render-three':
+        specifier: workspace:*
+        version: link:../../packages/render-three
+    devDependencies:
+      vite:
+        specifier: ^6.0.0
+        version: 6.4.3(@types/node@22.20.1)(tsx@4.23.1)
+
   modes/parkour:
+    dependencies:
+      '@mp/character':
+        specifier: workspace:*
+        version: link:../../packages/character
+      '@mp/components':
+        specifier: workspace:*
+        version: link:../../packages/components
+      '@mp/content':
+        specifier: workspace:*
+        version: link:../../packages/content
+      '@mp/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@mp/game-client':
+        specifier: workspace:*
+        version: link:../../packages/game-client
+      '@mp/mode':
+        specifier: workspace:*
+        version: link:../../packages/mode
+      '@mp/physics':
+        specifier: workspace:*
+        version: link:../../packages/physics
+      '@mp/render-three':
+        specifier: workspace:*
+        version: link:../../packages/render-three
+    devDependencies:
+      vite:
+        specifier: ^6.0.0
+        version: 6.4.3(@types/node@22.20.1)(tsx@4.23.1)
+
+  modes/swing:
     dependencies:
       '@mp/character':
         specifier: workspace:*

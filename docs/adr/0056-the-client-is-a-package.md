@@ -73,6 +73,31 @@ Two things had to change beyond moving files, and both were seams that only made
 file — and a package's `src` sits at the same depth as a mode's, so the globs find exactly what they found
 before. `levelsFor(mode, registry)` replaces a module-level `MODE_NAME`.
 
+### The template, and the second game
+
+`modes/_template` is the thing to copy, and it **is** the acceptance test: if its `main.ts` cannot stay three
+lines, something that belongs in a package has leaked back into a game. Its directory is `_`-prefixed and the
+editor's glob skips `modes/_*`, because it exists to be copied rather than authored for — without that it
+would sit in the game picker offering to make levels for a game nobody plays.
+
+**It is a complete app**, `index.html` and vite config included. Those were stripped at first, on the theory
+that a template is source rather than an application; that was wrong, and counting the steps to make a game
+is what showed it — every new game was recreating four files by hand for no reason but tidiness. With them
+back it is six steps, of which only the last is a judgement call, and `main.ts` lists them. What it has no
+copy of is a **level**: `content/levels/` is filtered by `config.mode.name` and nothing there is authored for
+`template`, so it throws until step six, saying what it does have.
+
+`modes/swing` is that copy. Renaming three identifiers and pointing a level at it was the whole job; the
+character controller, its procedural animation, the camera, the netcode and the editor came for free. Its
+registry takes the whole shared gameplay library because its first level is a copy of parkour's and uses
+movers, a trampoline, checkpoints and a goal — while its session keeps no progress, so those pads are
+authorable and touchable and do nothing yet. That split is the point: the component is authoring, the rule is
+behaviour.
+
+**A level's name is its filename, and `content/levels/` is shared**, so two games cannot both own
+`default.json`. `LevelSource.defaultName` therefore prefers `default` and falls back to the game's first
+level — which is what actually lets a second game boot with no `?level=`. Found by Swing failing to start.
+
 ## Consequences
 
 - **`modes/parkour/src/main.ts` is 12 lines**, from 1487. The mode is six files: the descriptor, its rules,
@@ -102,7 +127,7 @@ before. `levelsFor(mode, registry)` replaces a module-level `MODE_NAME`.
   dozen pieces of mutable state (the room, the level, the local character, death, ragdolls, peer assemblies).
   Splitting those means threading a state object between them, which is a redesign rather than a move, so it
   is its own step rather than a rider on this one.
-- `@mp/game-client` has no tests of its own beyond `persistence.test.ts`. A composition root resists them
+- `@mp/game-client` has few tests of its own beyond `levels.test.ts` and `persistence.test.ts`. A composition root resists them
   by nature, which is exactly why the pieces that *can* be tested were moved into packages that test them.
 
 ## Rejected
