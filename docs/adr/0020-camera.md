@@ -1,6 +1,8 @@
 # ADR 0020 — Third-person camera: wheel zoom, full overhead pitch, sphere-cast occlusion
 
-Status: accepted. Supersedes nothing; the camera had no ADR before this.
+Status: accepted, amended by ADR 0055 — an obstruction **dithers away** instead of pulling the boom in. The
+pull-in below survives for the two cases where it is still the only right answer: the camera would sit inside
+solid, or below the character's feet. The no-clipping argument here is exactly why.
 
 ## Context
 
@@ -134,7 +136,7 @@ refreshes on demand — see `docs/physics.md`.
   inside the lookahead window is mispredicted: the camera eases in toward something it never reaches
   (then eases back out), or gets no warning at all and the hard clamp pops as before.
 
-- Nothing fades or hides *level* geometry between the camera and the character — only your own rig is
-  hidden, and only when the camera is inside it.
+- ~~Nothing fades or hides *level* geometry between the camera and the character~~ — closed by ADR 0055.
+  Your own rig is still hidden separately, and still only when the camera is inside it.
 - Squeezed all the way in you are effectively in first person with no body. There is no first-person
   mode as such: the camera is still an orbit boom that happens to be short.

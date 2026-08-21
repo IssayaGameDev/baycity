@@ -23,6 +23,9 @@ export { createProceduralSky, DEFAULT_SKY_PARAMS, skyUniformValues, sunDirection
 export type { PostFX, PostFXOptions } from './postfx'
 export { createPostFX } from './postfx'
 export type { LevelView, LevelViewOptions, MarkersView } from './levelView'
+// The see-through hole (ADR 0055): level surfaces dither away between the eye and the character.
+export type { CutoutMask, CutoutState } from './cutout'
+export { createCutoutMask, cutoutCoverage, injectCutout } from './cutout'
 // Content lights (ADR 0047): the loader says what lights exist, this realizes them. The sun is not one.
 export type { ContentLights, ContentLightsOptions, LightDesc } from './lights'
 export { addLights, createLight, lightAims, shadowPassesFor } from './lights'

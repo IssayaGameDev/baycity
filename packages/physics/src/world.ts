@@ -199,6 +199,13 @@ export interface SphereCastOptions {
   readonly exclude?: readonly number[]
 }
 
+export interface SphereOverlapOptions {
+  readonly center: Vec3
+  readonly radius: number
+  /** Collider handles to ignore — what the caller considers part of itself. */
+  readonly exclude?: readonly number[]
+}
+
 export interface PhysicsWorld {
   addDynamicBody: (opts: BodyOptions) => PhysicsBody
   addFixedBody: (opts: BodyOptions) => PhysicsBody
@@ -217,6 +224,14 @@ export interface PhysicsWorld {
    * Queries the world as it stands; no step needed.
    */
   castSphere: (opts: SphereCastOptions) => CastHit | undefined
+  /**
+   * Is a sphere at `center` inside solid geometry right now? A cast answers "what is between here and
+   * there"; this answers "is *here* free", which a cast cannot: a sweep that starts already penetrating
+   * and heads out of the overlap deliberately ignores it (see `castSphere`), so the one place a caller
+   * needs a straight yes is exactly where a cast lies. Triggers do not count as solid (ADR 0054).
+   * Queries the world as it stands; no step needed.
+   */
+  sphereOverlaps: (opts: SphereOverlapOptions) => boolean
   /** Advance the simulation by one fixed step of `dtSeconds`. */
   step: (dtSeconds: number) => void
   /** Release the underlying WASM world. */
@@ -569,12 +584,32 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
     return hit === null ? undefined : { distance: hit.time_of_impact, colliderHandle: hit.collider.handle }
   }
 
+  const sphereOverlaps = ({ center, radius, exclude }: SphereOverlapOptions): boolean => {
+    if (radius <= 0) return false
+    freshenQueries()
+    castBall.radius = radius
+    let found = false
+    world.intersectionsWithShape(
+      center,
+      NO_ROTATION,
+      castBall,
+      (c) => {
+        if (exclude !== undefined && exclude.includes(c.handle)) return true // keep looking
+        found = true
+        return false // one is enough
+      },
+      RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+    )
+    return found
+  }
+
   return {
     addDynamicBody: (o) => addBody(o, 'dynamic'),
     addFixedBody: (o) => addBody(o, 'fixed'),
     addKinematicBody: (o) => addBody(o, 'kinematic'),
     addCharacter,
     castSphere,
+    sphereOverlaps,
     step: (dtSeconds) => {
       world.timestep = dtSeconds
       world.step()

@@ -78,6 +78,12 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
   *further in*; on a path out of the overlap it is ignored (Rapier's `stopAtPenetration: false`), so a
   probe whose origin grazes a surface is not pinned to zero regardless of where it was going.
   Used by the parkour camera (ADR 0020).
+- `world.sphereOverlaps({ center, radius, exclude? })` → `boolean` — is a sphere at `center` inside solid
+  geometry right now. `intersectionsWithShape` with `EXCLUDE_SENSORS`, stopping at the first hit. This is
+  the question `castSphere` structurally cannot answer: a sweep that starts already penetrating and heads
+  *out* of the overlap ignores it by design (above), so from inside a wall a cast reports clear air. The
+  camera needs a straight yes before it may keep its distance and let the shader dither the obstruction
+  away (ADR 0055). Triggers are not solid (ADR 0054), so they never block it either.
 - `move` returns `applied`, the translation actually resolved. It differs from what was asked
   wherever the step was blocked or slid, and it is how a caller can tell what the controller did.
   `move` also **retries once** when it discards an entire step while resting (see `CONTACT_NUDGE`).
@@ -100,7 +106,7 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
   repositioned since the last step is not in it, so a cast reports geometry that has moved and misses
   geometry that has arrived — the same staleness that makes a teleported platform stop resolving
   movement (see carry, point 4). The wrapper tracks it: any add / remove / `setPosition` / `teleport` /
-  `setRotation` marks the index stale, and `castSphere`/`probeGround` call Rapier's
+  `setRotation` marks the index stale, and `castSphere`/`sphereOverlaps`/`probeGround` call Rapier's
   `updateSceneQueries()` before casting if it is. On demand, not per cast — the refresh walks the
   collider set and most frames change nothing. Relevant because the camera casts from the **render**
   loop, which runs up to 144 Hz against a 30 Hz sim.

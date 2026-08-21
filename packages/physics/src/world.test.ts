@@ -334,6 +334,77 @@ describe('physics world', () => {
     })
   })
 
+  /**
+   * The question a cast cannot answer. `castSphere` deliberately ignores an overlap it is leaving, which
+   * is right for a boom starting at the character's head and wrong for the one caller that needs a
+   * straight "is this spot free" — the camera deciding whether it may keep its distance (ADR 0055).
+   */
+  describe('sphereOverlaps', () => {
+    const walled = () => {
+      const world = createPhysicsWorld()
+      const wall = world.addFixedBody({
+        position: { x: 5, y: 0, z: 0 },
+        shape: { kind: 'cuboid', halfExtents: { x: 0.25, y: 5, z: 5 } },
+      })
+      return { world, wall }
+    }
+
+    it('reports the solid it is inside', () => {
+      const { world } = walled()
+      expect(world.sphereOverlaps({ center: { x: 5, y: 0, z: 0 }, radius: 0.25 })).toBe(true)
+      world.free()
+    })
+
+    // Where a cast lies: from inside the wall, heading out, `castSphere` reports clear.
+    it('reports an overlap a sweep on its way out would ignore', () => {
+      const { world } = walled()
+      const center = { x: 4.9, y: 0, z: 0 }
+      expect(world.castSphere({ origin: center, direction: { x: -1, y: 0, z: 0 }, maxDistance: 5, radius: 0.25 })).toBeUndefined()
+      expect(world.sphereOverlaps({ center, radius: 0.25 })).toBe(true)
+      world.free()
+    })
+
+    it('reports free air as free', () => {
+      const { world } = walled()
+      expect(world.sphereOverlaps({ center: { x: 0, y: 0, z: 0 }, radius: 0.25 })).toBe(false)
+      world.free()
+    })
+
+    it('counts only what the radius actually reaches', () => {
+      const { world } = walled()
+      // The near face is at x = 4.75. A 0.25 m sphere at 4.4 reaches 4.65 — short of it.
+      expect(world.sphereOverlaps({ center: { x: 4.4, y: 0, z: 0 }, radius: 0.25 })).toBe(false)
+      expect(world.sphereOverlaps({ center: { x: 4.6, y: 0, z: 0 }, radius: 0.25 })).toBe(true)
+      world.free()
+    })
+
+    it('ignores excluded colliders — the camera is not blocked by its own body', () => {
+      const { world, wall } = walled()
+      const center = { x: 5, y: 0, z: 0 }
+      expect(world.sphereOverlaps({ center, radius: 0.25, exclude: [wall.colliderHandle] })).toBe(false)
+      world.free()
+    })
+
+    // A trigger is not solid (ADR 0054), so it must not make the camera give up its distance either.
+    it('ignores triggers', () => {
+      const world = createPhysicsWorld()
+      world.addFixedBody({
+        position: { x: 0, y: 0, z: 0 },
+        shape: { kind: 'cuboid', halfExtents: { x: 2, y: 2, z: 2 } },
+        sensor: true,
+      })
+      expect(world.sphereOverlaps({ center: { x: 0, y: 0, z: 0 }, radius: 0.25 })).toBe(false)
+      world.free()
+    })
+
+    it('needs no step: a body added this instant is already there', () => {
+      const world = createPhysicsWorld()
+      world.addFixedBody({ position: { x: 0, y: 0, z: 0 }, shape: { kind: 'ball', radius: 1 } })
+      expect(world.sphereOverlaps({ center: { x: 0, y: 0, z: 0 }, radius: 0.25 })).toBe(true)
+      world.free()
+    })
+  })
+
   describe('collision layers', () => {
     const A = { belongsTo: 0x0001, collidesWith: 0xffff & ~0x0002 }
     const B = { belongsTo: 0x0002, collidesWith: 0xffff & ~0x0001 }

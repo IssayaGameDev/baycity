@@ -33,6 +33,7 @@ import {
   applyGreyboxEnvironment,
   assetIdsIn,
   createAssetRuntime,
+  createCutoutMask,
   createPostFX,
   createThreeStage,
   loadSky,
@@ -61,6 +62,7 @@ import { Client, type Room } from 'colyseus.js'
 import { Pane } from 'tweakpane'
 
 import { createAssembly, type Assembly, type AssemblyTiming } from './assemble'
+import { occlusionFor, type Occlusion, type OcclusionView } from './cameraOcclusion'
 import { createCharacterViews, PEER_COLORS, SELF_COLORS } from './characterView'
 import { BODY_LAYERS } from './layers'
 import { OVERLAY_LAYER } from './nametag'
@@ -140,7 +142,17 @@ const env = applyGreyboxEnvironment(stage.renderer, stage.scene, { shadowRadius:
 // toggle compares two backdrops rather than two whole looks. Deleted once the comparison is settled.
 const photoSky = await loadSky(stage.scene, assetUrlOf('textures/sky_110_2k.webp'))
 if (photoSky !== null && env.sky !== null) stage.scene.background = env.sky.background
-const postfx = createPostFX(stage.renderer, stage.scene, stage.camera, { ao: true, bloom: true, bloomStrength: 0.1 })
+const postfx = createPostFX(stage.renderer, stage.scene, stage.camera, {
+  ao: true,
+  bloom: true,
+  bloomStrength: 0.1,
+  /**
+   * A surface wearing a hole must be absent from the AO prepass, or the character seen through it comes out
+   * shaded by occlusion cast by something the player cannot see — which was the one artifact that survived
+   * every other fix, and was measured by toggling AO rather than guessed at (ADR 0055).
+   */
+  aoIgnores: () => levelView?.occluding() ?? [],
+})
 
 // Nametags live on an overlay layer drawn AFTER post-FX. GTAO renders the scene into its
 // own depth/normal buffer to compute occlusion; a sprite left in the world pipeline shows
@@ -194,6 +206,23 @@ const CAM_PROBE_RADIUS = 0.25
 /** Boom height above the orbit sphere — the camera looks slightly down at the target. */
 const CAM_RISE = 0.5
 /**
+ * How far above the capsule's centre the camera aims, in metres. The capsule is 2 m tall, so this is level
+ * with the top of the head — the framing everyone expects, and the reason the occlusion probes below exist:
+ * a sightline to *this* point is not a sightline to the body.
+ */
+const CAM_AIM_RISE = 1
+/**
+ * The points the camera checks are visible, given where it is aiming: the aim point itself, the capsule's
+ * centre, and the bottom of its spine. Three sightlines down the body, because one to the head says
+ * "clear" with a platform lying across the chest (ADR 0055).
+ *
+ * The spine, not the capsule's ends: the probe sphere's own radius covers the caps.
+ */
+const bodyProbes = (aim: Vec3): readonly Vec3[] => [
+  vec3(aim.x, aim.y - CAM_AIM_RISE, aim.z),
+  vec3(aim.x, aim.y - CAM_AIM_RISE - CHAR_HALF_HEIGHT, aim.z),
+]
+/**
  * Half-life (s) for the turn and travel rates that drive the lookahead probe. Mouse movement arrives
  * in bursts, so the raw per-frame rate is spiky; this is short enough to answer a flick and long
  * enough that the predicted boom does not jitter. Move it before touching `camLookahead` if the soft
@@ -232,10 +261,11 @@ const worldFromBase = (e: { position: Vec3; yaw: number; base: number }, rendere
 const chase = (from: number, to: number, dt: number, halfLife: number): number =>
   halfLife > 0 ? from + (to - from) * (1 - Math.pow(2, -dt / halfLife)) : to
 /**
- * How far the camera may sit along a given boom before it hits the world, in metres. Set once the
- * local sim exists, since that owns the physics world; until then the camera just uses its zoom.
+ * What the camera does about an obstruction on a given boom — move in, or stay put and let the shader
+ * dither a hole (ADR 0055). Set once the local sim exists, since that owns the physics world; until then
+ * the camera just uses its zoom.
  */
-let camClearance: ((target: Vec3, boom: Vec3, want: number) => number) | null = null
+let camOcclude: ((target: Vec3, boom: Vec3, len: number, view?: OcclusionView) => Occlusion) | null = null
 /**
  * Landing strength for the camera dip, in units of a plain jump's landing speed: 1 is landing your own
  * jump, more is a longer drop. Set on the sim tick that finds footing, eased back to 0 in the render loop.
@@ -280,6 +310,19 @@ const params = {
    * so anything under that is already cutting into the frame.
    */
   camHideMargin: 0.15,
+  /** Hole radius (m) at the character. The capsule is 0.8 m wide and 2 m tall, so this clears it. */
+  camMaskRadius: 1.3,
+  /** Soft edge of the hole, as a fraction of its radius. The dither ramps out across it. */
+  camMaskFeather: 0.5,
+  /** Half-life (s) of the hole opening and closing. Keeps a passing beam from popping. */
+  camMaskSmooth: 0.03,
+  /**
+   * Both on, both here only so a shading artifact can be told from a geometric one. A hole in a surface
+   * leaves behind whatever *shading* that surface was responsible for, and there is no way to tell which
+   * pass is doing it by looking.
+   */
+  sunShadows: true,
+  ambientOcclusion: true,
   sensitivity: 0.0025,
   /**
    * Look sensitivity for a **finger** (rad per CSS pixel). Its own number, and far larger than the mouse
@@ -292,6 +335,26 @@ const params = {
 }
 /** The orbit distance actually rendered: `camZoom` smoothed, so a notch glides instead of jumping. */
 let camDistance = params.camZoom
+/**
+ * The see-through hole (ADR 0055). Created here because the level view has to be handed it at build time —
+ * it patches the shader of every surface it draws — and driven from the render loop, which is the only
+ * place that knows where the eye and the character ended up.
+ */
+const cutout = createCutoutMask({
+  camera: vec3(),
+  target: vec3(),
+  radius: params.camMaskRadius,
+  feather: params.camMaskFeather,
+  strength: 0,
+})
+/** How far open the aperture is, 0 to 1, chased so it grows and shrinks rather than popping. */
+let maskOpen = 0
+/**
+ * The surfaces the hole is currently cut in, held while the aperture closes. Handing the level view an
+ * empty list the frame the obstruction clears would put its plain material back at once, which is the hole
+ * snapping shut and `camMaskSmooth` being a lie.
+ */
+let maskOccluders: readonly number[] = []
 /**
  * Touch controls (ADR 0022): stick bottom-left, jump bottom-right, look everywhere else. Bound to the
  * canvas, so its rect is the coordinate frame the HUD draws in. `active()` stays false until a real touch
@@ -437,6 +500,21 @@ cam.addBinding(params, 'camLookahead', { min: 0, max: 0.5, step: 0.01, label: 'l
 cam.addBinding(params, 'camPushInSmooth', { min: 0, max: 0.5, step: 0.01, label: 'push-in s' })
 cam.addBinding(params, 'camReturnSmooth', { min: 0, max: 1, step: 0.01, label: 'pull-out s' })
 cam.addBinding(params, 'camHideMargin', { min: 0, max: 1, step: 0.01, label: 'rig hide m' })
+cam.addBinding(params, 'camMaskRadius', { min: 0.2, max: 4, step: 0.05, label: 'hole m' })
+cam.addBinding(params, 'camMaskFeather', { min: 0, max: 2, step: 0.05, label: 'hole edge' })
+cam.addBinding(params, 'camMaskSmooth', { min: 0, max: 0.5, step: 0.01, label: 'hole open s' })
+/**
+ * Two switches for telling shading apart from geometry. A hole in a surface leaves the *shading* it was
+ * responsible for behind — the sun shadow it casts on whatever it covered, and the ambient occlusion the
+ * AO pass reads from a depth buffer that never heard about the discard — and both read as the surface
+ * having failed to disappear. Guessing which one is which from a screenshot does not work; toggling does.
+ */
+cam.addBinding(params, 'sunShadows', { label: 'sun shadows' }).on('change', (e) => {
+  env.sun.castShadow = e.value
+})
+cam.addBinding(params, 'ambientOcclusion', { label: 'ambient occl.' }).on('change', (e) => {
+  if (postfx.ao !== null) postfx.ao.enabled = e.value
+})
 cam.addBinding(params, 'sensitivity', { min: 0.0005, max: 0.006, step: 0.0005, label: 'sensitivity' })
 
 // Sky + sun (ADR 0046). Every one of these needs an eye rather than a value, so they all live here. The sun
@@ -704,7 +782,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   // models still arriving. Anything unreferenced is never fetched, so a greybox level costs nothing.
   const assets = createAssetRuntime({ db: ASSET_DB, urlOf: assetUrlOf, materialOf })
   await assets.load(assetIdsIn(loaded.visuals))
-  levelView = addLevel(stage.scene, loaded.visuals, { assets })
+  levelView = addLevel(stage.scene, loaded.visuals, { assets, cutout })
   levelLights = addLights(stage.scene, loaded.lights)
   // The level owns its sun, and moving it rebakes the sky so the two cannot disagree (ADR 0048).
   env.applyEnvironment(loaded.config.environment)
@@ -747,13 +825,29 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
    * single frame and would report zero clearance; and while dead the ragdoll's parts are our own body too,
    * not scenery to be shoved away from.
    */
-  camClearance = (origin, direction, want) => {
+  camOcclude = (target, boom, len, view) => {
     const skip = [char.body.colliderHandle, ...(ragdoll?.colliders ?? [])]
     // Every corpse, not only our own. A living peer is mirrored as a kinematic capsule here, so they do
     // move the camera — but a ragdoll is a visual whose position no two clients agree on, and ten cuboids
     // tumbling around your feet because someone died next to you should not shove your view.
     for (const corpse of peerRagdolls.values()) skip.push(...corpse.colliders)
-    return world.castSphere({ origin, direction, maxDistance: want, radius: CAM_PROBE_RADIUS, exclude: skip })?.distance ?? want
+    return occlusionFor(
+      {
+        cast: (origin, direction, maxDistance, more) =>
+          world.castSphere({
+            origin,
+            direction,
+            maxDistance,
+            radius: CAM_PROBE_RADIUS,
+            exclude: more === undefined ? skip : [...skip, ...more],
+          }),
+        occupied: (point) => world.sphereOverlaps({ center: point, radius: CAM_PROBE_RADIUS, exclude: skip }),
+      },
+      target,
+      boom,
+      len,
+      view,
+    )
   }
 
   // Respawn: teleport to wherever the rules say (the last checkpoint, or the spawn) and kill momentum.
@@ -1186,7 +1280,7 @@ stage.start(() => {
 
   // orbit camera around the own character, dipped by whatever is left of the last landing
   landImpact = chase(landImpact, 0, frameDt, params.landKickRecovery)
-  const target = { x: ownPos.x, y: ownPos.y + 1 - landImpact * params.landKick, z: ownPos.z }
+  const target = { x: ownPos.x, y: ownPos.y + CAM_AIM_RISE - landImpact * params.landKick, z: ownPos.z }
   // Re-clamped every frame, because the range itself is tunable in the pane while playing.
   params.camZoom = clamp(params.camZoom, params.camZoomMin, params.camZoomMax)
   camDistance = chase(camDistance, params.camZoom, frameDt, params.camZoomSmooth)
@@ -1214,15 +1308,26 @@ stage.start(() => {
   const boomZ = Math.cos(camYaw) * Math.cos(camPitch) * camDistance
   const boom = Math.hypot(boomX, boomY, boomZ)
   // Hard limit: how far the boom has room for *now*. The camera is clamped to it unconditionally, and
-  // that clamp is the whole no-clipping guarantee.
-  const hard = camClearance?.(target, vec3(boomX, boomY, boomZ), boom) ?? boom
+  // that clamp is the whole no-clipping guarantee. `seeThrough` is the case where there *is* something in
+  // the way but it is thin and the camera is in clear air, so the limit is the full boom and the shader
+  // takes over (ADR 0055).
+  // Anything the boom meets below the feet is floor: it stops the camera as it always did, rather than
+  // being holed, because a hole in the floor is a view of the level's underside (ADR 0055). Always, not
+  // only while grounded — falling and looking down puts the camera under the ground just the same.
+  const feetY = ownPos.y - (CHAR_HALF_HEIGHT + CHAR_RADIUS)
+  const live = camOcclude?.(target, vec3(boomX, boomY, boomZ), boom, { probes: bodyProbes(target), feetY }) ?? {
+    limit: boom,
+    seeThrough: false,
+    occluders: [],
+  }
+  const hard = live.limit
   // Soft limit: the same probe, of the same radius, run where the boom *will* be `lookahead` from now —
   // the character has moved on and the mouse has kept turning. An obstruction about to cross the sight
   // line shows up there before it shows up here, which is the head start the ease needs to arrive
   // before the clamp has to bite. Widening the probe instead would also see it early, and would collapse
   // the camera every time a surface merely runs alongside the boom (ADR 0020).
   let soft = hard
-  if (params.camLookahead > 0 && camClearance !== null) {
+  if (params.camLookahead > 0 && camOcclude !== null) {
     const t = params.camLookahead
     const yaw = camYaw + camYawRate * t
     const pitch = clamp(camPitch + camPitchRate * t, params.pitchMinDeg * DEG, PITCH_MAX)
@@ -1233,7 +1338,7 @@ stage.start(() => {
     )
     const aheadTarget = vec3(target.x + camVel.x * t, target.y + camVel.y * t, target.z + camVel.z * t)
     const aheadLen = Math.hypot(aheadBoom.x, aheadBoom.y, aheadBoom.z)
-    soft = Math.min(hard, camClearance(aheadTarget, aheadBoom, aheadLen))
+    soft = Math.min(hard, camOcclude(aheadTarget, aheadBoom, aheadLen).limit)
   }
   // Move toward the soft limit on a half-life — in on one, back out on another — then clamp to the hard
   // limit. `null` on the first frame only, where there is nothing to interpolate from.
@@ -1249,6 +1354,32 @@ stage.start(() => {
   // The direction is known whatever the length is. YXZ order — yaw about Y, then pitch about X — is the
   // one that keeps the horizon level, and it stays defined at straight-up, where lookAt does not.
   camera.rotation.set(-Math.atan2(boomY, Math.hypot(boomX, boomZ)), camYaw, 0, 'YXZ')
+
+  /**
+   * The see-through hole (ADR 0055). Driven from the *live* probe, not the lookahead one: the hole has to
+   * agree with what is actually in frame, and it has its own ease. Written every frame because the shape is
+   * tunable in the pane while playing, and because the eye and the target move every frame anyway.
+   *
+   * The ease drives the **radius**, not the dither's strength. Ramping the strength puts the whole disc
+   * through a stipple on the way in and on the way out, which is a lot of crawling noise across a wide
+   * surface; growing the radius keeps the interior fully cut from the first frame, so stipple only ever
+   * lives in the thin feather ring and the hole reads as an aperture opening around the character.
+   */
+  maskOpen = chase(maskOpen, live.seeThrough ? 1 : 0, frameDt, params.camMaskSmooth)
+  if (live.seeThrough) maskOccluders = live.occluders
+  else if (maskOpen < 0.004) maskOccluders = [] // shut: hand the plain materials back
+  levelView?.setOccluders(maskOccluders)
+  cutout.set({
+    camera: vec3(camera.position.x, camera.position.y, camera.position.z),
+    // The capsule's centre, *not* the camera's look target: that one is a metre higher, at the top of the
+    // head, so the hole would be centred there and the feet would fall outside it. It also carries the
+    // landing dip, which the hole has no business following.
+    target: vec3(ownPos.x, ownPos.y, ownPos.z),
+    radius: params.camMaskRadius * maskOpen,
+    feather: params.camMaskFeather,
+    // Full strength whenever there is any hole at all: the aperture is the animation.
+    strength: maskOpen > 0 ? 1 : 0,
+  })
 
   // Your own rig's visibility, decided here because three things want a say and the third needs the
   // camera placed first: death (the ragdoll has the floor), the spawn assembly (the body has not landed

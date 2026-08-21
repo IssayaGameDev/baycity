@@ -2,6 +2,7 @@ import type { VisualItem, WorldMarker } from '@mp/content'
 import * as THREE from 'three'
 
 import type { AssetRuntime } from './assetRuntime'
+import type { CutoutMask } from './cutout'
 import { colorForMarker, createGreyboxMaterial, geometryForCollider } from './materials'
 
 /**
@@ -15,6 +16,19 @@ export interface LevelView {
   group: THREE.Group
   /** Copy each visual's current position/rotation onto its mesh (moving/rotating pieces). */
   sync: () => void
+  /**
+   * Which colliders are between the eye and the character right now (ADR 0055). Their meshes get a masked
+   * copy of their material and dither a hole; everything else keeps the plain one and is untouched.
+   *
+   * Handles, because that is what a physics cast answers with. A no-op unless a `cutout` was supplied.
+   * Cheap to call every frame: it diffs against what is already swapped.
+   */
+  setOccluders: (handles: readonly number[]) => void
+  /**
+   * The meshes currently wearing a hole. For the ambient-occlusion pass, which has to skip exactly these
+   * and nothing else — see `PostFXOptions.aoIgnores`.
+   */
+  occluding: () => readonly THREE.Object3D[]
   dispose: () => void
 }
 
@@ -29,13 +43,28 @@ export interface LevelViewOptions {
    * level is never briefly walkable with its geometry still arriving.
    */
   assets?: AssetRuntime
+  /**
+   * The see-through hole (ADR 0055). Supplying one enables `setOccluders`; without it that call does
+   * nothing and no material is ever copied, so a tool that wants to look at the level as it is — the
+   * editor, the viewer — pays nothing at all.
+   *
+   * Level geometry only. The character rig, the markers and the sky are built elsewhere and stay solid,
+   * which is the point: the hole exists so you can see the character *through* the level.
+   */
+  cutout?: CutoutMask
 }
 
 export const addLevel = (scene: THREE.Scene, visuals: VisualItem[], opts: LevelViewOptions = {}): LevelView => {
   const shadows = opts.shadows ?? true
   const assets = opts.assets
+  const cutout = opts.cutout
   const group = new THREE.Group()
   const pairs: { v: VisualItem; object: THREE.Object3D }[] = []
+  /**
+   * A cast answers with a collider handle; this is the way back to what is on screen. A node drawing a
+   * model lists all of its colliders against the one mesh, and a mesh can appear under several handles.
+   */
+  const meshesByHandle = new Map<number, THREE.Mesh[]>()
   // Only what this view created gets disposed. A model instance's geometry belongs to the runtime's cached
   // original, and a material may be shared by every piece using it, so neither is this view's to free.
   const owned: { geometries: THREE.BufferGeometry[]; materials: THREE.Material[] } = { geometries: [], materials: [] }
@@ -75,12 +104,37 @@ export const addLevel = (scene: THREE.Scene, visuals: VisualItem[], opts: LevelV
       if (o instanceof THREE.Mesh) {
         o.castShadow = shadows
         o.receiveShadow = shadows
+        if (cutout !== undefined) {
+          for (const handle of v.colliderHandles) {
+            const list = meshesByHandle.get(handle)
+            if (list === undefined) meshesByHandle.set(handle, [o])
+            else list.push(o)
+          }
+        }
       }
     })
     group.add(object)
     pairs.push({ v, object })
   }
   scene.add(group)
+
+  /**
+   * The masked copy of each material, built on first need and kept — a mesh goes in and out of occluding
+   * many times a second, and cloning per frame would be a new compiled program's worth of bookkeeping
+   * every time. Keyed by the plain material, so every piece sharing one shares its copy too.
+   */
+  const variants = new Map<THREE.Material, THREE.Material>()
+  /** What each swapped mesh had before, so it can be put back exactly. */
+  const plain = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>()
+  let masked: THREE.Mesh[] = []
+
+  const variantOf = (m: THREE.Material): THREE.Material => {
+    const found = variants.get(m)
+    if (found !== undefined) return found
+    const made = (cutout as CutoutMask).variant(m)
+    variants.set(m, made)
+    return made
+  }
 
   return {
     group,
@@ -90,9 +144,32 @@ export const addLevel = (scene: THREE.Scene, visuals: VisualItem[], opts: LevelV
         object.quaternion.set(v.rotation.x, v.rotation.y, v.rotation.z, v.rotation.w)
       }
     },
+    setOccluders: (handles) => {
+      if (cutout === undefined) return
+      const wanted: THREE.Mesh[] = []
+      for (const handle of handles) {
+        for (const mesh of meshesByHandle.get(handle) ?? []) if (!wanted.includes(mesh)) wanted.push(mesh)
+      }
+      // Restore first, so a mesh that is in both sets is left alone rather than restored after swapping.
+      for (const mesh of masked) {
+        if (wanted.includes(mesh)) continue
+        const was = plain.get(mesh)
+        if (was !== undefined) mesh.material = was
+        plain.delete(mesh)
+      }
+      for (const mesh of wanted) {
+        if (plain.has(mesh)) continue
+        plain.set(mesh, mesh.material)
+        mesh.material = Array.isArray(mesh.material) ? mesh.material.map(variantOf) : variantOf(mesh.material)
+      }
+      masked = wanted
+    },
+    occluding: () => masked,
     dispose: () => {
       for (const g of owned.geometries) g.dispose()
       for (const m of owned.materials) m.dispose()
+      // The copies are this view's, unlike the originals, which the asset runtime owns.
+      for (const m of variants.values()) m.dispose()
       scene.remove(group)
     },
   }

@@ -50,6 +50,17 @@ export interface VisualItem {
   model: string | undefined
   /** Material asset id. Absent means nobody has chosen a surface, and the renderer greyboxes it. */
   material: string | undefined
+  /**
+   * The colliders this drawing stands for — the link from a query's answer back to the thing on screen.
+   *
+   * Usually one, since a greybox visual is one collider's shape. A node drawing a **model** gets a single
+   * visual for the whole node, so it lists every collider the node owns: a cast that hits any of them has
+   * hit that mesh.
+   *
+   * Exists for the camera, which needs to know *which surface* is in the way and not merely that something
+   * is (ADR 0055). Written during the build and read-only afterwards.
+   */
+  colliderHandles: number[]
 }
 
 /**
@@ -437,6 +448,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         rotation: { ...f.worldRot },
         model: drawsModel ? model : undefined,
         material: surfaced === '' ? undefined : surfaced,
+        colliderHandles: [],
       }
       visuals.push(v)
       return v
@@ -444,6 +456,8 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
 
     if (colliders.length > 0) {
       nodes.push(worldNode)
+      // A model draws once for the whole node, so every collider on it points back at this one visual.
+      let modelItem: VisualItem | undefined
       colliders.forEach((c, n) => {
         const collider = scaleCollider(shapeOf(c), f.scale)
         const shape = toShape(collider)
@@ -463,7 +477,17 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         handles.push(body.colliderHandle)
         // A model draws once for the whole node and rides the first body, so a single-collider node still
         // produces exactly one dynamic with both fields — the shape every existing piece has.
-        const paired = renderer === undefined ? undefined : drawsModel ? (n === 0 ? item(collider, at) : undefined) : item(collider, at)
+        let paired: VisualItem | undefined
+        if (renderer !== undefined) {
+          if (drawsModel) {
+            if (n === 0) modelItem = item(collider, at)
+            modelItem?.colliderHandles.push(body.colliderHandle)
+            paired = n === 0 ? modelItem : undefined
+          } else {
+            paired = item(collider, at)
+            paired.colliderHandles.push(body.colliderHandle)
+          }
+        }
         if (f.animated) addDynamic(f, body, paired, offset)
       })
     } else if (drawsModel) {
