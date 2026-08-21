@@ -225,16 +225,44 @@ export interface LoadedLevel {
 
 const LOOPS = new Set<string>(['loop', 'pingPong', 'once'])
 
+/**
+ * Where a clip's keys come from (ADR 0050).
+ *
+ * A capability passed in, like `TypeInfo`, rather than an asset database imported here: this package is
+ * headless and knows nothing about fetching files. Absent means no clip resolves, which is the right
+ * behaviour for a caller that has no asset layer — a level whose movers are all inline still loads.
+ */
+export interface ClipSource {
+  readonly keys: (assetId: string) => readonly Keyframe[] | undefined
+}
+
+/**
+ * The keys a `Track` plays: its own inline `keys` if it has any, otherwise the clip its `clip` names.
+ *
+ * **Inline wins**, which is most-local-wins — the same precedence a node's own `MaterialOverride` has over
+ * the one it inherited. The editor keeps the two exclusive, so this rule only ever decides a hand-edited
+ * file; having a rule at all is what stops such a file from being ambiguous.
+ *
+ * A `clip` naming an asset that is missing resolves to no keys, so the object stands still at its transform.
+ * A dangling reference is a mover that stopped moving, not a level that fails to load.
+ */
+const keysOf = (track: ComponentData, clips: ClipSource | undefined): readonly Keyframe[] => {
+  const inline = track.params.keys
+  if (Array.isArray(inline) && inline.length > 0) return inline as readonly Keyframe[]
+  const clip = track.params.clip
+  return typeof clip === 'string' && clip !== '' ? (clips?.keys(clip) ?? []) : []
+}
+
 /** A `Track` component as the `Behavior` the frame tree already evaluates. No keys means no motion. */
-const behaviorOf = (track: ComponentData | undefined): Behavior => {
+const behaviorOf = (track: ComponentData | undefined, clips: ClipSource | undefined): Behavior => {
   if (track === undefined) return { kind: 'static' }
-  const keys = track.params.keys
-  if (!Array.isArray(keys) || keys.length === 0) return { kind: 'static' }
+  const keys = keysOf(track, clips)
+  if (keys.length === 0) return { kind: 'static' }
   const loop = track.params.loop
   const phaseMs = track.params.phaseMs
   return {
     kind: 'track',
-    keys: keys as readonly Keyframe[],
+    keys,
     ...(typeof loop === 'string' && LOOPS.has(loop) ? { loop: loop as LoopMode } : {}),
     ...(typeof phaseMs === 'number' && Number.isFinite(phaseMs) ? { phaseMs } : {}),
   }
@@ -250,7 +278,7 @@ const shapeOf = (c: ComponentData): ColliderDesc => {
   return shape !== null && typeof shape === 'object' && 'kind' in shape ? (shape as ColliderDesc) : UNIT_BOX
 }
 
-export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeInfo): LoadedLevel => {
+export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeInfo, clips?: ClipSource): LoadedLevel => {
   const visuals: VisualItem[] = []
   const markers: WorldMarker[] = []
   const lights: WorldLight[] = []
@@ -332,7 +360,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
    */
   const build = (node: Node, parent: Frame | null, inheritedMaterial: string | undefined, scope: number): void => {
     const r = effectiveNode(level, node, types)
-    const f = makeFrame(r.transform, behaviorOf(firstOfType(r.components, TRACK)), parent)
+    const f = makeFrame(r.transform, behaviorOf(firstOfType(r.components, TRACK), clips), parent)
     // A placement opens a scope: everything it inherits from its prefab resolves references among itself.
     // The placement node is the prefab's root, so it belongs to that scope too.
     const inner = r.inheritedCount > 0 ? ++nextScope : scope

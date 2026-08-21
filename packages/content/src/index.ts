@@ -32,7 +32,7 @@ export type { Resolved, TypeInfo } from './nodes'
 export { LevelError, validateLevel } from './validate'
 export type { ParamChecker } from './validate'
 export { instantiateLevel } from './loader'
-export type { BasePhase, LoadedLevel, VisualItem, WorldLight, WorldMarker, WorldNode } from './loader'
+export type { BasePhase, ClipSource, LoadedLevel, VisualItem, WorldLight, WorldMarker, WorldNode } from './loader'
 export {
   ASSET_KINDS,
   META_SUFFIX,
@@ -40,10 +40,11 @@ export {
   buildDatabase,
   entriesFrom,
   entryFor,
+  isAnimationAsset,
   kindForPath,
   materialDependencies,
   nameForPath,
 } from './assets'
-export type { AssetDatabase, AssetEntry, AssetKind, AssetMeta, MaterialAsset, MaterialValue } from './assets'
+export type { AnimationAsset, AssetDatabase, AssetEntry, AssetKind, AssetMeta, MaterialAsset, MaterialValue } from './assets'
 export { easeAt, isAnimated, moveTrack, poseAt, spinTrack, trackDuration, trackTime } from './track'
 export type { Pose } from './track'

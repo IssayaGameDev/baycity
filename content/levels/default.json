@@ -13,7 +13,7 @@
     "environment": {
       "sun": {
         "elevation": 30,
-        "azimuth": 38,
+        "azimuth": -29,
         "intensity": 1.2,
         "color": "#ffffff",
         "shadows": true
@@ -22,7 +22,7 @@
         "intensity": 0.2
       },
       "sky": {
-        "topColor": "#2f86cc",
+        "topColor": "#2967d1",
         "bottomColor": "#0a1424",
         "gradientBias": 1.15,
         "gain": 2.6,
@@ -538,164 +538,6 @@
       ]
     },
     {
-      "id": "n1",
-      "name": "step",
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 0.2,
-          "z": 6
-        }
-      },
-      "components": [],
-      "children": [
-        {
-          "id": "n1-p0",
-          "transform": {
-            "position": {
-              "x": -6.5,
-              "y": 0,
-              "z": -7.5
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 2,
-                    "y": 0.2,
-                    "z": 2
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "55205761e38bc929"
-              }
-            },
-            {
-              "id": "893c75f8",
-              "type": "Track",
-              "params": {
-                "keys": [
-                  {
-                    "t": 0,
-                    "position": {
-                      "x": 7,
-                      "y": -0.2,
-                      "z": -7.5
-                    },
-                    "easing": "inOut"
-                  },
-                  {
-                    "t": 1000,
-                    "position": {
-                      "x": 7,
-                      "y": 9.8,
-                      "z": -7.5
-                    },
-                    "easing": "inOut"
-                  },
-                  {
-                    "t": 2000,
-                    "position": {
-                      "x": 7,
-                      "y": -0.2,
-                      "z": -7.5
-                    }
-                  }
-                ],
-                "loop": "loop",
-                "phaseMs": 0
-              }
-            }
-          ]
-        },
-        {
-          "id": "n8",
-          "name": "turntable",
-          "transform": {
-            "position": {
-              "x": 7,
-              "y": 0.3,
-              "z": -7.5
-            }
-          },
-          "components": [
-            {
-              "id": "o0",
-              "type": "Track",
-              "params": {
-                "keys": [
-                  {
-                    "t": 0,
-                    "rotation": {
-                      "x": 0,
-                      "y": 0,
-                      "z": 0
-                    },
-                    "easing": "linear"
-                  },
-                  {
-                    "t": 6000,
-                    "rotation": {
-                      "x": 0,
-                      "y": 6.2832,
-                      "z": 0
-                    }
-                  }
-                ],
-                "loop": "loop",
-                "phaseMs": 0
-              }
-            }
-          ],
-          "children": [
-            {
-              "id": "n8-p0",
-              "transform": {
-                "position": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 0
-                }
-              },
-              "components": [
-                {
-                  "id": "c0",
-                  "type": "Collider",
-                  "params": {
-                    "shape": {
-                      "kind": "box",
-                      "halfExtents": {
-                        "x": 3,
-                        "y": 0.15,
-                        "z": 0.6
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "c1",
-                  "type": "Renderer",
-                  "params": {
-                    "material": "19079ddb3fbfb27e"
-                  }
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    },
-    {
       "id": "n2",
       "name": "rise-1",
       "transform": {
@@ -955,8 +797,8 @@
                 "t": 0,
                 "position": {
                   "x": 0,
-                  "y": 3.6,
-                  "z": 37
+                  "y": 0,
+                  "z": 0
                 },
                 "easing": "inOut"
               },
@@ -964,8 +806,8 @@
                 "t": 2000,
                 "position": {
                   "x": 0,
-                  "y": 6.6,
-                  "z": 37
+                  "y": 3,
+                  "z": 0
                 },
                 "easing": "inOut"
               },
@@ -973,8 +815,8 @@
                 "t": 4000,
                 "position": {
                   "x": 0,
-                  "y": 3.6,
-                  "z": 37
+                  "y": 0,
+                  "z": 0
                 }
               }
             ],
@@ -1256,6 +1098,259 @@
           "id": "c0",
           "type": "Spawn",
           "params": {}
+        }
+      ]
+    },
+    {
+      "id": "n1",
+      "name": "step",
+      "transform": {
+        "position": {
+          "x": 8,
+          "y": 0.2,
+          "z": -2
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "n1-p0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 2,
+                    "y": 0.2,
+                    "z": 2
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "893c75f8",
+              "type": "Track",
+              "params": {
+                "keys": [
+                  {
+                    "t": 0,
+                    "position": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "easing": "inOut"
+                  },
+                  {
+                    "t": 1000,
+                    "position": {
+                      "x": 0,
+                      "y": 10,
+                      "z": 0
+                    },
+                    "easing": "inOut"
+                  },
+                  {
+                    "t": 2000,
+                    "position": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                ],
+                "loop": "loop",
+                "phaseMs": 0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "1fab32c2",
+      "name": "step",
+      "transform": {
+        "position": {
+          "x": -9,
+          "y": 0.2,
+          "z": -2
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "86cfa8d1",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 2,
+                    "y": 0.2,
+                    "z": 2
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "893c75f8",
+              "type": "Track",
+              "params": {
+                "keys": [
+                  {
+                    "t": 0,
+                    "position": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "easing": "inOut"
+                  },
+                  {
+                    "t": 0,
+                    "position": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  },
+                  {
+                    "t": 0,
+                    "position": {
+                      "x": 0,
+                      "y": 10,
+                      "z": 0
+                    },
+                    "easing": "inOut"
+                  }
+                ],
+                "loop": "loop",
+                "phaseMs": 0
+              }
+            }
+          ],
+          "children": [
+            {
+              "id": "b0639e1c",
+              "name": "turntable",
+              "transform": {
+                "position": {
+                  "x": 0,
+                  "y": 0.3,
+                  "z": 0
+                }
+              },
+              "components": [
+                {
+                  "id": "o0",
+                  "type": "Track",
+                  "params": {
+                    "keys": [
+                      {
+                        "t": 0,
+                        "rotation": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        },
+                        "easing": "linear"
+                      },
+                      {
+                        "t": 6000,
+                        "rotation": {
+                          "x": 0,
+                          "y": 6.2832,
+                          "z": 0
+                        }
+                      }
+                    ],
+                    "loop": "loop",
+                    "phaseMs": 0
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "id": "866a0a2c",
+                  "transform": {
+                    "position": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 1.1,
+                      "y": 0.65,
+                      "z": 0.2
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "c0",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 3,
+                            "y": 0.15,
+                            "z": 0.6
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "id": "c1",
+                      "type": "Renderer",
+                      "params": {
+                        "material": "4a11d049f9f8e5ac"
+                      }
+                    },
+                    {
+                      "id": "579c2464",
+                      "type": "Hazard",
+                      "params": {}
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
         }
       ]
     }

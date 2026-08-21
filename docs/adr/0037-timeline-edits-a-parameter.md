@@ -1,6 +1,11 @@
 # ADR 0037 — The timeline edits a declared parameter, not a privileged component
 
-Status: accepted. Narrows ADR 0029 (which introduced the timeline) to fit the component system of ADR 0035.
+Status: accepted, amended by [ADR 0050](0050-tracks-are-offsets-and-assets.md) and [ADR 0051](0051-dope-sheet.md) — the keys a `keyEditor`
+addresses may now come from an animation asset rather than the component's own parameter, and `oneKeyAt(pose)`
+became `restKeys()` since a fresh track holds the rest pose by being zero. The parameter-addressing decision
+below is what made that cheap: the strip never learned the difference.
+
+Narrows ADR 0029 (which introduced the timeline) to fit the component system of ADR 0035.
 
 ## Context
 

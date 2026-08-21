@@ -77,7 +77,7 @@ export interface Vec3Spec extends SpecBase {
 /** An asset id, restricted to one kind so the Inspector can offer the right list. `''` means none. */
 export interface AssetSpec extends SpecBase {
   readonly kind: 'asset'
-  readonly of: 'material' | 'model'
+  readonly of: 'material' | 'model' | 'animation'
   readonly default: string
 }
 /** A collision shape. Its own kind rather than a bag of numbers, so the Inspector can switch shape. */
@@ -85,9 +85,17 @@ export interface ColliderSpec extends SpecBase {
   readonly kind: 'collider'
   readonly default: ColliderDesc
 }
-/** A keyframe track, edited by the existing timeline (ADR 0029). Always defaults to empty. */
+/** A keyframe track, edited by the timeline (ADR 0029). Always defaults to empty. */
 export interface KeysSpec extends SpecBase {
   readonly kind: 'keys'
+  /**
+   * Name of the sibling `asset` parameter that may hold these keys as a clip instead (ADR 0050).
+   *
+   * Declared rather than assumed, so the timeline keeps addressing a *parameter* and not a privileged
+   * component: ADR 0037 exists to stop the panel from knowing what a `Track` is, and reaching for a field
+   * called `clip` by name would have put that knowledge straight back.
+   */
+  readonly clip?: string
 }
 /** A pointer to another node, by id. Always defaults to `null`. Resolution lands in stage C4. */
 export interface NodeRefSpec extends SpecBase {

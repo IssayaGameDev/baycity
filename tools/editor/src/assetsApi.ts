@@ -1,11 +1,21 @@
-import { buildDatabase, type AssetDatabase, type AssetEntry, type MaterialAsset, type Node } from '@mp/content'
+import {
+  buildDatabase,
+  isAnimationAsset,
+  type AnimationAsset,
+  type AssetDatabase,
+  type AssetEntry,
+  type Keyframe,
+  type MaterialAsset,
+  type Node,
+} from '@mp/content'
 
 /**
  * Client for the dev server's asset routes (see vite.config.ts).
  *
- * Materials are fetched eagerly and kept in memory. They are tiny JSON, and it makes `materialOf`
- * synchronous — which the material compiler needs, since compiling is a pure step after the preload pass
- * rather than something that awaits mid-scene-build.
+ * Materials, prefabs and animation clips are fetched eagerly and kept in memory. They are tiny JSON, and it
+ * makes `materialOf` and `keys` synchronous — which the material compiler and the loader both need, since
+ * compiling and instantiating are pure steps after the preload pass rather than things that await
+ * mid-scene-build.
  */
 export interface AssetLibrary {
   db: AssetDatabase
@@ -18,6 +28,19 @@ export interface AssetLibrary {
   materialOf: (assetId: string) => MaterialAsset | undefined
   /** A loaded prefab asset's JSON, by asset id. */
   prefabOf: (assetId: string) => Node | undefined
+  /** A loaded animation clip's keys, by asset id (ADR 0050). Satisfies `ClipSource`. */
+  keys: (assetId: string) => readonly Keyframe[] | undefined
+  /**
+   * Replace a clip's keys in memory, without touching disk.
+   *
+   * Split from `saveClip` because the timeline writes on every pointer event of a drag: the viewport has to
+   * follow at once, and a PUT per event would flood the dev server. The caller flushes when the edit settles.
+   */
+  setClipKeys: (assetId: string, keys: readonly Keyframe[]) => void
+  /** Write a clip to disk from what `setClipKeys` last put in memory. */
+  saveClip: (assetId: string) => Promise<void>
+  /** Create `<name>.anim.json` in `folder`. Resolves once the importer has given it an id. */
+  createAnimation: (name: string, clip: AnimationAsset, folder?: string) => Promise<AssetEntry | undefined>
   /** Overwrite a material on disk and in memory. */
   saveMaterial: (assetId: string, material: MaterialAsset) => Promise<void>
   /** Overwrite a prefab asset on disk and in memory. */
@@ -59,24 +82,28 @@ const post = async (route: string, body: unknown): Promise<void> => {
   }
 }
 
-/** Fetch the database and every material in it. */
+/** Fetch the database and every JSON asset in it. */
 export const loadAssetLibrary = async (): Promise<AssetLibrary> => {
   const { entries, folders } = await fetchJson<{ entries: AssetEntry[]; folders: string[] }>('/api/assets')
   const db = buildDatabase(entries)
   const materials = new Map<string, MaterialAsset>()
   const prefabs = new Map<string, Node>()
+  const clips = new Map<string, AnimationAsset>()
 
-  // Materials and prefabs are small JSON and both are needed synchronously — a material to compile, a
-  // prefab to preview or place — so they are fetched up front rather than on demand.
+  // All three are small JSON and all three are needed synchronously — a material to compile, a prefab to
+  // preview or place, a clip to pose a mover — so they are fetched up front rather than on demand.
   await Promise.all(
     entries
-      .filter((e) => e.kind === 'material' || e.kind === 'prefab')
+      .filter((e) => e.kind === 'material' || e.kind === 'prefab' || e.kind === 'animation')
       .map(async (e) => {
         try {
           const parsed = await fetchJson<unknown>(assetUrl(e.path))
           if (e.kind === 'material') {
             if (isMaterial(parsed)) materials.set(e.id, parsed)
             else console.warn(`material ${e.path}: no shader`)
+          } else if (e.kind === 'animation') {
+            if (isAnimationAsset(parsed)) clips.set(e.id, parsed)
+            else console.warn(`animation ${e.path}: no keys`)
           } else if (isPrefab(parsed)) prefabs.set(e.id, parsed)
           else console.warn(`prefab ${e.path}: no pieces`)
         } catch (err) {
@@ -110,6 +137,25 @@ export const loadAssetLibrary = async (): Promise<AssetLibrary> => {
     },
     materialOf: (id) => materials.get(id),
     prefabOf: (id) => prefabs.get(id),
+    keys: (id) => clips.get(id)?.keys,
+    setClipKeys: (id, keys) => {
+      clips.set(id, { keys })
+    },
+    saveClip: async (id) => {
+      const entry = db.byId[id]
+      const clip = clips.get(id)
+      if (entry === undefined || clip === undefined) throw new Error(`animation ${id}: not in the database`)
+      await put(entry.path, clip)
+    },
+    createAnimation: async (name, clip, folder = 'animations') => {
+      const safe = name.replace(/[^\w-]+/g, '-') || 'animation'
+      const path = `${folder === '' ? '' : `${folder}/`}${safe}.anim.json`
+      await put(path, clip)
+      const entry = await rescan(path)
+      // Held in memory straight away, so the clip resolves before the next full library reload.
+      if (entry !== undefined) clips.set(entry.id, clip)
+      return entry
+    },
     saveMaterial: async (id, material) => {
       const entry = db.byId[id]
       if (entry === undefined) throw new Error(`material ${id}: not in the database`)

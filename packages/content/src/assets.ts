@@ -1,5 +1,7 @@
 import type { Vec3 } from '@mp/core'
 
+import type { Keyframe } from './types'
+
 
 
 /**
@@ -14,10 +16,10 @@ import type { Vec3 } from '@mp/core'
  * Headless: this is the schema and the resolution rules. Loading a texture or compiling a material is a
  * renderer's job (`@mp/render-three`), and playing a sound is nobody's yet.
  */
-export type AssetKind = 'prefab' | 'texture' | 'model' | 'material' | 'shader' | 'sound' | 'font'
+export type AssetKind = 'prefab' | 'texture' | 'model' | 'material' | 'shader' | 'animation' | 'sound' | 'font'
 
 /** Every kind, for iteration in a browser panel and for validation. */
-export const ASSET_KINDS: readonly AssetKind[] = ['prefab', 'texture', 'model', 'material', 'shader', 'sound', 'font']
+export const ASSET_KINDS: readonly AssetKind[] = ['prefab', 'texture', 'model', 'material', 'shader', 'animation', 'sound', 'font']
 
 /**
  * What a `.meta` sidecar holds. Written once by the importer and then never regenerated — the id *is* the
@@ -94,6 +96,27 @@ export interface MaterialAsset {
   params: Record<string, MaterialValue>
 }
 
+/**
+ * An **animation asset** (`*.anim.json`): a reusable keyframe track on disk (ADR 0050).
+ *
+ * Only `keys`. `loop` and `phaseMs` stay parameters of the component that plays the clip, because they are
+ * per-placement: a staggered row of pistons is one clip and six phases, and one clip played once here and
+ * looping there is ordinary. So a clip is the *shape of the motion in time* and nothing about how it repeats.
+ *
+ * Shareable at all only because keys are offsets (see `Keyframe`). Under absolute keys a clip would have put
+ * every user in the same spot, which is why this asset kind could not exist before.
+ */
+export interface AnimationAsset {
+  keys: readonly Keyframe[]
+}
+
+/**
+ * Whether a parsed file is an animation clip. Structural, like the material and prefab checks: a `keys`
+ * array is what tells a clip from the other JSON asset kinds.
+ */
+export const isAnimationAsset = (v: unknown): v is AnimationAsset =>
+  typeof v === 'object' && v !== null && Array.isArray((v as { keys?: unknown }).keys)
+
 /** Suffix of an identity sidecar: `crate.glb` is described by `crate.glb.meta`. */
 export const META_SUFFIX = '.meta'
 
@@ -129,6 +152,7 @@ export const kindForPath = (path: string): AssetKind | undefined => {
   if (lower.endsWith('.mat.json')) return 'material'
   if (lower.endsWith('.shader.json')) return 'shader'
   if (lower.endsWith('.prefab.json')) return 'prefab'
+  if (lower.endsWith('.anim.json')) return 'animation'
   const dot = lower.lastIndexOf('.')
   if (dot < 0) return undefined
   return BY_EXTENSION[lower.slice(dot + 1)]
@@ -137,7 +161,7 @@ export const kindForPath = (path: string): AssetKind | undefined => {
 /** Display name: the file name with its extension (compound ones included) removed. */
 export const nameForPath = (path: string): string => {
   const file = path.slice(path.lastIndexOf('/') + 1)
-  for (const suffix of ['.mat.json', '.shader.json', '.prefab.json']) {
+  for (const suffix of ['.mat.json', '.shader.json', '.prefab.json', '.anim.json']) {
     if (file.toLowerCase().endsWith(suffix)) return file.slice(0, -suffix.length)
   }
   const dot = file.lastIndexOf('.')

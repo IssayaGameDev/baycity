@@ -50,11 +50,16 @@ export type ColliderDesc =
 export type Easing = 'linear' | 'in' | 'out' | 'inOut' | 'step'
 
 /**
- * One authored pose at `t` milliseconds from the start of a track.
+ * One authored **offset** from the node's transform, `t` milliseconds from the start of a track.
  *
- * Both channels are optional and mean "the authored transform's value" when absent, so a track that only
- * translates carries no rotation data at all. A key is a whole pose rather than a per-channel curve point:
- * one row of keys in the timeline, which is the UI this schema exists to serve.
+ * Offsets, not absolute poses (ADR 0050). A key of zero is the rest pose, and a key of `y: 3` means three
+ * metres up from wherever the node sits. That is what makes a track independent of where it was authored:
+ * duplicate the object, move it, reparent it, and its motion comes with it. Absolute keys welded a track to
+ * one spot in one level, which is why they could not be shared.
+ *
+ * Both channels are optional and contribute nothing when absent, so a track that only translates carries no
+ * rotation data at all. A key is a whole pose rather than a per-channel curve point: one row of keys in the
+ * timeline, which is the UI this schema exists to serve.
  *
  * `rotation` is euler radians like `Transform.rotation`, and is interpolated **per component** rather than
  * as a quaternion. That is deliberate: slerp between identity and a full turn is degenerate (they are the
@@ -87,9 +92,10 @@ export type LoopMode = 'loop' | 'pingPong' | 'once'
  * `phaseMs` shifts this track's clock, which is what unlocks a staggered row of pistons. The duration is the
  * last key's `t`, derived rather than stored so the two cannot disagree.
  *
- * **A track replaces the node's local pose**, per channel, rather than adding to it — Unity's model. A
- * spinning object that is also tilted carries the tilt in its keys. Composition onto the *parent* is
- * unchanged, so a keyed bar under a keyed platform still rides it (ADR 0025).
+ * **A track offsets the node's local pose**, per channel, rather than replacing it (ADR 0050). A spinning
+ * object that is also tilted keeps the tilt in its transform, where a person can see and edit it, instead of
+ * having it baked into every key. Composition onto the *parent* is unchanged, so a keyed bar under a keyed
+ * platform still rides it (ADR 0025).
  */
 export type Behavior =
   | { readonly kind: 'static' }

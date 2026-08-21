@@ -1,26 +1,52 @@
-import { trackDuration, type Keyframe, type Pose } from '@mp/content'
+import type { Keyframe, Pose } from '@mp/content'
 
-import { DIRS, EASINGS, deleteKey, keyRows, moveKey, nudgeKey, putKey, setEasing, snapTime, sortedKeys } from './trackEdit'
+import {
+  CHANNELS,
+  DIRS,
+  EASINGS,
+  channelRow,
+  channelSegments,
+  copyKeys,
+  deleteKeys,
+  moveChannelKey,
+  moveKeys,
+  nudgeKey,
+  pasteKeys,
+  putKey,
+  setEasingOn,
+  setKeyPose,
+  snapTime,
+  sortedKeys,
+  trackDuration,
+  type Channel,
+} from './trackEdit'
 import type { ContextMenu, MenuItem } from './menu'
 
 /**
- * The Animation panel: the timeline strip (ADR 0029).
+ * The Animation panel: a dope sheet (ADR 0029 for the schema, ADR 0051 for this panel).
  *
- * Time lives here and space lives in the viewport. That split is the reason there is no graph editor — a
- * graph editor unifies them into one curve per channel, which is the right tool for character animation and
- * the wrong one for "this platform rises three metres and pauses". So: diamonds on a ruler for *when*, the
- * existing transform gizmo for *where*, and a named curve per segment instead of bezier handles.
+ * Time lives here and space lives in the viewport. That split is the reason there is no curve editor — a curve
+ * editor unifies them into one graph per channel, which is the right tool for character animation and the
+ * wrong one for "this platform rises three metres and pauses", where nudging a platform sideways would mean
+ * typing numbers into three graphs. So: rows of diamonds for *when*, the transform gizmo for *where*.
  *
- * Rebuilt wholesale on `render`, like the Hierarchy: a track is a handful of keys, and diffing would buy
- * nothing but a class of stale-node bugs.
+ * **A row per channel.** A key carrying position and rotation used to be a single diamond with no way to grab
+ * half of it. Dragging one on its own row splits it (`moveChannelKey`), which the schema always allowed and
+ * the single-row panel simply could not express.
  *
- * **It edits one component's `keys` parameter**, named in its heading and opened from that component's section
- * in the Inspector. It used to float beside the Project browser and address "the selection's track", which made
- * an animation the one thing in the editor that was not a component you could point at. The strip stays a wide
- * strip because a timeline needs horizontal room, and Unity keeps its Animation window out of the Inspector for
- * the same reason — but what it edits is a declared parameter like any other. So `loop` and `phase` are gone
- * from here: they are ordinary fields in the component's own section, and a second copy was the duplication
- * worth deleting.
+ * **A real time axis.** A view window in milliseconds, positioned in pixels, so drawing and hit-testing share
+ * one transform and zooming is possible at all. The old strip laid keys out in CSS percentages of a span fixed
+ * at `duration * 1.25`, so the whole track always filled the width and nothing could be looked at closely.
+ *
+ * **The shell is built once.** Toolbar, gutter, lanes, ruler, playhead and marquee are created here and never
+ * recreated; `render` replaces only the diamonds and segments inside the lanes, `layout` repositions them
+ * without touching the tree, and `syncHead` moves the playhead alone, sixty times a second. The old panel
+ * called `replaceChildren` on the whole strip for every edit, which is why the playhead needed a separate
+ * escape hatch to avoid cancelling the drag it was drawing.
+ *
+ * **It edits one component's `keys` parameter**, or the animation clip that component names (ADR 0050/0051),
+ * whichever the host hands it. `loop` and `phase` are not here: they are declared parameters of the component,
+ * edited in its own Inspector section, and a second copy was the duplication worth deleting (ADR 0037).
  */
 
 export interface TimelineHost {
@@ -30,17 +56,36 @@ export interface TimelineHost {
   setKeys: (keys: readonly Keyframe[]) => void
   /** Whether anything is selected at all — the panel has nothing to show otherwise. */
   hasSelection: () => boolean
-  /** Whose keys these are: the node and the component, so the strip says what it is editing. */
+  /** Whose keys these are: the node and the component, so the panel says what it is editing. */
   label: () => string
+  /**
+   * The clip these keys live in, when the open component names one (ADR 0050).
+   *
+   * `null` means the keys are the component's own. The panel says which, because editing a clip changes every
+   * object playing it and that must not be a surprise.
+   */
+  clip: () => { id: string; name: string } | null
+  /** Lift the open inline keys into a new clip asset and point the component at it. */
+  saveAsClip: () => void
+  /** Copy the clip's keys back inline and clear the reference, leaving this object on its own. */
+  unlinkClip: () => void
   /** Playhead, in milliseconds into the track. */
   time: () => number
   setTime: (ms: number) => void
-  /** Preview playback: the strip's own clock, not the game's. */
+  /** Preview playback: the panel's own clock, not the game's. */
   previewing: () => boolean
   setPreviewing: (on: boolean) => void
-  /** The key the gizmo is editing, or `null` when it is editing the whole object. */
-  activeKey: () => number | null
-  setActiveKey: (index: number | null) => void
+  /**
+   * Armed to record: a gizmo drag writes a key at the playhead on the channel it touched (ADR 0051).
+   *
+   * The panel owns the button and nothing else — the write happens where the drag is handled, since only that
+   * code knows which channel moved.
+   */
+  recording: () => boolean
+  setRecording: (on: boolean) => void
+  /** Selected keys, as indices into the sorted array, **primary last** — the ADR 0031 convention. */
+  selection: () => readonly number[]
+  setSelection: (indices: readonly number[]) => void
   /** The selected item's pose right now — what "+ key" records. */
   poseNow: () => Pose | null
   /** Grid to snap dragged keys and the playhead to, in ms. 0 for none. */
@@ -55,13 +100,18 @@ export interface TimelineHost {
 }
 
 export interface Timeline {
+  /** The track's shape changed — rebuild the rows. */
   render: () => void
   /**
    * Move the playhead only. Called every frame while previewing and on every scrub, where a full `render`
-   * would rebuild the whole strip 60 times a second and cancel the drag it was drawing.
+   * would rebuild the rows sixty times a second for a picture that is identical.
    */
   syncHead: () => void
 }
+
+/** Narrowest and widest the view may get, in milliseconds across the panel. */
+const MIN_SPAN = 40
+const MAX_SPAN = 600_000
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: string): HTMLElementTagNameMap[K] => {
   const node = document.createElement(tag)
@@ -74,8 +124,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, text?: 
 const secs = (ms: number): string => `${(ms / 1000).toFixed(1)}s`
 
 /**
- * A tick spacing that gives roughly one label every 90px, from a 1/2/5 series so the numbers stay round.
- * A ruler labelled every 137ms is worse than no ruler.
+ * A tick spacing that gives roughly one label every 90px, from a 1/2/5 series so the numbers stay round. A
+ * ruler labelled every 137ms is worse than no ruler.
  */
 export const tickStep = (spanMs: number, widthPx: number): number => {
   const target = (spanMs * 90) / Math.max(1, widthPx)
@@ -87,82 +137,151 @@ export const tickStep = (spanMs: number, widthPx: number): number => {
 }
 
 /**
- * The visible span: the track's length plus headroom, so a key dragged off the right-hand end **extends**
- * the track instead of hitting a wall. A minimum of one second keeps a fresh one-key track from being an
+ * The window a fresh track opens at: its length plus headroom, so a key dragged off the right-hand end
+ * **extends** the track instead of hitting a wall. A minimum of one second keeps a one-key track from being an
  * infinitely zoomed ruler.
  */
-export const visibleSpan = (durationMs: number): number => Math.max(1000, durationMs * 1.25)
+export const fitSpan = (durationMs: number): number => Math.max(1000, durationMs * 1.25)
+
+/** Keep the window over the track: a little slack each side, never so far out that the keys leave the panel. */
+export const clampStart = (startMs: number, spanMs: number, durationMs: number): number => {
+  const slack = spanMs * 0.05
+  return Math.max(-slack, Math.min(startMs, Math.max(0, durationMs) + slack))
+}
 
 export const createTimeline = (root: HTMLElement, host: TimelineHost): Timeline => {
-  /** The live playhead element and the span it is placed within, so `syncHead` needs no measuring. */
-  let head: { node: HTMLElement; span: number } | null = null
+  /** The visible window. Persists across selections, so scrubbing between two objects keeps your zoom. */
+  const view = { startMs: 0, spanMs: 4000 }
+  /** Keys lifted by Copy, rebased to 0. Survives a selection change, like any clipboard. */
+  let clipboard: readonly Keyframe[] = []
 
-  /**
-   * Right-click on a key: everything that happens to one key but not on a drag.
-   *
-   * The five easings go in a submenu. Flat, they were five of the eight entries and pushed the two that
-   * actually change the track to the bottom.
-   */
-  const openKeyMenu = (index: number, x: number, y: number): void => {
+  // ---- the shell, built once ---------------------------------------------------------------------------
+  const bar = el('div', 'tl-bar')
+  const body = el('div', 'tl-body')
+  const gutter = el('div', 'tl-gutter')
+  const lanes = el('div', 'tl-lanes')
+  const ruler = el('div', 'tl-ruler')
+  const head = el('div', 'tl-head')
+  const marquee = el('div', 'tl-marquee')
+  /** Where the track ends, since the view deliberately shows more than that. Part of the shell, not redrawn. */
+  const endMark = el('div', 'tl-end')
+  const fields = el('div', 'tl-fields')
+  const hint = el('p', 'hint')
+  marquee.hidden = true
+  head.hidden = true
+  lanes.append(ruler, head, endMark, marquee)
+  body.append(gutter, lanes)
+  root.append(bar, hint, body, fields)
+
+  /** One per channel, in `CHANNELS` order. Created once; their contents are what `render` replaces. */
+  const laneOf = new Map<Channel, HTMLElement>()
+  for (const channel of CHANNELS) {
+    const label = el('div', 'tl-name', channel)
+    label.title = `${channel} keys — drag one to retime just this channel`
+    gutter.append(label)
+    const lane = el('div', 'tl-lane')
+    lane.dataset.channel = channel
+    lanes.append(lane)
+    laneOf.set(channel, lane)
+  }
+
+  /** Every drawn key, so `layout` can reposition without touching the DOM tree. */
+  let drawn: { node: HTMLElement; channel: Channel; index: number; t: number }[] = []
+  let drawnSegments: { node: HTMLElement; fromMs: number; toMs: number }[] = []
+
+  const width = (): number => Math.max(1, lanes.clientWidth)
+  const pxPerMs = (): number => width() / view.spanMs
+  const xOf = (t: number): number => (t - view.startMs) * pxPerMs()
+  const tOf = (x: number): number => view.startMs + x / pxPerMs()
+  const timeAtClientX = (clientX: number): number => tOf(clientX - lanes.getBoundingClientRect().left)
+
+  const duration = (): number => {
     const keys = host.keys()
-    if (keys === null) return
-    const items: MenuItem[] = [
-      {
-        label: 'Ease out of this key',
-        items: EASINGS.map((easing) => ({ label: easing, run: () => host.setKeys(setEasing(keys, index, easing)) })),
-      },
-      { label: 'Duplicate 1ms later (instant jump)', divider: true, run: () => host.setKeys(nudgeKey(keys, index)) },
-      {
-        label: 'Delete key',
-        run: () => {
-          host.setKeys(deleteKey(keys, index))
-          host.setActiveKey(null)
-        },
-      },
-    ]
-    host.menu.open({ x, y }, items, `key at ${secs(keyRows(keys)[index]?.t ?? 0)}`)
+    return keys === null ? 0 : trackDuration(keys)
+  }
+
+  const fitView = (): void => {
+    view.spanMs = fitSpan(duration())
+    view.startMs = clampStart(0, view.spanMs, duration())
+    layout()
+  }
+
+  // ---- layout: pixels from the view, no DOM churn ------------------------------------------------------
+  const layout = (): void => {
+    const span = duration()
+
+    ruler.replaceChildren()
+    const step = tickStep(view.spanMs, width())
+    const first = Math.ceil(view.startMs / step) * step
+    for (let t = first; t <= view.startMs + view.spanMs; t += step) {
+      const tick = el('div', 'tl-tick')
+      tick.style.left = `${xOf(t)}px`
+      tick.append(el('span', undefined, secs(t)))
+      ruler.append(tick)
+    }
+    endMark.style.left = `${xOf(span)}px`
+
+    for (const k of drawn) k.node.style.left = `${xOf(k.t)}px`
+    for (const s of drawnSegments) {
+      const from = xOf(s.fromMs)
+      s.node.style.left = `${from}px`
+      s.node.style.width = `${Math.max(0, xOf(s.toMs) - from)}px`
+    }
+    syncHead()
   }
 
   const syncHead = (): void => {
-    if (head === null) return
-    head.node.style.left = `${(host.time() / head.span) * 100}%`
-  }
-
-  const render = (): void => {
-    // No menu to close: the shared one dismisses itself on the press that caused this render.
-    head = null
-    root.replaceChildren()
-
-    if (!host.hasSelection()) {
-      root.append(el('p', 'hint', 'Select something in the viewport or the Hierarchy to animate it.'))
-      return
-    }
-
     const keys = host.keys()
-    root.append(buildToolbar(keys))
-    if (keys === null) {
-      root.append(el('p', 'hint', 'Nothing animatable selected. Add a Track in the Inspector, or start from a preset.'))
-      return
-    }
-    if (keys.length === 0) {
-      root.append(el('p', 'hint', 'No keys yet. Pose the object and press + key, or start from a preset.'))
-      return
-    }
-    root.append(buildStrip(keys))
+    head.hidden = keys === null
+    if (keys === null) return
+    head.style.left = `${xOf(host.time())}px`
   }
 
-  /** Everything above the strip: preview, the key tools, the duration, and the two presets. */
-  const buildToolbar = (keys: readonly Keyframe[] | null): HTMLElement => {
-    const bar = el('div', 'tl-bar')
-    bar.append(el('span', 'tl-who', host.label()))
+  // ---- selection helpers ------------------------------------------------------------------------------
+  const selected = (): Set<number> => new Set(host.selection())
+  const primary = (): number | null => {
+    const sel = host.selection()
+    return sel.length === 0 ? null : (sel[sel.length - 1] ?? null)
+  }
+
+  /** Add to, remove from, or replace the selection — the modifier rules the Hierarchy uses (ADR 0031). */
+  const pick = (index: number, additive: boolean): void => {
+    if (!additive) {
+      host.setSelection([index])
+      return
+    }
+    const sel = host.selection().filter((i) => i !== index)
+    // Primary last, so the numeric fields and the gizmo follow the key you just touched.
+    host.setSelection(host.selection().includes(index) ? sel : [...sel, index])
+  }
+
+  // ---- the toolbar ------------------------------------------------------------------------------------
+  const buildBar = (keys: readonly Keyframe[] | null): void => {
+    bar.replaceChildren()
+    const who = el('span', 'tl-who', host.label())
+    who.title = host.label()
+    bar.append(who)
+
+    const clip = host.clip()
+    if (clip !== null) {
+      const tag = el('span', 'tl-clip', `clip: ${clip.name}`)
+      tag.title = `these keys live in an animation asset — every object playing "${clip.name}" changes with them`
+      bar.append(tag)
+    }
 
     if (keys === null) {
       const add = el('button', 'ctl', '+ Add Track')
       add.title = 'give this object a Track component — the same thing the Inspector adds'
       add.addEventListener('click', host.addKeyComponent)
       bar.append(add, presetControls())
-      return bar
+      return
     }
+
+    const rec = el('button', 'ctl rec')
+    rec.textContent = '● REC'
+    rec.title = 'armed: moving the object with the gizmo writes a key at the playhead, on the channel you moved'
+    rec.classList.toggle('on', host.recording())
+    rec.addEventListener('click', () => host.setRecording(!host.recording()))
 
     const play = el('button', 'ctl')
     play.textContent = host.previewing() ? '■' : '▶'
@@ -171,28 +290,21 @@ export const createTimeline = (root: HTMLElement, host: TimelineHost): Timeline 
     play.addEventListener('click', () => host.setPreviewing(!host.previewing()))
 
     const addKey = el('button', 'ctl', '+ key')
-    addKey.title = 'record the current pose at the playhead'
-    addKey.addEventListener('click', () => {
-      const pose = host.poseNow()
-      if (pose === null) return
-      const t = host.time()
-      const next = putKey(keys, { t, position: pose.position, rotation: pose.rotation })
-      host.setKeys(next)
-      // Select what was just recorded, so the gizmo is immediately editing that key rather than the object.
-      host.setActiveKey(sortedKeys(next).findIndex((k) => k.t === t))
+    addKey.title = 'record the current pose at the playhead, both channels'
+    addKey.addEventListener('click', addKeyAtHead)
+
+    const fit = el('button', 'ctl', 'Fit')
+    fit.title = 'zoom the view to the whole track (wheel zooms, shift+wheel pans)'
+    fit.addEventListener('click', fitView)
+
+    const more = el('button', 'ctl', '⋯')
+    more.title = 'presets, clip actions, and what to do with the selected keys'
+    more.addEventListener('click', () => {
+      const box = more.getBoundingClientRect()
+      host.menu.open({ x: box.left, y: box.bottom }, trackMenu(), 'track')
     })
 
-    const clear = el('button', 'ctl', 'Clear keys')
-    clear.title = 'empty the track; the object keeps its authored transform and the component stays'
-    clear.addEventListener('click', () => {
-      host.setKeys([])
-      host.setActiveKey(null)
-    })
-
-    // No `loop` or `phase` here: they are declared parameters of the component, edited in its own Inspector
-    // section. A second copy in this bar is what made an animation feel like it lived somewhere else.
-    bar.append(play, addKey, clear, el('span', 'tl-dur', `${secs(trackDuration(keys))} · ${keys.length} keys`), presetControls())
-    return bar
+    bar.append(rec, play, addKey, fit, el('span', 'tl-dur', `${secs(trackDuration(keys))} · ${keys.length} keys`), more, presetControls())
   }
 
   /** The two presets, which are the only reason a direction picker still exists in this editor. */
@@ -230,123 +342,391 @@ export const createTimeline = (root: HTMLElement, host: TimelineHost): Timeline 
     return group
   }
 
-  /** The ruler, the key row and the playhead. */
-  const buildStrip = (keys: readonly Keyframe[]): HTMLElement => {
-    const strip = el('div', 'tl-strip')
-    const duration = trackDuration(keys)
-    const span = visibleSpan(duration)
-    const rows = keyRows(keys)
+  // ---- edits -----------------------------------------------------------------------------------------
+  const addKeyAtHead = (): void => {
+    const keys = host.keys()
+    const pose = host.poseNow()
+    if (keys === null || pose === null) return
+    const t = host.time()
+    const next = putKey(keys, { t, position: pose.position, rotation: pose.rotation })
+    host.setKeys(next)
+    // Select what was just recorded, so the gizmo is immediately editing that key rather than the object.
+    host.setSelection([sortedKeys(next).findIndex((k) => k.t === t)])
+  }
 
-    const pct = (t: number): number => (t / span) * 100
+  const deleteSelected = (): void => {
+    const keys = host.keys()
+    const sel = host.selection()
+    if (keys === null || sel.length === 0) return
+    host.setKeys(deleteKeys(keys, sel))
+    host.setSelection([])
+  }
 
-    // --- ruler
-    const ruler = el('div', 'tl-ruler')
-    const width = root.clientWidth || 800
-    const step = tickStep(span, width)
-    for (let t = 0; t <= span; t += step) {
-      const tick = el('div', 'tl-tick')
-      tick.style.left = `${pct(t)}%`
-      tick.append(el('span', undefined, secs(t)))
-      ruler.append(tick)
-    }
-    // Where the track actually ends, since the strip deliberately shows more than that.
-    const endMark = el('div', 'tl-end')
-    endMark.style.left = `${pct(duration)}%`
-    endMark.title = `track ends at ${secs(duration)}`
-    ruler.append(endMark)
+  const copySelected = (): void => {
+    const keys = host.keys()
+    if (keys === null) return
+    clipboard = copyKeys(keys, host.selection())
+  }
 
-    // --- key row, with the easing of each segment written between its two keys
-    const row = el('div', 'tl-row')
-    for (let i = 0; i < rows.length - 1; i++) {
-      const a = rows[i]!
-      const b = rows[i + 1]!
-      if (b.t === a.t) continue
-      const seg = el('div', 'tl-seg')
-      seg.style.left = `${pct(a.t)}%`
-      seg.style.width = `${pct(b.t) - pct(a.t)}%`
-      const held = a.easing === 'step'
-      seg.classList.toggle('step', held)
-      seg.append(el('span', undefined, a.easing))
-      seg.title = `click to change the curve out of the ${secs(a.t)} key`
-      seg.addEventListener('click', (e) => {
+  const pasteAtHead = (): void => {
+    const keys = host.keys()
+    if (keys === null || clipboard.length === 0) return
+    const next = pasteKeys(keys, clipboard, host.time())
+    host.setKeys(next.keys)
+    host.setSelection(next.indices)
+  }
+
+  /** Everything that acts on the track or the selected keys, in one menu rather than a row of buttons. */
+  const trackMenu = (): MenuItem[] => {
+    const keys = host.keys()
+    const sel = host.selection()
+    const clip = host.clip()
+    const many = sel.length > 1 ? ` (${sel.length})` : ''
+    return [
+      {
+        label: `Ease out of selected key${many}`,
+        enabled: sel.length > 0,
+        why: 'select a key first',
+        items: EASINGS.map((easing) => ({ label: easing, run: () => keys !== null && host.setKeys(setEasingOn(keys, sel, easing)) })),
+      },
+      { label: `Copy key${many}`, enabled: sel.length > 0, why: 'select a key first', run: copySelected },
+      { label: 'Paste at playhead', enabled: clipboard.length > 0, why: 'nothing copied', run: pasteAtHead },
+      {
+        label: 'Duplicate 1ms later (instant jump)',
+        enabled: sel.length === 1,
+        why: sel.length === 0 ? 'select a key first' : 'one key at a time',
+        run: () => {
+          const at = primary()
+          if (keys !== null && at !== null) host.setKeys(nudgeKey(keys, at))
+        },
+      },
+      { label: `Delete key${many}`, divider: true, enabled: sel.length > 0, why: 'select a key first', run: deleteSelected },
+      {
+        label: 'Clear all keys',
+        enabled: keys !== null && keys.length > 0,
+        why: 'already empty',
+        run: () => {
+          host.setKeys([])
+          host.setSelection([])
+        },
+      },
+      clip === null
+        ? {
+            label: 'Save as clip…',
+            divider: true,
+            enabled: keys !== null && keys.length > 0,
+            why: 'nothing to save',
+            run: host.saveAsClip,
+          }
+        : { label: `Unlink from ${clip.name}`, divider: true, run: host.unlinkClip },
+    ]
+  }
+
+  // ---- rows ------------------------------------------------------------------------------------------
+  const buildLane = (channel: Channel, keys: readonly Keyframe[]): void => {
+    const lane = laneOf.get(channel)!
+    lane.replaceChildren()
+
+    for (const seg of channelSegments(keys, channel)) {
+      const node = el('div', 'tl-seg')
+      node.classList.toggle('step', seg.easing === 'step')
+      node.append(el('span', undefined, seg.easing))
+      node.title = `click to change the curve out of the ${secs(seg.fromMs)} key`
+      node.addEventListener('click', (e) => {
         e.stopPropagation()
-        const next = EASINGS[(EASINGS.indexOf(a.easing) + 1) % EASINGS.length]!
-        host.setKeys(setEasing(keys, i, next))
+        const next = EASINGS[(EASINGS.indexOf(seg.easing) + 1) % EASINGS.length]!
+        host.setKeys(setEasingOn(keys, [seg.index], next))
       })
-      row.append(seg)
+      lane.append(node)
+      drawnSegments.push({ node, fromMs: seg.fromMs, toMs: seg.toMs })
     }
 
-    const active = host.activeKey()
-    for (const key of rows) {
+    const sel = selected()
+    for (const key of channelRow(keys, channel)) {
       const dot = el('div', 'tl-key')
-      dot.style.left = `${pct(key.t)}%`
-      dot.classList.toggle('on', key.index === active)
+      dot.classList.toggle('on', sel.has(key.index))
       dot.classList.toggle('stacked', key.stacked)
-      dot.classList.toggle('rot', !key.hasPosition && key.hasRotation)
-      dot.title = `${secs(key.t)}${key.hasPosition ? ' · pos' : ''}${key.hasRotation ? ' · rot' : ''}`
-
-      dot.addEventListener('pointerdown', (e) => {
-        e.stopPropagation()
-        if (e.button === 2) return
-        host.setActiveKey(key.index)
-        host.setTime(key.t)
-        // Drag to retime. The index follows the key when the drag carries it past a neighbour.
-        let index = key.index
-        let moved = false
-        const onMove = (m: PointerEvent): void => {
-          const t = snapTime(timeAtPointer(m, strip, span), host.snapMs())
-          if (!moved && Math.abs(t - key.t) < 1) return
-          moved = true
-          const next = moveKey(host.keys() ?? keys, index, t)
-          index = next.index
-          if (host.keys() !== null) host.setKeys(next.keys)
-          host.setActiveKey(index)
-          host.setTime(t)
-        }
-        const onUp = (): void => {
-          window.removeEventListener('pointermove', onMove)
-          window.removeEventListener('pointerup', onUp)
-        }
-        window.addEventListener('pointermove', onMove)
-        window.addEventListener('pointerup', onUp)
-      })
+      dot.classList.toggle('shared', key.shared)
+      dot.title = `${secs(key.t)} · ${channel}${key.shared ? ' (also keys the other channel — dragging splits it)' : ''}`
+      dot.addEventListener('pointerdown', (e) => beginKeyDrag(e, channel, key.index, key.t))
       dot.addEventListener('contextmenu', (e) => {
         e.preventDefault()
         e.stopPropagation()
-        openKeyMenu(key.index, e.clientX, e.clientY)
+        if (!selected().has(key.index)) host.setSelection([key.index])
+        host.menu.open({ x: e.clientX, y: e.clientY }, trackMenu(), `key at ${secs(key.t)}`)
       })
-      row.append(dot)
+      lane.append(dot)
+      drawn.push({ node: dot, channel, index: key.index, t: key.t })
     }
-
-    // --- playhead
-    const headNode = el('div', 'tl-head')
-    headNode.style.left = `${pct(host.time())}%`
-    head = { node: headNode, span }
-    strip.append(ruler, row, headNode)
-
-    // Scrubbing anywhere on the strip, which is the point: motion without entering Play.
-    strip.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return
-      host.setActiveKey(null)
-      const scrub = (m: PointerEvent): void => host.setTime(snapTime(timeAtPointer(m, strip, span), host.snapMs()))
-      scrub(e)
-      const onUp = (): void => {
-        window.removeEventListener('pointermove', scrub)
-        window.removeEventListener('pointerup', onUp)
-      }
-      window.addEventListener('pointermove', scrub)
-      window.addEventListener('pointerup', onUp)
-    })
-
-    return strip
   }
 
-  return { render, syncHead }
-}
+  const render = (): void => {
+    drawn = []
+    drawnSegments = []
+    endMark.hidden = true
 
-/** Pointer x as a time, clamped at zero. */
-const timeAtPointer = (e: PointerEvent, strip: HTMLElement, span: number): number => {
-  const box = strip.getBoundingClientRect()
-  const u = box.width > 0 ? (e.clientX - box.left) / box.width : 0
-  return Math.max(0, u * span)
+    const has = host.hasSelection()
+    const keys = has ? host.keys() : null
+    body.hidden = !has || keys === null || keys.length === 0
+    fields.hidden = body.hidden
+
+    if (!has) {
+      bar.replaceChildren()
+      hint.hidden = false
+      hint.textContent = 'Select something in the viewport or the Hierarchy to animate it.'
+      for (const lane of laneOf.values()) lane.replaceChildren()
+      return
+    }
+
+    buildBar(keys)
+    hint.hidden = keys !== null && keys.length > 0
+    if (keys === null) hint.textContent = 'Nothing animatable selected. Add a Track in the Inspector, or start from a preset.'
+    else if (keys.length === 0) hint.textContent = 'No keys yet. Arm REC and move the object, press + key, or start from a preset.'
+
+    if (keys === null || keys.length === 0) {
+      for (const lane of laneOf.values()) lane.replaceChildren()
+      return
+    }
+
+    endMark.hidden = false
+    endMark.title = `track ends at ${secs(trackDuration(keys))}`
+
+    for (const channel of CHANNELS) buildLane(channel, keys)
+    buildFields(keys)
+    layout()
+  }
+
+  // ---- the numeric row -------------------------------------------------------------------------------
+  /**
+   * Typed values for the primary selected key.
+   *
+   * The panel had nothing typeable at all: a key's time was whatever a diamond dragged at percentage
+   * precision landed on. Rotation is in **degrees** here, matching the Inspector, because radians are the
+   * storage format and degrees are what a person types.
+   */
+  const buildFields = (keys: readonly Keyframe[]): void => {
+    // Not while one of these has focus: committing a typed value re-renders, and replacing the input the
+    // person is still in would eat the next keystroke. The Inspector guards its name field the same way.
+    if (fields.contains(document.activeElement)) return
+    fields.replaceChildren()
+    const at = primary()
+    const sorted = sortedKeys(keys)
+    const key = at === null ? undefined : sorted[at]
+    if (at === null || key === undefined) {
+      fields.append(el('span', 'tl-lbl', 'no key selected — click a diamond, or drag a box over several'))
+      return
+    }
+
+    const num = (value: number, step: number, onCommit: (v: number) => void): HTMLInputElement => {
+      const input = el('input', 'ctl num')
+      input.type = 'number'
+      input.step = String(step)
+      input.value = String(Math.round(value * 1e4) / 1e4)
+      input.addEventListener('change', () => {
+        const v = Number(input.value)
+        if (Number.isFinite(v)) onCommit(v)
+      })
+      return input
+    }
+
+    fields.append(el('span', 'tl-lbl', `key ${at + 1}/${sorted.length}`))
+    fields.append(el('span', 'tl-lbl', 't'))
+    fields.append(
+      num(key.t, 50, (v) => {
+        const next = moveKeys(keys, [at], Math.max(0, v) - key.t)
+        host.setKeys(next.keys)
+        host.setSelection(next.indices)
+      }),
+    )
+
+    const axes = ['x', 'y', 'z'] as const
+    if (key.position !== undefined) {
+      const p = key.position
+      fields.append(el('span', 'tl-lbl', 'pos'))
+      for (const ax of axes) {
+        fields.append(num(p[ax], 0.1, (v) => host.setKeys(setKeyPose(keys, at, { position: { ...p, [ax]: v } }))))
+      }
+    }
+    if (key.rotation !== undefined) {
+      const r = key.rotation
+      fields.append(el('span', 'tl-lbl', 'rot°'))
+      for (const ax of axes) {
+        fields.append(
+          num((r[ax] * 180) / Math.PI, 5, (v) => host.setKeys(setKeyPose(keys, at, { rotation: { ...r, [ax]: (v * Math.PI) / 180 } }))),
+        )
+      }
+    }
+
+    const easing = el('select', 'ctl')
+    for (const name of EASINGS) {
+      const opt = el('option', undefined, name)
+      opt.value = name
+      easing.append(opt)
+    }
+    easing.value = key.easing ?? 'linear'
+    easing.title = host.selection().length > 1 ? 'the curve leaving every selected key' : 'the curve leaving this key'
+    easing.addEventListener('change', () => host.setKeys(setEasingOn(keys, host.selection(), easing.value as (typeof EASINGS)[number])))
+    fields.append(el('span', 'tl-lbl', 'ease'), easing)
+  }
+
+  // ---- gestures --------------------------------------------------------------------------------------
+  /**
+   * Drag a key in time.
+   *
+   * One selected key moves **its own channel**, splitting a key that carries both. Several move as whole keys,
+   * because a bulk drag is about shifting a passage of time and a selection can span both rows (see
+   * `moveChannelKey` and `moveKeys`).
+   */
+  const beginKeyDrag = (e: PointerEvent, channel: Channel, index: number, t0: number): void => {
+    e.stopPropagation()
+    if (e.button !== 0) return
+    pick(index, e.shiftKey || e.ctrlKey)
+    host.setTime(t0)
+
+    let at = index
+    let moved = false
+    const onMove = (m: PointerEvent): void => {
+      const keys = host.keys()
+      if (keys === null) return
+      const target = snapTime(timeAtClientX(m.clientX), host.snapMs())
+      if (!moved && Math.abs(target - t0) * pxPerMs() < 3) return
+      moved = true
+      const sel = host.selection()
+      if (sel.length > 1) {
+        const now = sortedKeys(keys)[at]
+        const seat = sel.indexOf(at)
+        if (now === undefined || seat < 0) return
+        const shifted = moveKeys(keys, sel, target - now.t)
+        host.setKeys(shifted.keys)
+        host.setSelection(shifted.indices)
+        // `moveKeys` returns the new indices in the order it was given, so the dragged key keeps its seat —
+        // reading the last one instead would start tracking whichever key happened to end up latest.
+        at = shifted.indices[seat] ?? at
+      } else {
+        const shifted = moveChannelKey(keys, at, channel, target)
+        at = shifted.index
+        host.setKeys(shifted.keys)
+        host.setSelection([at])
+      }
+      host.setTime(target)
+    }
+    const onUp = (): void => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
+  /**
+   * Scrubbing is on the **ruler**, box-select is in the lanes.
+   *
+   * The old panel scrubbed on a press anywhere in the strip, which is why it could never have had a marquee.
+   */
+  ruler.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || host.keys() === null) return
+    e.stopPropagation()
+    const scrub = (m: PointerEvent): void => host.setTime(Math.max(0, snapTime(timeAtClientX(m.clientX), host.snapMs())))
+    scrub(e)
+    const onUp = (): void => {
+      window.removeEventListener('pointermove', scrub)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', scrub)
+    window.addEventListener('pointerup', onUp)
+  })
+
+  /** Box-select. Vertical extent matters: a marquee over one lane selects only that channel's keys. */
+  lanes.addEventListener('pointerdown', (e) => {
+    if (host.keys() === null) return
+    if (e.button === 1) {
+      beginPan(e)
+      return
+    }
+    if (e.button !== 0) return
+    const box = lanes.getBoundingClientRect()
+    const from = { x: e.clientX - box.left, y: e.clientY - box.top }
+    let dragging = false
+
+    const onMove = (m: PointerEvent): void => {
+      const to = { x: m.clientX - box.left, y: m.clientY - box.top }
+      if (!dragging && Math.abs(to.x - from.x) < 3 && Math.abs(to.y - from.y) < 3) return
+      dragging = true
+      marquee.hidden = false
+      marquee.style.left = `${Math.min(from.x, to.x)}px`
+      marquee.style.top = `${Math.min(from.y, to.y)}px`
+      marquee.style.width = `${Math.abs(to.x - from.x)}px`
+      marquee.style.height = `${Math.abs(to.y - from.y)}px`
+
+      const lo = Math.min(from.x, to.x)
+      const hi = Math.max(from.x, to.x)
+      const top = Math.min(from.y, to.y)
+      const bottom = Math.max(from.y, to.y)
+      const hits: number[] = []
+      for (const k of drawn) {
+        const x = xOf(k.t)
+        if (x < lo || x > hi) continue
+        const r = k.node.getBoundingClientRect()
+        const ky = r.top + r.height / 2 - box.top
+        if (ky < top || ky > bottom) continue
+        if (!hits.includes(k.index)) hits.push(k.index)
+      }
+      host.setSelection(hits)
+    }
+    const onUp = (): void => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      marquee.hidden = true
+      // A press with no drag is "deselect", which is what clicking empty space should mean.
+      if (!dragging) host.setSelection([])
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  })
+
+  const beginPan = (e: PointerEvent): void => {
+    e.preventDefault()
+    const from = e.clientX
+    const start = view.startMs
+    const onMove = (m: PointerEvent): void => {
+      view.startMs = clampStart(start - (m.clientX - from) / pxPerMs(), view.spanMs, duration())
+      layout()
+    }
+    const onUp = (): void => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
+  /** Wheel zooms about the cursor; shift+wheel pans. The panel does not scroll, so nothing is being stolen. */
+  lanes.addEventListener(
+    'wheel',
+    (e) => {
+      if (host.keys() === null) return
+      e.preventDefault()
+      if (e.shiftKey) {
+        view.startMs = clampStart(view.startMs + (e.deltaY / pxPerMs()) * 0.5, view.spanMs, duration())
+        layout()
+        return
+      }
+      const anchor = timeAtClientX(e.clientX)
+      const offsetPx = e.clientX - lanes.getBoundingClientRect().left
+      const next = Math.max(MIN_SPAN, Math.min(MAX_SPAN, view.spanMs * (e.deltaY > 0 ? 1.15 : 1 / 1.15)))
+      view.spanMs = next
+      // Keep the instant under the cursor under the cursor, which is what makes zoom feel like a lens.
+      view.startMs = clampStart(anchor - offsetPx / (width() / next), next, duration())
+      layout()
+    },
+    { passive: false },
+  )
+
+  /**
+   * The panel lives inside a hand-rolled splitter (`splitter.ts`), so dragging the divider resizes these
+   * lanes without the window changing size at all — a `resize` listener would miss every one of those.
+   */
+  new ResizeObserver(() => layout()).observe(lanes)
+
+  return { render, syncHead }
 }

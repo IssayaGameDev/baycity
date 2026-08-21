@@ -438,7 +438,7 @@ describe('editing an inherited node writes an override', () => {
 })
 
 describe('keyframes', () => {
-  const keys = (): ReturnType<typeof moveTrack> => moveTrack(ZERO, vec3(0, 1, 0), 3, 1000)
+  const keys = (): ReturnType<typeof moveTrack> => moveTrack(vec3(0, 1, 0), 3, 1000)
 
   /** The one keyframe parameter on a node — what the timeline would open. */
   const editor = (doc: Doc, i: number) => {
@@ -457,7 +457,7 @@ describe('keyframes', () => {
     const i = doc.placeModel('m', vec3(0, 0, 0))
     expect(doc.keyEditors(i)).toEqual([])
     doc.addComponent(i, TRACK)
-    expect(doc.keyEditors(i)).toEqual([{ componentId: idOf(doc, i, TRACK), type: TRACK, param: 'keys' }])
+    expect(doc.keyEditors(i)).toEqual([{ componentId: idOf(doc, i, TRACK), type: TRACK, param: 'keys', clipParam: 'clip' }])
   })
 
   it('starts a fresh Track empty, so adding one moves nothing', () => {
@@ -525,7 +525,7 @@ describe('keyframes', () => {
   // says something different and weaker, and both are now expressible.
   it('tells emptying the keys apart from removing the component', () => {
     const lib = library()
-    lib['pad']!.children![0]!.components.push(comp('t0', TRACK, { keys: moveTrack(ZERO, vec3(0, 1, 0), 3, 1000), loop: 'loop', phaseMs: 0 }))
+    lib['pad']!.children![0]!.components.push(comp('t0', TRACK, { keys: moveTrack(vec3(0, 1, 0), 3, 1000), loop: 'loop', phaseMs: 0 }))
     const doc = levelDoc(blank(), lib)
     doc.place('pad', vec3(0, 0, 0))
     expect(doc.keysOf(1, editor(doc, 1))).toHaveLength(3)

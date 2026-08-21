@@ -67,7 +67,7 @@ import { BODY_LAYERS } from './layers'
 import { OVERLAY_LAYER } from './nametag'
 import { createPauseMenu } from './pauseMenu'
 import { createRagdoll, type Ragdoll } from './ragdoll'
-import { ASSET_DB, assetUrlOf, materialOf } from './assets'
+import { ASSET_DB, CLIP_SOURCE, assetUrlOf, materialOf } from './assets'
 import { DEFAULT_NAME, levelByName } from './levels'
 import { localParkourPersistence } from './persistence'
 
@@ -695,7 +695,7 @@ const initLocalSim = async (id: EntityId): Promise<void> => {
   // them down. It was zero here, which left a corpse coasting off in a straight line for ever.
   const world = createPhysicsWorld({ gravity: { x: 0, y: -tuning.gravity, z: 0 } })
   physicsWorld = world // the render loop builds peers' corpses in it
-  loaded = instantiateLevel(world, levelData, DEFAULT_REGISTRY)
+  loaded = instantiateLevel(world, levelData, DEFAULT_REGISTRY, CLIP_SOURCE)
 
   // Build the level's greybox meshes via the shared renderer (content C3). Marker pads are
   // just their (colour-coded) box here; radius/overlay visualization belongs in the viewer.

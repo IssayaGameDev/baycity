@@ -78,15 +78,24 @@ export const Bumper = defineComponent({
 
 /**
  * Clock-driven keyed motion — a pure function of synced time, so no per-object networking (ADR 0013/0021,
- * ADR 0029). Replaces the node's local pose per channel rather than adding to it, Unity's model.
+ * ADR 0029). **Offsets** the node's local pose per channel rather than replacing it (ADR 0050).
  *
- * `keys` is edited by the existing timeline. Duration is the last key's `t`, derived rather than stored so
- * the two cannot disagree. `phaseMs` shifts this track's clock, which is what staggers a row of pistons.
+ * The motion comes from one of two places, and both are supported on purpose (ADR 0050):
+ *
+ * - `keys` — this node's own track. What a one-off mover wants: no file, nothing shared.
+ * - `clip` — an animation asset every user of it shares. Edit the clip, every platform playing it changes.
+ *
+ * **Inline keys win** when a file somehow has both; the editor keeps them exclusive. Duration is the last
+ * key's `t`, derived rather than stored so the two cannot disagree.
+ *
+ * `loop` and `phaseMs` stay here rather than moving into the clip, because they are per-placement: a
+ * staggered row of pistons is one clip and six phases.
  */
 export const Track = defineComponent({
   type: TRACK,
   params: {
-    keys: { kind: 'keys' },
+    clip: { kind: 'asset', of: 'animation', default: '', label: 'clip' },
+    keys: { kind: 'keys', clip: 'clip' },
     loop: { kind: 'enum', options: ['loop', 'pingPong', 'once'], default: 'loop' },
     phaseMs: { kind: 'number', default: 0, step: 50, label: 'phase (ms)' },
   },

@@ -81,13 +81,14 @@ describe('the built-in registry', () => {
   })
 
   it('starts a track empty and looping, so adding one moves nothing until keys exist', () => {
-    expect(DEFAULT_REGISTRY.defaults('Track')).toEqual({ keys: [], loop: 'loop', phaseMs: 0 })
+    expect(DEFAULT_REGISTRY.defaults('Track')).toEqual({ clip: '', keys: [], loop: 'loop', phaseMs: 0 })
     expect(Track.params.keys.kind).toBe('keys')
   })
 
   it('offers only material assets where a material belongs', () => {
     expect(Renderer.params.material.of).toBe('material')
     expect(Mesh.params.model.of).toBe('model')
+    expect(Track.params.clip.of, 'and only animation clips where a clip belongs').toBe('animation')
   })
 
   it('carries the bumper default in the schema, not in the editor', () => {

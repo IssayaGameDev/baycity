@@ -1,6 +1,6 @@
 import { vec3, type Vec3 } from '@mp/core'
 import type { ColliderDesc } from '@mp/content'
-import { visibleParams, type ParamSpec } from '@mp/components'
+import { visibleParams, type AssetSpec, type ParamSpec } from '@mp/components'
 import { DEFAULT_SKY_PARAMS } from '@mp/render-three'
 import { Pane } from 'tweakpane'
 
@@ -56,10 +56,13 @@ export interface InspectorHost {
   remove: () => void
   extract: () => void
   openPrefab: () => void
-  /** Material assets to offer, as Tweakpane options (label → asset id; `''` for none). */
-  materials: () => Record<string, string>
-  /** Model assets to offer, same shape. */
-  models: () => Record<string, string>
+  /**
+   * Assets of one kind to offer, as Tweakpane options (label → asset id; `''` for none).
+   *
+   * One accessor keyed by the kind the parameter declares, rather than one per kind: `AssetSpec['of']` is
+   * the same list, so a new asset-valued parameter needs nothing here.
+   */
+  assetOptions: (of: AssetSpec['of']) => Record<string, string>
   /** Open the timeline on this component's keyframe parameter (ADR 0037). */
   editKeys: (componentId: string, param: string) => void
   /** Revert one override — `'transform'`, `'name'`, or a component id — or all of them. */
@@ -429,7 +432,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         return
       }
       case 'asset': {
-        const options = spec.of === 'material' ? host.materials() : host.models()
+        const options = host.assetOptions(spec.of)
         mark(section.pane().addBinding(state, key, { label, options }).on('change', () => write({ [key]: state[key] })))
         return
       }

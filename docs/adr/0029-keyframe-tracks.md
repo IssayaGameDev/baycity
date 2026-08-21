@@ -1,6 +1,10 @@
 # ADR 0029 — Motion is a keyframe track, edited on a timeline
 
-Status: accepted. Replaces the `move`/`rotate` behaviours of ADR 0014. Keeps the clock-driven invariant of
+Status: accepted, amended by [ADR 0050](0050-tracks-are-offsets-and-assets.md) — a key is an **offset** from the
+node's transform, not a pose that replaces it, and a track can live in an animation asset. Everything below
+about vocabulary, the UI split and the clock still holds.
+
+Replaces the `move`/`rotate` behaviours of ADR 0014. Keeps the clock-driven invariant of
 ADR 0013/0021 and the frame-tree composition of ADR 0025 untouched.
 
 ## Context

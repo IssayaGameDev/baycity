@@ -14,6 +14,7 @@ import {
   MESH,
   RENDERER,
   type Behavior,
+  type ClipSource,
   type ColliderDesc,
   type ComponentData,
   type Keyframe,
@@ -259,9 +260,17 @@ export interface Doc {
  */
 export interface KeyEditor {
   readonly componentId: string
-  /** The component's registry type, for the strip's heading. */
+  /** The component's registry type, for the panel's heading. */
   readonly type: string
   readonly param: string
+  /**
+   * The sibling asset parameter that may hold these keys as a clip, or `null` when the declaration names none
+   * (ADR 0050).
+   *
+   * Read off the `keys` declaration rather than assumed to be called `clip`, so the panel still addresses a
+   * parameter and not a component it knows the shape of — which is the whole point of ADR 0037.
+   */
+  readonly clipParam: string | null
 }
 
 /**
@@ -315,14 +324,26 @@ const solidNode = (shape: ColliderDesc, transform: Transform, name?: string, mod
   ],
 })
 
-/** The `Behavior` a `Track` component describes, for posing a node at a track time. */
-const behaviorOf = (c: ComponentData | undefined): Behavior => {
+/**
+ * The `Behavior` a `Track` component describes, for posing a node at a track time.
+ *
+ * Inline keys first, then the clip the component names — the same precedence the loader applies, and it has
+ * to be the same or the editor would draw a mover the game plays differently (ADR 0050).
+ */
+const behaviorOf = (c: ComponentData | undefined, clips: ClipSource | undefined): Behavior => {
   if (c === undefined) return { kind: 'static' }
-  const keys = c.params.keys
-  if (!Array.isArray(keys) || keys.length === 0) return { kind: 'static' }
+  const inline = c.params.keys
+  const clip = c.params.clip
+  const keys =
+    Array.isArray(inline) && inline.length > 0
+      ? (inline as readonly Keyframe[])
+      : typeof clip === 'string' && clip !== ''
+        ? (clips?.keys(clip) ?? [])
+        : []
+  if (keys.length === 0) return { kind: 'static' }
   return {
     kind: 'track',
-    keys: keys as readonly Keyframe[],
+    keys,
     loop: stringParam(c, 'loop', 'loop') as LoopMode,
     phaseMs: Number(c.params.phaseMs ?? 0),
   }
@@ -364,8 +385,8 @@ interface DocNode {
  * is a level of one node with no table, which is why there is one implementation here where there used to be
  * two — the operations differ only in what the palette offers and in whether references exist at all.
  */
-const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>; registry: Registry; json: () => Level | Node }): Doc => {
-  const { mode, library, registry } = opts
+const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>; registry: Registry; clips?: ClipSource; json: () => Level | Node }): Doc => {
+  const { mode, library, registry, clips } = opts
   const roots = level.nodes
 
   const nodes = (): DocNode[] => {
@@ -583,7 +604,8 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
       if (c.enabled === false) continue
       const def = registry.get(c.type)
       if (def === undefined) continue
-      for (const [param, spec] of Object.entries(def.params)) if (spec.kind === 'keys') out.push({ componentId: c.id, type: c.type, param })
+      for (const [param, spec] of Object.entries(def.params))
+        if (spec.kind === 'keys') out.push({ componentId: c.id, type: c.type, param, clipParam: spec.clip ?? null })
     }
     return out
   }
@@ -1004,7 +1026,7 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
     poseOf: (i, timeMs) => {
       const n = node(i)
       if (n === undefined) return { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) }
-      return poseAt(behaviorOf(trackComponent(n)), n.view.transform, timeMs)
+      return poseAt(behaviorOf(trackComponent(n), clips), n.view.transform, timeMs)
     },
 
     /** Takes the *resolved* definitions rather than the keys alone, including nested children's. */
@@ -1101,8 +1123,8 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
   }
 }
 
-export const levelDoc = (level: Level, library: Record<string, Node>, registry: Registry = DEFAULT_REGISTRY): Doc =>
-  docOver(level, { mode: 'level', library, registry, json: () => level })
+export const levelDoc = (level: Level, library: Record<string, Node>, registry: Registry = DEFAULT_REGISTRY, clips?: ClipSource): Doc =>
+  docOver(level, { mode: 'level', library, registry, ...(clips !== undefined ? { clips } : {}), json: () => level })
 
 /**
  * A prefab, edited as a document of one root node.
@@ -1111,8 +1133,8 @@ export const levelDoc = (level: Level, library: Record<string, Node>, registry: 
  * level is a node tree with a table. `physical-fall` and a distant `fallY` keep the wrapper from killing the
  * test character while previewing a prefab in mid-air.
  */
-export const prefabDoc = (root: Node, registry: Registry = DEFAULT_REGISTRY): Doc =>
+export const prefabDoc = (root: Node, registry: Registry = DEFAULT_REGISTRY, clips?: ClipSource): Doc =>
   docOver(
     { id: root.name ?? root.id, config: { fallBehavior: 'physical-fall', fallY: -999 }, nodes: [root] },
-    { mode: 'prefab', library: {}, registry, json: () => root },
+    { mode: 'prefab', library: {}, registry, ...(clips !== undefined ? { clips } : {}), json: () => root },
   )

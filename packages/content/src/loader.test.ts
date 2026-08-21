@@ -1,8 +1,8 @@
-import { vec3 } from '@mp/core'
+import { vec3, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { instantiateLevel } from './loader'
+import { instantiateLevel, type ClipSource } from './loader'
 import { effectiveNode, COLLIDER, LIGHT, MATERIAL_OVERRIDE, MESH, RENDERER, SPAWN, TRACK, type TypeInfo } from './nodes'
 import { moveTrack } from './track'
 import type { ComponentData, Node, Level } from './types'
@@ -208,7 +208,7 @@ describe('resolving a placement against its prefab', () => {
     id: 'root',
     name: 'pad',
     transform: { position: vec3(0, 0, 0) },
-    components: [comp('rc0', TRACK, { keys: moveTrack(vec3(0, 0, 0), vec3(0, 1, 0), 2, 1000), loop: 'loop', phaseMs: 0 })],
+    components: [comp('rc0', TRACK, { keys: moveTrack(vec3(0, 1, 0), 2, 1000), loop: 'loop', phaseMs: 0 })],
     children: [
       {
         id: 'p0',
@@ -382,7 +382,7 @@ describe('a Light component', () => {
         {
           id: 'lamp',
           transform: { position: vec3(0, 0, 0) },
-          components: [comp('c0', LIGHT), comp('c1', TRACK, { keys: moveTrack(vec3(0, 0, 0), vec3(0, 1, 0), 4, 1000), loop: 'loop', phaseMs: 0 })],
+          components: [comp('c0', LIGHT), comp('c1', TRACK, { keys: moveTrack(vec3(0, 1, 0), 4, 1000), loop: 'loop', phaseMs: 0 })],
         },
       ]),
     )
@@ -390,5 +390,68 @@ describe('a Light component', () => {
     loaded.update(250)
     loaded.render(1)
     expect(loaded.lights[0]!.position.y).not.toBe(start.y)
+  })
+})
+
+/**
+ * A `Track` playing an animation asset instead of its own keys (ADR 0050).
+ *
+ * The point of the whole asset kind is that one clip drives many movers, so the tests that matter are: a
+ * clip resolves at all, two nodes playing one clip each move around *their own* transform, and every way of
+ * naming nothing leaves the node standing still rather than throwing.
+ */
+describe('a Track that names a clip', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  const RISE = moveTrack(vec3(0, 1, 0), 4, 2000)
+  const clips: ClipSource = { keys: (id) => (id === 'rise' ? RISE : undefined) }
+
+  const mover = (id: string, at: Vec3, params: Record<string, unknown>): Node => ({
+    id,
+    transform: { position: at },
+    components: [comp(`${id}-t`, TRACK, { loop: 'loop', phaseMs: 0, ...params }), comp(`${id}-c`, COLLIDER, box()), comp(`${id}-r`, RENDERER, {})],
+  })
+
+  const loadWith = (nodes: Node[]): ReturnType<typeof instantiateLevel> =>
+    instantiateLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), levelOf(nodes), TYPES, clips)
+
+  it('plays the clip’s keys', () => {
+    const loaded = loadWith([mover('a', vec3(0, 0, 0), { clip: 'rise' })])
+    loaded.update(0)
+    expect(loaded.visuals[0]!.position.y).toBeCloseTo(0, 6)
+    loaded.update(1000)
+    expect(loaded.visuals[0]!.position.y, 'four metres up at the top of the cycle').toBeCloseTo(4, 6)
+  })
+
+  /** The property the asset kind exists for, and the reason keys had to become offsets first. */
+  it('moves two nodes around their own transforms from one clip', () => {
+    const loaded = loadWith([mover('a', vec3(0, 0, 0), { clip: 'rise' }), mover('b', vec3(10, 5, -3), { clip: 'rise' })])
+    loaded.update(1000)
+    expect(loaded.visuals[0]!.position).toMatchObject({ x: 0, z: 0 })
+    expect(loaded.visuals[0]!.position.y).toBeCloseTo(4, 6)
+    expect(loaded.visuals[1]!.position).toMatchObject({ x: 10, z: -3 })
+    expect(loaded.visuals[1]!.position.y, 'the same four metres, from its own rest pose').toBeCloseTo(9, 6)
+  })
+
+  it('lets inline keys win over a clip, so a hand-edited file is never ambiguous', () => {
+    const loaded = loadWith([mover('a', vec3(0, 0, 0), { clip: 'rise', keys: moveTrack(vec3(0, 1, 0), 1, 2000) })])
+    loaded.update(1000)
+    expect(loaded.visuals[0]!.position.y, 'the inline one metre, not the clip’s four').toBeCloseTo(1, 6)
+  })
+
+  it('stands still for a clip that does not resolve, rather than failing to load', () => {
+    for (const params of [{ clip: 'gone' }, { clip: '' }, {}]) {
+      const loaded = loadWith([mover('a', vec3(0, 2, 0), params)])
+      loaded.update(1000)
+      expect(loaded.visuals[0]!.position.y, `${JSON.stringify(params)} holds its transform`).toBeCloseTo(2, 6)
+    }
+  })
+
+  it('stands still when no clip source was supplied at all', () => {
+    const loaded = load(levelOf([mover('a', vec3(0, 2, 0), { clip: 'rise' })]))
+    loaded.update(1000)
+    expect(loaded.visuals[0]!.position.y).toBeCloseTo(2, 6)
   })
 })

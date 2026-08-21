@@ -104,16 +104,23 @@ export interface Pose {
 
 const ZERO = vec3(0, 0, 0)
 const baseRotation = (t: Transform): Vec3 => t.rotation ?? ZERO
+const add = (a: Vec3, b: Vec3): Vec3 => vec3(a.x + b.x, a.y + b.y, a.z + b.z)
 
 /**
  * The frame's local pose at `nowMs`, given its authored transform.
  *
- * A channel with no keys falls back to the authored value, **per channel** — so a translation-only track
- * leaves the authored rotation alone instead of flattening it to zero, and a spin-only track keeps the
- * authored position. One key in a channel is a constant, which is a legitimate way to say "hold this pose".
+ * **A key is an offset from that transform, not a pose that replaces it** (ADR 0050). A key of zero means
+ * "at rest". So the transform is where the thing lives and the track is what it does there — which is what
+ * makes a track independent of position, and therefore reusable and shareable as an asset.
+ *
+ * A channel with no keys contributes nothing, **per channel** — so a translation-only track leaves the
+ * authored rotation alone, and a spin-only track keeps the authored position. Both fall through to the
+ * authored value by returning it untouched rather than by adding zero to it. One key in a channel is a
+ * constant offset, which is a legitimate way to say "hold this pose".
  */
 export const poseAt = (behavior: Behavior, base: Transform, nowMs: number): Pose => {
-  if (behavior.kind !== 'track') return { position: base.position, rotation: baseRotation(base) }
+  const rest = baseRotation(base)
+  if (behavior.kind !== 'track') return { position: base.position, rotation: rest }
 
   const u = trackTime(trackDuration(behavior.keys), behavior.loop, nowMs, behavior.phaseMs)
 
@@ -121,17 +128,20 @@ export const poseAt = (behavior: Behavior, base: Transform, nowMs: number): Pose
   const rotKeys = channelKeys(behavior.keys, (k) => k.rotation !== undefined)
 
   return {
-    position: posKeys.length === 0 ? base.position : sampleChannel(posKeys, (k) => k.position ?? base.position, lerpVec3, u),
+    position: posKeys.length === 0 ? base.position : add(base.position, sampleChannel(posKeys, (k) => k.position ?? ZERO, lerpVec3, u)),
     rotation:
       rotKeys.length === 0
-        ? baseRotation(base)
-        : sampleChannel(
-            rotKeys,
-            (k) => k.rotation ?? baseRotation(base),
-            // Component lerp, not slerp: see `Keyframe.rotation`. A full turn depends on it, because slerp
-            // between identity and 2π has nowhere to go.
-            (a, b, t) => vec3(lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t)),
-            u,
+        ? rest
+        : add(
+            rest,
+            sampleChannel(
+              rotKeys,
+              (k) => k.rotation ?? ZERO,
+              // Component lerp, not slerp: see `Keyframe.rotation`. A full turn depends on it, because slerp
+              // between identity and 2π has nowhere to go.
+              (a, b, t) => vec3(lerp(a.x, b.x, t), lerp(a.y, b.y, t), lerp(a.z, b.z, t)),
+              u,
+            ),
           ),
   }
 }
@@ -150,28 +160,34 @@ export const isAnimated = (behavior: Behavior): boolean => behavior.kind === 'tr
 // ---------------------------------------------------------------------------------------------------
 
 /**
- * An eased out-and-back: `distance` metres along `axis` from `base` and back, over `periodMs`.
+ * An eased out-and-back: `distance` metres along `axis` from rest and back, over `periodMs`.
+ *
+ * Takes no base pose. Keys are offsets, so "from rest" is the zero key, and the same preset is correct for
+ * an object anywhere in the level — which is the point of ADR 0050 in one function signature.
  *
  * Identical to the old `move` behavior by construction — see `easeAt` for why the easing has to be cosine.
  */
-export const moveTrack = (base: Vec3, axis: Vec3, distance: number, periodMs: number): Keyframe[] => {
+export const moveTrack = (axis: Vec3, distance: number, periodMs: number): Keyframe[] => {
   const len = Math.hypot(axis.x, axis.y, axis.z) || 1
-  const far = vec3(base.x + (axis.x / len) * distance, base.y + (axis.y / len) * distance, base.z + (axis.z / len) * distance)
+  const far = vec3((axis.x / len) * distance, (axis.y / len) * distance, (axis.z / len) * distance)
   return [
-    { t: 0, position: base, easing: 'inOut' },
+    { t: 0, position: vec3(0, 0, 0), easing: 'inOut' },
     { t: periodMs / 2, position: far, easing: 'inOut' },
-    { t: periodMs, position: base },
+    { t: periodMs, position: vec3(0, 0, 0) },
   ]
 }
 
 /**
  * One full turn per `periodMs`, looping seamlessly because a turn of 2π is the orientation it started from.
  *
+ * An authored tilt needs no mention here now: the keys are offsets, so the spin composes onto whatever
+ * rotation the transform holds instead of having to carry it.
+ *
  * Cardinal axes only, which is a real limit of euler keys rather than a shortcut: a spin about a slanted
  * axis is not a straight line through euler space, so the preset takes the dominant component. Spinning
  * about a slanted axis means keying the poses.
  */
-export const spinTrack = (base: Vec3, axis: Vec3, periodMs: number): Keyframe[] => {
+export const spinTrack = (axis: Vec3, periodMs: number): Keyframe[] => {
   const turn = Math.PI * 2
   const ax = Math.abs(axis.x)
   const ay = Math.abs(axis.y)
@@ -179,13 +195,9 @@ export const spinTrack = (base: Vec3, axis: Vec3, periodMs: number): Keyframe[] 
   const dominant = ax >= ay && ax >= az ? 'x' : ay >= az ? 'y' : 'z'
   const signed = dominant === 'x' ? axis.x : dominant === 'y' ? axis.y : axis.z
   const delta = signed < 0 ? -turn : turn
-  const end = vec3(
-    base.x + (dominant === 'x' ? delta : 0),
-    base.y + (dominant === 'y' ? delta : 0),
-    base.z + (dominant === 'z' ? delta : 0),
-  )
+  const end = vec3(dominant === 'x' ? delta : 0, dominant === 'y' ? delta : 0, dominant === 'z' ? delta : 0)
   return [
-    { t: 0, rotation: base, easing: 'linear' },
+    { t: 0, rotation: vec3(0, 0, 0), easing: 'linear' },
     { t: periodMs, rotation: end },
   ]
 }

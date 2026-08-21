@@ -131,8 +131,8 @@ describe('poseAt', () => {
   it('leaves a channel at its authored value when no key touches it', () => {
     const base: Transform = { position: vec3(7, 0, 7), rotation: vec3(0, 1.25, 0) }
     const lift = track([
-      { t: 0, position: vec3(7, 0, 7) },
-      { t: 1000, position: vec3(7, 3, 7) },
+      { t: 0, position: vec3(0, 0, 0) },
+      { t: 1000, position: vec3(0, 3, 0) },
     ])
     expect(poseAt(lift, base, 500).rotation, 'authored tilt survives a translation-only track').toEqual(vec3(0, 1.25, 0))
 
@@ -141,6 +141,63 @@ describe('poseAt', () => {
       { t: 1000, rotation: vec3(0, Math.PI * 2, 0) },
     ])
     expect(poseAt(turntable, base, 500).position, 'authored position survives a spin-only track').toEqual(vec3(7, 0, 7))
+  })
+
+  // ------------------------------------------------------------------------------------------------------
+  // Offsets, not poses (ADR 0050). These are the properties the whole rework rests on.
+  // ------------------------------------------------------------------------------------------------------
+
+  // `once` throughout this block, so the last key can be sampled at its own time: under a loop the end *is*
+  // the start, so `t === duration` reads back as the first key and would prove nothing about composition.
+  it('adds a position key to the authored position instead of replacing it', () => {
+    const base: Transform = { position: vec3(10, 2, -5) }
+    const b = track(
+      [
+        { t: 0, position: vec3(0, 0, 0) },
+        { t: 1000, position: vec3(0, 4, 0) },
+      ],
+      { loop: 'once' },
+    )
+    expect(poseAt(b, base, 0).position, 'a zero key is the rest pose').toEqual(vec3(10, 2, -5))
+    expect(poseAt(b, base, 500).position, 'halfway is halfway up from it').toEqual(vec3(10, 4, -5))
+    expect(poseAt(b, base, 1000).position, 'and a key of 4 is four metres up from it').toEqual(vec3(10, 6, -5))
+  })
+
+  it('adds a rotation key to the authored rotation, so a spin composes onto a tilt', () => {
+    const tilted: Transform = { position: vec3(0, 0, 0), rotation: vec3(0.3, 0, 0) }
+    const spin = track(
+      [
+        { t: 0, rotation: vec3(0, 0, 0) },
+        { t: 1000, rotation: vec3(0, Math.PI, 0) },
+      ],
+      { loop: 'once' },
+    )
+    const pose = poseAt(spin, tilted, 1000)
+    expect(pose.rotation.x, 'the tilt is still there').toBeCloseTo(0.3, 9)
+    expect(pose.rotation.y, 'and the spin landed on top of it').toBeCloseTo(Math.PI, 9)
+  })
+
+  /**
+   * The property that lets a track be shared. Under absolute keys the same `keys` array put two objects in
+   * the *same* place; under offsets it gives them the same motion wherever each one stands, which is what
+   * makes a clip asset possible at all.
+   */
+  it('gives two objects the same motion from different rest poses', () => {
+    const keys: Keyframe[] = [
+      { t: 0, position: vec3(0, 0, 0), easing: 'inOut' },
+      { t: 1000, position: vec3(0, 3, 0), easing: 'inOut' },
+      { t: 2000, position: vec3(0, 0, 0) },
+    ]
+    const b = track(keys, { loop: 'loop' })
+    const here: Transform = { position: vec3(0, 0, 0) }
+    const there: Transform = { position: vec3(-20, 6, 13) }
+    for (let t = 0; t <= 2000; t += 125) {
+      const a = poseAt(b, here, t)
+      const c = poseAt(b, there, t)
+      expect(c.position.x - there.position.x, `x at ${t}ms`).toBeCloseTo(a.position.x, 9)
+      expect(c.position.y - there.position.y, `y at ${t}ms`).toBeCloseTo(a.position.y, 9)
+      expect(c.position.z - there.position.z, `z at ${t}ms`).toBeCloseTo(a.position.z, 9)
+    }
   })
 
   it('holds a single key as a fixed pose', () => {
@@ -217,27 +274,30 @@ describe('presets', () => {
     const axis = vec3(0, 1, 0)
     const distance = 3
     const periodMs = 4000
-    const b = track(moveTrack(base, axis, distance, periodMs), { loop: 'loop' })
+    const b = track(moveTrack(axis, distance, periodMs), { loop: 'loop' })
 
     const oldMove = (nowMs: number): number => base.y + (distance * (1 - Math.cos((nowMs / periodMs) * Math.PI * 2))) / 2
 
+    // Still the exact comparison, and now also proof that offsets compose: the preset knows nothing about
+    // `base`, and the sum still tracks a formula written in absolute world metres.
     for (let t = 0; t <= periodMs; t += 50) {
       expect(poseAt(b, { position: base }, t).position.y, `t=${t}ms`).toBeCloseTo(oldMove(t), 9)
     }
   })
 
   it('moveTrack normalizes the axis, so an unnormalized one still travels the given distance', () => {
-    const keys = moveTrack(vec3(0, 0, 0), vec3(0, 5, 0), 3, 1000)
+    const keys = moveTrack(vec3(0, 5, 0), 3, 1000)
     expect(keys[1]!.position!.y).toBeCloseTo(3, 9)
   })
 
-  it('moveTrack starts and ends at the home position, so looping is seamless', () => {
-    const keys = moveTrack(vec3(1, 2, 3), vec3(1, 0, 0), 4, 2000)
-    expect(keys[0]!.position).toEqual(keys[2]!.position)
+  it('moveTrack starts and ends at rest, so looping is seamless', () => {
+    const keys = moveTrack(vec3(1, 0, 0), 4, 2000)
+    expect(keys[0]!.position).toEqual(vec3(0, 0, 0))
+    expect(keys[2]!.position).toEqual(vec3(0, 0, 0))
   })
 
   it('spinTrack turns a full circle over the period, which loops seamlessly', () => {
-    const keys = spinTrack(vec3(0, 0, 0), vec3(0, 1, 0), 6000)
+    const keys = spinTrack(vec3(0, 1, 0), 6000)
     const b = track(keys, { loop: 'loop' })
     expect(poseAt(b, AT_ORIGIN, 0).rotation.y).toBeCloseTo(0, 9)
     expect(poseAt(b, AT_ORIGIN, 1500).rotation.y).toBeCloseTo(Math.PI / 2, 9)
@@ -246,20 +306,26 @@ describe('presets', () => {
   })
 
   it('spinTrack reverses for a negative axis', () => {
-    const keys = spinTrack(vec3(0, 0, 0), vec3(0, -1, 0), 1000)
+    const keys = spinTrack(vec3(0, -1, 0), 1000)
     expect(keys[1]!.rotation!.y).toBeCloseTo(-Math.PI * 2, 9)
   })
 
   it('spinTrack takes the dominant axis, since euler keys cannot spin about a slanted one', () => {
-    expect(spinTrack(vec3(0, 0, 0), vec3(0.2, 0.1, 0.9), 1000)[1]!.rotation).toEqual(vec3(0, 0, Math.PI * 2))
-    expect(spinTrack(vec3(0, 0, 0), vec3(1, 0, 0), 1000)[1]!.rotation).toEqual(vec3(Math.PI * 2, 0, 0))
+    expect(spinTrack(vec3(0.2, 0.1, 0.9), 1000)[1]!.rotation).toEqual(vec3(0, 0, Math.PI * 2))
+    expect(spinTrack(vec3(1, 0, 0), 1000)[1]!.rotation).toEqual(vec3(Math.PI * 2, 0, 0))
   })
 
-  it('spinTrack keeps an authored tilt as the pose it spins from', () => {
-    const tilt = vec3(0.3, 0, 0)
-    const keys = spinTrack(tilt, vec3(0, 1, 0), 1000)
-    expect(keys[0]!.rotation).toEqual(tilt)
-    expect(keys[1]!.rotation!.x, 'the tilt is carried, not dropped').toBeCloseTo(0.3, 9)
+  /**
+   * A tilt used to have to be baked into both keys, so the preset needed the current pose to avoid dropping
+   * it. Offsets make that the transform's job, and this pins the consequence: the preset emits pure zeros and
+   * the tilt survives anyway.
+   */
+  it('spinTrack starts from zero and lets the transform carry any tilt', () => {
+    const keys = spinTrack(vec3(0, 1, 0), 1000)
+    expect(keys[0]!.rotation).toEqual(vec3(0, 0, 0))
+    const tilted: Transform = { position: vec3(0, 0, 0), rotation: vec3(0.3, 0, 0) }
+    expect(poseAt(track(keys), tilted, 0).rotation.x, 'the tilt is carried, not dropped').toBeCloseTo(0.3, 9)
+    expect(poseAt(track(keys), tilted, 500).rotation.x, 'and it stays put mid-spin').toBeCloseTo(0.3, 9)
   })
 })
 

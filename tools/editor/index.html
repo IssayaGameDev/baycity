@@ -120,9 +120,9 @@
         color: var(--dim);
       }
 
-      /* ---- the timeline strip ---- */
+      /* ---- the Animation panel: a dope sheet (timeline.ts, ADR 0051) ---- */
       #timeline {
-        padding: 6px 8px 10px;
+        padding: 6px 8px 8px;
       }
       #timeline .hint {
         margin: 8px 2px;
@@ -134,7 +134,7 @@
         align-items: center;
         flex-wrap: wrap;
         gap: 5px;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
       }
       .tl-who {
         font-size: 12px;
@@ -145,6 +145,15 @@
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+      /* These keys live in an asset, so an edit here reaches every object playing it. Worth flagging. */
+      .tl-clip {
+        font-size: 11px;
+        padding: 1px 6px;
+        border: 1px solid var(--accent-dim);
+        border-radius: 9px;
+        color: var(--accent);
+        white-space: nowrap;
+      }
       .tl-lbl {
         font-size: 11px;
         color: var(--dim);
@@ -153,6 +162,11 @@
         font-size: 11px;
         color: var(--dim);
         font-variant-numeric: tabular-nums;
+      }
+      .ctl.rec.on {
+        background: #b3213f;
+        border-color: #ff5c8a;
+        color: #fff;
       }
       .tl-presets {
         display: flex;
@@ -166,19 +180,40 @@
         width: 46px;
       }
 
-      /* The strip itself: a ruler, one key row, a playhead. Percentages throughout, so it reflows with the
-         panel instead of needing a measure-and-position pass in JS. */
-      .tl-strip {
+      /* A gutter of channel names beside a stack of lanes. Positions are pixels from the view window, set in
+         JS, because a percentage cannot express a zoom. */
+      .tl-body {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .tl-gutter {
+        flex: 0 0 74px;
+        padding-top: 16px; /* clears the ruler, so a name lines up with its lane */
+      }
+      .tl-name {
+        height: 26px;
+        line-height: 26px;
+        font-size: 11px;
+        color: var(--dim);
+        text-align: right;
+        padding-right: 2px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .tl-lanes {
         position: relative;
-        height: 54px;
-        margin: 0 10px; /* room for a diamond centred on t=0 and on the far end */
-        cursor: text;
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        touch-action: none;
       }
       .tl-ruler {
-        position: absolute;
-        inset: 0 0 auto 0;
+        position: relative;
         height: 16px;
         border-bottom: 1px solid var(--line);
+        cursor: text; /* it scrubs; the lanes below box-select */
       }
       .tl-tick {
         position: absolute;
@@ -195,18 +230,21 @@
         font-variant-numeric: tabular-nums;
         pointer-events: none;
       }
+      .tl-lane {
+        position: relative;
+        height: 26px;
+        cursor: crosshair;
+      }
+      .tl-lane + .tl-lane {
+        border-top: 1px solid var(--line);
+      }
+      /* Where the track ends, since the view deliberately shows more than that. */
       .tl-end {
         position: absolute;
         top: 0;
-        bottom: -38px;
+        bottom: 0;
         border-left: 1px dashed var(--accent-dim);
-      }
-      .tl-row {
-        position: absolute;
-        left: 0;
-        right: 0;
-        top: 22px;
-        height: 26px;
+        pointer-events: none;
       }
       /* A segment carries its easing name, and clicking it cycles the curve. */
       .tl-seg {
@@ -227,9 +265,9 @@
       .tl-seg span {
         position: absolute;
         left: 50%;
-        top: -11px;
+        top: -1px;
         transform: translateX(-50%);
-        font-size: 10px;
+        font-size: 9px;
         color: var(--dim);
         pointer-events: none;
         white-space: nowrap;
@@ -252,14 +290,14 @@
         background: var(--accent);
         border-color: #fff;
       }
-      /* A rotation-only key is hollow: the viewport draws no path point for it. */
-      .tl-key.rot {
-        background: transparent;
-        border-color: var(--text);
-      }
-      /* Two keys at one time is an instant jump, and worth seeing as one. */
-      .tl-key.stacked {
+      /* It keys the other channel at this time too, so dragging it here splits it. */
+      .tl-key.shared {
         border-color: var(--accent);
+      }
+      /* Two keys at one time on this channel is an instant jump, and worth seeing as one. */
+      .tl-key.stacked {
+        border-style: dashed;
+        border-color: #ff5c8a;
       }
       .tl-head {
         position: absolute;
@@ -276,6 +314,25 @@
         left: -4px;
         border: 4px solid transparent;
         border-top-color: #ff5c8a;
+      }
+      .tl-marquee {
+        position: absolute;
+        border: 1px solid var(--accent);
+        background: rgba(90, 160, 255, 0.14);
+        pointer-events: none;
+      }
+      /* Typed values for the primary selected key — the panel had nothing typeable before. */
+      .tl-fields {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 8px;
+        padding-top: 7px;
+        border-top: 1px solid var(--line);
+      }
+      .tl-fields input.ctl[type='number'] {
+        width: 58px;
       }
 
       /* ---- the editor's one context menu (menu.ts) ---- */

@@ -33,7 +33,8 @@ export interface ProjectHost {
   onPickAsset: (assetId: string) => void
   /** Open a non-placeable asset in the Inspector. */
   onSelectAsset: (assetId: string) => void
-  onCreateMaterial: (folder: string) => void
+  /** Make a new asset of a kind this panel can author, in `folder`. See `CREATABLE`. */
+  onCreateAsset: (kind: AssetKind, folder: string) => void
   onMkdir: (parent: string, name: string) => void
   onRename: (path: string, name: string) => void
   onDelete: (path: string) => void
@@ -72,14 +73,23 @@ const KIND_LABEL: Record<AssetKind, string> = {
   model: 'Models',
   material: 'Materials',
   shader: 'Shaders',
+  animation: 'Animations',
   sound: 'Sounds',
   font: 'Fonts',
 }
 
 /** Kinds a viewport click can place; everything else opens in the Inspector. */
 const PLACEABLE = new Set<AssetKind>(['prefab', 'model'])
+/**
+ * Kinds this panel can make from nothing.
+ *
+ * A material and an animation clip are both authored *here* rather than imported, so an empty one is a
+ * meaningful starting point. A texture or a model arrives as a file, and a prefab is made by extracting one
+ * from a level.
+ */
+const CREATABLE = new Set<AssetKind>(['material', 'animation'])
 /** Kinds with no picture worth inventing. */
-const UNPREVIEWABLE = new Set<AssetKind>(['sound', 'font'])
+const UNPREVIEWABLE = new Set<AssetKind>(['animation', 'sound', 'font'])
 /** The pseudo-folder for a level's own prefabs. Not a path, so it can never collide with one. */
 const OWN = ' own'
 
@@ -378,11 +388,13 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
       }
     }
 
-    if (kind === 'material' && folder !== null) {
+    // Only on a single kind's tab and inside a real folder: "new" needs to know what to make and where.
+    if (kind !== null && CREATABLE.has(kind) && folder !== null) {
       const target = folder
+      const making = kind
       const b = el('button', 'ctl tile new')
-      b.textContent = '+ new material'
-      b.addEventListener('click', () => host.onCreateMaterial(target))
+      b.textContent = `+ new ${kind}`
+      b.addEventListener('click', () => host.onCreateAsset(making, target))
       grid.append(b)
     }
 
