@@ -21,8 +21,8 @@ export interface DebugPaneOptions {
   stage: ThreeStage
   /** The equirect backdrop, if one loaded — it adds a source toggle to the Sky folder. */
   photoSky: Sky | null
-  /** Post-processing switches — see the Camera folder for why they exist. */
-  debug: { sunShadows: boolean; ambientOcclusion: boolean }
+  /** The sun-shadow switch — see the Camera folder for why it exists. */
+  debug: { sunShadows: boolean }
   env: GreyboxEnvironment
   postfx: PostFX
   tuning: CharacterTuning
@@ -64,9 +64,9 @@ export const installDebugPane = (opts: DebugPaneOptions): void => {
   cam.addBinding(debug, 'sunShadows', { label: 'sun shadows' }).on('change', (e) => {
     env.sun.castShadow = e.value
   })
-  cam.addBinding(debug, 'ambientOcclusion', { label: 'ambient occl.' }).on('change', (e) => {
-    if (postfx.ao !== null) postfx.ao.enabled = e.value
-  })
+  // Through `params`, not straight onto the pass: AO is level data now (`config.environment.postfx`), and
+  // writing the pass behind the live object would leave the two disagreeing the moment a level is applied.
+  cam.addBinding(postfx.params, 'ao', { label: 'ambient occl.' }).on('change', () => postfx.refresh())
   // Sky + sun (ADR 0046). Every one of these needs an eye rather than a value, so they all live here. The sun
   // angles drive the key light, its shadow frustum and the sky bake together, which is why there is no separate
   // light direction to set. The sky is a designed gradient rather than atmospheric scattering, because the shape
@@ -141,18 +141,23 @@ export const installDebugPane = (opts: DebugPaneOptions): void => {
   arc.addBinding(tuning, 'apexSpeed', { min: 0, max: 10, step: 0.5, label: 'apex window m/s' })
   arc.addBinding(tuning, 'jumpCutScale', { min: 0, max: 1, step: 0.05, label: 'release cut x' })
   
-  // Live render tuning (content C3) — the greybox polish is data, so you can dial it here.
-  const renderParams = { exposure: 1.0, bloom: true, bloomStrength: 0.1 }
+  /**
+   * Live render tuning (content C3).
+   *
+   * Bloom is bound to `postfx.params` — the object the level writes into — rather than to a copy, so loading a
+   * level that pins its bloom moves these sliders instead of leaving them showing numbers nothing reads. Same
+   * reason the sky block below binds `env.skyParams` (ADR 0048).
+   *
+   * Exposure keeps a local value because it is the renderer's, not the level's: it is not in
+   * `config.environment` yet, and inventing that here would be a schema decision made in a debug pane.
+   */
+  const renderParams = { exposure: 1.0 }
   const rp = pane.addFolder({ title: 'Render (greybox C3)' })
   rp.addBinding(renderParams, 'exposure', { min: 0.4, max: 2, step: 0.05 }).on('change', (e) => {
     stage.renderer.toneMappingExposure = e.value
   })
-  rp.addBinding(renderParams, 'bloom').on('change', (e) => {
-    postfx.bloom.enabled = e.value
-  })
-  rp.addBinding(renderParams, 'bloomStrength', { min: 0, max: 1.5, step: 0.05, label: 'bloom str' }).on('change', (e) => {
-    postfx.bloom.strength = e.value
-  })
+  rp.addBinding(postfx.params, 'bloom').on('change', () => postfx.refresh())
+  rp.addBinding(postfx.params, 'bloomStrength', { min: 0, max: 1.5, step: 0.05, label: 'bloom str' }).on('change', () => postfx.refresh())
   
   // Gait feel (ADR 0018). Read fresh every frame by every character's animator, so these are live.
   const gf = pane.addFolder({ title: 'Gait (procedural)', expanded: false })

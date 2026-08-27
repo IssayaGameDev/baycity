@@ -1,6 +1,6 @@
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
-import { COLLIDER, instantiateLevel, type ComponentData, type Node, type Level, type WorldNode } from '@mp/content'
+import { COLLIDER, RENDERER, instantiateLevel, type ComponentData, type Node, type Level, type WorldNode } from '@mp/content'
 import { vec3 } from '@mp/core'
 
 import { createComponentRuntime, characterAccess, hasHooks, type Effects } from './runtime'
@@ -60,12 +60,60 @@ const Touchy = defineComponent({
   onContact: (self, _ctx, hit) => void log.push(`touch:${self.node.id}:${hit.colliderHandle}`),
 })
 
-const TEST_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Bumper, Checkpoint, Goal, Hazard, Track, Counter, Peeker, Wanderer, Touchy])
+/** Drives its own node upward, a tick at a time (ADR 0058). Declares `moves`, so `self.offset` is live. */
+const Riser = defineComponent({
+  type: 'Riser',
+  params: { rate: { kind: 'number', default: 1 } },
+  moves: true,
+  onFixedUpdate: (self, ctx) => {
+    if (self.offset !== undefined) self.offset.position.y += self.params.rate * ctx.dt
+  },
+})
+
+/** Wants to move its node but never said so. The point is that it gets `undefined` rather than a no-op. */
+const Sneak = defineComponent({
+  type: 'Sneak',
+  params: {},
+  onFixedUpdate: (self) => void log.push(`sneak:${self.offset === undefined ? 'denied' : 'granted'}`),
+})
+
+/** Turns its own node a quarter turn a tick. Rotation is Euler **radians**, like `Transform`. */
+const Spinner = defineComponent({
+  type: 'Spinner',
+  params: {},
+  moves: true,
+  onFixedUpdate: (self) => {
+    if (self.offset !== undefined) self.offset.rotation.y += Math.PI / 2
+  },
+})
+
+const TEST_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Bumper, Checkpoint, Goal, Hazard, Track, Counter, Peeker, Wanderer, Touchy, Riser, Sneak, Spinner])
 
 const load = (nodes: Node[]): ReturnType<typeof instantiateLevel> =>
   instantiateLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), levelOf(nodes), TEST_REGISTRY)
 
 const noEffects = (): Effects => ({ kill: () => {}, progress: () => {} })
+
+/**
+ * A character-shaped object for `characterAccess`, standing in for `CharacterState` (ADR 0059).
+ *
+ * `CharacterLike` is structural precisely so this package can be tested without importing the controller,
+ * and building it through `characterAccess` rather than hand-writing the six methods is what stops a test
+ * from passing against a stub the game does not use.
+ */
+const fakeCharacter = (at = vec3(0, 0, 0)) => ({
+  launch: 0,
+  impulse: vec3(0, 0, 0),
+  vx: 0,
+  vy: 0,
+  vz: 0,
+  carry: vec3(0, 0, 0),
+  grounded: true,
+  body: { translation: () => at },
+})
+
+/** The access every test that does not care about the character passes. */
+const anyCharacter = () => characterAccess(fakeCharacter())
 
 describe('which components the runner picks up', () => {
   beforeAll(async () => {
@@ -74,7 +122,7 @@ describe('which components the runner picks up', () => {
 
   it('ignores anything with no hooks, so a data-only component costs nothing', () => {
     const loaded = load([{ id: 'n', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', COLLIDER, box), comp('c1', Goal.type)] }])
-    expect(createComponentRuntime(loaded, TEST_REGISTRY, { character: { launch: () => {} }, effects: noEffects() }).count()).toBe(0)
+    expect(createComponentRuntime(loaded, TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() }).count()).toBe(0)
   })
 
   it('says which definitions have anything to run', () => {
@@ -85,13 +133,13 @@ describe('which components the runner picks up', () => {
 
   it('skips a component that is switched off', () => {
     const loaded = load([{ id: 'n', transform: { position: vec3(0, 0, 0) }, components: [{ ...comp('c0', Counter.type), enabled: false }] }])
-    expect(createComponentRuntime(loaded, TEST_REGISTRY, { character: { launch: () => {} }, effects: noEffects() }).count()).toBe(0)
+    expect(createComponentRuntime(loaded, TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() }).count()).toBe(0)
   })
 
   it('runs a component on a node with no collider at all', () => {
     const loaded = load([{ id: 'n', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', Counter.type)] }])
     expect(loaded.nodes, 'nothing touchable').toEqual([])
-    expect(createComponentRuntime(loaded, TEST_REGISTRY, { character: { launch: () => {} }, effects: noEffects() }).count()).toBe(1)
+    expect(createComponentRuntime(loaded, TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() }).count()).toBe(1)
   })
 })
 
@@ -107,14 +155,14 @@ describe('the lifecycle', () => {
 
   it('attaches in tree order, then component order', () => {
     log.length = 0
-    const runtime = createComponentRuntime(load(tree()), TEST_REGISTRY, { character: { launch: () => {} }, effects: noEffects() })
+    const runtime = createComponentRuntime(load(tree()), TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() })
     runtime.attach(0, 0, 1 / 60)
     expect(log).toEqual(['attach:parent', 'peek:2', 'attach:child'])
   })
 
   it('gives each instance its own state, initialised from its own parameters', () => {
     log.length = 0
-    const runtime = createComponentRuntime(load(tree()), TEST_REGISTRY, { character: { launch: () => {} }, effects: noEffects() })
+    const runtime = createComponentRuntime(load(tree()), TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() })
     runtime.attach(0, 0, 1 / 60)
     runtime.fixedUpdate(1, 16, 1 / 60)
     runtime.fixedUpdate(2, 32, 1 / 60)
@@ -123,7 +171,7 @@ describe('the lifecycle', () => {
 
   it('detaches in reverse, so a child tears down before its parent', () => {
     log.length = 0
-    const runtime = createComponentRuntime(load(tree()), TEST_REGISTRY, { character: { launch: () => {} }, effects: noEffects() })
+    const runtime = createComponentRuntime(load(tree()), TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() })
     runtime.attach(0, 0, 1 / 60)
     runtime.detach()
     expect(log.filter((l) => l.startsWith('detach'))).toEqual(['detach:child:0', 'detach:parent:0'])
@@ -135,7 +183,7 @@ describe('the lifecycle', () => {
       { id: 'a', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', Peeker.type)] },
       { id: 'b', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', Counter.type, { step: 7 })] },
     ])
-    createComponentRuntime(loaded, TEST_REGISTRY, { character: { launch: () => {} }, effects: noEffects() }).attach(0, 0, 1 / 60)
+    createComponentRuntime(loaded, TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() }).attach(0, 0, 1 / 60)
     expect(log.filter((l) => l.startsWith('peek')), 'the Counter is on the other node, so there is nothing to find').toEqual(['peek:none'])
   })
 })
@@ -148,7 +196,7 @@ describe('contact', () => {
   it('delivers to every component on the node that owns the collider', () => {
     log.length = 0
     const loaded = load(nodes())
-    const runtime = createComponentRuntime(loaded, TEST_REGISTRY, { character: { launch: () => {} }, effects: noEffects() })
+    const runtime = createComponentRuntime(loaded, TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() })
     const handle = loaded.nodes[0]!.colliderHandles[0]!
     runtime.contact([handle])
     expect(log).toEqual([`touch:pad:${handle}`])
@@ -156,7 +204,7 @@ describe('contact', () => {
 
   it('ignores a handle that belongs to nothing', () => {
     log.length = 0
-    const runtime = createComponentRuntime(load(nodes()), TEST_REGISTRY, { character: { launch: () => {} }, effects: noEffects() })
+    const runtime = createComponentRuntime(load(nodes()), TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() })
     runtime.contact([9999])
     expect(log).toEqual([])
   })
@@ -174,17 +222,17 @@ describe('the rules that own their reaction', () => {
     let launched = 0
     let killed = 0
     const progressed: WorldNode[] = []
+    // Through the real `characterAccess`, so the "strongest bumper wins" rule under test is the shipped one
+    // rather than a copy of it written here.
+    const character = fakeCharacter()
     const runtime = createComponentRuntime(loaded, TEST_REGISTRY, {
-      character: {
-        launch: (speed) => {
-          if (speed > launched) launched = speed
-        },
-      },
+      character: characterAccess(character),
       effects: { kill: () => void killed++, progress: (n) => void progressed.push(n) },
     })
     // Every collider in the level, which is what touching all of them at once looks like. Taken from the
     // nodes rather than counted up from zero: a Rapier handle packs a generation and is not a small integer.
     runtime.contact(loaded.nodes.flatMap((n) => [...n.colliderHandles]))
+    launched = character.launch
     return { launched, killed, progressed }
   }
 
@@ -246,7 +294,7 @@ describe('determinism', () => {
 
   const fold = (ticks: number): string[] => {
     log.length = 0
-    const runtime = createComponentRuntime(load(nodes()), TEST_REGISTRY, { character: { launch: () => {} }, effects: noEffects() })
+    const runtime = createComponentRuntime(load(nodes()), TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() })
     runtime.attach(0, 0, 1 / 60)
     for (let t = 1; t <= ticks; t++) runtime.fixedUpdate(t, t * 16.666, 1 / 60)
     runtime.detach()
@@ -267,7 +315,7 @@ describe('determinism', () => {
 
   it('draws numbers in [0, 1) and does not repeat within a tick', () => {
     log.length = 0
-    const runtime = createComponentRuntime(load(nodes()), TEST_REGISTRY, { character: { launch: () => {} }, effects: noEffects() })
+    const runtime = createComponentRuntime(load(nodes()), TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() })
     runtime.attach(0, 0, 1 / 60)
     runtime.fixedUpdate(1, 16, 1 / 60)
     runtime.detach()
@@ -281,7 +329,7 @@ describe('determinism', () => {
 
 describe('characterAccess', () => {
   it('raises the launch field and never lowers it, since the step is what consumes it', () => {
-    const state = { launch: 0 }
+    const state = fakeCharacter()
     const access = characterAccess(state)
     access.launch(20)
     access.launch(5)
@@ -302,7 +350,7 @@ describe('node references (stage C4)', () => {
     instantiateLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), level, REG)
   const attach = (level: Level): void => {
     log.length = 0
-    createComponentRuntime(loadWith(level), REG, { character: { launch: () => {} }, effects: noEffects() }).attach(0, 0, 1 / 60)
+    createComponentRuntime(loadWith(level), REG, { character: anyCharacter(), effects: noEffects() }).attach(0, 0, 1 / 60)
   }
 
   it('resolves a reference between two nodes in a level', () => {
@@ -352,7 +400,7 @@ describe('node references (stage C4)', () => {
     }
     const loaded = loadWith(level)
     log.length = 0
-    createComponentRuntime(loaded, REG, { character: { launch: () => {} }, effects: noEffects() }).attach(0, 0, 1 / 60)
+    createComponentRuntime(loaded, REG, { character: anyCharacter(), effects: noEffects() }).attach(0, 0, 1 / 60)
 
     // Both say `anchor`, so the ids alone cannot tell them apart. The positions can.
     expect(log).toEqual(['link:watcher->anchor', 'link:watcher->anchor'])
@@ -376,5 +424,233 @@ describe('node references (stage C4)', () => {
     }
     attach(level)
     expect(log).toEqual(['link:inner->elsewhere'])
+  })
+})
+
+/**
+ * A component moving its own node (ADR 0058).
+ *
+ * The gap this closed: `WorldNode` is readonly and `Track` is evaluated by the loader as `pose = f(t)`, so
+ * nothing a hook could reach was writable and "a door that opens when touched" was not expressible in any
+ * game. What a component writes is an **offset** from the authored transform, which is why these assert
+ * against a node placed away from the origin rather than at it.
+ */
+describe('driving a node', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  const at = (id: string, y: number, ...components: ComponentData[]): Node => ({
+    id,
+    transform: { position: vec3(0, y, 0) },
+    // A `Renderer` too: it is what turns the node's colliders into a `VisualItem`, and half of what these
+    // assert is that the *drawn* thing followed the body rather than only the body moving.
+    components: [comp('c0', COLLIDER, box), comp('c1', RENDERER, { material: '' }), ...components],
+  })
+
+  /** The visual drawing a node's first collider. */
+  const visualOf = (level: ReturnType<typeof instantiateLevel>, id: string) => {
+    const handle = level.allNodes.find((n) => n.id === id)!.colliderHandles[0]!
+    return level.visuals.find((v) => v.colliderHandles.includes(handle))!
+  }
+
+  /** One tick of the real order: components write, then the frame tree reads. */
+  const tick = (level: ReturnType<typeof instantiateLevel>, runtime: ReturnType<typeof createComponentRuntime>, n: number, ms: number): void => {
+    runtime.fixedUpdate(n, ms, 1)
+    level.update(ms)
+  }
+
+  it('hands a live offset to a component that declared moves, and nothing to one that did not', () => {
+    const level = load([at('driven', 0, comp('r', 'Riser')), at('static', 0, comp('s', 'Sneak'))])
+    expect(level.driveOf(level.allNodes.find((n) => n.id === 'driven')!)).toEqual({ position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) })
+    expect(level.driveOf(level.allNodes.find((n) => n.id === 'static')!)).toBeUndefined()
+
+    log.length = 0
+    const runtime = createComponentRuntime(level, TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() })
+    runtime.attach(0, 0, 1)
+    runtime.fixedUpdate(1, 0, 1)
+    expect(log).toEqual(['sneak:denied'])
+  })
+
+  it('moves the node it sits on, and the visual with it', () => {
+    const level = load([at('lift', 5, comp('r', 'Riser', { rate: 2 }))])
+    const visual = visualOf(level, 'lift')
+    const runtime = createComponentRuntime(level, TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() })
+    runtime.attach(0, 0, 1)
+
+    tick(level, runtime, 1, 0)
+    // The offset is added to the authored 5, never replacing it.
+    expect(visual.position.y).toBeCloseTo(7, 6)
+    tick(level, runtime, 2, 0)
+    expect(visual.position.y).toBeCloseTo(9, 6)
+  })
+
+  it('carries children, so moving a parent moves its subtree', () => {
+    const level = load([
+      {
+        id: 'platform',
+        transform: { position: vec3(0, 0, 0) },
+        components: [comp('c0', COLLIDER, box), comp('c1', RENDERER, { material: '' }), comp('r', 'Riser', { rate: 1 })],
+        children: [at('rider', 3)],
+      },
+    ])
+    const runtime = createComponentRuntime(level, TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() })
+    runtime.attach(0, 0, 1)
+    tick(level, runtime, 1, 0)
+
+    const child = visualOf(level, 'rider')
+    // The child was authored 3 above its parent and the parent rose 1.
+    expect(child.position.y).toBeCloseTo(4, 6)
+  })
+
+  it('rotates the node, in Euler radians like its transform', () => {
+    const level = load([at('turn', 0, comp('s', 'Spinner'))])
+    const runtime = createComponentRuntime(level, TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() })
+    runtime.attach(0, 0, 1)
+    tick(level, runtime, 1, 0)
+    // 90° about Y is (0, √½, 0, √½).
+    const visual = visualOf(level, 'turn')
+    expect(visual.rotation.y).toBeCloseTo(Math.SQRT1_2, 6)
+    expect(visual.rotation.w).toBeCloseTo(Math.SQRT1_2, 6)
+  })
+
+  /**
+   * The reason the drive is an offset and not a pose: a node can be moved by a track *and* by a component,
+   * and the answer is both rather than whichever ran last.
+   */
+  it('adds to a track rather than fighting it', () => {
+    const keys = [
+      { t: 0, position: vec3(0, 0, 0) },
+      { t: 1000, position: vec3(0, 10, 0) },
+    ]
+    const level = load([at('both', 0, comp('t', 'Track', { keys }), comp('r', 'Riser', { rate: 1 }))])
+    const runtime = createComponentRuntime(level, TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() })
+    runtime.attach(0, 0, 1)
+    // Half way along the track is 5; one tick of the riser at rate 1 and dt 1 is another 1.
+    tick(level, runtime, 1, 500)
+    expect(visualOf(level, 'both').position.y).toBeCloseTo(6, 6)
+  })
+
+  /** A driven node needs a kinematic body, decided at load, which is why `moves` has to be declared. */
+  it('gives a driven node a body that can actually be posed', () => {
+    const level = load([at('driven', 0, comp('r', 'Riser'))])
+    const runtime = createComponentRuntime(level, TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() })
+    runtime.attach(0, 0, 1)
+    tick(level, runtime, 1, 0)
+    // `basePose` only answers for nodes in the per-tick pose pass, so a non-zero answer here is the proof.
+    const handle = level.allNodes.find((n) => n.id === 'driven')!.colliderHandles[0]!
+    expect(level.basePose(handle)?.position.y).toBeCloseTo(1, 6)
+  })
+})
+
+/**
+ * The widened character access, and components living on the player (ADR 0059).
+ *
+ * `launch` was the whole surface before this, which is why a trampoline was expressible and a rope was not.
+ */
+describe('the character access', () => {
+  it('reads position, velocity, carry and footing off the live state', () => {
+    const state = fakeCharacter(vec3(1, 2, 3))
+    const access = characterAccess(state)
+    expect(access.position()).toEqual(vec3(1, 2, 3))
+
+    state.vx = 4
+    state.vz = -6
+    state.grounded = false
+    state.carry = vec3(0, 9, 0)
+    // Accessors rather than a snapshot, so a component reading next tick sees next tick.
+    expect(access.velocity()).toEqual({ x: 4, y: 0, z: -6 })
+    expect(access.carry()).toEqual(vec3(0, 9, 0))
+    expect(access.grounded()).toBe(false)
+  })
+
+  /** Adds, where `launch` takes the max: two shoves have a sum, two heights do not. */
+  it('accumulates pushes within a tick', () => {
+    const state = fakeCharacter()
+    const access = characterAccess(state)
+    access.push(vec3(1, 0, 0))
+    access.push(vec3(0, 0, 2))
+    access.push(vec3(-4, 5, 0))
+    expect(state.impulse).toEqual(vec3(-3, 5, 2))
+  })
+
+  /** In place, because the step zeroes that same object rather than replacing it. */
+  it('pushes into the object the step consumes', () => {
+    const state = fakeCharacter()
+    const impulse = state.impulse
+    characterAccess(state).push(vec3(0, 1, 0))
+    expect(state.impulse).toBe(impulse)
+  })
+})
+
+describe('components on the player', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  const Ability = defineComponent({
+    type: 'Ability',
+    params: { strength: { kind: 'number', default: 3 } },
+    onAttach: (self) => void log.push(`ability:attach:${self.node.id}`),
+    onFixedUpdate: (self, ctx) => {
+      log.push(`ability:${ctx.character.grounded() ? 'ground' : 'air'}`)
+      ctx.character.push(vec3(self.params.strength, 0, 0))
+    },
+    onContact: () => void log.push('ability:contact'),
+  })
+  const REG = createRegistry([...ENGINE_COMPONENTS, Counter, Ability])
+  const loadIn = (nodes: Node[]): ReturnType<typeof instantiateLevel> =>
+    instantiateLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), levelOf(nodes), REG)
+
+  const player = { id: 'player', components: [comp('a', 'Ability', { strength: 5 })] }
+
+  it('runs a component the level never mentioned', () => {
+    log.length = 0
+    const state = fakeCharacter()
+    const runtime = createComponentRuntime(loadIn([]), REG, { character: characterAccess(state), effects: noEffects(), player })
+    expect(runtime.count()).toBe(1)
+    runtime.attach(0, 0, 1)
+    runtime.fixedUpdate(1, 0, 1)
+    expect(log).toEqual(['ability:attach:player', 'ability:ground'])
+    expect(state.impulse).toEqual(vec3(5, 0, 0))
+  })
+
+  it('attaches nothing when a game declares no player components', () => {
+    expect(createComponentRuntime(loadIn([]), REG, { character: anyCharacter(), effects: noEffects() }).count()).toBe(0)
+  })
+
+  /** The level is the world and the player reacts to it, so within a tick the world has already moved. */
+  it('runs after every level node', () => {
+    log.length = 0
+    const nodes: Node[] = [
+      { id: 'a', transform: { position: vec3(0, 0, 0) }, components: [comp('c', 'Counter')] },
+      { id: 'b', transform: { position: vec3(0, 0, 0) }, components: [comp('c', 'Counter')] },
+    ]
+    const runtime = createComponentRuntime(loadIn(nodes), REG, { character: anyCharacter(), effects: noEffects(), player })
+    runtime.attach(0, 0, 1)
+    expect(log).toEqual(['attach:a', 'attach:b', 'ability:attach:player'])
+  })
+
+  /**
+   * The player owns no colliders, so a contact is delivered to whatever it *touched*. A hazard the player
+   * walks into fires on the hazard's node, which is where the rule was authored.
+   */
+  it('never fires onContact, having no colliders of its own', () => {
+    log.length = 0
+    const loaded = loadIn([{ id: 'pad', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', COLLIDER, box)] }])
+    const runtime = createComponentRuntime(loaded, REG, { character: anyCharacter(), effects: noEffects(), player })
+    runtime.attach(0, 0, 1)
+    log.length = 0
+    runtime.contact(loaded.nodes.flatMap((n) => [...n.colliderHandles]))
+    expect(log).toEqual([])
+  })
+
+  it('tears down with everything else', () => {
+    const runtime = createComponentRuntime(loadIn([]), REG, { character: anyCharacter(), effects: noEffects(), player })
+    runtime.attach(0, 0, 1)
+    log.length = 0
+    runtime.detach()
+    // `Ability` has no onDetach; what is asserted is that detaching a player component does not throw.
+    expect(log).toEqual([])
   })
 })

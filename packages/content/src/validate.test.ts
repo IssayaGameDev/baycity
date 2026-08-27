@@ -172,7 +172,7 @@ describe('parameters, when a registry is supplied', () => {
 })
 
 /**
- * The environment block (ADR 0048): sun, ambient, sky, all optional.
+ * The environment block (ADR 0048): sun, ambient, sky, post-FX, all optional.
  *
  * Optionality is the load-bearing part. A level that pins only its sun must keep the renderer's sky, and a
  * level written before this existed must still load — so absent is never an error and malformed always is.
@@ -195,8 +195,10 @@ describe('the environment block', () => {
     sunDiskIntensity: 400,
   }
 
+  const postfx = { ao: true, bloom: true, bloomStrength: 0.1 }
+
   it('accepts a full one', () => {
-    expect(() => validateLevel(withEnv({ sun, ambient: { intensity: 0.2 }, sky }))).not.toThrow()
+    expect(() => validateLevel(withEnv({ sun, ambient: { intensity: 0.2 }, sky, postfx }))).not.toThrow()
   })
 
   it('accepts a level with no environment at all', () => {
@@ -208,6 +210,7 @@ describe('the environment block', () => {
     expect(() => validateLevel(withEnv({ sun }))).not.toThrow()
     expect(() => validateLevel(withEnv({ ambient: { intensity: 0 } }))).not.toThrow()
     expect(() => validateLevel(withEnv({ sky }))).not.toThrow()
+    expect(() => validateLevel(withEnv({ postfx }))).not.toThrow()
     expect(() => validateLevel(withEnv({}))).not.toThrow()
   })
 
@@ -229,8 +232,22 @@ describe('the environment block', () => {
     expect(() => validateLevel(withEnv({ sky: { ...sky, gain: 'lots' } }))).toThrow(/environment\.sky\.gain/)
   })
 
+  /**
+   * Post-FX is level data because it is tuned against the light (ADR 0057). Every app used to hardcode its
+   * own and they had drifted, so what matters is that a level saying otherwise is honoured at all.
+   */
+  it('rejects a post-FX switch that is not a boolean', () => {
+    expect(() => validateLevel(withEnv({ postfx: { ...postfx, ao: 'on' } }))).toThrow(/environment\.postfx\.ao/)
+    expect(() => validateLevel(withEnv({ postfx: { ...postfx, bloom: 1 } }))).toThrow(/environment\.postfx\.bloom/)
+  })
+
+  it('rejects a bad bloom strength', () => {
+    expect(() => validateLevel(withEnv({ postfx: { ...postfx, bloomStrength: 'lots' } }))).toThrow(/postfx\.bloomStrength/)
+  })
+
   it('rejects parts that are not objects', () => {
     expect(() => validateLevel(withEnv(30))).toThrow(/config\.environment/)
     expect(() => validateLevel(withEnv({ ambient: 0.2 }))).toThrow(/environment\.ambient/)
+    expect(() => validateLevel(withEnv({ postfx: true }))).toThrow(/environment\.postfx/)
   })
 })

@@ -147,6 +147,26 @@ export interface CharacterState {
    */
   launch: number
   /**
+   * A velocity (m/s) something outside locomotion wants **added** on the next step, then **consumed**
+   * (ADR 0059).
+   *
+   * `launch` generalised to three axes. It exists because `launch` could only ever set a vertical, so
+   * anything that wanted to move the character sideways — a rope pulling you round an arc, a dash, a wind
+   * volume — had no way to say so, and a component on the player could not do the one thing a locomotion
+   * component has to do.
+   *
+   * Why it goes through the step rather than onto `vx`/`vy`/`vz` from outside is `launch`'s reason
+   * unchanged: leaving a surface is five decisions and not one. It is applied **after** the horizontal
+   * solve, so the ground brake cannot eat it on the tick it lands — the same place, and for the same reason,
+   * as a departing mover's velocity.
+   *
+   * **An upward impulse leaves the surface; a flat one does not.** A dash along the floor should keep its
+   * footing and let friction spend the burst over the next few ticks, while anything with a positive `y`
+   * has to release the ride or it is cancelled outright — a rider's vertical belongs to the surface, so
+   * `desired.y` ignores `vy` entirely while riding.
+   */
+  impulse: Vec3
+  /**
    * Seconds of jump grace left — coyote time. Refilled to `coyoteTime` on every tick that has footing,
    * counted down on every tick that does not, and **spent to 0** the moment a jump or a launch leaves the
    * surface. That last part is what stops one ledge from yielding two jumps to a held button.
@@ -200,6 +220,7 @@ export const addCharacterWith = (world: PhysicsWorld, spawn: Vec3, opts: Partial
   vz: 0,
   vy: 0,
   launch: 0,
+  impulse: vec3(0, 0, 0),
   coyote: 0,
   jumpBuffer: 0,
   jumpCut: false,
@@ -222,6 +243,7 @@ export const addCharacter = (world: PhysicsWorld, spawn: Vec3, layers?: Collisio
   vz: 0,
   vy: 0,
   launch: 0,
+  impulse: vec3(0, 0, 0),
   coyote: 0,
   jumpBuffer: 0,
   jumpCut: false,
@@ -322,7 +344,11 @@ export const stepCharacter = (
   // A launch leaves the surface exactly as a jump does, so every decision below keys off `leaving` rather than
   // off `jumping`. A bumper does not require footing: you can be thrown by clipping one in the air.
   const launching = state.launch > 0
-  const leaving = jumping || launching
+  // An impulse with any upward component leaves the surface, for the reason on the field: while riding, the
+  // surface owns the vertical outright, so an upward push that kept its footing would simply be discarded.
+  // A flat impulse keeps its footing on purpose — a ground dash is not a jump.
+  const impulsing = state.impulse.x !== 0 || state.impulse.y !== 0 || state.impulse.z !== 0
+  const leaving = jumping || launching || state.impulse.y > 0
   // Spend both windows on the way out. Without this the counters keep running while airborne and a held
   // button gets a second jump out of the same ledge, two ticks after the first.
   if (leaving) {
@@ -337,7 +363,7 @@ export const stepCharacter = (
   else if (jumping) state.vy = Math.sqrt(2 * tuning.gravity * tuning.jumpHeight)
   // Only a jump is the player's to cut short. A launch clears the flag instead of setting it, because
   // letting go of the button must not cancel a throw the level gave you.
-  if (launching) state.jumpCut = false
+  if (launching || state.impulse.y > 0) state.jumpCut = false
   else if (jumping) state.jumpCut = true
   state.launch = 0
 
@@ -454,6 +480,24 @@ export const stepCharacter = (
     state.vz += state.liftVel.z
     vyStart += state.liftVel.y
     state.liftStore = 0
+  }
+
+  // The outside push, applied here rather than earlier for exactly the reason the block above gives: this
+  // tick may still count as grounded, and the ground brake would eat most of a flat impulse before it moved
+  // anything. `vyStart` moves with it so the trapezoid below stays the exact integral.
+  if (impulsing) {
+    state.vx += state.impulse.x
+    state.vy += state.impulse.y
+    state.vz += state.impulse.z
+    vyStart += state.impulse.y
+    // Consumed, so one request is honoured once — `launch`'s contract, and what lets a component write it
+    // every tick it wants to pull and simply stop writing it when it does not.
+    //
+    // Zeroed **in place** rather than replaced, because `CharacterAccess.push` adds into this very object and
+    // several components may push in one tick. Replacing it would leave an accumulator holding a stale one.
+    state.impulse.x = 0
+    state.impulse.y = 0
+    state.impulse.z = 0
   }
 
   // One translation for the controller to resolve: our own movement plus the surface's. The ridden

@@ -1,7 +1,7 @@
 import { vec3, type Vec3 } from '@mp/core'
 import type { ColliderDesc } from '@mp/content'
 import { visibleParams, type AssetSpec, type ParamSpec } from '@mp/components'
-import { DEFAULT_SKY_PARAMS } from '@mp/render-three'
+import { DEFAULT_POSTFX, DEFAULT_SKY_PARAMS } from '@mp/render-three'
 import { Pane } from 'tweakpane'
 
 import type { ComponentView, Doc } from './editorDoc'
@@ -734,8 +734,9 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     const sun = { ...(current.sun ?? { elevation: 30, azimuth: 38, intensity: 2.4, color: '#ffffff', shadows: true }) }
     const ambient = { ...(current.ambient ?? { intensity: 0.2 }) }
     const sky = { ...(current.sky ?? DEFAULT_SKY_PARAMS) }
+    const postfx = { ...(current.postfx ?? DEFAULT_POSTFX) }
     const write = (): void => {
-      doc.setEnvironment({ sun: { ...sun }, ambient: { ...ambient }, sky: { ...sky } })
+      doc.setEnvironment({ sun: { ...sun }, ambient: { ...ambient }, sky: { ...sky }, postfx: { ...postfx } })
       host.onEnvironmentChanged()
     }
 
@@ -764,6 +765,19 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     skySection.pane().addBinding(sky, 'glowStrength', { min: 0, max: 2, step: 0.01, label: 'glow' }).on('change', write)
     skySection.pane().addBinding(sky, 'glowSharpness', { min: 4, max: 600, step: 4, label: 'glow tight' }).on('change', write)
     skySection.pane().addBinding(sky, 'sunDiskIntensity', { min: 0, max: 2000, step: 10, label: 'sun disc' }).on('change', write)
+
+    /**
+     * The passes over the finished image. Here rather than in a preferences dialogue because they are the
+     * level's: occlusion is most of what gives greybox its form, and both are tuned against the light above.
+     *
+     * These were hardcoded per app and had drifted — the editor asked for a stronger bloom than the game — so
+     * the viewport was not showing what you would play.
+     */
+    const fxSection = addSection('@env-postfx', { title: 'Post-FX' })
+    fxSection.pane().addBinding(postfx, 'ao', { label: 'ambient occl.' }).on('change', write)
+    fxSection.pane().addBinding(postfx, 'bloom', { label: 'bloom' }).on('change', write)
+    fxSection.pane().addBinding(postfx, 'bloomStrength', { min: 0, max: 1.5, step: 0.05, label: 'bloom str' }).on('change', write)
+    fxSection.row('', 'bloom only fires on emissive materials')
   }
 
   const rebuild = (): void => {

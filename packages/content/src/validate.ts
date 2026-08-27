@@ -47,7 +47,7 @@ const checkNumbers = (o: Record<string, unknown>, keys: readonly string[], at: s
 }
 
 /**
- * The environment block (ADR 0048): sun, ambient, sky.
+ * The environment block (ADR 0048): sun, ambient, sky, post-FX.
  *
  * Every part is optional, and so is the block. A level written before this existed, or one that only pins its
  * sun, still loads — the renderer fills the rest from its defaults. Present-but-malformed is the error case;
@@ -75,6 +75,15 @@ const validateEnvironment = (e: unknown): void => {
     if (!isObj(e.sky)) throw new LevelError(`${at}: expected object`)
     checkNumbers(e.sky, ['gradientBias', 'gain', 'glowSharpness', 'glowStrength', 'sunDiskIntensity'], at)
     for (const key of ['topColor', 'bottomColor', 'glowColor']) checkColor(e.sky[key], `${at}.${key}`)
+  }
+
+  if (e.postfx !== undefined) {
+    const at = 'level.config.environment.postfx'
+    if (!isObj(e.postfx)) throw new LevelError(`${at}: expected object`)
+    for (const key of ['ao', 'bloom']) {
+      if (typeof e.postfx[key] !== 'boolean') throw new LevelError(`${at}.${key}: expected true or false`)
+    }
+    checkNumbers(e.postfx, ['bloomStrength'], at)
   }
 }
 

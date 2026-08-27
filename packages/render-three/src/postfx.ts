@@ -1,3 +1,4 @@
+import type { PostFXConfig } from '@mp/content'
 import * as THREE from 'three'
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js'
@@ -74,6 +75,16 @@ export interface PostFXOptions {
   bloomThreshold?: number
 }
 
+/**
+ * What a level that pins nothing gets. The renderer's opinion, the same way `DEFAULT_SKY_PARAMS` is — the
+ * *schema* lives in `@mp/content` and has no numbers in it.
+ *
+ * These are the game's previous hardcoded values, so nothing looks different until a level says otherwise.
+ * The editor and the viewer asked for `bloomStrength: 0.3`; they now agree with the game instead, which is
+ * the point of the change.
+ */
+export const DEFAULT_POSTFX: PostFXConfig = { ao: true, bloom: true, bloomStrength: 0.1 }
+
 export interface PostFX {
   composer: EffectComposer
   /** The bloom pass (always present so it can be toggled live via `.enabled`). */
@@ -83,6 +94,21 @@ export interface PostFX {
    * reason bloom is — `.enabled` is the only way to tell whether a shading artifact is AO's doing.
    */
   ao: GTAOPass | null
+  /**
+   * Live values. Mutate, then `refresh()`.
+   *
+   * A pane binds to **this object**, not a copy, for the reason ADR 0048 gives for `skyParams`: a pane bound
+   * to a copy goes on showing its own numbers after a level is loaded, so the sliders and the image disagree
+   * and nobody can tell which one is lying.
+   */
+  params: PostFXConfig
+  /** Push `params` onto the passes. */
+  refresh: () => void
+  /**
+   * Apply a level's `config.environment.postfx`. Absent — or a level written before this existed — falls back
+   * to `DEFAULT_POSTFX`, so an old level still looks the way it did.
+   */
+  apply: (from: Partial<PostFXConfig> | undefined) => void
   render: () => void
   setSize: (width: number, height: number) => void
   dispose: () => void
@@ -101,25 +127,32 @@ export const createPostFX = (
 
   composer.addPass(new RenderPass(scene, camera))
 
+  /**
+   * Built whether or not AO is currently wanted, and switched with `.enabled`.
+   *
+   * It used to be skipped entirely on `ao: false`, which was fine while that was a build-time choice. It is a
+   * level's choice now, and levels change without reloading the page — a pass that does not exist cannot be
+   * switched back on.
+   */
   let gtao: GTAOPass | null = null
+  const aoBracket = opts.ao === false ? null : (opts.aoIgnores === undefined ? null : bracket(opts.aoIgnores))
   if (opts.ao !== false) {
     gtao = new GTAOPass(scene, camera, size.x, size.y)
     gtao.output = GTAOPass.OUTPUT.Default
     // Bracketed, so whatever `aoIgnores` names is absent from the AO prepass and present everywhere else.
-    const skip = opts.aoIgnores === undefined ? null : bracket(opts.aoIgnores)
-    if (skip !== null) composer.addPass(skip.hide)
+    if (aoBracket !== null) composer.addPass(aoBracket.hide)
     composer.addPass(gtao)
-    if (skip !== null) composer.addPass(skip.show)
+    if (aoBracket !== null) composer.addPass(aoBracket.show)
   }
 
   // Always present so the consumer can toggle it live; disabled passes are skipped.
   const bloom = new UnrealBloomPass(
     new THREE.Vector2(size.x, size.y),
-    opts.bloomStrength ?? 0.35,
+    opts.bloomStrength ?? DEFAULT_POSTFX.bloomStrength,
     opts.bloomRadius ?? 0.4,
     opts.bloomThreshold ?? 0.85,
   )
-  bloom.enabled = opts.bloom === true
+  bloom.enabled = opts.bloom ?? DEFAULT_POSTFX.bloom
   composer.addPass(bloom)
 
   composer.addPass(new OutputPass())
@@ -132,10 +165,36 @@ export const createPostFX = (
   }
   window.addEventListener('resize', onResize)
 
+  /** Seeded from what was actually built, so `params` and the passes agree before anything is applied. */
+  const params: PostFXConfig = {
+    ao: gtao !== null && gtao.enabled,
+    bloom: bloom.enabled,
+    bloomStrength: bloom.strength,
+  }
+
+  const refresh = (): void => {
+    if (gtao !== null) gtao.enabled = params.ao
+    // The bracket only exists to serve the AO prepass, so it idles with it rather than hiding and showing
+    // objects for a pass that is not running.
+    if (aoBracket !== null) {
+      aoBracket.hide.enabled = params.ao
+      aoBracket.show.enabled = params.ao
+    }
+    bloom.enabled = params.bloom
+    bloom.strength = params.bloomStrength
+  }
+
   return {
     composer,
     bloom,
     ao: gtao,
+    params,
+    refresh,
+    // Key by key, not replaced, because `params` is the object a pane is bound to.
+    apply: (from) => {
+      Object.assign(params, DEFAULT_POSTFX, from)
+      refresh()
+    },
     render: () => composer.render(),
     setSize: (w, h) => {
       composer.setSize(w, h)

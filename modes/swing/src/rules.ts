@@ -1,8 +1,7 @@
 import { CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/character'
-import { Bumper, Checkpoint, createRegistry, ENGINE_COMPONENTS, Goal, Hazard, Track } from '@mp/components'
-import { vec3, type Vec3 } from '@mp/core'
+import { Bumper, Checkpoint, createRegistry, ENGINE_COMPONENTS, Goal, Hazard, PLAYER_COMPONENTS, Track } from '@mp/components'
 import type { LoadedLevel } from '@mp/content'
-import type { ModeSession, ModeSessionOptions } from '@mp/mode'
+import { spawnFrom, type ModeSession, type ModeSessionOptions } from '@mp/mode'
 
 /**
  * Swing's rules, which are so far only the ones every game needs: spawn somewhere, be able to die, respawn.
@@ -25,25 +24,18 @@ import type { ModeSession, ModeSessionOptions } from '@mp/mode'
  * below keeps no progress, so reaching one does nothing yet. The rule is where progression lives, not the
  * component.
  */
-export const SWING_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Checkpoint, Goal, Hazard, Bumper, Track])
+export const SWING_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Checkpoint, Goal, Hazard, Bumper, Track, ...PLAYER_COMPONENTS])
 
 /** How far above a spawn node the character's origin sits — half the capsule, plus its cap. */
 export const STAND_OFFSET = CHAR_HALF_HEIGHT + CHAR_RADIUS
 
 /**
- * Where a player starts: the level's spawn marker, or the origin if it has none, so a level with nothing
- * authored still boots instead of dropping the character through the void.
+ * Where a player starts: the level's spawn marker, or above the origin if it has none.
  *
- * `seed` is a player id, and spreading arrivals around one marker is what stops two players spawning inside
- * each other. A tool passes nothing, having one body to place.
+ * The placement itself is shared (`@mp/mode`) — it was the same function in every game. What is this game's
+ * is the stand-off height, which is its character's, not the platform's.
  */
-export const spawnOf = (loaded: LoadedLevel, seed?: number): Vec3 => {
-  const marker = loaded.markers.find((m) => m.kind === 'spawn')?.position
-  if (marker === undefined) return vec3(0, 3, 0)
-  if (seed === undefined) return vec3(marker.x, marker.y + STAND_OFFSET, marker.z)
-  const a = seed * 2.399963 // the golden angle, so arrivals fan out rather than stack
-  return vec3(marker.x + Math.cos(a) * 2, marker.y + STAND_OFFSET, marker.z + Math.sin(a) * 2)
-}
+export const spawnOf = spawnFrom(STAND_OFFSET)
 
 /**
  * A session with no progression: you spawn, you can die, you respawn where you started.

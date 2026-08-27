@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@mode/parkour": "workspace:*",
+    "@mp/camera": "workspace:*",
     "@mp/character": "workspace:*",
     "@mp/client": "workspace:*",
     "@mp/components": "workspace:*",

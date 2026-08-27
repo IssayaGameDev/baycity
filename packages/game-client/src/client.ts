@@ -41,9 +41,9 @@ import {
   type GaitTuning,
 } from '@mp/character'
 import { createOrbitCamera, type OcclusionQueries } from '@mp/camera'
-import type { ModeDescriptor } from '@mp/mode'
+import { PLAYER_NODE_ID, type ModeDescriptor } from '@mp/mode'
 import { instantiateLevel, type LoadedLevel } from '@mp/content'
-import { characterAccess, createComponentRuntime, type ComponentRuntime } from '@mp/components'
+import { Death, characterAccess, componentOn, createComponentRuntime, readParams, type ComponentRuntime } from '@mp/components'
 import { t } from '@mp/i18n'
 import { createTouchHud, createUiOverlay, uiButton, type ListItem, type TouchHud } from '@mp/render-pixi'
 import { Client, type Room } from 'colyseus.js'
@@ -124,7 +124,16 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
   const gait: GaitTuning = { ...DEFAULT_GAIT }
   const views = createCharacterViews(stage.scene, gait)
   // Spawn assembly timing. Declared up here so the debug pane below can bind it.
-  const assembleTiming: AssemblyTiming = { stagger: 0.05, fall: 0.18, height: 2.5 }
+  /**
+   * What dying looks like: the game's `Death` component, or the shipped defaults when it declares none
+   * (ADR 0059).
+   *
+   * Read once, here, rather than per death: it is authored data, not live state. The values then stay live on
+   * the debug pane, which is bound to `assembleTiming` — so a game can ship an opinion and it can still be
+   * dialled by eye.
+   */
+  const death = componentOn(mode.player ?? [], Death) ?? readParams(Death.params, {}, Death.type)
+  const assembleTiming: AssemblyTiming = { stagger: death.assembleStagger, fall: death.assembleFall, height: death.assembleHeight }
 
   // --- camera orbit (mouselook via pointer lock) ---
   /**
@@ -156,8 +165,13 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
     }
   }
 
-  /** Post-processing switches, kept because a hole in a surface leaves its *shading* behind (ADR 0055). */
-  const debug = { sunShadows: true, ambientOcclusion: true }
+  /**
+   * The sun-shadow switch, kept because a hole in a surface leaves its *shading* behind (ADR 0055).
+   *
+   * Its AO twin has gone: ambient occlusion is level data now, so the pane binds `postfx.params` directly and
+   * a second flag beside it would just be something else to keep in step.
+   */
+  const debug = { sunShadows: true }
   // Everything the player presses (`inputs.ts`), which is also what keeps the camera DOM-free: a mouse
   // delta becomes `lookMouse`, a wheel tick becomes `zoomNotch` (ADR 0056).
   const input = createInputs({
@@ -277,6 +291,8 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
     levelLights = addLights(stage.scene, loaded.lights)
     // The level owns its sun, and moving it rebakes the sky so the two cannot disagree (ADR 0048).
     env.applyEnvironment(loaded.config.environment)
+    // The same block, applied by the object that owns those passes (ADR 0048).
+    postfx.apply(loaded.config.environment?.postfx)
     /**
      * **The rules run themselves.** `Bumper`, `Checkpoint` and `Hazard` carry their own `onContact`, so this
      * mode supplies only what dying and making progress *mean* here, and the branches that used to sit in the
@@ -365,7 +381,10 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
      * `kill` sets a flag instead of calling `die()` directly, because death is gated on not already being dead
      * and on the fall plane in the same breath, and one place deciding that is one place to read.
      */
+    // The player's own components come from the descriptor, not from the level (ADR 0059): a level authors
+    // the world, and who is playing is the game's business.
     const components: ComponentRuntime = createComponentRuntime(loaded, mode.registry, {
+      ...(mode.player === undefined ? {} : { player: { id: PLAYER_NODE_ID, components: mode.player } }),
       character: characterAccess(char),
       effects: rules.effects,
     })
@@ -389,6 +408,9 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
       const pose = views.poseOf(id)
       if (pose === null) return // no rig drawn yet; nothing to fall apart
       dead = true
+      // A game whose character is not a jointed figure says `ragdoll: false` and simply waits (ADR 0059).
+      // Death still happens, the rig still goes, the click still respawns — there is just nothing to fall.
+      if (!death.ragdoll) return
       ragdoll = createRagdoll({
         world,
         scene: stage.scene,
@@ -422,10 +444,12 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
         // translation is computed by `stepCharacter` from the full `TICK_DT` and applied through `move`.
         const half = TICK_DT / 2
         const nowMs = simClock.tick()
-        loaded?.update(nowMs, char.base?.colliderHandle)
-        // Components run on the synced clock, before physics, so what one of them writes is what this tick
-        // resolves against. Nothing built in uses it yet; an authored component would.
+        // Components run **before** the frame tree, not after it (ADR 0058). A component can move its own
+        // node now, and it writes an offset the frame tree reads — so running `update` first would pose
+        // everything from last tick's offsets and land every driven node one tick late. The old order was
+        // harmless only while nothing a component could reach was writable.
         components.fixedUpdate(++tickCount, nowMs, TICK_DT)
+        loaded?.update(nowMs, char.base?.colliderHandle)
         world.step(half) // (A) platforms move
         stepCharacter(char, cmd, TICK_DT, tuning, loaded?.basePose) // rides whatever it stands on
         world.step(half) // (B) character resolves against the moved platforms

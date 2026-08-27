@@ -1,4 +1,5 @@
-import type { LoadedLevel, WorldNode } from '@mp/content'
+import type { Vec3 } from '@mp/core'
+import type { ComponentData, NodeDrive, LoadedLevel, WorldNode } from '@mp/content'
 import type { AnyComponentDef, Registry } from './registry'
 import { readParams, type ParamDecls, type Params } from './params'
 import type { ComponentDef } from './define'
@@ -27,7 +28,17 @@ import type { ComponentDef } from './define'
  * static subtree costs nothing. Moving it here would trade that for nothing.
  */
 
-/** What the local character can be asked to do. Motion only; anything about the *run* goes through `Effects`. */
+/**
+ * What the local character can be asked, and asked to do. Motion only; anything about the *run* goes through
+ * `Effects`.
+ *
+ * This was one method — `launch` — which was enough for a trampoline and nothing else (ADR 0032). A component
+ * that lives *on the player* has to be able to see where it is and move it in a direction, so it is now the
+ * read surface plus one general push (ADR 0059).
+ *
+ * **Accessors, not fields.** The state underneath mutates every tick, so a snapshot object would be stale the
+ * moment a component held onto it.
+ */
 export interface CharacterAccess {
   /**
    * Ask for an upward speed on the next step, which `stepCharacter` consumes (ADR 0032).
@@ -36,6 +47,27 @@ export interface CharacterAccess {
    * is the reading that cannot surprise anybody — it is also exactly what the mode's `Math.max` did before.
    */
   launch: (speed: number) => void
+  /** Where the character is right now — the capsule's centre, in world space. */
+  position: () => Vec3
+  /**
+   * Its own locomotion velocity (m/s).
+   *
+   * Not what the world is adding: a platform carrying you, a sweeping bar shoving you and a wall taking your
+   * momentum are all in `carry` and none of them are here.
+   */
+  velocity: () => Vec3
+  /** What the world moved the character by that its own locomotion did not ask for (m/s). */
+  carry: () => Vec3
+  /** Is there ground under it. False through a jump, a fall, and the coyote window. */
+  grounded: () => boolean
+  /**
+   * Add a velocity (m/s) on the next step, then consumed — `launch` generalised to three axes.
+   *
+   * **Accumulates within a tick**, rather than the strongest winning, because two pushes from different
+   * directions have a meaningful sum where two competing *heights* do not. Write it every tick to pull
+   * continuously; stop writing it to stop.
+   */
+  push: (v: Vec3) => void
 }
 
 /**
@@ -69,6 +101,23 @@ export interface Self<D extends ParamDecls, S> {
    * `self.find(self.params.target)`.
    */
   readonly find: (ref: string | null) => WorldNode | undefined
+  /**
+   * Move this node: a **live, mutable offset** from its authored transform, in local space (ADR 0058).
+   *
+   * `undefined` unless this component's definition declares `moves`. Write into it — `self.offset.position.y
+   * += ctx.dt` — and the frame tree picks it up on the same tick, carrying the node's colliders, its visual,
+   * its light and everything parented under it.
+   *
+   * An offset rather than a pose, so zero means "as authored", a driven node survives being duplicated or
+   * reparented, and a component can nudge a node a `Track` is already moving — the two simply add.
+   *
+   * `rotation` is Euler **radians**, like `Transform.rotation`.
+   *
+   * Before this, nothing a component could reach was writable: `WorldNode` is readonly and `Track` is
+   * evaluated by the loader as `pose = f(t)`, so "a door that opens when touched" was not expressible in any
+   * game (ADR 0058).
+   */
+  readonly offset: NodeDrive | undefined
 }
 
 /**
@@ -154,10 +203,37 @@ const hashRandom = (a: number, b: number, c: number): number => {
  * leaves its default execution order effectively undefined and everybody has been bitten by it; being
  * explicit costs nothing and is what makes the determinism test meaningful.
  */
+/**
+ * Components that live on **the player** rather than on a level node (ADR 0059).
+ *
+ * A level authors the world; it does not author who is playing. So these come from the game's
+ * `ModeDescriptor` and are attached at runtime, which is the whole difference between a pad you touch and an
+ * ability you have. Before this the character was a capsule plus `stepCharacter` and nothing else, so an
+ * ability the player *has* had nowhere at all to live.
+ *
+ * Validated against the same registry as everything else, so a game cannot give its player a component it did
+ * not declare.
+ */
+export interface PlayerEntity {
+  /** Node id, for `self.node.id` and for a `nodeRef` to name. Conventionally `'player'`. */
+  readonly id: string
+  readonly components: readonly ComponentData[]
+}
+
 export const createComponentRuntime = (
   loaded: LoadedLevel,
   registry: Registry,
-  io: { readonly character: CharacterAccess; readonly effects: Effects },
+  io: {
+    readonly character: CharacterAccess
+    readonly effects: Effects
+    /**
+     * The local player's own components, attached after every level node's.
+     *
+     * After, deliberately: the level is the world and the player reacts to it, so within one tick a mover has
+     * already moved and a rule has already fired by the time an ability runs.
+     */
+    readonly player?: PlayerEntity
+  },
 ): ComponentRuntime => {
   const instances: Instance[] = []
   const byNode = new Map<WorldNode, Instance[]>()
@@ -181,9 +257,29 @@ export const createComponentRuntime = (
     mutable.dt = dt
   }
 
-  for (const node of loaded.allNodes) {
+  /**
+   * The player as a node, so a component on it sees the same `Self` as one on a platform.
+   *
+   * Three things about it are deliberately different, and all three are documented on `Self`: it owns no
+   * colliders, so `onContact` never fires on it (a hazard the player touches is delivered to the *hazard*);
+   * `position` is where it spawned rather than where it is, because a `WorldNode`'s position is load-time
+   * data and the live answer is `ctx.character.position()`; and `self.offset` is `undefined` even for a
+   * component that declares `moves`, since the character is a controller resolved against the world rather
+   * than a frame posed by the loader — it moves by asking `ctx.character`, not by writing an offset.
+   */
+  const playerNode: WorldNode | undefined =
+    io.player === undefined
+      ? undefined
+      : { id: io.player.id, name: io.player.id, components: io.player.components, position: { x: 0, y: 0, z: 0 }, colliderHandles: [], scope: 0 }
+
+  const sources: readonly { node: WorldNode; components: readonly ComponentData[] }[] = [
+    ...loaded.allNodes.map((node) => ({ node, components: node.components })),
+    ...(playerNode === undefined ? [] : [{ node: playerNode, components: playerNode.components }]),
+  ]
+
+  for (const { node, components } of sources) {
     const here: Instance[] = []
-    for (const c of node.components) {
+    for (const c of components) {
       if (c.enabled === false) continue
       const def = registry.get(c.type)
       if (def === undefined || !hasHooks(def)) continue
@@ -197,6 +293,9 @@ export const createComponentRuntime = (
           return found === undefined ? undefined : readParams(other.params, found.params, other.type)
         },
         find: (ref) => (ref === null || ref === '' ? undefined : loaded.findNode(node, ref)),
+        // Only for a component that asked. Handing it to every component would mean every node with any
+        // hook at all became kinematic and got posed every tick, which is a cost nothing asked for.
+        offset: def.moves === true ? loaded.driveOf(node) : undefined,
       }
       const instance: Instance = { def, self }
       instances.push(instance)
@@ -252,13 +351,41 @@ export const createComponentRuntime = (
 }
 
 /**
- * A `CharacterAccess` over a character whose `launch` is a number field the step consumes.
- *
- * Takes the max across a tick, which is the "strongest bumper wins" rule, and keeps the field's
- * consume-on-step contract intact — the step zeroes it, so this only ever raises it.
+ * The shape of a character this can be built over. Structural on purpose: `@mp/character` owns
+ * `CharacterState` and satisfies this, but nothing here imports it, so the component system stays usable by a
+ * test with a plain object and cannot end up in a cycle with the controller.
  */
-export const characterAccess = (state: { launch: number }): CharacterAccess => ({
+export interface CharacterLike {
+  launch: number
+  impulse: Vec3
+  vx: number
+  vy: number
+  vz: number
+  carry: Vec3
+  grounded: boolean
+  body: { translation: () => Vec3 }
+}
+
+/**
+ * A `CharacterAccess` over a character whose pending requests are fields the step consumes.
+ *
+ * `launch` takes the max across a tick — the "strongest bumper wins" rule — and keeps the field's
+ * consume-on-step contract intact, since the step zeroes it and this only ever raises it. `push` **adds**
+ * instead, for the reason on the interface: two shoves have a sum, two heights do not.
+ */
+export const characterAccess = (state: CharacterLike): CharacterAccess => ({
   launch: (speed) => {
     if (speed > state.launch) state.launch = speed
+  },
+  position: () => state.body.translation(),
+  velocity: () => ({ x: state.vx, y: state.vy, z: state.vz }),
+  carry: () => state.carry,
+  grounded: () => state.grounded,
+  push: (v) => {
+    // In place, because the step zeroes the same object rather than replacing it, and because two components
+    // pushing in one tick must both land.
+    state.impulse.x += v.x
+    state.impulse.y += v.y
+    state.impulse.z += v.z
   },
 })

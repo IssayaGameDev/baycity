@@ -31,7 +31,8 @@ import {
   type Transform,
 } from '@mp/content'
 import { DEFAULT_REGISTRY, characterAccess, createComponentRuntime, type ComponentRuntime, type Registry } from '@mp/components'
-import type { ModeDescriptor } from '@mp/mode'
+import { createOrbitCamera } from '@mp/camera'
+import { PLAYER_NODE_ID, type ModeDescriptor } from '@mp/mode'
 import { createSimClock, eulerToQuat, quat, startFixedLoop, vec3, type EntityId, type LoopHandle, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
@@ -80,8 +81,10 @@ const canvas = $<HTMLCanvasElement>('#view')
 // --- scene + polished pipeline (same renderer the game/viewer use) ---
 const stage = createThreeStage({ canvas, cameraPosition: [12, 10, 16], lookAt: [0, 1, 0] })
 // Same sky and same sun the game runs, so what is authored here is lit the way it ships (ADR 0046).
-const env = applyGreyboxEnvironment(stage.renderer, stage.scene, { shadowRadius: 40, sunIntensity: 2.4 })
-const postfx = createPostFX(stage.renderer, stage.scene, stage.camera, { ao: true, bloom: true, bloomStrength: 0.3 })
+// Same defaults as the game, on purpose: this pinned `shadowRadius: 40` and `bloomStrength: 0.3` against the
+// game's 30 and 0.1, so the editor did not show what you would play. Post-FX now follows the open document.
+const env = applyGreyboxEnvironment(stage.renderer, stage.scene, { sunIntensity: 2.4 })
+const postfx = createPostFX(stage.renderer, stage.scene, stage.camera)
 stage.setRenderStep(postfx.render)
 
 const controls = new OrbitControls(stage.camera, canvas)
@@ -546,6 +549,7 @@ const showDoc = (): void => {
   // The level owns its sun (ADR 0048), so opening one relights the viewport and rebakes the sky. A prefab has
   // none, which `sun()` reports as `undefined`, and that falls back to the renderer's defaults.
   env.applyEnvironment(doc?.environment())
+  postfx.apply(doc?.environment()?.postfx)
   buildItems()
   rebuildLoaded()
   statusMsg = '' // a message about the old document would be a lie about this one
@@ -1528,15 +1532,33 @@ let playView: LevelView | null = null
 let playLights: ContentLights | null = null
 let ownPos: Vec3 = { x: 0, y: 1, z: 0 }
 
-// The game's third-person camera: mouselook (pointer lock) yaw/pitch orbit at a fixed distance.
-let camYaw = 0
-let camPitch = 0.35
-const camParams = { distance: 7, sensitivity: 0.0025 }
+/**
+ * The game's third-person camera — `@mp/camera`, the same object the game builds (ADR 0059).
+ *
+ * This was a **third** hand-written third-person camera: its own yaw and pitch, a fixed distance, `lookAt`
+ * instead of a boom, and no occlusion at all. So every camera fix since ADR 0055 — the see-through hole, the
+ * below-the-feet rule, the three sightlines down the body — was invisible in the editor, which is the one
+ * place you would go to check whether a level plays well. ADR 0056 recorded this file as using
+ * `OrbitControls` for it; that was wrong, and the duplicate is why.
+ *
+ * Built once rather than per play, so zoom and pitch survive stopping and starting — and because the cutout
+ * mask it owns clones a material per occluder, which is not worth rebuilding on every play.
+ */
+const playCamera = createOrbitCamera(stage.camera)
 window.addEventListener('mousemove', (e) => {
   if (!playing || document.pointerLockElement !== canvas) return
-  camYaw -= e.movementX * camParams.sensitivity
-  camPitch = Math.min(1.2, Math.max(-0.2, camPitch + e.movementY * camParams.sensitivity))
+  playCamera.lookMouse(e.movementX, e.movementY)
 })
+// Wheel zoom, which the hand-written camera simply did not have.
+window.addEventListener(
+  'wheel',
+  (e) => {
+    if (!playing || document.pointerLockElement !== canvas) return
+    e.preventDefault()
+    playCamera.zoomNotch(Math.sign(e.deltaY))
+  },
+  { passive: false },
+)
 canvas.addEventListener('click', () => {
   if (playing && document.pointerLockElement !== canvas) void canvas.requestPointerLock()
 })
@@ -1553,8 +1575,9 @@ const worldMove = (): { x: number; z: number } => {
   if (keys.has('KeyA') || keys.has('ArrowLeft')) rx -= 1
   if (keys.has('KeyD') || keys.has('ArrowRight')) rx += 1
   if (rx === 0 && rz === 0) return { x: 0, z: 0 }
-  const fwdX = -Math.sin(camYaw)
-  const fwdZ = -Math.cos(camYaw)
+  const facing = playCamera.yaw()
+  const fwdX = -Math.sin(facing)
+  const fwdZ = -Math.cos(facing)
   let x = fwdX * -rz + -fwdZ * rx
   let z = fwdZ * -rz + fwdX * rx
   const l = Math.hypot(x, z)
@@ -1594,7 +1617,13 @@ const startPlay = (): void => {
   playComponents =
     rules === undefined
       ? null
-      : createComponentRuntime(loaded, registry(), { character: characterAccess(char), effects: rules.effects })
+      : createComponentRuntime(loaded, registry(), {
+          character: characterAccess(char),
+          effects: rules.effects,
+          // The game's player components too, so a play-test has the abilities the game has (ADR 0059) —
+          // the same reason it runs the game's own `tuning` and rules rather than a default.
+          ...(mode?.player === undefined ? {} : { player: { id: PLAYER_NODE_ID, components: mode.player } }),
+        })
   let playTick = 0
   playComponents?.attach(playTick, 0, TICK_DT)
 
@@ -1606,8 +1635,10 @@ const startPlay = (): void => {
     applyInput: (cmd) => {
       if (world === null || loaded === null || char === null) return
       const nowMs = simClock.tick()
-      loaded.update(nowMs, char.base?.colliderHandle) // only the ridden piece is frozen
+      // Components first, then the frame tree — the same order as the game (ADR 0058), because a component
+      // that moves its node writes an offset the frame tree reads, and posing first lands it a tick late.
       playComponents?.fixedUpdate(++playTick, nowMs, TICK_DT)
+      loaded.update(nowMs, char.base?.colliderHandle) // only the ridden piece is frozen
       world.step(TICK_DT) // (A) platforms move
       // The game's own locomotion, not the stack default: a game with a different controller feels like
       // itself in a play-test (ADR 0052).
@@ -1620,7 +1651,32 @@ const startPlay = (): void => {
   controller = createLocalController({ world: local, tickRateHz: TICK_RATE_HZ })
 
   instanceRoot.visible = false
-  playView = addLevel(stage.scene, loaded.visuals)
+  // The cutout mask, so an obstruction dithers away here exactly as it does in the game (ADR 0055). The edit
+  // view deliberately does not get one — it would clone a material per occluder for a camera nobody is
+  // playing through.
+  playView = addLevel(stage.scene, loaded.visuals, { cutout: playCamera.cutout })
+  /**
+   * The two queries the camera needs, over the play world (ADR 0056: the camera imports no physics, it is
+   * handed the casts). Self-exclusion is the character's own capsule; there is no ragdoll here to skip.
+   */
+  playCamera.observe({
+    cast: (origin, direction, maxDistance, skip) => {
+      const hit = world?.castSphere({
+        origin,
+        direction,
+        maxDistance,
+        radius: playCamera.probeRadius,
+        exclude: [...(char === null ? [] : [char.body.colliderHandle]), ...(skip ?? [])],
+      })
+      return hit === undefined ? undefined : { distance: hit.distance, colliderHandle: hit.colliderHandle }
+    },
+    occupied: (point) =>
+      world?.sphereOverlaps({
+        center: point,
+        radius: playCamera.probeRadius,
+        exclude: char === null ? [] : [char.body.colliderHandle],
+      }) === true,
+  })
   playLights = addLights(stage.scene, loaded.lights)
   charMesh.visible = true
   playing = true
@@ -2698,6 +2754,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   onEnvironmentChanged: () => {
     // Elevation and azimuth move the sky as well as the light, so this rebakes rather than just relighting.
     env.applyEnvironment(doc?.environment())
+    postfx.apply(doc?.environment()?.postfx)
     recordEdit('environment')
     uiChanged()
   },
@@ -2873,7 +2930,7 @@ createSplitter({
 })
 
 // --- render loop ---
-stage.start(() => {
+stage.start((dt) => {
   if (playing && controller !== null && loaded !== null) {
     // Interpolate clock-driven pieces + the character between the last two sim ticks (same
     // timeline as the game), then place the player camera (mouselook orbit) around the character.
@@ -2883,12 +2940,10 @@ stage.start(() => {
     playLights?.sync()
     ownPos = controller.renderPositions().get(PLAYER_ID) ?? ownPos
     charMesh.position.set(ownPos.x, ownPos.y, ownPos.z)
-    const tx = ownPos.x
-    const ty = ownPos.y + 1
-    const tz = ownPos.z
-    const cp = Math.cos(camPitch)
-    stage.camera.position.set(tx + Math.sin(camYaw) * cp * camParams.distance, ty + Math.sin(camPitch) * camParams.distance + 0.5, tz + Math.cos(camYaw) * cp * camParams.distance)
-    stage.camera.lookAt(tx, ty, tz)
+    // The camera places itself around the capsule's centre and reports whether we are inside our own rig;
+    // `setOccluders` is what puts the hole in whatever is in the way.
+    const { rigVisible } = playCamera.update(dt, ownPos, (handles) => playView?.setOccluders(handles))
+    charMesh.visible = rigVisible
   } else {
     // The strip's own playback: real time, wrapped by the track, and only while the panel asks for it. It is
     // deliberately not the game clock — this previews one authored track, it does not run the level.

@@ -8,7 +8,7 @@
  */
 export const CONTENT_VERSION = '0.0.0' as const
 
-export type { Behavior, ColliderDesc, ComponentData, Easing, Keyframe, Level, LevelConfig, ModeRef, SunConfig, AmbientConfig, EnvironmentConfig, SkyConfig, LoopMode, Node, NodeOverride, Transform } from './types'
+export type { Behavior, ColliderDesc, ComponentData, Easing, Keyframe, Level, LevelConfig, ModeRef, SunConfig, AmbientConfig, EnvironmentConfig, PostFXConfig, SkyConfig, LoopMode, Node, NodeOverride, Transform } from './types'
 export {
   COLLIDER,
   LIGHT,
@@ -32,7 +32,7 @@ export type { Resolved, TypeInfo } from './nodes'
 export { LevelError, validateLevel } from './validate'
 export type { ParamChecker } from './validate'
 export { instantiateLevel } from './loader'
-export type { BasePhase, ClipSource, LoadedLevel, VisualItem, WorldLight, WorldMarker, WorldNode } from './loader'
+export type { BasePhase, ClipSource, LoadedLevel, NodeDrive, VisualItem, WorldLight, WorldMarker, WorldNode } from './loader'
 export {
   ASSET_KINDS,
   META_SUFFIX,

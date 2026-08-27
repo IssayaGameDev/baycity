@@ -21,6 +21,18 @@ import { occlusionFor, type Occlusion, type OcclusionQueries } from './occlusion
  * lets `occlusion.ts` be tested against slabs on a number line.
  */
 export interface CameraParams {
+  /**
+   * Vertical field of view, degrees.
+   *
+   * A camera parameter and not a renderer constant: FOV is feel, and it trades framing against distortion
+   * the same way the zoom range does. It was hardcoded at 60 in `createThreeStage`, where no game and no
+   * level could reach it.
+   *
+   * Two other numbers were derived from 60 by hand and do **not** follow it: `camHideMargin`'s default and
+   * `PROBE_RADIUS` are both sized against the near plane's corner at 60°. Widening the lens moves that
+   * corner outward, so a very wide FOV wants a larger hide margin — which is a slider, so it can have one.
+   */
+  fov: number
   /** Zoom goal (m) — what the wheel sets. What renders is a distance that chases this. */
   camZoom: number
   camZoomMin: number
@@ -64,6 +76,14 @@ export interface CameraParams {
   camMaskFeather: number
   /** Half-life (s) of the aperture opening and closing. Keeps a passing beam from popping. */
   camMaskSmooth: number
+  /**
+   * Half-life (s) of moving into an authored eye position and back out again — see `shot`.
+   *
+   * Its own number rather than reusing the zoom or push-in smoothing, because it is a different kind of
+   * move: those slide the camera **along** the boom, and this one travels off it to somewhere else entirely.
+   * 0 snaps, which is a cut rather than a move and is occasionally what you want.
+   */
+  shotSmooth: number
   /** Mouse look, radians per unit of `movementX` (a raw device delta). */
   sensitivity: number
   /**
@@ -77,6 +97,8 @@ export interface CameraParams {
 }
 
 export const DEFAULT_CAMERA_PARAMS: CameraParams = {
+  // The value the stage hardcoded, so this change moves nothing until somebody drags the slider.
+  fov: 60,
   camZoom: 7,
   camZoomMin: 3,
   camZoomMax: 14,
@@ -94,6 +116,8 @@ export const DEFAULT_CAMERA_PARAMS: CameraParams = {
   camMaskRadius: 1.3,
   camMaskFeather: 0.5,
   camMaskSmooth: 0.03,
+  // Long enough to read as a camera move rather than a teleport, short enough not to feel sluggish.
+  shotSmooth: 0.25,
   sensitivity: 0.0025,
   touchSensitivity: 0.006,
   pinchZoom: 0.02,
@@ -113,6 +137,7 @@ export interface Tunable {
 }
 
 export const CAMERA_TUNABLES: readonly Tunable[] = [
+  { key: 'fov', label: 'fov °', min: 30, max: 110, step: 1 },
   { key: 'camZoomMin', label: 'zoom min m', min: 0.5, max: 10, step: 0.5 },
   { key: 'camZoomMax', label: 'zoom max m', min: 4, max: 40, step: 0.5 },
   { key: 'camZoomStep', label: 'notch m', min: 0.1, max: 3, step: 0.1 },
@@ -128,6 +153,7 @@ export const CAMERA_TUNABLES: readonly Tunable[] = [
   { key: 'camMaskRadius', label: 'hole m', min: 0.2, max: 4, step: 0.05 },
   { key: 'camMaskFeather', label: 'hole edge', min: 0, max: 2, step: 0.05 },
   { key: 'camMaskSmooth', label: 'hole open s', min: 0, max: 0.5, step: 0.01 },
+  { key: 'shotSmooth', label: 'shot move s', min: 0, max: 1.5, step: 0.01 },
   { key: 'sensitivity', label: 'sensitivity', min: 0.0005, max: 0.006, step: 0.0005 },
 ]
 
@@ -163,6 +189,22 @@ export interface OrbitCamera {
    * A landing to dip for, as a multiple of the speed a plain jump lands at, so 1 is landing your own jump.
    * Clamped by `landKickMax` here rather than at the call site, which is a sim tick with no opinion on feel.
    */
+  /**
+   * Put the eye at an **authored world position** instead of on the boom, or `null` to go back to orbiting.
+   *
+   * The camera still looks at the character, and still holes whatever is in the way (ADR 0055) — what it stops
+   * doing is orbiting. Mouse look is overridden while a shot is held, deliberately: a shot the player can
+   * swing away from is not a shot.
+   *
+   * **The occlusion pull-in does not apply.** Somebody placed this eye; moving it because a wall is near
+   * would be second-guessing them, and a shot inside a wall is a mistake that is obvious the moment you see
+   * it. The see-through hole still runs, along the shot's own sightline rather than the boom's, which is the
+   * same split ADR 0055 settled: hole the obstruction, do not move the camera.
+   *
+   * Blends in and out on `shotSmooth`, and hands back continuously — the orbit's yaw and pitch track the
+   * blended direction throughout, so releasing a shot does not snap.
+   */
+  shot: (eye: Vec3 | null) => void
   land: (impact: number) => void
   /** The world's occlusion queries. Until this is called the camera simply uses its zoom. */
   observe: (queries: OcclusionQueries) => void
@@ -225,7 +267,7 @@ export interface OrbitCameraOptions {
   pitch?: number
 }
 
-export const createOrbitCamera = (camera: THREE.Camera, opts: OrbitCameraOptions = {}): OrbitCamera => {
+export const createOrbitCamera = (camera: THREE.PerspectiveCamera, opts: OrbitCameraOptions = {}): OrbitCamera => {
   const params: CameraParams = { ...DEFAULT_CAMERA_PARAMS, ...opts.params }
 
   let yaw = 0
@@ -253,6 +295,10 @@ export const createOrbitCamera = (camera: THREE.Camera, opts: OrbitCameraOptions
   })
   /** How far open the aperture is, 0 to 1, chased so it grows and shrinks rather than popping. */
   let maskOpen = 0
+  /** The authored eye, while one is held. `null` is "orbit normally". */
+  let shotEye: Vec3 | null = null
+  /** 0 fully orbiting, 1 fully at `shotEye`. Eased, so both directions are a move rather than a cut. */
+  let shotMix = 0
   /**
    * The surfaces the hole is cut in, held while the aperture closes. Handing the level view an empty list
    * the frame the obstruction clears would put its plain material back at once, which is the hole snapping
@@ -293,6 +339,9 @@ export const createOrbitCamera = (camera: THREE.Camera, opts: OrbitCameraOptions
     zoomPinch: (px) => {
       params.camZoom = clamp(params.camZoom - px * params.pinchZoom, params.camZoomMin, params.camZoomMax)
     },
+    shot: (eye) => {
+      shotEye = eye
+    },
     land: (impact) => {
       landImpact = Math.min(impact, params.landKickMax)
     },
@@ -300,6 +349,12 @@ export const createOrbitCamera = (camera: THREE.Camera, opts: OrbitCameraOptions
       queries = q
     },
     update: (dt, body, setOccluders) => {
+      // The lens, before anything is measured against it. Guarded because `updateProjectionMatrix` rebuilds
+      // the projection, and this is a slider that moves on maybe one frame in a session.
+      if (camera.fov !== params.fov) {
+        camera.fov = params.fov
+        camera.updateProjectionMatrix()
+      }
       // The aim point, dipped by whatever is left of the last landing.
       landImpact = chase(landImpact, 0, dt, params.landKickRecovery)
       const target = vec3(body.x, body.y + AIM_RISE - landImpact * params.landKick, body.z)
@@ -364,13 +419,48 @@ export const createOrbitCamera = (camera: THREE.Camera, opts: OrbitCameraOptions
           ? soft
           : chase(boomHad, soft, dt, soft < boomHad ? params.camPushInSmooth : params.camReturnSmooth)
       const reach = Math.min(boomHad, hard) / boom
-      camera.position.set(target.x + boomX * reach, target.y + boomY * reach, target.z + boomZ * reach)
-      // Orientation from the boom's *direction*, not from `lookAt`. A fully squeezed boom puts the camera
+      // Where the orbit alone would put the eye, as an offset from the target.
+      let offX = boomX * reach
+      let offY = boomY * reach
+      let offZ = boomZ * reach
+
+      /**
+       * An authored eye, blended in (`shot`). The blend is on the *offset*, so it is a move relative to the
+       * character rather than through world space — which is what keeps a shot from lurching when the
+       * character is running while it eases in.
+       *
+       * The pull-in above is simply overridden at full mix: the author placed this eye, and clamping it to
+       * what a probe cleared would be second-guessing them.
+       */
+      shotMix = chase(shotMix, shotEye === null ? 0 : 1, dt, params.shotSmooth)
+      if (shotEye !== null || shotMix > 0.001) {
+        const wanted = shotEye ?? { x: target.x + offX, y: target.y + offY, z: target.z + offZ }
+        offX += (wanted.x - target.x - offX) * shotMix
+        offY += (wanted.y - target.y - offY) * shotMix
+        offZ += (wanted.z - target.z - offZ) * shotMix
+      }
+
+      camera.position.set(target.x + offX, target.y + offY, target.z + offZ)
+      // Orientation from the eye's *direction*, not from `lookAt`. A fully squeezed boom puts the camera
       // exactly on its target, and lookAt then has a zero-length direction to build a basis from: three
       // falls back to looking along world -Z, which is a fixed heading that ignores the mouse entirely.
       // The direction is known whatever the length is. YXZ order — yaw about Y, then pitch about X — is the
       // one that keeps the horizon level, and it stays defined at straight-up, where lookAt does not.
-      camera.rotation.set(-Math.atan2(boomY, Math.hypot(boomX, boomZ)), yaw, 0, 'YXZ')
+      //
+      // Taken from the offset rather than from `yaw` and the raw boom: for a pure orbit the two are the same
+      // angle (`reach` scales all three components, which atan2 divides out), and during a shot the offset is
+      // the only one that is true.
+      const flat = Math.hypot(offX, offZ)
+      const eyeYaw = flat < 1e-6 && Math.abs(offY) < 1e-6 ? yaw : Math.atan2(offX, offZ)
+      camera.rotation.set(-Math.atan2(offY, flat), eyeYaw, 0, 'YXZ')
+
+      // Hand the orbit its state back continuously, so releasing a shot resumes from where the shot was
+      // looking instead of snapping to wherever the mouse had wandered. A no-op at zero mix, where these are
+      // already the values the offset came from.
+      if (shotMix > 0.001) {
+        yaw = eyeYaw
+        pitch = clamp(Math.atan2(offY - RISE, flat), params.pitchMinDeg * DEG, PITCH_MAX)
+      }
 
       /**
        * The see-through hole (ADR 0055). Driven from the *live* probe, not the lookahead one: the hole has
@@ -382,8 +472,15 @@ export const createOrbitCamera = (camera: THREE.Camera, opts: OrbitCameraOptions
        * surface; growing the radius keeps the interior fully cut from the first frame, so stipple only ever
        * lives in the thin feather ring and the hole reads as an aperture opening around the character.
        */
-      maskOpen = chase(maskOpen, live.seeThrough ? 1 : 0, dt, params.camMaskSmooth)
-      if (live.seeThrough) maskOccluders = live.occluders
+      /**
+       * While a shot is held the boom is not where the eye is, so `live` describes a sightline nobody is
+       * looking down. One more query along the *actual* offset answers the question that matters. Only while
+       * blending or held — an ordinary orbit pays nothing.
+       */
+      const seen =
+        shotMix > 0.001 ? occlude(target, vec3(offX, offY, offZ), Math.hypot(offX, offY, offZ), bodyProbes(target), feetY) : live
+      maskOpen = chase(maskOpen, seen.seeThrough ? 1 : 0, dt, params.camMaskSmooth)
+      if (seen.seeThrough) maskOccluders = seen.occluders
       else if (maskOpen < 0.004) maskOccluders = [] // shut: hand the plain materials back
       setOccluders(maskOccluders)
       cutout.set({

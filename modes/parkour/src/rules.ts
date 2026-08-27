@@ -1,8 +1,8 @@
 import { CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/character'
 import { Bumper, Checkpoint, ENGINE_COMPONENTS, Goal, Hazard, Track, createRegistry, hasComponent } from '@mp/components'
 import type { LoadedLevel, WorldNode } from '@mp/content'
-import { vec3, type Vec3 } from '@mp/core'
-import type { ModeSession, ModeSessionOptions } from '@mp/mode'
+import type { Vec3 } from '@mp/core'
+import { spawnFrom, standingAt, type ModeSession, type ModeSessionOptions } from '@mp/mode'
 
 /**
  * Parkour's rules, headless (ADR 0052).
@@ -46,18 +46,16 @@ export const STAND_OFFSET = CHAR_HALF_HEIGHT + CHAR_RADIUS
 /** Nodes carrying a `Checkpoint`, in tree order. Only touchable ones: an unreachable checkpoint is not a step. */
 export const checkpointsOf = (loaded: LoadedLevel): readonly WorldNode[] => loaded.nodes.filter((n) => hasComponent(n.components, Checkpoint))
 
-/** Standing height above a node's own origin. */
-const standingAt = (at: Vec3): Vec3 => vec3(at.x, at.y + STAND_OFFSET, at.z)
+/** Standing height above a node's own origin, at this character's size. */
+const standing = (at: Vec3): Vec3 => standingAt(at, STAND_OFFSET)
 
-/** The level's spawn marker, or a fallback above the origin when it has none. */
-export const spawnOf = (loaded: LoadedLevel, seed?: number): Vec3 => {
-  const marker = loaded.markers.find((m) => m.kind === 'spawn')?.position
-  if (marker === undefined) return vec3(0, 3, 0)
-  if (seed === undefined) return standingAt(marker)
-  // The golden-angle step keeps two arrivals from stacking inside each other.
-  const a = seed * 2.399963
-  return vec3(marker.x + Math.cos(a) * 2, marker.y + STAND_OFFSET, marker.z + Math.sin(a) * 2)
-}
+/**
+ * The level's spawn marker, or a fallback above the origin when it has none.
+ *
+ * The placement is shared (`@mp/mode`) — it was the same function in every game. What is parkour's is the
+ * stand-off height, which is its character's, not the platform's.
+ */
+export const spawnOf = spawnFrom(STAND_OFFSET)
 
 /**
  * A parkour session: progress is a checkpoint index, and death is any hazard firing — a pad, or the hazard
@@ -73,7 +71,7 @@ export const parkourSession = (loaded: LoadedLevel, opts: ModeSessionOptions = {
 
   // Resuming: stand on the checkpoint that was reached, if it is still in this level.
   const resumed = reached >= 0 && reached < checkpoints.length ? checkpoints[reached]!.position : undefined
-  let respawn = resumed === undefined ? spawnOf(loaded) : standingAt(resumed)
+  let respawn = resumed === undefined ? spawnOf(loaded) : standing(resumed)
 
   return {
     effects: {
@@ -85,7 +83,7 @@ export const parkourSession = (loaded: LoadedLevel, opts: ModeSessionOptions = {
         const i = checkpoints.indexOf(node)
         if (i < 0 || i <= reached) return
         reached = i
-        respawn = standingAt(node.position)
+        respawn = standing(node.position)
         opts.onProgress?.(i, node)
       },
     },

@@ -1,5 +1,5 @@
 import { DEFAULT_TUNING } from '@mp/character'
-import { Hazard } from '@mp/components'
+import { Death, Hazard } from '@mp/components'
 import type { ModeDescriptor } from '@mp/mode'
 import { MARKER_COLORS } from '@mp/render-three'
 
@@ -25,6 +25,15 @@ export const TEMPLATE_MODE: ModeDescriptor = {
   standOffset: STAND_OFFSET,
   /** One rule, one colour. The palette is shared so two games' hazards look alike; the mapping is each game's. */
   gizmos: { [Hazard.type]: MARKER_COLORS.hazard },
+  /**
+   * The player's own components (ADR 0059) — what this game gives whoever is playing, as opposed to what a
+   * level authors. Kept in the template because it is the seam a new game is least likely to find on its own.
+   *
+   * `Death` is data the client reads: whether the rig falls apart, and the timing of it dropping back in.
+   * Its defaults are what the client hardcoded for every game, so declaring it changes nothing until a
+   * parameter is changed.
+   */
+  player: [{ id: 'death', type: Death.type, params: {} }],
   spawn: spawnOf,
   session: templateSession,
 }

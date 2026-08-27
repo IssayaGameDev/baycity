@@ -621,7 +621,11 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
   const canAdd = (i: number, type: string): boolean => {
     const n = node(i)
     if (n === undefined || !registry.has(type)) return false
-    if (registry.get(type)?.singleton !== true) return true
+    const def = registry.get(type)
+    // A player component is the game's, declared in its `ModeDescriptor` and never authored in a level
+    // (ADR 0059). Both Add Component menus read this, so neither offers a death reaction for a staircase.
+    if (def?.attachesTo === 'player') return false
+    if (def?.singleton !== true) return true
     return !n.view.components.some((c) => c.type === type)
   }
 

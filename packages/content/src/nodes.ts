@@ -32,7 +32,7 @@ export const LIGHT = 'Light'
  * and content takes a capability as an argument.
  */
 export interface TypeInfo {
-  readonly get: (type: string) => { readonly singleton?: boolean } | undefined
+  readonly get: (type: string) => { readonly singleton?: boolean; readonly moves?: boolean } | undefined
 }
 
 /**

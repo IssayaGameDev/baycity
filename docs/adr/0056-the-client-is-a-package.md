@@ -118,8 +118,10 @@ level — which is what actually lets a second game boot with no `?level=`. Foun
 - `@mp/camera` imports both `@mp/render-three` and (structurally) physics's query shapes without depending on
   the package. It is browser-side view code, so this breaks no dependency law: simulation still never imports
   rendering.
-- The editor could use this for its play-in-place camera, which today is `OrbitControls`. Not done, not
-  needed, worth knowing.
+- The editor could use this for its play-in-place camera. Not done, not needed, worth knowing. **This said
+  the editor's play camera "today is `OrbitControls`", and that was wrong**: `OrbitControls` is its *edit*
+  camera, and play mode had a third hand-written third-person camera with no occlusion at all. Corrected and
+  done in ADR 0059.
 
 ## Known open
 

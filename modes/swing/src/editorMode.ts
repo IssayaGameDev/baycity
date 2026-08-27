@@ -1,5 +1,5 @@
 import { DEFAULT_TUNING } from '@mp/character'
-import { Bumper, Checkpoint, Goal, Hazard } from '@mp/components'
+import { Bumper, Checkpoint, Death, Goal, Hazard } from '@mp/components'
 import type { ModeDescriptor } from '@mp/mode'
 import { MARKER_COLORS } from '@mp/render-three'
 
@@ -29,6 +29,15 @@ export const SWING_MODE: ModeDescriptor = {
     [Hazard.type]: MARKER_COLORS.hazard,
     [Bumper.type]: MARKER_COLORS.bumper,
   },
+  /**
+   * The player's own components (ADR 0059) — what this game gives whoever is playing, as opposed to what a
+   * level authors. Swing is the newer game and the place to try one.
+   *
+   * `Death` is data the client reads: whether the rig falls apart, and the timing of it dropping back in.
+   * Its defaults are what the client hardcoded for every game, so declaring it changes nothing until a
+   * parameter is changed.
+   */
+  player: [{ id: 'death', type: Death.type, params: {} }],
   spawn: spawnOf,
   session: swingSession,
 }

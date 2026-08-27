@@ -22,6 +22,27 @@ export interface ComponentDef<D extends ParamDecls = ParamDecls> {
    * purpose, which is half the reason for a list instead of a field.
    */
   readonly singleton?: boolean
+  /**
+   * This component moves the node it sits on, so `self.offset` is live and the node is posed every tick.
+   *
+   * **Declared, not inferred.** The loader has to know before it builds anything: a node nothing moves gets a
+   * *fixed* physics body and sits outside the per-tick pose pass, and neither is changeable afterwards. A
+   * component that writes `self.offset` without declaring this finds it `undefined`, which is the honest
+   * failure — the alternative is a silent no-op.
+   *
+   * The cost is real, so it is opt-in: a kinematic body and a frame evaluated every tick, on that node and
+   * every node under it.
+   */
+  readonly moves?: boolean
+  /**
+   * Whether this belongs on a **level node** or on the **player** (ADR 0059). Defaults to `'node'`.
+   *
+   * A player component is declared by the game (`ModeDescriptor.player`) and never authored in a level, so
+   * offering it in the editor's Add Component menu would only let somebody put a death reaction on a
+   * staircase. Nothing enforces it at load — a hand-edited level naming one is not a file that fails to
+   * load — it decides what a tool offers.
+   */
+  readonly attachesTo?: 'node' | 'player'
   /** What the runner calls. Absent means this component is data only, and the runner skips it entirely. */
   readonly hooks?: ErasedHooks
 }
@@ -37,6 +58,10 @@ export interface ComponentSpec<D extends ParamDecls, S> {
   readonly params: D
   readonly label?: string
   readonly singleton?: boolean
+  /** See `ComponentDef.moves`. */
+  readonly moves?: boolean
+  /** See `ComponentDef.attachesTo`. */
+  readonly attachesTo?: 'node' | 'player'
   readonly init?: (params: Params<D>, ctx: Ctx) => S
   /** Once, when the level is instantiated. Unity's Awake and Start, merged. */
   readonly onAttach?: (self: Self<D, S>, ctx: Ctx) => void
@@ -67,6 +92,8 @@ export const defineComponent = <const D extends ParamDecls, S = undefined>(spec:
     params: spec.params,
     ...(spec.label !== undefined ? { label: spec.label } : {}),
     ...(spec.singleton !== undefined ? { singleton: spec.singleton } : {}),
+    ...(spec.moves !== undefined ? { moves: spec.moves } : {}),
+    ...(spec.attachesTo !== undefined ? { attachesTo: spec.attachesTo } : {}),
     ...(hooks !== undefined ? { hooks } : {}),
   }
 }

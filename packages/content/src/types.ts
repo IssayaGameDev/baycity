@@ -164,11 +164,32 @@ export interface SkyConfig {
 }
 
 /**
+ * The screen-space passes over the finished image (ADR 0048, extended).
+ *
+ * Level data for the same reason the sun is: these are tuned **against** the lighting, not beside it. Ambient
+ * occlusion is what gives greybox forms their depth, and bloom only fires on emissive materials, so a level
+ * lit at dusk and one lit at noon do not want the same numbers.
+ *
+ * They were hardcoded at each of the three call sites instead, and had already drifted: the editor and the
+ * viewer asked for `bloomStrength: 0.3` while the game asked for 0.1, so the tools did not show what you
+ * would play. That is the drift ADR 0048 removed for the sun, arriving a second time in a different file.
+ */
+export interface PostFXConfig {
+  /** Ground-truth ambient occlusion. Off is a flatter, cheaper image, not a broken one. */
+  ao: boolean
+  /** Bloom on emissive materials. Nothing without them glows, so this is free on an unlit level. */
+  bloom: boolean
+  /** How hard the bloom blooms. Ignored while `bloom` is off. */
+  bloomStrength: number
+}
+
+/**
  * Everything about how a level is lit and what is behind it (ADR 0048).
  *
- * One block because these three are one subject and are tuned against each other: the sun's angles move the
- * sky's glow (ADR 0046), and `ambient` is the strength of the environment map the sky itself bakes. Splitting
- * them across the config would mean balancing coupled numbers in three places.
+ * One block because these are one subject and are tuned against each other: the sun's angles move the sky's
+ * glow (ADR 0046), `ambient` is the strength of the environment map the sky itself bakes, and `postfx` is
+ * the occlusion and bloom read off the result. Splitting them across the config would mean balancing coupled
+ * numbers in four places.
  *
  * The hemisphere fill is deliberately **not** here — it is a node with a `Light` component, because unlike
  * these it is something a level can have several of, or none.
@@ -177,6 +198,7 @@ export interface EnvironmentConfig {
   sun: SunConfig
   ambient: AmbientConfig
   sky: SkyConfig
+  postfx: PostFXConfig
 }
 
 /**
@@ -200,8 +222,8 @@ export interface LevelConfig {
    */
   mode?: ModeRef
   /**
-   * Sun, ambient and sky. Absent, or any part of it absent, falls back to the renderer's defaults — so a level
-   * authored before this existed still loads and still looks the way it did.
+   * Sun, ambient, sky and the post-processing over them. Absent, or any part of it absent, falls back to the
+   * renderer's defaults — so a level authored before this existed still loads and still looks the way it did.
    */
   environment?: Partial<EnvironmentConfig>
 }

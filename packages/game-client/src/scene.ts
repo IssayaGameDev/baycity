@@ -34,16 +34,17 @@ export const createScene = async (canvas: HTMLCanvasElement, occluding: () => It
   // Polished greybox pipeline (content pipeline C3): IBL + ACES + soft shadows, with GTAO +
   // SMAA post-FX. Level meshes, materials (the "High-contrast dev" palette) and markers are
   // realized by the shared @mp/render-three renderer — same code the viewer uses.
-  const env = applyGreyboxEnvironment(stage.renderer, stage.scene, { shadowRadius: 30, sunIntensity: 2.4 })
+  // `shadowRadius` is deliberately not passed: the renderer's own default is the one number, and the editor
+  // and viewer overrode it to 40 while this said 30 — so the tools showed shadows the game did not have.
+  const env = applyGreyboxEnvironment(stage.renderer, stage.scene, { sunIntensity: 2.4 })
   // The photographic sky stays loaded as the control to judge the procedural one against (ADR 0046). It swaps
   // the **background only** — the lighting keeps coming from the procedural bake either way, so flipping the
   // toggle compares two backdrops rather than two whole looks. Deleted once the comparison is settled.
   const photoSky = await loadSky(stage.scene, assetUrlOf('textures/sky_110_2k.webp'))
   if (photoSky !== null && env.sky !== null) stage.scene.background = env.sky.background
+  // No look values here any more: ambient occlusion and bloom are level data (`config.environment.postfx`),
+  // applied with the lighting they are tuned against. What stays is the one thing a level cannot know.
   const postfx = createPostFX(stage.renderer, stage.scene, stage.camera, {
-    ao: true,
-    bloom: true,
-    bloomStrength: 0.1,
     /**
      * A surface wearing a hole must be absent from the AO prepass, or the character seen through it comes out
      * shaded by occlusion cast by something the player cannot see — which was the one artifact that survived

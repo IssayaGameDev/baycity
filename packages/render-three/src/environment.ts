@@ -197,8 +197,14 @@ export const applyGreyboxEnvironment = (
   }
   refresh()
 
-  /** The renderer's own values, and what any part a level leaves out falls back to. */
-  const defaults: EnvironmentConfig = {
+  /**
+   * The renderer's own values, and what any part a level leaves out falls back to.
+   *
+   * `postfx` is excluded rather than defaulted here: the same config block, but the passes belong to
+   * `createPostFX`, which owns `DEFAULT_POSTFX` (ADR 0057). A second copy in this file is exactly the drift
+   * that change exists to remove.
+   */
+  const defaults: Omit<EnvironmentConfig, 'postfx'> = {
     sun: {
       elevation: sunAngles.elevationDeg,
       azimuth: sunAngles.azimuthDeg,

@@ -169,6 +169,8 @@ interface Frame {
   animated: boolean
   worldPos: Vec3
   worldRot: Quat
+  /** What a component has moved this node by, or `null` on a node no component can move. See `NodeDrive`. */
+  drive: NodeDrive | null
 }
 
 /**
@@ -199,6 +201,28 @@ interface Dynamic {
   renderRot: Quat
 }
 
+/**
+ * How much a component has moved its own node, in the node's **local** space (ADR 0058).
+ *
+ * An **offset from the authored transform**, not a replacement for it — the same choice ADR 0050 made for
+ * keyframes, and for the same reasons: zero means "as authored", a driven node can be duplicated or
+ * reparented without rewriting anything, and a component can nudge a node that a `Track` is already moving
+ * because the two offsets simply add.
+ *
+ * Local space, so it composes with the parent chain. A component writing world space would fight every
+ * ancestor's rotation and scale.
+ *
+ * **Mutated in place.** A component writes into this object and the frame tree reads it on the next
+ * `update`, so there is no allocation per tick and no setter to forget to call.
+ *
+ * `rotation` is Euler **radians**, matching `Transform.rotation` — which the editor shows in degrees and
+ * stores in radians, so a component writing `Math.PI / 2` turns a quarter turn.
+ */
+export interface NodeDrive {
+  position: Vec3
+  rotation: Vec3
+}
+
 export interface LoadedLevel {
   config: LevelConfig
   markers: WorldMarker[]
@@ -226,6 +250,15 @@ export interface LoadedLevel {
    * in the level and may name a level node.
    */
   findNode: (from: WorldNode, id: string) => WorldNode | undefined
+  /**
+   * The live offset a component may write to move this node, or `undefined` when nothing can move it.
+   *
+   * Present only for a node carrying a component whose definition declares `moves` (`TypeInfo`). That
+   * declaration is load-bearing and cannot be decided later: a node nothing moves gets a **fixed** body and
+   * sits outside the per-tick pose pass, and neither can be changed after instantiation. So a component that
+   * moves things has to say so, exactly as one that may appear only once says `singleton`.
+   */
+  driveOf: (node: WorldNode) => NodeDrive | undefined
   update: (nowMs: number, ridingColliderHandle?: number) => void
   render: (alpha: number) => void
   basePose: (colliderHandle: number) => { position: Vec3; rotation: Quat } | undefined
@@ -300,13 +333,17 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
   const byScope = new Map<number, Map<string, WorldNode>>()
   let nextScope = 0
   const frames: Frame[] = []
+  /** Node → its frame, for `driveOf`. Only driven nodes are ever looked up, but the map is cheap and total. */
+  const frameByNode = new Map<WorldNode, Frame>()
   const dynamics: Dynamic[] = []
   const dynamicByCollider = new Map<number, number>()
 
   const evaluate = (f: Frame, nowMs: number): void => {
     const pose = poseAt(f.behavior, f.base, nowMs)
-    const localPos = pose.position
-    const localRot = eulerToQuat(pose.rotation)
+    // Both offsets add: the authored transform, plus what a track sampled, plus what a component drove. That
+    // is what lets a component nudge a moving platform rather than having to choose between them (ADR 0058).
+    const localPos = f.drive === null ? pose.position : add(pose.position, f.drive.position)
+    const localRot = eulerToQuat(f.drive === null ? pose.rotation : add(pose.rotation, f.drive.rotation))
     if (f.parent === null) {
       f.worldPos = localPos
       f.worldRot = localRot
@@ -316,7 +353,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     f.worldRot = mulQuat(f.parent.worldRot, localRot)
   }
 
-  const makeFrame = (t: Transform, behavior: Behavior, parent: Frame | null): Frame => {
+  const makeFrame = (t: Transform, behavior: Behavior, parent: Frame | null, driven = false): Frame => {
     const parentScale = parent?.scale ?? vec3(1, 1, 1)
     const f: Frame = {
       base: t,
@@ -324,9 +361,12 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
       scale: mul(parentScale, scaleOf(t)),
       behavior,
       parent,
-      animated: isAnimated(behavior) || (parent?.animated ?? false),
+      // A driven node is animated for the same reason a tracked one is: it needs a kinematic body and a place
+      // in the per-tick pose pass. Inherited by children, so moving a parent carries its subtree.
+      animated: driven || isAnimated(behavior) || (parent?.animated ?? false),
       worldPos: vec3(0, 0, 0),
       worldRot: quat(),
+      drive: driven ? { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) } : null,
     }
     frames.push(f)
     evaluate(f, 0)
@@ -371,7 +411,10 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
    */
   const build = (node: Node, parent: Frame | null, inheritedMaterial: string | undefined, scope: number): void => {
     const r = effectiveNode(level, node, types)
-    const f = makeFrame(r.transform, behaviorOf(firstOfType(r.components, TRACK), clips), parent)
+    // Does any enabled component on this node say it moves it (ADR 0058)? Asked here because the answer
+    // decides the frame's `animated` flag and whether its bodies are kinematic, and neither can change later.
+    const driven = r.components.some((c) => c.enabled !== false && types.get(c.type)?.moves === true)
+    const f = makeFrame(r.transform, behaviorOf(firstOfType(r.components, TRACK), clips), parent, driven)
     // A placement opens a scope: everything it inherits from its prefab resolves references among itself.
     // The placement node is the prefab's root, so it belongs to that scope too.
     const inner = r.inheritedCount > 0 ? ++nextScope : scope
@@ -405,6 +448,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
 
     const handles: number[] = []
     const worldNode: WorldNode = { id: r.id, name: r.name, components: r.components, position: { ...f.worldPos }, colliderHandles: handles, scope: inner }
+    frameByNode.set(worldNode, f)
     allNodes.push(worldNode)
     /**
      * Registered under the id whoever might name it would use, which for a placement is **two** ids: its own,
@@ -563,6 +607,8 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     }
   }
 
+  const driveOf = (node: WorldNode): NodeDrive | undefined => frameByNode.get(node)?.drive ?? undefined
+
   const basePose = (colliderHandle: number): { position: Vec3; rotation: Quat } | undefined => {
     const i = dynamicByCollider.get(colliderHandle)
     if (i === undefined) return undefined
@@ -600,6 +646,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     findNode: (from, id) => byScope.get(from.scope)?.get(id) ?? byScope.get(0)?.get(id),
     visuals,
     lights,
+    driveOf,
     update,
     render,
     basePose,

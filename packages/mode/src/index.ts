@@ -1,6 +1,6 @@
 import type { CharacterTuning } from '@mp/character'
 import type { Effects, Registry } from '@mp/components'
-import type { LoadedLevel, WorldNode } from '@mp/content'
+import type { ComponentData, LoadedLevel, WorldNode } from '@mp/content'
 import type { Vec3 } from '@mp/core'
 
 /**
@@ -89,6 +89,16 @@ export interface ModeDescriptor {
    * absent in a tool, which has exactly one body to place.
    */
   readonly spawn: (loaded: LoadedLevel, seed?: number) => Vec3
+  /**
+   * Components the **player** carries, attached at runtime rather than authored in a level (ADR 0059).
+   *
+   * The seam for an ability the player *has*, as opposed to a pad they touch. A level authors the world; it
+   * does not author who is playing, so this is the game's to declare and the same registry above validates it.
+   *
+   * Absent means a player with no components of its own, which is every game today. What one of these can do
+   * is read the character and push it (`Ctx.character`) — see `CharacterAccess`.
+   */
+  readonly player?: readonly ComponentData[]
   /** Begin a rules session over this level. */
   readonly session: (loaded: LoadedLevel, opts?: ModeSessionOptions) => ModeSession
 }
@@ -104,3 +114,13 @@ export interface ModeDescriptor {
  * Re-add it the day a game has something that genuinely is a level-wide *value* rather than a rule: a lap
  * count, a time limit. Until then it would be an untested seam with no callers.
  */
+
+export { spawnFrom, standingAt } from './spawn'
+
+/**
+ * The node id the local player's components see as `self.node.id` (ADR 0059).
+ *
+ * One constant rather than a string typed at each host, so a `nodeRef` authored against the player means the
+ * same thing in the game and in the editor's play-test.
+ */
+export const PLAYER_NODE_ID = 'player'

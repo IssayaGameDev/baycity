@@ -318,6 +318,9 @@ importers:
       '@mode/parkour':
         specifier: workspace:*
         version: link:../../modes/parkour
+      '@mp/camera':
+        specifier: workspace:*
+        version: link:../../packages/camera
       '@mp/character':
         specifier: workspace:*
         version: link:../../packages/character

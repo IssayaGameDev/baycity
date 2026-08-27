@@ -34,8 +34,11 @@ const titleEl = document.querySelector<HTMLDivElement>('#title')!
 
 // --- scene + polished pipeline (same renderer the game uses) ---
 const stage = createThreeStage({ canvas, cameraPosition: [10, 9, 14], lookAt: [0, 1, 0] })
-const env = applyGreyboxEnvironment(stage.renderer, stage.scene, { shadowRadius: 40, sunIntensity: 2.4 })
-const postfx = createPostFX(stage.renderer, stage.scene, stage.camera, { ao: true, bloom: true, bloomStrength: 0.3 })
+// Neither the shadow frustum nor the post-FX is overridden here: both are the renderer's defaults, and the
+// post-FX then follows whatever the open level says. This file used to pin `bloomStrength: 0.3` against the
+// game's 0.1, so the viewer showed a level that did not exist.
+const env = applyGreyboxEnvironment(stage.renderer, stage.scene, { sunIntensity: 2.4 })
+const postfx = createPostFX(stage.renderer, stage.scene, stage.camera)
 stage.setRenderStep(postfx.render)
 
 const controls = new OrbitControls(stage.camera, canvas)
@@ -275,6 +278,7 @@ const load = (entry: Entry): void => {
   levelView = addLevel(stage.scene, loaded.visuals)
   levelLights = addLights(stage.scene, loaded.lights)
   env.applyEnvironment(loaded.config.environment)
+  postfx.apply(loaded.config.environment?.postfx)
   buildOverlays()
   applyShow()
   titleEl.textContent = `${entry.group}: ${entry.name}`
