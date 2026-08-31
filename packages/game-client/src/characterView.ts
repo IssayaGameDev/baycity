@@ -33,9 +33,19 @@ import { makeNameLabel } from './nametag'
  */
 const BASE_SWITCH_HALFLIFE = 0.1
 
+/** Shared, and never mutated: what a game with no declared states reports every frame. */
+const EMPTY_STATES: ReadonlySet<string> = new Set()
+
 interface Rendered {
   rig: CharacterRig
   animator: Animator
+  /**
+   * The game's states for this character, in a box.
+   *
+   * A box rather than a plain field because the animator is built with a reader that closes over it, and the
+   * animator has to exist before `Rendered` does. One store, so the reader cannot go stale.
+   */
+  states: { current: ReadonlySet<string> }
   /** The pose written this frame. The animator reuses one object, so this is a live reference to it. */
   pose: Pose | null
   last: Vec3
@@ -78,6 +88,15 @@ export interface CharacterPlacement {
    * something the peer is not standing on, or a wall taking their momentum: those are not a base.
    */
   carry: Vec3 | null
+  /**
+   * This game's own states that are set for this character right now (ADR 0064).
+   *
+   * The local player's come from the game; a peer's come off the wire's spare flag bits. Either way the
+   * animator reads them through the reader it was handed, so one animator body covers both.
+   *
+   * `null` for a game that declared none, which is every game the stack ships.
+   */
+  states: ReadonlySet<string> | null
   /**
    * The clock-driven piece this player is riding (`LoadedLevel.baseIndex + 1`, 0 for none). `position`
    * and `yaw` are already in world space by the time they arrive here — the caller undoes the frame,
@@ -144,9 +163,13 @@ export const createCharacterViews = (
       scene.add(rig.root)
       // Seed from the entity id so a session is reproducible, and so two characters do not roll the
       // same sequence of steps — the variation is still per movement, not a fixed personality.
+      // Declared before the animator, because the reader handed to it closes over this very object.
+      // Before the animator, because the reader handed to it closes over this box (ADR 0064).
+      const states = { current: EMPTY_STATES }
       r = {
         rig,
-        animator: makeAnimator(gait, (id as number) * 2654435761),
+        states,
+        animator: makeAnimator(gait, (id as number) * 2654435761, () => states.current),
         pose: null,
         last: { ...position },
         speed: 0,
@@ -173,8 +196,10 @@ export const createCharacterViews = (
   }
 
   return {
-    upsert: (id, { isSelf, position, yaw, speed, vy, grounded, rising, carry, base, name }, dt) => {
+    upsert: (id, { isSelf, position, yaw, speed, vy, grounded, rising, carry, base, name, states }, dt) => {
       const r = charFor(id, isSelf, position)
+      // Written every frame; the animator reads it through its own closure over the box.
+      r.states.current = states ?? EMPTY_STATES
 
       // Stepping onto or off a moving platform swaps which timeline this player is drawn against, so the
       // position steps. Keep the step as an offset and decay it, rather than showing it.

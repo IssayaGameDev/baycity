@@ -87,9 +87,19 @@ relative transform does not change while the platform moves, so the two clocks s
 - The relative coordinates reuse the same `±QUANT_BOUND` axis quantization as world positions. They are
   small, so the shared bound is generous rather than tight: 1.2 mm either way.
 
-### State flags (v8)
+### State flags (v8, bits 3..7 added in ADR 0064)
 
-`STATE_GROUNDED` (bit 0), `STATE_RISING` (bit 1), `STATE_DEAD` (bit 2). These carry the state a
+Bits 0..2 are the **platform's**: `STATE_GROUNDED` (bit 0), `STATE_RISING` (bit 1), `STATE_DEAD`
+(bit 2).
+
+Bits 3..7 are the **game's** — five booleans it names itself (`ModeDescriptor.states`, in bit order),
+packed and unpacked by `gameStates.ts` and opaque to everything in between. The byte was already a
+full `u8` on both hops with three bits used, so these cost nothing; a sixth state needs a wider
+field and a real budget decision. They exist because a game-supplied animator reads the local
+player's state by closure and cannot do that for a peer, so a peer mid-dash was drawn running.
+Appending a name is safe; reordering silently reinterprets every peer's bits.
+
+The platform's three carry the state a
 viewer **cannot** reconstruct from a position curve, and they are **never interpolated** — the
 interpolator takes them from the sample at or before the render time (`interpolation.ts`),
 because blending "grounded" toward "airborne" is meaningless and fading a change in early

@@ -353,10 +353,15 @@ export interface Animator {
  * invented. Called **per character**, because the seed is what stops two players rolling the same steps.
  *
  * A game's factory can close over whatever it likes, since the game is what supplies it (ADR 0061). That is
- * why nothing needed adding to `AnimationInput`: a dash animation reads the game's own dash state directly
- * rather than the platform carrying a flag it cannot interpret.
+ * why nothing needed adding to `AnimationInput` for the **local** player: a dash animation reads the game's
+ * own dash state directly rather than the platform carrying a flag it cannot interpret.
+ *
+ * `states` is the same question for **everybody else** (ADR 0064). A closure cannot answer it — a peer's
+ * component state does not exist on this machine — so the host hands the animator a live reader of the state
+ * names that came off the wire for *this* character. For the local player it reports the same names the game
+ * sent, so one animator body handles both and does not have to know which it is animating.
  */
-export type AnimatorFactory = (gait: GaitTuning, seed: number) => Animator
+export type AnimatorFactory = (gait: GaitTuning, seed: number, states: () => ReadonlySet<string>) => Animator
 
 /**
  * mulberry32 — a small deterministic PRNG. Seeded so the variation is reproducible in tests; local

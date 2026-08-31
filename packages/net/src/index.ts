@@ -34,8 +34,19 @@ export {
 // design was going to transmit it. Keeping it here made the component system unable to name the type without
 // depending on the netcode.
 export type { PlayerState } from './state'
-export { encodeState, decodeState, STATE_GROUNDED, STATE_RISING, STATE_DEAD } from './state'
+export {
+  encodeState,
+  decodeState,
+  STATE_GROUNDED,
+  STATE_RISING,
+  STATE_DEAD,
+  STATE_GAME_BITS,
+  STATE_GAME_MASK,
+  STATE_GAME_SHIFT,
+} from './state'
 export type { Welcome } from './welcome'
 export { encodeWelcome, decodeWelcome } from './welcome'
 export type { Ping, Pong } from './timesync'
 export { encodePing, decodePing, encodePong, decodePong } from './timesync'
+
+export { MAX_GAME_STATES, TooManyStatesError, packStates, unpackStates } from './gameStates'

@@ -8,6 +8,8 @@ import {
 } from '@mp/client'
 import { clamp, createSimClock, rotateVec3, startFixedLoop, TICK_DT, TICK_RATE_HZ, vec3, yawOf, type EntityId, type Vec3 } from '@mp/core'
 import {
+  packStates,
+  unpackStates,
   decodePong,
   decodeRoster,
   decodeSnapshot,
@@ -121,6 +123,15 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
   // The game's gait if it has an opinion, the shipped one otherwise (ADR 0063). Copied, because this object
   // is what the debug pane binds and what every animator reads fresh each frame — the descriptor's must not
   // be mutated out from under a second session.
+  /**
+   * This game's own states for the local player, this frame (ADR 0064).
+   *
+   * Asked once and reused for both the outgoing state message and our own rig, so what peers are told and what
+   * we draw cannot disagree. Empty for a game that declared none, which is every game the stack ships.
+   */
+  let ownStates: ReadonlySet<string> = new Set()
+  const readOwnStates = (): ReadonlySet<string> => (mode.playerStates === undefined ? ownStates : (ownStates = mode.playerStates()))
+
   const gait: GaitTuning = { ...(mode.gait ?? DEFAULT_GAIT) }
   const views = createCharacterViews(stage.scene, gait, mode.animator ?? createAnimator)
   // Spawn assembly timing. Declared up here so the debug pane below can bind it.
@@ -555,8 +566,14 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
           // follows the input rather than the movement; and locomotion speed is what is left after a
           // platform's carry is taken out. These are exactly the values our own rig is animated from,
           // just below — a peer's rig should be given the same numbers, not a guess at them.
+          // The game's own states ride the spare bits of the same byte (ADR 0064) — five of them, already paid
+          // for. Without this a peer mid-dash is drawn running, because a game-supplied animator reads its
+          // state by closure (ADR 0063) and a closure cannot answer for somebody else's machine.
           const flags =
-            (char.grounded ? STATE_GROUNDED : 0) | (char.vy > 0 ? STATE_RISING : 0) | (dead ? STATE_DEAD : 0)
+            (char.grounded ? STATE_GROUNDED : 0) |
+            (char.vy > 0 ? STATE_RISING : 0) |
+            (dead ? STATE_DEAD : 0) |
+            packStates(mode.states, readOwnStates())
           // Riding a clock-driven piece? Then send the transform **in that piece's frame** and say which
           // piece it is (v10, ADR 0021). A viewer draws the level at its own current time and draws peers
           // on a delayed timeline, so a world position puts a rider where they were 100 ms ago on a deck
@@ -686,6 +703,8 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
             // change to smooth over, so this is always 0 for us however much platform we are riding.
             base: 0,
             name: myName,
+            // The same set the outgoing state message used, so our rig and every peer's view of us agree.
+            states: readOwnStates(),
           },
           frameDt,
         )
@@ -774,6 +793,9 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
               // Still missing: being shoved by something you are *not* standing on, and a wall taking your
               // momentum. Neither is a base, and both would need real bytes (ADR 0021).
               carry: e.base === 0 ? null : loaded?.baseCarry(e.base - 1, e.position) ?? null,
+              // Their game states, out of the spare flag bits (ADR 0064). This is the whole of what makes a
+              // peer's dash look like a dash rather than a run.
+              states: unpackStates(mode.states, e.flags),
               base: e.base,
               name: names.get(e.id) ?? '…',
             },

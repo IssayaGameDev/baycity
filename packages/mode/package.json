@@ -10,9 +10,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mp/humanoid": "workspace:*",
     "@mp/components": "workspace:*",
     "@mp/content": "workspace:*",
-    "@mp/core": "workspace:*"
+    "@mp/core": "workspace:*",
+    "@mp/humanoid": "workspace:*"
   }
 }

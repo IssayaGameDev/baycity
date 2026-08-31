@@ -22,7 +22,7 @@ const scene = (): THREE.Scene => new THREE.Scene()
  * view derives speed and facing from movement. The values do not matter here; what is under test is which
  * animator receives them.
  */
-const placement = (position = vec3(0, 1, 0)): CharacterPlacement => ({
+const placement = (position = vec3(0, 1, 0), states: ReadonlySet<string> | null = null): CharacterPlacement => ({
   isSelf: true,
   position,
   yaw: null,
@@ -33,6 +33,7 @@ const placement = (position = vec3(0, 1, 0)): CharacterPlacement => ({
   carry: null,
   base: 0,
   name: 'test',
+  states,
 })
 
 describe('the animator a game supplies', () => {
@@ -126,5 +127,64 @@ describe('the default', () => {
   it('is the shared gait itself, not a copy of it', () => {
     const a: Animator = createAnimator({ ...DEFAULT_GAIT }, 1)
     expect(typeof a.step).toBe('function')
+  })
+})
+
+/**
+ * A peer's game states reaching the animator (ADR 0064).
+ *
+ * The local player's states come from a closure over the game's own component (ADR 0063), which cannot answer
+ * for anybody else — a peer's arrive as bits on the wire, and the host hands the animator a reader for them.
+ * One animator body then covers both, which is the property these check.
+ */
+describe('the states an animator is handed', () => {
+  it('is empty for a game that declared none', () => {
+    const seen: ReadonlySet<string>[] = []
+    const mine: AnimatorFactory = (_gait, _seed, states) => ({
+      step: () => {
+        seen.push(states())
+        return restPose()
+      },
+    })
+    const views = createCharacterViews(scene(), { ...DEFAULT_GAIT }, mine)
+    views.upsert(entityId(1), placement(), 1 / 60)
+    expect([...seen[0]!]).toEqual([])
+  })
+
+  it('reports whatever the host wrote for that character, live', () => {
+    const seen: string[][] = []
+    const mine: AnimatorFactory = (_gait, _seed, states) => ({
+      step: () => {
+        seen.push([...states()].sort())
+        return restPose()
+      },
+    })
+    const views = createCharacterViews(scene(), { ...DEFAULT_GAIT }, mine)
+    const id = entityId(1)
+
+    views.upsert(id, placement(vec3(0, 1, 0), new Set(['dash'])), 1 / 60)
+    views.upsert(id, placement(vec3(0, 1, 0), new Set(['dash', 'glide'])), 1 / 60)
+    // Cleared, not sticky: a state that stops being sent stops being animated.
+    views.upsert(id, placement(vec3(0, 1, 0), null), 1 / 60)
+
+    expect(seen).toEqual([['dash'], ['dash', 'glide'], []])
+  })
+
+  /** Per character, so one peer dashing does not put everybody in a dash pose. */
+  it('is not shared between characters', () => {
+    const seen = new Map<number, string[]>()
+    const mine: AnimatorFactory = (_gait, seed, states) => ({
+      step: () => {
+        seen.set(seed, [...states()])
+        return restPose()
+      },
+    })
+    const views = createCharacterViews(scene(), { ...DEFAULT_GAIT }, mine)
+    views.upsert(entityId(1), placement(vec3(0, 1, 0), new Set(['dash'])), 1 / 60)
+    views.upsert(entityId(2), placement(vec3(0, 1, 0), null), 1 / 60)
+
+    const [a, b] = [...seen.values()]
+    expect(a).toEqual(['dash'])
+    expect(b).toEqual([])
   })
 })

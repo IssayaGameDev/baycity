@@ -59,8 +59,22 @@ export const TEMPLATE_MODE: ModeDescriptor = {
    * ```
    *
    * Nothing was added to `AnimationInput` for that on purpose: this factory is *your* code, so it can read
-   * your own state directly. The cost is that such a state is local — a peer's dash reads as a run until
-   * whatever it does goes on the wire.
+   * your own state directly.
+   *
+   * For **other players** a closure cannot answer, so declare the state and it rides the spare bits of the
+   * flags byte already being sent (ADR 0064) — five of them, free:
+   *
+   * ```ts
+   * states: ['dash'],
+   * playerStates: () => (dashing ? new Set(['dash']) : new Set()),
+   * animator: (gait, seed, states) => {
+   *   const shared = createAnimator(gait, seed)
+   *   // `states` answers for whichever character this animator belongs to — us or a peer.
+   *   return { step: (input, dt) => (states().has('dash') ? dashPose() : shared.step(input, dt)) }
+   * },
+   * ```
+   *
+   * Order is bit order: appending a state is safe, reordering reinterprets every peer's bits.
    */
   spawn: spawnOf,
   session: templateSession,

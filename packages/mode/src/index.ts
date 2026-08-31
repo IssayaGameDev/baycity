@@ -161,6 +161,28 @@ export interface ModeDescriptor {
    */
   readonly gait?: GaitTuning
   readonly animator?: AnimatorFactory
+  /**
+   * States of this game's own that have to reach **other players** (ADR 0064), in order, at most five.
+   *
+   * A game-supplied animator reads the local player's state by closure (ADR 0063), and cannot do that for a
+   * peer — component state never goes on the wire (ADR 0059) — so a peer mid-dash was drawn running. These
+   * names claim the spare bits of the state byte, which are already being sent: order is the bit order, so
+   * **appending is safe and reordering is not**.
+   *
+   * Five because that is what is spare. A sixth needs a wider field and real bytes, which is a budget
+   * decision rather than a free one.
+   *
+   * The platform never learns what a name means. It asks `playerStates` which are set, packs them, and hands
+   * the set back for a peer — see `AnimatorFactory`, which is where they are read.
+   */
+  readonly states?: readonly string[]
+  /**
+   * Which of `states` are true for the local player right now.
+   *
+   * Called once per outgoing state message. A game closes over whatever it needs, the same way `playerDefs`
+   * does — usually its own component's flag.
+   */
+  readonly playerStates?: () => ReadonlySet<string>
   /** Begin a rules session over this level. */
   readonly session: (loaded: LoadedLevel, opts?: ModeSessionOptions) => ModeSession
 }

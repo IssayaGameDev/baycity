@@ -25,10 +25,33 @@ import { MSG_STATE, PROTOCOL_VERSION, readHeader } from './messages'
  * whole of what a death costs on the wire. Each viewer then runs its own ragdoll from its own
  * interpolated pose of that player, so the corpses land in different places on every screen and no
  * part positions travel (ADR 0019).
+ *
+ * Bits 3..7 are the **game's** — see `STATE_GAME_SHIFT`.
  */
 export const STATE_GROUNDED = 1 << 0
 export const STATE_RISING = 1 << 1
 export const STATE_DEAD = 1 << 2
+
+/**
+ * The **game's** bits: bits 3..7 of the same byte, meaning whatever the game says (ADR 0064).
+ *
+ * The three above are the platform's, and they were the only three there could be — so a game with a state of
+ * its own (dashing, swinging, gliding) had no way to tell a viewer about it, and a peer mid-dash was drawn
+ * running. Component state is not serialized (ADR 0059), and a game-supplied animator reads its own state by
+ * closure (ADR 0063), which works for the local player and cannot work for anybody else's.
+ *
+ * **Five of them, and they cost nothing.** The flags byte is a full `u8` on both hops and three bits were in
+ * use, so this is room already being paid for. That is also the whole of the budget conversation: adding a
+ * sixth state means a wider field and real bytes.
+ *
+ * **Opaque to the platform.** `@mp/net` never learns what bit 3 means; a game declares its names and a host
+ * packs and unpacks them (`ModeDescriptor.states`). Which is why they are exposed as a count and a mask
+ * rather than as named constants.
+ */
+export const STATE_GAME_SHIFT = 3
+export const STATE_GAME_BITS = 5
+/** `0b11111000` — the game's half of the byte, for masking either way. */
+export const STATE_GAME_MASK = ((1 << STATE_GAME_BITS) - 1) << STATE_GAME_SHIFT
 
 export interface PlayerState {
   position: Vec3
