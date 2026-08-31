@@ -1,0 +1,25 @@
+{
+  "name": "@mp/tps",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mp/camera": "workspace:*",
+    "@mp/client": "workspace:*",
+    "@mp/core": "workspace:*",
+    "@mp/humanoid": "workspace:*",
+    "@mp/mode": "workspace:*",
+    "@mp/physics": "workspace:*",
+    "@mp/render-three": "workspace:*",
+    "tweakpane": "^4.0.5"
+  },
+  "devDependencies": {
+    "@tweakpane/core": "^2.0.0"
+  }
+}

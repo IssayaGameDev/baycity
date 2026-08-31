@@ -1,4 +1,5 @@
 import {
+  OVERLAY_LAYER,
   applyGreyboxEnvironment,
   createPostFX,
   createThreeStage,
@@ -11,7 +12,6 @@ import {
 } from '@mp/render-three'
 
 import { assetUrlOf } from './assets'
-import { OVERLAY_LAYER } from './nametag'
 
 /**
  * The Three stage and everything that dresses it: the greybox pipeline, the sky, post-FX, and the render step
@@ -57,7 +57,7 @@ export const createScene = async (canvas: HTMLCanvasElement, occluding: () => It
   // own depth/normal buffer to compute occlusion; a sprite left in the world pipeline shows
   // up there as a hard dark AO ghost (the tilted black quad). Keeping the sprites on a layer
   // the world camera never sees during post-FX excludes them from GTAO entirely; we then draw
-  // them on top, free of AO and tone mapping (OVERLAY_LAYER — see nametag.ts).
+  // them on top, free of AO and tone mapping (`OVERLAY_LAYER`, declared by the renderer that draws it).
   stage.setRenderStep(() => {
     postfx.render() // world + AO + bloom to screen (camera sees layer 0 only)
     const r = stage.renderer

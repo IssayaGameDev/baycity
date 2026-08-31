@@ -202,6 +202,9 @@ importers:
       '@mp/render-three':
         specifier: workspace:*
         version: link:../render-three
+      '@mp/tps':
+        specifier: workspace:*
+        version: link:../tps
       colyseus.js:
         specifier: ^0.16.22
         version: 0.16.22
@@ -307,6 +310,37 @@ importers:
       colyseus.js:
         specifier: ^0.16.22
         version: 0.16.22
+
+  packages/tps:
+    dependencies:
+      '@mp/camera':
+        specifier: workspace:*
+        version: link:../camera
+      '@mp/client':
+        specifier: workspace:*
+        version: link:../client
+      '@mp/core':
+        specifier: workspace:*
+        version: link:../core
+      '@mp/humanoid':
+        specifier: workspace:*
+        version: link:../humanoid
+      '@mp/mode':
+        specifier: workspace:*
+        version: link:../mode
+      '@mp/physics':
+        specifier: workspace:*
+        version: link:../physics
+      '@mp/render-three':
+        specifier: workspace:*
+        version: link:../render-three
+      tweakpane:
+        specifier: ^4.0.5
+        version: 4.0.5
+    devDependencies:
+      '@tweakpane/core':
+        specifier: ^2.0.0
+        version: 2.0.5
 
   tools/bots:
     dependencies:

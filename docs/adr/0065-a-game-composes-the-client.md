@@ -1,7 +1,7 @@
 # ADR 0065 — A game composes the client, instead of being called by it
 
-Status: accepted, landing in phases. **Phase 0 only** is built: every allocator in `@mp/game-client` owns its
-release, and `startGameClient` returns a `GameClient` with `dispose`.
+Status: accepted, landing in phases. **Phases 0 and 1** are built: every allocator owns its release, and the
+third-person game is `@mp/tps`.
 
 ## Context
 
@@ -44,7 +44,7 @@ Landing in phases, each ending runnable:
 | Phase | What |
 | --- | --- |
 | **0** | Every allocator owns its release; `startGameClient` returns a handle. **Built.** |
-| 1 | Group three extracted to `@mp/tps`. A move, not a rewrite; the descriptor is untouched. |
+| **1** | Group three extracted to `@mp/tps`. **Built.** |
 | 2 | Groups one and two extracted as services, each with its own teardown. |
 | 3 | Inversion. `_template/main.ts` composes; the descriptor drops to ~6 fields. |
 | 4 | Swing's rope, as the acceptance test: game code touching Three and Rapier directly, no new field. |
@@ -77,6 +77,37 @@ re-declared arrow silently fails to match), `CharacterViews`, and `installDebugP
 `prune` was leaking a texture and a material per player who left the room: the nametag is added to `rig.root`
 after the rig is built, so `rig.dispose()` never knew it was there. Both paths share one `drop` now.
 
+### Phase 1: `@mp/tps`
+
+Two halves, deliberately, because they carry very different risk.
+
+**The move.** Seven files — `characterView`, `pane`, `inputs`, `ragdoll`, `assemble`, `nametag`, `layers`, with
+their two tests — relocated whole: 1048 lines, no edits beyond imports. `OVERLAY_LAYER` went sideways to
+`@mp/render-three`, because it is an agreement between the two-pass render step (which stayed in
+`@mp/game-client`'s scene) and every object that opts into the layer (now `@mp/tps`'s nametag), and those are
+different packages now. A second copy of that number is how two halves of one agreement drift (ADR 0057).
+
+`@mp/game-client` stopped re-exporting the character views and the body layers. A game that wants a rig imports
+the game that has one rather than reaching through the platform for it.
+
+**The rewrite.** `avatars.ts`: the rigs, the corpses and the spawn assemblies as one module. These were 127
+interleaved lines threaded through the tick and the render loop, and interleaved is the point — a corpse
+suppresses an assembly, an assembly hides a rig, a death needs the pose the rig was last *drawn* in, and all
+three want the same interpolation alpha. Split across a host and a package, the host would have had to know
+that order. Kept together, the order is the module.
+
+What is left in `client.ts` is the three questions only a *client* can answer: where a peer is once their base
+frame is undone (ADR 0021), whether their dead bit is set, and where the camera ended up. **Nothing in
+`@mp/tps` reads a flag byte or a base index.**
+
+`setSelfVisible` is separate from `drawSelf` rather than a field on it, because the camera is placed *after* the
+bodies are drawn: folding the camera's answer into `drawSelf` would have hidden the rig on last frame's
+placement and flickered. Three things decide whether your own rig is drawn and only one is the client's, so the
+`&&` lives in `@mp/tps` and the client passes one boolean.
+
+`world` is a getter because the world arrives with the first snapshot and the avatars are built before it. A
+peer who dies before then keeps their rig for a frame, which was already the behaviour.
+
 ## Consequences
 
 - Nothing calls `dispose`. The page owns the client for its whole life and the browser reclaims everything on
@@ -91,6 +122,17 @@ after the rig is built, so `rig.dispose()` never knew it was there. Both paths s
   the camera stops being steered, a second `createInputs` on the same page works while the first goes deaf,
   and a second `dispose` does not throw. Three of the four were confirmed to **fail** with the removal loop
   commented out, which is the only evidence that a teardown test tests anything.
+- 14 more tests on `avatars.ts` — the part of phase 1 that was a rewrite, and the part with the most ways to
+  be quietly wrong. Every gate in the state machine: a rig left alone while dead, hidden while assembling,
+  shown once the body lands, hidden by the camera alone; a death refused before any rig is drawn, happening
+  without a ragdoll when the game declared none or before a world exists, dropping one body per part; a peer
+  with no world keeping their rig, a peer already dead on join not getting a corpse from a pose that does not
+  exist, a corpse cleared and reassembled on respawn, a peer killed again mid-respawn keeping only the corpse,
+  and a leaver taking their corpse with them. The physics is a fake world handing out bodies that stay put —
+  nothing here asserts on how a part falls, and a real Rapier world would only make it async.
+- The peer paths needed a stubbed 2D canvas context to be reachable at all (happy-dom implements none), so
+  those tests carry a seven-method fake of what the nametag draws with. That stub does **not** make the leak
+  fix testable: it proves nothing about a real texture.
 - The "second inputs" test asserts on the **keyboard**, not the camera. Every mouse and wheel handler is gated
   on `document.pointerLockElement === canvas`, so a stale handler fails that check regardless — a camera
   assertion there passes whether the listener was removed or not.
@@ -110,7 +152,7 @@ away. Phase 4 gets the same evidence by making the rope the exam instead of the 
 
 ## Known open
 
-- **`client.ts` has zero tests**, and the 1029 in the suite are all on packages. The gate for phases 0-3
+- **`client.ts` has zero tests**, and the 1043 in the suite are all on packages. The gate for phases 0-3
   stays Kodjo playing parkour, swing, the template and the editor.
 - **`dispose` is untested end to end**: `startGameClient` needs a WebGL context, which no fake browser has.
 - **The nametag leak fix is unverified.** happy-dom implements no 2D canvas context — `getContext('2d')`
@@ -118,4 +160,9 @@ away. Phase 4 gets the same evidence by making the rope the exam instead of the 
   needs a toolchain on Windows and is not worth one assertion. The fix is verified by reading only.
 - **The debug pane's `dispose` is untested.** It would need a twelve-field fake of the whole client's live
   objects to reach one `pane.dispose()`, and it is dev tooling that no player sees.
+- **`client.ts` is still 911 lines**, and phases 2-4 are the rest of this ADR.
+- **`ModeDescriptor` has not shrunk yet.** Phase 1 deliberately left it alone — nine of its fifteen fields die
+  in phase 3, when a game passes them as arguments instead of declaring them.
+- The editor and the viewer still hand-roll their own play-test against `@mp/humanoid` and `@mp/camera`. They
+  are the obvious consumers of `@mp/tps` now, and neither has been pointed at it.
 - Everything in phases 1-4.

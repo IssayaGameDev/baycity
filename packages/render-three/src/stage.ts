@@ -32,6 +32,17 @@ export interface ThreeStageOptions {
   background?: number
 }
 
+/**
+ * Render layer for in-world UI drawn in its own pass after post-FX, excluded from shadows, GTAO and tone
+ * mapping.
+ *
+ * Lives here rather than with any one thing that uses it, because it is a contract between the *render step*
+ * that draws the layer last and every object that opts into it — and those are now in different packages
+ * (ADR 0065): the two-pass render is `@mp/game-client`'s scene, the nametag that sets the layer is
+ * `@mp/tps`'s. A second copy of the number is how two halves of one agreement come to disagree (ADR 0057).
+ */
+export const OVERLAY_LAYER = 1
+
 export const createThreeStage = (opts: ThreeStageOptions): ThreeStage => {
   const renderer = new THREE.WebGLRenderer({ canvas: opts.canvas, antialias: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))

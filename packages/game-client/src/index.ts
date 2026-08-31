@@ -6,8 +6,9 @@
  * `index.html` with a `#view` canvas and a `#status` line; the stack supplies the scene, the netcode, the
  * views, the camera, the pause screen and the render loop.
  *
- * The pieces are exported alongside it because a tool may want one without the client: the editor already
- * draws rig-coloured characters and could use the level source.
+ * The pieces exported alongside it are the ones a *tool* may want without a client — the level source, the
+ * asset database, the save adapter. Everything that makes the shipped game a third-person humanoid game lives
+ * in `@mp/tps` now (ADR 0065), which a game imports directly.
  */
 
 export const GAME_CLIENT_VERSION = '0.0.0' as const
@@ -19,6 +20,5 @@ export { DEFAULT_NAME, levelsFor } from './levels'
 export { ASSET_DB, CLIP_SOURCE, assetUrlOf, materialOf } from './assets'
 export type { PersistenceAdapter, PlayerProgress } from './persistence'
 export { localProgress } from './persistence'
-export { BODY_LAYERS, CORPSE_LAYERS } from './layers'
-export type { CharacterPlacement, CharacterViews } from './characterView'
-export { createCharacterViews, PEER_COLORS, SELF_COLORS } from './characterView'
+// The third-person game's own pieces moved to `@mp/tps` (ADR 0065). Not re-exported: a game that wants a
+// character rig imports the game that has one, rather than reaching through the platform for it.

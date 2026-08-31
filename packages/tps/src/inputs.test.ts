@@ -23,10 +23,10 @@ const fakeCamera = (): OrbitCamera & { looks: [number, number][]; zooms: number[
     looks,
     zooms,
     yaw: () => 0,
-    lookMouse: (dx, dy) => {
+    lookMouse: (dx: number, dy: number) => {
       looks.push([dx, dy])
     },
-    zoomNotch: (dir) => {
+    zoomNotch: (dir: number) => {
       zooms.push(dir)
     },
   } as unknown as OrbitCamera & { looks: [number, number][]; zooms: number[] }
@@ -43,7 +43,7 @@ const lockedCanvas = (): HTMLCanvasElement => {
   const canvas = document.createElement('canvas')
   document.body.appendChild(canvas)
   Object.defineProperty(document, 'pointerLockElement', { value: canvas, configurable: true })
-  canvas.requestPointerLock = (): void => {}
+  canvas.requestPointerLock = (): Promise<void> => Promise.resolve()
   return canvas
 }
 

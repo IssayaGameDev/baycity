@@ -1,9 +1,5 @@
 import { CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/humanoid'
-import { THREE } from '@mp/render-three'
-
-/** Render layer for in-world UI drawn in a separate overlay pass, excluded from the
- * shadow / GTAO / tone-mapping pipeline. The mode renders this layer after post-FX. */
-export const OVERLAY_LAYER = 1
+import { OVERLAY_LAYER, THREE } from '@mp/render-three'
 
 /**
  * A billboard nametag: a canvas-texture `Sprite` that always faces the camera. Lives on the

@@ -22,6 +22,7 @@
     "@mp/physics": "workspace:*",
     "@mp/render-pixi": "workspace:*",
     "@mp/render-three": "workspace:*",
+    "@mp/tps": "workspace:*",
     "colyseus.js": "^0.16.22",
     "tweakpane": "^4.0.5"
   },

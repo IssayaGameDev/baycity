@@ -59,15 +59,10 @@ import { t } from '@mp/i18n'
 import { createTouchHud, createUiOverlay, uiButton, type ListItem, type TouchHud } from '@mp/render-pixi'
 import { Client, type Room } from 'colyseus.js'
 
-import { createAssembly, type Assembly, type AssemblyTiming } from './assemble'
-import { createInputs } from './inputs'
-import { installDebugPane } from './pane'
+import { BODY_LAYERS, createAvatars, createInputs, installDebugPane, type Avatars, type AssemblyTiming } from '@mp/tps'
 import { createScene } from './scene'
 import { createStatusLine } from './status'
-import { createCharacterViews, PEER_COLORS, SELF_COLORS } from './characterView'
-import { BODY_LAYERS } from './layers'
 import { createPauseMenu } from './pauseMenu'
-import { createRagdoll, type Ragdoll } from './ragdoll'
 import { ASSET_DB, CLIP_SOURCE, assetUrlOf, materialOf } from './assets'
 import { levelsFor } from './levels'
 import { localProgress } from './persistence'
@@ -77,14 +72,17 @@ import { localProgress } from './persistence'
  *
  * A `ModeDescriptor` is the whole of what varies: its registry validates and instantiates the level, its
  * tuning drives the controller, its `session` is the rules, its `spawn` places arrivals, and its name picks
- * the level list and the save key. Everything else here — the Three stage, the post-FX, the asset preload,
- * joining a room, interpolation, peer views, nametags, the ragdoll and spawn assembly, the pause screen, the
- * debug pane, touch, and the render loop — is the same for every game, which is exactly why it stopped being
- * a game's file.
+ * the level list and the save key. What is left here is the Three stage, the post-FX, the asset preload,
+ * joining a room, interpolation, the pause screen, touch, and the render loop.
  *
- * **Moved, not redesigned.** This was `modes/parkour/src/main.ts` and it is still one long composition
- * root; the entry point is what is new. Breaking it into scene / netcode / render modules is the follow-up,
- * and it is safe to do incrementally now that callers only see `startGameClient`.
+ * **What is no longer here**: every body on screen, the camera's DOM events, the debug pane, and what a death
+ * looks like all live in `@mp/tps` (ADR 0065), because they are one game's opinion rather than the platform's.
+ * This file drives them; it does not own them.
+ *
+ * **Being taken apart (ADR 0065).** The remaining ~900 lines are a platform half (clock, snapshots, room,
+ * codecs, fixed loop, level, physics, assets) and a plumbing half (canvas, renderer, post-FX, input, status,
+ * pause, resize). Phase 2 makes each a service with its own teardown; phase 3 hands the composition to the
+ * game's own `main.ts` and `ModeDescriptor` drops to about six fields.
  *
  * The host page owes it two elements: a `#view` canvas and a `#status` line.
  */
@@ -165,8 +163,6 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
   const readOwnStates = (): ReadonlySet<string> => (mode.playerStates === undefined ? ownStates : (ownStates = mode.playerStates()))
 
   const gait: GaitTuning = { ...(mode.gait ?? DEFAULT_GAIT) }
-  const views = createCharacterViews(stage.scene, gait, mode.animator ?? createAnimator)
-  // Spawn assembly timing. Declared up here so the debug pane below can bind it.
   /**
    * What dying looks like: the game's `Death` component, or the shipped defaults when it declares none
    * (ADR 0059).
@@ -177,6 +173,25 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
    */
   const death = componentOn(mode.player ?? [], Death) ?? readParams(Death.params, {}, Death.type)
   const assembleTiming: AssemblyTiming = { stagger: death.assembleStagger, fall: death.assembleFall, height: death.assembleHeight }
+
+  /**
+   * Every body on screen — rigs, corpses, spawn assemblies — as one thing that owns the order they interact in
+   * (ADR 0065).
+   *
+   * This was 127 lines threaded through the tick and the render loop here. What is left in this file is the
+   * three questions only a *client* can answer: where a peer is once their base frame is undone, whether their
+   * dead bit is set, and where the camera ended up.
+   *
+   * `world` is a getter because the world arrives with the first snapshot and this is built before it.
+   */
+  const avatars: Avatars = createAvatars({
+    scene: stage.scene,
+    gait,
+    ...(mode.animator === undefined ? {} : { makeAnimator: mode.animator }),
+    timing: assembleTiming,
+    world: () => physicsWorld,
+    ragdoll: death.ragdoll,
+  })
 
   // --- camera orbit (mouselook via pointer lock) ---
   /**
@@ -268,42 +283,20 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
   let lastSimTickAt = 0 // wall-clock of the last fixed tick, for render-interpolating clock-driven pieces
   let requestRespawn: (() => void) | null = null // set once the local sim exists; used by the pause menu's Restart
   let requestDeath: (() => void) | null = null // set once the local sim exists; the death path, for the ragdoll
-  // Death state. `dead` gates input and the kill checks; `ragdoll` is the loose bodies, synced per frame
-  // and thrown away on respawn. Local and visual only — nothing about a death goes on the wire.
+  /**
+   * Whether we are dead: it gates input, the kill checks and the flag we send.
+   *
+   * Only the *fact* stays here. What a death looks like — the loose bodies, the corpses of peers, the body
+   * dropping back in — is `@mp/tps`'s, because it is a game's opinion (ADR 0065). Nothing about a death goes
+   * on the wire but this one bit.
+   */
   let dead = false
-  let ragdoll: Ragdoll | null = null
-  /**
-   * Peers' corpses, one per dead remote player. A death travels as a single flag (`STATE_DEAD`) and the
-   * ragdoll is built here, from *this* client's interpolated pose of that player — so every viewer's
-   * corpse lands somewhere different and no part positions ever go on the wire (ADR 0019).
-   */
-  const peerRagdolls = new Map<EntityId, Ragdoll>()
-  /**
-   * Peers' spawn assemblies, one per peer whose body is currently dropping back in. Same trigger as the
-   * corpse — the *falling* edge of `STATE_DEAD` — and the same timing knobs, so a respawn looks the same
-   * from the outside as it does to the player it happened to.
-   */
-  const peerAssemblies = new Map<EntityId, { assembly: Assembly; elapsed: number }>()
   /** The client's own physics world, once the local sim exists. Peer corpses are dynamic bodies in it. */
   let physicsWorld: PhysicsWorld | null = null
   /** The fixed sim loop, once the local sim exists. Held only so `dispose` can stop it. */
   let simLoop: LoopHandle | null = null
   /** The ping timer, once a room is joined. Held only so `dispose` can clear it. */
   let pingTimer: ReturnType<typeof setInterval> | null = null
-  // Spawn assembly: the body drops in a pair at a time. Runs on the first spawn and every respawn, and owns
-  // the rig's visibility while it does — the rig only reappears once the last part has landed.
-  let assembly: Assembly | null = null
-  let assembledFor = 0
-  const startAssembly = (): void => {
-    assembly?.dispose()
-    assembly = createAssembly({ scene: stage.scene, look: { colors: SELF_COLORS } })
-    assembledFor = 0
-  }
-  const clearRagdoll = (): void => {
-    ragdoll?.dispose()
-    ragdoll = null
-    dead = false
-  }
   const names = new Map<EntityId, string>() // peer id -> display name (from ROSTER)
 
   // Auto-assigned random display name (player-chosen names come later — ADR 0013).
@@ -355,7 +348,8 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
      * instead of a second hand-written copy. They had already drifted: the editor died on any fall, ignoring
      * `fallBehavior`, so a tower level killed you there and let you fall here.
      *
-     * What stays in this file is what a *client* does about it — persistence, ragdolls, assembly, the camera.
+     * What stays in this file is what a *client* does about it — persistence, and driving the camera and the
+     * bodies rather than owning them.
      */
     const playerState = persistence.load()
     const rules = mode.session(loaded, {
@@ -378,20 +372,11 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
      * stand on, so the camera treating them as geometry is right.
      *
      * Excluded: ourselves. The boom starts at the capsule's crown, so the probe overlaps the capsule every
-     * single frame and would report zero clearance; and while dead the ragdoll's parts are our own body too,
-     * not scenery to be shoved away from.
+     * frame and would report zero clearance — and, while dead, our own scattered parts, which are our body
+     * rather than scenery. Which colliders those are is `avatars.obstacles`, because the corpses are its
+     * (ADR 0065); the capsule is the only handle this file owns.
      */
-    /**
-     * What the camera must not be shoved by: our own capsule, our own corpse, and **every** corpse. A living
-     * peer is mirrored as a kinematic capsule here, so they do move the camera — but a ragdoll is a visual
-     * whose position no two clients agree on, and ten cuboids tumbling round your feet because someone died
-     * next to you should not shove your view. Read fresh per query, since the ragdoll comes and goes.
-     */
-    const selfColliders = (): number[] => {
-      const skip = [char.body.colliderHandle, ...(ragdoll?.colliders ?? [])]
-      for (const corpse of peerRagdolls.values()) skip.push(...corpse.colliders)
-      return skip
-    }
+    const selfColliders = (): number[] => avatars.obstacles(char.body.colliderHandle)
     const queries: OcclusionQueries = {
       cast: (origin, direction, maxDistance, more) => {
         const skip = selfColliders()
@@ -410,13 +395,13 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
     // Respawn: teleport to wherever the rules say (the last checkpoint, or the spawn) and kill momentum.
     // Triggered by touching a hazard pad or falling below the kill plane — both are `takeDeath`'s call now.
     const respawn = (): void => {
-      clearRagdoll()
+      dead = false
+      avatars.reassemble()
       char.body.setPosition(rules.respawnAt())
       char.vx = 0
       char.vy = 0
       char.vz = 0
       char.grounded = false
-      startAssembly()
     }
     requestRespawn = respawn // let the pause menu's Restart reach it
 
@@ -472,22 +457,11 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
      */
     const die = (): void => {
       if (dead) return
-      const pose = views.poseOf(id)
-      if (pose === null) return // no rig drawn yet; nothing to fall apart
-      dead = true
-      // A game whose character is not a jointed figure says `ragdoll: false` and simply waits (ADR 0059).
-      // Death still happens, the rig still goes, the click still respawns — there is just nothing to fall.
-      if (!death.ragdoll) return
-      ragdoll = createRagdoll({
-        world,
-        scene: stage.scene,
-        transforms: partTransforms(pose, char.body.translation()),
-        velocity: vec3(char.vx, char.vy, char.vz),
-        look: { colors: SELF_COLORS },
-      })
+      // `false` means no rig has been drawn yet, so there is nothing to fall apart and we are not dead.
+      dead = avatars.die(id, char.body.translation(), vec3(char.vx, char.vy, char.vz))
     }
     requestDeath = die
-    startAssembly() // the first spawn arrives the same way a respawn does
+    avatars.reassemble() // the first spawn arrives the same way a respawn does
 
     // This local sim IS the truth for our own character (client-authoritative, ADR 0011).
     // Clock-driven pieces advance one fixed step per fixed step, tracking the synced server
@@ -589,11 +563,10 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
           const ref = Math.sqrt(2 * tuning.gravity * tuning.jumpHeight)
           orbit.land(-vyBefore / ref)
         }
-        // After the world has stepped: a ragdoll's bodies only move on a tick, so this is where their new
-        // pose is taken. The render loop interpolates between the last two. Peers' corpses are bodies in
-        // this same world, so they are captured on the same tick.
-        ragdoll?.capture()
-        for (const corpse of peerRagdolls.values()) corpse.capture()
+        // After the world has stepped: loose bodies only move on a tick, so this is where their new pose is
+        // taken and the render loop interpolates between the last two. Ours and every peer's corpse are
+        // bodies in this same world, so one call captures them all.
+        avatars.capture()
 
         const p = controller!.state().get(id)
         if (p) {
@@ -718,43 +691,30 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
     if (myId !== null && controller) {
       seen.add(myId)
       ownPos = controller.renderPositions().get(myId) ?? ownPos
-      // Dead: the rig is hidden and the ragdoll's bodies own the picture. Still counted as `seen`, so the
-      // hidden rig is not pruned and can simply be shown again on respawn.
-      if (dead) ragdoll?.sync(tickAlpha)
-      // Our own inputs are exact — we own the sim — so nothing is derived for us.
-      else
-        views.upsert(
-          myId,
-          {
-            isSelf: true,
-            position: ownPos,
-            yaw: ownFacing,
-            speed: ownState !== null ? Math.hypot(ownState.vx, ownState.vz) : 0,
-            vy: ownState?.vy ?? 0,
-            grounded: ownState?.grounded ?? true,
-            rising: (ownState?.vy ?? 0) > 0,
-            // Motion we did not ask for — a platform carrying us, a bar shoving us, a wall stopping us.
-            carry: ownState?.carry ?? null,
-            // Our own rig is drawn from our own sim, in world space, on one timeline — there is no frame
-            // change to smooth over, so this is always 0 for us however much platform we are riding.
-            base: 0,
-            name: myName,
-            // The same set the outgoing state message used, so our rig and every peer's view of us agree.
-            states: readOwnStates(),
-          },
-          frameDt,
-        )
-      // Assembling: the animator still runs above (the parts fall toward the pose it produces, so a player
-      // already walking has their body arrive around them), but the rig itself stays hidden until the last
-      // part lands. The hiding is the camera block's job at the end of the frame — one writer for it.
-      if (!dead && assembly !== null) {
-        assembledFor += frameDt
-        const pose = views.poseOf(myId)
-        if (pose === null || assembly.draw(partTransforms(pose, ownPos), assembledFor, assembleTiming)) {
-          assembly.dispose()
-          assembly = null
-        }
-      }
+      // Our own inputs are exact — we own the sim — so nothing is derived for us. Dead or assembling is
+      // `@mp/tps`'s to picture; we only say which.
+      avatars.drawSelf(
+        myId,
+        {
+          isSelf: true,
+          position: ownPos,
+          yaw: ownFacing,
+          speed: ownState !== null ? Math.hypot(ownState.vx, ownState.vz) : 0,
+          vy: ownState?.vy ?? 0,
+          grounded: ownState?.grounded ?? true,
+          rising: (ownState?.vy ?? 0) > 0,
+          // Motion we did not ask for — a platform carrying us, a bar shoving us, a wall stopping us.
+          carry: ownState?.carry ?? null,
+          // Our own rig is drawn from our own sim, in world space, on one timeline — there is no frame
+          // change to smooth over, so this is always 0 for us however much platform we are riding.
+          base: 0,
+          name: myName,
+          // The same set the outgoing state message used, so our rig and every peer's view of us agree.
+          states: readOwnStates(),
+        },
+        frameDt,
+        { dead, tickAlpha, at: ownPos },
+      )
     }
     for (const e of interp.sample())
       if (e.id !== myId) {
@@ -764,105 +724,42 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
         // Everything below uses this, not `e.position`: the rig, the corpse it is seeded from, the spawn
         // assembly's targets.
         const at = worldFromBase(e, true)
-        // A peer's death is one flag; the corpse is ours to build and ours alone (ADR 0019). It is seeded
-        // from the pose *this* client last drew them in, so it starts exactly where the rig was.
-        const peerDead = (e.flags & STATE_DEAD) !== 0
-        let corpse = peerRagdolls.get(e.id)
-        if (corpse !== undefined && !peerDead) {
-          // They respawned. The corpse goes and the body drops back in, exactly as it does for us — the rig
-          // stays hidden until the last part lands.
-          corpse.dispose()
-          peerRagdolls.delete(e.id)
-          corpse = undefined
-          // Their position just jumped to a checkpoint. Differenced, that teleport reads as a sprint, and
-          // the assembly falls toward whatever pose the animator is in.
-          views.resetMotion(e.id, at.position)
-          peerAssemblies.get(e.id)?.assembly.dispose()
-          peerAssemblies.set(e.id, {
-            assembly: createAssembly({ scene: stage.scene, look: { colors: PEER_COLORS } }),
-            elapsed: 0,
-          })
-        }
-        if (corpse === undefined && peerDead && physicsWorld !== null) {
-          const pose = views.poseOf(e.id)
-          // No pose means their rig has never been drawn — a peer who was already dead when we joined.
-          // Let them draw standing for one frame; the ragdoll goes up on the next.
-          if (pose !== null) {
-            corpse = createRagdoll({
-              world: physicsWorld,
-              scene: stage.scene,
-              transforms: partTransforms(pose, at.position),
-              velocity: views.velocityOf(e.id) ?? vec3(),
-              look: { colors: PEER_COLORS },
-            })
-            peerRagdolls.set(e.id, corpse)
-            views.setVisible(e.id, false)
-            // Killed again mid-assembly: the corpse owns the picture from here.
-            const spawning = peerAssemblies.get(e.id)
-            if (spawning !== undefined) {
-              spawning.assembly.dispose()
-              peerAssemblies.delete(e.id)
-            }
-          }
-        }
-        // Dead: the corpse owns the picture, and the rig is left hidden and un-animated behind it.
-        if (corpse !== undefined) corpse.sync(tickAlpha)
         // Peers: facing, locomotion speed and grounded/rising all come off the wire (v8/v9) — a position
         // curve cannot tell facing from heading, nor walking from being carried. Only the vertical is
         // still derived, and it is the one place where carry riding along in it does no harm: the joint
         // lag wants total vertical motion, whatever caused it.
-        else
-          views.upsert(
-            e.id,
-            {
-              isSelf: false,
-              position: at.position,
-              yaw: at.yaw,
-              speed: e.speed,
-              vy: null,
-              grounded: (e.flags & STATE_GROUNDED) !== 0,
-              rising: (e.flags & STATE_RISING) !== 0,
-              // A peer's platform carry, for nothing on the wire: v10 already says *which* piece they are
-              // riding, and a piece's own motion is known to every client, so the velocity it imparts at the
-              // rider's exact spot is derivable here. That is the dominant case — a deck starting, stopping
-              // or reversing under someone — and it is why a peer now braces against it like its owner does.
-              // Still missing: being shoved by something you are *not* standing on, and a wall taking your
-              // momentum. Neither is a base, and both would need real bytes (ADR 0021).
-              carry: e.base === 0 ? null : loaded?.baseCarry(e.base - 1, e.position) ?? null,
-              // Their game states, out of the spare flag bits (ADR 0064). This is the whole of what makes a
-              // peer's dash look like a dash rather than a run.
-              states: unpackStates(mode.states, e.flags),
-              base: e.base,
-              name: names.get(e.id) ?? '…',
-            },
-            frameDt,
-          )
-        // Assembling: the animator above has run, so the falling parts have a live pose to arrive at — a
-        // peer already walking when they respawn has their body land around them, same as for us.
-        const spawning = corpse === undefined ? peerAssemblies.get(e.id) : undefined
-        if (spawning !== undefined) {
-          views.setVisible(e.id, false)
-          spawning.elapsed += frameDt
-          const pose = views.poseOf(e.id)
-          if (pose === null || spawning.assembly.draw(partTransforms(pose, at.position), spawning.elapsed, assembleTiming)) {
-            spawning.assembly.dispose()
-            peerAssemblies.delete(e.id)
-            views.setVisible(e.id, true)
-          }
-        }
+        //
+        // A peer's death is one flag; what it *looks* like — the corpse, seeded from the pose this client
+        // last drew them in, and the body dropping back in afterwards — is `@mp/tps`'s (ADR 0019, ADR 0065).
+        avatars.drawPeer(
+          e.id,
+          {
+            isSelf: false,
+            position: at.position,
+            yaw: at.yaw,
+            speed: e.speed,
+            vy: null,
+            grounded: (e.flags & STATE_GROUNDED) !== 0,
+            rising: (e.flags & STATE_RISING) !== 0,
+            // A peer's platform carry, for nothing on the wire: v10 already says *which* piece they are
+            // riding, and a piece's own motion is known to every client, so the velocity it imparts at the
+            // rider's exact spot is derivable here. That is the dominant case — a deck starting, stopping
+            // or reversing under someone — and it is why a peer now braces against it like its owner does.
+            // Still missing: being shoved by something you are *not* standing on, and a wall taking your
+            // momentum. Neither is a base, and both would need real bytes (ADR 0021).
+            carry: e.base === 0 ? null : loaded?.baseCarry(e.base - 1, e.position) ?? null,
+            // Their game states, out of the spare flag bits (ADR 0064). This is the whole of what makes a
+            // peer's dash look like a dash rather than a run.
+            states: unpackStates(mode.states, e.flags),
+            base: e.base,
+            name: names.get(e.id) ?? '…',
+          },
+          frameDt,
+          { dead: (e.flags & STATE_DEAD) !== 0, tickAlpha },
+        )
       }
-    views.prune(seen) // drop players who left the room (no longer relayed)
-    // A player who leaves mid-death or mid-respawn takes both with them; `views.prune` only knows rigs.
-    for (const [pid, corpse] of peerRagdolls)
-      if (!seen.has(pid)) {
-        corpse.dispose()
-        peerRagdolls.delete(pid)
-      }
-    for (const [pid, spawning] of peerAssemblies)
-      if (!seen.has(pid)) {
-        spawning.assembly.dispose()
-        peerAssemblies.delete(pid)
-      }
+    // Drop players who left the room, and whatever they were mid-way through.
+    avatars.prune(seen)
 
     // Touch: one drain per frame, applied exactly where the mouse and wheel handlers apply theirs. Drained
     // rather than read, so a frame never consumes the same drag twice (ADR 0022).
@@ -887,12 +784,10 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
      * somewhere to report the surfaces it wants holed.
      */
     const placed = orbit.update(frameDt, ownPos, (handles: readonly number[]) => levelView?.setOccluders(handles))
-    /**
-     * Three things want a say in whether your rig is drawn, and the third needs the camera placed first:
-     * death (the ragdoll has the floor), the spawn assembly (the body has not landed yet), and the camera
-     * being inside you. Peers are unaffected — they always see you.
-     */
-    if (myId !== null) views.setVisible(myId, !dead && assembly === null && placed.rigVisible)
+    // Whether your own rig is drawn. Three things want a say and only this one is the client's, so the
+    // camera's answer goes in and `@mp/tps` resolves it against the other two. After the camera, because it
+    // needs this frame's placement rather than last frame's. Peers are unaffected — they always see you.
+    if (myId !== null) avatars.setSelfVisible(myId, placed.rigVisible)
   })
   // --- pause screen (Pixi UI, ADR 0015) ---
   // A transparent Pixi canvas stacked over the Three canvas. The pause screen composition
@@ -998,14 +893,9 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
       window.removeEventListener('resize', onResize)
       input.dispose()
       // (4) What is drawn. Rigs and nametags, the level's meshes and lights, every loose body, the overlays.
-      views.dispose()
+      avatars.dispose()
       levelView?.dispose()
       levelLights?.dispose()
-      clearRagdoll()
-      for (const corpse of peerRagdolls.values()) corpse.dispose()
-      peerRagdolls.clear()
-      for (const spawning of peerAssemblies.values()) spawning.assembly.dispose()
-      peerAssemblies.clear()
       touchHud?.dispose()
       pane.dispose()
       ui.dispose()
