@@ -1,7 +1,7 @@
 # ADR 0065 — A game composes the client, instead of being called by it
 
-Status: accepted, landing in phases. **Phases 0 and 1** are built: every allocator owns its release, and the
-third-person game is `@mp/tps`.
+Status: accepted, landing in phases. **Phases 0, 1 and 2** are built: every allocator owns its release, the
+third-person game is `@mp/tps`, and the netcode, the level and the page are three services.
 
 ## Context
 
@@ -45,7 +45,7 @@ Landing in phases, each ending runnable:
 | --- | --- |
 | **0** | Every allocator owns its release; `startGameClient` returns a handle. **Built.** |
 | **1** | Group three extracted to `@mp/tps`. **Built.** |
-| 2 | Groups one and two extracted as services, each with its own teardown. |
+| **2** | The netcode, the level and the page extracted as services. **Built.** |
 | 3 | Inversion. `_template/main.ts` composes; the descriptor drops to ~6 fields. |
 | 4 | Swing's rope, as the acceptance test: game code touching Three and Rapier directly, no new field. |
 
@@ -108,6 +108,35 @@ placement and flickered. Three things decide whether your own rig is drawn and o
 `world` is a getter because the world arrives with the first snapshot and the avatars are built before it. A
 peer who dies before then keeps their rig for a frame, which was already the behaviour.
 
+### Phase 2: three services
+
+`netHost.ts` (171 lines) — the room, the clock, the snapshot stream, the roster, the display name. **This is
+the part that genuinely must be uniform**: every client in a room has to agree on the wire format and on what
+time it is, or nobody sees anybody in the right place. It is therefore the one piece that stays framework when
+phase 3 hands the rest over. It knows a game *name* and a level name, and only as the two matchmaking filters.
+
+Synchronous, with the join in flight, because that is what it was inline: the render loop starts before the
+room is joined, and `id()` returning `null` for most of the first second is load-bearing (ADR 0055). Making it
+`await` would have been a behaviour change dressed as a refactor.
+
+`levelHost.ts` (104 lines) — instantiate into the world, wait for assets, build the meshes and the content
+lights, apply the level's environment and post-FX. Colliders and meshes in **one** call deliberately: two would
+let a level be walkable before it is visible, and `addLevel` is synchronous, so the only place to wait for
+models is before it. Also platform, because `baseIndex` goes on the wire and only means anything if every
+client instantiated the same JSON in the same order (ADR 0021).
+
+`shell.ts` (146 lines) — the 2D overlay, the pause screen, the touch HUD, the pointer-lock handoff, the resize.
+Plumbing rather than platform: nothing in it is needed for two clients to agree on anything. It is simply what
+any game rendered into a canvas wants, and having it inline is what made `startGameClient` the only way to get
+it.
+
+**What was left alone.** `initLocalSim` is still 300 lines in `client.ts`, and that is deliberate: it is the
+point where the mode, the avatars, the camera, the input, the netcode and the tuning all meet. Extracting it
+would mean a function of fifteen parameters, which is worse than leaving it — and it is exactly what phase 3
+moves into a game's own `main.ts`, where all fifteen are local.
+
+`client.ts` 947 → 750 lines.
+
 ## Consequences
 
 - Nothing calls `dispose`. The page owns the client for its whole life and the browser reclaims everything on
@@ -160,7 +189,12 @@ away. Phase 4 gets the same evidence by making the rope the exam instead of the 
   needs a toolchain on Windows and is not worth one assertion. The fix is verified by reading only.
 - **The debug pane's `dispose` is untested.** It would need a twelve-field fake of the whole client's live
   objects to reach one `pane.dispose()`, and it is dev tooling that no player sees.
-- **`client.ts` is still 911 lines**, and phases 2-4 are the rest of this ADR.
+- **`client.ts` is still 750 lines**, and phases 3-4 are the rest of this ADR.
+- **`pnpm -s typecheck` hides recursive errors, and `| head` hides the exit code.** Phase 1 was committed
+  (`3c40cbd`) with two unused-import errors in `client.ts` because both were true at once: `-s` suppressed
+  `pnpm -r run typecheck`'s output, and piping the command into `head` made the pipeline's status `head`'s. The
+  errors are fixed in phase 2. Verify with `pnpm -r run typecheck` and read the exit code — never through a
+  pipe.
 - **`ModeDescriptor` has not shrunk yet.** Phase 1 deliberately left it alone — nine of its fifteen fields die
   in phase 3, when a game passes them as arguments instead of declaring them.
 - The editor and the viewer still hand-roll their own play-test against `@mp/humanoid` and `@mp/camera`. They

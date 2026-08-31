@@ -1,11 +1,4 @@
-import {
-  createClockSync,
-  createLocalController,
-  createSnapshotClient,
-  createSnapshotReassembler,
-  type LocalController,
-  type LocalWorld,
-} from '@mp/client'
+import { createLocalController, type LocalController, type LocalWorld } from '@mp/client'
 import {
   clamp,
   createSimClock,
@@ -19,51 +12,27 @@ import {
   type LoopHandle,
   type Vec3,
 } from '@mp/core'
-import {
-  packStates,
-  unpackStates,
-  decodePong,
-  decodeRoster,
-  decodeSnapshot,
-  decodeWelcome,
-  encodePing,
-  encodeState,
-  MSG_PONG,
-  MSG_ROSTER,
-  MSG_SNAPSHOT,
-  MSG_WELCOME,
-  NET_CHANNEL,
-  readMessageType,
-  STATE_DEAD,
-  STATE_GROUNDED,
-  STATE_RISING,
-} from '@mp/net'
+import { packStates, unpackStates, STATE_DEAD, STATE_GROUNDED, STATE_RISING } from '@mp/net'
 import { createPhysicsWorld, initPhysics, type PhysicsBody, type PhysicsWorld } from '@mp/physics'
-import { addLevel, addLights, assetIdsIn, createAssetRuntime, type ContentLights, type LevelView } from '@mp/render-three'
 import {
-  createAnimator,
   addCharacter,
   CHAR_HALF_HEIGHT,
   CHAR_RADIUS,
   type CharacterState,
   type CharacterTuning,
   DEFAULT_GAIT,
-  partTransforms,
   type GaitTuning,
 } from '@mp/humanoid'
 import { createOrbitCamera, type OcclusionQueries } from '@mp/camera'
 import { PLAYER_NODE_ID, type ModeDescriptor, type PlayerHost } from '@mp/mode'
-import { instantiateLevel, type LoadedLevel } from '@mp/content'
+import { type LoadedLevel } from '@mp/content'
 import { Death, characterAccess, componentOn, createComponentRuntime, readParams, type ComponentRuntime } from '@mp/components'
-import { t } from '@mp/i18n'
-import { createTouchHud, createUiOverlay, uiButton, type ListItem, type TouchHud } from '@mp/render-pixi'
-import { Client, type Room } from 'colyseus.js'
-
 import { BODY_LAYERS, createAvatars, createInputs, installDebugPane, type Avatars, type AssemblyTiming } from '@mp/tps'
+import { loadLevelInto, type LevelHost } from './levelHost'
+import { createNetHost } from './netHost'
 import { createScene } from './scene'
+import { createShell, type Shell } from './shell'
 import { createStatusLine } from './status'
-import { createPauseMenu } from './pauseMenu'
-import { ASSET_DB, CLIP_SOURCE, assetUrlOf, materialOf } from './assets'
 import { levelsFor } from './levels'
 import { localProgress } from './persistence'
 
@@ -108,10 +77,6 @@ export interface GameClient {
 
 export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient> => {
 
-  // Relay endpoint. Defaults to the dev host on :9200. `?server=wss://host` overrides it, so a
-  // tunnelled page (served from a different origin than the relay) can point at its own relay URL.
-  const SERVER_URL = new URLSearchParams(location.search).get('server') ?? `ws://${location.hostname}:9200`
-
   /**
    * Which level: `?level=<name>` picks a file from `content/levels/`, no param gets `default.json`. A typo
    * falls back to the default rather than bricking the page, and says so in the console.
@@ -146,7 +111,7 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
   // The scene: stage, greybox pipeline, sky, post-FX, and the render step that draws nametags after
   // post-FX. The AO pass asks for the currently-holed surfaces fresh each frame — the level does not exist
   // yet, it arrives with the first snapshot (ADR 0055).
-  const { stage, env, postfx, photoSky } = await createScene(canvas, () => levelView?.occluding() ?? [])
+  const { stage, env, postfx, photoSky } = await createScene(canvas, () => level?.occluding() ?? [])
 
   // Player views (own + peers): the blocky rig, procedurally animated, + billboard nametag.
   // One shared gait object so the debug pane retunes every character live (ADR 0018).
@@ -242,12 +207,12 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
   })
   const touch = input.touch
   /**
-   * The on-screen controls, and whether the pause menu is up. Both live on the Pixi overlay, which is built
-   * with an `await` **after** the render loop starts — so a frame can run before they exist and the loop has
-   * to cope with that rather than reference them eagerly.
+   * The 2D overlay and everything on it, once it exists.
+   *
+   * Nullable because it is built with an `await` **after** the render loop starts, so a frame can run before
+   * there is any of it and the loop has to cope rather than reference it eagerly.
    */
-  let touchHud: TouchHud | null = null
-  let menuOpen: () => boolean = () => false
+  let shell: Shell | null = null
 
 
   // Live locomotion feel, owned here because the sim and the render loop both read it. The pane only binds it.
@@ -269,17 +234,30 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
     onDeath: () => requestDeath?.(),
   })
 
-  // --- netcode (Colyseus rooms, ADR 0013) ---
-  const clock = createClockSync()
-  const reassembler = createSnapshotReassembler()
-  const interp = createSnapshotClient({ interpolationDelayMs: 100, serverNow: () => clock.serverNow() })
-  let myId: EntityId | null = null
+  /**
+   * The room, the clock and the snapshot stream — the part of a client that must be uniform across everyone in
+   * it, and therefore the platform's (`netHost.ts`, ADR 0065).
+   *
+   * Started here rather than awaited: the join is in flight while the first frames render, so `net.id()` is
+   * `null` for most of the first second and everything downstream already copes with that (ADR 0055).
+   */
+  const net = createNetHost({
+    game: mode.name,
+    level: levelName,
+    setStatus,
+    onWelcome: (id: EntityId) => {
+      void initLocalSim(id)
+    },
+  })
   let controller: LocalController | null = null
   let ownFacing = 0
-  let room: Room | null = null
-  let loaded: LoadedLevel | null = null // the instantiated level (colliders + markers + visuals)
-  let levelView: LevelView | null = null // Three meshes for the level; sync() re-poses moving pieces
-  let levelLights: ContentLights | null = null // content lights (ADR 0047); the sun is the sky's, not one of these
+  /** The level, once the first snapshot has brought us one. Colliders, meshes and content lights together. */
+  let level: LevelHost | null = null
+  /**
+   * The instantiated half of it, held separately because it is read on far more paths than the drawn half —
+   * the tick, the base-frame maths, the components, the rules.
+   */
+  let loaded: LoadedLevel | null = null
   let lastSimTickAt = 0 // wall-clock of the last fixed tick, for render-interpolating clock-driven pieces
   let requestRespawn: (() => void) | null = null // set once the local sim exists; used by the pause menu's Restart
   let requestDeath: (() => void) | null = null // set once the local sim exists; the death path, for the ragdoll
@@ -295,22 +273,6 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
   let physicsWorld: PhysicsWorld | null = null
   /** The fixed sim loop, once the local sim exists. Held only so `dispose` can stop it. */
   let simLoop: LoopHandle | null = null
-  /** The ping timer, once a room is joined. Held only so `dispose` can clear it. */
-  let pingTimer: ReturnType<typeof setInterval> | null = null
-  const names = new Map<EntityId, string>() // peer id -> display name (from ROSTER)
-
-  // Auto-assigned random display name (player-chosen names come later — ADR 0013).
-  const ADJ = ['Swift', 'Brave', 'Calm', 'Lucky', 'Sly', 'Bold', 'Keen', 'Wily']
-  const NOUN = ['Fox', 'Otter', 'Hawk', 'Wolf', 'Lynx', 'Crow', 'Bear', 'Mole']
-  const pick = <T>(a: readonly T[]): T => a[Math.floor(Math.random() * a.length)]!
-  const myName = `${pick(ADJ)} ${pick(NOUN)}`
-  // Colyseus onMessage hands us a Uint8Array view; our codecs take a standalone ArrayBuffer.
-  const toArrayBuffer = (m: Uint8Array): ArrayBuffer => {
-    const copy = new Uint8Array(m.byteLength)
-    copy.set(m)
-    return copy.buffer
-  }
-
   // Per-player state behind a pluggable adapter (mode seam): local now, account-backed later.
   const persistence = localProgress(mode.name)
 
@@ -321,20 +283,19 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
     // them down. It was zero here, which left a corpse coasting off in a straight line for ever.
     const world = createPhysicsWorld({ gravity: { x: 0, y: -tuning.gravity, z: 0 } })
     physicsWorld = world // the render loop builds peers' corpses in it
-    loaded = instantiateLevel(world, levelData, mode.registry, CLIP_SOURCE)
-
-    // Build the level's greybox meshes via the shared renderer (content C3). Marker pads are
-    // just their (colour-coded) box here; radius/overlay visualization belongs in the viewer.
-    // Assets first, then build: `addLevel` is synchronous, so a level is never briefly walkable with its
-    // models still arriving. Anything unreferenced is never fetched, so a greybox level costs nothing.
-    const assets = createAssetRuntime({ db: ASSET_DB, urlOf: assetUrlOf, materialOf })
-    await assets.load(assetIdsIn(loaded.visuals))
-    levelView = addLevel(stage.scene, loaded.visuals, { assets, cutout: orbit.cutout })
-    levelLights = addLights(stage.scene, loaded.lights)
-    // The level owns its sun, and moving it rebakes the sky so the two cannot disagree (ADR 0048).
-    env.applyEnvironment(loaded.config.environment)
-    // The same block, applied by the object that owns those passes (ADR 0048).
-    postfx.apply(loaded.config.environment?.postfx)
+    // Colliders and meshes in one call (`levelHost.ts`, ADR 0065). The level schema is platform, because
+    // `baseIndex` goes on the wire and only means anything if every client instantiated the same JSON in the
+    // same order (ADR 0021).
+    level = await loadLevelInto({
+      world,
+      scene: stage.scene,
+      data: levelData,
+      registry: mode.registry,
+      cutout: orbit.cutout,
+      env,
+      postfx,
+    })
+    loaded = level.loaded
     /**
      * **The rules run themselves.** `Bumper`, `Checkpoint` and `Hazard` carry their own `onContact`, so this
      * mode supplies only what dying and making progress *mean* here, and the branches that used to sit in the
@@ -468,7 +429,7 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
     // clock by slewing. Reading `serverNow()` directly here would stall the platforms whenever
     // the loop runs several ticks in one wake, while the character kept advancing a full step
     // each — the platform-carry jitter (see @mp/core simClock).
-    const simClock = createSimClock({ tickMs: TICK_DT * 1000, reference: () => clock.serverNow() })
+    const simClock = createSimClock({ tickMs: TICK_DT * 1000, reference: () => net.serverNow() })
 
     const local: LocalWorld = {
       applyInput: (cmd) => {
@@ -508,7 +469,7 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
     const remotes = new Map<EntityId, PhysicsBody>()
     const syncRemotes = (): void => {
       const seen = new Set<EntityId>()
-      for (const e of interp.sample()) {
+      for (const e of net.sample()) {
         if (e.id === id) continue
         seen.add(e.id)
         let mirror = remotes.get(e.id)
@@ -596,18 +557,13 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
           const baseIdx = char.base === undefined ? undefined : loaded?.baseIndex(char.base.colliderHandle)
           const base = baseIdx !== undefined && baseIdx < 255 ? baseIdx + 1 : 0
           const basePose = base === 0 ? undefined : loaded?.basePoseOf(base - 1, 'tick')
-          room?.sendBytes(
-            NET_CHANNEL,
-            new Uint8Array(
-              encodeState({
-                position: basePose === undefined ? p : char.base!.localPos,
-                flags,
-                yaw: basePose === undefined ? ownFacing : ownFacing - yawOf(basePose.rotation),
-                speed: Math.hypot(char.vx, char.vz),
-                base: basePose === undefined ? 0 : base,
-              }),
-            ),
-          )
+          net.send({
+            position: basePose === undefined ? p : char.base!.localPos,
+            flags,
+            yaw: basePose === undefined ? ownFacing : ownFacing - yawOf(basePose.rotation),
+            speed: Math.hypot(char.vx, char.vz),
+            base: basePose === undefined ? 0 : base,
+          })
           // Real contact: the colliders the capsule pushed against this tick. Handed straight to the
           // components on whatever nodes own them — a corpse triggers nothing, which is why this is gated.
           // Solids the capsule pushed against, plus the triggers it is standing inside (ADR 0054) 2014 a sensor
@@ -622,51 +578,6 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
     })
   }
 
-  const onNet = (m: Uint8Array): void => {
-    const buf = toArrayBuffer(m)
-    switch (readMessageType(buf)) {
-      case MSG_WELCOME:
-        myId = decodeWelcome(buf).playerId
-        void initLocalSim(myId)
-        break
-      case MSG_SNAPSHOT:
-        // Peers only (the server never relays our own body back to us); interpolate.
-        interp.ingest(reassembler.apply(decodeSnapshot(buf)))
-        break
-      case MSG_ROSTER:
-        names.clear()
-        for (const e of decodeRoster(buf)) names.set(e.id, e.name)
-        break
-      case MSG_PONG: {
-        const pong = decodePong(buf)
-        clock.recordSample(pong.clientTimeMs, pong.serverTimeMs, performance.now())
-        break
-      }
-    }
-  }
-
-  // Colyseus matchmaking: joinOrCreate fills the most-full non-full room, else spins up a
-  // new one (auto-join, no matchmaking UI — ADR 0013). A raw WebSocket won't do; the SDK
-  // performs the HTTP seat reservation then upgrades.
-  const connect = async (): Promise<void> => {
-    try {
-      // `game` and `level` are matchmaking filters (server: `.filterBy(['game', 'level'])`), so a room only ever
-      // holds players in the same game on the same level. One room type serves every game on the platform; which
-      // game it is is a filter, not a room name (ADR 0052) — see the note on `levelName`.
-      room = await new Client(SERVER_URL).joinOrCreate('game', { name: myName, game: mode.name, level: levelName })
-    } catch {
-      setStatus('status.offline')
-      return
-    }
-    setStatus('status.room', { room: room.roomId })
-    room.onMessage(NET_CHANNEL, onNet)
-    room.onLeave(() => {
-      setStatus('status.offline')
-    })
-    pingTimer = setInterval(() => room?.sendBytes(NET_CHANNEL, new Uint8Array(encodePing({ clientTimeMs: performance.now() }))), 250)
-  }
-  void connect()
-
   // --- render ---
   let ownPos: Vec3 = { x: 0, y: 1, z: 0 }
   let ownState: CharacterState | null = null // set once the local sim exists; drives our own animation
@@ -680,14 +591,11 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
     // Clock-driven pieces advance in the fixed sim loop; here we only render-interpolate
     // their meshes between the last two ticks (same timeline as the player), then sync.
     const tickAlpha = clamp((performance.now() - lastSimTickAt) / (1000 / TICK_RATE_HZ), 0, 1)
-    if (loaded !== null) {
-      loaded.render(tickAlpha)
-      levelView?.sync()
-      levelLights?.sync()
-    }
+    level?.render(tickAlpha)
 
     // Own character: our authoritative local sim, render-smoothed. Peers: interpolated.
     const seen = new Set<EntityId>()
+    const myId = net.id()
     if (myId !== null && controller) {
       seen.add(myId)
       ownPos = controller.renderPositions().get(myId) ?? ownPos
@@ -708,7 +616,7 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
           // Our own rig is drawn from our own sim, in world space, on one timeline — there is no frame
           // change to smooth over, so this is always 0 for us however much platform we are riding.
           base: 0,
-          name: myName,
+          name: net.myName,
           // The same set the outgoing state message used, so our rig and every peer's view of us agree.
           states: readOwnStates(),
         },
@@ -716,7 +624,7 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
         { dead, tickAlpha, at: ownPos },
       )
     }
-    for (const e of interp.sample())
+    for (const e of net.sample())
       if (e.id !== myId) {
         seen.add(e.id)
         // Out of the base's frame and into the world, against the pose the deck was *drawn* at — which is
@@ -752,7 +660,7 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
             // peer's dash look like a dash rather than a run.
             states: unpackStates(mode.states, e.flags),
             base: e.base,
-            name: names.get(e.id) ?? '…',
+            name: net.nameOf(e.id) ?? '…',
           },
           frameDt,
           { dead: (e.flags & STATE_DEAD) !== 0, tickAlpha },
@@ -764,16 +672,18 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
     // Touch: one drain per frame, applied exactly where the mouse and wheel handlers apply theirs. Drained
     // rather than read, so a frame never consumes the same drag twice (ADR 0022).
     if (touch.active()) {
-      // The menu owns the screen while it is open: no routing, no camera swing, nothing held.
-      touch.setEnabled(!menuOpen())
+      // The menu owns the screen while it is open: no routing, no camera swing, nothing held. Closed until the
+      // overlay exists, so the first frames route normally rather than being treated as paused.
+      const paused = shell?.isOpen() ?? false
+      touch.setEnabled(!paused)
       const t = touch.drainLook()
       orbit.lookTouch(t.dx, t.dy)
       if (t.pinch !== 0) orbit.zoomPinch(t.pinch)
       // Tap in the look region = the mobile respawn, matching desktop's left click.
-      if (t.tapped && dead && !menuOpen()) requestRespawn?.()
-      if (touchHud !== null) {
-        touchHud.setVisible(!menuOpen())
-        touchHud.draw(touch.joystick(), touch.jumpButton())
+      if (t.tapped && dead && !paused) requestRespawn?.()
+      if (shell !== null) {
+        shell.touchHud.setVisible(!paused)
+        shell.touchHud.draw(touch.joystick(), touch.jumpButton())
       }
     }
 
@@ -783,99 +693,34 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
      * of it is `@mp/camera`'s now (ADR 0056) — what it needs from here is the character's capsule centre and
      * somewhere to report the surfaces it wants holed.
      */
-    const placed = orbit.update(frameDt, ownPos, (handles: readonly number[]) => levelView?.setOccluders(handles))
+    const placed = orbit.update(frameDt, ownPos, (handles: readonly number[]) => level?.setOccluders(handles))
     // Whether your own rig is drawn. Three things want a say and only this one is the client's, so the
     // camera's answer goes in and `@mp/tps` resolves it against the other two. After the camera, because it
     // needs this frame's placement rather than last frame's. Peers are unaffected — they always see you.
     if (myId !== null) avatars.setSelfVisible(myId, placed.rigVisible)
   })
-  // --- pause screen (Pixi UI, ADR 0015) ---
-  // A transparent Pixi canvas stacked over the Three canvas. The pause screen composition
-  // lives in pauseMenu.ts; this wires it to the game (params, roster, respawn) and manages the
-  // pointer-lock handoff.
   /**
-   * Sized from the **canvas**, not from `window.innerWidth/innerHeight`. The canvas is `dvh`-sized, so on
-   * mobile it is shorter than the layout viewport; taking the overlay's size from the window instead would
-   * put the drawn controls a browser-bar's height away from the touch zones, which come from the canvas rect.
-   * One source for both means they cannot drift.
+   * The page around the game (`shell.ts`, ADR 0065): the 2D overlay, the pause screen, the touch HUD, and the
+   * pointer-lock handoff that makes lock *be* the pause state on a mouse.
+   *
+   * Awaited **after** the render loop has started, exactly as it was inline — which is why `shell` is nullable
+   * and the loop above checks it. A frame can and does run before the overlay exists.
    */
-  const viewSize = (): { width: number; height: number } => ({
-    width: canvas.clientWidth || window.innerWidth,
-    height: canvas.clientHeight || window.innerHeight,
-  })
-  const ui = await createUiOverlay(viewSize())
-  ui.canvas.style.position = 'fixed'
-  ui.canvas.style.inset = '0'
-  ui.canvas.style.zIndex = '10'
-  document.body.appendChild(ui.canvas)
-
-  const SENS_MIN = 0.0005
-  const SENS_MAX = 0.006
-
-  const pause = createPauseMenu(ui, {
-    onResume: () => resumePlay(),
-    onRestart: () => {
-      requestRespawn?.()
-      resumePlay()
-    },
+  shell = await createShell({
+    canvas,
+    isTouch: () => touch.active(),
     sensitivity: {
-      get: () => (orbit.params.sensitivity - SENS_MIN) / (SENS_MAX - SENS_MIN),
-      set: (t) => {
-        orbit.params.sensitivity = SENS_MIN + t * (SENS_MAX - SENS_MIN)
+      get: () => orbit.params.sensitivity,
+      set: (v) => {
+        orbit.params.sensitivity = v
       },
     },
-    players: () => {
-      const items: ListItem[] = [{ text: t('pause.self', { name: myName }), highlight: true }]
-      for (const [pid, name] of names) if (pid !== myId) items.push({ text: name })
-      return items
+    roster: () => {
+      const me = net.id()
+      return { me: net.myName, peers: net.roster().filter((peer) => peer.id !== me).map((peer) => peer.name) }
     },
+    onRestart: () => requestRespawn?.(),
   })
-
-  touchHud = createTouchHud(ui.root)
-  menuOpen = () => pause.isOpen()
-
-  const resumePlay = (): void => {
-    pause.close()
-    // Touch has no lock to take, and requesting one on mobile either throws or does nothing (ADR 0022).
-    if (!touch.active()) void canvas.requestPointerLock()
-  }
-
-  // On a mouse, pointer lock *is* the pause state: releasing it (Esc / focus loss) opens the menu and
-  // re-locking closes it. Touch has no lock at all, so there the pause button is the only way in and out —
-  // hence the guard, without which the first touch would open the menu and never let it close.
-  const onPointerLockChange = (): void => {
-    if (touch.active()) return
-    if (document.pointerLockElement === canvas) pause.close()
-    else pause.open()
-  }
-  document.addEventListener('pointerlockchange', onPointerLockChange)
-  ui.setBackgroundTap(() => {
-    if (!touch.active() && !pause.isOpen()) void canvas.requestPointerLock()
-  })
-
-  // Top-left pause button (placeholder glyph until skinned). During locked play the cursor is
-  // hidden, so this is clickable when free; Esc is the primary open while playing.
-  const pauseBtn = uiButton({
-    label: 'II',
-    width: 44,
-    height: 40,
-    color: 0x475569,
-    onClick: () => {
-      if (touch.active()) pause.open()
-      else if (document.pointerLockElement === canvas) document.exitPointerLock()
-      else pause.open()
-    },
-  })
-  pauseBtn.view.position.set(16, 16)
-  ui.root.addChild(pauseBtn.view)
-
-  const onResize = (): void => {
-    const v = viewSize()
-    ui.resize(v.width, v.height)
-    pauseBtn.view.position.set(16, 16)
-    pause.layout()
-  }
-  window.addEventListener('resize', onResize)
 
   let disposed = false
   return {
@@ -886,19 +731,14 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
       stage.stop()
       simLoop?.stop()
       // (2) The connection, and the timer that was feeding it.
-      if (pingTimer !== null) clearInterval(pingTimer)
-      void room?.leave()
-      // (3) The DOM. `input` owns seven listeners; these two were never anybody's.
-      document.removeEventListener('pointerlockchange', onPointerLockChange)
-      window.removeEventListener('resize', onResize)
+      net.dispose()
+      // (3) The DOM. `input` owns seven listeners, the shell owns two.
       input.dispose()
-      // (4) What is drawn. Rigs and nametags, the level's meshes and lights, every loose body, the overlays.
+      shell?.dispose()
+      // (4) What is drawn: rigs and nametags, the level's meshes and lights, every loose body, the pane.
       avatars.dispose()
-      levelView?.dispose()
-      levelLights?.dispose()
-      touchHud?.dispose()
+      level?.dispose()
       pane.dispose()
-      ui.dispose()
       // (5) The renderer, then the world. The world is last because step (1) is the only guarantee that
       // nothing will touch it again, and freeing it is the one step that cannot be undone.
       postfx.dispose()
