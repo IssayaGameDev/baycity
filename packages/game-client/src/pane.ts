@@ -35,7 +35,12 @@ export interface DebugPaneOptions {
   onDeath: () => void
 }
 
-export const installDebugPane = (opts: DebugPaneOptions): void => {
+/** What the pane hands back: the one call that takes it off the page again. */
+export interface DebugPane {
+  dispose: () => void
+}
+
+export const installDebugPane = (opts: DebugPaneOptions): DebugPane => {
   const { camera: orbit, debug, env, postfx, stage, photoSky, tuning, gait, touchLayout, assembleTiming } = opts
   const requestDeath = opts.onDeath
   // Own host element with an explicit stacking order: the Pixi UI canvas is at z-index 10, and
@@ -256,6 +261,13 @@ export const installDebugPane = (opts: DebugPaneOptions): void => {
   df.addBinding(assembleTiming, 'stagger', { min: 0, max: 0.4, step: 0.01, label: 'pair gap s' })
   df.addBinding(assembleTiming, 'fall', { min: 0.02, max: 1, step: 0.01, label: 'fall s' })
   df.addBinding(assembleTiming, 'height', { min: 0.2, max: 8, step: 0.1, label: 'drop from m' })
-  
-  
+
+  return {
+    dispose: () => {
+      // Tweakpane's own teardown, then the host element it was given. Both, because `pane.dispose()` leaves
+      // the div behind and the div is what carries the fixed position and z-index.
+      pane.dispose()
+      paneHost.remove()
+    },
+  }
 }

@@ -132,6 +132,13 @@ export interface CharacterViews {
   resetMotion: (id: EntityId, position: Vec3) => void
   /** Remove any players whose id isn't in `keep` (left the room). */
   prune: (keep: Set<EntityId>) => void
+  /**
+   * Drop every character and everything each one owns.
+   *
+   * `prune(new Set())` is not the same thing: this is the end of the views, so a caller does not have to
+   * construct an empty set to say so, and nothing is left to be upserted back into (ADR 0065).
+   */
+  dispose: () => void
 }
 
 /** Shared, read-only: the animator treats zero carry exactly as it treats none. */
@@ -181,6 +188,21 @@ export const createCharacterViews = (
       chars.set(id, r)
     }
     return r
+  }
+
+  /**
+   * Everything one character owns: its rig, and the nametag sprite hung off the rig's root.
+   *
+   * The label is separate because it is added to `rig.root` after the rig is built, so `rig.dispose()` has no
+   * idea it is there — `prune` was leaking one texture and one material per player who left the room.
+   */
+  const drop = (r: Rendered): void => {
+    if (r.label !== undefined) {
+      r.rig.root.remove(r.label)
+      r.label.material.map?.dispose()
+      r.label.material.dispose()
+    }
+    r.rig.dispose()
   }
 
   const setLabel = (r: Rendered, name: string): void => {
@@ -269,9 +291,13 @@ export const createCharacterViews = (
     prune: (keep) => {
       for (const [id, r] of chars)
         if (!keep.has(id)) {
-          r.rig.dispose()
+          drop(r)
           chars.delete(id)
         }
+    },
+    dispose: () => {
+      for (const r of chars.values()) drop(r)
+      chars.clear()
     },
   }
 }

@@ -188,3 +188,23 @@ describe('the states an animator is handed', () => {
     expect(b).toEqual([])
   })
 })
+
+/**
+ * Teardown (ADR 0065).
+ *
+ * A client has to be able to put the page back — which starts with every allocator here owning its own
+ * release. Headless: rigs and nametag sprites are Three objects and need no WebGL context.
+ */
+describe('disposing the views', () => {
+  it('empties the scene and forgets every character', () => {
+    const root = scene()
+    const views = createCharacterViews(root, { ...DEFAULT_GAIT })
+    for (const n of [1, 2, 3]) views.upsert(entityId(n), placement(), 1 / 60)
+    expect(root.children.length).toBeGreaterThan(0)
+
+    views.dispose()
+
+    expect(root.children).toHaveLength(0)
+    expect(views.poseOf(entityId(1))).toBeNull()
+  })
+})

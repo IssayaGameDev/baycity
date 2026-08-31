@@ -6,7 +6,19 @@ import {
   type LocalController,
   type LocalWorld,
 } from '@mp/client'
-import { clamp, createSimClock, rotateVec3, startFixedLoop, TICK_DT, TICK_RATE_HZ, vec3, yawOf, type EntityId, type Vec3 } from '@mp/core'
+import {
+  clamp,
+  createSimClock,
+  rotateVec3,
+  startFixedLoop,
+  TICK_DT,
+  TICK_RATE_HZ,
+  vec3,
+  yawOf,
+  type EntityId,
+  type LoopHandle,
+  type Vec3,
+} from '@mp/core'
 import {
   packStates,
   unpackStates,
@@ -76,7 +88,27 @@ import { localProgress } from './persistence'
  *
  * The host page owes it two elements: a `#view` canvas and a `#status` line.
  */
-export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
+/**
+ * A running game client.
+ *
+ * One method, and it exists so that starting a client is a reversible act (ADR 0065). Nothing in the stack
+ * calls it yet — the page owns the client for its whole life and the browser reclaims everything on unload.
+ * It is here because `dispose` is only cheap to write while the thing that allocates is being written: this
+ * file is about to be taken apart into services, and each one carries its own teardown from the start rather
+ * than having one reconstructed for it later.
+ */
+export interface GameClient {
+  /**
+   * Stop the loops, leave the room, release the DOM and free the physics world.
+   *
+   * Ordered deliberately rather than by unwinding creation: the loops go first, because a tick that ran after
+   * `world.free()` would be reading freed WASM memory, and the world is created long after the render loop
+   * starts. Safe to call twice.
+   */
+  dispose: () => void
+}
+
+export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient> => {
 
   // Relay endpoint. Defaults to the dev host on :9200. `?server=wss://host` overrides it, so a
   // tunnelled page (served from a different origin than the relay) can point at its own relay URL.
@@ -207,7 +239,7 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
   const tuning: CharacterTuning = { ...mode.tuning }
   // Everything live-tunable, in one place (`pane.ts`). It is pure wiring — every folder binds an object
   // somebody else owns — so it is the one part of this file that came out whole.
-  installDebugPane({
+  const pane = installDebugPane({
     camera: orbit,
     debug,
     stage,
@@ -254,6 +286,10 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
   const peerAssemblies = new Map<EntityId, { assembly: Assembly; elapsed: number }>()
   /** The client's own physics world, once the local sim exists. Peer corpses are dynamic bodies in it. */
   let physicsWorld: PhysicsWorld | null = null
+  /** The fixed sim loop, once the local sim exists. Held only so `dispose` can stop it. */
+  let simLoop: LoopHandle | null = null
+  /** The ping timer, once a room is joined. Held only so `dispose` can clear it. */
+  let pingTimer: ReturnType<typeof setInterval> | null = null
   // Spawn assembly: the body drops in a pair at a time. Runs on the first spawn and every respawn, and owns
   // the rig's visibility while it does — the rig only reappears once the last part has landed.
   let assembly: Assembly | null = null
@@ -521,7 +557,7 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
         }
     }
 
-    startFixedLoop({
+    simLoop = startFixedLoop({
       tickRateHz: TICK_RATE_HZ,
       onTick: () => {
         syncRemotes()
@@ -654,7 +690,7 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
     room.onLeave(() => {
       setStatus('status.offline')
     })
-    setInterval(() => room?.sendBytes(NET_CHANNEL, new Uint8Array(encodePing({ clientTimeMs: performance.now() }))), 250)
+    pingTimer = setInterval(() => room?.sendBytes(NET_CHANNEL, new Uint8Array(encodePing({ clientTimeMs: performance.now() }))), 250)
   }
   void connect()
 
@@ -912,11 +948,12 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
   // On a mouse, pointer lock *is* the pause state: releasing it (Esc / focus loss) opens the menu and
   // re-locking closes it. Touch has no lock at all, so there the pause button is the only way in and out —
   // hence the guard, without which the first touch would open the menu and never let it close.
-  document.addEventListener('pointerlockchange', () => {
+  const onPointerLockChange = (): void => {
     if (touch.active()) return
     if (document.pointerLockElement === canvas) pause.close()
     else pause.open()
-  })
+  }
+  document.addEventListener('pointerlockchange', onPointerLockChange)
   ui.setBackgroundTap(() => {
     if (!touch.active() && !pause.isOpen()) void canvas.requestPointerLock()
   })
@@ -937,11 +974,47 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
   pauseBtn.view.position.set(16, 16)
   ui.root.addChild(pauseBtn.view)
 
-  window.addEventListener('resize', () => {
+  const onResize = (): void => {
     const v = viewSize()
     ui.resize(v.width, v.height)
     pauseBtn.view.position.set(16, 16)
     pause.layout()
-  })
+  }
+  window.addEventListener('resize', onResize)
 
+  let disposed = false
+  return {
+    dispose: () => {
+      if (disposed) return
+      disposed = true
+      // (1) Nothing ticks from here. Both loops, before anything they read is taken away.
+      stage.stop()
+      simLoop?.stop()
+      // (2) The connection, and the timer that was feeding it.
+      if (pingTimer !== null) clearInterval(pingTimer)
+      void room?.leave()
+      // (3) The DOM. `input` owns seven listeners; these two were never anybody's.
+      document.removeEventListener('pointerlockchange', onPointerLockChange)
+      window.removeEventListener('resize', onResize)
+      input.dispose()
+      // (4) What is drawn. Rigs and nametags, the level's meshes and lights, every loose body, the overlays.
+      views.dispose()
+      levelView?.dispose()
+      levelLights?.dispose()
+      clearRagdoll()
+      for (const corpse of peerRagdolls.values()) corpse.dispose()
+      peerRagdolls.clear()
+      for (const spawning of peerAssemblies.values()) spawning.assembly.dispose()
+      peerAssemblies.clear()
+      touchHud?.dispose()
+      pane.dispose()
+      ui.dispose()
+      // (5) The renderer, then the world. The world is last because step (1) is the only guarantee that
+      // nothing will touch it again, and freeing it is the one step that cannot be undone.
+      postfx.dispose()
+      stage.dispose()
+      physicsWorld?.free()
+      physicsWorld = null
+    },
+  }
 }

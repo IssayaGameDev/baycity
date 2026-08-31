@@ -38,6 +38,14 @@ export interface Inputs {
   actions: () => ReadonlySet<string>
   /** UI that owns its own pointers, so dragging a slider is not also a camera swing. */
   ignore: (el: HTMLElement) => void
+  /**
+   * Release every listener this took on `window`, `document` and the canvas.
+   *
+   * There are seven, and they are part of why a client could not be torn down: they outlive the canvas they
+   * were bound for, so a second `createInputs` on the same page would have the first one's handlers still
+   * moving the first one's camera (ADR 0065).
+   */
+  dispose: () => void
 }
 
 export interface InputsOptions {
@@ -91,24 +99,45 @@ export const createInputs = ({ canvas, camera, isDead, onRespawn, actions: bindi
     layout.jumpInset.y = DEFAULT_TOUCH_LAYOUT.jumpInset.y + bottom
   }
   applySafeArea()
-  window.addEventListener('resize', applySafeArea)
 
-  canvas.addEventListener('click', () => {
+  /**
+   * Every listener, paired with the call that removes it.
+   *
+   * Collected at the point of adding rather than removed one by one at the end, because
+   * `removeEventListener` matches on (type, function, options) — a re-declared inline arrow silently fails to
+   * match and the listener stays for ever.
+   */
+  const bound: (() => void)[] = []
+  const on = <K extends keyof WindowEventMap>(
+    target: Window | Document | HTMLElement,
+    type: K,
+    handler: (e: WindowEventMap[K]) => void,
+    opts?: AddEventListenerOptions,
+  ): void => {
+    const listener = handler as EventListener
+    target.addEventListener(type, listener, opts)
+    bound.push(() => target.removeEventListener(type, listener, opts))
+  }
+
+  on(window, 'resize', applySafeArea)
+
+  on(canvas, 'click', () => {
     // Never on touch: there is no pointer lock on mobile, and asking for it on every tap throws.
     if (!touch.active() && document.pointerLockElement !== canvas) void canvas.requestPointerLock()
   })
   // Left click respawns while dead — but only during locked play, so the click that *re-captures* the mouse
   // after the pause menu does not also cut a death short. The touch equivalent is a tap in the look region,
   // drained in the render loop (ADR 0022).
-  canvas.addEventListener('mousedown', (e) => {
+  on(canvas, 'mousedown', (e) => {
     if (e.button === 0 && isDead() && document.pointerLockElement === canvas) onRespawn()
   })
-  window.addEventListener('mousemove', (e) => {
+  on(window, 'mousemove', (e) => {
     if (document.pointerLockElement !== canvas) return
     camera.lookMouse(e.movementX, e.movementY)
   })
   // Wheel zoom, gated on pointer lock: scrolling the debug pane with the mouse free must not move the camera.
-  window.addEventListener(
+  on(
+    window,
     'wheel',
     (e) => {
       if (document.pointerLockElement !== canvas) return
@@ -120,12 +149,14 @@ export const createInputs = ({ canvas, camera, isDead, onRespawn, actions: bindi
 
   const keys = new Set<string>()
   let jumpLatch = false
-  window.addEventListener('keydown', (e) => {
+  on(window, 'keydown', (e) => {
     if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault()
     if (e.code === 'Space' && !e.repeat) jumpLatch = true
     keys.add(e.code)
   })
-  window.addEventListener('keyup', (e) => keys.delete(e.code))
+  on(window, 'keyup', (e) => {
+    keys.delete(e.code)
+  })
 
   return {
     touch,
@@ -160,6 +191,16 @@ export const createInputs = ({ canvas, camera, isDead, onRespawn, actions: bindi
     },
     // Shared with the editor's play-test (`@mp/mode`), so one game's controls mean one thing in both.
     actions: () => actionsHeld(bindings, keys),
-    ignore: (el) => ignored.push(el),
+    ignore: (el) => {
+      ignored.push(el)
+    },
+    dispose: () => {
+      for (const off of bound) off()
+      bound.length = 0
+      touch.dispose()
+      // Held keys go too. A client torn down mid-stride left `keys` populated, and anything still holding the
+      // set would read a key that can never be released now the listener that clears it is gone.
+      keys.clear()
+    },
   }
 }
