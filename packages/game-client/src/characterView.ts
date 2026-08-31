@@ -1,4 +1,4 @@
-import { createAnimator, DEFAULT_GAIT, type Animator, type GaitTuning, type Pose } from '@mp/character'
+import { createAnimator, DEFAULT_GAIT, type Animator, type AnimatorFactory, type GaitTuning, type Pose } from '@mp/humanoid'
 import type { EntityId, Vec3 } from '@mp/core'
 import { createCharacterRig, THREE, type CharacterRig } from '@mp/render-three'
 
@@ -126,8 +126,15 @@ export const PEER_COLORS = { shirt: 0xf97316, trousers: 0x2b1503 }
  * `gait` is shared by every character's animator and read fresh each frame, so mutating it — from
  * the debug pane — retunes everyone live. Feel is Kodjo's call, and describing it in words is a slow
  * way to converge; sliders are not.
+ *
+ * `makeAnimator` is the game's, when it has one (ADR 0063). It defaults to the shared procedural gait, which
+ * is what this hardcoded before there was any way for a game to say otherwise.
  */
-export const createCharacterViews = (scene: THREE.Scene, gait: GaitTuning = DEFAULT_GAIT): CharacterViews => {
+export const createCharacterViews = (
+  scene: THREE.Scene,
+  gait: GaitTuning = DEFAULT_GAIT,
+  makeAnimator: AnimatorFactory = createAnimator,
+): CharacterViews => {
   const chars = new Map<EntityId, Rendered>()
 
   const charFor = (id: EntityId, isSelf: boolean, position: Vec3): Rendered => {
@@ -139,7 +146,7 @@ export const createCharacterViews = (scene: THREE.Scene, gait: GaitTuning = DEFA
       // same sequence of steps — the variation is still per movement, not a fixed personality.
       r = {
         rig,
-        animator: createAnimator(gait, (id as number) * 2654435761),
+        animator: makeAnimator(gait, (id as number) * 2654435761),
         pose: null,
         last: { ...position },
         speed: 0,

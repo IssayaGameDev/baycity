@@ -1,4 +1,4 @@
-import { CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/character'
+import { LOCOMOTION_DEF, CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/humanoid'
 import { Bumper, Checkpoint, createRegistry, ENGINE_COMPONENTS, Goal, Hazard, PLAYER_COMPONENTS, Track } from '@mp/components'
 import type { LoadedLevel } from '@mp/content'
 import { spawnFrom, type ModeSession, type ModeSessionOptions } from '@mp/mode'
@@ -24,7 +24,7 @@ import { spawnFrom, type ModeSession, type ModeSessionOptions } from '@mp/mode'
  * below keeps no progress, so reaching one does nothing yet. The rule is where progression lives, not the
  * component.
  */
-export const SWING_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Checkpoint, Goal, Hazard, Bumper, Track, ...PLAYER_COMPONENTS])
+export const SWING_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Checkpoint, Goal, Hazard, Bumper, Track, ...PLAYER_COMPONENTS, LOCOMOTION_DEF])
 
 /** How far above a spawn node the character's origin sits — half the capsule, plus its cap. */
 export const STAND_OFFSET = CHAR_HALF_HEIGHT + CHAR_RADIUS

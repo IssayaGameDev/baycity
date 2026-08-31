@@ -53,7 +53,7 @@ speed is 0–16 m/s in 255 steps (0.063 m/s). Both are quantities **only the own
   the position curve never turned them.
 - **Speed is locomotion only, with a platform's carry taken out.** Differencing a position gives
   world speed, so a viewer saw a player standing on a moving platform as walking — while on their
-  own screen they were sliding. It is the quantity `@mp/character`'s animator documents as its
+  own screen they were sliding. It is the quantity `@mp/humanoid`'s gait documents as its
   input; the owner passes its own rig exactly these two numbers, so a peer's rig gets the same
   values rather than a guess at them.
 

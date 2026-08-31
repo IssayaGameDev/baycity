@@ -1,5 +1,5 @@
 import { CAMERA_TUNABLES, type OrbitCamera } from '@mp/camera'
-import type { CharacterTuning, GaitTuning } from '@mp/character'
+import type { CharacterTuning, GaitTuning } from '@mp/humanoid'
 import type { TouchLayout } from '@mp/client/dom'
 import type { GreyboxEnvironment, PostFX, Sky, ThreeStage } from '@mp/render-three'
 import { Pane } from 'tweakpane'

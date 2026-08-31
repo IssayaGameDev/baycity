@@ -1,6 +1,7 @@
 import type { OrbitCamera } from '@mp/camera'
 import { keysToMovement } from '@mp/client'
 import { createTouchJoystick, DEFAULT_TOUCH_LAYOUT, type TouchInput, type TouchLayout } from '@mp/client/dom'
+import { actionsHeld, type ActionBindings } from '@mp/mode'
 
 /**
  * Everything the player presses: keyboard, mouse with pointer lock, wheel, and the touch controls of
@@ -28,6 +29,13 @@ export interface Inputs {
   takeJump: () => boolean
   /** Camera-relative world-space move direction from WASD/arrows, or the stick. */
   worldMove: () => { x: number; z: number }
+  /**
+   * The game's own actions that are held right now, by name (ADR 0061).
+   *
+   * Built from the bindings the game declared (`ModeDescriptor.actions`), so this module maps keys to names
+   * and never learns what a name means. Empty for a game that declared none.
+   */
+  actions: () => ReadonlySet<string>
   /** UI that owns its own pointers, so dragging a slider is not also a camera swing. */
   ignore: (el: HTMLElement) => void
 }
@@ -38,13 +46,20 @@ export interface InputsOptions {
   /** Whether the player is dead — a click respawns, and only during locked play. */
   isDead: () => boolean
   onRespawn: () => void
+  /**
+   * The game's action bindings: action name → the physical `code`s that hold it (ADR 0061).
+   *
+   * Physical codes, like `keys`, so a binding means the same key on any layout. Absent means this game has no
+   * actions of its own beyond move and jump, which is every game the stack ships.
+   */
+  actions?: ActionBindings
 }
 
 /** A CSS custom property as a number, for the safe-area insets the page publishes. */
 const px = (name: string): number =>
   Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) || 0
 
-export const createInputs = ({ canvas, camera, isDead, onRespawn }: InputsOptions): Inputs => {
+export const createInputs = ({ canvas, camera, isDead, onRespawn, actions: bindings }: InputsOptions): Inputs => {
   /**
    * Touch controls (ADR 0022): stick bottom-left, jump bottom-right, look everywhere else. Bound to the
    * canvas, so its rect is the coordinate frame the HUD draws in. `active()` stays false until a real touch
@@ -143,6 +158,8 @@ export const createInputs = ({ canvas, camera, isDead, onRespawn }: InputsOption
       }
       return { x, z }
     },
+    // Shared with the editor's play-test (`@mp/mode`), so one game's controls mean one thing in both.
+    actions: () => actionsHeld(bindings, keys),
     ignore: (el) => ignored.push(el),
   }
 }

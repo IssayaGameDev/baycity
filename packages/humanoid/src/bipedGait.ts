@@ -1,11 +1,16 @@
 import { axisAngleToQuat, clamp, conjQuat, mulQuat, quat, rotateVec3, slerpQuat, vec3, type Quat, type Vec3 } from '@mp/core'
 
-import { FOOT_Y, HIP_HEIGHT, LIMB_LENGTH, RIG, restPose, type PartName, type Pose } from './rig'
+import { FOOT_Y, HIP_HEIGHT, LIMB_LENGTH, RIG, restPose, type PartName, type Pose } from './humanoidRig'
 
 /**
- * Procedural character animation — no clips, no skinning, no art. Pure math: it takes what the
- * game knows about a character this frame and returns joint rotations, so it is unit-testable
- * headlessly and a renderer only has to apply the result.
+ * **One** gait: a procedural walk / run / idle / air cycle for the eleven-part biped next door — no clips,
+ * no skinning, no art. Pure math: it takes what the game knows about a character this frame and returns
+ * joint rotations, so it is unit-testable headlessly and a renderer only has to apply the result.
+ *
+ * This file was `animate.ts`, which claimed the whole subject and delivers this (ADR 0062). It is bipedal by
+ * construction: `armSwing` and `strideWalk` mean nothing to a thing with no arms or four legs, and the
+ * states it knows are exactly the ones `stepCharacter` produces. A game with its own locomotion has no way
+ * to tell it about a state it invented — which is the animation half of ADR 0061, and is not built.
  *
  * Three things make it read as smooth rather than as a loop being played:
  *
@@ -339,6 +344,19 @@ export interface Animator {
   /** Advance and return this frame's pose. Call once per rendered frame. */
   step: (input: AnimationInput, dt: number) => Pose
 }
+
+/**
+ * How a host builds one animator per character (ADR 0063).
+ *
+ * `createAnimator` has exactly this shape, so the default is the function itself and a game that wants
+ * something else supplies its own — usually by wrapping this one and overriding the pose for a state it
+ * invented. Called **per character**, because the seed is what stops two players rolling the same steps.
+ *
+ * A game's factory can close over whatever it likes, since the game is what supplies it (ADR 0061). That is
+ * why nothing needed adding to `AnimationInput`: a dash animation reads the game's own dash state directly
+ * rather than the platform carrying a flag it cannot interpret.
+ */
+export type AnimatorFactory = (gait: GaitTuning, seed: number) => Animator
 
 /**
  * mulberry32 — a small deterministic PRNG. Seeded so the variation is reproducible in tests; local

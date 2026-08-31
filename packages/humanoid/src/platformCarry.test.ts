@@ -1,16 +1,8 @@
-import { axisAngleToQuat, quat, vec3, type Quat, type Vec3 } from '@mp/core'
+import { axisAngleToQuat, quat, TICK_DT, vec3, type Quat, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsBody, type PhysicsWorld } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import {
-  addCharacter,
-  CHAR_HALF_HEIGHT,
-  CHAR_RADIUS,
-  DEFAULT_TUNING,
-  stepCharacter,
-  TICK_DT,
-  type PlatformFrame,
-} from './character'
+import { addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, DEFAULT_TUNING, stepCharacter, type PlatformFrame } from './groundController'
 
 /**
  * Platform carry: standing on a moving piece must track it exactly, every tick.

@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@mp/camera": "workspace:*",
-    "@mp/character": "workspace:*",
+    "@mp/humanoid": "workspace:*",
     "@mp/client": "workspace:*",
     "@mp/components": "workspace:*",
     "@mp/content": "workspace:*",

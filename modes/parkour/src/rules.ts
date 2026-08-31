@@ -1,5 +1,5 @@
-import { CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/character'
-import { Bumper, Checkpoint, ENGINE_COMPONENTS, Goal, Hazard, Track, createRegistry, hasComponent } from '@mp/components'
+import { LOCOMOTION_DEF, CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/humanoid'
+import { PLAYER_COMPONENTS, Bumper, Checkpoint, ENGINE_COMPONENTS, Goal, Hazard, Track, createRegistry, hasComponent } from '@mp/components'
 import type { LoadedLevel, WorldNode } from '@mp/content'
 import type { Vec3 } from '@mp/core'
 import { spawnFrom, standingAt, type ModeSession, type ModeSessionOptions } from '@mp/mode'
@@ -35,7 +35,7 @@ import { spawnFrom, standingAt, type ModeSession, type ModeSessionOptions } from
  * four rules whether they meant anything to it. A game that has no use for `Bumper` leaves it out and the
  * editor stops offering it.
  */
-export const PARKOUR_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Checkpoint, Goal, Hazard, Bumper, Track])
+export const PARKOUR_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Checkpoint, Goal, Hazard, Bumper, Track, ...PLAYER_COMPONENTS, LOCOMOTION_DEF])
 
 /**
  * Markers sit on a surface, so the capsule's *centre* must clear it by its stand height — otherwise the player

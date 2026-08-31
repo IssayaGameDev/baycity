@@ -1,4 +1,4 @@
-import { PART_NAMES, RIG, type PartName, type Pose } from '@mp/character'
+import { PART_NAMES, RIG, type PartName, type Pose } from '@mp/humanoid'
 import * as THREE from 'three'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 

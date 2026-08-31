@@ -91,7 +91,7 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
   (outward normal pointing down past `CEILING_NORMAL_MAX_Y`) was in the way. Read off contact normals
   rather than from `applied.y` falling short of `desired.y`, because autostep and snap-to-ground both
   move the capsule vertically on their own, so a shortfall alone cannot tell a roof from either.
-  `@mp/character` uses it to end a jump's rise — without it `vy` stays positive under the roof and the
+  `@mp/humanoid` uses it to end a jump's rise — without it `vy` stays positive under the roof and the
   character hangs there for the rest of its hang time.
 
 `rapier3d-compat`'s inlined WASM makes the same wrapper work in the browser and Node.
@@ -119,7 +119,7 @@ Version is pinned in `packages/physics/package.json` (SEED §4).
   current positions, so depenetration carries it up a rising platform and off a sweeping bar, and
   snap-to-ground holds it on a descending one. See `modes/parkour` and the viewer's play loop;
   covered by `world.test.ts`.
-- **Platform carry (`@mp/character` movement base + `@mp/content` frozen posing).** Riding a moving
+- **Platform carry (`@mp/humanoid` movement base + `@mp/content` frozen posing).** Riding a moving
   piece is implemented here, the way engines do it — Unreal's movement base, Godot's platform
   floor, Quake's ground entity. The character stores which collider it stands on plus its position
   *in that surface's frame*, and each tick asks where that local point has moved to; the difference

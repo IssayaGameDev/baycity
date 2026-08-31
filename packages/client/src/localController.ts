@@ -1,5 +1,4 @@
-import { clamp, lerpVec3, type EntityId, type Vec3 } from '@mp/core'
-import type { InputCommand } from '@mp/net'
+import { clamp, lerpVec3, type EntityId, type InputCommand, type Vec3 } from '@mp/core'
 
 /**
  * The local, client-authoritative simulation (ADR 0011). The client owns its own
@@ -23,8 +22,14 @@ export interface LocalControllerOptions {
 }
 
 export interface LocalController {
-  /** Advance the sim one step from a world-space move direction (+ optional jump). */
-  step: (moveX: number, moveZ: number, jump?: boolean) => void
+  /**
+   * Advance the sim one step from one input command.
+   *
+   * A command rather than positional arguments (ADR 0061). It was `(moveX, moveZ, jump?)`, which was fine
+   * while those were the only three things a control scheme could have; a game with its own actions makes a
+   * fourth positional argument, and then a fifth.
+   */
+  step: (cmd: InputCommand) => void
   /** Authoritative (latest-tick) positions — what to send to the server. */
   state: () => Map<EntityId, Vec3>
   /** Positions interpolated between the last two ticks, smooth at display rate. */
@@ -60,8 +65,8 @@ export const createLocalController = (opts: LocalControllerOptions): LocalContro
   sync() // seed tracks from the initial state
 
   return {
-    step: (moveX, moveZ, jump = false) => {
-      opts.world.applyInput({ moveX, moveZ, jump })
+    step: (cmd) => {
+      opts.world.applyInput(cmd)
       sync()
     },
     state: () => opts.world.readState(),

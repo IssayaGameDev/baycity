@@ -1,7 +1,9 @@
-import type { CharacterTuning } from '@mp/character'
-import type { Effects, Registry } from '@mp/components'
+import type { AnimatorFactory, CharacterState, CharacterTuning, GaitTuning, PlatformPoseLookup } from '@mp/humanoid'
+import type { ComponentDef, Effects, Registry } from '@mp/components'
 import type { ComponentData, LoadedLevel, WorldNode } from '@mp/content'
 import type { Vec3 } from '@mp/core'
+
+import type { ActionBindings } from './actions'
 
 /**
  * `@mp/mode` — what a **game** contributes to the platform, as one object.
@@ -55,6 +57,24 @@ export interface ModeSessionOptions {
 }
 
 /**
+ * What a host can offer a game's player components, as getters (ADR 0061).
+ *
+ * Getters throughout, because none of it exists when `playerDefs` is called for a session that is still being
+ * built, and because the character can be replaced (a respawn) without the definitions being rebuilt.
+ *
+ * Deliberately small: these are the things the **host** owns. A game needing anything else closes over it in
+ * `playerDefs`, which is its own code.
+ */
+export interface PlayerHost {
+  /** The live character, or `null` before a session has one. */
+  readonly character: () => CharacterState | null
+  /** The game's live tuning — the same object a debug pane is bound to, so it stays one source. */
+  readonly tuning: () => CharacterTuning
+  /** Where the level's clock-driven pieces are this tick, so a rider is carried. */
+  readonly platforms: () => PlatformPoseLookup | undefined
+}
+
+/**
  * One game, as the platform sees it.
  *
  * `registry` is **composed**, not inherited: the engine's components plus whichever of the shared gameplay
@@ -99,6 +119,48 @@ export interface ModeDescriptor {
    * is read the character and push it (`Ctx.character`) — see `CharacterAccess`.
    */
   readonly player?: readonly ComponentData[]
+  /**
+   * This game's own controls, as action name → the physical key `code`s that hold it (ADR 0061).
+   *
+   * The names are the game's and the platform never learns what one means: a host fills
+   * `InputCommand.actions` from these, and the game's own locomotion component reads back the names it
+   * declared. Physical codes, so a binding is the same key on any keyboard layout.
+   *
+   * Absent means move and jump are the whole control scheme, which is every game the stack ships.
+   */
+  readonly actions?: ActionBindings
+  /**
+   * Build this game's player component definitions for one session (ADR 0061).
+   *
+   * The seam that makes locomotion the game's. A host calls this when a level is joined and hands the result
+   * to `createComponentRuntime`, so a definition can close over the live character — which does not exist
+   * when the registry is built.
+   *
+   * **The game supplies its own access.** What the host offers is only what the host owns (the character, the
+   * level's platform poses, the feel); anything else a game's component needs, the game closes over itself,
+   * because the game is what runs this function. That is why `Ctx` does not grow a field per capability.
+   *
+   * Absent means this game's player components are all data the host reads (`Death`) rather than behaviour.
+   */
+  readonly playerDefs?: (host: PlayerHost) => readonly ComponentDef[]
+  /**
+   * How this game's characters are animated (ADR 0063).
+   *
+   * `gait` is the feel of the shared biped cycle — stride, bob, lean, arm swing — and was one object for
+   * every game on the platform, live on the debug pane and reachable by nobody else. Absent keeps the shipped
+   * numbers.
+   *
+   * `animator` is the seam: a factory the host calls per character. Absent uses the shared procedural gait,
+   * which is what every game does today. A game with movement of its own supplies its own — normally by
+   * wrapping `createAnimator` and overriding the pose for a state the shared cycle has never heard of.
+   *
+   * **Nothing was added to `AnimationInput` for that**, deliberately: the factory is the game's own code, so
+   * it closes over the game's own state (ADR 0061's trick), and the platform never carries a flag it cannot
+   * interpret. The cost is that such a state is **local only** — component state is not serialized, so a
+   * peer's dash shows as an ordinary run until whatever it does goes on the wire.
+   */
+  readonly gait?: GaitTuning
+  readonly animator?: AnimatorFactory
   /** Begin a rules session over this level. */
   readonly session: (loaded: LoadedLevel, opts?: ModeSessionOptions) => ModeSession
 }
@@ -124,3 +186,6 @@ export { spawnFrom, standingAt } from './spawn'
  * same thing in the game and in the editor's play-test.
  */
 export const PLAYER_NODE_ID = 'player'
+
+export type { ActionBindings } from './actions'
+export { actionsHeld } from './actions'

@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mp/character": "workspace:*",
+    "@mp/humanoid": "workspace:*",
     "@mp/components": "workspace:*",
     "@mp/content": "workspace:*",
     "@mp/core": "workspace:*",

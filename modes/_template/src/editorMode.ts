@@ -1,4 +1,4 @@
-import { DEFAULT_TUNING } from '@mp/character'
+import { DEFAULT_TUNING, createLocomotion } from '@mp/humanoid'
 import { Death, Hazard } from '@mp/components'
 import type { ModeDescriptor } from '@mp/mode'
 import { MARKER_COLORS } from '@mp/render-three'
@@ -26,14 +26,42 @@ export const TEMPLATE_MODE: ModeDescriptor = {
   /** One rule, one colour. The palette is shared so two games' hazards look alike; the mapping is each game's. */
   gizmos: { [Hazard.type]: MARKER_COLORS.hazard },
   /**
-   * The player's own components (ADR 0059) — what this game gives whoever is playing, as opposed to what a
-   * level authors. Kept in the template because it is the seam a new game is least likely to find on its own.
+   * The player's own components (ADR 0059, ADR 0061).
+   *
+   * `Locomotion` is the stack's `stepCharacter` wearing a component, which is what makes it **this game's
+   * choice** rather than something every game runs. Kept here because it is the seam a new game is least likely to find on its own.
    *
    * `Death` is data the client reads: whether the rig falls apart, and the timing of it dropping back in.
-   * Its defaults are what the client hardcoded for every game, so declaring it changes nothing until a
-   * parameter is changed.
+   * Both default to exactly what the client hardcoded, so declaring them changed nothing.
    */
-  player: [{ id: 'death', type: Death.type, params: {} }],
+  player: [
+    { id: 'loco', type: 'Locomotion', params: {} },
+    { id: 'death', type: Death.type, params: {} },
+  ],
+  /**
+   * Built per session, closing over the live character (ADR 0061) — it does not exist when the registry is.
+   * A game with its own movement returns its own definition here and the platform is none the wiser.
+   */
+  playerDefs: (host) => [createLocomotion(host)],
+  /**
+   * How this game's characters look and move visually (ADR 0063). Both optional; absent is the shipped biped.
+   *
+   * `gait` retunes the shared cycle — stride, bob, lean, arm swing. `animator` **replaces** it, and the shape
+   * for adding a state the platform has never heard of is to wrap the shared one:
+   *
+   * ```ts
+   * // beside your own dash component, whose state you close over
+   * let dashing = false
+   * animator: (gait, seed) => {
+   *   const shared = createAnimator(gait, seed)
+   *   return { step: (input, dt) => (dashing ? dashPose() : shared.step(input, dt)) }
+   * }
+   * ```
+   *
+   * Nothing was added to `AnimationInput` for that on purpose: this factory is *your* code, so it can read
+   * your own state directly. The cost is that such a state is local — a peer's dash reads as a run until
+   * whatever it does goes on the wire.
+   */
   spawn: spawnOf,
   session: templateSession,
 }

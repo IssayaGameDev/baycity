@@ -1,4 +1,4 @@
-import { CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/character'
+import { CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/humanoid'
 import { clamp, vec3, type Vec3 } from '@mp/core'
 import { createCutoutMask, THREE, type CutoutMask } from '@mp/render-three'
 

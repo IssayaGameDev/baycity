@@ -2,12 +2,8 @@ import {
   addCharacter,
   CHAR_HALF_HEIGHT,
   CHAR_RADIUS,
-  DEFAULT_TUNING,
-  stepCharacter,
-  TICK_DT,
-  TICK_RATE_HZ,
   type CharacterState,
-} from '@mp/character'
+} from '@mp/humanoid'
 import { createLocalController, type LocalController, type LocalWorld } from '@mp/client'
 import {
   assetsOfKind,
@@ -32,8 +28,8 @@ import {
 } from '@mp/content'
 import { DEFAULT_REGISTRY, characterAccess, createComponentRuntime, type ComponentRuntime, type Registry } from '@mp/components'
 import { createOrbitCamera } from '@mp/camera'
-import { PLAYER_NODE_ID, type ModeDescriptor } from '@mp/mode'
-import { createSimClock, eulerToQuat, quat, startFixedLoop, vec3, type EntityId, type LoopHandle, type Vec3 } from '@mp/core'
+import { PLAYER_NODE_ID, actionsHeld, type ModeDescriptor } from '@mp/mode'
+import { createSimClock, eulerToQuat, quat, startFixedLoop, TICK_DT, TICK_RATE_HZ, vec3, type EntityId, type LoopHandle, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
   addLevel,
@@ -1588,6 +1584,15 @@ const worldMove = (): { x: number; z: number } => {
   return { x, z }
 }
 
+/**
+ * The active game's own actions that are held right now, by name (ADR 0061).
+ *
+ * Read off `activeMode` per tick rather than flattened once, because the game can change while the editor is
+ * open. `actionsHeld` is shared with the game client on purpose: two copies of this mapping is how the editor
+ * and the game came to disagree about post-FX (ADR 0057).
+ */
+const heldActions = (): ReadonlySet<string> => actionsHeld(activeMode?.actions, keys)
+
 /** The live components while playing. Detached on stop, so a component's teardown runs like the game's. */
 let playComponents: ComponentRuntime | null = null
 
@@ -1621,8 +1626,26 @@ const startPlay = (): void => {
           character: characterAccess(char),
           effects: rules.effects,
           // The game's player components too, so a play-test has the abilities the game has (ADR 0059) —
-          // the same reason it runs the game's own `tuning` and rules rather than a default.
-          ...(mode?.player === undefined ? {} : { player: { id: PLAYER_NODE_ID, components: mode.player } }),
+          // the same reason it runs the game's own `tuning` and rules rather than a default. Their
+          // definitions come from the game as well (ADR 0061), which is what gives a play-test the game's
+          // *locomotion* and not the stack's.
+          ...(mode?.player === undefined
+            ? {}
+            : {
+                player: {
+                  id: PLAYER_NODE_ID,
+                  components: mode.player,
+                  ...(mode.playerDefs === undefined
+                    ? {}
+                    : {
+                        defs: mode.playerDefs({
+                          character: () => char,
+                          tuning: () => mode.tuning,
+                          platforms: () => loaded?.basePose,
+                        }),
+                      }),
+                },
+              }),
         })
   let playTick = 0
   playComponents?.attach(playTick, 0, TICK_DT)
@@ -1640,9 +1663,15 @@ const startPlay = (): void => {
       playComponents?.fixedUpdate(++playTick, nowMs, TICK_DT)
       loaded.update(nowMs, char.base?.colliderHandle) // only the ridden piece is frozen
       world.step(TICK_DT) // (A) platforms move
-      // The game's own locomotion, not the stack default: a game with a different controller feels like
-      // itself in a play-test (ADR 0052).
-      stepCharacter(char, cmd, TICK_DT, mode?.tuning ?? DEFAULT_TUNING, loaded.basePose) // rides what it stands on
+      /**
+       * The movement slot (ADR 0061), same as the game's. A game whose locomotion is its own component feels
+       * like itself here, where before this ran `stepCharacter` with the game's *numbers* and the stack's
+       * mechanics.
+       *
+       * A level with no game, or a game with no locomotion component, does not move — which is honest: there
+       * is nothing to ask. It used to fall back to `DEFAULT_TUNING`, quietly play-testing parkour.
+       */
+      playComponents?.locomote(playTick, nowMs, TICK_DT, cmd)
       world.step(TICK_DT) // (B) character resolves against the moved platforms
       lastSimTickAt = performance.now()
     },
@@ -1690,7 +1719,9 @@ const startPlay = (): void => {
     onTick: () => {
       if (char === null || controller === null) return
       const m = worldMove()
-      controller.step(m.x, m.z, keys.has('Space'))
+      // The game's own actions too (ADR 0061), so a play-test has the controls the game has — the same
+      // reason it runs the game's `tuning`, its rules and its player components rather than defaults.
+      controller.step({ moveX: m.x, moveZ: m.z, jump: keys.has('Space'), actions: heldActions() })
       // Solids and triggers both: a sensor resolves no movement, so it is not in `collisions` (ADR 0054).
       playComponents?.contact([...char.body.collisions(), ...char.body.overlaps()])
       // One question, asked of the game's rules, which also consume the flag. A level with no game never dies.

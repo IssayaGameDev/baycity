@@ -1,19 +1,9 @@
+import { TICK_DT } from '@mp/core'
 ﻿import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
-import type { InputCommand } from '@mp/net'
+import type { InputCommand } from '@mp/core'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import {
-  addCharacter,
-  CHAR_HALF_HEIGHT,
-  CHAR_RADIUS,
-  DEFAULT_TUNING,
-  playerSpawn,
-  stepCharacter,
-  TICK_DT,
-  type CharacterState,
-  type CharacterTuning,
-  type PlatformPoseLookup,
-} from './character'
+import { addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, DEFAULT_TUNING, playerSpawn, stepCharacter, type CharacterState, type CharacterTuning, type PlatformPoseLookup } from './groundController'
 
 const cmd = (moveX: number, moveZ: number, jump = false): InputCommand => ({ moveX, moveZ, jump })
 

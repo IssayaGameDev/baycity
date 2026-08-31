@@ -1,4 +1,4 @@
-import { CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/character'
+import { CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/humanoid'
 import { THREE } from '@mp/render-three'
 
 /** Render layer for in-world UI drawn in a separate overlay pass, excluded from the

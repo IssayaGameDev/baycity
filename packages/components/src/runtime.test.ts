@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { COLLIDER, RENDERER, instantiateLevel, type ComponentData, type Node, type Level, type WorldNode } from '@mp/content'
 import { vec3 } from '@mp/core'
 
-import { createComponentRuntime, characterAccess, hasHooks, type Effects } from './runtime'
+import { createComponentRuntime, characterAccess, hasHooks, HOOK_NAMES, type Effects } from './runtime'
 import { createRegistry } from './registry'
 import { defineComponent } from './define'
 import { Bumper, Checkpoint, Goal, Hazard, Track } from './gameplay'
@@ -652,5 +652,26 @@ describe('components on the player', () => {
     runtime.detach()
     // `Ability` has no onDetach; what is asserted is that detaching a player component does not throw.
     expect(log).toEqual([])
+  })
+})
+
+/**
+ * A component with **only** a new hook still counts as having hooks (ADR 0061).
+ *
+ * The bug this stops, hit while adding `onLocomote`: `defineComponent` decided data-or-behaviour from a
+ * hand-written list of hook names, so a component carrying only the new one looked like data and the runner
+ * skipped it entirely. Silent, and it looks exactly like the hook never firing. Both sides read `HOOK_NAMES`
+ * now, and this is the test that says so.
+ */
+describe('hook detection', () => {
+  it('counts every hook the runner knows about', () => {
+    for (const name of HOOK_NAMES) {
+      const def = defineComponent({ type: `Only_${name}`, params: {}, [name]: () => {} })
+      expect(hasHooks(def), name).toBe(true)
+    }
+  })
+
+  it('still treats a component with no hooks as data', () => {
+    expect(hasHooks(defineComponent({ type: 'JustData', params: {} }))).toBe(false)
   })
 })

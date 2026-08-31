@@ -1,4 +1,4 @@
-import { PART_NAMES, type PartName, type PartTransform } from '@mp/character'
+import { PART_NAMES, type PartName, type PartTransform } from '@mp/humanoid'
 import { clamp } from '@mp/core'
 import { createLooseParts, THREE, type CharacterRigOptions } from '@mp/render-three'
 

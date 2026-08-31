@@ -6,7 +6,7 @@ import {
   type LocalController,
   type LocalWorld,
 } from '@mp/client'
-import { clamp, createSimClock, rotateVec3, startFixedLoop, vec3, yawOf, type EntityId, type Vec3 } from '@mp/core'
+import { clamp, createSimClock, rotateVec3, startFixedLoop, TICK_DT, TICK_RATE_HZ, vec3, yawOf, type EntityId, type Vec3 } from '@mp/core'
 import {
   decodePong,
   decodeRoster,
@@ -27,21 +27,18 @@ import {
 import { createPhysicsWorld, initPhysics, type PhysicsBody, type PhysicsWorld } from '@mp/physics'
 import { addLevel, addLights, assetIdsIn, createAssetRuntime, type ContentLights, type LevelView } from '@mp/render-three'
 import {
+  createAnimator,
   addCharacter,
   CHAR_HALF_HEIGHT,
   CHAR_RADIUS,
-
-  stepCharacter,
-  TICK_DT,
-  TICK_RATE_HZ,
   type CharacterState,
   type CharacterTuning,
   DEFAULT_GAIT,
   partTransforms,
   type GaitTuning,
-} from '@mp/character'
+} from '@mp/humanoid'
 import { createOrbitCamera, type OcclusionQueries } from '@mp/camera'
-import { PLAYER_NODE_ID, type ModeDescriptor } from '@mp/mode'
+import { PLAYER_NODE_ID, type ModeDescriptor, type PlayerHost } from '@mp/mode'
 import { instantiateLevel, type LoadedLevel } from '@mp/content'
 import { Death, characterAccess, componentOn, createComponentRuntime, readParams, type ComponentRuntime } from '@mp/components'
 import { t } from '@mp/i18n'
@@ -121,8 +118,11 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
 
   // Player views (own + peers): the blocky rig, procedurally animated, + billboard nametag.
   // One shared gait object so the debug pane retunes every character live (ADR 0018).
-  const gait: GaitTuning = { ...DEFAULT_GAIT }
-  const views = createCharacterViews(stage.scene, gait)
+  // The game's gait if it has an opinion, the shipped one otherwise (ADR 0063). Copied, because this object
+  // is what the debug pane binds and what every animator reads fresh each frame — the descriptor's must not
+  // be mutated out from under a second session.
+  const gait: GaitTuning = { ...(mode.gait ?? DEFAULT_GAIT) }
+  const views = createCharacterViews(stage.scene, gait, mode.animator ?? createAnimator)
   // Spawn assembly timing. Declared up here so the debug pane below can bind it.
   /**
    * What dying looks like: the game's `Death` component, or the shipped defaults when it declares none
@@ -179,6 +179,8 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
     camera: orbit,
     isDead: () => dead,
     onRespawn: () => requestRespawn?.(),
+    // This game's own controls, if it has any (ADR 0061). The names are the game's; this only maps keys.
+    ...(mode.actions === undefined ? {} : { actions: mode.actions }),
   })
   const touch = input.touch
   /**
@@ -381,10 +383,28 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
      * `kill` sets a flag instead of calling `die()` directly, because death is gated on not already being dead
      * and on the fall plane in the same breath, and one place deciding that is one place to read.
      */
+    /**
+     * What this host can offer the game's player components (ADR 0061). Getters, because the character is
+     * replaced on a respawn and `tuning` is the live object the debug pane is bound to.
+     */
+    const playerHost: PlayerHost = {
+      character: () => char,
+      tuning: () => tuning,
+      platforms: () => loaded?.basePose,
+    }
     // The player's own components come from the descriptor, not from the level (ADR 0059): a level authors
-    // the world, and who is playing is the game's business.
+    // the world, and who is playing is the game's business. Their *definitions* can come from the game too
+    // (ADR 0061), built against the host above, which is how locomotion stopped being the platform's.
     const components: ComponentRuntime = createComponentRuntime(loaded, mode.registry, {
-      ...(mode.player === undefined ? {} : { player: { id: PLAYER_NODE_ID, components: mode.player } }),
+      ...(mode.player === undefined
+        ? {}
+        : {
+            player: {
+              id: PLAYER_NODE_ID,
+              components: mode.player,
+              ...(mode.playerDefs === undefined ? {} : { defs: mode.playerDefs(playerHost) }),
+            },
+          }),
       character: characterAccess(char),
       effects: rules.effects,
     })
@@ -451,7 +471,11 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
         components.fixedUpdate(++tickCount, nowMs, TICK_DT)
         loaded?.update(nowMs, char.base?.colliderHandle)
         world.step(half) // (A) platforms move
-        stepCharacter(char, cmd, TICK_DT, tuning, loaded?.basePose) // rides whatever it stands on
+        // The movement slot (ADR 0061). This was `stepCharacter(...)` called straight from here, which is why
+        // every game had the same locomotion whether it suited them or not. The game's own locomotion
+        // component occupies this moment now — between the two half-steps, so the character resolves against
+        // where the platforms are *now*.
+        components.locomote(tickCount, nowMs, TICK_DT, cmd)
         world.step(half) // (B) character resolves against the moved platforms
         lastSimTickAt = performance.now()
       },
@@ -503,7 +527,14 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<void> => {
         const touchTap = touch.drainJumpPress()
         const vyBefore = char.vy
         const groundedBefore = char.grounded
-        controller!.step(move.x, move.z, !dead && (input.keys.has('Space') || touch.jump() || keyTap || touchTap))
+        controller!.step({
+          moveX: move.x,
+          moveZ: move.z,
+          jump: !dead && (input.keys.has('Space') || touch.jump() || keyTap || touchTap),
+          // Whatever else this game's controls do, by name (ADR 0061). Empty for a game that declared none,
+          // which is every game the stack ships.
+          actions: input.actions(),
+        })
         // Landing, for the camera's dip below. Taken from the vertical speed *before* the step, since
         // `stepCharacter` zeroes it the moment footing is found. Scaled by the speed a plain jump lands at,
         // so a normal landing is 1 and a long drop is more.

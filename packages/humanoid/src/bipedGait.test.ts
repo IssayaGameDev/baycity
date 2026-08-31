@@ -1,8 +1,8 @@
 ﻿import { mulQuat, rotateVec3, vec3, type Quat, type Vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
-import { createAnimator, solveTwoBone, DEFAULT_GAIT } from './animate'
-import { CHAR_HEIGHT, FOOT_Y, HIP_HEIGHT, LIMB_LENGTH, RIG, PART_NAMES, partTransforms, restPose, type PartName, type Pose } from './rig'
+import { createAnimator, solveTwoBone, DEFAULT_GAIT } from './bipedGait'
+import { CHAR_HEIGHT, FOOT_Y, HIP_HEIGHT, LIMB_LENGTH, RIG, PART_NAMES, partTransforms, restPose, type PartName, type Pose } from './humanoidRig'
 
 const DT = 1 / 60
 const ZERO = vec3(0, 0, 0)

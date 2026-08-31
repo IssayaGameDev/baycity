@@ -4,13 +4,11 @@ import {
   CHAR_RADIUS,
   DEFAULT_TUNING,
   stepCharacter,
-  TICK_DT,
-  TICK_RATE_HZ,
   type CharacterState,
   type CharacterTuning,
-} from '@mp/character'
+} from '@mp/humanoid'
 import { instantiateLevel, type LoadedLevel, type VisualItem } from '@mp/content'
-import { createSimClock, startFixedLoop, type LoopHandle, type Vec3 } from '@mp/core'
+import { createSimClock, startFixedLoop, TICK_DT, TICK_RATE_HZ, type LoopHandle, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
   addLevel,

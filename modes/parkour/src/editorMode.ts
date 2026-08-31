@@ -1,5 +1,5 @@
-import { DEFAULT_TUNING } from '@mp/character'
-import { Bumper, Checkpoint, Goal, Hazard } from '@mp/components'
+import { DEFAULT_TUNING, createLocomotion } from '@mp/humanoid'
+import { Bumper, Checkpoint, Death, Goal, Hazard } from '@mp/components'
 import type { ModeDescriptor } from '@mp/mode'
 import { MARKER_COLORS } from '@mp/render-three'
 
@@ -34,6 +34,24 @@ export const PARKOUR_MODE: ModeDescriptor = {
     [Hazard.type]: MARKER_COLORS.hazard,
     [Bumper.type]: MARKER_COLORS.bumper,
   },
+  /**
+   * The player's own components (ADR 0059, ADR 0061).
+   *
+   * `Locomotion` is the stack's `stepCharacter` wearing a component, which is what makes it **this game's
+   * choice** rather than something every game runs. Swapping it out is how a game gets different mechanics and not just different numbers.
+   *
+   * `Death` is data the client reads: whether the rig falls apart, and the timing of it dropping back in.
+   * Both default to exactly what the client hardcoded, so declaring them changed nothing.
+   */
+  player: [
+    { id: 'loco', type: 'Locomotion', params: {} },
+    { id: 'death', type: Death.type, params: {} },
+  ],
+  /**
+   * Built per session, closing over the live character (ADR 0061) — it does not exist when the registry is.
+   * A game with its own movement returns its own definition here and the platform is none the wiser.
+   */
+  playerDefs: (host) => [createLocomotion(host)],
   spawn: spawnOf,
   session: parkourSession,
 }

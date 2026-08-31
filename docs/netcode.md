@@ -55,7 +55,7 @@ nobody can see. The server still loads no content; it never learns what a level 
 - **Names:** each client sends an auto-random name as a join option; the room relays the peer
   roster (id → name) via `ROSTER`. Chosen names + accounts come later (platform SDK).
 
-## Character controller (`@mp/character`) + content (`@mp/content`)
+## Character controller (`@mp/humanoid`) + content (`@mp/content`)
 
 `stepCharacter` (Roblox-like kinematic locomotion — ground accel/decel, force-limited air
 control, fixed-apex jump; ADR 0012) is now a stack-level, mode-agnostic library, run by each

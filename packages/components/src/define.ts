@@ -1,5 +1,7 @@
 import type { ParamDecls, Params } from './params'
-import type { Ctx, ErasedHooks, Hit, Self } from './runtime'
+import type { InputCommand } from '@mp/core'
+
+import { HOOK_NAMES, type Ctx, type ErasedHooks, type Hit, type Self } from './runtime'
 
 /**
  * A component definition: a name, its declared parameters, and optional lifecycle hooks.
@@ -67,6 +69,14 @@ export interface ComponentSpec<D extends ParamDecls, S> {
   readonly onAttach?: (self: Self<D, S>, ctx: Ctx) => void
   /** Every sim tick, fixed step. Unity's FixedUpdate. There is deliberately no per-frame hook. */
   readonly onFixedUpdate?: (self: Self<D, S>, ctx: Ctx) => void
+  /**
+   * The **movement slot** (ADR 0061): every sim tick, but *between* the host's two physics half-steps rather
+   * than before them, and handed the tick's input.
+   *
+   * This is where a game's locomotion lives. It is a separate hook from `onFixedUpdate` because it is a
+   * separate moment: the character has to resolve against where the platforms are now, not where they were.
+   */
+  readonly onLocomote?: (self: Self<D, S>, ctx: Ctx, cmd: InputCommand) => void
   /** A collider on this node was touched. Unity's OnCollision*, delivered to the node, not to the collider. */
   readonly onContact?: (self: Self<D, S>, ctx: Ctx, hit: Hit) => void
   /** Teardown. */
@@ -80,8 +90,10 @@ export interface ComponentSpec<D extends ParamDecls, S> {
  * `string[]`, so `self.params.loop` narrows inside the component's own code.
  */
 export const defineComponent = <const D extends ParamDecls, S = undefined>(spec: ComponentSpec<D, S>): ComponentDef<D> => {
+  // Every hook name, from the one list the runner also reads. Spelling them out here again is how a new hook
+  // ships silently broken: a component with only that hook looks like data and the runner skips it entirely.
   const hooks: ErasedHooks | undefined =
-    spec.init === undefined && spec.onAttach === undefined && spec.onFixedUpdate === undefined && spec.onContact === undefined && spec.onDetach === undefined
+    HOOK_NAMES.every((name) => spec[name] === undefined)
       ? undefined
       : // The one cast in the component system. Safe because `spec`'s hooks were checked against this very
         // `D` and `S` at the call site, and the runner only ever hands a hook the instance built from the

@@ -1,8 +1,8 @@
-import { vec3 } from '@mp/core'
+import { TICK_DT, vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, DEFAULT_TUNING, stepCharacter, TICK_DT } from './character'
+import { addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, DEFAULT_TUNING, stepCharacter } from './groundController'
 
 // TEMPORARY: measure what the character can actually do, so obstacle parameters are chosen against
 // measured limits rather than arithmetic. Delete after the numbers are recorded in docs.

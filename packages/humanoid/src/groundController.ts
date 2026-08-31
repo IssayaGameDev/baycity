@@ -1,16 +1,20 @@
-import { conjQuat, rotateVec3, vec3, type Quat, type Vec3 } from '@mp/core'
-import type { InputCommand } from '@mp/net'
+import { conjQuat, rotateVec3, vec3, type InputCommand, type Quat, type Vec3 } from '@mp/core'
 import { type CharacterBody, type CharacterOptions, type CollisionLayers, type PhysicsWorld } from '@mp/physics'
 
 /**
- * Kinematic character-controller library (stack-level, mode-agnostic — ADR pending).
- * Roblox-like locomotion (ADR 0012): fixed-apex jump, ground accel/decel, force-limited
- * air control. Run by each client for its own body (client-authoritative, ADR 0011).
- * Feel is data (`CharacterTuning`) — a mode/level can scale it per player at runtime.
- * Relocated out of `@mp/server/tps`; world *content* now comes from `@mp/content`.
+ * **One** ground controller: a kinematic capsule with Roblox-like locomotion for a third-person camera
+ * (ADR 0012) — fixed-apex jump, ground accel/decel, force-limited air control, riding moving surfaces.
+ *
+ * Run by each client for its own body (client-authoritative, ADR 0011). Feel is data (`CharacterTuning`),
+ * so a game can scale it per player at runtime.
+ *
+ * **Not "the" character controller**, which is what this file was called and what its header claimed
+ * (ADR 0062). It assumes a capsule, a ground plane, two horizontal axes and a jump button — reasonable for
+ * a 3D platformer and wrong for anything else. A game that wants different *mechanics* writes its own and
+ * attaches that instead (ADR 0061); this one is reached through `createLocomotion`.
  */
-export const TICK_RATE_HZ = 30
-export const TICK_DT = 1 / TICK_RATE_HZ
+// `TICK_RATE_HZ` and `TICK_DT` moved to `@mp/core` (ADR 0062): the simulation tick is the platform's,
+// not a character's, and every host was importing a package called `character` to find it.
 export const CHAR_RADIUS = 0.4
 export const CHAR_HALF_HEIGHT = 0.6
 

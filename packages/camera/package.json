@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mp/character": "workspace:*",
+    "@mp/humanoid": "workspace:*",
     "@mp/core": "workspace:*",
     "@mp/render-three": "workspace:*"
   }

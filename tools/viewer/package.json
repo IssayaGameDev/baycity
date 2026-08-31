@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@mode/parkour": "workspace:*",
-    "@mp/character": "workspace:*",
+    "@mp/humanoid": "workspace:*",
     "@mp/components": "workspace:*",
     "@mp/content": "workspace:*",
     "@mp/core": "workspace:*",

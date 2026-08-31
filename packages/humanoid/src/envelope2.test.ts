@@ -1,8 +1,8 @@
-import { axisAngleToQuat, vec3, type Vec3 } from '@mp/core'
+import { axisAngleToQuat, TICK_DT, vec3, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, stepCharacter, TICK_DT } from './character'
+import { addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, stepCharacter } from './groundController'
 
 /**
  * TEMPORARY. Measures the two things obstacle parameters need and arithmetic cannot give:

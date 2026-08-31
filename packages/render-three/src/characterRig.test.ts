@@ -1,4 +1,4 @@
-import { createAnimator, FOOT_Y, LIMB_LENGTH, PART_NAMES, RIG, restPose } from '@mp/character'
+import { createAnimator, FOOT_Y, LIMB_LENGTH, PART_NAMES, RIG, restPose } from '@mp/humanoid'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 

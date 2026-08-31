@@ -1,10 +1,14 @@
 import { mulQuat, quat, rotateVec3, vec3, type Quat, type Vec3 } from '@mp/core'
 
-import { CHAR_HALF_HEIGHT, CHAR_RADIUS } from './character'
+import { CHAR_HALF_HEIGHT, CHAR_RADIUS } from './groundController'
 
 /**
- * Blocky character rig — 11 rigid parts, no skinning, no art (Kodjo's call). Geometry is data here
- * and realized by a renderer (`@mp/render-three`), the same split `@mp/content` uses for levels.
+ * **One** skeleton: a blocky biped of 11 rigid parts, no skinning, no art (Kodjo's call). Geometry is data
+ * here and realized by a renderer (`@mp/render-three`), the same split `@mp/content` uses for levels.
+ *
+ * This file was `rig.ts` and this constant is `RIG` — a name that reads as "the rig the platform has"
+ * rather than "the one this avatar happens to be" (ADR 0062). `PartName` is a closed union of these eleven,
+ * so a differently-shaped avatar is a different rig and not a variation on this one.
  *
  * Everything is expressed in **root space, origin at the capsule's centre**, because that is what
  * the simulation reports as the character's position. Feet therefore sit at `-(halfHeight + radius)`

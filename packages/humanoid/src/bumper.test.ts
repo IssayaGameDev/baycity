@@ -1,18 +1,8 @@
-import { quat, vec3, type Quat, type Vec3 } from '@mp/core'
+import { quat, TICK_DT, vec3, type Quat, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsBody, type PhysicsWorld } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import {
-  addCharacter,
-  CHAR_HALF_HEIGHT,
-  CHAR_RADIUS,
-  DEFAULT_TUNING,
-  stepCharacter,
-  TICK_DT,
-  type CharacterState,
-  type PlatformFrame,
-  type PlatformPoseLookup,
-} from './character'
+import { addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, DEFAULT_TUNING, stepCharacter, type CharacterState, type PlatformFrame, type PlatformPoseLookup } from './groundController'
 
 /**
  * The launch path: `CharacterState.launch`, which is how a bumper throws the player (ADR 0032).

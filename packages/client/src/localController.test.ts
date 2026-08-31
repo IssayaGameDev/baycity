@@ -16,12 +16,15 @@ const makeWorld = (): LocalWorld => {
   }
 }
 
+/** One tick of running east. A command rather than positionals since ADR 0061. */
+const EAST = { moveX: 1, moveZ: 0, jump: false }
+
 describe('createLocalController', () => {
   it('advances authoritative state by the applied input (no correction)', () => {
     let t = 0
     const c = createLocalController({ world: makeWorld(), tickRateHz: 30, now: () => t })
-    c.step(1, 0)
-    c.step(1, 0)
+    c.step(EAST)
+    c.step(EAST)
     expect(c.state().get(ID)!.x).toBe(2)
   })
 
@@ -29,7 +32,7 @@ describe('createLocalController', () => {
     let t = 0
     const tick = 1000 / 30
     const c = createLocalController({ world: makeWorld(), tickRateHz: 30, now: () => t })
-    c.step(1, 0) // prev x=0, curr x=1, lastTickAt=0
+    c.step(EAST) // prev x=0, curr x=1, lastTickAt=0
 
     t = tick / 2 // halfway to the next tick
     expect(c.renderPositions().get(ID)!.x).toBeCloseTo(0.5, 5)

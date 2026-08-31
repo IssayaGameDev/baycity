@@ -29,7 +29,10 @@ export {
   dequantizeSpeed,
   SPEED_BOUND,
 } from './quantize'
-export type { InputCommand } from './input'
+// `InputCommand` moved to `@mp/core` (ADR 0061). It was never sent on the wire — a client-authoritative
+// client sends its resulting position, not its input (ADR 0011) — so it was only ever here because an earlier
+// design was going to transmit it. Keeping it here made the component system unable to name the type without
+// depending on the netcode.
 export type { PlayerState } from './state'
 export { encodeState, decodeState, STATE_GROUNDED, STATE_RISING, STATE_DEAD } from './state'
 export type { Welcome } from './welcome'

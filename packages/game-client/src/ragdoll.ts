@@ -1,4 +1,4 @@
-import { PART_NAMES, RIG, type PartName, type PartTransform } from '@mp/character'
+import { PART_NAMES, RIG, type PartName, type PartTransform } from '@mp/humanoid'
 import { clamp, slerpQuat, vec3, type Vec3 } from '@mp/core'
 import type { PhysicsBody, PhysicsWorld } from '@mp/physics'
 import { createLooseParts, THREE, type CharacterRigOptions } from '@mp/render-three'

@@ -1,4 +1,5 @@
 import type { Vec3 } from '@mp/core'
+import type { InputCommand } from '@mp/core'
 import type { ComponentData, NodeDrive, LoadedLevel, WorldNode } from '@mp/content'
 import type { AnyComponentDef, Registry } from './registry'
 import { readParams, type ParamDecls, type Params } from './params'
@@ -153,11 +154,12 @@ export interface ErasedHooks {
   readonly init?: (params: Params<ParamDecls>, ctx: Ctx) => unknown
   readonly onAttach?: (self: Self<ParamDecls, never>, ctx: Ctx) => void
   readonly onFixedUpdate?: (self: Self<ParamDecls, never>, ctx: Ctx) => void
+  readonly onLocomote?: (self: Self<ParamDecls, never>, ctx: Ctx, cmd: InputCommand) => void
   readonly onContact?: (self: Self<ParamDecls, never>, ctx: Ctx, hit: Hit) => void
   readonly onDetach?: (self: Self<ParamDecls, never>, ctx: Ctx) => void
 }
 
-const HOOK_NAMES = ['init', 'onAttach', 'onFixedUpdate', 'onContact', 'onDetach'] as const
+export const HOOK_NAMES = ['init', 'onAttach', 'onFixedUpdate', 'onLocomote', 'onContact', 'onDetach'] as const
 
 /** True when a definition has anything for the runner to call. */
 export const hasHooks = (def: AnyComponentDef): boolean =>
@@ -174,6 +176,18 @@ export interface ComponentRuntime {
   attach: (tick: number, timeMs: number, dt: number) => void
   /** Run every `onFixedUpdate`, in tree order then component order. Once per fixed tick. */
   fixedUpdate: (tick: number, timeMs: number, dt: number) => void
+  /**
+   * Run every `onLocomote` — the **movement slot** (ADR 0061).
+   *
+   * Its own call rather than part of `fixedUpdate` because it is a different *moment*. The host's tick is
+   * two-phase: the clock-driven pieces move, the physics world steps, the character resolves against where
+   * they are **now**, and the world steps again. Locomotion has to land between those two steps, and
+   * `fixedUpdate` runs before all of it.
+   *
+   * So this is not a convenience — putting locomotion in the general sweep resolves the character against
+   * last tick's platforms, which is the platform-carry jitter ADR 0012 and the two-phase step exist to avoid.
+   */
+  locomote: (tick: number, timeMs: number, dt: number, cmd: InputCommand) => void
   /**
    * Run `onContact` for the nodes owning these collider handles. Call it with what
    * `CharacterBody.collisions()` returned, after the step that produced them.
@@ -218,6 +232,18 @@ export interface PlayerEntity {
   /** Node id, for `self.node.id` and for a `nodeRef` to name. Conventionally `'player'`. */
   readonly id: string
   readonly components: readonly ComponentData[]
+  /**
+   * Definitions built for **this session**, tried before the registry (ADR 0061).
+   *
+   * The registry is built once at module load, and a player component's real work usually needs things that do
+   * not exist until a level is joined — the character above all. So a game builds its own definitions with
+   * those closed over and hands them in here, and the platform never has to learn what they were.
+   *
+   * The registry still holds a definition of the same type: that is the one a tool validates parameters
+   * against, and it is built with nothing bound. Only the *closure* differs, which is why the two cannot
+   * meaningfully drift.
+   */
+  readonly defs?: readonly AnyComponentDef[]
 }
 
 export const createComponentRuntime = (
@@ -272,6 +298,9 @@ export const createComponentRuntime = (
       ? undefined
       : { id: io.player.id, name: io.player.id, components: io.player.components, position: { x: 0, y: 0, z: 0 }, colliderHandles: [], scope: 0 }
 
+  /** By type, so the lookup above is one map hit rather than a scan per component. */
+  const sessionDefs = new Map<string, AnyComponentDef>((io.player?.defs ?? []).map((d) => [d.type, d]))
+
   const sources: readonly { node: WorldNode; components: readonly ComponentData[] }[] = [
     ...loaded.allNodes.map((node) => ({ node, components: node.components })),
     ...(playerNode === undefined ? [] : [{ node: playerNode, components: playerNode.components }]),
@@ -281,7 +310,8 @@ export const createComponentRuntime = (
     const here: Instance[] = []
     for (const c of components) {
       if (c.enabled === false) continue
-      const def = registry.get(c.type)
+      // A session definition wins over the registry's, and only for the player — see `PlayerEntity.defs`.
+      const def = (node === playerNode ? sessionDefs.get(c.type) : undefined) ?? registry.get(c.type)
       if (def === undefined || !hasHooks(def)) continue
       const params = readParams(def.params, c.params, `${node.id}.${c.type}`)
       const self: Self<ParamDecls, never> = {
@@ -326,6 +356,16 @@ export const createComponentRuntime = (
     fixedUpdate: (tick, timeMs, dt) => {
       setClock(tick, timeMs, dt)
       instances.forEach((instance, i) => run(i, instance.def.hooks?.onFixedUpdate))
+    },
+    locomote: (tick, timeMs, dt, cmd) => {
+      setClock(tick, timeMs, dt)
+      instances.forEach((instance, i) => {
+        const fn = instance.def.hooks?.onLocomote
+        if (fn === undefined) return
+        instanceOf = i
+        calls = 0
+        fn(instance.self, ctx, cmd)
+      })
     },
     contact: (handles) => {
       for (const handle of handles) {

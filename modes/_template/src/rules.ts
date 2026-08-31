@@ -1,4 +1,4 @@
-import { CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/character'
+import { LOCOMOTION_DEF, CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/humanoid'
 import { createRegistry, ENGINE_COMPONENTS, Hazard, PLAYER_COMPONENTS } from '@mp/components'
 import type { LoadedLevel } from '@mp/content'
 import { spawnFrom, type ModeSession, type ModeSessionOptions } from '@mp/mode'
@@ -18,7 +18,7 @@ import { spawnFrom, type ModeSession, type ModeSessionOptions } from '@mp/mode'
  * **Composed, not inherited.** Add `Checkpoint`, `Goal`, `Bumper` or your own from `@mp/components` as the
  * game needs them; the editor offers exactly what is listed here and nothing else.
  */
-export const TEMPLATE_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Hazard, ...PLAYER_COMPONENTS])
+export const TEMPLATE_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Hazard, ...PLAYER_COMPONENTS, LOCOMOTION_DEF])
 
 /** How far above a spawn node the character's origin sits — half the capsule, plus its cap. */
 export const STAND_OFFSET = CHAR_HALF_HEIGHT + CHAR_RADIUS
