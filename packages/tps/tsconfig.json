@@ -2,10 +2,11 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    // Pinned, exactly as `@mp/game-client` does. Left open, TypeScript auto-includes every `@types/*` it can
-    // find — and happy-dom (a dev dependency since ADR 0065) declares DOM globals of its own, which shadow the
-    // `lib` ones and make `inputs.test.ts` fail against a different `requestPointerLock`.
-    "types": ["node"]
+    // `vite/client` types `import.meta.glob`, which `@mp/game-client`'s level and asset bundling uses — and
+    // this package's `client.ts` pulls those in. Left open, TypeScript would also auto-include every
+    // `@types/*` it can find, and happy-dom (a dev dependency since ADR 0065) declares DOM globals of its own
+    // that shadow the `lib` ones.
+    "types": ["vite/client", "node"]
   },
   "include": ["src/**/*"]
 }

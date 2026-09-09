@@ -1,24 +1,39 @@
 /**
- * @mp/game-client — the browser client every game on the platform runs (ADR 0056).
+ * @mp/game-client — the services a browser game on this platform is built out of (ADR 0056, ADR 0065).
  *
- * `startGameClient(descriptor)` is the whole surface, and it returns a `GameClient` whose `dispose` puts
- * the page back (ADR 0065). A game supplies its `ModeDescriptor` and an
- * `index.html` with a `#view` canvas and a `#status` line; the stack supplies the scene, the netcode, the
- * views, the camera, the pause screen and the render loop.
+ * **Not a framework.** There is no `startGameClient` any more and nothing here decides what a game is. These
+ * are pieces you call, and a game's entry point is the thing that calls them.
  *
- * The pieces exported alongside it are the ones a *tool* may want without a client — the level source, the
- * asset database, the save adapter. Everything that makes the shipped game a third-person humanoid game lives
- * in `@mp/tps` now (ADR 0065), which a game imports directly.
+ * Two kinds of thing live here, and the difference is worth keeping:
+ *
+ * - **Must be uniform.** `createNetHost` (the room, the clock, the snapshot stream), `loadLevelInto` (the level
+ *   schema), `worldFromBase` (wire semantics). Every client in a room has to agree on these or nobody sees
+ *   anybody in the right place. This is the actual platform.
+ * - **Merely universal.** `createScene`, `createShell`, `createStatusLine`, `levelsFor`, `localProgress`. No
+ *   agreement needed; they are simply what any game rendered into a canvas wants, and writing them twice would
+ *   be a waste rather than a bug.
+ *
+ * The third-person humanoid game that used to live in here — rigs, ragdolls, the boom camera, the walk cycle,
+ * the debug pane — is `@mp/tps`, and `startTpsClient` is its ready-made assembly. Every game the stack ships
+ * calls that. A game that is *not* that game composes these services instead and needs nobody's permission.
  */
 
 export const GAME_CLIENT_VERSION = '0.0.0' as const
 
-export type { GameClient } from './client'
-export { startGameClient } from './client'
+export type { BasedTransform } from './baseFrame'
+export { worldFromBase } from './baseFrame'
+export type { NetHost, NetHostOptions } from './netHost'
+export { createNetHost } from './netHost'
+export type { LevelHost, LevelHostOptions } from './levelHost'
+export { loadLevelInto } from './levelHost'
+export type { Scene } from './scene'
+export { createScene } from './scene'
+export type { Shell, ShellOptions } from './shell'
+export { createShell } from './shell'
+export type { StatusLine } from './status'
+export { createStatusLine } from './status'
 export type { LevelSource } from './levels'
 export { DEFAULT_NAME, levelsFor } from './levels'
 export { ASSET_DB, CLIP_SOURCE, assetUrlOf, materialOf } from './assets'
 export type { PersistenceAdapter, PlayerProgress } from './persistence'
 export { localProgress } from './persistence'
-// The third-person game's own pieces moved to `@mp/tps` (ADR 0065). Not re-exported: a game that wants a
-// character rig imports the game that has one, rather than reaching through the platform for it.

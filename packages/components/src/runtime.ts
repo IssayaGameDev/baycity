@@ -312,6 +312,19 @@ export const createComponentRuntime = (
       if (c.enabled === false) continue
       // A session definition wins over the registry's, and only for the player — see `PlayerEntity.defs`.
       const def = (node === playerNode ? sessionDefs.get(c.type) : undefined) ?? registry.get(c.type)
+      /**
+       * A **player** component with no definition anywhere is always a bug, so it says so.
+       *
+       * A *level* node naming a type this build does not have is a different case and stays silent: levels
+       * outlive builds, and refusing to load one because a sibling app was not installed is worse than ignoring
+       * a node. The player's components are declared by the game itself, in the same build as the definitions —
+       * the only way to reach here is for the two lists to disagree.
+       *
+       * The symptom otherwise is a character that turns on the spot and will not move, with nothing in the
+       * console: declaring `Locomotion` while supplying a `Swing` definition dropped the movement silently.
+       */
+      if (node === playerNode && def === undefined)
+        console.error(`player component '${c.type}' (id '${c.id}') has no definition — the game's player list and its playerDefs disagree`)
       if (def === undefined || !hasHooks(def)) continue
       const params = readParams(def.params, c.params, `${node.id}.${c.type}`)
       const self: Self<ParamDecls, never> = {

@@ -1,4 +1,14 @@
-import { createAnimator, DEFAULT_GAIT, type Animator, type AnimatorFactory, type GaitTuning, type Pose } from '@mp/humanoid'
+import {
+  createAnimator,
+  DEFAULT_GAIT,
+  partTransforms,
+  type Animator,
+  type AnimatorFactory,
+  type GaitTuning,
+  type PartName,
+  type PartTransform,
+  type Pose,
+} from '@mp/humanoid'
 import type { EntityId, Vec3 } from '@mp/core'
 import { createCharacterRig, THREE, type CharacterRig } from '@mp/render-three'
 
@@ -115,6 +125,17 @@ export interface CharacterViews {
    * so its rigid bodies start in exactly the pose the animated rig was in and nothing jumps.
    */
   poseOf: (id: EntityId) => Pose | null
+  /**
+   * Every part of a character's rig **in world space**, as it was last drawn.
+   *
+   * `poseOf` alone is not enough to attach anything to a body: it is joint-local, so a caller needs the
+   * position the rig was drawn at too, and only this module knows that. Handing out the pose without the origin
+   * was the gap ADR 0066 found by trying to use its own API — the probe could not place a line's end on a hand.
+   *
+   * The drawn position, not the simulated one, which is the whole point: rigs are animated per rendered frame,
+   * so anything pinned to a hand has to follow the frame and not the tick.
+   */
+  partsOf: (id: EntityId) => Record<PartName, PartTransform> | null
   /**
    * The velocity last derived for a player, or `null` if it has no view yet. Reconstructed from the
    * smoothed planar speed and facing plus the smoothed vertical, which is what a peer's motion is known
@@ -270,6 +291,10 @@ export const createCharacterViews = (
       if (!isSelf) setLabel(r, name)
     },
     poseOf: (id) => chars.get(id)?.pose ?? null,
+    partsOf: (id) => {
+      const r = chars.get(id)
+      return r === undefined || r.pose === null ? null : partTransforms(r.pose, r.last)
+    },
     velocityOf: (id) => {
       const r = chars.get(id)
       return r === undefined ? null : { x: Math.sin(r.yaw) * r.speed, y: r.vy, z: Math.cos(r.yaw) * r.speed }

@@ -12,14 +12,21 @@
   "dependencies": {
     "@mp/camera": "workspace:*",
     "@mp/client": "workspace:*",
+    "@mp/components": "workspace:*",
+    "@mp/content": "workspace:*",
     "@mp/core": "workspace:*",
+    "@mp/game-client": "workspace:*",
     "@mp/humanoid": "workspace:*",
+    "@mp/i18n": "workspace:*",
     "@mp/mode": "workspace:*",
+    "@mp/net": "workspace:*",
     "@mp/physics": "workspace:*",
+    "@mp/render-pixi": "workspace:*",
     "@mp/render-three": "workspace:*",
     "tweakpane": "^4.0.5"
   },
   "devDependencies": {
-    "@tweakpane/core": "^2.0.0"
+    "@tweakpane/core": "^2.0.0",
+    "vite": "^6.0.0"
   }
 }

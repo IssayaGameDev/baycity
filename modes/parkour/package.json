@@ -14,14 +14,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mp/humanoid": "workspace:*",
     "@mp/components": "workspace:*",
     "@mp/content": "workspace:*",
     "@mp/core": "workspace:*",
     "@mp/game-client": "workspace:*",
+    "@mp/humanoid": "workspace:*",
     "@mp/mode": "workspace:*",
     "@mp/physics": "workspace:*",
-    "@mp/render-three": "workspace:*"
+    "@mp/render-three": "workspace:*",
+    "@mp/tps": "workspace:*"
   },
   "devDependencies": {
     "vite": "^6.0.0"

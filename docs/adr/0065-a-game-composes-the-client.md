@@ -1,7 +1,8 @@
 # ADR 0065 — A game composes the client, instead of being called by it
 
-Status: accepted, landing in phases. **Phases 0, 1 and 2** are built: every allocator owns its release, the
-third-person game is `@mp/tps`, and the netcode, the level and the page are three services.
+Status: accepted, landing in phases. **Phases 0-3** are built: every allocator owns its release, the
+third-person game is `@mp/tps` and starts itself, `@mp/game-client` is services with no entry point, and
+`ModeDescriptor` is 15 fields → 10. Phase 4 (swing's rope, the acceptance test) remains.
 
 ## Context
 
@@ -46,7 +47,7 @@ Landing in phases, each ending runnable:
 | **0** | Every allocator owns its release; `startGameClient` returns a handle. **Built.** |
 | **1** | Group three extracted to `@mp/tps`. **Built.** |
 | **2** | The netcode, the level and the page extracted as services. **Built.** |
-| 3 | Inversion. `_template/main.ts` composes; the descriptor drops to ~6 fields. |
+| **3** | `startTpsClient` in `@mp/tps`; `@mp/game-client` is services only; descriptor 15 → 10. **Built.** |
 | 4 | Swing's rope, as the acceptance test: game code touching Three and Rapier directly, no new field. |
 
 Phase 4 is the gate on phase 3. If the rope needs a sixteenth field, phase 3 was wrong.
@@ -137,13 +138,63 @@ moves into a game's own `main.ts`, where all fifteen are local.
 
 `client.ts` 947 → 750 lines.
 
+### Phase 3: the split, not the straight inversion
+
+Reading the whole composition changed the plan, and the plan as first described was wrong. `main.ts` was
+estimated at ~70 lines; the composition is ~700. And all three games are *the same game*, so inverting straight
+would have produced **three near-identical 700-line files** — which is what ADR 0056 existed to prevent, at a
+smaller scale.
+
+So the inversion went one level down instead of into every game:
+
+- **`@mp/game-client` is services with no entry point.** `startGameClient` is gone. What is left is
+  `createNetHost`, `loadLevelInto`, `worldFromBase` (must be uniform), and `createScene`, `createShell`,
+  `createStatusLine`, `levelsFor`, `localProgress` (merely universal). Nothing in it decides what a game is.
+- **`@mp/tps` gained `startTpsClient(options)`** — the whole composition, once, built out of those services.
+  Every game the stack ships calls it, because every game the stack ships *is* the third-person humanoid game.
+- A game that is not that game **stops calling it** and composes the services in its own `main.ts`. That is
+  ~700 lines, and `packages/tps/src/client.ts` is the worked example. Expensive, and honest about it: it buys
+  direct access to Three and Rapier with nothing in the way, and no permission required.
+
+**The wall was never "a game passes a descriptor". It was "the descriptor is the only door."** This puts a
+second door beside it.
+
+The dependency direction flipped with it: `@mp/tps` → `@mp/game-client`, where it used to be the reverse.
+`@mp/game-client` dropped `@mp/camera`, `@mp/humanoid` and `tweakpane` entirely.
+
+### What `ModeDescriptor` is for now
+
+**One game as the *tools* see it** — that is the membership rule, and it is what took it from 15 fields to 10.
+A field earns its place by having more than one consumer: the editor authors and play-tests, the viewer
+inspects, the client runs.
+
+Measured, per field, outside `modes/`:
+
+| Field | Readers | Verdict |
+| --- | --- | --- |
+| `name`, `registry`, `gizmos`, `spawn`, `session`, `label` | client + editor + viewer | stay |
+| `tuning`, `player`, `playerDefs`, `actions` | client + **editor's play-test** | stay |
+| `gait`, `animator`, `states`, `playerStates` | client only | → `TpsClientOptions` |
+| `standOffset` | **none** | deleted |
+
+`standOffset` was read by nothing. Every game declared it and then passed its own `STAND_OFFSET` to its own
+`spawnOf`; the field was pure ceremony.
+
+The four that stay are the interesting result: they are fields **because the editor play-tests in place**,
+which is a real platform capability. That is a legitimate reason for a shared field, and it is a different
+reason from the one that produced the other five.
+
 ## Consequences
 
 - Nothing calls `dispose`. The page owns the client for its whole life and the browser reclaims everything on
   unload. It is written now because teardown is only cheap while the allocation is being written, and phases
   1-3 move every allocation in this file.
 - It is also what a game-to-game swap inside one page needs later, which is not built and not planned.
-- `await startGameClient(MODE)` still compiles unchanged in all three games — the return value is ignored.
+- `await startTpsClient(MODE)` in all three games. Parkour and swing are still three lines, because they are
+  still the shipped game; `_template/main.ts` grew to carry `gait` and `animator` as arguments plus the
+  documentation for what to do when `startTpsClient` is not enough.
+- **All four apps build** (`vite build` on parkour, swing, template and the editor), which the typecheck
+  cannot tell you: it is the only check that module resolution across the flipped dependency actually works.
 - **happy-dom** is now a root dev dependency, applied per file (`// @vitest-environment happy-dom`) rather
   than suite-wide, so the other 78 files stay in Node and stay fast. It costs ~1.3 s of setup per DOM file.
 - 5 new tests. The views empty their scene and forget their characters; and four on `Inputs.dispose` —
@@ -189,7 +240,10 @@ away. Phase 4 gets the same evidence by making the rope the exam instead of the 
   needs a toolchain on Windows and is not worth one assertion. The fix is verified by reading only.
 - **The debug pane's `dispose` is untested.** It would need a twelve-field fake of the whole client's live
   objects to reach one `pane.dispose()`, and it is dev tooling that no player sees.
-- **`client.ts` is still 750 lines**, and phases 3-4 are the rest of this ADR.
+- **The composition is still ~700 lines**, now `packages/tps/src/client.ts`. It is not smaller; it moved to
+  where it is honest. Phase 4 is the rest of this ADR.
+- **A game between the two doors has nothing.** Swing's rope will either fit `TpsClientOptions` or cost 700
+  lines. Phase 4 finds out which, and if the answer is "neither", phase 3 is wrong.
 - **`pnpm -s typecheck` hides recursive errors, and `| head` hides the exit code.** Phase 1 was committed
   (`3c40cbd`) with two unused-import errors in `client.ts` because both were true at once: `-s` suppressed
   `pnpm -r run typecheck`'s output, and piping the command into `head` made the pipeline's status `head`'s. The

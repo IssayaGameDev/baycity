@@ -35,8 +35,16 @@ export interface DebugPaneOptions {
   onDeath: () => void
 }
 
-/** What the pane hands back: the one call that takes it off the page again. */
+/**
+ * What the pane hands back.
+ *
+ * `pane` is the tweakpane root, so **a game can add its own folder** (ADR 0067). Every value in here is
+ * something the platform happens to own; a game's own feel — a rope's stiffness, a dash's length — is owned by
+ * the game, and tuning by eye is the only way anybody sets those numbers (ADR 0018). Handing over the root is
+ * the same move as handing over the scene: no concept per idea, and the pane never learns what a rope is.
+ */
 export interface DebugPane {
+  readonly pane: Pane
   dispose: () => void
 }
 
@@ -263,6 +271,7 @@ export const installDebugPane = (opts: DebugPaneOptions): DebugPane => {
   df.addBinding(assembleTiming, 'height', { min: 0.2, max: 8, step: 0.1, label: 'drop from m' })
 
   return {
+    pane,
     dispose: () => {
       // Tweakpane's own teardown, then the host element it was given. Both, because `pane.dispose()` leaves
       // the div behind and the div is what carries the fixed position and z-index.

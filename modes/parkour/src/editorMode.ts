@@ -3,7 +3,7 @@ import { Bumper, Checkpoint, Death, Goal, Hazard } from '@mp/components'
 import type { ModeDescriptor } from '@mp/mode'
 import { MARKER_COLORS } from '@mp/render-three'
 
-import { PARKOUR_REGISTRY, STAND_OFFSET, parkourSession, spawnOf } from './rules'
+import { PARKOUR_REGISTRY, parkourSession, spawnOf } from './rules'
 
 /**
  * Parkour as the platform sees it (ADR 0052) — what a tool loads to author or play-test a parkour level.
@@ -20,7 +20,6 @@ export const PARKOUR_MODE: ModeDescriptor = {
   label: 'Parkour',
   registry: PARKOUR_REGISTRY,
   tuning: DEFAULT_TUNING,
-  standOffset: STAND_OFFSET,
   /**
    * Which colour a tool draws over each rule's node.
    *

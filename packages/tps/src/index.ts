@@ -15,6 +15,19 @@
 
 export const TPS_VERSION = '0.0.0' as const
 
+/**
+ * The whole game, started — what every game the stack ships calls from its `main.ts`.
+ *
+ * It is here rather than in `@mp/game-client` because it is not the platform: it is one game, and its options
+ * are its own parameters rather than fields punched through a shared contract (ADR 0065). The pieces below are
+ * exported beside it so a game can take some of it and not the rest, and `@mp/game-client`'s services are what
+ * a game composes when it wants none of it.
+ */
+export type { Peer, TpsClient, TpsClientOptions } from './client'
+export { startTpsClient } from './client'
+export type { FrameHooks } from './frameHooks'
+export { createFrameHooks } from './frameHooks'
+
 export type { Avatars, AvatarsOptions, PeerFrame, SelfFrame } from './avatars'
 export { createAvatars } from './avatars'
 export type { CharacterPlacement, CharacterViews } from './characterView'

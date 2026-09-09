@@ -1642,6 +1642,12 @@ const startPlay = (): void => {
                           character: () => char,
                           tuning: () => mode.tuning,
                           platforms: () => loaded?.basePose,
+                          // The play-test has a real world and a real level, so a game's component gets the
+                          // same two handles here as it does in the game (ADR 0066). Anything it draws will
+                          // not appear — the editor has no frame hook of its own to offer — which is the
+                          // known limit of play-in-place.
+                          world: () => world,
+                          level: () => loaded,
                         }),
                       }),
                 },

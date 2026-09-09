@@ -1,4 +1,5 @@
-import type { AnimatorFactory, CharacterState, CharacterTuning, GaitTuning, PlatformPoseLookup } from '@mp/humanoid'
+import type { CharacterState, CharacterTuning, PlatformPoseLookup } from '@mp/humanoid'
+import type { PhysicsWorld } from '@mp/physics'
 import type { ComponentDef, Effects, Registry } from '@mp/components'
 import type { ComponentData, LoadedLevel, WorldNode } from '@mp/content'
 import type { Vec3 } from '@mp/core'
@@ -72,10 +73,38 @@ export interface PlayerHost {
   readonly tuning: () => CharacterTuning
   /** Where the level's clock-driven pieces are this tick, so a rider is carried. */
   readonly platforms: () => PlatformPoseLookup | undefined
+  /**
+   * The physics world this session runs in, or `null` before there is one (ADR 0066).
+   *
+   * The whole of it: cast against it, add bodies to it, remove them again. **The platform learns nothing** by
+   * handing this over, which is the difference between this and a descriptor field — a rope, a grapple, a
+   * portal and a laser all want exactly `castSphere` and `addDynamicBody`, and none of them is a concept the
+   * stack has to hold.
+   *
+   * Not a new coupling: `character()` already returns a `CharacterState` whose `body` is a physics type, so
+   * this contract has always leaked `@mp/physics`. It is now honest about it.
+   */
+  readonly world: () => PhysicsWorld | null
+  /**
+   * The instantiated level, or `null` before one is loaded (ADR 0066).
+   *
+   * `nodeOf(colliderHandle)` is the reason this is here: a cast returns a collider, and asking "what did I
+   * hit, and what is authored on it" is how a game acts on **tagged** geometry rather than on any surface at
+   * all. `markers`, `allNodes` and `findNode` are the rest of the same question.
+   */
+  readonly level: () => LoadedLevel | null
 }
 
 /**
- * One game, as the platform sees it.
+ * One game, as the **tools** see it.
+ *
+ * That is the whole membership rule since ADR 0065, and it is why this shrank from fifteen fields to ten. A
+ * field belongs here when more than one consumer needs it: the editor authors levels for a game and play-tests
+ * them in place, the viewer inspects them, and the client runs them. `gait`, `animator`, `states`,
+ * `playerStates` and `standOffset` had exactly one reader each — the client — and existed as fields only
+ * because `startGameClient` was the sole door into it. They are `TpsClientOptions` now (`@mp/tps`), which is
+ * an argument list rather than a contract, and a game that wants something else changes its own `main.ts`
+ * instead of asking for a sixteenth field.
  *
  * `registry` is **composed**, not inherited: the engine's components plus whichever of the shared gameplay
  * library this game wants plus its own. A racing game that has no use for `Bumper` simply does not list it,
@@ -89,13 +118,13 @@ export interface ModeDescriptor {
   readonly label: string
   /** Engine components + the shared ones this game uses + its own. */
   readonly registry: Registry
-  /** How a character moves here. A game with different locomotion supplies different numbers. */
-  readonly tuning: CharacterTuning
-  /**
-   * How far above a spawn or checkpoint node the character's origin sits. A rig-shape constant, so a game
-   * with a differently-sized character is not stuck with the capsule's.
+/**
+   * How a character moves here. A game with different locomotion supplies different numbers.
+   *
+   * Stays a field because the **editor** play-tests in place and needs it. A client-only value would have
+   * moved to `TpsClientOptions` with the rest (ADR 0065).
    */
-  readonly standOffset: number
+  readonly tuning: CharacterTuning
   /**
    * Component type → gizmo colour (`0xrrggbb`), for the markers a tool draws over a rule's node.
    *
@@ -117,6 +146,8 @@ export interface ModeDescriptor {
    *
    * Absent means a player with no components of its own, which is every game today. What one of these can do
    * is read the character and push it (`Ctx.character`) — see `CharacterAccess`.
+   *
+   * A field rather than a client argument because the editor's play-test attaches these too (ADR 0065).
    */
   readonly player?: readonly ComponentData[]
   /**
@@ -144,45 +175,15 @@ export interface ModeDescriptor {
    */
   readonly playerDefs?: (host: PlayerHost) => readonly ComponentDef[]
   /**
-   * How this game's characters are animated (ADR 0063).
+   * **Gone since ADR 0065**: `gait`, `animator`, `states`, `playerStates`, `standOffset`.
    *
-   * `gait` is the feel of the shared biped cycle — stride, bob, lean, arm swing — and was one object for
-   * every game on the platform, live on the debug pane and reachable by nobody else. Absent keeps the shipped
-   * numbers.
+   * Each had one reader — the client — and each is now a parameter of `startTpsClient` in `@mp/tps`, passed
+   * from the game's own `main.ts`. `standOffset` had no reader at all: every game declared it and then handed
+   * its own `STAND_OFFSET` to its own `spawnOf`, so the field was never read by anything.
    *
-   * `animator` is the seam: a factory the host calls per character. Absent uses the shared procedural gait,
-   * which is what every game does today. A game with movement of its own supplies its own — normally by
-   * wrapping `createAnimator` and overriding the pose for a state the shared cycle has never heard of.
-   *
-   * **Nothing was added to `AnimationInput` for that**, deliberately: the factory is the game's own code, so
-   * it closes over the game's own state (ADR 0061's trick), and the platform never carries a flag it cannot
-   * interpret. The cost is that such a state is **local only** — component state is not serialized, so a
-   * peer's dash shows as an ordinary run until whatever it does goes on the wire.
+   * The rule that removed them: a field here is a contract shared with two tools that do not care about
+   * animation. An argument to the game a `main.ts` calls is not.
    */
-  readonly gait?: GaitTuning
-  readonly animator?: AnimatorFactory
-  /**
-   * States of this game's own that have to reach **other players** (ADR 0064), in order, at most five.
-   *
-   * A game-supplied animator reads the local player's state by closure (ADR 0063), and cannot do that for a
-   * peer — component state never goes on the wire (ADR 0059) — so a peer mid-dash was drawn running. These
-   * names claim the spare bits of the state byte, which are already being sent: order is the bit order, so
-   * **appending is safe and reordering is not**.
-   *
-   * Five because that is what is spare. A sixth needs a wider field and real bytes, which is a budget
-   * decision rather than a free one.
-   *
-   * The platform never learns what a name means. It asks `playerStates` which are set, packs them, and hands
-   * the set back for a peer — see `AnimatorFactory`, which is where they are read.
-   */
-  readonly states?: readonly string[]
-  /**
-   * Which of `states` are true for the local player right now.
-   *
-   * Called once per outgoing state message. A game closes over whatever it needs, the same way `playerDefs`
-   * does — usually its own component's flag.
-   */
-  readonly playerStates?: () => ReadonlySet<string>
   /** Begin a rules session over this level. */
   readonly session: (loaded: LoadedLevel, opts?: ModeSessionOptions) => ModeSession
 }

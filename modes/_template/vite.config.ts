@@ -5,7 +5,7 @@ import { defineConfig } from 'vite'
  * silently steals the first one's. Parkour is 5174, swing 5175; this one is deliberately in the same range so
  * a clash is obvious rather than mysterious.
  *
- * `es2022` for the top-level await `startGameClient` needs. The `allowedHosts` entry is for quick tunnels:
+ * `es2022` for the top-level await `startTpsClient` needs. The `allowedHosts` entry is for quick tunnels:
  * they present an arbitrary `*.trycloudflare.com` Host header, which Vite 6 rejects by default.
  */
 export default defineConfig({

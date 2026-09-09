@@ -1464,6 +1464,156 @@
           "params": {}
         }
       ]
+    },
+    {
+      "id": "swingbeams",
+      "name": "swing test beams",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "sb0",
+          "name": "beam-1",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 10,
+              "z": 10
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 7,
+                    "y": 0.3,
+                    "z": 0.3
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        },
+        {
+          "id": "sb1",
+          "name": "beam-2",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 11,
+              "z": 26
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 7,
+                    "y": 0.3,
+                    "z": 0.3
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        },
+        {
+          "id": "sb2",
+          "name": "beam-3",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 12,
+              "z": 40
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 7,
+                    "y": 0.3,
+                    "z": 0.3
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        },
+        {
+          "id": "sb3",
+          "name": "beam-4",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 10,
+              "z": 54
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 7,
+                    "y": 0.3,
+                    "z": 0.3
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

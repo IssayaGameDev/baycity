@@ -68,6 +68,8 @@ export interface Avatars {
   obstacles: (ownCollider: number) => number[]
   /** The pose a rig was last drawn in — what a corpse is seeded from, and what an assembly falls toward. */
   poseOf: CharacterViews['poseOf']
+  /** The same, in world space, for anything a game wants to pin to a body (ADR 0066). */
+  partsOf: CharacterViews['partsOf']
   /** Peers who left mid-teleport, for the caller that knows they teleported. */
   resetMotion: CharacterViews['resetMotion']
   dispose: () => void
@@ -143,6 +145,7 @@ export const createAvatars = ({
 
   return {
     poseOf: views.poseOf,
+    partsOf: views.partsOf,
     resetMotion: views.resetMotion,
 
     assembling: () => assembly !== null,

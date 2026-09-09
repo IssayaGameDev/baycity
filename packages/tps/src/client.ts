@@ -2,7 +2,6 @@ import { createLocalController, type LocalController, type LocalWorld } from '@m
 import {
   clamp,
   createSimClock,
-  rotateVec3,
   startFixedLoop,
   TICK_DT,
   TICK_RATE_HZ,
@@ -16,6 +15,9 @@ import { packStates, unpackStates, STATE_DEAD, STATE_GROUNDED, STATE_RISING } fr
 import { createPhysicsWorld, initPhysics, type PhysicsBody, type PhysicsWorld } from '@mp/physics'
 import {
   addCharacter,
+  type AnimatorFactory,
+  type PartName,
+  type PartTransform,
   CHAR_HALF_HEIGHT,
   CHAR_RADIUS,
   type CharacterState,
@@ -23,18 +25,39 @@ import {
   DEFAULT_GAIT,
   type GaitTuning,
 } from '@mp/humanoid'
-import { createOrbitCamera, type OcclusionQueries } from '@mp/camera'
+import { createOrbitCamera, type OcclusionQueries, type OrbitCamera } from '@mp/camera'
 import { PLAYER_NODE_ID, type ModeDescriptor, type PlayerHost } from '@mp/mode'
-import { type LoadedLevel } from '@mp/content'
-import { Death, characterAccess, componentOn, createComponentRuntime, readParams, type ComponentRuntime } from '@mp/components'
-import { BODY_LAYERS, createAvatars, createInputs, installDebugPane, type Avatars, type AssemblyTiming } from '@mp/tps'
-import { loadLevelInto, type LevelHost } from './levelHost'
-import { createNetHost } from './netHost'
-import { createScene } from './scene'
-import { createShell, type Shell } from './shell'
-import { createStatusLine } from './status'
-import { levelsFor } from './levels'
-import { localProgress } from './persistence'
+import { type ComponentData, type LoadedLevel } from '@mp/content'
+import {
+  Death,
+  characterAccess,
+  componentOn,
+  createComponentRuntime,
+  readParams,
+  type ComponentRuntime,
+  type Registry,
+} from '@mp/components'
+import {
+  createNetHost,
+  createScene,
+  createShell,
+  createStatusLine,
+  levelsFor,
+  loadLevelInto,
+  localProgress,
+  worldFromBase,
+  type LevelHost,
+  type Shell,
+} from '@mp/game-client'
+
+import type { THREE } from '@mp/render-three'
+
+import { createAvatars, type Avatars } from './avatars'
+import { createFrameHooks } from './frameHooks'
+import { type AssemblyTiming } from './assemble'
+import { createInputs } from './inputs'
+import { BODY_LAYERS } from './layers'
+import { installDebugPane, type DebugPane } from './pane'
 
 /**
  * The game client, for any game on the platform (ADR 0056).
@@ -64,7 +87,30 @@ import { localProgress } from './persistence'
  * file is about to be taken apart into services, and each one carries its own teardown from the start rather
  * than having one reconstructed for it later.
  */
-export interface GameClient {
+/** One other player, as this frame drew them. */
+export interface Peer {
+  id: EntityId
+  /** World space, already out of any platform frame it was riding. */
+  position: Vec3
+  /** Facing (radians) as sent — it follows their *input*, not their velocity (v9). */
+  yaw: number
+  /** This game's own states that are set for them, off the spare flag bits (ADR 0064). */
+  states: ReadonlySet<string>
+}
+
+/**
+ * A running third-person client, and the keys to the things it built.
+ *
+ * **Returning handles is not the same smell as growing `TpsClientOptions`** (ADR 0066). An option is a game
+ * declaring a feature *to* the platform, and the platform then has to hold a concept per idea — which is how
+ * `ModeDescriptor` reached fifteen fields. These are the engine's own objects, handed over: a game draws with
+ * the scene, casts with the world, and the platform learns nothing about what it drew or why.
+ *
+ * The pairing that matters is `scene` + `onFrame`. A component can already run logic every tick and move the
+ * character (ADR 0061), so simulation was never the gap; **drawing was**, because component hooks are all
+ * fixed-tick and a thing drawn at 30 Hz attached to a rig animated per frame visibly comes apart.
+ */
+export interface TpsClient {
   /**
    * Stop the loops, leave the room, release the DOM and free the physics world.
    *
@@ -73,9 +119,119 @@ export interface GameClient {
    * starts. Safe to call twice.
    */
   dispose: () => void
+  /**
+   * The Three scene, for anything the game draws itself.
+   *
+   * Add and remove as you like; nothing here tracks it. What the client owns it disposes, and what a game adds
+   * is a game's to dispose — `dispose` does not walk the scene looking for strangers.
+   */
+  readonly scene: THREE.Scene
+  /**
+   * Run `fn` once per **rendered** frame, with the frame's delta in seconds. Returns the call that removes it.
+   *
+   * Additive, unlike `ThreeStage.setRenderStep`, which replaces — the nametag pass already holds that
+   * (ADR 0065). Called at the **end** of the frame, after the level is posed, the bodies are drawn and the
+   * camera is placed, so `poseOf` and `camera` both report this frame rather than the last.
+   */
+  onFrame: (fn: (dt: number) => void) => () => void
+  /**
+   * Every part of a character's rig, **in world space, as it was last drawn**.
+   *
+   * Drawn rather than simulated, which is the point: rigs are animated per rendered frame, so anything pinned
+   * to a hand has to follow the frame and not the 30 Hz tick. `null` for a character with no rig yet.
+   *
+   * Pair it with `onFrame`. Reading it from a component's `onFixedUpdate` would give the same answer three or
+   * four frames running.
+   */
+  partsOf: (id: EntityId) => Record<PartName, PartTransform> | null
+  /** Our own id, or `null` before the server has assigned one — which is most of the first second. */
+  id: () => EntityId | null
+  /**
+   * Every other player as this frame drew them (ADR 0068).
+   *
+   * Position and facing are already **out of any moving platform's frame** (ADR 0021) and on the delayed
+   * timeline the rig was drawn on, so a game reading this sees exactly what the eye sees. `states` is this
+   * game's own bits off the flags byte (ADR 0064) — the whole of what a peer can tell you about itself beyond
+   * where it is.
+   *
+   * Rebuilt once per frame from what the render pass already computed, not sampled again: two samples in one
+   * frame land on slightly different interpolation times, and a rope drawn from one while the body was drawn
+   * from the other would hang off the hand.
+   *
+   * Empty until the first snapshot. Never includes us.
+   */
+  peers: () => readonly Peer[]
+  /** The boom camera, for a game that wants to change how it behaves. Its params are live. */
+  readonly camera: OrbitCamera
+  /**
+   * The debug pane's root, for a game to add a folder of its own (ADR 0067).
+   *
+   * A game's feel is the game's, and feel is set by eye rather than by argument (ADR 0018) — so the numbers
+   * that matter most to a new mechanic are exactly the ones with nowhere to live before this.
+   */
+  readonly debugPane: DebugPane['pane']
+  /** This client's physics world, or `null` before the first snapshot brought a level. */
+  world: () => PhysicsWorld | null
+  /** The instantiated level, or `null` before there is one. */
+  level: () => LoadedLevel | null
 }
 
-export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient> => {
+/**
+ * Everything this game is, as arguments.
+ *
+ * A superset of what `ModeDescriptor` carries plus the four things only a client reads (`gait`, `animator`,
+ * `states`, `playerStates`), which is why they left the descriptor in ADR 0065: a field on the platform's
+ * game-contract existed only because there was no other door. Here they are simply parameters of the
+ * third-person game, which is what they always were.
+ *
+ * A game that wants something this cannot express does not add a field — it stops calling this and composes
+ * `@mp/game-client`'s services itself, which is roughly this file with its own opinions instead of these.
+ */
+export interface TpsClientOptions {
+  /** Which game: the level filter, the save key, and one of the two matchmaking filters. */
+  name: string
+  /** The component types this game installs — what validates and instantiates a level. */
+  registry: Registry
+  /** The rules, headless, so the editor's play-in-place runs these and not a second copy (ADR 0052). */
+  session: ModeDescriptor['session']
+  /** Where an arrival stands. Spread by id, so two players joining at once do not stack. */
+  spawn: ModeDescriptor['spawn']
+  /** Locomotion feel. Copied on the way in — the debug pane binds the copy (ADR 0057). */
+  tuning: CharacterTuning
+  /** The player's own components (ADR 0059). A level authors the world; who is playing is the game's. */
+  player?: readonly ComponentData[]
+  /** Their definitions, built per session against the live character (ADR 0061). */
+  playerDefs?: ModeDescriptor['playerDefs']
+  /** This game's own controls, by name (ADR 0061). The names are the game's; the client only maps keys. */
+  actions?: ModeDescriptor['actions']
+  /** Retunes the shared walk cycle — stride, bob, lean, arm swing. Absent is the shipped biped (ADR 0063). */
+  gait?: GaitTuning
+  /** **Replaces** the shared cycle. Wrap `createAnimator` to add a state to it (ADR 0063). */
+  animator?: AnimatorFactory
+  /**
+   * States of this game's own that have to reach other players, **in bit order** (ADR 0064).
+   *
+   * Five are free — they ride the spare bits of a flags byte already being sent. Appending is safe;
+   * reordering silently reinterprets every peer's bits. A sixth throws.
+   */
+  states?: readonly string[]
+  /** Which of them are set for the local player right now. Closes over whatever the game likes. */
+  playerStates?: () => ReadonlySet<string>
+}
+
+/**
+ * The third-person game the platform ships, started (ADR 0065).
+ *
+ * This was `@mp/game-client`'s `startGameClient`, and moving it here is the whole point of ADR 0065: it is not
+ * the platform, it is one game — a blocky humanoid seen over its own shoulder, with a boom camera, a ragdoll
+ * death and a walk cycle. Every game the stack ships happens to be that game, so it lives here **once** rather
+ * than being copied into three `main.ts` files that would immediately drift.
+ *
+ * What it is built out of is `@mp/game-client`'s services — the status line, the scene, the room and clock,
+ * the level, the page, the fixed loop. Those are the platform, and a game that is not this game composes them
+ * directly.
+ */
+export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient> => {
 
   /**
    * Which level: `?level=<name>` picks a file from `content/levels/`, no param gets `default.json`. A typo
@@ -168,26 +324,6 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
    * physics queries once a world exists, and the character position to orbit.
    */
   const orbit = createOrbitCamera(stage.camera)
-  /**
-   * A peer's world transform from what the wire carried (v10, ADR 0021). While `base` is non-zero the
-   * position and facing are in that clock-driven piece's frame, so they have to be brought back out
-   * through the piece's pose — and *which* pose matters: `rendered` for anything drawn, so the rider sits
-   * still on the deck the eye can see, and the sim tick's for the collision proxy, which resolves against
-   * where physics has the deck.
-   *
-   * Falls back to treating the values as world-space if the piece is unknown, which is what a client that
-   * somehow lacks it should do: slightly wrong beats nowhere.
-   */
-  const worldFromBase = (e: { position: Vec3; yaw: number; base: number }, rendered: boolean): { position: Vec3; yaw: number } => {
-    const pose = e.base === 0 ? undefined : loaded?.basePoseOf(e.base - 1, rendered ? 'render' : 'tick')
-    if (pose === undefined) return { position: e.position, yaw: e.yaw }
-    const p = rotateVec3(pose.rotation, e.position)
-    return {
-      position: vec3(pose.position.x + p.x, pose.position.y + p.y, pose.position.z + p.z),
-      yaw: e.yaw + yawOf(pose.rotation),
-    }
-  }
-
   /**
    * The sun-shadow switch, kept because a hole in a surface leaves its *shading* behind (ADR 0055).
    *
@@ -384,6 +520,11 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
       character: () => char,
       tuning: () => tuning,
       platforms: () => loaded?.basePose,
+      // The world and the level themselves (ADR 0066), so a game's component can cast against the one and ask
+      // the other what it hit. Getters for the same reason as the rest: both outlive nothing here, but a
+      // component built before a respawn must not capture a stale one.
+      world: () => physicsWorld,
+      level: () => loaded,
     }
     // The player's own components come from the descriptor, not from the level (ADR 0059): a level authors
     // the world, and who is playing is the game's business. Their *definitions* can come from the game too
@@ -475,7 +616,7 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
         let mirror = remotes.get(e.id)
         if (mirror === undefined) {
           mirror = world.addKinematicBody({
-            position: worldFromBase(e, false).position,
+            position: worldFromBase(loaded, e, false).position,
             shape: { kind: 'capsule', halfHeight: CHAR_HALF_HEIGHT, radius: CHAR_RADIUS },
             // A body, so corpses pass through it: a dead peer's mirror stands invisibly at their death
             // point and their own parts were landing on it.
@@ -483,7 +624,7 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
           })
           remotes.set(e.id, mirror)
         }
-        mirror.setNextKinematicTranslation(worldFromBase(e, false).position)
+        mirror.setNextKinematicTranslation(worldFromBase(loaded, e, false).position)
       }
       for (const [rid, mirror] of remotes)
         if (!seen.has(rid)) {
@@ -578,6 +719,16 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
     })
   }
 
+  /** What a game asked to have run every rendered frame (ADR 0066). */
+  const frameHooks = createFrameHooks()
+  /**
+   * Every peer as the last render pass drew them (ADR 0068).
+   *
+   * Rebuilt in place each frame rather than reallocated, and read by `peers()` — so a frame hook sees the same
+   * interpolation instant the bodies were drawn at.
+   */
+  let peerFrame: Peer[] = []
+
   // --- render ---
   let ownPos: Vec3 = { x: 0, y: 1, z: 0 }
   let ownState: CharacterState | null = null // set once the local sim exists; drives our own animation
@@ -595,6 +746,7 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
 
     // Own character: our authoritative local sim, render-smoothed. Peers: interpolated.
     const seen = new Set<EntityId>()
+    peerFrame = []
     const myId = net.id()
     if (myId !== null && controller) {
       seen.add(myId)
@@ -631,7 +783,11 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
         // what pins a rider to a moving platform instead of leaving them 100 ms behind it (ADR 0021).
         // Everything below uses this, not `e.position`: the rig, the corpse it is seeded from, the spawn
         // assembly's targets.
-        const at = worldFromBase(e, true)
+        const at = worldFromBase(loaded, e, true)
+        // What a game can read about them this frame (ADR 0068). Recorded here because this is where the base
+        // frame has just been undone and the timeline is the one the rig is about to be drawn on.
+        const peerStates = unpackStates(mode.states, e.flags)
+        peerFrame.push({ id: e.id, position: at.position, yaw: at.yaw, states: peerStates })
         // Peers: facing, locomotion speed and grounded/rising all come off the wire (v8/v9) — a position
         // curve cannot tell facing from heading, nor walking from being carried. Only the vertical is
         // still derived, and it is the one place where carry riding along in it does no harm: the joint
@@ -658,7 +814,7 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
             carry: e.base === 0 ? null : loaded?.baseCarry(e.base - 1, e.position) ?? null,
             // Their game states, out of the spare flag bits (ADR 0064). This is the whole of what makes a
             // peer's dash look like a dash rather than a run.
-            states: unpackStates(mode.states, e.flags),
+            states: peerStates,
             base: e.base,
             name: net.nameOf(e.id) ?? '…',
           },
@@ -698,6 +854,10 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
     // camera's answer goes in and `@mp/tps` resolves it against the other two. After the camera, because it
     // needs this frame's placement rather than last frame's. Peers are unaffected — they always see you.
     if (myId !== null) avatars.setSelfVisible(myId, placed.rigVisible)
+
+    // The game's own drawing, last: the level is posed, every body is drawn and the camera is placed, so
+    // `poseOf` and `camera` answer for this frame (ADR 0066).
+    frameHooks.run(frameDt)
   })
   /**
    * The page around the game (`shell.ts`, ADR 0065): the 2D overlay, the pause screen, the touch HUD, and the
@@ -724,12 +884,23 @@ export const startGameClient = async (mode: ModeDescriptor): Promise<GameClient>
 
   let disposed = false
   return {
+    scene: stage.scene,
+    camera: orbit,
+    debugPane: pane.pane,
+    id: () => net.id(),
+    peers: () => peerFrame,
+    partsOf: (id) => avatars.partsOf(id),
+    world: () => physicsWorld,
+    level: () => loaded,
+    onFrame: frameHooks.add,
     dispose: () => {
       if (disposed) return
       disposed = true
-      // (1) Nothing ticks from here. Both loops, before anything they read is taken away.
+      // (1) Nothing ticks from here. Both loops, before anything they read is taken away — and the game's own
+      // frame hooks with them, since they read `poseOf` and the world.
       stage.stop()
       simLoop?.stop()
+      frameHooks.clear()
       // (2) The connection, and the timer that was feeding it.
       net.dispose()
       // (3) The DOM. `input` owns seven listeners, the shell owns two.

@@ -3,7 +3,7 @@ import { Death, Hazard } from '@mp/components'
 import type { ModeDescriptor } from '@mp/mode'
 import { MARKER_COLORS } from '@mp/render-three'
 
-import { STAND_OFFSET, TEMPLATE_REGISTRY, spawnOf, templateSession } from './rules'
+import { TEMPLATE_REGISTRY, spawnOf, templateSession } from './rules'
 
 /**
  * The template game, as the platform sees it (ADR 0052) — and the whole of what a new game has to write.
@@ -22,7 +22,6 @@ export const TEMPLATE_MODE: ModeDescriptor = {
   registry: TEMPLATE_REGISTRY,
   // The shared Roblox-like feel (ADR 0012). A game with a different character overrides these.
   tuning: DEFAULT_TUNING,
-  standOffset: STAND_OFFSET,
   /** One rule, one colour. The palette is shared so two games' hazards look alike; the mapping is each game's. */
   gizmos: { [Hazard.type]: MARKER_COLORS.hazard },
   /**
@@ -44,37 +43,8 @@ export const TEMPLATE_MODE: ModeDescriptor = {
    */
   playerDefs: (host) => [createLocomotion(host)],
   /**
-   * How this game's characters look and move visually (ADR 0063). Both optional; absent is the shipped biped.
-   *
-   * `gait` retunes the shared cycle — stride, bob, lean, arm swing. `animator` **replaces** it, and the shape
-   * for adding a state the platform has never heard of is to wrap the shared one:
-   *
-   * ```ts
-   * // beside your own dash component, whose state you close over
-   * let dashing = false
-   * animator: (gait, seed) => {
-   *   const shared = createAnimator(gait, seed)
-   *   return { step: (input, dt) => (dashing ? dashPose() : shared.step(input, dt)) }
-   * }
-   * ```
-   *
-   * Nothing was added to `AnimationInput` for that on purpose: this factory is *your* code, so it can read
-   * your own state directly.
-   *
-   * For **other players** a closure cannot answer, so declare the state and it rides the spare bits of the
-   * flags byte already being sent (ADR 0064) — five of them, free:
-   *
-   * ```ts
-   * states: ['dash'],
-   * playerStates: () => (dashing ? new Set(['dash']) : new Set()),
-   * animator: (gait, seed, states) => {
-   *   const shared = createAnimator(gait, seed)
-   *   // `states` answers for whichever character this animator belongs to — us or a peer.
-   *   return { step: (input, dt) => (states().has('dash') ? dashPose() : shared.step(input, dt)) }
-   * },
-   * ```
-   *
-   * Order is bit order: appending a state is safe, reordering reinterprets every peer's bits.
+   * Where a player starts, and this game's rules — both read by the client *and* by the editor's play-test,
+   * which is why they are fields here rather than arguments in `main.ts` (ADR 0065).
    */
   spawn: spawnOf,
   session: templateSession,

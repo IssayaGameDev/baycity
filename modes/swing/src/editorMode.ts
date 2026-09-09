@@ -3,7 +3,7 @@ import { Bumper, Checkpoint, Death, Goal, Hazard } from '@mp/components'
 import type { ModeDescriptor } from '@mp/mode'
 import { MARKER_COLORS } from '@mp/render-three'
 
-import { STAND_OFFSET, SWING_REGISTRY, spawnOf, swingSession } from './rules'
+import { SWING_REGISTRY, spawnOf, swingSession } from './rules'
 
 /**
  * Swing, as the platform sees it (ADR 0052) — and the whole of what it contributes.
@@ -12,16 +12,25 @@ import { STAND_OFFSET, SWING_REGISTRY, spawnOf, swingSession } from './rules'
  * `modes/_template`, renaming three identifiers and pointing a level at it. The character controller, its
  * procedural animation, the camera, the netcode and the editor all came for free.
  *
- * Nothing swinging is built yet. `registry` is where its components go, and `session` is where their rules
- * go.
+ * The swing itself is in `swing.ts` and `rope.ts`, wired in `main.ts` — not here, because none of it is
+ * something a *tool* needs (ADR 0065): the editor authors levels and play-tests them, and the rope is neither
+ * a level's content nor a rule. What is here is the one part the editor does need, the key binding, so a
+ * play-test holds the rope with the same key the game does (ADR 0061).
  */
 export const SWING_MODE: ModeDescriptor = {
   name: 'swing',
   label: 'Swing',
   registry: SWING_REGISTRY,
+  /**
+   * Hold to swing (ADR 0067). Two codes, so it is the same gesture on either side of the keyboard.
+   *
+   * Held rather than toggled: letting go releases the rope with the momentum you had, the release timing is the
+   * skill, and nothing can get stuck attached. The name is this game's and the platform never learns it —
+   * `actionsHeld` maps the codes, and `createSwing` reads back the name it declared.
+   */
+  actions: { swing: ['ShiftLeft', 'ShiftRight'] },
   // The shared Roblox-like feel (ADR 0012). A game with a different character overrides these.
   tuning: DEFAULT_TUNING,
-  standOffset: STAND_OFFSET,
   /** The palette is shared so two games' checkpoints look alike; the mapping is each game's own. */
   gizmos: {
     [Checkpoint.type]: MARKER_COLORS.checkpoint,
@@ -39,7 +48,15 @@ export const SWING_MODE: ModeDescriptor = {
    * Both default to exactly what the client hardcoded, so declaring them changed nothing.
    */
   player: [
-    { id: 'loco', type: 'Locomotion', params: {} },
+    /**
+     * **`Swing`, not `Locomotion`** — this game's movement *is* the swing (ADR 0067).
+     *
+     * These two lists have to agree: this one says which components the player carries, and `playerDefs` below
+     * says what those types mean. Leaving `Locomotion` here while `playerDefs` supplied `Swing` gave a
+     * character that could turn on the spot and not move: the declared type had no definition, and the supplied
+     * definition had no instance.
+     */
+    { id: 'swing', type: 'Swing', params: {} },
     { id: 'death', type: Death.type, params: {} },
   ],
   /**

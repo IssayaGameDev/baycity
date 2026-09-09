@@ -13,6 +13,7 @@
     "@mp/components": "workspace:*",
     "@mp/content": "workspace:*",
     "@mp/core": "workspace:*",
-    "@mp/humanoid": "workspace:*"
+    "@mp/humanoid": "workspace:*",
+    "@mp/physics": "workspace:*"
   }
 }
