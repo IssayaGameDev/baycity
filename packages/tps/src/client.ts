@@ -856,8 +856,12 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
     if (myId !== null) avatars.setSelfVisible(myId, placed.rigVisible)
 
     // The game's own drawing, last: the level is posed, every body is drawn and the camera is placed, so
-    // `poseOf` and `camera` answer for this frame (ADR 0066).
+    // `partsOf` and `camera` answer for this frame (ADR 0066).
     frameHooks.run(frameDt)
+
+    // The frame meter, after everything this frame does — the game's own hooks included, which is the point of
+    // measuring at all (ADR 0070). A no-op while it is switched off.
+    pane.frame()
   })
   /**
    * The page around the game (`shell.ts`, ADR 0065): the 2D overlay, the pause screen, the touch HUD, and the

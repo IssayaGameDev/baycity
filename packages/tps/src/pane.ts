@@ -2,6 +2,7 @@ import { CAMERA_TUNABLES, type OrbitCamera } from '@mp/camera'
 import type { CharacterTuning, GaitTuning } from '@mp/humanoid'
 import type { TouchLayout } from '@mp/client/dom'
 import type { GreyboxEnvironment, PostFX, Sky, ThreeStage } from '@mp/render-three'
+import Stats from 'stats.js'
 import { Pane } from 'tweakpane'
 
 import type { AssemblyTiming } from './assemble'
@@ -38,6 +39,9 @@ export interface DebugPaneOptions {
 /**
  * What the pane hands back.
  *
+ * `frame` drives the frame-time meter and is the one thing here that has to be **called**, once per rendered
+ * frame, rather than bound (ADR 0070).
+ *
  * `pane` is the tweakpane root, so **a game can add its own folder** (ADR 0067). Every value in here is
  * something the platform happens to own; a game's own feel — a rope's stiffness, a dash's length — is owned by
  * the game, and tuning by eye is the only way anybody sets those numbers (ADR 0018). Handing over the root is
@@ -45,6 +49,13 @@ export interface DebugPaneOptions {
  */
 export interface DebugPane {
   readonly pane: Pane
+  /**
+   * Advance the frame-time meter. Call once per **rendered** frame (ADR 0070).
+   *
+   * A no-op while the meter is off, which is how it ships: an always-on overlay is one more thing between you
+   * and the game, and `stats.js` costs a DOM write per frame whether anybody is reading it or not.
+   */
+  frame: () => void
   dispose: () => void
 }
 
@@ -59,8 +70,15 @@ export const installDebugPane = (opts: DebugPaneOptions): DebugPane => {
   paneHost.style.cssText = 'position:fixed;top:8px;right:8px;width:256px;z-index:100'
   document.body.appendChild(paneHost)
   opts.onTouchIgnore(paneHost)
-  const pane = new Pane({ title: 'Debug', container: paneHost })
-  const cam = pane.addFolder({ title: 'Camera' })
+  /**
+   * **Collapsed, and so is everything in it.**
+   *
+   * There are fifty-odd tunables across a dozen folders, and an open pane covers a quarter of the screen with
+   * numbers nobody is currently looking at. Opening the one folder you want is a click; closing eleven you did
+   * not is eleven.
+   */
+  const pane = new Pane({ title: 'Debug', container: paneHost, expanded: false })
+  const cam = pane.addFolder({ title: 'Camera', expanded: false })
   /**
    * The camera describes its own knobs (`CAMERA_TUNABLES`) and this builds them, so a camera parameter is
    * added in one place instead of two and cannot ship without a slider. No entry for the zoom itself — the
@@ -84,7 +102,7 @@ export const installDebugPane = (opts: DebugPaneOptions): DebugPane => {
   // angles drive the key light, its shadow frustum and the sky bake together, which is why there is no separate
   // light direction to set. The sky is a designed gradient rather than atmospheric scattering, because the shape
   // wanted here (light at the top, darkening all the way down) is the inverse of what scattering produces.
-  const skyFolder = pane.addFolder({ title: 'Sky' })
+  const skyFolder = pane.addFolder({ title: 'Sky', expanded: false })
   const skyView = { source: 'procedural' as 'procedural' | 'photo', fill: 0.4, sunIntensity: 2.4 }
   if (env.sky !== null) {
     const rebake = (): void => env.refresh()
@@ -135,7 +153,7 @@ export const installDebugPane = (opts: DebugPaneOptions): DebugPane => {
   tc.addBinding(orbit.params, 'pinchZoom', { min: 0, max: 0.08, step: 0.002, label: 'pinch m/px' })
   
   // Live locomotion feel (client-authoritative, so tuning is purely local — ADR 0011/0012).
-  const mv = pane.addFolder({ title: 'Movement (Roblox-like)' })
+  const mv = pane.addFolder({ title: 'Movement (Roblox-like)', expanded: false })
   mv.addBinding(tuning, 'moveSpeed', { min: 1, max: 12, step: 0.1, label: 'speed m/s' })
   mv.addBinding(tuning, 'jumpHeight', { min: 0.5, max: 5, step: 0.1, label: 'jump apex m' })
   mv.addBinding(tuning, 'gravity', { min: 10, max: 100, step: 1, label: 'gravity m/s²' })
@@ -165,7 +183,7 @@ export const installDebugPane = (opts: DebugPaneOptions): DebugPane => {
    * `config.environment` yet, and inventing that here would be a schema decision made in a debug pane.
    */
   const renderParams = { exposure: 1.0 }
-  const rp = pane.addFolder({ title: 'Render (greybox C3)' })
+  const rp = pane.addFolder({ title: 'Render (greybox C3)', expanded: false })
   rp.addBinding(renderParams, 'exposure', { min: 0.4, max: 2, step: 0.05 }).on('change', (e) => {
     stage.renderer.toneMappingExposure = e.value
   })
@@ -270,13 +288,45 @@ export const installDebugPane = (opts: DebugPaneOptions): DebugPane => {
   df.addBinding(assembleTiming, 'fall', { min: 0.02, max: 1, step: 0.01, label: 'fall s' })
   df.addBinding(assembleTiming, 'height', { min: 0.2, max: 8, step: 0.1, label: 'drop from m' })
 
+  /**
+   * Frame time, off by default (ADR 0070).
+   *
+   * `stats.js` rather than a number on the pane, because what matters when a frame is slow is the **shape** of
+   * the graph — an even 40 ms is a budget problem and one 40 ms spike in a run of 8 ms is a hitch, and those
+   * want different fixes. Tweakpane would show you the same number for both.
+   *
+   * Its own element, positioned under the pane rather than at the top-left where `stats.js` puts itself: that
+   * corner is the pause button's (ADR 0015). Above the Pixi overlay's z-index 10, or the UI canvas covers it.
+   */
+  const stats = new Stats()
+  stats.showPanel(0) // frames per second; click the panel itself for ms and memory
+  const meter = stats.dom
+  meter.style.position = 'fixed'
+  meter.style.left = 'auto'
+  meter.style.top = '8px'
+  meter.style.right = '272px'
+  meter.style.zIndex = '100'
+  meter.style.display = 'none'
+  document.body.appendChild(meter)
+  opts.onTouchIgnore(meter)
+
+  const meterOn = { fps: false }
+  pane.addBinding(meterOn, 'fps', { label: 'frame meter' }).on('change', (e) => {
+    meter.style.display = e.value ? 'block' : 'none'
+  })
+
   return {
     pane,
+    frame: () => {
+      // Gated, so an off meter costs one boolean rather than two DOM writes a frame.
+      if (meterOn.fps) stats.update()
+    },
     dispose: () => {
       // Tweakpane's own teardown, then the host element it was given. Both, because `pane.dispose()` leaves
       // the div behind and the div is what carries the fixed position and z-index.
       pane.dispose()
       paneHost.remove()
+      meter.remove()
     },
   }
 }

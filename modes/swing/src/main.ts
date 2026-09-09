@@ -45,7 +45,7 @@ const client = await startTpsClient({
 
 drawRopes(client, state, () => rope)
 
-const folder = client.debugPane.addFolder({ title: 'Swing' })
+const folder = client.debugPane.addFolder({ title: 'Swing', expanded: false })
 folder.addBinding(rope, 'stiffness', { min: 10, max: 300, step: 1, label: 'stiffness' })
 folder.addBinding(rope, 'damping', { min: 0, max: 30, step: 0.5, label: 'damping' })
 folder.addBinding(rope, 'pump', { min: 0, max: 40, step: 0.5, label: 'pump m/s²' })
