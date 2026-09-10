@@ -115,3 +115,15 @@ exist.
 - **No multipliers, Wins, rebirth or treadmills**, all of which the real game stacks on `perKey`.
 - **Level gates nothing**, there being one stage.
 - **Nothing migrates an old save.** The key was renamed with the concept.
+
+## Correction
+
+**Max Speed never reached the character.** `main.ts` wrote `moveSpeed` into the game's own `CharacterTuning` —
+the object on the descriptor — every frame. `startTpsClient` copies that object on the way in (ADR 0057) and
+the controller reads the copy, so the write landed on an object nobody read. Kodjo reached level 52 at the
+shipped 5.5 m/s and asked. An earlier "yes, it works" was given without checking.
+
+Fix: `TpsClient.tuning` is the live copy, and the game writes there. The "Level owns `moveSpeed`" section above
+describes the intent; the mechanism it describes (the game's own object, the pane binding it) was wrong about
+which object the pane and the controller share. The game no longer keeps a named tuning object of its own — the
+descriptor carries a starting copy of `DEFAULT_TUNING`, and the live one is the client's.

@@ -2,7 +2,7 @@ import { CHAR_RADIUS, LIMB_LENGTH } from '@mp/humanoid'
 import { THREE } from '@mp/render-three'
 import { startTpsClient } from '@mp/tps'
 
-import { KEYBOARD_MODE, keyboardTuning } from './editorMode'
+import { KEYBOARD_MODE } from './editorMode'
 import { createHud } from './hud'
 import { DEFAULT_KEYCAP_SHAPE, type KeycapShape } from './keycapGeometry'
 import { DEFAULT_KEYCAP_LOOK, DEFAULT_PRESS, drawKeycaps, type KeycapLook, type PressFeel } from './keycaps'
@@ -42,6 +42,11 @@ const cashedOut: { wins: number; at: { x: number; y: number; z: number } }[] = [
 
 const client = await startTpsClient({
   ...KEYBOARD_MODE,
+  /**
+   * None of the platform's debug folders (ADR 0075). Kodjo's call: this game is deep in its own loop, and a
+   * pane of camera, gait and sky sliders is twelve folders between you and the three below.
+   */
+  debugFolders: [],
   /**
    * The game's own session, with the one callback the platform has no word for. The rules stay headless — the
    * editor calls them with no callback and still teleports — and the client hears about the payout here.
@@ -108,8 +113,10 @@ client.onFrame((dt) => {
   const at = levelAt(experience, curve)
   hud.set(experience, at.level, at.into, at.next)
   hud.setWins(wins)
-  // The velocity Level grants. Read by this game's locomotion every tick.
-  keyboardTuning.moveSpeed = maxSpeedMps(at.level, curve)
+  // The velocity Level grants, written into the **client's** live tuning — the object the controller reads.
+  // It went into the descriptor's object for fifty levels and changed nothing: the client copies that on the
+  // way in (ADR 0057, ADR 0071's correction).
+  client.tuning.moveSpeed = maxSpeedMps(at.level, curve)
 
   sinceSave += dt
   if (sinceSave >= SAVE_EVERY) {
@@ -119,17 +126,11 @@ client.onFrame((dt) => {
   }
 })
 
-const folder = client.debugPane.addFolder({ title: 'Keycaps', expanded: false })
-folder.addBinding(feel, 'depth', { min: 0, max: 1, step: 0.01, label: 'press depth' })
-folder.addBinding(feel, 'downTime', { min: 0.01, max: 0.4, step: 0.005, label: 'down s' })
-folder.addBinding(feel, 'upTime', { min: 0.01, max: 0.6, step: 0.005, label: 'up s' })
-
+/**
+ * The one folder this game adds (ADR 0075). Kodjo's list, nothing else: the two resets and a grant. The curve,
+ * the keycap press feel and the popup feel have defaults and no sliders — nobody asked for sliders.
+ */
 const loop = client.debugPane.addFolder({ title: 'Progression', expanded: false })
-loop.addBinding(curve, 'perKey', { min: 0, max: 100, step: 1, label: 'XP per key' })
-loop.addBinding(curve, 'firstLevel', { min: 10, max: 2000, step: 10, label: 'level 1 costs' })
-loop.addBinding(curve, 'levelGrowth', { min: 1, max: 1.5, step: 0.005, label: 'cost growth' })
-loop.addBinding(curve, 'baseMaxSpeed', { min: 0, max: 100, step: 1, label: 'base studs/s' })
-loop.addBinding(curve, 'maxSpeedPerLevel', { min: 0, max: 20, step: 0.5, label: 'studs/s per level' })
 loop.addButton({ title: 'Reset experience' }).on('click', () => {
   experience = 0
   saveExperience(0)
@@ -138,11 +139,10 @@ loop.addButton({ title: 'Reset wins' }).on('click', () => {
   wins = 0
   saveWins(0)
 })
-
-const pop = client.debugPane.addFolder({ title: 'XP popups', expanded: false })
-pop.addBinding(pops, 'life', { min: 0.2, max: 2.5, step: 0.05, label: 'life s' })
-pop.addBinding(pops, 'rise', { min: 0, max: 300, step: 5, label: 'rise px' })
-pop.addBinding(pops, 'sway', { min: 0, max: 80, step: 1, label: 'sway px' })
-pop.addBinding(pops, 'sways', { min: 0, max: 4, step: 0.05, label: 'sway cycles' })
-pop.addBinding(pops, 'pop', { min: 1, max: 3, step: 0.05, label: 'spawn scale' })
-pop.addBinding(pops, 'hold', { min: 0, max: 0.9, step: 0.05, label: 'opaque for' })
+// Jump ahead: type an amount, press the button. For reaching a level without walking there.
+const grant = { amount: 1000 }
+loop.addBinding(grant, 'amount', { min: 0, step: 1, label: 'grant XP' })
+loop.addButton({ title: 'Add experience' }).on('click', () => {
+  experience += Math.max(0, Math.floor(grant.amount))
+  saveExperience(experience)
+})

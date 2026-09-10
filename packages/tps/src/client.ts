@@ -58,7 +58,7 @@ import { createFrameHooks } from './frameHooks'
 import { type AssemblyTiming } from './assemble'
 import { createInputs } from './inputs'
 import { BODY_LAYERS } from './layers'
-import { installDebugPane, type DebugPane } from './pane'
+import { installDebugPane, type DebugFolder, type DebugPane } from './pane'
 
 /**
  * The game client, for any game on the platform (ADR 0056).
@@ -165,6 +165,14 @@ export interface TpsClient {
   /** The boom camera, for a game that wants to change how it behaves. Its params are live. */
   readonly camera: OrbitCamera
   /**
+   * The character's **live** tuning — the object the controller reads every tick and the debug pane binds.
+   *
+   * Not the one passed in: that is copied on the way in (ADR 0057), so a game writing into its own descriptor's
+   * object changes nothing. Keyboard did exactly that for fifty levels (ADR 0071's correction). A game that
+   * drives a tuning value at runtime writes it here.
+   */
+  readonly tuning: CharacterTuning
+  /**
    * Where a world point is on the 2D overlay, in **overlay pixels**, or `null` if it is behind the camera
    * (ADR 0072).
    *
@@ -242,6 +250,13 @@ export interface TpsClientOptions {
   states?: readonly string[]
   /** Which of them are set for the local player right now. Closes over whatever the game likes. */
   playerStates?: () => ReadonlySet<string>
+  /**
+   * Which of the platform's debug folders this game wants (ADR 0075). Absent is all of them; `[]` is none.
+   *
+   * The pane's root is handed back either way (`debugPane`), so a game with none of the platform's folders
+   * still adds its own. The frame meter is always there.
+   */
+  debugFolders?: readonly DebugFolder[]
 }
 
 /**
@@ -393,6 +408,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
     assembleTiming,
     onTouchIgnore: input.ignore,
     onDeath: () => requestDeath?.(),
+    ...(mode.debugFolders !== undefined ? { folders: mode.debugFolders } : {}),
   })
 
   /**
@@ -927,6 +943,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
   return {
     scene: stage.scene,
     camera: orbit,
+    tuning,
     // Non-null by here: `createShell` is awaited above, which is also why the render loop's own reads of
     // `shell` are guarded and this is not.
     ui: shell.ui,

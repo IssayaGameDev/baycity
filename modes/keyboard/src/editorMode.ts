@@ -1,13 +1,10 @@
 import { Death, Hazard } from '@mp/components'
-import { DEFAULT_TUNING, createLocomotion, type CharacterTuning } from '@mp/humanoid'
+import { DEFAULT_TUNING, createLocomotion } from '@mp/humanoid'
 import type { ModeDescriptor } from '@mp/mode'
 import { MARKER_COLORS } from '@mp/render-three'
 
 import { KEYBOARD_REGISTRY, keyboardSession, spawnOf } from './rules'
 import { WinsPad } from './wins'
-
-/** Live, shared between the descriptor, the debug pane and `main.ts`'s per-frame Max Speed write. */
-export const keyboardTuning: CharacterTuning = { ...DEFAULT_TUNING }
 
 /**
  * Keyboard Escape, as the tools see it (ADR 0052, ADR 0065).
@@ -28,19 +25,14 @@ export const KEYBOARD_MODE: ModeDescriptor = {
   label: 'Keyboard',
   registry: KEYBOARD_REGISTRY,
   /**
-   * This game's live tuning, and **`moveSpeed` is Level's to write** (ADR 0071).
-   *
-   * Its own object rather than `DEFAULT_TUNING` because `main.ts` sets `moveSpeed` from Max Speed every frame,
-   * and writing into the shared default would change every other game in the build.
-   *
-   * The debug pane binds this same object, so its `move speed` slider is the one control here that does
-   * nothing — Level overwrites it on the next frame. Every other slider still works, and one dead slider beats
-   * two owners quietly fighting over one field (ADR 0057).
+   * The **starting** tuning. `moveSpeed` here is what you run at before the first frame writes Max Speed into
+   * the client's live copy (`client.tuning`, ADR 0071) — the client copies this object on the way in
+   * (ADR 0057), so nothing written here after startup reaches the character.
    *
    * `groundAccelTime`, `groundStopTime` and `airControl` stay fixed on purpose: leaving them alone while
    * `moveSpeed` climbs is what makes a fast character floaty and hard to turn, which is the game's skill curve.
    */
-  tuning: keyboardTuning,
+  tuning: { ...DEFAULT_TUNING },
   /**
    * The palette is shared so two games' hazards look alike; the mapping is each game's own. A `WinsPad` is
    * where a stage ends, which is what the shared palette calls a goal.
