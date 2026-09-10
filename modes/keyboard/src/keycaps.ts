@@ -10,8 +10,8 @@ import { DEFAULT_KEYCAP_SHAPE, keycapGeometry, type KeycapShape } from './keycap
  * A platform's top face, tiled with keycaps that press when you step on them (ADR 0069).
  *
  * The scale is the point and it is the opposite of what "giant keyboard" suggests: the player is 2 m tall and a
- * cap is 0.6 m, so a stride covers a few of them. Caps are **surface detail that reacts**, not platforms —
- * which is what makes "+1 speed per step" land, because there is always a key under your foot.
+ * cap is 0.9 m, so a stride covers a couple of them. Caps are **surface detail that reacts**, not platforms —
+ * which is what makes "+1 per step" land, because there is always a key under your foot.
  *
  * Two consequences follow from the count. A board is hundreds of caps, so:
  *
@@ -27,12 +27,12 @@ export const Keyboard = defineComponent({
   type: 'Keyboard',
   label: 'Keyboard surface',
   params: {
-    /** Centre-to-centre spacing (m). Life-size is ~0.2; 0.6 is Kodjo's call after seeing it, three times that. */
-    pitch: { kind: 'number', default: 0.6, min: 0.05, max: 3, step: 0.01, label: 'pitch m' },
+    /** Centre-to-centre spacing (m). Life-size is ~0.2. 0.9 is Kodjo's, after seeing 0.2 then 0.6 in play. */
+    pitch: { kind: 'number', default: 0.9, min: 0.05, max: 3, step: 0.01, label: 'pitch m' },
     /** Cap footprint as a fraction of the pitch. The remainder is the gap you can see between keys. */
     fill: { kind: 'number', default: 0.88, min: 0.3, max: 1, step: 0.01, label: 'cap fill' },
     /** How far a cap stands above the platform's face (m). */
-    height: { kind: 'number', default: 0.3, min: 0.005, max: 1, step: 0.005, label: 'cap height m' },
+    height: { kind: 'number', default: 0.45, min: 0.005, max: 1.5, step: 0.005, label: 'cap height m' },
     /**
      * Which letters get used, and in what order — hashed per cell, so the same level always reads the same.
      *
@@ -79,8 +79,16 @@ export interface Keycaps {
    *
    * Silently does nothing when there is no board under the point, which is the common case — most of a level
    * is not a keyboard.
+   *
+   * **Returns the top of every cap this hold newly struck** — down from resting, not merely still held.
+   *
+   * The count is the "+1 per key" of ADR 0071 and the positions are where its popup comes from (ADR 0072), so
+   * one call answers both rather than the caller looking the same caps up twice. Per-hold rather than global on
+   * purpose: every character presses keys, and only the local player's presses earn Experience.
+   *
+   * The **top** of the cap, not its base: a label that spawned inside the board would be born clipped.
    */
-  hold: (centre: Vec3, radius: number) => void
+  hold: (centre: Vec3, radius: number) => readonly Vec3[]
   /**
    * Once per rendered frame, **after every `hold`**.
    *
@@ -239,10 +247,20 @@ export const drawKeycaps = (
     ready: () => boards.length > 0,
 
     hold: (centre, radius) => {
+      const struck: Vec3[] = []
       for (const cap of capsUnder(boards, caps, centre, radius)) {
+        // Newly struck: resting, and nobody else already claimed it this frame. `held` is cleared in `update`,
+        // so a cap under two players at once is struck once and by whoever is asked first.
+        if (cap.at === 0 && !cap.held)
+          struck.push({
+            x: cap.rest.x - cap.down.x * cap.scale.y,
+            y: cap.rest.y - cap.down.y * cap.scale.y,
+            z: cap.rest.z - cap.down.z * cap.scale.y,
+          })
         cap.held = true
         active.add(cap)
       }
+      return struck
     },
 
     update: (dt) => {
@@ -367,9 +385,9 @@ const keyboardOn = (loaded: LoadedLevel, item: VisualItem): KeyboardParams | nul
   if (data === undefined) return null
   const p = data.params as Partial<KeyboardParams>
   return {
-    pitch: numberOr(p.pitch, 0.6),
+    pitch: numberOr(p.pitch, 0.9),
     fill: numberOr(p.fill, 0.88),
-    height: numberOr(p.height, 0.3),
+    height: numberOr(p.height, 0.45),
     glyphs: typeof p.glyphs === 'string' && p.glyphs.length > 0 ? p.glyphs : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
     seed: numberOr(p.seed, 1),
   }

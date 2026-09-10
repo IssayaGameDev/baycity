@@ -37,7 +37,7 @@ export const spawnOf = spawnFrom(STAND_OFFSET)
  * A session with no progression yet: you spawn, you can die, you respawn where you started.
  *
  * Falling puts you back at the stage start, which is what `respawnAt` already does with no checkpoints — the
- * design Kodjo picked, and the reason speed matters.
+ * design Kodjo picked, and the reason a higher speed cap is worth earning.
  *
  * `progress` is always `-1` and `onProgress` is never called, so the client saves nothing — which is correct
  * for a game with nothing to save yet, and is where a checkpoint rule would go. Compare `modes/parkour`, whose

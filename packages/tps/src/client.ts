@@ -48,9 +48,10 @@ import {
   worldFromBase,
   type LevelHost,
   type Shell,
+  type UiOverlay,
 } from '@mp/game-client'
 
-import type { THREE } from '@mp/render-three'
+import { THREE as THREEImpl, type THREE } from '@mp/render-three'
 
 import { createAvatars, type Avatars } from './avatars'
 import { createFrameHooks } from './frameHooks'
@@ -163,6 +164,30 @@ export interface TpsClient {
   peers: () => readonly Peer[]
   /** The boom camera, for a game that wants to change how it behaves. Its params are live. */
   readonly camera: OrbitCamera
+  /**
+   * Where a world point is on the 2D overlay, in **overlay pixels**, or `null` if it is behind the camera
+   * (ADR 0072).
+   *
+   * A helper rather than the raw `PerspectiveCamera`, because every game wanting to pin a label to a thing in
+   * the world would otherwise redo the same three steps: project through the camera, map clip space to the
+   * overlay's pixels — **not** the window's, which differ on mobile — and reject points behind the lens, which
+   * project to a mirrored position in front of it.
+   *
+   * General, not a concept per feature: "where is this on screen" is what damage numbers, nameplates,
+   * waypoints and this game's XP popups all want.
+   */
+  toScreen: (world: Vec3) => { x: number; y: number } | null
+  /**
+   * The 2D overlay, for a game's own HUD (ADR 0071).
+   *
+   * The same Pixi layer the pause screen and the touch controls are on (ADR 0015), because a second Pixi
+   * application would mean a second canvas, a second stacking order and a second resize to keep in step. Add
+   * to `ui.root`; what a game adds is a game's to remove.
+   *
+   * Sized from the **Three canvas** rather than the window, and re-laid-out on resize — read `ui.width` and
+   * `ui.height` rather than the window's, or a HUD sits a browser-bar's height out of place on mobile.
+   */
+  readonly ui: UiOverlay
   /**
    * The debug pane's root, for a game to add a folder of its own (ADR 0067).
    *
@@ -721,6 +746,8 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
 
   /** What a game asked to have run every rendered frame (ADR 0066). */
   const frameHooks = createFrameHooks()
+  /** Reused by `toScreen`, which a game may call once per popup per frame. */
+  const projected = new THREEImpl.Vector3()
   /**
    * Every peer as the last render pass drew them (ADR 0068).
    *
@@ -890,6 +917,20 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
   return {
     scene: stage.scene,
     camera: orbit,
+    // Non-null by here: `createShell` is awaited above, which is also why the render loop's own reads of
+    // `shell` are guarded and this is not.
+    ui: shell.ui,
+    toScreen: (world) => {
+      projected.set(world.x, world.y, world.z).project(stage.camera)
+      // `project` divides by w, which is negative behind the lens — the point comes back mirrored into view
+      // rather than absent, so it has to be rejected explicitly.
+      if (projected.z > 1) return null
+      return {
+        x: ((projected.x + 1) / 2) * shell.ui.width,
+        // Clip space has +y up and the overlay has +y down.
+        y: ((1 - projected.y) / 2) * shell.ui.height,
+      }
+    },
     debugPane: pane.pane,
     id: () => net.id(),
     peers: () => peerFrame,

@@ -2,32 +2,42 @@ import { CHAR_RADIUS, LIMB_LENGTH } from '@mp/humanoid'
 import { THREE } from '@mp/render-three'
 import { startTpsClient } from '@mp/tps'
 
-import { KEYBOARD_MODE } from './editorMode'
+import { KEYBOARD_MODE, keyboardTuning } from './editorMode'
+import { createHud } from './hud'
 import { DEFAULT_KEYCAP_SHAPE, type KeycapShape } from './keycapGeometry'
 import { DEFAULT_KEYCAP_LOOK, DEFAULT_PRESS, drawKeycaps, type KeycapLook, type PressFeel } from './keycaps'
+import { createPopups, DEFAULT_POPUP, type PopupFeel } from './popups'
+import { DEFAULT_CURVE, levelAt, loadExperience, maxSpeedMps, saveExperience, type ProgressCurve } from './progression'
 
 /**
- * Keyboard Escape, as an application (ADR 0069).
+ * Keyboard Escape, as an application (ADR 0069, ADR 0071).
  *
- * The shipped third-person game plus two things it knows nothing about: platforms carrying a `Keyboard`
- * component get their top face tiled with keycaps, and every cap somebody is standing over is **held down**
- * until they move off it.
+ * The shipped third-person game plus three things it knows nothing about: platforms carrying a `Keyboard`
+ * component get keycaps, every cap somebody stands over is held down, and **striking one earns Experience**.
  *
- * Occupancy, not footfalls. A key that bobbed once per step popped back up under a standing player, which is
- * not what a keyboard does — you leave a print of your feet in it.
+ * The loop is three values and **only one is a speed**: **Experience** is the currency (+1 a key), **Level** is
+ * derived from it, and **Max Speed** is derived from Level and is the actual velocity. The game being cloned
+ * calls the currency "Speed", which is what made an earlier version treat a player at 345,510 as moving at
+ * 345,510 — they were moving at 100 studs a second.
  *
- * Both go through what ADR 0066 opened: the scene to draw into, a per-frame hook, and the drawn rig parts.
- * The last is why **other players press keys too** — their animator runs on this machine (ADR 0063), so where
- * their feet are is known here with nothing on the wire.
+ * Everything here goes through what ADR 0066 and ADR 0071 opened: the scene, a per-frame hook, the drawn rig
+ * parts, and the 2D overlay. Not one field was added to `TpsClientOptions` or `ModeDescriptor`.
  *
- * **Still not the game.** No speed number, no click, no Wins. The press is the feedback those hang off.
+ * **Still missing:** the click, the speed picker, Wins, rebirth.
  */
 const look: KeycapLook = { ...DEFAULT_KEYCAP_LOOK }
 const shape: KeycapShape = { ...DEFAULT_KEYCAP_SHAPE }
 const feel: PressFeel = { ...DEFAULT_PRESS }
+const curve: ProgressCurve = { ...DEFAULT_CURVE }
+const pops: PopupFeel = { ...DEFAULT_POPUP }
+
+/** Survives a reload. The game's own key: Experience is this game's stat, not the platform's save shape. */
+let experience = loadExperience()
 
 const client = await startTpsClient(KEYBOARD_MODE)
 const keycaps = drawKeycaps(client, look, shape, feel)
+const hud = createHud(client, curve)
+const popups = createPopups(client, pops)
 
 /**
  * Where a character's weight is: under the body, at the height of the lower **sole**.
@@ -51,21 +61,62 @@ const standing = (parts: NonNullable<ReturnType<typeof client.partsOf>>): { x: n
   z: parts.body.position.z,
 })
 
+/** Written back on a timer, not per key: a struck cap is a `localStorage` write and there are several a second. */
+let sinceSave = 0
+const SAVE_EVERY = 3
+
 client.onFrame((dt) => {
   const me = client.id()
   if (me !== null) {
     const parts = client.partsOf(me)
-    if (parts !== null) keycaps.hold(standing(parts), CHAR_RADIUS)
+    if (parts !== null) {
+      // Only ours earns, and only ours pops. Everybody's presses are drawn; one player's are paid for.
+      const struck = keycaps.hold(standing(parts), CHAR_RADIUS)
+      if (struck.length > 0) {
+        experience += struck.length * curve.perKey
+        popups.burst(struck, `+${curve.perKey}`)
+      }
+    }
   }
   for (const peer of client.peers()) {
     const parts = client.partsOf(peer.id)
     if (parts !== null) keycaps.hold(standing(parts), CHAR_RADIUS)
   }
-  // After every hold, which is the order the caps' own doc requires.
   keycaps.update(dt)
+  popups.update(dt)
+
+  const at = levelAt(experience, curve)
+  hud.set(experience, at.level, at.into, at.next)
+  // The velocity Level grants. Read by this game's locomotion every tick.
+  keyboardTuning.moveSpeed = maxSpeedMps(at.level, curve)
+
+  sinceSave += dt
+  if (sinceSave >= SAVE_EVERY) {
+    sinceSave = 0
+    saveExperience(experience)
+  }
 })
 
 const folder = client.debugPane.addFolder({ title: 'Keycaps', expanded: false })
 folder.addBinding(feel, 'depth', { min: 0, max: 1, step: 0.01, label: 'press depth' })
 folder.addBinding(feel, 'downTime', { min: 0.01, max: 0.4, step: 0.005, label: 'down s' })
 folder.addBinding(feel, 'upTime', { min: 0.01, max: 0.6, step: 0.005, label: 'up s' })
+
+const loop = client.debugPane.addFolder({ title: 'Progression', expanded: false })
+loop.addBinding(curve, 'perKey', { min: 0, max: 100, step: 1, label: 'XP per key' })
+loop.addBinding(curve, 'firstLevel', { min: 10, max: 2000, step: 10, label: 'level 1 costs' })
+loop.addBinding(curve, 'levelGrowth', { min: 1, max: 1.5, step: 0.005, label: 'cost growth' })
+loop.addBinding(curve, 'baseMaxSpeed', { min: 0, max: 100, step: 1, label: 'base studs/s' })
+loop.addBinding(curve, 'maxSpeedPerLevel', { min: 0, max: 20, step: 0.5, label: 'studs/s per level' })
+loop.addButton({ title: 'Reset experience' }).on('click', () => {
+  experience = 0
+  saveExperience(0)
+})
+
+const pop = client.debugPane.addFolder({ title: 'XP popups', expanded: false })
+pop.addBinding(pops, 'life', { min: 0.2, max: 2.5, step: 0.05, label: 'life s' })
+pop.addBinding(pops, 'rise', { min: 0, max: 300, step: 5, label: 'rise px' })
+pop.addBinding(pops, 'sway', { min: 0, max: 80, step: 1, label: 'sway px' })
+pop.addBinding(pops, 'sways', { min: 0, max: 4, step: 0.05, label: 'sway cycles' })
+pop.addBinding(pops, 'pop', { min: 1, max: 3, step: 0.05, label: 'spawn scale' })
+pop.addBinding(pops, 'hold', { min: 0, max: 0.9, step: 0.05, label: 'opaque for' })

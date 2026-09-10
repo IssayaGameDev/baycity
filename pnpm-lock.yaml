@@ -81,6 +81,9 @@ importers:
       '@mp/physics':
         specifier: workspace:*
         version: link:../../packages/physics
+      '@mp/render-pixi':
+        specifier: workspace:*
+        version: link:../../packages/render-pixi
       '@mp/render-three':
         specifier: workspace:*
         version: link:../../packages/render-three

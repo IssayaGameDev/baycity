@@ -54,6 +54,11 @@
           "x": 0,
           "y": 1,
           "z": 0
+        },
+        "scale": {
+          "x": 3.3,
+          "y": 1,
+          "z": 5
         }
       },
       "components": [
@@ -82,9 +87,9 @@
           "id": "c2",
           "type": "Keyboard",
           "params": {
-            "pitch": 0.6,
+            "pitch": 0.9,
             "fill": 0.88,
-            "height": 0.3,
+            "height": 0.45,
             "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
             "seed": 0
           }
@@ -98,7 +103,7 @@
         "position": {
           "x": 0,
           "y": 1,
-          "z": 9
+          "z": 20.5
         }
       },
       "components": [
@@ -127,9 +132,9 @@
           "id": "c2",
           "type": "Keyboard",
           "params": {
-            "pitch": 0.6,
+            "pitch": 0.9,
             "fill": 0.88,
-            "height": 0.3,
+            "height": 0.45,
             "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
             "seed": 63
           }
@@ -143,7 +148,7 @@
         "position": {
           "x": 0,
           "y": 1,
-          "z": 18
+          "z": 29.5
         }
       },
       "components": [
@@ -172,9 +177,9 @@
           "id": "c2",
           "type": "Keyboard",
           "params": {
-            "pitch": 0.6,
+            "pitch": 0.9,
             "fill": 0.88,
-            "height": 0.3,
+            "height": 0.45,
             "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
             "seed": 126
           }
@@ -188,7 +193,7 @@
         "position": {
           "x": 0,
           "y": 1,
-          "z": 28
+          "z": 39.5
         }
       },
       "components": [
@@ -217,9 +222,9 @@
           "id": "c2",
           "type": "Keyboard",
           "params": {
-            "pitch": 0.6,
+            "pitch": 0.9,
             "fill": 0.88,
-            "height": 0.3,
+            "height": 0.45,
             "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
             "seed": 196
           }
@@ -233,7 +238,7 @@
         "position": {
           "x": 0,
           "y": 1,
-          "z": 40
+          "z": 51.5
         }
       },
       "components": [
@@ -262,9 +267,9 @@
           "id": "c2",
           "type": "Keyboard",
           "params": {
-            "pitch": 0.6,
+            "pitch": 0.9,
             "fill": 0.88,
-            "height": 0.3,
+            "height": 0.45,
             "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
             "seed": 280
           }

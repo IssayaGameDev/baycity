@@ -21,6 +21,7 @@
     "@mp/humanoid": "workspace:*",
     "@mp/mode": "workspace:*",
     "@mp/physics": "workspace:*",
+    "@mp/render-pixi": "workspace:*",
     "@mp/render-three": "workspace:*",
     "@mp/tps": "workspace:*"
   },
