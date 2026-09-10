@@ -29,10 +29,13 @@ export const KEYBOARD_MODE: ModeDescriptor = {
    * the client's live copy (`client.tuning`, ADR 0071) — the client copies this object on the way in
    * (ADR 0057), so nothing written here after startup reaches the character.
    *
-   * `groundAccelTime`, `groundStopTime` and `airControl` stay fixed on purpose: leaving them alone while
-   * `moveSpeed` climbs is what makes a fast character floaty and hard to turn, which is the game's skill curve.
+   * `groundAccelTime`, `groundStopTime` and `airControl` are times and ratios, so they scale with `moveSpeed`:
+   * left alone, a character at 30 m/s steers exactly like one at 5 — total control, no momentum. The two caps
+   * (m/s², ADR 0078) are what stop that: below a cap nothing changes, above it reversing takes `speed / cap`
+   * seconds and a turn at speed is an arc. Ground high for snap, air low for momentum — one cap for both made
+   * the ground heavy. First values; the Progression folder has both sliders.
    */
-  tuning: { ...DEFAULT_TUNING },
+  tuning: { ...DEFAULT_TUNING, groundMaxAccel: 150, airMaxAccel: 40 },
   /**
    * The palette is shared so two games' hazards look alike; the mapping is each game's own. A `WinsPad` is
    * where a stage ends, which is what the shared palette calls a goal.

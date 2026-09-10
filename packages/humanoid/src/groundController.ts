@@ -25,6 +25,20 @@ export interface CharacterTuning {
   // Kodjo's values are deliberately above the Roblox reference: see DEFAULT_TUNING.
   groundAccelTime: number // s to reach full speed from rest
   groundStopTime: number // s to brake to a stop when input is released
+  /**
+   * m/s² ceilings on how fast horizontal velocity may change, one for the ground and one for the air
+   * (ADR 0078). `Infinity` = off.
+   *
+   * The rates above are *times to full speed*, so they scale with `moveSpeed`: a character ten times faster
+   * accelerates and reverses ten times harder and steers exactly as it did at walking pace, which at 30 m/s is
+   * total control and no momentum. These cap that. Below a cap nothing changes; above it, reaching speed and
+   * reversing take `speed / cap` seconds and a turn at speed becomes an arc.
+   *
+   * Two, because one number could not serve both: the ground wants snap and the air wants momentum, and the
+   * first single cap that gave the air its momentum made the ground feel heavy (Kodjo).
+   */
+  groundMaxAccel: number
+  airMaxAccel: number
   airControl: number // 0..1 air steering strength relative to ground accel
   maxFallSpeed: number // m/s cap on downward speed (terminal velocity); rising is never capped
   coyoteTime: number // s of grace after losing footing in which a jump still fires (0 = off)
@@ -60,6 +74,10 @@ export const DEFAULT_TUNING: CharacterTuning = {
   gravity: 55,
   groundAccelTime: 0.1,
   groundStopTime: 0.08,
+  // Off: the shipped games run at one speed, where the time-based rates are the feel. A game whose speed climbs
+  // sets these (keyboard: ADR 0078).
+  groundMaxAccel: Infinity,
+  airMaxAccel: Infinity,
   // 1.0 = air accel equals ground accel, which is the Roblox model: `TurnSpeedFactor` is 1 in both its
   // GroundController and its AirController, so it does not restrict air steering at all, and
   // `MaintainLinearMomentum` (true) keeps your speed when you let go. Kodjo's call.
@@ -259,9 +277,27 @@ export const addCharacter = (world: PhysicsWorld, spawn: Vec3, layers?: Collisio
 })
 
 // Move `cur` toward `target` by at most `maxDelta` (frame-rate-independent accel).
-const approach = (cur: number, target: number, maxDelta: number): number => {
-  const d = target - cur
-  return Math.abs(d) <= maxDelta ? target : cur + Math.sign(d) * maxDelta
+/**
+ * Move the horizontal velocity toward a target by at most `maxDelta`, **as one vector** (ADR 0078).
+ *
+ * It was one `approach` per axis. That is fine while the rate is so high both axes arrive in a tick, and wrong
+ * the moment it is not: the axis with less to do finishes first and the other keeps going, so the velocity
+ * swings off the line the stick is pushing — a reversal along a camera-diagonal traces a curve, and
+ * forward-back-forward walks a circle. Along the difference vector, direction is preserved and the time to
+ * arrive no longer depends on which way the camera happens to face.
+ */
+const approachVec = (state: { vx: number; vz: number }, targetX: number, targetZ: number, maxDelta: number): void => {
+  const dx = targetX - state.vx
+  const dz = targetZ - state.vz
+  const len = Math.hypot(dx, dz)
+  if (len <= maxDelta) {
+    state.vx = targetX
+    state.vz = targetZ
+    return
+  }
+  const k = maxDelta / len
+  state.vx += dx * k
+  state.vz += dz * k
 }
 
 /**
@@ -418,13 +454,13 @@ export const stepCharacter = (
   const targetZ = cmd.moveZ * scale * tuning.moveSpeed
   const hasInput = cmd.moveX !== 0 || cmd.moveZ !== 0
 
+  // Time-based rates, each capped in m/s² so a fast character keeps its momentum (ADR 0078).
   const accel = tuning.moveSpeed / Math.max(tuning.groundAccelTime, 1e-3)
   if (state.grounded) {
-    const rate = hasInput ? accel : tuning.moveSpeed / Math.max(tuning.groundStopTime, 1e-3)
-    state.vx = approach(state.vx, targetX, rate * dt)
-    state.vz = approach(state.vz, targetZ, rate * dt)
+    const rate = Math.min(hasInput ? accel : tuning.moveSpeed / Math.max(tuning.groundStopTime, 1e-3), tuning.groundMaxAccel)
+    approachVec(state, targetX, targetZ, rate * dt)
   } else if (hasInput) {
-    const rate = accel * tuning.airControl
+    const rate = Math.min(accel * tuning.airControl, tuning.airMaxAccel)
     // Air input steers and accelerates. It must never *brake* a character already travelling faster
     // than `moveSpeed`, which is what a plain approach toward a `moveSpeed`-sized target does: launched
     // off a fast mover at 12 m/s, holding the direction of flight measured 5.02 m of travel against
@@ -455,11 +491,12 @@ export const stepCharacter = (
       const excess = speed - tuning.moveSpeed
       const ex = (state.vx / speed) * excess
       const ez = (state.vz / speed) * excess
-      state.vx = approach(state.vx - ex, targetX, rate * dt) + ex
-      state.vz = approach(state.vz - ez, targetZ, rate * dt) + ez
+      const steered = { vx: state.vx - ex, vz: state.vz - ez }
+      approachVec(steered, targetX, targetZ, rate * dt)
+      state.vx = steered.vx + ex
+      state.vz = steered.vz + ez
     } else {
-      state.vx = approach(state.vx, targetX, rate * dt)
-      state.vz = approach(state.vz, targetZ, rate * dt)
+      approachVec(state, targetX, targetZ, rate * dt)
     }
   }
 

@@ -470,3 +470,130 @@ describe('character controller', () => {
     expect(flungJump(cmd(0, 0), 4).end).toBeCloseTo(4, 6)
   })
 })
+
+/**
+ * A ground wide enough to sprint on at 30 m/s for two seconds. `makeWorld`'s 50 m slab is not: the character
+ * ran off its edge mid-test and the "ground" reversal was measured in the air.
+ */
+const makeWideWorld = (): PhysicsWorld => {
+  const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+  world.addFixedBody({ position: { x: 0, y: 0, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 400, y: 0.1, z: 400 } } })
+  return world
+}
+
+describe('groundMaxAccel / airMaxAccel (ADR 0078)', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  /** Full speed one way, then full stick the other way, reading the horizontal velocity each tick. */
+  const reverse = (tuning: CharacterTuning, ticks: number): number[] => {
+    const world = makeWideWorld()
+    const c = addCharacter(world, playerSpawn(1000))
+    for (let i = 0; i < 60; i++) {
+      stepCharacter(c, cmd(0, 1), TICK_DT, tuning)
+      world.step(TICK_DT)
+    }
+    const out: number[] = []
+    for (let i = 0; i < ticks; i++) {
+      stepCharacter(c, cmd(0, -1), TICK_DT, tuning)
+      world.step(TICK_DT)
+      out.push(c.vz)
+    }
+    world.free()
+    return out
+  }
+
+  it('is off by default — a reversal at 30 m/s completes in the time-based 0.2 s, as before', () => {
+    const fast: CharacterTuning = { ...DEFAULT_TUNING, moveSpeed: 30 }
+    const vz = reverse(fast, 8)
+    // groundAccelTime 0.1 s → 300 m/s² → 10 m/s per tick: +30 to -30 in six ticks.
+    expect(vz[5]).toBeCloseTo(-30, 5)
+  })
+
+  it('caps the change per tick, so the same reversal takes speed / maxAccel seconds', () => {
+    const fast: CharacterTuning = { ...DEFAULT_TUNING, moveSpeed: 30, groundMaxAccel: 40 }
+    const vz = reverse(fast, 60)
+    // Never more than 40 m/s² × dt between ticks.
+    let prev = 30
+    for (const v of vz) {
+      expect(prev - v).toBeLessThanOrEqual(40 * TICK_DT + 1e-6)
+      prev = v
+    }
+    // 60 m/s of change at 40 m/s² is 1.5 s = 45 ticks; not there at 30, there by 50.
+    expect(vz[29]!).toBeGreaterThan(-30)
+    expect(vz[49]!).toBeCloseTo(-30, 5)
+  })
+
+  it('changes nothing at a speed the time-based rate already accelerates more gently than the cap', () => {
+    // 5.5 m/s over 0.1 s is 55 m/s²; a cap of 60 never binds.
+    expect(reverse({ ...DEFAULT_TUNING, groundMaxAccel: 60 }, 10)).toEqual(reverse(DEFAULT_TUNING, 10))
+  })
+})
+
+describe('steering is one vector, not two axes (ADR 0078)', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  // A reversal along a diagonal must stay on that diagonal. Per-axis approach let the shorter axis finish first
+  // and the velocity swing off the line; forward-back-forward then walked a circle.
+  it('keeps a capped reversal on the line it was pushed along', () => {
+    const tuning: CharacterTuning = { ...DEFAULT_TUNING, moveSpeed: 30, groundMaxAccel: 40 }
+    const world = makeWideWorld()
+    const c = addCharacter(world, playerSpawn(1000))
+    // Diagonal, 30° off the z axis — the case an axis-aligned camera never exercises.
+    const dx = Math.sin(Math.PI / 6)
+    const dz = Math.cos(Math.PI / 6)
+    for (let i = 0; i < 60; i++) {
+      stepCharacter(c, cmd(dx, dz), TICK_DT, tuning)
+      world.step(TICK_DT)
+    }
+    for (let i = 0; i < 40; i++) {
+      stepCharacter(c, cmd(-dx, -dz), TICK_DT, tuning)
+      world.step(TICK_DT)
+      // Velocity stays parallel to the line: no component across it.
+      const across = c.vx * dz - c.vz * dx
+      expect(Math.abs(across)).toBeLessThan(1e-6)
+    }
+    world.free()
+  })
+})
+
+describe('the two caps are independent (ADR 0078)', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  /** Sprint one way, jump, and at the apex flip the stick; read the horizontal velocity change per air tick. */
+  const airReverse = (tuning: CharacterTuning): number[] => {
+    const world = makeWideWorld()
+    const c = addCharacter(world, playerSpawn(1000))
+    for (let i = 0; i < 60; i++) {
+      stepCharacter(c, cmd(0, 1), TICK_DT, tuning)
+      world.step(TICK_DT)
+    }
+    stepCharacter(c, cmd(0, 1, true), TICK_DT, tuning)
+    world.step(TICK_DT)
+    const out: number[] = []
+    let prev = c.vz
+    for (let i = 0; i < 6 && !c.grounded; i++) {
+      stepCharacter(c, cmd(0, -1), TICK_DT, tuning)
+      world.step(TICK_DT)
+      out.push(prev - c.vz)
+      prev = c.vz
+    }
+    world.free()
+    return out
+  }
+
+  it('a ground cap leaves the air alone, and an air cap binds only there', () => {
+    const groundOnly: CharacterTuning = { ...DEFAULT_TUNING, moveSpeed: 30, groundMaxAccel: 40 }
+    const airOnly: CharacterTuning = { ...DEFAULT_TUNING, moveSpeed: 30, airMaxAccel: 40 }
+    // Uncapped air at 30 m/s over 0.1 s is 300 m/s² — ten m/s a tick. The ground cap must not touch that.
+    expect(airReverse(groundOnly)[0]).toBeCloseTo(300 * TICK_DT, 5)
+    // The air cap holds every air tick to 40 m/s² × dt.
+    for (const d of airReverse(airOnly)) expect(d).toBeLessThanOrEqual(40 * TICK_DT + 1e-6)
+    expect(airReverse(airOnly)[0]).toBeCloseTo(40 * TICK_DT, 5)
+  })
+})

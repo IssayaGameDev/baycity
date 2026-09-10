@@ -127,10 +127,15 @@ client.onFrame((dt) => {
 })
 
 /**
- * The one folder this game adds (ADR 0075). Kodjo's list, nothing else: the two resets and a grant. The curve,
- * the keycap press feel and the popup feel have defaults and no sliders — nobody asked for sliders.
+ * The one folder this game adds (ADR 0075). Kodjo's list, nothing else: the two acceleration caps (ADR 0078), the
+ * two resets and a grant. The curve, the keycap press feel and the popup feel have defaults and no sliders —
+ * nobody asked for sliders.
  */
 const loop = client.debugPane.addFolder({ title: 'Progression', expanded: false })
+// The two movement numbers this game owns (ADR 0078): how hard a fast character may accelerate or turn, on the
+// ground and in the air.
+loop.addBinding(client.tuning, 'groundMaxAccel', { min: 5, max: 500, step: 1, label: 'ground accel m/s²' })
+loop.addBinding(client.tuning, 'airMaxAccel', { min: 5, max: 500, step: 1, label: 'air accel m/s²' })
 loop.addButton({ title: 'Reset experience' }).on('click', () => {
   experience = 0
   saveExperience(0)
