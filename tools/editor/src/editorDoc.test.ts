@@ -17,7 +17,7 @@ import {
 import { Bumper, Checkpoint, DEFAULT_REGISTRY, ENGINE_COMPONENTS, GAMEPLAY_COMPONENTS, Hazard, createRegistry, defineComponent } from '@mp/components'
 import { vec3, type Vec3 } from '@mp/core'
 
-import { levelDoc, prefabDoc, type Doc } from './editorDoc'
+import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type Doc } from './editorDoc'
 
 /**
  * The editor document over a node tree (PLAN-component-system, stage C1).
@@ -824,5 +824,44 @@ describe('the level’s game', () => {
     const doc = prefabDoc(padPrefab())
     doc.setMode('parkour')
     expect(doc.modeRef()).toBeUndefined()
+  })
+})
+
+describe('a prefab the game cannot hold (ADR 0076, ADR 0077)', () => {
+  /** A game with no `Bumper`: the engine's components and a hazard, like keyboard's. */
+  const noBumper = createRegistry([...ENGINE_COMPONENTS, Hazard])
+  const trampoline = (): Node => ({
+    id: 'root',
+    name: 'Trampoline',
+    transform: { position: ZERO },
+    components: [],
+    children: [{ ...solid('pad', ZERO), components: [...solid('pad', ZERO).components, { id: 'b', type: Bumper.type, params: {} }] }],
+  })
+
+  it('names the component types the registry lacks, once each, sorted', () => {
+    expect(unknownComponentTypes(trampoline(), noBumper)).toEqual([Bumper.type])
+    expect(unknownComponentTypes(trampoline(), DEFAULT_REGISTRY)).toEqual([])
+  })
+
+  // Before validation, so the editor can adopt what a level needs and *then* validate it (ADR 0077).
+  it('lists the component types an unvalidated level file uses, prefab table included', () => {
+    const raw = { nodes: [solid('a', ZERO), { id: 'p', transform: {}, components: [], prefab: 'Trampoline' }], prefabs: { Trampoline: trampoline() } }
+    expect(componentTypesInRaw(raw)).toEqual(['Bumper', 'Collider', 'Renderer'])
+    expect(componentTypesInRaw({ nodes: 'nonsense' })).toEqual([])
+    expect(componentTypesInRaw(null)).toEqual([])
+  })
+
+  // The game would refuse the level at load; the editor refuses the placement instead, so the file on disk is
+  // never one the game cannot open.
+  it('refuses to place it, and leaves the level untouched', () => {
+    const doc = levelDoc(blank(), {}, noBumper)
+    expect(doc.placePrefab(trampoline(), 'Trampoline', ZERO)).toBe(-1)
+    expect(doc.count()).toBe(0)
+    expect(() => validateLevel(doc.asLevel(), noBumper)).not.toThrow()
+  })
+
+  it('places it in a game that has the type', () => {
+    const doc = levelDoc(blank(), {})
+    expect(doc.placePrefab(trampoline(), 'Trampoline', ZERO)).toBeGreaterThanOrEqual(0)
   })
 })

@@ -64,7 +64,7 @@ export interface PressFeel {
   upTime: number
 }
 
-export const DEFAULT_PRESS: PressFeel = { depth: 0.85, downTime: 0.05, upTime: 0.14 }
+export const DEFAULT_PRESS: PressFeel = { depth: 0.85, downTime: 0.05, upTime: .65 }
 
 export interface Keycaps {
   /**
@@ -303,7 +303,7 @@ export const drawKeycaps = (
     dispose: () => {
       for (const mesh of meshes) {
         client.scene.remove(mesh)
-        ;(mesh.material as THREE.Material).dispose()
+          ; (mesh.material as THREE.Material).dispose()
         mesh.dispose()
       }
       // Shared by every mesh, so disposed once rather than per glyph.

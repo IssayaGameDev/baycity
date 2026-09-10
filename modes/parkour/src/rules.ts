@@ -1,8 +1,10 @@
 import { LOCOMOTION_DEF, CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/humanoid'
-import { PLAYER_COMPONENTS, Bumper, Checkpoint, ENGINE_COMPONENTS, Goal, Hazard, Track, createRegistry, hasComponent } from '@mp/components'
+import { PLAYER_COMPONENTS, Checkpoint, ENGINE_COMPONENTS, createRegistry, hasComponent, sharedComponents } from '@mp/components'
 import type { LoadedLevel, WorldNode } from '@mp/content'
 import type { Vec3 } from '@mp/core'
 import { spawnFrom, standingAt, type ModeSession, type ModeSessionOptions } from '@mp/mode'
+
+import game from '../../../content/games/parkour.json'
 
 /**
  * Parkour's rules, headless (ADR 0052).
@@ -35,7 +37,12 @@ import { spawnFrom, standingAt, type ModeSession, type ModeSessionOptions } from
  * four rules whether they meant anything to it. A game that has no use for `Bumper` leaves it out and the
  * editor stops offering it.
  */
-export const PARKOUR_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Checkpoint, Goal, Hazard, Bumper, Track, ...PLAYER_COMPONENTS, LOCOMOTION_DEF])
+/**
+ * What this game's levels may contain (ADR 0077): the engine's components, the player's, this game's own code
+ * components, and **the shared components named in `content/games/parkour.json`** — a data file, so the editor can
+ * add to it when a level here needs a `Bumper` or a `Checkpoint` the game did not have yet.
+ */
+export const PARKOUR_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, ...sharedComponents(game.components)])
 
 /**
  * Markers sit on a surface, so the capsule's *centre* must clear it by its stand height — otherwise the player

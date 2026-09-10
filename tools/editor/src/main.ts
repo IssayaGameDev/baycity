@@ -24,9 +24,8 @@ import {
   type Node as SceneNode,
   type Level,
   type Pose,
-  type Transform,
-} from '@mp/content'
-import { DEFAULT_REGISTRY, characterAccess, createComponentRuntime, type ComponentRuntime, type Registry } from '@mp/components'
+  type Transform, validateLevel } from '@mp/content'
+import { DEFAULT_REGISTRY, characterAccess, createComponentRuntime, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type ComponentRuntime, type Registry } from '@mp/components'
 import { createOrbitCamera } from '@mp/camera'
 import { PLAYER_NODE_ID, actionsHeld, type ModeDescriptor } from '@mp/mode'
 import { createSimClock, eulerToQuat, quat, startFixedLoop, TICK_DT, TICK_RATE_HZ, vec3, type EntityId, type LoopHandle, type Vec3 } from '@mp/core'
@@ -51,10 +50,10 @@ import {
   type LevelView,
   type LightDesc,
 } from '@mp/render-three'
-import { levelDoc, prefabDoc, type ClipItem, type Doc, type KeyEditor, type Mode } from './editorDoc'
+import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type ClipItem, type Doc, type KeyEditor, type Mode } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
 import { askUnsaved } from './confirm'
-import { listFiles, loadLevel, saveFile, type FileEntry } from './filesApi'
+import { listFiles, loadGame, loadLevelRaw, saveFile, saveGame, type FileEntry } from './filesApi'
 import { createHierarchy, type Hierarchy } from './hierarchy'
 import { createHistory } from './history'
 import { createInspector, type Inspector } from './inspector'
@@ -159,8 +158,46 @@ let placing: Placing | null = null
  */
 let activeMode: ModeDescriptor | undefined = soleMode()
 
+/**
+ * Each game's shared-component list as it is on disk **right now** (ADR 0077), read over `/api/games` at boot
+ * and kept current by `adopt`. The game's own `registry` already folds this file in at build time, but the
+ * editor's bundle does not reload when the editor writes it (see `vite.config.ts`), so the live list is merged
+ * here rather than trusted from the code.
+ */
+const gameData: Record<string, readonly string[]> = {}
+
+/** A game's registry: its code, plus whatever the live data file adds that the code did not already have. */
+const registryFor = (mode: ModeDescriptor): Registry => {
+  const have = new Set(mode.registry.all().map((d) => d.type))
+  const extra = (gameData[mode.name] ?? []).filter((type) => !have.has(type) && isSharedComponent(type))
+  return extra.length === 0 ? mode.registry : createRegistry([...mode.registry.all(), ...sharedComponents(extra)])
+}
+
 /** The component set the open document is validated and edited against. */
-const registry = (): Registry => activeMode?.registry ?? DEFAULT_REGISTRY
+const registry = (): Registry => (activeMode === undefined ? DEFAULT_REGISTRY : registryFor(activeMode))
+
+/** Shared components the active game does not have — what a placement or an Add Component may adopt. */
+const adoptable = (): string[] => {
+  if (activeMode === undefined) return []
+  const reg = registryFor(activeMode)
+  return SHARED_COMPONENT_TYPES.filter((type) => !reg.has(type))
+}
+
+/**
+ * Add shared components to the active game (ADR 0077): the data file on disk, the live list here, and the open
+ * document rebuilt against the grown registry. The game's dev server sees the file change and reloads.
+ */
+const adopt = async (types: readonly string[]): Promise<void> => {
+  const mode = activeMode
+  if (mode === undefined) return
+  const fresh = types.filter((type) => isSharedComponent(type) && !(gameData[mode.name] ?? []).includes(type))
+  if (fresh.length === 0) return
+  const next = [...(gameData[mode.name] ?? []), ...fresh].sort()
+  await saveGame(mode.name, { components: next })
+  gameData[mode.name] = next
+  setStatus(`added ${fresh.join(', ')} to ${mode.label}`)
+  if (doc !== null) reopenWithRegistry()
+}
 
 /** Loaded assets. Both arrive at boot, before any document is opened. */
 let assets: AssetLibrary | null = null
@@ -1330,7 +1367,8 @@ canvas.addEventListener('pointerup', (e) => {
             ? doc.placePrefab(prefabAsset, assets?.db.byId[placing.assetId]?.name ?? prefabAsset.name ?? prefabAsset.id, at)
             : -1
     if (idx < 0) {
-      setStatus('that prefab did not load')
+      const unknown = prefabAsset === undefined ? [] : unknownComponentTypes(prefabAsset, doc.registry)
+      setStatus(unknown.length > 0 ? `uses ${unknown.join(', ')}, which this game does not have` : 'that prefab did not load')
       placing = null
       return
     }
@@ -1801,8 +1839,19 @@ const openFile = async (name: string): Promise<void> => {
        * Read before validating, which is why `loadLevel` takes a resolver: the mode has to be known to pick
        * the registry, and the registry is what checks the parameters.
        */
-      const level = await loadLevel(name, (mode) => MODES[mode]?.registry)
-      activeMode = modeOf(level) ?? soleMode()
+      const raw = await loadLevelRaw(name)
+      const declared = (raw as { config?: { mode?: { name?: unknown } } }).config?.mode?.name
+      activeMode = (typeof declared === 'string' ? MODES[declared] : undefined) ?? soleMode()
+      /**
+       * A level that uses a shared component its game has not opted into yet — a trampoline dropped into a
+       * game with no `Bumper` — adopts it into the game and opens, rather than refusing to open the very file
+       * you would need to open to fix it (ADR 0077). Anything else unknown is still a load error.
+       */
+      if (activeMode !== undefined) {
+        const reg = registryFor(activeMode)
+        await adopt(componentTypesInRaw(raw).filter((type) => !reg.has(type) && isSharedComponent(type)))
+      }
+      const level = validateLevel(raw, registry())
       setDoc(levelDoc(level, userPrefabs, registry(), editorClips), name)
       return
     }
@@ -2077,20 +2126,35 @@ const menuFor = (index: number): MenuItem[] => {
     {
       label: 'Add component',
       // The submenu the Inspector's Add Component button opens, reachable without going there first.
-      items: doc.registry
-        .all()
-        .map((d) => d.type)
-        .filter((type) => doc?.canAdd(index, type) === true)
-        .map((type) => ({
-          label: type,
+      items: [
+        ...doc.registry
+          .all()
+          .map((d) => d.type)
+          .filter((type) => doc?.canAdd(index, type) === true)
+          .map((type) => ({
+            label: type,
+            run: () => {
+              doc?.addComponent(index, type)
+              recordEdit('add component')
+              scheduleRebuild()
+              inspectorRebuild()
+              uiChanged()
+            },
+          })),
+        // Shared components the game has not opted into: picking one adds it to the game first (ADR 0077).
+        ...adoptable().map((type) => ({
+          label: `${type} (adds to game)`,
           run: () => {
-            doc?.addComponent(index, type)
-            recordEdit('add component')
-            scheduleRebuild()
-            inspectorRebuild()
-            uiChanged()
+            void adopt([type]).then(() => {
+              doc?.addComponent(index, type)
+              recordEdit('add component')
+              scheduleRebuild()
+              inspectorRebuild()
+              uiChanged()
+            })
           },
         })),
+      ],
     },
     { label: 'Create empty child', divider: true, enabled: own, why, run: () => createEmpty(index) },
     { label: 'Duplicate', hint: 'Ctrl+D', enabled: own, why, run: () => duplicateSelected() },
@@ -2295,9 +2359,39 @@ const afterFileOp = (label: string, run: () => Promise<void>): void => {
 }
 
 /** Arm a placeable asset for the next viewport click, or disarm the one already waiting. */
+/**
+ * The component types a prefab file uses that the open document's registry lacks, split into the shared ones
+ * the game can adopt (ADR 0077) and another game's private ones, which it cannot (ADR 0076).
+ */
+const missingIn = (assetId: string): { shared: string[]; foreign: string[] } => {
+  const entry = assets?.db.byId[assetId]
+  const root = entry?.kind === 'prefab' ? assets?.prefabOf(assetId) : undefined
+  if (root === undefined || doc === null) return { shared: [], foreign: [] }
+  const unknown = unknownComponentTypes(root, doc.registry)
+  return { shared: unknown.filter(isSharedComponent), foreign: unknown.filter((t) => !isSharedComponent(t)) }
+}
+
+/** Why this asset cannot be placed into the open document, or `null`. Only another game's private component is a reason. */
+const unplaceableWhy = (assetId: string): string | null => {
+  const { foreign } = missingIn(assetId)
+  return foreign.length === 0 ? null : `uses ${foreign.join(', ')}, which this game does not have`
+}
+
 const armAsset = (assetId: string): void => {
   const entry = assets?.db.byId[assetId]
   if (entry === undefined) return
+  const why = unplaceableWhy(assetId)
+  if (why !== null) {
+    setStatus(`${entry.name} ${why}`)
+    return
+  }
+  // A shared component the game lacks is adopted on the way to arming, so the click that places it never sees
+  // a registry without it (ADR 0077). Not while a prefab is open on top: a prefab belongs to no game.
+  const { shared } = missingIn(assetId)
+  if (shared.length > 0 && activeMode !== undefined && docStack.length === 1) {
+    void adopt(shared).then(() => armAsset(assetId))
+    return
+  }
   const kind = entry.kind === 'prefab' ? ('prefabAsset' as const) : ('model' as const)
   placing = placing !== null && placing.kind !== 'own' && placing.assetId === assetId ? null : { kind, assetId }
   refreshUi()
@@ -2321,6 +2415,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     refreshUi()
   },
   onPickAsset: armAsset,
+  unplaceableWhy,
   onSelectAsset: (assetId) => {
     // Selecting an asset and selecting something in the scene are the same slot in the Inspector, so one
     // clears the other rather than both claiming it.
@@ -2362,13 +2457,14 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     const inFolder = isFolder ? (assets?.db.entries.filter((e) => e.path.startsWith(`${path}/`)).length ?? 0) : 0
     const entry = isFolder ? undefined : assets?.db.entries.find((e) => e.path === path)
     const placeable = entry?.kind === 'prefab' || entry?.kind === 'model'
+    const foreign = entry === undefined ? null : unplaceableWhy(entry.id)
     contextMenu.open(
       at,
       [
         {
           label: placeable ? 'Place in the level' : 'Open in the Inspector',
-          enabled: entry !== undefined && (placeable || entry.kind === 'material'),
-          why: isFolder ? 'a folder is not an asset' : 'nothing to open for this kind',
+          enabled: entry !== undefined && foreign === null && (placeable || entry.kind === 'material'),
+          why: isFolder ? 'a folder is not an asset' : foreign ?? 'nothing to open for this kind',
           run: () => {
             if (entry === undefined) return
             if (placeable) armAsset(entry.id)
@@ -2786,6 +2882,8 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
 const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<HTMLDivElement>('#inspector'), {
   menu: contextMenu,
   doc: () => doc,
+  adoptable,
+  adopt: (type) => adopt([type]),
   selected: () => selected,
   envSelected: () => envSelected,
   gameSelected: () => gameSelected,
@@ -3021,6 +3119,8 @@ stage.start((dt) => {
 const reloadAssets = async (): Promise<void> => {
   try {
     assets = await loadAssetLibrary()
+    // Each game's shared-component list, live from disk (ADR 0077). Missing file = no extras.
+    for (const mode of MODE_LIST) gameData[mode.name] = (await loadGame(mode.name)).components
     setProblem('')
   } catch (e) {
     // The usual cause is a dev server started before these routes existed, which answers /api/assets with

@@ -1,0 +1,3 @@
+{
+  "components": ["Bumper", "Checkpoint", "Goal", "Hazard", "Track"]
+}

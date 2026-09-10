@@ -349,6 +349,75 @@
           "params": {}
         }
       ]
+    },
+    {
+      "id": "0a588e7a",
+      "transform": {
+        "position": {
+          "x": -5.5,
+          "y": 1.25,
+          "z": 11.5
+        }
+      },
+      "components": [],
+      "prefab": "Trampoline"
     }
-  ]
+  ],
+  "prefabs": {
+    "Trampoline": {
+      "id": "root",
+      "name": "Trampoline",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "p0",
+          "name": "pad",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.15,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "d8dcf8f542bebdf7"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Bumper",
+              "params": {
+                "power": 26
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
 }

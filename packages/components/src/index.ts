@@ -38,3 +38,4 @@ export { Collider, ENGINE_COMPONENTS, MaterialOverride, Mesh, Renderer, Spawn } 
 export { Bumper, Checkpoint, Death, GAMEPLAY_COMPONENTS, Goal, Hazard, PLAYER_COMPONENTS, Track } from './gameplay'
 export { DEFAULT_REGISTRY } from './defaults'
 export { componentOn, hasComponent } from './read'
+export { isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents } from './shared'

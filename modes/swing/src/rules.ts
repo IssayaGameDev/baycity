@@ -1,7 +1,9 @@
 import { LOCOMOTION_DEF, CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/humanoid'
-import { Bumper, Checkpoint, createRegistry, ENGINE_COMPONENTS, Goal, Hazard, PLAYER_COMPONENTS, Track } from '@mp/components'
+import { createRegistry, ENGINE_COMPONENTS, PLAYER_COMPONENTS, sharedComponents } from '@mp/components'
 import type { LoadedLevel } from '@mp/content'
 import { spawnFrom, type ModeSession, type ModeSessionOptions } from '@mp/mode'
+
+import game from '../../../content/games/swing.json'
 
 /**
  * Swing's rules, which are so far only the ones every game needs: spawn somewhere, be able to die, respawn.
@@ -24,7 +26,12 @@ import { spawnFrom, type ModeSession, type ModeSessionOptions } from '@mp/mode'
  * below keeps no progress, so reaching one does nothing yet. The rule is where progression lives, not the
  * component.
  */
-export const SWING_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Checkpoint, Goal, Hazard, Bumper, Track, ...PLAYER_COMPONENTS, LOCOMOTION_DEF])
+/**
+ * What this game's levels may contain (ADR 0077): the engine's components, the player's, this game's own code
+ * components, and **the shared components named in `content/games/swing.json`** — a data file, so the editor can
+ * add to it when a level here needs a `Bumper` or a `Checkpoint` the game did not have yet.
+ */
+export const SWING_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, ...sharedComponents(game.components)])
 
 /** How far above a spawn node the character's origin sits — half the capsule, plus its cap. */
 export const STAND_OFFSET = CHAR_HALF_HEIGHT + CHAR_RADIUS

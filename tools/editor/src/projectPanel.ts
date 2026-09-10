@@ -31,6 +31,11 @@ export interface ProjectHost {
   onPickOwn: (name: string) => void
   /** Arm a placeable asset (a prefab file or a model) for the next viewport click. */
   onPickAsset: (assetId: string) => void
+  /**
+   * Why a placeable asset cannot go into the open document, or `null` (ADR 0076). A prefab using a component
+   * the open level's game lacks is shown greyed, with the reason, rather than armed and refused later.
+   */
+  unplaceableWhy: (assetId: string) => string | null
   /** Open a non-placeable asset in the Inspector. */
   onSelectAsset: (assetId: string) => void
   /** Make a new asset of a kind this panel can author, in `folder`. See `CREATABLE`. */
@@ -411,8 +416,12 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
       const previewKind = UNPREVIEWABLE.has(entry.kind) ? null : (entry.kind as PreviewKind)
       // Showing more than one folder's worth means the name alone is ambiguous.
       const label = folder === null || recursive ? `${folderOf(entry.path)}/${entry.name}`.replace(/^\//, '') : entry.name
-      const t = tile(label, entry.path, on, previewKind, entry.id)
+      const why = placeable ? host.unplaceableWhy(entry.id) : null
+      const t = tile(label, why === null ? entry.path : `${entry.path} — ${why}`, on, previewKind, entry.id)
+      // Greyed rather than hidden: the file exists and is worth seeing; it is this game it cannot go into.
+      if (why !== null) t.classList.add('foreign')
       t.addEventListener('click', () => {
+        if (why !== null) return
         if (placeable) host.onPickAsset(entry.id)
         else {
           host.onSelectAsset(entry.id)

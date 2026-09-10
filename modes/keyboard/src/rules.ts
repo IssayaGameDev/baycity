@@ -1,11 +1,12 @@
 import { LOCOMOTION_DEF, CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/humanoid'
-import { createRegistry, componentOn, ENGINE_COMPONENTS, Hazard, PLAYER_COMPONENTS } from '@mp/components'
+import { createRegistry, componentOn, ENGINE_COMPONENTS, PLAYER_COMPONENTS, sharedComponents } from '@mp/components'
 import type { LoadedLevel, WorldNode } from '@mp/content'
 import type { Vec3 } from '@mp/core'
 import { spawnFrom, type ModeSession, type ModeSessionOptions } from '@mp/mode'
 
 import { Keyboard } from './keycaps'
 import { WinsPad } from './wins'
+import game from '../../../content/games/keyboard.json'
 
 /**
  * Keyboard Escape's rules: spawn, die, and cash out.
@@ -16,14 +17,11 @@ import { WinsPad } from './wins'
  */
 
 /**
- * What this game's levels may contain: the engine's components, `Hazard` for a kill plane under the level
- * (ADR 0053), **`Keyboard`**, which turns a platform's top face into keycaps (ADR 0069), and **`WinsPad`**,
- * the end of a stage (ADR 0073).
- *
- * **Composed, not inherited.** Add `Checkpoint`, `Goal`, `Bumper` or your own from `@mp/components` as the
- * game needs them; the editor offers exactly what is listed here and nothing else.
+ * What this game's levels may contain (ADR 0077): the engine's components, the player's, this game's own code
+ * components, and **the shared components named in `content/games/keyboard.json`** — a data file, so the editor can
+ * add to it when a level here needs a `Bumper` or a `Checkpoint` the game did not have yet.
  */
-export const KEYBOARD_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Hazard, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, Keyboard, WinsPad])
+export const KEYBOARD_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, Keyboard, WinsPad, ...sharedComponents(game.components)])
 
 /** How far above a spawn node the character's origin sits — half the capsule, plus its cap. */
 export const STAND_OFFSET = CHAR_HALF_HEIGHT + CHAR_RADIUS

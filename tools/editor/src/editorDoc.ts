@@ -100,6 +100,49 @@ export interface ClipItem {
   readonly prefabs: Record<string, Node>
 }
 
+/**
+ * Component types in a node tree that a registry does not know (ADR 0076).
+ *
+ * A level is validated against **its game's** registry, and a prefab file is written against whichever game
+ * happened to be open when it was authored. Placing one into a level for a game that lacks a type it uses
+ * produces a level the game refuses to load — the editor has to say so *before* placing, not the game after.
+ */
+export const unknownComponentTypes = (root: Node, registry: Registry): string[] =>
+  componentTypesIn(root).filter((type) => !registry.has(type))
+
+/** Every component type in a node tree, once each, sorted. */
+export const componentTypesIn = (root: Node): string[] => {
+  const seen = new Set<string>()
+  const walk = (n: Node): void => {
+    for (const c of n.components) seen.add(c.type)
+    for (const kid of n.children ?? []) walk(kid)
+  }
+  walk(root)
+  return [...seen].sort()
+}
+
+/**
+ * Every component type an **unvalidated** level file uses — its nodes and its prefab table — once each, sorted.
+ *
+ * Tolerant of shape, because it runs *before* validation: this is how the editor learns which shared components
+ * a level needs so it can add them to the game and then validate (ADR 0077). Anything not shaped like a node is
+ * skipped rather than thrown on; validation will say what is wrong with it.
+ */
+export const componentTypesInRaw = (data: unknown): string[] => {
+  const seen = new Set<string>()
+  const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
+  const walk = (n: unknown): void => {
+    if (!isObj(n)) return
+    if (Array.isArray(n['components'])) for (const c of n['components']) if (isObj(c) && typeof c['type'] === 'string') seen.add(c['type'])
+    if (Array.isArray(n['children'])) for (const kid of n['children']) walk(kid)
+  }
+  if (isObj(data)) {
+    if (Array.isArray(data['nodes'])) for (const n of data['nodes']) walk(n)
+    if (isObj(data['prefabs'])) for (const root of Object.values(data['prefabs'])) walk(root)
+  }
+  return [...seen].sort()
+}
+
 export interface Doc {
   readonly mode: Mode
   /** Every component type this build knows, for the add menu. */
@@ -762,6 +805,10 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
       return indexOf(placed)
     },
     placePrefab: (root, name, position) => {
+      // Refused here, not only in the palette: a level a game cannot load must not be producible by any door.
+      // A shared component the game lacks never reaches this line — the host adopts it into the game and
+      // rebuilds the document first (ADR 0077); what is refused is another game's private component.
+      if (unknownComponentTypes(root, registry).length > 0) return -1
       if (mode === 'prefab') {
         // A prefab holds nodes, never prefabs, so placing one here appends its children.
         const host = roots[0]

@@ -12,9 +12,11 @@ import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './s
 // survive a rename, folders and previews.
 const DIRS: Record<string, string> = {
   levels: fileURLToPath(new URL('../../content/levels', import.meta.url)),
+  // One file per game: the shared components it has opted into (ADR 0077). The editor appends to it.
+  games: fileURLToPath(new URL('../../content/games', import.meta.url)),
 }
 const ASSETS_DIR = fileURLToPath(new URL('../../content/assets', import.meta.url))
-const ROUTE_RE = /^\/api\/(levels)(?:\/([\w-]+))?$/
+const ROUTE_RE = /^\/api\/(levels|games)(?:\/([\w-]+))?$/
 
 const CONTENT_TYPES: Record<string, string> = {
   png: 'image/png',
@@ -67,6 +69,7 @@ const readBody = async (req: IncomingMessage): Promise<string> =>
  *   GET  /api/levels        → [{ name, mode? }] — the file name, and the game it declares (ADR 0052)
  *   GET  /api/levels/:name  → the JSON
  *   PUT  /api/levels/:name  → write the JSON (pretty-printed)
+ *   GET/PUT /api/games/:name → the same, for a game's shared-component list (ADR 0077)
  *
  * And the asset tree at content/assets/:
  *   GET  /api/assets            → the database + folder list (runs the importer, so sidecars exist first)
@@ -224,6 +227,12 @@ const filesApi = (): Plugin => ({
 // Localhost level/prefab editor. Own port so it runs alongside the game/server/viewer.
 export default defineConfig({
   plugins: [filesApi()],
-  server: { port: 5176 },
+  /**
+   * `content/games` is imported by every game's `rules.ts`, which the editor bundles (`modes.ts`), so a write
+   * to it would be a full page reload of the editor — losing the undo history — right after the editor itself
+   * wrote it. The editor reads those files live over `/api/games` instead (ADR 0077); the game's own dev server
+   * still watches them and reloads, which is the reload that matters.
+   */
+  server: { port: 5176, watch: { ignored: ['**/content/games/**'] } },
   build: { target: 'es2022' },
 })

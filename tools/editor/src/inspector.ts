@@ -35,6 +35,10 @@ export interface TransformValues {
 
 export interface InspectorHost {
   doc: () => Doc | null
+  /** Shared components the open level's game does not have yet, addable by adopting them (ADR 0077). */
+  adoptable: () => readonly string[]
+  /** Add a shared component to the game, rebuild the document, then resolve. */
+  adopt: (type: string) => Promise<void>
   selected: () => number | null
   /**
    * The Environment row is selected instead of a node (ADR 0048). The panel then edits the level's sun, which
@@ -613,24 +617,33 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       .all()
       .map((d) => d.type)
       .filter((type) => doc.canAdd(at, type))
+    // Shared components this game has not opted into yet. Picking one adds it to the game first (ADR 0077).
+    const adoptable = host.adoptable()
     const row = el('div', 'iadd')
     const button = el('button', 'ctl wide', 'Add Component')
-    button.disabled = addable.length === 0
-    button.title = addable.length === 0 ? 'this object already has one of everything' : 'add a component to this object'
+    button.disabled = addable.length === 0 && adoptable.length === 0
+    button.title = button.disabled ? 'this object already has one of everything' : 'add a component to this object'
+    const place = (d: Doc, type: string): void => {
+      const id = d.addComponent(at, type)
+      host.onPropsChanged()
+      if (id !== null) shut.delete(id) // what you just added should be open
+      rebuildKeepingScroll()
+    }
     button.addEventListener('click', (e) => {
       e.stopPropagation()
-      openMenu(
-        button,
-        addable.map((type) => ({
-          label: type,
+      openMenu(button, [
+        ...addable.map((type) => ({ label: type, run: () => place(doc, type) })),
+        ...adoptable.map((type) => ({
+          label: `${type} (adds to game)`,
           run: () => {
-            const id = doc.addComponent(at, type)
-            host.onPropsChanged()
-            if (id !== null) shut.delete(id) // what you just added should be open
-            rebuildKeepingScroll()
+            // The document is rebuilt against the grown registry, so add to the one the host now holds.
+            void host.adopt(type).then(() => {
+              const fresh = host.doc()
+              if (fresh !== null) place(fresh, type)
+            })
           },
         })),
-      )
+      ])
     })
     row.append(button)
     container.append(row)

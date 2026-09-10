@@ -7,7 +7,7 @@ import { DEFAULT_REGISTRY, type Registry } from '@mp/components'
  * Levels only. Prefabs used to live here too; they are **assets** now (`*.prefab.json` under
  * `content/assets/`), which gives them ids that survive a rename, folders, and previews — see `assetsApi.ts`.
  */
-export type FileKind = 'levels'
+export type FileKind = 'levels' | 'games'
 
 const req = async (kind: FileKind, path = '', init?: RequestInit): Promise<Response> => {
   const r = await fetch(`/api/${kind}${path}`, init)
@@ -38,6 +38,24 @@ export const loadLevel = async (name: string, registryFor?: (mode: string) => Re
   const registry = (mode === undefined ? undefined : registryFor?.(mode)) ?? DEFAULT_REGISTRY
   return validateLevel(raw, registry)
 }
+
+/** The level as it is on disk, unvalidated — for the caller that has to look at it before choosing a registry. */
+export const loadLevelRaw = async (name: string): Promise<unknown> => (await req('levels', `/${name}`)).json()
+
+/** A game's shared-component list (ADR 0077). A game with no file yet has none. */
+export interface GameData {
+  components: string[]
+}
+
+export const loadGame = async (name: string): Promise<GameData> => {
+  const r = await fetch(`/api/games/${name}`)
+  if (r.status === 404) return { components: [] }
+  if (!r.ok) throw new Error(`GET /api/games/${name} → ${r.status}`)
+  const raw = (await r.json()) as { components?: unknown }
+  return { components: Array.isArray(raw.components) ? raw.components.filter((c): c is string => typeof c === 'string') : [] }
+}
+
+export const saveGame = (name: string, data: GameData): Promise<void> => saveFile('games', name, data)
 
 export const saveFile = async (kind: FileKind, name: string, data: unknown): Promise<void> => {
   await req(kind, `/${name}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) })
