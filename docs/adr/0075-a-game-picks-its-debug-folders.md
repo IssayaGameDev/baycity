@@ -25,7 +25,8 @@ key. Nothing inside a block changed.
 
 ## Consequences
 
-- Keyboard's pane: Debug → frame meter, Progression. Nothing else. Progression is Kodjo's list: Reset
+- Keyboard's pane: Debug → frame meter, Movement, Progression. Nothing else. Movement is the two acceleration
+  caps (ADR 0078). Progression is Kodjo's list: Reset
   experience, Reset wins, and a grant (an amount and an **Add experience** button, for reaching a level without
   walking there). The curve sliders and the Keycaps and XP popups folders are gone; every value keeps its
   default.

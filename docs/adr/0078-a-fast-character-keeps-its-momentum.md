@@ -28,8 +28,8 @@ Kodjo's read was that this is mostly an air thing, and the ground wants snap. On
 
 Keyboard sets **150 on the ground and 40 in the air**. At level 1 (3.4 m/s) the time-based rate is 34 m/s²,
 under both, so the first levels feel as before. At 32 m/s a ground reversal takes 0.4 s instead of 0.2 and an
-air reversal 1.6 s. The numbers are Kodjo's to feel, so they are the two movement sliders in keyboard's
-Progression folder, bound to the client's live tuning.
+air reversal 1.6 s. The numbers are Kodjo's to feel, so they are the two sliders in keyboard's Movement
+folder, bound to the client's live tuning.
 
 Why a cap rather than re-tuning the times: the times are the right model at one speed — Kodjo tuned them — and
 the wrong one across a 10× range. A cap keeps the tuned feel where it was tuned and adds a physical ceiling where

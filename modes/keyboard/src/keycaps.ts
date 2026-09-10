@@ -64,7 +64,7 @@ export interface PressFeel {
   upTime: number
 }
 
-export const DEFAULT_PRESS: PressFeel = { depth: 0.85, downTime: 0.05, upTime: .65 }
+export const DEFAULT_PRESS: PressFeel = { depth: 0.7, downTime: 0.05, upTime: .65 }
 
 export interface Keycaps {
   /**
