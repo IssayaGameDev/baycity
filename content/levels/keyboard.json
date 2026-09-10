@@ -277,6 +277,47 @@
       ]
     },
     {
+      "id": "w0",
+      "name": "wins-pad",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 1,
+          "z": 56
+        }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 1.5,
+                "y": 0.25,
+                "z": 1.5
+              }
+            }
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Renderer",
+          "params": {
+            "material": "6bbc0130aff311b5"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "WinsPad",
+          "params": {
+            "wins": 1
+          }
+        }
+      ]
+    },
+    {
       "id": "kill",
       "name": "kill-plane",
       "transform": {

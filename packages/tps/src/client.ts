@@ -739,6 +739,16 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
           // asked of the rules, which also consumes the flag. Gated on `dead`, because a corpse still resting
           // on the plane keeps generating contacts.
           if (rules.takeDeath() && !dead) die()
+          // A rule moved us without killing us — cashing out at the end of a stage (ADR 0073). Position and
+          // momentum only: the rig stays whole, so nothing about death is involved.
+          const teleport = dead ? null : (rules.takeTeleport?.() ?? null)
+          if (teleport !== null) {
+            char.body.setPosition(teleport)
+            char.vx = 0
+            char.vy = 0
+            char.vz = 0
+            char.grounded = false
+          }
         }
       },
     })

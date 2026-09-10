@@ -47,6 +47,17 @@ export interface ModeSession {
   readonly takeDeath: () => boolean
   /** How far this session has progressed, for a host that persists it. `-1` for no progress yet. */
   readonly progress: () => number
+  /**
+   * Did a rule move the player this tick? Returns where to, **once**, then `null` — the same consume-on-read
+   * shape as `takeDeath`, so a host asking once per tick cannot apply one teleport twice (ADR 0073).
+   *
+   * Separate from death on purpose: dying ragdolls, waits for a click and reassembles, and a rule that just
+   * relocates the player (cashing out at the end of a stage, a portal) must not look like any of that.
+   *
+   * Optional, because most sessions never move anybody: a game with no such rule leaves it undefined and the
+   * host never asks.
+   */
+  readonly takeTeleport?: () => Vec3 | null
 }
 
 /** How a session starts: where the player left off, and a hook for saving when they get further. */

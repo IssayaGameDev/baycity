@@ -8,12 +8,15 @@ import { DEFAULT_KEYCAP_SHAPE, type KeycapShape } from './keycapGeometry'
 import { DEFAULT_KEYCAP_LOOK, DEFAULT_PRESS, drawKeycaps, type KeycapLook, type PressFeel } from './keycaps'
 import { createPopups, DEFAULT_POPUP, type PopupFeel } from './popups'
 import { DEFAULT_CURVE, levelAt, loadExperience, maxSpeedMps, saveExperience, type ProgressCurve } from './progression'
+import { keyboardSession } from './rules'
+import { loadWins, padTop, saveWins } from './wins'
 
 /**
  * Keyboard Escape, as an application (ADR 0069, ADR 0071).
  *
- * The shipped third-person game plus three things it knows nothing about: platforms carrying a `Keyboard`
- * component get keycaps, every cap somebody stands over is held down, and **striking one earns Experience**.
+ * The shipped third-person game plus four things it knows nothing about: platforms carrying a `Keyboard`
+ * component get keycaps, every cap somebody stands over is held down, **striking one earns Experience**, and
+ * standing on a `WinsPad` **banks its Wins and sends you back to the spawn** (ADR 0073).
  *
  * The loop is three values and **only one is a speed**: **Experience** is the currency (+1 a key), **Level** is
  * derived from it, and **Max Speed** is derived from Level and is the actual velocity. The game being cloned
@@ -23,7 +26,7 @@ import { DEFAULT_CURVE, levelAt, loadExperience, maxSpeedMps, saveExperience, ty
  * Everything here goes through what ADR 0066 and ADR 0071 opened: the scene, a per-frame hook, the drawn rig
  * parts, and the 2D overlay. Not one field was added to `TpsClientOptions` or `ModeDescriptor`.
  *
- * **Still missing:** the click, the speed picker, Wins, rebirth.
+ * **Still missing:** the click, the speed picker, anything Wins buy, rebirth.
  */
 const look: KeycapLook = { ...DEFAULT_KEYCAP_LOOK }
 const shape: KeycapShape = { ...DEFAULT_KEYCAP_SHAPE }
@@ -31,10 +34,20 @@ const feel: PressFeel = { ...DEFAULT_PRESS }
 const curve: ProgressCurve = { ...DEFAULT_CURVE }
 const pops: PopupFeel = { ...DEFAULT_POPUP }
 
-/** Survives a reload. The game's own key: Experience is this game's stat, not the platform's save shape. */
+/** Survive a reload. The game's own keys: Experience and Wins are this game's stats, not the platform's save shape. */
 let experience = loadExperience()
+let wins = loadWins()
+/** Cash-outs the rules reported this tick, banked here and popped on the next frame. */
+const cashedOut: { wins: number; at: { x: number; y: number; z: number } }[] = []
 
-const client = await startTpsClient(KEYBOARD_MODE)
+const client = await startTpsClient({
+  ...KEYBOARD_MODE,
+  /**
+   * The game's own session, with the one callback the platform has no word for. The rules stay headless — the
+   * editor calls them with no callback and still teleports — and the client hears about the payout here.
+   */
+  session: (loaded, opts) => keyboardSession(loaded, { ...opts, onCashOut: (paid, node) => cashedOut.push({ wins: paid, at: padTop(node) }) }),
+})
 const keycaps = drawKeycaps(client, look, shape, feel)
 const hud = createHud(client, curve)
 const popups = createPopups(client, pops)
@@ -82,11 +95,19 @@ client.onFrame((dt) => {
     const parts = client.partsOf(peer.id)
     if (parts !== null) keycaps.hold(standing(parts), CHAR_RADIUS)
   }
+  // The tick already put us back at the spawn; the payout is what is left to show. Popped from the pad we left.
+  for (const cash of cashedOut) {
+    wins += cash.wins
+    popups.burst([cash.at], `+${cash.wins} Wins`)
+  }
+  cashedOut.length = 0
+
   keycaps.update(dt)
   popups.update(dt)
 
   const at = levelAt(experience, curve)
   hud.set(experience, at.level, at.into, at.next)
+  hud.setWins(wins)
   // The velocity Level grants. Read by this game's locomotion every tick.
   keyboardTuning.moveSpeed = maxSpeedMps(at.level, curve)
 
@@ -94,6 +115,7 @@ client.onFrame((dt) => {
   if (sinceSave >= SAVE_EVERY) {
     sinceSave = 0
     saveExperience(experience)
+    saveWins(wins)
   }
 })
 
@@ -111,6 +133,10 @@ loop.addBinding(curve, 'maxSpeedPerLevel', { min: 0, max: 20, step: 0.5, label: 
 loop.addButton({ title: 'Reset experience' }).on('click', () => {
   experience = 0
   saveExperience(0)
+})
+loop.addButton({ title: 'Reset wins' }).on('click', () => {
+  wins = 0
+  saveWins(0)
 })
 
 const pop = client.debugPane.addFolder({ title: 'XP popups', expanded: false })

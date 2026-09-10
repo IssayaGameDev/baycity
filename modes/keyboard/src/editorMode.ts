@@ -4,6 +4,7 @@ import type { ModeDescriptor } from '@mp/mode'
 import { MARKER_COLORS } from '@mp/render-three'
 
 import { KEYBOARD_REGISTRY, keyboardSession, spawnOf } from './rules'
+import { WinsPad } from './wins'
 
 /** Live, shared between the descriptor, the debug pane and `main.ts`'s per-frame Max Speed write. */
 export const keyboardTuning: CharacterTuning = { ...DEFAULT_TUNING }
@@ -18,9 +19,9 @@ export const keyboardTuning: CharacterTuning = { ...DEFAULT_TUNING }
  * The game being cloned calls its currency "Speed". Here it is **Experience**, so that "speed" means the one
  * thing that is a velocity (ADR 0071).
  *
- * `registry` carries `Keyboard`, which is what makes a platform's top face a board of keys (ADR 0069). Nothing
- * about the *look* of those keys is here: it is not a rule, not level content and not something a tool needs,
- * so it is wired in `main.ts` against `@mp/tps`'s scene handle.
+ * `registry` carries `Keyboard`, which is what makes a platform's top face a board of keys (ADR 0069), and
+ * `WinsPad`, which ends a stage (ADR 0073). Nothing about the *look* of the keys is here: it is not a rule, not
+ * level content and not something a tool needs, so it is wired in `main.ts` against `@mp/tps`'s scene handle.
  */
 export const KEYBOARD_MODE: ModeDescriptor = {
   name: 'keyboard',
@@ -40,8 +41,11 @@ export const KEYBOARD_MODE: ModeDescriptor = {
    * `moveSpeed` climbs is what makes a fast character floaty and hard to turn, which is the game's skill curve.
    */
   tuning: keyboardTuning,
-  /** The palette is shared so two games' hazards look alike; the mapping is each game's own. */
-  gizmos: { [Hazard.type]: MARKER_COLORS.hazard },
+  /**
+   * The palette is shared so two games' hazards look alike; the mapping is each game's own. A `WinsPad` is
+   * where a stage ends, which is what the shared palette calls a goal.
+   */
+  gizmos: { [Hazard.type]: MARKER_COLORS.hazard, [WinsPad.type]: MARKER_COLORS.goal },
   /** No abilities of its own yet — the shipped locomotion, whose `moveSpeed` Level writes. */
   player: [
     { id: 'loco', type: 'Locomotion', params: {} },

@@ -1738,6 +1738,15 @@ const startPlay = (): void => {
         char.vz = 0
         char.grounded = false
       }
+      // A rule that relocates without killing (ADR 0073) — a play-test cashes out the way the game does.
+      const teleport = rules?.takeTeleport?.() ?? null
+      if (teleport !== null) {
+        char.body.setPosition(teleport)
+        char.vx = 0
+        char.vy = 0
+        char.vz = 0
+        char.grounded = false
+      }
     },
   })
 }
