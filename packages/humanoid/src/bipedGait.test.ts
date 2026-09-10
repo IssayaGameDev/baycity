@@ -752,6 +752,46 @@ describe('createAnimator', () => {
     }
   })
 
+  // ADR 0079: a character accelerating far past what the layer was tuned for must not be thrown flat.
+  it('believes no more acceleration than inertiaAccelCap, and is untouched below it', () => {
+    const still = carried(vec3(0, 0, 0))
+    const lagZ = (pose: Pose, part: PartName): number => Math.abs(tipPosition(pose, part).z - tipPosition(still, part).z)
+    const capped = { ...DEFAULT_GAIT, inertiaAccelCap: 20 }
+    // A violent shove: the cap reins the arm in; without it the arm goes much further.
+    expect(lagZ(carried(vec3(0, 0, 40), 1 / 12, capped), 'upperArmL')).toBeLessThan(lagZ(carried(vec3(0, 0, 40)), 'upperArmL') * 0.7)
+    // A gentle one stays under the cap and is bit-for-bit the same pose.
+    const gentle = vec3(0, 0, 0.3)
+    for (const part of PART_NAMES) expect(tipPosition(carried(gentle, 1 / 12, capped), part)).toEqual(tipPosition(carried(gentle), part))
+  })
+
+  // ADR 0079: sideways lag rolls both arms the same way; the inward one must stop at hanging straight down.
+  it('never rolls an arm inward past vertical, whichever way it is shoved', () => {
+    const downOf = (pose: Pose, part: PartName): Vec3 => rotateVec3(pose.rotation[part], vec3(0, -1, 0))
+    for (const carry of [vec3(6, 0, 0), vec3(-6, 0, 0)]) {
+      const pose = carried(carry)
+      // Positive roll carries the hanging arm toward +x. Right arm inward is -x; left arm inward is +x.
+      expect(downOf(pose, 'upperArmR').x, 'right arm must not cross into the torso').toBeGreaterThanOrEqual(-1e-6)
+      expect(downOf(pose, 'upperArmL').x, 'left arm must not cross into the torso').toBeLessThanOrEqual(1e-6)
+    }
+  })
+
+  it('weights the arms’ sideways lag separately from their fore-aft lag', () => {
+    // The arm's own roll about the shoulder, read off where it hangs: a pure sideways push has no pitch in it,
+    // so the hanging direction is (sin roll, -cos roll, 0). Relative to standing, so `armOutward` cancels.
+    const rollOf = (pose: Pose): number => {
+      const d = rotateVec3(pose.rotation.upperArmL, vec3(0, -1, 0))
+      return Math.atan2(d.x, -d.y)
+    }
+    const still = rollOf(carried(vec3(0, 0, 0)))
+    const swing = (gait: typeof DEFAULT_GAIT): number => Math.abs(rollOf(carried(vec3(3, 0, 0), 1 / 12, gait)) - still)
+    const quiet = { ...DEFAULT_GAIT, inertiaUpperArmLateral: 0.35 }
+    expect(swing(DEFAULT_GAIT)).toBeGreaterThan(0.01)
+    expect(swing(quiet)).toBeCloseTo(swing(DEFAULT_GAIT) * 0.35, 6)
+    // Fore-aft is untouched by the lateral weight.
+    const fwd = (gait: typeof DEFAULT_GAIT): number => tipPosition(carried(vec3(0, 0, 3), 1 / 12, gait), 'upperArmL').z
+    expect(fwd(quiet)).toBeCloseTo(fwd(DEFAULT_GAIT), 9)
+  })
+
   it('lags the loose parts more than the load-bearing ones', () => {
     const still = carried(vec3(0, 0, 0))
     const moved = carried(vec3(0, 0, 3))
@@ -1479,3 +1519,34 @@ describe('createAnimator', () => {
 const restPoseOf = (a: ReturnType<typeof createAnimator>): Pose =>
   a.step({ yaw: 0, speed: 0, grounded: true, rising: false }, DT)
 
+// ADR 0079: a capped cadence — past the cap the stride grows with speed and the legs cycle no faster.
+describe('maxStrideRate', () => {
+  /** Full cycles the legs complete over one second at `speed`, read off the bob, which peaks once per stride. */
+  const strideRate = (speed: number, gait = DEFAULT_GAIT): number => {
+    const a = createAnimator(gait, 3)
+    const input = { yaw: 0, speed, grounded: true, rising: false }
+    let peaks = 0
+    let prev = a.step(input, 1 / 120).bodyOffset.y
+    let rising = false
+    for (let i = 0; i < 120; i++) {
+      const y = a.step(input, 1 / 120).bodyOffset.y
+      if (y > prev) rising = true
+      else if (rising && y < prev) {
+        peaks++
+        rising = false
+      }
+      prev = y
+    }
+    return peaks
+  }
+
+  it('lets the legs cycle faster and faster by default', () => {
+    expect(strideRate(30)).toBeGreaterThan(strideRate(5.5) * 3)
+  })
+
+  it('holds the cadence at the cap once the speed would exceed it, and changes nothing below', () => {
+    const capped = { ...DEFAULT_GAIT, maxStrideRate: 3.25 }
+    expect(strideRate(30, capped)).toBeLessThanOrEqual(strideRate(5.5, capped) + 1)
+    expect(strideRate(4, capped)).toBe(strideRate(4))
+  })
+})

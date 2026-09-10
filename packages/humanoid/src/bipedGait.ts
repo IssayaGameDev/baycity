@@ -69,6 +69,15 @@ export interface GaitTuning {
   strideRun: number
   /** Speed at which `strideRun` is reached (m/s). */
   runSpeed: number
+  /**
+   * The most strides per second the legs will take (ADR 0079). `Infinity` = off.
+   *
+   * Cadence is `speed / stride`, and `stride` stops growing at `runSpeed`, so a character at six times
+   * `runSpeed` cycles its legs six times faster — ten a second against a 30 Hz tick, a strobe. Past this rate
+   * the stride grows with speed instead, so the cadence holds and the steps get long. The IK still bounds how
+   * far a leg can reach, so past that the feet slide rather than the legs flail.
+   */
+  maxStrideRate: number
   /** Peak foot lift during swing (m). */
   footLift: number
   /** Vertical bob amplitude at top speed (m). */
@@ -175,12 +184,32 @@ export interface GaitTuning {
    * means either a blind layer or a shaking one.
    */
   inertiaSampleHalfLife: number
+  /**
+   * The most acceleration the layer will believe, m/s² (ADR 0079). `Infinity` = off.
+   *
+   * `atan(a / 55)` was tuned at walking pace, where a hard start is 55 m/s² and reads as 45°. A character whose
+   * speed climbs (keyboard) accelerates at whatever its controller allows — 150 m/s² on the ground, 320 before
+   * it was capped — and the same formula throws the arms to 70–80° on every start, stop and reversal. This caps
+   * the input, as a vector so direction is kept, at the acceleration the pose was tuned for. Below it nothing
+   * changes.
+   */
+  inertiaAccelCap: number
   /** Torso lag weight. */
   inertiaBody: number
   /** Head lag weight. Low by default: a real head stabilizes itself and keeps looking level. */
   inertiaHead: number
   /** Upper arm lag weight — the loosest part of the body, and the most visible. */
   inertiaUpperArm: number
+  /**
+   * Upper arm lag weight for **sideways** acceleration only (ADR 0079). `inertiaUpperArm` still drives the
+   * fore-aft pitch.
+   *
+   * The two used to share one weight, and they are not the same thing to look at: fore-aft lag is a pitch,
+   * nearly invisible from a camera behind the character; sideways lag is a roll, both arms swinging the same
+   * way, one flying out and the other across the chest — the most visible motion on the body. At walking pace
+   * one weight served. A game that strafes and turns at speed wants this lower.
+   */
+  inertiaUpperArmLateral: number
   /** Forearm lag weight, on top of the upper arm's. */
   inertiaLowerArm: number
   /**
@@ -278,6 +307,8 @@ export interface GaitTuning {
 export const DEFAULT_GAIT: GaitTuning = {
   strideWalk: 0.9,
   strideRun: 1.7,
+  // Off: the shipped games never run past `runSpeed`. Keyboard sets the cadence `runSpeed` produces (ADR 0079).
+  maxStrideRate: Infinity,
   runSpeed: 5.5,
   footLift: 0.3,
   bob: 0.12,
@@ -309,9 +340,13 @@ export const DEFAULT_GAIT: GaitTuning = {
   inertiaStrength: 1,
   inertiaHalfLife: 0.12,
   inertiaSampleHalfLife: 0.03,
+  // Off: the shipped games never accelerate past what the layer was tuned for. Keyboard sets 55 (ADR 0079).
+  inertiaAccelCap: Infinity,
   inertiaBody: 0.35,
   inertiaHead: 0.15,
   inertiaUpperArm: 1,
+  // Same as the fore-aft weight, which is what it always was. Keyboard sets 0.35 (ADR 0079).
+  inertiaUpperArmLateral: 1,
   inertiaLowerArm: 0.6,
   inertiaHip: 0.05,
   // Scaled by 55/9.81 when `G_REF` became the sim's real gravity. Unlike every other weight here,
@@ -677,7 +712,8 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
     step: (input, dt) => {
       const speed = Math.max(0, input.speed)
       const t = tuning.runSpeed > 0 ? clamp(speed / tuning.runSpeed, 0, 1) : 0
-      const stride = tuning.strideWalk + (tuning.strideRun - tuning.strideWalk) * t
+      // Past `maxStrideRate` the stride lengthens with speed so the cadence holds (ADR 0079).
+      const stride = Math.max(tuning.strideWalk + (tuning.strideRun - tuning.strideWalk) * t, speed / tuning.maxStrideRate)
 
       // --- phase from distance, not time -------------------------------------------------
       // Distance covered **relative to the surface underfoot**, which is `speed * dt`: `speed` is
@@ -801,9 +837,18 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
       accCarryY = smooth(accCarryY, (gapCarryY + (ky - carryY)) * 0.5 * rateCarry, dt, hl)
       accCarryZ = smooth(accCarryZ, (gapCarryZ + (kz - carryZ)) * 0.5 * rateCarry, dt, hl)
 
-      const accX = accLocoX + accCarryX
-      const accY = accCarryY
-      const accZ = accLocoZ + accCarryZ
+      let accX = accLocoX + accCarryX
+      let accY = accCarryY
+      let accZ = accLocoZ + accCarryZ
+      // The most the layer will believe (ADR 0079): the planar vector is scaled down, not clipped per axis, so
+      // the direction the body leans stays the direction it was pushed; the vertical is bounded on its own.
+      const planar = Math.hypot(accX, accZ)
+      if (planar > tuning.inertiaAccelCap) {
+        const f = tuning.inertiaAccelCap / planar
+        accX *= f
+        accZ *= f
+      }
+      accY = clamp(accY, -tuning.inertiaAccelCap, tuning.inertiaAccelCap)
       // Into the character's own frame, so "forward" means where it is facing.
       const yawCos = Math.cos(yaw)
       const yawSin = Math.sin(yaw)
@@ -1027,7 +1072,11 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
         // Arms are the loosest thing on the body and the most visible, so they carry the most lag.
         // `floatUp` is mirrored (inside the `side` factor) and the lateral lag is not — one is the
         // body losing weight, the other is a direction in the world.
-        setLimb(`upperArm${s}` as PartName, swing + (airArm + ARM_ASYM_PITCH * armLead) * airBlend + lagFwd * tuning.inertiaUpperArm, side * (outward + breathOut + floatUp) + hang + lagRight * tuning.inertiaUpperArm)
+        const roll = side * (outward + breathOut + floatUp) + hang + lagRight * tuning.inertiaUpperArmLateral
+        // An arm never rolls inward past hanging straight down: past that it is inside the torso (ADR 0079).
+        // Positive roll is +x, so "inward" is negative for the right arm and positive for the left.
+        const bounded = side === 1 ? Math.max(roll, 0) : Math.min(roll, 0)
+        setLimb(`upperArm${s}` as PartName, swing + (airArm + ARM_ASYM_PITCH * armLead) * airBlend + lagFwd * tuning.inertiaUpperArm, bounded)
         // Pitch only: the forearm's lateral lag arrives by inheriting the shoulder's, and an elbow
         // is a hinge — rolling it sideways bends the arm in a direction it does not have.
         setLimb(`lowerArm${s}` as PartName, fold + airElbow * airBlend + lagFwd * tuning.inertiaLowerArm)

@@ -1,4 +1,4 @@
-import { CHAR_RADIUS, LIMB_LENGTH } from '@mp/humanoid'
+import { CHAR_RADIUS, DEFAULT_GAIT, LIMB_LENGTH } from '@mp/humanoid'
 import { THREE } from '@mp/render-three'
 import { startTpsClient } from '@mp/tps'
 
@@ -47,6 +47,20 @@ const client = await startTpsClient({
    * pane of camera, gait and sky sliders is twelve folders between you and the three below.
    */
   debugFolders: [],
+  /**
+   * The shipped gait, with the inertia layer told to believe no more than the 55 m/s² it was tuned at
+   * (ADR 0079). At this game's speeds every stick input hits the controller's 150 m/s² cap, and uncapped the
+   * arms went to 70° on every start and stop.
+   */
+  gait: {
+    ...DEFAULT_GAIT,
+    inertiaAccelCap: 55,
+    // Sideways lag rolls the arms, one out and one across the chest, and at this game's speeds every strafe
+    // and turn is a hard sideways acceleration. A third of the fore-aft weight: about 16° at the cap.
+    inertiaUpperArmLateral: 0.35,
+    // 5.5 m/s over a 1.7 m stride is 3.24 strides a second; hold that, and let the steps get long instead.
+    maxStrideRate: 3.25,
+  },
   /**
    * The game's own session, with the one callback the platform has no word for. The rules stay headless — the
    * editor calls them with no callback and still teleports — and the client hears about the payout here.
