@@ -775,7 +775,7 @@ describe('createAnimator', () => {
     }
   })
 
-  it('weights the arms’ sideways lag separately from their fore-aft lag', () => {
+  it('scales the whole layer’s sideways lag — arms and torso alike — and leaves fore-aft alone', () => {
     // The arm's own roll about the shoulder, read off where it hangs: a pure sideways push has no pitch in it,
     // so the hanging direction is (sin roll, -cos roll, 0). Relative to standing, so `armOutward` cancels.
     const rollOf = (pose: Pose): number => {
@@ -784,9 +784,18 @@ describe('createAnimator', () => {
     }
     const still = rollOf(carried(vec3(0, 0, 0)))
     const swing = (gait: typeof DEFAULT_GAIT): number => Math.abs(rollOf(carried(vec3(3, 0, 0), 1 / 12, gait)) - still)
-    const quiet = { ...DEFAULT_GAIT, inertiaUpperArmLateral: 0.35 }
+    const quiet = { ...DEFAULT_GAIT, inertiaLateral: 0.35 }
     expect(swing(DEFAULT_GAIT)).toBeGreaterThan(0.01)
     expect(swing(quiet)).toBeCloseTo(swing(DEFAULT_GAIT) * 0.35, 6)
+    // The torso too, in the same proportion: its roll about z, relative to standing.
+    const bodyRoll = (pose: Pose): number => {
+      const u = rotateVec3(pose.rotation.body, vec3(0, 1, 0))
+      return Math.atan2(-u.x, u.y)
+    }
+    const bodyStill = bodyRoll(carried(vec3(0, 0, 0)))
+    const tilt = (gait: typeof DEFAULT_GAIT): number => Math.abs(bodyRoll(carried(vec3(3, 0, 0), 1 / 12, gait)) - bodyStill)
+    expect(tilt(DEFAULT_GAIT)).toBeGreaterThan(0.005)
+    expect(tilt(quiet)).toBeCloseTo(tilt(DEFAULT_GAIT) * 0.35, 6)
     // Fore-aft is untouched by the lateral weight.
     const fwd = (gait: typeof DEFAULT_GAIT): number => tipPosition(carried(vec3(0, 0, 3), 1 / 12, gait), 'upperArmL').z
     expect(fwd(quiet)).toBeCloseTo(fwd(DEFAULT_GAIT), 9)

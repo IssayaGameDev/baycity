@@ -169,6 +169,16 @@ export interface GaitTuning {
   // these are increments down the chain and the loose end of a limb ends up lagging most.
   /** Overall response. 0 disables the layer. */
   inertiaStrength: number
+  /**
+   * How much of the **sideways** lag the whole layer shows, 0..1 (ADR 0079). Fore-aft is untouched.
+   *
+   * Sideways and fore-aft lag are not the same thing to look at from a camera behind the character: fore-aft is
+   * a pitch, nearly invisible; sideways is a roll — both arms swinging the same way, one across the chest, the
+   * torso and head tilting with them — the most visible motion on the body. At walking pace one strength
+   * served both. A game that strafes and turns at speed wants the sideways half quieter, and wants it quieter
+   * **everywhere at once** so the arms, torso, head and hips keep the proportions they were tuned with.
+   */
+  inertiaLateral: number
   /** Response half-life (s) — how loose the body is once it has been told to move. */
   inertiaHalfLife: number
   /**
@@ -200,16 +210,6 @@ export interface GaitTuning {
   inertiaHead: number
   /** Upper arm lag weight — the loosest part of the body, and the most visible. */
   inertiaUpperArm: number
-  /**
-   * Upper arm lag weight for **sideways** acceleration only (ADR 0079). `inertiaUpperArm` still drives the
-   * fore-aft pitch.
-   *
-   * The two used to share one weight, and they are not the same thing to look at: fore-aft lag is a pitch,
-   * nearly invisible from a camera behind the character; sideways lag is a roll, both arms swinging the same
-   * way, one flying out and the other across the chest — the most visible motion on the body. At walking pace
-   * one weight served. A game that strafes and turns at speed wants this lower.
-   */
-  inertiaUpperArmLateral: number
   /** Forearm lag weight, on top of the upper arm's. */
   inertiaLowerArm: number
   /**
@@ -338,6 +338,8 @@ export const DEFAULT_GAIT: GaitTuning = {
   idleSway: 0.015,
   idleRoll: 0.015,
   inertiaStrength: 1,
+  // Full sideways response, which is what it always was. Keyboard sets 0.35 (ADR 0079).
+  inertiaLateral: 1,
   inertiaHalfLife: 0.12,
   inertiaSampleHalfLife: 0.03,
   // Off: the shipped games never accelerate past what the layer was tuned for. Keyboard sets 55 (ADR 0079).
@@ -345,8 +347,6 @@ export const DEFAULT_GAIT: GaitTuning = {
   inertiaBody: 0.35,
   inertiaHead: 0.15,
   inertiaUpperArm: 1,
-  // Same as the fore-aft weight, which is what it always was. Keyboard sets 0.35 (ADR 0079).
-  inertiaUpperArmLateral: 1,
   inertiaLowerArm: 0.6,
   inertiaHip: 0.05,
   // Scaled by 55/9.81 when `G_REF` became the sim's real gravity. Unlike every other weight here,
@@ -859,7 +859,8 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
       // Negative because a part lags *against* the acceleration: both pose helpers take positive to
       // mean "tip toward +z", so one sign serves upright parts and hanging limbs alike.
       const lagFwd = -Math.atan2(aFwd, G_REF) * tuning.inertiaStrength
-      const lagRight = -Math.atan2(aRight, G_REF) * tuning.inertiaStrength
+      // Sideways scaled once, here, so every part that reads it keeps its tuned proportion (ADR 0079).
+      const lagRight = -Math.atan2(aRight, G_REF) * tuning.inertiaStrength * tuning.inertiaLateral
       const lagUp = Math.atan2(accY, G_REF) * tuning.inertiaStrength
       // Accelerating upward compresses the body. Downward is **not** allowed to lift the hips —
       // standing legs are at full extension and it cannot be solved — so lost weight goes to the
@@ -1072,7 +1073,7 @@ export const createAnimator = (tuning: GaitTuning = DEFAULT_GAIT, seed = 1): Ani
         // Arms are the loosest thing on the body and the most visible, so they carry the most lag.
         // `floatUp` is mirrored (inside the `side` factor) and the lateral lag is not — one is the
         // body losing weight, the other is a direction in the world.
-        const roll = side * (outward + breathOut + floatUp) + hang + lagRight * tuning.inertiaUpperArmLateral
+        const roll = side * (outward + breathOut + floatUp) + hang + lagRight * tuning.inertiaUpperArm
         // An arm never rolls inward past hanging straight down: past that it is inside the torso (ADR 0079).
         // Positive roll is +x, so "inward" is negative for the right arm and positive for the left.
         const bounded = side === 1 ? Math.max(roll, 0) : Math.min(roll, 0)

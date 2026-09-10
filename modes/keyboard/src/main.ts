@@ -1,5 +1,4 @@
-import { CHAR_RADIUS, DEFAULT_GAIT, LIMB_LENGTH } from '@mp/humanoid'
-import { THREE } from '@mp/render-three'
+import { CHAR_RADIUS, DEFAULT_GAIT, FOOT_Y, RIG } from '@mp/humanoid'
 import { startTpsClient } from '@mp/tps'
 
 import { KEYBOARD_MODE } from './editorMode'
@@ -55,9 +54,10 @@ const client = await startTpsClient({
   gait: {
     ...DEFAULT_GAIT,
     inertiaAccelCap: 55,
-    // Sideways lag rolls the arms, one out and one across the chest, and at this game's speeds every strafe
-    // and turn is a hard sideways acceleration. A third of the fore-aft weight: about 16° at the cap.
-    inertiaUpperArmLateral: 0.35,
+    // Sideways lag rolls the arms — one out, one across the chest — and tilts the torso and head with them, and
+    // at this game's speeds every strafe and turn is a hard sideways acceleration. A third of the fore-aft
+    // response, for the whole layer at once: about 16° on the arms and 5° on the torso at the cap.
+    inertiaLateral: 0.35,
     // 5.5 m/s over a 1.7 m stride is 3.24 strides a second; hold that, and let the steps get long instead.
     maxStrideRate: 3.25,
   },
@@ -72,38 +72,57 @@ const hud = createHud(client, curve)
 const popups = createPopups(client, pops)
 
 /**
- * Where a character's weight is: under the body, at the height of the lower **sole**.
+ * How far the torso part's centre sits above the ground when the character stands: its pivot at the hips, plus
+ * half its own height, less the foot line. A rig constant, so the ground is read off the torso rather than off
+ * the feet.
+ */
+const TORSO_ABOVE_GROUND = RIG.body.pivot.y + RIG.body.meshOffset.y - FOOT_Y
+
+/**
+ * Where a character's weight is: under the torso, at ground level.
  *
- * The sole and not the part's origin. `partsOf` gives each part's centre, and a lower leg is 0.375 m long, so
- * its centre sits ~0.19 m above the foot — enough that a band tight enough to reject a falling player would
- * also reject one standing still.
+ * Ground level is the **torso's height less a rig constant**, not the drawn feet. It was the feet — the lower of
+ * the two soles — and that broke the moment the stride was allowed to grow past `runSpeed` (ADR 0079): a leg
+ * reaching for a footfall metres ahead is clamped by the IK to a line from the hip that ends above the ground,
+ * so at 32 m/s the lower sole floated more than the 0.35 m band above the keys two frames in three, and presses
+ * came in bursts of four. The torso bobs a few centimetres and crouches on landing, all inside the band.
  *
  * Taken from the **drawn** parts rather than from the simulation, so it is one source for us and for every
  * peer, and it follows the rig you can see rather than the capsule you cannot.
  */
-const soleY = (part: { position: { y: number }; rotation: { x: number; y: number; z: number; w: number } }): number => {
-  const down = new THREE.Vector3(0, -LIMB_LENGTH / 2, 0)
-  down.applyQuaternion(new THREE.Quaternion(part.rotation.x, part.rotation.y, part.rotation.z, part.rotation.w))
-  return part.position.y + down.y
-}
-
 const standing = (parts: NonNullable<ReturnType<typeof client.partsOf>>): { x: number; y: number; z: number } => ({
   x: parts.body.position.x,
-  y: Math.min(soleY(parts.lowerLegL), soleY(parts.lowerLegR)),
+  y: parts.body.position.y - TORSO_ABOVE_GROUND,
   z: parts.body.position.z,
 })
+
+/**
+ * Where each character's sole was last frame, so this frame's presses sweep the path rather than sample the
+ * end of it. Entries for characters no longer drawn are dropped each frame.
+ */
+type CharacterId = NonNullable<ReturnType<typeof client.id>>
+const lastSole = new Map<CharacterId, { x: number; y: number; z: number }>()
 
 /** Written back on a timer, not per key: a struck cap is a `localStorage` write and there are several a second. */
 let sinceSave = 0
 const SAVE_EVERY = 3
 
 client.onFrame((dt) => {
+  const seen = new Set<CharacterId>()
+  /** Press every cap under this character between where it was last frame and where it is now. */
+  const press = (id: CharacterId, parts: NonNullable<ReturnType<typeof client.partsOf>>): readonly { x: number; y: number; z: number }[] => {
+    const sole = standing(parts)
+    const struck = keycaps.sweep(lastSole.get(id) ?? null, sole, CHAR_RADIUS)
+    lastSole.set(id, sole)
+    seen.add(id)
+    return struck
+  }
   const me = client.id()
   if (me !== null) {
     const parts = client.partsOf(me)
     if (parts !== null) {
       // Only ours earns, and only ours pops. Everybody's presses are drawn; one player's are paid for.
-      const struck = keycaps.hold(standing(parts), CHAR_RADIUS)
+      const struck = press(me, parts)
       if (struck.length > 0) {
         experience += struck.length * curve.perKey
         popups.burst(struck, `+${curve.perKey}`)
@@ -112,8 +131,9 @@ client.onFrame((dt) => {
   }
   for (const peer of client.peers()) {
     const parts = client.partsOf(peer.id)
-    if (parts !== null) keycaps.hold(standing(parts), CHAR_RADIUS)
+    if (parts !== null) press(peer.id, parts)
   }
+  for (const id of lastSole.keys()) if (!seen.has(id)) lastSole.delete(id)
   // The tick already put us back at the spawn; the payout is what is left to show. Popped from the pad we left.
   for (const cash of cashedOut) {
     wins += cash.wins

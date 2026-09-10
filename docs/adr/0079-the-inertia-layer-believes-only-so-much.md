@@ -1,9 +1,9 @@
 # ADR 0079 — The inertia layer believes only so much
 
 Status: accepted. `GaitTuning.inertiaAccelCap` bounds the acceleration the humanoid's inertia layer responds to,
-in m/s²; `GaitTuning.maxStrideRate` bounds the legs' cadence in strides per second; `inertiaUpperArmLateral`
-weights the arms' sideways lag on its own, and an arm never rolls inward past vertical. The first two are off
-(`Infinity`) by default and the weight defaults to what it always was; keyboard sets 55, 3.25 and 0.35.
+in m/s²; `GaitTuning.maxStrideRate` bounds the legs' cadence in strides per second; `inertiaLateral` scales the
+whole layer's sideways response on its own, and an arm never rolls inward past vertical. The first two are off
+(`Infinity`) by default and the scale defaults to 1; keyboard sets 55, 3.25 and 0.35.
 
 ## Context
 
@@ -47,11 +47,16 @@ the legs cycle no faster and each step covers more ground. The IK still bounds h
 so beyond that the feet slide rather than the legs flail. Keyboard sets 3.25, which is what 5.5 m/s over a 1.7 m
 stride already produces, so nothing changes up to `runSpeed`.
 
-### The arms, sideways
+### Sideways, for the whole layer
 
-`inertiaUpperArmLateral` weights the roll; `inertiaUpperArm` keeps the pitch. Default 1, the shared value it
-always was, so nothing moves elsewhere; keyboard sets 0.35, about 16° at the cap. The Inertia debug folder gets
-the slider.
+`inertiaLateral`, 0..1, applied once where the sideways lag angle is computed, so every part that reads it — arm
+roll, torso tilt, head tilt, hip travel — is quietened in the same proportion and keeps the balance it was tuned
+with. Fore-aft is untouched. Default 1, the response it always had; keyboard sets 0.35, about 16° on the arms and
+5° on the torso at the cap. The Inertia debug folder gets the slider.
+
+A first version weighted the arms alone (`inertiaUpperArmLateral`). Kodjo then saw the torso and head leaning
+the same way, for the same reason — the same shared weight — and one scale for the layer replaced it: the parts
+were tuned as a set, and quietening one of them changes the set.
 
 And, in every game: **an arm never rolls inward past hanging straight down.** Past vertical it is inside the
 torso, which was a clip nobody had reported because at walking pace the roll never got there.
@@ -78,5 +83,10 @@ were right.
 
 ## Known open
 
+- **The feet float at long strides.** Past `runSpeed` the stride grows and a leg reaching for a footfall metres
+  ahead is clamped by the IK to a line from the hip that ends above the ground. Visible at speed. It also broke
+  keyboard's sole-based key detection until the game read ground level off the torso instead (its `standing`).
+  Kodjo has not yet judged whether the float is acceptable; if not, the cadence cap comes down or stride growth
+  is bounded.
 - The head and shoulder trail sit at their `*LagMax` permanently at speed. Small, bounded, and not what was
   reported.

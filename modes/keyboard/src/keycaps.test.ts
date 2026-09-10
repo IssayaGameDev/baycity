@@ -2,7 +2,7 @@ import { vec3 } from '@mp/core'
 import { THREE } from '@mp/render-three'
 import { describe, expect, it } from 'vitest'
 
-import { boardOf, capsFor, capsUnder, glyphAt, type KeyboardParams } from './keycaps'
+import { advancePress, boardOf, capsFor, capsUnder, DEFAULT_PRESS, glyphAt, MAX_SWEEP, sweepPoints, type KeyboardParams, type PressState } from './keycaps'
 
 /**
  * Turning a standing character back into the caps under them (ADR 0069).
@@ -194,5 +194,84 @@ describe('lettering', () => {
     for (let c = 0; c < 20; c += 1) for (let r = 0; r < 20; r += 1) seen.add(glyphAt(1, c, r, 26))
     // A hash that collapsed — a bad shift, a lost multiply — would show up as a handful of letters.
     expect(seen.size).toBeGreaterThan(20)
+  })
+})
+
+describe('a press goes all the way down', () => {
+  const DT = 1 / 60
+  const struck = (): PressState => ({ held: true, committed: true, at: 0 })
+  const settle = (cap: PressState, frames: number): number[] => {
+    const trace: number[] = []
+    for (let i = 0; i < frames; i++) {
+      advancePress(cap, DEFAULT_PRESS, DT)
+      trace.push(cap.at)
+    }
+    return trace
+  }
+
+  it('bottoms out even when the foot is there for a single frame', () => {
+    const cap = struck()
+    // One frame of contact, then nobody re-asserts `held`.
+    const trace = settle(cap, 30)
+    expect(Math.max(...trace)).toBe(1)
+    // And it does not stay down: once bottomed it rises.
+    expect(trace[trace.length - 1]!).toBeLessThan(1)
+  })
+
+  it('does not bottom out without the commitment — the old behaviour, for contrast', () => {
+    const cap: PressState = { held: true, committed: false, at: 0 }
+    expect(Math.max(...settle(cap, 30))).toBeLessThan(1)
+  })
+
+  it('stays down while somebody keeps standing on it', () => {
+    const cap = struck()
+    for (let i = 0; i < 30; i++) {
+      cap.held = true
+      advancePress(cap, DEFAULT_PRESS, DT)
+    }
+    expect(cap.at).toBe(1)
+  })
+
+  it('reports itself finished only once fully up and unheld', () => {
+    const cap = struck()
+    let live = true
+    let frames = 0
+    while (live && frames < 200) {
+      live = advancePress(cap, DEFAULT_PRESS, DT)
+      frames++
+    }
+    expect(live).toBe(false)
+    expect(cap.at).toBe(0)
+    // Down in downTime, up in upTime: about (0.05 + 0.65) × 60 frames.
+    expect(frames).toBeGreaterThan(30)
+  })
+})
+
+describe('sweeping a frame of travel', () => {
+  it('samples no wider than the spacing and ends exactly at the destination', () => {
+    const pts = sweepPoints(vec3(0, 1, 0), vec3(0, 1, 2.1), 0.4)
+    expect(pts[pts.length - 1]).toEqual(vec3(0, 1, 2.1))
+    let prev = vec3(0, 1, 0)
+    for (const p of pts) {
+      expect(Math.hypot(p.x - prev.x, p.y - prev.y, p.z - prev.z)).toBeLessThanOrEqual(0.4 + 1e-9)
+      prev = p
+    }
+    // Two footprints of radius 0.4 always overlap along the path, so no cap between them can be missed.
+    expect(pts.length).toBe(6)
+  })
+
+  it('is one point — the destination — when the travel is shorter than the spacing', () => {
+    expect(sweepPoints(vec3(0, 0, 0), vec3(0.1, 0, 0), 0.4)).toEqual([vec3(0.1, 0, 0)])
+  })
+
+  it('interpolates height too, so a sweep down a ramp follows the ramp', () => {
+    const pts = sweepPoints(vec3(0, 2, 0), vec3(0, 0, 2), 1)
+    expect(pts[0]!.y).toBeCloseTo(2 - 2 / pts.length, 9)
+  })
+
+  it('treats a whole-level jump as a teleport, not a run', () => {
+    // A respawn from the last board to spawn is ~56 m; a frame at 15 fps and 32 m/s is 2.1 m.
+    expect(MAX_SWEEP).toBeGreaterThan(2.1)
+    expect(MAX_SWEEP).toBeLessThan(56)
   })
 })

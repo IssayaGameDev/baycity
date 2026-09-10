@@ -90,6 +90,16 @@ export interface Keycaps {
    */
   hold: (centre: Vec3, radius: number) => readonly Vec3[]
   /**
+   * `hold` along a path: every cap under the footprint anywhere between `from` and `to`, not only at `to`.
+   *
+   * One `hold` per frame at the current position skips keys once a frame's travel exceeds the footprint — at
+   * 32 m/s that is every frame under 40 fps, and every dropped frame at any rate. Sampled no wider apart than
+   * `radius`, so two footprints always overlap. A `from` of `null` (first sight of a character) or a jump longer
+   * than `MAX_SWEEP` (a respawn, a reconciliation) is treated as no path: pressing every key between spawn and
+   * where you died is not what a teleport means.
+   */
+  sweep: (from: Vec3 | null, to: Vec3, radius: number) => readonly Vec3[]
+  /**
    * Once per rendered frame, **after every `hold`**.
    *
    * Ordered that way on purpose and not on an internal frame hook: the hooks run in registration order, and a
@@ -139,8 +149,63 @@ interface Cap {
   down: THREE.Vector3
   /** Somebody is standing over it right now. Cleared every frame and re-asserted by `hold`. */
   held: boolean
-  /** How far down it is, 0…1. Eased toward `held ? 1 : 0`, which is what lets it stay down. */
+  /**
+   * Struck, and not yet all the way down. A cap that is stepped on goes **fully** down before it may rise,
+   * however briefly the foot was there: a running player crosses a cap in a frame or two, and a key that only
+   * dips a little for that does not read as pressed.
+   */
+  committed: boolean
+  /** How far down it is, 0…1. Eased toward 1 while held or committed, else toward 0. */
   at: number
+}
+
+/**
+ * Longest path a single frame may sweep (m). A frame at 15 fps and 32 m/s is 2.1 m; a respawn is tens of metres.
+ * Anything past this is a teleport and presses nothing on the way.
+ */
+export const MAX_SWEEP = 4
+
+/**
+ * Points along `from → to`, no further apart than `spacing`, ending exactly at `to`. `from` itself is not
+ * included: it was the previous frame's `to` and has already been pressed.
+ */
+export const sweepPoints = (from: Vec3, to: Vec3, spacing: number): Vec3[] => {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const dz = to.z - from.z
+  const length = Math.hypot(dx, dy, dz)
+  const steps = Math.max(1, Math.ceil(length / Math.max(spacing, 1e-3)))
+  const out: Vec3[] = []
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps
+    out.push({ x: from.x + dx * t, y: from.y + dy * t, z: from.z + dz * t })
+  }
+  return out
+}
+
+/** The part of a cap's state the press animation reads and writes. */
+export interface PressState {
+  held: boolean
+  committed: boolean
+  at: number
+}
+
+/**
+ * Advance one cap's press by `dt`. Returns whether the cap still needs animating.
+ *
+ * Down toward 1 while somebody stands on it **or** it was struck and has not reached the bottom yet; up toward 0
+ * otherwise. `held` is consumed here rather than in `hold`, so a cap keeps its state until something asserts it
+ * again. Pure, so it can be tested without a mesh.
+ */
+export const advancePress = (cap: PressState, feel: PressFeel, dt: number): boolean => {
+  const downStep = dt / Math.max(1e-4, feel.downTime)
+  const upStep = dt / Math.max(1e-4, feel.upTime)
+  const target = cap.held || cap.committed ? 1 : 0
+  cap.held = false
+  if (cap.at !== target) cap.at = target > cap.at ? Math.min(target, cap.at + downStep) : Math.max(target, cap.at - upStep)
+  if (cap.at >= 1) cap.committed = false
+  // Fully back up and nobody standing on it: nothing left to animate.
+  return !(cap.at === 0 && target === 0)
 }
 
 /**
@@ -227,7 +292,7 @@ export const drawKeycaps = (
         const scale = new THREE.Vector3()
         // Decomposed once and kept: a press re-composes from these rather than reading the matrix back out.
         p.matrix.decompose(rest, quat, scale)
-        caps.set(p.key, { mesh, index: i, rest, quat, scale, down: p.down, held: false, at: 0 })
+        caps.set(p.key, { mesh, index: i, rest, quat, scale, down: p.down, held: false, committed: false, at: 0 })
       })
       mesh.instanceMatrix.needsUpdate = true
       /**
@@ -243,7 +308,7 @@ export const drawKeycaps = (
     }
   }
 
-  return {
+  const self: Keycaps = {
     ready: () => boards.length > 0,
 
     hold: (centre, radius) => {
@@ -251,15 +316,27 @@ export const drawKeycaps = (
       for (const cap of capsUnder(boards, caps, centre, radius)) {
         // Newly struck: resting, and nobody else already claimed it this frame. `held` is cleared in `update`,
         // so a cap under two players at once is struck once and by whoever is asked first.
-        if (cap.at === 0 && !cap.held)
+        if (cap.at === 0 && !cap.held) {
+          cap.committed = true
           struck.push({
             x: cap.rest.x - cap.down.x * cap.scale.y,
             y: cap.rest.y - cap.down.y * cap.scale.y,
             z: cap.rest.z - cap.down.z * cap.scale.y,
           })
+        }
         cap.held = true
         active.add(cap)
       }
+      return struck
+    },
+
+    sweep: (from, to, radius) => {
+      if (from === null) return self.hold(to, radius)
+      const length = Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z)
+      if (length > MAX_SWEEP) return self.hold(to, radius)
+      const struck: Vec3[] = []
+      // A cap struck at one sample is `held` by the next, so the guard in `hold` counts it once.
+      for (const point of sweepPoints(from, to, radius)) struck.push(...self.hold(point, radius))
       return struck
     },
 
@@ -278,19 +355,11 @@ export const drawKeycaps = (
 
       if (active.size === 0) return
       const dirty = new Set<THREE.InstancedMesh>()
-      // Down faster than up: a key that returns as quickly as it depresses reads as rubber.
-      const downStep = dt / Math.max(1e-4, feel.downTime)
-      const upStep = dt / Math.max(1e-4, feel.upTime)
 
       for (const cap of [...active]) {
-        const target = cap.held ? 1 : 0
-        // Cleared here rather than in `hold`, so a cap keeps its state until something asserts it again.
-        cap.held = false
-        if (cap.at !== target) cap.at = target > cap.at ? Math.min(target, cap.at + downStep) : Math.max(target, cap.at - upStep)
-        else if (target === 0) {
-          // Fully back up and nobody standing on it: stop paying for it until somebody does.
-          active.delete(cap)
-        }
+        // Down faster than up: a key that returns as quickly as it depresses reads as rubber. And a struck cap
+        // goes all the way down before it may rise, however brief the step.
+        if (!advancePress(cap, feel, dt)) active.delete(cap) // fully up and unheld: stop paying for it
 
         scratchVec.copy(cap.rest).addScaledVector(cap.down, cap.at * feel.depth * cap.scale.y)
         scratch.compose(scratchVec, cap.quat, cap.scale)
@@ -316,6 +385,7 @@ export const drawKeycaps = (
       active.clear()
     },
   }
+  return self
 }
 
 /**
