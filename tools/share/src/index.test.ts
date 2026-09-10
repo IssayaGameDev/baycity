@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { composeShareLink, findTunnelUrl } from './index'
+import { composeShareLink, findTunnelUrl, gameToShare, isTunnelNews, SHARED_GAMES } from './index'
 
 describe('findTunnelUrl', () => {
   it('pulls the hostname out of the cloudflared banner', () => {
@@ -19,9 +19,40 @@ describe('findTunnelUrl', () => {
 })
 
 describe('composeShareLink', () => {
-  it('carries the relay endpoint as wss in ?server=', () => {
-    expect(composeShareLink('https://page.trycloudflare.com', 'https://relay.trycloudflare.com')).toBe(
-      'https://page.trycloudflare.com/?server=wss://relay.trycloudflare.com',
+  it('points the page at its own host’s /relay proxy, as wss, in ?server=', () => {
+    expect(composeShareLink('https://page.trycloudflare.com')).toBe(
+      'https://page.trycloudflare.com/?server=wss://page.trycloudflare.com/relay',
     )
+  })
+})
+
+describe('gameToShare', () => {
+  it('defaults to parkour, which is what the command always shared', () => {
+    expect(gameToShare([]).name).toBe('parkour')
+  })
+
+  it('picks the named game and its own port', () => {
+    expect(gameToShare(['keyboard'])).toEqual({ name: 'keyboard', script: 'dev:keyboard', port: 5177 })
+  })
+
+  it('refuses a name that is not a game rather than sharing the wrong one', () => {
+    expect(() => gameToShare(['kayboard'])).toThrow(/no game called "kayboard"/)
+  })
+
+  it('knows every game that has a dev script', () => {
+    expect(SHARED_GAMES.map((g) => g.name).sort()).toEqual(['keyboard', 'parkour', 'swing'])
+  })
+})
+
+describe('isTunnelNews', () => {
+  it('keeps the connection and failure lines', () => {
+    expect(isTunnelNews('2026-09-10T14:37:42Z INF Registered tunnel connection connIndex=0 protocol=quic')).toBe(true)
+    expect(isTunnelNews('2026-09-10T14:37:42Z ERR Failed to dial a quic connection')).toBe(true)
+    expect(isTunnelNews('2026-09-10T14:37:42Z WRN Cannot determine default origin certificate path')).toBe(true)
+  })
+
+  it('drops the banner and the pre-checks', () => {
+    expect(isTunnelNews('2026-09-10T14:37:41Z INF |  https://x.trycloudflare.com  |')).toBe(false)
+    expect(isTunnelNews('2026-09-10T14:37:41Z INF |  UDP Connectivity  region1.v2.argotunnel.com  PASS  |')).toBe(false)
   })
 })

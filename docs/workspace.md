@@ -27,7 +27,7 @@ strict, source-first (no build step at this stage).
 - `tools/bots` — headless `colyseus.js` load clients + `load` harness (budgets 2 & 3; live integration check). → net, server, `colyseus.js`
 - `tools/viewer` — localhost content inspector (`pnpm dev:viewer`): picker, orbit, overlays, jump gizmo, play-in-place (ADR 0014). Each catalog entry names the game its level belongs to (ADR 0052), which is where its registry and rule gizmo colours come from. → character, components, content, core, mode, physics, render-three
 - `tools/editor` — localhost level/prefab editor (`pnpm dev:editor`; ADR 0023 authoring, ADR 0024 UI): fixed-panel DOM shell (toolbar/hierarchy/viewport/inspector/palette/status, CSS grid + hand-rolled splitters), prefab references + per-node component overrides, an Inspector generated from each component's declared parameters (ADR 0035), play-in-place on the game's own rules. Tweakpane is the Inspector panel only. **Which game it authors for is explicit** (ADR 0052): descriptors are globbed from `modes/*/src/editorMode.ts`, so it depends on every game — the direction that works, since a game cannot import a tool without a cycle. Reads/writes `content/` through a Vite dev-server file API (`vite.config.ts`), so it is a dev tool only. → character, client, components, content, core, mode, physics, render-three, every mode
-- `tools/share` — opt-in remote debugging (`pnpm share`): relay + page behind two Cloudflare quick tunnels, prints one link. No workspace deps; shells out to `cloudflared`.
+- `tools/share` — opt-in remote debugging (`pnpm share [game]`): one game's page behind one Cloudflare quick tunnel, the relay proxied through it, prints one link. No workspace deps; shells out to `cloudflared`.
 - `modes/parkour` — the parkour mode on Colyseus rooms (`colyseus.js`). Exports `./rules` (headless: its composed registry and rules session — run by both its own client and the editor's play-in-place, so they cannot drift) and `./editorMode` (its `ModeDescriptor`): Roblox-like controller, auto-join, nametags, data-driven levels (`default.json`, or any file by name), checkpoints/hazard/fall read as **components on the node whose collider was touched** (ADR 0035) + persistence adapter. (Rename of `games/tps`.) → character, client, components, content, core, mode, net, physics, render-three
 - `content/` — level JSON as **node trees** (`levels/`; prefab files under `assets/prefabs/` are root nodes — ADR 0035) and the **asset tree** (`assets/`: textures, models, materials, shaders, sounds, fonts, each with a `.meta` sidecar holding its id — ADR 0026). What `tools/editor` reads and writes, and what the parkour mode loads by name (`?level=<file>`; no param → the code gym). Shared content, not a package. See ADR 0023.
 - `infra/` — empty placeholder; populated later (SEED §7).
@@ -87,16 +87,24 @@ To inspect content in isolation: `pnpm dev:viewer` — the content viewer, `tool
 
 ## Play with someone off-network (debug only)
 
-`pnpm share` (needs `cloudflared` on PATH). Reuses whatever dev servers are already
-running, starts the rest, opens a Cloudflare quick tunnel per port and prints one link
-to send. Ctrl+C tears down the whole tree.
+`pnpm share [game]` (needs `cloudflared` on PATH; `game` is `parkour` by default, or
+`swing`, `keyboard` — the table is `SHARED_GAMES` in `tools/share/src/index.ts`, one
+line per game). Reuses whatever dev servers are already running, starts the rest, opens
+**one** Cloudflare quick tunnel to the page server, and prints the link once cloudflared
+reports its connection registered. **Wait ~20 s before anyone opens it**: a resolver asked
+about the fresh hostname too early caches "does not exist" for up to 30 minutes on that
+machine (ADR 0074 — a readiness probe that asked DNS was itself the failure). Ctrl+C tears
+down the whole tree.
 
-The page and the relay land on separate origins, so the page reads its relay endpoint
-from `?server=wss://…` (`modes/parkour/src/main.ts`), falling back to
-`ws://<page host>:9200`. Vite accepts the tunnel's `Host` via `allowedHosts` in
-`modes/parkour/vite.config.ts`. Quick-tunnel hostnames are random per run, so the link
-changes every session. Traffic is relayed through Cloudflare's edge — latency is
-inflated, so never read game-feel or clock-sync numbers off it.
+One tunnel, not one per port (ADR 0074): each game's `vite.config.ts` proxies the relay
+at `/relay` (HTTP matchmaking and the WebSocket both), and the link hands the page
+`?server=wss://<same host>/relay`, read by `createNetHost`
+(`packages/game-client/src/netHost.ts`), which falls back to `ws://<page host>:9200`
+when absent. The same config accepts the tunnel's `Host` via `allowedHosts`.
+Quick-tunnel hostnames are random per run, so the link changes every
+session — and so does the origin, so anything a game keeps in `localStorage` (keyboard's
+XP and Wins) starts over with each link. Traffic is relayed through Cloudflare's edge —
+latency is inflated, so never read game-feel or clock-sync numbers off it.
 
 The server runs through `tsx` (dev tooling; not a shipped/runtime dependency). Browser apps are
 served from TypeScript source by Vite (no stack build step).
