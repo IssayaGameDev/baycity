@@ -130,5 +130,6 @@ why matters.
 | [0082](adr/0082-text-standing-in-the-world-and-pads-that-set-the-step.md) | Text standing in the world; pads that set the step |
 | [0083](adr/0083-content-is-authored-on-a-hosted-editor.md) | Content is authored on a hosted editor |
 | [0084](adr/0084-the-game-reads-a-live-mirror-of-the-box.md) | The game reads a live mirror of the box |
+| [0085](adr/0085-a-staging-game-on-the-box.md) | A staging game on the box |
 
 `Design archive/` holds superseded design material and is not maintained.

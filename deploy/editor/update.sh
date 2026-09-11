@@ -36,9 +36,13 @@ run pnpm install --frozen-lockfile --reporter=silent
 run pnpm --filter @mp/editor run build > /dev/null
 
 echo "== restart"
-systemctl restart editor-server
-sleep 2
-systemctl --no-pager --lines=3 status editor-server || true
+for unit in editor-server mp-relay mp-game-keyboard; do
+  cp "deploy/editor/${unit}.service" "/etc/systemd/system/${unit}.service"
+done
+systemctl daemon-reload
+systemctl restart editor-server mp-relay mp-game-keyboard
+sleep 3
+for unit in editor-server mp-relay mp-game-keyboard; do echo "${unit}: $(systemctl is-active "${unit}")"; done
 
 echo "== push content"
 run git push --quiet origin HEAD

@@ -1,0 +1,17 @@
+[Unit]
+Description=Staging game: keyboard, Vite dev server on the box's live content (dev.playgorbo.com)
+After=network-online.target mp-relay.service
+Wants=network-online.target
+
+[Service]
+User=editor
+Group=editor
+WorkingDirectory=/srv/editor/repo/modes/keyboard
+# The dev server, on purpose: it bundles content/ from this disk — the folder the hosted editor writes — and
+# reloads the page on every save. Loopback only; cloudflared brings the tunnel to it.
+ExecStart=/srv/editor/repo/node_modules/.bin/vite --host 127.0.0.1 --port 5177 --strictPort
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

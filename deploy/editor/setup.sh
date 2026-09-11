@@ -87,13 +87,15 @@ fi
 chown root:"${APP_USER}" "${CONF}"
 chmod 640 "${CONF}"
 
-echo "== service"
-cp deploy/editor/editor-server.service /etc/systemd/system/editor-server.service
+echo "== services"
+for unit in editor-server mp-relay mp-game-keyboard; do
+  cp "deploy/editor/${unit}.service" "/etc/systemd/system/${unit}.service"
+done
 systemctl daemon-reload
-systemctl enable --quiet editor-server
-systemctl restart editor-server
-sleep 2
-systemctl --no-pager --lines=5 status editor-server || true
+systemctl enable --quiet editor-server mp-relay mp-game-keyboard
+systemctl restart editor-server mp-relay mp-game-keyboard
+sleep 3
+for unit in editor-server mp-relay mp-game-keyboard; do echo "${unit}: $(systemctl is-active "${unit}")"; done
 
 cat <<EOF
 
@@ -104,4 +106,6 @@ Done. Next:
        journalctl -u editor-server -n 20
      Put it in auth.aud, restart again. From then on everyone in auth.users gets in.
   4. Later deploys: from your PC,  pnpm deploy:editor
+  5. The staging game (ADR 0085) is the Vite dev server on :5177 plus the relay on :9200. Route
+     dev.<domain> → http://localhost:5177 in the tunnel and add that hostname to the Access application.
 EOF

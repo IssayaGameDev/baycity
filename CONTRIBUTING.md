@@ -40,6 +40,12 @@ you are looking at.
 - **Levels** are big. Two people cannot work on the same one, so agree who has which.
 - Do not rename or delete files you did not make without asking. Deleting a material breaks every piece using it.
 
+## Playing
+
+**https://dev.playgorbo.com** is the game, running on what everyone has saved. Same login as the editor. Open it
+next to the editor: save, and the game tab reloads a second later. Everyone who is in it is in the same level
+together. This is not the public game, it is the three of us.
+
 ## Where it ends up
 
 Nothing you save is in the game until Kodjo has played it and merged it. Ask him when you want a look.

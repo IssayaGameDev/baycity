@@ -108,8 +108,9 @@ A **service token** (the mirror, `content-sync.md`) arrives as a JWT with `commo
 | File | Role |
 | --- | --- |
 | `setup.sh <repo ssh url>` | once, as root: Node 22, pnpm via corepack, user `editor`, deploy key (printed; add with write access), clone to `/srv/editor/repo` on `content` (created from master if absent), install, build, `/etc/editor-server/config.json` from the example, systemd unit, start |
-| `update.sh` | `pnpm deploy:editor` pipes it over ssh: `commit-all` → merge `origin/master` into `content` → install → build → `systemctl restart` → push `content` |
+| `update.sh` | `pnpm deploy:editor` pipes it over ssh: `commit-all` → merge `origin/master` into `content` → install → build → reinstall the three units and `systemctl restart` them → push `content` |
 | `editor-server.service` | `User=editor`, `tsx tools/editor-server/src/main.ts /etc/editor-server/config.json`, `TimeoutStopSec=45` |
+| `mp-relay.service`, `mp-game-keyboard.service` | the staging game (below) |
 | `editor-server.config.example.json` | team `cold-boat-3e59`, branch `content`, 10 MiB |
 
 Box: Hetzner CX23 (2 vCPU, 4 GB) `2.28.227.20`, Ubuntu 26.04; cloudflared installed by the dashboard's tunnel
@@ -117,6 +118,18 @@ command, `editor.playgorbo.com → localhost:8080`; Access application `Editor` 
 emails, One-time PIN login) and `Sync` (Service Auth, the `content-sync` service token, `content-sync.md`).
 Dashboard names as of setup: Cloudflare One → *Access controls* (applications, service credentials),
 *Integrations → Identity providers* (One-time PIN). Nothing listens publicly. State in `/var/lib/editor-server/`.
+
+## Staging game — `dev.playgorbo.com` (ADR 0085)
+
+| Unit | Runs | Port |
+| --- | --- | --- |
+| `mp-relay.service` | `tsx packages/server/src/main.ts` | 9200 |
+| `mp-game-keyboard.service` | `vite --host 127.0.0.1 --port 5177 --strictPort` in `modes/keyboard` — the **dev server**, bundling the box's `content/` and reloading on every save | 5177 |
+
+Tunnel hostname `dev.playgorbo.com → http://localhost:5177`, added as a destination of the `Editor` Access
+application (same `Team` policy). The page reaches the relay at `wss://dev.playgorbo.com/relay` through Vite's
+`/relay` proxy (`relayUrl`, `client/services.md`). Both units are installed by `setup.sh` and restarted by
+`update.sh`. Keyboard only; another game is another unit and hostname.
 
 ## Open
 
