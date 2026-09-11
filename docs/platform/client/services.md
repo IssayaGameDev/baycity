@@ -30,7 +30,7 @@ interface NetHost {
 
 - Synchronous; join in flight. Colyseus `joinOrCreate('game', { name, game, level })`; `game`+`level` are the
   two matchmaking filters (ADR 0052).
-- Server URL: `?server=` else `ws://${location.hostname}:9200`.
+- Server URL: `relayUrl(location)` (`src/relayUrl.ts`, ADR 0085): `?server=` wins; `http:` page → `ws://${hostname}:9200`; `https:` page → `wss://${host}/relay` (the page's Vite proxy).
 - Constants: `PING_INTERVAL_MS = 250`, `INTERPOLATION_DELAY_MS = 100`.
 - Handles `MSG_WELCOME | MSG_SNAPSHOT | MSG_ROSTER | MSG_PONG` on `NET_CHANNEL`; composes `createClockSync`,
   `createSnapshotReassembler`, `createSnapshotClient` from `@mp/client`.

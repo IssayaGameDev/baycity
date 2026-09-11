@@ -19,6 +19,7 @@ import {
 import { Client, type Room } from 'colyseus.js'
 
 import type { StatusLine } from './status'
+import { relayUrl } from './relayUrl'
 
 /**
  * The room, the clock and the snapshot stream (ADR 0013, ADR 0065).
@@ -77,11 +78,8 @@ const ADJ = ['Swift', 'Brave', 'Calm', 'Lucky', 'Sly', 'Bold', 'Keen', 'Wily']
 const NOUN = ['Fox', 'Otter', 'Hawk', 'Wolf', 'Lynx', 'Crow', 'Bear', 'Mole']
 const pick = <T>(a: readonly T[]): T => a[Math.floor(Math.random() * a.length)]!
 
-/**
- * Relay endpoint. The dev host on :9200 by default; `?server=wss://host` overrides it, so a tunnelled page
- * served from a different origin than the relay can point at its own relay URL.
- */
-const serverUrl = (): string => new URLSearchParams(location.search).get('server') ?? `ws://${location.hostname}:9200`
+/** Relay endpoint: `relayUrl` over the page's location (ADR 0085). */
+const serverUrl = (): string => relayUrl(location)
 
 /** Colyseus `onMessage` hands us a `Uint8Array` view; our codecs take a standalone `ArrayBuffer`. */
 const toArrayBuffer = (m: Uint8Array): ArrayBuffer => {

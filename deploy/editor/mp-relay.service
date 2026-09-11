@@ -1,0 +1,16 @@
+[Unit]
+Description=Staging relay (Colyseus rooms) for the dev game
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=editor
+Group=editor
+WorkingDirectory=/srv/editor/repo/packages/server
+ExecStart=/srv/editor/repo/node_modules/.bin/tsx src/main.ts
+Environment=PORT=9200
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

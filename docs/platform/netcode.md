@@ -89,7 +89,7 @@ createNetHost({ game, level, onWelcome, setStatus }): NetHost
 // NetHost: id(), sample(), nameOf(id), roster(), myName, send(state), serverNow(), dispose()
 ```
 
-Synchronous, join in flight; `id()` is `null` until `WELCOME`. `PING_INTERVAL_MS = 250`; `INTERPOLATION_DELAY_MS = 100` (module const, not exposed on `NetHost`). Endpoint: `?server=` query param, else `ws://${location.hostname}:9200`. Name: random `ADJ`/`NOUN` pair.
+Synchronous, join in flight; `id()` is `null` until `WELCOME`. `PING_INTERVAL_MS = 250`; `INTERPOLATION_DELAY_MS = 100` (module const, not exposed on `NetHost`). Endpoint: `relayUrl(location)` — `?server=` query param, else `ws://${location.hostname}:9200` on `http:`, `wss://${location.host}/relay` on `https:` (ADR 0085). Name: random `ADJ`/`NOUN` pair.
 
 ### Clock sync (`packages/client/src/clockSync.ts`)
 
@@ -115,7 +115,7 @@ Synchronous, join in flight; `id()` is `null` until `WELCOME`. `PING_INTERVAL_MS
 
 ## Endpoint override and `/relay` (ADR 0074)
 
-Every `modes/*/vite.config.ts` proxies `/relay` → `http://localhost:9200` (`ws: true`, prefix stripped). `composeShareLink` (`tools/share/src/index.ts`) hands the page `?server=wss://<host>/relay`, so page and relay share one tunnel hostname. Without `?server=` the proxy is unused.
+Every `modes/*/vite.config.ts` proxies `/relay` → `http://localhost:9200` (`ws: true`, prefix stripped). `composeShareLink` (`tools/share/src/index.ts`) hands the page `?server=wss://<host>/relay`, so page and relay share one tunnel hostname. Without `?server=` the proxy is used by any `https:` page (the staging game, ADR 0085) and unused on plain `http:` dev.
 
 ## Tests
 

@@ -16,7 +16,7 @@ export default defineConfig({
   resolve: { alias: contentAlias() },
   server: {
     port: 5179,
-    allowedHosts: ['.trycloudflare.com'],
+    allowedHosts: ['.trycloudflare.com', '.playgorbo.com'],
     /**
      * The relay, reachable through this server at `/relay` (ADR 0074). A shared page points its client at
      * `wss://<this host>/relay`, so page and relay ride **one** tunnel: two quick tunnels opened together were

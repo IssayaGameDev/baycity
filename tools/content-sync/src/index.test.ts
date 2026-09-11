@@ -21,13 +21,18 @@ describe('planSync', () => {
 })
 
 describe('readEnv', () => {
-  const full = { MP_EDITOR_URL: 'https://editor.playgorbo.com/', MP_ACCESS_CLIENT_ID: 'id', MP_ACCESS_CLIENT_SECRET: 's' }
+  const id = `${'a'.repeat(32)}.access`
+  const secret = 'b'.repeat(64)
+  const full = { MP_EDITOR_URL: 'https://editor.playgorbo.com/', MP_ACCESS_CLIENT_ID: id, MP_ACCESS_CLIENT_SECRET: secret }
   it('reads the four, defaults the root, trims the URL', () => {
-    expect(readEnv(full)).toEqual({ url: 'https://editor.playgorbo.com', clientId: 'id', clientSecret: 's', root: '.content-live' })
+    expect(readEnv(full)).toEqual({ url: 'https://editor.playgorbo.com', clientId: id, clientSecret: secret, root: '.content-live' })
     expect(readEnv({ ...full, MP_CONTENT_ROOT: 'mirror' }).root).toBe('mirror')
   })
-  it('names the missing variable', () => {
+  it('names the missing variable, and a value of the wrong shape without printing it', () => {
     expect(() => readEnv({ ...full, MP_ACCESS_CLIENT_SECRET: '' })).toThrow(/MP_ACCESS_CLIENT_SECRET/)
+    expect(() => readEnv({ ...full, MP_ACCESS_CLIENT_ID: `CF-Access-Client-Id: ${id}` })).toThrow(/space or a colon/)
+    expect(() => readEnv({ ...full, MP_ACCESS_CLIENT_SECRET: `${secret} ` })).toThrow(/space or a colon/)
+    expect(() => readEnv({ ...full, MP_ACCESS_CLIENT_ID: 'abc' })).toThrow(/does not end in .access/)
   })
 })
 

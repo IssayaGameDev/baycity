@@ -45,10 +45,18 @@ export const readEnv = (env: Record<string, string | undefined>): SyncEnv => {
     if (v === undefined || v === '') throw new Error(`${name} is not set — copy .env.example to .env and fill it in`)
     return v
   }
+  const clientId = need('MP_ACCESS_CLIENT_ID')
+  const clientSecret = need('MP_ACCESS_CLIENT_SECRET')
+  // Shape only, never the values: a pasted header name or a stray space is the usual mistake. Lengths are not
+  // checked — Cloudflare's are its own business — only what can never be part of a value.
+  for (const [name, v] of [['MP_ACCESS_CLIENT_ID', clientId], ['MP_ACCESS_CLIENT_SECRET', clientSecret]] as const) {
+    if (/[\s:]/.test(v)) throw new Error(`${name} contains a space or a colon — paste only the value, not the header name`)
+  }
+  if (!clientId.endsWith('.access')) throw new Error(`MP_ACCESS_CLIENT_ID does not end in .access — got ${clientId.length} characters`)
   return {
     url: need('MP_EDITOR_URL').replace(/\/+$/, ''),
-    clientId: need('MP_ACCESS_CLIENT_ID'),
-    clientSecret: need('MP_ACCESS_CLIENT_SECRET'),
+    clientId,
+    clientSecret,
     root: env.MP_CONTENT_ROOT === undefined || env.MP_CONTENT_ROOT === '' ? '.content-live' : env.MP_CONTENT_ROOT,
   }
 }
