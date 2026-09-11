@@ -49,5 +49,6 @@ export default defineConfig({
    * still watches them and reloads, which is the reload that matters.
    */
   server: { port: 5176, watch: { ignored: ['**/content/games/**'] } },
-  build: { target: 'es2022' },
+  // `app/`, not Vite's default `assets/`: that prefix is the content API's asset route (ADR 0083).
+  build: { target: 'es2022', assetsDir: 'app' },
 })

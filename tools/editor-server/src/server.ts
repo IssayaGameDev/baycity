@@ -138,8 +138,8 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
     const ext = extname(file)
     res.statusCode = 200
     res.setHeader('content-type', STATIC_TYPES[ext] ?? contentTypeFor(file))
-    // Vite hashes everything under assets/; index.html is the one file that must never be stale.
-    res.setHeader('cache-control', rel.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'no-cache')
+    // Vite hashes everything under app/ (`assetsDir`; `assets/` is the content route); index.html must never be stale.
+    res.setHeader('cache-control', rel.startsWith('app/') ? 'public, max-age=31536000, immutable' : 'no-cache')
     res.end(readFileSync(file))
   }
 

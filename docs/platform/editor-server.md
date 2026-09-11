@@ -41,7 +41,7 @@ Identity first: `identify(req)` → `null` is 401, `AuthError` is its status (40
 keys = repo-relative posix paths: `content/levels/<name>.json`, `content/games/<name>.json`,
 `content/assets/<path>`. Every write reports its paths to `onChanged` (sidecars included; a PUT of a new JSON
 asset rescans so its `.meta` is attributed to the writer). Upload with the same path **replaces and keeps the
-sidecar**, so the id survives. Anything other than `/api/*` and `/assets/*` resolves `false` for the host to serve.
+sidecar**, so the id survives. Anything other than `/api/*` and `/assets/*` resolves `false` for the host to serve. The built editor's own files are under `/app/` (`build.assetsDir`), because `/assets/` is this route.
 
 ## Locks
 
