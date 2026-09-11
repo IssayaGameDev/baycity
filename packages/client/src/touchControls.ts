@@ -136,8 +136,14 @@ export const createTouchControls = (
   let centreY = 0
   let knobX = 0
   let knobY = 0
-  let stickId = -1
-  let jumpId = -1
+  /**
+   * The pointer on the stick and the one on the jump button, or `null`. **Not `-1`**: iOS Safari hands touch
+   * pointers negative ids, and a `>= 0` test read a real finger as no finger — the knob followed the thumb while
+   * the stick swore nobody was on it, and the character stood still. Chrome's emulation uses positive ids, which
+   * is why it never showed there.
+   */
+  let stickId: number | null = null
+  let jumpId: number | null = null
   /** A jump press seen since the last drain — see `drainJumpPress`. */
   let jumpPress = false
   /** Finger separation at the last pinch sample, or null when a pinch is not in progress. */
@@ -152,7 +158,7 @@ export const createTouchControls = (
     centreY = c.y
     knobX = c.x
     knobY = c.y
-    stickId = -1
+    stickId = null
   }
   resetStick()
 
@@ -187,14 +193,14 @@ export const createTouchControls = (
   return {
     active: () => seen,
     movement: (): InputState => {
-      if (stickId < 0) return { x: 0, z: 0 }
+      if (stickId === null) return { x: 0, z: 0 }
       const x = (knobX - centreX) / layout.stickRadius
       const z = (knobY - centreY) / layout.stickRadius
       // Dead zone on the *magnitude*, so it is circular rather than per-axis — a per-axis one leaves
       // diagonals live while the axes are dead, which reads as the stick snapping to diagonals.
       return Math.hypot(x, z) < layout.deadZone ? { x: 0, z: 0 } : { x, z }
     },
-    jump: () => jumpId >= 0,
+    jump: () => jumpId !== null,
     drainJumpPress: () => {
       const p = jumpPress
       jumpPress = false
@@ -206,7 +212,7 @@ export const createTouchControls = (
       return out
     },
     joystick: () => ({
-      active: stickId >= 0,
+      active: stickId !== null,
       baseX: centreX,
       baseY: centreY,
       knobX,
@@ -215,13 +221,13 @@ export const createTouchControls = (
     }),
     jumpButton: () => {
       const c = jumpCentre()
-      return { x: c.x, y: c.y, radius: layout.jumpRadius, held: jumpId >= 0 }
+      return { x: c.x, y: c.y, radius: layout.jumpRadius, held: jumpId !== null }
     },
     resize: (nw, nh) => {
       w = nw
       h = nh
       pointers.clear()
-      jumpId = -1
+      jumpId = null
       pinchSpan = null
       resetStick()
     },
@@ -231,7 +237,7 @@ export const createTouchControls = (
       const zone = zoneOf(x, y)
       if (zone === null) return
       if (zone === 'stick') {
-        if (stickId >= 0) return // one thumb per stick; a second in the zone is ignored
+        if (stickId !== null) return // one thumb per stick; a second in the zone is ignored
         stickId = id
         if (layout.anchor === 'recentre') {
           // Exactly on the thumb, deliberately un-clamped. Nudging the centre inward to keep the whole
@@ -244,7 +250,7 @@ export const createTouchControls = (
         }
         setKnob(x, y)
       } else if (zone === 'jump') {
-        if (jumpId >= 0) return
+        if (jumpId !== null) return
         jumpId = id
         jumpPress = true
       } else if (lookPointers().length === 1) {
@@ -282,7 +288,7 @@ export const createTouchControls = (
       const p = pointers.get(id)
       pointers.delete(id)
       if (id === stickId) resetStick()
-      if (id === jumpId) jumpId = -1
+      if (id === jumpId) jumpId = null
       if (p === undefined) return
       if (p.zone === 'look') {
         if (p.travel <= layout.tapSlop) look.tapped = true
@@ -293,7 +299,7 @@ export const createTouchControls = (
     },
     releaseAll: () => {
       pointers.clear()
-      jumpId = -1
+      jumpId = null
       pinchSpan = null
       resetStick()
     },

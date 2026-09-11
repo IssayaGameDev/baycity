@@ -130,6 +130,10 @@ export const createShell = async ({
     pauseBtn.view.position.set(16, 16)
     pause.layout()
   }
+  // The canvas is watched, not the window: iOS fires `resize` on rotation before layout has settled, and the
+  // overlay took the canvas's stale size (see `createThreeStage`). The observer fires after layout.
+  const observer = new ResizeObserver(onResize)
+  observer.observe(canvas)
   window.addEventListener('resize', onResize)
 
   return {
@@ -138,6 +142,7 @@ export const createShell = async ({
     isOpen: () => pause.isOpen(),
     dispose: () => {
       document.removeEventListener('pointerlockchange', onPointerLockChange)
+      observer.disconnect()
       window.removeEventListener('resize', onResize)
       touchHud.dispose()
       ui.dispose()

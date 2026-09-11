@@ -287,3 +287,28 @@ describe('createTouchControls', () => {
     expect(c.drainJumpPress()).toBe(true)
   })
 })
+
+// iOS Safari hands touch pointers negative ids. A `-1` sentinel with `>= 0` tests read a real finger as no
+// finger: the knob tracked the thumb, `active` said false, and the character never moved.
+describe('pointer ids from iOS', () => {
+  it('drives the stick with a negative pointer id', () => {
+    const c = make()
+    c.pointerDown(-7, STICK_ZONE.x, STICK_ZONE.y)
+    c.pointerMove(-7, STICK_ZONE.x + 40, STICK_ZONE.y)
+    expect(c.joystick().active).toBe(true)
+    expect(c.movement().x).toBeGreaterThan(0.5)
+    c.pointerUp(-7)
+    expect(c.joystick().active).toBe(false)
+    expect(c.movement()).toEqual({ x: 0, z: 0 })
+  })
+
+  it('holds the jump button with a negative pointer id', () => {
+    const c = make()
+    const j = c.jumpButton()
+    c.pointerDown(-3, j.x, j.y)
+    expect(c.jump()).toBe(true)
+    expect(c.jumpButton().held).toBe(true)
+    c.pointerUp(-3)
+    expect(c.jump()).toBe(false)
+  })
+})

@@ -64,6 +64,15 @@ export const createThreeStage = (opts: ThreeStageOptions): ThreeStage => {
     camera.updateProjectionMatrix()
   }
   resize()
+  /**
+   * The canvas is watched, not the window. On iOS a rotation fires `resize` before layout has finished, so the
+   * canvas still reports the old size — the drawing buffer and the camera aspect took that and never heard
+   * again, and the browser stretched the stale buffer over the screen: a squashed picture that did not reach
+   * the edges. A `ResizeObserver` fires after layout, with the size the canvas actually has. The window event
+   * stays as a belt to the braces; calling `resize` twice costs nothing.
+   */
+  const observer = new ResizeObserver(resize)
+  observer.observe(opts.canvas)
   window.addEventListener('resize', resize)
 
   let onFrame: ((dtSeconds: number) => void) | null = null
@@ -105,6 +114,7 @@ export const createThreeStage = (opts: ThreeStageOptions): ThreeStage => {
     dispose: () => {
       running = false
       if (raf) cancelAnimationFrame(raf)
+      observer.disconnect()
       window.removeEventListener('resize', resize)
       renderer.dispose()
     },

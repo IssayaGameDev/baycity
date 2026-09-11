@@ -158,11 +158,18 @@ export const createPostFX = (
   composer.addPass(new OutputPass())
   composer.addPass(new SMAAPass(size.x, size.y))
 
+  // From the canvas's own layout size, after layout (see `createThreeStage`): reading the renderer's size
+  // here depended on the stage having resized first, and on `resize` firing after layout at all, which iOS
+  // rotation does not guarantee.
   const onResize = (): void => {
-    const s = renderer.getSize(new THREE.Vector2())
-    composer.setSize(s.x, s.y)
-    gtao?.setSize(s.x, s.y)
+    const canvas = renderer.domElement
+    const w = canvas.clientWidth || canvas.width
+    const h = canvas.clientHeight || canvas.height
+    composer.setSize(w, h)
+    gtao?.setSize(w, h)
   }
+  const observer = new ResizeObserver(onResize)
+  observer.observe(renderer.domElement)
   window.addEventListener('resize', onResize)
 
   /** Seeded from what was actually built, so `params` and the passes agree before anything is applied. */
@@ -201,6 +208,7 @@ export const createPostFX = (
       gtao?.setSize(w, h)
     },
     dispose: () => {
+      observer.disconnect()
       window.removeEventListener('resize', onResize)
       composer.dispose()
     },
