@@ -26,6 +26,12 @@ export const Treadmill = defineComponent({
   onContact: (_self, ctx, hit) => ctx.effects.progress(hit.node),
 })
 
+/**
+ * The state that travels when a player is on a treadmill (ADR 0064): one of the five free flag bits. Peers read
+ * it to run their copy of the character in place, exactly as the local client does (ADR 0080, amended).
+ */
+export const TREADMILL_STATE = 'treadmill'
+
 /** What standing on a treadmill for one tick is: the tier of the one you are on. */
 export interface TreadmillTick {
   multiplier: number

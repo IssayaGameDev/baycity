@@ -1,5 +1,5 @@
 import { TICK_DT } from '@mp/core'
-import { CHAR_RADIUS, createLocomotion, DEFAULT_GAIT, FOOT_Y, RIG } from '@mp/humanoid'
+import { CHAR_RADIUS, createAnimator, createLocomotion, DEFAULT_GAIT, FOOT_Y, RIG } from '@mp/humanoid'
 import { componentOn } from '@mp/components'
 import { worldLabel, type LabelLine, type THREE } from '@mp/render-three'
 import { startTpsClient } from '@mp/tps'
@@ -12,7 +12,7 @@ import { createPopups, DEFAULT_POPUP, type PopupFeel } from './popups'
 import { abbreviate, DEFAULT_CURVE, levelAt, loadExperience, maxSpeedAt, saveExperience, type ProgressCurve } from './progression'
 import { keyboardSession } from './rules'
 import { createStepper, stepsPerSecond } from './steps'
-import { Treadmill, treadmillStepValue, type TreadmillTick } from './treadmill'
+import { Treadmill, TREADMILL_STATE, treadmillStepValue, type TreadmillTick } from './treadmill'
 import { loadPerStep, loadWins, padTop, savePerStep, saveWins } from './wins'
 import { qualifies, StepPad, type StepPadOffer } from './stepPad'
 
@@ -65,6 +65,11 @@ let groundSteps = 0
 let treadmillSteps = 0
 /** The treadmill stood on this tick, for what a step is worth. `null` off one. */
 let treadmillOn: TreadmillTick | null = null
+/** When the treadmill last reported, so "on a treadmill now" is a recent report, not a stale flag. */
+let treadmillSeenMs = -Infinity
+const onTreadmillNow = (): boolean => performance.now() - treadmillSeenMs < 3 * TICK_DT * 1000
+const TREADMILL_STATES: ReadonlySet<string> = new Set([TREADMILL_STATE])
+const NO_STATES: ReadonlySet<string> = new Set()
 /** The stepper's report for the tick in progress, held until the tick's contacts have said whether we are on a treadmill. */
 let stepsThisTick = 0
 
@@ -75,6 +80,20 @@ const client = await startTpsClient({
    * pane of camera, gait and sky sliders is twelve folders between you and the three below.
    */
   debugFolders: [],
+  /**
+   * On a treadmill the character **runs in place** (ADR 0080, amended): the shared gait is handed the tuned run
+   * speed while the state is set, so the legs cycle at their natural stride and nothing else moves. The state
+   * travels (ADR 0064), so a peer on a treadmill runs in place on every screen. The same wrap-the-animator move
+   * as ADR 0063's dash: nothing was added to `AnimationInput`.
+   */
+  states: [TREADMILL_STATE],
+  playerStates: () => (onTreadmillNow() ? TREADMILL_STATES : NO_STATES),
+  animator: (gait, seed, states) => {
+    const base = createAnimator(gait, seed)
+    return {
+      step: (input, dt) => base.step(states().has(TREADMILL_STATE) ? { ...input, speed: gait.runSpeed, grounded: true, rising: false } : input, dt),
+    }
+  },
   /**
    * The shipped gait, with the inertia layer told to believe no more than the 55 m/s² it was tuned at
    * (ADR 0079). At this game's speeds every stick input hits the controller's 150 m/s² cap, and uncapped the
@@ -108,6 +127,7 @@ const client = await startTpsClient({
       // direction was held (ADR 0080, ADR 0081).
       onTreadmill: (on: TreadmillTick) => {
         treadmillOn = on
+        treadmillSeenMs = performance.now()
         treadmillSteps += stepsPerSecond(levelAt(experience, curve).level, curve) * TICK_DT
         stepsThisTick = 0 // the stepper's report for this tick, if any, is superseded
       },

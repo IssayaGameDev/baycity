@@ -8,7 +8,6 @@ What the game lacks or has unresolved, in one place. Each item names the doc or 
 - **Speed picker.** The real game lets you run below Max Speed. Only a debug stand-in exists ([debug.md](debug.md)).
 - **Treadmill lock/unlock.** Every placed treadmill is usable (ADR 0080).
 - **Rebirth, trails, auras, more worlds.** Not started.
-- **Run-in-place on the treadmill.** The character stands still on it (ADR 0080).
 - **Active-pad highlight beyond material.** Only the material swap exists (ADR 0082).
 
 ## Unresolved

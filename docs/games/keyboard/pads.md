@@ -39,6 +39,11 @@ Cadence is the game's (`stepsPerSecond(level)`, [steps.md](steps.md)); the tier 
 rate. `TreadmillTick = { multiplier }`; `treadmillStepValue(perStep, tick)`. The shipped pad `t0` is ×1 at x 6.
 No lock or unlock yet (Kodjo: next).
 
+**Runs in place.** `TREADMILL_STATE = 'treadmill'` is one of the game's travelling state bits (ADR 0064), set
+while the treadmill reported within the last three ticks. The game's `animator` wraps `createAnimator` and hands
+the gait `speed: gait.runSpeed, grounded: true` while the state is set — the natural run cycle, in place. Peers
+read the bit and do the same.
+
 ## Signs
 
 `buildSigns()` in `main.ts`, once the level exists: a `worldLabel` per pad and per treadmill (`@mp/render-three`,

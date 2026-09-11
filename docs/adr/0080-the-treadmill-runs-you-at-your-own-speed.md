@@ -65,6 +65,7 @@ not one.
 ## Known open
 
 - **No lock, no unlock.** Every treadmill placed is usable. Kodjo has said this is next.
-- The character stands still on it. The real game runs you in place. Animation is the game's `animator` to
-  supply when wanted (ADR 0063).
+- ~~The character stands still on it.~~ It runs in place now: a `treadmill` state bit (ADR 0064) and the
+  game's `animator` wrapping the shared gait with `speed: runSpeed` while the bit is set (ADR 0063's move).
+  Peers run in place too.
 - A plain pad, no belt.
