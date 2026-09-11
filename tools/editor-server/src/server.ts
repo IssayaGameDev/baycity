@@ -9,6 +9,7 @@ import { createChangeFeed } from './changes'
 import type { ServerConfig, User } from './config'
 import { commitPaths, push } from './git'
 import { heldBy, sweep, type LockTable } from './locks'
+import { proxyHttp, proxyUpgrade, routeFor } from './proxy'
 import { describeCommit, markDirty, take, takeAll, takeDue, type Session, type SessionTable } from './sessions'
 
 /**
@@ -126,7 +127,21 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
     status: () => ({ pushError }),
     admin: { token: adminToken, commitAll },
     changes: createChangeFeed(),
+    games: Object.fromEntries(Object.entries(config.games).map(([name, g]) => [name, g.path])),
   })
+
+  // --- the staging games, under this origin (ADR 0086) ---
+  const gameRoutes = Object.values(config.games).map((g) => ({ path: g.path, target: new URL(g.target), host: g.host }))
+  const relayRoute = { path: '/relay', target: new URL(config.relay) }
+  const pathOf = (req: IncomingMessage): string => (req.url ?? '/').split('?')[0] ?? '/'
+  /** `dev.playgorbo.com/` → `/play/keyboard/`, query kept. `null` when no redirect applies. */
+  const hostRedirect = (req: IncomingMessage): string | null => {
+    const host = (req.headers.host ?? '').split(':')[0]
+    const game = gameRoutes.find((g) => g.host !== undefined && g.host === host)
+    if (game === undefined || pathOf(req).startsWith(game.path)) return null
+    const q = (req.url ?? '').indexOf('?')
+    return `${game.path}${q >= 0 ? (req.url ?? '').slice(q) : ''}`
+  }
 
   // --- static editor ---
   const serveStatic = (req: IncomingMessage, res: ServerResponse): void => {
@@ -147,6 +162,17 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
   }
 
   const server = createServer((req, res) => {
+    const redirect = hostRedirect(req)
+    if (redirect !== null) {
+      res.writeHead(302, { location: redirect })
+      res.end()
+      return
+    }
+    const game = routeFor(pathOf(req), gameRoutes)
+    if (game !== undefined) {
+      proxyHttp(req, res, game.target)
+      return
+    }
     void api(req, res)
       .then((handled) => {
         if (!handled) serveStatic(req, res)
@@ -158,6 +184,16 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
           res.end('server error')
         }
       })
+  })
+
+  // Vite's HMR socket for a framed game, and the relay socket its page opens at /relay.
+  server.on('upgrade', (req, socket, head) => {
+    const route = routeFor(pathOf(req), [...gameRoutes, relayRoute])
+    if (route === undefined) {
+      socket.destroy()
+      return
+    }
+    proxyUpgrade(req, socket, head, route.target)
   })
 
   // Stale locks are swept and overdue sessions committed once a minute.
@@ -175,7 +211,11 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
     for (const s of takeDue(sessions, now, config.safetyCommitMs)) void commitSession(s)
   }, 60_000)
 
-  server.listen(config.port, () => log(`editor server on :${config.port}, ${config.auth.kind === 'none' ? 'no auth' : `Access team ${config.auth.teamDomain}`}, git ${config.git === null ? 'off' : `→ ${config.git.branch}`}`))
+  server.listen(config.port, () =>
+    log(
+      `editor server on :${config.port}, ${config.auth.kind === 'none' ? 'no auth' : `Access team ${config.auth.teamDomain}`}, git ${config.git === null ? 'off' : `→ ${config.git.branch}`}, games ${Object.keys(config.games).join(', ') || 'none'}`,
+    ),
+  )
 
   return {
     server,

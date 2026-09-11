@@ -10,6 +10,8 @@ WorkingDirectory=/srv/editor/repo/modes/keyboard
 # The dev server, on purpose: it bundles content/ from this disk — the folder the hosted editor writes — and
 # reloads the page on every save. Loopback only; cloudflared brings the tunnel to it.
 ExecStart=/srv/editor/repo/modes/keyboard/node_modules/.bin/vite --host 127.0.0.1 --port 5177 --strictPort
+# Served under the editor's origin at this path, so the editor can frame it (ADR 0086).
+Environment=MP_BASE=/play/keyboard/
 Restart=always
 RestartSec=3
 

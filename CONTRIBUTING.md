@@ -42,9 +42,12 @@ you are looking at.
 
 ## Playing
 
-**https://dev.playgorbo.com** is the game, running on what everyone has saved. Same login as the editor. Open it
-next to the editor: save, and the game tab reloads a second later. Everyone who is in it is in the same level
-together. This is not the public game, it is the three of us.
+**Play** in the editor's toolbar, with a level open, saves it and runs the real game on it, right there in the
+viewport: HUD, progress, everyone else who is playing that level. **Stop** brings the editor back. Esc inside
+the game is its pause menu, not Stop.
+
+The same game is at **https://dev.playgorbo.com**, same login, if you want it in its own tab. People are
+together when they are on the same level. This is not the public game, it is the three of us.
 
 ## Where it ends up
 

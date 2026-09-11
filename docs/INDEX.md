@@ -24,7 +24,7 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 | [client/tps.md](platform/client/tps.md) | `startTpsClient` options and every `TpsClient` handle |
 | [client/input.md](platform/client/input.md) | Keyboard, mouse, touch zones, actions, `InputCommand` |
 | [rendering.md](platform/rendering.md) | Stage, post-FX, overlay layer, level view, assets, world labels, Pixi UI |
-| [editor.md](platform/editor.md) | What it authors, content API client, locks in the editor, game discovery, adoption, play-test |
+| [editor.md](platform/editor.md) | What it authors, content API client, locks in the editor, game discovery, adoption, Play |
 | [editor-server.md](platform/editor-server.md) | The content API, Access identity, locks, session commits, upload, deploy |
 | [content-sync.md](platform/content-sync.md) | The live mirror, `content-root.ts`, the `@content` alias, `.env` |
 | [tooling.md](platform/tooling.md) | share, bots, netsim, viewer |
@@ -131,5 +131,6 @@ why matters.
 | [0083](adr/0083-content-is-authored-on-a-hosted-editor.md) | Content is authored on a hosted editor |
 | [0084](adr/0084-the-game-reads-a-live-mirror-of-the-box.md) | The game reads a live mirror of the box |
 | [0085](adr/0085-a-staging-game-on-the-box.md) | A staging game on the box |
+| [0086](adr/0086-play-in-the-editor-is-the-real-game.md) | Play in the editor is the real game |
 
 `Design archive/` holds superseded design material and is not maintained.

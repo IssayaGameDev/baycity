@@ -15,6 +15,10 @@
     "push": true,
     "committer": { "name": "Editor Server", "email": "editor@playgorbo.com" }
   },
+  "games": {
+    "keyboard": { "path": "/play/keyboard/", "target": "http://127.0.0.1:5177", "host": "dev.playgorbo.com" }
+  },
+  "relay": "http://127.0.0.1:9200",
   "maxUploadBytes": 10485760,
   "lockStaleMs": 120000,
   "heartbeatMs": 30000,

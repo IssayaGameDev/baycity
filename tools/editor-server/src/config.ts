@@ -53,6 +53,21 @@ export interface ServerConfig {
   heartbeatMs: number
   /** A session's dirty files are committed at least this often even if its lock is never released. */
   safetyCommitMs: number
+  /**
+   * The staging games this server fronts (ADR 0086): by game name, the path they are served under here and the
+   * dev server to proxy to. `host`: a hostname whose root should land on the game (`dev.playgorbo.com`).
+   */
+  games: Record<string, StagingGame>
+  /** The relay every game page reaches at `/relay` (ws). */
+  relay: string
+}
+
+export interface StagingGame {
+  /** `/play/keyboard/` — also the game's Vite `base`. */
+  path: string
+  /** `http://127.0.0.1:5177` */
+  target: string
+  host?: string
 }
 
 export const DEFAULTS = {
@@ -114,6 +129,15 @@ export const parseConfig = (raw: unknown, baseDir: string): ServerConfig => {
     }
   }
 
+  const games: Record<string, StagingGame> = {}
+  const rawGames = (typeof o.games === 'object' && o.games !== null ? o.games : {}) as Record<string, unknown>
+  for (const [name, g] of Object.entries(rawGames)) {
+    const r = (typeof g === 'object' && g !== null ? g : {}) as Record<string, unknown>
+    const p = str(r.path, `games.${name}.path`)
+    if (!p.startsWith('/') || !p.endsWith('/')) throw new Error(`config.games.${name}.path: must start and end with /`)
+    games[name] = { path: p, target: str(r.target, `games.${name}.target`), ...(typeof r.host === 'string' && r.host !== '' ? { host: r.host } : {}) }
+  }
+
   const repoRoot = path(o.repoRoot, 'repoRoot')
   return {
     port: num(o.port, DEFAULTS.port, 'port'),
@@ -126,6 +150,8 @@ export const parseConfig = (raw: unknown, baseDir: string): ServerConfig => {
     lockStaleMs: num(o.lockStaleMs, DEFAULTS.lockStaleMs, 'lockStaleMs'),
     heartbeatMs: num(o.heartbeatMs, DEFAULTS.heartbeatMs, 'heartbeatMs'),
     safetyCommitMs: num(o.safetyCommitMs, DEFAULTS.safetyCommitMs, 'safetyCommitMs'),
+    games,
+    relay: typeof o.relay === 'string' && o.relay !== '' ? o.relay : 'http://127.0.0.1:9200',
   }
 }
 

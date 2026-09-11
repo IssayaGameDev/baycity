@@ -84,7 +84,16 @@ File list filtered by game: `visibleLevels()` keeps entries whose `mode` is abse
 - `unplaceableWhy(assetId)` non-null only for `foreign` types → Project tile greyed, reason in tooltip (`unplaceableWhy` host option, `src/projectPanel.ts`); context-menu "Place in the level" disabled with the same reason.
 - `Doc.placePrefab` returns `-1` on any remaining unknown type — second gate.
 
-## Play-test in place (`startPlay`/`stopPlay`)
+## Play
+
+**A level plays in the real game** (ADR 0086): `startPlay` → `gamePageUrl()` (`me.games[activeMode.name]`,
+from `/api/me`) → `startFramePlay(url)`: `saveNow()` if dirty (a refused save is no play), then an
+`<iframe id="game-frame">` over `#centre` at `${url}?level=${fileState.name}`; `playing = true`, orbit off. Stop
+(toolbar) removes the frame. Esc inside the frame is the game's pause; the `pointerlockchange` exit applies only
+to the in-editor loop. Hosted: `url` is the proxied `/play/<game>/`; dev: `http://localhost:<port>/` with
+`pnpm dev:<game>` running. A prefab, or a game the server has no page for, falls through to the loop below.
+
+## Play-test in place (`startPlay`/`stopPlay`) — prefabs
 
 The game's own code, not a copy (ADR 0052):
 

@@ -88,6 +88,8 @@ export interface Me {
   heartbeatMs: number
   lockStaleMs: number
   maxUploadBytes: number
+  /** Game name → where its playable page is, for Play to frame (ADR 0086). Relative to this origin or absolute. */
+  games: Record<string, string>
 }
 
 const getJson = async <T>(url: string): Promise<T> => {
