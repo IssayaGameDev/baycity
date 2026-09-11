@@ -27,8 +27,8 @@ key. Nothing inside a block changed.
 
 - Keyboard's pane: Debug → frame meter, Movement, Progression. Nothing else. Movement is the two acceleration
   caps (ADR 0078). Progression is Kodjo's list: Reset
-  experience, Reset wins, and a grant (an amount and an **Add experience** button, for reaching a level without
-  walking there). The curve sliders and the Keycaps and XP popups folders are gone; every value keeps its
+  experience, Reset wins, and two grants (an amount and an **Add experience** button, for reaching a level without
+  walking there; the same for Wins, which gate the step pads). The curve sliders and the Keycaps and XP popups folders are gone; every value keeps its
   default.
 - Parkour, swing, `_template`: unchanged.
 - To get a platform folder back in keyboard, list it: `debugFolders: ['movement']`.

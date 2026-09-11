@@ -14,7 +14,7 @@
         "shadows": true
       },
       "ambient": {
-        "intensity": 0.37000000000000005
+        "intensity": 0.30000000000000004
       },
       "sky": {
         "topColor": "#2b3f7a",
@@ -35,18 +35,34 @@
   },
   "nodes": [
     {
-      "id": "m0",
+      "id": "kill",
+      "name": "kill-plane",
       "transform": {
         "position": {
           "x": 0,
-          "y": 1.75,
-          "z": 0
+          "y": -12,
+          "z": 20
         }
       },
       "components": [
         {
           "id": "c0",
-          "type": "Spawn",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 80,
+                "y": 0.5,
+                "z": 80
+              }
+            },
+            "trigger": true
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Hazard",
           "params": {}
         }
       ]
@@ -99,249 +115,647 @@
             "seed": 0
           }
         }
-      ]
-    },
-    {
-      "id": "b1",
-      "name": "board-2",
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 1,
-          "z": 20.5
-        }
-      },
-      "components": [
+      ],
+      "children": [
         {
-          "id": "c0",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 3,
-                "y": 0.25,
-                "z": 3
-              }
+          "id": "m0",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 1.75,
+              "z": 0
+            },
+            "scale": {
+              "x": 0.9999,
+              "y": 1,
+              "z": 1
             }
-          }
-        },
-        {
-          "id": "c1",
-          "type": "Renderer",
-          "params": {
-            "material": "55205761e38bc929"
-          }
-        },
-        {
-          "id": "c2",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 63
-          }
-        }
-      ]
-    },
-    {
-      "id": "b2",
-      "name": "board-3",
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 1,
-          "z": 29.5
-        }
-      },
-      "components": [
-        {
-          "id": "c0",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 3,
-                "y": 0.25,
-                "z": 2.5
-              }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Spawn",
+              "params": {}
             }
-          }
+          ]
         },
         {
-          "id": "c1",
-          "type": "Renderer",
-          "params": {
-            "material": "55205761e38bc929"
-          }
-        },
-        {
-          "id": "c2",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 126
-          }
-        }
-      ]
-    },
-    {
-      "id": "b3",
-      "name": "board-4",
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 1,
-          "z": 39.5
-        }
-      },
-      "components": [
-        {
-          "id": "c0",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 2.5,
-                "y": 0.25,
-                "z": 2.5
-              }
+          "id": "steppads",
+          "name": "step-pads",
+          "transform": {
+            "position": {
+              "x": -3.6364,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 0.303,
+              "y": 1,
+              "z": 0.2
             }
-          }
-        },
-        {
-          "id": "c1",
-          "type": "Renderer",
-          "params": {
-            "material": "55205761e38bc929"
-          }
-        },
-        {
-          "id": "c2",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 196
-          }
-        }
-      ]
-    },
-    {
-      "id": "b4",
-      "name": "board-5",
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 1,
-          "z": 51.5
-        }
-      },
-      "components": [
-        {
-          "id": "c0",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 2.5,
-                "y": 0.25,
-                "z": 2
-              }
+          },
+          "components": [],
+          "children": [
+            {
+              "id": "sp1",
+              "name": "step-pad-1",
+              "transform": {
+                "position": {
+                  "x": 1,
+                  "y": 0.5,
+                  "z": 9.5
+                }
+              },
+              "components": [
+                {
+                  "id": "c0",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 1,
+                        "y": 0.25,
+                        "z": 1
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "c1",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "d8dcf8f542bebdf7"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "type": "StepPad",
+                  "params": {
+                    "perStep": 1,
+                    "requiresWins": 0,
+                    "activeMaterial": "6bbc0130aff311b5",
+                    "idleMaterial": "d67ddcac4f57efc8"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "sp2",
+              "name": "step-pad-2",
+              "transform": {
+                "position": {
+                  "x": 1,
+                  "y": 0.5,
+                  "z": 7
+                }
+              },
+              "components": [
+                {
+                  "id": "c0",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 1,
+                        "y": 0.25,
+                        "z": 1
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "c1",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "d8dcf8f542bebdf7"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "type": "StepPad",
+                  "params": {
+                    "perStep": 2,
+                    "requiresWins": 3,
+                    "activeMaterial": "6bbc0130aff311b5",
+                    "idleMaterial": "d67ddcac4f57efc8"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "sp3",
+              "name": "step-pad-3",
+              "transform": {
+                "position": {
+                  "x": 1,
+                  "y": 0.5,
+                  "z": 4.5
+                }
+              },
+              "components": [
+                {
+                  "id": "c0",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 1,
+                        "y": 0.25,
+                        "z": 1
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "c1",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "d8dcf8f542bebdf7"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "type": "StepPad",
+                  "params": {
+                    "perStep": 5,
+                    "requiresWins": 15,
+                    "activeMaterial": "6bbc0130aff311b5",
+                    "idleMaterial": "d67ddcac4f57efc8"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "sp4",
+              "name": "step-pad-4",
+              "transform": {
+                "position": {
+                  "x": 1,
+                  "y": 0.5,
+                  "z": 2
+                }
+              },
+              "components": [
+                {
+                  "id": "c0",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 1,
+                        "y": 0.25,
+                        "z": 1
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "c1",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "d8dcf8f542bebdf7"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "type": "StepPad",
+                  "params": {
+                    "perStep": 25,
+                    "requiresWins": 100,
+                    "activeMaterial": "6bbc0130aff311b5",
+                    "idleMaterial": "d67ddcac4f57efc8"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "sp5",
+              "name": "step-pad-5",
+              "transform": {
+                "position": {
+                  "x": 1,
+                  "y": 0.5,
+                  "z": -0.5
+                }
+              },
+              "components": [
+                {
+                  "id": "c0",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 1,
+                        "y": 0.25,
+                        "z": 1
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "c1",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "d8dcf8f542bebdf7"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "type": "StepPad",
+                  "params": {
+                    "perStep": 50,
+                    "requiresWins": 500,
+                    "activeMaterial": "6bbc0130aff311b5",
+                    "idleMaterial": "d67ddcac4f57efc8"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "sp6",
+              "name": "step-pad-6",
+              "transform": {
+                "position": {
+                  "x": 1,
+                  "y": 0.5,
+                  "z": -3
+                }
+              },
+              "components": [
+                {
+                  "id": "c0",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 1,
+                        "y": 0.25,
+                        "z": 1
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "c1",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "d8dcf8f542bebdf7"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "type": "StepPad",
+                  "params": {
+                    "perStep": 100,
+                    "requiresWins": 2500,
+                    "activeMaterial": "6bbc0130aff311b5",
+                    "idleMaterial": "d67ddcac4f57efc8"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "sp7",
+              "name": "step-pad-7",
+              "transform": {
+                "position": {
+                  "x": 1,
+                  "y": 0.5,
+                  "z": -5.5
+                }
+              },
+              "components": [
+                {
+                  "id": "c0",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 1,
+                        "y": 0.25,
+                        "z": 1
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "c1",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "d8dcf8f542bebdf7"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "type": "StepPad",
+                  "params": {
+                    "perStep": 250,
+                    "requiresWins": 15000,
+                    "activeMaterial": "6bbc0130aff311b5",
+                    "idleMaterial": "d67ddcac4f57efc8"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "sp8",
+              "name": "step-pad-8",
+              "transform": {
+                "position": {
+                  "x": 1,
+                  "y": 0.5,
+                  "z": -8
+                }
+              },
+              "components": [
+                {
+                  "id": "c0",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 1,
+                        "y": 0.25,
+                        "z": 1
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "c1",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "d8dcf8f542bebdf7"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "type": "StepPad",
+                  "params": {
+                    "perStep": 500,
+                    "requiresWins": 50000,
+                    "activeMaterial": "6bbc0130aff311b5",
+                    "idleMaterial": "d67ddcac4f57efc8"
+                  }
+                }
+              ]
             }
-          }
+          ]
         },
         {
-          "id": "c1",
-          "type": "Renderer",
-          "params": {
-            "material": "55205761e38bc929"
-          }
-        },
-        {
-          "id": "c2",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 280
-          }
-        }
-      ]
-    },
-    {
-      "id": "w0",
-      "name": "wins-pad",
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 1,
-          "z": 56
-        }
-      },
-      "components": [
-        {
-          "id": "c0",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 1.5,
-                "y": 0.25,
-                "z": 1.5
-              }
+          "id": "54515f53",
+          "name": "Treadmills",
+          "transform": {
+            "position": {
+              "x": -0.3482,
+              "y": -0.366,
+              "z": 0.9012
+            },
+            "scale": {
+              "x": 0.303,
+              "y": 1,
+              "z": 0.2
             }
-          }
-        },
-        {
-          "id": "c1",
-          "type": "Renderer",
-          "params": {
-            "material": "6bbc0130aff311b5"
-          }
-        },
-        {
-          "id": "c2",
-          "type": "WinsPad",
-          "params": {
-            "wins": 1
-          }
+          },
+          "components": [],
+          "children": [
+            {
+              "id": "t0",
+              "name": "treadmill",
+              "transform": {
+                "position": {
+                  "x": -5.8509,
+                  "y": 0.866,
+                  "z": -17.5061
+                }
+              },
+              "components": [
+                {
+                  "id": "c0",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 1.5,
+                        "y": 0.25,
+                        "z": 1.5
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "c1",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "d67ddcac4f57efc8"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "type": "Treadmill",
+                  "params": {
+                    "multiplier": 1
+                  }
+                }
+              ]
+            },
+            {
+              "id": "e5f507ee",
+              "name": "treadmill",
+              "transform": {
+                "position": {
+                  "x": -1.8509,
+                  "y": 0.866,
+                  "z": -17.5061
+                }
+              },
+              "components": [
+                {
+                  "id": "c0",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 1.5,
+                        "y": 0.25,
+                        "z": 1.5
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "c1",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "d67ddcac4f57efc8"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "type": "Treadmill",
+                  "params": {
+                    "multiplier": 5
+                  }
+                }
+              ]
+            },
+            {
+              "id": "f1682fde",
+              "name": "treadmill",
+              "transform": {
+                "position": {
+                  "x": 2.1491,
+                  "y": 0.866,
+                  "z": -17.5061
+                }
+              },
+              "components": [
+                {
+                  "id": "c0",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 1.5,
+                        "y": 0.25,
+                        "z": 1.5
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "c1",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "d67ddcac4f57efc8"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "type": "Treadmill",
+                  "params": {
+                    "multiplier": 10
+                  }
+                }
+              ]
+            },
+            {
+              "id": "546bb4bd",
+              "name": "treadmill",
+              "transform": {
+                "position": {
+                  "x": 6.1491,
+                  "y": 0.866,
+                  "z": -17.5061
+                }
+              },
+              "components": [
+                {
+                  "id": "c0",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 1.5,
+                        "y": 0.25,
+                        "z": 1.5
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "c1",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "d67ddcac4f57efc8"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "type": "Treadmill",
+                  "params": {
+                    "multiplier": 50
+                  }
+                }
+              ]
+            },
+            {
+              "id": "bd3140bd",
+              "name": "treadmill",
+              "transform": {
+                "position": {
+                  "x": 10.1491,
+                  "y": 0.866,
+                  "z": -17.5061
+                }
+              },
+              "components": [
+                {
+                  "id": "c0",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 1.5,
+                        "y": 0.25,
+                        "z": 1.5
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "c1",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "d67ddcac4f57efc8"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "type": "Treadmill",
+                  "params": {
+                    "multiplier": 100
+                  }
+                }
+              ]
+            }
+          ]
         }
       ]
     },
     {
-      "id": "steppads",
-      "name": "step-pads",
+      "id": "b803cc8a",
+      "name": "Obstacle 1",
       "transform": {
         "position": {
-          "x": -12,
-          "y": 1,
-          "z": 0
+          "x": 6.1031,
+          "y": 7.1795,
+          "z": 36.4923
         }
       },
       "components": [],
       "children": [
         {
-          "id": "sp1",
-          "name": "step-pad-1",
+          "id": "b1",
+          "name": "board-2",
           "transform": {
             "position": {
-              "x": 1,
-              "y": 0.5,
-              "z": 9.5
+              "x": -6.1031,
+              "y": -6.1795,
+              "z": -15.9923
             }
           },
           "components": [
@@ -352,9 +766,9 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 1,
+                    "x": 3,
                     "y": 0.25,
-                    "z": 1
+                    "z": 3
                   }
                 }
               }
@@ -363,29 +777,30 @@
               "id": "c1",
               "type": "Renderer",
               "params": {
-                "material": "d8dcf8f542bebdf7"
+                "material": "55205761e38bc929"
               }
             },
             {
               "id": "c2",
-              "type": "StepPad",
+              "type": "Keyboard",
               "params": {
-                "perStep": 1,
-                "requiresWins": 0,
-                "activeMaterial": "6bbc0130aff311b5",
-                "idleMaterial": "d67ddcac4f57efc8"
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 63
               }
             }
           ]
         },
         {
-          "id": "sp2",
-          "name": "step-pad-2",
+          "id": "b2",
+          "name": "board-3",
           "transform": {
             "position": {
-              "x": 1,
-              "y": 0.5,
-              "z": 7
+              "x": -6.1031,
+              "y": -6.1795,
+              "z": -6.9923
             }
           },
           "components": [
@@ -396,9 +811,9 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 1,
+                    "x": 3,
                     "y": 0.25,
-                    "z": 1
+                    "z": 2.5
                   }
                 }
               }
@@ -407,29 +822,30 @@
               "id": "c1",
               "type": "Renderer",
               "params": {
-                "material": "d8dcf8f542bebdf7"
+                "material": "55205761e38bc929"
               }
             },
             {
               "id": "c2",
-              "type": "StepPad",
+              "type": "Keyboard",
               "params": {
-                "perStep": 2,
-                "requiresWins": 3,
-                "activeMaterial": "6bbc0130aff311b5",
-                "idleMaterial": "d67ddcac4f57efc8"
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 126
               }
             }
           ]
         },
         {
-          "id": "sp3",
-          "name": "step-pad-3",
+          "id": "b3",
+          "name": "board-4",
           "transform": {
             "position": {
-              "x": 1,
-              "y": 0.5,
-              "z": 4.5
+              "x": -6.1031,
+              "y": -6.1795,
+              "z": 3.0077
             }
           },
           "components": [
@@ -440,9 +856,9 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 1,
+                    "x": 2.5,
                     "y": 0.25,
-                    "z": 1
+                    "z": 2.5
                   }
                 }
               }
@@ -451,29 +867,30 @@
               "id": "c1",
               "type": "Renderer",
               "params": {
-                "material": "d8dcf8f542bebdf7"
+                "material": "55205761e38bc929"
               }
             },
             {
               "id": "c2",
-              "type": "StepPad",
+              "type": "Keyboard",
               "params": {
-                "perStep": 5,
-                "requiresWins": 15,
-                "activeMaterial": "6bbc0130aff311b5",
-                "idleMaterial": "d67ddcac4f57efc8"
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 196
               }
             }
           ]
         },
         {
-          "id": "sp4",
-          "name": "step-pad-4",
+          "id": "b4",
+          "name": "board-5",
           "transform": {
             "position": {
-              "x": 1,
-              "y": 0.5,
-              "z": 2
+              "x": -6.1031,
+              "y": -6.1795,
+              "z": 15.0077
             }
           },
           "components": [
@@ -484,9 +901,9 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 1,
+                    "x": 2.5,
                     "y": 0.25,
-                    "z": 1
+                    "z": 2
                   }
                 }
               }
@@ -495,29 +912,30 @@
               "id": "c1",
               "type": "Renderer",
               "params": {
-                "material": "d8dcf8f542bebdf7"
+                "material": "55205761e38bc929"
               }
             },
             {
               "id": "c2",
-              "type": "StepPad",
+              "type": "Keyboard",
               "params": {
-                "perStep": 25,
-                "requiresWins": 100,
-                "activeMaterial": "6bbc0130aff311b5",
-                "idleMaterial": "d67ddcac4f57efc8"
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 280
               }
             }
           ]
         },
         {
-          "id": "sp5",
-          "name": "step-pad-5",
+          "id": "w0",
+          "name": "wins-pad",
           "transform": {
             "position": {
-              "x": 1,
-              "y": 0.5,
-              "z": -0.5
+              "x": -6.1031,
+              "y": -6.1795,
+              "z": 19.5077
             }
           },
           "components": [
@@ -528,9 +946,9 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 1,
+                    "x": 1.5,
                     "y": 0.25,
-                    "z": 1
+                    "z": 1.5
                   }
                 }
               }
@@ -539,149 +957,14 @@
               "id": "c1",
               "type": "Renderer",
               "params": {
-                "material": "d8dcf8f542bebdf7"
+                "material": "6bbc0130aff311b5"
               }
             },
             {
               "id": "c2",
-              "type": "StepPad",
+              "type": "WinsPad",
               "params": {
-                "perStep": 50,
-                "requiresWins": 500,
-                "activeMaterial": "6bbc0130aff311b5",
-                "idleMaterial": "d67ddcac4f57efc8"
-              }
-            }
-          ]
-        },
-        {
-          "id": "sp6",
-          "name": "step-pad-6",
-          "transform": {
-            "position": {
-              "x": 1,
-              "y": 0.5,
-              "z": -3
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 1,
-                    "y": 0.25,
-                    "z": 1
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "d8dcf8f542bebdf7"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "StepPad",
-              "params": {
-                "perStep": 100,
-                "requiresWins": 2500,
-                "activeMaterial": "6bbc0130aff311b5",
-                "idleMaterial": "d67ddcac4f57efc8"
-              }
-            }
-          ]
-        },
-        {
-          "id": "sp7",
-          "name": "step-pad-7",
-          "transform": {
-            "position": {
-              "x": 1,
-              "y": 0.5,
-              "z": -5.5
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 1,
-                    "y": 0.25,
-                    "z": 1
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "d8dcf8f542bebdf7"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "StepPad",
-              "params": {
-                "perStep": 250,
-                "requiresWins": 15000,
-                "activeMaterial": "6bbc0130aff311b5",
-                "idleMaterial": "d67ddcac4f57efc8"
-              }
-            }
-          ]
-        },
-        {
-          "id": "sp8",
-          "name": "step-pad-8",
-          "transform": {
-            "position": {
-              "x": 1,
-              "y": 0.5,
-              "z": -8
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 1,
-                    "y": 0.25,
-                    "z": 1
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "d8dcf8f542bebdf7"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "StepPad",
-              "params": {
-                "perStep": 500,
-                "requiresWins": 50000,
-                "activeMaterial": "6bbc0130aff311b5",
-                "idleMaterial": "d67ddcac4f57efc8"
+                "wins": 1
               }
             }
           ]
@@ -689,254 +972,30 @@
       ]
     },
     {
-      "id": "kill",
-      "name": "kill-plane",
+      "id": "91f6e3d8",
+      "name": "empty",
       "transform": {
         "position": {
-          "x": 0,
-          "y": -12,
-          "z": 20
+          "x": 11.3974,
+          "y": 1,
+          "z": 9.017
         }
       },
       "components": [
         {
-          "id": "c0",
-          "type": "Collider",
+          "id": "80bbfe29",
+          "type": "Light",
           "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 80,
-                "y": 0.5,
-                "z": 80
-              }
-            },
-            "trigger": true
+            "kind": "ambient",
+            "color": "#ffffff",
+            "groundColor": "#808080",
+            "intensity": 0.1999999999999998,
+            "range": 12,
+            "decay": 2,
+            "angle": 40,
+            "penumbra": 0.3,
+            "castShadow": false
           }
-        },
-        {
-          "id": "c1",
-          "type": "Hazard",
-          "params": {}
-        }
-      ]
-    },
-    {
-      "id": "54515f53",
-      "name": "Treadmills",
-      "transform": {
-        "position": {
-          "x": -1.1491,
-          "y": 0.634,
-          "z": 4.5061
-        }
-      },
-      "components": [],
-      "children": [
-        {
-          "id": "t0",
-          "name": "treadmill",
-          "transform": {
-            "position": {
-              "x": -5.8509,
-              "y": 0.866,
-              "z": -17.5061
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 1.5,
-                    "y": 0.25,
-                    "z": 1.5
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "d67ddcac4f57efc8"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Treadmill",
-              "params": {
-                "multiplier": 1
-              }
-            }
-          ]
-        },
-        {
-          "id": "e5f507ee",
-          "name": "treadmill",
-          "transform": {
-            "position": {
-              "x": -1.8509,
-              "y": 0.866,
-              "z": -17.5061
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 1.5,
-                    "y": 0.25,
-                    "z": 1.5
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "d67ddcac4f57efc8"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Treadmill",
-              "params": {
-                "multiplier": 5
-              }
-            }
-          ]
-        },
-        {
-          "id": "f1682fde",
-          "name": "treadmill",
-          "transform": {
-            "position": {
-              "x": 2.1491,
-              "y": 0.866,
-              "z": -17.5061
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 1.5,
-                    "y": 0.25,
-                    "z": 1.5
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "d67ddcac4f57efc8"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Treadmill",
-              "params": {
-                "multiplier": 10
-              }
-            }
-          ]
-        },
-        {
-          "id": "546bb4bd",
-          "name": "treadmill",
-          "transform": {
-            "position": {
-              "x": 6.1491,
-              "y": 0.866,
-              "z": -17.5061
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 1.5,
-                    "y": 0.25,
-                    "z": 1.5
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "d67ddcac4f57efc8"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Treadmill",
-              "params": {
-                "multiplier": 50
-              }
-            }
-          ]
-        },
-        {
-          "id": "bd3140bd",
-          "name": "treadmill",
-          "transform": {
-            "position": {
-              "x": 10.1491,
-              "y": 0.866,
-              "z": -17.5061
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 1.5,
-                    "y": 0.25,
-                    "z": 1.5
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "d67ddcac4f57efc8"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Treadmill",
-              "params": {
-                "multiplier": 100
-              }
-            }
-          ]
         }
       ]
     }

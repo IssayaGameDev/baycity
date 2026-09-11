@@ -331,3 +331,10 @@ loop.addButton({ title: 'Add experience' }).on('click', () => {
   experience += Math.max(0, Math.floor(grant.amount))
   saveExperience(experience)
 })
+// The same for Wins: the step pads are gated on them, and earning 50K by running is not a debug workflow.
+const grantWins = { amount: 100 }
+loop.addBinding(grantWins, 'amount', { min: 0, step: 1, label: 'grant Wins' })
+loop.addButton({ title: 'Add wins' }).on('click', () => {
+  wins += Math.max(0, Math.floor(grantWins.amount))
+  saveWins(wins)
+})
