@@ -31,11 +31,16 @@ const headers = { 'CF-Access-Client-Id': env.clientId, 'CF-Access-Client-Secret'
 const stamp = (): string => new Date().toTimeString().slice(0, 8)
 const log = (msg: string): void => console.log(`${stamp()} ${msg}`)
 
+const REFUSED = "Access refused the service token: check MP_ACCESS_CLIENT_ID/SECRET in .env, and that the Editor application has a Service Auth policy including this token"
+
+/**
+ * Access answers a bad or unlisted service token with a **redirect to its login page**, not a 401 — so redirects
+ * are not followed, and an HTML body where JSON was expected means the same thing.
+ */
 const api = async (path: string): Promise<Response> => {
-  const r = await fetch(`${env.url}${path}`, { headers })
-  if (r.status === 401 || r.status === 403) {
-    throw new Error(`Access refused the service token (${r.status}). Expired or not in the Editor app's Service Auth policy.`)
-  }
+  const r = await fetch(`${env.url}${path}`, { headers, redirect: 'manual' })
+  if (r.status === 401 || r.status === 403 || (r.status >= 300 && r.status < 400)) throw new Error(`${REFUSED} (${r.status})`)
+  if ((r.headers.get('content-type') ?? '').includes('text/html')) throw new Error(`${REFUSED} (login page)`)
   return r
 }
 
@@ -97,10 +102,11 @@ const fullSync = async (): Promise<number> => {
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
 const run = async (): Promise<void> => {
-  let seq = await fullSync()
+  let seq: number | null = null
   let failures = 0
   for (;;) {
     try {
+      if (seq === null) seq = await fullSync()
       const r = await api(`/api/changes?since=${seq}&timeout=${POLL_TIMEOUT_MS}`)
       if (r.status === 410) {
         log('fell behind the feed; full sync')
@@ -118,13 +124,7 @@ const run = async (): Promise<void> => {
       const wait = Math.min(30_000, 1000 * 2 ** Math.min(failures, 5))
       console.error(`${stamp()} !! ${e instanceof Error ? e.message : String(e)} — retrying in ${wait / 1000}s (the game is showing a stale mirror meanwhile)`)
       await sleep(wait)
-      if (failures % 5 === 0) {
-        try {
-          seq = await fullSync()
-        } catch {
-          // reported on the next loop
-        }
-      }
+      if (failures % 5 === 0) seq = null // every fifth failure, start over with a full sync
     }
   }
 }

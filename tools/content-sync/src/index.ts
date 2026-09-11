@@ -45,10 +45,15 @@ export const readEnv = (env: Record<string, string | undefined>): SyncEnv => {
     if (v === undefined || v === '') throw new Error(`${name} is not set — copy .env.example to .env and fill it in`)
     return v
   }
+  const clientId = need('MP_ACCESS_CLIENT_ID')
+  const clientSecret = need('MP_ACCESS_CLIENT_SECRET')
+  // Shape only, never the values: a pasted header name, a stray space or a swapped pair is the usual mistake.
+  if (!/^[0-9a-f]{32}\.access$/.test(clientId)) throw new Error(`MP_ACCESS_CLIENT_ID does not look like a Client ID (32 hex characters then .access) — got ${clientId.length} characters`)
+  if (!/^[0-9a-f]{64}$/.test(clientSecret)) throw new Error(`MP_ACCESS_CLIENT_SECRET does not look like a Client Secret (64 hex characters) — got ${clientSecret.length} characters`)
   return {
     url: need('MP_EDITOR_URL').replace(/\/+$/, ''),
-    clientId: need('MP_ACCESS_CLIENT_ID'),
-    clientSecret: need('MP_ACCESS_CLIENT_SECRET'),
+    clientId,
+    clientSecret,
     root: env.MP_CONTENT_ROOT === undefined || env.MP_CONTENT_ROOT === '' ? '.content-live' : env.MP_CONTENT_ROOT,
   }
 }
