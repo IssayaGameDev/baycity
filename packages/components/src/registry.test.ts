@@ -95,3 +95,33 @@ describe('the built-in registry', () => {
     expect(Bumper.params.power.default).toBe(26)
   })
 })
+
+describe('assetParamIds (ADR 0082)', async () => {
+  const { assetParamIds } = await import('./read')
+  const { defineComponent } = await import('./define')
+  const { createRegistry } = await import('./registry')
+  const Pad = defineComponent({
+    type: 'Pad',
+    params: {
+      active: { kind: 'asset', of: 'material', default: '' },
+      idle: { kind: 'asset', of: 'material', default: '' },
+      look: { kind: 'asset', of: 'model', default: '' },
+      n: { kind: 'number', default: 1 },
+    },
+  })
+  const reg = createRegistry([Pad])
+  const nodes = [
+    { components: [{ id: 'a', type: 'Pad', params: { active: 'm1', idle: '', look: 'mod1', n: 3 } }] },
+    { components: [{ id: 'b', type: 'Pad', params: { active: 'm2', idle: 'm1' } }] },
+    { components: [{ id: 'c', type: 'Unknown', params: { active: 'zzz' } }] },
+  ]
+
+  it('collects every named asset once, skipping empties and unknown components', () => {
+    expect(assetParamIds(nodes, reg).sort()).toEqual(['m1', 'm2', 'mod1'])
+  })
+
+  it('filters by kind', () => {
+    expect(assetParamIds(nodes, reg, 'material').sort()).toEqual(['m1', 'm2'])
+    expect(assetParamIds(nodes, reg, 'model')).toEqual(['mod1'])
+  })
+})

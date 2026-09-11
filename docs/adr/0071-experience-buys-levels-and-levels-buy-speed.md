@@ -116,6 +116,12 @@ exist.
 - **Level gates nothing**, there being one stage.
 - **Nothing migrates an old save.** The key was renamed with the concept.
 
+## Correction (ADR 0081)
+
+**Experience is not paid per keycap struck.** Kodjo tested the real game: pushing a wall with no key going down
+pays, mid-air pays nothing. A step is time holding a direction on the ground, at a fixed four a second. The keys
+press but pay nothing. See ADR 0081.
+
 ## Correction
 
 **Max Speed never reached the character.** `main.ts` wrote `moveSpeed` into the game's own `CharacterTuning` —

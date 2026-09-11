@@ -49,6 +49,12 @@ export interface ProgressCurve {
    * metres because the physics is.
    */
   metresPerStud: number
+  /**
+   * Steps a second while holding a direction on the ground (ADR 0081). Measured in the game being cloned: ~40
+   * steps in 10 s, and the same count at speed 10 and speed 100 — a fixed cadence, not one that follows speed. A
+   * step is time holding a direction on the ground, not a key struck.
+   */
+  stepsPerSecond: number
 }
 
 export const DEFAULT_CURVE: ProgressCurve = {
@@ -58,6 +64,7 @@ export const DEFAULT_CURVE: ProgressCurve = {
   baseMaxSpeed: 10,
   maxSpeedPerLevel: 2,
   metresPerStud: 0.28,
+  stepsPerSecond: 4,
 }
 
 /**

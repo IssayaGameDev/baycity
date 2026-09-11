@@ -4,6 +4,10 @@ import type { ModeDescriptor } from '@mp/mode'
 import { MARKER_COLORS } from '@mp/render-three'
 
 import { KEYBOARD_REGISTRY, keyboardSession, spawnOf } from './rules'
+import { createStepper } from './steps'
+import { DEFAULT_CURVE } from './progression'
+import { StepPad } from './stepPad'
+import { Treadmill } from './treadmill'
 import { WinsPad } from './wins'
 
 /**
@@ -40,13 +44,18 @@ export const KEYBOARD_MODE: ModeDescriptor = {
    * The palette is shared so two games' hazards look alike; the mapping is each game's own. A `WinsPad` is
    * where a stage ends, which is what the shared palette calls a goal.
    */
-  gizmos: { [Hazard.type]: MARKER_COLORS.hazard, [WinsPad.type]: MARKER_COLORS.goal },
-  /** No abilities of its own yet — the shipped locomotion, whose `moveSpeed` Level writes. */
+  gizmos: { [Hazard.type]: MARKER_COLORS.hazard, [WinsPad.type]: MARKER_COLORS.goal, [Treadmill.type]: MARKER_COLORS.checkpoint, [StepPad.type]: MARKER_COLORS.bumper },
+  /**
+   * The shipped locomotion, whose `moveSpeed` Level writes, and the **Stepper** that turns held input into the
+   * steps Experience is paid for (ADR 0081). This list and `playerDefs` have to agree (see `modes/swing`).
+   */
   player: [
     { id: 'loco', type: 'Locomotion', params: {} },
+    { id: 'stepper', type: 'Stepper', params: {} },
     { id: 'death', type: Death.type, params: {} },
   ],
-  playerDefs: (host) => [createLocomotion(host)],
+  /** The editor's play-test carries the Stepper with nowhere to report to; `main.ts` binds the sink. */
+  playerDefs: (host) => [createLocomotion(host), createStepper({ curve: () => DEFAULT_CURVE })],
   spawn: spawnOf,
   session: keyboardSession,
 }

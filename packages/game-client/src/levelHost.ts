@@ -1,3 +1,4 @@
+import { assetParamIds } from '@mp/components'
 import { instantiateLevel, type Level, type LoadedLevel } from '@mp/content'
 import type { PhysicsWorld } from '@mp/physics'
 import type { Registry } from '@mp/components'
@@ -40,6 +41,10 @@ export interface LevelHost {
   occluding: () => Iterable<THREE.Object3D>
   /** Hand the camera the surfaces it wants holed. */
   setOccluders: (handles: readonly number[]) => void
+  /** The meshes drawing the node that owns a collider handle (ADR 0082). */
+  meshesOf: (handle: number) => readonly THREE.Mesh[]
+  /** A loaded material asset by id, or `null`. Everything a component parameter names is loaded (ADR 0082). */
+  material: (assetId: string) => THREE.Material | null
   dispose: () => void
 }
 
@@ -78,7 +83,9 @@ export const loadLevelInto = async ({
   // still arriving. Marker pads are just their colour-coded box here — radius and overlay visualization
   // belongs to the viewer.
   const assets = createAssetRuntime({ db: ASSET_DB, urlOf: assetUrlOf, materialOf })
-  await assets.load(assetIdsIn(loaded.visuals))
+  // The Renderers' models and materials, and every asset any component parameter names (ADR 0082) — a pad's
+  // active material is a game's to pick in the editor, and it has to be here when the game asks for it.
+  await assets.load([...assetIdsIn(loaded.visuals), ...assetParamIds(loaded.nodes, registry)])
   const view: LevelView = addLevel(scene, loaded.visuals, { assets, cutout })
   const lights: ContentLights = addLights(scene, loaded.lights)
 
@@ -96,6 +103,8 @@ export const loadLevelInto = async ({
     setOccluders: (handles) => {
       view.setOccluders(handles)
     },
+    meshesOf: (handle) => view.meshesOf(handle),
+    material: (assetId) => assets.material(assetId),
     dispose: () => {
       view.dispose()
       lights.dispose()

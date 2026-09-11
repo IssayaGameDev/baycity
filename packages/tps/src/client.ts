@@ -27,7 +27,7 @@ import {
 } from '@mp/humanoid'
 import { createOrbitCamera, type OcclusionQueries, type OrbitCamera } from '@mp/camera'
 import { PLAYER_NODE_ID, type ModeDescriptor, type PlayerHost } from '@mp/mode'
-import { type ComponentData, type LoadedLevel } from '@mp/content'
+import { type ComponentData, type LoadedLevel, type WorldNode } from '@mp/content'
 import {
   Death,
   characterAccess,
@@ -207,6 +207,26 @@ export interface TpsClient {
   world: () => PhysicsWorld | null
   /** The instantiated level, or `null` before there is one. */
   level: () => LoadedLevel | null
+  /**
+   * The drawn meshes of a level node (ADR 0082), for a game to restyle a piece of the level at runtime — an
+   * active pad, a lit door. Empty before the level exists or for a node that draws nothing. The same "hand over
+   * a fact" move as `partsOf` (ADR 0066): the game changes a material, the platform never learns what a pad is.
+   */
+  meshesOf: (node: WorldNode) => readonly THREE.Mesh[]
+  /**
+   * A material asset the level loaded, by id (ADR 0082). Every material a component parameter names is loaded
+   * with the level, so a game restyling a node reads the id off the component and asks here.
+   */
+  material: (assetId: string) => THREE.Material | null
+  /**
+   * Keep an object out of the ambient-occlusion prepass (ADR 0082). Returns the undo.
+   *
+   * A billboard in the world pass draws no depth, but the AO prepass draws everything with an override
+   * material and would see it as a tilted quad — the dark ghost the nametags were moved to the overlay layer
+   * to escape. A sign that must hide behind walls cannot live on that layer, so it stays in the world and is
+   * excluded here instead, the same way the surfaces wearing the camera's cutout are (ADR 0055).
+   */
+  excludeFromAO: (object: THREE.Object3D) => () => void
 }
 
 /**
@@ -307,7 +327,9 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
   // The scene: stage, greybox pipeline, sky, post-FX, and the render step that draws nametags after
   // post-FX. The AO pass asks for the currently-holed surfaces fresh each frame — the level does not exist
   // yet, it arrives with the first snapshot (ADR 0055).
-  const { stage, env, postfx, photoSky } = await createScene(canvas, () => level?.occluding() ?? [])
+  /** Objects a game keeps out of the AO prepass (ADR 0082), alongside the cutout's surfaces. */
+  const aoExcluded = new Set<THREE.Object3D>()
+  const { stage, env, postfx, photoSky } = await createScene(canvas, () => [...(level?.occluding() ?? []), ...aoExcluded])
 
   // Player views (own + peers): the blocky rig, procedurally animated, + billboard nametag.
   // One shared gait object so the debug pane retunes every character live (ADR 0018).
@@ -964,6 +986,18 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
     partsOf: (id) => avatars.partsOf(id),
     world: () => physicsWorld,
     level: () => loaded,
+    meshesOf: (node) => {
+      if (level === null) return []
+      // A node drawing a model lists all its colliders against one mesh; dedupe so a caller sees each once.
+      const out = new Set<THREE.Mesh>()
+      for (const handle of node.colliderHandles) for (const mesh of level.meshesOf(handle)) out.add(mesh)
+      return [...out]
+    },
+    material: (assetId) => level?.material(assetId) ?? null,
+    excludeFromAO: (object) => {
+      aoExcluded.add(object)
+      return () => aoExcluded.delete(object)
+    },
     onFrame: frameHooks.add,
     dispose: () => {
       if (disposed) return

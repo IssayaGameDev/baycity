@@ -5,6 +5,9 @@ import type { Vec3 } from '@mp/core'
 import { spawnFrom, type ModeSession, type ModeSessionOptions } from '@mp/mode'
 
 import { Keyboard } from './keycaps'
+import { StepPad, type StepPadOffer } from './stepPad'
+import { STEPPER_DEF } from './steps'
+import { Treadmill, type TreadmillTick } from './treadmill'
 import { WinsPad } from './wins'
 import game from '../../../content/games/keyboard.json'
 
@@ -21,7 +24,7 @@ import game from '../../../content/games/keyboard.json'
  * components, and **the shared components named in `content/games/keyboard.json`** — a data file, so the editor can
  * add to it when a level here needs a `Bumper` or a `Checkpoint` the game did not have yet.
  */
-export const KEYBOARD_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, Keyboard, WinsPad, ...sharedComponents(game.components)])
+export const KEYBOARD_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, STEPPER_DEF, Keyboard, WinsPad, Treadmill, StepPad, ...sharedComponents(game.components)])
 
 /** How far above a spawn node the character's origin sits — half the capsule, plus its cap. */
 export const STAND_OFFSET = CHAR_HALF_HEIGHT + CHAR_RADIUS
@@ -38,6 +41,10 @@ export const spawnOf = spawnFrom(STAND_OFFSET)
 export interface KeyboardSessionOptions extends ModeSessionOptions {
   /** A `WinsPad` paid out. The client banks and shows it; the editor's play-test passes nothing. */
   readonly onCashOut?: (wins: number, node: WorldNode) => void
+  /** Standing on a `Treadmill` this tick (ADR 0080). Once per tick, for as long as you stand there. */
+  readonly onTreadmill?: (on: TreadmillTick) => void
+  /** Standing on a `StepPad` this tick (ADR 0082): what it offers. The game holds the Wins and decides. */
+  readonly onStepPad?: (offer: StepPadOffer, node: WorldNode) => void
 }
 
 /**
@@ -63,6 +70,18 @@ export const keyboardSession = (loaded: LoadedLevel, opts: KeyboardSessionOption
       // Every contact with a rule-bearing node lands here; only a pad means anything to this game. Standing on
       // one reports every tick, so a cash-out already waiting to be applied is not paid a second time.
       progress: (node) => {
+        // A step pad is a stay too (ADR 0082): the offer is reported every tick; the game takes it once.
+        const stepPad = componentOn(node.components, StepPad)
+        if (stepPad !== undefined) {
+          opts.onStepPad?.({ perStep: stepPad.perStep, requiresWins: stepPad.requiresWins }, node)
+          return
+        }
+        // A treadmill is a stay: every tick you stand on it is a report (ADR 0080).
+        const mill = componentOn(node.components, Treadmill)
+        if (mill !== undefined) {
+          opts.onTreadmill?.({ multiplier: mill.multiplier })
+          return
+        }
         if (teleport !== null) return
         const pad = componentOn(node.components, WinsPad)
         if (pad === undefined) return

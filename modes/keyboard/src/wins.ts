@@ -60,3 +60,24 @@ export const saveWins = (wins: number): void => {
     // A session that cannot save still plays.
   }
 }
+
+/** The per-step value the player last took from a `StepPad` (ADR 0082), in this game's own key. */
+const STEP_KEY = 'keyboard.perStep'
+
+export const loadPerStep = (fallback: number): number => {
+  try {
+    const raw = localStorage.getItem(STEP_KEY)
+    const n = raw === null ? fallback : Number.parseFloat(raw)
+    return Number.isFinite(n) && n >= 1 ? n : fallback
+  } catch {
+    return fallback
+  }
+}
+
+export const savePerStep = (perStep: number): void => {
+  try {
+    localStorage.setItem(STEP_KEY, String(perStep))
+  } catch {
+    // A session that cannot save still plays.
+  }
+}

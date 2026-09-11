@@ -1,4 +1,7 @@
-import { CHAR_RADIUS, DEFAULT_GAIT, FOOT_Y, RIG } from '@mp/humanoid'
+import { TICK_DT } from '@mp/core'
+import { CHAR_RADIUS, createLocomotion, DEFAULT_GAIT, FOOT_Y, RIG } from '@mp/humanoid'
+import { componentOn } from '@mp/components'
+import { worldLabel, type LabelLine, type THREE } from '@mp/render-three'
 import { startTpsClient } from '@mp/tps'
 
 import { KEYBOARD_MODE } from './editorMode'
@@ -6,16 +9,20 @@ import { createHud } from './hud'
 import { DEFAULT_KEYCAP_SHAPE, type KeycapShape } from './keycapGeometry'
 import { DEFAULT_KEYCAP_LOOK, DEFAULT_PRESS, drawKeycaps, type KeycapLook, type PressFeel } from './keycaps'
 import { createPopups, DEFAULT_POPUP, type PopupFeel } from './popups'
-import { DEFAULT_CURVE, levelAt, loadExperience, maxSpeedMps, saveExperience, type ProgressCurve } from './progression'
+import { abbreviate, DEFAULT_CURVE, levelAt, loadExperience, maxSpeedAt, saveExperience, type ProgressCurve } from './progression'
 import { keyboardSession } from './rules'
-import { loadWins, padTop, saveWins } from './wins'
+import { createStepper, stepsPerSecond } from './steps'
+import { Treadmill, treadmillStepValue, type TreadmillTick } from './treadmill'
+import { loadPerStep, loadWins, padTop, savePerStep, saveWins } from './wins'
+import { qualifies, StepPad, type StepPadOffer } from './stepPad'
 
 /**
  * Keyboard Escape, as an application (ADR 0069, ADR 0071).
  *
  * The shipped third-person game plus four things it knows nothing about: platforms carrying a `Keyboard`
- * component get keycaps, every cap somebody stands over is held down, **striking one earns Experience**, and
- * standing on a `WinsPad` **banks its Wins and sends you back to the spawn** (ADR 0073).
+ * component get keycaps, every cap somebody stands over is held down, **holding a direction on the ground earns
+ * Experience by the step** (ADR 0081 — the keys are what you see, not what you earn), and standing on a
+ * `WinsPad` **banks its Wins and sends you back to the spawn** (ADR 0073).
  *
  * The loop is three values and **only one is a speed**: **Experience** is the currency (+1 a key), **Level** is
  * derived from it, and **Max Speed** is derived from Level and is the actual velocity. The game being cloned
@@ -36,8 +43,30 @@ const pops: PopupFeel = { ...DEFAULT_POPUP }
 /** Survive a reload. The game's own keys: Experience and Wins are this game's stats, not the platform's save shape. */
 let experience = loadExperience()
 let wins = loadWins()
+/** What a step pays (ADR 0082): the last `StepPad` taken, or the curve's one. */
+let perStep = loadPerStep(curve.perKey)
 /** Cash-outs the rules reported this tick, banked here and popped on the next frame. */
 const cashedOut: { wins: number; at: { x: number; y: number; z: number } }[] = []
+/**
+ * A debug stand-in for the speed picker the real game has (ADR 0071's known open): run at a chosen speed up to
+ * Max Speed rather than always at Max. Off, you run at Max Speed. In studs/s, the game's unit.
+ */
+const speedPick = { enabled: false, studs: 12 }
+
+/**
+ * Steps taken and not yet paid out, on the ground and on a treadmill (ADR 0081, ADR 0080). Both accrue
+ * fractionally per tick; the frame pays whole steps, one popup each saying what it paid.
+ *
+ * A tick spent on a treadmill is a treadmill tick, not also a ground tick, so holding a direction on one does
+ * not pay twice. The stepper reports first in a tick (the movement slot) and the treadmill second (contacts), so
+ * the ground steps of a tick that turns out to be on a treadmill are handed over here.
+ */
+let groundSteps = 0
+let treadmillSteps = 0
+/** The treadmill stood on this tick, for what a step is worth. `null` off one. */
+let treadmillOn: TreadmillTick | null = null
+/** The stepper's report for the tick in progress, held until the tick's contacts have said whether we are on a treadmill. */
+let stepsThisTick = 0
 
 const client = await startTpsClient({
   ...KEYBOARD_MODE,
@@ -65,7 +94,39 @@ const client = await startTpsClient({
    * The game's own session, with the one callback the platform has no word for. The rules stay headless — the
    * editor calls them with no callback and still teleports — and the client hears about the payout here.
    */
-  session: (loaded, opts) => keyboardSession(loaded, { ...opts, onCashOut: (paid, node) => cashedOut.push({ wins: paid, at: padTop(node) }) }),
+  session: (loaded, opts) =>
+    keyboardSession(loaded, {
+      ...opts,
+      onCashOut: (paid, node) => cashedOut.push({ wins: paid, at: padTop(node) }),
+      // A pad's offer, every tick stood on it. Taken when the Wins allow; nothing otherwise (Kodjo's call).
+      onStepPad: (offer: StepPadOffer) => {
+        if (!qualifies(wins, offer) || offer.perStep === perStep) return
+        perStep = offer.perStep
+        savePerStep(perStep)
+      },
+      // Once per tick while standing on it: this tick's steps are the treadmill's, at its tier, whether or not a
+      // direction was held (ADR 0080, ADR 0081).
+      onTreadmill: (on: TreadmillTick) => {
+        treadmillOn = on
+        treadmillSteps += stepsPerSecond(curve) * TICK_DT
+        stepsThisTick = 0 // the stepper's report for this tick, if any, is superseded
+      },
+    }),
+  /**
+   * The locomotion, and the Stepper bound to this client (ADR 0081): held input on the ground becomes steps,
+   * banked per tick and paid out per frame below.
+   */
+  playerDefs: (host) => [
+    createLocomotion(host),
+    createStepper({
+      curve: () => curve,
+      onSteps: (steps) => {
+        // Settle the previous tick's report first: it was on the ground unless a treadmill claimed it.
+        groundSteps += stepsThisTick
+        stepsThisTick = steps
+      },
+    }),
+  ],
 })
 const keycaps = drawKeycaps(client, look, shape, feel)
 const hud = createHud(client, curve)
@@ -103,6 +164,69 @@ const standing = (parts: NonNullable<ReturnType<typeof client.partsOf>>): { x: n
 type CharacterId = NonNullable<ReturnType<typeof client.id>>
 const lastSole = new Map<CharacterId, { x: number; y: number; z: number }>()
 
+/**
+ * A sign over every `StepPad` and every `Treadmill` (ADR 0082), from the node's own parameters: a pad says
+ * `+N/step` and what it requires; a treadmill says its name and `×N/step`. Built once, on the first frame the
+ * level exists — it arrives with the first snapshot (ADR 0055).
+ */
+const signs: THREE.Sprite[] = []
+let signsBuilt = false
+const buildSigns = (): void => {
+  if (signsBuilt) return
+  const loaded = client.level()
+  if (loaded === null) return
+  signsBuilt = true
+  for (const node of loaded.nodes) {
+    const pad = componentOn(node.components, StepPad)
+    const mill = componentOn(node.components, Treadmill)
+    const lines: LabelLine[] | null =
+      pad !== undefined
+        ? [
+            { text: `+${abbreviate(pad.perStep)}/step`, size: 44, color: '#7CFF5A' },
+            { text: `Requires ${abbreviate(pad.requiresWins)} Wins`, size: 24, color: '#FFE7A8' },
+          ]
+        : mill !== undefined
+          ? [
+              { text: mill.name, size: 44, color: '#FFE7A8' },
+              { text: `×${abbreviate(mill.multiplier)}/step`, size: 24, color: '#7CFF5A' },
+            ]
+          : null
+    if (lines === null) continue
+    // In the world, not over it: a sign hides behind a wall and behind a player. Kept out of the AO prepass, or
+    // it ghosts (ADR 0082).
+    const sign = worldLabel(lines, { heightM: 0.9, background: null, depth: 'world' })
+    const top = padTop(node)
+    sign.position.set(top.x, top.y + 1.1, top.z)
+    client.scene.add(sign)
+    client.excludeFromAO(sign)
+    signs.push(sign)
+  }
+}
+
+/**
+ * The pads' materials (ADR 0082): each pad names, in the editor, what it wears while its value is the one you
+ * are on and what it wears otherwise. Swapped onto the pads' meshes whenever the chosen value changes. A pad
+ * that names nothing keeps the material its Renderer gave it.
+ */
+const padOriginal = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>()
+let styledFor = -1
+const stylePads = (): void => {
+  if (styledFor === perStep) return
+  const loaded = client.level()
+  if (loaded === null) return
+  styledFor = perStep
+  for (const node of loaded.nodes) {
+    const pad = componentOn(node.components, StepPad)
+    if (pad === undefined) continue
+    const wanted = pad.perStep === perStep ? pad.activeMaterial : pad.idleMaterial
+    for (const mesh of client.meshesOf(node)) {
+      if (!padOriginal.has(mesh)) padOriginal.set(mesh, mesh.material)
+      const material = wanted === '' ? null : client.material(wanted)
+      mesh.material = material ?? padOriginal.get(mesh)!
+    }
+  }
+}
+
 /** Written back on a timer, not per key: a struck cap is a `localStorage` write and there are several a second. */
 let sinceSave = 0
 const SAVE_EVERY = 3
@@ -120,20 +244,30 @@ client.onFrame((dt) => {
   const me = client.id()
   if (me !== null) {
     const parts = client.partsOf(me)
-    if (parts !== null) {
-      // Only ours earns, and only ours pops. Everybody's presses are drawn; one player's are paid for.
-      const struck = press(me, parts)
-      if (struck.length > 0) {
-        experience += struck.length * curve.perKey
-        popups.burst(struck, `+${curve.perKey}`)
-      }
-    }
+    // Keys press under us as under everyone. They pay nothing (ADR 0081): the steps below do.
+    if (parts !== null) press(me, parts)
   }
   for (const peer of client.peers()) {
     const parts = client.partsOf(peer.id)
     if (parts !== null) press(peer.id, parts)
   }
   for (const id of lastSole.keys()) if (!seen.has(id)) lastSole.delete(id)
+
+  // Pay out whole steps, from the feet: ground steps at a key's worth (ADR 0081), treadmill steps at the tier's
+  // (ADR 0080). Kodjo's call: popups on, one per step, saying what the step paid.
+  const payOut = (pending: number, each: number): number => {
+    const steps = Math.floor(pending)
+    if (steps < 1 || me === null) return pending
+    experience += steps * each
+    const parts = client.partsOf(me)
+    if (parts !== null) popups.burst(Array.from({ length: steps }, () => standing(parts)), `+${each}`)
+    return pending - steps
+  }
+  // Every tick before this frame is complete, contacts included, so the last report is settled and on the ground.
+  groundSteps += stepsThisTick
+  stepsThisTick = 0
+  groundSteps = payOut(groundSteps, perStep)
+  if (treadmillOn !== null) treadmillSteps = payOut(treadmillSteps, treadmillStepValue(perStep, treadmillOn))
   // The tick already put us back at the spawn; the payout is what is left to show. Popped from the pad we left.
   for (const cash of cashedOut) {
     wins += cash.wins
@@ -143,20 +277,27 @@ client.onFrame((dt) => {
 
   keycaps.update(dt)
   popups.update(dt)
+  buildSigns()
+  stylePads()
 
   const at = levelAt(experience, curve)
-  hud.set(experience, at.level, at.into, at.next)
+  // The speed you run at: Max Speed for your Level, or the debug pick, which cannot exceed it (as the real
+  // game's picker cannot). In studs/s for the HUD, in m/s for the controller.
+  const maxStuds = maxSpeedAt(at.level, curve)
+  const speedStuds = speedPick.enabled ? Math.min(speedPick.studs, maxStuds) : maxStuds
+  hud.set(experience, at.level, at.into, at.next, speedStuds)
   hud.setWins(wins)
-  // The velocity Level grants, written into the **client's** live tuning — the object the controller reads.
-  // It went into the descriptor's object for fifty levels and changed nothing: the client copies that on the
-  // way in (ADR 0057, ADR 0071's correction).
-  client.tuning.moveSpeed = maxSpeedMps(at.level, curve)
+  // Written into the **client's** live tuning — the object the controller reads. It went into the descriptor's
+  // object for fifty levels and changed nothing: the client copies that on the way in (ADR 0057, ADR 0071's
+  // correction).
+  client.tuning.moveSpeed = speedStuds * curve.metresPerStud
 
   sinceSave += dt
   if (sinceSave >= SAVE_EVERY) {
     sinceSave = 0
     saveExperience(experience)
     saveWins(wins)
+    savePerStep(perStep)
   }
 })
 
@@ -170,6 +311,9 @@ client.onFrame((dt) => {
 const movement = client.debugPane.addFolder({ title: 'Movement', expanded: false })
 movement.addBinding(client.tuning, 'groundMaxAccel', { min: 5, max: 500, step: 1, label: 'ground accel m/s²' })
 movement.addBinding(client.tuning, 'airMaxAccel', { min: 5, max: 500, step: 1, label: 'air accel m/s²' })
+// The speed picker's debug stand-in: on, you run at this many studs/s, capped at Max Speed.
+movement.addBinding(speedPick, 'enabled', { label: 'pick speed' })
+movement.addBinding(speedPick, 'studs', { min: 1, max: 1000, step: 1, label: 'speed studs/s' })
 
 const loop = client.debugPane.addFolder({ title: 'Progression', expanded: false })
 loop.addButton({ title: 'Reset experience' }).on('click', () => {

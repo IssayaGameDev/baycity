@@ -11,6 +11,9 @@ export { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 export { TransformControls } from 'three/examples/jsm/controls/TransformControls.js'
 export type { ThreeStage, ThreeStageOptions } from './stage'
 export { createThreeStage, OVERLAY_LAYER } from './stage'
+// Text standing in the world (ADR 0082): a billboard text sprite on the overlay layer, sized in metres.
+export type { LabelLine, WorldLabelOptions } from './worldLabel'
+export { disposeWorldLabel, layoutLabel, worldLabel } from './worldLabel'
 
 // Polished greybox pipeline (content pipeline C3) — shared by the game and the viewer.
 export { BEVEL_RADIUS, BEVEL_SEGMENTS, MARKER_COLORS, bevelFor, colorForMarker, createGreyboxMaterial, geometryForCollider, outlineGeometryForCollider } from './materials'

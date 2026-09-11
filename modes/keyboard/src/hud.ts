@@ -31,7 +31,7 @@ export interface Hud {
    * Re-placing is folded in here rather than hooked to a resize, because `UiOverlay` has no resize event —
    * only a `resize()` the shell calls. Comparing two numbers a frame is cheaper than adding one.
    */
-  set: (experience: number, level: number, into: number, next: number) => void
+  set: (experience: number, level: number, into: number, next: number, speedStuds: number) => void
   /** The Wins counter, left edge, vertically centred. Same redraw-on-change rule. */
   setWins: (wins: number) => void
   dispose: () => void
@@ -51,6 +51,9 @@ export const createHud = (client: TpsClient, _curve: ProgressCurve): Hud => {
 
   const xpText = uiLabel('0 XP', { size: 40, weight: '700', align: 'center' })
   xpText.anchor.set(0.5, 1)
+  /** The speed you are running at, in the game's unit (studs/s), to the right of the counter. */
+  const speedText = uiLabel('', { size: 22, weight: '600' })
+  speedText.anchor.set(0, 1)
 
   const barBack = new Graphics()
   const barFill = new Graphics()
@@ -63,10 +66,10 @@ export const createHud = (client: TpsClient, _curve: ProgressCurve): Hud => {
   winsText.anchor.set(0, 0.5)
 
   // Fill before the labels, so the text stays legible over it.
-  root.addChild(barBack, barFill, levelText, progressText, xpText, winsText)
+  root.addChild(barBack, barFill, levelText, progressText, xpText, speedText, winsText)
 
   /** Last drawn, so an unchanged frame does no work at all. */
-  let shown = { experience: -1, level: -1, into: -1, next: -1 }
+  let shown = { experience: -1, level: -1, into: -1, next: -1, speed: -1 }
   let shownWins = -1
   /** Last laid out at, so a window resize is noticed without a resize event to listen to. */
   let placedAt = { width: -1, height: -1 }
@@ -88,25 +91,35 @@ export const createHud = (client: TpsClient, _curve: ProgressCurve): Hud => {
     progressText.position.set(x + BAR_WIDTH - 18, y + BAR_HEIGHT / 2)
     xpText.position.set(client.ui.width / 2, y - 10)
     winsText.position.set(WINS_MARGIN, client.ui.height / 2)
+    placeSpeed()
+  }
+
+  /** Right of the counter, which changes width as the number grows. */
+  const placeSpeed = (): void => {
+    speedText.position.set(xpText.position.x + xpText.width / 2 + 14, xpText.position.y - 6)
   }
 
   drawBar(0)
   place()
 
   return {
-    set: (experience, level, into, next) => {
+    set: (experience, level, into, next, speedStuds) => {
       if (client.ui.width !== placedAt.width || client.ui.height !== placedAt.height) {
         place()
         placedAt = { width: client.ui.width, height: client.ui.height }
       }
-      if (experience === shown.experience && level === shown.level && into === shown.into && next === shown.next) return
-      if (experience !== shown.experience) xpText.text = `${abbreviate(experience)} XP`
+      if (experience === shown.experience && level === shown.level && into === shown.into && next === shown.next && speedStuds === shown.speed) return
+      if (experience !== shown.experience) {
+        xpText.text = `${abbreviate(experience)} XP`
+        placeSpeed() // the counter grew or shrank
+      }
+      if (speedStuds !== shown.speed) speedText.text = `Speed ${Math.round(speedStuds)}`
       if (level !== shown.level) levelText.text = `Level ${level}`
       if (into !== shown.into || next !== shown.next) {
         progressText.text = `${abbreviate(into)} / ${abbreviate(next)}`
         drawBar(next > 0 ? into / next : 0)
       }
-      shown = { experience, level, into, next }
+      shown = { experience, level, into, next, speed: speedStuds }
     },
     setWins: (wins) => {
       if (wins === shownWins) return

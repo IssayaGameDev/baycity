@@ -29,6 +29,11 @@ export interface LevelView {
    * and nothing else — see `PostFXOptions.aoIgnores`.
    */
   occluding: () => readonly THREE.Object3D[]
+  /**
+   * The meshes drawing the node that owns this collider handle (ADR 0082). For a game that restyles a piece of
+   * the level at runtime — an active pad, a lit door — without owning the level's meshes.
+   */
+  meshesOf: (handle: number) => readonly THREE.Mesh[]
   dispose: () => void
 }
 
@@ -138,6 +143,7 @@ export const addLevel = (scene: THREE.Scene, visuals: VisualItem[], opts: LevelV
 
   return {
     group,
+    meshesOf: (handle) => meshesByHandle.get(handle) ?? [],
     sync: () => {
       for (const { v, object } of pairs) {
         object.position.set(v.position.x, v.position.y, v.position.z)

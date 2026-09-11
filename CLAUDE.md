@@ -15,6 +15,10 @@ Blocked on design → ask Kodjo directly in conversation. Batch multiple questio
 
 Boundary examples: snapshot header layout — technical. Interpolation buffer duration — design (game feel). Rewind buffer structure — technical. Whether a prop enters the prediction loop — design. Which mitigation when a budget is exceeded — design.
 
+## Content files are Kodjo's work
+
+- **Never rebuild a level file from git.** What is on disk is his work, committed or not. Edit the working copy in place; if a scripted edit breaks it, restore from a backup taken before the edit, never from a commit.
+
 ## Scope discipline
 
 - Build only what was asked — never invent features, however obvious the addition seems
