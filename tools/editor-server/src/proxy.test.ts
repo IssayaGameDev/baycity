@@ -3,7 +3,7 @@ import { connect } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { proxyHttp, proxyUpgrade, routeFor } from './proxy'
+import { proxyHttp, proxyUpgrade, routeFor, stripPrefix } from './proxy'
 
 const listen = (s: Server): Promise<number> =>
   new Promise((r) =>
@@ -28,6 +28,15 @@ describe('routeFor', () => {
     expect(routeFor('/play/keyboard', routes)?.path).toBe('/play/keyboard/')
     expect(routeFor('/play/other/', routes)?.path).toBe('/play/')
     expect(routeFor('/api/me', routes)).toBeUndefined()
+  })
+})
+
+describe('stripPrefix', () => {
+  it('drops the relay prefix and keeps the rest, query included', () => {
+    expect(stripPrefix('/relay/matchmake/joinOrCreate/game', '/relay')).toBe('/matchmake/joinOrCreate/game')
+    expect(stripPrefix('/relay/abc?sessionId=1', '/relay/')).toBe('/abc?sessionId=1')
+    expect(stripPrefix('/relay', '/relay')).toBe('/')
+    expect(stripPrefix('/relayx/y', '/relay')).toBe('/relayx/y')
   })
 })
 

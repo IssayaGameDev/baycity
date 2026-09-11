@@ -10,6 +10,9 @@
 
 ## The curve
 
+Every field is a **game setting** edited in the editor and stored in `content/games/keyboard.json` (ADR 0087,
+[balance.md](balance.md)); `DEFAULT_CURVE` = the declared defaults, `GAME_CURVE` (`rules.ts`) = the file over them.
+
 ```ts
 interface ProgressCurve {
   perKey: number          // 1  — Experience per step before multipliers

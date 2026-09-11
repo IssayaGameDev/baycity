@@ -11,6 +11,8 @@ import { Treadmill, type TreadmillTick } from './treadmill'
 import { WinsPad } from './wins'
 import game from '@content/games/keyboard.json'
 
+import { curveFrom, type ProgressCurve } from './progression'
+
 /**
  * Keyboard Escape's rules: spawn, die, and cash out.
  *
@@ -24,6 +26,9 @@ import game from '@content/games/keyboard.json'
  * components, and **the shared components named in `content/games/keyboard.json`** — a data file, so the editor can
  * add to it when a level here needs a `Bumper` or a `Checkpoint` the game did not have yet.
  */
+/** The curve as `content/games/keyboard.json` sets it (ADR 0087) — what the game and the editor's play run on. */
+export const GAME_CURVE: ProgressCurve = curveFrom((game as { settings?: unknown }).settings)
+
 export const KEYBOARD_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, STEPPER_DEF, Keyboard, WinsPad, Treadmill, StepPad, ...sharedComponents(game.components)])
 
 /** How far above a spawn node the character's origin sits — half the capsule, plus its cap. */

@@ -9,7 +9,7 @@ import { createChangeFeed } from './changes'
 import type { ServerConfig, User } from './config'
 import { commitPaths, push } from './git'
 import { heldBy, sweep, type LockTable } from './locks'
-import { proxyHttp, proxyUpgrade, routeFor } from './proxy'
+import { proxyHttp, proxyUpgrade, routeFor, stripPrefix } from './proxy'
 import { describeCommit, markDirty, take, takeAll, takeDue, type Session, type SessionTable } from './sessions'
 
 /**
@@ -173,6 +173,11 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
       proxyHttp(req, res, game.target)
       return
     }
+    // Colyseus matchmakes over HTTP before it opens the socket; both ride `/relay`, prefix stripped.
+    if (routeFor(pathOf(req), [relayRoute]) !== undefined) {
+      proxyHttp(req, res, relayRoute.target, stripPrefix(req.url ?? '/', relayRoute.path))
+      return
+    }
     void api(req, res)
       .then((handled) => {
         if (!handled) serveStatic(req, res)
@@ -193,7 +198,7 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
       socket.destroy()
       return
     }
-    proxyUpgrade(req, socket, head, route.target)
+    proxyUpgrade(req, socket, head, route.target, route === relayRoute ? stripPrefix(req.url ?? '/', relayRoute.path) : (req.url ?? '/'))
   })
 
   // Stale locks are swept and overdue sessions committed once a minute.

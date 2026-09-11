@@ -84,6 +84,13 @@ File list filtered by game: `visibleLevels()` keeps entries whose `mode` is abse
 - `unplaceableWhy(assetId)` non-null only for `foreign` types → Project tile greyed, reason in tooltip (`unplaceableWhy` host option, `src/projectPanel.ts`); context-menu "Place in the level" disabled with the same reason.
 - `Doc.placePrefab` returns `-1` on any remaining unknown type — second gate.
 
+## Game settings (ADR 0087)
+
+Under the Game row, one Tweakpane field per `activeMode.settings` declaration (`host.settings()` →
+`{ decls, values }`, values = `readSettings(decls, gameData[game].settings)`); `change` with `ev.last` →
+`host.onSettingChanged(key, value)` → `gameData[game].settings[key] = value` and `saveGame` writes the **whole**
+file (`components` + `settings`). `adopt` spreads the file too, so a component adoption keeps the settings.
+
 ## Play
 
 **A level plays in the real game** (ADR 0086): `startPlay` → `gamePageUrl()` (`me.games[activeMode.name]`,

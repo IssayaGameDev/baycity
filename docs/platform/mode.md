@@ -94,3 +94,7 @@ The `self.node.id` the local player's components see, in both the game and the e
 | `actions` | `actionsHeld(activeMode?.actions, keys)` → `InputCommand.actions` per tick |
 
 Unassigned level or missing game → character + geometry only, no rules, `DEFAULT_REGISTRY`.
+
+## Settings (ADR 0087)
+
+`ModeDescriptor.settings?: SettingDecls` — `Record<key, { label, default, min?, max?, step?, hint? }>`. `readSettings(decls, raw)` lays a file's `settings` block over the defaults (finite numbers only, undeclared keys ignored). Stored in `content/games/<game>.json` → `settings`; edited in the editor's Game row. Keyboard: `CURVE_SETTINGS` (`docs/games/keyboard/balance.md`).

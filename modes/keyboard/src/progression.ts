@@ -15,6 +15,8 @@
  *
  * Headless and pure, so the curve can be checked against real save data rather than eyeballed in play.
  */
+import { readSettings, type SettingDecl } from '@mp/mode'
+
 
 export interface ProgressCurve {
   /** Experience gained per keycap struck, before multipliers. The genre's "+1". */
@@ -65,18 +67,29 @@ export interface ProgressCurve {
   stepsTau: number
 }
 
-export const DEFAULT_CURVE: ProgressCurve = {
-  perKey: 1,
-  firstLevel: 100,
-  levelGrowth: 1.15,
-  baseMaxSpeed: 10,
-  maxSpeedPerLevel: 2,
-  metresPerStud: 0.28,
-  stepsFloor: 240,
-  stepsCap: 600,
-  stepsRamp: 819,
-  stepsTau: 33,
-}
+/**
+ * The curve, as the editor edits it (ADR 0087): one declaration per field, stored in
+ * `content/games/keyboard.json` → `settings`. `DEFAULT_CURVE` is these defaults; `curveFrom` lays the file over
+ * them. The numbers are what the real game was measured at, and the data is far from complete — that is what
+ * the balance simulator (`balance.ts`) and these fields are for.
+ */
+export const CURVE_SETTINGS = {
+  perKey: { label: 'XP per step', default: 1, min: 0, step: 1, hint: 'before any StepPad' },
+  firstLevel: { label: 'Level 1 costs', default: 100, min: 1, step: 10, hint: 'XP' },
+  levelGrowth: { label: 'level cost ×', default: 1.15, min: 1, max: 3, step: 0.01, hint: 'each level costs this times the last' },
+  baseMaxSpeed: { label: 'speed at L0', default: 10, min: 0, step: 1, hint: 'studs/s' },
+  maxSpeedPerLevel: { label: 'speed per level', default: 2, min: 0, step: 0.5, hint: 'studs/s' },
+  metresPerStud: { label: 'metres per stud', default: 0.28, min: 0.01, step: 0.01 },
+  stepsFloor: { label: 'cadence floor', default: 240, min: 1, step: 10, hint: 'steps/min at low levels' },
+  stepsCap: { label: 'cadence cap', default: 600, min: 1, step: 10, hint: 'steps/min at high levels' },
+  stepsRamp: { label: 'cadence ramp', default: 819, min: 0, step: 10, hint: 'cap − ramp·e^(−level/τ), floored' },
+  stepsTau: { label: 'cadence τ', default: 33, min: 1, step: 1, hint: 'levels' },
+} satisfies Record<keyof ProgressCurve, SettingDecl>
+
+export const DEFAULT_CURVE: ProgressCurve = readSettings(CURVE_SETTINGS, undefined)
+
+/** The curve a game's data file holds: its `settings` block over the defaults. */
+export const curveFrom = (settings: unknown): ProgressCurve => readSettings(CURVE_SETTINGS, settings)
 
 /**
  * What level 1 → `level` costs in total, i.e. the Experience at which `level` is reached.
