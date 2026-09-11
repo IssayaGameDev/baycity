@@ -444,7 +444,7 @@ describe('character controller', () => {
   })
 
   it('air control never raises speed above what you came in with', () => {
-    // What separates this from Quake-style air-strafing, and what keeps docs/obstacles.md honest.
+    // What separates this from Quake-style air-strafing, and what keeps docs/platform/humanoid/controller.md's envelope honest.
     for (const input of [cmd(1, 0), cmd(0.7, 0.7), cmd(0, 1), cmd(-0.7, 0.7), cmd(-1, 0)])
       expect(flungJump(input).peak, `input ${input.moveX},${input.moveZ}`).toBeLessThanOrEqual(12 + 1e-6)
   })

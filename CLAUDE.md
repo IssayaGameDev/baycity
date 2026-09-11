@@ -5,7 +5,7 @@ Always in memory. Bootstraps every session.
 ## Orient first, before any work
 
 1. `SEED.md` (if present) — Kodjo's initial requirements: locked decisions, budgets, invariants, build order. Not yours to change; it has a lifecycle note and is deleted (with Kodjo's approval) once fully consumed into docs and ADRs.
-2. `docs/INDEX.md` — index of system docs. Read it, then load only what the current task needs. If it doesn't exist, nothing is built yet — you create it with the first code.
+2. `docs/INDEX.md` — the table of contents, one hop to everything. Then `docs/platform/README.md`, then the `README.md` of the game the task touches (`docs/games/<game>/`). Load only the subsystem or system files the task needs.
 
 ## Prime directive: you never make design decisions
 
@@ -45,13 +45,21 @@ Boundary examples: snapshot header layout — technical. Interpolation buffer du
 
 ## Documentation policy
 
+Three layers, and a fact lives in exactly one of them:
+
+- **`docs/platform/<subsystem>.md`** — the shared stack, one file per subsystem (a folder once it outgrows a page: `humanoid/`, `client/`). What it *is*, now.
+- **`docs/games/<game>/<system>.md`** — one folder per game, one file per system, plus a `README.md` listing them and a `known-open.md`. A new system in a game is a new file, not a longer one.
+- **`docs/adr/`** — why. Short, append-only: context, decision, rejected alternatives. An ADR is not where a current fact is looked up; the doc that states the fact cites the ADR number.
+
+Rules:
+
 1. Docs are for the next agent session, not humans — dense, factual, no narrative
 2. Document what exists, when it exists — never speculatively; no placeholders
-3. Docs change in the same commit as the code they describe
-4. Current state only — history lives in git and ADRs
-5. Decisions get ADRs (short, append-only: context, choice, rejected alternatives); all other docs are rewritten or deleted when stale
-6. Maintain `docs/INDEX.md`; any doc findable in one hop — structure beyond that is yours
-7. Prefer code over prose; if type signatures already say it, delete the doc
+3. Docs change in the same commit as the code they describe: touch a subsystem or a game system, update its file; a decision, add an ADR and cite it from the file
+4. Current state only — platform and game files are rewritten, never appended; history lives in git and ADRs
+5. `docs/INDEX.md` is a table of contents: one line per doc, one line per ADR by title. No summaries in it
+6. Prefer code over prose; if type signatures already say it, quote the signature and stop. Tables for parameters, tunings, saved keys
+7. Each file stays around a page; split into a folder before it does not
 
 Exception: one human-facing `README.md` at the root — what this is, run locally, deploy, where the index lives. Short.
 

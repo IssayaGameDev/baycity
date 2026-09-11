@@ -1,0 +1,30 @@
+# Debug pane
+
+`KEYBOARD_MODE`/`startTpsClient` is called with `debugFolders: []` (ADR 0075): none of the platform's twelve
+folders. What remains is the frame meter (platform, always) and the game's two folders, built in `main.ts`.
+Kodjo's list; nothing else is added without his word.
+
+## Movement
+
+| Control | Binds | Range | Meaning |
+| --- | --- | --- | --- |
+| `ground accel m/s²` | `client.tuning.groundMaxAccel` | 5–500 | cap on ground acceleration/braking (ADR 0078); ships 150 |
+| `air accel m/s²` | `client.tuning.airMaxAccel` | 5–500 | cap on air steering; ships 40 |
+| `pick speed` | `speedPick.enabled` | on/off | run at a chosen speed instead of Max Speed (stand-in for the real game's picker) |
+| `speed studs/s` | `speedPick.studs` | 1–1000 | the pick; capped at Max Speed when applied |
+
+## Progression
+
+| Control | Effect |
+| --- | --- |
+| Reset experience | `experience = 0`, saved |
+| Reset wins | `wins = 0`, saved |
+| `grant XP` + **Add experience** | adds the field's amount to Experience, saved |
+| `grant Wins` + **Add wins** | adds the field's amount to Wins, saved |
+
+To get a platform folder back for a session, list it in `debugFolders` in `main.ts`:
+`camera | sky | touch | movement | render | gait | idle | inertia | head | jointLag | air | death`.
+
+## Frame meter
+
+`frame meter` checkbox at the pane root (platform, ADR 0070): `stats.js` FPS graph, off by default.

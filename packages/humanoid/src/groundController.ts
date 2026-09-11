@@ -124,7 +124,7 @@ export interface PlatformFrame {
 /**
  * Current pose of the moving piece owning `colliderHandle`, or `undefined` when that collider
  * is static (nothing to ride). `@mp/content`'s `LoadedLevel.basePose` implements this; the
- * character stays content-agnostic (docs/workspace.md §Dependency laws).
+ * character stays content-agnostic (docs/platform/workspace.md, dependency laws).
  */
 export type PlatformPoseLookup = (colliderHandle: number) => PlatformFrame | undefined
 
@@ -476,7 +476,7 @@ export const stepCharacter = (
     //   the player is reaching for. It just cannot cancel the fling itself;
     // - speed can never exceed what you came in with, since the most air control can do is align its
     //   own `moveSpeed` with the excess. Quake's projection cap *does* exceed it — that is air-strafing,
-    //   and the skill ceiling with it — at the price of every reach number in `docs/obstacles.md`, so it
+    //   and the skill ceiling with it — at the price of every reach number in `docs/platform/humanoid/controller.md`, so it
     //   stays rejected;
     // - turning costs speed, monotonically: the excess stays pointed where it was while the steered part
     //   swings away from it, so the two partly cancel. An earlier version stretched the *target* to the

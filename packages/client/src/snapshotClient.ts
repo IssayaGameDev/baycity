@@ -6,7 +6,7 @@ export interface SnapshotClientOptions {
   /**
    * Interpolation buffer duration (ms): how far in the past remote entities are
    * rendered. DESIGN slider (game feel); 100 ms provisional (Kodjo), tunable at
-   * runtime. See docs/netcode.md.
+   * runtime. See docs/platform/netcode.md.
    */
   interpolationDelayMs: number
   /** Drop buffered snapshots older than this many ms behind the newest. */
