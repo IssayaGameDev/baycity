@@ -29,5 +29,8 @@ Thumbs.db
 .env.*
 !.env.example
 
+# live mirror of the hosted editor's content (pnpm sync:content, ADR 0084)
+.content-live/
+
 # claude code — personal overrides only; shared settings.json is tracked
 .claude/settings.local.json

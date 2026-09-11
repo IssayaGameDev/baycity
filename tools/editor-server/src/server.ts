@@ -5,6 +5,7 @@ import { extname, join } from 'node:path'
 
 import { createAccessVerifier } from './access'
 import { AuthError, contentTypeFor, createContentApi, safeJoin } from './api'
+import { createChangeFeed } from './changes'
 import type { ServerConfig, User } from './config'
 import { commitPaths, push } from './git'
 import { heldBy, sweep, type LockTable } from './locks'
@@ -104,6 +105,7 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
         }
         return null
       }
+      if (v.service !== undefined) return { name: auth.services[v.service] ?? `service ${v.service.slice(0, 8)}…`, email: v.email }
       const name = auth.users[v.email]
       if (name === undefined) throw new AuthError(403, `${v.email} is signed in but not in the editor's user list`)
       return { name, email: v.email }
@@ -123,6 +125,7 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
     onLocksChanged: saveLocks,
     status: () => ({ pushError }),
     admin: { token: adminToken, commitAll },
+    changes: createChangeFeed(),
   })
 
   // --- static editor ---

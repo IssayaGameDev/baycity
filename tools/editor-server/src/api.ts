@@ -1,11 +1,13 @@
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { join, normalize, sep } from 'node:path'
+import { join, normalize, relative, sep } from 'node:path'
 
 import { kindForPath, META_SUFFIX } from '../../../packages/content/src/assets'
 import { LevelError, validateLevel } from '../../../packages/content/src/validate'
 import { importAssets } from './assetImporter'
 import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './assetOps'
+import type { ChangeFeed } from './changes'
 import type { User } from './config'
 import { acquire, blocker, heartbeat, holder, release, type LockRules, type LockTable } from './locks'
 
@@ -29,8 +31,14 @@ import { acquire, blocker, heartbeat, holder, release, type LockRules, type Lock
  *   PUT  /assets/<path>               → a JSON asset
  *   POST /api/admin/commit-all        → Bearer token, not a user: deploy flushes every session
  *
+ * For the live mirror (ADR 0084):
+ *   GET  /api/tree                    → { seq, files: [{ path, size, sha1 }] } — every file under content/
+ *   GET  /api/changes?since=N&timeout=MS → { seq, paths } — long-poll; 410 when N is older than the feed remembers
+ *   GET  /api/file?path=content/...   → the bytes of any content file (404 when gone)
+ *
  * Every write is gated by the lock table: a path someone else holds live is a 423 with their name. Every
- * write reports the repo-relative paths it touched to `onChanged`, which is how sessions know what to commit.
+ * write reports the repo-relative paths it touched to `onChanged` and the change feed — always **file** paths,
+ * so a folder move or delete is reported as the files it moved or removed.
  */
 export interface ApiOptions {
   repoRoot: string
@@ -47,6 +55,8 @@ export interface ApiOptions {
   onLocksChanged?: () => void
   status?: () => { pushError: string | null }
   admin?: { token: string; commitAll: () => Promise<void> }
+  /** The live mirror's feed; every changed path is recorded here too. */
+  changes?: ChangeFeed
 }
 
 /** Handles the request and resolves `true`, or resolves `false` having touched nothing. */
@@ -143,14 +153,40 @@ export const keyFor = {
   asset: (path: string): string => `content/assets/${path}`,
 }
 
+/** Every file under `dir`, as forward-slashed paths relative to `dir`. */
+const filesUnder = (dir: string): string[] => {
+  if (!existsSync(dir)) return []
+  const out: string[] = []
+  const walk = (d: string): void => {
+    for (const name of readdirSync(d)) {
+      const full = join(d, name)
+      if (statSync(full).isDirectory()) walk(full)
+      else out.push(relative(dir, full).split('\\').join('/'))
+    }
+  }
+  walk(dir)
+  return out.sort()
+}
+
 export const createContentApi = (opts: ApiOptions): ApiHandler => {
   const now = opts.now ?? (() => Date.now())
-  const DIRS = { levels: join(opts.repoRoot, 'content', 'levels'), games: join(opts.repoRoot, 'content', 'games') }
-  const ASSETS = join(opts.repoRoot, 'content', 'assets')
+  const CONTENT = join(opts.repoRoot, 'content')
+  const DIRS = { levels: join(CONTENT, 'levels'), games: join(CONTENT, 'games') }
+  const ASSETS = join(CONTENT, 'assets')
   for (const dir of [...Object.values(DIRS), ASSETS]) if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
 
-  const changed = (user: User, paths: string[]): void => opts.onChanged?.(user, paths)
+  const changed = (user: User, paths: string[]): void => {
+    opts.onChanged?.(user, paths)
+    opts.changes?.record(paths)
+  }
   const locksChanged = (): void => opts.onLocksChanged?.()
+
+  /** A file's own path plus its sidecar; a folder's every file. For reporting what a move or delete touched. */
+  const filesOf = (rel: string): string[] => {
+    const full = safeJoin(ASSETS, rel)
+    if (full !== null && existsSync(full) && statSync(full).isDirectory()) return filesUnder(full).map((f) => `${rel}/${f}`)
+    return [rel, `${rel}${META_SUFFIX}`]
+  }
 
   /** Refuse with 423 when someone else holds `key` (or, for a folder, anything under it). Returns `true` when refused. */
   const refuseIfLocked = (res: ServerResponse, user: User, keys: readonly string[]): boolean => {
@@ -225,13 +261,16 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
           const from = strField(args, 'from')
           const to = strField(args, 'to')
           if (refuseIfLocked(res, user, [keyFor.asset(from), keyFor.asset(to)])) return true
+          const before = filesOf(from)
           movePath(ASSETS, from, to)
-          changed(user, [keyFor.asset(from), keyFor.asset(`${from}${META_SUFFIX}`), keyFor.asset(to), keyFor.asset(`${to}${META_SUFFIX}`)])
+          const after = before.map((p) => `${to}${p.slice(from.length)}`)
+          changed(user, [...before, ...after].map(keyFor.asset))
         } else {
           const path = strField(args, 'path')
           if (refuseIfLocked(res, user, [keyFor.asset(path)])) return true
+          const gone = filesOf(path)
           removePath(ASSETS, path)
-          changed(user, [keyFor.asset(path), keyFor.asset(`${path}${META_SUFFIX}`)])
+          changed(user, gone.map(keyFor.asset))
         }
         sendJson(res, 200, { ok: true })
       } catch (e) {
@@ -321,6 +360,39 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     return false
   }
 
+  const handleMirror = async (req: IncomingMessage, res: ServerResponse, url: string, query: URLSearchParams): Promise<boolean> => {
+    if (req.method !== 'GET') return false
+    if (url === '/api/tree') {
+      const files = filesUnder(CONTENT).map((rel) => {
+        const bytes = readFileSync(join(CONTENT, rel))
+        return { path: `content/${rel}`, size: bytes.length, sha1: createHash('sha1').update(bytes).digest('hex') }
+      })
+      sendJson(res, 200, { seq: opts.changes?.seq() ?? 0, files })
+      return true
+    }
+    if (url === '/api/changes') {
+      const since = Number(query.get('since') ?? '0')
+      const timeout = Math.min(Math.max(Number(query.get('timeout') ?? '25000'), 0), 60_000)
+      if (opts.changes === undefined) return sendJson(res, 200, { seq: 0, paths: [] }), true
+      const batch = await opts.changes.wait(Number.isFinite(since) ? since : 0, timeout)
+      if (batch === null) return sendJson(res, 410, { error: 'too far behind; do a full sync' }), true
+      sendJson(res, 200, batch)
+      return true
+    }
+    if (url === '/api/file') {
+      const rel = (query.get('path') ?? '').replace(/\\/g, '/')
+      if (!rel.startsWith('content/')) return sendJson(res, 400, { error: 'path must start with content/' }), true
+      const file = safeJoin(CONTENT, rel.slice('content/'.length))
+      if (file === null) return sendJson(res, 400, { error: 'path escapes content' }), true
+      if (!existsSync(file) || statSync(file).isDirectory()) return sendJson(res, 404, { error: 'not found' }), true
+      res.statusCode = 200
+      res.setHeader('content-type', contentTypeFor(file))
+      res.end(readFileSync(file))
+      return true
+    }
+    return false
+  }
+
   const handleLocks = async (req: IncomingMessage, res: ServerResponse, url: string, user: User): Promise<boolean> => {
     if (url === '/api/me' && req.method === 'GET') {
       sendJson(res, 200, { user, heartbeatMs: opts.rules.heartbeatMs, lockStaleMs: opts.rules.staleMs, maxUploadBytes: opts.rules.maxUploadBytes })
@@ -396,6 +468,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     }
     if (user === null) return sendJson(res, 401, { error: 'not signed in' }), true
 
+    if (await handleMirror(req, res, url, query)) return true
     if (await handleLocks(req, res, url, user)) return true
     if (await handleFiles(req, res, url, user)) return true
     return handleAssets(req, res, url, query, user)

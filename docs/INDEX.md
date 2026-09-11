@@ -26,6 +26,7 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 | [rendering.md](platform/rendering.md) | Stage, post-FX, overlay layer, level view, assets, world labels, Pixi UI |
 | [editor.md](platform/editor.md) | What it authors, content API client, locks in the editor, game discovery, adoption, play-test |
 | [editor-server.md](platform/editor-server.md) | The content API, Access identity, locks, session commits, upload, deploy |
+| [content-sync.md](platform/content-sync.md) | The live mirror, `content-root.ts`, the `@content` alias, `.env` |
 | [tooling.md](platform/tooling.md) | share, bots, netsim, viewer |
 | [budgets.md](platform/budgets.md) | The tripwires and how each is measured |
 
@@ -128,5 +129,6 @@ why matters.
 | [0081](adr/0081-a-step-is-a-tick-of-held-input.md) | A step is a tick of held input |
 | [0082](adr/0082-text-standing-in-the-world-and-pads-that-set-the-step.md) | Text standing in the world; pads that set the step |
 | [0083](adr/0083-content-is-authored-on-a-hosted-editor.md) | Content is authored on a hosted editor |
+| [0084](adr/0084-the-game-reads-a-live-mirror-of-the-box.md) | The game reads a live mirror of the box |
 
 `Design archive/` holds superseded design material and is not maintained.

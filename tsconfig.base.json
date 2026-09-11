@@ -7,6 +7,7 @@
     "moduleResolution": "bundler",
     "moduleDetection": "force",
     "resolveJsonModule": true,
+    "paths": { "@content/*": ["./content/*"] },
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "esModuleInterop": true,

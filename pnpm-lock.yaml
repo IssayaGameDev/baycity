@@ -415,6 +415,12 @@ importers:
         specifier: ^0.16.22
         version: 0.16.22
 
+  tools/content-sync:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
+
   tools/editor:
     dependencies:
       '@mode/parkour':

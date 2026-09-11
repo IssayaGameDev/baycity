@@ -24,6 +24,11 @@ export type AuthConfig =
       aud: string
       /** Verified email (lower-cased) → display name. An email not listed is refused even if Access let it in. */
       users: Record<string, string>
+      /**
+       * Access service-token Client ID → display name (ADR 0084). Any token Access let through is accepted —
+       * the Access policy is the list — this only names it in logs; unlisted ones show as `service <id…>`.
+       */
+      services: Record<string, string>
     }
 
 export interface ServerConfig {
@@ -85,11 +90,15 @@ export const parseConfig = (raw: unknown, baseDir: string): ServerConfig => {
     const users = (typeof auth.users === 'object' && auth.users !== null ? auth.users : {}) as Record<string, unknown>
     const named: Record<string, string> = {}
     for (const [email, name] of Object.entries(users)) named[email.toLowerCase()] = str(name, `auth.users.${email}`)
+    const services = (typeof auth.services === 'object' && auth.services !== null ? auth.services : {}) as Record<string, unknown>
+    const namedServices: Record<string, string> = {}
+    for (const [id, name] of Object.entries(services)) namedServices[id] = str(name, `auth.services.${id}`)
     authConfig = {
       kind: 'access',
       teamDomain: str(auth.teamDomain, 'auth.teamDomain'),
       aud: typeof auth.aud === 'string' ? auth.aud : '',
       users: named,
+      services: namedServices,
     }
   } else if (auth.kind === 'none' || auth.kind === undefined) {
     authConfig = { kind: 'none', user: auth.user === undefined ? { name: 'local', email: 'local@localhost' } : user(auth.user, 'auth.user') }

@@ -49,6 +49,8 @@ The routes are `tools/editor-server/src/api.ts`, mounted by `vite.config.ts` (`f
 
 `content/games/<game>.json` is written by `adopt` without a lock (gated only by others' locks).
 
+The dev editor's `@content` alias is pinned to the repo's `content/` (`contentAlias(REPO_CONTENT)`): it edits that folder, never the live mirror (`content-sync.md`, ADR 0084).
+
 **Watcher:** `watch.ignored: ['**/content/games/**']`. Every game's `rules.ts` imports its `content/games/<game>.json` and the editor bundles those modules, so a write would full-reload the editor and lose undo history right after the editor wrote it. The editor reads the files live over `/api/games`; the game's dev server still reloads (ADR 0077).
 
 ## Game discovery (`src/modes.ts`)

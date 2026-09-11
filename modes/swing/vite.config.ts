@@ -1,8 +1,13 @@
 import { defineConfig } from 'vite'
 
+import { contentAlias, contentBanner } from '../../content-root'
+
 // Throwaway M10 demo app (3D TPS character controller). Target ES2022 for the
 // top-level await used to init the physics/HUD.
 export default defineConfig({
+  // `@content` is the repo's content/, or the live mirror when `.env` says so (ADR 0084).
+  plugins: [contentBanner()],
+  resolve: { alias: contentAlias() },
   // Quick tunnels present an arbitrary *.trycloudflare.com Host header; Vite 6 rejects
   // unrecognised hosts by default.
   server: {

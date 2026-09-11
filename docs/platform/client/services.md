@@ -123,7 +123,7 @@ interface LevelSource { names: () => string[]; defaultName: string; byName: (nam
 DEFAULT_NAME = 'default'
 ```
 
-- `import.meta.glob('../../../content/levels/*.json')`, bundled at build.
+- `import.meta.glob('@content/levels/*.json')`, bundled at build; `@content` is the repo's `content/` or the live mirror (`content-sync.md`, ADR 0084).
 - Filtered by `config.mode.name === mode` **or unassigned**. `names()` = default first, rest sorted.
 - `defaultName` = `'default'` if present else first level. `byName` validates with `validateLevel(data, registry)`;
   throws for an unknown name.
@@ -147,7 +147,7 @@ assetUrlOf(path: string): string        // bundled URL, or the path itself
 materialOf(assetId: string): MaterialAsset | undefined
 ```
 
-Bundled via `import.meta.glob` over `content/assets/**` (`*.meta` as `?raw`, `*` as `?url`, `*.mat.json`,
+Bundled via `import.meta.glob` over `@content/assets/**` (alias, `content-sync.md`) (`*.meta` as `?raw`, `*` as `?url`, `*.mat.json`,
 `*.anim.json`). Kind from extension (`kindForPath`); a corrupt or missing sidecar = unknown asset, not a build error.
 
 ## Other exports

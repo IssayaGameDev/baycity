@@ -21,27 +21,30 @@ import {
  */
 // `?raw`, because `.meta` is not an extension Vite knows: imported normally it would try to parse a
 // sidecar as JavaScript and fail the build.
-const METAS = import.meta.glob('../../../content/assets/**/*.meta', {
+const METAS = import.meta.glob('@content/assets/**/*.meta', {
   eager: true,
   query: '?raw',
   import: 'default',
 }) as Record<string, string>
-const URLS = import.meta.glob('../../../content/assets/**/*', { eager: true, query: '?url', import: 'default' }) as Record<
+const URLS = import.meta.glob('@content/assets/**/*', { eager: true, query: '?url', import: 'default' }) as Record<
   string,
   string
 >
-const MATERIALS = import.meta.glob('../../../content/assets/**/*.mat.json', { eager: true, import: 'default' }) as Record<
+const MATERIALS = import.meta.glob('@content/assets/**/*.mat.json', { eager: true, import: 'default' }) as Record<
   string,
   unknown
 >
-const CLIPS = import.meta.glob('../../../content/assets/**/*.anim.json', { eager: true, import: 'default' }) as Record<
+const CLIPS = import.meta.glob('@content/assets/**/*.anim.json', { eager: true, import: 'default' }) as Record<
   string,
   unknown
 >
 
-const PREFIX = '../../../content/assets/'
-
-const relativeOf = (globKey: string): string => (globKey.startsWith(PREFIX) ? globKey.slice(PREFIX.length) : globKey)
+/** The glob key however Vite spells the aliased root — `@content/assets/x` or an absolute path — to `x`. */
+const MARK = '/assets/'
+const relativeOf = (globKey: string): string => {
+  const i = globKey.indexOf(MARK)
+  return i >= 0 ? globKey.slice(i + MARK.length) : globKey
+}
 
 const asMeta = (raw: string): AssetMeta | undefined => {
   try {

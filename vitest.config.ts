@@ -1,12 +1,19 @@
 import { defineConfig } from 'vitest/config'
 
+import { REPO_CONTENT, contentAlias } from './content-root'
+
 const ALL = '{packages,tools,modes}/*/src/**/*.test.ts'
 const LIVE_SERVER = 'tools/bots/src/matchmaking.test.ts'
+
+// Tests always read the repo's content/, never the live mirror (ADR 0084). Per project: a project is its own
+// Vite config and inherits nothing from the root's `resolve`.
+const content = { alias: contentAlias(REPO_CONTENT) }
 
 export default defineConfig({
   test: {
     projects: [
       {
+        resolve: content,
         test: {
           name: 'unit',
           // 'forks' (child processes) keeps native addons and real sockets well-isolated per file.
@@ -16,6 +23,7 @@ export default defineConfig({
         },
       },
       {
+        resolve: content,
         test: {
           name: 'live-server',
           /**

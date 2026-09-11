@@ -18,6 +18,7 @@ Boundary examples: snapshot header layout — technical. Interpolation buffer du
 ## Content files are Kodjo's work
 
 - **Never rebuild a level file from git.** What is on disk is his work, committed or not. Edit the working copy in place; if a scripted edit breaks it, restore from a backup taken before the edit, never from a commit.
+- **Content is authored on the hosted editor** (ADR 0083/0084). `content/` on master changes only by merging the `content` branch — never edit or commit it locally. `.content-live/` is a mirror of the box: never edit it, never commit it. Code commits never include `content/`.
 
 ## Scope discipline
 
@@ -42,6 +43,7 @@ Boundary examples: snapshot header layout — technical. Interpolation buffer du
 - Branches are for experiments and risky refactors; short-lived, merged or deleted — no long-running divergence
 - Never rewrite pushed history; never force-push
 - Never commit secrets or generated output (`node_modules`, `dist`, builds) — maintain `.gitignore` from the first commit
+- **Never read, print, or edit `.env`** (the root one or any other). It holds Kodjo's Access service token. `.claude/settings.json` denies it; the rule stands even where a tool could get around that. `.env.example` is the only file of that shape you touch
 - Tag milestone completions (`m1`, `m2`, …) so any milestone state is recoverable
 
 ## Documentation policy

@@ -14,7 +14,7 @@ import { validateLevel, type Level, type ParamChecker } from '@mp/content'
  * to parse is a build error instead of a blank screen. The glob resolves relative to *this file*, which sits
  * at the same depth in a package as it did in a mode, so moving it here changed nothing about what it finds.
  */
-const ALL = import.meta.glob('../../../content/levels/*.json', { eager: true, import: 'default' }) as Record<
+const ALL = import.meta.glob('@content/levels/*.json', { eager: true, import: 'default' }) as Record<
   string,
   unknown
 >
