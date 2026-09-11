@@ -12,9 +12,15 @@ import type { Duplex } from 'node:stream'
  *
  * The `Host` header is passed through unchanged: Vite checks it against `allowedHosts`, which lists the domain.
  */
-export const proxyHttp = (req: IncomingMessage, res: ServerResponse, target: URL): void => {
+/** `/relay/matchmake/x` → `/matchmake/x`: the relay lives at its root, as behind the games' own Vite proxy. */
+export const stripPrefix = (url: string, prefix: string): string => {
+  const bare = prefix.replace(/\/$/, '')
+  return url === bare ? '/' : url.startsWith(`${bare}/`) ? url.slice(bare.length) : url
+}
+
+export const proxyHttp = (req: IncomingMessage, res: ServerResponse, target: URL, path: string = req.url ?? '/'): void => {
   const upstream = request(
-    { host: target.hostname, port: Number(target.port), method: req.method, path: req.url, headers: req.headers },
+    { host: target.hostname, port: Number(target.port), method: req.method, path, headers: req.headers },
     (r) => {
       res.writeHead(r.statusCode ?? 502, r.headers)
       r.pipe(res)
@@ -31,9 +37,9 @@ export const proxyHttp = (req: IncomingMessage, res: ServerResponse, target: URL
 }
 
 /** Forward a WebSocket (or any) upgrade: replay the request line and headers, then pipe bytes both ways. */
-export const proxyUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer, target: URL): void => {
+export const proxyUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer, target: URL, path: string = req.url ?? '/'): void => {
   const upstream = connect(Number(target.port), target.hostname, () => {
-    const lines = [`${req.method ?? 'GET'} ${req.url ?? '/'} HTTP/1.1`]
+    const lines = [`${req.method ?? 'GET'} ${path} HTTP/1.1`]
     for (const [k, v] of Object.entries(req.headers)) if (v !== undefined) lines.push(`${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
     upstream.write(`${lines.join('\r\n')}\r\n\r\n`)
     if (head.length > 0) upstream.write(head)
