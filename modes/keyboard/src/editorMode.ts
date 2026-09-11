@@ -55,7 +55,7 @@ export const KEYBOARD_MODE: ModeDescriptor = {
     { id: 'death', type: Death.type, params: {} },
   ],
   /** The editor's play-test carries the Stepper with nowhere to report to; `main.ts` binds the sink. */
-  playerDefs: (host) => [createLocomotion(host), createStepper({ curve: () => DEFAULT_CURVE })],
+  playerDefs: (host) => [createLocomotion(host), createStepper({ curve: () => DEFAULT_CURVE, level: () => 0 })],
   spawn: spawnOf,
   session: keyboardSession,
 }

@@ -7,8 +7,8 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import { KEYBOARD_REGISTRY, STAND_OFFSET, keyboardSession } from './rules'
 import { qualifies, StepPad } from './stepPad'
-import { stepsPerSecond, stepsThisTick } from './steps'
-import { DEFAULT_CURVE } from './progression'
+import { stepsThisTick } from './steps'
+import { DEFAULT_CURVE, stepsPerMinute } from './progression'
 import { Treadmill, treadmillStepValue } from './treadmill'
 import { WinsPad, padTop } from './wins'
 
@@ -145,17 +145,39 @@ describe('the treadmill (ADR 0080)', () => {
   })
 })
 
-describe('a step is a tick of held input at a fixed cadence (ADR 0081)', () => {
-  // Kodjo's measurement: ~40 popups in 10 s, the same at speed 10 and at speed 100.
-  it('is four a second, whatever the speed', () => {
-    expect(stepsPerSecond(DEFAULT_CURVE)).toBe(4)
+describe('a step is a tick of held input, at a cadence set by Level (ADR 0081)', () => {
+  // Kodjo's table from the game being cloned: level → steps a minute. The curve is fitted to it, so it is the
+  // fixture, with tolerance for a fit rather than a reverse-engineering.
+  it('reproduces the measured cadence at every level in the table', () => {
+    const table: [number, number][] = [
+      [10, 240],
+      [20, 240],
+      [30, 270],
+      [50, 420],
+      [85, 540],
+      [170, 600],
+      [200, 600],
+      [300, 600],
+    ]
+    for (const [level, perMinute] of table) {
+      const got = stepsPerMinute(level, DEFAULT_CURVE)
+      expect(Math.abs(got - perMinute) / perMinute, `level ${level}: ${got.toFixed(0)} vs ${perMinute}`).toBeLessThan(0.012)
+    }
   })
 
-  it('accrues only on the ground with a direction held — a wall counts, the air does not', () => {
-    expect(stepsThisTick(true, { moveX: 0, moveZ: 1 }, DEFAULT_CURVE, 0.25)).toBeCloseTo(1, 9)
-    expect(stepsThisTick(true, { moveX: 0.3, moveZ: 0 }, DEFAULT_CURVE, 0.25)).toBeCloseTo(1, 9)
-    expect(stepsThisTick(true, { moveX: 0, moveZ: 0 }, DEFAULT_CURVE, 0.25)).toBe(0)
-    expect(stepsThisTick(false, { moveX: 0, moveZ: 1 }, DEFAULT_CURVE, 0.25)).toBe(0)
+  it('never drops below the floor, and never exceeds the ceiling', () => {
+    expect(stepsPerMinute(0, DEFAULT_CURVE)).toBe(240)
+    expect(stepsPerMinute(1000, DEFAULT_CURVE)).toBeLessThanOrEqual(600)
+    expect(stepsPerMinute(1000, DEFAULT_CURVE)).toBeGreaterThan(599.9)
+  })
+
+  it('accrues whenever a direction is held — a wall counts, the air counts, standing still does not', () => {
+    // Level 10: 240 a minute, four a second; a quarter second is one step.
+    expect(stepsThisTick({ moveX: 0, moveZ: 1 }, 10, DEFAULT_CURVE, 0.25)).toBeCloseTo(1, 9)
+    expect(stepsThisTick({ moveX: 0.3, moveZ: 0 }, 10, DEFAULT_CURVE, 0.25)).toBeCloseTo(1, 9)
+    expect(stepsThisTick({ moveX: 0, moveZ: 0 }, 10, DEFAULT_CURVE, 0.25)).toBe(0)
+    // Level 200: ten a second.
+    expect(stepsThisTick({ moveX: 0, moveZ: 1 }, 200, DEFAULT_CURVE, 0.1)).toBeCloseTo(1, 1)
   })
 })
 

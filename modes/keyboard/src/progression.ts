@@ -50,11 +50,19 @@ export interface ProgressCurve {
    */
   metresPerStud: number
   /**
-   * Steps a second while holding a direction on the ground (ADR 0081). Measured in the game being cloned: ~40
-   * steps in 10 s, and the same count at speed 10 and speed 100 — a fixed cadence, not one that follows speed. A
-   * step is time holding a direction on the ground, not a key struck.
+   * The cadence curve (ADR 0081, amended): steps a **minute** while holding a direction on the ground, as a
+   * function of Level. Kodjo measured the game being cloned at eight levels: flat at 240 to about level 20,
+   * climbing, flat at 600 from about level 170. A saturating curve fits every reading within 1%:
+   *
+   *   steps/min = max(stepsFloor, stepsCap − stepsRamp × e^(−level / stepsTau))
+   *
+   * The floor and the ceiling are read straight off the table; the two curve constants come from the 30, 50
+   * and 85 readings. A step is time holding a direction on the ground, not a key struck.
    */
-  stepsPerSecond: number
+  stepsFloor: number
+  stepsCap: number
+  stepsRamp: number
+  stepsTau: number
 }
 
 export const DEFAULT_CURVE: ProgressCurve = {
@@ -64,7 +72,10 @@ export const DEFAULT_CURVE: ProgressCurve = {
   baseMaxSpeed: 10,
   maxSpeedPerLevel: 2,
   metresPerStud: 0.28,
-  stepsPerSecond: 4,
+  stepsFloor: 240,
+  stepsCap: 600,
+  stepsRamp: 819,
+  stepsTau: 33,
 }
 
 /**
@@ -114,6 +125,13 @@ const BOUNDARY_NUDGE = 1e-9
 /** The velocity cap a level grants, in studs/s. The one number here that really is a speed. */
 export const maxSpeedAt = (level: number, curve: ProgressCurve = DEFAULT_CURVE): number =>
   curve.baseMaxSpeed + curve.maxSpeedPerLevel * level
+
+/**
+ * Steps a minute at this Level (ADR 0081, amended): the saturating curve above, floored. Level 10 and 20 give
+ * 240, level 50 gives 420, level 170 and up give 600.
+ */
+export const stepsPerMinute = (level: number, curve: ProgressCurve = DEFAULT_CURVE): number =>
+  Math.max(curve.stepsFloor, curve.stepsCap - curve.stepsRamp * Math.exp(-Math.max(0, level) / Math.max(1e-6, curve.stepsTau)))
 
 /** The same, in metres per second — what the character controller actually wants. */
 export const maxSpeedMps = (level: number, curve: ProgressCurve = DEFAULT_CURVE): number =>

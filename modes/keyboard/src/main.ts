@@ -108,7 +108,7 @@ const client = await startTpsClient({
       // direction was held (ADR 0080, ADR 0081).
       onTreadmill: (on: TreadmillTick) => {
         treadmillOn = on
-        treadmillSteps += stepsPerSecond(curve) * TICK_DT
+        treadmillSteps += stepsPerSecond(levelAt(experience, curve).level, curve) * TICK_DT
         stepsThisTick = 0 // the stepper's report for this tick, if any, is superseded
       },
     }),
@@ -120,6 +120,8 @@ const client = await startTpsClient({
     createLocomotion(host),
     createStepper({
       curve: () => curve,
+      // The cadence follows Level (ADR 0081, amended). Closed form, so a read per tick is cheap.
+      level: () => levelAt(experience, curve).level,
       onSteps: (steps) => {
         // Settle the previous tick's report first: it was on the ground unless a treadmill claimed it.
         groundSteps += stepsThisTick
