@@ -113,8 +113,10 @@ A **service token** (the mirror, `content-sync.md`) arrives as a JWT with `commo
 | `editor-server.config.example.json` | team `cold-boat-3e59`, branch `content`, 10 MiB |
 
 Box: Hetzner CX23 (2 vCPU, 4 GB) `2.28.227.20`, Ubuntu 26.04; cloudflared installed by the dashboard's tunnel
-command, `editor.playgorbo.com → localhost:8080`; Access application `Editor`, policy `Team` (emails), One-time
-PIN. Nothing listens publicly. State in `/var/lib/editor-server/`.
+command, `editor.playgorbo.com → localhost:8080`; Access application `Editor` with two policies: `Team` (Allow,
+emails, One-time PIN login) and `Sync` (Service Auth, the `content-sync` service token, `content-sync.md`).
+Dashboard names as of setup: Cloudflare One → *Access controls* (applications, service credentials),
+*Integrations → Identity providers* (One-time PIN). Nothing listens publicly. State in `/var/lib/editor-server/`.
 
 ## Open
 
