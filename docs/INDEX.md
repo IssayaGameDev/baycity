@@ -14,7 +14,7 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 | [workspace.md](platform/workspace.md) | Packages, imports, scripts, ports, adding a package or a game |
 | [content.md](platform/content.md) | Node/component schema, prefabs, levels, assets, `content/games/*.json` |
 | [components.md](platform/components.md) | Parameter kinds, `defineComponent`, hooks, registries as code + data, built-ins |
-| [mode.md](platform/mode.md) | `ModeDescriptor`, `ModeSession`, `PlayerHost` — what a game supplies |
+| [mode.md](platform/mode.md) | `ModeDescriptor`, `ModeSession`, `PlayerHost`, settings — what a game supplies |
 | [netcode.md](platform/netcode.md) | Client-authoritative rooms, tick, wire format, clock sync, interpolation |
 | [physics.md](platform/physics.md) | The Rapier wrapper |
 | [humanoid/controller.md](platform/humanoid/controller.md) | `CharacterTuning`, `stepCharacter`, caps, envelope numbers |
@@ -34,7 +34,7 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 
 | Game | Docs |
 | --- | --- |
-| [keyboard](games/keyboard/README.md) | progression, steps, keycaps, stages-and-wins, pads, hud, debug, known-open |
+| [keyboard](games/keyboard/README.md) | progression, balance, steps, keycaps, stages-and-wins, pads, hud, debug, known-open |
 | [parkour](games/parkour/README.md) | the reference game: checkpoints, goal, hazards |
 | [swing](games/swing/README.md) | the rope: a game-owned locomotion and a travelling state |
 
@@ -132,5 +132,6 @@ why matters.
 | [0084](adr/0084-the-game-reads-a-live-mirror-of-the-box.md) | The game reads a live mirror of the box |
 | [0085](adr/0085-a-staging-game-on-the-box.md) | A staging game on the box |
 | [0086](adr/0086-play-in-the-editor-is-the-real-game.md) | Play in the editor is the real game |
+| [0087](adr/0087-a-games-numbers-are-settings-and-a-simulator-reads-them.md) | A game's numbers are settings, and a simulator reads them |
 
 `Design archive/` holds superseded design material and is not maintained.

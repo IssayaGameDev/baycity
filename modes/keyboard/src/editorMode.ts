@@ -3,9 +3,9 @@ import { DEFAULT_TUNING, createLocomotion } from '@mp/humanoid'
 import type { ModeDescriptor } from '@mp/mode'
 import { MARKER_COLORS } from '@mp/render-three'
 
-import { KEYBOARD_REGISTRY, keyboardSession, spawnOf } from './rules'
+import { KEYBOARD_REGISTRY, keyboardSession, spawnOf, GAME_CURVE } from './rules'
 import { createStepper } from './steps'
-import { DEFAULT_CURVE } from './progression'
+import { CURVE_SETTINGS } from './progression'
 import { StepPad } from './stepPad'
 import { Treadmill } from './treadmill'
 import { WinsPad } from './wins'
@@ -55,7 +55,8 @@ export const KEYBOARD_MODE: ModeDescriptor = {
     { id: 'death', type: Death.type, params: {} },
   ],
   /** The editor's play-test carries the Stepper with nowhere to report to; `main.ts` binds the sink. */
-  playerDefs: (host) => [createLocomotion(host), createStepper({ curve: () => DEFAULT_CURVE, level: () => 0 })],
+  playerDefs: (host) => [createLocomotion(host), createStepper({ curve: () => GAME_CURVE, level: () => 0 })],
+  settings: CURVE_SETTINGS,
   spawn: spawnOf,
   session: keyboardSession,
 }

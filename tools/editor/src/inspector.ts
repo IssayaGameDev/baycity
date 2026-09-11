@@ -6,6 +6,7 @@ import { Pane } from 'tweakpane'
 
 import type { ComponentView, Doc } from './editorDoc'
 import type { ContextMenu, MenuItem } from './menu'
+import type { SettingDecls } from '@mp/mode'
 
 /**
  * The Inspector panel: a stack of **sections**, one per component, with the fields inside each generated from
@@ -49,6 +50,9 @@ export interface InspectorHost {
   gameSelected: () => boolean
   /** The installed games, for the Game section's picker. */
   games: () => readonly { name: string; label: string }[]
+  /** The active game's declared settings and current values (ADR 0087), or `null` when it declares none. */
+  settings: () => { decls: SettingDecls; values: Record<string, number> } | null
+  onSettingChanged: (key: string, value: number) => void
   /** The level was reassigned to another game: its registry changed, so panels and the world rebuild. */
   onModeChanged: () => void
   /** The environment changed: rebake the sky and relight, since sun, ambient and sky move together. */
@@ -730,6 +734,25 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
 
     if (ref === undefined) section.row('', 'unassigned — its components are checked against everything this build knows')
     else if (!installed.some((g) => g.name === ref.name)) section.row('', `'${ref.name}' is not installed: no rules, no rule gizmos`)
+
+    // The game's numbers (ADR 0087): one field per declaration, saved to the game's data file on change.
+    const settings = host.settings()
+    if (settings === null) return
+    const values = { ...settings.values }
+    const tuning = addSection('@game-settings', { title: 'Game settings' })
+    for (const [key, decl] of Object.entries(settings.decls)) {
+      const opts: { label: string; min?: number; max?: number; step?: number } = { label: decl.label }
+      if (decl.min !== undefined) opts.min = decl.min
+      if (decl.max !== undefined) opts.max = decl.max
+      if (decl.step !== undefined) opts.step = decl.step
+      tuning
+        .pane()
+        .addBinding(values, key, opts)
+        .on('change', (ev) => {
+          if (ev.last) host.onSettingChanged(key, values[key] ?? decl.default)
+        })
+      if (decl.hint !== undefined) tuning.row('', decl.hint)
+    }
   }
 
   const addEnvironmentSections = (doc: Doc): void => {

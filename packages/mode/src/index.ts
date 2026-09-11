@@ -5,6 +5,7 @@ import type { ComponentData, LoadedLevel, WorldNode } from '@mp/content'
 import type { Vec3 } from '@mp/core'
 
 import type { ActionBindings } from './actions'
+import type { SettingDecls } from './settings'
 
 /**
  * `@mp/mode` — what a **game** contributes to the platform, as one object.
@@ -162,6 +163,12 @@ export interface ModeDescriptor {
    */
   readonly player?: readonly ComponentData[]
   /**
+   * The game's tunable numbers, edited in the editor's Game section and stored in `content/games/<game>.json`
+   * under `settings` (ADR 0087). Absent means the game has none. What the game does with them is its own:
+   * keyboard reads its progression curve off them (`curveFrom`).
+   */
+  readonly settings?: SettingDecls
+  /**
    * This game's own controls, as action name → the physical key `code`s that hold it (ADR 0061).
    *
    * The names are the game's and the platform never learns what one means: a host fills
@@ -212,6 +219,7 @@ export interface ModeDescriptor {
  */
 
 export { spawnFrom, standingAt } from './spawn'
+export { readSettings, type SettingDecl, type SettingDecls } from './settings'
 
 /**
  * The node id the local player's components see as `self.node.id` (ADR 0059).

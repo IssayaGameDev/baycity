@@ -9,8 +9,8 @@ import { createHud } from './hud'
 import { DEFAULT_KEYCAP_SHAPE, type KeycapShape } from './keycapGeometry'
 import { DEFAULT_KEYCAP_LOOK, DEFAULT_PRESS, drawKeycaps, type KeycapLook, type PressFeel } from './keycaps'
 import { createPopups, DEFAULT_POPUP, type PopupFeel } from './popups'
-import { abbreviate, DEFAULT_CURVE, levelAt, loadExperience, maxSpeedAt, saveExperience, type ProgressCurve } from './progression'
-import { keyboardSession } from './rules'
+import { abbreviate, levelAt, loadExperience, maxSpeedAt, saveExperience, type ProgressCurve } from './progression'
+import { keyboardSession, GAME_CURVE } from './rules'
 import { createStepper, stepsPerSecond } from './steps'
 import { Treadmill, TREADMILL_STATE, treadmillStepValue, type TreadmillTick } from './treadmill'
 import { loadPerStep, loadWins, padTop, savePerStep, saveWins } from './wins'
@@ -37,7 +37,7 @@ import { qualifies, StepPad, type StepPadOffer } from './stepPad'
 const look: KeycapLook = { ...DEFAULT_KEYCAP_LOOK }
 const shape: KeycapShape = { ...DEFAULT_KEYCAP_SHAPE }
 const feel: PressFeel = { ...DEFAULT_PRESS }
-const curve: ProgressCurve = { ...DEFAULT_CURVE }
+const curve: ProgressCurve = { ...GAME_CURVE }
 const pops: PopupFeel = { ...DEFAULT_POPUP }
 
 /** Survive a reload. The game's own keys: Experience and Wins are this game's stats, not the platform's save shape. */

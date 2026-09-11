@@ -27,7 +27,7 @@ import {
   type Transform, validateLevel } from '@mp/content'
 import { DEFAULT_REGISTRY, characterAccess, createComponentRuntime, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type ComponentRuntime, type Registry } from '@mp/components'
 import { createOrbitCamera } from '@mp/camera'
-import { PLAYER_NODE_ID, actionsHeld, type ModeDescriptor } from '@mp/mode'
+import { PLAYER_NODE_ID, actionsHeld, type ModeDescriptor, readSettings } from '@mp/mode'
 import { createSimClock, eulerToQuat, quat, startFixedLoop, TICK_DT, TICK_RATE_HZ, vec3, type EntityId, type LoopHandle, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
@@ -68,6 +68,7 @@ import {
   serverStatus,
   uploadAsset,
   type FileEntry,
+  type GameData,
   type Me,
 } from './filesApi'
 import { createHierarchy, type Hierarchy } from './hierarchy'
@@ -180,12 +181,12 @@ let activeMode: ModeDescriptor | undefined = soleMode()
  * editor's bundle does not reload when the editor writes it (see `vite.config.ts`), so the live list is merged
  * here rather than trusted from the code.
  */
-const gameData: Record<string, readonly string[]> = {}
+const gameData: Record<string, GameData> = {}
 
 /** A game's registry: its code, plus whatever the live data file adds that the code did not already have. */
 const registryFor = (mode: ModeDescriptor): Registry => {
   const have = new Set(mode.registry.all().map((d) => d.type))
-  const extra = (gameData[mode.name] ?? []).filter((type) => !have.has(type) && isSharedComponent(type))
+  const extra = (gameData[mode.name]?.components ?? []).filter((type) => !have.has(type) && isSharedComponent(type))
   return extra.length === 0 ? mode.registry : createRegistry([...mode.registry.all(), ...sharedComponents(extra)])
 }
 
@@ -206,10 +207,12 @@ const adoptable = (): string[] => {
 const adopt = async (types: readonly string[]): Promise<void> => {
   const mode = activeMode
   if (mode === undefined) return
-  const fresh = types.filter((type) => isSharedComponent(type) && !(gameData[mode.name] ?? []).includes(type))
+  const have = gameData[mode.name] ?? { components: [], settings: {} }
+  const fresh = types.filter((type) => isSharedComponent(type) && !have.components.includes(type))
   if (fresh.length === 0) return
-  const next = [...(gameData[mode.name] ?? []), ...fresh].sort()
-  await saveGame(mode.name, { components: next })
+  // The whole file goes back, settings included: writing only the list would drop them (ADR 0087).
+  const next: GameData = { ...have, components: [...have.components, ...fresh].sort() }
+  await saveGame(mode.name, next)
   gameData[mode.name] = next
   setStatus(`added ${fresh.join(', ')} to ${mode.label}`)
   if (doc !== null) reopenWithRegistry()
@@ -3047,6 +3050,26 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   envSelected: () => envSelected,
   gameSelected: () => gameSelected,
   games: () => MODE_LIST.map((m) => ({ name: m.name, label: m.label })),
+  /**
+   * The game's settings (ADR 0087): what it declares, over what its data file holds. Written whole, with the
+   * component list, on every change — the file is small and the alternative is two writers to one file.
+   */
+  settings: () => {
+    const mode = activeMode
+    if (mode === undefined || mode.settings === undefined) return null
+    return { decls: mode.settings, values: readSettings(mode.settings, gameData[mode.name]?.settings) }
+  },
+  onSettingChanged: (key, value) => {
+    const mode = activeMode
+    if (mode === undefined) return
+    const have = gameData[mode.name] ?? { components: [], settings: {} }
+    const next: GameData = { ...have, settings: { ...have.settings, [key]: value } }
+    gameData[mode.name] = next
+    void saveGame(mode.name, next).then(
+      () => setStatus(`${mode.label}: ${key} = ${value}`),
+      (e: unknown) => setStatus(`settings save failed: ${String(e)}`),
+    )
+  },
   onModeChanged: () => {
     // The registry changed with the game, so everything derived from it is stale: the document's own registry,
     // the Add Component menu, the rule gizmos and the physics instance.
@@ -3283,7 +3306,7 @@ const reloadAssets = async (): Promise<void> => {
   try {
     assets = await loadAssetLibrary()
     // Each game's shared-component list, live from disk (ADR 0077). Missing file = no extras.
-    for (const mode of MODE_LIST) gameData[mode.name] = (await loadGame(mode.name)).components
+    for (const mode of MODE_LIST) gameData[mode.name] = await loadGame(mode.name)
     setProblem('')
   } catch (e) {
     // The usual cause is a dev server started before these routes existed, which answers /api/assets with
