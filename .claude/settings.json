@@ -2,6 +2,19 @@
   "permissions": {
     "allow": [
       "PowerShell(pnpm run typecheck 2>&1)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Edit(./.env)",
+      "Edit(./.env.*)",
+      "Bash(cat .env*)",
+      "Bash(cat *.env)",
+      "Bash(type .env*)",
+      "PowerShell(Get-Content .env*)",
+      "PowerShell(cat .env*)",
+      "PowerShell(type .env*)"
     ]
   }
 }

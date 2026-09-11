@@ -43,6 +43,7 @@ Boundary examples: snapshot header layout — technical. Interpolation buffer du
 - Branches are for experiments and risky refactors; short-lived, merged or deleted — no long-running divergence
 - Never rewrite pushed history; never force-push
 - Never commit secrets or generated output (`node_modules`, `dist`, builds) — maintain `.gitignore` from the first commit
+- **Never read, print, or edit `.env`** (the root one or any other). It holds Kodjo's Access service token. `.claude/settings.json` denies it; the rule stands even where a tool could get around that. `.env.example` is the only file of that shape you touch
 - Tag milestone completions (`m1`, `m2`, …) so any milestone state is recoverable
 
 ## Documentation policy
