@@ -18,7 +18,8 @@
     "dev:keyboard": "pnpm --filter @mode/keyboard run dev",
     "dev:viewer": "pnpm --filter @mp/viewer run dev",
     "dev:editor": "pnpm --filter @mp/editor run dev",
-    "share": "pnpm --filter @mp/share run share"
+    "share": "pnpm --filter @mp/share run share",
+    "deploy:editor": "ssh root@2.28.227.20 bash -s < deploy/editor/update.sh"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -608,7 +608,9 @@
         box-shadow: inset 0 -2px 0 0 var(--accent);
       }
       /* Dropped *onto* — this row becomes the parent, so the whole row is the target, not an edge. */
-      .row.drop-onto {
+      .row.drop-onto,
+      .tile.drop-onto,
+      .tiles.drop-onto {
         box-shadow: inset 0 0 0 2px var(--accent);
       }
       .row input.rename {

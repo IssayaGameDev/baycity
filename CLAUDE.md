@@ -62,7 +62,7 @@ Rules:
 6. Prefer code over prose; if type signatures already say it, quote the signature and stop. Tables for parameters, tunings, saved keys
 7. Each file stays around a page; split into a folder before it does not
 
-Exception: one human-facing `README.md` at the root — what this is, run locally, deploy, where the index lives. Short.
+Exceptions, human-facing, at the root: `README.md` — what this is, run locally, deploy, where the index lives; `CONTRIBUTING.md` — for the content people using the hosted editor (ADR 0083). Both short.
 
 ## Communication with Kodjo
 

@@ -53,7 +53,23 @@ import {
 import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type ClipItem, type Doc, type KeyEditor, type Mode } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
 import { askUnsaved } from './confirm'
-import { listFiles, loadGame, loadLevelRaw, saveFile, saveGame, type FileEntry } from './filesApi'
+import {
+  acquireLock,
+  heartbeatLocks,
+  listFiles,
+  loadGame,
+  loadLevelRaw,
+  lockKey,
+  me as fetchMe,
+  releaseLock,
+  releaseLockBeacon,
+  saveFile,
+  saveGame,
+  serverStatus,
+  uploadAsset,
+  type FileEntry,
+  type Me,
+} from './filesApi'
 import { createHierarchy, type Hierarchy } from './hierarchy'
 import { createHistory } from './history'
 import { createInspector, type Inspector } from './inspector'
@@ -201,6 +217,64 @@ const adopt = async (types: readonly string[]): Promise<void> => {
 
 /** Loaded assets. Both arrive at boot, before any document is opened. */
 let assets: AssetLibrary | null = null
+
+// ============================== locks (ADR 0083) ==============================
+/** Who the server says you are. `null` until boot has asked. */
+let me: Me | null = null
+/** Every lock this tab holds: the open file, and any asset it has written. Released together when the file changes. */
+const heldLocks = new Set<string>()
+/** Who holds the open file when it is not you. Save is off; the server would refuse it anyway. */
+let readOnlyBy: string | null = null
+/** Assets you selected that someone else holds, by id → their name. Edits to them are refused. */
+const lockedAssets = new Map<string, string>()
+/** The last push failure the server reported, or `''`. Kodjo's to fix; shown so nobody thinks their work is on GitHub. */
+let pushProblem = ''
+
+/**
+ * Take a lock, remembering it. Resolves the holder's name when someone else has it — the caller decides what
+ * read-only means for that thing. A lock already held is a no-op (the server refreshes it).
+ */
+const takeLock = async (path: string): Promise<string | null> => {
+  if (heldLocks.has(path)) return null
+  try {
+    const owner = await acquireLock(path)
+    if (owner === null) heldLocks.add(path)
+    return owner
+  } catch (e) {
+    setProblem(`lock failed: ${String(e)}`)
+    return null // the server refuses the write if it must; a hiccup here should not block the open
+  }
+}
+
+/** Release everything this tab holds. Runs when the file changes: the server commits the session then. */
+const dropAllLocks = async (): Promise<void> => {
+  const paths = [...heldLocks]
+  heldLocks.clear()
+  lockedAssets.clear()
+  readOnlyBy = null
+  await Promise.all(paths.map((p) => releaseLock(p).catch(() => undefined)))
+}
+
+/** The key the open file is locked by, from what Save would write. */
+const docLockKey = (): string => {
+  if (fileState.mode === 'level') return lockKey.level(fileState.name)
+  const entry = openPrefabAsset === null ? undefined : assets?.db.byId[openPrefabAsset]
+  return lockKey.asset(entry?.path ?? `prefabs/${fileState.name}.prefab.json`)
+}
+
+/** Lock an editable asset (a material, a clip) before writing it. `true` when it may be written. */
+const lockAsset = async (assetId: string): Promise<boolean> => {
+  const entry = assets?.db.byId[assetId]
+  if (entry === undefined) return false
+  const owner = await takeLock(lockKey.asset(entry.path))
+  if (owner === null) {
+    lockedAssets.delete(assetId)
+    return true
+  }
+  lockedAssets.set(assetId, owner)
+  setStatus(`${entry.name} is read-only: locked by ${owner}`)
+  return false
+}
 
 /**
  * Animation clips, for every document this editor opens (ADR 0050).
@@ -893,7 +967,10 @@ const scheduleClipSave = (assetId: string): void => {
   if (clipSaveTimer !== null) window.clearTimeout(clipSaveTimer)
   clipSaveTimer = window.setTimeout(() => {
     clipSaveTimer = null
-    void assets?.saveClip(assetId).catch((e: unknown) => setProblem(`clip save failed: ${String(e)}`))
+    void lockAsset(assetId).then((mine) => {
+      if (mine) return assets?.saveClip(assetId).catch((e: unknown) => setProblem(`clip save failed: ${String(e)}`))
+      return undefined
+    })
   }, 400)
 }
 
@@ -1828,9 +1905,12 @@ let fileNames: string[] = []
 const prefabEntries = (): AssetEntry[] => (assets === null ? [] : assetsOfKind(assets.db, 'prefab'))
 
 const openFile = async (name: string): Promise<void> => {
+  // The previous file's locks go first — releasing them is what commits that session (ADR 0083).
+  await dropAllLocks()
   try {
     if (fileState.mode === 'level') {
       openPrefabAsset = null
+      readOnlyBy = await takeLock(lockKey.level(name))
       /**
        * The level says which game it is for, and that decides the registry it is validated against — so
        * opening a level that uses a component its game does not declare is a clear load error rather than a
@@ -1863,10 +1943,12 @@ const openFile = async (name: string): Promise<void> => {
       return
     }
     openPrefabAsset = entry.id
+    readOnlyBy = await takeLock(lockKey.asset(entry.path))
     setDoc(prefabDoc(prefab, registry(), editorClips), name)
   } catch (e) {
     setStatus(`load failed: ${String(e)}`)
   }
+  if (readOnlyBy !== null) setStatus(`${name} is open read-only: ${readOnlyBy} has it`)
 }
 
 /**
@@ -1927,6 +2009,7 @@ const toolbar: Toolbar = createToolbar(
     step: edit.step,
     playing,
     inPrefab: docStack.length > 1,
+    readOnly: readOnlyBy,
     grid: grid.visible,
     markers: markerGroup.visible,
   }),
@@ -1964,6 +2047,7 @@ const toolbar: Toolbar = createToolbar(
     newBlank: () => {
       const name = fileState.name || 'untitled'
       openPrefabAsset = null // a new prefab has no asset yet; the first Save creates one
+      void dropAllLocks() // a new file locks nothing until its first Save names it
       setDoc(fileState.mode === 'level' ? levelDoc(blankLevel(name), userPrefabs, registry(), editorClips) : prefabDoc(blankPrefab(name), registry(), editorClips), name)
     },
     back: closePrefab,
@@ -2416,6 +2500,16 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   },
   onPickAsset: armAsset,
   unplaceableWhy,
+  onUpload: (files, folder) => {
+    const cap = me?.maxUploadBytes ?? Infinity
+    const tooBig = files.filter((f) => f.size > cap).map((f) => f.name)
+    if (tooBig.length > 0) setStatus(`too big (cap ${Math.round(cap / 1024 / 1024)} MB): ${tooBig.join(', ')}`)
+    const fits = files.filter((f) => f.size <= cap)
+    if (fits.length === 0) return
+    afterFileOp(`uploaded ${fits.map((f) => f.name).join(', ')}`, async () => {
+      for (const f of fits) await uploadAsset(folder === '' ? f.name : `${folder}/${f.name}`, f)
+    })
+  },
   onSelectAsset: (assetId) => {
     // Selecting an asset and selecting something in the scene are the same slot in the Inspector, so one
     // clears the other rather than both claiming it.
@@ -2423,6 +2517,9 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     deselect()
     assetInspector.show(assetId)
     refreshUi()
+    // A material is edited the moment it is selected, so it is locked then — "lock on open" (ADR 0083).
+    const kind = assets?.db.byId[assetId]?.kind
+    if (kind === 'material' || kind === 'animation') void lockAsset(assetId).then(() => renderStatus())
   },
   requestPreview: (kind, key, done) => previews.request(kind, key, done),
   onCreateAsset: (kind, folder) => {
@@ -2578,6 +2675,20 @@ let dirty = false
 const saveNow = async (): Promise<boolean> => {
   const root = docStack[0]?.doc
   if (root === undefined) return false
+  if (readOnlyBy !== null) {
+    setStatus(`not saved: ${fileState.name} is locked by ${readOnlyBy}`)
+    return false
+  }
+  // The name may have changed since the file was opened (Save-as), or this may be a new file: the lock follows
+  // what is about to be written. Refused means someone else has a file by that name open.
+  const key = docLockKey()
+  if (!heldLocks.has(key)) {
+    const owner = await takeLock(key)
+    if (owner !== null) {
+      setStatus(`not saved: ${fileState.name} is locked by ${owner}`)
+      return false
+    }
+  }
   // Saving writes the *file*, not whatever prefab is open on top of it, and the id follows the name. Letting
   // them drift is how content/levels ended up with three files all claiming "level1".
   root.setId(fileState.name)
@@ -2866,6 +2977,12 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
   onMaterialChanged: (id, material) => {
     void (async () => {
       if (assets === null) return
+      const owner = lockedAssets.get(id)
+      if (owner !== undefined) {
+        setStatus(`not saved: ${assets.db.byId[id]?.name ?? 'material'} is locked by ${owner}`)
+        assetInspector.show(id)
+        return
+      }
       await assets.saveMaterial(id, material).catch((e: unknown) => setStatus(`save failed: ${String(e)}`))
       // Recompile and redraw: a material edit has to show on every piece using it, immediately. Its
       // thumbnail is stale too, and so is any prefab preview that used it.
@@ -2989,7 +3106,10 @@ const setProblem = (msg: string): void => {
   renderStatus()
 }
 const renderStatus = (): void => {
-  const parts: string[] = [breadcrumb()]
+  const parts: string[] = []
+  if (me !== null) parts.push(`<b>${me.user.name}</b>`)
+  parts.push(breadcrumb())
+  if (readOnlyBy !== null) parts.push(`<span class="problem">read-only · locked by ${readOnlyBy}</span>`)
   if (selected !== null && doc !== null) {
     parts.push(selection.length > 1 ? `${selection.length} selected · editing ${doc.label(selected)}` : `selected #${selected} (${doc.label(selected)})`)
   }
@@ -3011,6 +3131,7 @@ const renderStatus = (): void => {
   if (clipboard.length > 0) parts.push(`clipboard: ${clipboard.length} object${clipboard.length > 1 ? 's' : ''}`)
   if (statusMsg !== '') parts.push(statusMsg)
   if (problemMsg !== '') parts.push(`<span class="problem">${problemMsg}</span>`)
+  if (pushProblem !== '') parts.push(`<span class="problem">not on GitHub yet: ${pushProblem}</span>`)
   statusBar.innerHTML = parts.filter((p) => p !== '').join(' · ')
 }
 
@@ -3141,6 +3262,41 @@ const reloadAssets = async (): Promise<void> => {
 // --- boot ---
 await initPhysics()
 applySnap()
+// Who you are, and the lock rules. A dev server answers `local`; the hosted one, whoever Access let in.
+me = await fetchMe().catch((e: unknown) => {
+  setProblem(`who am I? ${String(e)} — restart pnpm dev:editor`)
+  return null
+})
 await reloadAssets()
 refreshPrefabLibrary()
 await enterMode('level')
+
+/**
+ * Keep every held lock alive, and re-take the file's if the server dropped it (a laptop asleep past the stale
+ * window). Also the moment a push failure is learned about.
+ */
+window.setInterval(() => {
+  void (async () => {
+    if (heldLocks.size > 0) {
+      const lost = await heartbeatLocks([...heldLocks]).catch(() => [] as string[])
+      for (const p of lost) heldLocks.delete(p)
+      const key = docLockKey()
+      if (lost.includes(key) && readOnlyBy === null) {
+        readOnlyBy = await takeLock(key)
+        if (readOnlyBy !== null) setStatus(`${fileState.name} is now read-only: ${readOnlyBy} took it while this tab was away`)
+        refreshUi()
+      }
+    }
+    const status = await serverStatus().catch(() => null)
+    const next = status?.pushError ?? ''
+    if (next !== pushProblem) {
+      pushProblem = next
+      renderStatus()
+    }
+  })()
+}, me?.heartbeatMs ?? 30_000)
+
+// A closing tab lets go of its locks at once rather than waiting out the stale window.
+window.addEventListener('pagehide', () => {
+  for (const p of heldLocks) releaseLockBeacon(p)
+})

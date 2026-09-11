@@ -461,6 +461,16 @@ importers:
         specifier: ^6.0.0
         version: 6.4.3(@types/node@22.20.1)(tsx@4.23.1)
 
+  tools/editor-server:
+    dependencies:
+      '@mp/content':
+        specifier: workspace:*
+        version: link:../../packages/content
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.1
+
   tools/netsim:
     dependencies:
       '@mp/core':

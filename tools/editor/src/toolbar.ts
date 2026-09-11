@@ -31,6 +31,8 @@ export interface ToolbarState {
   playing: boolean
   /** Depth > 1 in the doc stack: a prefab is open on top of the file. */
   inPrefab: boolean
+  /** Who holds this file's lock when it is not you — Save is off and says so (ADR 0083). `null` when yours. */
+  readOnly: string | null
   grid: boolean
   markers: boolean
 }
@@ -251,6 +253,10 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
     }
     for (const button of gizmoButtons.values()) button.disabled = s.playing
     spaceButton.disabled = s.playing
+    if (s.readOnly !== null) {
+      saveButton.disabled = true
+      saveButton.title = `read-only: locked by ${s.readOnly}`
+    } else saveButton.title = ''
   }
 
   render()

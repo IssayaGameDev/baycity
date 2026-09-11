@@ -56,7 +56,15 @@ Reports downstream bandwidth per client (budget 2) and server tick time (budget 
 
 ## Deploy
 
-Not yet — deferred; see the deferred list in `docs/INDEX.md`. `infra/` is empty.
+The game itself is not deployed yet. The **editor** is: `https://editor.playgorbo.com`, a Hetzner box behind
+Cloudflare Access, for the people making content (`CONTRIBUTING.md`). Their work lands on the `content` branch;
+merge it into master when it is good.
+
+```sh
+pnpm deploy:editor   # after editor or game changes: merge master into content on the box, rebuild, restart
+```
+
+First-time box setup and the config are in `deploy/editor/` (`docs/platform/editor-server.md`).
 
 ## Docs
 

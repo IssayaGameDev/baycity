@@ -57,6 +57,8 @@ export interface ProjectHost {
   onContext: (at: { x: number; y: number }, path: string, isFolder: boolean) => void
   /** Move a file or folder into `toFolder`. */
   onMove: (from: string, toFolder: string) => void
+  /** Files dragged in from outside the browser, to be uploaded into `folder` (ADR 0083). */
+  onUpload: (files: readonly File[], folder: string) => void
   /**
    * Ask for a tile's picture. Called only when the tile is about to be visible, and expected to answer from
    * cache when it can — `done` may be called synchronously.
@@ -220,19 +222,35 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     }
   }
 
-  const dropTargetFor = (target: HTMLElement, into: string): void => {
+  /**
+   * A drop is one of two things: a tile dragged from this panel (a move), or files dragged in from the desktop
+   * (an upload). `into` may be a getter, for the grid, whose folder changes.
+   */
+  const dropTargetFor = (target: HTMLElement, into: string | (() => string | null)): void => {
+    const folderOf = (): string | null => (typeof into === 'string' ? into : into())
     target.addEventListener('dragover', (e) => {
+      if (folderOf() === null) return
       e.preventDefault()
       target.classList.add('drop-onto')
     })
     target.addEventListener('dragleave', () => target.classList.remove('drop-onto'))
     target.addEventListener('drop', (e) => {
+      const dest = folderOf()
+      if (dest === null) return
       e.preventDefault()
+      e.stopPropagation()
       target.classList.remove('drop-onto')
+      const files = [...(e.dataTransfer?.files ?? [])]
+      if (files.length > 0) {
+        host.onUpload(files, dest)
+        return
+      }
       const from = e.dataTransfer?.getData('text/plain')
-      if (from !== undefined && from !== '') host.onMove(from, into)
+      if (from !== undefined && from !== '') host.onMove(from, dest)
     })
   }
+  // The grid itself takes desktop drops for the folder being looked at; not for "all folders" or the level's own.
+  dropTargetFor(grid, () => (folder === null || folder === OWN ? null : folder))
 
   const renderTree = (root: TreeNode): void => {
     treePane.replaceChildren()

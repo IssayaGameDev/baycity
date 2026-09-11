@@ -1,6 +1,6 @@
 # Tooling — `tools/*` (except the editor)
 
-Editor: `editor.md`. All tools are `private`, source-first (`exports` → `./src/index.ts` where present), typechecked by `pnpm typecheck`.
+Editor: `editor.md`; its server: `editor-server.md`. All tools are `private`, source-first (`exports` → `./src/index.ts` where present), typechecked by `pnpm typecheck`.
 
 ## `tools/share` — `pnpm share [game]` (ADR 0074)
 

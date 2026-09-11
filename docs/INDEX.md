@@ -24,7 +24,8 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 | [client/tps.md](platform/client/tps.md) | `startTpsClient` options and every `TpsClient` handle |
 | [client/input.md](platform/client/input.md) | Keyboard, mouse, touch zones, actions, `InputCommand` |
 | [rendering.md](platform/rendering.md) | Stage, post-FX, overlay layer, level view, assets, world labels, Pixi UI |
-| [editor.md](platform/editor.md) | What it authors, files API, game discovery, adoption, play-test |
+| [editor.md](platform/editor.md) | What it authors, content API client, locks in the editor, game discovery, adoption, play-test |
+| [editor-server.md](platform/editor-server.md) | The content API, Access identity, locks, session commits, upload, deploy |
 | [tooling.md](platform/tooling.md) | share, bots, netsim, viewer |
 | [budgets.md](platform/budgets.md) | The tripwires and how each is measured |
 
@@ -126,5 +127,6 @@ why matters.
 | [0080](adr/0080-the-treadmill-runs-you-at-your-own-speed.md) | The treadmill (amended by 0081) |
 | [0081](adr/0081-a-step-is-a-tick-of-held-input.md) | A step is a tick of held input |
 | [0082](adr/0082-text-standing-in-the-world-and-pads-that-set-the-step.md) | Text standing in the world; pads that set the step |
+| [0083](adr/0083-content-is-authored-on-a-hosted-editor.md) | Content is authored on a hosted editor |
 
 `Design archive/` holds superseded design material and is not maintained.

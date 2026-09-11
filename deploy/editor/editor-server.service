@@ -1,0 +1,19 @@
+[Unit]
+Description=Hosted level editor (content API + built editor)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=editor
+Group=editor
+WorkingDirectory=/srv/editor/repo
+ExecStart=/srv/editor/repo/node_modules/.bin/tsx /srv/editor/repo/tools/editor-server/src/main.ts /etc/editor-server/config.json
+Restart=always
+RestartSec=3
+# SIGTERM makes the server commit every open session before it exits (main.ts); give it time to push.
+KillSignal=SIGTERM
+TimeoutStopSec=45
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

@@ -1,3 +1,4 @@
+import { failed } from './filesApi'
 import {
   buildDatabase,
   isAnimationAsset,
@@ -76,10 +77,7 @@ const post = async (route: string, body: unknown): Promise<void> => {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   })
-  if (!r.ok) {
-    const detail = (await r.json().catch(() => ({}))) as { error?: string }
-    throw new Error(detail.error ?? `${route} → ${r.status}`)
-  }
+  if (!r.ok) await failed(r, route)
 }
 
 /** Fetch the database and every JSON asset in it. */
@@ -118,7 +116,7 @@ export const loadAssetLibrary = async (): Promise<AssetLibrary> => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     })
-    if (!r.ok) throw new Error(`PUT ${path} → ${r.status}`)
+    if (!r.ok) await failed(r, `PUT ${path}`)
   }
 
   const rescan = async (path: string): Promise<AssetEntry | undefined> => {

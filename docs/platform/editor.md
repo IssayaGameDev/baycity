@@ -1,12 +1,12 @@
 # Editor — `tools/editor`
 
-Localhost level/prefab editor. `pnpm dev:editor` → `http://localhost:5176`. Dev tool only: reads/writes `content/` through a Vite dev-server file API. Authoring model ADR 0023, UI shell ADR 0024, game-explicit authoring ADR 0052.
+Level/prefab editor. `pnpm dev:editor` → `http://localhost:5176` (the dev host), or `https://editor.playgorbo.com` (the hosted one, `editor-server.md`, ADR 0083). Reads/writes `content/` through the content API. Authoring model ADR 0023, UI shell ADR 0024, game-explicit authoring ADR 0052.
 
 ## What it authors
 
 | Document | On disk | Written via |
 | --- | --- | --- |
-| Level (node tree + `config`) | `content/levels/<name>.json` | `PUT /api/levels/<name>` (`saveFile`, `src/filesApi.ts`) |
+| Level (node tree + `config`) | `content/levels/<name>.json` | `PUT /api/levels/<name>` (`saveFile`, `src/filesApi.ts`); locked while open (ADR 0083) |
 | Prefab (a root `Node`) | `content/assets/prefabs/<name>.prefab.json` — an **asset** with a `.meta` id (ADR 0026) | `PUT /assets/<path>` (`savePrefab`/`createPrefab`, `src/assetsApi.ts`) |
 | Game shared-component list | `content/games/<game>.json` | `PUT /api/games/<game>` (`saveGame`) — appended by adoption (ADR 0077) |
 | Materials, clips | `content/assets/**` JSON | `PUT /assets/<path>` |
@@ -28,18 +28,26 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 
 Document model: `src/editorDoc.ts` (`Doc`, `levelDoc`, `prefabDoc`; a `Doc` captures its `registry`). Undo: `src/history.ts`. Shortcuts: `src/shortcuts.ts` (ADR 0030).
 
-## Files API (`tools/editor/vite.config.ts`, plugin `filesApi`)
+## Content API — `editor-server.md` (ADR 0083)
 
-| Route | Method | Notes |
-| --- | --- | --- |
-| `/api/levels` | GET | `[{ name, mode? }]`, `mode` = `config.mode.name`; unparseable file listed without `mode` |
-| `/api/levels/:name` | GET / PUT | level JSON, pretty-printed on write |
-| `/api/games/:name` | GET / PUT | `{ components: string[] }` |
-| `/api/assets` | GET | runs `importAssets` (writes missing `.meta`), returns `{ entries, folders }` |
-| `/api/assets/mkdir` · `move` · `delete` | POST | `{ path }` · `{ from, to }` · `{ path }`; sidecars follow, ids survive |
-| `/assets/<path>` | GET / PUT | bytes by extension / JSON only |
+The routes are `tools/editor-server/src/api.ts`, mounted by `vite.config.ts` (`filesApi` plugin: `createContentApi` with `identify → local`, in-memory locks, no git) and by the hosted server. Clients: `src/filesApi.ts` (levels, games, `me`, `serverStatus`, `acquireLock`/`releaseLock`/`releaseLockBeacon`/`heartbeatLocks`, `uploadAsset`, `lockKey`, `ApiError` with `status` and `owner`), `src/assetsApi.ts` (`loadAssetLibrary`).
 
-`safeJoin` rejects paths escaping `content/assets`; `AssetOpError` → 400 (`src/assetOps.ts`). Client: `src/filesApi.ts`, `src/assetsApi.ts` (`loadAssetLibrary`).
+### Identity, locks, upload in the editor (`src/main.ts`)
+
+| Piece | Behaviour |
+| --- | --- |
+| `me` | `GET /api/me` at boot; name shown first in the status bar; `heartbeatMs`/`maxUploadBytes` read from it |
+| `heldLocks` | every key this tab holds; `takeLock(path)` → holder's name or `null`; `dropAllLocks()` releases all (→ the server commits the session) |
+| `openFile` | `dropAllLocks()`, then `takeLock(lockKey.level(name))` / `lockKey.asset(entry.path)`; refused → `readOnlyBy`, the file still opens |
+| `readOnlyBy` | toolbar `readOnly` disables Save with a title; status bar shows `read-only · locked by X`; `saveNow` refuses |
+| `saveNow` | takes the lock for `docLockKey()` first (Save-as or a new file names it now) |
+| `newBlank` | `dropAllLocks()`; nothing locked until the first Save |
+| materials, clips | `lockAsset(id)` on select (`onSelectAsset`, kinds `material`/`animation`) and before a clip save; refused ids in `lockedAssets` → `onMaterialChanged` refuses |
+| heartbeat | `setInterval(heartbeatMs)`: `heartbeatLocks(held)`; a lost file lock is re-taken or turns the file read-only; `serverStatus().pushError` → `pushProblem` in the status bar |
+| `pagehide` | `releaseLockBeacon` per held lock |
+| upload | `ProjectHost.onUpload(files, folder)` from a desktop drop on a folder row, folder tile or the grid (`dropTargetFor`, `folder` getter; not for *All folders* or the level's own); files over `maxUploadBytes` are named and skipped; `afterFileOp` uploads the rest |
+
+`content/games/<game>.json` is written by `adopt` without a lock (gated only by others' locks).
 
 **Watcher:** `watch.ignored: ['**/content/games/**']`. Every game's `rules.ts` imports its `content/games/<game>.json` and the editor bundles those modules, so a write would full-reload the editor and lose undo history right after the editor wrote it. The editor reads the files live over `/api/games`; the game's dev server still reloads (ADR 0077).
 

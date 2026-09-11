@@ -7,7 +7,7 @@
     },
     "metalness": {
       "kind": "number",
-      "value": 0
+      "value": 1
     },
     "roughness": {
       "kind": "number",
