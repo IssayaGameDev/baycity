@@ -6,6 +6,7 @@ import { defineConfig, type Plugin } from 'vite'
 import { REPO_CONTENT, contentAlias } from '../../content-root'
 import { createContentApi } from '../editor-server/src/api'
 import { DEFAULTS } from '../editor-server/src/config'
+import { SHARED_GAMES } from '../share/src/index'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
@@ -25,6 +26,8 @@ const filesApi = (): Plugin => ({
       identify: async () => local,
       locks: {},
       rules: { staleMs: DEFAULTS.lockStaleMs, heartbeatMs: DEFAULTS.heartbeatMs, maxUploadBytes: DEFAULTS.maxUploadBytes },
+      // Play frames the game's own dev server on this machine (ADR 0086): `pnpm dev:<game>` has to be running.
+      games: Object.fromEntries(SHARED_GAMES.map((g) => [g.name, `http://localhost:${g.port}/`])),
     })
     server.middlewares.use((req, res, next) => {
       void api(req, res).then(

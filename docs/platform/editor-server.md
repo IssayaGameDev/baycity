@@ -14,7 +14,8 @@ dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` c
 | `src/sessions.ts` | `SessionTable`, `markDirty`, `take`, `takeDue`, `takeAll`, `describeCommit` — pure |
 | `src/git.ts` | `git`, `changedUnder`, `commitPaths`, `push`, `currentBranch` |
 | `src/changes.ts` | `createChangeFeed(keep)` — numbered, bounded log of written paths with long-poll `wait`; `null` = full sync needed (behind, or ahead after a restart) |
-| `src/server.ts` | `startEditorServer(config)` — identity, static editor, timers, commit queue, state files |
+| `src/proxy.ts` | `proxyHttp`, `proxyUpgrade`, `routeFor` — the staging games and `/relay` under this origin (ADR 0086) |
+| `src/server.ts` | `startEditorServer(config)` — identity, static editor, game proxy, timers, commit queue, state files |
 | `src/assetOps.ts`, `src/assetImporter.ts` | moved from the editor: folder ops, `.meta` importer |
 | `src/main.ts` | CLI; SIGTERM/SIGINT commit every session then exit |
 
@@ -22,7 +23,7 @@ dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` c
 
 | Route | Body → reply | Gate |
 | --- | --- | --- |
-| `GET /api/me` | `{ user, heartbeatMs, lockStaleMs, maxUploadBytes }` | |
+| `GET /api/me` | `{ user, heartbeatMs, lockStaleMs, maxUploadBytes, games }` — `games`: name → URL Play frames | |
 | `GET /api/status` | `{ pushError, locks: [{ path, owner, since }] }` (live locks only) | |
 | `POST /api/locks/acquire` | `{ path }` → `{ ok }` or `{ ok: false, owner: { name } }` | |
 | `POST /api/locks/release` | `{ path }` → `{ ok }`; then `onLockReleased(user)` | |
@@ -75,6 +76,8 @@ interface ServerConfig {
   auth: { kind: 'none'; user: User } | { kind: 'access'; teamDomain: string; aud: string; users: Record<email, name>; services: Record<clientId, name> }
   git: { branch: string; push: boolean; committer: User } | null
   maxUploadBytes: number; lockStaleMs: number; heartbeatMs: number; safetyCommitMs: number
+  games: Record<name, { path: string; target: string; host?: string }>   // ADR 0086; path = the game's Vite base
+  relay: string                                                          // default http://127.0.0.1:9200
 }
 ```
 
@@ -126,10 +129,13 @@ Dashboard names as of setup: Cloudflare One → *Access controls* (applications,
 | `mp-relay.service` | `tsx packages/server/src/main.ts` | 9200 |
 | `mp-game-keyboard.service` | `vite --host 127.0.0.1 --port 5177 --strictPort` in `modes/keyboard` — the **dev server**, bundling the box's `content/` and reloading on every save | 5177 |
 
-Tunnel hostname `dev.playgorbo.com → http://localhost:5177`, added as a destination of the `Editor` Access
-application (same `Team` policy). The page reaches the relay at `wss://dev.playgorbo.com/relay` through Vite's
-`/relay` proxy (`relayUrl`, `client/services.md`). Both units are installed by `setup.sh` and restarted by
-`update.sh`. Keyboard only; another game is another unit and hostname.
+The game runs with `MP_BASE=/play/keyboard/` and is reached **through this server** at
+`editor.playgorbo.com/play/keyboard/` (ADR 0086): every request under a configured `games[].path` is proxied
+to its `target` (HTTP and upgrade), `/relay` upgrades go to `config.relay`, and a request whose `Host` is a
+game's `host` (`dev.playgorbo.com`) is redirected to its path, query kept. The editor's Play frames that URL
+(`editor.md`). Tunnel hostname `dev.playgorbo.com → http://localhost:5177` still works too: Vite redirects its
+root to the base. Both units are installed by `setup.sh` and restarted by `update.sh`. Keyboard only; another
+game is another unit, a `games` entry and a hostname.
 
 ## Open
 

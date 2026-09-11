@@ -25,5 +25,7 @@ export default defineConfig({
      */
     proxy: { '/relay': { target: 'http://localhost:9200', ws: true, rewrite: (p) => p.replace(/^\/relay/, '') } },
   },
+  // On the box the game is served under the editor's origin at this path (ADR 0086); locally at /.
+  base: process.env.MP_BASE ?? '/',
   build: { target: 'es2022' },
 })

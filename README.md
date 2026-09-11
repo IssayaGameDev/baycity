@@ -66,7 +66,7 @@ pnpm sync:content    # live mirror of the box's content into .content-live/, so 
 ```
 
 Day to day: `pnpm dev:server`, `pnpm dev:keyboard`, `pnpm sync:content`; edit at `editor.playgorbo.com`; the game
-reloads on save. The content people play the same live content at `https://dev.playgorbo.com` (ADR 0085). Needs a `.env` from `.env.example` with an Access service token. First-time box setup and the
+reloads on save. Play in the hosted editor runs the real game on the open level (ADR 0086); it also lives at `https://dev.playgorbo.com` (ADR 0085). Needs a `.env` from `.env.example` with an Access service token. First-time box setup and the
 config are in `deploy/editor/` (`docs/platform/editor-server.md`, `docs/platform/content-sync.md`).
 
 ## Docs

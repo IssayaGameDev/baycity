@@ -16,7 +16,7 @@ import { acquire, blocker, heartbeat, holder, release, type LockRules, type Lock
  * hosted editor (a Node server behind Cloudflare Access), so what the editor can do to `content/` is defined
  * once (ADR 0083).
  *
- *   GET  /api/me                      → { user, heartbeatMs, lockStaleMs, maxUploadBytes }
+ *   GET  /api/me                      → { user, heartbeatMs, lockStaleMs, maxUploadBytes, games }
  *   GET  /api/status                  → { pushError, locks: [{ path, owner, since }] }
  *   POST /api/locks/acquire           → { path } → { ok, owner? }
  *   POST /api/locks/release           → { path } → { ok }         (a sendBeacon on tab close lands here too)
@@ -57,6 +57,8 @@ export interface ApiOptions {
   admin?: { token: string; commitAll: () => Promise<void> }
   /** The live mirror's feed; every changed path is recorded here too. */
   changes?: ChangeFeed
+  /** Game name → URL the editor's Play opens in a frame (ADR 0086). Relative to this server or absolute. */
+  games?: Record<string, string>
 }
 
 /** Handles the request and resolves `true`, or resolves `false` having touched nothing. */
@@ -395,7 +397,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
 
   const handleLocks = async (req: IncomingMessage, res: ServerResponse, url: string, user: User): Promise<boolean> => {
     if (url === '/api/me' && req.method === 'GET') {
-      sendJson(res, 200, { user, heartbeatMs: opts.rules.heartbeatMs, lockStaleMs: opts.rules.staleMs, maxUploadBytes: opts.rules.maxUploadBytes })
+      sendJson(res, 200, { user, heartbeatMs: opts.rules.heartbeatMs, lockStaleMs: opts.rules.staleMs, maxUploadBytes: opts.rules.maxUploadBytes, games: opts.games ?? {} })
       return true
     }
     if (url === '/api/status' && req.method === 'GET') {

@@ -1674,7 +1674,7 @@ canvas.addEventListener('click', () => {
   if (playing && document.pointerLockElement !== canvas) void canvas.requestPointerLock()
 })
 document.addEventListener('pointerlockchange', () => {
-  if (playing && document.pointerLockElement !== canvas) stopPlay() // Esc / lost lock exits play
+  if (playing && gameFrame === null && document.pointerLockElement !== canvas) stopPlay() // Esc / lost lock exits play
 })
 
 // WASD/arrows relative to the camera yaw (identical to the game).
@@ -1711,8 +1711,41 @@ const heldActions = (): ReadonlySet<string> => actionsHeld(activeMode?.actions, 
 /** The live components while playing. Detached on stop, so a component's teardown runs like the game's. */
 let playComponents: ComponentRuntime | null = null
 
+// ============================== Play = the real game, in a frame (ADR 0086) ==============================
+/** The frame showing the game while a level is being play-tested; `null` otherwise. */
+let gameFrame: HTMLIFrameElement | null = null
+/** Where the open level's game plays, or `null`: not a level, no game, or the server knows no page for it. */
+const gamePageUrl = (): string | null => {
+  if (fileState.mode !== 'level' || activeMode === undefined) return null
+  return me?.games[activeMode.name] ?? null
+}
+
+/**
+ * Play a level in the **real game** — HUD, progression, other players — rather than the editor's own loop. The
+ * game page reads the saved file, so unsaved edits are saved first; a save that fails (read-only, locked) means
+ * no play. Stop is the toolbar button: Esc inside the frame is the game's pause, not ours.
+ */
+const startFramePlay = async (url: string): Promise<void> => {
+  if (dirty && !(await saveNow())) return
+  const frame = document.createElement('iframe')
+  frame.id = 'game-frame'
+  frame.src = `${url}?level=${encodeURIComponent(fileState.name)}`
+  frame.allow = 'fullscreen; pointer-lock'
+  document.getElementById('centre')?.append(frame)
+  gameFrame = frame
+  playing = true
+  controls.enabled = false
+  setStatus(`playing ${fileState.name} in the game — Stop to come back`)
+  uiChanged()
+}
+
 const startPlay = (): void => {
   if (doc === null || playing) return
+  const url = gamePageUrl()
+  if (url !== null) {
+    void startFramePlay(url)
+    return
+  }
   // Two clocks running at once would be two answers to "where is this platform". Play wins: it is the real
   // one, and the track helper hides itself while playing anyway.
   setPreviewing(false)
@@ -1868,6 +1901,15 @@ const startPlay = (): void => {
 
 const stopPlay = (): void => {
   if (!playing) return
+  if (gameFrame !== null) {
+    gameFrame.remove()
+    gameFrame = null
+    playing = false
+    controls.enabled = true
+    statusMsg = ''
+    uiChanged()
+    return
+  }
   playLoop?.stop()
   playLoop = null
   playComponents?.detach()
