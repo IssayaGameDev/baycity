@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# One-time setup of the hosted editor box (ADR 0083). Run as root on a fresh Ubuntu 24.04+ server:
+# One-time setup of the hosted editor box (ADR 0083). The repo is private, so copy this file over, then run it
+# as root on a fresh Ubuntu 24.04+ server:
 #
-#   curl -fsSL https://raw.githubusercontent.com/IssayaGameDev/Multiplayer-Web/master/deploy/editor/setup.sh | bash -s -- git@github.com:IssayaGameDev/Multiplayer-Web.git
+#   scp deploy/editor/setup.sh root@<box>:setup.sh
+#   ssh root@<box> bash setup.sh git@github.com:IssayaGameDev/Multiplayer-Web.git
 #
-# or copy this file over and `bash setup.sh <repo ssh url>`. Idempotent: rerunning repairs, it does not duplicate.
+# Idempotent: rerunning repairs, it does not duplicate.
 #
 # Assumes cloudflared is already installed as a service by the Cloudflare dashboard's tunnel command, routing
 # editor.<domain> → http://localhost:8080. Nothing here opens a port.
@@ -35,6 +37,7 @@ echo "== user ${APP_USER}"
 id -u "${APP_USER}" > /dev/null 2>&1 || useradd -m -s /bin/bash "${APP_USER}"
 HOME_DIR=$(getent passwd "${APP_USER}" | cut -d: -f6)
 mkdir -p "${HOME_DIR}/.ssh" && chmod 700 "${HOME_DIR}/.ssh"
+chown -R "${APP_USER}:${APP_USER}" "${HOME_DIR}/.ssh"
 if [[ ! -f "${HOME_DIR}/.ssh/id_ed25519" ]]; then
   sudo -u "${APP_USER}" ssh-keygen -q -t ed25519 -N '' -C "editor-server" -f "${HOME_DIR}/.ssh/id_ed25519"
 fi
