@@ -998,6 +998,33 @@
           }
         }
       ]
+    },
+    {
+      "id": "d37352b9",
+      "name": "empty",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 8.5,
+          "z": 0
+        }
+      },
+      "components": [
+        {
+          "id": "372d7485",
+          "type": "Renderer",
+          "params": {
+            "material": ""
+          }
+        },
+        {
+          "id": "17cab0ac",
+          "type": "Mesh",
+          "params": {
+            "model": ""
+          }
+        }
+      ]
     }
   ],
   "prefabs": {
