@@ -18,6 +18,7 @@ Boundary examples: snapshot header layout — technical. Interpolation buffer du
 ## Content files are Kodjo's work
 
 - **Never rebuild a level file from git.** What is on disk is his work, committed or not. Edit the working copy in place; if a scripted edit breaks it, restore from a backup taken before the edit, never from a commit.
+- **Content is authored on the hosted editor** (ADR 0083/0084). `content/` on master changes only by merging the `content` branch — never edit or commit it locally. `.content-live/` is a mirror of the box: never edit it, never commit it. Code commits never include `content/`.
 
 ## Scope discipline
 

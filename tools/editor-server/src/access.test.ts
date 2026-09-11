@@ -45,6 +45,13 @@ describe('verifyToken', () => {
     expect(verifyToken(mint(k.priv, 'k1', good), { ...opts, aud: '' })).toMatchObject({ ok: false, reason: 'wrong audience', aud: [AUD] })
   })
 
+  it('accepts a service token by its common_name when there is no email', () => {
+    const t = mint(k.priv, 'k1', { aud: [AUD], common_name: 'abc123.access', exp: NOW + 600, iss: ISS, type: 'app' })
+    expect(verifyToken(t, { issuer: ISS, aud: AUD, now: NOW, keys: [k.jwk] })).toEqual({ ok: true, email: 'abc123.access@service', service: 'abc123.access' })
+    const neither = mint(k.priv, 'k1', { aud: [AUD], exp: NOW + 600, iss: ISS })
+    expect(verifyToken(neither, { issuer: ISS, aud: AUD, now: NOW, keys: [k.jwk] })).toMatchObject({ ok: false, reason: 'no email' })
+  })
+
   it('refuses garbage and unknown kids without throwing', () => {
     expect(verifyToken('nope', { issuer: ISS, aud: AUD, now: NOW, keys: [k.jwk] })).toMatchObject({ ok: false })
     expect(verifyToken(mint(k.priv, 'k9', good), { issuer: ISS, aud: AUD, now: NOW, keys: [k.jwk] })).toMatchObject({ ok: false, reason: 'unknown kid' })

@@ -13,6 +13,7 @@ dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` c
 | `src/locks.ts` | `LockTable`, `acquire`, `release`, `heartbeat`, `holder`, `blocker`, `heldBy`, `sweep` — pure |
 | `src/sessions.ts` | `SessionTable`, `markDirty`, `take`, `takeDue`, `takeAll`, `describeCommit` — pure |
 | `src/git.ts` | `git`, `changedUnder`, `commitPaths`, `push`, `currentBranch` |
+| `src/changes.ts` | `createChangeFeed(keep)` — numbered, bounded log of written paths with long-poll `wait`; `null` = full sync needed (behind, or ahead after a restart) |
 | `src/server.ts` | `startEditorServer(config)` — identity, static editor, timers, commit queue, state files |
 | `src/assetOps.ts`, `src/assetImporter.ts` | moved from the editor: folder ops, `.meta` importer |
 | `src/main.ts` | CLI; SIGTERM/SIGINT commit every session then exit |
@@ -35,12 +36,15 @@ dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` c
 | `GET /assets/<path>` | bytes | |
 | `PUT /assets/<path>` | JSON asset | lock |
 | `POST /api/admin/commit-all` | `Authorization: Bearer <stateDir/admin.token>` → commits every session | token, no user |
+| `GET /api/tree` | `{ seq, files: [{ path, size, sha1 }] }` — every file under `content/` (mirror, ADR 0084) | |
+| `GET /api/changes?since=N&timeout=MS` | `{ seq, paths }` long-poll (≤ 60 s); **410** when N is behind the feed or ahead of it | |
+| `GET /api/file?path=content/…` | the bytes; 404 when gone | |
 
 Identity first: `identify(req)` → `null` is 401, `AuthError` is its status (403 signed in but not in `users`, 503
 `aud` unset). **Lock gate**: `blocker(locks, key, user)` non-null → 423 `{ error: 'locked by X', owner }`. Lock
 keys = repo-relative posix paths: `content/levels/<name>.json`, `content/games/<name>.json`,
-`content/assets/<path>`. Every write reports its paths to `onChanged` (sidecars included; a PUT of a new JSON
-asset rescans so its `.meta` is attributed to the writer). Upload with the same path **replaces and keeps the
+`content/assets/<path>`. Every write reports its paths to `onChanged` and to the change feed (sidecars included; a PUT of a new JSON
+asset rescans so its `.meta` is attributed to the writer; a folder move or delete is reported as the **files** it touched). Upload with the same path **replaces and keeps the
 sidecar**, so the id survives. Anything other than `/api/*` and `/assets/*` resolves `false` for the host to serve. The built editor's own files are under `/app/` (`build.assetsDir`), because `/assets/` is this route.
 
 ## Locks
@@ -68,7 +72,7 @@ Subjects: `Edit level keyboard` · `Edit texture warn.png` (sidecar folded) · `
 ```ts
 interface ServerConfig {
   port: number; repoRoot: string; stateDir: string; editorDist: string   // dist default: <repoRoot>/tools/editor/dist
-  auth: { kind: 'none'; user: User } | { kind: 'access'; teamDomain: string; aud: string; users: Record<email, name> }
+  auth: { kind: 'none'; user: User } | { kind: 'access'; teamDomain: string; aud: string; users: Record<email, name>; services: Record<clientId, name> }
   git: { branch: string; push: boolean; committer: User } | null
   maxUploadBytes: number; lockStaleMs: number; heartbeatMs: number; safetyCommitMs: number
 }
@@ -83,6 +87,7 @@ interface ServerConfig {
 | `safetyCommitMs` | 600 000 | |
 | `auth.aud` | `''` | empty refuses every login and logs the `aud` the token carried, so the tag can be read off the first attempt |
 | `auth.users` | | lower-cased email → display name; a verified email not listed is 403 |
+| `auth.services` | `{}` | service-token Client ID → display name for logs; any token Access let through is accepted (the Access policy is the list) |
 
 Dev host (`tools/editor/vite.config.ts`): `identify → { local, local@localhost }`, `locks: {}` in memory, rules
 from `DEFAULTS`, no git. Same handlers, so the editor's lock code runs against both.
@@ -93,6 +98,10 @@ Header `cf-access-jwt-assertion`; RS256; `iss === https://<teamDomain>`, `exp > 
 `email` lower-cased. Keys from `https://<teamDomain>/cdn-cgi/access/certs` (`{ keys: Jwk[] }`). The plain
 `Cf-Access-Authenticated-User-Email` header is never trusted: cloudflared connects from loopback, so loopback
 proves nothing.
+
+A **service token** (the mirror, `content-sync.md`) arrives as a JWT with `common_name` = its Client ID and no
+`email`; `verifyToken` returns `{ email: '<id>@service', service: '<id>' }` and the server names it from
+`auth.services`.
 
 ## Deploy — `deploy/editor/`
 

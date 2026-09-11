@@ -4,7 +4,7 @@ import type { LoadedLevel, WorldNode } from '@mp/content'
 import type { Vec3 } from '@mp/core'
 import { spawnFrom, standingAt, type ModeSession, type ModeSessionOptions } from '@mp/mode'
 
-import game from '../../../content/games/parkour.json'
+import game from '@content/games/parkour.json'
 
 /**
  * Parkour's rules, headless (ADR 0052).

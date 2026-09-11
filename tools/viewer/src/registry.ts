@@ -2,7 +2,7 @@ import { isAnimationAsset, validateLevel, type ClipSource, type Level } from '@m
 import type { ModeDescriptor } from '@mp/mode'
 import { PARKOUR_MODE } from '@mode/parkour/editorMode'
 
-import level1 from '../../../content/levels/level1.json'
+import level1 from '@content/levels/level1.json'
 
 /**
  * The viewer's catalog: the level files in `content/levels/`.
@@ -36,8 +36,8 @@ export const ENTRIES: Entry[] = [
  * clip is not a surface, it is the motion, and motion is what this tool exists to look at. Ids come from the
  * `.meta` sidecars, the same way the game gets them.
  */
-const CLIPS = import.meta.glob('../../../content/assets/**/*.anim.json', { eager: true, import: 'default' }) as Record<string, unknown>
-const METAS = import.meta.glob('../../../content/assets/**/*.anim.json.meta', { eager: true, query: '?raw', import: 'default' }) as Record<
+const CLIPS = import.meta.glob('@content/assets/**/*.anim.json', { eager: true, import: 'default' }) as Record<string, unknown>
+const METAS = import.meta.glob('@content/assets/**/*.anim.json.meta', { eager: true, query: '?raw', import: 'default' }) as Record<
   string,
   string
 >

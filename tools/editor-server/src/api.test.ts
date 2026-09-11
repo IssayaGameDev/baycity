@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { createContentApi, keyFor } from './api'
+import { createChangeFeed, type ChangeFeed } from './changes'
 import type { User } from './config'
 import type { LockTable } from './locks'
 
@@ -22,6 +23,7 @@ let locks: LockTable
 let changed: { user: string; paths: string[] }[]
 let released: string[]
 let committedAll = 0
+let feed: ChangeFeed
 
 const LEVEL = { id: 'a', config: { mode: { name: 'parkour' } }, nodes: [] }
 
@@ -33,6 +35,7 @@ beforeEach(async () => {
   locks = {}
   changed = []
   released = []
+  feed = createChangeFeed()
   const api = createContentApi({
     repoRoot: root,
     identify: async (req) => USERS[String(req.headers['x-user'] ?? '')] ?? null,
@@ -47,6 +50,7 @@ beforeEach(async () => {
         committedAll++
       },
     },
+    changes: feed,
   })
   server = createServer((req, res) => {
     void api(req, res).then((handled) => {
@@ -167,6 +171,46 @@ describe('assets', () => {
       keyFor.asset('prefabs/q.prefab.json'),
       keyFor.asset('prefabs/q.prefab.json.meta'),
     ])
+  })
+})
+
+describe('mirror feed', () => {
+  it('tree lists every content file with a hash; changes fold writes; file serves bytes and 404s the gone', async () => {
+    const t0 = await json<{ seq: number; files: { path: string; sha1: string; size: number }[] }>(await call('ada', 'GET', '/api/tree'))
+    expect(t0.seq).toBe(0)
+    expect(t0.files.map((f) => f.path)).toEqual(['content/levels/a.json'])
+    expect(t0.files[0]!.sha1).toHaveLength(40)
+
+    await call('ada', 'PUT', '/api/levels/a', LEVEL)
+    await call('ada', 'POST', '/api/assets/upload?path=textures/t.png', undefined, Buffer.from('png'))
+    const ch = await json<{ seq: number; paths: string[] }>(await call('bob', 'GET', '/api/changes?since=0&timeout=10'))
+    expect(ch.seq).toBe(3)
+    expect(ch.paths.sort()).toEqual([keyFor.asset('textures/t.png'), keyFor.asset('textures/t.png.meta'), keyFor.level('a')])
+    expect(await json(await call('bob', 'GET', `/api/changes?since=${ch.seq}&timeout=10`))).toEqual({ seq: 3, paths: [] })
+
+    const f = await call('bob', 'GET', `/api/file?path=${encodeURIComponent(keyFor.asset('textures/t.png'))}`)
+    expect(f.status).toBe(200)
+    expect(Buffer.from(await f.arrayBuffer()).toString()).toBe('png')
+    expect((await call('bob', 'GET', '/api/file?path=content/levels/nope.json')).status).toBe(404)
+    expect((await call('bob', 'GET', '/api/file?path=../package.json')).status).toBe(400)
+    expect((await call('bob', 'GET', '/api/file?path=content/../package.json')).status).toBe(400)
+  })
+
+  it('a folder move or delete is reported as the files it touched', async () => {
+    await call('ada', 'POST', '/api/assets/upload?path=tex/a.png', undefined, Buffer.from('a'))
+    await call('ada', 'POST', '/api/assets/upload?path=tex/deep/b.png', undefined, Buffer.from('b'))
+    const before = feed.seq()
+    await call('ada', 'POST', '/api/assets/move', { from: 'tex', to: 'art' })
+    const moved = feed.since(before)!
+    expect(moved.paths.sort()).toEqual(
+      ['tex/a.png', 'tex/a.png.meta', 'tex/deep/b.png', 'tex/deep/b.png.meta', 'art/a.png', 'art/a.png.meta', 'art/deep/b.png', 'art/deep/b.png.meta'].map(keyFor.asset).sort(),
+    )
+    const mid = feed.seq()
+    await call('ada', 'POST', '/api/assets/delete', { path: 'art/deep' })
+    expect(feed.since(mid)!.paths.sort()).toEqual([keyFor.asset('art/deep/b.png'), keyFor.asset('art/deep/b.png.meta')])
+    // The tree agrees with what the feed said.
+    const tree = await json<{ files: { path: string }[] }>(await call('ada', 'GET', '/api/tree'))
+    expect(tree.files.map((f) => f.path).filter((p) => p.includes('art/'))).toEqual([keyFor.asset('art/a.png'), keyFor.asset('art/a.png.meta')])
   })
 })
 

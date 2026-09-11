@@ -9,7 +9,7 @@ import { StepPad, type StepPadOffer } from './stepPad'
 import { STEPPER_DEF } from './steps'
 import { Treadmill, type TreadmillTick } from './treadmill'
 import { WinsPad } from './wins'
-import game from '../../../content/games/keyboard.json'
+import game from '@content/games/keyboard.json'
 
 /**
  * Keyboard Escape's rules: spawn, die, and cash out.

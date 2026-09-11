@@ -43,12 +43,13 @@ Every game `vite.config.ts`: `allowedHosts: ['.trycloudflare.com']`, `proxy: '/r
 | --- | --- | --- |
 | `editor` | `pnpm dev:editor`, 5176 | @mode/parkour, camera, humanoid, client, components, content, core, mode, physics, render-three, tweakpane; all games via glob; mounts `editor-server`'s API by relative import |
 | `editor-server` | `pnpm --filter @mp/editor-server run start <config>`, 8080 on the box | content (relative path); `git`, `tsx` |
+| `content-sync` | `pnpm sync:content` | none; a service token in `.env` (`content-sync.md`) |
 | `viewer` | `pnpm dev:viewer`, 5175 | @mode/parkour, humanoid, components, content, core, mode, physics, render-three, tweakpane |
 | `bots` | `pnpm --filter @mp/bots run load` | net, server, colyseus.js |
 | `netsim` | library only | core |
 | `share` | `pnpm share [game]` | none; `cloudflared` on PATH |
 
-`content/` — shared data, not a package: `levels/*.json`, `games/<game>.json`, `assets/**` + `.meta` sidecars. `deploy/editor/` — the hosted editor's setup/update scripts, unit and config example (`editor-server.md`). `infra/` — README only, deferred.
+`content/` — shared data, not a package: `levels/*.json`, `games/<game>.json`, `assets/**` + `.meta` sidecars; on master it arrives by merging the `content` branch. `.content-live/` — the git-ignored live mirror; `content-root.ts` + `.env` decide which of the two a dev server bundles (`@content` alias, `content-sync.md`). `deploy/editor/` — the hosted editor's setup/update scripts, unit and config example (`editor-server.md`). `infra/` — README only, deferred.
 
 ## Dependency laws (SEED §6)
 
@@ -76,6 +77,7 @@ Not CI-enforced beyond (2).
 | `pnpm dev:viewer` / `dev:editor` | 5175 / 5176 |
 | `pnpm share [game]` | quick tunnel |
 | `pnpm deploy:editor` | `ssh root@2.28.227.20 bash -s < deploy/editor/update.sh` — redeploy the hosted editor (ADR 0083) |
+| `pnpm sync:content` | live mirror of the hosted editor's content into `.content-live/` (ADR 0084) |
 
 Build: per browser app, `pnpm --filter <pkg> run build` (`vite build`); no root build script.
 

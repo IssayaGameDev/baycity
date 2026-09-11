@@ -3,7 +3,7 @@ import { createRegistry, ENGINE_COMPONENTS, PLAYER_COMPONENTS, sharedComponents 
 import type { LoadedLevel } from '@mp/content'
 import { spawnFrom, type ModeSession, type ModeSessionOptions } from '@mp/mode'
 
-import game from '../../../content/games/_template.json'
+import game from '@content/games/_template.json'
 
 /**
  * The smallest set of rules a game can have, and the thing to copy when starting one.

@@ -24,7 +24,8 @@ export interface VerifyOptions {
   keys: readonly Jwk[]
 }
 
-export type Verified = { ok: true; email: string } | { ok: false; reason: string; aud?: string[] }
+/** A person (`email`) or an Access service token (`service` = its Client ID; the mirror on Kodjo's PC, ADR 0084). */
+export type Verified = { ok: true; email: string; service?: string } | { ok: false; reason: string; aud?: string[] }
 
 const b64url = (s: string): Buffer => Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64')
 
@@ -61,8 +62,11 @@ export const verifyToken = (token: string, opts: VerifyOptions): Verified => {
   if (typeof payload.exp !== 'number' || payload.exp <= opts.now) return { ok: false, reason: 'expired', aud }
   if (opts.aud === '' || !aud.includes(opts.aud)) return { ok: false, reason: 'wrong audience', aud }
   const email = typeof payload.email === 'string' ? payload.email.toLowerCase() : ''
-  if (email === '') return { ok: false, reason: 'no email', aud }
-  return { ok: true, email }
+  if (email !== '') return { ok: true, email }
+  // A service token: Access puts its Client ID in `common_name` and no email.
+  const service = typeof payload.common_name === 'string' ? payload.common_name : ''
+  if (service !== '') return { ok: true, email: `${service}@service`, service }
+  return { ok: false, reason: 'no email', aud }
 }
 
 export interface AccessVerifier {

@@ -62,9 +62,12 @@ merge it into master when it is good.
 
 ```sh
 pnpm deploy:editor   # after editor or game changes: merge master into content on the box, rebuild, restart
+pnpm sync:content    # live mirror of the box's content into .content-live/, so the local game sees every save
 ```
 
-First-time box setup and the config are in `deploy/editor/` (`docs/platform/editor-server.md`).
+Day to day: `pnpm dev:server`, `pnpm dev:keyboard`, `pnpm sync:content`; edit at `editor.playgorbo.com`; the game
+reloads on save. Needs a `.env` from `.env.example` with an Access service token. First-time box setup and the
+config are in `deploy/editor/` (`docs/platform/editor-server.md`, `docs/platform/content-sync.md`).
 
 ## Docs
 

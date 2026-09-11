@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite'
 
+import { contentAlias, contentBanner } from '../../content-root'
+
 /**
  * Copy this with the directory and **change the port** — every game needs its own, or the second one you run
  * silently steals the first one's. Parkour is 5174, swing 5175; this one is deliberately in the same range so
@@ -9,6 +11,9 @@ import { defineConfig } from 'vite'
  * they present an arbitrary `*.trycloudflare.com` Host header, which Vite 6 rejects by default.
  */
 export default defineConfig({
+  // `@content` is the repo's content/, or the live mirror when `.env` says so (ADR 0084).
+  plugins: [contentBanner()],
+  resolve: { alias: contentAlias() },
   server: {
     port: 5179,
     allowedHosts: ['.trycloudflare.com'],
