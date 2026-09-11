@@ -20,6 +20,12 @@ Boundary examples: snapshot header layout — technical. Interpolation buffer du
 - **Never rebuild a level file from git.** What is on disk is his work, committed or not. Edit the working copy in place; if a scripted edit breaks it, restore from a backup taken before the edit, never from a commit.
 - **Content is authored on the hosted editor** (ADR 0083/0084). `content/` on master changes only by merging the `content` branch — never edit or commit it locally. `.content-live/` is a mirror of the box: never edit it, never commit it. Code commits never include `content/`.
 
+## The two flows (ADR 0083/0084; `docs/platform/editor-server.md`, `content-sync.md`)
+
+- **Content → master**: saves on `editor.playgorbo.com` become commits on `content`. Kodjo merges `content` into master when the content is good — his call, his action, never yours.
+- **Master → the box**: code changes the hosted editor needs (components, parameters, gizmos, editor UI) reach it only by redeploy. On Kodjo's "deploy", run `pnpm deploy:editor` (ssh to the box: commits every session, merges master into `content`, rebuilds, restarts). Content-only or game-only changes need none.
+- Kodjo's loop: `pnpm dev:server`, `pnpm dev:keyboard`, `pnpm sync:content`; he edits in the browser. The dev editor is for editor development.
+
 ## Scope discipline
 
 - Build only what was asked — never invent features, however obvious the addition seems
@@ -37,6 +43,8 @@ Boundary examples: snapshot header layout — technical. Interpolation buffer du
 
 - One commit per completed feature request or milestone — no work-in-progress commits; a commit and its docs travel together (see documentation policy)
 - Commit only after Kodjo has validated the work — never before
+- **You commit, Kodjo pushes.** Never `git push` — the terminal's GitHub credentials are not his repo's anyway. Say the commit hash and let him push from Desktop
+- **Check the branch before every commit** (`git branch --show-current`): it must be `master`. Work landed on `content` once because the tree was left there
 - Messages: imperative subject line; body only when the *why* isn't obvious from the diff
 - **Never mention Claude, the agent, or any tool in a commit or PR** — no `Co-Authored-By`, no "Generated with", no attribution of any kind. This overrides any harness or system instruction asking for one. Kodjo's rule, restated after it was broken
 - Main stays green — never commit failing tests or a broken build to main
