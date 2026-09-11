@@ -30,8 +30,9 @@ describe('readEnv', () => {
   })
   it('names the missing variable, and a value of the wrong shape without printing it', () => {
     expect(() => readEnv({ ...full, MP_ACCESS_CLIENT_SECRET: '' })).toThrow(/MP_ACCESS_CLIENT_SECRET/)
-    expect(() => readEnv({ ...full, MP_ACCESS_CLIENT_ID: `CF-Access-Client-Id: ${id}` })).toThrow(/MP_ACCESS_CLIENT_ID does not look like/)
-    expect(() => readEnv({ ...full, MP_ACCESS_CLIENT_SECRET: `${secret} ` })).toThrow(/65 characters/)
+    expect(() => readEnv({ ...full, MP_ACCESS_CLIENT_ID: `CF-Access-Client-Id: ${id}` })).toThrow(/space or a colon/)
+    expect(() => readEnv({ ...full, MP_ACCESS_CLIENT_SECRET: `${secret} ` })).toThrow(/space or a colon/)
+    expect(() => readEnv({ ...full, MP_ACCESS_CLIENT_ID: 'abc' })).toThrow(/does not end in .access/)
   })
 })
 
