@@ -4,9 +4,12 @@ import { lastRatio, sampleCurve, type CurvePoint, type CurveSetting } from '@mp/
  * The curve editor (ADR 0088): a graph of control points for one `CurveSetting`.
  *
  * Drag a point to move it, click empty space to add one, double-click a point (or press Delete with it
- * selected) to remove it. On a log axis an exponential is a straight line, which is how a level-cost curve is
- * meant to be read: "each level costs ×1.15" is a slope. The readout under the graph names the value at the
- * pointer and, for ratio curves, the growth per unit the last segment implies.
+ * selected) to remove it. Ctrl+Z / Ctrl+Y (or the buttons) walk this graph's own history: every edit saves to
+ * the game's file at once, so the way back has to live here, not in the document's undo.
+ *
+ * On a log axis an exponential is a straight line, which is how a level-cost curve is meant to be read: "each
+ * level costs ×1.15" is a slope. The readout under the graph names the value at the pointer and, for ratio
+ * curves, the growth per unit the last segment implies.
  *
  * Pure DOM and canvas, no library: Tweakpane has no graph control, and this one has to know about
  * `sampleCurve`'s rules to draw what the game will compute.
@@ -92,7 +95,15 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
   reset.className = 'ctl'
   reset.textContent = 'default'
   reset.title = 'put the declared default curve back'
-  fields.append(xLab, xIn, yLab, yIn, reset)
+  const undoBtn = document.createElement('button')
+  undoBtn.className = 'ctl'
+  undoBtn.textContent = '↶'
+  undoBtn.title = 'undo (Ctrl+Z with the graph focused)'
+  const redoBtn = document.createElement('button')
+  redoBtn.className = 'ctl'
+  redoBtn.textContent = '↷'
+  redoBtn.title = 'redo (Ctrl+Y)'
+  fields.append(xLab, xIn, yLab, yIn, undoBtn, redoBtn, reset)
   root.append(canvas, readout, fields)
   container.append(root)
 
@@ -235,10 +246,38 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
     return Math.min(hi, Math.max(lo, x))
   }
 
+  // This graph's own history: states before each edit, and the states undone from.
+  const past: CurvePoint[][] = []
+  const future: CurvePoint[][] = []
+  const snapshot = (): CurvePoint[] => points.map((p) => ({ ...p }))
+  /** The state before an edit begins. Called once per edit (a drag is one edit). */
+  const remember = (): void => {
+    past.push(snapshot())
+    if (past.length > 100) past.shift()
+    future.length = 0
+  }
   const commit = (): void => {
-    opts.onChange(points.map((p) => ({ ...p })))
+    opts.onChange(snapshot())
     draw()
   }
+  const undo = (): void => {
+    const prev = past.pop()
+    if (prev === undefined) return
+    future.push(snapshot())
+    points = prev
+    selected = -1
+    commit()
+  }
+  const redo = (): void => {
+    const next = future.pop()
+    if (next === undefined) return
+    past.push(snapshot())
+    points = next
+    selected = -1
+    commit()
+  }
+  undoBtn.addEventListener('click', undo)
+  redoBtn.addEventListener('click', redo)
 
   const local = (e: PointerEvent | MouseEvent): { x: number; y: number } => {
     const r = canvas.getBoundingClientRect()
@@ -255,10 +294,12 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
       selected = i
       dragging = true
       moved = false
+      remember()
       canvas.setPointerCapture(e.pointerId)
     } else {
       const p = fromPx(at.x, at.y)
       if (points.some((q) => q.x === p.x)) return
+      remember()
       points.push(p)
       points.sort((a, b) => a.x - b.x)
       selected = points.findIndex((q) => q.x === p.x)
@@ -281,6 +322,7 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
     if (!dragging) return
     dragging = false
     if (moved) commit()
+    else past.pop() // a click that moved nothing is not an edit
   }
   canvas.addEventListener('pointerup', endDrag)
   canvas.addEventListener('pointercancel', endDrag)
@@ -292,21 +334,38 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
     const at = local(e)
     const i = hit(at.x, at.y)
     if (i < 0 || points.length <= 1) return
+    remember()
     points.splice(i, 1)
     selected = -1
     commit()
   })
   canvas.addEventListener('keydown', (e) => {
+    const mod = e.ctrlKey || e.metaKey
+    if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+      undo()
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
+    if ((mod && e.key.toLowerCase() === 'y') || (mod && e.shiftKey && e.key.toLowerCase() === 'z')) {
+      redo()
+      e.preventDefault()
+      e.stopPropagation()
+      return
+    }
     if ((e.key === 'Delete' || e.key === 'Backspace') && selected >= 0 && points.length > 1) {
+      remember()
       points.splice(selected, 1)
       selected = -1
       commit()
       e.preventDefault()
+      e.stopPropagation()
     }
   })
   const fieldChange = (): void => {
     const sel = points[selected]
     if (sel === undefined) return
+    remember()
     const x = Number(xIn.value)
     const y = Number(yIn.value)
     if (Number.isFinite(x)) sel.x = clampX(selected, Math.max(0, Math.round(x)))
@@ -316,6 +375,7 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
   xIn.addEventListener('change', fieldChange)
   yIn.addEventListener('change', fieldChange)
   reset.addEventListener('click', () => {
+    remember()
     points = decl.default.map((p) => ({ ...p }))
     selected = -1
     commit()
