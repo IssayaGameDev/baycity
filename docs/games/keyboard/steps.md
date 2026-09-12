@@ -12,13 +12,10 @@ Steps per minute follow **Level**, from Kodjo's table of the real game:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Steps/min | 240 | 240 | 270 | 420 | 540 | 600 | 600 | 600 |
 
-```
-stepsPerMinute(level) = max(stepsFloor, stepsCap − stepsRamp × e^(−level / stepsTau))
-                      = max(240, 600 − 819 × e^(−level / 33))
-```
-
-Every row within 1% (`rules.test.ts` is the fixture). Speed plays no part. `stepsPerSecond(level, curve)` is
-that over 60.
+`stepsPerMinute(level)` samples the **cadence curve** (`curve.cadence`, linear between points, held past the
+last; ADR 0088, [balance.md](balance.md)), whose default points are that table: `{0: 240}, {20: 240}, {30: 270},
+{50: 420}, {85: 540}, {170: 600}`. Kodjo edits it in the editor's Game row. Speed plays no part.
+`stepsPerSecond(level, curve)` is that over 60.
 
 ## The component
 
@@ -36,7 +33,7 @@ the movement slot (`onLocomote`) with the tick's `InputCommand`, the one place a
 
 `main.ts` accrues steps per tick and pays whole ones per frame:
 
-- Ground steps pay `perStep` each (see [pads.md](pads.md); default `curve.perKey` = 1).
+- Ground steps pay `perStep` each (see [pads.md](pads.md); default `BASE_PER_STEP` = 1).
 - Treadmill steps pay `perStep × multiplier`. A tick spent on a treadmill is a treadmill tick, not also a
   ground tick: the stepper's report for that tick is superseded when the treadmill's contact arrives later in
   the same tick.

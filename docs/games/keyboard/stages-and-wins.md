@@ -52,3 +52,5 @@ editor's play-test calls the session with no callbacks and still teleports and d
 51.5); Wins pad `w0` at z 56 (1 Win); treadmill `t0` at x 6; `step-pads` parent at x −12 with eight children;
 Kodjo's trampoline (Bumper prefab); kill plane. Boards past z = 40 exceed the wire's `QUANT_BOUND` (ADR 0011),
 so peers out there are clamped — known open.
+
+`WinsPad.stage` (number, default 0 = unnumbered): the pad's place in the world's sequence, 1-based — what the simulator and a future HUD read (ADR 0088). Wins per stage for World 1: [world-1.md](world-1.md).

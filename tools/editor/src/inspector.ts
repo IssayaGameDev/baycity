@@ -6,7 +6,9 @@ import { Pane } from 'tweakpane'
 
 import type { ComponentView, Doc } from './editorDoc'
 import type { ContextMenu, MenuItem } from './menu'
-import type { SettingDecls } from '@mp/mode'
+import { isCurveSetting, type CurvePoint, type SettingDecls } from '@mp/mode'
+
+import { createCurveEditor } from './curveEditor'
 
 /**
  * The Inspector panel: a stack of **sections**, one per component, with the fields inside each generated from
@@ -50,9 +52,9 @@ export interface InspectorHost {
   gameSelected: () => boolean
   /** The installed games, for the Game section's picker. */
   games: () => readonly { name: string; label: string }[]
-  /** The active game's declared settings and current values (ADR 0087), or `null` when it declares none. */
-  settings: () => { decls: SettingDecls; values: Record<string, number> } | null
-  onSettingChanged: (key: string, value: number) => void
+  /** The active game's declared settings and current values (ADR 0087/0088), or `null` when it declares none. */
+  settings: () => { decls: SettingDecls; values: Record<string, number | CurvePoint[]> } | null
+  onSettingChanged: (key: string, value: number | CurvePoint[]) => void
   /** The level was reassigned to another game: its registry changed, so panels and the world rebuild. */
   onModeChanged: () => void
   /** The environment changed: rebake the sky and relight, since sun, ambient and sky move together. */
@@ -738,18 +740,29 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     // The game's numbers (ADR 0087): one field per declaration, saved to the game's data file on change.
     const settings = host.settings()
     if (settings === null) return
-    const values = { ...settings.values }
+    const numbers: Record<string, number> = {}
+    for (const [k, v] of Object.entries(settings.values)) if (typeof v === 'number') numbers[k] = v
     const tuning = addSection('@game-settings', { title: 'Game settings' })
     for (const [key, decl] of Object.entries(settings.decls)) {
+      if (isCurveSetting(decl)) {
+        // A curve gets its own section: a graph is not a row (ADR 0088).
+        const sec = addSection(`@game-curve-${key}`, { title: decl.label })
+        const pts = settings.values[key]
+        const holder = sec.row('', '')
+        holder.replaceChildren()
+        createCurveEditor(holder, { decl, points: Array.isArray(pts) ? pts : decl.default, onChange: (points) => host.onSettingChanged(key, points) })
+        if (decl.hint !== undefined) sec.row('', decl.hint)
+        continue
+      }
       const opts: { label: string; min?: number; max?: number; step?: number } = { label: decl.label }
       if (decl.min !== undefined) opts.min = decl.min
       if (decl.max !== undefined) opts.max = decl.max
       if (decl.step !== undefined) opts.step = decl.step
       tuning
         .pane()
-        .addBinding(values, key, opts)
+        .addBinding(numbers, key, opts)
         .on('change', (ev) => {
-          if (ev.last) host.onSettingChanged(key, values[key] ?? decl.default)
+          if (ev.last) host.onSettingChanged(key, numbers[key] ?? decl.default)
         })
       if (decl.hint !== undefined) tuning.row('', decl.hint)
     }
