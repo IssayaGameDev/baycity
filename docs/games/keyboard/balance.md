@@ -22,7 +22,9 @@ Pad tiers and Wins payouts are node parameters, not settings: `StepPad` ([pads.m
 ## The curve editor (`tools/editor/src/curveEditor.ts`)
 
 One graph per curve under the Game row. Drag a point; click empty space to add one; double-click or Delete to
-remove (never the last). Fields for the selected point; **default** puts the declared curve back. Log axis for
+remove (never the last). Fields for the selected point; **default** puts the declared curve back; ↶ ↷ or
+Ctrl+Z/Y undo within the graph. Wheel zooms around the cursor (an axis alone over that axis), right-drag pans,
+**fit** reframes, **⤢** opens the graph large over the viewport. Log axis for
 `levelCost`: an exponential is a straight line, and the readout gives the ratio per Level of the last segment.
 The right edge of the graph shows the extension, so what Level 300 costs is visible.
 

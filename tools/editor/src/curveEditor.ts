@@ -7,6 +7,11 @@ import { lastRatio, sampleCurve, type CurvePoint, type CurveSetting } from '@mp/
  * selected) to remove it. Ctrl+Z / Ctrl+Y (or the buttons) walk this graph's own history: every edit saves to
  * the game's file at once, so the way back has to live here, not in the document's undo.
  *
+ * **View**: the wheel zooms around the cursor — X over the bottom axis, Y over the left axis, both over the
+ * plot; right-drag or Shift-drag pans; `fit` (or F) frames the points again. Grid and labels follow the view, so
+ * a zoomed-in cost curve reads `1.2K … 1.5K`, not decades. `⤢` opens the same graph four times larger over the
+ * viewport, bound to the same points.
+ *
  * On a log axis an exponential is a straight line, which is how a level-cost curve is meant to be read: "each
  * level costs ×1.15" is a slope. The readout under the graph names the value at the pointer and, for ratio
  * curves, the growth per unit the last segment implies.
@@ -25,11 +30,13 @@ export interface CurveEditorOptions {
   points: readonly CurvePoint[]
   /** A drag ended, a point was added or removed, or a field was edited. */
   onChange: (points: CurvePoint[]) => void
+  /** Canvas size in CSS pixels. Default 320 × 170. */
+  size?: { w: number; h: number }
+  /** Hide the enlarge button (the enlarged copy hides it). */
+  noEnlarge?: boolean
 }
 
-const W = 320
-const H = 170
-const PAD = { l: 44, r: 10, t: 8, b: 22 }
+const PAD = { l: 48, r: 10, t: 8, b: 22 }
 
 const short = (n: number): string => {
   if (!Number.isFinite(n)) return '∞'
@@ -54,19 +61,32 @@ const short = (n: number): string => {
 /** A "nice" tick step for a linear axis spanning `range` with about `n` ticks. */
 const niceStep = (range: number, n: number): number => {
   const raw = range / Math.max(1, n)
+  if (!(raw > 0)) return 1
   const mag = 10 ** Math.floor(Math.log10(raw))
   const r = raw / mag
   return (r < 1.5 ? 1 : r < 3.5 ? 2 : r < 7.5 ? 5 : 10) * mag
 }
 
+const btn = (text: string, title: string): HTMLButtonElement => {
+  const b = document.createElement('button')
+  b.className = 'ctl'
+  b.textContent = text
+  b.title = title
+  return b
+}
+
 export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptions): CurveEditor => {
   const { decl } = opts
+  const W = opts.size?.w ?? 320
+  const H = opts.size?.h ?? 170
   const shape = { interpolation: decl.interpolation, beyond: decl.beyond }
-  const yMin = decl.yMin ?? (decl.logY ? 1e-3 : 0)
+  const log = decl.logY === true
+  const yMin = decl.yMin ?? (log ? 1e-3 : 0)
   let points: CurvePoint[] = opts.points.map((p) => ({ ...p }))
   let selected = -1
   let hover: { x: number; y: number } | null = null
 
+  // --- DOM ---
   const root = document.createElement('div')
   root.className = 'curve-ed'
   const canvas = document.createElement('canvas')
@@ -91,19 +111,13 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
   xLab.textContent = decl.xLabel
   const yLab = document.createElement('span')
   yLab.textContent = decl.yLabel
-  const reset = document.createElement('button')
-  reset.className = 'ctl'
-  reset.textContent = 'default'
-  reset.title = 'put the declared default curve back'
-  const undoBtn = document.createElement('button')
-  undoBtn.className = 'ctl'
-  undoBtn.textContent = '↶'
-  undoBtn.title = 'undo (Ctrl+Z with the graph focused)'
-  const redoBtn = document.createElement('button')
-  redoBtn.className = 'ctl'
-  redoBtn.textContent = '↷'
-  redoBtn.title = 'redo (Ctrl+Y)'
-  fields.append(xLab, xIn, yLab, yIn, undoBtn, redoBtn, reset)
+  const undoBtn = btn('↶', 'undo (Ctrl+Z with the graph focused)')
+  const redoBtn = btn('↷', 'redo (Ctrl+Y)')
+  const fitBtn = btn('fit', 'frame the points (F)')
+  const reset = btn('default', 'put the declared default curve back')
+  const bigBtn = btn('⤢', 'open large')
+  fields.append(xLab, xIn, yLab, yIn, undoBtn, redoBtn, fitBtn, reset)
+  if (opts.noEnlarge !== true) fields.append(bigBtn)
   root.append(canvas, readout, fields)
   container.append(root)
 
@@ -114,110 +128,114 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
   canvas.style.height = `${H}px`
   const ctx = canvas.getContext('2d')!
   ctx.scale(dpr, dpr)
-
-  // --- axes ---
-  const xMax = (): number => {
-    const last = points[points.length - 1]?.x ?? 10
-    return Math.max(10, Math.ceil((last * 1.25) / 10) * 10)
-  }
-  const yRange = (): { lo: number; hi: number } => {
-    const ys = points.map((p) => p.y)
-    // The extension past the last point is part of the picture: sample the right edge too.
-    ys.push(sampleCurve(points, xMax(), shape))
-    const max = Math.max(...ys, yMin + 1e-9)
-    const min = Math.min(...ys)
-    if (decl.logY) {
-      const lo = 10 ** Math.floor(Math.log10(Math.max(yMin, min, 1e-9)))
-      const hi = 10 ** Math.ceil(Math.log10(max) + 1e-9)
-      return { lo, hi: hi <= lo ? lo * 10 : hi }
-    }
-    return { lo: Math.min(0, min), hi: max * 1.15 || 1 }
-  }
   const plotW = W - PAD.l - PAD.r
   const plotH = H - PAD.t - PAD.b
-  const toPx = (p: CurvePoint, yr = yRange()): { px: number; py: number } => {
-    const px = PAD.l + (p.x / xMax()) * plotW
-    const fy = decl.logY ? (Math.log10(Math.max(p.y, yr.lo)) - Math.log10(yr.lo)) / (Math.log10(yr.hi) - Math.log10(yr.lo)) : (p.y - yr.lo) / (yr.hi - yr.lo)
-    return { px, py: PAD.t + plotH - fy * plotH }
+
+  // --- view: what the plot shows. y is stored in "axis space": log10(y) on a log axis. ---
+  const toAxis = (y: number): number => (log ? Math.log10(Math.max(y, yMin, 1e-300)) : y)
+  const fromAxis = (a: number): number => (log ? 10 ** a : a)
+  const view = { x0: 0, x1: 10, y0: 0, y1: 1 }
+
+  const fit = (): void => {
+    const last = points[points.length - 1]?.x ?? 10
+    view.x0 = 0
+    view.x1 = Math.max(10, Math.ceil((last * 1.25) / 10) * 10)
+    const ys = points.map((p) => toAxis(p.y))
+    ys.push(toAxis(sampleCurve(points, view.x1, shape))) // the extension is part of the picture
+    const lo = Math.min(...ys)
+    const hi = Math.max(...ys)
+    if (log) {
+      view.y0 = Math.floor(lo)
+      view.y1 = Math.max(view.y0 + 1, Math.ceil(hi + 1e-9))
+    } else {
+      view.y0 = Math.min(0, lo)
+      view.y1 = hi <= view.y0 ? view.y0 + 1 : view.y0 + (hi - view.y0) * 1.15
+    }
   }
-  const fromPx = (px: number, py: number, yr = yRange()): CurvePoint => {
-    const x = ((px - PAD.l) / plotW) * xMax()
-    const fy = (PAD.t + plotH - py) / plotH
-    const y = decl.logY ? 10 ** (Math.log10(yr.lo) + fy * (Math.log10(yr.hi) - Math.log10(yr.lo))) : yr.lo + fy * (yr.hi - yr.lo)
-    return { x: Math.max(0, Math.round(x)), y: Math.max(yMin, y) }
+  fit()
+
+  const toPx = (p: CurvePoint): { px: number; py: number } => ({
+    px: PAD.l + ((p.x - view.x0) / (view.x1 - view.x0)) * plotW,
+    py: PAD.t + plotH - ((toAxis(p.y) - view.y0) / (view.y1 - view.y0)) * plotH,
+  })
+  const fromPx = (px: number, py: number): CurvePoint => {
+    const x = view.x0 + ((px - PAD.l) / plotW) * (view.x1 - view.x0)
+    const a = view.y0 + ((PAD.t + plotH - py) / plotH) * (view.y1 - view.y0)
+    return { x: Math.max(0, Math.round(x)), y: Math.max(yMin, fromAxis(a)) }
+  }
+  const zone = (px: number, py: number): 'plot' | 'xaxis' | 'yaxis' | 'out' => {
+    const inX = px >= PAD.l && px <= W - PAD.r
+    const inY = py >= PAD.t && py <= PAD.t + plotH
+    if (inX && inY) return 'plot'
+    if (inX && py > PAD.t + plotH) return 'xaxis'
+    if (inY && px < PAD.l) return 'yaxis'
+    return 'out'
   }
 
+  // --- drawing ---
   const draw = (): void => {
-    const yr = yRange()
     ctx.clearRect(0, 0, W, H)
     ctx.font = '10px system-ui, sans-serif'
     ctx.textBaseline = 'middle'
-    // grid + labels
     ctx.strokeStyle = 'rgba(255,255,255,0.08)'
     ctx.fillStyle = 'rgba(255,255,255,0.55)'
     ctx.lineWidth = 1
-    const xs = niceStep(xMax(), 6)
-    for (let x = 0; x <= xMax() + 1e-9; x += xs) {
-      const { px } = toPx({ x, y: yr.lo }, yr)
+    // x grid
+    const xs = niceStep(view.x1 - view.x0, Math.max(3, plotW / 60))
+    ctx.textAlign = 'center'
+    for (let x = Math.ceil(view.x0 / xs) * xs; x <= view.x1 + 1e-9; x += xs) {
+      const { px } = toPx({ x, y: fromAxis(view.y0) })
       ctx.beginPath()
       ctx.moveTo(px, PAD.t)
       ctx.lineTo(px, PAD.t + plotH)
       ctx.stroke()
-      ctx.textAlign = 'center'
-      ctx.fillText(String(Math.round(x)), px, H - PAD.b / 2)
+      ctx.fillText(short(x), px, H - PAD.b / 2)
     }
+    // y grid: decades when a log view spans more than two; otherwise nice steps in axis space (log: fractions of
+    // a decade, labelled with the real value).
     ctx.textAlign = 'right'
-    if (decl.logY) {
-      for (let e = Math.log10(yr.lo); e <= Math.log10(yr.hi) + 1e-9; e += 1) {
-        const y = 10 ** e
-        const { py } = toPx({ x: 0, y }, yr)
-        ctx.beginPath()
-        ctx.moveTo(PAD.l, py)
-        ctx.lineTo(W - PAD.r, py)
-        ctx.stroke()
-        ctx.fillText(short(y), PAD.l - 4, py)
-      }
-    } else {
-      const ys = niceStep(yr.hi - yr.lo, 4)
-      for (let y = Math.ceil(yr.lo / ys) * ys; y <= yr.hi + 1e-9; y += ys) {
-        const { py } = toPx({ x: 0, y }, yr)
-        ctx.beginPath()
-        ctx.moveTo(PAD.l, py)
-        ctx.lineTo(W - PAD.r, py)
-        ctx.stroke()
-        ctx.fillText(short(y), PAD.l - 4, py)
-      }
+    const span = view.y1 - view.y0
+    const ys = log && span > 2 ? 1 : niceStep(span, Math.max(2, plotH / 34))
+    for (let a = Math.ceil(view.y0 / ys) * ys; a <= view.y1 + 1e-9; a += ys) {
+      const { py } = toPx({ x: view.x0, y: fromAxis(a) })
+      ctx.beginPath()
+      ctx.moveTo(PAD.l, py)
+      ctx.lineTo(W - PAD.r, py)
+      ctx.stroke()
+      ctx.fillText(short(fromAxis(a)), PAD.l - 4, py)
     }
-    // curve, sampled across the whole axis so the extension shows
+    // the curve, clipped to the plot, sampled across the view so the extension shows
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(PAD.l, PAD.t, plotW, plotH)
+    ctx.clip()
     ctx.strokeStyle = '#7fb3ff'
     ctx.lineWidth = 1.5
     ctx.beginPath()
-    const N = 160
+    const N = Math.max(120, Math.floor(plotW / 2))
     for (let i = 0; i <= N; i++) {
-      const x = (i / N) * xMax()
-      const { px, py } = toPx({ x, y: sampleCurve(points, x, shape) }, yr)
+      const x = view.x0 + (i / N) * (view.x1 - view.x0)
+      const { px, py } = toPx({ x, y: sampleCurve(points, Math.max(0, x), shape) })
       if (i === 0) ctx.moveTo(px, py)
       else ctx.lineTo(px, py)
     }
     ctx.stroke()
-    // points
     points.forEach((p, i) => {
-      const { px, py } = toPx(p, yr)
+      const { px, py } = toPx(p)
       ctx.beginPath()
       ctx.arc(px, py, i === selected ? 5 : 3.5, 0, Math.PI * 2)
       ctx.fillStyle = i === selected ? '#ffd166' : '#ffffff'
       ctx.fill()
     })
-    // hover readout
-    if (hover !== null) {
-      const at = fromPx(hover.x, hover.y, yr)
-      const y = sampleCurve(points, at.x, shape)
-      readout.textContent = `${decl.xLabel} ${at.x} → ${short(y)} ${decl.yLabel}${decl.interpolation === 'ratio' ? ` · ×${lastRatio(points).toFixed(4)} per ${decl.xLabel.toLowerCase()} past the last point` : ''}`
+    ctx.restore()
+    // readout
+    const ratio = decl.interpolation === 'ratio' ? ` · ×${lastRatio(points).toFixed(4)} per ${decl.xLabel.toLowerCase()} on the last segment` : ''
+    if (hover !== null && zone(hover.x, hover.y) === 'plot') {
+      const at = fromPx(hover.x, hover.y)
+      readout.textContent = `${decl.xLabel} ${at.x} → ${short(sampleCurve(points, at.x, shape))} ${decl.yLabel}${ratio}`
     } else {
-      readout.textContent =
-        decl.interpolation === 'ratio' ? `×${lastRatio(points).toFixed(4)} per ${decl.xLabel.toLowerCase()} on the last segment · click to add a point, drag to move, double-click to remove` : 'click to add a point, drag to move, double-click to remove'
+      readout.textContent = `click adds · drag moves · double-click removes · wheel zooms · right-drag pans${ratio}`
     }
-    // fields
     const sel = points[selected]
     xIn.disabled = yIn.disabled = sel === undefined
     if (sel !== undefined && document.activeElement !== xIn) xIn.value = String(sel.x)
@@ -225,11 +243,10 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
   }
 
   const hit = (px: number, py: number): number => {
-    const yr = yRange()
     let best = -1
     let bestD = 8
     points.forEach((p, i) => {
-      const q = toPx(p, yr)
+      const q = toPx(p)
       const d = Math.hypot(q.px - px, q.py - py)
       if (d < bestD) {
         bestD = d
@@ -246,11 +263,10 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
     return Math.min(hi, Math.max(lo, x))
   }
 
-  // This graph's own history: states before each edit, and the states undone from.
+  // --- history ---
   const past: CurvePoint[][] = []
   const future: CurvePoint[][] = []
   const snapshot = (): CurvePoint[] => points.map((p) => ({ ...p }))
-  /** The state before an edit begins. Called once per edit (a drag is one edit). */
   const remember = (): void => {
     past.push(snapshot())
     if (past.length > 100) past.shift()
@@ -278,18 +294,31 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
   }
   undoBtn.addEventListener('click', undo)
   redoBtn.addEventListener('click', redo)
+  fitBtn.addEventListener('click', () => {
+    fit()
+    draw()
+  })
 
-  const local = (e: PointerEvent | MouseEvent): { x: number; y: number } => {
+  // --- pointer ---
+  const local = (e: PointerEvent | MouseEvent | WheelEvent): { x: number; y: number } => {
     const r = canvas.getBoundingClientRect()
     return { x: ((e.clientX - r.left) / r.width) * W, y: ((e.clientY - r.top) / r.height) * H }
   }
-
   let dragging = false
   let moved = false
+  let panning: { x: number; y: number; view: typeof view } | null = null
+
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault())
   canvas.addEventListener('pointerdown', (e) => {
     const at = local(e)
-    const i = hit(at.x, at.y)
     canvas.focus()
+    if (e.button === 2 || e.shiftKey) {
+      panning = { x: at.x, y: at.y, view: { ...view } }
+      canvas.setPointerCapture(e.pointerId)
+      return
+    }
+    if (e.button !== 0 || zone(at.x, at.y) !== 'plot') return
+    const i = hit(at.x, at.y)
     if (i >= 0) {
       selected = i
       dragging = true
@@ -311,21 +340,29 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
   canvas.addEventListener('pointermove', (e) => {
     const at = local(e)
     hover = at
-    if (dragging && selected >= 0) {
+    if (panning !== null) {
+      const dx = ((at.x - panning.x) / plotW) * (panning.view.x1 - panning.view.x0)
+      const dy = ((at.y - panning.y) / plotH) * (panning.view.y1 - panning.view.y0)
+      view.x0 = Math.max(0, panning.view.x0 - dx)
+      view.x1 = view.x0 + (panning.view.x1 - panning.view.x0)
+      view.y0 = panning.view.y0 + dy
+      view.y1 = panning.view.y1 + dy
+    } else if (dragging && selected >= 0) {
       const p = fromPx(at.x, at.y)
       points[selected] = { x: clampX(selected, p.x), y: Math.max(yMin, p.y) }
       moved = true
     }
     draw()
   })
-  const endDrag = (): void => {
+  const endPointer = (): void => {
+    panning = null
     if (!dragging) return
     dragging = false
     if (moved) commit()
     else past.pop() // a click that moved nothing is not an edit
   }
-  canvas.addEventListener('pointerup', endDrag)
-  canvas.addEventListener('pointercancel', endDrag)
+  canvas.addEventListener('pointerup', endPointer)
+  canvas.addEventListener('pointercancel', endPointer)
   canvas.addEventListener('pointerleave', () => {
     hover = null
     draw()
@@ -339,29 +376,53 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
     selected = -1
     commit()
   })
+  canvas.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault()
+      const at = local(e)
+      const z = zone(at.x, at.y)
+      if (z === 'out') return
+      const f = Math.exp(Math.sign(e.deltaY) * 0.18)
+      const anchor = fromPx(at.x, at.y)
+      if (z !== 'yaxis') {
+        const ax = view.x0 + ((at.x - PAD.l) / plotW) * (view.x1 - view.x0)
+        view.x0 = Math.max(0, ax - (ax - view.x0) * f)
+        view.x1 = Math.max(view.x0 + 2, ax + (view.x1 - ax) * f)
+      }
+      if (z !== 'xaxis') {
+        const ay = toAxis(anchor.y)
+        const y0 = ay - (ay - view.y0) * f
+        const y1 = ay + (view.y1 - ay) * f
+        const minSpan = log ? 0.05 : 1e-6
+        if (y1 - y0 >= minSpan) {
+          view.y0 = y0
+          view.y1 = y1
+        }
+      }
+      draw()
+    },
+    { passive: false },
+  )
   canvas.addEventListener('keydown', (e) => {
     const mod = e.ctrlKey || e.metaKey
-    if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) {
-      undo()
-      e.preventDefault()
-      e.stopPropagation()
-      return
-    }
-    if ((mod && e.key.toLowerCase() === 'y') || (mod && e.shiftKey && e.key.toLowerCase() === 'z')) {
-      redo()
-      e.preventDefault()
-      e.stopPropagation()
-      return
-    }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && selected >= 0 && points.length > 1) {
+    const k = e.key.toLowerCase()
+    if (mod && k === 'z' && !e.shiftKey) undo()
+    else if ((mod && k === 'y') || (mod && e.shiftKey && k === 'z')) redo()
+    else if (k === 'f' && !mod) {
+      fit()
+      draw()
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected >= 0 && points.length > 1) {
       remember()
       points.splice(selected, 1)
       selected = -1
       commit()
-      e.preventDefault()
-      e.stopPropagation()
-    }
+    } else return
+    e.preventDefault()
+    e.stopPropagation()
   })
+
+  // --- fields ---
   const fieldChange = (): void => {
     const sel = points[selected]
     if (sel === undefined) return
@@ -378,7 +439,52 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
     remember()
     points = decl.default.map((p) => ({ ...p }))
     selected = -1
+    fit()
     commit()
+  })
+
+  // --- enlarge: the same graph, four times the area, over the viewport, bound to the same points ---
+  let big: { overlay: HTMLElement; editor: CurveEditor } | null = null
+  const closeBig = (): void => {
+    if (big === null) return
+    big.editor.dispose()
+    big.overlay.remove()
+    big = null
+  }
+  bigBtn.addEventListener('click', () => {
+    if (big !== null) {
+      closeBig()
+      return
+    }
+    const overlay = document.createElement('div')
+    overlay.className = 'curve-ed-big'
+    const head = document.createElement('div')
+    head.className = 'curve-ed-big-h'
+    const title = document.createElement('span')
+    title.textContent = `${decl.label} — ${decl.yLabel} over ${decl.xLabel}`
+    const close = btn('✕', 'close (Esc)')
+    close.addEventListener('click', closeBig)
+    head.append(title, close)
+    const body = document.createElement('div')
+    overlay.append(head, body)
+    document.body.append(overlay)
+    const size = { w: Math.min(1100, window.innerWidth - 80), h: Math.min(560, window.innerHeight - 160) }
+    const editor = createCurveEditor(body, {
+      decl,
+      points,
+      size,
+      noEnlarge: true,
+      onChange: (next) => {
+        points = next.map((p) => ({ ...p }))
+        selected = -1
+        opts.onChange(next)
+        draw()
+      },
+    })
+    overlay.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeBig()
+    })
+    big = { overlay, editor }
   })
 
   draw()
@@ -386,8 +492,12 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
     set: (next) => {
       points = next.map((p) => ({ ...p }))
       selected = Math.min(selected, points.length - 1)
+      big?.editor.set(points)
       draw()
     },
-    dispose: () => root.remove(),
+    dispose: () => {
+      closeBig()
+      root.remove()
+    },
   }
 }

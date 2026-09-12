@@ -88,7 +88,7 @@ File list filtered by game: `visibleLevels()` keeps entries whose `mode` is abse
 
 Under the Game row: one Tweakpane field per number setting in `activeMode.settings`, and **one section with a
 graph per curve setting** (`src/curveEditor.ts`, ADR 0088: drag, click to add, double-click/Delete to remove,
-fields for the selected point, `default`, its own undo/redo — Ctrl+Z/Ctrl+Y with the graph focused, or ↶ ↷ — since every edit saves at once; log axis when `logY`; readout of the value under the pointer and the
+fields for the selected point, `default`, its own undo/redo — Ctrl+Z/Ctrl+Y with the graph focused, or ↶ ↷ — since every edit saves at once; wheel zooms around the cursor (X over the bottom axis, Y over the left, both over the plot), right-/Shift-drag pans, `fit`/F reframes, `⤢` opens the same graph large over the viewport; log axis when `logY`; readout of the value under the pointer and the
 last segment's ratio). `host.settings()` → `{ decls, values }`, values = `readSettings(decls, gameData[game].settings)`;
 a change → `host.onSettingChanged(key, number | CurvePoint[])` → `gameData[game].settings[key] = value` and
 `saveGame` writes the **whole** file (`components` + `settings`). `adopt` spreads the file too, so a component

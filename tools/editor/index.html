@@ -476,6 +476,32 @@
       .curve-ed-num {
         width: 72px;
       }
+      /* The enlarged graph, over everything (ADR 0088). */
+      .curve-ed-big {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        background: rgba(0, 0, 0, 0.6);
+      }
+      .curve-ed-big-h {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        color: var(--text);
+        font-size: 12px;
+      }
+      .curve-ed-big .curve-ed {
+        width: auto;
+        padding: 10px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
 
       /* The real game, framed over the viewport while a level plays (ADR 0086). */
       #game-frame {
