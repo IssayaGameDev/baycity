@@ -10,6 +10,7 @@ Run: `pnpm dev:keyboard` (port 5177) with `pnpm dev:server`. Share: `pnpm share 
 | --- | --- |
 | [progression.md](progression.md) | Experience → Level → Max Speed; the curve, its fixture, the save keys |
 | [balance.md](balance.md) | The curve as editor-edited settings; the balance simulator and its CLI |
+| [world-1.md](world-1.md) | The design values: stages as speed gates, Wins per stage, worlds, rebirth, the per-step formula |
 | [steps.md](steps.md) | What a step is, the cadence curve by Level, the `Stepper` component |
 | [keycaps.md](keycaps.md) | The `Keyboard` component, instanced caps, the press animation, the sweep |
 | [stages-and-wins.md](stages-and-wins.md) | `WinsPad`, the teleport, Wins |

@@ -34,7 +34,7 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 
 | Game | Docs |
 | --- | --- |
-| [keyboard](games/keyboard/README.md) | progression, balance, steps, keycaps, stages-and-wins, pads, hud, debug, known-open |
+| [keyboard](games/keyboard/README.md) | progression, balance, world-1, steps, keycaps, stages-and-wins, pads, hud, debug, known-open |
 | [parkour](games/parkour/README.md) | the reference game: checkpoints, goal, hazards |
 | [swing](games/swing/README.md) | the rope: a game-owned locomotion and a travelling state |
 
