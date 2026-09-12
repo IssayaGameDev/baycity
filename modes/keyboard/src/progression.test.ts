@@ -83,11 +83,23 @@ describe('the level curve', () => {
     }
   })
 
-  it('survives a flat curve, which the slider allows', () => {
-    const flat = { ...C, levelGrowth: 1 }
+  it('survives a flat curve, which the editor allows', () => {
+    const flat = { ...C, levelCost: [{ x: 0, y: 100 }] }
     expect(experienceForLevel(3, flat)).toBe(300)
     expect(levelAt(350, flat).level).toBe(3)
     expect(levelAt(350, flat).next).toBe(100)
+  })
+
+  it('a designed curve: gentle, then a steeper ratio from Level 100', () => {
+    const bent = { ...C, levelCost: [{ x: 0, y: 100 }, { x: 100, y: 1e5 }, { x: 200, y: 1e12 }] }
+    const r1 = (1e5 / 100) ** (1 / 100)
+    const r2 = (1e12 / 1e5) ** (1 / 100)
+    expect(r2).toBeGreaterThan(r1)
+    const cost150 = experienceForLevel(151, bent) - experienceForLevel(150, bent)
+    expect(cost150).toBeCloseTo(1e5 * r2 ** 50, -3)
+    // Beyond the last point the last ratio continues: Level 300 is not free.
+    expect(experienceForLevel(301, bent) - experienceForLevel(300, bent)).toBeCloseTo(1e12 * r2 ** 100, -8)
+    expect(levelAt(experienceForLevel(250, bent), bent).level).toBe(250)
   })
 })
 

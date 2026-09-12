@@ -3066,7 +3066,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     const next: GameData = { ...have, settings: { ...have.settings, [key]: value } }
     gameData[mode.name] = next
     void saveGame(mode.name, next).then(
-      () => setStatus(`${mode.label}: ${key} = ${value}`),
+      () => setStatus(`${mode.label}: ${key} = ${Array.isArray(value) ? `${value.length} points` : value}`),
       (e: unknown) => setStatus(`settings save failed: ${String(e)}`),
     )
   },

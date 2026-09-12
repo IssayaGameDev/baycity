@@ -15,7 +15,7 @@ Sets what a step pays. The real game's row of numbered buttons at spawn.
 | `idleMaterial` | asset:material | `''` | worn otherwise; empty keeps the Renderer's |
 
 Rules (Kodjo's): stepping on a pad you qualify for (`qualifies(wins, offer)`, `wins >= requiresWins`) makes its
-`perStep` yours, **including a lower one**; with no pad ever taken the step pays `curve.perKey`; on a pad you do
+`perStep` yours, **including a lower one**; with no pad ever taken the step pays `BASE_PER_STEP` (1); on a pad you do
 not qualify for nothing happens. Saved under `keyboard.perStep`.
 
 Materials: `stylePads()` in `main.ts` runs when `perStep` changes and swaps each pad's meshes

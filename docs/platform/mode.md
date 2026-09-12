@@ -97,4 +97,14 @@ Unassigned level or missing game → character + geometry only, no rules, `DEFAU
 
 ## Settings (ADR 0087)
 
-`ModeDescriptor.settings?: SettingDecls` — `Record<key, { label, default, min?, max?, step?, hint? }>`. `readSettings(decls, raw)` lays a file's `settings` block over the defaults (finite numbers only, undeclared keys ignored). Stored in `content/games/<game>.json` → `settings`; edited in the editor's Game row. Keyboard: `CURVE_SETTINGS` (`docs/games/keyboard/balance.md`).
+`ModeDescriptor.settings?: SettingDecls` — `Record<key, NumberSetting | CurveSetting>`:
+
+```ts
+NumberSetting { kind?: 'number'; label; default: number; min?; max?; step?; hint? }
+CurveSetting  { kind: 'curve'; label; hint?; xLabel; yLabel; interpolation: 'linear' | 'ratio'; beyond: 'hold' | 'extend'; logY?; yMin?; default: CurvePoint[] }
+readSettings(decls, raw): SettingValues   // a file's `settings` block over the defaults; wrong shape → default
+sampleCurve(points, x, { interpolation, beyond })   // before the first point: its y; between: linear or constant ratio; after: hold or extend
+normalizePoints(raw): CurvePoint[] | null  // sorted, deduped, finite
+```
+
+Stored in `content/games/<game>.json` → `settings`; edited in the editor's Game row (a graph per curve, `editor.md`). Keyboard: `CURVE_SETTINGS`, three curves (`docs/games/keyboard/balance.md`, ADR 0087/0088).

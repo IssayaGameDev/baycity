@@ -86,10 +86,13 @@ File list filtered by game: `visibleLevels()` keeps entries whose `mode` is abse
 
 ## Game settings (ADR 0087)
 
-Under the Game row, one Tweakpane field per `activeMode.settings` declaration (`host.settings()` →
-`{ decls, values }`, values = `readSettings(decls, gameData[game].settings)`); `change` with `ev.last` →
-`host.onSettingChanged(key, value)` → `gameData[game].settings[key] = value` and `saveGame` writes the **whole**
-file (`components` + `settings`). `adopt` spreads the file too, so a component adoption keeps the settings.
+Under the Game row: one Tweakpane field per number setting in `activeMode.settings`, and **one section with a
+graph per curve setting** (`src/curveEditor.ts`, ADR 0088: drag, click to add, double-click/Delete to remove,
+fields for the selected point, `default`; log axis when `logY`; readout of the value under the pointer and the
+last segment's ratio). `host.settings()` → `{ decls, values }`, values = `readSettings(decls, gameData[game].settings)`;
+a change → `host.onSettingChanged(key, number | CurvePoint[])` → `gameData[game].settings[key] = value` and
+`saveGame` writes the **whole** file (`components` + `settings`). `adopt` spreads the file too, so a component
+adoption keeps the settings. `loadGame` accepts numbers and point lists (`normalizePoints`).
 
 ## Play
 

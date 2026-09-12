@@ -1,5 +1,6 @@
 import { validateLevel, type Level } from '@mp/content'
 import { DEFAULT_REGISTRY, type Registry } from '@mp/components'
+import { normalizePoints, type CurvePoint } from '@mp/mode'
 
 /**
  * Client for the content API (`tools/editor-server/src/api.ts`, ADR 0083) — the same routes whether the
@@ -61,10 +62,10 @@ export const loadLevel = async (name: string, registryFor?: (mode: string) => Re
 /** The level as it is on disk, unvalidated — for the caller that has to look at it before choosing a registry. */
 export const loadLevelRaw = async (name: string): Promise<unknown> => (await req('levels', `/${name}`)).json()
 
-/** A game's data file: its shared-component list (ADR 0077) and its settings (ADR 0087). A game with no file yet has neither. */
+/** A game's data file: its shared-component list (ADR 0077) and its settings (ADR 0087/0088: numbers or curve points). */
 export interface GameData {
   components: string[]
-  settings: Record<string, number>
+  settings: Record<string, number | CurvePoint[]>
 }
 
 export const loadGame = async (name: string): Promise<GameData> => {
@@ -72,9 +73,15 @@ export const loadGame = async (name: string): Promise<GameData> => {
   if (r.status === 404) return { components: [], settings: {} }
   if (!r.ok) await failed(r, `GET /api/games/${name}`)
   const raw = (await r.json()) as { components?: unknown; settings?: unknown }
-  const settings: Record<string, number> = {}
+  const settings: Record<string, number | CurvePoint[]> = {}
   if (typeof raw.settings === 'object' && raw.settings !== null) {
-    for (const [k, v] of Object.entries(raw.settings as Record<string, unknown>)) if (typeof v === 'number' && Number.isFinite(v)) settings[k] = v
+    for (const [k, v] of Object.entries(raw.settings as Record<string, unknown>)) {
+      if (typeof v === 'number' && Number.isFinite(v)) settings[k] = v
+      else {
+        const pts = normalizePoints(v)
+        if (pts !== null) settings[k] = pts
+      }
+    }
   }
   return { components: Array.isArray(raw.components) ? raw.components.filter((c): c is string => typeof c === 'string') : [], settings }
 }

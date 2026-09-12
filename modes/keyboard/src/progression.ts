@@ -1,10 +1,10 @@
 /**
- * Experience, Level and Max Speed — the incremental loop, as arithmetic (ADR 0071).
+ * Experience, Level and Max Speed — the incremental loop, as arithmetic (ADR 0071, curves ADR 0088).
  *
  * Three values, and **only one of them is a speed**:
  *
- * - **Experience** is the currency. It goes up by one per keycap struck, times whatever multipliers are
- *   running, and it is what the counter on screen shows.
+ * - **Experience** is the currency. It goes up per step, times whatever multipliers are running, and it is what
+ *   the counter on screen shows.
  * - **Level** is *derived* from Experience. It cannot be bought; it is the conversion, and in the game being
  *   cloned it is what gates the worlds.
  * - **Max Speed** is derived from Level, and *that* is the velocity — the cap on how fast the character moves.
@@ -13,151 +13,163 @@
  * player at 345,510 as moving at 345,510. They were moving at 100 studs a second. Calling it Experience keeps
  * the word "speed" for the only thing that is one.
  *
- * Headless and pure, so the curve can be checked against real save data rather than eyeballed in play.
+ * The shape of each conversion is a **designed curve** — control points Kodjo places in the editor, stored in
+ * `content/games/keyboard.json` (ADR 0087/0088) — not a formula with parameters. Three of them:
+ *
+ * - `levelCost`: XP needed to go from Level L to L+1. Exponential, so edited on a log axis with constant-ratio
+ *   segments; extends forever, because Level 500 must not be free.
+ * - `speed`: Max Speed at Level, studs/s. Linear segments; extends.
+ * - `cadence`: steps per minute at Level (`steps.ts`). Linear segments; holds past the last point.
+ *
+ * Headless and pure, so the curves can be checked against real save data rather than eyeballed in play.
  */
-import { readSettings, type SettingDecl } from '@mp/mode'
-
+import { readSettings, sampleCurve, type CurvePoint, type CurveSetting, type SettingDecl } from '@mp/mode'
 
 export interface ProgressCurve {
-  /** Experience gained per keycap struck, before multipliers. The genre's "+1". */
-  perKey: number
-  /**
-   * What level 1 costs, in Experience.
-   *
-   * Fitted to Kodjo's save of the real game: 345,510 at Level 45 with 33,840 banked toward a 46,850 level.
-   * Levels 1–45 therefore cost ~311,670 between them while level 46 alone costs 46,850 — steeply escalating,
-   * and a geometric fit puts the first level near 100.
-   */
-  firstLevel: number
-  /**
-   * How much more each level costs than the last.
-   *
-   * ~1.15 from the same fit. It is the whole pacing dial: 1.1 makes Level 400 reachable in an afternoon and
-   * 1.2 makes it a wall.
-   */
-  levelGrowth: number
-  /** Max Speed at level 0, in studs/s. */
-  baseMaxSpeed: number
-  /**
-   * Studs/s of Max Speed per level.
-   *
-   * 2 exactly, from two readings of Kodjo's save: level 45 gives 100 and level 46 gives 102.
-   */
-  maxSpeedPerLevel: number
-  /**
-   * Metres per stud.
-   *
-   * Roblox's own scale, so the speed on screen means what it means in the game being cloned. Movement is in
-   * metres because the physics is.
-   */
-  metresPerStud: number
-  /**
-   * The cadence curve (ADR 0081, amended): steps a **minute** while holding a direction on the ground, as a
-   * function of Level. Kodjo measured the game being cloned at eight levels: flat at 240 to about level 20,
-   * climbing, flat at 600 from about level 170. A saturating curve fits every reading within 1%:
-   *
-   *   steps/min = max(stepsFloor, stepsCap − stepsRamp × e^(−level / stepsTau))
-   *
-   * The floor and the ceiling are read straight off the table; the two curve constants come from the 30, 50
-   * and 85 readings. A step is time holding a direction on the ground, not a key struck.
-   */
-  stepsFloor: number
-  stepsCap: number
-  stepsRamp: number
-  stepsTau: number
+  levelCost: CurvePoint[]
+  speed: CurvePoint[]
+  cadence: CurvePoint[]
 }
 
+/** One stud, in metres. A unit, not a balance value: the character's world is metric, the game's numbers are studs. */
+export const METRES_PER_STUD = 0.28
+
+/** What a step pays before any multiplier. Always one; the multipliers are the game (ADR 0082). */
+export const BASE_PER_STEP = 1
+
+const LEVEL_COST_SHAPE = { interpolation: 'ratio', beyond: 'extend' } as const
+const SPEED_SHAPE = { interpolation: 'linear', beyond: 'extend' } as const
+const CADENCE_SHAPE = { interpolation: 'linear', beyond: 'hold' } as const
+
 /**
- * The curve, as the editor edits it (ADR 0087): one declaration per field, stored in
- * `content/games/keyboard.json` → `settings`. `DEFAULT_CURVE` is these defaults; `curveFrom` lays the file over
- * them. The numbers are what the real game was measured at, and the data is far from complete — that is what
- * the balance simulator (`balance.ts`) and these fields are for.
+ * The three curves, as the editor edits them (ADR 0088). The defaults are the fits that came before them:
+ * Level 1 costs 100 and each level 1.15× the last (Kodjo's Level 45 save), speed 10 + 2 per Level (two readings),
+ * cadence Kodjo's eight readings (ADR 0081). The data behind them is thin; that is what the editor is for.
  */
 export const CURVE_SETTINGS = {
-  perKey: { label: 'XP per step', default: 1, min: 0, step: 1, hint: 'before any StepPad' },
-  firstLevel: { label: 'Level 1 costs', default: 100, min: 1, step: 10, hint: 'XP' },
-  levelGrowth: { label: 'level cost ×', default: 1.15, min: 1, max: 3, step: 0.01, hint: 'each level costs this times the last' },
-  baseMaxSpeed: { label: 'speed at L0', default: 10, min: 0, step: 1, hint: 'studs/s' },
-  maxSpeedPerLevel: { label: 'speed per level', default: 2, min: 0, step: 0.5, hint: 'studs/s' },
-  metresPerStud: { label: 'metres per stud', default: 0.28, min: 0.01, step: 0.01 },
-  stepsFloor: { label: 'cadence floor', default: 240, min: 1, step: 10, hint: 'steps/min at low levels' },
-  stepsCap: { label: 'cadence cap', default: 600, min: 1, step: 10, hint: 'steps/min at high levels' },
-  stepsRamp: { label: 'cadence ramp', default: 819, min: 0, step: 10, hint: 'cap − ramp·e^(−level/τ), floored' },
-  stepsTau: { label: 'cadence τ', default: 33, min: 1, step: 1, hint: 'levels' },
-} satisfies Record<keyof ProgressCurve, SettingDecl>
+  levelCost: {
+    kind: 'curve',
+    label: 'Level cost',
+    hint: 'XP to go from a Level to the next. Ratio segments, extends: Level 500 costs what the trend says',
+    xLabel: 'Level',
+    yLabel: 'XP to next Level',
+    ...LEVEL_COST_SHAPE,
+    logY: true,
+    yMin: 1,
+    default: [
+      { x: 0, y: 100 },
+      { x: 100, y: 100 * 1.15 ** 100 },
+    ],
+  },
+  speed: {
+    kind: 'curve',
+    label: 'Max Speed',
+    hint: 'studs/s at a Level, before the world multiplier',
+    xLabel: 'Level',
+    yLabel: 'studs/s',
+    ...SPEED_SHAPE,
+    yMin: 0,
+    default: [
+      { x: 0, y: 10 },
+      { x: 100, y: 210 },
+    ],
+  },
+  cadence: {
+    kind: 'curve',
+    label: 'Step cadence',
+    hint: 'steps per minute of held input at a Level; holds past the last point',
+    xLabel: 'Level',
+    yLabel: 'steps/min',
+    ...CADENCE_SHAPE,
+    yMin: 1,
+    default: [
+      { x: 0, y: 240 },
+      { x: 20, y: 240 },
+      { x: 30, y: 270 },
+      { x: 50, y: 420 },
+      { x: 85, y: 540 },
+      { x: 170, y: 600 },
+    ],
+  },
+} satisfies Record<keyof ProgressCurve, CurveSetting & SettingDecl>
 
 export const DEFAULT_CURVE: ProgressCurve = readSettings(CURVE_SETTINGS, undefined)
 
-/** The curve a game's data file holds: its `settings` block over the defaults. */
+/** The curves a game's data file holds: its `settings` block over the defaults. */
 export const curveFrom = (settings: unknown): ProgressCurve => readSettings(CURVE_SETTINGS, settings)
 
-/**
- * What level 1 → `level` costs in total, i.e. the Experience at which `level` is reached.
- *
- * A geometric series in closed form rather than a loop: Level 400 is a real target in this genre, and summing
- * four hundred terms every frame to draw a progress bar would be four hundred terms too many.
- */
-export const experienceForLevel = (level: number, curve: ProgressCurve = DEFAULT_CURVE): number => {
-  if (level <= 0) return 0
-  const r = curve.levelGrowth
-  // r === 1 would divide by zero, and a flat cost is a legitimate thing to set the slider to.
-  if (Math.abs(r - 1) < 1e-9) return curve.firstLevel * level
-  return curve.firstLevel * ((r ** level - 1) / (r - 1))
-}
+/** XP to go from `level` to `level + 1`. */
+export const levelCostAt = (level: number, curve: ProgressCurve = DEFAULT_CURVE): number =>
+  Math.max(0, sampleCurve(curve.levelCost, Math.max(0, level), LEVEL_COST_SHAPE))
 
 /**
- * The level a given Experience has bought, and how far into the next one it is.
- *
- * Inverted in closed form for the same reason: `level = log(1 + xp(r-1)/first) / log(r)`, then floored. The
- * remainder is the progress bar, which is the thing a player actually watches.
- *
- * **Nudged before flooring.** The logarithm and the exponent it inverts do not agree to the last bit, so
- * exactly on a boundary the ratio comes back as 3.9999999 and floors to 3 — the player would see the previous
- * level with a completely full bar at the instant they bought the next one. The nudge is far smaller than a
- * level and far larger than the error.
+ * Cumulative costs, per curve, grown on demand and remembered: `levelAt` runs every frame and a Level in the
+ * hundreds must not mean hundreds of curve samples each time. Keyed by the point array itself, so a curve the
+ * editor replaces gets a fresh table and an unchanged one keeps its own.
  */
+const tables = new WeakMap<readonly CurvePoint[], number[]>()
+const cumulative = (curve: ProgressCurve, upTo: number): number[] => {
+  let t = tables.get(curve.levelCost)
+  if (t === undefined) {
+    t = [0]
+    tables.set(curve.levelCost, t)
+  }
+  while (t.length <= upTo) t.push(t[t.length - 1]! + levelCostAt(t.length - 1, curve))
+  return t
+}
+
+/** The total Experience at which `level` is reached. */
+export const experienceForLevel = (level: number, curve: ProgressCurve = DEFAULT_CURVE): number => {
+  if (level <= 0) return 0
+  const L = Math.floor(level)
+  return cumulative(curve, L)[L]!
+}
+
+/** Levels never grow past this in a lookup: the sum has hit Infinity or the loop would never end. */
+const MAX_LEVEL = 100_000
+
 export const levelAt = (
   experience: number,
   curve: ProgressCurve = DEFAULT_CURVE,
 ): { level: number; into: number; next: number } => {
-  if (experience <= 0) return { level: 0, into: 0, next: curve.firstLevel }
-  const r = curve.levelGrowth
-  const exact =
-    Math.abs(r - 1) < 1e-9
-      ? experience / curve.firstLevel
-      : Math.log1p((experience * (r - 1)) / curve.firstLevel) / Math.log(r)
-  const level = Math.floor(exact + BOUNDARY_NUDGE)
-  const reached = experienceForLevel(level, curve)
-  // Clamped at zero for the same reason the nudge exists: `reached` can come back a hair above `experience`.
-  return { level, into: Math.max(0, experience - reached), next: experienceForLevel(level + 1, curve) - reached }
+  if (!(experience > 0)) return { level: 0, into: 0, next: levelCostAt(0, curve) }
+  // Grow the table until it passes the experience, then binary search it.
+  let t = cumulative(curve, 1)
+  while (t[t.length - 1]! <= experience && t.length <= MAX_LEVEL && Number.isFinite(t[t.length - 1]!)) t = cumulative(curve, t.length * 2)
+  let lo = 0
+  let hi = t.length - 1
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1
+    if (t[mid]! <= experience) lo = mid
+    else hi = mid
+  }
+  const level = t[hi]! <= experience ? hi : lo
+  const reached = t[level]!
+  return { level, into: Math.max(0, experience - reached), next: levelCostAt(level, curve) }
 }
 
-/** Smaller than any level and larger than the round-trip error between `log` and `**`. */
-const BOUNDARY_NUDGE = 1e-9
-
-/** The velocity cap a level grants, in studs/s. The one number here that really is a speed. */
 export const maxSpeedAt = (level: number, curve: ProgressCurve = DEFAULT_CURVE): number =>
-  curve.baseMaxSpeed + curve.maxSpeedPerLevel * level
+  Math.max(0, sampleCurve(curve.speed, Math.max(0, level), SPEED_SHAPE))
 
-/**
- * Steps a minute at this Level (ADR 0081, amended): the saturating curve above, floored. Level 10 and 20 give
- * 240, level 50 gives 420, level 170 and up give 600.
- */
 export const stepsPerMinute = (level: number, curve: ProgressCurve = DEFAULT_CURVE): number =>
-  Math.max(curve.stepsFloor, curve.stepsCap - curve.stepsRamp * Math.exp(-Math.max(0, level) / Math.max(1e-6, curve.stepsTau)))
+  Math.max(0, sampleCurve(curve.cadence, Math.max(0, level), CADENCE_SHAPE))
 
-/** The same, in metres per second — what the character controller actually wants. */
-export const maxSpeedMps = (level: number, curve: ProgressCurve = DEFAULT_CURVE): number =>
-  maxSpeedAt(level, curve) * curve.metresPerStud
+export const maxSpeedMps = (level: number, curve: ProgressCurve = DEFAULT_CURVE): number => maxSpeedAt(level, curve) * METRES_PER_STUD
 
 /**
- * `345510` as `345.51K`.
- *
- * Its own function because a counter that reads `345510` and a counter that reads `345.51K` are different
- * feelings, and the whole point of an incremental game is the counter.
+ * The counter's number, the way the genre writes it: two decimals under 100, one above, and the short scale up
+ * to decillions — trails reach ×3 million and totals go far past quadrillions.
  */
 export const abbreviate = (n: number): string => {
+  if (!Number.isFinite(n)) return n > 0 ? '∞' : '0'
   const units: readonly [number, string][] = [
+    [1e33, 'Dc'],
+    [1e30, 'No'],
+    [1e27, 'Oc'],
+    [1e24, 'Sp'],
+    [1e21, 'Sx'],
+    [1e18, 'Qi'],
+    [1e15, 'Qa'],
     [1e12, 'T'],
     [1e9, 'B'],
     [1e6, 'M'],
@@ -166,22 +178,11 @@ export const abbreviate = (n: number): string => {
   for (const [size, suffix] of units)
     if (n >= size) {
       const scaled = n / size
-      // Two decimals under 100, one above: `345.51K` but `1.2M`, which is how the genre writes it.
       return `${scaled < 100 ? scaled.toFixed(2) : scaled.toFixed(1)}${suffix}`
     }
   return Math.floor(n).toString()
 }
 
-/**
- * Experience across reloads, in this game's own `localStorage` key.
- *
- * Not `PlayerProgress` (`@mp/game-client`), which holds a checkpoint index and belongs to the platform's save
- * shape. Experience is **this game's stat**, so it lives in this game — the same reasoning that put the rope in
- * `modes/swing` rather than a field on `ModeDescriptor` (ADR 0065).
- *
- * Best-effort both ways: a locked-down browser throws on either call, and a game that loads at zero beats one
- * that will not load.
- */
 const KEY = 'keyboard.experience'
 
 export const loadExperience = (): number => {

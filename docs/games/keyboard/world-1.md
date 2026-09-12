@@ -40,5 +40,6 @@ Fixed alongside:
   screen. Neither built.
 - **Time per clear**: 5 to 45 seconds a stage, shrinking with the player's speed.
 
-Open: Wins for stage 15 (irrelevant for now); the required speeds are read by eye from play and will move with the
-speed curve.
+Machine copy for the simulator: `modes/keyboard/balance.world1.json` (`balance.test.ts` asserts it matches this
+table). Open: Wins for stage 15 (irrelevant for now); the required speeds are read by eye from play and will move
+with the speed curve.

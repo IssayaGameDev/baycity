@@ -219,7 +219,8 @@ export interface ModeDescriptor {
  */
 
 export { spawnFrom, standingAt } from './spawn'
-export { readSettings, type SettingDecl, type SettingDecls } from './settings'
+export { readSettings, readSetting, isCurveSetting, type SettingDecl, type SettingDecls, type SettingValues, type NumberSetting, type CurveSetting } from './settings'
+export { sampleCurve, normalizePoints, lastRatio, RATIO_FLOOR, type CurvePoint, type CurveShape, type Interpolation, type Beyond } from './curve'
 
 /**
  * The node id the local player's components see as `self.node.id` (ADR 0059).

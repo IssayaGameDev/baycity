@@ -133,5 +133,6 @@ why matters.
 | [0085](adr/0085-a-staging-game-on-the-box.md) | A staging game on the box |
 | [0086](adr/0086-play-in-the-editor-is-the-real-game.md) | Play in the editor is the real game |
 | [0087](adr/0087-a-games-numbers-are-settings-and-a-simulator-reads-them.md) | A game's numbers are settings, and a simulator reads them |
+| [0088](adr/0088-a-curve-is-points-the-designer-places.md) | A curve is points the designer places |
 
 `Design archive/` holds superseded design material and is not maintained.

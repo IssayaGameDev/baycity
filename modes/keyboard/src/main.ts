@@ -9,7 +9,7 @@ import { createHud } from './hud'
 import { DEFAULT_KEYCAP_SHAPE, type KeycapShape } from './keycapGeometry'
 import { DEFAULT_KEYCAP_LOOK, DEFAULT_PRESS, drawKeycaps, type KeycapLook, type PressFeel } from './keycaps'
 import { createPopups, DEFAULT_POPUP, type PopupFeel } from './popups'
-import { abbreviate, levelAt, loadExperience, maxSpeedAt, saveExperience, type ProgressCurve } from './progression'
+import { abbreviate, BASE_PER_STEP, levelAt, loadExperience, maxSpeedAt, METRES_PER_STUD, saveExperience, type ProgressCurve } from './progression'
 import { keyboardSession, GAME_CURVE } from './rules'
 import { createStepper, stepsPerSecond } from './steps'
 import { Treadmill, TREADMILL_STATE, treadmillStepValue, type TreadmillTick } from './treadmill'
@@ -44,7 +44,7 @@ const pops: PopupFeel = { ...DEFAULT_POPUP }
 let experience = loadExperience()
 let wins = loadWins()
 /** What a step pays (ADR 0082): the last `StepPad` taken, or the curve's one. */
-let perStep = loadPerStep(curve.perKey)
+let perStep = loadPerStep(BASE_PER_STEP)
 /** Cash-outs the rules reported this tick, banked here and popped on the next frame. */
 const cashedOut: { wins: number; at: { x: number; y: number; z: number } }[] = []
 /**
@@ -312,7 +312,7 @@ client.onFrame((dt) => {
   // Written into the **client's** live tuning — the object the controller reads. It went into the descriptor's
   // object for fifty levels and changed nothing: the client copies that on the way in (ADR 0057, ADR 0071's
   // correction).
-  client.tuning.moveSpeed = speedStuds * curve.metresPerStud
+  client.tuning.moveSpeed = speedStuds * METRES_PER_STUD
 
   sinceSave += dt
   if (sinceSave >= SAVE_EVERY) {
