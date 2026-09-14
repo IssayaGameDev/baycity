@@ -1593,63 +1593,6 @@
           "name": "treadmill +1"
         }
       }
-    },
-    {
-      "id": "0508eaf2",
-      "name": "platform",
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": -12,
-          "z": 64.5
-        },
-        "scale": {
-          "x": 30000,
-          "y": 0.3,
-          "z": 3000
-        }
-      },
-      "components": [
-        {
-          "id": "4c2629fe",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.5
-              }
-            },
-            "center": {
-              "x": 0,
-              "y": 0,
-              "z": 0
-            },
-            "trigger": true
-          }
-        },
-        {
-          "id": "5a30d9f0",
-          "type": "Mesh",
-          "params": {
-            "model": "builtin:rounded-box"
-          }
-        },
-        {
-          "id": "a1782540",
-          "type": "Renderer",
-          "params": {
-            "material": "4a11d049f9f8e5ac"
-          }
-        },
-        {
-          "id": "91a382a3",
-          "type": "Hazard",
-          "params": {}
-        }
-      ]
     }
   ]
 }
