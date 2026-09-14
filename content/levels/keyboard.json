@@ -1130,6 +1130,61 @@
           }
         }
       ]
+    },
+    {
+      "id": "b7f237e9",
+      "name": "board-5",
+      "transform": {
+        "position": {
+          "x": 1,
+          "y": 0.5,
+          "z": 46.5
+        },
+        "rotation": {
+          "x": -1.5531,
+          "y": -0.0937,
+          "z": 0.0068
+        },
+        "scale": {
+          "x": 1,
+          "y": 1.6,
+          "z": 1
+        }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 2.5,
+                "y": 0.25,
+                "z": 2
+              }
+            }
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Renderer",
+          "params": {
+            "material": "55205761e38bc929"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "Keyboard",
+          "params": {
+            "pitch": 0.9,
+            "fill": 0.88,
+            "height": 0.45,
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 280
+          }
+        }
+      ]
     }
   ],
   "prefabs": {
