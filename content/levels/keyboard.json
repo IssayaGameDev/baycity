@@ -973,6 +973,106 @@
               }
             }
           ]
+        },
+        {
+          "id": "31aaeca0",
+          "name": "board-5",
+          "transform": {
+            "position": {
+              "x": -6.1031,
+              "y": -0.6795,
+              "z": 15.0077
+            },
+            "rotation": {
+              "x": 0.7854,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 2.5,
+                    "y": 0.25,
+                    "z": 2
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 280
+              }
+            }
+          ]
+        },
+        {
+          "id": "38136b34",
+          "name": "board-2",
+          "transform": {
+            "position": {
+              "x": 1.8969,
+              "y": -1.6795,
+              "z": -26.4923
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 0
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 3,
+                    "y": 0.25,
+                    "z": 3
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 63
+              }
+            }
+          ]
         }
       ]
     },
@@ -1137,13 +1237,13 @@
       "transform": {
         "position": {
           "x": 1,
-          "y": 0.5,
+          "y": 4,
           "z": 46.5
         },
         "rotation": {
-          "x": -1.5531,
-          "y": -0.0937,
-          "z": 0.0068
+          "x": -1.5885,
+          "y": 0.0937,
+          "z": -3.1348
         },
         "scale": {
           "x": 1,
