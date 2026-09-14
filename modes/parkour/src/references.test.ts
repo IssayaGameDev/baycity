@@ -1,4 +1,4 @@
-import { instantiateLevel, materialDependencies } from '@mp/content'
+import { isBuiltinModel, instantiateLevel, materialDependencies } from '@mp/content'
 import { PARKOUR_REGISTRY } from './rules'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -34,7 +34,8 @@ describe('content asset references', () => {
     const dangling: string[] = []
     for (const v of loaded.visuals) {
       if (v.material !== undefined && ASSET_DB.byId[v.material] === undefined) dangling.push(`material ${v.material}`)
-      if (v.model !== undefined && ASSET_DB.byId[v.model] === undefined) dangling.push(`model ${v.model}`)
+      // A built-in shape is geometry the renderer builds, not a file to look up (ADR 0090).
+      if (v.model !== undefined && !isBuiltinModel(v.model) && ASSET_DB.byId[v.model] === undefined) dangling.push(`model ${v.model}`)
     }
 
     expect(dangling, `${name} references assets that are not in the database`).toEqual([])

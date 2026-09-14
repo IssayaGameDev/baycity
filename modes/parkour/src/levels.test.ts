@@ -1,6 +1,6 @@
-import { instantiateLevel, COLLIDER } from '@mp/content'
+import { instantiateLevel, scaleCollider, COLLIDER, type ColliderDesc } from '@mp/content'
 import { Hazard } from '@mp/components'
-import type { Vec3 } from '@mp/core'
+import { vec3 } from '@mp/core'
 import { PARKOUR_REGISTRY } from './rules'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -54,13 +54,20 @@ describe('the kill plane', () => {
     await initPhysics()
   })
 
-  const planeOf = (name: string): { top: number; halfXZ: number } | null => {
+  /**
+   * The plane's real dimensions, with the node's scale baked into its collider as the loader bakes it
+   * (`scaleCollider`). A kill plane authored after the built-in shapes landed is a **unit** box carrying its
+   * size as scale (ADR 0090), so reading half extents alone would call a six-metre plane one metre thick.
+   */
+  const planeOf = (name: string): { top: number; halfY: number; halfXZ: number } | null => {
     const node = levels.byName(name).nodes.find((n) => n.components.some((c) => c.type === Hazard.type))
     if (node === undefined) return null
-    const shape = node.components.find((c) => c.type === COLLIDER)?.params.shape as { halfExtents?: Vec3 } | undefined
-    const half = shape?.halfExtents
-    if (half === undefined) return null
-    return { top: node.transform.position.y + half.y, halfXZ: Math.min(half.x, half.z) }
+    const shape = node.components.find((c) => c.type === COLLIDER)?.params.shape as ColliderDesc | undefined
+    if (shape === undefined) return null
+    const baked = scaleCollider(shape, node.transform.scale ?? vec3(1, 1, 1))
+    if (baked.kind !== 'box') return null
+    const half = baked.halfExtents
+    return { top: node.transform.position.y + half.y, halfY: half.y, halfXZ: Math.min(half.x, half.z) }
   }
 
   it.each(levels.names())('%s keeps its plane below everything you can stand on', (name) => {
@@ -87,9 +94,7 @@ describe('the kill plane', () => {
   it.each(levels.names())('%s has a plane thick and wide enough to catch a fall', (name) => {
     const plane = planeOf(name)
     if (plane === null) return
-    const node = levels.byName(name).nodes.find((n) => n.components.some((c) => c.type === Hazard.type))!
-    const half = (node.components.find((c) => c.type === COLLIDER)!.params.shape as { halfExtents: Vec3 }).halfExtents
-    expect(half.y * 2, 'thinner than one tick of terminal velocity').toBeGreaterThanOrEqual(2)
+    expect(plane.halfY * 2, 'thinner than one tick of terminal velocity').toBeGreaterThanOrEqual(2)
     expect(plane.halfXZ, 'narrower than the levels we author').toBeGreaterThanOrEqual(60)
   })
 
