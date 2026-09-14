@@ -113,6 +113,9 @@ builtinShape(id, scale): { collider: ColliderDesc; rounded: boolean }   // round
 PRIMITIVE_ORDER = ['box','rounded-box','platform','wall','sphere','capsule']; PRIMITIVE_PRESETS, PRIMITIVE_LABELS
 ```
 
+A built-in is **never** an asset to fetch: `assetIdsIn` (`rendering.md`) and the editor's `Doc.assetIds` leave
+it out, and `AssetRuntime.load` ignores one that reaches it anyway.
+
 `scaleCollider` lives here, not in the loader: the loader, the game's `levelView`, the editor viewport and the
 Project previews all run it, so what is drawn and what is collided with are one computation. Presets:
 `platform` = rounded box at 3 × 0.3 × 3, `wall` = 3 × 2 × 0.3, the rest unit.

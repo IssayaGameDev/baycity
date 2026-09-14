@@ -1,4 +1,4 @@
-import { materialDependencies, type AssetDatabase, type MaterialAsset, type VisualItem } from '@mp/content'
+import { isBuiltinModel, materialDependencies, type AssetDatabase, type MaterialAsset, type VisualItem } from '@mp/content'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
@@ -41,7 +41,8 @@ export interface AssetRuntime {
 export const assetIdsIn = (visuals: readonly VisualItem[]): string[] => {
   const ids = new Set<string>()
   for (const v of visuals) {
-    if (v.model !== undefined) ids.add(v.model)
+    // A built-in shape is geometry this package builds, not a file to fetch (ADR 0090).
+    if (v.model !== undefined && !isBuiltinModel(v.model)) ids.add(v.model)
     if (v.material !== undefined) ids.add(v.material)
   }
   return [...ids]
@@ -71,6 +72,9 @@ export const createAssetRuntime = (opts: AssetRuntimeOptions): AssetRuntime => {
     const existing = inFlight.get(id)
     if (existing !== undefined) return existing
     if (textures.has(id) || models.has(id) || materials.has(id)) return Promise.resolve()
+
+    // Belt for a caller that collected one anyway: it is geometry, and there is nothing to load.
+    if (isBuiltinModel(id)) return Promise.resolve()
 
     const entry = opts.db.byId[id]
     if (entry === undefined) {
