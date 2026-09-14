@@ -38,6 +38,8 @@ export interface Row {
   label: string
   /** Right-aligned annotation: shared-instance count, or `inline` for a one-off. */
   badge: string
+  /** Who else has this node selected (ADR 0089) — the row is not selectable, renamable or draggable. `''` when free. */
+  held: string
   /** References a prefab — Unity tints these, and it is the distinction that matters most here. */
   linked: boolean
   hasChildren: boolean
@@ -66,7 +68,7 @@ export interface Openness {
  * Rows for a document. Pure, so the parts worth getting right — which descendants a collapsed row hides,
  * what a drop above a row would insert at, how a piece row is addressed — are testable without a DOM.
  */
-export const rowsOf = (doc: Doc, open: Openness): Row[] => {
+export const rowsOf = (doc: Doc, open: Openness, heldBy: (index: number) => string | null = () => null): Row[] => {
   const rows: Row[] = []
   // Anything deeper than this is inside a collapsed subtree. A depth-first walk means we are back out of
   // it the moment a row appears at that depth or shallower.
@@ -96,6 +98,7 @@ export const rowsOf = (doc: Doc, open: Openness): Row[] => {
       siblingIndex: doc.siblingIndexOf(i),
       label: doc.label(i),
       badge: shared > 1 ? `×${shared}` : ref === null && kind !== 'inherited' ? 'inline' : '',
+      held: heldBy(i) ?? '',
       linked: ref !== null,
       hasChildren: contents > 0,
       expandable: contents > 0,
@@ -167,6 +170,8 @@ export interface HierarchyHost {
   onRename: (index: number, name: string) => void
   /** Re-parent `from` under `parent` (`null` = top level) at sibling position `at`. */
   onReparent: (from: number, parent: number | null, at: number) => void
+  /** Who else holds this node, or `null` (ADR 0089). Absent when nothing is ever held (prefabs). */
+  heldBy?: (index: number) => string | null
 }
 
 export interface Hierarchy {
@@ -248,7 +253,7 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
 
     const selection = host.selection()
     const primary = selection[selection.length - 1] ?? null
-    const rows = rowsOf(doc, { expanded })
+    const rows = rowsOf(doc, { expanded }, host.heldBy)
     // Every visible row in draw order: what a Shift-range runs over. Pieces are selectable too, so they are
     // in it — a range that skipped them would jump over what the eye sees between two rows.
     const order = rows.map((r) => r.index)
@@ -263,6 +268,7 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
         // The primary is marked apart, because it is the one the Inspector shows and the one a range anchors
         // on: "which of these five am I editing" has to be answerable at a glance.
         row.index === primary && selection.length > 1 ? 'primary' : '',
+        row.held !== '' ? 'held' : '',
       ]
         .filter((c) => c !== '')
         .join(' ')
@@ -325,6 +331,17 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
         badge.className = 'badge'
         badge.textContent = row.badge
         el.append(badge)
+      }
+      // Someone else has it: their name is the badge, and the row does nothing but say so.
+      if (row.held !== '') {
+        const badge = document.createElement('span')
+        badge.className = 'badge held'
+        badge.textContent = row.held
+        el.append(badge)
+        el.title = `${row.held} has this selected`
+        el.addEventListener('pointerdown', (e) => host.onSelect(row.index, modeFor(e), order))
+        container.append(el)
+        continue
       }
 
       // Selecting and renaming work on every row, pieces included: a piece is an object now (ADR 0033), so it

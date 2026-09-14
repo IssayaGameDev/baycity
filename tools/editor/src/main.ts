@@ -24,7 +24,7 @@ import {
   type Node as SceneNode,
   type Level,
   type Pose,
-  type Transform, validateLevel, applyBatch, OpError, type NodeRef, type Op } from '@mp/content'
+  type Transform, validateLevel, applyBatch, refKey, OpError, type NodeRef, type Op } from '@mp/content'
 import { DEFAULT_REGISTRY, characterAccess, createComponentRuntime, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type ComponentRuntime, type Registry } from '@mp/components'
 import { createOrbitCamera } from '@mp/camera'
 import { PLAYER_NODE_ID, actionsHeld, type ModeDescriptor, readSettings } from '@mp/mode'
@@ -50,7 +50,7 @@ import {
   type LevelView,
   type LightDesc,
 } from '@mp/render-three'
-import { createCollab, httpTransport, type Peer } from './collab'
+import { createCollab, httpTransport, type Hold, type Peer } from './collab'
 import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type ClipItem, type Doc, type KeyEditor, type Mode, type OpBatch } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
 import { askName, askUnsaved } from './confirm'
@@ -257,6 +257,8 @@ const dropAllLocks = async (): Promise<void> => {
   lockedAssets.clear()
   readOnlyBy = null
   collab.leave()
+  holdMap = new Map()
+  heldRefs = new Map()
   await Promise.all(paths.map((p) => releaseLock(p).catch(() => undefined)))
 }
 
@@ -273,6 +275,100 @@ let deferredRemote: Op[] = []
 const live = (): boolean => fileState.mode === 'level' && collab.name() !== null
 
 const TRANSFORM_KINDS = new Set<string>(['setTransform', 'setOverrideTransform'])
+
+// ------------------------------ holds (phase 3) ------------------------------
+/** Every hold in the room by `refKey`, theirs and mine. */
+let holdMap = new Map<string, Hold>()
+/** The refs this tab holds: its selection, as the server last heard it. */
+let heldRefs = new Map<string, NodeRef>()
+
+/** The name of another connection holding node `index` or any node above it; `null` when it is free. */
+const heldBy = (index: number): string | null => {
+  const open = doc
+  if (open === null || holdMap.size === 0) return null
+  const mine = collab.connId()
+  for (let i: number | null = index; i !== null; i = open.parentOf(i)) {
+    const ref = open.refAt(i)
+    if (ref === null) continue
+    const h = holdMap.get(refKey(ref))
+    if (h !== undefined && h.connId !== mine) return h.name
+  }
+  return null
+}
+
+/**
+ * Make the room's holds match the selection: hold what came in, release what went out. The server refuses a
+ * ref someone else has (a race the local filter lost): the refused nodes drop out of the selection.
+ */
+const syncHolds = (): void => {
+  if (!live()) return
+  const want = new Map<string, NodeRef>()
+  for (const ref of selectionRefs()) want.set(refKey(ref), ref)
+  const added = [...want].filter(([k]) => !heldRefs.has(k)).map(([, r]) => r)
+  const dropped = [...heldRefs].filter(([k]) => !want.has(k)).map(([, r]) => r)
+  heldRefs = want
+  if (dropped.length > 0) collab.release(dropped)
+  if (added.length > 0) {
+    void collab.hold(added).then((r) => {
+      if (r.ok) return
+      setStatus(`${r.holder} has that selected`)
+      const refused = new Set(added.map(refKey))
+      const open = doc
+      if (open === null) return
+      applySelection(selection.filter((i) => {
+        const ref = open.refAt(i)
+        return ref === null || !refused.has(refKey(ref))
+      }))
+    })
+  }
+}
+
+/** Tinted boxes over nodes others hold, in world space and refreshed each frame so a drag keeps up. */
+const holdRoot = new THREE.Group()
+stage.scene.add(holdRoot)
+const holdHelpers = new Map<number, THREE.BoxHelper>()
+const holdColour = (connId: string): number => {
+  let h = 0
+  for (let i = 0; i < connId.length; i++) h = (h * 31 + connId.charCodeAt(i)) >>> 0
+  return new THREE.Color().setHSL((h % 360) / 360, 0.75, 0.6).getHex()
+}
+const rebuildHoldHelpers = (): void => {
+  for (const helper of holdHelpers.values()) {
+    holdRoot.remove(helper)
+    helper.dispose()
+  }
+  holdHelpers.clear()
+  const open = doc
+  if (open === null || !live()) return
+  const mine = collab.connId()
+  for (const h of holdMap.values()) {
+    if (h.connId === mine) continue
+    const i = open.indexOfRef(h.ref)
+    const g = i === null ? undefined : instanceGroups[i]
+    if (i === null || g === undefined) continue
+    const helper = new THREE.BoxHelper(meshHolderOf(g), holdColour(h.connId))
+    ;(helper.material as THREE.LineBasicMaterial).depthTest = false
+    helper.renderOrder = 1
+    holdRoot.add(helper)
+    holdHelpers.set(i, helper)
+  }
+}
+const updateHoldHelpers = (): void => {
+  for (const helper of holdHelpers.values()) helper.update()
+}
+
+/** The room's holds changed: drop what I can no longer have, redraw the badges and the boxes. */
+const onHoldsChanged = (holds: Hold[]): void => {
+  holdMap = new Map(holds.map((h) => [refKey(h.ref), h]))
+  const mine = collab.connId()
+  for (const [k] of heldRefs) {
+    const h = holdMap.get(k)
+    if (h === undefined || h.connId !== mine) heldRefs.delete(k)
+  }
+  if (selection.some((i) => heldBy(i) !== null)) applySelection(selection.filter((i) => heldBy(i) === null))
+  rebuildHoldHelpers()
+  hierarchy.render()
+}
 
 /**
  * Redraw after ops changed the level from outside the document — a remote batch, an undo. Transforms alone
@@ -301,6 +397,7 @@ const repaintAfterOps = (ops: readonly Op[]): void => {
   rebuildLoaded()
   const restored = keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
   if (restored.length > 0) applySelection(restored)
+  rebuildHoldHelpers()
   refreshUi()
   inspectorRebuild()
   loadNewReferences(buildItems)
@@ -319,6 +416,8 @@ const reinstallLevel = (level: Level): void => {
   docStack.length = 1
   docStack[0] = { doc: withOps(levelDoc(level, userPrefabs, registry(), editorClips)), label: root.label }
   showDoc()
+  heldRefs = new Map() // a reconnect is a new connection: the server holds nothing for it yet
+  syncHolds()
 }
 
 const collab = createCollab(httpTransport(), {
@@ -338,7 +437,7 @@ const collab = createCollab(httpTransport(), {
     livePeers = peers
     renderStatus()
   },
-  onHolds: () => {},
+  onHolds: (holds) => onHoldsChanged(holds),
   onPresence: () => {},
   onError: (message) => setStatus(`live: ${message}`),
 })
@@ -1418,7 +1517,8 @@ const applySelection = (next: readonly number[]): void => {
     selectedAsset = null
     assetInspector.show(null)
   }
-  selection = clampTo(next, doc?.count() ?? 0)
+  // A node someone else holds is theirs: never in the selection, so the gizmo never lands on it (ADR 0089).
+  selection = clampTo(next, doc?.count() ?? 0).filter((i) => heldBy(i) === null)
   const primary = primaryOf(selection)
   selected = primary
   keySelection = [] // a fresh selection edits the object, not whichever key the last one was on
@@ -1438,18 +1538,29 @@ const applySelection = (next: readonly number[]): void => {
   // After the panel has been rebuilt, not before: a nested object selected in the viewport is inside a
   // collapsed parent as often as not, and marking a row nobody can see is the same as not marking it.
   if (primary !== null) hierarchy.reveal(primary)
+  syncHolds()
 }
 
 /** Select one item outright — the plain click, and what every command that lands on a new item does. */
 const select = (index: number): void => {
   if (instanceGroups[index] === undefined || doc === null) return
+  if (refuseHeld(index)) return
   applySelection([index])
 }
 
 /** A click that carries modifiers: Ctrl toggles one, Shift extends a range over `order`. */
 const selectWith = (index: number, mode: SelectMode, order: readonly number[]): void => {
   if (instanceGroups[index] === undefined || doc === null) return
+  if (refuseHeld(index)) return
   applySelection(applySelect(selection, index, mode, order))
+}
+
+/** A click on a node someone else holds: say who, do nothing. */
+const refuseHeld = (index: number): boolean => {
+  const holder = heldBy(index)
+  if (holder === null) return false
+  setStatus(`${holder} has that selected`)
+  return true
 }
 
 const deselect = (): void => {
@@ -1461,6 +1572,7 @@ const deselect = (): void => {
   updateTrackHelper()
   timeline.render()
   uiChanged()
+  syncHolds()
 }
 
 const raycaster = new THREE.Raycaster()
@@ -2310,6 +2422,7 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
     gameSelected = false
     selectWith(index, mode, order)
   },
+  heldBy,
   onRename: (index, name) => {
     doc?.setName(index, name)
     recordEdit('rename')
@@ -2318,6 +2431,7 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
   },
   onReparent: (from, parent, at) => {
     if (doc === null || !doc.canReparent(from, parent)) return
+    if (parent !== null && refuseHeld(parent)) return
     // Preserve the world pose, as dragging in Unity's hierarchy does: the stored numbers are re-expressed
     // in the new parent's frame so the object does not jump. Read off the scene graph, which is where the
     // composed matrices already live — the document only ever holds local transforms.
@@ -3416,6 +3530,7 @@ createSplitter({
 
 // --- render loop ---
 stage.start((dt) => {
+  updateHoldHelpers()
   if (playing && controller !== null && loaded !== null) {
     // Interpolate clock-driven pieces + the character between the last two sim ticks (same
     // timeline as the game), then place the player camera (mouselook orbit) around the character.

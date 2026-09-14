@@ -14,6 +14,8 @@ Several people can have the same level open. Every move, every placed piece show
 within a second. There is **no Save for levels**: each change is saved as you make it. The bottom bar says
 *live · with X* when someone else is in.
 
+- A piece you have selected is **yours** while it stays selected: the others see it dimmed with your name in
+  the list and a coloured box around it, and cannot select or move it. Click elsewhere to let it go.
 - Undo puts back what **you** did, even if someone moved the piece since.
 - **New** asks for a name and creates the level at once. **Duplicate** copies the open level under a new name.
 - If a change is refused (bottom bar says why), it is undone on your screen. Nothing is lost on the server.
