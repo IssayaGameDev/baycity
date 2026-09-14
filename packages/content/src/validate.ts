@@ -22,7 +22,7 @@ const isVec3 = (v: unknown): boolean => isObj(v) && typeof v.x === 'number' && t
  *
  * Nothing else. A game's rules are components on nodes, so there is no settings bag to check — see `ModeRef`.
  */
-const validateConfig = (c: unknown): LevelConfig => {
+export const validateConfig = (c: unknown): LevelConfig => {
   if (!isObj(c)) throw new LevelError('level.config: expected object')
   if (c.mode !== undefined) {
     if (!isObj(c.mode)) throw new LevelError('level.config.mode: expected object')
@@ -92,13 +92,13 @@ export interface ParamChecker {
   readonly checkParams: (type: string, raw: Record<string, unknown> | undefined, at: string) => void
 }
 
-const checkTransform = (t: unknown, at: string): void => {
+export const checkTransform = (t: unknown, at: string): void => {
   if (!isObj(t) || !isVec3(t.position)) throw new LevelError(`${at}.position: expected a Vec3`)
   if (t.rotation !== undefined && !isVec3(t.rotation)) throw new LevelError(`${at}.rotation: expected a Vec3`)
   if (t.scale !== undefined && !isVec3(t.scale)) throw new LevelError(`${at}.scale: expected a Vec3`)
 }
 
-const checkComponents = (value: unknown, at: string, checker: ParamChecker | undefined): void => {
+export const checkComponents = (value: unknown, at: string, checker: ParamChecker | undefined): void => {
   if (!Array.isArray(value)) throw new LevelError(`${at}: expected an array of components`)
   const seen = new Set<string>()
   value.forEach((c: unknown, n: number) => {
@@ -116,7 +116,7 @@ const checkComponents = (value: unknown, at: string, checker: ParamChecker | und
   })
 }
 
-const checkOverrides = (value: unknown, at: string, checker: ParamChecker | undefined): void => {
+export const checkOverrides = (value: unknown, at: string, checker: ParamChecker | undefined): void => {
   if (value === undefined) return
   if (!isObj(value)) throw new LevelError(`${at}: expected an object keyed by node id`)
   for (const [id, o] of Object.entries(value)) {
@@ -147,6 +147,42 @@ const checkOverrides = (value: unknown, at: string, checker: ParamChecker | unde
   // placement that touched it failing to load (the rule ADR 0033 set for pieces).
 }
 
+/** What one node tree is checked against: the ids already taken in its tree, the prefab table, where it sits. */
+export interface TreeContext {
+  ids: Set<string>
+  table: Record<string, unknown>
+  /**
+   * Forbids prefab-in-prefab: a reference graph needs cycle detection that a tree of plain nodes does not, and
+   * it stayed out under ADR 0023 for the same reason.
+   */
+  insidePrefab: boolean
+  checker?: ParamChecker
+}
+
+/**
+ * One node and everything under it. Exported so an operation can check the subtree it inserts against the
+ * tree it lands in (`ops.ts`, ADR 0089) with exactly the rules a whole-level load applies.
+ */
+export const validateNodeTree = (node: unknown, at: string, ctx: TreeContext): void => {
+  if (!isObj(node)) throw new LevelError(`${at}: expected object`)
+  if (typeof node.id !== 'string' || node.id === '') throw new LevelError(`${at}.id: expected a non-empty string`)
+  if (ctx.ids.has(node.id)) throw new LevelError(`${at}.id: '${node.id}' is used twice in this tree`)
+  ctx.ids.add(node.id)
+  if (node.name !== undefined && typeof node.name !== 'string') throw new LevelError(`${at}.name: expected a string`)
+  checkTransform(node.transform, `${at}.transform`)
+  checkComponents(node.components, `${at}.components`, ctx.checker)
+  if (node.prefab !== undefined) {
+    if (typeof node.prefab !== 'string') throw new LevelError(`${at}.prefab: expected a prefab table key`)
+    if (ctx.insidePrefab) throw new LevelError(`${at}.prefab: a node inside a prefab cannot reference another prefab`)
+    if (!(node.prefab in ctx.table)) throw new LevelError(`${at}: prefab '${node.prefab}' is not in level.prefabs`)
+  }
+  checkOverrides(node.overrides, `${at}.overrides`, ctx.checker)
+  if (node.children !== undefined) {
+    if (!Array.isArray(node.children)) throw new LevelError(`${at}.children: expected an array of nodes`)
+    node.children.forEach((child, n) => validateNodeTree(child, `${at}.children[${n}]`, ctx))
+  }
+}
+
 export const validateLevel = (data: unknown, checker?: ParamChecker): Level => {
   if (!isObj(data)) throw new LevelError('level: expected object')
   if (typeof data.id !== 'string') throw new LevelError('level.id: expected string')
@@ -154,33 +190,10 @@ export const validateLevel = (data: unknown, checker?: ParamChecker): Level => {
   if (!Array.isArray(data.nodes)) throw new LevelError('level.nodes: expected array')
 
   const table = isObj(data.prefabs) ? data.prefabs : {}
+  const ctx = (ids: Set<string>, insidePrefab: boolean): TreeContext => ({ ids, table, insidePrefab, ...(checker !== undefined ? { checker } : {}) })
 
-  /**
-   * `insidePrefab` is what forbids prefab-in-prefab: a reference graph needs cycle detection that a tree
-   * of plain nodes does not, and it stayed out under ADR 0023 for the same reason.
-   */
-  const checkNode = (node: unknown, at: string, ids: Set<string>, insidePrefab: boolean): void => {
-    if (!isObj(node)) throw new LevelError(`${at}: expected object`)
-    if (typeof node.id !== 'string' || node.id === '') throw new LevelError(`${at}.id: expected a non-empty string`)
-    if (ids.has(node.id)) throw new LevelError(`${at}.id: '${node.id}' is used twice in this tree`)
-    ids.add(node.id)
-    if (node.name !== undefined && typeof node.name !== 'string') throw new LevelError(`${at}.name: expected a string`)
-    checkTransform(node.transform, `${at}.transform`)
-    checkComponents(node.components, `${at}.components`, checker)
-    if (node.prefab !== undefined) {
-      if (typeof node.prefab !== 'string') throw new LevelError(`${at}.prefab: expected a prefab table key`)
-      if (insidePrefab) throw new LevelError(`${at}.prefab: a node inside a prefab cannot reference another prefab`)
-      if (!(node.prefab in table)) throw new LevelError(`${at}: prefab '${node.prefab}' is not in level.prefabs`)
-    }
-    checkOverrides(node.overrides, `${at}.overrides`, checker)
-    if (node.children !== undefined) {
-      if (!Array.isArray(node.children)) throw new LevelError(`${at}.children: expected an array of nodes`)
-      node.children.forEach((child, n) => checkNode(child, `${at}.children[${n}]`, ids, insidePrefab))
-    }
-  }
-
-  for (const [key, root] of Object.entries(table)) checkNode(root, `level.prefabs['${key}']`, new Set(), true)
+  for (const [key, root] of Object.entries(table)) validateNodeTree(root, `level.prefabs['${key}']`, ctx(new Set(), true))
   const levelIds = new Set<string>()
-  data.nodes.forEach((node, n) => checkNode(node, `level.nodes[${n}]`, levelIds, false))
+  data.nodes.forEach((node, n) => validateNodeTree(node, `level.nodes[${n}]`, ctx(levelIds, false)))
   return data as unknown as Level
 }

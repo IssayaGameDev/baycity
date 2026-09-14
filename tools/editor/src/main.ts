@@ -24,7 +24,7 @@ import {
   type Node as SceneNode,
   type Level,
   type Pose,
-  type Transform, validateLevel } from '@mp/content'
+  type Transform, validateLevel, applyBatch, OpError, type NodeRef, type Op } from '@mp/content'
 import { DEFAULT_REGISTRY, characterAccess, createComponentRuntime, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type ComponentRuntime, type Registry } from '@mp/components'
 import { createOrbitCamera } from '@mp/camera'
 import { PLAYER_NODE_ID, actionsHeld, type ModeDescriptor, readSettings } from '@mp/mode'
@@ -50,7 +50,7 @@ import {
   type LevelView,
   type LightDesc,
 } from '@mp/render-three'
-import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type ClipItem, type Doc, type KeyEditor, type Mode } from './editorDoc'
+import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type ClipItem, type Doc, type KeyEditor, type Mode, type OpBatch } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
 import { askUnsaved } from './confirm'
 import {
@@ -72,7 +72,7 @@ import {
   type Me,
 } from './filesApi'
 import { createHierarchy, type Hierarchy } from './hierarchy'
-import { createHistory } from './history'
+import { createOpHistory, foldBatches } from './opHistory'
 import { createInspector, type Inspector } from './inspector'
 import { createAssetInspector, type AssetInspector } from './assetInspector'
 import { loadAssetLibrary, type AssetLibrary } from './assetsApi'
@@ -684,7 +684,7 @@ const showDoc = (): void => {
 const reopenWithRegistry = (): void => {
   const root = docStack[0]
   if (root === undefined || docStack.length > 1) return
-  docStack[0] = { doc: levelDoc(root.doc.asLevel(), userPrefabs, registry(), editorClips), label: root.label }
+  docStack[0] = { doc: withOps(levelDoc(root.doc.asLevel(), userPrefabs, registry(), editorClips)), label: root.label }
   showDoc()
 }
 
@@ -705,7 +705,8 @@ const openPrefabOf = (index: number): void => {
   const prefab = doc.prefabAt(id)
   if (prefab === undefined) return
   const n = doc.refCount(id)
-  docStack.push({ doc: prefabDoc(prefab, registry(), editorClips), label: `${id} (${n} instance${n === 1 ? '' : 's'})` })
+  // Scoped to the table entry it edits, so the ops it reports apply to `prefabs[id]` on every copy (ADR 0089).
+  docStack.push({ doc: withOps(prefabDoc(prefab, registry(), editorClips, { table: id })), label: `${id} (${n} instance${n === 1 ? '' : 's'})` })
   showDoc()
 }
 
@@ -1055,8 +1056,8 @@ gizmo.addEventListener('dragging-changed', (event) => {
   gizmoDragging = dragging
   if (dragging) {
     gizmoDragged = true
-    // One history entry per drag, recorded when it ends. `coalescing` suppresses the hundred notifications in
-    // between, which is also what leaves `baseline` sitting on the pre-drag state for that one record to use.
+    // One history entry per drag, recorded when it ends. `coalescing` holds `recordEdit` off while the hundred
+    // pointer events each report a transform op; the record at the end folds them into one.
     coalescing = true
     dragStart = new Map()
     if (doc !== null) {
@@ -1977,7 +1978,7 @@ const openFile = async (name: string): Promise<void> => {
         await adopt(componentTypesInRaw(raw).filter((type) => !reg.has(type) && isSharedComponent(type)))
       }
       const level = validateLevel(raw, registry())
-      setDoc(levelDoc(level, userPrefabs, registry(), editorClips), name)
+      setDoc(withOps(levelDoc(level, userPrefabs, registry(), editorClips)), name)
       return
     }
     // A prefab is an asset now, so it is opened by id and saved back to its own path.
@@ -1989,7 +1990,7 @@ const openFile = async (name: string): Promise<void> => {
     }
     openPrefabAsset = entry.id
     readOnlyBy = await takeLock(lockKey.asset(entry.path))
-    setDoc(prefabDoc(prefab, registry(), editorClips), name)
+    setDoc(withOps(prefabDoc(prefab, registry(), editorClips)), name)
   } catch (e) {
     setStatus(`load failed: ${String(e)}`)
   }
@@ -2036,7 +2037,7 @@ const enterMode = async (mode: Mode): Promise<void> => {
   fileState.mode = mode
   await refreshFileList()
   if (fileNames[0] !== undefined) await openFile(fileNames[0])
-  else setDoc(mode === 'level' ? levelDoc(blankLevel('untitled'), userPrefabs, registry(), editorClips) : prefabDoc(blankPrefab('untitled'), registry(), editorClips), 'untitled')
+  else setDoc(withOps(mode === 'level' ? levelDoc(blankLevel('untitled'), userPrefabs, registry(), editorClips) : prefabDoc(blankPrefab('untitled'), registry(), editorClips)), 'untitled')
 }
 
 // --- toolbar ---
@@ -2093,7 +2094,7 @@ const toolbar: Toolbar = createToolbar(
       const name = fileState.name || 'untitled'
       openPrefabAsset = null // a new prefab has no asset yet; the first Save creates one
       void dropAllLocks() // a new file locks nothing until its first Save names it
-      setDoc(fileState.mode === 'level' ? levelDoc(blankLevel(name), userPrefabs, registry(), editorClips) : prefabDoc(blankPrefab(name), registry(), editorClips), name)
+      setDoc(withOps(fileState.mode === 'level' ? levelDoc(blankLevel(name), userPrefabs, registry(), editorClips) : prefabDoc(blankPrefab(name), registry(), editorClips)), name)
     },
     back: closePrefab,
     setGizmo: setMode,
@@ -2660,44 +2661,24 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
 })
 
 
-// ============================== undo/redo and the clipboard (ADR 0030) ==============================
+// ============================== undo/redo by inverse ops (ADR 0089) ==============================
 /**
- * A snapshot of the whole open file, plus where the selection was.
- *
- * The **root** document, always — `docStack[0]` — not whichever prefab is open on top of it. Editing a prefab
- * from a level mutates that level's own table entry, so a root snapshot already covers it, and one history per
- * file is the thing a person expects Ctrl+Z to walk.
+ * The document reports every edit as ops with their inverses (`Doc.onOps`); `recordEdit` folds what arrived
+ * since the last call into one history entry. Undo applies the entry's inverses to the level — an ordinary
+ * edit as far as everything else is concerned — and never touches what anyone else did. Snapshots of the whole
+ * document (ADR 0030) went with the per-file lock: a snapshot cannot belong to one person.
  */
-interface EditSnapshot {
-  data: Level | SceneNode
-  mode: Mode
-  /** Sibling paths of the selection (`"0/2"`), primary last — these survive renumbering where indices do not. */
-  selectedPaths: string[]
+const history = createOpHistory()
+/** Batches the open documents reported since the last `recordEdit`. A gizmo drag piles up a hundred. */
+let pending: OpBatch[] = []
+const onDocOps = (batch: OpBatch): void => {
+  pending.push(batch)
 }
-
-const snapshotNow = (): EditSnapshot => {
-  const root = docStack[0]
-  const rootDoc = root?.doc ?? null
-  return {
-    data: structuredClone(rootDoc?.toJSON() ?? blankLevel('untitled')),
-    mode: rootDoc?.mode ?? 'level',
-    // Only meaningful when the selection is in the root document; inside a prefab it names a piece of
-    // something else, and restoring drops back to the root anyway.
-    selectedPaths: docStack.length === 1 && rootDoc !== null && rootDoc === doc ? selection.map((i) => rootDoc.pathOf(i)) : [],
-  }
+/** Every document this file builds reports its ops here; the top of the stack and the root alike. */
+const withOps = (d: Doc): Doc => {
+  d.onOps = onDocOps
+  return d
 }
-
-const history = createHistory<EditSnapshot>({ clone: (v) => ({ ...v, data: structuredClone(v.data) }) })
-
-/**
- * What the document looked like before the edit currently being reported.
- *
- * Held as a clone rather than snapshotting at each mutation site, because most mutations reach this file as a
- * *notification* — the Inspector and the Hierarchy call `doc.setName`/`setProps` themselves and then tell us —
- * so by then the old state is already gone. Keeping one clone ahead costs a clone per edit and removes the
- * need for every call site to remember to snapshot first.
- */
-let baseline: EditSnapshot | null = null
 /** True while a gizmo drag is in flight: one history entry per drag, not one per pointer event. */
 let coalescing = false
 /**
@@ -2777,21 +2758,25 @@ const guardUnsaved = async (): Promise<boolean> => {
   return saveNow()
 }
 
+/** The selection, by identity that survives renumbering — what an undo puts back. */
+const selectionRefs = (): NodeRef[] => {
+  const open = doc
+  if (open === null) return []
+  return selection.map((i) => open.refAt(i)).filter((r): r is NodeRef => r !== null)
+}
+
 /**
- * Record that an edit just happened. `baseline` is the state before it.
- *
- * Silently drops an edit that changed nothing, which is not a nicety: a click on a gizmo handle, or picking the
- * material a piece already had, both notify exactly like a real edit. Without this, Ctrl+Z would need pressing
- * two or three times to undo one visible change, which is the way undo stops being trusted. The comparison is
- * a stringify of a document measured in kilobytes, against a rebuild of the whole scene — it is not the
- * expensive part of an edit.
+ * Record that an edit just happened: fold the batches the document reported since the last record into one
+ * history entry. An edit that changed nothing reported nothing — the document drops an op whose inverse is
+ * `null` — so a click on a gizmo handle, or picking the material a piece already had, records nothing, and
+ * Ctrl+Z never needs pressing twice for one visible change.
  */
 const recordEdit = (label: string): void => {
-  if (coalescing || baseline === null) return
-  const now = snapshotNow()
-  if (JSON.stringify(now.data) === JSON.stringify(baseline.data)) return
-  history.push(baseline, label)
-  baseline = now
+  if (coalescing) return
+  const entry = foldBatches(pending, label, selectionRefs())
+  pending = []
+  if (entry === null) return
+  history.push(entry)
   dirty = true
   renderStatus()
 }
@@ -2799,46 +2784,67 @@ const recordEdit = (label: string): void => {
 /** Start a fresh history: a different file's edits are not this one's. */
 const resetHistory = (): void => {
   history.clear()
-  baseline = snapshotNow()
+  pending = []
   dirty = false
 }
 
-/** The index whose sibling path matches, or `null` — how a selection survives a restore. */
-const indexOfPath = (path: string | null): number | null => {
-  if (path === null || doc === null) return null
-  for (let i = 0; i < doc.count(); i++) if (doc.pathOf(i) === path) return i
-  return null
-}
+/** The level every op applies to: the open file's. A prefab opened on top is one of its table entries. */
+const rootLevel = (): Level | null => docStack[0]?.doc.asLevel() ?? null
 
-const restore = (snapshot: EditSnapshot): void => {
-  const data = structuredClone(snapshot.data)
-  const next = snapshot.mode === 'level' ? levelDoc(data as Level, userPrefabs, registry(), editorClips) : prefabDoc(data as SceneNode, registry(), editorClips)
-  // Straight into the stack rather than through `setDoc`, which would reset the history we are walking.
-  docStack.length = 0
-  docStack.push({ doc: next, label: `${next.mode}: ${fileState.name}` })
-  showDoc()
-  const restored = snapshot.selectedPaths.map(indexOfPath).filter((i): i is number => i !== null)
+/**
+ * Apply a history entry's ops straight to the level — not through a document, so nothing is re-reported — then
+ * rebuild everything from the data, as any structural edit does, and put the selection back by identity.
+ * Resolves `false` when the ops no longer apply (the node is gone); the entry is dropped and the status bar
+ * says why.
+ */
+const applyHistory = (ops: readonly Op[], keep: readonly NodeRef[], what: string): boolean => {
+  const level = rootLevel()
+  if (level === null) return false
+  try {
+    applyBatch(level, ops)
+  } catch (e) {
+    setStatus(`cannot ${what}: ${e instanceof OpError ? e.message : String(e)}`)
+    return false
+  }
+  pending = []
+  deselect()
+  env.applyEnvironment(doc?.environment())
+  postfx.apply(doc?.environment()?.postfx)
+  buildItems()
+  rebuildLoaded()
+  const open = doc
+  const restored = open === null ? [] : keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
   if (restored.length > 0) applySelection(restored)
-  baseline = snapshotNow()
+  dirty = true
+  refreshUi()
+  inspectorRebuild()
+  loadNewReferences(buildItems)
+  return true
 }
 
 const undo = (): void => {
-  const entry = history.undo(snapshotNow())
+  const entry = history.undo()
   if (entry === null) {
     setStatus('nothing to undo')
     return
   }
-  restore(entry.data)
+  if (!applyHistory(entry.inverses, entry.selection, `undo ${entry.label}`)) {
+    history.drop(entry)
+    return
+  }
   setStatus(`undid: ${entry.label}`)
 }
 
 const redo = (): void => {
-  const entry = history.redo(snapshotNow())
+  const entry = history.redo()
   if (entry === null) {
     setStatus('nothing to redo')
     return
   }
-  restore(entry.data)
+  if (!applyHistory(entry.ops, entry.selection, `redo ${entry.label}`)) {
+    history.drop(entry)
+    return
+  }
   setStatus(`redid: ${entry.label}`)
 }
 

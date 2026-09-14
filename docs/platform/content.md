@@ -35,7 +35,7 @@ interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: Su
 
 ## Validation — `packages/content/src/validate.ts`
 
-`validateLevel(data: unknown, checker?: ParamChecker): Level` — throws `LevelError` with a JSON-path message. Always: ids non-empty, unique per tree; transforms; component ids unique per node; `prefab` key in table and not inside a prefab; override shapes; `config.mode.name` non-empty; `environment` sub-blocks (`#rrggbb`, finite numbers, booleans). Params **only** with `checker` (`Registry.checkParams`). `nodeRef` targets unchecked.
+`validateLevel(data: unknown, checker?: ParamChecker): Level` — throws `LevelError` with a JSON-path message. Per-tree helper `validateNodeTree(node, at, { ids, table, insidePrefab, checker? })` and `checkTransform`/`checkComponents`/`checkOverrides`/`validateConfig` are exported for `ops.ts`. Always: ids non-empty, unique per tree; transforms; component ids unique per node; `prefab` key in table and not inside a prefab; override shapes; `config.mode.name` non-empty; `environment` sub-blocks (`#rrggbb`, finite numbers, booleans). Params **only** with `checker` (`Registry.checkParams`). `nodeRef` targets unchecked.
 
 ## Loader — `packages/content/src/loader.ts`
 
@@ -65,6 +65,33 @@ Build rules:
 - Draw (ADR 0039): `Renderer`+`Mesh.model` → one visual listing all handles; `Renderer` alone → one per collider; else nothing. `MaterialOverride` cascades down over `Renderer.material`; `''` = unsurfaced.
 - Placement with inherited children opens a new `scope` (own id + prefab root id; first writer wins).
 - `Track` keys: inline `keys` if non-empty, else `clips.keys(clip)`, else static.
+
+## Ops — `packages/content/src/ops.ts` (ADR 0089)
+
+The unit of a live edit: data, invertible, one implementation for editor, server and every peer.
+
+```ts
+interface OwnRef { table?: string; id: string }           // an authored node: the level forest, or level.prefabs[table]
+interface InheritedRef { owner: string; node: string }    // a prefab-side node through one placement = the override key pair
+type NodeRef = OwnRef | InheritedRef;  refKey(ref)         // 'n:id' | 't:key:id' | 'i:owner:node'
+type Op = { table?: string } & (
+  | setTransform | setName | setParams{patch, unset?} | setComponentEnabled | addComponent{component, index?} | removeComponent | moveComponent{to}
+  | insertNode{parent|null, index, node} | removeNode | moveNode{parent|null, index} | replaceNode{node}
+  | internPrefab{key, root} | dropPrefab{key}
+  | setOverrideTransform | setOverrideName | setOverrideParams | setOverrideEnabled{enabled|null} | addOverrideComponent | removeOverrideComponent | setOverrideRemoved | setNodeOverride{override|null}
+  | setEnvironment{environment|null} | setMode{mode|null} )
+invertOp(level, op): Op | null    // before apply; null = changes nothing; throws OpError for what apply would refuse
+applyOp(level, op): void          // in place; validates first (structure only), throws OpError having touched nothing
+applyBatch(level, ops): { ops /* that changed something */, inverses /* undo order */ }   // all-or-nothing via a scratch clone
+touchedRefs(level, op): NodeRef[] // the node, or the subtree (+ inherited refs under placements in it)
+```
+
+Rules: ids and table keys are minted by the client and travel in the op; `internPrefab` on an identical entry is
+a no-op and on a different one an `OpError`; `dropPrefab` of a referenced key is a no-op; a `table` op may not
+insert a second root, remove the root, or touch environment/mode; `moveNode` refuses a cycle; `insertNode` /
+`replaceNode` refuse an id already in the tree. Validation reuses `validate.ts` (exported `validateNodeTree`,
+`checkTransform`, `checkComponents`, `checkOverrides`, `validateConfig`); `LevelError` becomes `OpError`.
+Tidying (`children: []`, emptied override records) happens here so every copy writes identical JSON.
 
 ## Tracks — `packages/content/src/track.ts` (ADR 0029)
 

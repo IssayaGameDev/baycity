@@ -26,7 +26,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | Bottom tabs | `#palette` **Project** (asset tree, previews) / `#timeline` **Animation** (ADR 0051) | `src/projectPanel.ts`, `src/assetTree.ts`, `src/previews.ts`, `src/timeline.ts`, `src/trackEdit.ts` |
 | Status | `#status` | `setStatus` |
 
-Document model: `src/editorDoc.ts` (`Doc`, `levelDoc`, `prefabDoc`; a `Doc` captures its `registry`). Undo: `src/history.ts`. Shortcuts: `src/shortcuts.ts` (ADR 0030).
+Document model: `src/editorDoc.ts` (`Doc`, `levelDoc`, `prefabDoc`; a `Doc` captures its `registry`; every mutation is an op batch, below). Undo: `src/opHistory.ts` (inverse ops, ADR 0089). Shortcuts: `src/shortcuts.ts` (ADR 0030).
 
 ## Content API — `editor-server.md` (ADR 0083)
 
@@ -52,6 +52,35 @@ The routes are `tools/editor-server/src/api.ts`, mounted by `vite.config.ts` (`f
 The dev editor's `@content` alias is pinned to the repo's `content/` (`contentAlias(REPO_CONTENT)`): it edits that folder, never the live mirror (`content-sync.md`, ADR 0084).
 
 **Watcher:** `watch.ignored: ['**/content/games/**']`. Every game's `rules.ts` imports its `content/games/<game>.json` and the editor bundles those modules, so a write would full-reload the editor and lose undo history right after the editor wrote it. The editor reads the files live over `/api/games`; the game's dev server still reloads (ADR 0077).
+
+## Edits are ops (ADR 0089)
+
+Every `Doc` mutator builds `Op`s (`@mp/content` `ops.ts`, `content.md`) and commits them through the one shared
+`applyBatch` on its own level; what changed is reported on `doc.onOps({ ops, inverses })`. No-op edits (inverse
+`null`) report nothing. Nodes are addressed on the wire by `NodeRef`: `refAt(i)` / `indexOfRef(ref)`.
+
+| Mutator | Ops |
+| --- | --- |
+| `setTransform` / `setName` / `setParams` / `setComponentEnabled` / `addComponent` / `removeComponent` / `moveComponent` | the own op on an own node; the `setOverride*` / `addOverrideComponent` / `removeOverrideComponent` flavour on an inherited one (an inherited component's removal = `setOverrideParams unset` + `setOverrideEnabled null` + `setOverrideRemoved`) |
+| `place` (level) / `placePrefab` (level) | `internPrefab` when the key is new (`internOp`, key from `freeTableKey`) + `insertNode` |
+| `place` / `placePrefab` / `placeEmpty` / `placeModel` / `duplicate` / `paste` | `insertNode` (ids minted client-side; `reidSubtree` for copies) |
+| `remove` / `move` / `reparent` | `removeNode` / `moveNode` |
+| `extract` | `internPrefab` + `replaceNode` |
+| `revert` | `setNodeOverride` (the record with the field gone, or `null`) |
+| `applyToPrefab` | the own ops **scoped `table: key`** on the definition + `setNodeOverride null` |
+| `setEnvironment` / `setMode` | `setEnvironment` / `setMode` |
+| `setId` | not an op (the file name; live, the server sets it) |
+
+`prefabDoc(root, registry, clips, { table })` — a prefab opened on top (`openPrefabOf`) stamps every op with
+`table`, so the same op applies to `level.prefabs[table]` on any copy; locally it applies to the wrapper whose one
+root *is* that entry.
+
+**Undo** (`src/opHistory.ts`): `main.ts` attaches `onDocOps` to every document (`withOps`); batches collect in
+`pending`; `recordEdit(label)` folds them (`foldBatches`: one transform op per target, last value, first inverse)
+into `{ ops, inverses, label, selection: NodeRef[] }`. `undo` applies `inverses` with `applyBatch` straight on the
+root level (nothing re-reported), rebuilds, restores the selection by ref; an entry whose ops no longer apply is
+dropped with a status line. `coalescing` still holds `recordEdit` off during a gizmo drag. Undo inside a prefab
+opened on top no longer pops back to the level.
 
 ## Game discovery (`src/modes.ts`)
 

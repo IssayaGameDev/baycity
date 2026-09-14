@@ -29,8 +29,10 @@ export {
   walkNodes,
 } from './nodes'
 export type { Resolved, TypeInfo } from './nodes'
-export { LevelError, validateLevel } from './validate'
-export type { ParamChecker } from './validate'
+export { LevelError, validateLevel, validateNodeTree, validateConfig, checkTransform, checkComponents, checkOverrides } from './validate'
+export type { ParamChecker, TreeContext } from './validate'
+export { applyOp, applyBatch, invertOp, touchedRefs, refKey, isInherited, OpError } from './ops'
+export type { Op, OpBody, OpKind, NodeRef, OwnRef, InheritedRef } from './ops'
 export { instantiateLevel } from './loader'
 export type { BasePhase, ClipSource, LoadedLevel, NodeDrive, VisualItem, WorldLight, WorldMarker, WorldNode } from './loader'
 export {

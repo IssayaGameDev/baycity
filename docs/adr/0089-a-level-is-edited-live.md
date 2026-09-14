@@ -38,3 +38,27 @@ not bundled.
 **Rejected.** Turning off the watcher alone: the eager glob would serve the build-time copy forever. Vite HMR
 accept handlers for JSON: the level is consumed at boot, there is nothing to hot-swap into. A build per save:
 seconds of CPU per edit for what a fetch does.
+
+## Phase 1 — edits are ops, undo is inverse ops
+
+**Decision.** `packages/content/src/ops.ts`: a discriminated union of every edit the editor makes, with
+`invertOp` computed against the state before applying and `applyOp`/`applyBatch` as the one implementation every
+copy runs. Nodes are addressed by id — `{ id }`, `{ table, id }` for a prefab table entry, `{ owner, node }` for a
+prefab-side node seen through a placement — never by index. Ids and table keys are minted client-side and carried.
+The editor's `Doc` keeps its index-based API; every mutator now builds ops and commits them, reporting
+`{ ops, inverses }` on `onOps`. `opHistory.ts` replaces the snapshot history: an entry is one edit's ops and
+inverses; undo applies the inverses as an ordinary edit.
+
+**Why keep the `Doc` API.** Forty call sites in the panels address nodes by index and the document's policy
+(prefab-mode refusals, registry-driven `canAdd`, `reidSubtree`) is UI policy. The network needs ops, not a new
+document model.
+
+**Why inverse ops, not snapshots.** A snapshot cannot belong to one person: putting back "the document as it
+was" puts back a colleague's work with it (ADR 0030's design assumed one author).
+
+**Rejected.** Replacing `Doc` with an op-first model (a rewrite with no gain). Diffing the document to derive
+ops (`recordEdit` had only a post-hoc notification; the mutator knows what it did). Snapshot undo scoped by
+author (impossible to compute).
+
+**Consequences.** Undo inside a prefab opened on top stays there. A gizmo drag is one op. `history.ts` is gone.
+The `Doc` still applies edits locally and immediately; phase 2 sends the same batches to the server.

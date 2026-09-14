@@ -865,3 +865,109 @@ describe('a prefab the game cannot hold (ADR 0076, ADR 0077)', () => {
     expect(doc.placePrefab(trampoline(), 'Trampoline', ZERO)).toBeGreaterThanOrEqual(0)
   })
 })
+
+/**
+ * Every mutation is an op batch (ADR 0089): replaying the reported ops on the starting level gives the edited
+ * level, and applying the inverses in undo order gives the start back. Key order is not meaning.
+ */
+describe('the document reports its edits as ops', () => {
+  const canon = (v: unknown): unknown =>
+    Array.isArray(v) ? v.map(canon) : typeof v === 'object' && v !== null ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon((v as Record<string, unknown>)[k])])) : v
+  const same = (a: unknown, b: unknown): void => expect(JSON.stringify(canon(a))).toBe(JSON.stringify(canon(b)))
+
+  const record = (doc: Doc): { ops: import('@mp/content').Op[]; inverses: import('@mp/content').Op[] }[] => {
+    const batches: { ops: import('@mp/content').Op[]; inverses: import('@mp/content').Op[] }[] = []
+    doc.onOps = (b) => batches.push(b)
+    return batches
+  }
+
+  it('replays and reverses every kind of edit on a level', async () => {
+    const { applyBatch } = await import('@mp/content')
+    const { level, doc } = placed()
+    const start = structuredClone(level)
+    const batches = record(doc)
+
+    // Index 0 is the placement (labelled by its prefab key, also `pad`); index 1 is the pad it inherits.
+    const placement = 0
+    const pad = 1
+    doc.setTransform(placement, { position: vec3(1, 2, 3) })
+    doc.setTransform(pad, { position: vec3(0, 5, 0) }) // inherited → an override
+    doc.setName(pad, 'renamed pad')
+    doc.setParams(pad, idOf(doc, pad, RENDERER), { material: MAT_A })
+    doc.setComponentEnabled(pad, idOf(doc, pad, COLLIDER), false)
+    const addedOnPad = doc.addComponent(pad, MATERIAL_OVERRIDE)!
+    doc.setParams(pad, addedOnPad, { material: MAT_B })
+    doc.removeComponent(pad, idOf(doc, pad, RENDERER))
+    const emptyAt = doc.placeEmpty(vec3(0, 0, 0), null)
+    doc.setName(emptyAt, 'empty one')
+    const added = doc.addComponent(emptyAt, SPAWN)!
+    doc.setComponentEnabled(emptyAt, added, false)
+    doc.removeComponent(emptyAt, added)
+    const dup = doc.duplicate(emptyAt)
+    doc.reparent(dup, emptyAt, 0)
+    doc.move(named(doc, 'empty one'), 0)
+    const model = doc.placeModel('model-1', vec3(4, 0, 0))
+    doc.remove(model)
+    doc.revert(named(doc, 'renamed pad'), 'name')
+    doc.applyToPrefab(1)
+    doc.setEnvironment({ ambient: { intensity: 0.4 } })
+    doc.setMode('parkour')
+    doc.setMode(null)
+    expect(doc.extract(named(doc, 'empty one'))).not.toBeNull()
+
+    const replay = structuredClone(start)
+    for (const b of batches) applyBatch(replay, b.ops)
+    same(replay, level)
+
+    const back = structuredClone(level)
+    for (const b of [...batches].reverse()) applyBatch(back, b.inverses)
+    same(back, start)
+    validateLevel(JSON.parse(JSON.stringify(level)), DEFAULT_REGISTRY)
+  })
+
+  it('an edit that changes nothing reports nothing', () => {
+    const { doc } = placed()
+    const empty = doc.placeEmpty(vec3(1, 1, 1), null)
+    doc.setName(empty, 'e')
+    const spawn = doc.addComponent(empty, SPAWN)!
+    const batches = record(doc)
+    doc.setName(empty, 'e')
+    doc.setTransform(0, doc.transformOf(0))
+    doc.setParams(empty, spawn, {})
+    doc.setComponentEnabled(empty, spawn, true)
+    doc.move(empty, doc.siblingIndexOf(empty))
+    expect(batches).toEqual([])
+  })
+
+  it('a prefab opened on top edits the live table entry and stamps its ops with the table key', async () => {
+    const { applyBatch } = await import('@mp/content')
+    const { level, doc } = placed()
+    const key = doc.refOf(0)!
+    const top = prefabDoc(doc.prefabAt(key)!, DEFAULT_REGISTRY, undefined, { table: key })
+    const start = structuredClone(level)
+    const batches = record(top)
+    top.setTransform(1, { position: vec3(0, 9, 0) })
+    top.place('box', vec3(1, 1, 1))
+    expect(batches.every((b) => b.ops.every((o) => o.table === key))).toBe(true)
+    // The level's own view changed with it: the placement now inherits the moved pad and the new box.
+    expect(doc.transformOf(1).position.y).toBe(9)
+    expect(labels(doc)).toContain('box')
+    const replay = structuredClone(start)
+    for (const b of batches) applyBatch(replay, b.ops)
+    same(replay, level)
+  })
+
+  it('refAt and indexOfRef round-trip, and two placements of one prefab are two different inherited nodes', () => {
+    const { doc } = placed()
+    doc.place('pad', vec3(5, 0, 0))
+    const pads = labels(doc).map((l, i) => [l, i] as const).filter(([l, i]) => l === 'pad' && doc.kindOf(i) === 'inherited').map(([, i]) => i)
+    expect(pads).toHaveLength(2)
+    const refs = pads.map((i) => doc.refAt(i)!)
+    expect(refs[0]).not.toEqual(refs[1])
+    expect('owner' in refs[0]!).toBe(true)
+    for (const i of [0, ...pads]) expect(doc.indexOfRef(doc.refAt(i)!)).toBe(i)
+    expect(doc.indexOfRef({ id: 'nobody' })).toBeNull()
+    doc.remove(0)
+    expect(doc.indexOfRef(refs[0]!), 'gone with its placement').toBeNull()
+  })
+})
