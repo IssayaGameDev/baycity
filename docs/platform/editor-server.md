@@ -35,7 +35,9 @@ dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` c
 | `GET /api/live` | `{ docs: [{ name, seq, peers, holds }] }` | |
 | `GET /api/live/:name/events` | SSE (`text/event-stream`, `:keepalive` every 25 s): `hello { connId, name }`, `snapshot { level, seq, holds, peers }`, then `ops { seq, from, batchId, ops }` with `id: seq`, `holds`, `peers`, `presence`, `error`. 404 when there is no such level. The stream closing is the leave | |
 | `POST /api/live/:name/ops` | `{ connId, batchId, ops }` → `{ ok, seq }` · 400 an op does not apply (`OpError`) · 423 `{ error, holder }` a node held by another connection | |
-| `POST /api/live/:name/hold` · `release` | `{ connId, refs }` → `{ ok }` / `{ ok: false, holder }` | |
+| `POST /api/live/:name/hold` | `{ connId, refs }` — **this connection's holds become exactly `refs`** → `{ ok }` / `{ ok: false, holder, refused }` (another's refs named and left out; the rest applies) | |
+| `POST /api/live/:name/release` | `{ connId, refs }` → `{ ok }` | |
+| `POST /api/live/:name/ping` | `{ connId }` — still here | |
 | `POST /api/live/:name/presence` | `{ connId, data }` — relayed to the others, unnumbered | |
 | `POST /api/live/:name/flush` | write the file now (the editor's Play) | |
 | `POST /api/live/:name/leave` | `{ connId }` — a closing tab's beacon | |
@@ -77,6 +79,11 @@ dirtyBy: Set<email> }`. The first join reads the file (`readLevel` → `validate
 `apply` runs `applyBatch` (in place; an `OpError` is a 400 and nothing changed), refuses an op whose touched ref or
 any ancestor is held by another `connId` (423), then `seq++`, logs, broadcasts `ops` to **every** client, the
 sender included. Holds go with their connection (leave, stream close) and with the node when it is removed.
+
+**Liveness.** `seen[connId]` is set on join and on every message. `sweep()` leaves every connection silent for
+`staleMs` (default two minutes; the box passes `lockStaleMs`) — a tab whose stream died without the server
+hearing it, whose holds would otherwise stay. `server.ts` sweeps on its minute timer; the dev plugin every
+minute too. The editor pings on its heartbeat.
 
 **Writes.** `idleMs` after the last edit, `maxMs` at most since the first unflushed one, on the last client leaving,
 on `flush`/`flushAll` (Play, `/api/tree`, `/api/file`, `commit-all`, shutdown): `level.id = name` →

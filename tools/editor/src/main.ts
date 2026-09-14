@@ -258,7 +258,7 @@ const dropAllLocks = async (): Promise<void> => {
   readOnlyBy = null
   collab.leave()
   holdMap = new Map()
-  heldRefs = new Map()
+  lastHoldKey = null
   heldBack = []
   if (presenceTimer !== null) {
     clearInterval(presenceTimer)
@@ -284,8 +284,8 @@ const TRANSFORM_KINDS = new Set<string>(['setTransform', 'setOverrideTransform']
 // ------------------------------ holds (phase 3) ------------------------------
 /** Every hold in the room by `refKey`, theirs and mine. */
 let holdMap = new Map<string, Hold>()
-/** The refs this tab holds: its selection, as the server last heard it. */
-let heldRefs = new Map<string, NodeRef>()
+/** The selection the server was last told to hold, as a key, so an unchanged selection sends nothing. */
+let lastHoldKey: string | null = null
 
 /** The name of another connection holding node `index` or any node above it; `null` when it is free. */
 const heldBy = (index: number): string | null => {
@@ -302,30 +302,26 @@ const heldBy = (index: number): string | null => {
 }
 
 /**
- * Make the room's holds match the selection: hold what came in, release what went out. The server refuses a
- * ref someone else has (a race the local filter lost): the refused nodes drop out of the selection.
+ * Tell the room what I hold: the selection, whole, every time it changes. The server refuses a ref someone
+ * else has (a race the local filter lost): the refused nodes drop out of the selection.
  */
 const syncHolds = (): void => {
   if (!live()) return
-  const want = new Map<string, NodeRef>()
-  for (const ref of selectionRefs()) want.set(refKey(ref), ref)
-  const added = [...want].filter(([k]) => !heldRefs.has(k)).map(([, r]) => r)
-  const dropped = [...heldRefs].filter(([k]) => !want.has(k)).map(([, r]) => r)
-  heldRefs = want
-  if (dropped.length > 0) collab.release(dropped)
-  if (added.length > 0) {
-    void collab.hold(added).then((r) => {
-      if (r.ok) return
-      setStatus(`${r.holder} has that selected`)
-      const refused = new Set(added.map(refKey))
-      const open = doc
-      if (open === null) return
-      applySelection(selection.filter((i) => {
-        const ref = open.refAt(i)
-        return ref === null || !refused.has(refKey(ref))
-      }))
-    })
-  }
+  const refs = selectionRefs()
+  const key = refs.map(refKey).sort().join('|')
+  if (key === lastHoldKey) return
+  lastHoldKey = key
+  void collab.setHolds(refs).then((r) => {
+    if (r.ok) return
+    setStatus(`${r.holder} has that selected`)
+    const refused = new Set(r.refused.map(refKey))
+    const open = doc
+    if (open === null) return
+    applySelection(selection.filter((i) => {
+      const ref = open.refAt(i)
+      return ref === null || !refused.has(refKey(ref))
+    }))
+  })
 }
 
 /** Tinted boxes over nodes others hold, in world space and refreshed each frame so a drag keeps up. */
@@ -365,11 +361,6 @@ const updateHoldHelpers = (): void => {
 /** The room's holds changed: drop what I can no longer have, redraw the badges and the boxes. */
 const onHoldsChanged = (holds: Hold[]): void => {
   holdMap = new Map(holds.map((h) => [refKey(h.ref), h]))
-  const mine = collab.connId()
-  for (const [k] of heldRefs) {
-    const h = holdMap.get(k)
-    if (h === undefined || h.connId !== mine) heldRefs.delete(k)
-  }
   if (selection.some((i) => heldBy(i) !== null)) applySelection(selection.filter((i) => heldBy(i) === null))
   rebuildHoldHelpers()
   hierarchy.render()
@@ -421,7 +412,7 @@ const reinstallLevel = (level: Level): void => {
   docStack.length = 1
   docStack[0] = { doc: withOps(levelDoc(level, userPrefabs, registry(), editorClips)), label: root.label }
   showDoc()
-  heldRefs = new Map() // a reconnect is a new connection: the server holds nothing for it yet
+  lastHoldKey = null // a reconnect is a new connection: the server holds nothing for it yet
   syncHolds()
 }
 
@@ -3690,6 +3681,7 @@ window.setInterval(() => {
         refreshUi()
       }
     }
+    if (live()) collab.ping() // the server drops a connection it has not heard from, holds included
     const status = await serverStatus().catch(() => null)
     const next = status?.pushError ?? ''
     if (next !== pushProblem) {

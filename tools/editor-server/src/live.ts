@@ -20,9 +20,12 @@ import type { User } from './config'
  *   read of the file from outside. After the write, `changed` names every user who edited since the last
  *   write, so each of their sessions goes dirty (`sessions.ts`) and the mirror learns the path — disk first,
  *   feed second, as the mirror requires.
- * - Holds: a node a client holds (it has it selected) is refused to every other connection; released on
- *   `release`, on the client leaving, and when the node is removed. Identity is the **connection**, so two tabs
- *   of one person are two holders.
+ * - Holds: a node a client holds (it has it selected) is refused to every other connection. `hold` is the
+ *   whole set a connection wants — "my holds are exactly these" — so a late or reordered message cannot leave a
+ *   ghost; released on the client leaving and when the node is removed. Identity is the **connection**, so two
+ *   tabs of one person are two holders.
+ * - Liveness: a connection is `seen` on every message; `sweep` leaves one silent for `staleMs` (a tab whose
+ *   stream died without the server hearing it), which releases its holds. The editor pings while idle.
  *
  * Pure over an injected file system and clock, so it is tested with fake clients.
  */
@@ -57,6 +60,8 @@ export interface LiveOptions {
   logKeep?: number
   /** Timers, injectable for tests. */
   schedule?: (fn: () => void, ms: number) => () => void
+  /** A connection silent this long is gone (`sweep`). Default two minutes, the lock rule. */
+  staleMs?: number
 }
 
 export class LiveError extends Error {
@@ -79,6 +84,8 @@ interface LiveDoc {
   seq: number
   log: { seq: number; from: string; ops: Op[] }[]
   clients: Map<string, LiveClient>
+  /** When each connection last said anything, for `sweep`. */
+  seen: Map<string, number>
   holds: Map<string, Hold>
   /** Who edited since the last write, by email. */
   dirtyBy: Map<string, User>
@@ -94,7 +101,12 @@ export interface Live {
   leave: (name: string, connId: string) => void
   /** Apply a batch from a connection. Throws `LiveError` 400 (bad op, unknown connection), 423 (held by another). */
   apply: (name: string, connId: string, user: User, batch: { batchId: string; ops: Op[] }) => ApplyResult
-  hold: (name: string, connId: string, user: User, refs: NodeRef[]) => { ok: true } | { ok: false; holder: string }
+  /** This connection's holds become exactly `refs`. Refused refs (another's) are named and left out. */
+  hold: (name: string, connId: string, user: User, refs: NodeRef[]) => { ok: true } | { ok: false; holder: string; refused: NodeRef[] }
+  /** The connection is alive. Any message counts; the editor sends this while idle. */
+  ping: (name: string, connId: string, user: User) => void
+  /** Leave every connection silent for `staleMs`. Called on a timer by the host. */
+  sweep: () => void
   release: (name: string, connId: string, user: User, refs: NodeRef[]) => void
   /** Relay presence (a pose mid-drag, a selection) to the others. No seq, nothing kept. */
   presence: (name: string, connId: string, user: User, data: unknown) => void
@@ -114,11 +126,11 @@ export const createLive = (opts: LiveOptions): Live => {
   const idleMs = opts.idleMs ?? 500
   const maxMs = opts.maxMs ?? 5000
   const logKeep = opts.logKeep ?? 500
+  const staleMs = opts.staleMs ?? 120_000
   const schedule = opts.schedule ?? ((fn, ms) => {
     const t = setTimeout(fn, ms)
     return () => clearTimeout(t)
   })
-  void now
   const docs = new Map<string, LiveDoc>()
 
   const peersOf = (d: LiveDoc): Peer[] => [...d.clients.values()].map((c) => ({ connId: c.connId, name: c.user.name }))
@@ -138,7 +150,7 @@ export const createLive = (opts: LiveOptions): Live => {
     } catch (e) {
       throw new LiveError(400, `${name} does not load: ${e instanceof Error ? e.message : String(e)}`)
     }
-    const d: LiveDoc = { name, level, seq: 0, log: [], clients: new Map(), holds: new Map(), dirtyBy: new Map(), contributors: new Map(), cancelIdle: null, cancelMax: null }
+    const d: LiveDoc = { name, level, seq: 0, log: [], clients: new Map(), seen: new Map(), holds: new Map(), dirtyBy: new Map(), contributors: new Map(), cancelIdle: null, cancelMax: null }
     docs.set(name, d)
     return d
   }
@@ -154,6 +166,7 @@ export const createLive = (opts: LiveOptions): Live => {
     const c = d.clients.get(connId)
     if (c === undefined) throw new LiveError(400, 'unknown connection; reload the editor')
     if (c.user.email !== user.email) throw new LiveError(400, 'that connection is not yours')
+    d.seen.set(connId, now())
     return c
   }
 
@@ -194,10 +207,11 @@ export const createLive = (opts: LiveOptions): Live => {
     return changed
   }
 
-  return {
+  const api: Live = {
     join: (name, client) => {
       const d = open(name)
       d.clients.set(client.connId, client)
+      d.seen.set(client.connId, now())
       client.send('hello', { connId: client.connId, name })
       client.send('snapshot', { level: d.level, seq: d.seq, holds: holdsOf(d), peers: peersOf(d) }, d.seq)
       for (const c of d.clients.values()) if (c !== client) c.send('peers', { peers: peersOf(d) })
@@ -209,6 +223,7 @@ export const createLive = (opts: LiveOptions): Live => {
       const client = d.clients.get(connId)
       if (client === undefined) return
       d.clients.delete(connId)
+      d.seen.delete(connId)
       const dropped = releaseHolds(d, connId)
       if (d.clients.size === 0) {
         flush(d)
@@ -267,13 +282,38 @@ export const createLive = (opts: LiveOptions): Live => {
     hold: (name, connId, user, refs) => {
       const d = must(name)
       clientOf(d, connId, user)
-      for (const ref of refs) {
-        const h = d.holds.get(refKey(ref))
-        if (h !== undefined && h.connId !== connId) return { ok: false, holder: h.name }
+      const want = new Map(refs.map((r) => [refKey(r), r]))
+      // Another's: named, and not taken. The rest of the set still applies.
+      let holder: string | null = null
+      const refused: NodeRef[] = []
+      for (const [key, ref] of want) {
+        const h = d.holds.get(key)
+        if (h !== undefined && h.connId !== connId) {
+          holder ??= h.name
+          refused.push(ref)
+          want.delete(key)
+        }
       }
-      for (const ref of refs) d.holds.set(refKey(ref), { ref, connId, name: user.name })
-      broadcast(d, 'holds', { holds: holdsOf(d) })
-      return { ok: true }
+      const gone = new Set([...d.holds].filter(([key, h]) => h.connId === connId && !want.has(key)).map(([key]) => key))
+      let changed = gone.size > 0 && releaseHolds(d, connId, gone)
+      for (const [key, ref] of want) {
+        if (d.holds.has(key)) continue
+        d.holds.set(key, { ref, connId, name: user.name })
+        changed = true
+      }
+      if (changed) broadcast(d, 'holds', { holds: holdsOf(d) })
+      return holder === null ? { ok: true } : { ok: false, holder, refused }
+    },
+
+    ping: (name, connId, user) => {
+      clientOf(must(name), connId, user)
+    },
+
+    sweep: () => {
+      const cutoff = now() - staleMs
+      const gone: { name: string; connId: string }[] = []
+      for (const d of docs.values()) for (const [connId, at] of d.seen) if (at < cutoff) gone.push({ name: d.name, connId })
+      for (const g of gone) api.leave(g.name, g.connId)
     },
 
     release: (name, connId, user, refs) => {
@@ -299,6 +339,7 @@ export const createLive = (opts: LiveOptions): Live => {
     levelOf: (name) => docs.get(name)?.level ?? null,
     status: () => [...docs.values()].map((d) => ({ name: d.name, seq: d.seq, peers: peersOf(d), holds: d.holds.size })),
   }
+  return api
 }
 
 /** The refs of every ancestor of `ref` in its tree — a hold on any of them covers `ref`. */

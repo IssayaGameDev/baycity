@@ -179,8 +179,10 @@ describe('collab', () => {
     s.h.emit({ event: 'snapshot', data: { level: fixture(), seq: 9, holds: [], peers: [] } })
     expect(s.snapshots()).toBe(2)
     expect(posOf(s.level(), 'a'), 'my unacked edit is back on the new copy').toBe(5)
-    expect(s.h.posts.filter((p) => p.action === 'ops')).toHaveLength(2)
-    expect(s.h.posts[1]!.body.connId).toBe('me2')
+    const ops = s.h.posts.filter((p) => p.action === 'ops')
+    expect(ops).toHaveLength(2)
+    expect(ops[1]!.body.connId).toBe('me2')
+    expect(s.h.posts.some((p) => p.action === 'leave' && p.body.connId === 'me'), 'the dead connection is left').toBe(true)
   })
 
   it('leave closes the stream and tells the server; pagehide uses a beacon', async () => {
@@ -195,14 +197,28 @@ describe('collab', () => {
     expect(s.h.posts, 'nothing is sent once left').toHaveLength(1)
   })
 
-  it('holds answer with the holder when refused', async () => {
+  it('holds go out one at a time, in order, and answer with the holder when refused', async () => {
     const s = await setUp()
-    const p = s.collab.hold([{ id: 'a' }])
-    s.h.posts[0]!.answer(false, 423, { ok: false, holder: 'Bob' })
-    expect(await p).toEqual({ ok: false, holder: 'Bob' })
-    const q = s.collab.hold([{ id: 'b' }])
+    const p = s.collab.setHolds([{ id: 'a' }])
+    const q = s.collab.setHolds([])
+    await tick()
+    expect(s.h.posts.map((x) => x.action), 'the second waits for the first').toEqual(['hold'])
+    s.h.posts[0]!.answer(false, 200, { ok: false, holder: 'Bob', refused: [{ id: 'a' }] })
+    expect(await p).toEqual({ ok: false, holder: 'Bob', refused: [{ id: 'a' }] })
+    await tick()
+    expect(s.h.posts.map((x) => x.action)).toEqual(['hold', 'hold'])
+    expect(s.h.posts[1]!.body.refs).toEqual([])
     s.h.posts[1]!.answer(true, 200, { ok: true })
     expect(await q).toEqual({ ok: true })
+  })
+
+  it('a new hello on the same session says goodbye for the old connection', async () => {
+    const s = await setUp()
+    s.h.emit({ event: 'hello', data: { connId: 'me2', name: 'Ada' } })
+    expect(s.h.posts.map((x) => [x.action, x.body.connId])).toEqual([['leave', 'me']])
+    expect(s.collab.connId()).toBe('me2')
+    s.collab.ping()
+    expect(s.h.posts.at(-1)!.body).toEqual({ connId: 'me2' })
   })
 })
 

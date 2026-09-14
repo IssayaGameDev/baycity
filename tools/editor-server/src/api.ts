@@ -38,7 +38,9 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *   GET  /api/live                    → open documents, peers, holds
  *   GET  /api/live/:name/events       → SSE: hello, snapshot, ops (id = seq), holds, peers, presence, error
  *   POST /api/live/:name/ops          → { connId, batchId, ops } → { ok, seq } · 400 bad op · 423 held by another
- *   POST /api/live/:name/hold|release → { connId, refs } → { ok } / { ok: false, holder }
+ *   POST /api/live/:name/hold         → { connId, refs } — my holds are exactly these → { ok } / { ok: false, holder, refused }
+ *   POST /api/live/:name/release      → { connId, refs } → { ok }
+ *   POST /api/live/:name/ping         → { connId } — still here (the editor, every heartbeat)
  *   POST /api/live/:name/presence     → { connId, data } — relayed, unnumbered
  *   POST /api/live/:name/flush        → write the file now
  *   POST /api/live/:name/leave        → { connId } (a closing tab's beacon)
@@ -422,7 +424,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     const live = opts.live
     if (live === undefined || !url.startsWith('/api/live')) return false
     if (url === '/api/live' && req.method === 'GET') return sendJson(res, 200, { docs: live.status() }), true
-    const m = /^\/api\/live\/([\w-]+)\/(events|ops|hold|release|presence|flush|leave)$/.exec(url)
+    const m = /^\/api\/live\/([\w-]+)\/(events|ops|hold|release|presence|flush|leave|ping)$/.exec(url)
     if (m === null) return false
     const name = m[1]!
     const action = m[2]!
@@ -486,6 +488,11 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
         }
         case 'flush': {
           live.flush(name)
+          sendJson(res, 200, { ok: true })
+          return true
+        }
+        case 'ping': {
+          live.ping(name, connId, user)
           sendJson(res, 200, { ok: true })
           return true
         }

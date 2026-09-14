@@ -92,6 +92,7 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
   // --- live level documents (ADR 0089) ---
   const levelsDir = join(config.repoRoot, 'content', 'levels')
   const live = createLive({
+    staleMs: config.lockStaleMs,
     readLevel: (name) => {
       const file = join(levelsDir, `${name}.json`)
       return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as unknown) : null
@@ -230,9 +231,10 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
     proxyUpgrade(req, socket, head, route.target, route === relayRoute ? stripPrefix(req.url ?? '/', relayRoute.path) : (req.url ?? '/'))
   })
 
-  // Stale locks are swept and overdue sessions committed once a minute.
+  // Stale locks and silent live connections are swept and overdue sessions committed once a minute.
   const timer = setInterval(() => {
     const now = Date.now()
+    live.sweep()
     const dropped = sweep(locks, now, { staleMs: config.lockStaleMs })
     if (dropped.length > 0) {
       saveLocks()
