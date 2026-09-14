@@ -135,5 +135,6 @@ why matters.
 | [0087](adr/0087-a-games-numbers-are-settings-and-a-simulator-reads-them.md) | A game's numbers are settings, and a simulator reads them |
 | [0088](adr/0088-a-curve-is-points-the-designer-places.md) | A curve is points the designer places |
 | [0089](adr/0089-a-level-is-edited-live.md) | A level is edited live |
+| [0090](adr/0090-a-shape-is-a-built-in-mesh-sized-by-scale.md) | A shape is a built-in mesh, sized by the object's scale |
 
 `Design archive/` holds superseded design material and is not maintained.

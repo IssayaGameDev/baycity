@@ -49,6 +49,10 @@ export const Collider = defineComponent({
  * Its absence is meaningful, which is why this replaced a `source` enum on the old combined `Visual`: having a
  * `Mesh` *is* the answer to "does this draw a model or its colliders", so the enum — and the conditional field
  * that hid `model` when the answer was "colliders" — both went away (ADR 0039).
+ *
+ * `model` is an uploaded model's asset id, or a **built-in shape** (`builtin:box`, `builtin:rounded-box`,
+ * `builtin:sphere`, `builtin:capsule`, ADR 0090): a unit shape sized by the node's scale. The editor keeps the
+ * colliders of a node drawing a built-in at the matching unit shape, so scale is the one size.
  */
 export const Mesh = defineComponent({
   type: MESH,

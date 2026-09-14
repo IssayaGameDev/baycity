@@ -16,7 +16,7 @@ export type { LabelLine, WorldLabelOptions } from './worldLabel'
 export { disposeWorldLabel, layoutLabel, worldLabel } from './worldLabel'
 
 // Polished greybox pipeline (content pipeline C3) — shared by the game and the viewer.
-export { BEVEL_RADIUS, BEVEL_SEGMENTS, MARKER_COLORS, bevelFor, colorForMarker, createGreyboxMaterial, geometryForCollider, outlineGeometryForCollider } from './materials'
+export { BEVEL_RADIUS, BEVEL_SEGMENTS, MARKER_COLORS, bevelFor, colorForMarker, createGreyboxMaterial, geometryForBuiltin, geometryForCollider, outlineGeometryForCollider } from './materials'
 export type { GizmoKind } from './materials'
 export type { GreyboxEnvironment, GreyboxEnvironmentOptions, Sky } from './environment'
 export { applyGreyboxEnvironment, installSky, loadSky } from './environment'

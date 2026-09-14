@@ -127,6 +127,7 @@ colorForMarker(kind): number
 createGreyboxMaterial(): MeshStandardMaterial      // 0x475569, roughness 0.85, metalness 0 — not configurable
 BEVEL_RADIUS = 0.5; BEVEL_SEGMENTS = 2; bevelFor(sx, sy, sz, wanted = BEVEL_RADIUS): number   // ≤ 0.25 × shortest side
 geometryForCollider(c: ColliderDesc): BufferGeometry     // box → RoundedBoxGeometry; capsule/ball/cylinder/convex
+geometryForBuiltin(id: BuiltinModel, scale: Vec3)        // ADR 0090: unit shape × scale; rounded only for builtin:rounded-box
 outlineGeometryForCollider(c): BufferGeometry            // sharp edges, for wireframes
 ```
 

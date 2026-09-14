@@ -1,5 +1,5 @@
 import { vec3, type Vec3 } from '@mp/core'
-import type { ColliderDesc } from '@mp/content'
+import { unitColliderFor, type ColliderDesc } from '@mp/content'
 import { visibleParams, type AssetSpec, type ParamSpec } from '@mp/components'
 import { DEFAULT_POSTFX, DEFAULT_SKY_PARAMS } from '@mp/render-three'
 import { Pane } from 'tweakpane'
@@ -453,6 +453,12 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         return
       }
       case 'collider': {
+        // A node drawing a built-in shape (ADR 0090): the collider is the unit shape and the scale is the size.
+        const builtin = doc.builtinOf(at)
+        if (builtin !== null) {
+          section.row(label, `unit ${unitColliderFor(builtin).kind} · size is the object's scale`)
+          return
+        }
         const shape = (state[key] ?? spec.default) as ColliderDesc
         const picker = { kind: shape.kind as string }
         mark(

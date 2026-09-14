@@ -1,6 +1,7 @@
 import { eulerToQuat, lerpVec3, mulQuat, quat, rotateVec3, slerpQuat, vec3, type Quat, type Vec3 } from '@mp/core'
 import type { PhysicsBody, PhysicsWorld, ShapeDesc } from '@mp/physics'
 
+import { scaleCollider } from './primitives'
 import { isAnimated, poseAt } from './track'
 import {
   COLLIDER,
@@ -46,8 +47,10 @@ export interface VisualItem {
   collider: ColliderDesc
   position: Vec3
   rotation: Quat
-  /** Model asset id, when this node draws a mesh instead of its colliders' shapes. */
+  /** Model asset id, or a built-in shape id (`builtin:…`, ADR 0090), when this node draws a mesh instead of its colliders' shapes. */
   model: string | undefined
+  /** The node's world scale — what a built-in shape is sized by. Colliders already carry theirs baked in. */
+  scale: Vec3
   /** Material asset id. Absent means nobody has chosen a surface, and the renderer greyboxes it. */
   material: string | undefined
   /**
@@ -97,26 +100,6 @@ export type BasePhase = 'render' | 'tick' | 'prev'
 const add = (a: Vec3, b: Vec3): Vec3 => vec3(a.x + b.x, a.y + b.y, a.z + b.z)
 const mul = (a: Vec3, b: Vec3): Vec3 => vec3(a.x * b.x, a.y * b.y, a.z * b.z)
 const scaleOf = (t: Transform): Vec3 => t.scale ?? vec3(1, 1, 1)
-
-/**
- * Bake a per-axis scale into a collider's dimensions (Unity's lossy-scale → shape bake). Ball and capsule
- * cannot represent non-uniform scale, so they take a uniform-ish approximation; a box and a hull are exact.
- */
-const scaleCollider = (c: ColliderDesc, s: Vec3): ColliderDesc => {
-  switch (c.kind) {
-    case 'box':
-      return { kind: 'box', halfExtents: mul(c.halfExtents, s) }
-    case 'ball':
-      return { kind: 'ball', radius: c.radius * ((s.x + s.y + s.z) / 3) }
-    case 'capsule':
-      return { kind: 'capsule', halfHeight: c.halfHeight * s.y, radius: c.radius * ((s.x + s.z) / 2) }
-    case 'cylinder':
-      return { kind: 'cylinder', halfHeight: c.halfHeight * s.y, radius: c.radius * ((s.x + s.z) / 2) }
-    case 'convex':
-      // Exact under any scale, unlike ball/capsule — a scaled convex hull is still that hull.
-      return { kind: 'convex', points: c.points.map((p) => mul(p, s)) }
-  }
-}
 
 const toShape = (c: ColliderDesc): ShapeDesc => {
   switch (c.kind) {
@@ -490,6 +473,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         collider,
         position: { ...at },
         rotation: { ...f.worldRot },
+        scale: { ...f.scale },
         model: drawsModel ? model : undefined,
         material: surfaced === '' ? undefined : surfaced,
         colliderHandles: [],
