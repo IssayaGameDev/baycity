@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { Level, Op } from '@mp/content'
 
-import { createCollab, type Hold, type LiveTransport, type LocalBatch, type Peer, type ServerEvent } from './collab'
+import { createCollab, parsePresence, type Hold, type LiveTransport, type LocalBatch, type Peer, type ServerEvent } from './collab'
 
 /**
  * The collaboration core against a fake server: a hand-driven event stream and a POST log. The level lives
@@ -203,5 +203,20 @@ describe('collab', () => {
     const q = s.collab.hold([{ id: 'b' }])
     s.h.posts[1]!.answer(true, 200, { ok: true })
     expect(await q).toEqual({ ok: true })
+  })
+})
+
+describe('parsePresence', () => {
+  const pose = { ref: { id: 'a' }, position: { x: 1, y: 2, z: 3 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } }
+  it('accepts a pose stream and keeps only the fields it knows', () => {
+    expect(parsePresence({ kind: 'pose', poses: [pose], junk: 1 })).toEqual({ kind: 'pose', poses: [pose] })
+    expect(parsePresence({ kind: 'pose', poses: [], end: true })).toEqual({ kind: 'pose', poses: [], end: true })
+    expect(parsePresence({ kind: 'pose', poses: [{ ...pose, ref: { owner: 'p1', node: 'top' } }] })!.poses[0]!.ref).toEqual({ owner: 'p1', node: 'top' })
+  })
+  it('refuses anything else', () => {
+    expect(parsePresence(null)).toBeNull()
+    expect(parsePresence({ kind: 'select', refs: [] })).toBeNull()
+    expect(parsePresence({ kind: 'pose', poses: [{ ...pose, position: { x: 'no' } }] })).toBeNull()
+    expect(parsePresence({ kind: 'pose', poses: [{ ...pose, ref: { nope: 1 } }] })).toBeNull()
   })
 })

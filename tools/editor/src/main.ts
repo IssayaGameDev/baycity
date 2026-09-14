@@ -50,7 +50,7 @@ import {
   type LevelView,
   type LightDesc,
 } from '@mp/render-three'
-import { createCollab, httpTransport, type Hold, type Peer } from './collab'
+import { createCollab, httpTransport, parsePresence, type Hold, type Peer } from './collab'
 import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type ClipItem, type Doc, type KeyEditor, type Mode, type OpBatch } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
 import { askName, askUnsaved } from './confirm'
@@ -259,6 +259,11 @@ const dropAllLocks = async (): Promise<void> => {
   collab.leave()
   holdMap = new Map()
   heldRefs = new Map()
+  heldBack = []
+  if (presenceTimer !== null) {
+    clearInterval(presenceTimer)
+    presenceTimer = null
+  }
   await Promise.all(paths.map((p) => releaseLock(p).catch(() => undefined)))
 }
 
@@ -420,6 +425,59 @@ const reinstallLevel = (level: Level): void => {
   syncHolds()
 }
 
+// ------------------------------ presence (phase 4) ------------------------------
+/** ~10 Hz: what a pointer drag looks like from across the room without a POST per pointer event. */
+const PRESENCE_MS = 100
+let presenceTimer: ReturnType<typeof setInterval> | null = null
+/** Batches the document reported during a gizmo drag: held back and sent as one op at drag end. */
+let heldBack: OpBatch[] = []
+
+/** The poses of what I am dragging, off the groups: what the gizmo has set, whatever the document will store. */
+const dragPoses = (): { ref: NodeRef; position: Vec3; rotation: Vec3; scale: Vec3 }[] => {
+  const open = doc
+  if (open === null) return []
+  const out: { ref: NodeRef; position: Vec3; rotation: Vec3; scale: Vec3 }[] = []
+  for (const i of selection) {
+    const g = instanceGroups[i]
+    const ref = open.refAt(i)
+    if (g === undefined || ref === null) continue
+    const pose = groupPose(g)
+    out.push({ ref, position: pose.position, rotation: pose.rotation, scale: vec3(g.scale.x, g.scale.y, g.scale.z) })
+  }
+  return out
+}
+const startPresence = (): void => {
+  if (!live() || presenceTimer !== null) return
+  presenceTimer = setInterval(() => collab.presence({ kind: 'pose', poses: dragPoses() }), PRESENCE_MS)
+}
+const stopPresence = (): void => {
+  if (presenceTimer === null) return
+  clearInterval(presenceTimer)
+  presenceTimer = null
+  collab.presence({ kind: 'pose', poses: [], end: true })
+}
+
+/** A peer's drag: pose their groups where they are, write nothing. `end` puts every group back on its data. */
+const onPresence = (data: unknown): void => {
+  const p = parsePresence(data)
+  const open = doc
+  if (p === null || open === null) return
+  if (p.end === true) {
+    // Not while my own gizmo owns the groups: my drag end repaints, and the deferred remote ops with it.
+    if (!gizmoDragging) applyPreviewPoses()
+    return
+  }
+  for (const pose of p.poses) {
+    const i = open.indexOfRef(pose.ref)
+    const g = i === null ? undefined : instanceGroups[i]
+    if (i === null || g === undefined || (gizmoDragging && selection.includes(i))) continue
+    g.position.set(pose.position.x, pose.position.y, pose.position.z)
+    const q = eulerToQuat(pose.rotation)
+    g.quaternion.set(q.x, q.y, q.z, q.w)
+    g.scale.set(pose.scale.x, pose.scale.y, pose.scale.z)
+  }
+}
+
 const collab = createCollab(httpTransport(), {
   level: () => (fileState.mode === 'level' ? rootLevel() : null),
   onSnapshot: (level) => {
@@ -438,7 +496,7 @@ const collab = createCollab(httpTransport(), {
     renderStatus()
   },
   onHolds: (holds) => onHoldsChanged(holds),
-  onPresence: () => {},
+  onPresence: (_from, _name, data) => onPresence(data),
   onError: (message) => setStatus(`live: ${message}`),
 })
 
@@ -1243,6 +1301,8 @@ gizmo.addEventListener('dragging-changed', (event) => {
     // One history entry per drag, recorded when it ends. `coalescing` holds `recordEdit` off while the hundred
     // pointer events each report a transform op; the record at the end folds them into one.
     coalescing = true
+    heldBack = []
+    startPresence()
     dragStart = new Map()
     if (doc !== null) {
       for (const i of selection) {
@@ -1259,6 +1319,11 @@ gizmo.addEventListener('dragging-changed', (event) => {
     }
   } else {
     coalescing = false
+    stopPresence()
+    // The whole drag as one op per node — what the history holds, and what the room gets.
+    const drag = foldBatches(heldBack, edit.mode, [])
+    heldBack = []
+    if (drag !== null && live()) collab.submit({ ops: drag.ops, inverses: drag.inverses })
     recordEdit(selection.length > 1 ? `${edit.mode} ${selection.length}` : edit.mode)
     dragStart = new Map()
     rebuildLoaded()
@@ -2927,7 +2992,10 @@ const history = createOpHistory()
 let pending: OpBatch[] = []
 const onDocOps = (batch: OpBatch): void => {
   pending.push(batch)
-  if (live()) collab.submit(batch)
+  if (!live()) return
+  // Mid-drag the room sees presence, not a hundred ops: the batches wait and go as one when the drag ends.
+  if (coalescing) heldBack.push(batch)
+  else collab.submit(batch)
 }
 /** Every document this file builds reports its ops here; the top of the stack and the root alike. */
 const withOps = (d: Doc): Doc => {
