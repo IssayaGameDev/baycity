@@ -186,9 +186,11 @@ export interface Doc {
    * into the node's own group, which already carries its transform.
    */
   lightSpec: (i: number) => LightDesc | undefined
-  palette: () => string[]
-  /** Place a palette entry. `-1` when the name is not in the library or this document's table. */
-  place: (name: string, position: Vec3) => number
+  /**
+   * Place a primitive by name under a prefab's root — what the prefab palette offers. `-1` in a level, where a
+   * primitive is placed by `placePrimitive` and a prefab by `placePrefab` (ADR 0091).
+   */
+  placeNamed: (name: string, position: Vec3) => number
   /**
    * Place a model asset: a node with the mesh as its `Visual` and an authored box as its `Collider`. Visual is
    * not collision (ADR 0014), so a detailed prop collides as a shape somebody can see and resize.
@@ -218,8 +220,6 @@ export interface Doc {
   placePrimitive: (kind: PrimitiveKind, position: Vec3, parent: number | null) => number
   /** The built-in shape this node draws, or `null` — when set, its colliders are locked to the unit shape. */
   builtinOf: (i: number) => BuiltinModel | null
-  /** What a palette entry would place, without placing it — what a Project tile previews. */
-  prefabForPalette: (name: string) => Node | undefined
   remove: (i: number) => void
   duplicate: (i: number) => number
   /** Display name: the typed name if there is one, else what the node is made of. */
@@ -472,9 +472,9 @@ interface DocNode {
  */
 const docOver = (
   level: Level,
-  opts: { mode: Mode; library: Record<string, Node>; registry: Registry; clips?: ClipSource; json: () => Level | Node; table?: string },
+  opts: { mode: Mode; registry: Registry; clips?: ClipSource; json: () => Level | Node; table?: string },
 ): Doc => {
-  const { mode, library, registry, clips } = opts
+  const { mode, registry, clips } = opts
   const roots = level.nodes
   /**
    * Every mutation goes through here (ADR 0089): the ops apply to this document's level through the one shared
@@ -830,34 +830,13 @@ const docOver = (
         castShadow: boolParam(c, 'castShadow', false),
       }
     },
-    /**
-     * In level mode, only what *this level* defines: prefab **files** are placed from the Project explorer by
-     * asset id, and listing them here as well is what made one prefab appear twice. In prefab mode, primitives.
-     */
-    palette: () => (mode === 'prefab' ? [...PRIMITIVE_ORDER] : Object.keys(level.prefabs ?? {})),
-    place: (name, position) => {
-      if (mode === 'prefab') {
-        const fresh = primitiveNode(isPrimitiveKind(name) ? name : 'box', position, name)
-        const host = roots[0]
-        if (host === undefined) return -1
-        commit([{ kind: 'insertNode', parent: host.id, index: host.children?.length ?? 0, node: fresh }])
-        return indexOfId(fresh.id)
-      }
-      let key: string
-      const ops: Op[] = []
-      if (level.prefabs?.[name] !== undefined) key = name
-      else {
-        const source = library[name]
-        // A palette offering a name the library no longer has is a bug, not a crash: the file may have been
-        // deleted between the panel drawing and the click landing.
-        if (source === undefined) return -1
-        const interned = internOp({ ...structuredClone(source), name })
-        key = interned.key
-        ops.push(...interned.ops)
-      }
-      const placed: Node = { id: freshId(), transform: { position }, components: [], prefab: key }
-      commit([...ops, { kind: 'insertNode', parent: null, index: roots.length, node: placed }])
-      return indexOfId(placed.id)
+    placeNamed: (name, position) => {
+      if (mode !== 'prefab') return -1
+      const fresh = primitiveNode(isPrimitiveKind(name) ? name : 'box', position, name)
+      const host = roots[0]
+      if (host === undefined) return -1
+      commit([{ kind: 'insertNode', parent: host.id, index: host.children?.length ?? 0, node: fresh }])
+      return indexOfId(fresh.id)
     },
     placePrefab: (assetId, root, position) => {
       // Refused here, not only in the palette: a level a game cannot load must not be producible by any door.
@@ -926,12 +905,6 @@ const docOver = (
       if (mode === 'prefab' && host === undefined) return -1
       commit([{ kind: 'insertNode', parent: host?.id ?? null, index: host === undefined ? roots.length : (host.children?.length ?? 0), node: fresh }])
       return indexOfId(fresh.id)
-    },
-    prefabForPalette: (name) => {
-      if (mode === 'prefab') {
-        return isPrimitiveKind(name) ? { id: name, name, transform: { position: vec3(0, 0, 0) }, components: [], children: [primitiveNode(name, vec3(0, 0, 0))] } : undefined
-      }
-      return level.prefabs?.[name] ?? library[name]
     },
     // Removing takes the subtree with it: children are placed relative to this node and have nowhere to be
     // without it. An inherited node cannot go — it would have to go from every placement of the prefab.
@@ -1262,8 +1235,8 @@ const docOver = (
   return self
 }
 
-export const levelDoc = (level: Level, library: Record<string, Node>, registry: Registry = DEFAULT_REGISTRY, clips?: ClipSource): Doc =>
-  docOver(level, { mode: 'level', library, registry, ...(clips !== undefined ? { clips } : {}), json: () => level })
+export const levelDoc = (level: Level, registry: Registry = DEFAULT_REGISTRY, clips?: ClipSource): Doc =>
+  docOver(level, { mode: 'level', registry, ...(clips !== undefined ? { clips } : {}), json: () => level })
 
 /**
  * A prefab, edited as a document of one root node.
@@ -1279,5 +1252,5 @@ export const levelDoc = (level: Level, library: Record<string, Node>, registry: 
 export const prefabDoc = (root: Node, registry: Registry = DEFAULT_REGISTRY, clips?: ClipSource, opts: { table?: string } = {}): Doc =>
   docOver(
     { id: root.name ?? root.id, config: {}, nodes: [root] },
-    { mode: 'prefab', library: {}, registry, ...(clips !== undefined ? { clips } : {}), json: () => root, ...(opts.table !== undefined ? { table: opts.table } : {}) },
+    { mode: 'prefab', registry, ...(clips !== undefined ? { clips } : {}), json: () => root, ...(opts.table !== undefined ? { table: opts.table } : {}) },
   )

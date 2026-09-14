@@ -1,5 +1,5 @@
 import { COLLIDER, RENDERER, type ComponentData, type Node, type Level } from '@mp/content'
-import { vec3 } from '@mp/core'
+import { vec3, type Vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
 import { levelDoc, prefabDoc, type Doc } from './editorDoc'
@@ -47,6 +47,15 @@ const twoNodes = (id: string): Node => ({
 /** A one-off: the same contents inline, with nothing to reference. */
 const inline = (id: string): Node => ({ ...twoNodes(id), id })
 
+/**
+ * A prefab asset id per fixture name: a placement references a prefab **file** by id (ADR 0091), so these
+ * tests place by id and hand the definition over, as the editor does from the Project panel.
+ */
+const ASSET: Record<string, string> = { platform: 'a'.repeat(16), pair: 'b'.repeat(16) }
+const PAIR: Record<string, Node> = { pair: twoNodes('pair') }
+const placeRef = (doc: Doc, name: string, at: Vec3, library: Record<string, Node> = LIBRARY): number =>
+  doc.placePrefab(ASSET[name] ?? name, library[name]!, at)
+
 /** Nothing expanded, which is what a freshly opened level looks like. */
 const SHUT: Openness = { expanded: new Set() }
 /** Every row expanded, for the tests that are about what nesting looks like when you can see it. */
@@ -69,8 +78,8 @@ const items = (doc: Doc, o?: Openness): string[] =>
 
 /** Four top-level platforms named a..d. */
 const four = (): Doc => {
-  const doc = levelDoc(blank(), LIBRARY)
-  for (const n of ['a', 'b', 'c', 'd']) doc.setName(doc.place('platform', vec3(0, 0, 0)), n)
+  const doc = levelDoc(blank())
+  for (const n of ['a', 'b', 'c', 'd']) doc.setName(placeRef(doc, 'platform', vec3(0, 0, 0)), n)
   return doc
 }
 
@@ -152,8 +161,8 @@ describe('rowsOf: prefab pieces', () => {
   })
 
   it('addresses an inherited row by its own index, under the placement it belongs to', () => {
-    const doc = levelDoc(blank(), { ...LIBRARY, pair: twoNodes('pair') })
-    doc.place('pair', vec3(0, 0, 0))
+    const doc = levelDoc(blank())
+    placeRef(doc, 'pair', vec3(0, 0, 0), PAIR)
 
     const rows = rowsOf(doc, allOpen(doc))
     // `index` is the node's *own* index: an inherited node is addressable, so it is no longer its owner's
@@ -180,9 +189,9 @@ describe('rowsOf: prefab pieces', () => {
    * that gained a child stopped writing to the pieces set — and its pieces could never be shown again.
    */
   it('shows inherited nodes and children together, so a child cannot hide them', () => {
-    const doc = levelDoc(blank(), { ...LIBRARY, pair: twoNodes('pair') })
-    const placement = doc.place('pair', vec3(0, 0, 0))
-    doc.reparent(doc.place('pair', vec3(0, 1, 0)), placement, 0)
+    const doc = levelDoc(blank())
+    const placement = placeRef(doc, 'pair', vec3(0, 0, 0), PAIR)
+    doc.reparent(placeRef(doc, 'pair', vec3(0, 1, 0), PAIR), placement, 0)
 
     const rows = rowsOf(doc, allOpen(doc))
     expect(rows.filter((r) => r.kind === 'inherited' && r.parent === 0)).toHaveLength(2)
@@ -193,9 +202,9 @@ describe('rowsOf: prefab pieces', () => {
   })
 
   it('hides inherited nodes and children behind the one twist', () => {
-    const doc = levelDoc(blank(), { ...LIBRARY, pair: twoNodes('pair') })
-    const placement = doc.place('pair', vec3(0, 0, 0))
-    doc.reparent(doc.place('pair', vec3(0, 1, 0)), placement, 0)
+    const doc = levelDoc(blank())
+    const placement = placeRef(doc, 'pair', vec3(0, 0, 0), PAIR)
+    doc.reparent(placeRef(doc, 'pair', vec3(0, 1, 0), PAIR), placement, 0)
 
     const rows = rowsOf(doc, SHUT)
     expect(rows).toHaveLength(1)
@@ -213,7 +222,7 @@ describe('rowsOf: annotations', () => {
 
     const level = blank()
     level.nodes.push(inline('oneoff'))
-    expect(rowsOf(levelDoc(level, LIBRARY), { expanded: new Set(['0']) })[0]!.badge).toBe('inline')
+    expect(rowsOf(levelDoc(level), { expanded: new Set(['0']) })[0]!.badge).toBe('inline')
   })
 
   it('reports the parent and sibling index a drop needs', () => {
@@ -284,10 +293,10 @@ describe('dropTarget', () => {
 describe('revealing a nested selection', () => {
   /** A placement of `pair` with another placement parked under it, three levels deep. */
   const nested = (): Doc => {
-    const doc = levelDoc(blank(), { ...LIBRARY, pair: twoNodes('pair') })
-    const outer = doc.place('pair', vec3(0, 0, 0))
+    const doc = levelDoc(blank())
+    const outer = placeRef(doc, 'pair', vec3(0, 0, 0), PAIR)
     doc.setName(outer, 'outer')
-    const inner = doc.place('pair', vec3(0, 1, 0))
+    const inner = placeRef(doc, 'pair', vec3(0, 1, 0), PAIR)
     doc.setName(inner, 'inner')
     doc.reparent(idx(doc, 'inner'), idx(doc, 'outer'), 0)
     return doc
@@ -322,7 +331,7 @@ describe('revealing a nested selection', () => {
 
   it('opens only the chain, leaving a sibling subtree shut', () => {
     const doc = nested()
-    const sibling = doc.place('pair', vec3(9, 0, 0))
+    const sibling = placeRef(doc, 'pair', vec3(9, 0, 0), PAIR)
     doc.setName(sibling, 'other')
     const deep = rowsOf(doc, allOpen(doc)).find((r) => r.depth === 2)!
     const opened: Openness = { expanded: new Set(ancestorPaths(doc, deep.index)) }

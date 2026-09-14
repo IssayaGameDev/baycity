@@ -125,7 +125,6 @@ let doc: Doc | null = null // the doc being edited — always the top of the sta
  * instance follows on the way back out. Save always writes `[0]`, never the prefab being inspected.
  */
 const docStack: { doc: Doc; label: string }[] = []
-const userPrefabs: Record<string, SceneNode> = {} // authored prefab library (for the level palette)
 // The panels are built further down (and after a top-level `await`), so the editing code above them
 // reaches the UI through these. Harmless no-ops until then, which is what makes boot order a non-issue.
 let uiChanged: () => void = () => {}
@@ -163,10 +162,7 @@ let gameSelected = false
  * placing one wraps it in a one-piece inline prefab whose collider is authored — visual is not collision,
  * so a detailed prop still collides as a box somebody can resize.
  */
-type Placing =
-  | { kind: 'own'; name: string }
-  | { kind: 'model'; assetId: string }
-  | { kind: 'prefabAsset'; assetId: string }
+type Placing = { kind: 'model' | 'prefabAsset'; assetId: string }
 let placing: Placing | null = null
 /**
  * The game being authored for (ADR 0052).
@@ -428,7 +424,7 @@ const reinstallLevel = (level: Level): void => {
     return
   }
   docStack.length = 1
-  docStack[0] = { doc: withOps(levelDoc(level, userPrefabs, registry(), editorClips)), label: root.label }
+  docStack[0] = { doc: withOps(levelDoc(level, registry(), editorClips)), label: root.label }
   showDoc()
   lastHoldKey = null // a reconnect is a new connection: the server holds nothing for it yet
   syncHolds()
@@ -970,7 +966,7 @@ const showDoc = (): void => {
 const reopenWithRegistry = (): void => {
   const root = docStack[0]
   if (root === undefined || docStack.length > 1) return
-  docStack[0] = { doc: withOps(levelDoc(root.doc.asLevel(), userPrefabs, registry(), editorClips)), label: root.label }
+  docStack[0] = { doc: withOps(levelDoc(root.doc.asLevel(), registry(), editorClips)), label: root.label }
   showDoc()
 }
 
@@ -1752,13 +1748,11 @@ canvas.addEventListener('pointerup', (e) => {
     const at = vec3(sx, r4(point.y), sz)
     const prefabAsset = placing.kind === 'prefabAsset' ? assets?.prefabOf(placing.assetId) : undefined
     const idx =
-      placing.kind === 'own'
-        ? doc.place(placing.name, at)
-        : placing.kind === 'model'
-          ? doc.placeModel(placing.assetId, at)
-          : prefabAsset !== undefined
-            ? doc.placePrefab(placing.assetId, prefabAsset, at)
-            : -1
+      placing.kind === 'model'
+        ? doc.placeModel(placing.assetId, at)
+        : prefabAsset !== undefined
+          ? doc.placePrefab(placing.assetId, prefabAsset, at)
+          : -1
     if (idx < 0) {
       const unknown = prefabAsset === undefined ? [] : unknownComponentTypes(prefabAsset, doc.registry)
       setStatus(unknown.length > 0 ? `uses ${unknown.join(', ')}, which this game does not have` : 'that prefab did not load')
@@ -2304,7 +2298,7 @@ const openFile = async (name: string): Promise<void> => {
       const resolved = hydratePrefabs(level, editorPrefabs)
       hydratedPrefabs = resolved.filled
       missingPrefabs = resolved.missing
-      setDoc(withOps(levelDoc(level, userPrefabs, registry(), editorClips)), name)
+      setDoc(withOps(levelDoc(level, registry(), editorClips)), name)
       if (missingPrefabs.length > 0) setStatus(`no prefab file for ${missingPrefabs.join(', ')} — those objects are empty`)
       return
     }
@@ -2322,19 +2316,6 @@ const openFile = async (name: string): Promise<void> => {
     setStatus(`load failed: ${String(e)}`)
   }
   if (readOnlyBy !== null) setStatus(`${name} is open read-only: ${readOnlyBy} has it`)
-}
-
-/**
- * The palette's library of prefab files, keyed by name. Two prefabs with the same name in different folders
- * collide here and the later one wins; placing from the Project explorer is by asset id and has no such
- * ambiguity, which is the path to prefer.
- */
-const refreshPrefabLibrary = (): void => {
-  for (const k of Object.keys(userPrefabs)) delete userPrefabs[k]
-  for (const entry of prefabEntries()) {
-    const prefab = assets?.prefabOf(entry.id)
-    if (prefab !== undefined) userPrefabs[entry.name] = prefab
-  }
 }
 
 /** Every level on disk with the game it declares, so the list can be narrowed to one game (ADR 0052). */
@@ -2401,7 +2382,7 @@ const enterMode = async (mode: Mode): Promise<void> => {
   fileState.mode = mode
   await refreshFileList()
   if (fileNames[0] !== undefined) await openFile(fileNames[0])
-  else setDoc(withOps(mode === 'level' ? levelDoc(blankLevel('untitled'), userPrefabs, registry(), editorClips) : prefabDoc(blankPrefab('untitled'), registry(), editorClips)), 'untitled')
+  else setDoc(withOps(mode === 'level' ? levelDoc(blankLevel('untitled'), registry(), editorClips) : prefabDoc(blankPrefab('untitled'), registry(), editorClips)), 'untitled')
 }
 
 // --- toolbar ---
@@ -2861,7 +2842,7 @@ const previews: Previews = createPreviews({
   // places `place` looks, so a tile previews exactly what clicking it would put in the scene.
   // A prefab tile's key is either a kit maker's name or a prefab asset's id; the two cannot collide, since
   // an id is 16 hex characters.
-  prefabFor: (key) => doc?.prefabForPalette(key) ?? assets?.prefabOf(key),
+  prefabFor: (assetId) => assets?.prefabOf(assetId),
   ensureLoaded: async (id) => {
     await runtime?.load([id])
   },
@@ -2919,7 +2900,7 @@ const armAsset = (assetId: string): void => {
     return
   }
   const kind = entry.kind === 'prefab' ? ('prefabAsset' as const) : ('model' as const)
-  placing = placing !== null && placing.kind !== 'own' && placing.assetId === assetId ? null : { kind, assetId }
+  placing = placing?.assetId === assetId ? null : { kind, assetId }
   refreshUi()
 }
 
@@ -2929,17 +2910,11 @@ const renameAsset = (path: string, name: string): void =>
 const deleteAsset = (path: string): void => afterFileOp(`deleted ${path}`, async () => assets?.remove(path) ?? Promise.resolve())
 
 const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
-  ownPrefabs: () => doc?.palette() ?? [],
   db: () => assets?.db ?? null,
   folders: () => assets?.folders ?? [],
   urlOf: (path) => assets?.urlOf(path) ?? path,
-  armed: () => (placing === null ? null : placing.kind === 'own' ? placing.name : placing.assetId),
+  armed: () => placing?.assetId ?? null,
   selectedAsset: () => selectedAsset,
-  onPickOwn: (name) => {
-    // Clicking the armed tile disarms it, so there is a way out of placement without placing.
-    placing = placing?.kind === 'own' && placing.name === name ? null : { kind: 'own', name }
-    refreshUi()
-  },
   onPickAsset: armAsset,
   unplaceableWhy,
   onUpload: (files, folder) => {
@@ -3138,7 +3113,6 @@ const saveNow = async (): Promise<boolean> => {
   setStatus(`saved ${fileState.name}`)
   previews.invalidate()
   await reloadAssets()
-  refreshPrefabLibrary()
   await refreshFileList()
   refreshUi()
   return true
@@ -3603,7 +3577,7 @@ const renderStatus = (): void => {
     parts.push(`t=${(previewMs / 1000).toFixed(2)}s · ${what}`)
   }
   if (placing !== null) {
-    const what = placing.kind === 'own' ? placing.name : (assets?.db.byId[placing.assetId]?.name ?? 'asset')
+    const what = assets?.db.byId[placing.assetId]?.name ?? 'asset'
     parts.push(`click in the viewport to place <b>${what}</b>`)
   }
   // Undo depth in the status bar because nothing else says whether Ctrl+Z will do anything, and the answer
@@ -3751,7 +3725,6 @@ me = await fetchMe().catch((e: unknown) => {
   return null
 })
 await reloadAssets()
-refreshPrefabLibrary()
 await enterMode('level')
 
 /**
