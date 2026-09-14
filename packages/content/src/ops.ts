@@ -294,7 +294,7 @@ const invert = (level: Level, op: Op): Op | null => {
       const scope = scopeOf(level, t)
       if (op.parent === null && scope.insidePrefab) throw new OpError('a prefab has one root; insert under it')
       const ids = idsIn(scope.roots)
-      validateNodeTree(op.node, 'node', { ids: new Set(), table: scope.table, insidePrefab: scope.insidePrefab })
+      validateNodeTree(op.node, 'node', { ids: new Set(), insidePrefab: scope.insidePrefab })
       for (const id of subtreeIds(op.node)) if (ids.has(id)) throw new OpError(`node id '${id}' is already in ${scope.at}`)
       if (op.parent !== null) must(scope, op.parent)
       return stamp({ kind: 'removeNode', id: op.node.id })
@@ -327,13 +327,13 @@ const invert = (level: Level, op: Op): Op | null => {
       if (op.node.id !== op.id) throw new OpError(`replaceNode keeps the id: '${op.node.id}' is not '${op.id}'`)
       const others = idsIn(scope.roots)
       for (const id of subtreeIds(f.node)) others.delete(id)
-      validateNodeTree(op.node, 'node', { ids: new Set(), table: scope.table, insidePrefab: scope.insidePrefab })
+      validateNodeTree(op.node, 'node', { ids: new Set(), insidePrefab: scope.insidePrefab })
       for (const id of subtreeIds(op.node)) if (others.has(id)) throw new OpError(`node id '${id}' is already in ${scope.at}`)
       return same(f.node, op.node) ? null : stamp({ kind: 'replaceNode', id: op.id, node: clone(f.node) })
     }
     case 'internPrefab': {
       if (t !== undefined) throw new OpError('the prefab table belongs to the level, not to a prefab')
-      validateNodeTree(op.root, `level.prefabs['${op.key}']`, { ids: new Set(), table: {}, insidePrefab: true })
+      validateNodeTree(op.root, `level.prefabs['${op.key}']`, { ids: new Set(), insidePrefab: true })
       const existing = level.prefabs?.[op.key]
       if (existing === undefined) return { kind: 'dropPrefab', key: op.key }
       if (same(existing, op.root)) return null

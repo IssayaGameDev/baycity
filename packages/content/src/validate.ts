@@ -147,10 +147,9 @@ export const checkOverrides = (value: unknown, at: string, checker: ParamChecker
   // placement that touched it failing to load (the rule ADR 0033 set for pieces).
 }
 
-/** What one node tree is checked against: the ids already taken in its tree, the prefab table, where it sits. */
+/** What one node tree is checked against: the ids already taken in its tree, and whether it sits in a prefab. */
 export interface TreeContext {
   ids: Set<string>
-  table: Record<string, unknown>
   /**
    * Forbids prefab-in-prefab: a reference graph needs cycle detection that a tree of plain nodes does not, and
    * it stayed out under ADR 0023 for the same reason.
@@ -172,9 +171,15 @@ export const validateNodeTree = (node: unknown, at: string, ctx: TreeContext): v
   checkTransform(node.transform, `${at}.transform`)
   checkComponents(node.components, `${at}.components`, ctx.checker)
   if (node.prefab !== undefined) {
-    if (typeof node.prefab !== 'string') throw new LevelError(`${at}.prefab: expected a prefab table key`)
+    if (typeof node.prefab !== 'string') throw new LevelError(`${at}.prefab: expected a prefab asset id`)
     if (ctx.insidePrefab) throw new LevelError(`${at}.prefab: a node inside a prefab cannot reference another prefab`)
-    if (!(node.prefab in ctx.table)) throw new LevelError(`${at}: prefab '${node.prefab}' is not in level.prefabs`)
+    /**
+     * A reference to a prefab with no file is **not** an error (ADR 0091). A level is validated in places that
+     * cannot resolve one — the content server has no asset database, and the game validates a level it fetched
+     * before it hydrates — and one deleted prefab file must leave a gap in a level rather than stop everyone
+     * from opening it. The placement draws nothing and the editor names the missing id, the same way a dangling
+     * override is inert (ADR 0033) and a missing material greyboxes.
+     */
   }
   checkOverrides(node.overrides, `${at}.overrides`, ctx.checker)
   if (node.children !== undefined) {
@@ -189,10 +194,11 @@ export const validateLevel = (data: unknown, checker?: ParamChecker): Level => {
   validateConfig(data.config)
   if (!Array.isArray(data.nodes)) throw new LevelError('level.nodes: expected array')
 
-  const table = isObj(data.prefabs) ? data.prefabs : {}
-  const ctx = (ids: Set<string>, insidePrefab: boolean): TreeContext => ({ ids, table, insidePrefab, ...(checker !== undefined ? { checker } : {}) })
+  const ctx = (ids: Set<string>, insidePrefab: boolean): TreeContext => ({ ids, insidePrefab, ...(checker !== undefined ? { checker } : {}) })
 
-  for (const [key, root] of Object.entries(table)) validateNodeTree(root, `level.prefabs['${key}']`, ctx(new Set(), true))
+  // `prefabs` is a resolution map now, not part of the file (ADR 0091) — but a hydrated level is validated too
+  // (the live server checks before every write), so its entries are still checked, as prefabs.
+  for (const [key, root] of Object.entries(isObj(data.prefabs) ? data.prefabs : {})) validateNodeTree(root, `level.prefabs['${key}']`, ctx(new Set(), true))
   const levelIds = new Set<string>()
   data.nodes.forEach((node, n) => validateNodeTree(node, `level.nodes[${n}]`, ctx(levelIds, false)))
   return data as unknown as Level

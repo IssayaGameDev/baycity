@@ -16,6 +16,9 @@ import {
   RENDERER,
   type AssetEntry,
   type ClipSource,
+  type PrefabSource,
+  hydratePrefabs,
+  stripHydrated,
   type ComponentData,
   type Keyframe,
   type LoadedLevel,
@@ -535,6 +538,15 @@ const lockAsset = async (assetId: string): Promise<boolean> => {
  * resolves without rebuilding the document.
  */
 const editorClips: ClipSource = { keys: (assetId) => assets?.keys(assetId) }
+/**
+ * Prefab definitions, as the `PrefabSource` `hydratePrefabs` takes (ADR 0091). `loadAssetLibrary` already
+ * fetched every prefab file at boot, so resolving a level's references costs nothing and needs no await.
+ */
+const editorPrefabs: PrefabSource = { root: (assetId) => assets?.prefabOf(assetId) }
+/** Prefab references the open level could not resolve — named in the Hierarchy and the status line. */
+let missingPrefabs: string[] = []
+/** What hydration added to the open level's table, so a save writes the references and not the definitions. */
+let hydratedPrefabs: string[] = []
 let runtime: AssetRuntime | null = null
 let selectedAsset: string | null = null
 const edit: { mode: GizmoMode; snap: boolean; step: number; space: GizmoSpace } = {
@@ -2284,7 +2296,16 @@ const openFile = async (name: string): Promise<void> => {
         await adopt(componentTypesInRaw(raw).filter((type) => !reg.has(type) && isSharedComponent(type)))
       }
       const level = validateLevel(raw, registry())
+      /**
+       * A placement names a prefab **asset**, so the definitions are resolved before the document is built
+       * (ADR 0091). A level that still carries its own table keeps it — hydration fills only what is not
+       * already there, and the save strips only what it filled.
+       */
+      const resolved = hydratePrefabs(level, editorPrefabs)
+      hydratedPrefabs = resolved.filled
+      missingPrefabs = resolved.missing
       setDoc(withOps(levelDoc(level, userPrefabs, registry(), editorClips)), name)
+      if (missingPrefabs.length > 0) setStatus(`no prefab file for ${missingPrefabs.join(', ')} — those objects are empty`)
       return
     }
     // A prefab is an asset now, so it is opened by id and saved back to its own path.
@@ -3099,7 +3120,7 @@ const saveNow = async (): Promise<boolean> => {
   // them drift is how content/levels ended up with three files all claiming "level1".
   root.setId(fileState.name)
   try {
-    if (fileState.mode === 'level') await saveFile('levels', fileState.name, root.toJSON())
+    if (fileState.mode === 'level') await saveFile('levels', fileState.name, stripHydrated(root.toJSON() as Level, hydratedPrefabs))
     else {
       const prefab = root.toJSON() as SceneNode
       // Overwrite the asset it came from, or create one when this prefab has never been saved.

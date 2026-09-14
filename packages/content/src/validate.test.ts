@@ -96,8 +96,18 @@ describe('prefab references', () => {
     expect(() => validateLevel(level([placement()], { pad }))).not.toThrow()
   })
 
-  it('rejects a reference to a prefab that is not there', () => {
-    expect(() => validateLevel(level([placement({ prefab: 'ghost' })], { pad }))).toThrow(/is not in level\.prefabs/)
+  /**
+   * A reference with no definition to resolve is inert, not invalid (ADR 0091): a level is validated where
+   * nothing can resolve one — the content server has no asset database — and a deleted prefab file must leave
+   * a gap rather than stop everyone opening the level.
+   */
+  it('accepts a reference to a prefab that is not there', () => {
+    expect(() => validateLevel(level([placement({ prefab: 'ghost' })], { pad }))).not.toThrow()
+    expect(() => validateLevel(level([placement()]))).not.toThrow()
+  })
+
+  it('still rejects a reference that is not a string', () => {
+    expect(() => validateLevel(level([placement({ prefab: 7 })], { pad }))).toThrow(/expected a prefab asset id/)
   })
 
   /** Prefab-in-prefab needs cycle detection a tree of plain nodes does not (ADR 0023, ADR 0035). */

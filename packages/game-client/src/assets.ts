@@ -9,6 +9,8 @@ import {
   type AssetMeta,
   type ClipSource,
   type MaterialAsset,
+  type Node,
+  type PrefabSource,
 } from '@mp/content'
 
 /**
@@ -38,6 +40,15 @@ const CLIPS = import.meta.glob('@content/assets/**/*.anim.json', { eager: true, 
   string,
   unknown
 >
+/**
+ * Prefab definitions (ADR 0091). Bundled and eager, like materials and clips, because a level references a
+ * prefab by asset id and `hydrate` must resolve it **before** `instantiateLevel`, which stays synchronous
+ * (`baseIndex` goes on the wire, ADR 0021). The whole library is a few kilobytes of JSON.
+ */
+const PREFABS = import.meta.glob('@content/assets/**/*.prefab.json', { eager: true, import: 'default' }) as Record<
+  string,
+  unknown
+>
 
 /** The glob key however Vite spells the aliased root — `@content/assets/x` or an absolute path — to `x`. */
 const MARK = '/assets/'
@@ -61,6 +72,7 @@ const pairs: [string, AssetMeta][] = []
 const urlByPath = new Map<string, string>()
 const materialsById = new Map<string, MaterialAsset>()
 const clipsById = new Map<string, AnimationAsset>()
+const prefabsById = new Map<string, Node>()
 
 for (const [key, url] of Object.entries(URLS)) urlByPath.set(relativeOf(key), url)
 
@@ -82,6 +94,11 @@ for (const [metaKey, raw] of Object.entries(METAS)) {
   } else if (kind === 'animation') {
     const clip = CLIPS[assetKey]
     if (isAnimationAsset(clip)) clipsById.set(meta.id, clip)
+  } else if (kind === 'prefab') {
+    // Structural, as the editor's check is: a root node has a components array. A malformed file is an
+    // unresolved reference, not a broken build.
+    const prefab = PREFABS[assetKey]
+    if (typeof prefab === 'object' && prefab !== null && Array.isArray((prefab as { components?: unknown }).components)) prefabsById.set(meta.id, prefab as Node)
   }
 }
 
@@ -97,3 +114,6 @@ export const materialOf = (assetId: string): MaterialAsset | undefined => materi
  * clip a level references resolves without a fetch and `instantiateLevel` stays synchronous.
  */
 export const CLIP_SOURCE: ClipSource = { keys: (assetId) => clipsById.get(assetId)?.keys }
+
+/** Prefab definitions, as the `PrefabSource` `hydrate` takes (ADR 0091). Bundled, so resolution is synchronous. */
+export const PREFAB_SOURCE: PrefabSource = { root: (assetId) => prefabsById.get(assetId) }
