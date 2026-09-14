@@ -131,7 +131,8 @@ Others' selection is what the hold boxes and badges show: a selection *is* a hol
 
 | Piece | Behaviour |
 | --- | --- |
-| `syncHolds` | after every `applySelection`/`deselect`: `collab.hold(added)` + `collab.release(dropped)` against `heldRefs` (what the server last heard). A refused hold (`{ ok: false, holder }`, a lost race) drops those nodes from the selection with a status line. `reinstallLevel` (new `connId`) re-holds the selection |
+| `syncHolds` | after every `applySelection`/`deselect`: `collab.setHolds(selectionRefs())` — the **whole** selection, skipped when unchanged (`lastHoldKey`). Hold messages queue one behind another in `collab.ts`, so a release can never overtake the hold before it. A refusal (`{ ok: false, holder, refused }`, a lost race) drops the refused nodes from the selection with a status line. `reinstallLevel` (new `connId`) re-sends; a `hello` with a new `connId` posts `leave` for the old one |
+| heartbeat | the lock heartbeat also `collab.ping()`s while live: the server sweeps a connection it has not heard from in two minutes, holds with it |
 | `heldBy(index)` | the name of another connection holding this node **or any ancestor** (`holdMap` by `refKey`), else `null` |
 | `applySelection` | filters `heldBy(i) !== null` out, so the gizmo never attaches to a held node; `select`/`selectWith` say `X has that selected` (`refuseHeld`) |
 | `onHoldsChanged` | on every `holds` event: `holdMap` rebuilt, my selection loses what someone else now holds, `rebuildHoldHelpers`, `hierarchy.render()` |

@@ -13,6 +13,20 @@ import { SHARED_GAMES } from '../share/src/index'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
+/** The live level sessions of this dev server (ADR 0089): the same code as the box, files on this disk. */
+const live = createLive({
+  readLevel: (name) => {
+    const file = join(ROOT, 'content', 'levels', `${name}.json`)
+    return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as unknown) : null
+  },
+  writeLevel: (name, level) => {
+    mkdirSync(join(ROOT, 'content', 'levels'), { recursive: true })
+    writeFileSync(join(ROOT, 'content', 'levels', `${name}.json`), `${JSON.stringify(level, null, 2)}\n`)
+  },
+  changed: () => {},
+})
+let sweeper: ReturnType<typeof setInterval> | null = null
+
 /**
  * The content API, in the dev server (ADR 0083).
  *
@@ -23,6 +37,8 @@ const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const filesApi = (): Plugin => ({
   name: 'files-api',
   configureServer(server) {
+    // Dev server only, and never holding the process open: vitest loads this config too.
+    if (sweeper === null) sweeper = setInterval(() => live.sweep(), 60_000).unref()
     const local = { name: 'local', email: 'local@localhost' }
     const api = createContentApi({
       repoRoot: ROOT,
@@ -32,17 +48,7 @@ const filesApi = (): Plugin => ({
       // Play frames the game's own dev server on this machine (ADR 0086): `pnpm dev:<game>` has to be running.
       games: Object.fromEntries(SHARED_GAMES.map((g) => [g.name, `http://localhost:${g.port}/`])),
       // Levels are edited live here too (ADR 0089): the same session code, one person, files on this disk.
-      live: createLive({
-        readLevel: (name) => {
-          const file = join(ROOT, 'content', 'levels', `${name}.json`)
-          return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as unknown) : null
-        },
-        writeLevel: (name, level) => {
-          mkdirSync(join(ROOT, 'content', 'levels'), { recursive: true })
-          writeFileSync(join(ROOT, 'content', 'levels', `${name}.json`), `${JSON.stringify(level, null, 2)}\n`)
-        },
-        changed: () => {},
-      }),
+      live,
     })
     server.middlewares.use((req, res, next) => {
       void api(req, res).then(

@@ -26,7 +26,7 @@ const fake = (connId: string, user = ADA): Fake => {
 }
 
 /** A world with a fake disk and fake timers the test advances by hand. */
-const world = (extra: { idleMs?: number; maxMs?: number } = {}) => {
+const world = (extra: { idleMs?: number; maxMs?: number; staleMs?: number } = {}) => {
   const disk = new Map<string, unknown>([['lv', fixture()]])
   const writes: { name: string; level: Level }[] = []
   const changed: { users: string[]; path: string }[] = []
@@ -186,7 +186,7 @@ describe('holds', () => {
     live.join('lv', b.client)
     expect(live.hold('lv', 'c1', ADA, [{ id: 'a' }])).toEqual({ ok: true })
     expect(b.events.at(-1)?.event).toBe('holds')
-    expect(live.hold('lv', 'c2', BOB, [{ id: 'a' }])).toEqual({ ok: false, holder: 'Ada' })
+    expect(live.hold('lv', 'c2', BOB, [{ id: 'a' }])).toEqual({ ok: false, holder: 'Ada', refused: [{ id: 'a' }] })
     expect(() => live.apply('lv', 'c2', BOB, { batchId: 'x', ops: [setName('a', 'X')] })).toThrow(/held by Ada/)
     expect(() => live.apply('lv', 'c2', BOB, { batchId: 'x', ops: [setName('a1', 'X')] }), 'the subtree too').toThrow(/held by Ada/)
     expect(() => live.apply('lv', 'c2', BOB, { batchId: 'x', ops: [{ kind: 'moveNode', id: 'b', parent: 'a', index: 0 }] }), 'moving into it too').toThrow(/held by Ada/)
@@ -196,6 +196,41 @@ describe('holds', () => {
     expect(live.apply('lv', 'c2', BOB, { batchId: 'w', ops: [setName('a', 'now mine')] }).ok).toBe(true)
   })
 
+  it('a hold is the whole set: what is left out is released, what another has is refused and left out', () => {
+    const { live } = world()
+    const a = fake('c1')
+    const b = fake('c2', BOB)
+    live.join('lv', a.client)
+    live.join('lv', b.client)
+    expect(live.hold('lv', 'c1', ADA, [{ id: 'a' }, { id: 'b' }])).toEqual({ ok: true })
+    expect(live.status()[0]!.holds).toBe(2)
+    expect(live.hold('lv', 'c1', ADA, [{ id: 'b' }]), 'a released by omission').toEqual({ ok: true })
+    expect(live.status()[0]!.holds).toBe(1)
+    expect(live.hold('lv', 'c2', BOB, [{ id: 'a' }, { id: 'b' }])).toEqual({ ok: false, holder: 'Ada', refused: [{ id: 'b' }] })
+    expect(live.status()[0]!.holds, 'Bob still got a').toBe(2)
+    expect(live.hold('lv', 'c1', ADA, []), 'an empty set is a release').toEqual({ ok: true })
+    expect(live.status()[0]!.holds).toBe(1)
+    const before = b.events.length
+    live.hold('lv', 'c2', BOB, [{ id: 'a' }])
+    expect(b.events.length, 'nothing changed: nothing broadcast').toBe(before)
+  })
+
+  it('a connection silent past staleMs is swept out and its holds go with it; any message keeps it', () => {
+    const { live, advance } = world({ staleMs: 1000 })
+    const a = fake('c1')
+    const b = fake('c2', BOB)
+    live.join('lv', a.client)
+    live.join('lv', b.client)
+    live.hold('lv', 'c1', ADA, [{ id: 'a' }])
+    advance(600)
+    live.ping('lv', 'c2', BOB)
+    advance(600)
+    live.sweep()
+    expect(live.status()[0]!.peers.map((p) => p.connId), 'c1 gone, c2 pinged').toEqual(['c2'])
+    expect(live.status()[0]!.holds).toBe(0)
+    expect(b.events.at(-1)?.event).toBe('peers')
+  })
+
   it('removing a node drops the holds on it, and two tabs of one person are two holders', () => {
     const { live } = world()
     const tab1 = fake('t1')
@@ -203,7 +238,7 @@ describe('holds', () => {
     live.join('lv', tab1.client)
     live.join('lv', tab2.client)
     live.hold('lv', 't1', ADA, [{ id: 'a1' }])
-    expect(live.hold('lv', 't2', ADA, [{ id: 'a1' }])).toEqual({ ok: false, holder: 'Ada' })
+    expect(live.hold('lv', 't2', ADA, [{ id: 'a1' }])).toEqual({ ok: false, holder: 'Ada', refused: [{ id: 'a1' }] })
     live.apply('lv', 't1', ADA, { batchId: 'r', ops: [{ kind: 'removeNode', id: 'a' }] })
     expect(live.status()[0]!.holds).toBe(0)
     expect(tab2.events.at(-1)?.event).toBe('holds')

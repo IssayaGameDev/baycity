@@ -122,6 +122,16 @@ gesture by a frame is not a claim anyone can see).
 row are off with selection. A reconnect is a new connection, so the editor re-holds its selection on the fresh
 snapshot.
 
+### Amendment — holds are a set, and a connection has to stay alive
+
+In use, a level showed three nodes held by someone who had nothing selected. Two ways there: a `hold` and its
+`release` sent as separate POSTs could arrive in the other order, leaving a hold for nothing; and a stream that
+died without the server hearing it (a sleeping laptop, a tunnel hop) kept its connection, holds included,
+forever. Now `hold` carries the connection's whole set — "mine are exactly these", so any message, in any
+order, ends in the right state — and is queued client-side one behind another; every message marks the
+connection seen, the editor pings on its heartbeat, and a minute sweep leaves anyone silent for two minutes,
+the lock rule. A reconnecting editor also says goodbye for its dead connection as soon as it hears its new id.
+
 ## Phase 4 — presence: a drag is streamed, not written
 
 **Decision.** While a gizmo drags, the editor streams the poses of what it drags at 10 Hz on the presence

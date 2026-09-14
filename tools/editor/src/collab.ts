@@ -69,8 +69,13 @@ export interface Collab {
   /** Send a batch the document already applied. */
   submit: (batch: LocalBatch) => void
   flush: () => Promise<void>
-  hold: (refs: NodeRef[]) => Promise<{ ok: true } | { ok: false; holder: string }>
-  release: (refs: NodeRef[]) => void
+  /**
+   * My holds are exactly `refs`. Sent one after another, never two in flight, so the server sees them in the
+   * order they were asked — a hold overtaking its release left a node held that nobody had selected.
+   */
+  setHolds: (refs: NodeRef[]) => Promise<{ ok: true } | { ok: false; holder: string; refused: NodeRef[] }>
+  /** Still here. The server drops a connection it has not heard from in a while, holds included. */
+  ping: () => void
   presence: (data: unknown) => void
   /** Release everything and say goodbye without waiting — for `pagehide`. */
   beaconLeave: () => void
@@ -132,6 +137,8 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
   let holds: Hold[] = []
   let unacked: { batchId: string; ops: Op[]; inverses: Op[] }[] = []
   let joined: { resolve: () => void; reject: (e: Error) => void } | null = null
+  /** Hold messages queue behind one another: order is the point of them. */
+  let holdChain: Promise<unknown> = Promise.resolve()
 
   const rollbackUnacked = (level: Level): void => {
     for (let i = unacked.length - 1; i >= 0; i--) applyBatch(level, unacked[i]!.inverses)
@@ -163,9 +170,14 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
 
   const onEvent = (e: ServerEvent): void => {
     switch (e.event) {
-      case 'hello':
+      case 'hello': {
+        // A new connection on an old session (the stream reconnected): the old one is dead but the server
+        // may not know yet, and it holds whatever was selected. Say goodbye for it.
+        const old = connId
         connId = e.data.connId
+        if (old !== null && old !== connId && name !== null) void transport.post(name, 'leave', { connId: old }).catch(() => undefined)
         return
+      }
       case 'snapshot': {
         seq = e.data.seq
         peers = e.data.peers
@@ -299,15 +311,20 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
       if (name === null || connId === null) return
       await transport.post(name, 'flush', { connId })
     },
-    hold: async (refs) => {
-      if (name === null || connId === null) return { ok: true }
-      const r = await transport.post(name, 'hold', { connId, refs })
-      const body = r.body as { ok?: boolean; holder?: string } | null
-      return body?.ok === false ? { ok: false, holder: body.holder ?? 'someone' } : { ok: true }
+    setHolds: (refs) => {
+      const send = async (): Promise<{ ok: true } | { ok: false; holder: string; refused: NodeRef[] }> => {
+        if (name === null || connId === null) return { ok: true }
+        const r = await transport.post(name, 'hold', { connId, refs })
+        const body = r.body as { ok?: boolean; holder?: string; refused?: NodeRef[] } | null
+        return body?.ok === false ? { ok: false, holder: body.holder ?? 'someone', refused: body.refused ?? refs } : { ok: true }
+      }
+      const next = holdChain.then(send, send)
+      holdChain = next.catch(() => undefined)
+      return next
     },
-    release: (refs) => {
+    ping: () => {
       if (name === null || connId === null) return
-      void transport.post(name, 'release', { connId, refs }).catch(() => undefined)
+      void transport.post(name, 'ping', { connId }).catch(() => undefined)
     },
     presence: (data) => {
       if (name === null || connId === null) return
