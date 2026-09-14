@@ -109,8 +109,21 @@ httpTransport(): LiveTransport   // EventSource in, fetch POST out, sendBeacon f
 | status bar | `live` or `live · with Adrien, Titouan` (peers other than this `connId`) |
 | leave | `dropAllLocks` → `collab.leave()`; `pagehide` → `beaconLeave()` |
 
-Two tabs of one person are two `connId`s: separate acks, separate holds. Holds and presence are wired but unused
-until phase 3.
+Two tabs of one person are two `connId`s: separate acks, separate holds. Presence is wired but unused until
+phase 4.
+
+### Holds — a node is yours while selected
+
+| Piece | Behaviour |
+| --- | --- |
+| `syncHolds` | after every `applySelection`/`deselect`: `collab.hold(added)` + `collab.release(dropped)` against `heldRefs` (what the server last heard). A refused hold (`{ ok: false, holder }`, a lost race) drops those nodes from the selection with a status line. `reinstallLevel` (new `connId`) re-holds the selection |
+| `heldBy(index)` | the name of another connection holding this node **or any ancestor** (`holdMap` by `refKey`), else `null` |
+| `applySelection` | filters `heldBy(i) !== null` out, so the gizmo never attaches to a held node; `select`/`selectWith` say `X has that selected` (`refuseHeld`) |
+| `onHoldsChanged` | on every `holds` event: `holdMap` rebuilt, my selection loses what someone else now holds, `rebuildHoldHelpers`, `hierarchy.render()` |
+| Hierarchy | `rowsOf(doc, open, heldBy)` → `Row.held` (name or `''`); a held row has class `held` (dimmed), a `.badge.held` with the name, and only `onSelect` wired (no rename, no drag); `onReparent` onto a held parent is refused |
+| viewport | one `THREE.BoxHelper` per held node over its mesh holder, in `holdRoot` (world space, `depthTest: false`), colour from a hash of the holder's `connId`; `helper.update()` every frame so a remote drag keeps up; rebuilt on holds events and after structural repaints |
+
+Prefabs and materials are never held: `live()` is false, `syncHolds` returns.
 
 ## Game discovery (`src/modes.ts`)
 

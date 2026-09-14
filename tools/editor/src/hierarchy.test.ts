@@ -127,6 +127,22 @@ describe('rowsOf: the tree', () => {
   })
 })
 
+describe('rowsOf: holds', () => {
+  it('names the holder on the row and on every row under it; free rows say nothing', () => {
+    const doc = four()
+    doc.reparent(idx(doc, 'b'), idx(doc, 'a'), 0)
+    const a = idx(doc, 'a')
+    const heldBy = (i: number): string | null => {
+      for (let at: number | null = i; at !== null; at = doc.parentOf(at)) if (at === a) return 'Adrien'
+      return null
+    }
+    const rows = rowsOf(doc, allOpen(doc), heldBy)
+    const byLabel = Object.fromEntries(rows.filter((r) => r.kind === 'item').map((r) => [r.label, r.held]))
+    expect(byLabel).toEqual({ a: 'Adrien', b: 'Adrien', c: '', d: '' })
+    expect(rowsOf(doc, allOpen(doc)).every((r) => r.held === ''), 'no holder function: nothing held').toBe(true)
+  })
+})
+
 describe('rowsOf: prefab pieces', () => {
   // Reversed by ADR 0033. A piece carries the visuals, the collider and the trigger, so hiding it by default
   // was hiding the object you came to edit — and reaching it took two clicks through an overloaded twist.
@@ -243,6 +259,7 @@ describe('dropTarget', () => {
     siblingIndex: 2,
     label: 'x',
     badge: '',
+    held: '',
     linked: true,
     hasChildren: false,
     expandable: false,

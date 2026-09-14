@@ -98,3 +98,26 @@ minted ids (the client's op must apply locally before the round trip).
 A level's session commit happens when its last editor leaves, not on a lock release. The name field is read-only
 for levels: the name is the room. `window.prompt` for New is gone. Holds and presence travel on the same stream
 and land in phases 3 and 4.
+
+## Phase 3 — holds follow the selection
+
+**Decision.** Selecting a node holds it for this connection (`/api/live/:name/hold`); deselecting releases it.
+The server refuses any other connection's op on a held node or anything under it (423), and drops a hold with
+its connection, on release, and when the node is removed. The editor filters held nodes out of every selection,
+so the gizmo never lands on one; the Hierarchy row carries the holder's name as its badge and is dimmed; the
+viewport draws a box in the holder's colour over the node, refreshed each frame so a drag shows through.
+
+**Why a hold covers the subtree.** A move of the parent moves the held child; a removal takes it. Refusing at
+the ancestor is the only way "mine while selected" holds for a node inside a group someone else grabbed.
+
+**Why refuse at the server too.** The client's filter runs on the holds it last heard; two people selecting the
+same node inside one round trip both think it free. The server is the arbiter: the loser's hold is refused and
+its selection drops the node; an op that raced ahead is a 423 and rolled back like any refusal.
+
+**Rejected.** A floating name label in the viewport (Kodjo: name in the Hierarchy, tint in the viewport).
+Force-take (everyone equal; no owner). Holding on hover or on pointer-down alone (a hold that outlives the
+gesture by a frame is not a claim anyone can see).
+
+**Consequences.** Two tabs of one person block each other, as two people would. Renaming and dragging a held
+row are off with selection. A reconnect is a new connection, so the editor re-holds its selection on the fresh
+snapshot.

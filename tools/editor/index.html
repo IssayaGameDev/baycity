@@ -701,6 +701,14 @@
         color: #7ddc9a;
         border-color: #2f5c40;
       }
+      /* Held by someone else (ADR 0089): dimmed, their name where the count would be. */
+      .row.held {
+        opacity: 0.6;
+      }
+      .row .badge.held {
+        color: #f0b860;
+        border-color: #6b5324;
+      }
       .empty {
         padding: 8px;
         color: var(--dim);
