@@ -415,10 +415,15 @@ const repaintAfterOps = (ops: readonly Op[]): void => {
   loadNewReferences(buildItems)
 }
 
-/** A fresh copy of the level from the server (a reconnect): the document is rebuilt over it, history kept. */
+/**
+ * A fresh copy of the **level** arrived (a reconnect): rebuild the document over it, keeping the history.
+ *
+ * Refused while a prefab room is open: that stream's snapshots are a prefab wrapper, and building a level
+ * document over one would put a prefab's root in the level's place.
+ */
 const reinstallLevel = (level: Level): void => {
   const root = docStack[0]
-  if (root === undefined || fileState.mode !== 'level') return
+  if (root === undefined || prefabOpen !== null) return
   try {
     validateLevel(level, registry())
   } catch (e) {
@@ -770,7 +775,10 @@ const buildItems = (): void => {
   // Counted fresh each rebuild, in document order, so the same lights keep their shadows instead of the cap
   // handing them to whichever node happened to rebuild first.
   editorShadowCasters = 0
-  if (doc === null) return
+  if (doc === null) {
+    reattachGizmo()
+    return
+  }
   // Depth-first order, so a parent's group always exists before its children ask for it.
   for (let i = 0; i < doc.count(); i++) {
     const g = new THREE.Group()
@@ -788,6 +796,7 @@ const buildItems = (): void => {
   // Authored transforms are only where *static* items sit. An animated one belongs at its track's pose for
   // the current playhead — which at 0 is where the game starts it, so the two now agree (ADR 0029).
   applyPreviewPoses()
+  reattachGizmo()
 }
 
 /**
@@ -1110,6 +1119,21 @@ const applySnap = (): void => {
   gizmo.setScaleSnap(edit.snap ? 0.1 : null)
 }
 stage.scene.add(gizmo.getHelper())
+
+/**
+ * Point the gizmo at the primary's group, or at nothing.
+ *
+ * `buildItems` replaces every group, so anything holding one is stale the moment it returns — and a gizmo
+ * holding a group that is no longer in the scene throws on the next click ("the attached 3D object must be a
+ * part of the scene graph", then a null `updateMatrixWorld` in `pointerDown`). Called at both of `buildItems`'
+ * exits, so the invariant holds however it was reached: a redraw after an async asset load
+ * (`loadNewReferences`) never went through a selection change, which is how the stale attachment survived.
+ */
+const reattachGizmo = (): void => {
+  const g = selected === null || playing ? undefined : instanceGroups[selected]
+  if (g === undefined) gizmo.detach()
+  else gizmo.attach(g)
+}
 
 /** Switch transform tool (toolbar buttons and the T/R/S keys are the same path). */
 const setMode = (mode: GizmoMode): void => {
@@ -1689,9 +1713,7 @@ const applySelection = (next: readonly number[]): void => {
   recording = false
   keyTarget = primary === null || doc === null ? null : (doc.keyEditors(primary)[0] ?? null)
 
-  const g = primary === null ? undefined : instanceGroups[primary]
-  if (g === undefined) gizmo.detach()
-  else gizmo.attach(g)
+  reattachGizmo()
 
   inspectorRebuild()
   updateTrackHelper()

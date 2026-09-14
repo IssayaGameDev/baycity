@@ -2,6 +2,7 @@ import { entityId } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
 import { PROTOCOL_VERSION } from './messages'
+import { QUANT_BOUND } from './quantize'
 import { STATE_GROUNDED, STATE_RISING } from './state'
 import {
   decodeSnapshot,
@@ -20,7 +21,7 @@ describe('snapshot codec', () => {
     ],
   }
 
-  it('round-trips a full snapshot (quantized, ~1cm tolerance)', () => {
+  it('round-trips a full snapshot (quantized, within one step per axis)', () => {
     const decoded = decodeSnapshot(encodeSnapshot(fullSnapshotMessage(full)))
     expect(decoded.isFull).toBe(true)
     expect(decoded.serverTimeMs).toBe(123456)
@@ -30,9 +31,12 @@ describe('snapshot codec', () => {
       const a = full.entities[i]!
       const b = decoded.changed[i]!
       expect(b.id).toBe(a.id)
-      expect(b.position.x).toBeCloseTo(a.position.x, 2)
-      expect(b.position.y).toBeCloseTo(a.position.y, 2)
-      expect(b.position.z).toBeCloseTo(a.position.z, 2)
+      // Derived from the bound, not a fixed decimal place, so a retune (ADR 0092) does not read as a
+      // failure. A u16 axis over ±QUANT_BOUND: one step is 2·bound/65535.
+      const step = (2 * QUANT_BOUND) / 65535
+      expect(Math.abs(b.position.x - a.position.x)).toBeLessThanOrEqual(step)
+      expect(Math.abs(b.position.y - a.position.y)).toBeLessThanOrEqual(step)
+      expect(Math.abs(b.position.z - a.position.z)).toBeLessThanOrEqual(step)
       expect(b.flags, 'flags are not quantized — they survive exactly').toBe(a.flags)
       // A byte each: 1.4° of facing, 0.063 m/s of speed.
       expect(b.yaw).toBeCloseTo(a.yaw, 1)

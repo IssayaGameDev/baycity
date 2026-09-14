@@ -50,7 +50,7 @@ editor's play-test calls the session with no callbacks and still teleports and d
 
 `content/levels/keyboard.json`: spawn `m0` at (0, 1.75, 0); boards `b0`–`b4` along +z (z 0, 20.5, 29.5, 39.5,
 51.5); Wins pad `w0` at z 56 (1 Win); treadmill `t0` at x 6; `step-pads` parent at x −12 with eight children;
-Kodjo's trampoline (Bumper prefab); kill plane. Boards past z = 40 exceed the wire's `QUANT_BOUND` (ADR 0011),
-so peers out there are clamped — known open.
+Kodjo's trampoline (Bumper prefab); kill plane. The whole run fits the wire's `QUANT_BOUND` of ±1000 m
+(ADR 0092); it did not at ±40, and peers past the last two boards were clamped.
 
 `WinsPad.stage` (number, default 0 = unnumbered): the pad's place in the world's sequence, 1-based — what the simulator and a future HUD read (ADR 0088). Wins per stage for World 1: [world-1.md](world-1.md).

@@ -16,7 +16,6 @@ What the game lacks or has unresolved, in one place. Each item names the doc or 
   ([steps.md](steps.md), ADR 0081).
 - **Feet float at long strides** past `runSpeed` (the cadence cap, ADR 0079). Key detection no longer depends
   on them; the look is Kodjo's to judge.
-- **Boards past z = 40** exceed the wire's `QUANT_BOUND` (ADR 0011): peers there are clamped.
 - **Saves reset per share link** — the origin changes each run (ADR 0074). Real hosting is the fix.
 - **Signs are built once**; a pad edited live keeps its old sign until reload (ADR 0082).
 - **The editor does not render keycaps**; a board is a plain box there (ADR 0069).
