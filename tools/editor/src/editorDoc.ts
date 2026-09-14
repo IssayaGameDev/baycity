@@ -997,7 +997,8 @@ const docOver = (
         for (const c of components) {
           if (c.type === MESH) {
             const model = stringParam(c, 'model', '')
-            if (model !== '') ids.add(model)
+            // A built-in shape is geometry, not a file: nothing to fetch (ADR 0090).
+            if (model !== '' && !isBuiltinModel(model)) ids.add(model)
           } else if (c.type === RENDERER || c.type === MATERIAL_OVERRIDE) {
             const material = stringParam(c, 'material', '')
             if (material !== '') ids.add(material)
