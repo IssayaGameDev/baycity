@@ -119,14 +119,21 @@ Key-driven, re-renders on locale change. Owns locale bootstrap: `localStorage['m
 
 ```ts
 levelsFor(mode: string, registry: ParamChecker): LevelSource
-interface LevelSource { names: () => string[]; defaultName: string; byName: (name: string | null) => Level }
+interface LevelSource { names: () => string[]; defaultName: string; byName: (name: string | null) => Level; validate: (raw: unknown) => Level }
 DEFAULT_NAME = 'default'
+type LevelFetch = (name: string) => Promise<unknown | null>
+fetchLevel: LevelFetch                       // GET /api/levels/<name> on the page's origin; anything but JSON 200 → null
+pickLevel(source, requested: string | null, live: LevelFetch | null): Promise<{ name; level; from: 'live' | 'bundled' }>
 ```
 
 - `import.meta.glob('@content/levels/*.json')`, bundled at build; `@content` is the repo's `content/` or the live mirror (`content-sync.md`, ADR 0084).
 - Filtered by `config.mode.name === mode` **or unassigned**. `names()` = default first, rest sorted.
 - `defaultName` = `'default'` if present else first level. `byName` validates with `validateLevel(data, registry)`;
-  throws for an unknown name.
+  throws for an unknown name. `validate(raw)` = the same check plus the game filter, for a copy from elsewhere.
+- **Live first on the box** (ADR 0089): `pickLevel` tries `live(name)` and `validate`s it (a bad or foreign copy
+  falls back to the bundle with a console warning); an unknown requested name falls back to the default, live
+  first. `@mp/tps` passes `fetchLevel` only when `import.meta.env.BASE_URL !== '/'` — the staging game served
+  under `/play/<game>/`; locally and in a build the bundle is the level.
 
 ## `localProgress` — `persistence.ts`
 

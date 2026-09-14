@@ -13,6 +13,12 @@ import { validateLevel, type Level, type ParamChecker } from '@mp/content'
  * Bundled with `import.meta.glob` rather than fetched: the file list needs no server, and a level that fails
  * to parse is a build error instead of a blank screen. The glob resolves relative to *this file*, which sits
  * at the same depth in a package as it did in a mode, so moving it here changed nothing about what it finds.
+ *
+ * **Live in front of the bundle** (ADR 0089): the staging game on the box is a dev server whose level files
+ * the hosted editor rewrites every few seconds. Bundled, every write reloaded every player's page. So a page
+ * may instead read its level **at boot over HTTP** (`pickLevel` with `fetchLevel`) and the dev server stops
+ * watching level files: a page plays the level as it was when it loaded, and the editor's Play frame is fresh
+ * on every Play. The bundle stays the fallback and the whole story locally and in a production build.
  */
 const ALL = import.meta.glob('@content/levels/*.json', { eager: true, import: 'default' }) as Record<
   string,
@@ -37,6 +43,57 @@ export interface LevelSource {
   defaultName: string
   /** The level called `name`, or the default for `null`. Throws for a name this game does not have. */
   byName: (name: string | null) => Level
+  /** A level from elsewhere, checked as a bundled one is: this game's (or unassigned), and valid for the registry. */
+  validate: (raw: unknown) => Level
+}
+
+/** Where a live copy of a level comes from. `null` = none available; the bundle answers. */
+export type LevelFetch = (name: string) => Promise<unknown | null>
+
+/**
+ * The editor server's copy: `GET /api/levels/<name>` on the page's own origin. Anything but a JSON 200 —
+ * a 404, a login page, no server at all — is `null`, never a throw: the bundle is the answer then.
+ */
+export const fetchLevel: LevelFetch = async (name) => {
+  try {
+    const r = await fetch(`/api/levels/${encodeURIComponent(name)}`, { headers: { accept: 'application/json' } })
+    if (!r.ok || !(r.headers.get('content-type') ?? '').includes('json')) return null
+    return (await r.json()) as unknown
+  } catch {
+    return null
+  }
+}
+
+export interface PickedLevel {
+  name: string
+  level: Level
+  from: 'live' | 'bundled'
+}
+
+/**
+ * The level a page plays: the one asked for by `?level=`, or the default; live when `live` has it and it
+ * checks out, else bundled. A name nobody has falls back to the default, and says so in the console — a typo
+ * must not brick the page.
+ */
+export const pickLevel = async (source: LevelSource, requested: string | null, live: LevelFetch | null): Promise<PickedLevel> => {
+  const name = requested ?? source.defaultName
+  if (live !== null) {
+    const raw = await live(name)
+    if (raw !== null) {
+      try {
+        return { name, level: source.validate(raw), from: 'live' }
+      } catch (e) {
+        console.warn(`live level "${name}" rejected (${String(e)}) — using the bundled copy`)
+      }
+    }
+  }
+  try {
+    return { name, level: source.byName(name), from: 'bundled' }
+  } catch (e) {
+    if (requested === null) throw e
+    console.error(`${String(e)} — falling back to ${source.defaultName}`)
+    return pickLevel(source, null, live)
+  }
 }
 
 /**
@@ -51,10 +108,11 @@ export interface LevelSource {
  * mid-frame.
  */
 export const levelsFor = (mode: string, registry: ParamChecker): LevelSource => {
-  const files = Object.entries(ALL).filter(([, data]) => {
+  const ours = (data: unknown): boolean => {
     const named = (data as { config?: { mode?: { name?: unknown } } }).config?.mode?.name
     return named === undefined || named === mode
-  })
+  }
+  const files = Object.entries(ALL).filter(([, data]) => ours(data))
 
   const names = (): string[] => {
     const all = files.map(([path]) => nameOf(path))
@@ -75,6 +133,10 @@ export const levelsFor = (mode: string, registry: ParamChecker): LevelSource => 
         throw new Error(`no ${mode} level "${wanted}" — have: ${names().join(', ') || '(none)'}`)
       }
       return validateLevel(found[1], registry)
+    },
+    validate: (raw) => {
+      if (!ours(raw)) throw new Error(`that level belongs to another game, not ${mode}`)
+      return validateLevel(raw, registry)
     },
   }
 }

@@ -42,7 +42,9 @@ import {
   createScene,
   createShell,
   createStatusLine,
+  fetchLevel,
   levelsFor,
+  pickLevel,
   loadLevelInto,
   localProgress,
   worldFromBase,
@@ -303,18 +305,16 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
    * wrong platform entirely.
    */
   const levels = levelsFor(mode.name, mode.registry)
-  const levelName = ((): string => {
-    const requested = new URLSearchParams(location.search).get('level')
-    if (requested === null) return levels.defaultName
-    try {
-      levels.byName(requested)
-      return requested
-    } catch (e) {
-      console.error(`${String(e)} — falling back to ${levels.defaultName}`)
-      return levels.defaultName
-    }
-  })()
-  const levelData = levels.byName(levelName)
+  /**
+   * Live copy first when this page is served under a base path — the staging game on the box, where the
+   * hosted editor rewrites level files every few seconds and the dev server no longer watches them (ADR 0089).
+   * Locally (`/`) and in a build the bundle is the level: the local loop is the mirror reloading the page.
+   */
+  const live = import.meta.env.BASE_URL !== '/' ? fetchLevel : null
+  const picked = await pickLevel(levels, new URLSearchParams(location.search).get('level'), live)
+  const levelName = picked.name
+  const levelData = picked.level
+  if (live !== null) console.info(`level ${levelName}: ${picked.from}`)
 
   const $ = <T extends HTMLElement>(sel: string): T => document.querySelector<T>(sel)!
   const canvas = $<HTMLCanvasElement>('#view')
