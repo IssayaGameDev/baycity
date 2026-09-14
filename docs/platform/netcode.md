@@ -27,7 +27,7 @@ Dead on the live path: `@mp/core` transport types, `packages/client/src/transpor
 
 ## Wire format (`packages/net`)
 
-`PROTOCOL_VERSION = 10`. Little-endian. Every message rides one Colyseus channel `NET_CHANNEL = 'n'` as raw bytes; header `u8 version, u8 type`. `readMessageType` peeks; `readHeader` throws on mismatch (server catches and drops the frame).
+`PROTOCOL_VERSION = 11`. Little-endian. Every message rides one Colyseus channel `NET_CHANNEL = 'n'` as raw bytes; header `u8 version, u8 type`. `readMessageType` peeks; `readHeader` throws on mismatch (server catches and drops the frame).
 
 | Type | Const | Dir | Layout | Bytes |
 |---|---|---|---|---|
@@ -59,7 +59,7 @@ Dead on the live path: `@mp/core` transport types, `packages/client/src/transpor
 
 | Symbol | Value | Resolution |
 |---|---|---|
-| `QUANT_BOUND` | 40 | ±40 m over u16 → 80/65535 ≈ 1.22 mm; clamped |
+| `QUANT_BOUND` | 1000 | ±1000 m over u16 → 2000/65535 ≈ 3.05 cm; clamped (ADR 0092) |
 | yaw | 256 steps/turn | ≈1.4°; wrapped, dequantizes to [−π, π] |
 | `SPEED_BOUND` | 16 m/s | 255 steps → 0.063 m/s; clamped |
 

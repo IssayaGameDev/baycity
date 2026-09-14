@@ -1,11 +1,19 @@
 /**
  * Position quantization (SEED §5): map a world coordinate to a u16 per axis
- * (~16-bit). Plumbing that's present but tuned with a single default range —
- * per-game bounds/precision are a later concern.
+ * (~16-bit). One range for every level; per-level bounds on the wire are ADR 0092's
+ * stated next step, and this value is the default they will fall back to.
  */
 
-/** Half-extent of the quantization range (world units); values clamp to ±this. */
-export const QUANT_BOUND = 40
+/**
+ * Half-extent of the quantization range (world units); values clamp to ±this.
+ *
+ * ±1000 m over u16 is a 3.05 cm step (ADR 0092). Coarser than the ±40 it replaces, and affordable
+ * because a peer's position is *cosmetic*: the server runs no physics and each client owns its own
+ * body (ADR 0011), so nothing collides against a relayed position. Clamping, by contrast, is not
+ * cosmetic — past the bound a peer stops moving on every screen but their own, and the delta's
+ * change check compares quantized values, so the server stops relaying them at all.
+ */
+export const QUANT_BOUND = 1000
 const QUANT_MAX = 65535
 
 export const quantizeAxis = (v: number): number => {

@@ -9,8 +9,11 @@
  * separate walking from being carried by a platform. +2 B per snapshot entity.
  * v10: they also carry the clock-driven piece being ridden, and while it is non-zero the position and
  * facing are expressed **in that piece's frame** — relative-to-base replication (ADR 0021), which is
- * what stops a rider sliding across a platform for everyone but its owner. +1 B per snapshot entity. */
-export const PROTOCOL_VERSION = 10 as const
+ * what stops a rider sliding across a platform for everyone but its owner. +1 B per snapshot entity.
+ * v11: no layout change — `QUANT_BOUND` widens from ±40 m to ±1000 m (ADR 0092). The same three u16s
+ * mean different metres, so a v10 peer would place everyone at a twenty-fifth of their distance. The
+ * bump exists only to make that mismatch a refused frame instead of a silently wrong world. */
+export const PROTOCOL_VERSION = 11 as const
 
 /** The single Colyseus message channel our whole binary protocol rides on (ADR 0013).
  * Colyseus never inspects the payload; we dispatch on the version+type header inside. */

@@ -137,5 +137,6 @@ why matters.
 | [0089](adr/0089-a-level-is-edited-live.md) | A level is edited live |
 | [0090](adr/0090-a-shape-is-a-built-in-mesh-sized-by-scale.md) | A shape is a built-in mesh, sized by the object's scale |
 | [0091](adr/0091-a-level-references-a-prefab-by-id.md) | A level references a prefab by id, and a prefab is edited live |
+| [0092](adr/0092-peers-are-quantized-over-a-kilometre.md) | A peer's position is quantized over ±1000 m, not ±40 m |
 
 `Design archive/` holds superseded design material and is not maintained.
