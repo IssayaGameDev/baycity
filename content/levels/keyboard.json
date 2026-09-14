@@ -1480,6 +1480,19 @@
       ]
     },
     {
+      "id": "197b5c54",
+      "name": "Stage End",
+      "transform": {
+        "position": {
+          "x": 1,
+          "y": 5.5,
+          "z": 65.5
+        }
+      },
+      "components": [],
+      "prefab": "8a569d7a7c66c3c7"
+    },
+    {
       "id": "85509955",
       "name": "Stage 2",
       "transform": {
@@ -1503,7 +1516,7 @@
             "scale": {
               "x": 43.5,
               "y": 0.5,
-              "z": 32
+              "z": 41.9
             }
           },
           "components": [
@@ -1549,6 +1562,28 @@
           ]
         }
       ]
+    },
+    {
+      "id": "73e3e8b8",
+      "name": "Stage End 2",
+      "transform": {
+        "position": {
+          "x": 1,
+          "y": 5.5,
+          "z": 126
+        }
+      },
+      "components": [],
+      "prefab": "8a569d7a7c66c3c7",
+      "overrides": {
+        "43638615": {
+          "params": {
+            "fd50a89a": {
+              "wins": 2
+            }
+          }
+        }
+      }
     },
     {
       "id": "6553af4c",
@@ -1964,17 +1999,29 @@
       ]
     },
     {
-      "id": "197b5c54",
-      "name": "Stage End",
+      "id": "a65938b4",
+      "name": "Stage End 3",
       "transform": {
         "position": {
           "x": 1,
           "y": 5.5,
-          "z": 65.5
+          "z": 196
         }
       },
       "components": [],
-      "prefab": "8a569d7a7c66c3c7"
+      "prefab": "8a569d7a7c66c3c7",
+      "overrides": {
+        "43638615": {
+          "params": {
+            "fd50a89a": {
+              "wins": 3
+            }
+          }
+        },
+        "8509bf48": {
+          "name": "treadmill +1"
+        }
+      }
     }
   ]
 }
