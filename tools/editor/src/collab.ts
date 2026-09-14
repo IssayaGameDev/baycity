@@ -18,6 +18,8 @@ export type ServerEvent =
   | { event: 'holds'; data: { holds: Hold[] } }
   | { event: 'peers'; data: { peers: Peer[] } }
   | { event: 'presence'; data: { from: string; name: string; data: unknown } }
+  /** A prefab this level references was edited, in its own document (ADR 0091). Repaint, do not re-send. */
+  | { event: 'prefab'; data: { assetId: string; ops: Op[] } }
   | { event: 'error'; data: { message: string } }
 
 export interface Hold {
@@ -34,12 +36,15 @@ export interface Stream {
   close: () => void
 }
 
+/** Which document: a level by name, or a prefab by asset id (ADR 0091). */
+export type DocKind = 'level' | 'prefab'
+
 export interface LiveTransport {
-  /** Open the event stream for `name`. `onDrop` fires when the stream closes for good (the server said 4xx). */
-  connect: (name: string, onEvent: (e: ServerEvent) => void, onDrop: (why: string) => void) => Stream
-  post: (name: string, action: string, body: unknown) => Promise<{ ok: boolean; status: number; body: unknown }>
+  /** Open the event stream for a document. `onDrop` fires when it closes for good (the server said 4xx). */
+  connect: (kind: DocKind, name: string, onEvent: (e: ServerEvent) => void, onDrop: (why: string) => void) => Stream
+  post: (kind: DocKind, name: string, action: string, body: unknown) => Promise<{ ok: boolean; status: number; body: unknown }>
   /** A fire-and-forget POST that outlives the page (a closing tab). */
-  beacon: (name: string, action: string, body: unknown) => void
+  beacon: (kind: DocKind, name: string, action: string, body: unknown) => void
 }
 
 export interface LocalBatch {
@@ -59,12 +64,19 @@ export interface CollabHooks {
   onPeers: (peers: Peer[]) => void
   onHolds: (holds: Hold[]) => void
   onPresence: (from: string, name: string, data: unknown) => void
+  /**
+   * A prefab the open level uses changed. The ops are against that prefab's own document, whose one root is
+   * the definition this level resolved, so applying them there is what makes the placements follow.
+   */
+  onPrefabOps: (assetId: string, ops: Op[]) => void
   onError: (message: string) => void
 }
 
 export interface Collab {
-  /** Join a level. Resolves after the first snapshot; rejects when the server refuses. */
-  join: (name: string) => Promise<void>
+  /** Join a document. Resolves after the first snapshot; rejects when the server refuses. */
+  join: (name: string, kind?: DocKind) => Promise<void>
+  /** Which kind of document is open, or `null`. */
+  kind: () => DocKind | null
   leave: () => void
   /** Send a batch the document already applied. */
   submit: (batch: LocalBatch) => void
@@ -76,6 +88,11 @@ export interface Collab {
   setHolds: (refs: NodeRef[]) => Promise<{ ok: true } | { ok: false; holder: string; refused: NodeRef[] }>
   /** Still here. The server drops a connection it has not heard from in a while, holds included. */
   ping: () => void
+  /**
+   * Send ops to a **prefab document this level uses**, without leaving the level (ADR 0091) — what "Apply to
+   * prefab" does. Resolves `null` on success, or why the server refused.
+   */
+  submitToPrefab: (assetId: string, ops: Op[]) => Promise<string | null>
   presence: (data: unknown) => void
   /** Release everything and say goodbye without waiting — for `pagehide`. */
   beaconLeave: () => void
@@ -131,6 +148,7 @@ const newBatchId = (): string => `${Date.now().toString(36)}-${(nextBatch++).toS
 export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Collab => {
   let stream: Stream | null = null
   let name: string | null = null
+  let kind: DocKind = 'level'
   let connId: string | null = null
   let seq = 0
   let peers: Peer[] = []
@@ -165,7 +183,7 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
     // The stream is the only way to a fresh copy: reopen it. The server greets every connection with one.
     if (name === null) return
     stream?.close()
-    stream = transport.connect(name, onEvent, onDrop)
+    stream = transport.connect(kind, name, onEvent, onDrop)
   }
 
   const onEvent = (e: ServerEvent): void => {
@@ -175,7 +193,7 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
         // may not know yet, and it holds whatever was selected. Say goodbye for it.
         const old = connId
         connId = e.data.connId
-        if (old !== null && old !== connId && name !== null) void transport.post(name, 'leave', { connId: old }).catch(() => undefined)
+        if (old !== null && old !== connId && name !== null) void transport.post(kind, name, 'leave', { connId: old }).catch(() => undefined)
         return
       }
       case 'snapshot': {
@@ -238,6 +256,9 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
       case 'presence':
         hooks.onPresence(e.data.from, e.data.name, e.data.data)
         return
+      case 'prefab':
+        hooks.onPrefabOps(e.data.assetId, e.data.ops)
+        return
       case 'error':
         hooks.onError(e.data.message)
         return
@@ -257,7 +278,7 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
     const entry = { batchId, ops: batch.ops, inverses: batch.inverses }
     unacked.push(entry)
     const level = name
-    void transport.post(level, 'ops', { connId, batchId, ops: batch.ops }).then(
+    void transport.post(kind, level, 'ops', { connId, batchId, ops: batch.ops }).then(
       (r) => {
         if (r.ok) return
         // Refused: take this batch off, along with everything after it, then put the later ones back.
@@ -286,20 +307,21 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
   }
 
   return {
-    join: (level) =>
+    join: (level, of = 'level') =>
       new Promise<void>((resolve, reject) => {
         stream?.close()
         name = level
+        kind = of
         connId = null
         seq = 0
         unacked = []
         joined = { resolve, reject }
-        stream = transport.connect(level, onEvent, onDrop)
+        stream = transport.connect(of, level, onEvent, onDrop)
       }),
     leave: () => {
       stream?.close()
       stream = null
-      if (name !== null && connId !== null) void transport.post(name, 'leave', { connId }).catch(() => undefined)
+      if (name !== null && connId !== null) void transport.post(kind, name, 'leave', { connId }).catch(() => undefined)
       name = null
       connId = null
       unacked = []
@@ -309,12 +331,12 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
     submit: (batch) => submitBatch(batch, newBatchId()),
     flush: async () => {
       if (name === null || connId === null) return
-      await transport.post(name, 'flush', { connId })
+      await transport.post(kind, name, 'flush', { connId })
     },
     setHolds: (refs) => {
       const send = async (): Promise<{ ok: true } | { ok: false; holder: string; refused: NodeRef[] }> => {
         if (name === null || connId === null) return { ok: true }
-        const r = await transport.post(name, 'hold', { connId, refs })
+        const r = await transport.post(kind, name, 'hold', { connId, refs })
         const body = r.body as { ok?: boolean; holder?: string; refused?: NodeRef[] } | null
         return body?.ok === false ? { ok: false, holder: body.holder ?? 'someone', refused: body.refused ?? refs } : { ok: true }
       }
@@ -324,17 +346,25 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
     },
     ping: () => {
       if (name === null || connId === null) return
-      void transport.post(name, 'ping', { connId }).catch(() => undefined)
+      void transport.post(kind, name, 'ping', { connId }).catch(() => undefined)
+    },
+    submitToPrefab: async (assetId, ops) => {
+      if (connId === null) return 'not in a live room'
+      const r = await transport.post('prefab', assetId, 'ops', { connId, batchId: newBatchId(), ops })
+      if (r.ok) return null
+      const body = r.body as { error?: unknown } | null
+      return typeof body?.error === 'string' ? body.error : `refused (${r.status})`
     },
     presence: (data) => {
       if (name === null || connId === null) return
-      void transport.post(name, 'presence', { connId, data }).catch(() => undefined)
+      void transport.post(kind, name, 'presence', { connId, data }).catch(() => undefined)
     },
     beaconLeave: () => {
-      if (name !== null && connId !== null) transport.beacon(name, 'leave', { connId })
+      if (name !== null && connId !== null) transport.beacon(kind, name, 'leave', { connId })
     },
     connId: () => connId,
     name: () => name,
+    kind: () => (name === null ? null : kind),
     peers: () => peers,
     holds: () => holds,
     pending: () => unacked.length,
@@ -343,9 +373,9 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
 
 /** The real transport: `EventSource` in, `fetch` out, `sendBeacon` for the way out. */
 export const httpTransport = (): LiveTransport => ({
-  connect: (name, onEvent, onDrop) => {
-    const source = new EventSource(`/api/live/${encodeURIComponent(name)}/events`)
-    for (const event of ['hello', 'snapshot', 'ops', 'holds', 'peers', 'presence', 'error'] as const) {
+  connect: (kind, name, onEvent, onDrop) => {
+    const source = new EventSource(`/api/live/${kind}/${encodeURIComponent(name)}/events`)
+    for (const event of ['hello', 'snapshot', 'ops', 'holds', 'peers', 'presence', 'prefab', 'error'] as const) {
       source.addEventListener(event, (m) => onEvent({ event, data: JSON.parse((m as MessageEvent<string>).data) } as ServerEvent))
     }
     // EventSource retries on its own after a network drop. A 4xx is a closed stream that never opened: the
@@ -355,11 +385,11 @@ export const httpTransport = (): LiveTransport => ({
     })
     return { close: () => source.close() }
   },
-  post: async (name, action, body) => {
-    const r = await fetch(`/api/live/${encodeURIComponent(name)}/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  post: async (kind, name, action, body) => {
+    const r = await fetch(`/api/live/${kind}/${encodeURIComponent(name)}/${action}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
     return { ok: r.ok, status: r.status, body: await r.json().catch(() => null) }
   },
-  beacon: (name, action, body) => {
-    navigator.sendBeacon(`/api/live/${encodeURIComponent(name)}/${action}`, new Blob([JSON.stringify(body)], { type: 'application/json' }))
+  beacon: (kind, name, action, body) => {
+    navigator.sendBeacon(`/api/live/${kind}/${encodeURIComponent(name)}/${action}`, new Blob([JSON.stringify(body)], { type: 'application/json' }))
   },
 })

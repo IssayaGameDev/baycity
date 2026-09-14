@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Level, Node, Op, PrefabSource } from '../../../packages/content/src/index'
-import { createLive, LiveError, type LiveClient } from './live'
+import type { Level, Node, Op } from '../../../packages/content/src/index'
+import { createLive, docKey, LiveError, type LiveClient, type LiveOptions } from './live'
 
 const v3 = (x: number, y: number, z: number): { x: number; y: number; z: number } => ({ x, y, z })
 const fixture = (): Level => ({
@@ -27,10 +27,20 @@ const fake = (connId: string, user = ADA): Fake => {
 
 /** A world with a fake disk and fake timers the test advances by hand. */
 const PAD = 'aaaaaaaaaaaaaaaa'
+/** A prefab store over a map of files, as the server's is over the assets folder. */
+const store = (files: Record<string, Node>): LiveOptions['prefabs'] => ({
+  root: (id) => files[id],
+  pathOf: (id) => (files[id] === undefined ? undefined : `prefabs/${id}.prefab.json`),
+  write: (id, root) => {
+    if (files[id] === undefined) return null
+    files[id] = root
+    return `prefabs/${id}.prefab.json`
+  },
+})
 /** A prefab file, as the store would hand it over. */
 const padFile = (): Node => ({ id: 'root', name: 'pad', transform: { position: v3(0, 0, 0) }, components: [], children: [{ id: 'p0', transform: { position: v3(0, 0, 0) }, components: [] }] })
 
-const world = (extra: { idleMs?: number; maxMs?: number; staleMs?: number; prefabs?: PrefabSource } = {}) => {
+const world = (extra: { idleMs?: number; maxMs?: number; staleMs?: number; prefabs?: LiveOptions['prefabs'] } = {}) => {
   const disk = new Map<string, unknown>([['lv', fixture()]])
   const writes: { name: string; level: Level }[] = []
   const changed: { users: string[]; path: string }[] = []
@@ -274,7 +284,7 @@ describe('prefab references (ADR 0091)', () => {
 
   it('resolves a reference on open, so the inherited nodes are here, and writes the reference alone', () => {
     const file = padFile()
-    const w = world({ prefabs: { root: (id) => (id === PAD ? file : undefined) } })
+    const w = world({ prefabs: store({ [PAD]: file }) })
     w.disk.set('lv', withPlacement())
     const a = fake('c1')
     w.live.join('lv', a.client)
@@ -293,7 +303,7 @@ describe('prefab references (ADR 0091)', () => {
   })
 
   it('keeps a table the level carries itself, and strips only what it resolved', () => {
-    const w = world({ prefabs: { root: () => padFile() } })
+    const w = world({ prefabs: store({ [PAD]: padFile(), Trampoline: padFile() }) })
     const own = padFile()
     own.name = 'mine'
     w.disk.set('lv', { id: 'lv', config: {}, prefabs: { Trampoline: own }, nodes: [{ id: 'n0', transform: { position: v3(0, 0, 0) }, components: [], prefab: 'Trampoline' }, { id: 'n1', transform: { position: v3(1, 0, 0) }, components: [], prefab: PAD }] })
@@ -307,7 +317,7 @@ describe('prefab references (ADR 0091)', () => {
   })
 
   it('a reference with no file leaves the placement with nothing inherited, and the level still opens', () => {
-    const w = world({ prefabs: { root: () => undefined } })
+    const w = world({ prefabs: store({}) })
     w.disk.set('lv', withPlacement())
     const a = fake('c1')
     expect(() => w.live.join('lv', a.client)).not.toThrow()
@@ -317,7 +327,7 @@ describe('prefab references (ADR 0091)', () => {
   })
 
   it('resolves a prefab placed during the session, without reopening the document', () => {
-    const w = world({ prefabs: { root: (id) => (id === PAD ? padFile() : undefined) } })
+    const w = world({ prefabs: store({ [PAD]: padFile() }) })
     const a = fake('c1')
     w.live.join('lv', a.client)
     w.live.apply('lv', 'c1', ADA, { batchId: 'b', ops: [{ kind: 'insertNode', parent: null, index: 2, node: { id: 'fresh', transform: { position: v3(0, 0, 0) }, components: [], prefab: PAD } }] })
@@ -325,5 +335,99 @@ describe('prefab references (ADR 0091)', () => {
     expect(w.live.apply('lv', 'c1', ADA, { batchId: 'c', ops: [{ kind: 'setOverrideName', owner: 'fresh', node: 'p0', name: 'mine' }] }).ok).toBe(true)
     w.live.flush('lv')
     expect(w.writes.at(-1)!.level.prefabs, 'still not written into the level').toBeUndefined()
+  })
+})
+
+describe('a prefab is a live document (ADR 0091)', () => {
+  const prefabKey = docKey('prefab', PAD)
+  /** A level referencing the prefab, so the two documents are related the way real content is. */
+  const referencing = (): Level => ({ id: 'lv', config: {}, nodes: [{ id: 'n0', transform: { position: v3(5, 0, 0) }, components: [], prefab: PAD }] })
+
+  it('opens from the store, is edited by ops and writes back to its own file', () => {
+    const files = { [PAD]: padFile() }
+    const w = world({ prefabs: store(files) })
+    const a = fake('c1')
+    w.live.join(prefabKey, a.client)
+    const snapshot = a.events.find((e) => e.event === 'snapshot')!.data as { level: Level }
+    expect(snapshot.level.nodes.map((n) => n.id), 'a one-root wrapper').toEqual(['root'])
+
+    expect(w.live.apply(prefabKey, 'c1', ADA, { batchId: 'b', ops: [setName('p0', 'renamed')] }).ok).toBe(true)
+    w.live.flush(prefabKey)
+    expect(files[PAD]!.children![0]!.name, 'written to the prefab file').toBe('renamed')
+    expect(w.changed.at(-1)).toEqual({ users: ['Ada'], path: `content/assets/prefabs/${PAD}.prefab.json` })
+    expect(w.writes, 'no level was written').toEqual([])
+  })
+
+  /** The whole point: one object, so a prefab edit is in every open level's resolution at once. */
+  it('shares its root with every level that references it', () => {
+    const w = world({ prefabs: store({ [PAD]: padFile() }) })
+    w.disk.set('lv', referencing())
+    const level = fake('c1')
+    w.live.join('lv', level.client)
+    const prefab = fake('c2', BOB)
+    w.live.join(prefabKey, prefab.client)
+
+    w.live.apply(prefabKey, 'c2', BOB, { batchId: 'b', ops: [setName('p0', 'moved')] })
+    const open = w.live.levelOf('lv')!
+    expect(open.prefabs![PAD]!.children![0]!.name, "the level's resolution followed with no level op").toBe('moved')
+    expect(w.live.status().find((s) => s.name === 'lv')!.seq, 'and the level took no op of its own').toBe(0)
+  })
+
+  it('a level opens the prefab documents it references, and keeps them open', () => {
+    const w = world({ prefabs: store({ [PAD]: padFile() }) })
+    w.disk.set('lv', referencing())
+    const level = fake('c1')
+    w.live.join('lv', level.client)
+    expect(w.live.isOpen(prefabKey), 'opened to resolve the reference').toBe(true)
+
+    // Nobody is *in* the prefab document, but the level reads from it, so it must not close.
+    w.live.leave(prefabKey, 'nobody')
+    expect(w.live.isOpen(prefabKey)).toBe(true)
+
+    w.live.leave('lv', 'c1')
+    expect(w.live.isOpen('lv')).toBe(false)
+    expect(w.live.isOpen(prefabKey), 'nothing depends on it now').toBe(false)
+  })
+
+  it('refuses a prefab that would contain a placement, and one that is not there', () => {
+    const w = world({ prefabs: store({ [PAD]: padFile() }) })
+    const a = fake('c1')
+    w.live.join(prefabKey, a.client)
+    expect(() => w.live.apply(prefabKey, 'c1', ADA, { batchId: 'b', ops: [{ kind: 'insertNode', parent: 'root', index: 1, node: { id: 'nested', transform: { position: v3(0, 0, 0) }, components: [], prefab: 'other' } }] })).toThrow()
+    expect(() => w.live.join(docKey('prefab', 'nope'), fake('c9').client)).toThrow(/no prefab asset/)
+  })
+
+  it('holds inside a prefab document work like any other', () => {
+    const w = world({ prefabs: store({ [PAD]: padFile() }) })
+    const a = fake('c1')
+    const b = fake('c2', BOB)
+    w.live.join(prefabKey, a.client)
+    w.live.join(prefabKey, b.client)
+    expect(w.live.hold(prefabKey, 'c1', ADA, [{ id: 'p0' }])).toEqual({ ok: true })
+    expect(w.live.hold(prefabKey, 'c2', BOB, [{ id: 'p0' }])).toEqual({ ok: false, holder: 'Ada', refused: [{ id: 'p0' }] })
+    expect(() => w.live.apply(prefabKey, 'c2', BOB, { batchId: 'x', ops: [setName('p0', 'mine')] })).toThrow(/held by Ada/)
+  })
+})
+
+describe('a refused prefab batch', () => {
+  it('rolls back through the object every level holds, not into a copy of it', () => {
+    const files = { [PAD]: padFile() }
+    const w = world({ prefabs: store(files) })
+    w.disk.set('lv', { id: 'lv', config: {}, nodes: [{ id: 'n0', transform: { position: v3(0, 0, 0) }, components: [], prefab: PAD }] })
+    const level = fake('c1')
+    w.live.join('lv', level.client)
+    const key = docKey('prefab', PAD)
+    const editor = fake('c2', BOB)
+    w.live.join(key, editor.client)
+
+    const shared = w.live.levelOf('lv')!.prefabs![PAD]!
+    expect(() => w.live.apply(key, 'c2', BOB, { batchId: 'b', ops: [{ kind: 'insertNode', parent: 'root', index: 1, node: { id: 'nested', transform: { position: v3(0, 0, 0) }, components: [], prefab: 'other' } }] })).toThrow()
+
+    expect(w.live.levelOf('lv')!.prefabs![PAD], 'the level still holds the live object').toBe(shared)
+    expect(shared.children!.map((c) => c.id), 'and it is back as it was').toEqual(['p0'])
+
+    // Still editable afterwards, and the level sees it.
+    expect(w.live.apply(key, 'c2', BOB, { batchId: 'c', ops: [setName('p0', 'fine')] }).ok).toBe(true)
+    expect(shared.children![0]!.name).toBe('fine')
   })
 })

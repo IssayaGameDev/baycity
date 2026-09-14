@@ -10,7 +10,7 @@ import { importAssets } from './assetImporter'
 import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './assetOps'
 import type { ChangeFeed } from './changes'
 import type { User } from './config'
-import { LiveError, type Live } from './live'
+import { docKey, LiveError, type Live } from './live'
 import { acquire, blocker, heartbeat, holder, release, type LockRules, type LockTable } from './locks'
 import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
 
@@ -36,14 +36,16 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *
  * Live level editing (ADR 0089), when `live` is given:
  *   GET  /api/live                    → open documents, peers, holds
- *   GET  /api/live/:name/events       → SSE: hello, snapshot, ops (id = seq), holds, peers, presence, error
- *   POST /api/live/:name/ops          → { connId, batchId, ops } → { ok, seq } · 400 bad op · 423 held by another
- *   POST /api/live/:name/hold         → { connId, refs } — my holds are exactly these → { ok } / { ok: false, holder, refused }
- *   POST /api/live/:name/release      → { connId, refs } → { ok }
- *   POST /api/live/:name/ping         → { connId } — still here (the editor, every heartbeat)
- *   POST /api/live/:name/presence     → { connId, data } — relayed, unnumbered
- *   POST /api/live/:name/flush        → write the file now
- *   POST /api/live/:name/leave        → { connId } (a closing tab's beacon)
+ *   GET  /api/live/:kind/:name/events → SSE: hello, snapshot, ops (id = seq), holds, peers, presence, error
+ *                                       plus `prefab` on a level's stream: a prefab the level uses was edited
+ *                                       :kind is `level` or `prefab` — a prefab is its own document (ADR 0091)
+ *   POST /api/live/:kind/:name/ops          → { connId, batchId, ops } → { ok, seq } · 400 bad op · 423 held by another
+ *   POST /api/live/:kind/:name/hold         → { connId, refs } — my holds are exactly these → { ok } / { ok: false, holder, refused }
+ *   POST /api/live/:kind/:name/release      → { connId, refs } → { ok }
+ *   POST /api/live/:kind/:name/ping         → { connId } — still here (the editor, every heartbeat)
+ *   POST /api/live/:kind/:name/presence     → { connId, data } — relayed, unnumbered
+ *   POST /api/live/:kind/:name/flush        → write the file now
+ *   POST /api/live/:kind/:name/leave        → { connId } (a closing tab's beacon)
  *   PUT  /api/levels/:name            → 409 while the level is open live; GET serves the live copy
  *
  * For the live mirror (ADR 0084):
@@ -305,7 +307,19 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     const file = safeJoin(ASSETS, rel)
     if (file === null) return sendJson(res, 400, { error: 'path escapes the assets root' }), true
 
+    /** The prefab document open on this path, if any: a prefab is a live document now (ADR 0091). */
+    const openPrefab = (): { id: string; root: unknown } | null => {
+      if (opts.live === undefined || !rel.endsWith('.prefab.json')) return null
+      const entry = importAssets(ASSETS).entries.find((e) => e.kind === 'prefab' && e.path === rel)
+      if (entry === undefined) return null
+      const doc = opts.live.levelOf(docKey('prefab', entry.id))
+      return doc === null ? null : { id: entry.id, root: doc.nodes[0] }
+    }
+
     if (req.method === 'GET') {
+      // The live copy wins, as it does for a level: it is up to five seconds ahead of the file.
+      const live = openPrefab()
+      if (live !== null) return sendJson(res, 200, live.root), true
       if (!existsSync(file) || statSync(file).isDirectory()) return sendJson(res, 404, { error: 'not found' }), true
       res.statusCode = 200
       res.setHeader('content-type', contentTypeFor(file))
@@ -313,6 +327,9 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       return true
     }
     if (req.method === 'PUT') {
+      // Refused while it is open, as a level's PUT is: the document would write its own copy back over this.
+      const live = openPrefab()
+      if (live !== null) return sendJson(res, 409, { error: `that prefab is open live; edit it in the editor` }), true
       if (refuseIfLocked(res, user, [keyFor.asset(rel)])) return true
       try {
         // JSON only: materials, prefabs and clips. Binaries go through upload, which has the cap.
@@ -424,10 +441,14 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     const live = opts.live
     if (live === undefined || !url.startsWith('/api/live')) return false
     if (url === '/api/live' && req.method === 'GET') return sendJson(res, 200, { docs: live.status() }), true
-    const m = /^\/api\/live\/([\w-]+)\/(events|ops|hold|release|presence|flush|leave|ping)$/.exec(url)
+    /**
+     * `/api/live/level/<name>/…` and `/api/live/prefab/<assetId>/…` (ADR 0091). The kind is its own segment
+     * rather than a prefix in the name, because a name is matched as `[\w-]+` and a `:` in it would not be.
+     */
+    const m = /^\/api\/live\/(level|prefab)\/([\w-]+)\/(events|ops|hold|release|presence|flush|leave|ping)$/.exec(url)
     if (m === null) return false
-    const name = m[1]!
-    const action = m[2]!
+    const name = docKey(m[1] as 'level' | 'prefab', m[2]!)
+    const action = m[3]!
 
     if (action === 'events') {
       if (req.method !== 'GET') return sendJson(res, 405, { error: 'GET expected' }), true

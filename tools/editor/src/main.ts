@@ -14,7 +14,6 @@ import {
   COLLIDER,
   SPAWN,
   RENDERER,
-  type AssetEntry,
   type ClipSource,
   type PrefabSource,
   hydratePrefabs,
@@ -24,7 +23,6 @@ import {
   type LoadedLevel,
   // Aliased: this file is DOM-heavy and `Node` is taken. A scene node is not a DOM node, and the day the two
   // are confused the error is a type error somewhere unrelated.
-  type Node as SceneNode,
   type Level,
   type Pose,
   type Transform, validateLevel, applyBatch, refKey, OpError, type NodeRef, type Op,
@@ -272,6 +270,8 @@ const dropAllLocks = async (): Promise<void> => {
 // ============================== live levels (ADR 0089) ==============================
 /** Who else has this level open, for the status bar. */
 let livePeers: Peer[] = []
+/** The prefab this tab is editing in its own room, and the level to go back to. `null` in a level. */
+let prefabOpen: { assetId: string; name: string; from: string } | null = null
 /** The level the last snapshot carried, for `openFile` to build its document over. */
 let latestSnapshot: Level | null = null
 /** True while `openFile` awaits its first snapshot; a later one (reconnect) reinstalls the document itself. */
@@ -279,7 +279,8 @@ let joining = false
 /** Remote ops that landed mid-drag: applied to the data already, repainted when the drag ends. */
 let deferredRemote: Op[] = []
 /** Is the open document a level in a live session? Prefabs and materials are files with locks, as before. */
-const live = (): boolean => fileState.mode === 'level' && collab.name() !== null
+/** Is the open document a live room? Both kinds are now (ADR 0091); a material is still a file with a lock. */
+const live = (): boolean => collab.name() !== null
 
 const TRANSFORM_KINDS = new Set<string>(['setTransform', 'setOverrideTransform'])
 
@@ -484,6 +485,38 @@ const onPresence = (data: unknown): void => {
   }
 }
 
+/**
+ * A prefab the open level uses was edited in its own document (ADR 0091). Its ops are written against that
+ * prefab's wrapper, whose one root **is** the definition this level resolved, so wrapping and applying them
+ * writes through to every placement at once. Nothing is sent back: this level's own sequence did not move.
+ */
+const onPrefabOps = (assetId: string, ops: Op[]): void => {
+  const level = rootLevel()
+  const root = level?.prefabs?.[assetId]
+  if (level === undefined || level === null || root === undefined) return
+  try {
+    applyBatch({ id: assetId, config: {}, nodes: [root] }, ops)
+  } catch (e) {
+    // The definition here is behind the server's; the next open will take a fresh copy.
+    setStatus(`a prefab changed in a way this level could not follow: ${e instanceof OpError ? e.message : String(e)}`)
+    return
+  }
+  // Every placement of it changed shape, so this is the structural repaint, not the cheap one.
+  const open = doc
+  if (open === null) return
+  const keep = selectionRefs()
+  deselect()
+  buildItems()
+  rebuildLoaded()
+  const restored = keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
+  if (restored.length > 0) applySelection(restored)
+  rebuildHoldHelpers()
+  refreshUi()
+  inspectorRebuild()
+  previews.invalidate()
+  loadNewReferences(buildItems)
+}
+
 const collab = createCollab(httpTransport(), {
   level: () => (fileState.mode === 'level' ? rootLevel() : null),
   onSnapshot: (level) => {
@@ -503,15 +536,12 @@ const collab = createCollab(httpTransport(), {
   },
   onHolds: (holds) => onHoldsChanged(holds),
   onPresence: (_from, _name, data) => onPresence(data),
+  onPrefabOps: (assetId, ops) => onPrefabOps(assetId, ops),
   onError: (message) => setStatus(`live: ${message}`),
 })
 
-/** The key the open file is locked by, from what Save would write. */
-const docLockKey = (): string => {
-  if (fileState.mode === 'level') return lockKey.level(fileState.name)
-  const entry = openPrefabAsset === null ? undefined : assets?.db.byId[openPrefabAsset]
-  return lockKey.asset(entry?.path ?? `prefabs/${fileState.name}.prefab.json`)
-}
+/** The key the open file is locked by. Levels and prefabs are live rooms; this is for the rest. */
+const docLockKey = (): string => lockKey.level(fileState.name)
 
 /** Lock an editable asset (a material, a clip) before writing it. `true` when it may be written. */
 const lockAsset = async (assetId: string): Promise<boolean> => {
@@ -558,7 +588,6 @@ let playing = false // play-in-place active (editing is suspended)
 let lastSimTickAt = 0
 
 /** Asset id of the prefab open in prefab mode, or `null` for a level or an unsaved prefab. */
-let openPrefabAsset: string | null = null
 
 const r4 = (n: number): number => Math.round(n * 1e4) / 1e4
 const isOne = (v: THREE.Vector3): boolean => Math.abs(v.x - 1) < 1e-4 && Math.abs(v.y - 1) < 1e-4 && Math.abs(v.z - 1) < 1e-4
@@ -962,11 +991,11 @@ const showDoc = (): void => {
  * `effectiveNode`'s singleton rules all read it — so reassigning a level to another game means a new document
  * over the same level object. Rare and deliberate, which is why recreating it beats making the registry live.
  *
- * Refuses while a prefab is open on top: a prefab belongs to no game, so there is nothing to reassign.
+ * Refuses while a prefab is open: a prefab belongs to no game, so there is nothing to reassign.
  */
 const reopenWithRegistry = (): void => {
   const root = docStack[0]
-  if (root === undefined || docStack.length > 1) return
+  if (root === undefined || prefabOpen !== null) return
   docStack[0] = { doc: withOps(levelDoc(root.doc.asLevel(), registry(), editorClips)), label: root.label }
   showDoc()
 }
@@ -980,23 +1009,68 @@ const setDoc = (next: Doc, name: string): void => {
   resetHistory()
 }
 
-/** Step into the shared definition behind a referencing instance. */
-const openPrefabOf = (index: number): void => {
-  if (doc === null) return
-  const id = doc.refOf(index)
-  if (id === null) return
-  const prefab = doc.prefabAt(id)
-  if (prefab === undefined) return
-  const n = doc.refCount(id)
-  // Scoped to the table entry it edits, so the ops it reports apply to `prefabs[id]` on every copy (ADR 0089).
-  docStack.push({ doc: withOps(prefabDoc(prefab, registry(), editorClips, { table: id })), label: `${id} (${n} instance${n === 1 ? '' : 's'})` })
+/**
+ * Edit the prefab behind a placement — in **its own live room** (ADR 0091), not as a lens over this level's
+ * copy, because there is no copy any more. Its edits are ops on that document, everyone in it sees them, and
+ * every open level following it repaints. There is no Save.
+ *
+ * The level's session is left, so this tab is in one document at a time: the viewport, the physics world, the
+ * selection and the holds are all singletons keyed to the open document, and two joined rooms would be two
+ * streams repainting one screen. Back rejoins the level, and the server greets that with a fresh snapshot, so
+ * what everyone else did while you were away is there when you return.
+ */
+const enterPrefab = async (assetId: string): Promise<void> => {
+  const entry = assets?.db.byId[assetId]
+  if (entry === undefined) {
+    setStatus('that prefab is not in the project')
+    return
+  }
+  const from = fileState.name
+  collab.leave()
+  joining = true
+  try {
+    await collab.join(assetId, 'prefab')
+  } catch (e) {
+    joining = false
+    setStatus(`could not open ${entry.name}: ${e instanceof Error ? e.message : String(e)}`)
+    void rejoinLevel(from)
+    return
+  }
+  joining = false
+  const root = latestSnapshot?.nodes[0]
+  if (root === undefined) {
+    setStatus('that prefab did not load')
+    void rejoinLevel(from)
+    return
+  }
+  prefabOpen = { assetId, name: entry.name, from }
+  docStack.length = 0
+  docStack.push({ doc: withOps(prefabDoc(root, registry(), editorClips)), label: `prefab: ${entry.name}` })
   showDoc()
+  resetHistory()
+  refreshUi()
 }
 
+const openPrefabOf = (index: number): void => {
+  const id = doc?.refOf(index)
+  if (id === null || id === undefined) return
+  void enterPrefab(id)
+}
+
+/** Leave the prefab and rejoin the level it was opened from, which arrives as a fresh snapshot. */
 const closePrefab = (): void => {
-  if (docStack.length < 2) return
-  docStack.pop()
-  showDoc()
+  const open = prefabOpen
+  if (open === null) return
+  prefabOpen = null
+  collab.leave()
+  void rejoinLevel(open.from)
+}
+
+/** Reopen a level by name, as `openFile` does — used on the way back out of a prefab. */
+const rejoinLevel = async (name: string): Promise<void> => {
+  prefabOpen = null
+  fileState.mode = 'level'
+  await openFile(name)
 }
 
 /** A component with a stable id — blank documents are authored here, so the ids may as well read plainly. */
@@ -1025,25 +1099,6 @@ const blankLevel = (id: string): Level => ({
       ],
     },
     { id: 'spawn', name: 'spawn', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', SPAWN, {})] },
-  ],
-})
-
-/** A new prefab: a root that carries only a transform, and one pad under it that carries the geometry. */
-const blankPrefab = (id: string): SceneNode => ({
-  id: 'root',
-  name: id,
-  transform: { position: vec3(0, 0, 0) },
-  components: [],
-  children: [
-    {
-      id: 'pad',
-      name: 'pad',
-      transform: { position: vec3(0, 0, 0) },
-      components: [
-        comp('c0', COLLIDER, { shape: { kind: 'box', halfExtents: vec3(1.5, 0.15, 1.5) }, center: vec3(0, 0, 0) }),
-        comp('c1', RENDERER, { material: '' }),
-      ],
-    },
   ],
 })
 
@@ -2309,15 +2364,11 @@ const statusBar = $<HTMLDivElement>('#status')
 const fileState: { mode: Mode; name: string } = { mode: 'level', name: 'untitled' }
 let fileNames: string[] = []
 
-/** Prefab assets, by name — what the file picker offers in prefab mode. */
-const prefabEntries = (): AssetEntry[] => (assets === null ? [] : assetsOfKind(assets.db, 'prefab'))
-
 const openFile = async (name: string): Promise<void> => {
   // The previous file's locks go first — releasing them is what commits that session (ADR 0083).
   await dropAllLocks()
   try {
-    if (fileState.mode === 'level') {
-      openPrefabAsset = null
+    {
       /**
        * A level is a live session, not a file with a lock (ADR 0089): join it and the server answers with its
        * copy — newer than the file whenever someone has it open.
@@ -2355,18 +2406,7 @@ const openFile = async (name: string): Promise<void> => {
       missingPrefabs = resolved.missing
       setDoc(withOps(levelDoc(level, registry(), editorClips)), name)
       if (missingPrefabs.length > 0) setStatus(`no prefab file for ${missingPrefabs.join(', ')} — those objects are empty`)
-      return
     }
-    // A prefab is an asset now, so it is opened by id and saved back to its own path.
-    const entry = prefabEntries().find((e) => e.name === name)
-    const prefab = entry === undefined ? undefined : assets?.prefabOf(entry.id)
-    if (entry === undefined || prefab === undefined) {
-      setStatus(`no prefab asset named ${name}`)
-      return
-    }
-    openPrefabAsset = entry.id
-    readOnlyBy = await takeLock(lockKey.asset(entry.path))
-    setDoc(withOps(prefabDoc(prefab, registry(), editorClips)), name)
   } catch (e) {
     setStatus(`load failed: ${String(e)}`)
   }
@@ -2387,12 +2427,8 @@ const visibleLevels = (): string[] =>
   levelEntries.filter((e) => activeMode === undefined || e.mode === undefined || e.mode === activeMode.name).map((e) => e.name)
 
 const refreshFileList = async (): Promise<void> => {
-  if (fileState.mode === 'level') {
-    levelEntries = await listFiles('levels').catch(() => [] as FileEntry[])
-    fileNames = visibleLevels()
-  } else {
-    fileNames = prefabEntries().map((e) => e.name)
-  }
+  levelEntries = await listFiles('levels').catch(() => [] as FileEntry[])
+  fileNames = visibleLevels()
   toolbar?.render()
 }
 
@@ -2433,18 +2469,17 @@ const createLevel = async (from: string | null): Promise<void> => {
   await openFile(name)
 }
 
-const enterMode = async (mode: Mode): Promise<void> => {
-  fileState.mode = mode
+/** Open the first level the active game has, or a blank one when it has none. */
+const openFirstLevel = async (): Promise<void> => {
   await refreshFileList()
   if (fileNames[0] !== undefined) await openFile(fileNames[0])
-  else setDoc(withOps(mode === 'level' ? levelDoc(blankLevel('untitled'), registry(), editorClips) : prefabDoc(blankPrefab('untitled'), registry(), editorClips)), 'untitled')
+  else setDoc(withOps(levelDoc(blankLevel('untitled'), registry(), editorClips)), 'untitled')
 }
 
 // --- toolbar ---
 const toolbar: Toolbar = createToolbar(
   $<HTMLDivElement>('#toolbar'),
   () => ({
-    mode: fileState.mode,
     game: activeMode?.name ?? '',
     games: MODE_LIST.map((m) => ({ name: m.name, label: m.label })),
     name: fileState.name,
@@ -2454,16 +2489,13 @@ const toolbar: Toolbar = createToolbar(
     snap: edit.snap,
     step: edit.step,
     playing,
-    inPrefab: docStack.length > 1,
+    inPrefab: prefabOpen !== null,
     readOnly: readOnlyBy,
     live: live(),
     grid: grid.visible,
     markers: markerGroup.visible,
   }),
   {
-    setMode: (m) => void guardUnsaved().then(async (go) => {
-      if (go) await enterMode(m)
-    }),
     setGame: (name) => {
       /**
        * The authoring context, not the open level's tag: retagging happens in the Game row, where the
@@ -2490,18 +2522,8 @@ const toolbar: Toolbar = createToolbar(
       fileState.name = name === '' ? 'untitled' : name
       refreshUi()
     },
-    save: () => void saveNow(),
-    newBlank: () => {
-      if (fileState.mode === 'level') {
-        // A live level exists the moment it is named: the file is created on the server, then joined.
-        void createLevel(null)
-        return
-      }
-      const name = fileState.name || 'untitled'
-      openPrefabAsset = null // a new prefab has no asset yet; the first Save creates one
-      void dropAllLocks() // a new file locks nothing until its first Save names it
-      setDoc(withOps(prefabDoc(blankPrefab(name), registry(), editorClips)), name)
-    },
+    // A live level exists the moment it is named: the file is created on the server, then joined.
+    newBlank: () => void createLevel(null),
     duplicate: () => void createLevel(fileState.name),
     back: closePrefab,
     setGizmo: setMode,
@@ -2635,14 +2657,34 @@ const revertOverride = (field?: string): void => {
 }
 
 /** Push this placement's overrides into the shared prefab. Named for the same reason as `revertOverride`. */
-const applyOverrides = (): void => {
-  if (selected === null || doc === null) return
-  doc.applyToPrefab(selected)
+/**
+ * Push this placement's overrides into the shared prefab — two documents, one gesture (ADR 0091). The prefab's
+ * ops go to its own room, and only once the server has taken them does the override here go, so a refusal
+ * leaves the placement exactly as it was rather than clean but unapplied.
+ *
+ * Ctrl+Z afterwards puts **this placement's** override back; it does not take the change out of the prefab.
+ * The result looks the same either way, and the status line says so, because pushing into a prefab is a
+ * deliberate act on something other levels share.
+ */
+const applyOverrides = async (): Promise<void> => {
+  const open = doc
+  const at = selected
+  if (at === null || open === null) return
+  const plan = open.overrideOpsFor(at)
+  if (plan === null) return
+  const name = assets?.db.byId[plan.assetId]?.name ?? 'the prefab'
+  const refused = await collab.submitToPrefab(plan.assetId, plan.ops)
+  if (refused !== null) {
+    setStatus(`${name} did not take it: ${refused} — this placement is unchanged`)
+    return
+  }
+  if (doc !== open) return // the document moved under the round trip
+  open.revert(at)
   recordEdit('apply to prefab')
   buildItems()
   rebuildLoaded()
   applySelection(selection)
-  setStatus('applied to the prefab — every instance follows')
+  setStatus(`applied to ${name} — every level using it follows; undo puts this placement's override back`)
 }
 
 /**
@@ -2715,7 +2757,7 @@ const menuFor = (index: number): MenuItem[] => {
       run: () => void saveAsPrefab(index),
     },
     { label: 'Revert to prefab', divider: true, enabled: inherited && doc.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => revertOverride() },
-    { label: 'Apply to prefab', enabled: inherited && doc.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => applyOverrides() },
+    { label: 'Apply to prefab', enabled: inherited && doc.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => void applyOverrides() },
   ]
 }
 
@@ -3027,6 +3069,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     const entry = isFolder ? undefined : assets?.db.entries.find((e) => e.path === path)
     const placeable = entry?.kind === 'prefab' || entry?.kind === 'model'
     const foreign = entry === undefined ? null : unplaceableWhy(entry.id)
+    const prefabHere = entry?.kind === 'prefab' ? entry.id : null
     contextMenu.open(
       at,
       [
@@ -3043,6 +3086,13 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
               refreshUi()
             }
           },
+        },
+        {
+          // A prefab placed in no level is reachable only from here, now that the toolbar has no prefab mode.
+          label: 'Open prefab',
+          enabled: prefabHere !== null && prefabOpen === null,
+          why: prefabHere === null ? 'not a prefab' : 'leave the prefab you are in first',
+          run: () => void (prefabHere !== null && enterPrefab(prefabHere)),
         },
         {
           label: 'Copy path',
@@ -3150,16 +3200,7 @@ const saveNow = async (): Promise<boolean> => {
   // them drift is how content/levels ended up with three files all claiming "level1".
   root.setId(fileState.name)
   try {
-    if (fileState.mode === 'level') await saveFile('levels', fileState.name, stripHydrated(root.toJSON() as Level, hydratedPrefabs))
-    else {
-      const prefab = root.toJSON() as SceneNode
-      // Overwrite the asset it came from, or create one when this prefab has never been saved.
-      if (openPrefabAsset !== null) await assets?.savePrefab(openPrefabAsset, prefab)
-      else {
-        const created = await assets?.createPrefab(`prefabs/${fileState.name}.prefab.json`, prefab)
-        openPrefabAsset = created?.id ?? null
-      }
-    }
+    await saveFile('levels', fileState.name, stripHydrated(root.toJSON() as Level, hydratedPrefabs))
   } catch (e: unknown) {
     setStatus(`save failed: ${String(e)}`)
     return false
@@ -3576,7 +3617,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     if (selected !== null) openPrefabOf(selected)
   },
   revertOverride,
-  applyOverrides,
+  applyOverrides: () => void applyOverrides(),
   editKeys: (componentId, param) => {
     if (selected === null || doc === null) return
     keyTarget = doc.keyEditors(selected).find((e) => e.componentId === componentId && e.param === param) ?? null
@@ -3780,7 +3821,7 @@ me = await fetchMe().catch((e: unknown) => {
   return null
 })
 await reloadAssets()
-await enterMode('level')
+await openFirstLevel()
 
 /**
  * Keep every held lock alive, and re-take the file's if the server dropped it (a laptop asleep past the stale

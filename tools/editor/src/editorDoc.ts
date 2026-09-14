@@ -281,8 +281,12 @@ export interface Doc {
    * to what the prefab says.
    */
   revert: (i: number, field?: string) => void
-  /** Push this placement's overrides into the shared prefab, so every placement gets them and this one is clean. */
-  applyToPrefab: (i: number) => void
+  /**
+   * The ops that would push this placement's overrides into the shared prefab, and which prefab (ADR 0091).
+   * Pure: a prefab is its own live document, so its ops are the host's to send there, and this document only
+   * clears the override afterwards with `revert`.
+   */
+  overrideOpsFor: (i: number) => { assetId: string; ops: Op[] } | null
 
   // ---- keyframes ----------------------------------------------------------------------------------
   /**
@@ -1076,30 +1080,28 @@ const docOver = (
      * Every other placement of that prefab changes, which is the point — and why this is a deliberate action
      * rather than something an edit does on its own.
      */
-    applyToPrefab: (i) => {
+    overrideOpsFor: (i) => {
       const n = node(i)
-      if (n?.owner?.prefab === undefined) return
+      if (n?.owner?.prefab === undefined) return null
       const over = overrideFor(n)
-      if (over === undefined) return
-      // The definition's own ops, scoped to its table entry, then the override goes: one batch, one undo step.
-      const table = n.owner.prefab
+      if (over === undefined) return null
+      // Plain ops, with no table scope: they go to the prefab's own document, whose forest is its one root.
       const id = n.authored.id
       const target = n.authored
       const ops: Op[] = []
-      if (over.transform !== undefined) ops.push({ kind: 'setTransform', table, id, transform: over.transform })
-      if (over.name !== undefined) ops.push({ kind: 'setName', table, id, name: over.name === '' ? null : over.name })
+      if (over.transform !== undefined) ops.push({ kind: 'setTransform', id, transform: over.transform })
+      if (over.name !== undefined) ops.push({ kind: 'setName', id, name: over.name === '' ? null : over.name })
       for (const [componentId, patch] of Object.entries(over.params ?? {})) {
-        if (target.components.some((x) => x.id === componentId)) ops.push({ kind: 'setParams', table, id, componentId, patch })
+        if (target.components.some((x) => x.id === componentId)) ops.push({ kind: 'setParams', id, componentId, patch })
       }
       for (const [componentId, on] of Object.entries(over.enabled ?? {})) {
-        if (target.components.some((x) => x.id === componentId)) ops.push({ kind: 'setComponentEnabled', table, id, componentId, enabled: on })
+        if (target.components.some((x) => x.id === componentId)) ops.push({ kind: 'setComponentEnabled', id, componentId, enabled: on })
       }
       for (const componentId of over.removed ?? []) {
-        if (target.components.some((x) => x.id === componentId)) ops.push({ kind: 'removeComponent', table, id, componentId })
+        if (target.components.some((x) => x.id === componentId)) ops.push({ kind: 'removeComponent', id, componentId })
       }
-      for (const c of over.added ?? []) ops.push({ kind: 'addComponent', table, id, component: structuredClone(c) })
-      ops.push({ kind: 'setNodeOverride', owner: n.owner.id, node: id, override: null })
-      commit(ops)
+      for (const c of over.added ?? []) ops.push({ kind: 'addComponent', id, component: structuredClone(c) })
+      return { assetId: n.owner.prefab, ops }
     },
 
     keyEditors,

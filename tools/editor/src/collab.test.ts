@@ -46,7 +46,7 @@ const harness = (): {
     transport: undefined as unknown as LiveTransport,
   }
   h.transport = {
-    connect: (_name, onEvent, onDrop) => {
+    connect: (_kind, _name, onEvent, onDrop) => {
       h.connections++
       h.emit = onEvent
       h.drop = onDrop
@@ -56,11 +56,11 @@ const harness = (): {
         },
       }
     },
-    post: (_name, action, body) =>
+    post: (_kind, _name, action, body) =>
       new Promise((resolve) => {
         h.posts.push({ action, body: body as Record<string, unknown>, answer: (ok, status = ok ? 200 : 400, b = ok ? { ok: true } : { error: 'refused' }) => resolve({ ok, status, body: b }) })
       }),
-    beacon: (_name, action) => {
+    beacon: (_kind, _name, action) => {
       h.beacons.push(action)
     },
   }
@@ -92,6 +92,7 @@ const setUp = async (): Promise<{
     onPeers: (p) => out.peers.push(p),
     onHolds: (x) => out.holds.push(x),
     onPresence: () => undefined,
+    onPrefabOps: () => undefined,
     onError: (m) => out.errors.push(m),
   })
   const joined = collab.join('lv')
@@ -116,7 +117,7 @@ describe('collab', () => {
 
   it('a refused stream rejects the join', async () => {
     const h = harness()
-    const collab = createCollab(h.transport, { level: () => null, onSnapshot: () => undefined, onApplied: () => undefined, onRejected: () => undefined, onPeers: () => undefined, onHolds: () => undefined, onPresence: () => undefined, onError: () => undefined })
+    const collab = createCollab(h.transport, { level: () => null, onSnapshot: () => undefined, onApplied: () => undefined, onRejected: () => undefined, onPeers: () => undefined, onHolds: () => undefined, onPresence: () => undefined, onPrefabOps: () => undefined, onError: () => undefined })
     const joined = collab.join('nope')
     h.drop('not there')
     await expect(joined).rejects.toThrow('not there')

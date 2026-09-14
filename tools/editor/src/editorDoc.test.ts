@@ -442,7 +442,7 @@ describe('editing an inherited node writes an override', () => {
     expect('overrides' in level.nodes[0]!).toBe(false)
   })
 
-  it('applies overrides to the prefab, so every placement follows and this one is clean', () => {
+  it('applies overrides to the prefab, so every placement follows and this one is clean', async () => {
     const level = blank()
     const doc = levelDoc(level)
     placeRef(doc, vec3(0, 0, 0))
@@ -450,7 +450,18 @@ describe('editing an inherited node writes an override', () => {
     doc.setParams(1, idOf(doc, 1, RENDERER), { material: MAT_A })
     doc.addComponent(1, Checkpoint.type)
 
-    doc.applyToPrefab(1)
+    /**
+     * Two halves now (ADR 0091): the ops the prefab's own document would take, and the override this level
+     * clears. The host sends the first to the prefab's room and only then calls `revert`. Applying them to the
+     * definition here stands in for that round trip.
+     */
+    const plan = doc.overrideOpsFor(1)!
+    expect(plan.assetId).toBe(PAD_ID)
+    expect(doc.overridesOf(1), 'nothing is cleared by asking').not.toEqual([])
+
+    const { applyBatch: apply } = await import('@mp/content')
+    apply({ id: 'p', config: {}, nodes: [doc.prefabAt(PAD_ID)!] }, plan.ops)
+    doc.revert(1)
 
     expect(doc.overridesOf(1), 'no longer an override').toEqual([])
     expect(paramOn(doc, 1, RENDERER, 'material'), 'still what was chosen').toBe(MAT_A)
@@ -463,7 +474,7 @@ describe('editing an inherited node writes an override', () => {
     const doc = prefabDoc(padPrefab())
     expect(doc.overridesOf(1)).toEqual([])
     doc.revert(1)
-    doc.applyToPrefab(1)
+    expect(doc.overrideOpsFor(1), 'nothing to push: the node is the definition').toBeNull()
     expect(doc.count(), 'and neither is a no-op that breaks anything').toBe(2)
   })
 })
@@ -964,7 +975,6 @@ describe('the document reports its edits as ops', () => {
     const model = doc.placeModel('model-1', vec3(4, 0, 0))
     doc.remove(model)
     doc.revert(named(doc, 'renamed pad'), 'name')
-    doc.applyToPrefab(1)
     doc.setEnvironment({ ambient: { intensity: 0.4 } })
     doc.setMode('parkour')
     doc.setMode(null)
