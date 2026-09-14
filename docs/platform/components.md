@@ -55,7 +55,9 @@ createComponentRuntime(loaded: LoadedLevel, registry: Registry, io: { character:
 interface PlayerEntity { id: string; components: readonly ComponentData[]; defs?: readonly AnyComponentDef[] /* session defs, tried before registry */ }
 interface ComponentRuntime { attach(tick, timeMs, dt); fixedUpdate(tick, timeMs, dt); locomote(tick, timeMs, dt, cmd); contact(handles); detach(); count() }
 
-interface Ctx { tick; dt; timeMs; random(): number /* hash(tick, instance, call) */; character: CharacterAccess; effects: Effects }
+interface Ctx { tick; dt; timeMs; random(): number /* hash(tick, instance, call) */; character: CharacterAccess; effects: Effects
+                players(): readonly PlayerView[] }   // ADR 0095
+interface PlayerView { id: number /* 0 = self */; position: Vec3; isSelf: boolean }
 interface Self<D, S> { params: Params<D>; state: S /* never serialized */; node: WorldNode; get(def); find(ref); offset: NodeDrive | undefined }
 interface Hit { colliderHandle: number; node: WorldNode }          // no contact normal
 interface CharacterAccess { launch(speed) /* max per tick */; position(); velocity(); carry(); grounded(); push(v) /* sums per tick */ }
@@ -65,6 +67,8 @@ interface Effects { kill(): void; progress(node: WorldNode): void }
 `characterAccess(state: CharacterLike)` adapts a character whose pending requests are fields.
 
 **Determinism** (`runtime.ts` header, ADR 0036): hooks are pure functions of (state, synced tick, arguments). `Ctx` withholds wall clock, `Math.random`, network, DOM — use `ctx.tick`/`timeMs`/`random`. Shared cross-client state has no channel in `Ctx`; unsupported by design.
+
+**`ctx.players()` is the one exception, and it is not deterministic** (ADR 0095). Own body first (`id: 0`), then peers from `io.peers()` — the relayed, ~100 ms interpolated stream — so two clients can differ by centimetres at the same tick. Legitimate for chasing, aiming, ranking, looking at; never for anything that must be agreed. Safe in this stack because each client decides its own death (ADR 0011), exactly as a `Hazard` does. Self-only where `io.peers` is absent: the editor's play-test and anything offline. Rebuilt once a tick and the array reused, so do not keep it past the hook.
 
 ## Registry — `packages/components/src/registry.ts`
 
@@ -90,13 +94,14 @@ interface Registry { has(type); get(type); all() /* declaration order = add-menu
 | | `Hazard` | — | `onContact → effects.kill()`; kill plane = Hazard on a trigger (ADR 0053) |
 | | `Bumper` | `power: number` (26, 1–60) | `onContact → character.launch(power)` (ADR 0032) |
 | | `Track` | `clip: asset(animation)`, `keys{clip:'clip'}`, `loop: enum`, `phaseMs` | no hook; loader-evaluated (ADR 0050) |
+| | `Boss` (ADR 0095) | `zone: nodeRef`, `speed: number` (8, 0.5–60 m/s), `turn: number` (180, 15–720 °/s) | `moves`; `onFixedUpdate` chases the player furthest along the zone's forward, drives home when empty. **Does not kill** — add `Collider` + `Hazard` |
 | `PLAYER_COMPONENTS` | `Death` | `ragdoll: bool`, `assembleStagger`, `assembleFall`, `assembleHeight` | `attachesTo: 'player'`; data read by the client (ADR 0059) |
 
 All gameplay/player built-ins are `singleton`.
 
 ## Shared set — `packages/components/src/shared.ts` (ADR 0077)
 
-`SHARED_COMPONENT_TYPES` = `['Bumper', 'Checkpoint', 'Goal', 'Hazard', 'Track']`. `isSharedComponent(type)`. `sharedComponents(types): AnyComponentDef[]` throws on a non-shared name.
+`SHARED_COMPONENT_TYPES` = `['Boss', 'Bumper', 'Checkpoint', 'Goal', 'Hazard', 'Track']`. `isSharedComponent(type)`. `sharedComponents(types): AnyComponentDef[]` throws on a non-shared name.
 
 ## Reading — `packages/components/src/read.ts`
 

@@ -126,6 +126,22 @@ export interface WorldNode {
   /** World centre at load — what a respawn point wants. */
   readonly position: Vec3
   /**
+   * World rotation at load (ADR 0095). Pairs with `position`, and is how a node says which way it *faces* —
+   * `rotateVec3(node.rotation, {x:0, y:0, z:1})` is its forward, the convention every transform gizmo draws.
+   *
+   * At load, like `position`: the nodes that are asked this are volumes and markers, which do not move. A
+   * node a `Track` or a component drives reports where it started.
+   */
+  readonly rotation: Quat
+  /**
+   * This node's colliders as **world-scaled shapes**, in the same order as `colliderHandles` (ADR 0095).
+   *
+   * The handles are opaque to everything above the physics world, so this is the only way a rule can ask how
+   * big a thing is — which a volume test needs and a contact does not. World-scaled, so a box already has
+   * ADR 0090's unit-collider-times-node-scale applied and a reader never repeats that arithmetic.
+   */
+  readonly colliders: readonly ColliderDesc[]
+  /**
    * The colliders this node owns, in order. The inverse of `nodeOf`.
    *
    * Opaque numbers: Rapier packs a generation into a handle, so they are **not** small sequential integers
@@ -430,7 +446,18 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     }
 
     const handles: number[] = []
-    const worldNode: WorldNode = { id: r.id, name: r.name, components: r.components, position: { ...f.worldPos }, colliderHandles: handles, scope: inner }
+    // Filled by the collider loop below, which runs after this node object is made — as `handles` is.
+    const worldColliders: ColliderDesc[] = []
+    const worldNode: WorldNode = {
+      id: r.id,
+      name: r.name,
+      components: r.components,
+      position: { ...f.worldPos },
+      rotation: { ...f.worldRot },
+      colliderHandles: handles,
+      colliders: worldColliders,
+      scope: inner,
+    }
     frameByNode.set(worldNode, f)
     allNodes.push(worldNode)
     /**
@@ -488,6 +515,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
       let modelItem: VisualItem | undefined
       colliders.forEach((c, n) => {
         const collider = scaleCollider(shapeOf(c), f.scale)
+        worldColliders.push(collider)
         const shape = toShape(collider)
         const centre = vec3Param(c, 'center', ZERO)
         // Scaled like any local offset, so a scaled node moves its colliders apart by the same factor.
