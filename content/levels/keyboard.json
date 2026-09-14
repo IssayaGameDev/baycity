@@ -52,7 +52,7 @@
             "shape": {
               "kind": "box",
               "halfExtents": {
-                "x": 80,
+                "x": 800,
                 "y": 0.5,
                 "z": 80
               }
