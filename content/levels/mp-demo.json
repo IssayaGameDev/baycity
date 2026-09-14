@@ -98,6 +98,13 @@
               }
             },
             {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
               "id": "c1",
               "type": "Renderer",
               "params": {
@@ -142,6 +149,13 @@
                     "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -197,6 +211,13 @@
               }
             },
             {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
               "id": "c1",
               "type": "Renderer",
               "params": {
@@ -241,6 +262,13 @@
                     "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -327,6 +355,13 @@
               }
             },
             {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
               "id": "c1",
               "type": "Renderer",
               "params": {
@@ -367,6 +402,13 @@
                   "kind": "ball",
                   "radius": 0.5
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:sphere"
               }
             },
             {
@@ -422,6 +464,13 @@
               }
             },
             {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
               "id": "c1",
               "type": "Renderer",
               "params": {
@@ -474,6 +523,13 @@
               }
             },
             {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
               "id": "c1",
               "type": "Renderer",
               "params": {
@@ -509,6 +565,11 @@
           "x": 0,
           "y": -13,
           "z": 0
+        },
+        "scale": {
+          "x": 240,
+          "y": 6,
+          "z": 240
         }
       },
       "components": [
@@ -519,12 +580,19 @@
             "shape": {
               "kind": "box",
               "halfExtents": {
-                "x": 120,
-                "y": 3,
-                "z": 120
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
               }
             },
             "trigger": true
+          }
+        },
+        {
+          "id": "mesh",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:rounded-box"
           }
         },
         {

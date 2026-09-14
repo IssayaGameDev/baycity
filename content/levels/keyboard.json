@@ -132,9 +132,9 @@
               "z": -1.5708
             },
             "scale": {
-              "x": 3.3,
-              "y": 0.303,
-              "z": 1
+              "x": 26.4,
+              "y": 0.1515,
+              "z": 6
             }
           },
           "components": [
@@ -145,11 +145,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 4,
-                    "y": 0.25,
-                    "z": 3
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -176,9 +183,9 @@
               "z": -1.5708
             },
             "scale": {
-              "x": 3.3,
-              "y": 0.303,
-              "z": 1
+              "x": 26.4,
+              "y": 0.1515,
+              "z": 6
             }
           },
           "components": [
@@ -189,11 +196,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 4,
-                    "y": 0.25,
-                    "z": 3
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -213,6 +227,11 @@
               "x": 0,
               "y": 26,
               "z": 0
+            },
+            "scale": {
+              "x": 8,
+              "y": 0.5,
+              "z": 6
             }
           },
           "components": [
@@ -223,11 +242,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 4,
-                    "y": 0.25,
-                    "z": 3
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -286,6 +312,11 @@
                   "x": 1,
                   "y": 0.5,
                   "z": 9.5
+                },
+                "scale": {
+                  "x": 2,
+                  "y": 0.5,
+                  "z": 2
                 }
               },
               "components": [
@@ -296,11 +327,18 @@
                     "shape": {
                       "kind": "box",
                       "halfExtents": {
-                        "x": 1,
-                        "y": 0.25,
-                        "z": 1
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
                       }
                     }
+                  }
+                },
+                {
+                  "id": "mesh",
+                  "type": "Mesh",
+                  "params": {
+                    "model": "builtin:rounded-box"
                   }
                 },
                 {
@@ -330,6 +368,11 @@
                   "x": 1,
                   "y": 0.5,
                   "z": 7
+                },
+                "scale": {
+                  "x": 2,
+                  "y": 0.5,
+                  "z": 2
                 }
               },
               "components": [
@@ -340,11 +383,18 @@
                     "shape": {
                       "kind": "box",
                       "halfExtents": {
-                        "x": 1,
-                        "y": 0.25,
-                        "z": 1
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
                       }
                     }
+                  }
+                },
+                {
+                  "id": "mesh",
+                  "type": "Mesh",
+                  "params": {
+                    "model": "builtin:rounded-box"
                   }
                 },
                 {
@@ -374,6 +424,11 @@
                   "x": 1,
                   "y": 0.5,
                   "z": 4.5
+                },
+                "scale": {
+                  "x": 2,
+                  "y": 0.5,
+                  "z": 2
                 }
               },
               "components": [
@@ -384,11 +439,18 @@
                     "shape": {
                       "kind": "box",
                       "halfExtents": {
-                        "x": 1,
-                        "y": 0.25,
-                        "z": 1
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
                       }
                     }
+                  }
+                },
+                {
+                  "id": "mesh",
+                  "type": "Mesh",
+                  "params": {
+                    "model": "builtin:rounded-box"
                   }
                 },
                 {
@@ -418,6 +480,11 @@
                   "x": 1,
                   "y": 0.5,
                   "z": 2
+                },
+                "scale": {
+                  "x": 2,
+                  "y": 0.5,
+                  "z": 2
                 }
               },
               "components": [
@@ -428,11 +495,18 @@
                     "shape": {
                       "kind": "box",
                       "halfExtents": {
-                        "x": 1,
-                        "y": 0.25,
-                        "z": 1
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
                       }
                     }
+                  }
+                },
+                {
+                  "id": "mesh",
+                  "type": "Mesh",
+                  "params": {
+                    "model": "builtin:rounded-box"
                   }
                 },
                 {
@@ -462,6 +536,11 @@
                   "x": 1.0001,
                   "y": 0.5,
                   "z": -0.5
+                },
+                "scale": {
+                  "x": 2,
+                  "y": 0.5,
+                  "z": 2
                 }
               },
               "components": [
@@ -472,11 +551,18 @@
                     "shape": {
                       "kind": "box",
                       "halfExtents": {
-                        "x": 1,
-                        "y": 0.25,
-                        "z": 1
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
                       }
                     }
+                  }
+                },
+                {
+                  "id": "mesh",
+                  "type": "Mesh",
+                  "params": {
+                    "model": "builtin:rounded-box"
                   }
                 },
                 {
@@ -506,6 +592,11 @@
                   "x": 1.0001,
                   "y": 0.5,
                   "z": -3
+                },
+                "scale": {
+                  "x": 2,
+                  "y": 0.5,
+                  "z": 2
                 }
               },
               "components": [
@@ -516,11 +607,18 @@
                     "shape": {
                       "kind": "box",
                       "halfExtents": {
-                        "x": 1,
-                        "y": 0.25,
-                        "z": 1
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
                       }
                     }
+                  }
+                },
+                {
+                  "id": "mesh",
+                  "type": "Mesh",
+                  "params": {
+                    "model": "builtin:rounded-box"
                   }
                 },
                 {
@@ -550,6 +648,11 @@
                   "x": 1,
                   "y": 0.5,
                   "z": -5.5
+                },
+                "scale": {
+                  "x": 2,
+                  "y": 0.5,
+                  "z": 2
                 }
               },
               "components": [
@@ -560,11 +663,18 @@
                     "shape": {
                       "kind": "box",
                       "halfExtents": {
-                        "x": 1,
-                        "y": 0.25,
-                        "z": 1
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
                       }
                     }
+                  }
+                },
+                {
+                  "id": "mesh",
+                  "type": "Mesh",
+                  "params": {
+                    "model": "builtin:rounded-box"
                   }
                 },
                 {
@@ -594,6 +704,11 @@
                   "x": 1,
                   "y": 0.5,
                   "z": -8
+                },
+                "scale": {
+                  "x": 2,
+                  "y": 0.5,
+                  "z": 2
                 }
               },
               "components": [
@@ -604,11 +719,18 @@
                     "shape": {
                       "kind": "box",
                       "halfExtents": {
-                        "x": 1,
-                        "y": 0.25,
-                        "z": 1
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
                       }
                     }
+                  }
+                },
+                {
+                  "id": "mesh",
+                  "type": "Mesh",
+                  "params": {
+                    "model": "builtin:rounded-box"
                   }
                 },
                 {
@@ -657,6 +779,11 @@
                   "x": -5.8509,
                   "y": 0.866,
                   "z": -17.5061
+                },
+                "scale": {
+                  "x": 3,
+                  "y": 0.5,
+                  "z": 3
                 }
               },
               "components": [
@@ -667,11 +794,18 @@
                     "shape": {
                       "kind": "box",
                       "halfExtents": {
-                        "x": 1.5,
-                        "y": 0.25,
-                        "z": 1.5
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
                       }
                     }
+                  }
+                },
+                {
+                  "id": "mesh",
+                  "type": "Mesh",
+                  "params": {
+                    "model": "builtin:rounded-box"
                   }
                 },
                 {
@@ -698,6 +832,11 @@
                   "x": -1.8509,
                   "y": 0.866,
                   "z": -17.5061
+                },
+                "scale": {
+                  "x": 3,
+                  "y": 0.5,
+                  "z": 3
                 }
               },
               "components": [
@@ -708,11 +847,18 @@
                     "shape": {
                       "kind": "box",
                       "halfExtents": {
-                        "x": 1.5,
-                        "y": 0.25,
-                        "z": 1.5
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
                       }
                     }
+                  }
+                },
+                {
+                  "id": "mesh",
+                  "type": "Mesh",
+                  "params": {
+                    "model": "builtin:rounded-box"
                   }
                 },
                 {
@@ -739,6 +885,11 @@
                   "x": 2.1491,
                   "y": 0.866,
                   "z": -17.5061
+                },
+                "scale": {
+                  "x": 3,
+                  "y": 0.5,
+                  "z": 3
                 }
               },
               "components": [
@@ -749,11 +900,18 @@
                     "shape": {
                       "kind": "box",
                       "halfExtents": {
-                        "x": 1.5,
-                        "y": 0.25,
-                        "z": 1.5
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
                       }
                     }
+                  }
+                },
+                {
+                  "id": "mesh",
+                  "type": "Mesh",
+                  "params": {
+                    "model": "builtin:rounded-box"
                   }
                 },
                 {
@@ -780,6 +938,11 @@
                   "x": 6.1491,
                   "y": 0.866,
                   "z": -17.5061
+                },
+                "scale": {
+                  "x": 3,
+                  "y": 0.5,
+                  "z": 3
                 }
               },
               "components": [
@@ -790,11 +953,18 @@
                     "shape": {
                       "kind": "box",
                       "halfExtents": {
-                        "x": 1.5,
-                        "y": 0.25,
-                        "z": 1.5
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
                       }
                     }
+                  }
+                },
+                {
+                  "id": "mesh",
+                  "type": "Mesh",
+                  "params": {
+                    "model": "builtin:rounded-box"
                   }
                 },
                 {
@@ -821,6 +991,11 @@
                   "x": 10.1491,
                   "y": 0.866,
                   "z": -17.5061
+                },
+                "scale": {
+                  "x": 3,
+                  "y": 0.5,
+                  "z": 3
                 }
               },
               "components": [
@@ -831,11 +1006,18 @@
                     "shape": {
                       "kind": "box",
                       "halfExtents": {
-                        "x": 1.5,
-                        "y": 0.25,
-                        "z": 1.5
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
                       }
                     }
+                  }
+                },
+                {
+                  "id": "mesh",
+                  "type": "Mesh",
+                  "params": {
+                    "model": "builtin:rounded-box"
                   }
                 },
                 {
@@ -871,9 +1053,9 @@
               "z": 0
             },
             "scale": {
-              "x": 1.5,
-              "y": 0.303,
-              "z": 0.5
+              "x": 12,
+              "y": 0.1515,
+              "z": 3
             }
           },
           "components": [
@@ -884,11 +1066,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 4,
-                    "y": 0.25,
-                    "z": 3
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -915,9 +1104,9 @@
               "z": 0
             },
             "scale": {
-              "x": 1.5,
-              "y": 0.303,
-              "z": 0.5
+              "x": 12,
+              "y": 0.1515,
+              "z": 3
             }
           },
           "components": [
@@ -928,11 +1117,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 4,
-                    "y": 0.25,
-                    "z": 3
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -959,9 +1155,9 @@
               "z": 0
             },
             "scale": {
-              "x": 1.5,
-              "y": 0.303,
-              "z": 0.5
+              "x": 12,
+              "y": 0.1515,
+              "z": 3
             }
           },
           "components": [
@@ -972,11 +1168,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 4,
-                    "y": 0.25,
-                    "z": 3
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1003,9 +1206,9 @@
               "z": 0
             },
             "scale": {
-              "x": 1.5,
-              "y": 0.303,
-              "z": 0.5
+              "x": 12,
+              "y": 0.1515,
+              "z": 3
             }
           },
           "components": [
@@ -1016,11 +1219,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 4,
-                    "y": 0.25,
-                    "z": 3
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1042,9 +1252,9 @@
               "z": 9.5
             },
             "scale": {
-              "x": 0.5,
-              "y": 0.5,
-              "z": 0.5
+              "x": 4,
+              "y": 0.25,
+              "z": 3
             }
           },
           "components": [
@@ -1055,11 +1265,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 4,
-                    "y": 0.25,
-                    "z": 3
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1114,9 +1331,9 @@
               "z": 59.0077
             },
             "scale": {
-              "x": 8.7,
-              "y": 1,
-              "z": 8
+              "x": 43.5,
+              "y": 0.5,
+              "z": 32
             }
           },
           "components": [
@@ -1127,11 +1344,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1164,9 +1388,9 @@
               "z": 86.5077
             },
             "scale": {
-              "x": 4.1,
-              "y": 1,
-              "z": 5.9
+              "x": 20.5,
+              "y": 0.5,
+              "z": 23.6
             }
           },
           "components": [
@@ -1177,11 +1401,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1219,9 +1450,9 @@
               "z": -1.5708
             },
             "scale": {
-              "x": 4.7,
-              "y": 1,
-              "z": 1.6
+              "x": 23.5,
+              "y": 0.5,
+              "z": 6.4
             }
           },
           "components": [
@@ -1232,11 +1463,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1263,9 +1501,9 @@
               "z": -1.5882
             },
             "scale": {
-              "x": 4.7,
-              "y": 1,
-              "z": 1.6
+              "x": 23.5,
+              "y": 0.5,
+              "z": 6.4
             }
           },
           "components": [
@@ -1276,11 +1514,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1302,9 +1547,9 @@
               "z": 104.0077
             },
             "scale": {
-              "x": 1.4,
-              "y": 1,
-              "z": 1.4
+              "x": 7,
+              "y": 0.5,
+              "z": 5.6
             }
           },
           "components": [
@@ -1315,11 +1560,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1352,9 +1604,9 @@
               "z": 109.5077
             },
             "scale": {
-              "x": 1.4,
-              "y": 1,
-              "z": 1.4
+              "x": 7,
+              "y": 0.5,
+              "z": 5.6
             }
           },
           "components": [
@@ -1365,11 +1617,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1402,9 +1661,9 @@
               "z": 116.0077
             },
             "scale": {
-              "x": 1.4,
-              "y": 1,
-              "z": 1.4
+              "x": 7,
+              "y": 0.5,
+              "z": 5.6
             }
           },
           "components": [
@@ -1415,11 +1674,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1452,9 +1718,9 @@
               "z": 131.5077
             },
             "scale": {
-              "x": 1.4,
-              "y": 1,
-              "z": 1.4
+              "x": 7,
+              "y": 0.5,
+              "z": 5.6
             }
           },
           "components": [
@@ -1465,11 +1731,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1502,9 +1775,9 @@
               "z": 138.0077
             },
             "scale": {
-              "x": 1.4,
-              "y": 1,
-              "z": 1.4
+              "x": 7,
+              "y": 0.5,
+              "z": 5.6
             }
           },
           "components": [
@@ -1515,11 +1788,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1552,9 +1832,9 @@
               "z": 145.0077
             },
             "scale": {
-              "x": 1.4,
-              "y": 1,
-              "z": 1.4
+              "x": 7,
+              "y": 0.5,
+              "z": 5.6
             }
           },
           "components": [
@@ -1565,11 +1845,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1602,9 +1889,9 @@
               "z": 120.0077
             },
             "scale": {
-              "x": 0.7,
-              "y": 1,
-              "z": 0.6
+              "x": 3.5,
+              "y": 0.5,
+              "z": 2.4
             }
           },
           "components": [
@@ -1615,11 +1902,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1652,9 +1946,9 @@
               "z": 126.0077
             },
             "scale": {
-              "x": 0.7,
-              "y": 1,
-              "z": 0.6
+              "x": 3.5,
+              "y": 0.5,
+              "z": 2.4
             }
           },
           "components": [
@@ -1665,11 +1959,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1759,9 +2060,9 @@
               "z": 19.5
             },
             "scale": {
-              "x": 2.5,
-              "y": 1,
-              "z": 0.75
+              "x": 15,
+              "y": 0.5,
+              "z": 4.5
             }
           },
           "components": [
@@ -1772,11 +2073,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 3,
-                    "y": 0.25,
-                    "z": 3
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1809,9 +2117,9 @@
               "z": 25
             },
             "scale": {
-              "x": 2.6,
-              "y": 1,
-              "z": 0.9
+              "x": 15.6,
+              "y": 0.5,
+              "z": 4.5
             }
           },
           "components": [
@@ -1822,11 +2130,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 3,
-                    "y": 0.25,
-                    "z": 2.5
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1857,6 +2172,11 @@
               "x": -5.5,
               "y": -3,
               "z": 65
+            },
+            "scale": {
+              "x": 3,
+              "y": 0.5,
+              "z": 3
             }
           },
           "components": [
@@ -1867,11 +2187,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 1.5,
-                    "y": 0.25,
-                    "z": 1.5
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1905,9 +2232,9 @@
               "z": 0
             },
             "scale": {
-              "x": 4.3,
-              "y": 1.1,
-              "z": 0.8
+              "x": 21.5,
+              "y": 0.55,
+              "z": 4
             }
           },
           "components": [
@@ -1918,11 +2245,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2.5
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -1955,9 +2289,9 @@
               "z": 49
             },
             "scale": {
-              "x": 4.5,
-              "y": 1.2,
-              "z": 0.6
+              "x": 22.5,
+              "y": 0.6,
+              "z": 3
             }
           },
           "components": [
@@ -1968,11 +2302,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2.5
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -2005,9 +2346,9 @@
               "z": 44.5
             },
             "scale": {
-              "x": 2.5,
-              "y": 1,
-              "z": 0.5
+              "x": 15,
+              "y": 0.5,
+              "z": 3
             }
           },
           "components": [
@@ -2018,11 +2359,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 3,
-                    "y": 0.25,
-                    "z": 3
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -2055,9 +2403,9 @@
               "z": 39.5
             },
             "scale": {
-              "x": 2.6,
-              "y": 1,
-              "z": 0.7
+              "x": 15.6,
+              "y": 0.5,
+              "z": 3.5
             }
           },
           "components": [
@@ -2068,11 +2416,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 3,
-                    "y": 0.25,
-                    "z": 2.5
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -2105,9 +2460,9 @@
               "z": 34
             },
             "scale": {
-              "x": 2.5,
-              "y": 1,
-              "z": 0.5
+              "x": 15,
+              "y": 0.5,
+              "z": 3
             }
           },
           "components": [
@@ -2118,11 +2473,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 3,
-                    "y": 0.25,
-                    "z": 3
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -2155,9 +2517,9 @@
               "z": 30
             },
             "scale": {
-              "x": 2.5,
-              "y": 1,
-              "z": 0.4
+              "x": 15,
+              "y": 0.5,
+              "z": 2
             }
           },
           "components": [
@@ -2168,11 +2530,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 3,
-                    "y": 0.25,
-                    "z": 2.5
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -2205,9 +2574,9 @@
               "z": 68
             },
             "scale": {
-              "x": 4.1,
-              "y": 1,
-              "z": 5.9
+              "x": 20.5,
+              "y": 0.5,
+              "z": 23.6
             }
           },
           "components": [
@@ -2218,11 +2587,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -2260,9 +2636,9 @@
               "z": -1.5708
             },
             "scale": {
-              "x": 4.7,
-              "y": 1,
-              "z": 1.6
+              "x": 23.5,
+              "y": 0.5,
+              "z": 6.4
             }
           },
           "components": [
@@ -2273,11 +2649,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -2304,9 +2687,9 @@
               "z": -1.5882
             },
             "scale": {
-              "x": 4.7,
-              "y": 1,
-              "z": 1.6
+              "x": 23.5,
+              "y": 0.5,
+              "z": 6.4
             }
           },
           "components": [
@@ -2317,11 +2700,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -2343,9 +2733,9 @@
               "z": 60.5
             },
             "scale": {
-              "x": 0.9999,
-              "y": 1,
-              "z": 1
+              "x": 2.9997,
+              "y": 0.5,
+              "z": 3
             }
           },
           "components": [
@@ -2356,11 +2746,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 1.5,
-                    "y": 0.25,
-                    "z": 1.5
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {
@@ -2415,6 +2812,11 @@
               "x": 0,
               "y": 0,
               "z": 0
+            },
+            "scale": {
+              "x": 3,
+              "y": 0.3,
+              "z": 3
             }
           },
           "components": [
@@ -2425,11 +2827,18 @@
                 "shape": {
                   "kind": "box",
                   "halfExtents": {
-                    "x": 1.5,
-                    "y": 0.15,
-                    "z": 1.5
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
                   }
                 }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
               }
             },
             {

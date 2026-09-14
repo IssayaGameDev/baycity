@@ -17,6 +17,11 @@
           "x": 0,
           "y": 0,
           "z": 0
+        },
+        "scale": {
+          "x": 3,
+          "y": 0.3,
+          "z": 3
         }
       },
       "components": [
@@ -27,11 +32,18 @@
             "shape": {
               "kind": "box",
               "halfExtents": {
-                "x": 1.5,
-                "y": 0.15,
-                "z": 1.5
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
               }
             }
+          }
+        },
+        {
+          "id": "mesh",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:rounded-box"
           }
         },
         {
