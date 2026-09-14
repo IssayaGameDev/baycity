@@ -26,6 +26,9 @@ import {
   type EnvironmentConfig,
   type ModeRef,
   type Transform,
+  applyBatch,
+  type NodeRef,
+  type Op,
 } from '@mp/content'
 import { DEFAULT_REGISTRY, type Registry } from '@mp/components'
 import type { LightDesc } from '@mp/render-three'
@@ -143,10 +146,25 @@ export const componentTypesInRaw = (data: unknown): string[] => {
   return [...seen].sort()
 }
 
+/** What one edit did, as data: the ops that changed something, and the ops that undo them in undo order (ADR 0089). */
+export interface OpBatch {
+  ops: Op[]
+  inverses: Op[]
+}
+
 export interface Doc {
   readonly mode: Mode
   /** Every component type this build knows, for the add menu. */
   readonly registry: Registry
+  /**
+   * Every mutation below is applied through `applyBatch` and reported here (ADR 0089). The host records the
+   * batch for undo and, live, sends it to the server. `null` until the host attaches; the edit still applies.
+   */
+  onOps: ((batch: OpBatch) => void) | null
+  /** The wire identity of index `i` — stable across renumbering, unlike the index — or `null` past the end. */
+  refAt: (i: number) => NodeRef | null
+  /** Where a ref is now, or `null` when the node is gone (someone removed it) or is not in this document. */
+  indexOfRef: (ref: NodeRef) => number | null
   count: () => number
   kindOf: (i: number) => NodeKind
   transformOf: (i: number) => Transform
@@ -401,16 +419,13 @@ const behaviorOf = (c: ComponentData | undefined, clips: ClipSource | undefined)
 }
 
 /**
- * Splice `arr`'s item at `from` so it lands *before* the original index `to`. `to` is expressed against the
- * array as it was, which is what a drop between two rows naturally gives you — hence the shift when moving
- * downward, where removing the item first pulls every later index back by one.
+ * Where an item at `from` lands when dropped *before* the original index `to`, in an array of `length`. `to` is
+ * expressed against the array as it was, which is what a drop between two rows naturally gives you — hence the
+ * shift when moving downward, where removing the item first pulls every later index back by one.
  */
-const moveWithin = <T>(arr: T[], from: number, to: number): number => {
-  if (from < 0 || from >= arr.length || from === to) return from
-  const [item] = arr.splice(from, 1)
-  const at = Math.max(0, Math.min(arr.length, to > from ? to - 1 : to))
-  arr.splice(at, 0, item as T)
-  return at
+const moveTarget = (length: number, from: number, to: number): number => {
+  if (from < 0 || from >= length || from === to) return from
+  return Math.max(0, Math.min(length - 1, to > from ? to - 1 : to))
 }
 
 /** One addressable node, and everything needed to read it and to write it back. */
@@ -436,9 +451,27 @@ interface DocNode {
  * is a level of one node with no table, which is why there is one implementation here where there used to be
  * two — the operations differ only in what the palette offers and in whether references exist at all.
  */
-const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>; registry: Registry; clips?: ClipSource; json: () => Level | Node }): Doc => {
+const docOver = (
+  level: Level,
+  opts: { mode: Mode; library: Record<string, Node>; registry: Registry; clips?: ClipSource; json: () => Level | Node; table?: string },
+): Doc => {
   const { mode, library, registry, clips } = opts
   const roots = level.nodes
+  /**
+   * Every mutation goes through here (ADR 0089): the ops apply to this document's level through the one shared
+   * `applyBatch`, no-op edits fall out (their inverse is `null`), and what changed is reported to the host —
+   * stamped with the prefab table key when this document is a prefab opened on top of a level, so the same ops
+   * apply to the level's `prefabs[key]` on every other copy. Applying here is unscoped: the wrapper's one root
+   * *is* that table entry.
+   */
+  const table_ = opts.table
+  const stamp = (op: Op): Op => (table_ === undefined || op.table !== undefined ? op : { ...op, table: table_ })
+  const commit = (ops: readonly Op[]): void => {
+    if (ops.length === 0) return
+    const r = applyBatch(level, ops)
+    if (r.ops.length === 0) return
+    self.onOps?.({ ops: r.ops.map(stamp), inverses: r.inverses.map(stamp) })
+  }
 
   const nodes = (): DocNode[] => {
     const out: DocNode[] = []
@@ -484,49 +517,29 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
     const n = node(i)
     return n?.owner === undefined ? n : undefined
   }
-  const indexOf = (authored: Node): number => nodes().findIndex((n) => n.authored === authored)
+  /** An own node by id. Ids are unique per tree, and an inserted op clones its node, so identity is the id. */
+  const indexOfId = (id: string): number => nodes().findIndex((n) => n.owner === undefined && n.authored.id === id)
+  const refOf = (n: DocNode): NodeRef => (n.owner === undefined ? (table_ === undefined ? { id: n.authored.id } : { table: table_, id: n.authored.id }) : { owner: n.owner.id, node: n.authored.id })
 
-  const table = (): Record<string, Node> => (level.prefabs ??= {})
-  /** Put `root` in the table under a free key (reusing an identical entry) and return that key. */
-  const intern = (root: Node): string => {
+  const table = (): Record<string, Node> => level.prefabs ?? {}
+  /**
+   * The op that puts `root` in the table under a free key — reusing an identical entry, in which case there is
+   * nothing to do — and the key it lands under. The key is minted here, on the client, and travels in the op.
+   */
+  const internOp = (root: Node): { key: string; ops: Op[] } => {
     const t = table()
     const key = freeTableKey(t, root.name ?? root.id, root)
-    t[key] ??= root
-    return key
+    return { key, ops: t[key] === undefined ? [{ kind: 'internPrefab', key, root }] : [] }
+  }
+  /** The parent an insert names for the children of `host`: `null` for the level forest, else the node's id. */
+  const parentIdOf = (host: Node[]): string | null => {
+    if (host === roots) return null
+    const owner = nodes().find((n) => n.owner === undefined && n.authored.children === host)
+    return owner?.authored.id ?? null
   }
 
-  /** This placement's override record for an inherited node, created if asked for. */
-  const overrideFor = (n: DocNode, create: boolean): NodeOverride | undefined => {
-    const owner = n.owner
-    if (owner === undefined) return undefined
-    if (!create) return owner.overrides?.[n.authored.id]
-    const map = (owner.overrides ??= {})
-    return (map[n.authored.id] ??= {})
-  }
-
-  /** Remove an override with nothing left in it, and the map with it, so the JSON accumulates no husks. */
-  const tidyOverride = (n: DocNode): void => {
-    const owner = n.owner
-    if (owner?.overrides === undefined) return
-    const over = owner.overrides[n.authored.id]
-    if (over !== undefined) {
-      for (const k of ['params', 'enabled'] as const) {
-        const sub = over[k]
-        if (sub !== undefined && Object.keys(sub).length === 0) delete over[k]
-      }
-      for (const k of ['added', 'removed'] as const) {
-        const arr = over[k]
-        if (arr !== undefined && arr.length === 0) delete over[k]
-      }
-      if (Object.keys(over).length === 0) delete owner.overrides[n.authored.id]
-    }
-    if (Object.keys(owner.overrides).length === 0) delete owner.overrides
-  }
-
-  /** Drop a `children: []` left behind by a move, so the JSON accumulates no empty arrays. */
-  const tidyChildren = (parent: Node | undefined): void => {
-    if (parent?.children !== undefined && parent.children.length === 0) delete parent.children
-  }
+  /** This placement's override record for an inherited node, as it is. Writes go through ops (`ops.ts` tidies). */
+  const overrideFor = (n: DocNode): NodeOverride | undefined => n.owner?.overrides?.[n.authored.id]
 
   /**
    * One past the last node of `i`'s subtree. In a depth-first walk a subtree is the contiguous run of deeper
@@ -625,25 +638,16 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
   const enabledOf = (c: ComponentData): boolean => c.enabled !== false
   const trackComponent = (n: DocNode): ComponentData | undefined => n.view.components.find((c) => c.type === TRACK && enabledOf(c))
 
-  /** Set some of a component's parameters, on the definition or as an override. */
+  /** Set some of a component's parameters, on the definition or as an override (`ops.ts` patches an added component in place). */
   const patchParams = (i: number, componentId: string, patch: Record<string, unknown>): void => {
     const n = node(i)
     if (n === undefined) return
     if (n.owner === undefined) {
-      const c = n.authored.components.find((x) => x.id === componentId)
-      if (c !== undefined) c.params = { ...c.params, ...patch }
+      if (!n.authored.components.some((x) => x.id === componentId)) return
+      commit([{ kind: 'setParams', id: n.authored.id, componentId, patch }])
       return
     }
-    const over = overrideFor(n, true)!
-    // A component this placement added is the placement's own, so it is patched in place rather than through
-    // a second layer that would shadow it.
-    const added = over.added?.find((x) => x.id === componentId)
-    if (added !== undefined) {
-      added.params = { ...added.params, ...patch }
-      return
-    }
-    const params = (over.params ??= {})
-    params[componentId] = { ...params[componentId], ...patch }
+    commit([{ kind: 'setOverrideParams', owner: n.owner.id, node: n.authored.id, componentId, patch }])
   }
 
   /** Keyframe parameters on a node, in component order then declaration order. */
@@ -676,12 +680,8 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
     const n = node(i)
     if (n === undefined || !canAdd(i, type)) return null
     const fresh: ComponentData = { id: freshId(), type, params: { ...registry.defaults(type) } }
-    if (n.owner === undefined) {
-      n.authored.components.push(fresh)
-      return fresh.id
-    }
-    const over = overrideFor(n, true)!
-    ;(over.added ??= []).push(fresh)
+    if (n.owner === undefined) commit([{ kind: 'addComponent', id: n.authored.id, component: fresh }])
+    else commit([{ kind: 'addOverrideComponent', owner: n.owner.id, node: n.authored.id, component: fresh }])
     return fresh.id
   }
 
@@ -692,42 +692,59 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
     const from = list.findIndex((c) => c.id === componentId)
     const to = from + delta
     if (from < 0 || to < 0 || to >= list.length) return
-    const [moved] = list.splice(from, 1)
-    list.splice(to, 0, moved as ComponentData)
+    commit([{ kind: 'moveComponent', id: n.authored.id, componentId, to }])
   }
 
   const removeComponent = (i: number, componentId: string): void => {
     const n = node(i)
     if (n === undefined) return
     if (n.owner === undefined) {
-      const at = n.authored.components.findIndex((c) => c.id === componentId)
-      if (at >= 0) n.authored.components.splice(at, 1)
+      if (!n.authored.components.some((c) => c.id === componentId)) return
+      commit([{ kind: 'removeComponent', id: n.authored.id, componentId }])
       return
     }
-    const over = overrideFor(n, true)!
+    const owner = n.owner.id
+    const nodeId = n.authored.id
+    const over = overrideFor(n)
     // Removing something this placement added is an undo, not a removal recorded against the prefab.
-    const at = over.added?.findIndex((c) => c.id === componentId) ?? -1
-    if (at >= 0) {
-      over.added!.splice(at, 1)
-    } else {
-      ;(over.removed ??= []).push(componentId)
-      delete over.params?.[componentId]
-      delete over.enabled?.[componentId]
+    if (over?.added?.some((c) => c.id === componentId) === true) {
+      commit([{ kind: 'removeOverrideComponent', owner, node: nodeId, componentId }])
+      return
     }
-    tidyOverride(n)
+    const ops: Op[] = []
+    const params = over?.params?.[componentId]
+    if (params !== undefined && Object.keys(params).length > 0) ops.push({ kind: 'setOverrideParams', owner, node: nodeId, componentId, patch: {}, unset: Object.keys(params) })
+    if (over?.enabled?.[componentId] !== undefined) ops.push({ kind: 'setOverrideEnabled', owner, node: nodeId, componentId, enabled: null })
+    ops.push({ kind: 'setOverrideRemoved', owner, node: nodeId, componentId, removed: true })
+    commit(ops)
   }
 
-  return {
+  const self: Doc = {
     mode,
     registry,
+    onOps: null,
+    refAt: (i) => {
+      const n = node(i)
+      return n === undefined ? null : refOf(n)
+    },
+    indexOfRef: (ref) => {
+      const all = nodes()
+      const at =
+        'owner' in ref
+          ? all.findIndex((n) => n.owner?.id === ref.owner && n.authored.id === ref.node)
+          : ref.table !== table_
+            ? -1
+            : all.findIndex((n) => n.owner === undefined && n.authored.id === ref.id)
+      return at < 0 ? null : at
+    },
     count: () => nodes().length,
     kindOf: (i) => (node(i)?.owner === undefined ? 'own' : 'inherited'),
     transformOf: (i) => node(i)?.view.transform ?? { position: vec3(0, 0, 0) },
     setTransform: (i, t) => {
       const n = node(i)
       if (n === undefined) return
-      if (n.owner === undefined) n.authored.transform = t
-      else overrideFor(n, true)!.transform = t
+      if (n.owner === undefined) commit([{ kind: 'setTransform', id: n.authored.id, transform: t }])
+      else commit([{ kind: 'setOverrideTransform', owner: n.owner.id, node: n.authored.id, transform: t }])
     },
     /**
      * One mesh per enabled `Collider`, at its own offset — which is what makes several colliders on one node
@@ -788,21 +805,24 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
         const fresh = solidNode(make(), { position }, name)
         const host = roots[0]
         if (host === undefined) return -1
-        ;(host.children ??= []).push(fresh)
-        return indexOf(fresh)
+        commit([{ kind: 'insertNode', parent: host.id, index: host.children?.length ?? 0, node: fresh }])
+        return indexOfId(fresh.id)
       }
       let key: string
+      const ops: Op[] = []
       if (level.prefabs?.[name] !== undefined) key = name
       else {
         const source = library[name]
         // A palette offering a name the library no longer has is a bug, not a crash: the file may have been
         // deleted between the panel drawing and the click landing.
         if (source === undefined) return -1
-        key = intern({ ...structuredClone(source), name })
+        const interned = internOp({ ...structuredClone(source), name })
+        key = interned.key
+        ops.push(...interned.ops)
       }
       const placed: Node = { id: freshId(), transform: { position }, components: [], prefab: key }
-      roots.push(placed)
-      return indexOf(placed)
+      commit([...ops, { kind: 'insertNode', parent: null, index: roots.length, node: placed }])
+      return indexOfId(placed.id)
     },
     placePrefab: (root, name, position) => {
       // Refused here, not only in the palette: a level a game cannot load must not be producible by any door.
@@ -810,46 +830,48 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
       // rebuilds the document first (ADR 0077); what is refused is another game's private component.
       if (unknownComponentTypes(root, registry).length > 0) return -1
       if (mode === 'prefab') {
-        // A prefab holds nodes, never prefabs, so placing one here appends its children.
+        // A prefab holds nodes, never prefabs, so placing one here appends its children — re-minted, so two
+        // placements of the same prefab are two sets of nodes.
         const host = roots[0]
         if (host === undefined) return -1
+        const ops: Op[] = []
+        let at = host.children?.length ?? 0
         let last: Node | undefined
         for (const kid of root.children ?? []) {
           const copy = structuredClone(kid)
-          copy.id = freshId()
+          reidSubtree(copy)
           copy.transform = { ...copy.transform, position: vec3(position.x + copy.transform.position.x, position.y + copy.transform.position.y, position.z + copy.transform.position.z) }
-          ;(host.children ??= []).push(copy)
+          ops.push({ kind: 'insertNode', parent: host.id, index: at++, node: copy })
           last = copy
         }
-        return last === undefined ? -1 : indexOf(last)
+        commit(ops)
+        return last === undefined ? -1 : indexOfId(last.id)
       }
-      const key = intern({ ...structuredClone(root), name })
-      const placed: Node = { id: freshId(), transform: { position }, components: [], prefab: key }
-      roots.push(placed)
-      return indexOf(placed)
+      const interned = internOp({ ...structuredClone(root), name })
+      const placed: Node = { id: freshId(), transform: { position }, components: [], prefab: interned.key }
+      commit([...interned.ops, { kind: 'insertNode', parent: null, index: roots.length, node: placed }])
+      return indexOfId(placed.id)
     },
     placeEmpty: (position, parent) => {
       const fresh: Node = { id: freshId(), name: 'empty', transform: { position }, components: [] }
+      let host: Node | undefined
       if (parent !== null) {
-        const host = own(parent)?.authored
+        host = own(parent)?.authored
         // An inherited node's children belong to the prefab, so there is nowhere here to put one.
         if (host === undefined) return -1
-        ;(host.children ??= []).push(fresh)
       } else if (mode === 'prefab') {
-        const host = roots[0]
+        host = roots[0]
         if (host === undefined) return -1
-        ;(host.children ??= []).push(fresh)
-      } else roots.push(fresh)
-      return indexOf(fresh)
+      }
+      commit([{ kind: 'insertNode', parent: host?.id ?? null, index: host === undefined ? roots.length : (host.children?.length ?? 0), node: fresh }])
+      return indexOfId(fresh.id)
     },
     placeModel: (assetId, position) => {
       const fresh = solidNode({ kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) }, { position }, undefined, assetId)
-      if (mode === 'prefab') {
-        const host = roots[0]
-        if (host === undefined) return -1
-        ;(host.children ??= []).push(fresh)
-      } else roots.push(fresh)
-      return indexOf(fresh)
+      const host = mode === 'prefab' ? roots[0] : undefined
+      if (mode === 'prefab' && host === undefined) return -1
+      commit([{ kind: 'insertNode', parent: host?.id ?? null, index: host === undefined ? roots.length : (host.children?.length ?? 0), node: fresh }])
+      return indexOfId(fresh.id)
     },
     prefabForPalette: (name) => {
       if (mode === 'prefab') {
@@ -863,9 +885,7 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
     remove: (i) => {
       const n = own(i)
       if (n?.siblings === undefined) return
-      n.siblings.splice(n.index, 1)
-      const parent = node(n.parent)?.authored
-      tidyChildren(parent)
+      commit([{ kind: 'removeNode', id: n.authored.id }])
     },
     // A clone of a placement references the same table entry. Cloning the *definition* would quietly break
     // the very link the reference exists to provide. Children come along; ids are re-minted.
@@ -874,29 +894,28 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
       if (n?.siblings === undefined) return i
       const copy = structuredClone(n.authored)
       reidSubtree(copy)
-      n.siblings.splice(n.index + 1, 0, copy)
-      return indexOf(copy)
+      commit([{ kind: 'insertNode', parent: parentIdOf(n.siblings), index: n.index + 1, node: copy }])
+      return indexOfId(copy.id)
     },
     label: labelAt,
     nameOf: (i) => node(i)?.view.name ?? '',
     setName: (i, name) => {
       const n = node(i)
       if (n === undefined) return
-      if (n.owner !== undefined) {
-        // Empty means "no name here", which still differs from inheriting the prefab's.
-        overrideFor(n, true)!.name = name
-        return
-      }
-      if (name === '') delete n.authored.name
-      else n.authored.name = name
+      // Empty means "no name here" on an inherited node, which still differs from inheriting the prefab's; on
+      // an own node it means no name at all.
+      if (n.owner !== undefined) commit([{ kind: 'setOverrideName', owner: n.owner.id, node: n.authored.id, name }])
+      else commit([{ kind: 'setName', id: n.authored.id, name: name === '' ? null : name }])
     },
     // Order is not cosmetic (checkpoint progression, the replicated movement-base index — ADR 0021), and an
     // inherited node's order belongs to the prefab.
     move: (from, to) => {
       const n = own(from)
       if (n?.siblings === undefined) return from
-      moveWithin(n.siblings, n.index, to)
-      return indexOf(n.authored)
+      const at = moveTarget(n.siblings.length, n.index, to)
+      if (at === n.index) return from
+      commit([{ kind: 'moveNode', id: n.authored.id, parent: parentIdOf(n.siblings), index: at }])
+      return indexOfId(n.authored.id)
     },
     depthOf: (i) => node(i)?.depth ?? 0,
     parentOf: (i) => {
@@ -918,14 +937,12 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
     reparent: (from, parent, atIndex) => {
       const n = own(from)
       if (n?.siblings === undefined || !canReparent(from, parent)) return from
-      const host = parent === null ? roots : (own(parent)!.authored.children ??= [])
+      const target = parent === null ? undefined : own(parent)!.authored
+      const host = target === undefined ? roots : (target.children ?? [])
       const sameList = host === n.siblings
-      const previousParent = node(n.parent)?.authored
-      n.siblings.splice(n.index, 1)
-      const insertAt = Math.max(0, Math.min(host.length, sameList && atIndex > n.index ? atIndex - 1 : atIndex))
-      host.splice(insertAt, 0, n.authored)
-      if (!sameList) tidyChildren(previousParent)
-      return indexOf(n.authored)
+      const insertAt = Math.max(0, Math.min(sameList ? host.length - 1 : host.length, sameList && atIndex > n.index ? atIndex - 1 : atIndex))
+      commit([{ kind: 'moveNode', id: n.authored.id, parent: target?.id ?? null, index: insertAt }])
+      return indexOfId(n.authored.id)
     },
     assetIds: () => {
       const ids = new Set<string>()
@@ -954,7 +971,7 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
     components: (i) => {
       const n = node(i)
       if (n === undefined) return []
-      const over = overrideFor(n, false)
+      const over = overrideFor(n)
       const addedIds = new Set((over?.added ?? []).map((c) => c.id))
       return n.view.components.map((c) => {
         const patch = over?.params?.[c.id]
@@ -980,20 +997,11 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
       const n = node(i)
       if (n === undefined) return
       if (n.owner === undefined) {
-        const c = n.authored.components.find((x) => x.id === componentId)
-        if (c === undefined) return
-        if (on) delete c.enabled
-        else c.enabled = false
+        if (!n.authored.components.some((x) => x.id === componentId)) return
+        commit([{ kind: 'setComponentEnabled', id: n.authored.id, componentId, enabled: on }])
         return
       }
-      const over = overrideFor(n, true)!
-      const added = over.added?.find((x) => x.id === componentId)
-      if (added !== undefined) {
-        if (on) delete added.enabled
-        else added.enabled = false
-        return
-      }
-      ;(over.enabled ??= {})[componentId] = on
+      commit([{ kind: 'setOverrideEnabled', owner: n.owner.id, node: n.authored.id, componentId, enabled: on }])
     },
 
     nodeChoices: (i) => {
@@ -1008,7 +1016,7 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
     },
     overridesOf: (i) => {
       const n = node(i)
-      const over = n === undefined ? undefined : overrideFor(n, false)
+      const over = n === undefined ? undefined : overrideFor(n)
       if (over === undefined || n === undefined) return []
       const out: string[] = []
       if (over.transform !== undefined) out.push('transform')
@@ -1022,22 +1030,20 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
     },
     revert: (i, field) => {
       const n = node(i)
-      if (n === undefined) return
-      const over = overrideFor(n, false)
-      if (over === undefined) return
-      if (field === undefined) {
-        for (const k of Object.keys(over)) delete (over as Record<string, unknown>)[k]
-      } else if (field === 'transform' || field === 'name') {
-        delete over[field]
-      } else {
-        delete over.params?.[field]
-        delete over.enabled?.[field]
-        const at = over.added?.findIndex((c) => c.id === field) ?? -1
-        if (at >= 0) over.added!.splice(at, 1)
-        const r = over.removed?.indexOf(field) ?? -1
-        if (r >= 0) over.removed!.splice(r, 1)
+      if (n?.owner === undefined) return
+      const current = overrideFor(n)
+      if (current === undefined) return
+      // The record as it will be: everything, or one field, or one component's every trace, gone.
+      let next: NodeOverride | null = structuredClone(current)
+      if (field === undefined) next = null
+      else if (field === 'transform' || field === 'name') delete next[field]
+      else {
+        delete next.params?.[field]
+        delete next.enabled?.[field]
+        if (next.added !== undefined) next.added = next.added.filter((c) => c.id !== field)
+        if (next.removed !== undefined) next.removed = next.removed.filter((id) => id !== field)
       }
-      tidyOverride(n)
+      commit([{ kind: 'setNodeOverride', owner: n.owner.id, node: n.authored.id, override: next }])
     },
     /**
      * Promote this placement's overrides into the shared prefab, then drop them.
@@ -1047,32 +1053,28 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
      */
     applyToPrefab: (i) => {
       const n = node(i)
-      if (n === undefined) return
-      const over = overrideFor(n, false)
+      if (n?.owner?.prefab === undefined) return
+      const over = overrideFor(n)
       if (over === undefined) return
+      // The definition's own ops, scoped to its table entry, then the override goes: one batch, one undo step.
+      const table = n.owner.prefab
+      const id = n.authored.id
       const target = n.authored
-      if (over.transform !== undefined) target.transform = over.transform
-      if (over.name !== undefined) {
-        if (over.name === '') delete target.name
-        else target.name = over.name
+      const ops: Op[] = []
+      if (over.transform !== undefined) ops.push({ kind: 'setTransform', table, id, transform: over.transform })
+      if (over.name !== undefined) ops.push({ kind: 'setName', table, id, name: over.name === '' ? null : over.name })
+      for (const [componentId, patch] of Object.entries(over.params ?? {})) {
+        if (target.components.some((x) => x.id === componentId)) ops.push({ kind: 'setParams', table, id, componentId, patch })
       }
-      for (const [id, patch] of Object.entries(over.params ?? {})) {
-        const c = target.components.find((x) => x.id === id)
-        if (c !== undefined) c.params = { ...c.params, ...patch }
+      for (const [componentId, on] of Object.entries(over.enabled ?? {})) {
+        if (target.components.some((x) => x.id === componentId)) ops.push({ kind: 'setComponentEnabled', table, id, componentId, enabled: on })
       }
-      for (const [id, on] of Object.entries(over.enabled ?? {})) {
-        const c = target.components.find((x) => x.id === id)
-        if (c === undefined) continue
-        if (on) delete c.enabled
-        else c.enabled = false
+      for (const componentId of over.removed ?? []) {
+        if (target.components.some((x) => x.id === componentId)) ops.push({ kind: 'removeComponent', table, id, componentId })
       }
-      for (const id of over.removed ?? []) {
-        const at = target.components.findIndex((x) => x.id === id)
-        if (at >= 0) target.components.splice(at, 1)
-      }
-      for (const c of over.added ?? []) target.components.push(structuredClone(c))
-      for (const k of Object.keys(over)) delete (over as Record<string, unknown>)[k]
-      tidyOverride(n)
+      for (const c of over.added ?? []) ops.push({ kind: 'addComponent', table, id, component: structuredClone(c) })
+      ops.push({ kind: 'setNodeOverride', owner: n.owner.id, node: id, override: null })
+      commit(ops)
     },
 
     keyEditors,
@@ -1112,11 +1114,15 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
        * A key already present with an identical definition is reused (`freeTableId` does that comparison),
        * which keeps pasting a prefab back into its own level from filling the table with copies.
        */
+      const ops: Op[] = []
       const remap = (x: Node): void => {
         if (x.prefab !== undefined) {
           const carried = item.prefabs[x.prefab]
-          if (carried !== undefined) x.prefab = intern(structuredClone(carried))
-          else if (!(x.prefab in table())) delete x.prefab
+          if (carried !== undefined) {
+            const interned = internOp(structuredClone(carried))
+            ops.push(...interned.ops)
+            x.prefab = interned.key
+          } else if (!(x.prefab in table())) delete x.prefab
         }
         for (const kid of x.children ?? []) remap(kid)
       }
@@ -1125,18 +1131,18 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
       // A prefab holds no prefabs, so a placement pasted into one would be a reference this schema forbids.
       if (mode === 'prefab' && fresh.prefab !== undefined) return -1
 
+      let host: Node | undefined
       if (parent === null) {
         if (mode === 'prefab') {
-          const host = roots[0]
+          host = roots[0]
           if (host === undefined) return -1
-          ;(host.children ??= []).push(fresh)
-        } else roots.push(fresh)
+        }
       } else {
-        const host = own(parent)?.authored
+        host = own(parent)?.authored
         if (host === undefined) return -1
-        ;(host.children ??= []).push(fresh)
       }
-      return indexOf(fresh)
+      commit([...ops, { kind: 'insertNode', parent: host?.id ?? null, index: host === undefined ? roots.length : (host.children?.length ?? 0), node: fresh }])
+      return indexOfId(fresh.id)
     },
     refOf: (i) => node(i)?.authored.prefab ?? null,
     extract: (i) => {
@@ -1150,11 +1156,11 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
         components: structuredClone(n.authored.components),
         ...(n.authored.children !== undefined ? { children: structuredClone(n.authored.children) } : {}),
       }
-      const key = intern(definition)
-      n.authored.components = []
-      delete n.authored.children
-      n.authored.prefab = key
-      return key
+      const interned = internOp(definition)
+      const { children: _kids, ...rest } = n.authored
+      const placement: Node = { ...rest, components: [], prefab: interned.key }
+      commit([...interned.ops, { kind: 'replaceNode', id: n.authored.id, node: placement }])
+      return interned.key
     },
     prefabAt: (id) => level.prefabs?.[id],
     refCount: (id) => {
@@ -1172,20 +1178,22 @@ const docOver = (level: Level, opts: { mode: Mode; library: Record<string, Node>
       // Prefab mode edits a throwaway wrapper level, so its config is not saved anywhere. Refusing here beats
       // writing a sun into a file that has no place to keep it.
       if (mode === 'prefab') return
-      level.config = { ...level.config, environment: env }
+      commit([{ kind: 'setEnvironment', environment: env }])
     },
     modeRef: () => (mode === 'prefab' ? undefined : level.config.mode),
     setMode: (name) => {
       if (mode === 'prefab') return // a prefab belongs to no game, for the same reason it has no sun
-      const { mode: _dropped, ...rest } = level.config
-      level.config = name === null ? rest : { ...rest, mode: { name } }
+      commit([{ kind: 'setMode', mode: name === null ? null : { name } }])
     },
     toJSON: opts.json,
+    // Not an op: the id follows the file name at save, and a prefab's root name is its file's. Live, the server
+    // sets the level's id before every write (ADR 0089).
     setId: (id) => {
       level.id = id
       if (mode === 'prefab' && roots[0] !== undefined) roots[0].name = id
     },
   }
+  return self
 }
 
 export const levelDoc = (level: Level, library: Record<string, Node>, registry: Registry = DEFAULT_REGISTRY, clips?: ClipSource): Doc =>
@@ -1202,8 +1210,8 @@ export const levelDoc = (level: Level, library: Record<string, Node>, registry: 
  * kill plane from deleting the test character — a wrapper working around a rule it had no business carrying
  * (ADR 0052).
  */
-export const prefabDoc = (root: Node, registry: Registry = DEFAULT_REGISTRY, clips?: ClipSource): Doc =>
+export const prefabDoc = (root: Node, registry: Registry = DEFAULT_REGISTRY, clips?: ClipSource, opts: { table?: string } = {}): Doc =>
   docOver(
     { id: root.name ?? root.id, config: {}, nodes: [root] },
-    { mode: 'prefab', library: {}, registry, ...(clips !== undefined ? { clips } : {}), json: () => root },
+    { mode: 'prefab', library: {}, registry, ...(clips !== undefined ? { clips } : {}), json: () => root, ...(opts.table !== undefined ? { table: opts.table } : {}) },
   )

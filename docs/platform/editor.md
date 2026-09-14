@@ -26,7 +26,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | Bottom tabs | `#palette` **Project** (asset tree, previews) / `#timeline` **Animation** (ADR 0051) | `src/projectPanel.ts`, `src/assetTree.ts`, `src/previews.ts`, `src/timeline.ts`, `src/trackEdit.ts` |
 | Status | `#status` | `setStatus` |
 
-Document model: `src/editorDoc.ts` (`Doc`, `levelDoc`, `prefabDoc`; a `Doc` captures its `registry`). Undo: `src/history.ts`. Shortcuts: `src/shortcuts.ts` (ADR 0030).
+Document model: `src/editorDoc.ts` (`Doc`, `levelDoc`, `prefabDoc`; a `Doc` captures its `registry`; every mutation is an op batch, below). Undo: `src/opHistory.ts` (inverse ops, ADR 0089). Shortcuts: `src/shortcuts.ts` (ADR 0030).
 
 ## Content API — `editor-server.md` (ADR 0083)
 
@@ -38,13 +38,13 @@ The routes are `tools/editor-server/src/api.ts`, mounted by `vite.config.ts` (`f
 | --- | --- |
 | `me` | `GET /api/me` at boot; name shown first in the status bar; `heartbeatMs`/`maxUploadBytes` read from it |
 | `heldLocks` | every key this tab holds; `takeLock(path)` → holder's name or `null`; `dropAllLocks()` releases all (→ the server commits the session) |
-| `openFile` | `dropAllLocks()`, then `takeLock(lockKey.level(name))` / `lockKey.asset(entry.path)`; refused → `readOnlyBy`, the file still opens |
+| `openFile` | `dropAllLocks()`; a **level joins its live session** (`collab.join(name)`, below — no file lock); a prefab takes `lockKey.asset(entry.path)`; refused → `readOnlyBy`, the file still opens |
 | `readOnlyBy` | toolbar `readOnly` disables Save with a title; status bar shows `read-only · locked by X`; `saveNow` refuses |
-| `saveNow` | takes the lock for `docLockKey()` first (Save-as or a new file names it now) |
-| `newBlank` | `dropAllLocks()`; nothing locked until the first Save |
+| `saveNow` | prefabs: takes the lock for `docLockKey()` first (Save-as or a new file names it now). A live level returns `true` at once: there is nothing to save |
+| `newBlank` | prefab: `dropAllLocks()`; nothing locked until the first Save. Level: `createLevel(null)` (below) |
 | materials, clips | `lockAsset(id)` on select (`onSelectAsset`, kinds `material`/`animation`) and before a clip save; refused ids in `lockedAssets` → `onMaterialChanged` refuses |
 | heartbeat | `setInterval(heartbeatMs)`: `heartbeatLocks(held)`; a lost file lock is re-taken or turns the file read-only; `serverStatus().pushError` → `pushProblem` in the status bar |
-| `pagehide` | `releaseLockBeacon` per held lock |
+| `pagehide` | `releaseLockBeacon` per held lock; `collab.beaconLeave()` |
 | upload | `ProjectHost.onUpload(files, folder)` from a desktop drop on a folder row, folder tile or the grid (`dropTargetFor`, `folder` getter; not for *All folders* or the level's own); files over `maxUploadBytes` are named and skipped; `afterFileOp` uploads the rest |
 
 `content/games/<game>.json` is written by `adopt` without a lock (gated only by others' locks).
@@ -52,6 +52,65 @@ The routes are `tools/editor-server/src/api.ts`, mounted by `vite.config.ts` (`f
 The dev editor's `@content` alias is pinned to the repo's `content/` (`contentAlias(REPO_CONTENT)`): it edits that folder, never the live mirror (`content-sync.md`, ADR 0084).
 
 **Watcher:** `watch.ignored: ['**/content/games/**']`. Every game's `rules.ts` imports its `content/games/<game>.json` and the editor bundles those modules, so a write would full-reload the editor and lose undo history right after the editor wrote it. The editor reads the files live over `/api/games`; the game's dev server still reloads (ADR 0077).
+
+## Edits are ops (ADR 0089)
+
+Every `Doc` mutator builds `Op`s (`@mp/content` `ops.ts`, `content.md`) and commits them through the one shared
+`applyBatch` on its own level; what changed is reported on `doc.onOps({ ops, inverses })`. No-op edits (inverse
+`null`) report nothing. Nodes are addressed on the wire by `NodeRef`: `refAt(i)` / `indexOfRef(ref)`.
+
+| Mutator | Ops |
+| --- | --- |
+| `setTransform` / `setName` / `setParams` / `setComponentEnabled` / `addComponent` / `removeComponent` / `moveComponent` | the own op on an own node; the `setOverride*` / `addOverrideComponent` / `removeOverrideComponent` flavour on an inherited one (an inherited component's removal = `setOverrideParams unset` + `setOverrideEnabled null` + `setOverrideRemoved`) |
+| `place` (level) / `placePrefab` (level) | `internPrefab` when the key is new (`internOp`, key from `freeTableKey`) + `insertNode` |
+| `place` / `placePrefab` / `placeEmpty` / `placeModel` / `duplicate` / `paste` | `insertNode` (ids minted client-side; `reidSubtree` for copies) |
+| `remove` / `move` / `reparent` | `removeNode` / `moveNode` |
+| `extract` | `internPrefab` + `replaceNode` |
+| `revert` | `setNodeOverride` (the record with the field gone, or `null`) |
+| `applyToPrefab` | the own ops **scoped `table: key`** on the definition + `setNodeOverride null` |
+| `setEnvironment` / `setMode` | `setEnvironment` / `setMode` |
+| `setId` | not an op (the file name; live, the server sets it) |
+
+`prefabDoc(root, registry, clips, { table })` — a prefab opened on top (`openPrefabOf`) stamps every op with
+`table`, so the same op applies to `level.prefabs[table]` on any copy; locally it applies to the wrapper whose one
+root *is* that entry.
+
+**Undo** (`src/opHistory.ts`): `main.ts` attaches `onDocOps` to every document (`withOps`); batches collect in
+`pending`; `recordEdit(label)` folds them (`foldBatches`: one transform op per target, last value, first inverse)
+into `{ ops, inverses, label, selection: NodeRef[] }`. `undo` applies `inverses` with `applyBatch` straight on the
+root level (nothing re-reported), rebuilds, restores the selection by ref; an entry whose ops no longer apply is
+dropped with a status line. `coalescing` still holds `recordEdit` off during a gizmo drag. Undo inside a prefab
+opened on top no longer pops back to the level. Live, the applied inverses go to the server as an ordinary batch
+(`collab.submit`): an undo is an edit the room sees.
+
+## Live levels (`src/collab.ts`, ADR 0089)
+
+A level is not a file with a lock but a **live session** on the server (`editor-server.md`, *Live documents*):
+every batch the document reports is applied locally at once and sent; the server numbers it and echoes it to
+everyone, the sender included (the echo is the ack). Prefabs and materials keep the file lock and Save.
+
+```ts
+createCollab(transport: LiveTransport, hooks: CollabHooks): Collab
+// join(name) resolves on the first snapshot · leave · submit(batch) · flush() · hold(refs) · release(refs) · presence(data)
+// beaconLeave() · connId() · name() · peers() · holds() · pending()
+httpTransport(): LiveTransport   // EventSource in, fetch POST out, sendBeacon for the way out
+```
+
+| Piece | Behaviour |
+| --- | --- |
+| join | `openFile` (level) → `collab.join(name)`; the snapshot's level (`latestSnapshot`) is what adoption, validation and `levelDoc` run on. A join the server refuses is the load error |
+| outbound | `onDocOps` → `pending` (history) **and** `collab.submit(batch)`; the batch is *unacked* until its echo. `applyHistory` submits the inverses it applied |
+| inbound | a remote batch: unacked batches rolled back (inverses, newest first), remote applied, unacked re-applied (inverses recomputed; one that no longer applies is dropped and reported); `hooks.onApplied(ops)` → `repaintAfterOps`. A seq gap or a failing apply reopens the stream: the server greets with a fresh snapshot, `reinstallLevel` rebuilds the document over it (history kept), unacked batches are re-applied and re-sent |
+| rejected | a 4xx on the POST: that batch and everything after it rolled back, the later ones re-applied, `onRejected` → `history.dropWhere` (the entry holding it) + status line + repaint |
+| repaint | `repaintAfterOps(ops)`: transforms only (`setTransform` / `setOverrideTransform`) → `applyPreviewPoses` + `scheduleRebuild` + `inspectorSync` + track helper; anything else → environment/postfx re-applied, `buildItems` + `rebuildLoaded`, selection put back by `indexOfRef`, `refreshUi` + `inspectorRebuild`. During a gizmo drag ops queue in `deferredRemote` (the data is already changed) and repaint at drag end |
+| Save | toolbar `live` hides Save and disables the name field; `dirty` stays `false` live (`recordEdit`, `applyHistory`), so `guardUnsaved` never asks. `saveNow` returns `true` |
+| Play | `startFramePlay`: live → `collab.flush()` first (the game reads the file), else the prefab path `saveNow()` |
+| New / Duplicate | `createLevel(from)`: `askName` (`confirm.ts`) → `^[\w-]+$` → refused if `listFiles('levels')` has it → `PUT /api/levels/<name>` a `blankLevel` with the active mode, or the open level (`loadLevelRaw`, the server's live copy) with `id` set → `refreshFileList` → `openFile`. Toolbar `Duplicate` in level mode |
+| status bar | `live` or `live · with Adrien, Titouan` (peers other than this `connId`) |
+| leave | `dropAllLocks` → `collab.leave()`; `pagehide` → `beaconLeave()` |
+
+Two tabs of one person are two `connId`s: separate acks, separate holds. Holds and presence are wired but unused
+until phase 3.
 
 ## Game discovery (`src/modes.ts`)
 
@@ -97,7 +156,7 @@ adoption keeps the settings. `loadGame` accepts numbers and point lists (`normal
 ## Play
 
 **A level plays in the real game** (ADR 0086): `startPlay` → `gamePageUrl()` (`me.games[activeMode.name]`,
-from `/api/me`) → `startFramePlay(url)`: `saveNow()` if dirty (a refused save is no play), then an
+from `/api/me`) → `startFramePlay(url)`: live level → `collab.flush()`; prefab → `saveNow()` if dirty (a refused save is no play); then an
 `<iframe id="game-frame">` over `#centre` at `${url}?level=${fileState.name}`; `playing = true`, orbit off. Stop
 (toolbar) removes the frame. Esc inside the frame is the game's pause; the `pointerlockchange` exit applies only
 to the in-editor loop. Hosted: `url` is the proxied `/play/<game>/`; dev: `http://localhost:<port>/` with

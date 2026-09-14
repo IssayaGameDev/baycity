@@ -22,7 +22,7 @@ Boundary examples: snapshot header layout — technical. Interpolation buffer du
 
 ## The two flows (ADR 0083/0084; `docs/platform/editor-server.md`, `content-sync.md`)
 
-- **Content → master**: saves on `editor.playgorbo.com` become commits on `content`. Kodjo merges `content` into master when the content is good — his call, his action, never yours.
+- **Content → master**: edits on `editor.playgorbo.com` become commits on `content` (levels are written live, a session commit per person; prefabs and materials on Save). Kodjo merges `content` into master when the content is good — his call, his action, never yours.
 - **Master → the box**: code changes the hosted editor needs (components, parameters, gizmos, editor UI) reach it only by redeploy. On Kodjo's "deploy", run `pnpm deploy:editor` (ssh to the box: commits every session, merges master into `content`, rebuilds, restarts the editor server, the relay and the staging game at `dev.playgorbo.com`, ADR 0085). Content-only or game-only changes need none.
 - Kodjo's loop: `pnpm dev:server`, `pnpm dev:keyboard`, `pnpm sync:content`; he edits in the browser. The dev editor is for editor development.
 

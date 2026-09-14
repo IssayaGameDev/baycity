@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createContentApi, keyFor } from './api'
 import { createChangeFeed, type ChangeFeed } from './changes'
 import type { User } from './config'
+import { createLive, type Live } from './live'
 import type { LockTable } from './locks'
 
 /**
@@ -24,6 +25,8 @@ let changed: { user: string; paths: string[] }[]
 let released: string[]
 let committedAll = 0
 let feed: ChangeFeed
+let live: Live
+let liveChanged: { users: string[]; path: string }[]
 
 const LEVEL = { id: 'a', config: { mode: { name: 'parkour' } }, nodes: [] }
 
@@ -36,6 +39,17 @@ beforeEach(async () => {
   changed = []
   released = []
   feed = createChangeFeed()
+  liveChanged = []
+  live = createLive({
+    readLevel: (name) => {
+      const file = join(root, 'content/levels', `${name}.json`)
+      return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as unknown) : null
+    },
+    writeLevel: (name, level) => writeFileSync(join(root, 'content/levels', `${name}.json`), `${JSON.stringify(level, null, 2)}\n`),
+    changed: (users, path) => liveChanged.push({ users: users.map((u) => u.name), path }),
+    idleMs: 20,
+    maxMs: 200,
+  })
   const api = createContentApi({
     repoRoot: root,
     identify: async (req) => USERS[String(req.headers['x-user'] ?? '')] ?? null,
@@ -51,6 +65,8 @@ beforeEach(async () => {
       },
     },
     changes: feed,
+    live,
+    keepaliveMs: 50,
   })
   server = createServer((req, res) => {
     void api(req, res).then((handled) => {
@@ -211,6 +227,89 @@ describe('mirror feed', () => {
     // The tree agrees with what the feed said.
     const tree = await json<{ files: { path: string }[] }>(await call('ada', 'GET', '/api/tree'))
     expect(tree.files.map((f) => f.path).filter((p) => p.includes('art/'))).toEqual([keyFor.asset('art/a.png'), keyFor.asset('art/a.png.meta')])
+  })
+})
+
+/** One reader per stream: SSE frames are taken off it as tests need them. */
+const sseReader = (r: Response): { take: (count: number) => Promise<{ event: string; data: unknown; id?: number }[]> } => {
+  const reader = r.body!.getReader()
+  let buf = ''
+  const queue: { event: string; data: unknown; id?: number }[] = []
+  const pump = async (): Promise<boolean> => {
+    const { value, done } = await reader.read()
+    if (done) return false
+    buf += new TextDecoder().decode(value)
+    let at: number
+    while ((at = buf.indexOf(String.fromCharCode(10, 10))) >= 0) {
+      const frame = buf.slice(0, at)
+      buf = buf.slice(at + 2)
+      if (frame.startsWith(':')) continue
+      const fields = Object.fromEntries(frame.split(String.fromCharCode(10)).map((l) => [l.slice(0, l.indexOf(':')), l.slice(l.indexOf(':') + 2)]))
+      const e: { event: string; data: unknown; id?: number } = { event: fields.event ?? '', data: JSON.parse(fields.data ?? 'null') }
+      if (fields.id !== undefined) e.id = Number(fields.id)
+      queue.push(e)
+    }
+    return true
+  }
+  return {
+    take: async (count) => {
+      while (queue.length < count) if (!(await pump())) break
+      return queue.splice(0, count)
+    },
+  }
+}
+
+describe('live editing over the wire', () => {
+  it('streams hello + snapshot, applies a batch and echoes it with the seq, serves the live copy, refuses a PUT', async () => {
+    const ctrl = new AbortController()
+    const stream = await fetch(`${base}/api/live/a/events`, { headers: { 'x-user': 'ada' }, signal: ctrl.signal })
+    expect(stream.status).toBe(200)
+    expect(stream.headers.get('content-type')).toContain('text/event-stream')
+    const sse = sseReader(stream)
+    const [hello, snapshot] = await sse.take(2)
+    expect(hello!.event).toBe('hello')
+    const connId = (hello!.data as { connId: string }).connId
+    expect(snapshot!.event).toBe('snapshot')
+    expect((snapshot!.data as { seq: number }).seq).toBe(0)
+
+    const r = await call('ada', 'POST', '/api/live/a/ops', { connId, batchId: 'b1', ops: [{ kind: 'setName', id: 'a', name: 'A' }] })
+    expect(r.status).toBe(400) // 'a' is the level id, not a node: the fixture has no nodes
+    const put = await call('ada', 'PUT', '/api/levels/a', LEVEL)
+    expect(put.status).toBe(409)
+
+    const ok = await call('ada', 'POST', '/api/live/a/ops', {
+      connId,
+      batchId: 'b2',
+      ops: [{ kind: 'insertNode', parent: null, index: 0, node: { id: 'n1', transform: { position: { x: 0, y: 0, z: 0 } }, components: [] } }],
+    })
+    expect(await json(ok)).toEqual({ ok: true, seq: 1 })
+    const [echo] = await sse.take(1)
+    expect(echo!.event).toBe('ops')
+    expect(echo!.id).toBe(1)
+    expect((echo!.data as { from: string; batchId: string }).batchId).toBe('b2')
+    const served = await json<{ nodes: unknown[] }>(await call('bob', 'GET', '/api/levels/a'))
+    expect(served.nodes).toHaveLength(1)
+    expect(JSON.parse(readFileSync(join(root, 'content/levels/a.json'), 'utf8')).nodes, 'not on disk yet').toHaveLength(0)
+
+    // Foreign connection, wrong person.
+    expect((await call('bob', 'POST', '/api/live/a/ops', { connId, batchId: 'x', ops: [] })).status).toBe(400)
+
+    // Flush writes and reports the contributor; the mirror's tree flushes too.
+    await call('ada', 'POST', '/api/live/a/flush', { connId })
+    expect(JSON.parse(readFileSync(join(root, 'content/levels/a.json'), 'utf8')).nodes).toHaveLength(1)
+    expect(liveChanged).toEqual([{ users: ['Ada'], path: 'content/levels/a.json' }])
+
+    const status = await json<{ docs: { name: string; peers: { name: string }[] }[] }>(await call('bob', 'GET', '/api/live'))
+    expect(status.docs[0]!.peers.map((p) => p.name)).toEqual(['Ada'])
+
+    ctrl.abort()
+    await new Promise((r) => setTimeout(r, 30))
+    expect(live.isOpen('a'), 'the stream closing is the leave').toBe(false)
+  })
+
+  it('a level that is not there is a 404, not a stream', async () => {
+    const r = await call('ada', 'GET', '/api/live/nope/events')
+    expect(r.status).toBe(404)
   })
 })
 

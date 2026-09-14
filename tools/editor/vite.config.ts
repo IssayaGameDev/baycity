@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 
@@ -6,6 +8,7 @@ import { defineConfig, type Plugin } from 'vite'
 import { REPO_CONTENT, contentAlias } from '../../content-root'
 import { createContentApi } from '../editor-server/src/api'
 import { DEFAULTS } from '../editor-server/src/config'
+import { createLive } from '../editor-server/src/live'
 import { SHARED_GAMES } from '../share/src/index'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -28,6 +31,18 @@ const filesApi = (): Plugin => ({
       rules: { staleMs: DEFAULTS.lockStaleMs, heartbeatMs: DEFAULTS.heartbeatMs, maxUploadBytes: DEFAULTS.maxUploadBytes },
       // Play frames the game's own dev server on this machine (ADR 0086): `pnpm dev:<game>` has to be running.
       games: Object.fromEntries(SHARED_GAMES.map((g) => [g.name, `http://localhost:${g.port}/`])),
+      // Levels are edited live here too (ADR 0089): the same session code, one person, files on this disk.
+      live: createLive({
+        readLevel: (name) => {
+          const file = join(ROOT, 'content', 'levels', `${name}.json`)
+          return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as unknown) : null
+        },
+        writeLevel: (name, level) => {
+          mkdirSync(join(ROOT, 'content', 'levels'), { recursive: true })
+          writeFileSync(join(ROOT, 'content', 'levels', `${name}.json`), `${JSON.stringify(level, null, 2)}\n`)
+        },
+        changed: () => {},
+      }),
     })
     server.middlewares.use((req, res, next) => {
       void api(req, res).then(
@@ -54,7 +69,8 @@ export default defineConfig({
    * wrote it. The editor reads those files live over `/api/games` instead (ADR 0077); the game's own dev server
    * still watches them and reloads, which is the reload that matters.
    */
-  server: { port: 5176, watch: { ignored: ['**/content/games/**'] } },
+  // `content/levels` too: the live session writes those files every few seconds, and the editor does not import them.
+  server: { port: 5176, watch: { ignored: ['**/content/games/**', '**/content/levels/**'] } },
   // `app/`, not Vite's default `assets/`: that prefix is the content API's asset route (ADR 0083).
   build: { target: 'es2022', assetsDir: 'app' },
 })

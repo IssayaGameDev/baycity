@@ -1,15 +1,18 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join, normalize, relative, sep } from 'node:path'
 
 import { kindForPath, META_SUFFIX } from '../../../packages/content/src/assets'
+import type { NodeRef, Op } from '../../../packages/content/src/ops'
 import { LevelError, validateLevel } from '../../../packages/content/src/validate'
 import { importAssets } from './assetImporter'
 import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './assetOps'
 import type { ChangeFeed } from './changes'
 import type { User } from './config'
+import { LiveError, type Live } from './live'
 import { acquire, blocker, heartbeat, holder, release, type LockRules, type LockTable } from './locks'
+import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
 
 /**
  * The content API — one implementation behind both the dev editor (a Vite middleware, `auth: none`) and the
@@ -30,6 +33,16 @@ import { acquire, blocker, heartbeat, holder, release, type LockRules, type Lock
  *   GET  /assets/<path>               → the bytes
  *   PUT  /assets/<path>               → a JSON asset
  *   POST /api/admin/commit-all        → Bearer token, not a user: deploy flushes every session
+ *
+ * Live level editing (ADR 0089), when `live` is given:
+ *   GET  /api/live                    → open documents, peers, holds
+ *   GET  /api/live/:name/events       → SSE: hello, snapshot, ops (id = seq), holds, peers, presence, error
+ *   POST /api/live/:name/ops          → { connId, batchId, ops } → { ok, seq } · 400 bad op · 423 held by another
+ *   POST /api/live/:name/hold|release → { connId, refs } → { ok } / { ok: false, holder }
+ *   POST /api/live/:name/presence     → { connId, data } — relayed, unnumbered
+ *   POST /api/live/:name/flush        → write the file now
+ *   POST /api/live/:name/leave        → { connId } (a closing tab's beacon)
+ *   PUT  /api/levels/:name            → 409 while the level is open live; GET serves the live copy
  *
  * For the live mirror (ADR 0084):
  *   GET  /api/tree                    → { seq, files: [{ path, size, sha1 }] } — every file under content/
@@ -59,6 +72,10 @@ export interface ApiOptions {
   changes?: ChangeFeed
   /** Game name → URL the editor's Play opens in a frame (ADR 0086). Relative to this server or absolute. */
   games?: Record<string, string>
+  /** Live level documents (ADR 0089). Absent: levels are files, as before. */
+  live?: Live
+  /** SSE keepalive period; short in tests. */
+  keepaliveMs?: number
 }
 
 /** Handles the request and resolves `true`, or resolves `false` having touched nothing. */
@@ -338,12 +355,16 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     }
     const file = join(dir, `${name}.json`)
     if (req.method === 'GET') {
+      // An open live document is newer than its file until the next flush; serve it.
+      const open = kind === 'levels' ? opts.live?.levelOf(name) : null
+      if (open !== null && open !== undefined) return sendJson(res, 200, open), true
       if (!existsSync(file)) return sendJson(res, 404, { error: 'not found' }), true
       sendJson(res, 200, JSON.parse(readFileSync(file, 'utf8')))
       return true
     }
     if (req.method === 'PUT') {
       const key = kind === 'levels' ? keyFor.level(name) : keyFor.game(name)
+      if (kind === 'levels' && opts.live?.isOpen(name) === true) return sendJson(res, 409, { error: `${name} is open live; edit it in the editor` }), true
       if (refuseIfLocked(res, user, [key])) return true
       try {
         const parsed: unknown = await readJson(req)
@@ -364,6 +385,8 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
 
   const handleMirror = async (req: IncomingMessage, res: ServerResponse, url: string, query: URLSearchParams): Promise<boolean> => {
     if (req.method !== 'GET') return false
+    // What is on disk must be current before anyone reads it from outside.
+    if (url === '/api/tree' || url === '/api/file') opts.live?.flushAll()
     if (url === '/api/tree') {
       const files = filesUnder(CONTENT).map((rel) => {
         const bytes = readFileSync(join(CONTENT, rel))
@@ -393,6 +416,89 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       return true
     }
     return false
+  }
+
+  const handleLive = async (req: IncomingMessage, res: ServerResponse, url: string, user: User): Promise<boolean> => {
+    const live = opts.live
+    if (live === undefined || !url.startsWith('/api/live')) return false
+    if (url === '/api/live' && req.method === 'GET') return sendJson(res, 200, { docs: live.status() }), true
+    const m = /^\/api\/live\/([\w-]+)\/(events|ops|hold|release|presence|flush|leave)$/.exec(url)
+    if (m === null) return false
+    const name = m[1]!
+    const action = m[2]!
+
+    if (action === 'events') {
+      if (req.method !== 'GET') return sendJson(res, 405, { error: 'GET expected' }), true
+      // Nothing is written until the join succeeds, so a missing level is still a 404 and not a stream.
+      const connId = randomUUID()
+      const buffered: string[] = []
+      let started = false
+      const send = (event: string, data: unknown, id?: number): void => {
+        const frame = encodeSse(event, data, id)
+        if (started) res.write(frame)
+        else buffered.push(frame)
+      }
+      try {
+        live.join(name, { connId, user, send })
+      } catch (e) {
+        return sendJson(res, e instanceof LiveError ? e.status : 500, { error: e instanceof Error ? e.message : String(e) }), true
+      }
+      res.writeHead(200, SSE_HEADERS)
+      res.flushHeaders()
+      res.write(buffered.join(''))
+      started = true
+      const keepalive = setInterval(() => res.write(SSE_KEEPALIVE), opts.keepaliveMs ?? 25_000)
+      res.on('close', () => {
+        clearInterval(keepalive)
+        live.leave(name, connId)
+      })
+      return true
+    }
+
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST expected' }), true
+    let args: Record<string, unknown>
+    try {
+      args = asRecord(await readJson(req))
+    } catch {
+      return sendJson(res, 400, { error: 'expected a JSON body' }), true
+    }
+    const connId = typeof args.connId === 'string' ? args.connId : ''
+    try {
+      switch (action) {
+        case 'ops': {
+          const ops = Array.isArray(args.ops) ? (args.ops as Op[]) : []
+          sendJson(res, 200, live.apply(name, connId, user, { batchId: typeof args.batchId === 'string' ? args.batchId : '', ops }))
+          return true
+        }
+        case 'hold': {
+          sendJson(res, 200, live.hold(name, connId, user, Array.isArray(args.refs) ? (args.refs as NodeRef[]) : []))
+          return true
+        }
+        case 'release': {
+          live.release(name, connId, user, Array.isArray(args.refs) ? (args.refs as NodeRef[]) : [])
+          sendJson(res, 200, { ok: true })
+          return true
+        }
+        case 'presence': {
+          live.presence(name, connId, user, args.data)
+          sendJson(res, 200, { ok: true })
+          return true
+        }
+        case 'flush': {
+          live.flush(name)
+          sendJson(res, 200, { ok: true })
+          return true
+        }
+        default: {
+          live.leave(name, connId)
+          sendJson(res, 200, { ok: true })
+          return true
+        }
+      }
+    } catch (e) {
+      sendJson(res, e instanceof LiveError ? e.status : 500, { error: e instanceof Error ? e.message : String(e) })
+      return true
+    }
   }
 
   const handleLocks = async (req: IncomingMessage, res: ServerResponse, url: string, user: User): Promise<boolean> => {
@@ -470,6 +576,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     }
     if (user === null) return sendJson(res, 401, { error: 'not signed in' }), true
 
+    if (await handleLive(req, res, url, user)) return true
     if (await handleMirror(req, res, url, query)) return true
     if (await handleLocks(req, res, url, user)) return true
     if (await handleFiles(req, res, url, user)) return true

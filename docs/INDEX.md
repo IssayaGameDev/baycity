@@ -24,8 +24,8 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 | [client/tps.md](platform/client/tps.md) | `startTpsClient` options and every `TpsClient` handle |
 | [client/input.md](platform/client/input.md) | Keyboard, mouse, touch zones, actions, `InputCommand` |
 | [rendering.md](platform/rendering.md) | Stage, post-FX, overlay layer, level view, assets, world labels, Pixi UI |
-| [editor.md](platform/editor.md) | What it authors, content API client, locks in the editor, game discovery, adoption, Play |
-| [editor-server.md](platform/editor-server.md) | The content API, Access identity, locks, session commits, upload, deploy |
+| [editor.md](platform/editor.md) | What it authors, content API client, locks in the editor, edits as ops, live levels, game discovery, adoption, Play |
+| [editor-server.md](platform/editor-server.md) | The content API, Access identity, locks, live documents, session commits, upload, deploy |
 | [content-sync.md](platform/content-sync.md) | The live mirror, `content-root.ts`, the `@content` alias, `.env` |
 | [tooling.md](platform/tooling.md) | share, bots, netsim, viewer |
 | [budgets.md](platform/budgets.md) | The tripwires and how each is measured |
