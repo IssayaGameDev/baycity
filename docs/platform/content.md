@@ -43,7 +43,10 @@ interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: Su
 ```ts
 instantiateLevel(world: PhysicsWorld, level: Level, types: TypeInfo, clips?: ClipSource): LoadedLevel
 interface ClipSource { keys(assetId): readonly Keyframe[] | undefined }   // absent → no clip resolves
-interface WorldNode { id; name; components /* resolved */; position /* at load */; colliderHandles: readonly number[] /* opaque */; scope: number }
+interface WorldNode { id; name; components /* resolved */; position, rotation /* world, at load */
+                     colliderHandles: readonly number[] /* opaque */
+                     colliders: readonly ColliderDesc[] /* world-scaled, same order as handles (ADR 0095) */
+                     scope: number }
 interface VisualItem { collider: ColliderDesc /* scale baked in */; position; rotation: Quat; scale: Vec3 /* world, sizes a built-in */; model?: string; material?: string; colliderHandles: number[] }
 ```
 

@@ -606,6 +606,15 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
           }),
       character: characterAccess(char),
       effects: rules.effects,
+      /**
+       * Peers, for a component that has to reason about everyone and not just its own player (ADR 0095).
+       *
+       * The tick timeline, not the render one: `worldFromBase(..., false)` resolves a rider against the base
+       * pose the sim is at, which is the same frame `onFixedUpdate` runs in. Sampling the rendered pose here
+       * would put a peer standing on a moving platform a fraction of a step away from where the rule thinks
+       * the platform is.
+       */
+      peers: () => net.sample().map((e) => ({ id: e.id as number, position: worldFromBase(loaded, e, false).position })),
     })
     // Tick 0 at level time 0: the clock has not started, and a component that wants "now" gets it in
     // `onFixedUpdate`. Counted here rather than read off the clock so the number a component sees is the

@@ -132,6 +132,25 @@ export interface Hit {
   readonly node: WorldNode
 }
 
+/**
+ * One player, in world space (ADR 0095).
+ *
+ * The shape is deliberately thin. A component gets where somebody is, not a handle on them: there is nothing
+ * a component may *do* to another player, because that player's own client owns their body (ADR 0011).
+ */
+export interface PlayerView {
+  /**
+   * The relay's entity id, or `0` for the local player.
+   *
+   * Zero because the server assigns ids from `FIRST_PLAYER_ID = 1000` and never relays a client its own body,
+   * so there is no id to use — and a component that wants "me" should read `isSelf` rather than a number.
+   */
+  readonly id: number
+  /** World position. The capsule's centre for the local player, the relayed origin for a peer. */
+  readonly position: Vec3
+  readonly isSelf: boolean
+}
+
 /** What a hook is handed about the world. One object, reused across the tick. */
 export interface Ctx {
   /** Sim tick from the synced clock. The only notion of "now" a component gets. */
@@ -147,6 +166,26 @@ export interface Ctx {
   readonly random: () => number
   readonly character: CharacterAccess
   readonly effects: Effects
+  /**
+   * Every player this client knows about, **own body first** (ADR 0095).
+   *
+   * Three things to know before writing a rule against it.
+   *
+   * **It is this client's opinion, not the truth.** Peers arrive relayed and interpolated a hundred
+   * milliseconds behind (`INTERPOLATION_DELAY_MS`), so two clients running the same component at the same
+   * tick can pick different answers for a few centimetres' difference. That is fine for what a component may
+   * legitimately do — chase, aim, rank, look at — and it is *not* fine for anything that must be agreed on.
+   * It is safe in this stack for the same reason a `Hazard` is: every client decides its own death, so a boss
+   * that is 3 cm apart on two screens still kills exactly the person whose own client says it touched them.
+   *
+   * **The list is single-entry off the network.** A play-test in the editor, or a game running offline, sees
+   * only itself. A component must read correctly with one player in the list, because most of the time there
+   * is one.
+   *
+   * **The array is reused.** It is rebuilt once per tick and handed out unchanged for the rest of it, so do
+   * not keep it past the hook that asked for it.
+   */
+  readonly players: () => readonly PlayerView[]
 }
 
 /** Hooks with their parameter and state types erased — what the runner can hold in a heterogeneous list. */
@@ -259,6 +298,14 @@ export const createComponentRuntime = (
      * already moved and a rule has already fired by the time an ability runs.
      */
     readonly player?: PlayerEntity
+    /**
+     * Peers as of now, in world space (ADR 0095). Omitted where there is no network — the editor's play-test
+     * and anything offline — and `ctx.players()` is then the local player alone.
+     *
+     * A getter rather than a value because the runtime samples it once a tick: the caller is reading an
+     * interpolated stream and must not be asked to cache it.
+     */
+    readonly peers?: () => readonly { readonly id: number; readonly position: Vec3 }[]
   },
 ): ComponentRuntime => {
   const instances: Instance[] = []
@@ -275,6 +322,25 @@ export const createComponentRuntime = (
     random: () => hashRandom(ctx.tick, instanceOf, calls++),
     character: io.character,
     effects: io.effects,
+    players: () => players(),
+  }
+
+  /**
+   * Built once a tick and handed out for the rest of it.
+   *
+   * Cached because several components on a busy tick would otherwise each walk the peer list and allocate
+   * their own copy of it, for an answer that cannot change between them — the clock does not move inside a
+   * tick. `-1` is a tick that never happens, so the first call always builds.
+   */
+  let playersTick = -1
+  const playerList: PlayerView[] = []
+  const players = (): readonly PlayerView[] => {
+    if (playersTick === ctx.tick) return playerList
+    playersTick = ctx.tick
+    playerList.length = 0
+    playerList.push({ id: 0, position: io.character.position(), isSelf: true })
+    for (const peer of io.peers?.() ?? []) playerList.push({ id: peer.id, position: peer.position, isSelf: false })
+    return playerList
   }
   const mutable = ctx as { tick: number; dt: number; timeMs: number }
   const setClock = (tick: number, timeMs: number, dt: number): void => {
@@ -296,7 +362,18 @@ export const createComponentRuntime = (
   const playerNode: WorldNode | undefined =
     io.player === undefined
       ? undefined
-      : { id: io.player.id, name: io.player.id, components: io.player.components, position: { x: 0, y: 0, z: 0 }, colliderHandles: [], scope: 0 }
+      : {
+          id: io.player.id,
+          name: io.player.id,
+          components: io.player.components,
+          // Placeholders, like `position` above and for the same reason: the character is a controller, not
+          // a frame the loader posed, so every live answer about it comes from `ctx.character`.
+          position: { x: 0, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          colliderHandles: [],
+          colliders: [],
+          scope: 0,
+        }
 
   /** By type, so the lookup above is one map hit rather than a scan per component. */
   const sessionDefs = new Map<string, AnyComponentDef>((io.player?.defs ?? []).map((d) => [d.type, d]))
