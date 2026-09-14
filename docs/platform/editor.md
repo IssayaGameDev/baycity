@@ -110,6 +110,32 @@ httpTransport(): LiveTransport   // EventSource in, fetch POST out, sendBeacon f
 
 Two tabs of one person are two `connId`s: separate acks, separate holds.
 
+### The navigation gizmo (ADR 0094)
+
+`src/viewGizmo.ts`, top-right of the viewport, 128 px. Blender's shape, Unity's centre, no auto-switch.
+
+| Gesture | Effect |
+| --- | --- |
+| click a ball | snap to that axis over 0.35 s, smoothstepped, keeping the orbit distance. Positive balls are filled and lettered `X`/`Y`/`Z`; negative are the same ball at 0.35 opacity |
+| drag anywhere on it | orbit, past 4 px of slop — so a drag that starts on a ball orbits, and a click on it still snaps |
+| click the centre | toggle perspective / isometric. The label under it reads `Persp` or `Iso` |
+
+Snapping never changes the projection: two decisions, deliberately not fused (ADR 0094 on Blender's *Auto
+Perspective*).
+
+**Two cameras.** `stage.camera` stays perspective and stays the game's — play-in-place tunes its `fov` — and
+`orthoCamera` sits beside it in `main.ts`. `activeCamera()` says which is live; `setProjection(ortho)` copies
+the placement across, cuts the frustum so both show the same height at the orbit target, and re-points
+`postfx.setCamera`, `controls.object` and `gizmo.camera`. Entering play forces perspective. `focusSelection`
+and the picking raycast both go through `activeCamera()`.
+
+**The pointer.** `document` in the **capture** phase, `stopPropagation` when the gizmo takes a press:
+`OrbitControls` and the selection click listen on the canvas itself and were added first, so there is no
+getting in front of them from there.
+
+Drawn in the render step **after** `postfx.render()` — it clears depth and paints over the finished image —
+and not at all while playing. `gizmoPointer` and `orbitAround` are pure and tested; the rest is WebGL.
+
 ### Network bounds, drawn (ADR 0093)
 
 `level.config.netBounds` — how far from the origin a peer's position survives the wire. On the **Game** row's

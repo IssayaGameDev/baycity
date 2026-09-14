@@ -111,6 +111,14 @@ export interface PostFX {
   apply: (from: Partial<PostFXConfig> | undefined) => void
   render: () => void
   setSize: (width: number, height: number) => void
+  /**
+   * Point the passes at a different camera.
+   *
+   * The passes take a camera at construction and hold it, so a consumer that swaps cameras — the editor
+   * toggling perspective for orthographic (ADR 0094) — would otherwise go on rendering through the old one.
+   * Rebuilding the composer instead would drop the AO and bloom settings the level asked for.
+   */
+  setCamera: (camera: THREE.Camera) => void
   dispose: () => void
 }
 
@@ -125,7 +133,8 @@ export const createPostFX = (
   composer.setPixelRatio(renderer.getPixelRatio())
   composer.setSize(size.x, size.y)
 
-  composer.addPass(new RenderPass(scene, camera))
+  const renderPass = new RenderPass(scene, camera)
+  composer.addPass(renderPass)
 
   /**
    * Built whether or not AO is currently wanted, and switched with `.enabled`.
@@ -203,6 +212,10 @@ export const createPostFX = (
       refresh()
     },
     render: () => composer.render(),
+    setCamera: (next) => {
+      renderPass.camera = next
+      if (gtao !== null) gtao.camera = next
+    },
     setSize: (w, h) => {
       composer.setSize(w, h)
       gtao?.setSize(w, h)

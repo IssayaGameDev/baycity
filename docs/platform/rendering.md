@@ -48,12 +48,14 @@ interface PostFX {
   refresh: () => void         // push params onto passes
   apply: (from: Partial<PostFXConfig> | undefined) => void   // Object.assign(params, DEFAULT_POSTFX, from)
   render: () => void; setSize: (w, h) => void; dispose: () => void
+  setCamera: (camera: THREE.Camera) => void   // re-point RenderPass + GTAOPass (ADR 0094)
 }
 DEFAULT_POSTFX: PostFXConfig = { ao: true, bloom: true, bloomStrength: 0.1 }
 ```
 
 Pass order: `RenderPass` → [`hide` toggle] → `GTAOPass` → [`show` toggle] → `UnrealBloomPass` → `OutputPass`
-(ACES from renderer) → `SMAAPass`. The toggle bracket hides `aoIgnores()` objects only for the AO prepass. Own
+(ACES from renderer) → `SMAAPass`. The passes take their camera at construction and hold it, so `setCamera` is
+the only way to swap cameras without rebuilding the composer and losing the level's AO and bloom (ADR 0094). The toggle bracket hides `aoIgnores()` objects only for the AO prepass. Own
 `ResizeObserver` on `renderer.domElement`.
 
 ## Environment & sky — `environment.ts`, `sky.ts`

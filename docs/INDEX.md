@@ -139,5 +139,6 @@ why matters.
 | [0091](adr/0091-a-level-references-a-prefab-by-id.md) | A level references a prefab by id, and a prefab is edited live |
 | [0092](adr/0092-peers-are-quantized-over-a-kilometre.md) | A peer's position is quantized over ±1000 m, not ±40 m |
 | [0093](adr/0093-a-level-says-how-far-it-reaches.md) | A level says how far it reaches, and the editor draws it |
+| [0094](adr/0094-the-viewport-has-a-navigation-gizmo.md) | The viewport has a navigation gizmo, and an isometric camera behind it |
 
 `Design archive/` holds superseded design material and is not maintained.
