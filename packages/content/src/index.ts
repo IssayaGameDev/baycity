@@ -35,6 +35,7 @@ export { applyOp, applyBatch, invertOp, touchedRefs, refKey, isInherited, OpErro
 export type { Op, OpBody, OpKind, NodeRef, OwnRef, InheritedRef } from './ops'
 export { instantiateLevel } from './loader'
 export { hydratePrefabs, stripHydrated, prefabRefsIn } from './prefabs'
+export { fingerprintLevel, firstDifference } from './fingerprint'
 export type { PrefabSource } from './prefabs'
 export { BUILTIN_MODELS, BUILTIN_LABELS, isBuiltinModel, unitColliderFor, scaleCollider, builtinShape, PRIMITIVE_ORDER, PRIMITIVE_PRESETS, PRIMITIVE_LABELS } from './primitives'
 export type { BuiltinModel, PrimitiveKind, PrimitivePreset } from './primitives'
