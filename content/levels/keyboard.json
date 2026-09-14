@@ -990,45 +990,6 @@
       ]
     },
     {
-      "id": "b4",
-      "name": "inter stage",
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 5,
-          "z": 68
-        },
-        "scale": {
-          "x": 20.5,
-          "y": 0.5,
-          "z": 23.6
-        }
-      },
-      "components": [],
-      "prefab": "inter stage",
-      "overrides": {
-        "0fd77e29": {
-          "transform": {
-            "position": {
-              "x": 0.5,
-              "y": 6,
-              "z": 0
-            },
-            "rotation": {
-              "x": -1.5708,
-              "y": 0,
-              "z": -1.5708
-            },
-            "scale": {
-              "x": 0.9958,
-              "y": 0.0244,
-              "z": 12.8
-            }
-          }
-        }
-      }
-    },
-    {
       "id": "d37352b9",
       "name": "Stage 1",
       "transform": {
@@ -1586,45 +1547,6 @@
               }
             }
           ]
-        },
-        {
-          "id": "35aca23e",
-          "name": "inter stage",
-          "transform": {
-            "position": {
-              "x": 9.0071,
-              "y": 32.0513,
-              "z": 86.6349
-            },
-            "scale": {
-              "x": 20.5,
-              "y": 0.5,
-              "z": 23.6
-            }
-          },
-          "components": [],
-          "prefab": "inter stage",
-          "overrides": {
-            "0fd77e29": {
-              "transform": {
-                "position": {
-                  "x": 0.5,
-                  "y": 6,
-                  "z": 0
-                },
-                "rotation": {
-                  "x": -1.5708,
-                  "y": 0,
-                  "z": -1.5708
-                },
-                "scale": {
-                  "x": 1,
-                  "y": 0,
-                  "z": 12.8
-                }
-              }
-            }
-          }
         }
       ]
     },
@@ -2038,64 +1960,6 @@
               }
             }
           ]
-        },
-        {
-          "id": "8c9d352b",
-          "name": "inter stage",
-          "transform": {
-            "position": {
-              "x": -10.792,
-              "y": 9.9314,
-              "z": 72.8715
-            },
-            "scale": {
-              "x": 20.5,
-              "y": 0.5,
-              "z": 23.6
-            }
-          },
-          "components": [],
-          "prefab": "inter stage",
-          "overrides": {
-            "15549963": {
-              "transform": {
-                "position": {
-                  "x": 0.5,
-                  "y": 6,
-                  "z": 0
-                },
-                "rotation": {
-                  "x": -1.571,
-                  "y": 0.0001,
-                  "z": -1.5708
-                },
-                "scale": {
-                  "x": 0.9958,
-                  "y": 0.0244,
-                  "z": 12.8
-                }
-              }
-            },
-            "0fd77e29": {
-              "transform": {
-                "position": {
-                  "x": 0.5122,
-                  "y": 6,
-                  "z": 0
-                },
-                "rotation": {
-                  "x": -1.571,
-                  "y": 0.0001,
-                  "z": -1.5708
-                },
-                "scale": {
-                  "x": 0.9958,
-                  "y": 0.0244,
-                  "z": 12.8
-                }
-              }
-            }
-          }
         }
       ]
     }
@@ -2276,18 +2140,18 @@
           "name": "board-5",
           "transform": {
             "position": {
-              "x": 0.5122,
+              "x": 0.5,
               "y": 6,
               "z": 0
             },
             "rotation": {
-              "x": -1.5711,
-              "y": -0.0023,
-              "z": -1.586
+              "x": -1.5708,
+              "y": 0,
+              "z": -1.5708
             },
             "scale": {
-              "x": 0.9958,
-              "y": 0.0244,
+              "x": 1,
+              "y": 0,
               "z": 12.8
             }
           },
