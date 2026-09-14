@@ -14,13 +14,11 @@ import { buildTree, filterEntries, flattenTree, folderOf, subfoldersOf, type Fil
  * its tile scrolls in, once, and the cache keeps it. That bounds the *loading* too — a model is fetched only
  * when something is about to show it.
  *
- * One node is not a folder: the prefabs a level defines **in its own table** rather than in a file. Those have
- * no path and no id, so they cannot sit in the tree, and they are the only placeable thing left that is not a
- * file — the code kit that used to live there is deleted (ADR 0027).
+ * Every prefab is a file in a folder and a level references one by asset id (ADR 0091), so the tree is the
+ * whole story: there is nothing placeable that is not a file. The pseudo-folder for a level's own prefab table
+ * went with the table, as the code kit beside it went with ADR 0027.
  */
 export interface ProjectHost {
-  /** Prefabs the open level defines in its own table — placeable, but not files. */
-  ownPrefabs: () => readonly string[]
   db: () => AssetDatabase | null
   /** Folders on disk, including the empty ones no asset path can imply. */
   folders: () => readonly string[]
@@ -28,7 +26,6 @@ export interface ProjectHost {
   /** The armed prefab or model, shown pressed while it waits for a viewport click. */
   armed: () => string | null
   selectedAsset: () => string | null
-  onPickOwn: (name: string) => void
   /** Arm a placeable asset (a prefab file or a model) for the next viewport click. */
   onPickAsset: (assetId: string) => void
   /**
@@ -72,6 +69,11 @@ export interface ProjectHost {
 
 export interface Project {
   render: () => void
+  /**
+   * The folder on screen: `''` at the assets root, `null` across all folders. `Save as prefab…` writes here,
+   * so navigating the panel is how the destination is chosen (ADR 0091).
+   */
+  folder: () => string | null
 }
 
 const KIND_LABEL: Record<AssetKind, string> = {
@@ -92,13 +94,11 @@ const PLACEABLE = new Set<AssetKind>(['prefab', 'model'])
  *
  * A material and an animation clip are both authored *here* rather than imported, so an empty one is a
  * meaningful starting point. A texture or a model arrives as a file, and a prefab is made by extracting one
- * from a level.
+ * from a level as one (ADR 0091).
  */
 const CREATABLE = new Set<AssetKind>(['material', 'animation'])
 /** Kinds with no picture worth inventing. */
 const UNPREVIEWABLE = new Set<AssetKind>(['animation', 'sound', 'font'])
-/** The pseudo-folder for a level's own prefabs. Not a path, so it can never collide with one. */
-const OWN = ' own'
 
 type PreviewKind = 'prefab' | 'model' | 'material' | 'shader' | 'texture'
 
@@ -109,8 +109,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className = ''): HTML
 }
 
 export const createProjectPanel = (container: HTMLElement, host: ProjectHost): Project => {
-  /** Selected folder. `''` is the assets root, `null` means every folder, `OWN` is the level's own prefabs. */
-  let folder: string | null = OWN
+  /** Selected folder. `''` is the assets root; `null` means every folder. */
+  let folder: string | null = ''
   let kind: AssetKind | null = null
   let search = ''
   let recursive = false
@@ -188,7 +188,7 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
   newFolderButton.textContent = '+ folder'
   newFolderButton.addEventListener('click', () => {
     const name = prompt('New folder name')
-    if (name !== null && name.trim() !== '') host.onMkdir(folder === null || folder === OWN ? '' : folder, name.trim())
+    if (name !== null && name.trim() !== '') host.onMkdir(folder ?? '', name.trim())
   })
 
   head.append(crumbs, kindSelect, searchInput, recurseBox, recurseLabel, newFolderButton)
@@ -205,10 +205,6 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
       b.textContent = label
       b.addEventListener('click', () => goTo(target))
       return b
-    }
-    if (folder === OWN) {
-      crumbs.append(crumb('level prefabs', OWN))
-      return
     }
     crumbs.append(crumb('assets', ''))
     if (folder === null) {
@@ -250,18 +246,10 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     })
   }
   // The grid itself takes desktop drops for the folder being looked at; not for "all folders" or the level's own.
-  dropTargetFor(grid, () => (folder === null || folder === OWN ? null : folder))
+  dropTargetFor(grid, () => folder)
 
   const renderTree = (root: TreeNode): void => {
     treePane.replaceChildren()
-
-    const ownRow = el('div', `row${folder === OWN ? ' sel' : ''}`)
-    const ownName = el('span', 'name')
-    ownName.textContent = `This level (${host.ownPrefabs().length})`
-    ownRow.append(el('span', 'twist'), ownName)
-    ownRow.title = 'prefabs this level defines in its own table'
-    ownRow.addEventListener('click', () => goTo(OWN))
-    treePane.append(ownRow)
 
     for (const node of flattenTree(root, collapsed)) {
       const row = el('div', `row${folder === node.path ? ' sel' : ''}`)
@@ -377,25 +365,13 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     kindSelect.value = kind ?? ''
     recurseBox.checked = recursive
     if (document.activeElement !== searchInput) searchInput.value = search
-    newFolderButton.disabled = folder === null || folder === OWN
+    newFolderButton.disabled = folder === null
     renderCrumbs()
     renderTree(root)
 
     // Every tile is about to be replaced, so the old observations are meaningless.
     observer.disconnect()
     grid.replaceChildren()
-
-    if (folder === OWN) {
-      const names = host.ownPrefabs()
-      if (names.length === 0) grid.append(empty('nothing to place'))
-      for (const name of names) {
-        const t = tile(name, `place ${name}`, host.armed() === name, 'prefab', name)
-        t.addEventListener('click', () => host.onPickOwn(name))
-        grid.append(t)
-        observer.observe(t)
-      }
-      return
-    }
 
     // Subfolders as tiles, so going down a level does not mean crossing to the tree.
     if (folder !== null && search === '') {
@@ -421,7 +397,7 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
       grid.append(b)
     }
 
-    const filter: Filter = { folder: folder === OWN ? null : folder, kind, search, recursive }
+    const filter: Filter = { folder, kind, search, recursive }
     const entries = filterEntries(db, filter)
     if (entries.length === 0 && grid.children.length === 0) {
       grid.append(empty(folder === null ? 'nothing matches' : `nothing in ${folder === '' ? 'assets' : folder}`))
@@ -454,5 +430,5 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
   }
 
   render()
-  return { render }
+  return { render, folder: () => folder }
 }

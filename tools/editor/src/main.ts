@@ -16,6 +16,9 @@ import {
   RENDERER,
   type AssetEntry,
   type ClipSource,
+  type PrefabSource,
+  hydratePrefabs,
+  stripHydrated,
   type ComponentData,
   type Keyframe,
   type LoadedLevel,
@@ -56,6 +59,7 @@ import { createCollab, httpTransport, parsePresence, type Hold, type Peer } from
 import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type ClipItem, type Doc, type KeyEditor, type Mode, type OpBatch } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
 import { askName, askUnsaved } from './confirm'
+import { prefabFolder, prefabTarget, sanitisePrefabName } from './prefabPath'
 import {
   acquireLock,
   heartbeatLocks,
@@ -122,7 +126,6 @@ let doc: Doc | null = null // the doc being edited — always the top of the sta
  * instance follows on the way back out. Save always writes `[0]`, never the prefab being inspected.
  */
 const docStack: { doc: Doc; label: string }[] = []
-const userPrefabs: Record<string, SceneNode> = {} // authored prefab library (for the level palette)
 // The panels are built further down (and after a top-level `await`), so the editing code above them
 // reaches the UI through these. Harmless no-ops until then, which is what makes boot order a non-issue.
 let uiChanged: () => void = () => {}
@@ -160,10 +163,7 @@ let gameSelected = false
  * placing one wraps it in a one-piece inline prefab whose collider is authored — visual is not collision,
  * so a detailed prop still collides as a box somebody can resize.
  */
-type Placing =
-  | { kind: 'own'; name: string }
-  | { kind: 'model'; assetId: string }
-  | { kind: 'prefabAsset'; assetId: string }
+type Placing = { kind: 'model' | 'prefabAsset'; assetId: string }
 let placing: Placing | null = null
 /**
  * The game being authored for (ADR 0052).
@@ -425,7 +425,7 @@ const reinstallLevel = (level: Level): void => {
     return
   }
   docStack.length = 1
-  docStack[0] = { doc: withOps(levelDoc(level, userPrefabs, registry(), editorClips)), label: root.label }
+  docStack[0] = { doc: withOps(levelDoc(level, registry(), editorClips)), label: root.label }
   showDoc()
   lastHoldKey = null // a reconnect is a new connection: the server holds nothing for it yet
   syncHolds()
@@ -535,6 +535,15 @@ const lockAsset = async (assetId: string): Promise<boolean> => {
  * resolves without rebuilding the document.
  */
 const editorClips: ClipSource = { keys: (assetId) => assets?.keys(assetId) }
+/**
+ * Prefab definitions, as the `PrefabSource` `hydratePrefabs` takes (ADR 0091). `loadAssetLibrary` already
+ * fetched every prefab file at boot, so resolving a level's references costs nothing and needs no await.
+ */
+const editorPrefabs: PrefabSource = { root: (assetId) => assets?.prefabOf(assetId) }
+/** Prefab references the open level could not resolve — named in the Hierarchy and the status line. */
+let missingPrefabs: string[] = []
+/** What hydration added to the open level's table, so a save writes the references and not the definitions. */
+let hydratedPrefabs: string[] = []
 let runtime: AssetRuntime | null = null
 let selectedAsset: string | null = null
 const edit: { mode: GizmoMode; snap: boolean; step: number; space: GizmoSpace } = {
@@ -958,7 +967,7 @@ const showDoc = (): void => {
 const reopenWithRegistry = (): void => {
   const root = docStack[0]
   if (root === undefined || docStack.length > 1) return
-  docStack[0] = { doc: withOps(levelDoc(root.doc.asLevel(), userPrefabs, registry(), editorClips)), label: root.label }
+  docStack[0] = { doc: withOps(levelDoc(root.doc.asLevel(), registry(), editorClips)), label: root.label }
   showDoc()
 }
 
@@ -1740,13 +1749,11 @@ canvas.addEventListener('pointerup', (e) => {
     const at = vec3(sx, r4(point.y), sz)
     const prefabAsset = placing.kind === 'prefabAsset' ? assets?.prefabOf(placing.assetId) : undefined
     const idx =
-      placing.kind === 'own'
-        ? doc.place(placing.name, at)
-        : placing.kind === 'model'
-          ? doc.placeModel(placing.assetId, at)
-          : prefabAsset !== undefined
-            ? doc.placePrefab(prefabAsset, assets?.db.byId[placing.assetId]?.name ?? prefabAsset.name ?? prefabAsset.id, at)
-            : -1
+      placing.kind === 'model'
+        ? doc.placeModel(placing.assetId, at)
+        : prefabAsset !== undefined
+          ? doc.placePrefab(placing.assetId, prefabAsset, at)
+          : -1
     if (idx < 0) {
       const unknown = prefabAsset === undefined ? [] : unknownComponentTypes(prefabAsset, doc.registry)
       setStatus(unknown.length > 0 ? `uses ${unknown.join(', ')}, which this game does not have` : 'that prefab did not load')
@@ -1838,14 +1845,68 @@ const duplicateSelected = (): void => {
   applySelection(made.reverse())
 }
 /** Give an inline one-off a shared identity, so it can be referenced and edited in one place. */
-const extractSelected = (): void => {
-  if (selected === null || doc === null) return
-  const id = doc.extract(selected)
-  if (id === null) return
-  recordEdit('extract to prefab')
-  inspectorRebuild() // the link row flips from "not linked" to the new prefab
-  uiChanged() // the level's own entries are placeable too, and the row gains a badge
-  setStatus(`extracted to prefab "${id}"`)
+/**
+ * Write the selection into a prefab file and point it at that file (ADR 0091) — the one action that makes a
+ * prefab, replacing both `Extract to prefab`, which wrote no file, and prefab mode's Save, which made no
+ * reference.
+ *
+ * **The file goes first.** A failed write costs nothing but a status line, where the reverse order would leave
+ * a placement pointing at a prefab that does not exist. If the write lands and the level edit does not, the
+ * file is simply an unreferenced prefab, which is visible in the Project panel and placeable by hand.
+ *
+ * The undo entry holds the level's `replaceNode` and its inverse. It does **not** delete the file: by the time
+ * anyone presses Ctrl+Z another level may already reference it, and deleting a file on an undo is a surprise
+ * nobody recovers from. The Project panel is where a prefab is deleted.
+ */
+const saveAsPrefab = async (index: number): Promise<void> => {
+  const open = doc
+  if (open === null || open.mode !== 'level' || assets === null) return
+  const definition = open.definitionOf(index)
+  if (definition === null) return
+  if (refuseHeld(index)) return
+
+  // Identity that survives the awaits: an index shifts under a remote edit, a ref does not.
+  const ref = open.refAt(index)
+  if (ref === null) return
+
+  const folder = project.folder()
+  const asked = await askName('Save as prefab', sanitisePrefabName(open.nameOf(index) || open.label(index)), `Saved in content/assets/${prefabFolder(folder)}/ — the folder open in the Project panel. Letters, digits, - and _.`)
+  if (asked === null) return
+  const target = prefabTarget(folder, asked, assets.db.entries.map((e) => e.path))
+  if ('error' in target) {
+    setStatus(target.error)
+    return
+  }
+
+  let created
+  try {
+    created = await assets.createPrefab(target.path, definition)
+  } catch (e) {
+    setStatus(`could not save ${target.path}: ${String(e)}`)
+    return
+  }
+  if (created === undefined) {
+    setProblem(`wrote ${target.path} but it was given no id — reload the editor`)
+    return
+  }
+  previews.invalidate()
+  await reloadAssets()
+
+  // The document may have moved under the dialog and the two requests.
+  const at = doc === open ? open.indexOfRef(ref) : null
+  if (at === null || !open.linkToPrefab(at, created.id, definition)) {
+    setStatus(`saved ${created.name} to ${target.path}, but that object is gone — place it from the Project panel`)
+    refreshUi()
+    return
+  }
+  recordEdit('save as prefab')
+  buildItems()
+  rebuildLoaded()
+  applySelection([open.indexOfRef(ref) ?? at])
+  inspectorRebuild()
+  uiChanged()
+  loadNewReferences(buildItems)
+  setStatus(`saved ${created.name} to ${target.path} — every level can place it now`)
 }
 
 /**
@@ -2284,7 +2345,16 @@ const openFile = async (name: string): Promise<void> => {
         await adopt(componentTypesInRaw(raw).filter((type) => !reg.has(type) && isSharedComponent(type)))
       }
       const level = validateLevel(raw, registry())
-      setDoc(withOps(levelDoc(level, userPrefabs, registry(), editorClips)), name)
+      /**
+       * A placement names a prefab **asset**, so the definitions are resolved before the document is built
+       * (ADR 0091). A level that still carries its own table keeps it — hydration fills only what is not
+       * already there, and the save strips only what it filled.
+       */
+      const resolved = hydratePrefabs(level, editorPrefabs)
+      hydratedPrefabs = resolved.filled
+      missingPrefabs = resolved.missing
+      setDoc(withOps(levelDoc(level, registry(), editorClips)), name)
+      if (missingPrefabs.length > 0) setStatus(`no prefab file for ${missingPrefabs.join(', ')} — those objects are empty`)
       return
     }
     // A prefab is an asset now, so it is opened by id and saved back to its own path.
@@ -2301,19 +2371,6 @@ const openFile = async (name: string): Promise<void> => {
     setStatus(`load failed: ${String(e)}`)
   }
   if (readOnlyBy !== null) setStatus(`${name} is open read-only: ${readOnlyBy} has it`)
-}
-
-/**
- * The palette's library of prefab files, keyed by name. Two prefabs with the same name in different folders
- * collide here and the later one wins; placing from the Project explorer is by asset id and has no such
- * ambiguity, which is the path to prefer.
- */
-const refreshPrefabLibrary = (): void => {
-  for (const k of Object.keys(userPrefabs)) delete userPrefabs[k]
-  for (const entry of prefabEntries()) {
-    const prefab = assets?.prefabOf(entry.id)
-    if (prefab !== undefined) userPrefabs[entry.name] = prefab
-  }
 }
 
 /** Every level on disk with the game it declares, so the list can be narrowed to one game (ADR 0052). */
@@ -2380,7 +2437,7 @@ const enterMode = async (mode: Mode): Promise<void> => {
   fileState.mode = mode
   await refreshFileList()
   if (fileNames[0] !== undefined) await openFile(fileNames[0])
-  else setDoc(withOps(mode === 'level' ? levelDoc(blankLevel('untitled'), userPrefabs, registry(), editorClips) : prefabDoc(blankPrefab('untitled'), registry(), editorClips)), 'untitled')
+  else setDoc(withOps(mode === 'level' ? levelDoc(blankLevel('untitled'), registry(), editorClips) : prefabDoc(blankPrefab('untitled'), registry(), editorClips)), 'untitled')
 }
 
 // --- toolbar ---
@@ -2592,7 +2649,7 @@ const applyOverrides = (): void => {
  * The Hierarchy's right-click menus.
  *
  * Almost every entry is a command that already existed and could only be reached from the keyboard or by a
- * gesture nobody discovers: rename was double-click only, Extract and Open lived in the Inspector's header,
+ * gesture nobody discovers: rename was double-click only, Save as prefab and Open lived in the Inspector's header,
  * and delete on an inherited node did nothing at all with no explanation. The menu is where they become
  * findable, which is why every disabled entry carries a reason rather than being left out.
  */
@@ -2652,10 +2709,10 @@ const menuFor = (index: number): MenuItem[] => {
       run: () => openPrefabOf(index),
     },
     {
-      label: 'Extract to prefab',
+      label: 'Save as prefab…',
       enabled: own && ref === null && doc.mode === 'level',
       why: ref !== null ? 'already a prefab' : doc.mode === 'prefab' ? 'already inside a prefab' : why,
-      run: () => extractSelected(),
+      run: () => void saveAsPrefab(index),
     },
     { label: 'Revert to prefab', divider: true, enabled: inherited && doc.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => revertOverride() },
     { label: 'Apply to prefab', enabled: inherited && doc.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => applyOverrides() },
@@ -2840,7 +2897,7 @@ const previews: Previews = createPreviews({
   // places `place` looks, so a tile previews exactly what clicking it would put in the scene.
   // A prefab tile's key is either a kit maker's name or a prefab asset's id; the two cannot collide, since
   // an id is 16 hex characters.
-  prefabFor: (key) => doc?.prefabForPalette(key) ?? assets?.prefabOf(key),
+  prefabFor: (assetId) => assets?.prefabOf(assetId),
   ensureLoaded: async (id) => {
     await runtime?.load([id])
   },
@@ -2898,7 +2955,7 @@ const armAsset = (assetId: string): void => {
     return
   }
   const kind = entry.kind === 'prefab' ? ('prefabAsset' as const) : ('model' as const)
-  placing = placing !== null && placing.kind !== 'own' && placing.assetId === assetId ? null : { kind, assetId }
+  placing = placing?.assetId === assetId ? null : { kind, assetId }
   refreshUi()
 }
 
@@ -2908,17 +2965,11 @@ const renameAsset = (path: string, name: string): void =>
 const deleteAsset = (path: string): void => afterFileOp(`deleted ${path}`, async () => assets?.remove(path) ?? Promise.resolve())
 
 const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
-  ownPrefabs: () => doc?.palette() ?? [],
   db: () => assets?.db ?? null,
   folders: () => assets?.folders ?? [],
   urlOf: (path) => assets?.urlOf(path) ?? path,
-  armed: () => (placing === null ? null : placing.kind === 'own' ? placing.name : placing.assetId),
+  armed: () => placing?.assetId ?? null,
   selectedAsset: () => selectedAsset,
-  onPickOwn: (name) => {
-    // Clicking the armed tile disarms it, so there is a way out of placement without placing.
-    placing = placing?.kind === 'own' && placing.name === name ? null : { kind: 'own', name }
-    refreshUi()
-  },
   onPickAsset: armAsset,
   unplaceableWhy,
   onUpload: (files, folder) => {
@@ -3099,7 +3150,7 @@ const saveNow = async (): Promise<boolean> => {
   // them drift is how content/levels ended up with three files all claiming "level1".
   root.setId(fileState.name)
   try {
-    if (fileState.mode === 'level') await saveFile('levels', fileState.name, root.toJSON())
+    if (fileState.mode === 'level') await saveFile('levels', fileState.name, stripHydrated(root.toJSON() as Level, hydratedPrefabs))
     else {
       const prefab = root.toJSON() as SceneNode
       // Overwrite the asset it came from, or create one when this prefab has never been saved.
@@ -3117,7 +3168,6 @@ const saveNow = async (): Promise<boolean> => {
   setStatus(`saved ${fileState.name}`)
   previews.invalidate()
   await reloadAssets()
-  refreshPrefabLibrary()
   await refreshFileList()
   refreshUi()
   return true
@@ -3521,7 +3571,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   },
   duplicate: duplicateSelected,
   remove: deleteSelected,
-  extract: extractSelected,
+  saveAsPrefab: () => void (selected !== null && saveAsPrefab(selected)),
   openPrefab: () => {
     if (selected !== null) openPrefabOf(selected)
   },
@@ -3582,7 +3632,7 @@ const renderStatus = (): void => {
     parts.push(`t=${(previewMs / 1000).toFixed(2)}s · ${what}`)
   }
   if (placing !== null) {
-    const what = placing.kind === 'own' ? placing.name : (assets?.db.byId[placing.assetId]?.name ?? 'asset')
+    const what = assets?.db.byId[placing.assetId]?.name ?? 'asset'
     parts.push(`click in the viewport to place <b>${what}</b>`)
   }
   // Undo depth in the status bar because nothing else says whether Ctrl+Z will do anything, and the answer
@@ -3730,7 +3780,6 @@ me = await fetchMe().catch((e: unknown) => {
   return null
 })
 await reloadAssets()
-refreshPrefabLibrary()
 await enterMode('level')
 
 /**

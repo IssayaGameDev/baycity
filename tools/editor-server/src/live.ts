@@ -2,6 +2,7 @@
 // bundles this file for the dev editor cannot load.
 import { applyBatch, OpError, refKey, touchedRefs, type NodeRef, type Op } from '../../../packages/content/src/ops'
 import type { Level } from '../../../packages/content/src/types'
+import { hydratePrefabs, stripHydrated, type PrefabSource } from '../../../packages/content/src/prefabs'
 import { validateLevel } from '../../../packages/content/src/validate'
 import type { User } from './config'
 
@@ -62,6 +63,12 @@ export interface LiveOptions {
   schedule?: (fn: () => void, ms: number) => () => void
   /** A connection silent this long is gone (`sweep`). Default two minutes, the lock rule. */
   staleMs?: number
+  /**
+   * Prefab definitions, by asset id (ADR 0091). A level references a prefab rather than carrying a copy, so
+   * the definitions are resolved when the document opens and removed again before it is written. Without it a
+   * placement would resolve to nothing here: no inherited nodes, so no holds on them and no repaint of them.
+   */
+  prefabs?: PrefabSource
 }
 
 export class LiveError extends Error {
@@ -93,6 +100,8 @@ interface LiveDoc {
   contributors: Map<string, User>
   cancelIdle: (() => void) | null
   cancelMax: (() => void) | null
+  /** Prefab ids resolution added to `level.prefabs`, so the write strips those and keeps any others. */
+  hydrated: string[]
 }
 
 export interface Live {
@@ -150,7 +159,8 @@ export const createLive = (opts: LiveOptions): Live => {
     } catch (e) {
       throw new LiveError(400, `${name} does not load: ${e instanceof Error ? e.message : String(e)}`)
     }
-    const d: LiveDoc = { name, level, seq: 0, log: [], clients: new Map(), seen: new Map(), holds: new Map(), dirtyBy: new Map(), contributors: new Map(), cancelIdle: null, cancelMax: null }
+    const hydrated = opts.prefabs === undefined ? [] : hydratePrefabs(level, opts.prefabs).filled
+    const d: LiveDoc = { name, level, seq: 0, log: [], clients: new Map(), seen: new Map(), holds: new Map(), dirtyBy: new Map(), contributors: new Map(), cancelIdle: null, cancelMax: null, hydrated }
     docs.set(name, d)
     return d
   }
@@ -184,7 +194,9 @@ export const createLive = (opts: LiveOptions): Live => {
       broadcast(d, 'error', { message: `not written: ${e instanceof Error ? e.message : String(e)}` })
       return
     }
-    opts.writeLevel(d.name, d.level)
+    // References go to disk, never the definitions they resolve to — and only the ones resolved here, so a
+    // level still carrying its own table keeps it.
+    opts.writeLevel(d.name, stripHydrated(d.level, d.hydrated))
     const users = [...d.dirtyBy.values()]
     d.dirtyBy.clear()
     opts.changed(users, levelPath(d.name))
@@ -262,6 +274,9 @@ export const createLive = (opts: LiveOptions): Live => {
       } catch (e) {
         throw new LiveError(400, e instanceof OpError ? e.message : String(e))
       }
+      // A batch can place a prefab nobody had referenced yet: resolve it now, or its inherited nodes would
+      // not exist here until the document reopened — no holds on them, and nothing to repaint.
+      if (opts.prefabs !== undefined) d.hydrated.push(...hydratePrefabs(d.level, opts.prefabs).filled)
       d.seq++
       d.log.push({ seq: d.seq, from: connId, ops: applied })
       while (d.log.length > logKeep) d.log.shift()

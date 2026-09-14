@@ -2,7 +2,6 @@ import {
   bakeOverrides,
   boolParam,
   effectiveNode,
-  freeTableKey,
   numberParam,
   poseAt,
   vec3Param,
@@ -186,22 +185,25 @@ export interface Doc {
    * into the node's own group, which already carries its transform.
    */
   lightSpec: (i: number) => LightDesc | undefined
-  palette: () => string[]
-  /** Place a palette entry. `-1` when the name is not in the library or this document's table. */
-  place: (name: string, position: Vec3) => number
+  /**
+   * Place a primitive by name under a prefab's root — what the prefab palette offers. `-1` in a level, where a
+   * primitive is placed by `placePrimitive` and a prefab by `placePrefab` (ADR 0091).
+   */
+  placeNamed: (name: string, position: Vec3) => number
   /**
    * Place a model asset: a node with the mesh as its `Visual` and an authored box as its `Collider`. Visual is
    * not collision (ADR 0014), so a detailed prop collides as a shape somebody can see and resize.
    */
   placeModel: (assetId: string, position: Vec3) => number
   /**
-   * Place a prefab that came from a file, **interned as a copy** into the table, so the level stays
-   * self-contained: moving or deleting the prefab file afterwards can never leave the level without geometry.
+   * Place a prefab **by asset id** (ADR 0091): the level gets a reference, never a copy, so editing the prefab
+   * reaches this placement and every other. `root` is the definition, used to resolve the reference locally
+   * and to refuse a prefab this game cannot load — it is not stored in the level.
    *
-   * `name` is the file's name and becomes the table key — not any id stored inside the file, which is
-   * routinely stale (`AlternatingDanger` shipped carrying `"id": "FastElevator"`, commit 0fc0b9f).
+   * In prefab mode there is no reference to make: a prefab holds nodes, never prefabs, so its children are
+   * copied in with fresh ids.
    */
-  placePrefab: (root: Node, name: string, position: Vec3) => number
+  placePrefab: (assetId: string, root: Node, position: Vec3) => number
   /**
    * A node with only a transform — Unity's Create Empty.
    *
@@ -217,8 +219,6 @@ export interface Doc {
   placePrimitive: (kind: PrimitiveKind, position: Vec3, parent: number | null) => number
   /** The built-in shape this node draws, or `null` — when set, its colliders are locked to the unit shape. */
   builtinOf: (i: number) => BuiltinModel | null
-  /** What a palette entry would place, without placing it — what a Project tile previews. */
-  prefabForPalette: (name: string) => Node | undefined
   remove: (i: number) => void
   duplicate: (i: number) => number
   /** Display name: the typed name if there is one, else what the node is made of. */
@@ -303,13 +303,22 @@ export interface Doc {
   // ---- clipboard, references, files ---------------------------------------------------------------
   copy: (i: number) => ClipItem | null
   paste: (item: ClipItem, parent: number | null) => number
-  /** The prefab key this node references, or `null`. */
+  /** The prefab **asset id** this node references, or `null` (ADR 0091). */
   refOf: (i: number) => string | null
-  /** Turn a plain node into a shared table entry and reference it. The new key, or `null`. */
-  extract: (i: number) => string | null
-  /** The shared definition behind a key — the object to edit so every placement follows. */
+  /**
+   * The prefab this node would become: its components and children at the origin. Pure — nothing is written
+   * and no op is reported, because the definition becomes a **file**, which is the host's to write. `null`
+   * when the node is inherited, already a placement, or this document is a prefab.
+   */
+  definitionOf: (i: number) => Node | null
+  /**
+   * Point a node at a prefab asset: its own components go, its transform and name stay, and it inherits the
+   * definition. One op, invertible, so the whole action is one undo step. `false` when it could not apply.
+   */
+  linkToPrefab: (i: number, assetId: string, root: Node) => boolean
+  /** The definition behind an asset id, as this document resolved it — the object every placement reads. */
   prefabAt: (id: string) => Node | undefined
-  /** How many placements reference `id`: what "edit this and 3 things move" is counting. */
+  /** How many placements in **this level** reference `id`. A prefab is shared across levels the editor cannot see. */
   refCount: (id: string) => number
   /** A level to instantiate for spawn gizmos and physics (prefab mode → wrapped at the origin). */
   asLevel: () => Level
@@ -471,9 +480,9 @@ interface DocNode {
  */
 const docOver = (
   level: Level,
-  opts: { mode: Mode; library: Record<string, Node>; registry: Registry; clips?: ClipSource; json: () => Level | Node; table?: string },
+  opts: { mode: Mode; registry: Registry; clips?: ClipSource; json: () => Level | Node; table?: string },
 ): Doc => {
-  const { mode, library, registry, clips } = opts
+  const { mode, registry, clips } = opts
   const roots = level.nodes
   /**
    * Every mutation goes through here (ADR 0089): the ops apply to this document's level through the one shared
@@ -539,16 +548,6 @@ const docOver = (
   const indexOfId = (id: string): number => nodes().findIndex((n) => n.owner === undefined && n.authored.id === id)
   const refOf = (n: DocNode): NodeRef => (n.owner === undefined ? (table_ === undefined ? { id: n.authored.id } : { table: table_, id: n.authored.id }) : { owner: n.owner.id, node: n.authored.id })
 
-  const table = (): Record<string, Node> => level.prefabs ?? {}
-  /**
-   * The op that puts `root` in the table under a free key — reusing an identical entry, in which case there is
-   * nothing to do — and the key it lands under. The key is minted here, on the client, and travels in the op.
-   */
-  const internOp = (root: Node): { key: string; ops: Op[] } => {
-    const t = table()
-    const key = freeTableKey(t, root.name ?? root.id, root)
-    return { key, ops: t[key] === undefined ? [{ kind: 'internPrefab', key, root }] : [] }
-  }
   /** The parent an insert names for the children of `host`: `null` for the level forest, else the node's id. */
   const parentIdOf = (host: Node[]): string | null => {
     if (host === roots) return null
@@ -829,36 +828,15 @@ const docOver = (
         castShadow: boolParam(c, 'castShadow', false),
       }
     },
-    /**
-     * In level mode, only what *this level* defines: prefab **files** are placed from the Project explorer by
-     * asset id, and listing them here as well is what made one prefab appear twice. In prefab mode, primitives.
-     */
-    palette: () => (mode === 'prefab' ? [...PRIMITIVE_ORDER] : Object.keys(level.prefabs ?? {})),
-    place: (name, position) => {
-      if (mode === 'prefab') {
-        const fresh = primitiveNode(isPrimitiveKind(name) ? name : 'box', position, name)
-        const host = roots[0]
-        if (host === undefined) return -1
-        commit([{ kind: 'insertNode', parent: host.id, index: host.children?.length ?? 0, node: fresh }])
-        return indexOfId(fresh.id)
-      }
-      let key: string
-      const ops: Op[] = []
-      if (level.prefabs?.[name] !== undefined) key = name
-      else {
-        const source = library[name]
-        // A palette offering a name the library no longer has is a bug, not a crash: the file may have been
-        // deleted between the panel drawing and the click landing.
-        if (source === undefined) return -1
-        const interned = internOp({ ...structuredClone(source), name })
-        key = interned.key
-        ops.push(...interned.ops)
-      }
-      const placed: Node = { id: freshId(), transform: { position }, components: [], prefab: key }
-      commit([...ops, { kind: 'insertNode', parent: null, index: roots.length, node: placed }])
-      return indexOfId(placed.id)
+    placeNamed: (name, position) => {
+      if (mode !== 'prefab') return -1
+      const fresh = primitiveNode(isPrimitiveKind(name) ? name : 'box', position, name)
+      const host = roots[0]
+      if (host === undefined) return -1
+      commit([{ kind: 'insertNode', parent: host.id, index: host.children?.length ?? 0, node: fresh }])
+      return indexOfId(fresh.id)
     },
-    placePrefab: (root, name, position) => {
+    placePrefab: (assetId, root, position) => {
       // Refused here, not only in the palette: a level a game cannot load must not be producible by any door.
       // A shared component the game lacks never reaches this line — the host adopts it into the game and
       // rebuilds the document first (ADR 0077); what is refused is another game's private component.
@@ -881,9 +859,14 @@ const docOver = (
         commit(ops)
         return last === undefined ? -1 : indexOfId(last.id)
       }
-      const interned = internOp({ ...structuredClone(root), name })
-      const placed: Node = { id: freshId(), transform: { position }, components: [], prefab: interned.key }
-      commit([...interned.ops, { kind: 'insertNode', parent: null, index: roots.length, node: placed }])
+      /**
+        * The definition is put in the resolution map so this document can read the placement's inherited
+        * nodes at once — **not** as an op and never written to the level: the server resolves it from the file
+        * on its own side, and the save strips whatever was resolved (`prefabs.ts`).
+        */
+      ;(level.prefabs ??= {})[assetId] = root
+      const placed: Node = { id: freshId(), transform: { position }, components: [], prefab: assetId }
+      commit([{ kind: 'insertNode', parent: null, index: roots.length, node: placed }])
       return indexOfId(placed.id)
     },
     placeEmpty: (position, parent) => {
@@ -920,12 +903,6 @@ const docOver = (
       if (mode === 'prefab' && host === undefined) return -1
       commit([{ kind: 'insertNode', parent: host?.id ?? null, index: host === undefined ? roots.length : (host.children?.length ?? 0), node: fresh }])
       return indexOfId(fresh.id)
-    },
-    prefabForPalette: (name) => {
-      if (mode === 'prefab') {
-        return isPrimitiveKind(name) ? { id: name, name, transform: { position: vec3(0, 0, 0) }, components: [], children: [primitiveNode(name, vec3(0, 0, 0))] } : undefined
-      }
-      return level.prefabs?.[name] ?? library[name]
     },
     // Removing takes the subtree with it: children are placed relative to this node and have nowhere to be
     // without it. An inherited node cannot go — it would have to go from every placement of the prefab.
@@ -1138,7 +1115,13 @@ const docOver = (
       return poseAt(behaviorOf(trackComponent(n), clips), n.view.transform, timeMs)
     },
 
-    /** Takes the *resolved* definitions rather than the keys alone, including nested children's. */
+    /**
+     * Carries the resolved definitions beside the references, so a placement pasted into a level that has
+     * never referenced that prefab can resolve it without waiting for the asset library.
+     *
+     * The references themselves travel unchanged: an asset id means the same prefab in every level (ADR 0091),
+     * which is what makes copying a placement between levels *share* the prefab instead of duplicating it.
+     */
     copy: (i) => {
       const n = own(i)
       if (n === undefined) return null
@@ -1162,20 +1145,26 @@ const docOver = (
        * A key already present with an identical definition is reused (`freeTableId` does that comparison),
        * which keeps pasting a prefab back into its own level from filling the table with copies.
        */
-      const ops: Op[] = []
-      const remap = (x: Node): void => {
-        if (x.prefab !== undefined) {
+      /**
+       * References are kept exactly as they were — an asset id addresses the same prefab everywhere — and a
+       * definition the clipboard carried is put in the resolution map when this document cannot resolve it
+       * yet. That is not an op and is never written to the level (`prefabs.ts`).
+       *
+       * A reference this document cannot resolve at all is **kept**, not dropped: it is inert until the
+       * prefab file is there, the same way a missing prefab behaves anywhere else (ADR 0091).
+       */
+      const resolve = (x: Node): void => {
+        if (x.prefab !== undefined && level.prefabs?.[x.prefab] === undefined) {
           const carried = item.prefabs[x.prefab]
-          if (carried !== undefined) {
-            const interned = internOp(structuredClone(carried))
-            ops.push(...interned.ops)
-            x.prefab = interned.key
-          } else if (!(x.prefab in table())) delete x.prefab
+          if (carried !== undefined) (level.prefabs ??= {})[x.prefab] = structuredClone(carried)
         }
-        for (const kid of x.children ?? []) remap(kid)
+        for (const kid of x.children ?? []) resolve(kid)
       }
-      remap(fresh)
+      resolve(fresh)
       reidSubtree(fresh)
+      // Refused here as in `placePrefab`: a level this game cannot load must not be producible by any door
+      // (ADR 0076). A pasted placement brings the prefab's components with it.
+      for (const carried of Object.values(item.prefabs)) if (unknownComponentTypes(carried, registry).length > 0) return -1
       // A prefab holds no prefabs, so a placement pasted into one would be a reference this schema forbids.
       if (mode === 'prefab' && fresh.prefab !== undefined) return -1
 
@@ -1189,26 +1178,31 @@ const docOver = (
         host = own(parent)?.authored
         if (host === undefined) return -1
       }
-      commit([...ops, { kind: 'insertNode', parent: host?.id ?? null, index: host === undefined ? roots.length : (host.children?.length ?? 0), node: fresh }])
+      commit([{ kind: 'insertNode', parent: host?.id ?? null, index: host === undefined ? roots.length : (host.children?.length ?? 0), node: fresh }])
       return indexOfId(fresh.id)
     },
     refOf: (i) => node(i)?.authored.prefab ?? null,
-    extract: (i) => {
+    definitionOf: (i) => {
       const n = own(i)
       if (n === undefined || n.authored.prefab !== undefined || mode === 'prefab') return null
-      // The definition is the node's contents; the placement keeps its transform and points at them.
-      const definition: Node = {
+      // The node's contents, at the origin: where the prefab sits is each placement's business.
+      return {
         id: 'root',
         ...(n.authored.name !== undefined ? { name: n.authored.name } : {}),
         transform: { position: vec3(0, 0, 0) },
         components: structuredClone(n.authored.components),
         ...(n.authored.children !== undefined ? { children: structuredClone(n.authored.children) } : {}),
       }
-      const interned = internOp(definition)
+    },
+    linkToPrefab: (i, assetId, root) => {
+      const n = own(i)
+      if (n === undefined || n.authored.prefab !== undefined || mode === 'prefab') return false
+      // Resolved for this document so the inherited nodes read at once; not an op, never written (`prefabs.ts`).
+      ;(level.prefabs ??= {})[assetId] = root
       const { children: _kids, ...rest } = n.authored
-      const placement: Node = { ...rest, components: [], prefab: interned.key }
-      commit([...interned.ops, { kind: 'replaceNode', id: n.authored.id, node: placement }])
-      return interned.key
+      const placement: Node = { ...rest, components: [], prefab: assetId }
+      commit([{ kind: 'replaceNode', id: n.authored.id, node: placement }])
+      return true
     },
     prefabAt: (id) => level.prefabs?.[id],
     refCount: (id) => {
@@ -1244,8 +1238,8 @@ const docOver = (
   return self
 }
 
-export const levelDoc = (level: Level, library: Record<string, Node>, registry: Registry = DEFAULT_REGISTRY, clips?: ClipSource): Doc =>
-  docOver(level, { mode: 'level', library, registry, ...(clips !== undefined ? { clips } : {}), json: () => level })
+export const levelDoc = (level: Level, registry: Registry = DEFAULT_REGISTRY, clips?: ClipSource): Doc =>
+  docOver(level, { mode: 'level', registry, ...(clips !== undefined ? { clips } : {}), json: () => level })
 
 /**
  * A prefab, edited as a document of one root node.
@@ -1261,5 +1255,5 @@ export const levelDoc = (level: Level, library: Record<string, Node>, registry: 
 export const prefabDoc = (root: Node, registry: Registry = DEFAULT_REGISTRY, clips?: ClipSource, opts: { table?: string } = {}): Doc =>
   docOver(
     { id: root.name ?? root.id, config: {}, nodes: [root] },
-    { mode: 'prefab', library: {}, registry, ...(clips !== undefined ? { clips } : {}), json: () => root, ...(opts.table !== undefined ? { table: opts.table } : {}) },
+    { mode: 'prefab', registry, ...(clips !== undefined ? { clips } : {}), json: () => root, ...(opts.table !== undefined ? { table: opts.table } : {}) },
   )

@@ -1,5 +1,5 @@
 import { assetParamIds } from '@mp/components'
-import { instantiateLevel, type Level, type LoadedLevel } from '@mp/content'
+import { hydratePrefabs, instantiateLevel, type Level, type LoadedLevel } from '@mp/content'
 import type { PhysicsWorld } from '@mp/physics'
 import type { Registry } from '@mp/components'
 import {
@@ -15,7 +15,7 @@ import {
   type THREE,
 } from '@mp/render-three'
 
-import { ASSET_DB, CLIP_SOURCE, assetUrlOf, materialOf } from './assets'
+import { ASSET_DB, CLIP_SOURCE, PREFAB_SOURCE, assetUrlOf, materialOf } from './assets'
 
 /**
  * A level, instantiated into a world and built into a scene (ADR 0065).
@@ -77,6 +77,14 @@ export const loadLevelInto = async ({
   env,
   postfx,
 }: LevelHostOptions): Promise<LevelHost> => {
+  /**
+   * Resolve the prefabs this level references, before instantiating (ADR 0091). A level holds asset ids, not
+   * copies, so the definitions have to be in place first; they are bundled, so this is synchronous and
+   * `instantiateLevel` stays synchronous with it. A reference with no file resolves to nothing — the placement
+   * draws nothing and the level still loads.
+   */
+  const { missing } = hydratePrefabs(data, PREFAB_SOURCE)
+  if (missing.length > 0) console.warn(`level ${data.id}: no prefab file for ${missing.join(', ')}`)
   const loaded = instantiateLevel(world, data, registry, CLIP_SOURCE)
 
   // Assets first, then build: `addLevel` is synchronous, so a level is never briefly walkable with its models
