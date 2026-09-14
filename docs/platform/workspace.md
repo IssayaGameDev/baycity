@@ -35,7 +35,7 @@ Each exports `./editorMode` (`<NAME>_MODE: ModeDescriptor`) and `./rules` (headl
 | `swing` | `SWING_MODE` | 5175 | **same port as `tools/viewer`** |
 | `keyboard` | `KEYBOARD_MODE` | 5177 | Keyboard Escape (ADR 0069/0073) |
 
-Every game `vite.config.ts`: `allowedHosts: ['.trycloudflare.com']`, `proxy: '/relay' → http://localhost:9200` (ws, ADR 0074), `build.target: es2022`.
+Every game `vite.config.ts`: `allowedHosts: ['.trycloudflare.com', '.playgorbo.com']`, `proxy: '/relay' → http://localhost:9200` (ws, ADR 0074), `build.target: es2022`; keyboard and `_template` also `base: MP_BASE ?? '/'` (ADR 0086) and, with `MP_BASE` set, `/api` → `:8080` and no watch on `content/levels/**` (ADR 0089).
 
 ## Tools — see `tooling.md`, `editor.md`
 

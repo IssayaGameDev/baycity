@@ -127,7 +127,7 @@ Dashboard names as of setup: Cloudflare One → *Access controls* (applications,
 | Unit | Runs | Port |
 | --- | --- | --- |
 | `mp-relay.service` | `tsx packages/server/src/main.ts` | 9200 |
-| `mp-game-keyboard.service` | `vite --host 127.0.0.1 --port 5177 --strictPort` in `modes/keyboard` — the **dev server**, bundling the box's `content/` and reloading on every save | 5177 |
+| `mp-game-keyboard.service` | `vite --host 127.0.0.1 --port 5177 --strictPort` in `modes/keyboard` — the **dev server**; with `MP_BASE` set it does **not** watch `content/levels/**` and proxies `/api` → `:8080`, and the page reads its level at boot from `GET /api/levels/<name>` (`pickLevel`, ADR 0089), so a save never reloads a player | 5177 |
 
 The game runs with `MP_BASE=/play/keyboard/` and is reached **through this server** at
 `editor.playgorbo.com/play/keyboard/` (ADR 0086): every request under a configured `games[].path` is proxied
