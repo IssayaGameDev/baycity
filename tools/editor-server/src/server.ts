@@ -8,6 +8,7 @@ import { AuthError, contentTypeFor, createContentApi, safeJoin } from './api'
 import { createChangeFeed } from './changes'
 import type { ServerConfig, User } from './config'
 import { commitPaths, push } from './git'
+import { createLive } from './live'
 import { heldBy, sweep, type LockTable } from './locks'
 import { proxyHttp, proxyUpgrade, routeFor, stripPrefix } from './proxy'
 import { describeCommit, markDirty, take, takeAll, takeDue, type Session, type SessionTable } from './sessions'
@@ -49,6 +50,7 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
 
   const sessions: SessionTable = new Map()
   let pushError: string | null = null
+  const feed = createChangeFeed()
 
   // Commits run one at a time: two sessions committing at once would race on the index.
   let queue: Promise<void> = Promise.resolve()
@@ -82,9 +84,35 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
     return queue
   }
   const commitAll = async (): Promise<void> => {
+    live.flushAll() // unwritten live edits first, or the commit would miss them
     for (const s of takeAll(sessions)) void commitSession(s)
     await queue
   }
+
+  // --- live level documents (ADR 0089) ---
+  const levelsDir = join(config.repoRoot, 'content', 'levels')
+  const live = createLive({
+    readLevel: (name) => {
+      const file = join(levelsDir, `${name}.json`)
+      return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as unknown) : null
+    },
+    writeLevel: (name, level) => {
+      mkdirSync(levelsDir, { recursive: true })
+      writeFileSync(join(levelsDir, `${name}.json`), `${JSON.stringify(level, null, 2)}\n`)
+    },
+    // Disk is written; now every contributor's session goes dirty and the mirror hears the path — once.
+    changed: (users, path) => {
+      const now = Date.now()
+      for (const u of users) markDirty(sessions, u, [path], now)
+      feed.record([path])
+    },
+    onDocClosed: (users) => {
+      for (const u of users) {
+        const s = take(sessions, u)
+        if (s !== null) void commitSession(s)
+      }
+    },
+  })
 
   // --- identity ---
   let identify: (req: IncomingMessage) => Promise<User | null>
@@ -126,8 +154,9 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
     onLocksChanged: saveLocks,
     status: () => ({ pushError }),
     admin: { token: adminToken, commitAll },
-    changes: createChangeFeed(),
+    changes: feed,
     games: Object.fromEntries(Object.entries(config.games).map(([name, g]) => [name, g.path])),
+    live,
   })
 
   // --- the staging games, under this origin (ADR 0086) ---
@@ -226,7 +255,7 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
     server,
     close: async () => {
       clearInterval(timer)
-      await commitAll()
+      await commitAll() // flushes live documents first
       await new Promise<void>((resolve) => server.close(() => resolve()))
     },
   }

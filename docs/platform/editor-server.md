@@ -14,6 +14,8 @@ dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` c
 | `src/sessions.ts` | `SessionTable`, `markDirty`, `take`, `takeDue`, `takeAll`, `describeCommit` — pure |
 | `src/git.ts` | `git`, `changedUnder`, `commitPaths`, `push`, `currentBranch` |
 | `src/changes.ts` | `createChangeFeed(keep)` — numbered, bounded log of written paths with long-poll `wait`; `null` = full sync needed (behind, or ahead after a restart) |
+| `src/live.ts` | `createLive(opts): Live` — the open levels, their op log, holds, peers, debounced writes (ADR 0089); `LiveError(status)`; `levelPath` |
+| `src/sse.ts` | `encodeSse(event, data, id?)`, `SSE_HEADERS`, `SSE_KEEPALIVE` |
 | `src/proxy.ts` | `proxyHttp`, `proxyUpgrade`, `routeFor` — the staging games and `/relay` under this origin (ADR 0086) |
 | `src/server.ts` | `startEditorServer(config)` — identity, static editor, game proxy, timers, commit queue, state files |
 | `src/assetOps.ts`, `src/assetImporter.ts` | moved from the editor: folder ops, `.meta` importer |
@@ -29,7 +31,14 @@ dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` c
 | `POST /api/locks/release` | `{ path }` → `{ ok }`; then `onLockReleased(user)` | |
 | `POST /api/locks/heartbeat` | `{ paths }` → `{ lost }` | |
 | `GET /api/levels` | `[{ name, mode? }]` | |
-| `GET/PUT /api/levels/:name` | level JSON; PUT runs `validateLevel(raw)` (structure only, no registry) | lock |
+| `GET/PUT /api/levels/:name` | level JSON — GET serves the **live copy** when the level is open; PUT runs `validateLevel(raw)` (structure only, no registry), **409** while the level is open live | lock |
+| `GET /api/live` | `{ docs: [{ name, seq, peers, holds }] }` | |
+| `GET /api/live/:name/events` | SSE (`text/event-stream`, `:keepalive` every 25 s): `hello { connId, name }`, `snapshot { level, seq, holds, peers }`, then `ops { seq, from, batchId, ops }` with `id: seq`, `holds`, `peers`, `presence`, `error`. 404 when there is no such level. The stream closing is the leave | |
+| `POST /api/live/:name/ops` | `{ connId, batchId, ops }` → `{ ok, seq }` · 400 an op does not apply (`OpError`) · 423 `{ error, holder }` a node held by another connection | |
+| `POST /api/live/:name/hold` · `release` | `{ connId, refs }` → `{ ok }` / `{ ok: false, holder }` | |
+| `POST /api/live/:name/presence` | `{ connId, data }` — relayed to the others, unnumbered | |
+| `POST /api/live/:name/flush` | write the file now (the editor's Play) | |
+| `POST /api/live/:name/leave` | `{ connId }` — a closing tab's beacon | |
 | `GET/PUT /api/games/:name` | `{ components: string[] }` | lock |
 | `GET /api/assets` | `{ entries, folders }` — runs the importer | |
 | `POST /api/assets/mkdir` · `move` · `delete` | `{ path }` · `{ from, to }` · `{ path }` | lock (move/delete; a folder is refused if anything under it is held) |
@@ -37,7 +46,7 @@ dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` c
 | `GET /assets/<path>` | bytes | |
 | `PUT /assets/<path>` | JSON asset | lock |
 | `POST /api/admin/commit-all` | `Authorization: Bearer <stateDir/admin.token>` → commits every session | token, no user |
-| `GET /api/tree` | `{ seq, files: [{ path, size, sha1 }] }` — every file under `content/` (mirror, ADR 0084) | |
+| `GET /api/tree` | `{ seq, files: [{ path, size, sha1 }] }` — every file under `content/` (mirror, ADR 0084); flushes every live level first, as `GET /api/file` does | |
 | `GET /api/changes?since=N&timeout=MS` | `{ seq, paths }` long-poll (≤ 60 s); **410** when N is behind the feed or ahead of it | |
 | `GET /api/file?path=content/…` | the bytes; 404 when gone | |
 
@@ -55,10 +64,34 @@ a **stale** lock is anyone's; a live one is nobody else's; no force-unlock (ever
 someone else's lock is a no-op `{ ok: false }`. Persisted to `stateDir/locks.json` on every change; swept once a
 minute — an owner whose last lock went stale has their session committed.
 
+## Live documents (`live.ts`, ADR 0089)
+
+```ts
+createLive({ readLevel, writeLevel, changed(users, path), onDocClosed?(users), idleMs = 500, maxMs = 5000, logKeep = 500, schedule? }): Live
+// join(name, client) · leave(name, connId) · apply(name, connId, user, { batchId, ops }) → { seq, ops } | throws LiveError
+// hold · release · presence · flush(name) · flushAll() · isOpen · levelOf · status()
+```
+
+One `Doc` per open level: `{ level, seq, log ≤ logKeep, clients: Map<connId, LiveClient>, holds: Map<refKey, hold>,
+dirtyBy: Set<email> }`. The first join reads the file (`readLevel` → `validateLevel`), sends `hello` + `snapshot`.
+`apply` runs `applyBatch` (in place; an `OpError` is a 400 and nothing changed), refuses an op whose touched ref or
+any ancestor is held by another `connId` (423), then `seq++`, logs, broadcasts `ops` to **every** client, the
+sender included. Holds go with their connection (leave, stream close) and with the node when it is removed.
+
+**Writes.** `idleMs` after the last edit, `maxMs` at most since the first unflushed one, on the last client leaving,
+on `flush`/`flushAll` (Play, `/api/tree`, `/api/file`, `commit-all`, shutdown): `level.id = name` →
+`writeLevel` → `changed(contributors, content/levels/<name>.json)`. In `server.ts`: `markDirty` per contributor,
+then `feed.record([path])` once — disk before the feed, so the mirror always reads the new file. When the last
+client leaves, `onDocClosed(contributors)` commits each contributor's session (the level's equivalent of a lock
+release). A restart loses at most `maxMs` of edits; clients reconnect and take the fresh snapshot.
+
+The dev editor (`tools/editor/vite.config.ts`) mounts the same `createLive` over the repo's `content/levels` with
+`changed: () => {}`; the watcher ignores `content/levels/**`.
+
 ## Sessions and commits
 
-`Session { user, dirty: Set<path>, since }` per email. Commit points: a lock release (`take(user)`), a stale
-sweep, `safetyCommitMs` since the session began (`takeDue`), `commit-all`, shutdown (`takeAll`). Commit =
+`Session { user, dirty: Set<path>, since }` per email. Commit points: a lock release (`take(user)`), a live
+level closing (`onDocClosed`), a stale sweep, `safetyCommitMs` since the session began (`takeDue`), `commit-all`, shutdown (`takeAll`). Commit =
 `git status --porcelain -z -- <paths>` → `git add -A -- <changed>` → `git commit --only -m <describeCommit>` with
 `GIT_AUTHOR_*` = the user and `GIT_COMMITTER_*` = `config.git.committer`; unchanged paths mean no commit. Then
 `git push origin <branch>` when `push`; a failure sets `pushError` (shown by the editor as "not on GitHub yet"),

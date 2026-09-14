@@ -50,9 +50,10 @@ import {
   type LevelView,
   type LightDesc,
 } from '@mp/render-three'
+import { createCollab, httpTransport, type Peer } from './collab'
 import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type ClipItem, type Doc, type KeyEditor, type Mode, type OpBatch } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
-import { askUnsaved } from './confirm'
+import { askName, askUnsaved } from './confirm'
 import {
   acquireLock,
   heartbeatLocks,
@@ -255,8 +256,92 @@ const dropAllLocks = async (): Promise<void> => {
   heldLocks.clear()
   lockedAssets.clear()
   readOnlyBy = null
+  collab.leave()
   await Promise.all(paths.map((p) => releaseLock(p).catch(() => undefined)))
 }
+
+// ============================== live levels (ADR 0089) ==============================
+/** Who else has this level open, for the status bar. */
+let livePeers: Peer[] = []
+/** The level the last snapshot carried, for `openFile` to build its document over. */
+let latestSnapshot: Level | null = null
+/** True while `openFile` awaits its first snapshot; a later one (reconnect) reinstalls the document itself. */
+let joining = false
+/** Remote ops that landed mid-drag: applied to the data already, repainted when the drag ends. */
+let deferredRemote: Op[] = []
+/** Is the open document a level in a live session? Prefabs and materials are files with locks, as before. */
+const live = (): boolean => fileState.mode === 'level' && collab.name() !== null
+
+const TRANSFORM_KINDS = new Set<string>(['setTransform', 'setOverrideTransform'])
+
+/**
+ * Redraw after ops changed the level from outside the document — a remote batch, an undo. Transforms alone
+ * move groups; anything else rebuilds from data, as every structural edit does, and puts the selection back
+ * by identity. Mid-drag, the redraw waits: the gizmo owns the groups until the pointer comes up.
+ */
+const repaintAfterOps = (ops: readonly Op[]): void => {
+  if (gizmoDragging) {
+    deferredRemote.push(...ops)
+    return
+  }
+  const open = doc
+  if (open === null) return
+  if (ops.every((o) => TRANSFORM_KINDS.has(o.kind))) {
+    applyPreviewPoses()
+    scheduleRebuild()
+    inspectorSync()
+    updateTrackHelper()
+    return
+  }
+  const keep = selectionRefs()
+  deselect()
+  env.applyEnvironment(open.environment())
+  postfx.apply(open.environment()?.postfx)
+  buildItems()
+  rebuildLoaded()
+  const restored = keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
+  if (restored.length > 0) applySelection(restored)
+  refreshUi()
+  inspectorRebuild()
+  loadNewReferences(buildItems)
+}
+
+/** A fresh copy of the level from the server (a reconnect): the document is rebuilt over it, history kept. */
+const reinstallLevel = (level: Level): void => {
+  const root = docStack[0]
+  if (root === undefined || fileState.mode !== 'level') return
+  try {
+    validateLevel(level, registry())
+  } catch (e) {
+    setProblem(`the server's copy does not load: ${String(e)}`)
+    return
+  }
+  docStack.length = 1
+  docStack[0] = { doc: withOps(levelDoc(level, userPrefabs, registry(), editorClips)), label: root.label }
+  showDoc()
+}
+
+const collab = createCollab(httpTransport(), {
+  level: () => (fileState.mode === 'level' ? rootLevel() : null),
+  onSnapshot: (level) => {
+    latestSnapshot = level
+    if (!joining) reinstallLevel(level)
+  },
+  onApplied: (ops) => repaintAfterOps(ops),
+  onRejected: (batch, reason) => {
+    // The batch is already rolled back in the data; forget the history entry that holds it, then redraw.
+    history.dropWhere((entry) => entry.ops.some((o) => batch.ops.includes(o)) || entry.inverses.some((o) => batch.ops.includes(o)))
+    setStatus(`edit refused: ${reason}`)
+    repaintAfterOps(batch.inverses)
+  },
+  onPeers: (peers) => {
+    livePeers = peers
+    renderStatus()
+  },
+  onHolds: () => {},
+  onPresence: () => {},
+  onError: (message) => setStatus(`live: ${message}`),
+})
 
 /** The key the open file is locked by, from what Save would write. */
 const docLockKey = (): string => {
@@ -1078,6 +1163,11 @@ gizmo.addEventListener('dragging-changed', (event) => {
     recordEdit(selection.length > 1 ? `${edit.mode} ${selection.length}` : edit.mode)
     dragStart = new Map()
     rebuildLoaded()
+    if (deferredRemote.length > 0) {
+      const ops = deferredRemote
+      deferredRemote = []
+      repaintAfterOps(ops)
+    }
   }
 })
 gizmo.addEventListener('objectChange', () => {
@@ -1730,7 +1820,8 @@ const gamePageUrl = (): string | null => {
  * no play. Stop is the toolbar button: Esc inside the frame is the game's pause, not ours.
  */
 const startFramePlay = async (url: string): Promise<void> => {
-  if (dirty && !(await saveNow())) return
+  if (live()) await collab.flush() // the game reads the file: make it current first
+  else if (dirty && !(await saveNow())) return
   const frame = document.createElement('iframe')
   frame.id = 'game-frame'
   frame.src = `${url}?level=${encodeURIComponent(fileState.name)}`
@@ -1956,16 +2047,21 @@ const openFile = async (name: string): Promise<void> => {
   try {
     if (fileState.mode === 'level') {
       openPrefabAsset = null
-      readOnlyBy = await takeLock(lockKey.level(name))
       /**
+       * A level is a live session, not a file with a lock (ADR 0089): join it and the server answers with its
+       * copy — newer than the file whenever someone has it open.
+       *
        * The level says which game it is for, and that decides the registry it is validated against — so
        * opening a level that uses a component its game does not declare is a clear load error rather than a
-       * silently broken Inspector (ADR 0052).
-       *
-       * Read before validating, which is why `loadLevel` takes a resolver: the mode has to be known to pick
-       * the registry, and the registry is what checks the parameters.
+       * silently broken Inspector (ADR 0052). Read before validating, so the mode can pick the registry.
        */
-      const raw = await loadLevelRaw(name)
+      joining = true
+      try {
+        await collab.join(name)
+      } finally {
+        joining = false
+      }
+      const raw: unknown = latestSnapshot ?? (await loadLevelRaw(name))
       const declared = (raw as { config?: { mode?: { name?: unknown } } }).config?.mode?.name
       activeMode = (typeof declared === 'string' ? MODES[declared] : undefined) ?? soleMode()
       /**
@@ -2033,6 +2129,43 @@ const refreshFileList = async (): Promise<void> => {
   toolbar?.render()
 }
 
+/**
+ * Make a level file and open it live (ADR 0089): a blank one, or a copy of `from` — the server's current copy,
+ * newer than the file while it is open. Names are files, so one that exists is refused.
+ */
+const createLevel = async (from: string | null): Promise<void> => {
+  const title = from === null ? 'New level' : `Duplicate ${from}`
+  const name = await askName(title, from === null ? 'untitled' : `${from}-copy`, 'File name in content/levels/. Letters, digits, - and _.')
+  if (name === null) return
+  if (!/^[\w-]+$/.test(name)) {
+    setStatus(`"${name}" is not a file name: letters, digits, - and _ only`)
+    return
+  }
+  const existing = await listFiles('levels').catch(() => [] as FileEntry[])
+  if (existing.some((e) => e.name === name)) {
+    setStatus(`a level called ${name} already exists`)
+    return
+  }
+  let data: unknown
+  if (from === null) {
+    const blank = blankLevel(name)
+    if (activeMode !== undefined) blank.config = { ...blank.config, mode: { name: activeMode.name } }
+    data = blank
+  } else {
+    const copy = (await loadLevelRaw(from)) as { id?: unknown }
+    copy.id = name
+    data = copy
+  }
+  try {
+    await saveFile('levels', name, data)
+  } catch (e) {
+    setStatus(`could not create ${name}: ${String(e)}`)
+    return
+  }
+  await refreshFileList()
+  await openFile(name)
+}
+
 const enterMode = async (mode: Mode): Promise<void> => {
   fileState.mode = mode
   await refreshFileList()
@@ -2056,6 +2189,7 @@ const toolbar: Toolbar = createToolbar(
     playing,
     inPrefab: docStack.length > 1,
     readOnly: readOnlyBy,
+    live: live(),
     grid: grid.visible,
     markers: markerGroup.visible,
   }),
@@ -2091,11 +2225,17 @@ const toolbar: Toolbar = createToolbar(
     },
     save: () => void saveNow(),
     newBlank: () => {
+      if (fileState.mode === 'level') {
+        // A live level exists the moment it is named: the file is created on the server, then joined.
+        void createLevel(null)
+        return
+      }
       const name = fileState.name || 'untitled'
       openPrefabAsset = null // a new prefab has no asset yet; the first Save creates one
       void dropAllLocks() // a new file locks nothing until its first Save names it
-      setDoc(withOps(fileState.mode === 'level' ? levelDoc(blankLevel(name), userPrefabs, registry(), editorClips) : prefabDoc(blankPrefab(name), registry(), editorClips)), name)
+      setDoc(withOps(prefabDoc(blankPrefab(name), registry(), editorClips)), name)
     },
+    duplicate: () => void createLevel(fileState.name),
     back: closePrefab,
     setGizmo: setMode,
     setSpace,
@@ -2673,6 +2813,7 @@ const history = createOpHistory()
 let pending: OpBatch[] = []
 const onDocOps = (batch: OpBatch): void => {
   pending.push(batch)
+  if (live()) collab.submit(batch)
 }
 /** Every document this file builds reports its ops here; the top of the stack and the root alike. */
 const withOps = (d: Doc): Doc => {
@@ -2701,6 +2842,7 @@ let dirty = false
 const saveNow = async (): Promise<boolean> => {
   const root = docStack[0]?.doc
   if (root === undefined) return false
+  if (live()) return true // every edit already reached the server; the file follows within a second
   if (readOnlyBy !== null) {
     setStatus(`not saved: ${fileState.name} is locked by ${readOnlyBy}`)
     return false
@@ -2777,7 +2919,7 @@ const recordEdit = (label: string): void => {
   pending = []
   if (entry === null) return
   history.push(entry)
-  dirty = true
+  dirty = !live() // a live level is saved as it is edited
   renderStatus()
 }
 
@@ -2800,12 +2942,15 @@ const rootLevel = (): Level | null => docStack[0]?.doc.asLevel() ?? null
 const applyHistory = (ops: readonly Op[], keep: readonly NodeRef[], what: string): boolean => {
   const level = rootLevel()
   if (level === null) return false
+  let applied: { ops: Op[]; inverses: Op[] }
   try {
-    applyBatch(level, ops)
+    applied = applyBatch(level, ops)
   } catch (e) {
     setStatus(`cannot ${what}: ${e instanceof OpError ? e.message : String(e)}`)
     return false
   }
+  // An undo is an edit like any other to the room.
+  if (live() && applied.ops.length > 0) collab.submit(applied)
   pending = []
   deselect()
   env.applyEnvironment(doc?.environment())
@@ -2815,7 +2960,7 @@ const applyHistory = (ops: readonly Op[], keep: readonly NodeRef[], what: string
   const open = doc
   const restored = open === null ? [] : keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
   if (restored.length > 0) applySelection(restored)
-  dirty = true
+  dirty = !live()
   refreshUi()
   inspectorRebuild()
   loadNewReferences(buildItems)
@@ -3181,6 +3326,10 @@ const renderStatus = (): void => {
   if (me !== null) parts.push(`<b>${me.user.name}</b>`)
   parts.push(breadcrumb())
   if (readOnlyBy !== null) parts.push(`<span class="problem">read-only · locked by ${readOnlyBy}</span>`)
+  if (live()) {
+    const others = livePeers.filter((p) => p.connId !== collab.connId()).map((p) => p.name)
+    parts.push(others.length === 0 ? 'live' : `live · with ${[...new Set(others)].join(', ')}`)
+  }
   if (selected !== null && doc !== null) {
     parts.push(selection.length > 1 ? `${selection.length} selected · editing ${doc.label(selected)}` : `selected #${selected} (${doc.label(selected)})`)
   }
@@ -3370,4 +3519,5 @@ window.setInterval(() => {
 // A closing tab lets go of its locks at once rather than waiting out the stale window.
 window.addEventListener('pagehide', () => {
   for (const p of heldLocks) releaseLockBeacon(p)
+  collab.beaconLeave()
 })

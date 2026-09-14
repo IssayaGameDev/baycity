@@ -27,6 +27,61 @@ const STYLE = {
  * Save is the default — Enter takes it — because losing work is the expensive mistake and saving is the one
  * answer that is never destructive.
  */
+/**
+ * Ask for a name: a new level, a duplicate. Resolves the trimmed name, or `null` for Escape, Cancel, a click
+ * outside, or an empty field. Replaces `window.prompt`, whose empty answer once deleted a file.
+ */
+export const askName = (title: string, initial: string, hint: string): Promise<string | null> =>
+  new Promise<string | null>((resolve) => {
+    const scrim = document.createElement('div')
+    scrim.style.cssText = STYLE.scrim
+    const box = document.createElement('div')
+    box.style.cssText = STYLE.box
+    const heading = document.createElement('div')
+    heading.style.cssText = STYLE.title
+    heading.textContent = title
+    const body = document.createElement('div')
+    body.style.cssText = STYLE.body
+    body.textContent = hint
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.value = initial
+    input.style.cssText = 'width:100%;box-sizing:border-box;margin-bottom:12px;padding:5px 8px;border-radius:4px;border:1px solid #34383f;background:#12141a;color:#d5d9e0;font:13px system-ui,sans-serif'
+    const row = document.createElement('div')
+    row.style.cssText = STYLE.row
+
+    let done = false
+    const finish = (value: string | null): void => {
+      if (done) return
+      done = true
+      window.removeEventListener('keydown', onKey, true)
+      scrim.remove()
+      resolve(value === null || value.trim() === '' ? null : value.trim())
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      e.stopPropagation()
+      if (e.key === 'Escape') finish(null)
+      else if (e.key === 'Enter') finish(input.value)
+    }
+    const button = (label: string, value: () => string | null, primary = false): HTMLButtonElement => {
+      const b = document.createElement('button')
+      b.style.cssText = primary ? STYLE.primary : STYLE.button
+      b.textContent = label
+      b.addEventListener('click', () => finish(value()))
+      return b
+    }
+    row.append(button('Cancel', () => null), button('OK', () => input.value, true))
+    box.append(heading, body, input, row)
+    scrim.append(box)
+    scrim.addEventListener('mousedown', (e) => {
+      if (e.target === scrim) finish(null)
+    })
+    window.addEventListener('keydown', onKey, true)
+    document.body.append(scrim)
+    input.focus()
+    input.select()
+  })
+
 export const askUnsaved = (name: string): Promise<UnsavedChoice> =>
   new Promise<UnsavedChoice>((resolve) => {
     const scrim = document.createElement('div')

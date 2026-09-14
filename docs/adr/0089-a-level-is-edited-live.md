@@ -62,3 +62,39 @@ author (impossible to compute).
 
 **Consequences.** Undo inside a prefab opened on top stays there. A gizmo drag is one op. `history.ts` is gone.
 The `Doc` still applies edits locally and immediately; phase 2 sends the same batches to the server.
+
+## Phase 2 — the live session
+
+**Decision.** The server holds every open level (`tools/editor-server/src/live.ts`): a client joins over a
+server-sent-events stream (`GET /api/live/:name/events`), gets `hello` + a snapshot, and POSTs each batch its
+document reported (`/api/live/:name/ops`). The server applies with the shared `applyBatch`, numbers the batch and
+broadcasts it to everyone, the sender included — the echo is the acknowledgement. The file is written on a debounce
+(500 ms idle, 5 s max) and on Play, `/api/tree`, `/api/file`, the last leave, `commit-all` and shutdown; the write
+feeds each contributor's session and the mirror once. The editor (`tools/editor/src/collab.ts`) applies its own
+edits at once and keeps them *unacked* until the echo; a remote batch is applied under them (roll back, apply,
+re-apply); a refusal rolls the batch back and drops its history entry; a sequence gap reopens the stream for a
+fresh snapshot. Save is gone for levels; Play flushes first; New asks for a name and creates at once; Duplicate
+copies the server's current copy.
+
+**Why SSE + POST, not WebSocket.** No new dependency is allowed and a hand-rolled RFC 6455 server would share the
+`upgrade` listener with the game proxy and Vite's HMR in dev. SSE is plain HTTP: the existing middleware, the
+Access cookie and the tunnel carry it unchanged, `EventSource` reconnects on its own, and the batch rate (an op
+when an edit ends, 10 Hz presence later) is nothing for POSTs. The transport is an interface, so the core is
+tested with a fake one and could move to a socket without touching it.
+
+**Why the sender gets its own echo.** One ordering for every copy, and one code path: the ack is "the server
+placed my batch at seq N", the same message the others act on. A client that missed a number knows it and asks
+for a snapshot instead of guessing.
+
+**Why write on a debounce, not per op.** The file is the mirror's and the game's view, not the source of truth
+while the level is open; a write per drag end would be a git-visible churn and a `sync:content` storm. Every
+reader that needs the file current (`/api/tree`, Play) flushes first, so the debounce is invisible to them.
+
+**Rejected.** A file lock plus periodic autosave (the stale-save problem this ADR exists for). Client-side
+persistence of unacked ops across reloads (the server has them within 5 s; a reload takes the snapshot). Server-
+minted ids (the client's op must apply locally before the round trip).
+
+**Consequences.** `PUT /api/levels/:name` is refused while the level is open (409); `GET` serves the live copy.
+A level's session commit happens when its last editor leaves, not on a lock release. The name field is read-only
+for levels: the name is the room. `window.prompt` for New is gone. Holds and presence travel on the same stream
+and land in phases 3 and 4.

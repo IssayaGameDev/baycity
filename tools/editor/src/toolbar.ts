@@ -33,6 +33,8 @@ export interface ToolbarState {
   inPrefab: boolean
   /** Who holds this file's lock when it is not you — Save is off and says so (ADR 0083). `null` when yours. */
   readOnly: string | null
+  /** The open level is edited live (ADR 0089): every edit is saved as it happens, so there is no Save. */
+  live: boolean
   grid: boolean
   markers: boolean
 }
@@ -45,6 +47,8 @@ export interface ToolbarActions {
   setName: (name: string) => void
   save: () => void
   newBlank: () => void
+  /** Copy the open level under a new name and open it. */
+  duplicate: () => void
   back: () => void
   setGizmo: (g: GizmoMode) => void
   setSpace: (s: GizmoSpace) => void
@@ -141,6 +145,11 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
   newButton.textContent = 'New'
   newButton.addEventListener('click', actions.newBlank)
 
+  const duplicateButton = el('button')
+  duplicateButton.textContent = 'Duplicate'
+  duplicateButton.title = 'copy this level under a new name'
+  duplicateButton.addEventListener('click', actions.duplicate)
+
   const backButton = el('button')
   backButton.textContent = '← Back'
   backButton.title = 'leave this prefab and return to the level'
@@ -203,7 +212,7 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
   container.append(
     group(label('game'), gameSelect),
     el('div', 'tb-sep'),
-    group(label('file'), modeSelect, openSelect, nameInput, saveButton, newButton, backButton),
+    group(label('file'), modeSelect, openSelect, nameInput, saveButton, newButton, duplicateButton, backButton),
     el('div', 'tb-sep'),
     group(seg, spaceButton, snapBox, snapLabel, stepInput),
     el('div', 'tb-sep'),
@@ -257,6 +266,12 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
       saveButton.disabled = true
       saveButton.title = `read-only: locked by ${s.readOnly}`
     } else saveButton.title = ''
+    // Live: the level saves itself, and its name is the file the whole room has open.
+    saveButton.hidden = s.live
+    nameInput.disabled = s.playing || s.live
+    nameInput.title = s.live ? 'a live level is named when it is created' : 'file name — the document id follows it on save'
+    duplicateButton.hidden = s.mode !== 'level'
+    duplicateButton.disabled = s.playing
   }
 
   render()

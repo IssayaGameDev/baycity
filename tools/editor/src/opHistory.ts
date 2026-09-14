@@ -34,6 +34,8 @@ export interface OpHistory {
   redoLabel: () => string | null
   /** Forget one entry wherever it sits — its ops no longer apply (the node is gone). */
   drop: (entry: HistoryEntry) => void
+  /** Forget every entry the predicate picks — the ones holding an edit the server refused. */
+  dropWhere: (pick: (entry: HistoryEntry) => boolean) => void
   /** Forget everything: a different file's edits are not this one's. */
   clear: () => void
   depth: () => { undo: number; redo: number }
@@ -71,6 +73,9 @@ export const createOpHistory = (limit = DEFAULT_LIMIT): OpHistory => {
         const at = stack.indexOf(entry)
         if (at >= 0) stack.splice(at, 1)
       }
+    },
+    dropWhere: (pick) => {
+      for (const stack of [past, future]) for (let i = stack.length - 1; i >= 0; i--) if (pick(stack[i]!)) stack.splice(i, 1)
     },
     clear: () => {
       past.length = 0
