@@ -73,7 +73,7 @@
       "transform": {
         "position": {
           "x": 0,
-          "y": 1,
+          "y": 0.5,
           "z": 0
         },
         "scale": {
@@ -651,7 +651,7 @@
           "children": [
             {
               "id": "t0",
-              "name": "treadmill",
+              "name": "treadmill +1",
               "transform": {
                 "position": {
                   "x": -5.8509,
@@ -692,7 +692,7 @@
             },
             {
               "id": "e5f507ee",
-              "name": "treadmill",
+              "name": "treadmill +5",
               "transform": {
                 "position": {
                   "x": -1.8509,
@@ -733,7 +733,7 @@
             },
             {
               "id": "f1682fde",
-              "name": "treadmill",
+              "name": "treadmill +10",
               "transform": {
                 "position": {
                   "x": 2.1491,
@@ -774,7 +774,7 @@
             },
             {
               "id": "546bb4bd",
-              "name": "treadmill",
+              "name": "treadmill +50",
               "transform": {
                 "position": {
                   "x": 6.1491,
@@ -815,7 +815,7 @@
             },
             {
               "id": "bd3140bd",
-              "name": "treadmill",
+              "name": "treadmill +100",
               "transform": {
                 "position": {
                   "x": 10.1491,
@@ -850,47 +850,6 @@
                   "type": "Treadmill",
                   "params": {
                     "multiplier": 100
-                  }
-                }
-              ]
-            },
-            {
-              "id": "e1bc9aee",
-              "name": "treadmill",
-              "transform": {
-                "position": {
-                  "x": -4.3509,
-                  "y": 4.866,
-                  "z": 55.994
-                }
-              },
-              "components": [
-                {
-                  "id": "c0",
-                  "type": "Collider",
-                  "params": {
-                    "shape": {
-                      "kind": "box",
-                      "halfExtents": {
-                        "x": 1.5,
-                        "y": 0.25,
-                        "z": 1.5
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "c1",
-                  "type": "Renderer",
-                  "params": {
-                    "material": "d67ddcac4f57efc8"
-                  }
-                },
-                {
-                  "id": "c2",
-                  "type": "Treadmill",
-                  "params": {
-                    "multiplier": 1
                   }
                 }
               ]
@@ -1072,6 +1031,64 @@
               }
             }
           ]
+        },
+        {
+          "id": "0b8a3f82",
+          "name": "board-start",
+          "transform": {
+            "position": {
+              "x": -11.5,
+              "y": 1,
+              "z": 9.5
+            },
+            "scale": {
+              "x": 0.5,
+              "y": 0.5,
+              "z": 0.5
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 4,
+                    "y": 0.25,
+                    "z": 3
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "a947cf35",
+              "type": "Track",
+              "params": {
+                "clip": "d8709e39091e7954",
+                "keys": [
+                  {
+                    "t": 0,
+                    "position": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                ],
+                "loop": "loop",
+                "phaseMs": 200
+              }
+            }
+          ]
         }
       ]
     },
@@ -1087,590 +1104,6 @@
       },
       "components": [],
       "children": [
-        {
-          "id": "b1",
-          "name": "board-2",
-          "transform": {
-            "position": {
-              "x": -0.1031,
-              "y": -6.1795,
-              "z": -16.9923
-            },
-            "scale": {
-              "x": 2.5,
-              "y": 1,
-              "z": 0.75
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 3,
-                    "y": 0.25,
-                    "z": 3
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "55205761e38bc929"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Keyboard",
-              "params": {
-                "pitch": 0.9,
-                "fill": 0.88,
-                "height": 0.45,
-                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                "seed": 63
-              }
-            }
-          ]
-        },
-        {
-          "id": "b2",
-          "name": "board-3",
-          "transform": {
-            "position": {
-              "x": -12.1031,
-              "y": -6.1795,
-              "z": -11.4923
-            },
-            "scale": {
-              "x": 2.6,
-              "y": 1,
-              "z": 0.9
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 3,
-                    "y": 0.25,
-                    "z": 2.5
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "55205761e38bc929"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Keyboard",
-              "params": {
-                "pitch": 0.9,
-                "fill": 0.88,
-                "height": 0.45,
-                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                "seed": 126
-              }
-            }
-          ]
-        },
-        {
-          "id": "b3",
-          "name": "board-4",
-          "transform": {
-            "position": {
-              "x": -6.1031,
-              "y": -6.1795,
-              "z": 12.5077
-            },
-            "scale": {
-              "x": 4.5,
-              "y": 1.2,
-              "z": 0.6
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2.5
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "55205761e38bc929"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Keyboard",
-              "params": {
-                "pitch": 0.9,
-                "fill": 0.88,
-                "height": 0.45,
-                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                "seed": 196
-              }
-            }
-          ]
-        },
-        {
-          "id": "b4",
-          "name": "board-5",
-          "transform": {
-            "position": {
-              "x": -6.1031,
-              "y": -2.1795,
-              "z": 31.5077
-            },
-            "scale": {
-              "x": 4.1,
-              "y": 1,
-              "z": 5.9
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "55205761e38bc929"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Keyboard",
-              "params": {
-                "pitch": 0.9,
-                "fill": 0.88,
-                "height": 0.45,
-                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                "seed": 280
-              }
-            }
-          ]
-        },
-        {
-          "id": "w0",
-          "name": "wins-pad",
-          "transform": {
-            "position": {
-              "x": -11.6031,
-              "y": -1.6795,
-              "z": 28.5077
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 1.5,
-                    "y": 0.25,
-                    "z": 1.5
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "6bbc0130aff311b5"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "WinsPad",
-              "params": {
-                "wins": 1
-              }
-            }
-          ]
-        },
-        {
-          "id": "08e34205",
-          "name": "board-3",
-          "transform": {
-            "position": {
-              "x": -6.1031,
-              "y": -6.1795,
-              "z": -6.4923
-            },
-            "scale": {
-              "x": 2.5,
-              "y": 1,
-              "z": 0.4
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 3,
-                    "y": 0.25,
-                    "z": 2.5
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "55205761e38bc929"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Keyboard",
-              "params": {
-                "pitch": 0.9,
-                "fill": 0.88,
-                "height": 0.45,
-                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                "seed": 126
-              }
-            }
-          ]
-        },
-        {
-          "id": "e75f07ba",
-          "name": "board-4",
-          "transform": {
-            "position": {
-              "x": -6.1031,
-              "y": -3.6999,
-              "z": 17.0281
-            },
-            "rotation": {
-              "x": -0.7854,
-              "y": 0,
-              "z": 0
-            },
-            "scale": {
-              "x": 4.3,
-              "y": 1.1,
-              "z": 0.8
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2.5
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "55205761e38bc929"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Keyboard",
-              "params": {
-                "pitch": 0.9,
-                "fill": 0.88,
-                "height": 0.45,
-                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                "seed": 196
-              }
-            }
-          ]
-        },
-        {
-          "id": "15549963",
-          "name": "board-5",
-          "transform": {
-            "position": {
-              "x": -15.6031,
-              "y": 0.8205,
-              "z": 31.5077
-            },
-            "rotation": {
-              "x": -1.5708,
-              "y": 0,
-              "z": -1.5708
-            },
-            "scale": {
-              "x": 4.7,
-              "y": 1,
-              "z": 1.6
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "55205761e38bc929"
-              }
-            }
-          ]
-        },
-        {
-          "id": "0fd77e29",
-          "name": "board-5",
-          "transform": {
-            "position": {
-              "x": 4.3969,
-              "y": 0.8205,
-              "z": 31.5077
-            },
-            "rotation": {
-              "x": -1.5708,
-              "y": 0,
-              "z": -1.5882
-            },
-            "scale": {
-              "x": 4.7,
-              "y": 1,
-              "z": 1.6
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 2.5,
-                    "y": 0.25,
-                    "z": 2
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "55205761e38bc929"
-              }
-            }
-          ]
-        },
-        {
-          "id": "baee7a3b",
-          "name": "board-2",
-          "transform": {
-            "position": {
-              "x": -0.1031,
-              "y": -6.1795,
-              "z": -2.4923
-            },
-            "scale": {
-              "x": 2.5,
-              "y": 1,
-              "z": 0.5
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 3,
-                    "y": 0.25,
-                    "z": 3
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "55205761e38bc929"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Keyboard",
-              "params": {
-                "pitch": 0.9,
-                "fill": 0.88,
-                "height": 0.45,
-                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                "seed": 63
-              }
-            }
-          ]
-        },
-        {
-          "id": "66cb6ddc",
-          "name": "board-3",
-          "transform": {
-            "position": {
-              "x": -12.1031,
-              "y": -6.1795,
-              "z": 3.0077
-            },
-            "scale": {
-              "x": 2.6,
-              "y": 1,
-              "z": 0.7
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 3,
-                    "y": 0.25,
-                    "z": 2.5
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "55205761e38bc929"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Keyboard",
-              "params": {
-                "pitch": 0.9,
-                "fill": 0.88,
-                "height": 0.45,
-                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                "seed": 126
-              }
-            }
-          ]
-        },
-        {
-          "id": "708589b2",
-          "name": "board-2",
-          "transform": {
-            "position": {
-              "x": -0.1031,
-              "y": -6.1795,
-              "z": 8.0077
-            },
-            "scale": {
-              "x": 2.5,
-              "y": 1,
-              "z": 0.5
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 3,
-                    "y": 0.25,
-                    "z": 3
-                  }
-                }
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "55205761e38bc929"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Keyboard",
-              "params": {
-                "pitch": 0.9,
-                "fill": 0.88,
-                "height": 0.45,
-                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                "seed": 63
-              }
-            }
-          ]
-        },
         {
           "id": "f59aed1a",
           "name": "board-5",
@@ -2291,7 +1724,7 @@
     },
     {
       "id": "d37352b9",
-      "name": "empty",
+      "name": "Stage 1",
       "transform": {
         "position": {
           "x": 0,
@@ -2314,7 +1747,651 @@
             "model": ""
           }
         }
+      ],
+      "children": [
+        {
+          "id": "b1",
+          "name": "board-2",
+          "transform": {
+            "position": {
+              "x": 6,
+              "y": -7.5,
+              "z": 19.5
+            },
+            "scale": {
+              "x": 2.5,
+              "y": 1,
+              "z": 0.75
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 3,
+                    "y": 0.25,
+                    "z": 3
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 63
+              }
+            }
+          ]
+        },
+        {
+          "id": "b2",
+          "name": "board-3",
+          "transform": {
+            "position": {
+              "x": -6,
+              "y": -7.5,
+              "z": 25
+            },
+            "scale": {
+              "x": 2.6,
+              "y": 1,
+              "z": 0.9
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 3,
+                    "y": 0.25,
+                    "z": 2.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 126
+              }
+            }
+          ]
+        },
+        {
+          "id": "w0",
+          "name": "wins-pad",
+          "transform": {
+            "position": {
+              "x": -5.5,
+              "y": -3,
+              "z": 65
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.25,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "6bbc0130aff311b5"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "WinsPad",
+              "params": {
+                "wins": 1
+              }
+            }
+          ]
+        },
+        {
+          "id": "e75f07ba",
+          "name": "board-4",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": -5.0204,
+              "z": 53.5204
+            },
+            "rotation": {
+              "x": -0.7854,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 4.3,
+              "y": 1.1,
+              "z": 0.8
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 2.5,
+                    "y": 0.25,
+                    "z": 2.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 196
+              }
+            }
+          ]
+        },
+        {
+          "id": "b3",
+          "name": "board-4",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": -7.5,
+              "z": 49
+            },
+            "scale": {
+              "x": 4.5,
+              "y": 1.2,
+              "z": 0.6
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 2.5,
+                    "y": 0.25,
+                    "z": 2.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 196
+              }
+            }
+          ]
+        },
+        {
+          "id": "708589b2",
+          "name": "board-2",
+          "transform": {
+            "position": {
+              "x": 6,
+              "y": -7.5,
+              "z": 44.5
+            },
+            "scale": {
+              "x": 2.5,
+              "y": 1,
+              "z": 0.5
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 3,
+                    "y": 0.25,
+                    "z": 3
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 63
+              }
+            }
+          ]
+        },
+        {
+          "id": "66cb6ddc",
+          "name": "board-3",
+          "transform": {
+            "position": {
+              "x": -6,
+              "y": -7.5,
+              "z": 39.5
+            },
+            "scale": {
+              "x": 2.6,
+              "y": 1,
+              "z": 0.7
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 3,
+                    "y": 0.25,
+                    "z": 2.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 126
+              }
+            }
+          ]
+        },
+        {
+          "id": "baee7a3b",
+          "name": "board-2",
+          "transform": {
+            "position": {
+              "x": 6,
+              "y": -7.5,
+              "z": 34
+            },
+            "scale": {
+              "x": 2.5,
+              "y": 1,
+              "z": 0.5
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 3,
+                    "y": 0.25,
+                    "z": 3
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 63
+              }
+            }
+          ]
+        },
+        {
+          "id": "08e34205",
+          "name": "board-3",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": -7.5,
+              "z": 30
+            },
+            "scale": {
+              "x": 2.5,
+              "y": 1,
+              "z": 0.4
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 3,
+                    "y": 0.25,
+                    "z": 2.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 126
+              }
+            }
+          ]
+        },
+        {
+          "id": "b4",
+          "name": "board-5",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": -3.5,
+              "z": 68
+            },
+            "scale": {
+              "x": 4.1,
+              "y": 1,
+              "z": 5.9
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 2.5,
+                    "y": 0.25,
+                    "z": 2
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 280
+              }
+            }
+          ]
+        },
+        {
+          "id": "15549963",
+          "name": "board-5",
+          "transform": {
+            "position": {
+              "x": -9.5,
+              "y": -0.5,
+              "z": 68
+            },
+            "rotation": {
+              "x": -1.5708,
+              "y": 0,
+              "z": -1.5708
+            },
+            "scale": {
+              "x": 4.7,
+              "y": 1,
+              "z": 1.6
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 2.5,
+                    "y": 0.25,
+                    "z": 2
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        },
+        {
+          "id": "0fd77e29",
+          "name": "board-5",
+          "transform": {
+            "position": {
+              "x": 10.5,
+              "y": -0.5,
+              "z": 68
+            },
+            "rotation": {
+              "x": -1.5708,
+              "y": 0,
+              "z": -1.5882
+            },
+            "scale": {
+              "x": 4.7,
+              "y": 1,
+              "z": 1.6
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 2.5,
+                    "y": 0.25,
+                    "z": 2
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        },
+        {
+          "id": "e1bc9aee",
+          "name": "treadmill +1",
+          "transform": {
+            "position": {
+              "x": -5.4995,
+              "y": -3,
+              "z": 60.5
+            },
+            "scale": {
+              "x": 0.9999,
+              "y": 1,
+              "z": 1
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 1.5,
+                    "y": 0.25,
+                    "z": 1.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "d67ddcac4f57efc8"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Treadmill",
+              "params": {
+                "multiplier": 1
+              }
+            }
+          ]
+        }
       ]
+    },
+    {
+      "id": "85509955",
+      "name": "Stage 2",
+      "transform": {
+        "position": {
+          "x": -9.0071,
+          "y": -27.0513,
+          "z": 36.8651
+        }
+      },
+      "components": []
     }
   ],
   "prefabs": {
