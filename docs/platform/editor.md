@@ -7,11 +7,11 @@ Level/prefab editor. `pnpm dev:editor` → `http://localhost:5176` (the dev host
 | Document | On disk | Written via |
 | --- | --- | --- |
 | Level (node tree + `config`) | `content/levels/<name>.json` | `PUT /api/levels/<name>` (`saveFile`, `src/filesApi.ts`); locked while open (ADR 0083) |
-| Prefab (a root `Node`) | `content/assets/prefabs/<name>.prefab.json` — an **asset** with a `.meta` id (ADR 0026) | `PUT /assets/<path>` (`savePrefab`/`createPrefab`, `src/assetsApi.ts`) |
+| Prefab (a root `Node`) | `content/assets/prefabs/<name>.prefab.json` — an **asset** with a `.meta` id (ADR 0026) | created once by `Save as prefab…` (`createPrefab`, `src/assetsApi.ts`), then **edited live** in its own room (ADR 0091) |
 | Game shared-component list | `content/games/<game>.json` | `PUT /api/games/<game>` (`saveGame`) — appended by adoption (ADR 0077) |
 | Materials, clips | `content/assets/**` JSON | `PUT /assets/<path>` |
 
-`saveNow` (`src/main.ts`) sets the document `id` to the file name and writes the **root** document, not a prefab opened on top (`docStack`).
+Both levels and prefabs are live rooms, so there is no Save and no file lock for either (ADR 0089, ADR 0091); only materials and clips are still locked files.
 
 ## Panel layout (`tools/editor/index.html`)
 
@@ -19,7 +19,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 
 | Area | Element | Module |
 | --- | --- | --- |
-| Top | `#toolbar` — level/prefab mode, **Game** picker, file list, name, Save, New, Back, gizmo T/R/S, space, snap/step, Play, grid, markers | `src/toolbar.ts` |
+| Top | `#toolbar` — **Game** picker, level list, name (read-only), New, Duplicate, Back, gizmo T/R/S, space, snap/step, Play, grid, markers. No mode select and no Save: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
 | Left | `#hierarchy` — node tree + context menu | `src/hierarchy.ts`, `src/menu.ts` |
 | Centre | `#view` — Three stage, orbit, transform gizmo, placement clicks | `src/main.ts` |
 | Right | `#insp-head`, `#inspector`, `#asset-inspector` | `src/inspector.ts`, `src/assetInspector.ts` |
@@ -38,10 +38,10 @@ The routes are `tools/editor-server/src/api.ts`, mounted by `vite.config.ts` (`f
 | --- | --- |
 | `me` | `GET /api/me` at boot; name shown first in the status bar; `heartbeatMs`/`maxUploadBytes` read from it |
 | `heldLocks` | every key this tab holds; `takeLock(path)` → holder's name or `null`; `dropAllLocks()` releases all (→ the server commits the session) |
-| `openFile` | `dropAllLocks()`; a **level joins its live session** (`collab.join(name)`, below — no file lock); a prefab takes `lockKey.asset(entry.path)`; refused → `readOnlyBy`, the file still opens |
-| `readOnlyBy` | toolbar `readOnly` disables Save with a title; status bar shows `read-only · locked by X`; `saveNow` refuses |
-| `saveNow` | prefabs: takes the lock for `docLockKey()` first (Save-as or a new file names it now). A live level returns `true` at once: there is nothing to save |
-| `newBlank` | prefab: `dropAllLocks()`; nothing locked until the first Save. Level: `createLevel(null)` (below) |
+| `openFile` | `dropAllLocks()`, then **joins the level's live room** (`collab.join(name)`, below). Levels only: a prefab is entered with `enterPrefab`, not opened as a file |
+| `readOnlyBy` | a material or clip this tab could not lock; status bar shows `read-only · locked by X` |
+| `saveNow` | returns `true` at once for a live room: every edit is already on the server |
+| `newBlank` | `createLevel(null)` — a level exists the moment it is named (below) |
 | materials, clips | `lockAsset(id)` on select (`onSelectAsset`, kinds `material`/`animation`) and before a clip save; refused ids in `lockedAssets` → `onMaterialChanged` refuses |
 | heartbeat | `setInterval(heartbeatMs)`: `heartbeatLocks(held)`; a lost file lock is re-taken or turns the file read-only; `serverStatus().pushError` → `pushProblem` in the status bar |
 | `pagehide` | `releaseLockBeacon` per held lock; `collab.beaconLeave()` |
@@ -62,18 +62,16 @@ Every `Doc` mutator builds `Op`s (`@mp/content` `ops.ts`, `content.md`) and comm
 | Mutator | Ops |
 | --- | --- |
 | `setTransform` / `setName` / `setParams` / `setComponentEnabled` / `addComponent` / `removeComponent` / `moveComponent` | the own op on an own node; the `setOverride*` / `addOverrideComponent` / `removeOverrideComponent` flavour on an inherited one (an inherited component's removal = `setOverrideParams unset` + `setOverrideEnabled null` + `setOverrideRemoved`) |
-| `place` (level) / `placePrefab` (level) | `internPrefab` when the key is new (`internOp`, key from `freeTableKey`) + `insertNode` |
-| `place` / `placePrefab` / `placeEmpty` / `placeModel` / `duplicate` / `paste` | `insertNode` (ids minted client-side; `reidSubtree` for copies) |
+| `placePrefab` / `placeNamed` / `placeEmpty` / `placePrimitive` / `placeModel` / `duplicate` / `paste` | `insertNode` (ids minted client-side; `reidSubtree` for copies). `placePrefab` writes the prefab's **asset id** and resolves the definition into `level.prefabs` without an op (ADR 0091) |
 | `remove` / `move` / `reparent` | `removeNode` / `moveNode` |
-| `extract` | `internPrefab` + `replaceNode` |
+| `linkToPrefab` | `replaceNode` (the node keeps its transform and name, loses its own components, gains the reference). `definitionOf` is pure: the definition becomes a **file**, which is the host's to write |
 | `revert` | `setNodeOverride` (the record with the field gone, or `null`) |
-| `applyToPrefab` | the own ops **scoped `table: key`** on the definition + `setNodeOverride null` |
+| `overrideOpsFor` | pure — the ops the **prefab's own room** would take. The host sends them there, then calls `revert` here (ADR 0091) |
 | `setEnvironment` / `setMode` | `setEnvironment` / `setMode` |
 | `setId` | not an op (the file name; live, the server sets it) |
 
-`prefabDoc(root, registry, clips, { table })` — a prefab opened on top (`openPrefabOf`) stamps every op with
-`table`, so the same op applies to `level.prefabs[table]` on any copy; locally it applies to the wrapper whose one
-root *is* that entry.
+`prefabDoc(root, registry, clips)` — a prefab is edited as a document of one root node, in its own live room
+(below), so its ops carry no table scope.
 
 **Undo** (`src/opHistory.ts`): `main.ts` attaches `onDocOps` to every document (`withOps`); batches collect in
 `pending`; `recordEdit(label)` folds them (`foldBatches`: one transform op per target, last value, first inverse)
@@ -87,7 +85,8 @@ opened on top no longer pops back to the level. Live, the applied inverses go to
 
 A level is not a file with a lock but a **live session** on the server (`editor-server.md`, *Live documents*):
 every batch the document reports is applied locally at once and sent; the server numbers it and echoes it to
-everyone, the sender included (the echo is the ack). Prefabs and materials keep the file lock and Save.
+everyone, the sender included (the echo is the ack). Prefabs are rooms too (ADR 0091); materials and clips keep
+the file lock.
 
 ```ts
 createCollab(transport: LiveTransport, hooks: CollabHooks): Collab
@@ -110,6 +109,40 @@ httpTransport(): LiveTransport   // EventSource in, fetch POST out, sendBeacon f
 | leave | `dropAllLocks` → `collab.leave()`; `pagehide` → `beaconLeave()` |
 
 Two tabs of one person are two `connId`s: separate acks, separate holds.
+
+### Prefabs are live rooms too (ADR 0091)
+
+A level references a prefab by asset id and holds no copy, so editing a prefab has to reach every level that
+uses it. It does, because a prefab is a live document of its own.
+
+| Piece | Behaviour |
+| --- | --- |
+| resolve on open | `openFile` runs `hydratePrefabs(level, editorPrefabs)` — `assets.prefabOf`, already in memory from boot — and keeps `hydratedPrefabs` (what it filled) and `missingPrefabs` (what it could not), naming the missing in the status line |
+| enter a prefab | `enterPrefab(assetId)`: leave the level's room, `collab.join(assetId, 'prefab')`, build `prefabDoc` over the snapshot's one root, `prefabOpen = { assetId, name, from }`. From a placement (`openPrefabOf`, the Inspector's **Open**, the Hierarchy and viewport menus) or from a prefab's Project tile — which is the only way to reach one that is placed nowhere |
+| one at a time | The viewport, the physics world, the selection and the holds are singletons keyed to the open document, so a tab is in one room. **Back** (`closePrefab`) rejoins the level, which the server answers with a fresh snapshot, so anything that changed meanwhile is there |
+| follow a prefab | a `prefab { assetId, ops }` event on the **level's** stream → `onPrefabOps`: `applyBatch` over `{ id, config: {}, nodes: [root] }`, whose root *is* the resolved definition, then a structural repaint and `previews.invalidate()`. No sequence and nothing sent back: the level's own file did not change |
+| Apply to prefab | two rooms, one gesture. `Doc.overrideOpsFor(i)` → `collab.submitToPrefab(assetId, ops)` → only if the server took them, `Doc.revert(i)` here. Undo puts **this placement's** override back and does not take the change out of the prefab; the status line says so |
+| no Save, no lock | both kinds of room write themselves. The toolbar has no mode select and no Save; the name field is read-only and says where a prefab is renamed. `New`, `Duplicate`, the file list and the game picker are disabled while in a prefab, titled *leave the prefab first* |
+
+### Save as prefab… (ADR 0091)
+
+One action makes a prefab, replacing both `Extract to prefab` (which wrote no file) and prefab mode's Save
+(which made no reference). On the Inspector link row and in the Hierarchy and viewport menus, all calling
+`saveAsPrefab(index)`.
+
+`askName` → `prefabTarget(project.folder(), name, taken)` (`src/prefabPath.ts`, pure and tested) →
+`assets.createPrefab(path, doc.definitionOf(index))` → `reloadAssets()` → `doc.linkToPrefab(at, id, definition)`
+→ `recordEdit('save as prefab')`.
+
+- **The file goes first.** A failed write costs a status line; the reverse order would leave a placement
+  pointing at nothing. If the write lands and the level edit does not, the file is an unreferenced prefab —
+  visible in the Project panel and placeable by hand.
+- **A name already in that folder is refused, never overwritten.** Writing over a prefab file keeps its `.meta`
+  sidecar, so the asset id would live on while the contents changed and every level referencing it would
+  quietly become something else.
+- **The undo entry holds the level's `replaceNode`, not the file.** By then another level may reference it.
+- The selection is re-found by `NodeRef` after the dialog and the two requests, since an index shifts under a
+  remote edit.
 
 ### Presence — a drag seen from across the room
 
@@ -139,7 +172,8 @@ Others' selection is what the hold boxes and badges show: a selection *is* a hol
 | Hierarchy | `rowsOf(doc, open, heldBy)` → `Row.held` (name or `''`); a held row has class `held` (dimmed), a `.badge.held` with the name, and only `onSelect` wired (no rename, no drag); `onReparent` onto a held parent is refused |
 | viewport | one `THREE.BoxHelper` per node of the held subtree (the held node and everything under it, skipping nodes with no meshes of their own) over its mesh holder, in `holdRoot` (world space, `depthTest: false`), colour from a hash of the holder's `connId`; `helper.update()` every frame so a remote drag keeps up; rebuilt on holds events and after structural repaints |
 
-Prefabs and materials are never held: `live()` is false, `syncHolds` returns.
+Holds work the same inside a prefab's room. A hold there does **not** block a level's override on the same
+node, and the reverse: they are different edits — the shared definition, and this one placement.
 
 ## Game discovery (`src/modes.ts`)
 
@@ -192,7 +226,7 @@ colliders are held at the matching unit shape — so scale is the one size a per
 | picker | `assetOptions('model')` lists `BUILTIN_LABELS` first, then the uploaded models: a built-in is picked like a file |
 | locked collider | `Doc.setParams` on a `Mesh` with a built-in rewrites every `Collider` on the node to `unitColliderFor(model)` **in the same batch** (one undo); `addComponent(Collider)` on such a node is born unit; `Doc.builtinOf(i)` says which built-in, or `null` |
 | Inspector | with `builtinOf` non-null the `collider` field is one row — `unit box · size is the object's scale` — instead of the kind picker and the dimensions |
-| Create | `createMenu` (blank space, Hierarchy *Create child*, viewport *Create here*) offers Box, Rounded box, Platform, Wall, Sphere, Capsule (`PRIMITIVE_ORDER`) then `Empty`; each is `Doc.placePrimitive(kind, position, parent)` = unit collider + `Mesh` + unsurfaced `Renderer` + the preset scale. The prefab palette offers the same six |
+| Create | `createMenu` (blank space, Hierarchy *Create child*, viewport *Create here*) offers Box, Rounded box, Platform, Wall, Sphere, Capsule (`PRIMITIVE_ORDER`) then `Empty`; each is `Doc.placePrimitive(kind, position, parent)` = unit collider + `Mesh` + unsurfaced `Renderer` + the preset scale. In a prefab's room the same menu applies (`placeNamed` is the by-name variant its palette used) |
 | drawn at final size | `buildItemMeshes` counter-scales the mesh holder by the group's world scale and builds every shape from the **world** dimensions (`geometryForBuiltin(id, ws)`, or `geometryForCollider(scaleCollider(shape, ws))`), a model file keeping the scale. So a bevel is computed on the real size, as the game computes it from the baked collider — the editor used to stretch it |
 | redraw on scale | `rebuildSubtreeMeshes(i)` after a scale gizmo drag, a typed transform, and a remote transform op: meshes are built from the world scale, so a node's change is its subtree's |
 | previews | `previews.ts` walks with the accumulated scale and does the same, so a Project tile shows the shape the viewport does |

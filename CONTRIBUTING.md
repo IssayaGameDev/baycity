@@ -21,18 +21,37 @@ within a second. There is **no Save for levels**: each change is saved as you ma
 - **New** asks for a name and creates the level at once. **Duplicate** copies the open level under a new name.
 - If a change is refused (bottom bar says why), it is undone on your screen. Nothing is lost on the server.
 
-## Prefabs and materials: one person per file
+## Prefabs: build it once, use it everywhere
 
-When you open a prefab, it is **yours** until you open something else or close the tab. Anyone else who opens
-it sees it read-only, with your name on it, and their Save button is off.
+A prefab is a thing you build once and place in as many levels as you like. **It is one thing.** Change it and
+every level using it changes, including levels you have not opened.
 
-- If the file you want says *locked by X*, ask X, or work on something else. There is no force-unlock.
-- A tab that died (crash, laptop shut) lets go of its files after two minutes.
-- Materials work the same: clicking one takes it; someone else editing it is refused.
+**To make one:** select what you built, right-click, **Save as prefab…**. Give it a name with no spaces. It
+saves into whichever folder you have open in the **Project** panel, so click into `prefabs` first.
+
+**To change one:** click the object and press **Open** in the Inspector, or right-click it and pick *Open
+prefab*. One that is placed nowhere is opened from its tile in the Project panel. You are now editing the
+prefab itself, and everyone sees your edits as you make them. **Back** returns you to the level.
+
+- There is **no Save** for prefabs or levels. Everything is saved as you do it.
+- The Inspector tells you how many placements of it are in the level you have open.
+- **Apply to prefab** takes the changes you made to one placement and pushes them into the prefab for
+  everybody. Ctrl+Z puts your placement's changes back; it does **not** take them out of the prefab.
+- A prefab whose file is deleted leaves an empty spot that says *missing prefab*. The level still opens and
+  still plays.
+- One tab shows one thing. To watch a prefab edit land in a level, open a second tab.
+
+## Materials: one person per file
+
+Materials are still files with a lock. Clicking one takes it until you click away or close the tab; someone
+else editing it at the same time is refused.
+
+- If something says *locked by X*, ask X, or work on something else. There is no force-unlock.
+- A tab that died (crash, laptop shut) lets go after two minutes.
 
 ## Saving
 
-- **Save** (prefabs) writes to the server at once. Levels write themselves. Your work is never on your machine.
+- Nothing to press. Every change is on the server as you make it.
 - Everything you changed is recorded as one entry in the history when you switch files or close the tab, and
   every ten minutes while you keep it open. Kodjo can see and undo any entry.
 - A red *not on GitHub yet* in the bottom bar means the server could not upload history. Your files are safe;
@@ -60,7 +79,7 @@ are rounded boxes, which is what everything in the game is made of.
 
 ## What goes where
 
-- **Obstacles are prefabs.** Make one, save it, place it in as many levels as you like.
+- **Obstacles are prefabs.** Make one with *Save as prefab…*, then place it in as many levels as you like.
 - **Levels** are big. Work on the same one together, or split by area; say what you are touching.
 - Do not rename or delete files you did not make without asking. Deleting a material breaks every piece using it.
 

@@ -75,9 +75,11 @@ export type MaterialValue =
 
 /**
  * A **prefab asset** (`*.prefab.json`): a reusable prefab on disk, in a folder, with an id that survives being
- * renamed or moved. What it is *not* is what a level references. Placing one still interns a copy into
- * `Level.prefabs` under a table id (ADR 0023), so a level stays self-contained and moving a prefab file can
- * never leave a level without geometry. The asset id names the *file*; the table id names the level's copy.
+ * renamed or moved. That id **is** what a level references (ADR 0091): placing one writes the id, the
+ * definition stays in the file, and editing the prefab reaches every level that uses it. ADR 0023 interned a
+ * copy per level instead, so that a deleted file could never leave a level without geometry; the trade was
+ * made deliberately, and a reference with no file now leaves an empty object that says so rather than a copy
+ * nobody can edit.
  *
  * Kit makers (`platform()`, `beam()`) are code, not files, and stay out of the tree: they are parametric,
  * which is exactly the reason to keep them that way.

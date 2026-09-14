@@ -5,10 +5,10 @@ Package `packages/content`. Headless; deps `@mp/core`, `@mp/physics`. Never impo
 ## Schema — `packages/content/src/types.ts`
 
 ```ts
-interface Level { id: string; config: LevelConfig; prefabs?: Record<string, Node>; nodes: Node[] }
+interface Level { id: string; config: LevelConfig; prefabs?: Record<string, Node> /* resolved in memory, not in the file */; nodes: Node[] }
 interface Node {
   id: string; name?: string; transform: Transform; components: ComponentData[]; children?: Node[]
-  prefab?: string                            // key into Level.prefabs; forbidden inside a prefab
+  prefab?: string                            // prefab **asset id** (ADR 0091); forbidden inside a prefab
   overrides?: Record<string, NodeOverride>   // keyed by the referenced tree's node ids, any depth
 }
 interface ComponentData { id: string; type: string; params: Record<string, unknown>; enabled?: boolean }
@@ -20,7 +20,7 @@ interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: Su
 ```
 
 - `enabled === false` → loader and runtime skip it.
-- No prefab-in-prefab (ADR 0023). Override keys are not checked against the tree; dangling = inert (ADR 0033).
+- No prefab-in-prefab (ADR 0023). Override keys are not checked against the tree; dangling = inert (ADR 0033), and so is a `prefab` no file resolves (ADR 0091).
 - Keys are **offsets** from `Transform`, per channel; rotation lerps per component (ADR 0050).
 - `environment` absent/partial → renderer defaults; sun is config, not a `Light` (ADR 0048).
 
@@ -127,6 +127,52 @@ to the unit shape, divides `center` by the same factor and inserts the `Mesh`; t
 `MigrationReport { changed, skipped }`. Declines: a node with children, a capsule, several colliders, a prefab
 node a placement overrides. Idempotent — a node that already has a `Mesh` is not a candidate.
 
+## Prefab references — `packages/content/src/prefabs.ts` (ADR 0091)
+
+A level names a prefab by asset id and holds no copy. `Level.prefabs` stays as the one lookup every reader
+already does (`effectiveNode`), but it is an **in-memory resolution map**: filled before the level is used,
+removed before it is written.
+
+```ts
+interface PrefabSource { root: (assetId: string) => Node | undefined }
+prefabRefsIn(level): string[]                                    // every reference, first-seen order
+hydratePrefabs(level, source): { filled: string[]; missing: string[] }   // in place; by reference, not copied
+stripHydrated(level, filled): T                                  // a shallow copy without what was filled
+```
+
+Two rules carry the whole design. **Hydration never fills a reference that already resolves**, and **stripping
+removes only what hydration filled** — so a level still carrying its own table keeps it, which is what let this
+ship before the migration ran and what stops an unmigrated level losing its prefabs on its first write. And the
+definition is assigned **by reference**: every level hydrated from one source shares one object, so an edit to a
+prefab is in all of their resolutions at once.
+
+A reference no file resolves is inert, not an error: the placement keeps its transform, draws nothing, and the
+`missing` ids are what a caller reports. Resolution happens in `loadLevelInto` before `instantiateLevel` (the
+game, from a bundled glob), in `openFile` (the editor, from the asset library it already holds) and in
+`live.ts` `open` (the server, from the prefab store).
+
+## Fingerprinting a level — `packages/content/src/fingerprint.ts`
+
+Proof that a change to how a level is *stored* did not change what it *is*.
+
+```ts
+fingerprintLevel(level, types, { ids?: boolean }): string[]   // one line per resolved node: pose + every component
+fingerprintGeometry(level, types): string[]                   // what it draws and collides with, sizes normalised
+firstDifference(before, after): { at; before?; after? } | null
+```
+
+`fingerprintGeometry` bakes scale into colliders and resolves built-in shapes, so the two ways of writing one
+size (ADR 0090) compare equal, and leaves out world scale and a name a placement inherits. It is the gate the
+reference migration runs behind.
+
+## Migrating to references — `packages/content/src/migratePrefabRefs.ts` (ADR 0091)
+
+`matchEntry(key, entry, files)` → contents, then the same shape under other node ids (with a remap), then the
+name. `migrateLevelRefs(level, at, files, types, report)` re-points every placement, remaps override keys and
+completes override transforms from the node they now override — then **throws the rewrite away** unless
+`fingerprintGeometry` agrees line for line. Run once by `tools/editor-server/src/migratePrefabRefs.ts` via
+`deploy/editor/migrate-prefab-refs.sh`, dry by default.
+
 ## Assets — `packages/content/src/assets.ts` (ADR 0026, ADR 0028)
 
 - `AssetKind = 'prefab' | 'texture' | 'model' | 'material' | 'shader' | 'animation' | 'sound' | 'font'`.
@@ -134,7 +180,7 @@ node a placement overrides. Idempotent — a node that already has a `Mesh` is n
 - `AssetEntry { id; kind; path; name }`, `AssetDatabase { entries; byId }`; `buildDatabase`, `entriesFrom`, `entryFor`, `assetsOfKind`, `nameForPath`.
 - `MaterialAsset { shader: 'standard' | 'unlit' | assetId; params: Record<string, MaterialValue> }`; `MaterialValue` kinds color/number/vec2/vec3/boolean/texture(`string|null`). `materialDependencies` = texture ids.
 - `AnimationAsset { keys }`, `isAnimationAsset`; loop/phase stay on `Track` (ADR 0050).
-- `*.prefab.json` = a `Node` root; placing interns a copy into `Level.prefabs` (`freeTableKey`).
+- `*.prefab.json` = a `Node` root. Placing writes its **asset id** into the level; the definition stays in the file (ADR 0091, below).
 
 ## `content/` layout
 
