@@ -37,6 +37,7 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  * Live level editing (ADR 0089), when `live` is given:
  *   GET  /api/live                    → open documents, peers, holds
  *   GET  /api/live/:kind/:name/events → SSE: hello, snapshot, ops (id = seq), holds, peers, presence, error
+ *                                       plus `prefab` on a level's stream: a prefab the level uses was edited
  *                                       :kind is `level` or `prefab` — a prefab is its own document (ADR 0091)
  *   POST /api/live/:kind/:name/ops          → { connId, batchId, ops } → { ok, seq } · 400 bad op · 423 held by another
  *   POST /api/live/:kind/:name/hold         → { connId, refs } — my holds are exactly these → { ok } / { ok: false, holder, refused }

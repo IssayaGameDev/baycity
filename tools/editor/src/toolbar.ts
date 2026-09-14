@@ -1,4 +1,3 @@
-import type { Mode } from './editorDoc'
 
 /**
  * The toolbar: file, transform tool, snap, play.
@@ -12,7 +11,6 @@ export type GizmoMode = 'translate' | 'rotate' | 'scale'
 export type GizmoSpace = 'world' | 'local'
 
 export interface ToolbarState {
-  mode: Mode
   /**
    * The **game** being authored for, by `ModeDescriptor.name`, or `''` for none (ADR 0052).
    *
@@ -40,12 +38,10 @@ export interface ToolbarState {
 }
 
 export interface ToolbarActions {
-  setMode: (m: Mode) => void
   /** Author for this game from now on: narrows the level list and decides what a new level is for. */
   setGame: (name: string) => void
   open: (name: string) => void
   setName: (name: string) => void
-  save: () => void
   newBlank: () => void
   /** Copy the open level under a new name and open it. */
   duplicate: () => void
@@ -107,18 +103,6 @@ const setOptions = (select: HTMLSelectElement, names: readonly string[], selecte
 
 export const createToolbar = (container: HTMLElement, state: () => ToolbarState, actions: ToolbarActions): Toolbar => {
   // --- file ---
-  const modeSelect = el('select')
-  for (const [value, text] of [
-    ['level', 'Level'],
-    ['prefab', 'Prefab'],
-  ] as const) {
-    const opt = el('option')
-    opt.value = value
-    opt.textContent = text
-    modeSelect.append(opt)
-  }
-  modeSelect.addEventListener('change', () => actions.setMode(modeSelect.value === 'prefab' ? 'prefab' : 'level'))
-
   /**
    * Which game is being authored for. The level list narrows to it and a new level is made for it — it does
    * **not** retag the open level, which happens in the Game row where the consequences are visible.
@@ -136,10 +120,6 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
   nameInput.type = 'text'
   nameInput.title = 'file name — the document id follows it on save'
   nameInput.addEventListener('change', () => actions.setName(nameInput.value.trim()))
-
-  const saveButton = el('button')
-  saveButton.textContent = 'Save'
-  saveButton.addEventListener('click', actions.save)
 
   const newButton = el('button')
   newButton.textContent = 'New'
@@ -212,7 +192,7 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
   container.append(
     group(label('game'), gameSelect),
     el('div', 'tb-sep'),
-    group(label('file'), modeSelect, openSelect, nameInput, saveButton, newButton, duplicateButton, backButton),
+    group(label('file'), openSelect, nameInput, newButton, duplicateButton, backButton),
     el('div', 'tb-sep'),
     group(seg, spaceButton, snapBox, snapLabel, stepInput),
     el('div', 'tb-sep'),
@@ -223,7 +203,6 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
 
   const render = (): void => {
     const s = state()
-    modeSelect.value = s.mode
     /**
      * `(none)` is offered and is not a placeholder: a level may legitimately belong to no game, and picking it
      * is how you see every level at once. A build with one game still shows the picker, because *which* game
@@ -257,21 +236,24 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
     playButton.textContent = s.playing ? '■ Stop' : '▶ Play'
     playButton.classList.toggle('on', s.playing)
     // Editing is suspended during play; the controls would lie about what they do.
-    for (const control of [modeSelect, gameSelect, openSelect, nameInput, saveButton, newButton, stepInput, snapBox]) {
+    for (const control of [gameSelect, openSelect, nameInput, newButton, stepInput, snapBox]) {
       control.disabled = s.playing
     }
     for (const button of gizmoButtons.values()) button.disabled = s.playing
     spaceButton.disabled = s.playing
-    if (s.readOnly !== null) {
-      saveButton.disabled = true
-      saveButton.title = `read-only: locked by ${s.readOnly}`
-    } else saveButton.title = ''
-    // Live: the level saves itself, and its name is the file the whole room has open.
-    saveButton.hidden = s.live
-    nameInput.disabled = s.playing || s.live
-    nameInput.title = s.live ? 'a live level is named when it is created' : 'file name — the document id follows it on save'
-    duplicateButton.hidden = s.mode !== 'level'
+    /**
+     * There is no Save. Levels and prefabs are both live rooms (ADR 0089, ADR 0091), so every edit is already
+     * on the server, and the name is the document the whole room has open rather than something to type.
+     */
+    nameInput.disabled = true
+    nameInput.title = s.inPrefab ? 'a prefab is renamed in the Project panel, where its id follows it' : 'the level this room has open'
+    duplicateButton.hidden = s.inPrefab
     duplicateButton.disabled = s.playing
+    newButton.disabled = s.playing || s.inPrefab
+    newButton.title = s.inPrefab ? 'leave the prefab first' : 'a new level, named now'
+    openSelect.disabled = s.playing || s.inPrefab
+    openSelect.title = s.inPrefab ? 'leave the prefab first' : ''
+    gameSelect.disabled = s.playing || s.inPrefab
   }
 
   render()

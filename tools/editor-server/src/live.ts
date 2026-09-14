@@ -296,6 +296,25 @@ export const createLive = (opts: LiveOptions): Live => {
     return c
   }
 
+  /**
+   * As `clientOf`, but a connection in a **level that uses this prefab** counts too (ADR 0091). That is what
+   * "Apply to prefab" needs: it pushes one placement's overrides into the shared prefab from inside the level,
+   * without making anyone leave it, and the edit still lands as an op on the prefab's own document — so it is
+   * broadcast, attributed and written to the prefab file like any other.
+   */
+  const editorOf = (d: LiveDoc, connId: string, user: User): LiveClient => {
+    if (d.clients.has(connId) || d.kind !== 'prefab') return clientOf(d, connId, user)
+    for (const key of d.dependents) {
+      const via = docs.get(key)
+      const c = via?.clients.get(connId)
+      if (c === undefined || via === undefined) continue
+      if (c.user.email !== user.email) throw new LiveError(400, 'that connection is not yours')
+      via.seen.set(connId, now())
+      return c
+    }
+    throw new LiveError(400, 'unknown connection; reload the editor')
+  }
+
   const flush = (d: LiveDoc): void => {
     d.cancelIdle?.()
     d.cancelMax?.()
@@ -391,7 +410,7 @@ export const createLive = (opts: LiveOptions): Live => {
 
     apply: (name, connId, user, batch) => {
       const d = must(name)
-      clientOf(d, connId, user)
+      editorOf(d, connId, user)
       // A hold covers the node and everything under it: an op on a node, or on any of its ancestors' subtree
       // through a held ancestor, is refused when the holder is another connection.
       if (d.holds.size > 0) {
@@ -438,6 +457,19 @@ export const createLive = (opts: LiveOptions): Live => {
       for (const op of applied) if (op.kind === 'removeNode' || op.kind === 'replaceNode') for (const key of d.holds.keys()) if (!stillThere(d.level, d.holds.get(key)!.ref)) gone.add(key)
       for (const key of gone) d.holds.delete(key)
       broadcast(d, 'ops', { seq: d.seq, from: connId, batchId: batch.batchId, ops: applied }, d.seq)
+      /**
+       * A prefab edit reaches every level that uses it, on that level's own stream (ADR 0091). The level's own
+       * sequence is untouched — its file did not change — so this is a repaint instruction rather than an op
+       * the level owns. An editor is only ever in one document at a time (stepping into a prefab leaves the
+       * level), so nobody receives the same batch twice, and a reconnecting client takes the definitions from
+       * its snapshot rather than replaying these.
+       */
+      if (d.kind === 'prefab') {
+        for (const key of d.dependents) {
+          const dep = docs.get(key)
+          if (dep !== undefined && dep.clients.size > 0) broadcast(dep, 'prefab', { assetId: d.name, ops: applied })
+        }
+      }
       if (gone.size > 0) broadcast(d, 'holds', { holds: holdsOf(d) })
       if (applied.length > 0) {
         d.dirtyBy.set(user.email, user)
