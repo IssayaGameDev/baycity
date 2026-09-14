@@ -345,13 +345,20 @@ const rebuildHoldHelpers = (): void => {
   for (const h of holdMap.values()) {
     if (h.connId === mine) continue
     const i = open.indexOfRef(h.ref)
-    const g = i === null ? undefined : instanceGroups[i]
-    if (i === null || g === undefined) continue
-    const helper = new THREE.BoxHelper(meshHolderOf(g), holdColour(h.connId))
-    ;(helper.material as THREE.LineBasicMaterial).depthTest = false
-    helper.renderOrder = 1
-    holdRoot.add(helper)
-    holdHelpers.set(i, helper)
+    if (i === null) continue
+    // A hold covers the node and everything under it, so every node of the subtree gets its own box: a group
+    // with no meshes of its own would otherwise show nothing at all. Depth-first order makes the subtree the
+    // run of deeper indices right after the node.
+    const depth = open.depthOf(i)
+    for (let j = i; j < open.count() && (j === i || open.depthOf(j) > depth); j++) {
+      const g = instanceGroups[j]
+      if (g === undefined || holdHelpers.has(j) || meshHolderOf(g).children.length === 0) continue
+      const helper = new THREE.BoxHelper(meshHolderOf(g), holdColour(h.connId))
+      ;(helper.material as THREE.LineBasicMaterial).depthTest = false
+      helper.renderOrder = 1
+      holdRoot.add(helper)
+      holdHelpers.set(j, helper)
+    }
   }
 }
 const updateHoldHelpers = (): void => {
