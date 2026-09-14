@@ -43,7 +43,7 @@ interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: Su
 instantiateLevel(world: PhysicsWorld, level: Level, types: TypeInfo, clips?: ClipSource): LoadedLevel
 interface ClipSource { keys(assetId): readonly Keyframe[] | undefined }   // absent → no clip resolves
 interface WorldNode { id; name; components /* resolved */; position /* at load */; colliderHandles: readonly number[] /* opaque */; scope: number }
-interface VisualItem { collider: ColliderDesc; position; rotation: Quat; model?: string; material?: string; colliderHandles: number[] }
+interface VisualItem { collider: ColliderDesc /* scale baked in */; position; rotation: Quat; scale: Vec3 /* world, sizes a built-in */; model?: string; material?: string; colliderHandles: number[] }
 ```
 
 | `LoadedLevel` | Meaning |
@@ -62,7 +62,7 @@ interface VisualItem { collider: ColliderDesc; position; rotation: Quat; model?:
 Build rules:
 - Frame `animated` if `Track` duration > 0, an enabled `moves` component, or an animated ancestor → kinematic bodies; else fixed.
 - `Collider.trigger` → sensor (ADR 0054), still in `colliderHandles`. Shape and `center` scaled by frame scale (box/convex exact, ball/capsule averaged). `cylinder` throws.
-- Draw (ADR 0039): `Renderer`+`Mesh.model` → one visual listing all handles; `Renderer` alone → one per collider; else nothing. `MaterialOverride` cascades down over `Renderer.material`; `''` = unsurfaced.
+- Draw (ADR 0039): `Renderer`+`Mesh.model` → one visual listing all handles; `Renderer` alone → one per collider; else nothing. `MaterialOverride` cascades down over `Renderer.material`; `''` = unsurfaced. `Mesh.model` is an asset id or a **built-in shape** (below).
 - Placement with inherited children opens a new `scope` (own id + prefab root id; first writer wins).
 - `Track` keys: inline `keys` if non-empty, else `clips.keys(clip)`, else static.
 
@@ -96,6 +96,33 @@ Tidying (`children: []`, emptied override records) happens here so every copy wr
 ## Tracks — `packages/content/src/track.ts` (ADR 0029)
 
 Pure in `(behavior, base, nowMs)`. `poseAt(behavior, base, nowMs): Pose { position; rotation /* euler rad */ }` — base + sampled offset per channel; empty channel returns base. `trackDuration` = max `t`. `trackTime(duration, loop, nowMs, phaseMs)` — flooring modulo; `pingPong` spans 2×; `once` clamps. `easeAt` — `inOut` cosine, `step` = 0; easing belongs to the key a segment leaves. Keys sorted per channel at sample. `isAnimated`. Presets `moveTrack(axis, distance, periodMs)`, `spinTrack(axis, periodMs)` (cardinal axis).
+
+## Built-in shapes — `packages/content/src/primitives.ts` (ADR 0090)
+
+A `Mesh` whose `model` is a `builtin:` id draws a unit shape **sized by the node's world scale**, in the same
+slot as an uploaded model. Scale is then the only size: the editor holds such a node's colliders at the unit
+shape (`editor.md`), and the loader bakes scale into colliders anyway, so collision follows what is drawn.
+
+```ts
+BUILTIN_MODELS = ['builtin:box', 'builtin:rounded-box', 'builtin:sphere', 'builtin:capsule']
+BUILTIN_LABELS: Record<BuiltinModel, string>      // 'Box' | 'Rounded box' | 'Sphere' | 'Capsule'
+isBuiltinModel(id: unknown): id is BuiltinModel
+unitColliderFor(id): ColliderDesc                  // box ½(.5,.5,.5) · ball r .5 · capsule h½ .5 r .5
+scaleCollider(c: ColliderDesc, s: Vec3): ColliderDesc          // box/convex exact, ball/capsule averaged
+builtinShape(id, scale): { collider: ColliderDesc; rounded: boolean }   // rounded only for builtin:rounded-box
+PRIMITIVE_ORDER = ['box','rounded-box','platform','wall','sphere','capsule']; PRIMITIVE_PRESETS, PRIMITIVE_LABELS
+```
+
+`scaleCollider` lives here, not in the loader: the loader, the game's `levelView`, the editor viewport and the
+Project previews all run it, so what is drawn and what is collided with are one computation. Presets:
+`platform` = rounded box at 3 × 0.3 × 3, `wall` = 3 × 2 × 0.3, the rest unit.
+
+**Migration** (`migratePrimitives.ts`, run once by `deploy/editor/migrate-primitives.sh`):
+`migrateNode(node) → string | null` moves a drawn box or ball's size into `transform.scale`, sets the collider
+to the unit shape, divides `center` by the same factor and inserts the `Mesh`; the string is why it declined.
+`migrateLevel(level, at, report)` and `migratePrefabTree(root, at, report)` walk a file into a
+`MigrationReport { changed, skipped }`. Declines: a node with children, a capsule, several colliders, a prefab
+node a placement overrides. Idempotent — a node that already has a `Mesh` is not a candidate.
 
 ## Assets — `packages/content/src/assets.ts` (ADR 0026, ADR 0028)
 

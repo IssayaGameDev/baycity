@@ -34,6 +34,10 @@ export type { ParamChecker, TreeContext } from './validate'
 export { applyOp, applyBatch, invertOp, touchedRefs, refKey, isInherited, OpError } from './ops'
 export type { Op, OpBody, OpKind, NodeRef, OwnRef, InheritedRef } from './ops'
 export { instantiateLevel } from './loader'
+export { BUILTIN_MODELS, BUILTIN_LABELS, isBuiltinModel, unitColliderFor, scaleCollider, builtinShape, PRIMITIVE_ORDER, PRIMITIVE_PRESETS, PRIMITIVE_LABELS } from './primitives'
+export type { BuiltinModel, PrimitiveKind, PrimitivePreset } from './primitives'
+export { migrateNode, migrateLevel, migratePrefabTree, newReport } from './migratePrimitives'
+export type { MigrationReport } from './migratePrimitives'
 export type { BasePhase, ClipSource, LoadedLevel, NodeDrive, VisualItem, WorldLight, WorldMarker, WorldNode } from './loader'
 export {
   ASSET_KINDS,

@@ -182,6 +182,21 @@ a change → `host.onSettingChanged(key, number | CurvePoint[])` → `gameData[g
 `saveGame` writes the **whole** file (`components` + `settings`). `adopt` spreads the file too, so a component
 adoption keeps the settings. `loadGame` accepts numbers and point lists (`normalizePoints`).
 
+## Shapes are built-in meshes (ADR 0090)
+
+A `Mesh` naming a `builtin:` id draws a unit shape sized by the node's **scale** (`content.md`), and that node's
+colliders are held at the matching unit shape — so scale is the one size a person reads and edits.
+
+| Piece | Behaviour |
+| --- | --- |
+| picker | `assetOptions('model')` lists `BUILTIN_LABELS` first, then the uploaded models: a built-in is picked like a file |
+| locked collider | `Doc.setParams` on a `Mesh` with a built-in rewrites every `Collider` on the node to `unitColliderFor(model)` **in the same batch** (one undo); `addComponent(Collider)` on such a node is born unit; `Doc.builtinOf(i)` says which built-in, or `null` |
+| Inspector | with `builtinOf` non-null the `collider` field is one row — `unit box · size is the object's scale` — instead of the kind picker and the dimensions |
+| Create | `createMenu` (blank space, Hierarchy *Create child*, viewport *Create here*) offers Box, Rounded box, Platform, Wall, Sphere, Capsule (`PRIMITIVE_ORDER`) then `Empty`; each is `Doc.placePrimitive(kind, position, parent)` = unit collider + `Mesh` + unsurfaced `Renderer` + the preset scale. The prefab palette offers the same six |
+| drawn at final size | `buildItemMeshes` counter-scales the mesh holder by the group's world scale and builds every shape from the **world** dimensions (`geometryForBuiltin(id, ws)`, or `geometryForCollider(scaleCollider(shape, ws))`), a model file keeping the scale. So a bevel is computed on the real size, as the game computes it from the baked collider — the editor used to stretch it |
+| redraw on scale | `rebuildSubtreeMeshes(i)` after a scale gizmo drag, a typed transform, and a remote transform op: meshes are built from the world scale, so a node's change is its subtree's |
+| previews | `previews.ts` walks with the accumulated scale and does the same, so a Project tile shows the shape the viewport does |
+
 ## Play
 
 **A level plays in the real game** (ADR 0086): `startPlay` → `gamePageUrl()` (`me.games[activeMode.name]`,

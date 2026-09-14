@@ -1,9 +1,9 @@
-import type { VisualItem, WorldMarker } from '@mp/content'
+import { isBuiltinModel, type VisualItem, type WorldMarker } from '@mp/content'
 import * as THREE from 'three'
 
 import type { AssetRuntime } from './assetRuntime'
 import type { CutoutMask } from './cutout'
-import { colorForMarker, createGreyboxMaterial, geometryForCollider } from './materials'
+import { colorForMarker, createGreyboxMaterial, geometryForBuiltin, geometryForCollider } from './materials'
 
 /**
  * Realizes the loader's renderer-agnostic outputs into Three.js meshes (content pipeline
@@ -75,7 +75,9 @@ export const addLevel = (scene: THREE.Scene, visuals: VisualItem[], opts: LevelV
   const owned: { geometries: THREE.BufferGeometry[]; materials: THREE.Material[] } = { geometries: [], materials: [] }
 
   for (const v of visuals) {
-    const model = v.model !== undefined ? (assets?.model(v.model) ?? null) : null
+    // A built-in (ADR 0090) is a shape, not a file: drawn like a collider, from the node's scale.
+    const builtin = isBuiltinModel(v.model) ? v.model : null
+    const model = v.model !== undefined && builtin === null ? (assets?.model(v.model) ?? null) : null
     let object: THREE.Object3D
 
     if (model !== null) {
@@ -89,7 +91,7 @@ export const addLevel = (scene: THREE.Scene, visuals: VisualItem[], opts: LevelV
       }
       object = model
     } else {
-      const geometry = geometryForCollider(v.collider)
+      const geometry = builtin !== null ? geometryForBuiltin(builtin, v.scale) : geometryForCollider(v.collider)
       owned.geometries.push(geometry)
       const assigned = v.material !== undefined ? assets?.material(v.material) : undefined
       let material: THREE.Material

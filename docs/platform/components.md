@@ -80,7 +80,7 @@ interface Registry { has(type); get(type); all() /* declaration order = add-menu
 | set | type | params | notes |
 |---|---|---|---|
 | `ENGINE_COMPONENTS` (`engine.ts`) | `Collider` | `shape: collider`, `center: vec3`, `trigger: bool` (ADR 0054) | repeatable |
-| | `Mesh` | `model: asset(model)` | singleton |
+| | `Mesh` | `model: asset(model)` — an asset id, or a **built-in shape** `builtin:box` / `rounded-box` / `sphere` / `capsule` sized by the node's scale (ADR 0090, `content.md`) | singleton |
 | | `Renderer` | `material: asset(material)` | singleton |
 | | `MaterialOverride` | `material: asset(material)` | singleton; cascades down |
 | | `Spawn` | — | singleton |

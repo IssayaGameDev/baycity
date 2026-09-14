@@ -47,6 +47,17 @@ you are looking at.
 - Max size is 10 MB per file.
 - Dropping a file with the same name into the same folder **replaces** it everywhere it is used.
 
+## Making a shape
+
+Right-click in the viewport and pick **Create**: Box, Rounded box, Platform, Wall, Sphere, Capsule. Platforms
+are rounded boxes, which is what everything in the game is made of.
+
+- **Scale is the size.** A platform 6 m wide, 0.5 m thick and 6 m deep is scale `6, 0.5, 6`. Nothing else.
+- The **shape** field in the Inspector (under Mesh) swaps between the six, or an uploaded model.
+- Rounded corners stay the right size however you scale it.
+- A few old pieces still keep their size in the collider's *half extents*. Those read `size is in the
+  collider` and are the exception; ask Kodjo before reshaping one.
+
 ## What goes where
 
 - **Obstacles are prefabs.** Make one, save it, place it in as many levels as you like.

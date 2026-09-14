@@ -1,4 +1,5 @@
-import type { ColliderDesc } from '@mp/content'
+import { builtinShape, type BuiltinModel, type ColliderDesc } from '@mp/content'
+import type { Vec3 } from '@mp/core'
 import * as THREE from 'three'
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
@@ -106,6 +107,16 @@ const shapeGeometry = (c: ColliderDesc, bevel: boolean): THREE.BufferGeometry =>
 
 /** Build the render geometry matching a collider primitive (greybox: visual == collider, wearing the bevel). */
 export const geometryForCollider = (c: ColliderDesc): THREE.BufferGeometry => shapeGeometry(c, true)
+
+/**
+ * A built-in shape (ADR 0090) at a node's world scale: the unit shape scaled, rounded only for the rounded
+ * box — built from the final dimensions, so the bevel is right at any scale, which a scaled unit mesh could
+ * not be.
+ */
+export const geometryForBuiltin = (id: BuiltinModel, scale: Vec3): THREE.BufferGeometry => {
+  const { collider, rounded } = builtinShape(id, scale)
+  return shapeGeometry(collider, rounded)
+}
 
 /**
  * The same shape with hard edges, for **overlays**.

@@ -24,7 +24,8 @@ import {
   type Node as SceneNode,
   type Level,
   type Pose,
-  type Transform, validateLevel, applyBatch, refKey, OpError, type NodeRef, type Op } from '@mp/content'
+  type Transform, validateLevel, applyBatch, refKey, OpError, type NodeRef, type Op,
+  BUILTIN_LABELS, BUILTIN_MODELS, isBuiltinModel, scaleCollider, PRIMITIVE_LABELS, PRIMITIVE_ORDER, type PrimitiveKind } from '@mp/content'
 import { DEFAULT_REGISTRY, characterAccess, createComponentRuntime, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type ComponentRuntime, type Registry } from '@mp/components'
 import { createOrbitCamera } from '@mp/camera'
 import { PLAYER_NODE_ID, actionsHeld, type ModeDescriptor, readSettings } from '@mp/mode'
@@ -39,6 +40,7 @@ import {
   createPostFX,
   createGreyboxMaterial,
   createThreeStage,
+  geometryForBuiltin,
   geometryForCollider,
   lightAims,
   OrbitControls,
@@ -387,6 +389,12 @@ const repaintAfterOps = (ops: readonly Op[]): void => {
   if (open === null) return
   if (ops.every((o) => TRANSFORM_KINDS.has(o.kind))) {
     applyPreviewPoses()
+    // A remote scale change: the meshes are built from the scale (ADR 0090), so the touched subtrees redraw.
+    for (const o of ops) {
+      const ref: NodeRef | null = o.kind === 'setTransform' ? (o.table !== undefined ? { table: o.table, id: o.id } : { id: o.id }) : o.kind === 'setOverrideTransform' ? { owner: o.owner, node: o.node } : null
+      const i = ref === null ? null : open.indexOfRef(ref)
+      if (i !== null) rebuildSubtreeMeshes(i)
+    }
     scheduleRebuild()
     inspectorSync()
     updateTrackHelper()
@@ -654,20 +662,35 @@ const lightGizmo = (light: LightDesc): THREE.Object3D => {
 const buildItemMeshes = (g: THREE.Group, i: number): void => {
   if (doc === null) return
   const holder = meshHolderOf(g)
+  /**
+   * Drawn at final size (ADR 0090). The group carries the node's scale for its children and the gizmo; the
+   * holder undoes it, and every shape here is built from the *world* dimensions — as the game builds them
+   * from the baked collider. So a rounded edge is computed on the real size instead of being stretched with
+   * the scale, and a built-in shape is the unit shape times the scale. A model file gets the scale back.
+   */
+  g.updateWorldMatrix(true, false)
+  const ws = g.getWorldScale(new THREE.Vector3())
+  const inv = (v: number): number => (Math.abs(v) < 1e-6 ? 1 : 1 / v)
+  holder.scale.set(inv(ws.x), inv(ws.y), inv(ws.z))
+  const worldScale = vec3(ws.x, ws.y, ws.z)
   for (const spec of doc.meshSpecs(i)) {
     // The same precedence the game's level view uses, so the editor is never showing a different scene:
     // a model replaces the greybox shape, a material replaces the greybox style, and either falling
     // through leaves the piece as its collider, greyboxed when no material is assigned.
-    const model = spec.model !== undefined ? (runtime?.model(spec.model) ?? null) : null
+    const builtin = isBuiltinModel(spec.model) ? spec.model : null
+    const model = spec.model !== undefined && builtin === null ? (runtime?.model(spec.model) ?? null) : null
     const material = spec.material !== undefined ? (runtime?.material(spec.material) ?? null) : null
     let object: THREE.Object3D
     if (model !== null) {
       if (material !== null) model.traverse((o) => void (o instanceof THREE.Mesh && (o.material = material)))
       object = model
     } else {
-      object = new THREE.Mesh(geometryForCollider(spec.collider), material ?? createGreyboxMaterial())
+      const geometry = builtin !== null ? geometryForBuiltin(builtin, worldScale) : geometryForCollider(scaleCollider(spec.collider, worldScale))
+      object = new THREE.Mesh(geometry, material ?? createGreyboxMaterial())
     }
-    applyTransform(object, spec.transform.position, spec.transform.rotation, spec.transform.scale)
+    const p = spec.transform.position
+    applyTransform(object, vec3(p.x * ws.x, p.y * ws.y, p.z * ws.z), spec.transform.rotation, spec.transform.scale)
+    if (model !== null) object.scale.multiply(ws)
     object.traverse((o) => {
       if (o instanceof THREE.Mesh) {
         o.castShadow = true
@@ -769,6 +792,17 @@ const rebuildItemMeshes = (index: number): void => {
 const rebuildSelectedMeshes = (): void => {
   if (selected === null) return
   rebuildItemMeshes(selected)
+}
+
+/**
+ * Meshes are built from the world scale (ADR 0090), so a scale change on a node redraws it and everything
+ * under it. Depth-first order makes the subtree the run of deeper indices right after the node.
+ */
+const rebuildSubtreeMeshes = (i: number): void => {
+  const open = doc
+  if (open === null) return
+  const depth = open.depthOf(i)
+  for (let j = i; j < open.count() && (j === i || open.depthOf(j) > depth); j++) rebuildItemMeshes(j)
 }
 
 /**
@@ -1335,6 +1369,7 @@ gizmo.addEventListener('dragging-changed', (event) => {
 gizmo.addEventListener('objectChange', () => {
   writeBackSelected()
   mirrorDragToSelection()
+  if (edit.mode === 'scale') for (const i of selection) rebuildSubtreeMeshes(i)
   inspectorSync()
   updateTrackHelper()
 })
@@ -2603,7 +2638,7 @@ const menuFor = (index: number): MenuItem[] => {
         })),
       ],
     },
-    { label: 'Create empty child', divider: true, enabled: own, why, run: () => createEmpty(index) },
+    { label: 'Create child', divider: true, enabled: own, why, items: createMenu(index) },
     { label: 'Duplicate', hint: 'Ctrl+D', enabled: own, why, run: () => duplicateSelected() },
     { label: 'Delete', hint: 'Del', enabled: own, why, run: () => deleteSelected() },
     { label: 'Copy', hint: 'Ctrl+C', divider: true, enabled: own, why, run: () => copySelected() },
@@ -2627,9 +2662,15 @@ const menuFor = (index: number): MenuItem[] => {
   ]
 }
 
+/** What can be made: the built-in shapes at their preset sizes (ADR 0090), and an empty. */
+const createMenu = (parent: number | null, at?: Vec3): MenuItem[] => [
+  ...PRIMITIVE_ORDER.map((kind) => ({ label: PRIMITIVE_LABELS[kind], run: () => createPrimitive(kind, parent, at) })),
+  { label: 'Empty', divider: true, run: () => createEmpty(parent, at) },
+]
+
 /** The blank-space menu: what you can make when you are not pointing at anything. */
 const blankMenu = (): MenuItem[] => [
-  { label: 'Create empty object', run: () => createEmpty(null) },
+  { label: 'Create', items: createMenu(null) },
   { label: 'Paste', hint: 'Ctrl+V', enabled: clipboard.length > 0, why: 'nothing copied', divider: true, run: () => pasteClipboard(false) },
   { label: 'Expand all', divider: true, run: () => hierarchy.setAllOpen(true) },
   { label: 'Collapse all', run: () => hierarchy.setAllOpen(false) },
@@ -2654,6 +2695,23 @@ const createEmpty = (parent: number | null, at?: Vec3): void => {
   scheduleRebuild()
   select(landed)
   uiChanged()
+}
+
+/** Create a built-in shape at its preset size (ADR 0090) and select it. Placed like `createEmpty`. */
+const createPrimitive = (kind: PrimitiveKind, parent: number | null, at?: Vec3): void => {
+  if (doc === null) return
+  const where = at ?? (parent === null ? vec3(r4(controls.target.x), r4(controls.target.y), r4(controls.target.z)) : vec3(0, 0, 0))
+  const landed = doc.placePrimitive(kind, where, parent)
+  if (landed < 0) {
+    setStatus('nowhere to put that')
+    return
+  }
+  recordEdit(`create ${PRIMITIVE_LABELS[kind].toLowerCase()}`)
+  buildItems()
+  scheduleRebuild()
+  select(landed)
+  uiChanged()
+  loadNewReferences(buildItems)
 }
 
 /**
@@ -2726,7 +2784,7 @@ const viewportMenu = (index: number | null, point: Vec3 | null): MenuItem[] => {
   if (index !== null) return [{ label: 'Focus', hint: 'F', run: () => focusSelection() }, ...menuFor(index).map((m, n) => (n === 0 ? { ...m, divider: true } : m))]
   return [
     { label: 'Paste here', enabled: clipboard.length > 0 && point !== null, why: clipboard.length === 0 ? 'nothing copied' : 'no surface under the pointer', run: () => point !== null && pasteAt(point) },
-    { label: 'Create empty here', enabled: point !== null, why: 'no surface under the pointer', run: () => createEmpty(null, point ?? undefined) },
+    { label: 'Create here', enabled: point !== null, why: 'no surface under the pointer', items: createMenu(null, point ?? undefined) },
     { label: 'Focus on the selection', divider: true, enabled: selection.length > 0, why: 'nothing selected', run: () => focusSelection() },
   ]
 }
@@ -3439,6 +3497,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     g.quaternion.set(q.x, q.y, q.z, q.w)
     g.scale.set(t.scale.x, t.scale.y, t.scale.z)
     writeBackSelected()
+    rebuildSubtreeMeshes(selected) // the scale may have changed, and the meshes are built from it
     recordEdit('transform')
     applyPreviewPoses() // the rest pose moved, so the item's drawn pose at the playhead moved with it
     scheduleRebuild()
@@ -3478,6 +3537,8 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   },
   assetOptions: (of) => {
     const options: Record<string, string> = { '(none)': '' }
+    // The built-in shapes (ADR 0090) sit in the model slot beside the uploaded files.
+    if (of === 'model') for (const id of BUILTIN_MODELS) options[BUILTIN_LABELS[id]] = id
     const db = assets?.db
     if (db !== undefined) for (const a of assetsOfKind(db, of)) options[a.name] = a.id
     return options

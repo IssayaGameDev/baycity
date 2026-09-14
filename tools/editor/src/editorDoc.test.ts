@@ -617,12 +617,28 @@ describe('prefab mode', () => {
     expect(doc.kindOf(1), 'inside a prefab everything is the definition').toBe('own')
   })
 
-  it('offers primitives, and appends one under the root', () => {
+  it('offers primitives, and appends one under the root as a built-in shape sized by its scale', () => {
     const doc = prefabDoc(padPrefab())
     expect(doc.palette()).toContain('platform')
     const i = doc.place('platform', vec3(0, 1, 0))
     expect(doc.parentOf(i)).toBe(0)
-    expect(typesOn(doc, i)).toEqual([COLLIDER, RENDERER])
+    expect(typesOn(doc, i)).toEqual([COLLIDER, MESH, RENDERER])
+    // Unit collider, the size in the scale (ADR 0090).
+    expect(paramOn(doc, i, COLLIDER, 'shape')).toEqual({ kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) })
+    expect(paramOn(doc, i, MESH, 'model')).toBe('builtin:rounded-box')
+    expect(doc.transformOf(i).scale).toEqual(vec3(3, 0.3, 3))
+    expect(doc.builtinOf(i)).toBe('builtin:rounded-box')
+  })
+
+  it('a built-in picked on a node locks its colliders to the unit shape, in one batch', () => {
+    const doc = prefabDoc(padPrefab())
+    const i = doc.place('box', vec3(0, 0, 0))
+    doc.setParams(i, idOf(doc, i, COLLIDER), { shape: { kind: 'box', halfExtents: vec3(4, 2, 1) } })
+    doc.setParams(i, idOf(doc, i, MESH), { model: 'builtin:sphere' })
+    expect(paramOn(doc, i, COLLIDER, 'shape'), 'the collider followed the shape').toEqual({ kind: 'ball', radius: 0.5 })
+    expect(doc.builtinOf(i)).toBe('builtin:sphere')
+    doc.setParams(i, idOf(doc, i, MESH), { model: '' })
+    expect(doc.builtinOf(i), 'a file or nothing: the collider is a free shape again').toBeNull()
   })
 
   it('protects the root, which is the file', () => {

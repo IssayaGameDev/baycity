@@ -29,6 +29,12 @@ import {
   applyBatch,
   type NodeRef,
   type Op,
+  isBuiltinModel,
+  unitColliderFor,
+  PRIMITIVE_ORDER,
+  PRIMITIVE_PRESETS,
+  type BuiltinModel,
+  type PrimitiveKind,
 } from '@mp/content'
 import { DEFAULT_REGISTRY, type Registry } from '@mp/components'
 import type { LightDesc } from '@mp/render-three'
@@ -204,6 +210,13 @@ export interface Doc {
    * only way to get one was to place something and delete its components.
    */
   placeEmpty: (position: Vec3, parent: number | null) => number
+  /**
+   * A built-in shape at its preset scale (ADR 0090): unit collider, `Mesh` on the built-in, unsurfaced
+   * `Renderer`. Same parent rule as `placeEmpty`.
+   */
+  placePrimitive: (kind: PrimitiveKind, position: Vec3, parent: number | null) => number
+  /** The built-in shape this node draws, or `null` — when set, its colliders are locked to the unit shape. */
+  builtinOf: (i: number) => BuiltinModel | null
   /** What a palette entry would place, without placing it — what a Project tile previews. */
   prefabForPalette: (name: string) => Node | undefined
   remove: (i: number) => void
@@ -355,13 +368,18 @@ const freshId = (): string => {
 const ZERO: Vec3 = { x: 0, y: 0, z: 0 }
 
 /** Primitive nodes for prefab mode. Only shapes the physics loader supports (no cylinder). */
-const PRIMITIVES: Record<string, () => ColliderDesc> = {
-  box: () => ({ kind: 'box', halfExtents: vec3(1, 0.5, 1) }),
-  platform: () => ({ kind: 'box', halfExtents: vec3(1.5, 0.15, 1.5) }),
-  wall: () => ({ kind: 'box', halfExtents: vec3(1.5, 1, 0.15) }),
-  ball: () => ({ kind: 'ball', radius: 0.5 }),
-  capsule: () => ({ kind: 'capsule', halfHeight: 0.5, radius: 0.4 }),
+/** A built-in shape as a node (ADR 0090): unit collider, the `Mesh`, an unsurfaced `Renderer`, the preset scale. */
+const primitiveNode = (kind: PrimitiveKind, position: Vec3, name: string = kind): Node => {
+  const preset = PRIMITIVE_PRESETS[kind]
+  const one = preset.scale.x === 1 && preset.scale.y === 1 && preset.scale.z === 1
+  return {
+    id: freshId(),
+    name,
+    transform: { position, ...(one ? {} : { scale: { ...preset.scale } }) },
+    components: [component(COLLIDER, { shape: unitColliderFor(preset.model), center: ZERO }), component(MESH, { model: preset.model }), component(RENDERER, { material: '' })],
+  }
 }
+const isPrimitiveKind = (name: string): name is PrimitiveKind => (PRIMITIVE_ORDER as readonly string[]).includes(name)
 
 const component = (type: string, params: Record<string, unknown>): ComponentData => ({ id: freshId(), type, params })
 
@@ -642,12 +660,26 @@ const docOver = (
   const patchParams = (i: number, componentId: string, patch: Record<string, unknown>): void => {
     const n = node(i)
     if (n === undefined) return
-    if (n.owner === undefined) {
-      if (!n.authored.components.some((x) => x.id === componentId)) return
-      commit([{ kind: 'setParams', id: n.authored.id, componentId, patch }])
-      return
+    const target = n.view.components.find((x) => x.id === componentId)
+    if (target === undefined) return
+    const paramsOp = (cid: string, p: Record<string, unknown>): Op =>
+      n.owner === undefined ? { kind: 'setParams', id: n.authored.id, componentId: cid, patch: p } : { kind: 'setOverrideParams', owner: n.owner.id, node: n.authored.id, componentId: cid, patch: p }
+    const ops: Op[] = [paramsOp(componentId, patch)]
+    // A built-in shape picked (ADR 0090): scale is the size, so every collider on the node becomes the unit
+    // shape of that built-in. Same batch, one undo.
+    if (target.type === MESH && isBuiltinModel(patch.model)) {
+      const unit = unitColliderFor(patch.model)
+      for (const c of n.view.components) if (c.type === COLLIDER) ops.push(paramsOp(c.id, { shape: unit }))
     }
-    commit([{ kind: 'setOverrideParams', owner: n.owner.id, node: n.authored.id, componentId, patch }])
+    commit(ops)
+  }
+
+  const builtinOf = (i: number): BuiltinModel | null => {
+    const n = node(i)
+    if (n === undefined) return null
+    const mesh = n.view.components.find((c) => c.type === MESH && enabledOf(c))
+    const model = mesh === undefined ? '' : stringParam(mesh, 'model', '')
+    return isBuiltinModel(model) ? model : null
   }
 
   /** Keyframe parameters on a node, in component order then declaration order. */
@@ -680,6 +712,9 @@ const docOver = (
     const n = node(i)
     if (n === undefined || !canAdd(i, type)) return null
     const fresh: ComponentData = { id: freshId(), type, params: { ...registry.defaults(type) } }
+    // A collider joining a node that draws a built-in shape is the unit shape of that built-in (ADR 0090).
+    const builtin = type === COLLIDER ? builtinOf(i) : null
+    if (builtin !== null) fresh.params.shape = unitColliderFor(builtin)
     if (n.owner === undefined) commit([{ kind: 'addComponent', id: n.authored.id, component: fresh }])
     else commit([{ kind: 'addOverrideComponent', owner: n.owner.id, node: n.authored.id, component: fresh }])
     return fresh.id
@@ -798,11 +833,10 @@ const docOver = (
      * In level mode, only what *this level* defines: prefab **files** are placed from the Project explorer by
      * asset id, and listing them here as well is what made one prefab appear twice. In prefab mode, primitives.
      */
-    palette: () => (mode === 'prefab' ? Object.keys(PRIMITIVES) : Object.keys(level.prefabs ?? {})),
+    palette: () => (mode === 'prefab' ? [...PRIMITIVE_ORDER] : Object.keys(level.prefabs ?? {})),
     place: (name, position) => {
       if (mode === 'prefab') {
-        const make = PRIMITIVES[name] ?? PRIMITIVES['box']!
-        const fresh = solidNode(make(), { position }, name)
+        const fresh = primitiveNode(isPrimitiveKind(name) ? name : 'box', position, name)
         const host = roots[0]
         if (host === undefined) return -1
         commit([{ kind: 'insertNode', parent: host.id, index: host.children?.length ?? 0, node: fresh }])
@@ -866,6 +900,20 @@ const docOver = (
       commit([{ kind: 'insertNode', parent: host?.id ?? null, index: host === undefined ? roots.length : (host.children?.length ?? 0), node: fresh }])
       return indexOfId(fresh.id)
     },
+    placePrimitive: (kind, position, parent) => {
+      const fresh = primitiveNode(kind, position)
+      let host: Node | undefined
+      if (parent !== null) {
+        host = own(parent)?.authored
+        if (host === undefined) return -1
+      } else if (mode === 'prefab') {
+        host = roots[0]
+        if (host === undefined) return -1
+      }
+      commit([{ kind: 'insertNode', parent: host?.id ?? null, index: host === undefined ? roots.length : (host.children?.length ?? 0), node: fresh }])
+      return indexOfId(fresh.id)
+    },
+    builtinOf,
     placeModel: (assetId, position) => {
       const fresh = solidNode({ kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) }, { position }, undefined, assetId)
       const host = mode === 'prefab' ? roots[0] : undefined
@@ -875,8 +923,7 @@ const docOver = (
     },
     prefabForPalette: (name) => {
       if (mode === 'prefab') {
-        const make = PRIMITIVES[name]
-        return make === undefined ? undefined : { id: name, name, transform: { position: vec3(0, 0, 0) }, components: [], children: [solidNode(make(), { position: vec3(0, 0, 0) }, name)] }
+        return isPrimitiveKind(name) ? { id: name, name, transform: { position: vec3(0, 0, 0) }, components: [], children: [primitiveNode(name, vec3(0, 0, 0))] } : undefined
       }
       return level.prefabs?.[name] ?? library[name]
     },

@@ -1,5 +1,6 @@
-import { COLLIDER, MESH, RENDERER, stringParam, vec3Param, type AssetDatabase, type ColliderDesc, type MaterialAsset, type Node } from '@mp/content'
-import { createGreyboxMaterial, createThumbnailer, geometryForCollider, THREE, type AssetRuntime, type Thumbnailer } from '@mp/render-three'
+import { COLLIDER, isBuiltinModel, MESH, RENDERER, scaleCollider, stringParam, vec3Param, type AssetDatabase, type ColliderDesc, type MaterialAsset, type Node } from '@mp/content'
+import type { Vec3 } from '@mp/core'
+import { createGreyboxMaterial, createThumbnailer, geometryForBuiltin, geometryForCollider, THREE, type AssetRuntime, type Thumbnailer } from '@mp/render-three'
 
 /**
  * Thumbnails for the Project panel, cached.
@@ -64,13 +65,23 @@ export const createPreviews = (host: PreviewHost): Previews => {
     const disposables: THREE.BufferGeometry[] = []
     const owned: THREE.Material[] = []
 
-    const walk = (node: Node, parent: THREE.Object3D): void => {
+    /**
+     * `scale` is the node's **world** scale, accumulated down the walk: every shape is built at its final
+     * dimensions (as the game builds them from the baked collider, ADR 0090) and then counter-scaled, so a
+     * rounded edge is right at any scale and a built-in shape is its unit shape times the scale.
+     */
+    const walk = (node: Node, parent: THREE.Object3D, parentScale: Vec3): void => {
       const holder = new THREE.Group()
       const t = node.transform
       holder.position.set(t.position.x, t.position.y, t.position.z)
       if (t.rotation !== undefined) holder.rotation.set(t.rotation.x, t.rotation.y, t.rotation.z)
       if (t.scale !== undefined) holder.scale.set(t.scale.x, t.scale.y, t.scale.z)
       parent.add(holder)
+      const own = t.scale ?? { x: 1, y: 1, z: 1 }
+      const scale = { x: parentScale.x * own.x, y: parentScale.y * own.y, z: parentScale.z * own.z }
+      const undo = (o: THREE.Object3D): void => {
+        o.scale.set(scale.x === 0 ? 1 : 1 / scale.x, scale.y === 0 ? 1 : 1 / scale.y, scale.z === 0 ? 1 : 1 / scale.z)
+      }
 
       const enabled = node.components.filter((c) => c.enabled !== false)
       const renderer = enabled.find((c) => c.type === RENDERER)
@@ -79,25 +90,29 @@ export const createPreviews = (host: PreviewHost): Previews => {
         const material = materialId === '' ? undefined : runtime?.material(materialId)
         const mesh = enabled.find((c) => c.type === MESH)
         const modelId = mesh === undefined ? '' : stringParam(mesh, 'model', '')
-        const model = modelId === '' ? undefined : runtime?.model(modelId)
+        const builtin = isBuiltinModel(modelId) ? modelId : null
+        const model = modelId === '' || builtin !== null ? undefined : runtime?.model(modelId)
         if (model != null) {
           holder.add(model)
         } else {
           for (const c of enabled.filter((x) => x.type === COLLIDER)) {
-            const geometry = geometryForCollider(c.params.shape as ColliderDesc)
+            const shape = c.params.shape as ColliderDesc
+            const geometry = builtin !== null ? geometryForBuiltin(builtin, scale) : geometryForCollider(scaleCollider(shape, scale))
             disposables.push(geometry)
             const mat = material ?? createGreyboxMaterial()
             if (material == null) owned.push(mat)
             const mesh = new THREE.Mesh(geometry, mat)
             const centre = vec3Param(c, 'center', { x: 0, y: 0, z: 0 })
             mesh.position.set(centre.x, centre.y, centre.z)
+            undo(mesh)
             holder.add(mesh)
+            if (builtin !== null) break // a built-in draws the node once, whatever its colliders
           }
         }
       }
-      for (const kid of node.children ?? []) walk(kid, holder)
+      for (const kid of node.children ?? []) walk(kid, holder, scale)
     }
-    walk(root, group)
+    walk(root, group, { x: 1, y: 1, z: 1 })
     if (group.getObjectByProperty('type', 'Mesh') === undefined) return null
     // Everything this built is thrown away after the shot; the runtime's cached models and materials are
     // not ours to free, which is why only what we created is tracked.
