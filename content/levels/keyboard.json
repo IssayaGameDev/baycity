@@ -82,815 +82,8 @@
           "z": 5
         }
       },
-      "components": [
-        {
-          "id": "c0",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 4,
-                "y": 0.25,
-                "z": 3
-              }
-            }
-          }
-        },
-        {
-          "id": "c1",
-          "type": "Renderer",
-          "params": {
-            "material": "55205761e38bc929"
-          }
-        },
-        {
-          "id": "c2",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 0
-          }
-        }
-      ],
-      "children": [
-        {
-          "id": "m0",
-          "transform": {
-            "position": {
-              "x": 0,
-              "y": 1.75,
-              "z": 0
-            },
-            "scale": {
-              "x": 0.9999,
-              "y": 1,
-              "z": 1
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Spawn",
-              "params": {}
-            }
-          ]
-        },
-        {
-          "id": "steppads",
-          "name": "step-pads",
-          "transform": {
-            "position": {
-              "x": -3.6364,
-              "y": 0,
-              "z": 0
-            },
-            "scale": {
-              "x": 0.303,
-              "y": 1,
-              "z": 0.2
-            }
-          },
-          "components": [],
-          "children": [
-            {
-              "id": "sp1",
-              "name": "step-pad-1",
-              "transform": {
-                "position": {
-                  "x": 1,
-                  "y": 0.5,
-                  "z": 9.5
-                },
-                "scale": {
-                  "x": 2,
-                  "y": 0.5,
-                  "z": 2
-                }
-              },
-              "components": [
-                {
-                  "id": "c0",
-                  "type": "Collider",
-                  "params": {
-                    "shape": {
-                      "kind": "box",
-                      "halfExtents": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "mesh",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:rounded-box"
-                  }
-                },
-                {
-                  "id": "c1",
-                  "type": "Renderer",
-                  "params": {
-                    "material": "d8dcf8f542bebdf7"
-                  }
-                },
-                {
-                  "id": "c2",
-                  "type": "StepPad",
-                  "params": {
-                    "perStep": 1,
-                    "requiresWins": 0,
-                    "activeMaterial": "6bbc0130aff311b5",
-                    "idleMaterial": "d67ddcac4f57efc8"
-                  }
-                }
-              ]
-            },
-            {
-              "id": "sp2",
-              "name": "step-pad-2",
-              "transform": {
-                "position": {
-                  "x": 1,
-                  "y": 0.5,
-                  "z": 7
-                },
-                "scale": {
-                  "x": 2,
-                  "y": 0.5,
-                  "z": 2
-                }
-              },
-              "components": [
-                {
-                  "id": "c0",
-                  "type": "Collider",
-                  "params": {
-                    "shape": {
-                      "kind": "box",
-                      "halfExtents": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "mesh",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:rounded-box"
-                  }
-                },
-                {
-                  "id": "c1",
-                  "type": "Renderer",
-                  "params": {
-                    "material": "d8dcf8f542bebdf7"
-                  }
-                },
-                {
-                  "id": "c2",
-                  "type": "StepPad",
-                  "params": {
-                    "perStep": 2,
-                    "requiresWins": 3,
-                    "activeMaterial": "6bbc0130aff311b5",
-                    "idleMaterial": "d67ddcac4f57efc8"
-                  }
-                }
-              ]
-            },
-            {
-              "id": "sp3",
-              "name": "step-pad-3",
-              "transform": {
-                "position": {
-                  "x": 1,
-                  "y": 0.5,
-                  "z": 4.5
-                },
-                "scale": {
-                  "x": 2,
-                  "y": 0.5,
-                  "z": 2
-                }
-              },
-              "components": [
-                {
-                  "id": "c0",
-                  "type": "Collider",
-                  "params": {
-                    "shape": {
-                      "kind": "box",
-                      "halfExtents": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "mesh",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:rounded-box"
-                  }
-                },
-                {
-                  "id": "c1",
-                  "type": "Renderer",
-                  "params": {
-                    "material": "d8dcf8f542bebdf7"
-                  }
-                },
-                {
-                  "id": "c2",
-                  "type": "StepPad",
-                  "params": {
-                    "perStep": 5,
-                    "requiresWins": 15,
-                    "activeMaterial": "6bbc0130aff311b5",
-                    "idleMaterial": "d67ddcac4f57efc8"
-                  }
-                }
-              ]
-            },
-            {
-              "id": "sp4",
-              "name": "step-pad-4",
-              "transform": {
-                "position": {
-                  "x": 1,
-                  "y": 0.5,
-                  "z": 2
-                },
-                "scale": {
-                  "x": 2,
-                  "y": 0.5,
-                  "z": 2
-                }
-              },
-              "components": [
-                {
-                  "id": "c0",
-                  "type": "Collider",
-                  "params": {
-                    "shape": {
-                      "kind": "box",
-                      "halfExtents": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "mesh",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:rounded-box"
-                  }
-                },
-                {
-                  "id": "c1",
-                  "type": "Renderer",
-                  "params": {
-                    "material": "d8dcf8f542bebdf7"
-                  }
-                },
-                {
-                  "id": "c2",
-                  "type": "StepPad",
-                  "params": {
-                    "perStep": 25,
-                    "requiresWins": 100,
-                    "activeMaterial": "6bbc0130aff311b5",
-                    "idleMaterial": "d67ddcac4f57efc8"
-                  }
-                }
-              ]
-            },
-            {
-              "id": "sp5",
-              "name": "step-pad-5",
-              "transform": {
-                "position": {
-                  "x": 1.0001,
-                  "y": 0.5,
-                  "z": -0.5
-                },
-                "scale": {
-                  "x": 2,
-                  "y": 0.5,
-                  "z": 2
-                }
-              },
-              "components": [
-                {
-                  "id": "c0",
-                  "type": "Collider",
-                  "params": {
-                    "shape": {
-                      "kind": "box",
-                      "halfExtents": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "mesh",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:rounded-box"
-                  }
-                },
-                {
-                  "id": "c1",
-                  "type": "Renderer",
-                  "params": {
-                    "material": "d8dcf8f542bebdf7"
-                  }
-                },
-                {
-                  "id": "c2",
-                  "type": "StepPad",
-                  "params": {
-                    "perStep": 50,
-                    "requiresWins": 500,
-                    "activeMaterial": "6bbc0130aff311b5",
-                    "idleMaterial": "d67ddcac4f57efc8"
-                  }
-                }
-              ]
-            },
-            {
-              "id": "sp6",
-              "name": "step-pad-6",
-              "transform": {
-                "position": {
-                  "x": 1.0001,
-                  "y": 0.5,
-                  "z": -3
-                },
-                "scale": {
-                  "x": 2,
-                  "y": 0.5,
-                  "z": 2
-                }
-              },
-              "components": [
-                {
-                  "id": "c0",
-                  "type": "Collider",
-                  "params": {
-                    "shape": {
-                      "kind": "box",
-                      "halfExtents": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "mesh",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:rounded-box"
-                  }
-                },
-                {
-                  "id": "c1",
-                  "type": "Renderer",
-                  "params": {
-                    "material": "d8dcf8f542bebdf7"
-                  }
-                },
-                {
-                  "id": "c2",
-                  "type": "StepPad",
-                  "params": {
-                    "perStep": 100,
-                    "requiresWins": 2500,
-                    "activeMaterial": "6bbc0130aff311b5",
-                    "idleMaterial": "d67ddcac4f57efc8"
-                  }
-                }
-              ]
-            },
-            {
-              "id": "sp7",
-              "name": "step-pad-7",
-              "transform": {
-                "position": {
-                  "x": 1,
-                  "y": 0.5,
-                  "z": -5.5
-                },
-                "scale": {
-                  "x": 2,
-                  "y": 0.5,
-                  "z": 2
-                }
-              },
-              "components": [
-                {
-                  "id": "c0",
-                  "type": "Collider",
-                  "params": {
-                    "shape": {
-                      "kind": "box",
-                      "halfExtents": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "mesh",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:rounded-box"
-                  }
-                },
-                {
-                  "id": "c1",
-                  "type": "Renderer",
-                  "params": {
-                    "material": "d8dcf8f542bebdf7"
-                  }
-                },
-                {
-                  "id": "c2",
-                  "type": "StepPad",
-                  "params": {
-                    "perStep": 250,
-                    "requiresWins": 15000,
-                    "activeMaterial": "6bbc0130aff311b5",
-                    "idleMaterial": "d67ddcac4f57efc8"
-                  }
-                }
-              ]
-            },
-            {
-              "id": "sp8",
-              "name": "step-pad-8",
-              "transform": {
-                "position": {
-                  "x": 1,
-                  "y": 0.5,
-                  "z": -8
-                },
-                "scale": {
-                  "x": 2,
-                  "y": 0.5,
-                  "z": 2
-                }
-              },
-              "components": [
-                {
-                  "id": "c0",
-                  "type": "Collider",
-                  "params": {
-                    "shape": {
-                      "kind": "box",
-                      "halfExtents": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "mesh",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:rounded-box"
-                  }
-                },
-                {
-                  "id": "c1",
-                  "type": "Renderer",
-                  "params": {
-                    "material": "d8dcf8f542bebdf7"
-                  }
-                },
-                {
-                  "id": "c2",
-                  "type": "StepPad",
-                  "params": {
-                    "perStep": 500,
-                    "requiresWins": 50000,
-                    "activeMaterial": "6bbc0130aff311b5",
-                    "idleMaterial": "d67ddcac4f57efc8"
-                  }
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "54515f53",
-          "name": "Treadmills",
-          "transform": {
-            "position": {
-              "x": -0.3482,
-              "y": -0.366,
-              "z": 0.9012
-            },
-            "scale": {
-              "x": 0.303,
-              "y": 1,
-              "z": 0.2
-            }
-          },
-          "components": [],
-          "children": [
-            {
-              "id": "t0",
-              "name": "treadmill +1",
-              "transform": {
-                "position": {
-                  "x": -5.8509,
-                  "y": 0.866,
-                  "z": -17.5061
-                },
-                "scale": {
-                  "x": 3,
-                  "y": 0.5,
-                  "z": 3
-                }
-              },
-              "components": [
-                {
-                  "id": "c0",
-                  "type": "Collider",
-                  "params": {
-                    "shape": {
-                      "kind": "box",
-                      "halfExtents": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "mesh",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:rounded-box"
-                  }
-                },
-                {
-                  "id": "c1",
-                  "type": "Renderer",
-                  "params": {
-                    "material": "d67ddcac4f57efc8"
-                  }
-                },
-                {
-                  "id": "c2",
-                  "type": "Treadmill",
-                  "params": {
-                    "multiplier": 1
-                  }
-                }
-              ]
-            },
-            {
-              "id": "e5f507ee",
-              "name": "treadmill +5",
-              "transform": {
-                "position": {
-                  "x": -1.8509,
-                  "y": 0.866,
-                  "z": -17.5061
-                },
-                "scale": {
-                  "x": 3,
-                  "y": 0.5,
-                  "z": 3
-                }
-              },
-              "components": [
-                {
-                  "id": "c0",
-                  "type": "Collider",
-                  "params": {
-                    "shape": {
-                      "kind": "box",
-                      "halfExtents": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "mesh",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:rounded-box"
-                  }
-                },
-                {
-                  "id": "c1",
-                  "type": "Renderer",
-                  "params": {
-                    "material": "d67ddcac4f57efc8"
-                  }
-                },
-                {
-                  "id": "c2",
-                  "type": "Treadmill",
-                  "params": {
-                    "multiplier": 5
-                  }
-                }
-              ]
-            },
-            {
-              "id": "f1682fde",
-              "name": "treadmill +10",
-              "transform": {
-                "position": {
-                  "x": 2.1491,
-                  "y": 0.866,
-                  "z": -17.5061
-                },
-                "scale": {
-                  "x": 3,
-                  "y": 0.5,
-                  "z": 3
-                }
-              },
-              "components": [
-                {
-                  "id": "c0",
-                  "type": "Collider",
-                  "params": {
-                    "shape": {
-                      "kind": "box",
-                      "halfExtents": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "mesh",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:rounded-box"
-                  }
-                },
-                {
-                  "id": "c1",
-                  "type": "Renderer",
-                  "params": {
-                    "material": "d67ddcac4f57efc8"
-                  }
-                },
-                {
-                  "id": "c2",
-                  "type": "Treadmill",
-                  "params": {
-                    "multiplier": 10
-                  }
-                }
-              ]
-            },
-            {
-              "id": "546bb4bd",
-              "name": "treadmill +50",
-              "transform": {
-                "position": {
-                  "x": 6.1491,
-                  "y": 0.866,
-                  "z": -17.5061
-                },
-                "scale": {
-                  "x": 3,
-                  "y": 0.5,
-                  "z": 3
-                }
-              },
-              "components": [
-                {
-                  "id": "c0",
-                  "type": "Collider",
-                  "params": {
-                    "shape": {
-                      "kind": "box",
-                      "halfExtents": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "mesh",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:rounded-box"
-                  }
-                },
-                {
-                  "id": "c1",
-                  "type": "Renderer",
-                  "params": {
-                    "material": "d67ddcac4f57efc8"
-                  }
-                },
-                {
-                  "id": "c2",
-                  "type": "Treadmill",
-                  "params": {
-                    "multiplier": 50
-                  }
-                }
-              ]
-            },
-            {
-              "id": "bd3140bd",
-              "name": "treadmill +100",
-              "transform": {
-                "position": {
-                  "x": 10.1491,
-                  "y": 0.866,
-                  "z": -17.5061
-                },
-                "scale": {
-                  "x": 3,
-                  "y": 0.5,
-                  "z": 3
-                }
-              },
-              "components": [
-                {
-                  "id": "c0",
-                  "type": "Collider",
-                  "params": {
-                    "shape": {
-                      "kind": "box",
-                      "halfExtents": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "mesh",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:rounded-box"
-                  }
-                },
-                {
-                  "id": "c1",
-                  "type": "Renderer",
-                  "params": {
-                    "material": "d67ddcac4f57efc8"
-                  }
-                },
-                {
-                  "id": "c2",
-                  "type": "Treadmill",
-                  "params": {
-                    "multiplier": 100
-                  }
-                }
-              ]
-            }
-          ]
-        }
-      ]
+      "components": [],
+      "prefab": "9cf0d022dfa16625"
     },
     {
       "id": "b803cc8a",
@@ -2006,6 +1199,403 @@
           "x": 1,
           "y": 5.5,
           "z": 196
+        }
+      },
+      "components": [],
+      "prefab": "8a569d7a7c66c3c7",
+      "overrides": {
+        "43638615": {
+          "params": {
+            "fd50a89a": {
+              "wins": 3
+            }
+          }
+        },
+        "8509bf48": {
+          "name": "treadmill +1"
+        }
+      }
+    },
+    {
+      "id": "2e0cd59e",
+      "name": "board-5",
+      "transform": {
+        "position": {
+          "x": 5.5,
+          "y": 5,
+          "z": 212.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0.7854
+        },
+        "scale": {
+          "x": 7,
+          "y": 0.5,
+          "z": 5.6
+        }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            }
+          }
+        },
+        {
+          "id": "mesh",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:rounded-box"
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Renderer",
+          "params": {
+            "material": "55205761e38bc929"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "Keyboard",
+          "params": {
+            "pitch": 0.9,
+            "fill": 0.88,
+            "height": 0.45,
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 280
+          }
+        }
+      ]
+    },
+    {
+      "id": "12b0cf52",
+      "name": "board-5",
+      "transform": {
+        "position": {
+          "x": 5.5,
+          "y": 5,
+          "z": 228.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0.7854
+        },
+        "scale": {
+          "x": 7,
+          "y": 0.5,
+          "z": 5.6
+        }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            }
+          }
+        },
+        {
+          "id": "mesh",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:rounded-box"
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Renderer",
+          "params": {
+            "material": "55205761e38bc929"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "Keyboard",
+          "params": {
+            "pitch": 0.9,
+            "fill": 0.88,
+            "height": 0.45,
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 280
+          }
+        }
+      ]
+    },
+    {
+      "id": "2b3fc60e",
+      "name": "board-5",
+      "transform": {
+        "position": {
+          "x": 5.5,
+          "y": 5,
+          "z": 247
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 0.7854
+        },
+        "scale": {
+          "x": 7,
+          "y": 0.5,
+          "z": 5.6
+        }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            }
+          }
+        },
+        {
+          "id": "mesh",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:rounded-box"
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Renderer",
+          "params": {
+            "material": "55205761e38bc929"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "Keyboard",
+          "params": {
+            "pitch": 0.9,
+            "fill": 0.88,
+            "height": 0.45,
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 280
+          }
+        }
+      ]
+    },
+    {
+      "id": "58caf032",
+      "name": "board-5",
+      "transform": {
+        "position": {
+          "x": -3.5,
+          "y": 6.5,
+          "z": 219.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": -1.0472
+        },
+        "scale": {
+          "x": 7,
+          "y": 0.5,
+          "z": 5.6
+        }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            }
+          }
+        },
+        {
+          "id": "mesh",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:rounded-box"
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Renderer",
+          "params": {
+            "material": "55205761e38bc929"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "Keyboard",
+          "params": {
+            "pitch": 0.9,
+            "fill": 0.88,
+            "height": 0.45,
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 280
+          }
+        }
+      ]
+    },
+    {
+      "id": "0618a42e",
+      "name": "board-5",
+      "transform": {
+        "position": {
+          "x": -3.5,
+          "y": 6.5,
+          "z": 241
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": -1.0472
+        },
+        "scale": {
+          "x": 7,
+          "y": 0.5,
+          "z": 5.6
+        }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            }
+          }
+        },
+        {
+          "id": "mesh",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:rounded-box"
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Renderer",
+          "params": {
+            "material": "55205761e38bc929"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "Keyboard",
+          "params": {
+            "pitch": 0.9,
+            "fill": 0.88,
+            "height": 0.45,
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 280
+          }
+        }
+      ]
+    },
+    {
+      "id": "24abb0dd",
+      "name": "board-5",
+      "transform": {
+        "position": {
+          "x": -3.5,
+          "y": 6.5,
+          "z": 258
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": -1.0472
+        },
+        "scale": {
+          "x": 7,
+          "y": 0.5,
+          "z": 5.6
+        }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            }
+          }
+        },
+        {
+          "id": "mesh",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:rounded-box"
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Renderer",
+          "params": {
+            "material": "55205761e38bc929"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "Keyboard",
+          "params": {
+            "pitch": 0.9,
+            "fill": 0.88,
+            "height": 0.45,
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 280
+          }
+        }
+      ]
+    },
+    {
+      "id": "114e57f4",
+      "name": "Stage End 3",
+      "transform": {
+        "position": {
+          "x": 1,
+          "y": 5.5,
+          "z": 272.5
         }
       },
       "components": [],
