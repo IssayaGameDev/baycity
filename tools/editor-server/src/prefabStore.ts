@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { importAssets } from './assetImporter'
@@ -20,8 +20,10 @@ import type { Node } from '../../../packages/content/src/types'
 export interface PrefabStore {
   /** The prefab file's root node for this id, or `undefined` when there is no such file. */
   root: (assetId: string) => Node | undefined
-  /** Repo-relative path of a prefab asset, for a lock key or a change report. */
+  /** Path of a prefab asset relative to the assets folder, for a lock key or a change report. */
   pathOf: (assetId: string) => string | undefined
+  /** Write a prefab back to its own file. Returns the path written, or `null` when the id is unknown. */
+  write: (assetId: string, root: Node) => string | null
 }
 
 const isNode = (v: unknown): v is Node => typeof v === 'object' && v !== null && Array.isArray((v as { components?: unknown }).components)
@@ -44,6 +46,12 @@ export const createPrefabStore = (assetsDir: string): PrefabStore => {
 
   return {
     pathOf,
+    write: (assetId, root) => {
+      const rel = pathOf(assetId)
+      if (rel === undefined) return null
+      writeFileSync(join(assetsDir, rel), `${JSON.stringify(root, null, 2)}\n`)
+      return rel
+    },
     root: (assetId) => {
       const rel = pathOf(assetId)
       if (rel === undefined) return undefined

@@ -262,7 +262,7 @@ const sseReader = (r: Response): { take: (count: number) => Promise<{ event: str
 describe('live editing over the wire', () => {
   it('streams hello + snapshot, applies a batch and echoes it with the seq, serves the live copy, refuses a PUT', async () => {
     const ctrl = new AbortController()
-    const stream = await fetch(`${base}/api/live/a/events`, { headers: { 'x-user': 'ada' }, signal: ctrl.signal })
+    const stream = await fetch(`${base}/api/live/level/a/events`, { headers: { 'x-user': 'ada' }, signal: ctrl.signal })
     expect(stream.status).toBe(200)
     expect(stream.headers.get('content-type')).toContain('text/event-stream')
     const sse = sseReader(stream)
@@ -272,12 +272,12 @@ describe('live editing over the wire', () => {
     expect(snapshot!.event).toBe('snapshot')
     expect((snapshot!.data as { seq: number }).seq).toBe(0)
 
-    const r = await call('ada', 'POST', '/api/live/a/ops', { connId, batchId: 'b1', ops: [{ kind: 'setName', id: 'a', name: 'A' }] })
+    const r = await call('ada', 'POST', '/api/live/level/a/ops', { connId, batchId: 'b1', ops: [{ kind: 'setName', id: 'a', name: 'A' }] })
     expect(r.status).toBe(400) // 'a' is the level id, not a node: the fixture has no nodes
     const put = await call('ada', 'PUT', '/api/levels/a', LEVEL)
     expect(put.status).toBe(409)
 
-    const ok = await call('ada', 'POST', '/api/live/a/ops', {
+    const ok = await call('ada', 'POST', '/api/live/level/a/ops', {
       connId,
       batchId: 'b2',
       ops: [{ kind: 'insertNode', parent: null, index: 0, node: { id: 'n1', transform: { position: { x: 0, y: 0, z: 0 } }, components: [] } }],
@@ -292,10 +292,10 @@ describe('live editing over the wire', () => {
     expect(JSON.parse(readFileSync(join(root, 'content/levels/a.json'), 'utf8')).nodes, 'not on disk yet').toHaveLength(0)
 
     // Foreign connection, wrong person.
-    expect((await call('bob', 'POST', '/api/live/a/ops', { connId, batchId: 'x', ops: [] })).status).toBe(400)
+    expect((await call('bob', 'POST', '/api/live/level/a/ops', { connId, batchId: 'x', ops: [] })).status).toBe(400)
 
     // Flush writes and reports the contributor; the mirror's tree flushes too.
-    await call('ada', 'POST', '/api/live/a/flush', { connId })
+    await call('ada', 'POST', '/api/live/level/a/flush', { connId })
     expect(JSON.parse(readFileSync(join(root, 'content/levels/a.json'), 'utf8')).nodes).toHaveLength(1)
     expect(liveChanged).toEqual([{ users: ['Ada'], path: 'content/levels/a.json' }])
 
@@ -308,7 +308,7 @@ describe('live editing over the wire', () => {
   })
 
   it('a level that is not there is a 404, not a stream', async () => {
-    const r = await call('ada', 'GET', '/api/live/nope/events')
+    const r = await call('ada', 'GET', '/api/live/level/nope/events')
     expect(r.status).toBe(404)
   })
 })
