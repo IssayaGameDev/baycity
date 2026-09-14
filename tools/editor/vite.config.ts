@@ -9,6 +9,7 @@ import { REPO_CONTENT, contentAlias } from '../../content-root'
 import { createContentApi } from '../editor-server/src/api'
 import { DEFAULTS } from '../editor-server/src/config'
 import { createLive } from '../editor-server/src/live'
+import { createPrefabStore } from '../editor-server/src/prefabStore'
 import { SHARED_GAMES } from '../share/src/index'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
@@ -24,6 +25,8 @@ const live = createLive({
     writeFileSync(join(ROOT, 'content', 'levels', `${name}.json`), `${JSON.stringify(level, null, 2)}\n`)
   },
   changed: () => {},
+  // A level references a prefab by asset id (ADR 0091); the definitions come off this disk.
+  prefabs: createPrefabStore(join(ROOT, 'content', 'assets')),
 })
 let sweeper: ReturnType<typeof setInterval> | null = null
 

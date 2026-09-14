@@ -10,6 +10,7 @@ import type { ServerConfig, User } from './config'
 import { commitPaths, push } from './git'
 import { createLive } from './live'
 import { heldBy, sweep, type LockTable } from './locks'
+import { createPrefabStore } from './prefabStore'
 import { proxyHttp, proxyUpgrade, routeFor, stripPrefix } from './proxy'
 import { describeCommit, markDirty, take, takeAll, takeDue, type Session, type SessionTable } from './sessions'
 
@@ -93,6 +94,8 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
   const levelsDir = join(config.repoRoot, 'content', 'levels')
   const live = createLive({
     staleMs: config.lockStaleMs,
+    // A level references a prefab by asset id (ADR 0091); the definitions come off disk.
+    prefabs: createPrefabStore(join(config.repoRoot, 'content', 'assets')),
     readLevel: (name) => {
       const file = join(levelsDir, `${name}.json`)
       return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as unknown) : null

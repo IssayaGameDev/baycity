@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Level, Op } from '../../../packages/content/src/index'
+import type { Level, Node, Op, PrefabSource } from '../../../packages/content/src/index'
 import { createLive, LiveError, type LiveClient } from './live'
 
 const v3 = (x: number, y: number, z: number): { x: number; y: number; z: number } => ({ x, y, z })
@@ -26,7 +26,11 @@ const fake = (connId: string, user = ADA): Fake => {
 }
 
 /** A world with a fake disk and fake timers the test advances by hand. */
-const world = (extra: { idleMs?: number; maxMs?: number; staleMs?: number } = {}) => {
+const PAD = 'aaaaaaaaaaaaaaaa'
+/** A prefab file, as the store would hand it over. */
+const padFile = (): Node => ({ id: 'root', name: 'pad', transform: { position: v3(0, 0, 0) }, components: [], children: [{ id: 'p0', transform: { position: v3(0, 0, 0) }, components: [] }] })
+
+const world = (extra: { idleMs?: number; maxMs?: number; staleMs?: number; prefabs?: PrefabSource } = {}) => {
   const disk = new Map<string, unknown>([['lv', fixture()]])
   const writes: { name: string; level: Level }[] = []
   const changed: { users: string[]; path: string }[] = []
@@ -256,5 +260,70 @@ describe('presence', () => {
     live.presence('lv', 'c1', ADA, { kind: 'select', refs: [{ id: 'a' }] })
     expect(a.events.length).toBe(before)
     expect(b.events.at(-1)).toEqual({ event: 'presence', data: { from: 'c1', name: 'Ada', data: { kind: 'select', refs: [{ id: 'a' }] } } })
+  })
+})
+
+
+describe('prefab references (ADR 0091)', () => {
+  /** A level naming a prefab it does not carry: the definition comes from the store, and the file keeps neither twice. */
+  const withPlacement = (): Level => ({
+    id: 'lv',
+    config: {},
+    nodes: [{ id: 'n0', transform: { position: v3(5, 0, 0) }, components: [], prefab: PAD }],
+  })
+
+  it('resolves a reference on open, so the inherited nodes are here, and writes the reference alone', () => {
+    const file = padFile()
+    const w = world({ prefabs: { root: (id) => (id === PAD ? file : undefined) } })
+    w.disk.set('lv', withPlacement())
+    const a = fake('c1')
+    w.live.join('lv', a.client)
+
+    const snapshot = a.events.find((e) => e.event === 'snapshot')!.data as { level: Level }
+    expect(snapshot.level.prefabs![PAD], 'the definition itself, not a copy').toBe(file)
+
+    // An op on an inherited node needs the definition present to be checked at all.
+    expect(w.live.apply('lv', 'c1', ADA, { batchId: 'b', ops: [{ kind: 'setOverrideTransform', owner: 'n0', node: 'p0', transform: { position: v3(0, 2, 0) } }] }).ok).toBe(true)
+
+    w.live.flush('lv')
+    const written = w.writes.at(-1)!.level
+    expect(written.prefabs, 'the definition is not written into the level').toBeUndefined()
+    expect(written.nodes[0]!.prefab, 'the reference is').toBe(PAD)
+    expect(written.nodes[0]!.overrides!['p0']!.transform!.position).toEqual(v3(0, 2, 0))
+  })
+
+  it('keeps a table the level carries itself, and strips only what it resolved', () => {
+    const w = world({ prefabs: { root: () => padFile() } })
+    const own = padFile()
+    own.name = 'mine'
+    w.disk.set('lv', { id: 'lv', config: {}, prefabs: { Trampoline: own }, nodes: [{ id: 'n0', transform: { position: v3(0, 0, 0) }, components: [], prefab: 'Trampoline' }, { id: 'n1', transform: { position: v3(1, 0, 0) }, components: [], prefab: PAD }] })
+    const a = fake('c1')
+    w.live.join('lv', a.client)
+    w.live.apply('lv', 'c1', ADA, { batchId: 'b', ops: [{ kind: 'setName', id: 'n0', name: 'x' }] })
+    w.live.flush('lv')
+    const written = w.writes.at(-1)!.level
+    expect(Object.keys(written.prefabs ?? {}), "the level's own table survives").toEqual(['Trampoline'])
+    expect(written.prefabs!['Trampoline']!.name).toBe('mine')
+  })
+
+  it('a reference with no file leaves the placement with nothing inherited, and the level still opens', () => {
+    const w = world({ prefabs: { root: () => undefined } })
+    w.disk.set('lv', withPlacement())
+    const a = fake('c1')
+    expect(() => w.live.join('lv', a.client)).not.toThrow()
+    const snapshot = a.events.find((e) => e.event === 'snapshot')!.data as { level: Level }
+    expect(snapshot.level.prefabs).toBeUndefined()
+    expect(w.live.apply('lv', 'c1', ADA, { batchId: 'b', ops: [{ kind: 'setName', id: 'n0', name: 'still editable' }] }).ok).toBe(true)
+  })
+
+  it('resolves a prefab placed during the session, without reopening the document', () => {
+    const w = world({ prefabs: { root: (id) => (id === PAD ? padFile() : undefined) } })
+    const a = fake('c1')
+    w.live.join('lv', a.client)
+    w.live.apply('lv', 'c1', ADA, { batchId: 'b', ops: [{ kind: 'insertNode', parent: null, index: 2, node: { id: 'fresh', transform: { position: v3(0, 0, 0) }, components: [], prefab: PAD } }] })
+    // The proof: an override op on an inherited node only validates when the definition resolved.
+    expect(w.live.apply('lv', 'c1', ADA, { batchId: 'c', ops: [{ kind: 'setOverrideName', owner: 'fresh', node: 'p0', name: 'mine' }] }).ok).toBe(true)
+    w.live.flush('lv')
+    expect(w.writes.at(-1)!.level.prefabs, 'still not written into the level').toBeUndefined()
   })
 })
