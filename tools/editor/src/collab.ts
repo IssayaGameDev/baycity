@@ -82,6 +82,44 @@ export interface Collab {
   pending: () => number
 }
 
+/**
+ * What a client streams mid-drag (ADR 0089 phase 4): the local pose of each node it is dragging, ~10 Hz. Peers
+ * pose their groups from it and write nothing; the op at drag end is what lands. `end` says the drag is over
+ * and every group goes back to its data pose (a drag that returned to its start sends no op).
+ */
+export interface PosePresence {
+  kind: 'pose'
+  poses: { ref: NodeRef; position: Vec3; rotation: Vec3; scale: Vec3 }[]
+  end?: boolean
+}
+export interface Vec3 {
+  x: number
+  y: number
+  z: number
+}
+
+const isVec3 = (v: unknown): v is Vec3 => typeof v === 'object' && v !== null && ['x', 'y', 'z'].every((k) => typeof (v as Record<string, unknown>)[k] === 'number')
+const isRef = (r: unknown): r is NodeRef => {
+  if (typeof r !== 'object' || r === null) return false
+  const o = r as Record<string, unknown>
+  return typeof o.id === 'string' ? o.table === undefined || typeof o.table === 'string' : typeof o.owner === 'string' && typeof o.node === 'string'
+}
+
+/** A presence payload off the wire, or `null` when it is not one this editor knows. Peers' data, not trusted. */
+export const parsePresence = (data: unknown): PosePresence | null => {
+  if (typeof data !== 'object' || data === null) return null
+  const d = data as Record<string, unknown>
+  if (d.kind !== 'pose' || !Array.isArray(d.poses)) return null
+  const poses: PosePresence['poses'] = []
+  for (const p of d.poses as unknown[]) {
+    if (typeof p !== 'object' || p === null) return null
+    const q = p as Record<string, unknown>
+    if (!isRef(q.ref) || !isVec3(q.position) || !isVec3(q.rotation) || !isVec3(q.scale)) return null
+    poses.push({ ref: q.ref, position: q.position, rotation: q.rotation, scale: q.scale })
+  }
+  return { kind: 'pose', poses, ...(d.end === true ? { end: true } : {}) }
+}
+
 let nextBatch = 0
 const newBatchId = (): string => `${Date.now().toString(36)}-${(nextBatch++).toString(36)}`
 

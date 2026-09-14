@@ -1,6 +1,6 @@
 # ADR 0089 — A level is edited live
 
-Status: accepted, in progress. Phases land as separate commits; each phase adds its section here.
+Status: accepted, implemented in four phases (one commit each); each phase has its section here.
 
 ## Context
 
@@ -121,3 +121,24 @@ gesture by a frame is not a claim anyone can see).
 **Consequences.** Two tabs of one person block each other, as two people would. Renaming and dragging a held
 row are off with selection. A reconnect is a new connection, so the editor re-holds its selection on the fresh
 snapshot.
+
+## Phase 4 — presence: a drag is streamed, not written
+
+**Decision.** While a gizmo drags, the editor streams the poses of what it drags at 10 Hz on the presence
+channel (`/api/live/:name/presence`, relayed to the others, unnumbered, never stored); peers pose their groups
+from it and write nothing. The transform batches the document reports mid-drag are held back and go as **one**
+op batch when the drag ends — the same ops the history entry holds. Others' selection needs no channel of its
+own: a selection is a hold, and holds are already drawn.
+
+**Why not stream the ops.** Before this, a drag was a POST and a `seq` per pointer event: a hundred numbered ops
+for one gesture, each one a line in the bounded log that a reconnecting client replays, and a hundred inverses
+for one undo. A pose is a picture, an op is a change; the room needs the picture often and the change once.
+
+**Why the groups' poses, not the document's.** With a key selected the gizmo writes a keyframe, and the
+document's transform does not move; the group does. What the peer should see is what the dragger sees.
+
+**Rejected.** A `select` presence message (redundant with holds). Streaming at pointer rate (bandwidth for
+nothing the eye can use). Keeping presence server-side for late joiners (a joiner sees the op within a second).
+
+**Consequences.** A drag returned to its start sends no op; the `end` message puts peers' groups back on their
+data. Undo of a drag is one entry, as before. The op log grows by one per drag, not per pointer event.

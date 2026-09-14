@@ -14,6 +14,7 @@ Several people can have the same level open. Every move, every placed piece show
 within a second. There is **no Save for levels**: each change is saved as you make it. The bottom bar says
 *live · with X* when someone else is in.
 
+- You see the others drag as they drag, and they see you.
 - A piece you have selected is **yours** while it stays selected: the others see it dimmed with your name in
   the list and a coloured box around it, and cannot select or move it. Click elsewhere to let it go.
 - Undo puts back what **you** did, even if someone moved the piece since.

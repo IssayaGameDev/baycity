@@ -109,8 +109,23 @@ httpTransport(): LiveTransport   // EventSource in, fetch POST out, sendBeacon f
 | status bar | `live` or `live · with Adrien, Titouan` (peers other than this `connId`) |
 | leave | `dropAllLocks` → `collab.leave()`; `pagehide` → `beaconLeave()` |
 
-Two tabs of one person are two `connId`s: separate acks, separate holds. Presence is wired but unused until
-phase 4.
+Two tabs of one person are two `connId`s: separate acks, separate holds.
+
+### Presence — a drag seen from across the room
+
+```ts
+interface PosePresence { kind: 'pose'; poses: { ref: NodeRef; position: Vec3; rotation: Vec3; scale: Vec3 }[]; end?: boolean }
+parsePresence(data: unknown): PosePresence | null   // collab.ts — peers' data, validated
+```
+
+| Piece | Behaviour |
+| --- | --- |
+| send | gizmo `dragging-changed` true → `startPresence()`: every 100 ms `collab.presence({ kind: 'pose', poses: dragPoses() })` — the selection's groups' local poses (`groupPose` + scale), not the document's. Drag end → `stopPresence()`: `{ poses: [], end: true }` |
+| ops | `onDocOps` while `coalescing` pushes to `heldBack` instead of submitting; drag end folds them (`foldBatches`) and submits **one** batch, the same ops the history entry holds. Nothing else changes: without a drag every batch still goes at once |
+| receive | `onPresence(data)`: `parsePresence` → for each pose `indexOfRef` → set the group's position/quaternion/scale; skipped for a node in my own selection while my gizmo drags. `end` → `applyPreviewPoses()` unless my gizmo is dragging (my drag end repaints). The hold box follows, since it updates each frame |
+| nothing kept | presence is unnumbered and never written; the op at drag end is what lands, and a drag that came back to its start lands nothing |
+
+Others' selection is what the hold boxes and badges show: a selection *is* a hold.
 
 ### Holds — a node is yours while selected
 
