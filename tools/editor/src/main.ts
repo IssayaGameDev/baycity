@@ -28,6 +28,8 @@ import {
   type Transform, validateLevel, applyBatch, refKey, OpError, type NodeRef, type Op,
   BUILTIN_LABELS, BUILTIN_MODELS, isBuiltinModel, scaleCollider, PRIMITIVE_LABELS, PRIMITIVE_ORDER, type PrimitiveKind } from '@mp/content'
 import { QUANT_BOUND } from '@mp/net'
+
+import { createViewGizmo } from './viewGizmo'
 import { DEFAULT_REGISTRY, characterAccess, createComponentRuntime, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type ComponentRuntime, type Registry } from '@mp/components'
 import { createOrbitCamera } from '@mp/camera'
 import { PLAYER_NODE_ID, actionsHeld, type ModeDescriptor, readSettings } from '@mp/mode'
@@ -103,7 +105,6 @@ const stage = createThreeStage({ canvas, cameraPosition: [12, 10, 16], lookAt: [
 // game's 30 and 0.1, so the editor did not show what you would play. Post-FX now follows the open document.
 const env = applyGreyboxEnvironment(stage.renderer, stage.scene, { sunIntensity: 2.4 })
 const postfx = createPostFX(stage.renderer, stage.scene, stage.camera)
-stage.setRenderStep(postfx.render)
 
 const controls = new OrbitControls(stage.camera, canvas)
 controls.enableDamping = true
@@ -1127,6 +1128,133 @@ const blankLevel = (id: string): Level => ({
 })
 
 // --- selection + transform gizmo ---
+/**
+ * The isometric camera (ADR 0094). `stage.camera` stays the perspective one and stays the game's — play mode
+ * hands it to `createOrbitCamera`, which tunes its `fov` — so this is a second camera the editor swaps in,
+ * not a change to the stage.
+ *
+ * "Isometric" is Unity's word for it and the one on the label; it is an orthographic projection, not the
+ * 30-degree angle the word means in drawing.
+ */
+const orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 2000)
+let isometric = false
+
+/** The camera actually being looked through. Everything that casts a ray or draws must ask for it. */
+const activeCamera = (): THREE.PerspectiveCamera | THREE.OrthographicCamera => (isometric ? orthoCamera : stage.camera)
+
+/** Half the world height the orthographic camera shows, chosen to match what perspective shows at the target. */
+const orthoHalfHeight = (): number => {
+  const distance = Math.max(0.001, stage.camera.position.distanceTo(controls.target))
+  return distance * Math.tan((stage.camera.fov * Math.PI) / 360)
+}
+
+/** Re-cut the orthographic frustum for the canvas's aspect, keeping the height it is already showing. */
+const syncOrthoFrustum = (halfHeight: number): void => {
+  const aspect = Math.max(0.001, canvas.clientWidth / Math.max(1, canvas.clientHeight))
+  orthoCamera.top = halfHeight
+  orthoCamera.bottom = -halfHeight
+  orthoCamera.left = -halfHeight * aspect
+  orthoCamera.right = halfHeight * aspect
+  orthoCamera.updateProjectionMatrix()
+}
+
+/**
+ * Swap projection, keeping the view.
+ *
+ * The outgoing camera's placement carries over, and the frustum is cut so the two show the same thing at the
+ * orbit target — so the toggle reads as the perspective draining out of the picture rather than as a jump.
+ * Going back, the distance is recovered from the frustum, since orthographic has no distance of its own.
+ *
+ * Everything holding a camera is re-pointed rather than rebuilt: the post-FX passes took theirs at
+ * construction, and rebuilding the composer would throw away the AO and bloom the level asked for.
+ */
+const setProjection = (ortho: boolean): void => {
+  if (ortho === isometric) return
+  if (ortho) {
+    const half = orthoHalfHeight()
+    orthoCamera.position.copy(stage.camera.position)
+    orthoCamera.quaternion.copy(stage.camera.quaternion)
+    orthoCamera.zoom = 1
+    syncOrthoFrustum(half)
+  } else {
+    // Orthographic distance is meaningless, so put the perspective camera where it shows the same height.
+    const half = (orthoCamera.top - orthoCamera.bottom) / 2 / orthoCamera.zoom
+    const distance = half / Math.tan((stage.camera.fov * Math.PI) / 360)
+    const back = orthoCamera.position.clone().sub(controls.target)
+    if (back.lengthSq() < 1e-6) back.set(0, 1, 1)
+    stage.camera.quaternion.copy(orthoCamera.quaternion)
+    stage.camera.position.copy(controls.target).add(back.normalize().multiplyScalar(distance))
+  }
+  isometric = ortho
+  const camera = activeCamera()
+  postfx.setCamera(camera)
+  controls.object = camera
+  gizmo.camera = camera
+  controls.update()
+  viewGizmo.setLabel(ortho ? 'Iso' : 'Persp')
+  setStatus(ortho ? 'isometric' : 'perspective')
+  uiChanged()
+}
+
+/**
+ * The navigation gizmo, top right (ADR 0094). Blender's ball-and-stick, Unity's click-the-middle to toggle
+ * isometric, and no auto-switch: looking down an axis and dropping perspective are two decisions.
+ */
+const viewGizmo = createViewGizmo({
+  camera: activeCamera,
+  target: () => controls.target,
+  dom: canvas,
+})
+
+/**
+ * Drawn after post-processing, because it clears depth and paints over the finished image — composite
+ * anything afterwards and it would be covered. Hidden during play, where the viewport is the game's.
+ */
+stage.setRenderStep(() => {
+  postfx.render()
+  if (!playing) viewGizmo.render(stage.renderer)
+})
+
+/**
+ * The gizmo gets the pointer before anything else does.
+ *
+ * On the document in the **capture** phase rather than on the canvas: `OrbitControls` and the rest listen on
+ * the canvas itself, and listeners on one element fire in the order they were added, so there is no way to
+ * get in front of them from there. Capturing on an ancestor is, and `stopPropagation` then means the event
+ * never reaches the canvas at all — no orbit, no selection click, no context menu.
+ */
+let viewGizmoHolding = false
+document.addEventListener(
+  'pointerdown',
+  (e) => {
+    if (e.target !== canvas || playing || e.button !== 0) return
+    if (!viewGizmo.pointerDown(e)) return
+    viewGizmoHolding = true
+    e.stopPropagation()
+    e.preventDefault()
+  },
+  true,
+)
+document.addEventListener(
+  'pointermove',
+  (e) => {
+    if (!viewGizmoHolding) return
+    viewGizmo.pointerMove(e)
+    e.stopPropagation()
+  },
+  true,
+)
+document.addEventListener(
+  'pointerup',
+  (e) => {
+    if (!viewGizmoHolding) return
+    viewGizmoHolding = false
+    if (viewGizmo.pointerUp(e) === 'centre') setProjection(!isometric)
+    e.stopPropagation()
+  },
+  true,
+)
+
 const gizmo = new TransformControls(stage.camera, canvas)
 const applySnap = (): void => {
   gizmo.setTranslationSnap(edit.snap ? edit.step : null)
@@ -1824,7 +1952,7 @@ canvas.addEventListener('pointerdown', (e) => {
 const castFrom = (clientX: number, clientY: number): void => {
   const rect = canvas.getBoundingClientRect()
   ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
-  raycaster.setFromCamera(ndc, stage.camera)
+  raycaster.setFromCamera(ndc, activeCamera())
 }
 
 /** The document index under a client position, or `null`. */
@@ -2355,6 +2483,8 @@ const startPlay = (): void => {
   })
   playLights = addLights(stage.scene, loaded.lights)
   charMesh.visible = true
+  // The player camera is `stage.camera` and tunes its fov (`createOrbitCamera`), so play is perspective.
+  setProjection(false)
   playing = true
   controls.enabled = false // editor orbit off; the player camera takes over
   void canvas.requestPointerLock()
@@ -2902,12 +3032,21 @@ const focusSelection = (): void => {
   if (box.isEmpty()) return
   const centre = box.getCenter(new THREE.Vector3())
   const radius = Math.max(0.5, box.getBoundingSphere(new THREE.Sphere()).radius)
-  const back = stage.camera.position.clone().sub(controls.target)
+  const camera = activeCamera()
+  const back = camera.position.clone().sub(controls.target)
   // Degenerate only if the camera is already at its own target, which the controls do not allow.
   if (back.lengthSq() < 1e-6) back.set(0, 1, 1)
-  const distance = (radius / Math.tan((stage.camera.fov * Math.PI) / 360)) * 1.4
   controls.target.copy(centre)
-  stage.camera.position.copy(centre).add(back.normalize().multiplyScalar(distance))
+  if (isometric) {
+    // No fov to frame with: an orthographic camera frames by how much world its frustum holds, so the
+    // distance only has to clear the geometry and the frustum does the framing.
+    orthoCamera.zoom = 1
+    syncOrthoFrustum(radius * 1.4)
+    orthoCamera.position.copy(centre).add(back.normalize().multiplyScalar(Math.max(radius * 4, 10)))
+  } else {
+    const distance = (radius / Math.tan((stage.camera.fov * Math.PI) / 360)) * 1.4
+    stage.camera.position.copy(centre).add(back.normalize().multiplyScalar(distance))
+  }
   controls.update()
 }
 
@@ -3791,6 +3930,8 @@ const relayout = (): void => {
   requestAnimationFrame(() => {
     relayoutQueued = false
     stage.resize()
+    // `stage.resize` only knows the perspective camera; this one is the editor's.
+    if (isometric) syncOrthoFrustum((orthoCamera.top - orthoCamera.bottom) / 2)
     const size = stage.renderer.getSize(new THREE.Vector2())
     postfx.setSize(size.x, size.y)
   })
@@ -3862,6 +4003,7 @@ stage.start((dt) => {
         advancePreviewTime(next)
       }
     }
+    viewGizmo.update(dt)
     controls.update()
   }
 })
