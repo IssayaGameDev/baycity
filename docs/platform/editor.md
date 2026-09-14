@@ -67,7 +67,7 @@ Every `Doc` mutator builds `Op`s (`@mp/content` `ops.ts`, `content.md`) and comm
 | `linkToPrefab` | `replaceNode` (the node keeps its transform and name, loses its own components, gains the reference). `definitionOf` is pure: the definition becomes a **file**, which is the host's to write |
 | `revert` | `setNodeOverride` (the record with the field gone, or `null`) |
 | `overrideOpsFor` | pure — the ops the **prefab's own room** would take. The host sends them there, then calls `revert` here (ADR 0091) |
-| `setEnvironment` / `setMode` | `setEnvironment` / `setMode` |
+| `setEnvironment` / `setMode` / `setNetBounds` | the same-named op; all three are level-only and a no-op in a prefab |
 | `setId` | not an op (the file name; live, the server sets it) |
 
 `prefabDoc(root, registry, clips)` — a prefab is edited as a document of one root node, in its own live room
@@ -109,6 +109,25 @@ httpTransport(): LiveTransport   // EventSource in, fetch POST out, sendBeacon f
 | leave | `dropAllLocks` → `collab.leave()`; `pagehide` → `beaconLeave()` |
 
 Two tabs of one person are two `connId`s: separate acks, separate holds.
+
+### Network bounds, drawn (ADR 0093)
+
+`level.config.netBounds` — how far from the origin a peer's position survives the wire. On the **Game** row's
+Inspector panel, below the game picker.
+
+| Piece | Behaviour |
+| --- | --- |
+| the number | `reach ±m` (10–20000, step 10), written by `Doc.setNetBounds`. Below it, the step this buys: `2 × m / 65535`, in cm. A level that has set one gets a **use the default** button, which writes `null` |
+| the box | `THREE.Box3Helper` on `stage.scene`, red, sized `±bound` about the origin. **Off by default**, toggled by `show box` in the same section, hidden inside a prefab (a prefab has no bounds of its own) and re-sized at both `buildItems` exits |
+| the reach report | `boundsReach()` — how many **top-level** objects have geometry past the bound, and the furthest metre anything reaches. Measured with `Box3.setFromObject` off the drawn groups, not authored positions: a wide platform counts by its edge, which is where a player can stand |
+
+The box is the reason the number is safe to author. A bound too small for its level is a peer who freezes and
+then stops being relayed at all, on everyone's screen but their own, with no error anywhere (ADR 0092) — so it
+is drawn and counted rather than left a field in a file.
+
+The bound reaches the relay through the **game**, not the editor: `startGameClient` passes
+`levelData.config.netBounds` as a join option, and the room adopts the first one it is given
+(`docs/platform/netcode.md`).
 
 ### Prefabs are live rooms too (ADR 0091)
 

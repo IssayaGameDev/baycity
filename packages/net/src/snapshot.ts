@@ -1,7 +1,7 @@
 import { entityId, type EntityId, type Vec3 } from '@mp/core'
 
 import { MSG_SNAPSHOT, PROTOCOL_VERSION, readHeader } from './messages'
-import { dequantizeAxis, dequantizeSpeed, dequantizeYaw, quantizeAxis, quantizeSpeed, quantizeYaw } from './quantize'
+import { dequantizeAxis, dequantizeSpeed, dequantizeYaw, QUANT_BOUND, quantizeAxis, quantizeSpeed, quantizeYaw } from './quantize'
 
 export interface SnapshotEntity {
   id: EntityId
@@ -56,7 +56,7 @@ const CHANGED_BYTES = 12
 const LE = true
 const FLAG_FULL = 1
 
-export const encodeSnapshot = (msg: SnapshotMessage): ArrayBuffer => {
+export const encodeSnapshot = (msg: SnapshotMessage, bound: number = QUANT_BOUND): ArrayBuffer => {
   const buffer = new ArrayBuffer(HEADER_BYTES + msg.changed.length * CHANGED_BYTES + 2 + msg.removed.length * 2)
   const view = new DataView(buffer)
   let o = 0
@@ -73,11 +73,11 @@ export const encodeSnapshot = (msg: SnapshotMessage): ArrayBuffer => {
   for (const e of msg.changed) {
     view.setUint16(o, e.id, LE)
     o += 2
-    view.setUint16(o, quantizeAxis(e.position.x), LE)
+    view.setUint16(o, quantizeAxis(e.position.x, bound), LE)
     o += 2
-    view.setUint16(o, quantizeAxis(e.position.y), LE)
+    view.setUint16(o, quantizeAxis(e.position.y, bound), LE)
     o += 2
-    view.setUint16(o, quantizeAxis(e.position.z), LE)
+    view.setUint16(o, quantizeAxis(e.position.z, bound), LE)
     o += 2
     view.setUint8(o, e.flags & 0xff)
     o += 1
@@ -97,7 +97,7 @@ export const encodeSnapshot = (msg: SnapshotMessage): ArrayBuffer => {
   return buffer
 }
 
-export const decodeSnapshot = (buffer: ArrayBuffer): SnapshotMessage => {
+export const decodeSnapshot = (buffer: ArrayBuffer, bound: number = QUANT_BOUND): SnapshotMessage => {
   readHeader(buffer, MSG_SNAPSHOT)
   const view = new DataView(buffer)
   let o = 2
@@ -111,11 +111,11 @@ export const decodeSnapshot = (buffer: ArrayBuffer): SnapshotMessage => {
   for (let i = 0; i < changedCount; i++) {
     const id = entityId(view.getUint16(o, LE))
     o += 2
-    const x = dequantizeAxis(view.getUint16(o, LE))
+    const x = dequantizeAxis(view.getUint16(o, LE), bound)
     o += 2
-    const y = dequantizeAxis(view.getUint16(o, LE))
+    const y = dequantizeAxis(view.getUint16(o, LE), bound)
     o += 2
-    const z = dequantizeAxis(view.getUint16(o, LE))
+    const z = dequantizeAxis(view.getUint16(o, LE), bound)
     o += 2
     const flags = view.getUint8(o)
     o += 1

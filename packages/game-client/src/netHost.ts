@@ -12,6 +12,7 @@ import {
   MSG_SNAPSHOT,
   MSG_WELCOME,
   NET_CHANNEL,
+  QUANT_BOUND,
   readMessageType,
   type PlayerState,
   type SnapshotEntity,
@@ -59,6 +60,13 @@ export interface NetHostOptions {
   game: string
   level: string
   /**
+   * The level's `netBounds` (ADR 0093), sent with the join so the room can adopt it.
+   *
+   * Only the **first** client into a room sets it; everyone after is told the room's value in `WELCOME` and
+   * uses that, even if their own level file disagrees. Undefined means "no opinion, use the default".
+   */
+  bounds?: number | undefined
+  /**
    * Told once, when the server assigns our id.
    *
    * This is the cue to build the local sim, and it is a callback rather than a promise because the render loop
@@ -96,7 +104,7 @@ const toArrayBuffer = (m: Uint8Array): ArrayBuffer => {
  * matchmaking UI (ADR 0013). A raw WebSocket will not do: the SDK performs the HTTP seat reservation and then
  * upgrades.
  */
-export const createNetHost = ({ game, level, onWelcome, setStatus }: NetHostOptions): NetHost => {
+export const createNetHost = ({ game, level, bounds, onWelcome, setStatus }: NetHostOptions): NetHost => {
   const clock = createClockSync()
   const reassembler = createSnapshotReassembler()
   const interp = createSnapshotClient({ interpolationDelayMs: INTERPOLATION_DELAY_MS, serverNow: () => clock.serverNow() })
@@ -104,19 +112,28 @@ export const createNetHost = ({ game, level, onWelcome, setStatus }: NetHostOpti
   const myName = `${pick(ADJ)} ${pick(NOUN)}`
   const names = new Map<EntityId, string>()
   let myId: EntityId | null = null
+  /**
+   * The room's quantization bound, from `WELCOME`. `WELCOME` is sent inside `onJoin`, before the room's first
+   * tick can reach us, so a snapshot decoded at the default would be a bug rather than a race — the fallback
+   * is here so a lost welcome degrades to slightly wrong positions instead of a crash.
+   */
+  let bound: number = QUANT_BOUND
   let room: Room | null = null
   let pingTimer: ReturnType<typeof setInterval> | null = null
 
   const onNet = (m: Uint8Array): void => {
     const buf = toArrayBuffer(m)
     switch (readMessageType(buf)) {
-      case MSG_WELCOME:
-        myId = decodeWelcome(buf).playerId
+      case MSG_WELCOME: {
+        const welcome = decodeWelcome(buf)
+        bound = welcome.bound
+        myId = welcome.playerId
         onWelcome(myId)
         break
+      }
       case MSG_SNAPSHOT:
         // Peers only (the server never relays our own body back to us); interpolate.
-        interp.ingest(reassembler.apply(decodeSnapshot(buf)))
+        interp.ingest(reassembler.apply(decodeSnapshot(buf, bound)))
         break
       case MSG_ROSTER:
         names.clear()
@@ -132,7 +149,7 @@ export const createNetHost = ({ game, level, onWelcome, setStatus }: NetHostOpti
 
   const connect = async (): Promise<void> => {
     try {
-      room = await new Client(serverUrl()).joinOrCreate('game', { name: myName, game, level })
+      room = await new Client(serverUrl()).joinOrCreate('game', { name: myName, game, level, ...(bounds !== undefined ? { bounds } : {}) })
     } catch {
       setStatus('status.offline')
       return

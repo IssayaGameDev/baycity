@@ -27,6 +27,7 @@ import {
   type Pose,
   type Transform, validateLevel, applyBatch, refKey, OpError, type NodeRef, type Op,
   BUILTIN_LABELS, BUILTIN_MODELS, isBuiltinModel, scaleCollider, PRIMITIVE_LABELS, PRIMITIVE_ORDER, type PrimitiveKind } from '@mp/content'
+import { QUANT_BOUND } from '@mp/net'
 import { DEFAULT_REGISTRY, characterAccess, createComponentRuntime, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type ComponentRuntime, type Registry } from '@mp/components'
 import { createOrbitCamera } from '@mp/camera'
 import { PLAYER_NODE_ID, actionsHeld, type ModeDescriptor, readSettings } from '@mp/mode'
@@ -112,7 +113,19 @@ const grid = new THREE.GridHelper(80, 80, 0x475569, 0x1f2937)
 ;(grid.material as THREE.Material).transparent = true
 ;(grid.material as THREE.Material).opacity = 0.5
 const axes = new THREE.AxesHelper(3)
-stage.scene.add(grid, axes)
+
+/**
+ * The network bounds, drawn (ADR 0093): the cube a peer's position is quantized over, centred on the origin.
+ *
+ * Off unless asked for. A level is almost always well inside it, so left on it would be a red box around
+ * everything forever; the reason to draw it at all is the half-hour when someone is deciding how big it
+ * should be, or checking that a level which grew still fits.
+ */
+const boundsBox = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color(0xef4444))
+boundsBox.visible = false
+let showBoundsBox = false
+
+stage.scene.add(grid, axes, boundsBox)
 
 // --- editor state ---
 let world: PhysicsWorld | null = null
@@ -777,6 +790,7 @@ const buildItems = (): void => {
   editorShadowCasters = 0
   if (doc === null) {
     reattachGizmo()
+    refreshBoundsBox()
     return
   }
   // Depth-first order, so a parent's group always exists before its children ask for it.
@@ -797,6 +811,7 @@ const buildItems = (): void => {
   // the current playhead — which at 0 is where the game starts it, so the two now agree (ADR 0029).
   applyPreviewPoses()
   reattachGizmo()
+  refreshBoundsBox()
 }
 
 /**
@@ -1133,6 +1148,41 @@ const reattachGizmo = (): void => {
   const g = selected === null || playing ? undefined : instanceGroups[selected]
   if (g === undefined) gizmo.detach()
   else gizmo.attach(g)
+}
+
+/** The bound in force for the open document: the level's own, or the platform default. */
+const effectiveBounds = (): number => doc?.netBounds() ?? QUANT_BOUND
+
+/**
+ * Re-size the box and decide whether it is drawn.
+ *
+ * Hidden inside a prefab as well as when switched off: a prefab has no bounds of its own (it is placed into
+ * a level, and the level's box is the one that matters), so drawing the default around it would be a lie.
+ */
+const refreshBoundsBox = (): void => {
+  const b = effectiveBounds()
+  boundsBox.box.set(new THREE.Vector3(-b, -b, -b), new THREE.Vector3(b, b, b))
+  boundsBox.visible = showBoundsBox && prefabOpen === null && doc !== null
+}
+
+/**
+ * How far the level actually reaches, and how much of it is outside the bound.
+ *
+ * Measured off the drawn objects rather than the authored positions, so a wide platform counts by its edge
+ * and not by its origin — the edge is where a player can stand, and standing there is what the bound has to
+ * carry. Top-level objects only, or a nested child would be counted twice with its parent.
+ */
+const boundsReach = (): { outside: number; reach: number } | null => {
+  if (doc === null) return null
+  const b = effectiveBounds()
+  const far = (box: THREE.Box3): number =>
+    box.isEmpty() ? 0 : Math.max(Math.abs(box.min.x), Math.abs(box.min.y), Math.abs(box.min.z), box.max.x, box.max.y, box.max.z)
+  let outside = 0
+  for (const g of instanceGroups) {
+    if (g === undefined || g.parent !== instanceRoot) continue
+    if (far(new THREE.Box3().setFromObject(g)) > b) outside += 1
+  }
+  return { outside, reach: far(new THREE.Box3().setFromObject(instanceRoot)) }
 }
 
 /** Switch transform tool (toolbar buttons and the T/R/S keys are the same path). */
@@ -3579,6 +3629,17 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     reopenWithRegistry()
     void refreshFileList()
   },
+  boundsBoxShown: () => showBoundsBox,
+  showBoundsBox: (on) => {
+    showBoundsBox = on
+    refreshBoundsBox()
+  },
+  onNetBoundsChanged: () => {
+    refreshBoundsBox()
+    recordEdit('network bounds')
+    uiChanged()
+  },
+  boundsReach,
   onEnvironmentChanged: () => {
     // Elevation and azimuth move the sky as well as the light, so this rebakes rather than just relighting.
     env.applyEnvironment(doc?.environment())

@@ -337,6 +337,13 @@ export interface Doc {
   environment: () => Partial<EnvironmentConfig> | undefined
   setEnvironment: (env: Partial<EnvironmentConfig>) => void
   /**
+   * How far this level reaches on the wire, in metres from the origin (ADR 0093), or `undefined` for the
+   * platform default. A prefab has none, for the same reason it has no sun.
+   */
+  netBounds: () => number | undefined
+  /** Set the level's own bound, or clear it back to the default. */
+  setNetBounds: (metres: number | null) => void
+  /**
    * Which game this level is for (ADR 0052). `undefined` for an unassigned level, and always for a prefab —
    * a prefab belongs to no game.
    */
@@ -1223,6 +1230,11 @@ const docOver = (
       // writing a sun into a file that has no place to keep it.
       if (mode === 'prefab') return
       commit([{ kind: 'setEnvironment', environment: env }])
+    },
+    netBounds: () => (mode === 'prefab' ? undefined : level.config.netBounds),
+    setNetBounds: (metres) => {
+      if (mode === 'prefab') return
+      commit([{ kind: 'setNetBounds', netBounds: metres }])
     },
     modeRef: () => (mode === 'prefab' ? undefined : level.config.mode),
     setMode: (name) => {

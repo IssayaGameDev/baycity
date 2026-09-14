@@ -18,6 +18,32 @@ const at = (id: typeof A, x: number, flags = STATE_GROUNDED, yaw = 0, speed = 0,
 // The Colyseus room + live handshake are exercised by the tsx load harness (a full
 // Colyseus server can't boot under vitest's fork pool — @pm2/io hijacks its IPC). Here
 // we unit-test the pure per-client delta logic that the relay is built on.
+describe('the room quantization bound (ADR 0093)', () => {
+  it('decides what counts as a move', () => {
+    // The change check compares *quantized* positions, so the bound decides the smallest move a viewer can
+    // be told about. 2 cm is inside one step at a 1000 m bound (3.05 cm) and dozens of steps at 10 m.
+    const coarse: DeltaBaseline = { sentFull: false, baseline: new Map() }
+    deltaSnapshot(coarse, [at(A, 0)], 0, 1000)
+    expect(deltaSnapshot(coarse, [at(A, 0.02)], 50, 1000).changed).toEqual([])
+
+    const fine: DeltaBaseline = { sentFull: false, baseline: new Map() }
+    deltaSnapshot(fine, [at(A, 0)], 0, 10)
+    expect(deltaSnapshot(fine, [at(A, 0.02)], 50, 10).changed).toHaveLength(1)
+  })
+
+  it('stops relaying a peer who has left it, which is the bug it exists to make visible', () => {
+    // Past the bound both frames quantize identically, so the delta concludes nobody moved — the peer is not
+    // merely clamped, they go silent (ADR 0092). A level that reaches further has to say so.
+    const s: DeltaBaseline = { sentFull: false, baseline: new Map() }
+    deltaSnapshot(s, [at(A, 60)], 0, 40)
+    expect(deltaSnapshot(s, [at(A, 95)], 50, 40).changed).toEqual([])
+    // Told the level's real size, the same move is relayed.
+    const wide: DeltaBaseline = { sentFull: false, baseline: new Map() }
+    deltaSnapshot(wide, [at(A, 60)], 0, 1000)
+    expect(deltaSnapshot(wide, [at(A, 95)], 50, 1000).changed).toHaveLength(1)
+  })
+})
+
 describe('deltaSnapshot (per-client relay delta)', () => {
   it('sends a full snapshot first, then deltas of only quantized-changed peers', () => {
     const s: DeltaBaseline = { sentFull: false, baseline: new Map() }

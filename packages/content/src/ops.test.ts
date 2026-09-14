@@ -176,6 +176,26 @@ describe('level ops', () => {
     expect(() => invertOp(fixture(), { kind: 'setMode', mode: { name: '' } })).toThrow(OpError)
     expect(() => invertOp(fixture(), { kind: 'setEnvironment', environment: { sun: { color: 'red' } as never } })).toThrow(OpError)
   })
+
+  it('setNetBounds round-trips, clears, and refuses a non-positive range', () => {
+    roundTrip({ kind: 'setNetBounds', netBounds: 250 })
+
+    // Clearing is only a change once there is something to clear, and the inverse restores the number.
+    const level = fixture()
+    applyOp(level, { kind: 'setNetBounds', netBounds: 250 })
+    const undo = invertOp(level, { kind: 'setNetBounds', netBounds: null })
+    expect(undo).toEqual({ kind: 'setNetBounds', netBounds: 250 })
+    applyOp(level, { kind: 'setNetBounds', netBounds: null })
+    expect(level.config.netBounds).toBeUndefined()
+    applyOp(level, undo!)
+    expect(level.config.netBounds).toBe(250)
+    expect(invertOp(level, { kind: 'setNetBounds', netBounds: 250 }), 'setting what is already set').toBeNull()
+
+    for (const bad of [0, -1, Number.NaN]) {
+      expect(() => invertOp(fixture(), { kind: 'setNetBounds', netBounds: bad })).toThrow(OpError)
+    }
+    expect(() => invertOp(fixture(), { kind: 'setNetBounds', table: 'pad', netBounds: 250 })).toThrow(/no bounds/)
+  })
 })
 
 describe('table scope', () => {

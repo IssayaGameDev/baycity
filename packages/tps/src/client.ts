@@ -443,6 +443,8 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
   const net = createNetHost({
     game: mode.name,
     level: levelName,
+    // What this level says it reaches (ADR 0093). The room takes it from whoever arrives first.
+    bounds: levelData.config.netBounds,
     setStatus,
     onWelcome: (id: EntityId) => {
       void initLocalSim(id)

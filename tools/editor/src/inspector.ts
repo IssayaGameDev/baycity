@@ -1,6 +1,7 @@
 import { vec3, type Vec3 } from '@mp/core'
 import { unitColliderFor, type ColliderDesc } from '@mp/content'
 import { visibleParams, type AssetSpec, type ParamSpec } from '@mp/components'
+import { QUANT_BOUND } from '@mp/net'
 import { DEFAULT_POSTFX, DEFAULT_SKY_PARAMS } from '@mp/render-three'
 import { Pane } from 'tweakpane'
 
@@ -59,6 +60,20 @@ export interface InspectorHost {
   onModeChanged: () => void
   /** The environment changed: rebake the sky and relight, since sun, ambient and sky move together. */
   onEnvironmentChanged: () => void
+  /** Whether the network-bounds box is currently drawn in the viewport (ADR 0093). */
+  boundsBoxShown: () => boolean
+  /** Turn the box on or off. It is off by default and never persists: it is a ruler, not scenery. */
+  showBoundsBox: (on: boolean) => void
+  /** Re-size the drawn box after the number changed, and mark the level edited. */
+  onNetBoundsChanged: () => void
+  /**
+   * How much of the level sticks out of the bound, as `{ outside, reach }` — how many top-level objects have
+   * any geometry beyond it, and the furthest metre anything reaches. `null` when nothing is loaded.
+   *
+   * This is the number that makes an authored bound safe: too small a box is visible here and in the
+   * viewport, instead of being a peer who silently stops moving on someone else's screen (ADR 0092).
+   */
+  boundsReach: () => { outside: number; reach: number } | null
   /** How many objects are selected. The panel edits one and has to say so when there are more. */
   selectionCount: () => number
   /** The selection's current transform, or `null` if there isn't one. */
@@ -744,6 +759,8 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     if (ref === undefined) section.row('', 'unassigned — its components are checked against everything this build knows')
     else if (!installed.some((g) => g.name === ref.name)) section.row('', `'${ref.name}' is not installed: no rules, no rule gizmos`)
 
+    addBoundsSection(doc)
+
     // The game's numbers (ADR 0087): one field per declaration, saved to the game's data file on change.
     const settings = host.settings()
     if (settings === null) return
@@ -772,6 +789,53 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
           if (ev.last) host.onSettingChanged(key, numbers[key] ?? decl.default)
         })
       if (decl.hint !== undefined) tuning.row('', decl.hint)
+    }
+  }
+
+  /**
+   * How far this level reaches on the wire (ADR 0093), and a box in the viewport showing it.
+   *
+   * The box is the point. The same number in a config file was a silent trap: set it too small and peers
+   * freeze past the edge with no error anywhere, in multiplayer only, on somebody else's screen (ADR 0092).
+   * Drawn, a bound that does not fit the level is something you can see. It is off by default and toggled
+   * here, never left on: it is a ruler, not scenery.
+   */
+  const addBoundsSection = (doc: Doc): void => {
+    const own = doc.netBounds()
+    const state = { metres: own ?? QUANT_BOUND, box: host.boundsBoxShown() }
+    const sec = addSection('@net-bounds', { title: 'Network bounds' })
+
+    sec
+      .pane()
+      .addBinding(state, 'metres', { min: 10, max: 20000, step: 10, label: 'reach ±m' })
+      .on('change', (ev) => {
+        if (!ev.last) return
+        doc.setNetBounds(state.metres)
+        host.onNetBoundsChanged()
+      })
+    // The whole trade in one line: a u16 an axis, so the step is the range over 65535.
+    sec.row('step', `${(((2 * state.metres) / 65535) * 100).toFixed(1)} cm between positions a peer can be at`)
+
+    sec
+      .pane()
+      .addBinding(state, 'box', { label: 'show box' })
+      .on('change', () => host.showBoundsBox(state.box))
+
+    const reach = host.boundsReach()
+    if (reach === null) sec.row('', 'nothing loaded')
+    else if (reach.outside > 0) {
+      sec.row('outside', `${reach.outside} object${reach.outside === 1 ? '' : 's'} past the bound — peers out there stop moving for everyone else`)
+      sec.row('', `the level reaches ${Math.ceil(reach.reach)} m`)
+    } else sec.row('fits', `the level reaches ${Math.ceil(reach.reach)} m of ${state.metres}`)
+
+    if (own === undefined) sec.row('', `unset — using the platform default of ${QUANT_BOUND} m`)
+    else {
+      const back = el('button', 'ctl', `use the default (${QUANT_BOUND} m)`)
+      back.addEventListener('click', () => {
+        doc.setNetBounds(null)
+        host.onNetBoundsChanged()
+      })
+      sec.row('', '').replaceChildren(back)
     }
   }
 

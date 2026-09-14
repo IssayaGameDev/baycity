@@ -1,11 +1,13 @@
 /**
- * Position quantization (SEED §5): map a world coordinate to a u16 per axis
- * (~16-bit). One range for every level; per-level bounds on the wire are ADR 0092's
- * stated next step, and this value is the default they will fall back to.
+ * Position quantization (SEED §5): map a world coordinate to a u16 per axis (~16-bit).
+ *
+ * The range is **per level** (ADR 0093): `level.config.netBounds`, carried to every client in `WELCOME` so
+ * the room and everyone in it read the same bytes the same way. `QUANT_BOUND` below is what a level that
+ * sets none gets.
  */
 
 /**
- * Half-extent of the quantization range (world units); values clamp to ±this.
+ * Default half-extent of the quantization range (world units); values clamp to ±this.
  *
  * ±1000 m over u16 is a 3.05 cm step (ADR 0092). Coarser than the ±40 it replaces, and affordable
  * because a peer's position is *cosmetic*: the server runs no physics and each client owns its own
@@ -16,13 +18,23 @@
 export const QUANT_BOUND = 1000
 const QUANT_MAX = 65535
 
-export const quantizeAxis = (v: number): number => {
-  const t = (v + QUANT_BOUND) / (2 * QUANT_BOUND)
+/**
+ * The bound to actually use: a level's own, or the default.
+ *
+ * One function so the fallback is written once. A non-positive or non-finite value is treated as absent
+ * rather than thrown on — `validateConfig` already refuses it at the door, and a relay that will not run
+ * because one level is malformed helps nobody.
+ */
+export const boundOf = (netBounds: number | null | undefined): number =>
+  typeof netBounds === 'number' && Number.isFinite(netBounds) && netBounds > 0 ? netBounds : QUANT_BOUND
+
+export const quantizeAxis = (v: number, bound: number = QUANT_BOUND): number => {
+  const t = (v + bound) / (2 * bound)
   const clamped = t < 0 ? 0 : t > 1 ? 1 : t
   return Math.round(clamped * QUANT_MAX)
 }
 
-export const dequantizeAxis = (q: number): number => (q / QUANT_MAX) * (2 * QUANT_BOUND) - QUANT_BOUND
+export const dequantizeAxis = (q: number, bound: number = QUANT_BOUND): number => (q / QUANT_MAX) * (2 * bound) - bound
 
 const TAU = Math.PI * 2
 const BYTE_MAX = 255

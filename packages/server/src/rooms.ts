@@ -9,8 +9,10 @@ import {
   encodeWelcome,
   MSG_PING,
   MSG_STATE,
+  boundOf,
   NET_CHANNEL,
   quantizeAxis,
+  QUANT_BOUND,
   quantizeSpeed,
   quantizeYaw,
   readMessageType,
@@ -39,11 +41,11 @@ interface Player {
 //
 // Compared *quantized*, not raw: the wire only carries the quantized value, so comparing floats would
 // relay an entity every tick for a change the recipient could never see, which is the delta's whole job.
-const relayDiffers = (a: PlayerState, b: PlayerState): boolean =>
+const relayDiffers = (a: PlayerState, b: PlayerState, bound: number): boolean =>
   a.flags !== b.flags ||
-  quantizeAxis(a.position.x) !== quantizeAxis(b.position.x) ||
-  quantizeAxis(a.position.y) !== quantizeAxis(b.position.y) ||
-  quantizeAxis(a.position.z) !== quantizeAxis(b.position.z) ||
+  quantizeAxis(a.position.x, bound) !== quantizeAxis(b.position.x, bound) ||
+  quantizeAxis(a.position.y, bound) !== quantizeAxis(b.position.y, bound) ||
+  quantizeAxis(a.position.z, bound) !== quantizeAxis(b.position.z, bound) ||
   quantizeYaw(a.yaw) !== quantizeYaw(b.yaw) ||
   quantizeSpeed(a.speed) !== quantizeSpeed(b.speed) ||
   // Stepping onto or off a platform changes the *frame* the position is expressed in, so it has to
@@ -91,6 +93,16 @@ export class GameRoom extends Room {
   private readonly players = new Map<Client, Player>()
   private nextPlayerId = FIRST_PLAYER_ID
   private serverTimeMs = 0
+  /**
+   * How far this room's level reaches, for quantization (ADR 0093). Set by the first client to arrive and
+   * never changed after, then handed to everyone else in `WELCOME`.
+   *
+   * The relay still never reads a level (ADR 0052): it is told a number, not shown a file. First-one-wins
+   * rather than last, because changing it mid-room would silently move every peer already on screen — and a
+   * room only ever holds one game on one level anyway (`filterBy(['game', 'level'])`), so the clients after
+   * the first are sending the same value unless one of them is running stale content.
+   */
+  private bound: number | null = null
 
   override onCreate(): void {
     this.setPatchRate(null) // no @colyseus/schema state to sync
@@ -100,11 +112,12 @@ export class GameRoom extends Room {
     this.setSimulationInterval((dtMs) => this.tick(dtMs), 1000 / SNAPSHOT_RATE_HZ)
   }
 
-  override onJoin(client: Client, options?: { name?: unknown }): void {
+  override onJoin(client: Client, options?: { name?: unknown; bounds?: unknown }): void {
     const id = entityId(this.nextPlayerId++)
     const name = typeof options?.name === 'string' && options.name.trim() !== '' ? options.name : `Player ${id}`
+    this.bound ??= boundOf(typeof options?.bounds === 'number' ? options.bounds : null)
     this.players.set(client, { client, id, name, latest: null, sentFull: false, baseline: new Map() })
-    client.sendBytes(NET_CHANNEL, bytes(encodeWelcome({ playerId: id })))
+    client.sendBytes(NET_CHANNEL, bytes(encodeWelcome({ playerId: id, bound: this.bound })))
     this.broadcastRoster()
   }
 
@@ -163,7 +176,8 @@ export class GameRoom extends Room {
           base: other.latest.base,
         })
       }
-      player.client.sendBytes(NET_CHANNEL, bytes(encodeSnapshot(deltaSnapshot(player, peers, time))))
+      const bound = this.bound ?? QUANT_BOUND
+      player.client.sendBytes(NET_CHANNEL, bytes(encodeSnapshot(deltaSnapshot(player, peers, time, bound), bound)))
     }
     const dur = performance.now() - t0
     statTicks += 1
@@ -188,7 +202,7 @@ const asState = (e: SnapshotEntity): PlayerState => ({
 
 /** A full snapshot on first send, then per-client deltas vs the last states sent.
  * Pure (mutates only the passed baseline) so it's unit-testable without Colyseus. */
-export const deltaSnapshot = (s: DeltaBaseline, peers: SnapshotEntity[], time: number): SnapshotMessage => {
+export const deltaSnapshot = (s: DeltaBaseline, peers: SnapshotEntity[], time: number, bound: number = QUANT_BOUND): SnapshotMessage => {
   if (!s.sentFull) {
     s.sentFull = true
     s.baseline = new Map(peers.map((e) => [e.id, asState(e)]))
@@ -199,7 +213,7 @@ export const deltaSnapshot = (s: DeltaBaseline, peers: SnapshotEntity[], time: n
   for (const e of peers) {
     present.add(e.id)
     const base = s.baseline.get(e.id)
-    if (base === undefined || relayDiffers(base, asState(e))) changed.push(e)
+    if (base === undefined || relayDiffers(base, asState(e), bound)) changed.push(e)
   }
   const removed: EntityId[] = []
   for (const id of s.baseline.keys()) if (!present.has(id)) removed.push(id)
