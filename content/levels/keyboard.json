@@ -35,39 +35,6 @@
   },
   "nodes": [
     {
-      "id": "kill",
-      "name": "kill-plane",
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": -12,
-          "z": 20
-        }
-      },
-      "components": [
-        {
-          "id": "c0",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 800,
-                "y": 0.5,
-                "z": 80
-              }
-            },
-            "trigger": true
-          }
-        },
-        {
-          "id": "c1",
-          "type": "Hazard",
-          "params": {}
-        }
-      ]
-    },
-    {
       "id": "b0",
       "name": "board-start",
       "transform": {
@@ -1217,374 +1184,388 @@
       }
     },
     {
-      "id": "2e0cd59e",
-      "name": "board-5",
+      "id": "28eee460",
+      "name": "Stage 4",
       "transform": {
         "position": {
-          "x": 5.5,
-          "y": 5,
-          "z": 212.5
-        },
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0.7854
-        },
-        "scale": {
-          "x": 7,
-          "y": 0.5,
-          "z": 5.6
+          "x": -216,
+          "y": -61.5,
+          "z": 166.5
         }
       },
-      "components": [
+      "components": [],
+      "children": [
         {
-          "id": "c0",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.5
+          "id": "2e0cd59e",
+          "name": "board-5",
+          "transform": {
+            "position": {
+              "x": 221.5,
+              "y": 66.5,
+              "z": 46
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0.7854
+            },
+            "scale": {
+              "x": 7,
+              "y": 0.5,
+              "z": 5.6
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 280
               }
             }
-          }
+          ]
         },
         {
-          "id": "mesh",
-          "type": "Mesh",
-          "params": {
-            "model": "builtin:rounded-box"
-          }
-        },
-        {
-          "id": "c1",
-          "type": "Renderer",
-          "params": {
-            "material": "55205761e38bc929"
-          }
-        },
-        {
-          "id": "c2",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 280
-          }
-        }
-      ]
-    },
-    {
-      "id": "12b0cf52",
-      "name": "board-5",
-      "transform": {
-        "position": {
-          "x": 5.5,
-          "y": 5,
-          "z": 228.5
-        },
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0.7854
-        },
-        "scale": {
-          "x": 7,
-          "y": 0.5,
-          "z": 5.6
-        }
-      },
-      "components": [
-        {
-          "id": "c0",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.5
+          "id": "12b0cf52",
+          "name": "board-5",
+          "transform": {
+            "position": {
+              "x": 221.5,
+              "y": 66.5,
+              "z": 62
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0.7854
+            },
+            "scale": {
+              "x": 7,
+              "y": 0.5,
+              "z": 5.6
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 280
               }
             }
-          }
+          ]
         },
         {
-          "id": "mesh",
-          "type": "Mesh",
-          "params": {
-            "model": "builtin:rounded-box"
-          }
-        },
-        {
-          "id": "c1",
-          "type": "Renderer",
-          "params": {
-            "material": "55205761e38bc929"
-          }
-        },
-        {
-          "id": "c2",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 280
-          }
-        }
-      ]
-    },
-    {
-      "id": "2b3fc60e",
-      "name": "board-5",
-      "transform": {
-        "position": {
-          "x": 5.5,
-          "y": 5,
-          "z": 247
-        },
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": 0.7854
-        },
-        "scale": {
-          "x": 7,
-          "y": 0.5,
-          "z": 5.6
-        }
-      },
-      "components": [
-        {
-          "id": "c0",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.5
+          "id": "2b3fc60e",
+          "name": "board-5",
+          "transform": {
+            "position": {
+              "x": 221.5,
+              "y": 66.5,
+              "z": 80.5
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 0.7854
+            },
+            "scale": {
+              "x": 7,
+              "y": 0.5,
+              "z": 5.6
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 280
               }
             }
-          }
+          ]
         },
         {
-          "id": "mesh",
-          "type": "Mesh",
-          "params": {
-            "model": "builtin:rounded-box"
-          }
-        },
-        {
-          "id": "c1",
-          "type": "Renderer",
-          "params": {
-            "material": "55205761e38bc929"
-          }
-        },
-        {
-          "id": "c2",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 280
-          }
-        }
-      ]
-    },
-    {
-      "id": "58caf032",
-      "name": "board-5",
-      "transform": {
-        "position": {
-          "x": -3.5,
-          "y": 6.5,
-          "z": 219.5
-        },
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": -1.0472
-        },
-        "scale": {
-          "x": 7,
-          "y": 0.5,
-          "z": 5.6
-        }
-      },
-      "components": [
-        {
-          "id": "c0",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.5
+          "id": "58caf032",
+          "name": "board-5",
+          "transform": {
+            "position": {
+              "x": 212.5,
+              "y": 68,
+              "z": 53
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": -1.0472
+            },
+            "scale": {
+              "x": 7,
+              "y": 0.5,
+              "z": 5.6
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 280
               }
             }
-          }
+          ]
         },
         {
-          "id": "mesh",
-          "type": "Mesh",
-          "params": {
-            "model": "builtin:rounded-box"
-          }
-        },
-        {
-          "id": "c1",
-          "type": "Renderer",
-          "params": {
-            "material": "55205761e38bc929"
-          }
-        },
-        {
-          "id": "c2",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 280
-          }
-        }
-      ]
-    },
-    {
-      "id": "0618a42e",
-      "name": "board-5",
-      "transform": {
-        "position": {
-          "x": -3.5,
-          "y": 6.5,
-          "z": 241
-        },
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": -1.0472
-        },
-        "scale": {
-          "x": 7,
-          "y": 0.5,
-          "z": 5.6
-        }
-      },
-      "components": [
-        {
-          "id": "c0",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.5
+          "id": "0618a42e",
+          "name": "board-5",
+          "transform": {
+            "position": {
+              "x": 212.5,
+              "y": 68,
+              "z": 74.5
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": -1.0472
+            },
+            "scale": {
+              "x": 7,
+              "y": 0.5,
+              "z": 5.6
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 280
               }
             }
-          }
+          ]
         },
         {
-          "id": "mesh",
-          "type": "Mesh",
-          "params": {
-            "model": "builtin:rounded-box"
-          }
-        },
-        {
-          "id": "c1",
-          "type": "Renderer",
-          "params": {
-            "material": "55205761e38bc929"
-          }
-        },
-        {
-          "id": "c2",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 280
-          }
-        }
-      ]
-    },
-    {
-      "id": "24abb0dd",
-      "name": "board-5",
-      "transform": {
-        "position": {
-          "x": -3.5,
-          "y": 6.5,
-          "z": 258
-        },
-        "rotation": {
-          "x": 0,
-          "y": 0,
-          "z": -1.0472
-        },
-        "scale": {
-          "x": 7,
-          "y": 0.5,
-          "z": 5.6
-        }
-      },
-      "components": [
-        {
-          "id": "c0",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.5
+          "id": "24abb0dd",
+          "name": "board-5",
+          "transform": {
+            "position": {
+              "x": 212.5,
+              "y": 68,
+              "z": 91.5
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": -1.0472
+            },
+            "scale": {
+              "x": 7,
+              "y": 0.5,
+              "z": 5.6
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 280
               }
             }
-          }
-        },
-        {
-          "id": "mesh",
-          "type": "Mesh",
-          "params": {
-            "model": "builtin:rounded-box"
-          }
-        },
-        {
-          "id": "c1",
-          "type": "Renderer",
-          "params": {
-            "material": "55205761e38bc929"
-          }
-        },
-        {
-          "id": "c2",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 280
-          }
+          ]
         }
       ]
     },
@@ -1612,6 +1593,63 @@
           "name": "treadmill +1"
         }
       }
+    },
+    {
+      "id": "0508eaf2",
+      "name": "platform",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -12,
+          "z": 64.5
+        },
+        "scale": {
+          "x": 30000,
+          "y": 0.3,
+          "z": 3000
+        }
+      },
+      "components": [
+        {
+          "id": "4c2629fe",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "trigger": true
+          }
+        },
+        {
+          "id": "5a30d9f0",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:rounded-box"
+          }
+        },
+        {
+          "id": "a1782540",
+          "type": "Renderer",
+          "params": {
+            "material": "4a11d049f9f8e5ac"
+          }
+        },
+        {
+          "id": "91a382a3",
+          "type": "Hazard",
+          "params": {}
+        }
+      ]
     }
   ]
 }
