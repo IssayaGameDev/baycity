@@ -44,6 +44,8 @@ const solid = (id: string, position: Vec3): Node => ({
 })
 
 const blank = (): Level => ({ id: 'lv', config: {}, nodes: [] })
+/** A prefab asset id: what a placement references now (ADR 0091). */
+const PAD_ID = 'aaaaaaaaaaaaaaaa'
 
 /** A two-node prefab: a root carrying only a transform, and a pad under it carrying the geometry. */
 const padPrefab = (): Node => ({ id: 'root', name: 'pad', transform: { position: ZERO }, components: [], children: [solid('pad', ZERO)] })
@@ -139,21 +141,51 @@ describe('placing', () => {
     expect(levelDoc(blank(), {}).place('ghost', vec3(0, 0, 0))).toBe(-1)
   })
 
-  // The bug behind commit 0fc0b9f: a prefab file shipped carrying someone else's name.
-  it('names a placed prefab by its file, not by a name stored inside it', () => {
+  /**
+   * The reference is the asset id, so a name stored inside a prefab file cannot mislead anything — which is
+   * the bug behind commit 0fc0b9f (`AlternatingDanger` shipped carrying `"id": "FastElevator"`) made
+   * unrepresentable rather than worked around.
+   */
+  it('references a placed prefab by its asset id, whatever name the file carries', () => {
     const doc = levelDoc(blank(), {})
-    doc.placePrefab({ ...padPrefab(), name: 'FastElevator' }, 'AlternatingDanger', vec3(0, 0, 0))
-    expect(doc.prefabAt('AlternatingDanger')).toBeDefined()
-    expect(doc.prefabAt('FastElevator')).toBeUndefined()
-    expect(doc.refOf(0)).toBe('AlternatingDanger')
+    doc.placePrefab(PAD_ID, { ...padPrefab(), name: 'FastElevator' }, vec3(0, 0, 0))
+    expect(doc.refOf(0)).toBe(PAD_ID)
+    expect(doc.prefabAt(PAD_ID), 'resolved locally so the inherited nodes are readable').toBeDefined()
   })
 
-  it('gives two files with colliding stored names two table entries', () => {
-    const doc = levelDoc(blank(), {})
-    doc.placePrefab({ ...padPrefab(), name: 'stale' }, 'one', vec3(0, 0, 0))
-    doc.placePrefab({ ...padPrefab(), name: 'stale', children: [solid('other', ZERO)] }, 'two', vec3(4, 0, 0))
-    expect(doc.prefabAt('one')).toBeDefined()
-    expect(doc.prefabAt('two')).toBeDefined()
+  it('copying a placement between levels shares the prefab instead of duplicating it', () => {
+    const from = blank()
+    const a = levelDoc(from, {})
+    a.placePrefab(PAD_ID, padPrefab(), vec3(0, 0, 0))
+    const item = a.copy(0)!
+    expect(Object.keys(item.prefabs), 'the definition travels, so a level that never saw it can resolve it').toEqual([PAD_ID])
+
+    const into = blank()
+    const b = levelDoc(into, {})
+    const at = b.paste(item, null)
+    expect(at).toBeGreaterThanOrEqual(0)
+    expect(b.refOf(at), 'the same prefab, not a copy of it').toBe(PAD_ID)
+    expect(Object.keys(into.prefabs ?? {})).toEqual([PAD_ID])
+  })
+
+  it('a pasted reference nothing can resolve is kept, inert, rather than dropped', () => {
+    const a = levelDoc(blank(), {})
+    a.placePrefab(PAD_ID, padPrefab(), vec3(0, 0, 0))
+    const item = a.copy(0)!
+    const bare = { node: item.node, prefabs: {} } // the definition did not travel
+    const b = levelDoc(blank(), {})
+    const at = b.paste(bare, null)
+    expect(b.refOf(at)).toBe(PAD_ID)
+    expect(b.childCount(at), 'nothing inherited until the prefab is there').toBe(0)
+  })
+
+  it('two placements of one prefab are one reference, so editing it moves both', () => {
+    const level = blank()
+    const doc = levelDoc(level, {})
+    doc.placePrefab(PAD_ID, padPrefab(), vec3(0, 0, 0))
+    doc.placePrefab(PAD_ID, padPrefab(), vec3(4, 0, 0))
+    expect(doc.refCount(PAD_ID)).toBe(2)
+    expect(Object.keys(level.prefabs ?? {}), 'one definition, not two copies').toEqual([PAD_ID])
   })
 
   it('places a model as a node with the mesh and an authored box', () => {
@@ -871,14 +903,14 @@ describe('a prefab the game cannot hold (ADR 0076, ADR 0077)', () => {
   // never one the game cannot open.
   it('refuses to place it, and leaves the level untouched', () => {
     const doc = levelDoc(blank(), {}, noBumper)
-    expect(doc.placePrefab(trampoline(), 'Trampoline', ZERO)).toBe(-1)
+    expect(doc.placePrefab(PAD_ID, trampoline(), ZERO)).toBe(-1)
     expect(doc.count()).toBe(0)
     expect(() => validateLevel(doc.asLevel(), noBumper)).not.toThrow()
   })
 
   it('places it in a game that has the type', () => {
     const doc = levelDoc(blank(), {})
-    expect(doc.placePrefab(trampoline(), 'Trampoline', ZERO)).toBeGreaterThanOrEqual(0)
+    expect(doc.placePrefab(PAD_ID, trampoline(), ZERO)).toBeGreaterThanOrEqual(0)
   })
 })
 

@@ -1757,7 +1757,7 @@ canvas.addEventListener('pointerup', (e) => {
         : placing.kind === 'model'
           ? doc.placeModel(placing.assetId, at)
           : prefabAsset !== undefined
-            ? doc.placePrefab(prefabAsset, assets?.db.byId[placing.assetId]?.name ?? prefabAsset.name ?? prefabAsset.id, at)
+            ? doc.placePrefab(placing.assetId, prefabAsset, at)
             : -1
     if (idx < 0) {
       const unknown = prefabAsset === undefined ? [] : unknownComponentTypes(prefabAsset, doc.registry)

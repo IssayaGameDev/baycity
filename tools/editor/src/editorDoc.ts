@@ -195,13 +195,14 @@ export interface Doc {
    */
   placeModel: (assetId: string, position: Vec3) => number
   /**
-   * Place a prefab that came from a file, **interned as a copy** into the table, so the level stays
-   * self-contained: moving or deleting the prefab file afterwards can never leave the level without geometry.
+   * Place a prefab **by asset id** (ADR 0091): the level gets a reference, never a copy, so editing the prefab
+   * reaches this placement and every other. `root` is the definition, used to resolve the reference locally
+   * and to refuse a prefab this game cannot load — it is not stored in the level.
    *
-   * `name` is the file's name and becomes the table key — not any id stored inside the file, which is
-   * routinely stale (`AlternatingDanger` shipped carrying `"id": "FastElevator"`, commit 0fc0b9f).
+   * In prefab mode there is no reference to make: a prefab holds nodes, never prefabs, so its children are
+   * copied in with fresh ids.
    */
-  placePrefab: (root: Node, name: string, position: Vec3) => number
+  placePrefab: (assetId: string, root: Node, position: Vec3) => number
   /**
    * A node with only a transform — Unity's Create Empty.
    *
@@ -858,7 +859,7 @@ const docOver = (
       commit([...ops, { kind: 'insertNode', parent: null, index: roots.length, node: placed }])
       return indexOfId(placed.id)
     },
-    placePrefab: (root, name, position) => {
+    placePrefab: (assetId, root, position) => {
       // Refused here, not only in the palette: a level a game cannot load must not be producible by any door.
       // A shared component the game lacks never reaches this line — the host adopts it into the game and
       // rebuilds the document first (ADR 0077); what is refused is another game's private component.
@@ -881,9 +882,14 @@ const docOver = (
         commit(ops)
         return last === undefined ? -1 : indexOfId(last.id)
       }
-      const interned = internOp({ ...structuredClone(root), name })
-      const placed: Node = { id: freshId(), transform: { position }, components: [], prefab: interned.key }
-      commit([...interned.ops, { kind: 'insertNode', parent: null, index: roots.length, node: placed }])
+      /**
+        * The definition is put in the resolution map so this document can read the placement's inherited
+        * nodes at once — **not** as an op and never written to the level: the server resolves it from the file
+        * on its own side, and the save strips whatever was resolved (`prefabs.ts`).
+        */
+      ;(level.prefabs ??= {})[assetId] = root
+      const placed: Node = { id: freshId(), transform: { position }, components: [], prefab: assetId }
+      commit([{ kind: 'insertNode', parent: null, index: roots.length, node: placed }])
       return indexOfId(placed.id)
     },
     placeEmpty: (position, parent) => {
@@ -1138,7 +1144,13 @@ const docOver = (
       return poseAt(behaviorOf(trackComponent(n), clips), n.view.transform, timeMs)
     },
 
-    /** Takes the *resolved* definitions rather than the keys alone, including nested children's. */
+    /**
+     * Carries the resolved definitions beside the references, so a placement pasted into a level that has
+     * never referenced that prefab can resolve it without waiting for the asset library.
+     *
+     * The references themselves travel unchanged: an asset id means the same prefab in every level (ADR 0091),
+     * which is what makes copying a placement between levels *share* the prefab instead of duplicating it.
+     */
     copy: (i) => {
       const n = own(i)
       if (n === undefined) return null
@@ -1162,20 +1174,26 @@ const docOver = (
        * A key already present with an identical definition is reused (`freeTableId` does that comparison),
        * which keeps pasting a prefab back into its own level from filling the table with copies.
        */
-      const ops: Op[] = []
-      const remap = (x: Node): void => {
-        if (x.prefab !== undefined) {
+      /**
+       * References are kept exactly as they were — an asset id addresses the same prefab everywhere — and a
+       * definition the clipboard carried is put in the resolution map when this document cannot resolve it
+       * yet. That is not an op and is never written to the level (`prefabs.ts`).
+       *
+       * A reference this document cannot resolve at all is **kept**, not dropped: it is inert until the
+       * prefab file is there, the same way a missing prefab behaves anywhere else (ADR 0091).
+       */
+      const resolve = (x: Node): void => {
+        if (x.prefab !== undefined && level.prefabs?.[x.prefab] === undefined) {
           const carried = item.prefabs[x.prefab]
-          if (carried !== undefined) {
-            const interned = internOp(structuredClone(carried))
-            ops.push(...interned.ops)
-            x.prefab = interned.key
-          } else if (!(x.prefab in table())) delete x.prefab
+          if (carried !== undefined) (level.prefabs ??= {})[x.prefab] = structuredClone(carried)
         }
-        for (const kid of x.children ?? []) remap(kid)
+        for (const kid of x.children ?? []) resolve(kid)
       }
-      remap(fresh)
+      resolve(fresh)
       reidSubtree(fresh)
+      // Refused here as in `placePrefab`: a level this game cannot load must not be producible by any door
+      // (ADR 0076). A pasted placement brings the prefab's components with it.
+      for (const carried of Object.values(item.prefabs)) if (unknownComponentTypes(carried, registry).length > 0) return -1
       // A prefab holds no prefabs, so a placement pasted into one would be a reference this schema forbids.
       if (mode === 'prefab' && fresh.prefab !== undefined) return -1
 
@@ -1189,7 +1207,7 @@ const docOver = (
         host = own(parent)?.authored
         if (host === undefined) return -1
       }
-      commit([...ops, { kind: 'insertNode', parent: host?.id ?? null, index: host === undefined ? roots.length : (host.children?.length ?? 0), node: fresh }])
+      commit([{ kind: 'insertNode', parent: host?.id ?? null, index: host === undefined ? roots.length : (host.children?.length ?? 0), node: fresh }])
       return indexOfId(fresh.id)
     },
     refOf: (i) => node(i)?.authored.prefab ?? null,
