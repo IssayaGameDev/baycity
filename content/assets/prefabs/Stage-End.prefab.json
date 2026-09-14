@@ -15,12 +15,12 @@
       "name": "platform",
       "transform": {
         "position": {
-          "x": -0.0016,
+          "x": 0,
           "y": -0.0174,
           "z": 0.0079
         },
         "scale": {
-          "x": 22.5,
+          "x": 15.4,
           "y": 0.3,
           "z": 15.3
         }
@@ -77,9 +77,9 @@
       "name": "platform",
       "transform": {
         "position": {
-          "x": 11.1016,
-          "y": 2.3174,
-          "z": -0.1079
+          "x": 7.5,
+          "y": 2.5,
+          "z": 0.05
         },
         "rotation": {
           "x": 0,
@@ -133,7 +133,7 @@
       "name": "Win",
       "transform": {
         "position": {
-          "x": -8.5,
+          "x": -5.5,
           "y": 0.5,
           "z": -4
         },
@@ -187,9 +187,9 @@
       "name": "platform",
       "transform": {
         "position": {
-          "x": -11.3984,
+          "x": -7.5,
           "y": 2.3174,
-          "z": -0.1079
+          "z": 0
         },
         "rotation": {
           "x": 0,
@@ -243,7 +243,7 @@
       "name": "treadmill +1",
       "transform": {
         "position": {
-          "x": -8.5,
+          "x": -5.5,
           "y": 0.5,
           "z": 0
         },
