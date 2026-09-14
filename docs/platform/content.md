@@ -16,13 +16,14 @@ interface NodeOverride { transform?; name?; params?: Record<compId, Record<strin
 interface Transform { position: Vec3; rotation?: Vec3 /* euler rad XYZ */; scale?: Vec3 /* baked into shapes at load */ }
 type ColliderDesc = box{halfExtents} | cylinder{halfHeight,radius} | capsule{halfHeight,radius} | ball{radius} | convex{points}
 interface Keyframe { t: number /* ms */; position?: Vec3; rotation?: Vec3; easing?: 'linear'|'in'|'out'|'inOut'|'step' }
-interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: SunConfig; ambient: AmbientConfig; sky: SkyConfig; postfx: PostFXConfig }> }
+interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: SunConfig; ambient: AmbientConfig; sky: SkyConfig; postfx: PostFXConfig }>; netBounds?: number }
 ```
 
 - `enabled === false` → loader and runtime skip it.
 - No prefab-in-prefab (ADR 0023). Override keys are not checked against the tree; dangling = inert (ADR 0033), and so is a `prefab` no file resolves (ADR 0091).
 - Keys are **offsets** from `Transform`, per channel; rotation lerps per component (ADR 0050).
 - `environment` absent/partial → renderer defaults; sun is config, not a `Light` (ADR 0048).
+- `netBounds`: half-extent in metres that peer positions are quantized over on the wire (ADR 0093). Absent → `QUANT_BOUND` (1000 m). Step is `2 × netBounds / 65535`. The editor draws it as a box (ADR 0093); a peer outside it stops being relayed (ADR 0092).
 
 ## Resolution — `packages/content/src/nodes.ts`
 
@@ -35,7 +36,7 @@ interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: Su
 
 ## Validation — `packages/content/src/validate.ts`
 
-`validateLevel(data: unknown, checker?: ParamChecker): Level` — throws `LevelError` with a JSON-path message. Per-tree helper `validateNodeTree(node, at, { ids, table, insidePrefab, checker? })` and `checkTransform`/`checkComponents`/`checkOverrides`/`validateConfig` are exported for `ops.ts`. Always: ids non-empty, unique per tree; transforms; component ids unique per node; `prefab` key in table and not inside a prefab; override shapes; `config.mode.name` non-empty; `environment` sub-blocks (`#rrggbb`, finite numbers, booleans). Params **only** with `checker` (`Registry.checkParams`). `nodeRef` targets unchecked.
+`validateLevel(data: unknown, checker?: ParamChecker): Level` — throws `LevelError` with a JSON-path message. Per-tree helper `validateNodeTree(node, at, { ids, table, insidePrefab, checker? })` and `checkTransform`/`checkComponents`/`checkOverrides`/`validateConfig` are exported for `ops.ts`. Always: ids non-empty, unique per tree; transforms; component ids unique per node; `prefab` key in table and not inside a prefab; override shapes; `config.mode.name` non-empty; `environment` sub-blocks (`#rrggbb`, finite numbers, booleans); `config.netBounds` a positive finite number. Params **only** with `checker` (`Registry.checkParams`). `nodeRef` targets unchecked.
 
 ## Loader — `packages/content/src/loader.ts`
 
@@ -79,7 +80,7 @@ type Op = { table?: string } & (
   | insertNode{parent|null, index, node} | removeNode | moveNode{parent|null, index} | replaceNode{node}
   | internPrefab{key, root} | dropPrefab{key}
   | setOverrideTransform | setOverrideName | setOverrideParams | setOverrideEnabled{enabled|null} | addOverrideComponent | removeOverrideComponent | setOverrideRemoved | setNodeOverride{override|null}
-  | setEnvironment{environment|null} | setMode{mode|null} )
+  | setEnvironment{environment|null} | setMode{mode|null} | setNetBounds{netBounds|null} )
 invertOp(level, op): Op | null    // before apply; null = changes nothing; throws OpError for what apply would refuse
 applyOp(level, op): void          // in place; validates first (structure only), throws OpError having touched nothing
 applyBatch(level, ops): { ops /* that changed something */, inverses /* undo order */ }   // all-or-nothing via a scratch clone
@@ -88,7 +89,7 @@ touchedRefs(level, op): NodeRef[] // the node, or the subtree (+ inherited refs 
 
 Rules: ids and table keys are minted by the client and travel in the op; `internPrefab` on an identical entry is
 a no-op and on a different one an `OpError`; `dropPrefab` of a referenced key is a no-op; a `table` op may not
-insert a second root, remove the root, or touch environment/mode; `moveNode` refuses a cycle; `insertNode` /
+insert a second root, remove the root, or touch environment/mode/netBounds; `moveNode` refuses a cycle; `insertNode` /
 `replaceNode` refuse an id already in the tree. Validation reuses `validate.ts` (exported `validateNodeTree`,
 `checkTransform`, `checkComponents`, `checkOverrides`, `validateConfig`); `LevelError` becomes `OpError`.
 Tidying (`children: []`, emptied override records) happens here so every copy writes identical JSON.

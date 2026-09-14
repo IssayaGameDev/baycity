@@ -447,6 +447,9 @@ importers:
       '@mp/mode':
         specifier: workspace:*
         version: link:../../packages/mode
+      '@mp/net':
+        specifier: workspace:*
+        version: link:../../packages/net
       '@mp/physics':
         specifier: workspace:*
         version: link:../../packages/physics

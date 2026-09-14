@@ -226,6 +226,18 @@ export interface LevelConfig {
    * renderer's defaults — so a level authored before this existed still loads and still looks the way it did.
    */
   environment?: Partial<EnvironmentConfig>
+  /**
+   * Half-extent, in metres, of the range a peer's position is quantized over on the wire (ADR 0092/0093).
+   *
+   * Absent means the platform default (`QUANT_BOUND`, 1000 m), which is what every level authored before this
+   * existed gets. Set it when a level reaches further than that, or when it is small and wants the precision
+   * back: the step is `2 x netBounds / 65535`, so 1000 is 3 cm and 100 is 3 mm.
+   *
+   * A peer outside it is **clamped and then stops being relayed at all**, because the delta's change check
+   * compares quantized values. That is why the editor draws this as a box rather than leaving it a number in
+   * a file (ADR 0093).
+   */
+  netBounds?: number
 }
 
 /**

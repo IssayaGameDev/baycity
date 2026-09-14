@@ -21,18 +21,19 @@ Dead on the live path: `@mp/core` transport types, `packages/client/src/transpor
 - `startServer({ port? })` → `ServerHandle { port, stats(), stop() }`. `DEFAULT_PORT = 9200`. `colyseus@0.16.5`; clients `colyseus.js@^0.16.22`.
 - One room type: `define('game', GameRoom).filterBy(['game', 'level'])`. Clients `joinOrCreate('game', { name, game, level })`. Filtering is per supplied option — an omitted key matches any room.
 - `GameRoom`: `maxClients = 20`, `setPatchRate(null)` (no `@colyseus/schema`), ids from `FIRST_PLAYER_ID = 1000`, default name `Player ${id}`. `onJoin` → `WELCOME` + `ROSTER` broadcast; `onLeave` → `ROSTER`.
+- **Quantization bound, per room** (ADR 0093): `onJoin` takes `options.bounds` from the **first** client (`boundOf`, so absent/nonsense → `QUANT_BOUND`), keeps it for the room's life, and sends it in every `WELCOME`. The relay still reads no level — it is told a number. Rooms are `filterBy(['game','level'])`, so later clients send the same value unless one is on stale content; theirs is ignored and they use the room's, which costs precision rather than agreement.
 - `SNAPSHOT_RATE_HZ = 20`: `setSimulationInterval` accumulates `serverTimeMs` (0 at room create) and sends each client `encodeSnapshot(deltaSnapshot(player, peers, time))`. Recipient never included.
 - `deltaSnapshot`: first send full; then `changed` = peers where `relayDiffers` (flags, quantized x/y/z, quantized yaw, quantized speed, or `base` differ from last sent), `removed` = ids gone. Safe because the transport is reliable+ordered.
 - `getRoomStats()` → `{ ticks, tickAvgMs, tickMaxMs }`, aggregated over the process's rooms (budget 3).
 
 ## Wire format (`packages/net`)
 
-`PROTOCOL_VERSION = 11`. Little-endian. Every message rides one Colyseus channel `NET_CHANNEL = 'n'` as raw bytes; header `u8 version, u8 type`. `readMessageType` peeks; `readHeader` throws on mismatch (server catches and drops the frame).
+`PROTOCOL_VERSION = 12`. Little-endian. Every message rides one Colyseus channel `NET_CHANNEL = 'n'` as raw bytes; header `u8 version, u8 type`. `readMessageType` peeks; `readHeader` throws on mismatch (server catches and drops the frame).
 
 | Type | Const | Dir | Layout | Bytes |
 |---|---|---|---|---|
 | 1 | `MSG_SNAPSHOT` | s→c | below | 9 + 12n + 2 + 2m |
-| 2 | `MSG_WELCOME` | s→c | `u16 playerId` | 4 |
+| 2 | `MSG_WELCOME` | s→c | `u16 playerId, f32 bound` | 8 |
 | 3 | `MSG_STATE` | c→s | `f32 x,y,z, u8 flags, f32 yaw, f32 speed, u8 base` | 24 |
 | 4 | `MSG_PING` | c→s | `u32 clientTimeMs` | 6 |
 | 5 | `MSG_PONG` | s→c | `u32 clientTimeMs, u32 serverTimeMs` | 10 |
@@ -59,11 +60,18 @@ Dead on the live path: `@mp/core` transport types, `packages/client/src/transpor
 
 | Symbol | Value | Resolution |
 |---|---|---|
-| `QUANT_BOUND` | 1000 | ±1000 m over u16 → 2000/65535 ≈ 3.05 cm; clamped (ADR 0092) |
+| `QUANT_BOUND` | 1000 | default half-extent; ±1000 m over u16 → 2000/65535 ≈ 3.05 cm; clamped (ADR 0092) |
+| `boundOf(n)` | `n` or the default | a level's `config.netBounds` when positive and finite (ADR 0093) |
 | yaw | 256 steps/turn | ≈1.4°; wrapped, dequantizes to [−π, π] |
 | `SPEED_BOUND` | 16 m/s | 255 steps → 0.063 m/s; clamped |
 
 Upstream `STATE` is full float; quantization happens once, in the snapshot encoder.
+
+`quantizeAxis(v, bound)` / `dequantizeAxis(q, bound)` / `encodeSnapshot(msg, bound)` / `decodeSnapshot(buf, bound)` /
+`deltaSnapshot(s, peers, time, bound)` all take the bound, defaulting to `QUANT_BOUND`. The room passes its own;
+the client passes the one `WELCOME` gave it. `relayDiffers` compares at that bound too — it is what decides the
+smallest move a viewer can be told about, and past the bound two frames are identical, so a peer outside it is
+not merely clamped but stops being relayed (ADR 0092).
 
 ### Flags byte (`state.ts`, `gameStates.ts`)
 

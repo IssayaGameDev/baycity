@@ -23,6 +23,7 @@ export {
   quantizeAxis,
   dequantizeAxis,
   QUANT_BOUND,
+  boundOf,
   quantizeYaw,
   dequantizeYaw,
   quantizeSpeed,

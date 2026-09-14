@@ -72,6 +72,7 @@ export type OpBody =
   // --- the level itself ---
   | { kind: 'setEnvironment'; environment: Partial<EnvironmentConfig> | null }
   | { kind: 'setMode'; mode: ModeRef | null }
+  | { kind: 'setNetBounds'; netBounds: number | null }
 
 /** `table` scopes the op to `level.prefabs[table]` (a prefab opened on top, ADR 0089); absent = the level forest. */
 export type Op = OpBody & { table?: string }
@@ -395,6 +396,12 @@ const invert = (level: Level, op: Op): Op | null => {
       const prior = overrideRecord(owner, op.node, false) ?? null
       return same(prior, op.override) ? null : { kind: 'setNodeOverride', owner: op.owner, node: op.node, override: prior === null ? null : clone(prior) }
     }
+    case 'setNetBounds': {
+      if (t !== undefined) throw new OpError('a prefab has no bounds of its own')
+      validateConfig({ ...level.config, ...(op.netBounds === null ? {} : { netBounds: op.netBounds }) })
+      const prior = level.config.netBounds ?? null
+      return prior === op.netBounds ? null : { kind: 'setNetBounds', netBounds: prior }
+    }
     case 'setEnvironment': {
       if (t !== undefined) throw new OpError('a prefab has no environment')
       validateConfig({ ...level.config, ...(op.environment === null ? {} : { environment: op.environment }) })
@@ -595,6 +602,11 @@ export const applyOp = (level: Level, op: Op): void => {
       tidyOverride(owner, op.node)
       return
     }
+    case 'setNetBounds': {
+      const { netBounds: _dropped, ...rest } = level.config
+      level.config = op.netBounds === null ? rest : { ...rest, netBounds: op.netBounds }
+      return
+    }
     case 'setEnvironment': {
       const { environment: _dropped, ...rest } = level.config
       level.config = op.environment === null ? rest : { ...rest, environment: clone(op.environment) }
@@ -679,6 +691,7 @@ export const touchedRefs = (level: Level, op: Op): NodeRef[] => {
     case 'dropPrefab':
     case 'setEnvironment':
     case 'setMode':
+    case 'setNetBounds':
       return []
     default:
       return [{ owner: op.owner, node: op.node }]

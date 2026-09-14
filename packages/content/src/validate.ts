@@ -29,6 +29,13 @@ export const validateConfig = (c: unknown): LevelConfig => {
     if (typeof c.mode.name !== 'string' || c.mode.name === '') throw new LevelError('level.config.mode.name: expected a non-empty string')
   }
   if (c.environment !== undefined) validateEnvironment(c.environment)
+  if (c.netBounds !== undefined) {
+    // Positive and finite is the whole rule. An upper limit would be a guess: the cost of a large bound is
+    // precision, which is the author's to trade (ADR 0093), not a correctness failure.
+    if (typeof c.netBounds !== 'number' || !Number.isFinite(c.netBounds) || c.netBounds <= 0) {
+      throw new LevelError('level.config.netBounds: expected a positive finite number of metres')
+    }
+  }
   return c as unknown as LevelConfig
 }
 

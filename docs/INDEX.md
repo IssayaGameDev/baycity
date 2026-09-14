@@ -138,5 +138,6 @@ why matters.
 | [0090](adr/0090-a-shape-is-a-built-in-mesh-sized-by-scale.md) | A shape is a built-in mesh, sized by the object's scale |
 | [0091](adr/0091-a-level-references-a-prefab-by-id.md) | A level references a prefab by id, and a prefab is edited live |
 | [0092](adr/0092-peers-are-quantized-over-a-kilometre.md) | A peer's position is quantized over ±1000 m, not ±40 m |
+| [0093](adr/0093-a-level-says-how-far-it-reaches.md) | A level says how far it reaches, and the editor draws it |
 
 `Design archive/` holds superseded design material and is not maintained.
