@@ -59,6 +59,7 @@ import { createCollab, httpTransport, parsePresence, type Hold, type Peer } from
 import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type ClipItem, type Doc, type KeyEditor, type Mode, type OpBatch } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
 import { askName, askUnsaved } from './confirm'
+import { prefabFolder, prefabTarget, sanitisePrefabName } from './prefabPath'
 import {
   acquireLock,
   heartbeatLocks,
@@ -1844,14 +1845,68 @@ const duplicateSelected = (): void => {
   applySelection(made.reverse())
 }
 /** Give an inline one-off a shared identity, so it can be referenced and edited in one place. */
-const extractSelected = (): void => {
-  if (selected === null || doc === null) return
-  const id = doc.extract(selected)
-  if (id === null) return
-  recordEdit('extract to prefab')
-  inspectorRebuild() // the link row flips from "not linked" to the new prefab
-  uiChanged() // the level's own entries are placeable too, and the row gains a badge
-  setStatus(`extracted to prefab "${id}"`)
+/**
+ * Write the selection into a prefab file and point it at that file (ADR 0091) — the one action that makes a
+ * prefab, replacing both `Extract to prefab`, which wrote no file, and prefab mode's Save, which made no
+ * reference.
+ *
+ * **The file goes first.** A failed write costs nothing but a status line, where the reverse order would leave
+ * a placement pointing at a prefab that does not exist. If the write lands and the level edit does not, the
+ * file is simply an unreferenced prefab, which is visible in the Project panel and placeable by hand.
+ *
+ * The undo entry holds the level's `replaceNode` and its inverse. It does **not** delete the file: by the time
+ * anyone presses Ctrl+Z another level may already reference it, and deleting a file on an undo is a surprise
+ * nobody recovers from. The Project panel is where a prefab is deleted.
+ */
+const saveAsPrefab = async (index: number): Promise<void> => {
+  const open = doc
+  if (open === null || open.mode !== 'level' || assets === null) return
+  const definition = open.definitionOf(index)
+  if (definition === null) return
+  if (refuseHeld(index)) return
+
+  // Identity that survives the awaits: an index shifts under a remote edit, a ref does not.
+  const ref = open.refAt(index)
+  if (ref === null) return
+
+  const folder = project.folder()
+  const asked = await askName('Save as prefab', sanitisePrefabName(open.nameOf(index) || open.label(index)), `Saved in content/assets/${prefabFolder(folder)}/ — the folder open in the Project panel. Letters, digits, - and _.`)
+  if (asked === null) return
+  const target = prefabTarget(folder, asked, assets.db.entries.map((e) => e.path))
+  if ('error' in target) {
+    setStatus(target.error)
+    return
+  }
+
+  let created
+  try {
+    created = await assets.createPrefab(target.path, definition)
+  } catch (e) {
+    setStatus(`could not save ${target.path}: ${String(e)}`)
+    return
+  }
+  if (created === undefined) {
+    setProblem(`wrote ${target.path} but it was given no id — reload the editor`)
+    return
+  }
+  previews.invalidate()
+  await reloadAssets()
+
+  // The document may have moved under the dialog and the two requests.
+  const at = doc === open ? open.indexOfRef(ref) : null
+  if (at === null || !open.linkToPrefab(at, created.id, definition)) {
+    setStatus(`saved ${created.name} to ${target.path}, but that object is gone — place it from the Project panel`)
+    refreshUi()
+    return
+  }
+  recordEdit('save as prefab')
+  buildItems()
+  rebuildLoaded()
+  applySelection([open.indexOfRef(ref) ?? at])
+  inspectorRebuild()
+  uiChanged()
+  loadNewReferences(buildItems)
+  setStatus(`saved ${created.name} to ${target.path} — every level can place it now`)
 }
 
 /**
@@ -2594,7 +2649,7 @@ const applyOverrides = (): void => {
  * The Hierarchy's right-click menus.
  *
  * Almost every entry is a command that already existed and could only be reached from the keyboard or by a
- * gesture nobody discovers: rename was double-click only, Extract and Open lived in the Inspector's header,
+ * gesture nobody discovers: rename was double-click only, Save as prefab and Open lived in the Inspector's header,
  * and delete on an inherited node did nothing at all with no explanation. The menu is where they become
  * findable, which is why every disabled entry carries a reason rather than being left out.
  */
@@ -2654,10 +2709,10 @@ const menuFor = (index: number): MenuItem[] => {
       run: () => openPrefabOf(index),
     },
     {
-      label: 'Extract to prefab',
+      label: 'Save as prefab…',
       enabled: own && ref === null && doc.mode === 'level',
       why: ref !== null ? 'already a prefab' : doc.mode === 'prefab' ? 'already inside a prefab' : why,
-      run: () => extractSelected(),
+      run: () => void saveAsPrefab(index),
     },
     { label: 'Revert to prefab', divider: true, enabled: inherited && doc.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => revertOverride() },
     { label: 'Apply to prefab', enabled: inherited && doc.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => applyOverrides() },
@@ -3516,7 +3571,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   },
   duplicate: duplicateSelected,
   remove: deleteSelected,
-  extract: extractSelected,
+  saveAsPrefab: () => void (selected !== null && saveAsPrefab(selected)),
   openPrefab: () => {
     if (selected !== null) openPrefabOf(selected)
   },

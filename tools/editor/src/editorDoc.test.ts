@@ -629,14 +629,23 @@ describe('references', () => {
     const doc = levelDoc(blank())
     const i = doc.placeModel('m', vec3(5, 0, 0))
     doc.setName(i, 'lamp')
-    expect(doc.extract(i)).toBe('lamp')
-    expect(doc.refOf(i)).toBe('lamp')
+
+    // What the host writes to a file: the contents at the origin, nothing reported, nothing changed.
+    const definition = doc.definitionOf(i)!
+    expect(definition.name).toBe('lamp')
+    expect(definition.transform.position, 'at the origin — where it sits is each placement’s business').toEqual(ZERO)
+    expect(doc.refOf(i), 'still a one-off until the link is made').toBeNull()
+
+    expect(doc.linkToPrefab(i, PAD_ID, definition)).toBe(true)
+    expect(doc.refOf(i)).toBe(PAD_ID)
     expect(doc.transformOf(i).position, 'the placement keeps its transform').toEqual(vec3(5, 0, 0))
     expect(typesOn(doc, i), 'and reads its contents through the reference').toEqual([COLLIDER, MESH, RENDERER])
   })
 
-  it('refuses to extract something that is already a reference', () => {
-    expect(placed().doc.extract(0)).toBeNull()
+  it('refuses a node that is already a reference, and one inside a prefab', () => {
+    expect(placed().doc.definitionOf(0)).toBeNull()
+    expect(placed().doc.linkToPrefab(0, PAD_ID, padPrefab())).toBe(false)
+    expect(prefabDoc(padPrefab()).definitionOf(1)).toBeNull()
   })
 })
 
@@ -959,7 +968,7 @@ describe('the document reports its edits as ops', () => {
     doc.setEnvironment({ ambient: { intensity: 0.4 } })
     doc.setMode('parkour')
     doc.setMode(null)
-    expect(doc.extract(named(doc, 'empty one'))).not.toBeNull()
+    expect(doc.linkToPrefab(named(doc, 'empty one'), PAD_ID, padPrefab())).toBe(true)
 
     const replay = structuredClone(start)
     for (const b of batches) applyBatch(replay, b.ops)

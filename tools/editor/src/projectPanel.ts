@@ -69,6 +69,11 @@ export interface ProjectHost {
 
 export interface Project {
   render: () => void
+  /**
+   * The folder on screen: `''` at the assets root, `null` across all folders. `Save as prefab…` writes here,
+   * so navigating the panel is how the destination is chosen (ADR 0091).
+   */
+  folder: () => string | null
 }
 
 const KIND_LABEL: Record<AssetKind, string> = {
@@ -425,5 +430,5 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
   }
 
   render()
-  return { render }
+  return { render, folder: () => folder }
 }

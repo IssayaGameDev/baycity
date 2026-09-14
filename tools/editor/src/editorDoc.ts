@@ -2,7 +2,6 @@ import {
   bakeOverrides,
   boolParam,
   effectiveNode,
-  freeTableKey,
   numberParam,
   poseAt,
   vec3Param,
@@ -304,13 +303,22 @@ export interface Doc {
   // ---- clipboard, references, files ---------------------------------------------------------------
   copy: (i: number) => ClipItem | null
   paste: (item: ClipItem, parent: number | null) => number
-  /** The prefab key this node references, or `null`. */
+  /** The prefab **asset id** this node references, or `null` (ADR 0091). */
   refOf: (i: number) => string | null
-  /** Turn a plain node into a shared table entry and reference it. The new key, or `null`. */
-  extract: (i: number) => string | null
-  /** The shared definition behind a key — the object to edit so every placement follows. */
+  /**
+   * The prefab this node would become: its components and children at the origin. Pure — nothing is written
+   * and no op is reported, because the definition becomes a **file**, which is the host's to write. `null`
+   * when the node is inherited, already a placement, or this document is a prefab.
+   */
+  definitionOf: (i: number) => Node | null
+  /**
+   * Point a node at a prefab asset: its own components go, its transform and name stay, and it inherits the
+   * definition. One op, invertible, so the whole action is one undo step. `false` when it could not apply.
+   */
+  linkToPrefab: (i: number, assetId: string, root: Node) => boolean
+  /** The definition behind an asset id, as this document resolved it — the object every placement reads. */
   prefabAt: (id: string) => Node | undefined
-  /** How many placements reference `id`: what "edit this and 3 things move" is counting. */
+  /** How many placements in **this level** reference `id`. A prefab is shared across levels the editor cannot see. */
   refCount: (id: string) => number
   /** A level to instantiate for spawn gizmos and physics (prefab mode → wrapped at the origin). */
   asLevel: () => Level
@@ -540,16 +548,6 @@ const docOver = (
   const indexOfId = (id: string): number => nodes().findIndex((n) => n.owner === undefined && n.authored.id === id)
   const refOf = (n: DocNode): NodeRef => (n.owner === undefined ? (table_ === undefined ? { id: n.authored.id } : { table: table_, id: n.authored.id }) : { owner: n.owner.id, node: n.authored.id })
 
-  const table = (): Record<string, Node> => level.prefabs ?? {}
-  /**
-   * The op that puts `root` in the table under a free key — reusing an identical entry, in which case there is
-   * nothing to do — and the key it lands under. The key is minted here, on the client, and travels in the op.
-   */
-  const internOp = (root: Node): { key: string; ops: Op[] } => {
-    const t = table()
-    const key = freeTableKey(t, root.name ?? root.id, root)
-    return { key, ops: t[key] === undefined ? [{ kind: 'internPrefab', key, root }] : [] }
-  }
   /** The parent an insert names for the children of `host`: `null` for the level forest, else the node's id. */
   const parentIdOf = (host: Node[]): string | null => {
     if (host === roots) return null
@@ -1184,22 +1182,27 @@ const docOver = (
       return indexOfId(fresh.id)
     },
     refOf: (i) => node(i)?.authored.prefab ?? null,
-    extract: (i) => {
+    definitionOf: (i) => {
       const n = own(i)
       if (n === undefined || n.authored.prefab !== undefined || mode === 'prefab') return null
-      // The definition is the node's contents; the placement keeps its transform and points at them.
-      const definition: Node = {
+      // The node's contents, at the origin: where the prefab sits is each placement's business.
+      return {
         id: 'root',
         ...(n.authored.name !== undefined ? { name: n.authored.name } : {}),
         transform: { position: vec3(0, 0, 0) },
         components: structuredClone(n.authored.components),
         ...(n.authored.children !== undefined ? { children: structuredClone(n.authored.children) } : {}),
       }
-      const interned = internOp(definition)
+    },
+    linkToPrefab: (i, assetId, root) => {
+      const n = own(i)
+      if (n === undefined || n.authored.prefab !== undefined || mode === 'prefab') return false
+      // Resolved for this document so the inherited nodes read at once; not an op, never written (`prefabs.ts`).
+      ;(level.prefabs ??= {})[assetId] = root
       const { children: _kids, ...rest } = n.authored
-      const placement: Node = { ...rest, components: [], prefab: interned.key }
-      commit([...interned.ops, { kind: 'replaceNode', id: n.authored.id, node: placement }])
-      return interned.key
+      const placement: Node = { ...rest, components: [], prefab: assetId }
+      commit([{ kind: 'replaceNode', id: n.authored.id, node: placement }])
+      return true
     },
     prefabAt: (id) => level.prefabs?.[id],
     refCount: (id) => {

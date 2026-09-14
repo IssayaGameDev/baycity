@@ -70,7 +70,8 @@ export interface InspectorHost {
   onRenamed: () => void
   duplicate: () => void
   remove: () => void
-  extract: () => void
+  /** Write the selection into a prefab file and point it at that file (ADR 0091). */
+  saveAsPrefab: () => void
   openPrefab: () => void
   /**
    * Assets of one kind to offer, as Tweakpane options (label → asset id; `''` for none).
@@ -99,7 +100,7 @@ export interface Inspector {
   rebuild: () => void
   /** The gizmo moved the selection — refresh the numbers without rebuilding. */
   sync: () => void
-  /** Redraw just the name + prefab link (e.g. after an Extract changed the link). */
+  /** Redraw just the name + prefab link (e.g. after Save as prefab changed the link). */
   renderHead: () => void
 }
 
@@ -195,10 +196,10 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       linkButton.onclick = host.openPrefab
       linkButton.hidden = false
     } else if (doc.mode === 'level' && doc.kindOf(at) === 'own') {
-      linkWho.textContent = 'not linked to a prefab'
-      linkButton.textContent = 'Extract'
-      linkButton.title = 'promote this one-off into a shared prefab'
-      linkButton.onclick = host.extract
+      linkWho.textContent = 'not saved as a prefab'
+      linkButton.textContent = 'Save as prefab…'
+      linkButton.title = 'write this into a prefab file — every level can then place it, and your edits reach all of them'
+      linkButton.onclick = host.saveAsPrefab
       linkButton.hidden = false
     } else {
       linkWho.textContent = doc.kindOf(at) === 'inherited' ? 'part of a prefab — edits become overrides' : 'part of this prefab'
