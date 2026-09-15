@@ -42,9 +42,12 @@ export interface Row {
   held: string
   /** References a prefab — Unity tints these, and it is the distinction that matters most here. */
   linked: boolean
-  /** Switched off (ADR 0099): absent from the level, drawn nowhere, and the row's checkbox is clear. */
+  /**
+   * Switched off (ADR 0099): absent from the level and drawn nowhere. The row **dims**; the checkbox that
+   * changes it lives in the Inspector's header, where Unity puts it (ADR 0102).
+   */
   disabled: boolean
-  /** An **ancestor** is switched off, so this is absent whatever its own checkbox says — shown greyed. */
+  /** An **ancestor** is switched off, so this is absent whatever its own flag says — the row dims the same. */
   disabledAbove: boolean
   hasChildren: boolean
   /** Something can be opened under this row: inherited nodes, own children, or both. */
@@ -163,13 +166,6 @@ export interface HierarchyHost {
    * panel knows which rows are on screen.
    */
   onSelect: (index: number, mode: SelectMode, order: readonly number[]) => void
-  /**
-   * A row's checkbox was clicked: switch that node and its subtree off, or back on (ADR 0099).
-   *
-   * Unity's active checkbox. Not a selection — clicking it must not move what the Inspector is showing, which
-   * is why the handler stops the event.
-   */
-  onSetEnabled: (index: number, on: boolean) => void
   /** Whether the Game row is the current selection (ADR 0052). */
   gameSelected: () => boolean
   /** What the Game row reads: the game's label, or that the level has none. */
@@ -291,26 +287,6 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
       // Indentation is the only thing that says "inside", so it comes from the data, not from a class.
       el.style.paddingLeft = `${6 + row.depth * 14}px`
       el.dataset.index = String(row.index) // what `reveal` scrolls to after a render
-
-      /**
-       * The active checkbox (ADR 0099), left of the twist as Unity has it.
-       *
-       * Disabled as a control when an ancestor is off: the node's own flag is then not what is keeping it out
-       * of the level, and offering a checkbox that changes nothing visible is worse than offering none.
-       */
-      const active = document.createElement('input')
-      active.type = 'checkbox'
-      active.className = 'row-on'
-      active.checked = !row.disabled
-      active.disabled = row.disabledAbove || row.held !== ''
-      active.title = row.disabledAbove
-        ? 'a parent is switched off'
-        : row.disabled
-          ? 'switched off: this and everything under it is not in the level'
-          : 'in the level'
-      active.addEventListener('pointerdown', (e) => e.stopPropagation()) // toggling is not selecting
-      active.addEventListener('change', () => host.onSetEnabled(row.index, active.checked))
-      el.append(active)
 
       const twist = document.createElement('span')
       twist.className = 'twist'

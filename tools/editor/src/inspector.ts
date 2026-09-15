@@ -60,6 +60,11 @@ export interface InspectorHost {
   onModeChanged: () => void
   /** The environment changed: rebake the sky and relight, since sun, ambient and sky move together. */
   onEnvironmentChanged: () => void
+  /**
+   * The header's active checkbox was clicked: switch the selected node and its subtree off, or back on
+   * (ADR 0099/0102). Structural — what the level contains just changed.
+   */
+  onSetEnabled: (on: boolean) => void
   /** Whether the network-bounds box is currently drawn in the viewport (ADR 0093). */
   boundsBoxShown: () => boolean
   /** Turn the box on or off. It is off by default and never persists: it is a ruler, not scenery. */
@@ -177,6 +182,23 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
    * The header is ours, not Tweakpane's: Unity's name field is full-width and prominent, and a Tweakpane
    * binding would put it in the label column like any other property.
    */
+  /**
+   * The active checkbox, left of the name (ADR 0099, moved here by ADR 0102).
+   *
+   * Where Unity puts it, and Kodjo's call: the Hierarchy is for finding and arranging things, and a column of
+   * checkboxes down it competed with the names. The Hierarchy still **dims** a switched-off row — that is the
+   * feedback — it just is not where you change it.
+   *
+   * Disabled as a control when an ancestor is off: the node's own flag is then not what is keeping it out of
+   * the level, and a checkbox that changes nothing visible is worse than none.
+   */
+  const activeRow = el('div', 'active')
+  const activeBox = el('input', 'row-on')
+  activeBox.type = 'checkbox'
+  const activeLabel = el('span', 'who')
+  activeRow.append(activeBox, activeLabel)
+  activeBox.addEventListener('change', () => host.onSetEnabled(activeBox.checked))
+
   const nameInput = el('input', 'ctl name')
   nameInput.type = 'text'
   nameInput.spellcheck = false
@@ -199,7 +221,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   const linkButton = el('button', 'ctl')
   linkRow.append(linkWho, linkButton)
   const multiNote = el('div', 'multi')
-  head.append(nameInput, linkRow, multiNote)
+  head.append(activeRow, nameInput, linkRow, multiNote)
 
   /** Name, prefab link, and the multi-selection note. Separate from `rebuild` so renaming is cheap. */
   const renderHead = (): void => {
@@ -210,6 +232,13 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       return
     }
     head.hidden = false
+
+    const off = !doc.nodeEnabled(at)
+    const offAbove = doc.disabledByAncestor(at)
+    activeBox.checked = !off
+    activeBox.disabled = offAbove
+    activeLabel.textContent = offAbove ? 'off — a parent is switched off' : off ? 'off — not in the level' : 'in the level'
+    activeRow.classList.toggle('off', off || offAbove)
 
     // Value = the typed name; placeholder = the fallback, so a clean file shows a sensible name without one
     // being written into the JSON.

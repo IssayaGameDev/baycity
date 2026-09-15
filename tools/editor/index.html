@@ -649,25 +649,9 @@
       .row.primary {
         box-shadow: inset 2px 0 0 var(--accent);
       }
-      /* The active checkbox (ADR 0099). Small and dim until you look for it: most rows are on, and a column
-         of bright checkboxes would compete with the names. */
-      .row .row-on {
-        width: 11px;
-        height: 11px;
-        margin: 0;
-        flex: 0 0 auto;
-        accent-color: var(--accent);
-        opacity: 0.55;
-      }
-      .row:hover .row-on,
-      .row .row-on:not(:checked) {
-        opacity: 1;
-      }
-      .row .row-on:disabled {
-        opacity: 0.3;
-      }
       /* Switched off, or off because a parent is: it is not in the level, so it reads like the Environment
-         row's dimming rather than like a selection. */
+         row's dimming rather than like a selection. The checkbox that changes it is in the Inspector's
+         header, where Unity puts it (ADR 0102). */
       .row.off .name {
         color: var(--dim);
         font-style: italic;
@@ -930,6 +914,25 @@
       #insp-head {
         padding: 6px;
         border-bottom: 1px solid var(--line);
+      }
+      /* The active checkbox and what it means, above the name — Unity's header order (ADR 0102). */
+      #insp-head .active {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 6px;
+        font-size: 11px;
+        color: var(--dim);
+      }
+      #insp-head .active .row-on {
+        width: 12px;
+        height: 12px;
+        margin: 0;
+        flex: 0 0 auto;
+        accent-color: var(--accent);
+      }
+      #insp-head .active.off .who {
+        color: var(--warn, #e0a355);
       }
       #insp-head input.name {
         width: 100%;
