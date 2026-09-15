@@ -1,4 +1,6 @@
-import type { Level, Node } from './types'
+import { effectiveNode, type TypeInfo } from './nodes'
+
+import type { ComponentData, Level, Node } from './types'
 
 /**
  * A level references a prefab **by asset id** (ADR 0091), and the definition is resolved from the prefab file
@@ -84,4 +86,111 @@ export const stripHydrated = <T extends Level>(level: T, filled: Iterable<string
   if (Object.keys(kept).length > 0) out.prefabs = kept
   else delete out.prefabs
   return out
+}
+/** What unlinking needs that this package cannot know on its own. */
+export interface UnlinkDeps {
+  /** Which component types are singletons — how a placement's own component layers over the inherited one. */
+  readonly types: TypeInfo
+  /** A node id nothing in this level uses. Inherited children enter the level's id space and must not collide. */
+  readonly freshId: () => string
+  /**
+   * Every `nodeRef` parameter a component type declares, so a reference between two inherited nodes follows
+   * them when they are re-idded.
+   *
+   * Injected because only a component registry knows, and this package has none — which is also why the
+   * editor-server cannot do this and the editor must (ADR 0097).
+   */
+  readonly refKeysOf: (type: string) => readonly string[]
+}
+
+/**
+ * One placement, resolved into a plain node that needs no prefab to explain itself (ADR 0097).
+ *
+ * Keeps what the placement owns — its id, its transform, its position in the tree — and takes the resolved
+ * name, components and children, which is exactly what was being drawn a moment before. Then drops `prefab`
+ * and `overrides`, because there is nothing left to override.
+ *
+ * **The inherited subtree is cloned and re-idded.** Two things force it: `bakeOverrides` returns the prefab's
+ * *own* objects when an override changed nothing, so two placements would end up sharing children and editing
+ * one would silently edit the other; and the prefab's ids are minted in its own scope, so inlining two
+ * placements of one prefab into a level would give it duplicate ids, which `validateLevel` refuses.
+ *
+ * A node that does not reference `assetId` comes back as-is, by identity.
+ */
+export const unlinkedNode = (level: Level, node: Node, assetId: string, deps: UnlinkDeps): Node => {
+  if (node.prefab !== assetId) return node
+  const resolved = effectiveNode(level, node, deps.types)
+  const { prefab: _dropped, overrides: _also, ...own } = node
+  // The placement's own children were already its own; only the inherited ones are new to this id space.
+  const inherited = resolved.children.slice(0, resolved.inheritedCount).map((k) => structuredClone(k))
+  reidForest(inherited, deps)
+  return {
+    ...own,
+    ...(resolved.name === undefined ? {} : { name: resolved.name }),
+    components: structuredClone(resolved.components) as ComponentData[],
+    children: [...inherited, ...resolved.children.slice(resolved.inheritedCount)],
+  }
+}
+
+/**
+ * Re-mint every id across a whole **forest** and re-point any reference that named one of them.
+ *
+ * The same rule as duplicating a subtree in the editor: without the re-point, the copy's references still
+ * name the original, so it looks right and behaves as the original's shadow.
+ *
+ * The forest, not each root in turn, and that is the bug this was written with. A prefab's root has several
+ * children and one of them may reference another; re-idding them one at a time gives each its own map, so the
+ * reference is left naming an id that no longer exists anywhere. One map over all of them, then one pass to
+ * re-point.
+ */
+const reidForest = (roots: readonly Node[], deps: UnlinkDeps): void => {
+  const map = new Map<string, string>()
+  const rename = (x: Node): void => {
+    const fresh = deps.freshId()
+    map.set(x.id, fresh)
+    x.id = fresh
+    for (const kid of x.children ?? []) rename(kid)
+  }
+  for (const root of roots) rename(root)
+  const retarget = (x: Node): void => {
+    for (const c of x.components) {
+      for (const key of deps.refKeysOf(c.type)) {
+        const was = c.params[key]
+        if (typeof was !== 'string') continue
+        const to = map.get(was)
+        if (to !== undefined) c.params[key] = to
+      }
+    }
+    for (const kid of x.children ?? []) retarget(kid)
+  }
+  for (const root of roots) retarget(root)
+}
+
+/**
+ * Unlink every placement of one prefab, in place, and report how many there were (ADR 0097).
+ *
+ * What deleting a prefab does to the levels using it: the objects stay exactly where they are and keep what
+ * they were drawing, they simply stop being copies of anything. Kodjo's call — the alternative was placements
+ * that keep a transform and draw nothing, which is what a missing prefab has always degraded to (ADR 0091)
+ * and is the right answer for a file that went missing by accident, not for one somebody chose to delete.
+ *
+ * Does **not** touch `level.prefabs`: that is the resolution map, rebuilt on every open, and it is
+ * `stripHydrated`'s business on the way to disk.
+ */
+export const unlinkPrefab = (level: Level, assetId: string, deps: UnlinkDeps): number => {
+  let count = 0
+  const walk = (nodes: Node[]): void => {
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i]!
+      const next = unlinkedNode(level, node, assetId, deps)
+      if (next !== node) {
+        nodes[i] = next
+        count += 1
+      }
+      const kids = nodes[i]!.children
+      if (kids !== undefined) walk(kids)
+    }
+  }
+  walk(level.nodes)
+  return count
 }

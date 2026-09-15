@@ -195,6 +195,21 @@ uses it. It does, because a prefab is a live document of its own.
 | Apply to prefab | two rooms, one gesture. `Doc.overrideOpsFor(i)` → `collab.submitToPrefab(assetId, ops)` → only if the server took them, `Doc.revert(i)` here. Undo puts **this placement's** override back and does not take the change out of the prefab; the status line says so |
 | no Save, no lock | both kinds of room write themselves. The toolbar has no mode select and no Save; the name field is read-only and says where a prefab is renamed. `New`, `Duplicate`, the file list and the game picker are disabled while in a prefab, titled *leave the prefab first* |
 
+### Deleting a prefab (ADR 0097)
+
+`deleteAsset` in `src/main.ts`. Any other asset kind goes straight to the server; a prefab does this instead:
+
+| Step | What |
+| --- | --- |
+| count | `listFiles('levels')` reports each level's `prefabs` (asset ids), so the confirm can say how many placements are in this level and which other levels use it |
+| confirm | `askDestructive` (`src/confirm.ts`). Enter is **Cancel**, not the destructive button. Says the id does not come back — the `.meta` goes with the file, so a prefab created again later is a different asset |
+| other levels | `loadLevelRaw` → `hydratePrefabs` → `unlinkPrefab` → `saveFile`. A `PUT` **409s while that level is open live**, and that refusal aborts the whole delete and names the level rather than rewriting a file under somebody |
+| this level | `doc.unlinkPrefab(id)` — `replaceNode` ops, so it is one undo entry and everyone in the room sees it |
+| the file | last. A failed unlink then costs nothing; the reverse order would leave placements pointing at a dead id |
+
+The unlink itself is `@mp/content`'s (`content.md`), with the registry injected: only this side knows which
+components are singletons and which parameters are node references. The editor-server has no registry.
+
 ### Save as prefab… (ADR 0091)
 
 One action makes a prefab, replacing both `Extract to prefab` (which wrote no file) and prefab mode's Save

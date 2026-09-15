@@ -5,6 +5,8 @@ import { join, normalize, relative, sep } from 'node:path'
 
 import { kindForPath, META_SUFFIX } from '../../../packages/content/src/assets'
 import type { NodeRef, Op } from '../../../packages/content/src/ops'
+import { prefabRefsIn } from '../../../packages/content/src/prefabs'
+import type { Level } from '../../../packages/content/src/types'
 import { LevelError, validateLevel } from '../../../packages/content/src/validate'
 import { importAssets } from './assetImporter'
 import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './assetOps'
@@ -24,7 +26,7 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *   POST /api/locks/acquire           → { path } → { ok, owner? }
  *   POST /api/locks/release           → { path } → { ok }         (a sendBeacon on tab close lands here too)
  *   POST /api/locks/heartbeat         → { paths } → { lost }
- *   GET  /api/levels                  → [{ name, mode? }]
+ *   GET  /api/levels                  → [{ name, mode?, prefabs? }] — prefabs: asset ids it references (ADR 0097)
  *   GET/PUT /api/levels/:name         → the JSON (PUT validated structurally)
  *   GET/PUT /api/games/:name          → { components } (ADR 0077)
  *   GET  /api/assets                  → { entries, folders } (runs the importer)
@@ -355,16 +357,27 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     const name = m[2]
     if (name === undefined) {
       if (req.method !== 'GET') return false
-      // Name and which game it is for (ADR 0052). A file that will not parse is listed without a game rather
-      // than omitted — you have to be able to see a broken level in order to fix it.
+      // Name, which game it is for (ADR 0052), and which prefabs it references (ADR 0097). A file that will
+      // not parse is listed without either rather than omitted — you have to be able to see a broken level in
+      // order to fix it.
+      //
+      // The prefab ids ride along in the pass this already makes over every level file, which is what makes
+      // "N levels use this" affordable enough to put in front of a delete.
       const entries = readdirSync(dir)
         .filter((f) => f.endsWith('.json'))
         .map((f) => {
           const levelName = f.slice(0, -'.json'.length)
           try {
-            const parsed = JSON.parse(readFileSync(join(dir, f), 'utf8')) as { config?: { mode?: { name?: unknown } } }
+            // An open document is ahead of its file, and a placement made in the last few seconds counts.
+            const live = kind === 'levels' ? opts.live?.levelOf(levelName) : null
+            const parsed = (live ?? JSON.parse(readFileSync(join(dir, f), 'utf8'))) as Level & { config?: { mode?: { name?: unknown } } }
             const mode = parsed.config?.mode?.name
-            return { name: levelName, ...(typeof mode === 'string' && mode !== '' ? { mode } : {}) }
+            const prefabs = prefabRefsIn(parsed)
+            return {
+              name: levelName,
+              ...(typeof mode === 'string' && mode !== '' ? { mode } : {}),
+              ...(prefabs.length > 0 ? { prefabs } : {}),
+            }
           } catch {
             return { name: levelName }
           }

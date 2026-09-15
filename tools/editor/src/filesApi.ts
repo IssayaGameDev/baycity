@@ -40,6 +40,14 @@ export interface FileEntry {
   name: string
   /** Absent for a level that names no game, and for one whose file will not parse. */
   mode?: string
+  /**
+   * The asset ids of every prefab this level references (ADR 0097). Absent when it references none, and for
+   * one whose file will not parse.
+   *
+   * Reported in the pass the server already makes over every level file, which is what makes "N levels use
+   * this" cheap enough to put in front of a delete.
+   */
+  prefabs?: string[]
 }
 
 export const listFiles = async (kind: FileKind): Promise<FileEntry[]> => (await req(kind)).json() as Promise<FileEntry[]>

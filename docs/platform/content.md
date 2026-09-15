@@ -23,6 +23,7 @@ interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: Su
 - No prefab-in-prefab (ADR 0023). Override keys are not checked against the tree; dangling = inert (ADR 0033), and so is a `prefab` no file resolves (ADR 0091).
 - Keys are **offsets** from `Transform`, per channel; rotation lerps per component (ADR 0050).
 - `environment` absent/partial → renderer defaults; sun is config, not a `Light` (ADR 0048).
+- `unlinkPrefab(level, assetId, deps)` / `unlinkedNode(level, node, assetId, deps)` (`prefabs.ts`, ADR 0097): turn placements of one prefab into plain nodes that keep what they were drawing. `deps` carries `types`, `freshId` and `refKeysOf` — a registry is needed for singleton layering and for `nodeRef`s that must follow the re-id, which is why only the editor can do this. The inherited subtree is cloned and re-idded as one forest.
 - `netBounds`: half-extent in metres that peer positions are quantized over on the wire (ADR 0093). Absent → `QUANT_BOUND` (1000 m). Step is `2 × netBounds / 65535`. The editor draws it as a box (ADR 0093); a peer outside it stops being relayed (ADR 0092).
 
 ## Resolution — `packages/content/src/nodes.ts`

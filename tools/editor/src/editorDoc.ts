@@ -34,6 +34,7 @@ import {
   PRIMITIVE_PRESETS,
   type BuiltinModel,
   type PrimitiveKind,
+  unlinkedNode,
 } from '@mp/content'
 import { DEFAULT_REGISTRY, type Registry } from '@mp/components'
 import type { LightDesc } from '@mp/render-three'
@@ -324,6 +325,14 @@ export interface Doc {
   prefabAt: (id: string) => Node | undefined
   /** How many placements in **this level** reference `id`. A prefab is shared across levels the editor cannot see. */
   refCount: (id: string) => number
+  /**
+   * Turn every placement of `id` into plain nodes keeping what they were drawing, and report how many
+   * (ADR 0097). What deleting a prefab does to the level using it.
+   *
+   * Ops, so it is one undo and it reaches everyone in the room — which is also why the **open** level is
+   * unlinked through here while the closed ones go through the files API.
+   */
+  unlinkPrefab: (id: string) => number
   /** A level to instantiate for spawn gizmos and physics (prefab mode → wrapped at the origin). */
   asLevel: () => Level
   toJSON: () => Level | Node
@@ -1212,6 +1221,21 @@ const docOver = (
       const placement: Node = { ...rest, components: [], prefab: assetId }
       commit([{ kind: 'replaceNode', id: n.authored.id, node: placement }])
       return true
+    },
+    unlinkPrefab: (id) => {
+      if (mode === 'prefab') return 0
+      const ops: Op[] = []
+      const walk = (nodes: readonly Node[]): void => {
+        for (const n of nodes) {
+          // `unlinkedNode` needs the registry for two things this package cannot know: which components are
+          // singletons, and which parameters are node references that must follow a re-id.
+          if (n.prefab === id) ops.push({ kind: 'replaceNode', id: n.id, node: unlinkedNode(level, n, id, { types: registry, freshId, refKeysOf: refKeys }) })
+          if (n.children !== undefined) walk(n.children)
+        }
+      }
+      walk(level.nodes)
+      if (ops.length > 0) commit(ops)
+      return ops.length
     },
     prefabAt: (id) => level.prefabs?.[id],
     refCount: (id) => {
