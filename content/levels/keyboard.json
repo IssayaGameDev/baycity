@@ -650,7 +650,77 @@
         }
       },
       "components": [],
-      "prefab": "8a569d7a7c66c3c7"
+      "prefab": "8a569d7a7c66c3c7",
+      "children": [
+        {
+          "id": "ccccc1e1",
+          "name": "Ground",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 16.5,
+              "z": 49
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 40,
+              "y": 1,
+              "z": 40
+            }
+          },
+          "components": [
+            {
+              "id": "3cfed622",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "ef79a853",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "aac1df41",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                },
+                "trigger": false
+              }
+            },
+            {
+              "id": "0ebcf91c",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "85509955",
