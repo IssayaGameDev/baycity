@@ -197,10 +197,11 @@ uses it. It does, because a prefab is a live document of its own.
 
 ### Switching a node off (ADR 0099)
 
-A checkbox in the **Inspector's header**, above the name — where Unity puts it (ADR 0102). The Hierarchy is
-for finding and arranging, and a column of checkboxes down it competed with the names; it still **dims** a
-switched-off row (`Row.disabled` / `Row.disabledAbove`, `.row.off`), which is how a whole tree reads at a
-glance.
+A checkbox in the **Inspector's header, immediately left of the name** and nothing else — the same shape a
+component section's header has (`isec-en`, then the name), because it is the same control one level up
+(ADR 0102). The Hierarchy is for finding and arranging, and a column of checkboxes down it competed with the
+names; it still **dims** a switched-off row (`Row.disabled` / `Row.disabledAbove`, `.row.off`), which is how a
+whole tree reads at a glance. Why an ancestor's state blocks the tick is a `title`, not body text.
 
 `doc.setNodeEnabled(i, on)` → `setNodeEnabled` on an own node, `setOverrideNodeEnabled` on an inherited one, so
 one placement of a prefab can drop a part the others keep. `InspectorHost.onSetEnabled` in `main.ts` treats it

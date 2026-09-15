@@ -915,27 +915,16 @@
         padding: 6px;
         border-bottom: 1px solid var(--line);
       }
-      /* The active checkbox and what it means, above the name — Unity's header order (ADR 0102). */
-      #insp-head .active {
+      /* Tick then name, which is a component section's header one level up (ADR 0102). */
+      #insp-head .namerow {
         display: flex;
         align-items: center;
         gap: 6px;
-        margin-bottom: 6px;
-        font-size: 11px;
-        color: var(--dim);
-      }
-      #insp-head .active .row-on {
-        width: 12px;
-        height: 12px;
-        margin: 0;
-        flex: 0 0 auto;
-        accent-color: var(--accent);
-      }
-      #insp-head .active.off .who {
-        color: var(--warn, #e0a355);
+        min-width: 0;
       }
       #insp-head input.name {
-        width: 100%;
+        flex: 1 1 auto;
+        min-width: 0;
         font-weight: 600;
       }
       #insp-head .link {
