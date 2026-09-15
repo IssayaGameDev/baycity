@@ -1,5 +1,6 @@
 {
   "components": [
+    "Boss",
     "Bumper",
     "Hazard",
     "Track"

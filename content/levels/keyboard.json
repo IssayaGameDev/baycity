@@ -1593,6 +1593,147 @@
           "name": "treadmill +1"
         }
       }
+    },
+    {
+      "id": "512ce78f",
+      "name": "Boss",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 15,
+          "z": 0
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "b23ad75b",
+          "name": "Ground",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 50,
+              "y": 1,
+              "z": 50
+            }
+          },
+          "components": [
+            {
+              "id": "3cfed622",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "ef79a853",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "aac1df41",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                },
+                "trigger": false
+              }
+            }
+          ]
+        },
+        {
+          "id": "e67565c1",
+          "name": "Boss",
+          "transform": {
+            "position": {
+              "x": 2.1691,
+              "y": 14.1771,
+              "z": -15.2046
+            }
+          },
+          "components": [
+            {
+              "id": "22bb73a7",
+              "type": "Boss",
+              "params": {
+                "zone": "41ae6098",
+                "speed": 8,
+                "turn": 180
+              }
+            }
+          ]
+        },
+        {
+          "id": "41ae6098",
+          "name": "Zone",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 12.5,
+              "z": 0
+            },
+            "scale": {
+              "x": 50,
+              "y": 25,
+              "z": 50
+            }
+          },
+          "components": [
+            {
+              "id": "c66f4fd1",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "3bffcb0e",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                },
+                "trigger": true
+              }
+            },
+            {
+              "id": "6f0a89ae",
+              "type": "Renderer",
+              "params": {
+                "material": ""
+              },
+              "enabled": false
+            }
+          ]
+        }
+      ]
     }
   ]
 }
