@@ -296,8 +296,8 @@
           "transform": {
             "position": {
               "x": 0,
-              "y": -5.0204,
-              "z": 53.5204
+              "y": -6.0103,
+              "z": 54.0937
             },
             "rotation": {
               "x": -0.7854,
@@ -307,7 +307,7 @@
             "scale": {
               "x": 21.5,
               "y": 0.55,
-              "z": 4
+              "z": 8.4
             }
           },
           "components": [
@@ -1730,7 +1730,7 @@
       "transform": {
         "position": {
           "x": 0,
-          "y": -11.5,
+          "y": -52.5,
           "z": 0
         }
       },
@@ -1740,8 +1740,7 @@
           "type": "Renderer",
           "params": {
             "material": "4a11d049f9f8e5ac"
-          },
-          "enabled": false
+          }
         }
       ],
       "prefab": "5a05991a9190c8d9",
