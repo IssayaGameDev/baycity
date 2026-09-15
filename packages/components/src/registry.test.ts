@@ -87,7 +87,7 @@ describe('the built-in registry', () => {
   })
 
   it('starts a Mover at the Move preset’s own defaults, so a fresh one behaves like the thing it replaced', () => {
-    expect(DEFAULT_REGISTRY.defaults('Mover')).toEqual({ move: { x: 0, y: 3, z: 0 }, speed: 1.5, smooth: true, offset: 0 })
+    expect(DEFAULT_REGISTRY.defaults('Mover')).toEqual({ move: { x: 0, y: 3, z: 0 }, speed: 1.5, smooth: true, offset: 0, space: 'world' })
   })
 
   it('offers only cardinal axes to a Spinner, because the offset it contributes is euler radians', () => {

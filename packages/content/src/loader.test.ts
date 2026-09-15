@@ -522,6 +522,117 @@ describe('a node that moves itself', () => {
     expect(drawnAt(loaded, 2000).y).toBeCloseTo(3, 6)
   })
 
+  /**
+   * **A metre is a metre, whatever a parent is scaled to** (ADR 0106).
+   *
+   * The frame tree puts a node's local position through its parent's scale, and the travel used to go through
+   * the same line — so 3 m under a parent scaled 2x became 6 m, and a diagonal under a non-uniform scale came
+   * out at an angle nobody typed. Unity has the same rule for an animated `localPosition`; this undoes it, so
+   * the number in the field is the number travelled.
+   */
+  it('travels the authored metres under a scaled parent', () => {
+    for (const scale of [vec3(2, 2, 2), vec3(2, 1, 1), vec3(0.5, 3, 0.25)]) {
+      const loaded = load(
+        levelOf([
+          {
+            id: 'holder',
+            transform: { position: vec3(0, 0, 0), scale },
+            components: [],
+            children: [
+              {
+                id: 'lift',
+                transform: { position: vec3(0, 0, 0) },
+                components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: '' }), comp('m0', MOVER, { move: vec3(0, 3, 0), speed: 6, smooth: false })],
+              },
+            ],
+          },
+        ]),
+      )
+      // 3 m at 6 m/s is a half-second leg, so fully out at 500 ms.
+      loaded.update(500)
+      loaded.render(1)
+      expect(loaded.visuals[0]!.position.y, `scale ${scale.x},${scale.y},${scale.z}`).toBeCloseTo(3, 6)
+    }
+  })
+
+  it('keeps a diagonal pointing where it was authored under a non-uniform parent', () => {
+    const loaded = load(
+      levelOf([
+        {
+          id: 'holder',
+          transform: { position: vec3(0, 0, 0), scale: vec3(4, 1, 1) },
+          components: [],
+          children: [
+            {
+              id: 'lift',
+              transform: { position: vec3(0, 0, 0) },
+              components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: '' }), comp('m0', MOVER, { move: vec3(3, 3, 0), speed: 100, smooth: false })],
+            },
+          ],
+        },
+      ]),
+    )
+    const travel = Math.hypot(3, 3)
+    loaded.update((travel / 100) * 1000)
+    loaded.render(1)
+    const at = loaded.visuals[0]!.position
+    expect(at.x, 'x is not stretched by the parent').toBeCloseTo(3, 5)
+    expect(at.y).toBeCloseTo(3, 5)
+  })
+
+  /**
+   * `space` picks the frame the travel is written in (ADR 0106): world axes, or the node's own orientation.
+   */
+  it('travels along the node’s own orientation in local space', () => {
+    const quarter = Math.PI / 2
+    const build = (space: string): { x: number; y: number; z: number } => {
+      const loaded = load(
+        levelOf([
+          {
+            id: 'lift',
+            // Turned a quarter turn about +Z: the node's own +Y now points along world -X.
+            transform: { position: vec3(0, 0, 0), rotation: vec3(0, 0, quarter) },
+            components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: '' }), comp('m0', MOVER, { move: vec3(0, 3, 0), speed: 6, smooth: false, space })],
+          },
+        ]),
+      )
+      loaded.update(500)
+      loaded.render(1)
+      return loaded.visuals[0]!.position
+    }
+    const world = build('world')
+    expect(world.y, 'world space ignores the node’s own turn').toBeCloseTo(3, 5)
+    expect(world.x).toBeCloseTo(0, 5)
+
+    const local = build('local')
+    expect(local.x, 'local space follows it: the node’s own up is world -X').toBeCloseTo(-3, 5)
+    expect(local.y).toBeCloseTo(0, 5)
+  })
+
+  it('travels along world axes under a rotated parent, in world space', () => {
+    const loaded = load(
+      levelOf([
+        {
+          id: 'holder',
+          transform: { position: vec3(0, 0, 0), rotation: vec3(0, 0, Math.PI / 2) },
+          components: [],
+          children: [
+            {
+              id: 'lift',
+              transform: { position: vec3(0, 0, 0) },
+              components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: '' }), comp('m0', MOVER, { move: vec3(0, 3, 0), speed: 6, smooth: false })],
+            },
+          ],
+        },
+      ]),
+    )
+    loaded.update(500)
+    loaded.render(1)
+    const at = loaded.visuals[0]!.position
+    expect(at.y, 'still straight up, whatever the parent is turned to').toBeCloseTo(3, 5)
+    expect(at.x).toBeCloseTo(0, 5)
+  })
+
   it('stays fixed with no speed or no distance, so a still level costs what it always did', () => {
     for (const params of [{ move: vec3(0, 3, 0), speed: 0 }, { move: vec3(0, 0, 0), speed: 2 }]) {
       const loaded = load(platform([comp('m0', MOVER, params)]))

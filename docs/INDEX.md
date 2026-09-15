@@ -153,5 +153,6 @@ why matters.
 | [0103](adr/0103-motion-is-a-speed-not-a-keyframe.md) | Object motion is a speed on a component, not a keyframe track |
 | [0104](adr/0104-a-deck-may-not-outrun-its-rider.md) | A deck may not outrun its rider: the overtake probe, and slicing the tick |
 | [0105](adr/0105-boarding-is-arriving-not-rising.md) | Boarding is decided by where a surface is met, and a rider is seated on it |
+| [0106](adr/0106-a-movers-metre-is-a-metre.md) | A Mover's metre is a metre, and it picks its own frame |
 
 `Design archive/` holds superseded design material and is not maintained.

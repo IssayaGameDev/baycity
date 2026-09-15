@@ -283,8 +283,21 @@ export const Mover = defineComponent({
   type: MOVER,
   label: 'Mover',
   params: {
-    /** Metres from rest, in the node's own space. `(0, 3, 0)` is three metres up. */
+    /**
+     * Metres from rest. `(0, 3, 0)` is three metres up, and they are **real metres** whatever any parent is
+     * scaled to (ADR 0106) — the frame tree's own scaling is undone so the number authored is the number
+     * travelled.
+     */
     move: { kind: 'vec3', default: { x: 0, y: 3, z: 0 }, label: 'move (m)' },
+    /**
+     * Which way `move` points: along the world axes, or along the node's own authored orientation
+     * (ADR 0106). Unity's `Space.World` / `Space.Self`.
+     *
+     * `world` by default, which is what a platform going up wants and is what every mover authored before
+     * this did. `local` is for a tilted platform that should travel along its own tilt rather than the
+     * world's — without it, the only way to say that was a rotated wrapper object.
+     */
+    space: { kind: 'enum', options: ['world', 'local'], default: 'world', label: 'space' },
     /**
      * Average metres per second over one leg. A leg takes `distance / speed` seconds whatever `smooth` does,
      * so the curve redistributes time inside a leg and never changes the cycle length.

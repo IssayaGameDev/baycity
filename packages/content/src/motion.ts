@@ -38,11 +38,28 @@ export const AXES: Readonly<Record<string, Vec3>> = {
 export const AXIS_NAMES = ['+X', '-X', '+Y', '-Y', '+Z', '-Z'] as const
 
 /**
+ * Which frame a `Mover`'s travel is written in (ADR 0106).
+ *
+ * `world` is metres along the world axes, whatever any parent is doing. `local` is metres along the node's
+ * **authored** orientation, so tilting a platform tilts its travel with it.
+ *
+ * Deliberately the node's authored rotation and not its live one: a `Spinner` on the same node would
+ * otherwise turn a straight `Mover` into an orbit, which is a different feature and a surprising way to get
+ * it.
+ */
+export type MotionSpace = 'world' | 'local'
+
+/**
  * One source of motion on a node, read off a component.
  *
  * `move` travels `move` metres from rest and back, averaging `speed` m/s over each leg. Several are allowed
  * on one node and their offsets add, which is how a circle is authored without keyframes: up-and-down plus
  * side-to-side, a quarter cycle apart.
+ *
+ * **The metres are real metres** (ADR 0106). The frame tree would otherwise put this offset through the
+ * parent's scale, the same line the node's own position goes through, so a 3 m travel under a parent scaled
+ * 2× became 6 m and a diagonal under a non-uniform scale came out at an angle nobody typed. The loader
+ * converts, so what is authored is what is travelled.
  *
  * `spin` turns about a **cardinal** axis at `speed` degrees per second. Cardinal is a real limit rather than
  * a shortcut: the pose it contributes is euler radians, and a turn about a slanted axis is not a straight
@@ -53,7 +70,7 @@ export const AXIS_NAMES = ['+X', '-X', '+Y', '-Y', '+Z', '-Z'] as const
  * so seconds would go stale the moment either changed and a staggered row would have to be re-authored.
  */
 export type Motion =
-  | { readonly kind: 'move'; readonly move: Vec3; readonly speed: number; readonly smooth: boolean; readonly offset: number }
+  | { readonly kind: 'move'; readonly move: Vec3; readonly speed: number; readonly smooth: boolean; readonly offset: number; readonly space: MotionSpace }
   | { readonly kind: 'spin'; readonly axis: Vec3; readonly speed: number; readonly offset: number }
 
 /** What a node's motions add to its authored transform. Zero on both channels means "as authored". */
@@ -168,6 +185,7 @@ export const motionsOf = (components: readonly ComponentData[]): readonly Motion
       speed: numberParam(c, 'speed', 0),
       smooth: boolParam(c, 'smooth', true),
       offset: numberParam(c, 'offset', 0),
+      space: stringParam(c, 'space', 'world') === 'local' ? 'local' : 'world',
     })
   }
   const spinner = firstOfType(components, SPINNER)
