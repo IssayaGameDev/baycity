@@ -1761,6 +1761,77 @@
           }
         }
       }
+    },
+    {
+      "id": "831102d2",
+      "name": "Moving",
+      "transform": {
+        "position": {
+          "x": 17,
+          "y": 0.5,
+          "z": 13
+        },
+        "scale": {
+          "x": 5,
+          "y": 0.5,
+          "z": 5
+        }
+      },
+      "components": [
+        {
+          "id": "c0",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            }
+          }
+        },
+        {
+          "id": "mesh",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:rounded-box"
+          }
+        },
+        {
+          "id": "c1",
+          "type": "Renderer",
+          "params": {
+            "material": "55205761e38bc929"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "Keyboard",
+          "params": {
+            "pitch": 0.9,
+            "fill": 0.88,
+            "height": 0.45,
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 63
+          }
+        },
+        {
+          "id": "eba84c76",
+          "type": "Mover",
+          "params": {
+            "move": {
+              "x": 0,
+              "y": 50.00000000000001,
+              "z": 0
+            },
+            "speed": 26.5,
+            "smooth": true,
+            "offset": 0
+          }
+        }
+      ]
     }
   ]
 }
