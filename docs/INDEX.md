@@ -13,7 +13,9 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 | [README.md](platform/README.md) | The stack in ten lines, dependency direction, this list |
 | [workspace.md](platform/workspace.md) | Packages, imports, scripts, ports, adding a package or a game |
 | [content.md](platform/content.md) | Node/component schema, prefabs, levels, assets, `content/games/*.json` |
-| [components.md](platform/components.md) | Parameter kinds, `defineComponent`, hooks, registries as code + data, built-ins |
+| [components/api.md](platform/components/api.md) | Parameter kinds, `defineComponent`, hooks, the runtime, registries as code + data |
+| [components/built-ins.md](platform/components/built-ins.md) | Every shipped definition and its params; the shared set |
+| [components/boss.md](platform/components/boss.md) | `Boss`: the three-node shape, the trigger rule, what it chases |
 | [mode.md](platform/mode.md) | `ModeDescriptor`, `ModeSession`, `PlayerHost`, settings — what a game supplies |
 | [netcode.md](platform/netcode.md) | Client-authoritative rooms, tick, wire format, clock sync, interpolation |
 | [physics.md](platform/physics.md) | The Rapier wrapper |

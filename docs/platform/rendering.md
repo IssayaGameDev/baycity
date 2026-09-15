@@ -83,6 +83,25 @@ interface GreyboxEnvironment {
 - `installSky(scene, texture): Sky` / `loadSky(scene, url): Promise<Sky | null>` — equirect **background only**
   (ADR 0045); `Sky { texture; dispose }`.
 
+## Anything holding a scene object goes stale when that object is replaced
+
+Three.js helpers and controls **capture** what they are given and read it every frame. None of them notice it
+leaving the scene. So every long-lived reference is a liability the moment something rebuilds.
+
+| Holder | Captures | Symptom when stale | How it is re-pointed |
+|---|---|---|---|
+| `TransformControls` | `.object` (attach), `.camera` | `object.parent` is `null`: a per-frame `console.error` ("must be a part of the scene graph"), then a throw on the next click — `pointerDown` dereferences that null parent and guards only `object === undefined` | `attach()` again, or `detach()` |
+| `BoxHelper` | the object it wraps | silent: `update()` measures a disposed group, so the box freezes or collapses. No error at all | rebuild it |
+| `RenderPass`, `GTAOPass` | the camera, at construction | renders through the old camera forever | `PostFX.setCamera` exists for exactly this (ADR 0094) |
+| `OrbitControls` | `.object` | orbits a camera nobody is looking through | assign `.object` |
+
+Two shapes of the same bug, and the quiet one is worse. Attaching a *getter* rather than an object is the
+cheapest fix where the API allows it — the editor's view gizmo takes `camera: () => Camera` for this reason.
+
+Where it cannot, **the re-pointing belongs inside the rebuild**, at every exit, not at the rebuild's call
+sites. Call sites are where it was last time, and an async redraw simply did not go through them
+(`editor.md`, "Rebuilding the viewport").
+
 ## Level view — `levelView.ts`
 
 ```ts

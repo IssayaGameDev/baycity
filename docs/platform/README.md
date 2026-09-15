@@ -14,7 +14,9 @@
 | `editor.md` | `tools/editor`: authored files, panels, files API routes, game discovery, live registry + adoption, prefab refusal, play-test, level validation test |
 | `tooling.md` | `tools/share`, `tools/bots`, `tools/netsim`, `tools/viewer` — commands, env, ports |
 | `content.md` | level/prefab/asset data model, validation, loader |
-| `components.md` | component declarations, registry, engine/shared/player components, runtime |
+| `components/api.md` | component declarations, hooks, runtime, registry |
+| `components/built-ins.md` | engine, shared and player components with their params |
+| `components/boss.md` | the `Boss` chaser: nodes, trigger rule, targeting |
 | `mode.md` | `ModeDescriptor`, `ModeSession`, spawn, actions — the game contract |
 | `netcode.md` | rooms, snapshot relay, wire format, interpolation, clock sync |
 | `physics.md` | Rapier wrapper, bodies, character controller, triggers |

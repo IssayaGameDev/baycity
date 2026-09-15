@@ -350,6 +350,14 @@ const holdColour = (connId: string): number => {
   for (let i = 0; i < connId.length; i++) h = (h * 31 + connId.charCodeAt(i)) >>> 0
   return new THREE.Color().setHSL((h % 360) / 360, 0.75, 0.6).getHex()
 }
+/**
+ * Rebuild every collaborator's hold box.
+ *
+ * Called from `buildItems` as well as on a holds event, and that is the load-bearing part: a `BoxHelper` wraps
+ * the object it was built around, so a rebuild leaves every one of them wrapping a group that is no longer in
+ * the scene and whose meshes have been disposed. It draws a stale box rather than throwing, which is why this
+ * outlived the same bug in the gizmo (see `reattachGizmo`).
+ */
 const rebuildHoldHelpers = (): void => {
   for (const helper of holdHelpers.values()) {
     holdRoot.remove(helper)
@@ -423,7 +431,6 @@ const repaintAfterOps = (ops: readonly Op[]): void => {
   rebuildLoaded()
   const restored = keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
   if (restored.length > 0) applySelection(restored)
-  rebuildHoldHelpers()
   refreshUi()
   inspectorRebuild()
   loadNewReferences(buildItems)
@@ -529,7 +536,6 @@ const onPrefabOps = (assetId: string, ops: Op[]): void => {
   rebuildLoaded()
   const restored = keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
   if (restored.length > 0) applySelection(restored)
-  rebuildHoldHelpers()
   refreshUi()
   inspectorRebuild()
   previews.invalidate()
@@ -791,6 +797,7 @@ const buildItems = (): void => {
   editorShadowCasters = 0
   if (doc === null) {
     reattachGizmo()
+    rebuildHoldHelpers()
     refreshBoundsBox()
     return
   }
@@ -812,6 +819,7 @@ const buildItems = (): void => {
   // the current playhead — which at 0 is where the game starts it, so the two now agree (ADR 0029).
   applyPreviewPoses()
   reattachGizmo()
+  rebuildHoldHelpers()
   refreshBoundsBox()
 }
 

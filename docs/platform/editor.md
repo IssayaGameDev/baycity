@@ -110,6 +110,26 @@ httpTransport(): LiveTransport   // EventSource in, fetch POST out, sendBeacon f
 
 Two tabs of one person are two `connId`s: separate acks, separate holds.
 
+### Rebuilding the viewport
+
+`buildItems()` disposes every mesh under `instanceRoot` and builds a fresh `THREE.Group` per document item, so
+**`instanceGroups` is a different array of different objects after every call**. Called on open, on a
+structural repaint, on a remote batch, on entering and leaving a prefab — and, crucially, again from
+`loadNewReferences(buildItems)` once newly referenced assets have loaded, which is **asynchronous** and goes
+through no selection change.
+
+Two things hold those groups, and both are re-pointed **inside** `buildItems`, at both of its exits:
+
+| Holder | Function | Was stale as |
+|---|---|---|
+| the transform gizmo | `reattachGizmo()` | `TransformControls: The attached 3D object must be a part of the scene graph`, every frame, then a null `updateMatrixWorld` on the next click |
+| collaborators' hold boxes | `rebuildHoldHelpers()` | a frozen or collapsed outline on somebody else's selection — silent, which is how it outlived the gizmo's version |
+
+Putting them at the call sites is what failed before: both sites ran them *before* `loadNewReferences`, so the
+async rebuild landed afterwards and undid the work. `refreshBoundsBox()` is there for the same reason.
+
+`rebuildHoldHelpers()` is also called on a holds event, since holds change with no rebuild at all.
+
 ### The navigation gizmo (ADR 0094)
 
 `src/viewGizmo.ts`, top-right of the viewport, 128 px. Blender's shape, Unity's centre, no auto-switch.
