@@ -44,28 +44,8 @@
           "z": 20
         }
       },
-      "components": [
-        {
-          "id": "c0",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 800,
-                "y": 0.5,
-                "z": 80
-              }
-            },
-            "trigger": true
-          }
-        },
-        {
-          "id": "c1",
-          "type": "Hazard",
-          "params": {}
-        }
-      ]
+      "components": [],
+      "prefab": "5a05991a9190c8d9"
     },
     {
       "id": "b0",

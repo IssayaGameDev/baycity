@@ -1,0 +1,33 @@
+{
+  "id": "root",
+  "name": "kill-plane",
+  "transform": {
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    }
+  },
+  "components": [
+    {
+      "id": "c0",
+      "type": "Collider",
+      "params": {
+        "shape": {
+          "kind": "box",
+          "halfExtents": {
+            "x": 800,
+            "y": 0.5,
+            "z": 80
+          }
+        },
+        "trigger": true
+      }
+    },
+    {
+      "id": "c1",
+      "type": "Hazard",
+      "params": {}
+    }
+  ]
+}
