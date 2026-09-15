@@ -48,3 +48,16 @@ Tripwires, not targets. Exceeding one is never resolved silently — mitigation 
 ## Not measured here
 
 Budgets 1, 4, 5 are device/network-bound and human-owned. No automated capture exists for any of them.
+
+## Named for the optimisation pass
+
+Kodjo's call, recorded so a later pass has a starting list rather than a survey. Nothing here is a problem
+today; all of it is frame cost that buys appearance.
+
+| Candidate | What it costs | Note |
+|---|---|---|
+| GTAO (`createPostFX`) | a normal prepass, an AO pass and a Poisson denoise every frame, at full resolution | The heaviest single item. It is most of what gives greybox its form (ADR 0057), so cutting it is a look decision, not a free win. Its camera-kind define also has to be kept in step by hand (`rendering.md`) |
+| Bloom (`UnrealBloomPass`) | a mip chain per frame | Cheap next to AO, and on by default per level |
+| SMAA | one full-screen pass | The alternative is MSAA on the renderer, which the composer path does not get |
+| Editor shadow casters | one extra scene render per caster, six for a point light | Already capped at `EDITOR_SHADOW_CAP = 4` (ADR 0047) |
+| Hold boxes (editor) | one `BoxHelper.update()` per held node per frame | Only while somebody else has a selection |

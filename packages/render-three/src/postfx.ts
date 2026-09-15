@@ -117,6 +117,9 @@ export interface PostFX {
    * The passes take a camera at construction and hold it, so a consumer that swaps cameras — the editor
    * toggling perspective for orthographic (ADR 0094) — would otherwise go on rendering through the old one.
    * Rebuilding the composer instead would drop the AO and bloom settings the level asked for.
+   *
+   * Recompiles the AO shaders when the **kind** of camera changes, which is not optional: see the comment on
+   * the implementation.
    */
   setCamera: (camera: THREE.Camera) => void
   dispose: () => void
@@ -212,9 +215,32 @@ export const createPostFX = (
       refresh()
     },
     render: () => composer.render(),
+    /**
+     * Re-point every pass, and **recompile the AO shaders when the camera's kind changes**.
+     *
+     * The second half is the whole reason this is not a one-liner. `GTAOPass` bakes
+     * `defines.PERSPECTIVE_CAMERA` from the camera it was constructed with, and a define only takes effect on
+     * a recompile — so assigning `gtao.camera` alone leaves the AO reconstructing a view position with
+     * perspective maths against an orthographic depth buffer. The occlusion term comes out garbage and AO
+     * *multiplies* the image, so the whole viewport goes black: the "skybox glitches out in isometric" bug.
+     *
+     * `pdMaterial` is set here too, and three never sets it at all — the denoise shader inherits a hardcoded
+     * `PERSPECTIVE_CAMERA: 1` from `PoissonDenoiseShader.defines`, so even a `GTAOPass` built with an
+     * orthographic camera would be half wrong.
+     *
+     * Guarded on an actual change, because a shader recompile is a visible hitch and re-pointing at the same
+     * kind of camera needs none.
+     */
     setCamera: (next) => {
       renderPass.camera = next
-      if (gtao !== null) gtao.camera = next
+      if (gtao === null) return
+      gtao.camera = next
+      const perspective = (next as THREE.PerspectiveCamera).isPerspectiveCamera === true ? 1 : 0
+      for (const material of [gtao.gtaoMaterial, gtao.pdMaterial]) {
+        if (material.defines.PERSPECTIVE_CAMERA === perspective) continue
+        material.defines.PERSPECTIVE_CAMERA = perspective
+        material.needsUpdate = true
+      }
     },
     setSize: (w, h) => {
       composer.setSize(w, h)
