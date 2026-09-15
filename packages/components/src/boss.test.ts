@@ -43,9 +43,13 @@ const scene = (opts: { rotationDeg?: number; zoneAt?: Vec3; half?: Vec3; speed?:
 ]
 
 /** Run the boss for `ticks` and report where it ended up, in world space. */
+/** A peer as the runtime wants one. Alive unless a test is about death. */
+const peer = (id: number, position: Vec3, alive = true): Peer => ({ id, position, alive })
+type Peer = { id: number; position: Vec3; alive: boolean }
+
 const run = (
   nodes: Node[],
-  peers: readonly { id: number; position: Vec3 }[],
+  peers: readonly Peer[],
   ticks: number,
   self: Vec3 = vec3(0, -100, 0), // far below by default, so the local player is not in the zone
 ): { position: Vec3; heading: number } => {
@@ -74,7 +78,7 @@ describe('Boss', () => {
 
   it('drives at the player in the zone, at the speed it was given', () => {
     // One second at 6 m/s, straight down +Z at a player 15 m away.
-    const at = run(scene({ speed: 6 }), [{ id: 1000, position: vec3(0, 0, 15) }], 60)
+    const at = run(scene({ speed: 6 }), [peer(1000, vec3(0, 0, 15))], 60)
     expect(at.position.z).toBeCloseTo(6, 1)
     expect(at.position.x).toBeCloseTo(0, 6)
   })
@@ -84,8 +88,8 @@ describe('Boss', () => {
     const at = run(
       scene(),
       [
-        { id: 1000, position: vec3(-8, 0, 4) },
-        { id: 1001, position: vec3(8, 0, 18) },
+        peer(1000, vec3(-8, 0, 4)),
+        peer(1001, vec3(8, 0, 18)),
       ],
       60,
     )
@@ -97,8 +101,8 @@ describe('Boss', () => {
     const at = run(
       scene({ rotationDeg: 90 }),
       [
-        { id: 1000, position: vec3(4, 0, -8) },
-        { id: 1001, position: vec3(18, 0, 8) },
+        peer(1000, vec3(4, 0, -8)),
+        peer(1001, vec3(18, 0, 8)),
       ],
       60,
     )
@@ -107,7 +111,7 @@ describe('Boss', () => {
 
   it('ignores anyone outside the box', () => {
     // 60 m down z is well past the zone's far face at z = 30.
-    const at = run(scene(), [{ id: 1000, position: vec3(0, 0, 60) }], 60)
+    const at = run(scene(), [peer(1000, vec3(0, 0, 60))], 60)
     expect(at.position.z).toBeCloseTo(0, 6)
   })
 
@@ -119,7 +123,7 @@ describe('Boss', () => {
   it('drives home when the zone empties, and stops there rather than circling', () => {
     const nodes = scene({ speed: 6 })
     const loaded = instantiateLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), { id: 'fx', config: {}, nodes } as Level, REGISTRY)
-    let peers: { id: number; position: Vec3 }[] = [{ id: 1000, position: vec3(0, 0, 15) }]
+    let peers: Peer[] = [peer(1000, vec3(0, 0, 15))]
     const runtime = createComponentRuntime(loaded, REGISTRY, {
       character: character(vec3(0, -100, 0)),
       effects: noEffects(),
@@ -142,19 +146,43 @@ describe('Boss', () => {
   it('cannot swing its heading faster than `turn`', () => {
     // 90°/s given a target straight behind it: after a tenth of a second it has turned about 9°, so it has
     // barely begun to come round and has certainly not reached the player.
-    const slow = run(scene({ turn: 90, speed: 6, zoneAt: vec3(0, 0, -10) }), [{ id: 1000, position: vec3(0, 0, -15) }], 6)
+    const slow = run(scene({ turn: 90, speed: 6, zoneAt: vec3(0, 0, -10) }), [peer(1000, vec3(0, 0, -15))], 6)
     expect(Math.abs(slow.position.z), 'still near home, because it spent the time turning').toBeLessThan(0.6)
   })
 
+  it('does not chase a corpse, which used to make it orbit a body until it respawned', () => {
+    const at = run(scene(), [peer(1000, vec3(0, 0, 15), false)], 60)
+    expect(at.position.z).toBeCloseTo(0, 6)
+  })
+
+  it('leaves a dying target for whoever is still running', () => {
+    // The one further through the zone is dead, so the live one behind them is the target: the boss should
+    // come out to z = 6 rather than sit still or head for the body.
+    const at = run(
+      scene({ speed: 6 }),
+      [peer(1000, vec3(0, 0, 18), false), peer(1001, vec3(0, 0, 15), true)],
+      60,
+    )
+    expect(at.position.z).toBeCloseTo(6, 1)
+  })
+
+  it('settles on its target instead of overshooting and swinging back', () => {
+    // Parked 4 m away at 6 m/s: after two seconds it has long since arrived, and must be sitting on the
+    // target rather than oscillating through it.
+    const target = vec3(0, 0, 4)
+    const near = run(scene({ speed: 6 }), [peer(1000, target)], 120)
+    expect(Math.hypot(near.position.x - target.x, near.position.z - target.z)).toBeLessThan(0.15)
+  })
+
   it('stays at its authored height, so it never chases anyone upward', () => {
-    const at = run(scene(), [{ id: 1000, position: vec3(0, 40, 15) }], 60)
+    const at = run(scene(), [peer(1000, vec3(0, 40, 15))], 60)
     expect(at.position.y).toBeCloseTo(0, 6)
   })
 
   it('does nothing at all when its zone reference is broken', () => {
     const nodes = scene()
     nodes[0]!.components = [comp('b0', Boss.type, { zone: 'nope', speed: 6, turn: 3600 })]
-    const at = run(nodes, [{ id: 1000, position: vec3(0, 0, 15) }], 60)
+    const at = run(nodes, [peer(1000, vec3(0, 0, 15))], 60)
     expect(at.position.z).toBeCloseTo(0, 6)
   })
 })
@@ -170,7 +198,7 @@ describe('ctx.players()', () => {
    */
   it('holds the local player and its peers, and is self-only with no network', () => {
     expect(run(scene(), [], 60, vec3(0, 0, 15)).position.z, 'saw itself').toBeGreaterThan(1)
-    expect(run(scene(), [{ id: 1000, position: vec3(0, 0, 15) }], 60).position.z, 'saw a peer').toBeGreaterThan(1)
+    expect(run(scene(), [peer(1000, vec3(0, 0, 15))], 60).position.z, 'saw a peer').toBeGreaterThan(1)
     expect(run(scene(), [], 60).position.z, 'saw nobody').toBeCloseTo(0, 6)
   })
 })

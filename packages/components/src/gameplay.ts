@@ -169,9 +169,15 @@ export const Death = defineComponent({
  * A chaser that wakes when someone enters its zone, hunts whoever is furthest through it, and parks itself
  * back home when the zone empties (ADR 0095).
  *
- * The rule is only the motion. **It does not kill** — put a `Collider` and a `Hazard` on the same node and
- * touching it kills, exactly as any other hazard does, because that is already a component and writing a
- * second way to die here would be two rules for one thing.
+ * The rule is only the motion. **It does not kill** — put a `Collider` with `trigger` **on** and a `Hazard`
+ * on the same node, and touching it kills, exactly as the kill plane does (ADR 0053). Writing a second way to
+ * die here would be two rules for one thing.
+ *
+ * The collider must be a **trigger**, and that is not a style preference. A solid one is resolved by the
+ * character controller, so it *shoves* the player instead of killing them, and it only ever reaches the
+ * `Hazard` when the **player** moves into **it** — a boss driving into somebody standing still reports
+ * nothing at all. A trigger is found by `CharacterBody.overlaps()`, an explicit query run every tick at
+ * wherever the capsule is, so it does not care who moved (ADR 0054).
  *
  * ### The zone
  *
@@ -186,8 +192,9 @@ export const Death = defineComponent({
  *
  * ### Who it picks
  *
- * The player furthest along that forward axis: the one closest to the exit, which is the one about to
- * escape. Ties go to whoever `ctx.players()` lists first, which puts the local player first — a tie needs
+ * The living player furthest along that forward axis: the one closest to the exit, which is the one about
+ * to escape. The dead are skipped — a corpse keeps the position it fell at, and a boss that chased them
+ * would orbit a body until it respawned. Ties go to whoever `ctx.players()` lists first, which puts the local player first — a tie needs
  * *some* answer and this one costs nothing.
  *
  * Two clients can pick different targets for a moment, because peers arrive interpolated (see
@@ -237,6 +244,9 @@ export const Boss = defineComponent({
     if (zone !== undefined && box !== undefined) {
       let best = -Infinity
       for (const p of ctx.players()) {
+        // A corpse lies where it fell and keeps a position, so without this the boss circles a dead body
+        // until it respawns rather than going home or picking whoever is still running.
+        if (!p.alive) continue
         if (!inBox(p.position, zone.position, zone.rotation, box.halfExtents)) continue
         // Distance along the zone's forward: the exit is the far end, so the largest wins.
         const along = (p.position.x - zone.position.x) * forward.x + (p.position.z - zone.position.z) * forward.z
@@ -254,7 +264,9 @@ export const Boss = defineComponent({
     const dz = target.z - at.z
     const distance = Math.hypot(dx, dz)
     const step = self.params.speed * ctx.dt
-    if (distance <= 1e-4 || (goal === null && distance <= step)) {
+    // Arrived. Stopping inside one step's reach rather than at zero is what keeps it from overshooting the
+    // target and swinging back through it every tick — which, on a body it cannot kill, reads as circling.
+    if (distance <= step) {
       if (goal === null) {
         drive.position.x = 0
         drive.position.z = 0

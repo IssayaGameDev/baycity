@@ -149,6 +149,15 @@ export interface PlayerView {
   /** World position. The capsule's centre for the local player, the relayed origin for a peer. */
   readonly position: Vec3
   readonly isSelf: boolean
+  /**
+   * Still playing. `false` from the moment they die until they are back in (`STATE_DEAD` on the wire).
+   *
+   * A corpse keeps a position — it is lying where it fell — so a rule that ranks or chases players has to
+   * ask. The Boss circling a dead body until it respawned is what this exists for.
+   *
+   * `true` wherever the host does not say: a play-test in the editor, and anything offline.
+   */
+  readonly alive: boolean
 }
 
 /** What a hook is handed about the world. One object, reused across the tick. */
@@ -305,7 +314,9 @@ export const createComponentRuntime = (
      * A getter rather than a value because the runtime samples it once a tick: the caller is reading an
      * interpolated stream and must not be asked to cache it.
      */
-    readonly peers?: () => readonly { readonly id: number; readonly position: Vec3 }[]
+    readonly peers?: () => readonly { readonly id: number; readonly position: Vec3; readonly alive: boolean }[]
+    /** Whether the local player is still playing. Absent means always — the editor's play-test does not die. */
+    readonly alive?: () => boolean
   },
 ): ComponentRuntime => {
   const instances: Instance[] = []
@@ -338,8 +349,8 @@ export const createComponentRuntime = (
     if (playersTick === ctx.tick) return playerList
     playersTick = ctx.tick
     playerList.length = 0
-    playerList.push({ id: 0, position: io.character.position(), isSelf: true })
-    for (const peer of io.peers?.() ?? []) playerList.push({ id: peer.id, position: peer.position, isSelf: false })
+    playerList.push({ id: 0, position: io.character.position(), isSelf: true, alive: io.alive?.() ?? true })
+    for (const peer of io.peers?.() ?? []) playerList.push({ id: peer.id, position: peer.position, isSelf: false, alive: peer.alive })
     return playerList
   }
   const mutable = ctx as { tick: number; dt: number; timeMs: number }
