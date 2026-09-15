@@ -1036,3 +1036,89 @@ describe('the document reports its edits as ops', () => {
     expect(doc.indexOfRef(refs[0]!), 'gone with its placement').toBeNull()
   })
 })
+
+/**
+ * Writing to a component a placement inherited from its prefab's **root** (ADR 0098).
+ *
+ * The bug this exists for: a placement has no `owner` — it is one — but its visible component list is the
+ * prefab root's layered with its own. So a write aimed at an inherited root component went to the placement,
+ * which does not have it. `setParams` threw `no component 'c0' on node '<id>'`; remove and enable had a guard
+ * and silently did nothing, which is worse.
+ *
+ * Every fixture above puts the geometry on a prefab's *child*, which is why none of them found it.
+ */
+const KILL_ID = 'cccccccccccccccc'
+
+/** A prefab whose **root** carries the geometry — Kodjo's kill plane, and the shape that found this. */
+const rootGeometry = (): Node => ({
+  id: 'kroot',
+  name: 'kill',
+  transform: { position: ZERO },
+  components: [comp('c0', COLLIDER, { shape: BOX, center: ZERO }), comp('c1', Hazard.type)],
+})
+
+const placedRootGeometry = (): { level: Level; doc: Doc } => {
+  const level = blank()
+  const doc = levelDoc(level)
+  doc.placePrefab(KILL_ID, rootGeometry(), vec3(0, 0, 0))
+  return { level, doc }
+}
+
+describe('a component inherited from the prefab root', () => {
+  const BIGGER = { kind: 'box', halfExtents: vec3(40, 1, 40) }
+
+  it('is shown on the placement, which is what made the write ambiguous', () => {
+    const { doc } = placedRootGeometry()
+    expect(doc.kindOf(0), 'a placement is its own node').toBe('own')
+    expect(typesOn(doc, 0)).toEqual([COLLIDER, Hazard.type])
+  })
+
+  it('records a parameter change as an override on the placement, keyed by the root', () => {
+    const { level, doc } = placedRootGeometry()
+    // Exactly Kodjo's gesture: resize the collider's half extents on the placed kill plane.
+    doc.setParams(0, 'c0', { shape: BIGGER })
+    const over = level.nodes[0]!.overrides
+    expect(over, 'an override, not an edit to the placement').toBeDefined()
+    expect(Object.keys(over!), "keyed by the prefab root's own id").toEqual(['kroot'])
+    expect(over!.kroot!.params?.c0?.shape).toEqual(BIGGER)
+    expect(paramOn(doc, 0, COLLIDER, 'shape'), 'and the document reads it back').toEqual(BIGGER)
+  })
+
+  it('leaves the prefab definition alone, so other placements keep the old size', () => {
+    const level = blank()
+    const doc = levelDoc(level)
+    doc.placePrefab(KILL_ID, rootGeometry(), vec3(0, 0, 0))
+    const second = doc.placePrefab(KILL_ID, rootGeometry(), vec3(50, 0, 0))
+    doc.setParams(0, 'c0', { shape: BIGGER })
+    expect(paramOn(doc, second, COLLIDER, 'shape'), 'a per-placement override is not a prefab edit').toEqual(BOX)
+    expect(level.prefabs?.[KILL_ID]?.components[0]?.params.shape).toEqual(BOX)
+  })
+
+  it('records a removal rather than doing nothing', () => {
+    const { level, doc } = placedRootGeometry()
+    doc.removeComponent(0, 'c1')
+    expect(level.nodes[0]!.overrides?.kroot?.removed).toContain('c1')
+    expect(typesOn(doc, 0), 'gone from the view').toEqual([COLLIDER])
+  })
+
+  it('records a disable rather than doing nothing', () => {
+    const { level, doc } = placedRootGeometry()
+    doc.setComponentEnabled(0, 'c0', false)
+    expect(level.nodes[0]!.overrides?.kroot?.enabled?.c0).toBe(false)
+  })
+
+  it('still edits a component the placement owns directly', () => {
+    const { level, doc } = placedRootGeometry()
+    const own = doc.addComponent(0, MATERIAL_OVERRIDE)!
+    doc.setParams(0, own, { material: MAT_A })
+    expect(level.nodes[0]!.components.find((c) => c.id === own)?.params.material, 'its own, so no override').toBe(MAT_A)
+    expect(level.nodes[0]!.overrides?.kroot?.params?.[own]).toBeUndefined()
+  })
+
+  it('refuses to reorder it, because the order is the prefab’s', () => {
+    const { level, doc } = placedRootGeometry()
+    doc.moveComponent(0, 'c1', -1)
+    expect(level.nodes[0]!.overrides, 'no override can express a reordering').toBeUndefined()
+    expect(typesOn(doc, 0)).toEqual([COLLIDER, Hazard.type])
+  })
+})
