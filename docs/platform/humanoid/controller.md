@@ -81,9 +81,11 @@ interface PlatformFrame { position: Vec3; rotation: Quat }
 
 `InputCommand` (`@mp/core`): `moveX`, `moveZ` (−1..1, world space, normalised if `|v| > 1`), `jump`, `actions`. Deterministic; mutates `state` only. Call after platforms are posed and stepped for the tick.
 
+**Riding a fast deck has a ceiling per physics step**: about `halfHeight + radius` of deck travel, ~1.2 m, i.e. a deck at ~36 m/s at 30 Hz. Past that `move()` will not sweep the capsule out of the deck it is inside, so the client slices the tick (`LoadedLevel.motionSlices`, ADR 0104) rather than the character — slicing the character alone makes it worse, and sweeping the platform instead of teleporting it does nothing.
+
 Step order:
 
-1. Footing: `body.probeGround()` (+ one deeper probe for the ridden base if missed).
+1. Footing: `body.probeGround()`, then for the ridden base if that missed — a **deeper** probe when the base dropped away (ADR 0042), or the base kept **without** a probe when it rose past the capsule's centre (ADR 0104), bounded by `-away <= 2 × (halfHeight + radius)`, the point still being overhead, and `vy <= 0`.
 2. `jumping = jumpBuffer > 0 && (grounded || coyote > 0)`; `leaving = jumping || launch > 0 || impulse.y > 0` spends both windows. Launch outranks jump.
 3. Jump cut when `jumpCut && !cmd.jump && vy > 0`.
 4. Vertical: riding → `vy = 0`; else gravity × scale, clamp `−maxFallSpeed`.

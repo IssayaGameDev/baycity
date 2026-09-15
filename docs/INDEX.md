@@ -151,5 +151,6 @@ why matters.
 | [0101](adr/0101-the-inspector-binds-to-a-copy.md) | The Inspector binds to a deep copy, never to the document |
 | [0102](adr/0102-the-active-checkbox-lives-in-the-inspector.md) | The active checkbox lives in the Inspector, not the Hierarchy |
 | [0103](adr/0103-motion-is-a-speed-not-a-keyframe.md) | Object motion is a speed on a component, not a keyframe track |
+| [0104](adr/0104-a-deck-may-not-outrun-its-rider.md) | A deck may not outrun its rider: the overtake probe, and slicing the tick |
 
 `Design archive/` holds superseded design material and is not maintained.

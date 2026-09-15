@@ -17,6 +17,11 @@ import { type CharacterBody, type CharacterOptions, type CollisionLayers, type P
 // not a character's, and every host was importing a package called `character` to find it.
 export const CHAR_RADIUS = 0.4
 export const CHAR_HALF_HEIGHT = 0.6
+/** Centre to the top of the head, and to the soles: how far a surface may pass through the capsule. */
+const STAND_HEIGHT = CHAR_HALF_HEIGHT + CHAR_RADIUS
+
+/** Is this world point still under the capsule, rather than somewhere we have walked away from? */
+const overhead = (point: Vec3, at: Vec3): boolean => Math.hypot(point.x - at.x, point.z - at.z) <= CHAR_RADIUS
 
 export interface CharacterTuning {
   moveSpeed: number // m/s target ground speed (Roblox WalkSpeed 16 studs ≈ 4.5)
@@ -433,10 +438,46 @@ export const stepCharacter = (
       // Exactly how far the point we were standing on has dropped away from us. Not a velocity estimate:
       // `liftVel` only fills in after a full tick of riding, and a fast descender takes the base away
       // before that, so the estimate read zero on precisely the ticks it was needed.
-      const away = -subVec(toWorld(baseFrame, state.base.localPos), state.body.translation()).y
+      const anchor = toWorld(baseFrame, state.base.localPos)
+      const away = -subVec(anchor, state.body.translation()).y
       if (away > 0) {
         const deeper = state.body.probeGround(away)
         if (deeper !== undefined && deeper.colliderHandle === state.base.colliderHandle) under = deeper
+      } else if (-away > STAND_HEIGHT && -away <= 2 * STAND_HEIGHT && overhead(anchor, state.body.translation()) && state.vy <= 0) {
+        /**
+         * **The deck came up through us** (ADR 0104). The mirror of the case above, and the one a longer
+         * ray cannot reach: a downward cast starts at the capsule's centre, so once the surface we were
+         * standing on is *above* that centre there is nothing below to find at any reach. Measured: a deck
+         * rising more than about a metre in one tick — 30 m/s at 30 Hz — overtakes the capsule, the base is
+         * dropped, and Rapier resolves the overlap by pushing us out of the bottom. The platform passes
+         * through the player, which is Kodjo's report.
+         *
+         * It cannot be caught on the platform's side: the loader poses a mover by teleport (`setPosition`
+         * plus a matching kinematic target, so Rapier derives zero velocity — the pairing platform carry
+         * depends on), and a teleport is not swept. Only the character can notice.
+         *
+         * So the base is kept without a probe, and the ride that follows carries us up with the deck, which
+         * is what riding it would have done had the tick been smaller. Two bounds keep it honest:
+         *
+         * `-away` is exactly how far the deck rose relative to us this tick: the anchor is our own centre
+         * stored in the deck's frame, re-evaluated under its new pose. So the band is geometry, not a feel
+         * number, and both ends of it are forced:
+         *
+         * - **more than `STAND_HEIGHT`** — the deck's top started at our soles, so a rise of more than the
+         *   centre-to-sole distance is exactly when it ends up above the ray's origin and no reach can find
+         *   it. Below that the longer probe above already copes, and firing here instead would re-capture
+         *   an ordinary 2 m/s riser every tick, dragging along anyone who had walked off it.
+         * - **no more than twice it** — beyond that the deck has cleared the top of our head in one tick.
+         *   It did not pass through us, it passed us; there is nothing to stand on. At 30 Hz that is a deck
+         *   doing about 60 m/s, which no authored mover reaches.
+         * - `overhead` — the point is still under the capsule rather than somewhere we walked away from.
+         * - `state.vy <= 0` — rising under our own power is not standing on anything (ADR 0042), so a jump
+         *   off a riser is never re-captured. On the overtake tick a rider's `vy` is zero or falling.
+         *
+         * The contact is synthesised rather than cast: `under` is read for its collider handle alone, and
+         * the anchor *is* the point on that surface we were standing on.
+         */
+        under = { colliderHandle: state.base.colliderHandle, point: anchor, normal: vec3(0, 1, 0) }
       }
     }
   }

@@ -259,6 +259,24 @@ export interface LoadedLevel {
    */
   driveOf: (node: WorldNode) => NodeDrive | undefined
   update: (nowMs: number, ridingColliderHandle?: number) => void
+  /**
+   * How many equal slices this tick has to be posed in so nothing moves more than `maxStep` metres
+   * between two of them (ADR 0104). `1` when the level is still or slow, which is every level without a
+   * fast mover, so the common path is unchanged.
+   *
+   * Free to ask, because motion is a pure function of time (ADR 0103): the pose at any instant is
+   * computable without stepping anything, so the largest move this tick is two evaluations and a
+   * subtraction, over animated frames only.
+   *
+   * It exists because a kinematic body is **teleported** into place, and a teleport is not swept: a deck
+   * that jumps more than the distance from the rider's centre to its soles lands above them, and the
+   * character controller will not sweep a capsule out of a collider it is already inside. Measured, at
+   * 30 Hz: the carry is exact to 0.02 m up to 1.18 m of deck travel in a step and fails completely at
+   * 1.27 m. Slicing the tick is the only thing that fixes it — sweeping the platform instead of
+   * teleporting it does not, and slicing only the character makes it worse, because by then the overlap
+   * already exists.
+   */
+  motionSlices: (fromMs: number, toMs: number, maxStep: number) => number
   render: (alpha: number) => void
   basePose: (colliderHandle: number) => { position: Vec3; rotation: Quat } | undefined
   baseIndex: (colliderHandle: number) => number | undefined
@@ -542,6 +560,20 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
   let prevMs = 0
   let currMs = 0
 
+  /** The furthest any animated frame's local pose travels between two instants. */
+  const widestStep = (fromMs: number, toMs: number): number => {
+    let widest = 0
+    for (const f of frames) {
+      if (!f.animated || f.motions.length === 0) continue
+      const a = motionOffset(f.motions, fromMs)
+      const b = motionOffset(f.motions, toMs)
+      // Position only: a spin's reach depends on how far the collider extends from the axis, and a node
+      // large enough for that to matter is not a thing a rider stands on the top face of.
+      widest = Math.max(widest, Math.hypot(b.position.x - a.position.x, b.position.y - a.position.y, b.position.z - a.position.z))
+    }
+    return widest
+  }
+
   const update = (nowMs: number, ridingColliderHandle?: number): void => {
     prevMs = primed ? currMs : nowMs
     currMs = nowMs
@@ -621,6 +653,14 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     lights,
     driveOf,
     update,
+    motionSlices: (fromMs, toMs, maxStep) => {
+      if (!(maxStep > 0)) return 1
+      const widest = widestStep(fromMs, toMs)
+      // Capped so a pathological authored speed cannot turn one tick into hundreds of physics steps: past
+      // this the platform is not rideable at this tick rate whatever we do, and a stutter is worse than a
+      // limit. 8 slices covers a deck doing roughly 280 m/s, which is the top of the character's own range.
+      return Math.min(8, Math.max(1, Math.ceil(widest / maxStep)))
+    },
     render,
     basePose,
     baseIndex,
