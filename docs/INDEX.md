@@ -148,5 +148,6 @@ why matters.
 | [0098](adr/0098-a-placement-can-override-its-prefab-roots-components.md) | A placement can override its prefab root's components |
 | [0099](adr/0099-a-node-can-be-switched-off.md) | A node can be switched off, and its subtree with it |
 | [0100](adr/0100-moving-the-character-releases-its-footing.md) | Moving the character from outside the controller releases its footing |
+| [0101](adr/0101-the-inspector-binds-to-a-copy.md) | The Inspector binds to a deep copy, never to the document |
 
 `Design archive/` holds superseded design material and is not maintained.
