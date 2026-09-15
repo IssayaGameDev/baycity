@@ -3,6 +3,8 @@ import {
   boolParam,
   effectiveNode,
   numberParam,
+  motionOffset,
+  motionsOf,
   poseAt,
   vec3Param,
   stringParam,
@@ -1188,7 +1190,15 @@ const docOver = (
     poseOf: (i, timeMs) => {
       const n = node(i)
       if (n === undefined) return { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) }
-      return poseAt(behaviorOf(trackComponent(n), clips), n.view.transform, timeMs)
+      // The same composition the loader does (ADR 0103): the authored transform, plus what a track sampled,
+      // plus what the node's movers and spinner contribute. Anything the viewport shows has to be what the
+      // game builds, and these are two separate readers of one rule.
+      const pose = poseAt(behaviorOf(trackComponent(n), clips), n.view.transform, timeMs)
+      const motion = motionOffset(motionsOf(n.view.components), timeMs)
+      return {
+        position: { x: pose.position.x + motion.position.x, y: pose.position.y + motion.position.y, z: pose.position.z + motion.position.z },
+        rotation: { x: pose.rotation.x + motion.rotation.x, y: pose.rotation.y + motion.rotation.y, z: pose.rotation.z + motion.rotation.z },
+      }
     },
 
     /**

@@ -1,6 +1,7 @@
 import { eulerToQuat, lerpVec3, mulQuat, quat, rotateVec3, slerpQuat, vec3, type Quat, type Vec3 } from '@mp/core'
 import type { PhysicsBody, PhysicsWorld, ShapeDesc } from '@mp/physics'
 
+import { MOTIONLESS, motionOffset, motionsOf, movesAtAll, type Motion } from './motion'
 import { scaleCollider } from './primitives'
 import { isAnimated, poseAt } from './track'
 import {
@@ -164,6 +165,8 @@ interface Frame {
   parentScale: Vec3
   scale: Vec3
   behavior: Behavior
+  /** Every `Mover`/`Spinner` on this node (ADR 0103). Empty on a node with none, which is the common case. */
+  motions: readonly Motion[]
   parent: Frame | null
   animated: boolean
   worldPos: Vec3
@@ -339,10 +342,14 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
 
   const evaluate = (f: Frame, nowMs: number): void => {
     const pose = poseAt(f.behavior, f.base, nowMs)
-    // Both offsets add: the authored transform, plus what a track sampled, plus what a component drove. That
-    // is what lets a component nudge a moving platform rather than having to choose between them (ADR 0058).
-    const localPos = f.drive === null ? pose.position : add(pose.position, f.drive.position)
-    const localRot = eulerToQuat(f.drive === null ? pose.rotation : add(pose.rotation, f.drive.rotation))
+    // Every contribution is an offset from the same authored transform, so they add and no source has to
+    // know about the others: what a track sampled, what the node's movers and spinner compute (ADR 0103),
+    // and what a component drove (ADR 0058). That is what lets a component nudge a moving platform rather
+    // than having to choose between them.
+    const motion = f.motions.length === 0 ? MOTIONLESS : motionOffset(f.motions, nowMs)
+    const drive = f.drive ?? MOTIONLESS
+    const localPos = add(add(pose.position, motion.position), drive.position)
+    const localRot = eulerToQuat(add(add(pose.rotation, motion.rotation), drive.rotation))
     if (f.parent === null) {
       f.worldPos = localPos
       f.worldRot = localRot
@@ -352,17 +359,18 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     f.worldRot = mulQuat(f.parent.worldRot, localRot)
   }
 
-  const makeFrame = (t: Transform, behavior: Behavior, parent: Frame | null, driven = false): Frame => {
+  const makeFrame = (t: Transform, behavior: Behavior, motions: readonly Motion[], parent: Frame | null, driven = false): Frame => {
     const parentScale = parent?.scale ?? vec3(1, 1, 1)
     const f: Frame = {
       base: t,
       parentScale,
       scale: mul(parentScale, scaleOf(t)),
       behavior,
+      motions,
       parent,
-      // A driven node is animated for the same reason a tracked one is: it needs a kinematic body and a place
+      // A driven node is animated for the same reason a moving one is: it needs a kinematic body and a place
       // in the per-tick pose pass. Inherited by children, so moving a parent carries its subtree.
-      animated: driven || isAnimated(behavior) || (parent?.animated ?? false),
+      animated: driven || isAnimated(behavior) || movesAtAll(motions) || (parent?.animated ?? false),
       worldPos: vec3(0, 0, 0),
       worldRot: quat(),
       drive: driven ? { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) } : null,
@@ -417,7 +425,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     // Does any enabled component on this node say it moves it (ADR 0058)? Asked here because the answer
     // decides the frame's `animated` flag and whether its bodies are kinematic, and neither can change later.
     const driven = r.components.some((c) => c.enabled !== false && types.get(c.type)?.moves === true)
-    const f = makeFrame(r.transform, behaviorOf(firstOfType(r.components, TRACK), clips), parent, driven)
+    const f = makeFrame(r.transform, behaviorOf(firstOfType(r.components, TRACK), clips), motionsOf(r.components), parent, driven)
     // A placement opens a scope: everything it inherits from its prefab resolves references among itself.
     // The placement node is the prefab's root, so it belongs to that scope too.
     const inner = r.inheritedCount > 0 ? ++nextScope : scope

@@ -46,7 +46,7 @@ describe('the registry', () => {
 })
 
 describe('the built-in registry', () => {
-  it('holds the twelve built-in components, engine first', () => {
+  it('holds the fourteen built-in components, engine first', () => {
     expect(DEFAULT_REGISTRY.all().map((d) => d.type)).toEqual([
       'Collider',
       'Mesh',
@@ -59,13 +59,19 @@ describe('the built-in registry', () => {
       'Hazard',
       'Bumper',
       'Track',
+      'Mover',
+      'Spinner',
       'Boss',
     ])
   })
 
-  it('makes a collider repeatable and everything else at most one per node', () => {
+  it('makes colliders and movers repeatable, and everything else at most one per node', () => {
+    // A node can genuinely have two colliders, and two Movers is how a circle is authored (ADR 0103): their
+    // offsets add. A second Spinner is not the same kind of thing — euler angles about two axes do not
+    // compose by adding — so it stays a singleton.
     expect(Collider.singleton).toBeUndefined()
-    for (const type of ['Mesh', 'Renderer', 'MaterialOverride', 'Spawn', 'Checkpoint', 'Goal', 'Hazard', 'Bumper', 'Track'])
+    expect(DEFAULT_REGISTRY.get('Mover')?.singleton).toBeUndefined()
+    for (const type of ['Mesh', 'Renderer', 'MaterialOverride', 'Spawn', 'Checkpoint', 'Goal', 'Hazard', 'Bumper', 'Track', 'Spinner'])
       expect(DEFAULT_REGISTRY.get(type)?.singleton, type).toBe(true)
   })
 
