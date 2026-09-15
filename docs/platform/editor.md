@@ -195,6 +195,20 @@ uses it. It does, because a prefab is a live document of its own.
 | Apply to prefab | two rooms, one gesture. `Doc.overrideOpsFor(i)` → `collab.submitToPrefab(assetId, ops)` → only if the server took them, `Doc.revert(i)` here. Undo puts **this placement's** override back and does not take the change out of the prefab; the status line says so |
 | no Save, no lock | both kinds of room write themselves. The toolbar has no mode select and no Save; the name field is read-only and says where a prefab is renamed. `New`, `Duplicate`, the file list and the game picker are disabled while in a prefab, titled *leave the prefab first* |
 
+### Switching a node off (ADR 0099)
+
+A checkbox per Hierarchy row, left of the twist — Unity's active checkbox. `doc.setNodeEnabled(i, on)` →
+`setNodeEnabled` on an own node, `setOverrideNodeEnabled` on an inherited one, so one placement of a prefab can
+drop a part the others keep. `onSetEnabled` in `main.ts` treats it as structural: `rebuildLoaded()` +
+`buildItems()`, the same as a delete, because what the level contains just changed.
+
+`buildItems` **builds no meshes** for a node that is off or has an ancestor that is. Not an invisible group:
+three raycasts invisible objects, so that would leave it clickable in the viewport. The group is still created,
+so indices, selection and the gizmo keep working — a disabled object can be moved, just not seen.
+
+`Row.disabled` is the node's own answer, `Row.disabledAbove` an ancestor's; the checkbox is itself disabled in
+the second case, because the node's own flag is not what is keeping it out. Both dim the row (`.row.off`).
+
 ### Deleting a prefab (ADR 0097)
 
 `deleteAsset` in `src/main.ts`. Any other asset kind goes straight to the server; a prefab does this instead:

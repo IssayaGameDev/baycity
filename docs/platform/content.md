@@ -8,6 +8,7 @@ Package `packages/content`. Headless; deps `@mp/core`, `@mp/physics`. Never impo
 interface Level { id: string; config: LevelConfig; prefabs?: Record<string, Node> /* resolved in memory, not in the file */; nodes: Node[] }
 interface Node {
   id: string; name?: string; transform: Transform; components: ComponentData[]; children?: Node[]
+  enabled?: boolean                          // absent = on; false = this node and its subtree are not built (ADR 0099)
   prefab?: string                            // prefab **asset id** (ADR 0091); forbidden inside a prefab
   overrides?: Record<string, NodeOverride>   // keyed by the referenced tree's node ids, any depth
 }
@@ -84,7 +85,8 @@ type Op = { table?: string } & (
   | insertNode{parent|null, index, node} | removeNode | moveNode{parent|null, index} | replaceNode{node}
   | internPrefab{key, root} | dropPrefab{key}
   | setOverrideTransform | setOverrideName | setOverrideParams | setOverrideEnabled{enabled|null} | addOverrideComponent | removeOverrideComponent | setOverrideRemoved | setNodeOverride{override|null}
-  | setEnvironment{environment|null} | setMode{mode|null} | setNetBounds{netBounds|null} )
+  | setEnvironment{environment|null} | setMode{mode|null} | setNetBounds{netBounds|null}
+  | setNodeEnabled{id,enabled} | setOverrideNodeEnabled{owner,node,enabled|null} )
 invertOp(level, op): Op | null    // before apply; null = changes nothing; throws OpError for what apply would refuse
 applyOp(level, op): void          // in place; validates first (structure only), throws OpError having touched nothing
 applyBatch(level, ops): { ops /* that changed something */, inverses /* undo order */ }   // all-or-nothing via a scratch clone

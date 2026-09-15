@@ -49,6 +49,8 @@ export type OpBody =
   | { kind: 'setName'; id: string; name: string | null }
   | { kind: 'setParams'; id: string; componentId: string; patch: Record<string, unknown>; unset?: string[] }
   | { kind: 'setComponentEnabled'; id: string; componentId: string; enabled: boolean }
+  /** Switch a node and everything under it off, or back on (ADR 0099). */
+  | { kind: 'setNodeEnabled'; id: string; enabled: boolean }
   | { kind: 'addComponent'; id: string; component: ComponentData; index?: number }
   | { kind: 'removeComponent'; id: string; componentId: string }
   | { kind: 'moveComponent'; id: string; componentId: string; to: number }
@@ -65,6 +67,8 @@ export type OpBody =
   | { kind: 'setOverrideName'; owner: string; node: string; name: string | null }
   | { kind: 'setOverrideParams'; owner: string; node: string; componentId: string; patch: Record<string, unknown>; unset?: string[] }
   | { kind: 'setOverrideEnabled'; owner: string; node: string; componentId: string; enabled: boolean | null }
+  /** The same for an **inherited** node, recorded on the placement. `null` clears back to the prefab's answer. */
+  | { kind: 'setOverrideNodeEnabled'; owner: string; node: string; enabled: boolean | null }
   | { kind: 'addOverrideComponent'; owner: string; node: string; component: ComponentData }
   | { kind: 'removeOverrideComponent'; owner: string; node: string; componentId: string }
   | { kind: 'setOverrideRemoved'; owner: string; node: string; componentId: string; removed: boolean }
@@ -272,6 +276,11 @@ const invert = (level: Level, op: Op): Op | null => {
       const prior = c.enabled !== false
       return prior === op.enabled ? null : stamp({ kind: 'setComponentEnabled', id: op.id, componentId: op.componentId, enabled: prior })
     }
+    case 'setNodeEnabled': {
+      const { node } = must(scopeOf(level, t), op.id)
+      const prior = node.enabled !== false
+      return prior === op.enabled ? null : stamp({ kind: 'setNodeEnabled', id: op.id, enabled: prior })
+    }
     case 'addComponent': {
       const { node } = must(scopeOf(level, t), op.id)
       checkComponent(op.component, 'component')
@@ -371,6 +380,11 @@ const invert = (level: Level, op: Op): Op | null => {
       const prior: boolean | null = 'added' in target ? target.added.enabled !== false : (target.over?.enabled?.[op.componentId] ?? null)
       return prior === op.enabled ? null : { kind: 'setOverrideEnabled', owner: op.owner, node: op.node, componentId: op.componentId, enabled: prior }
     }
+    case 'setOverrideNodeEnabled': {
+      const owner = ownerOf(level, op.owner)
+      const prior = overrideRecord(owner, op.node, false)?.nodeEnabled ?? null
+      return prior === op.enabled ? null : { kind: 'setOverrideNodeEnabled', owner: op.owner, node: op.node, enabled: prior }
+    }
     case 'addOverrideComponent': {
       const owner = ownerOf(level, op.owner)
       checkComponent(op.component, 'component')
@@ -450,6 +464,13 @@ export const applyOp = (level: Level, op: Op): void => {
       const c = componentOn(node.components, op.componentId, `node '${op.id}'`)
       if (op.enabled) delete c.enabled
       else c.enabled = false
+      return
+    }
+    case 'setNodeEnabled': {
+      const { node } = must(scopeOf(level, t), op.id)
+      // Absent means enabled, so being on is the absence of the field rather than `true` — one shape on disk.
+      if (op.enabled) delete node.enabled
+      else node.enabled = false
       return
     }
     case 'addComponent': {
@@ -550,6 +571,14 @@ export const applyOp = (level: Level, op: Op): void => {
         if (Object.keys(next).length === 0) delete params[op.componentId]
         else params[op.componentId] = next
       }
+      tidyOverride(owner, op.node)
+      return
+    }
+    case 'setOverrideNodeEnabled': {
+      const owner = ownerOf(level, op.owner)
+      const over = overrideRecord(owner, op.node, true)!
+      if (op.enabled === null) delete over.nodeEnabled
+      else over.nodeEnabled = op.enabled
       tidyOverride(owner, op.node)
       return
     }
@@ -676,6 +705,12 @@ export const touchedRefs = (level: Level, op: Op): NodeRef[] => {
     case 'removeComponent':
     case 'moveComponent':
       return [own(op.id)]
+    case 'setNodeEnabled': {
+      // The whole subtree, not just the node: switching it off takes everything under it out of the level,
+      // so a hold on any of it has to be respected (ADR 0099). Same reasoning as `removeNode`.
+      const f = find(scopeOf(level, t), op.id)
+      return f === null ? [own(op.id)] : subtree(f.node)
+    }
     case 'insertNode':
       return [...subtree(op.node), ...(op.parent === null ? [] : [own(op.parent)])]
     case 'removeNode':

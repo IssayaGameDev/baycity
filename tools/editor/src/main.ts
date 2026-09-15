@@ -810,7 +810,17 @@ const buildItems = (): void => {
     const holder = new THREE.Group()
     g.userData.meshes = holder
     g.add(holder)
-    buildItemMeshes(g, i)
+    /**
+     * A switched-off node draws nothing (ADR 0099) — Kodjo's call, the same as Unity's scene view.
+     *
+     * **No meshes rather than an invisible group.** Three does not skip invisible objects when raycasting
+     * (`Raycaster.js`), so `visible = false` would leave it clickable in the viewport: you would select
+     * something you cannot see. Building nothing is also what the loader does, so the two agree.
+     *
+     * The group itself still exists, so document indices, the Hierarchy's selection and the gizmo all keep
+     * working — you can still move a disabled object, you just cannot see it.
+     */
+    if (doc.nodeEnabled(i) && !doc.disabledByAncestor(i)) buildItemMeshes(g, i)
     const parent = doc.parentOf(i)
     ;(parent === null ? instanceRoot : (instanceGroups[parent] ?? instanceRoot)).add(g)
     instanceGroups[i] = g
@@ -2836,6 +2846,19 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
     gameSelected = false
     deselect()
     hierarchy.render()
+  },
+  /**
+   * The active checkbox (ADR 0099). A structural change: what the level contains just changed, so the
+   * physics world, the markers and the drawn items all have to be rebuilt, exactly as a delete would.
+   */
+  onSetEnabled: (index, on) => {
+    if (doc === null) return
+    doc.setNodeEnabled(index, on)
+    recordEdit(on ? 'enabled' : 'disabled')
+    rebuildLoaded()
+    buildItems()
+    hierarchy.render()
+    inspectorRebuild()
   },
   gameSelected: () => gameSelected,
   /**

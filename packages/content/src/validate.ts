@@ -136,6 +136,7 @@ export const checkOverrides = (value: unknown, at: string, checker: ParamChecker
       for (const [cid, patch] of Object.entries(o.params))
         if (!isObj(patch)) throw new LevelError(`${oAt}.params['${cid}']: expected an object`)
     }
+    if (o.nodeEnabled !== undefined && typeof o.nodeEnabled !== 'boolean') throw new LevelError(`${oAt}.nodeEnabled: expected true or false`)
     if (o.enabled !== undefined) {
       if (!isObj(o.enabled)) throw new LevelError(`${oAt}.enabled: expected an object keyed by component id`)
       for (const [cid, on] of Object.entries(o.enabled))
@@ -175,6 +176,7 @@ export const validateNodeTree = (node: unknown, at: string, ctx: TreeContext): v
   if (ctx.ids.has(node.id)) throw new LevelError(`${at}.id: '${node.id}' is used twice in this tree`)
   ctx.ids.add(node.id)
   if (node.name !== undefined && typeof node.name !== 'string') throw new LevelError(`${at}.name: expected a string`)
+  if (node.enabled !== undefined && typeof node.enabled !== 'boolean') throw new LevelError(`${at}.enabled: expected true or false`)
   checkTransform(node.transform, `${at}.transform`)
   checkComponents(node.components, `${at}.components`, ctx.checker)
   if (node.prefab !== undefined) {

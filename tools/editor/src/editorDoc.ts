@@ -257,6 +257,18 @@ export interface Doc {
   setParams: (i: number, componentId: string, patch: Record<string, unknown>) => void
   setComponentEnabled: (i: number, componentId: string, on: boolean) => void
   /**
+   * Is this node built at all (ADR 0099)? `false` means it and everything under it is absent from the level,
+   * in the editor and in the game.
+   *
+   * Resolved, so a placement reports its own answer where it has one and the prefab root's otherwise, and an
+   * inherited node reports what this placement's override says.
+   */
+  nodeEnabled: (i: number) => boolean
+  /** Switch a node and its subtree off, or back on. An override when the node is inherited. */
+  setNodeEnabled: (i: number, on: boolean) => void
+  /** `true` when an **ancestor** is switched off, so this node is absent whatever its own flag says. */
+  disabledByAncestor: (i: number) => boolean
+  /**
    * Move a component one place up or down its node's list.
    *
    * Order is not cosmetic: it is the order hooks run in (ADR 0036) and the order several colliders draw in.
@@ -529,7 +541,13 @@ const docOver = (
       let view: Node
       if (owner === undefined) {
         const r = effectiveNode(level, authored, registry)
-        view = { id: r.id, ...(r.name !== undefined ? { name: r.name } : {}), transform: r.transform, components: [...r.components] }
+        view = {
+          id: r.id,
+          ...(r.name !== undefined ? { name: r.name } : {}),
+          ...(r.enabled !== undefined ? { enabled: r.enabled } : {}),
+          transform: r.transform,
+          components: [...r.components],
+        }
       } else {
         view = bakeOverrides(authored, owner.overrides)
       }
@@ -1276,6 +1294,28 @@ const docOver = (
       walk(level.nodes)
       if (ops.length > 0) commit(ops)
       return ops.length
+    },
+    nodeEnabled: (i) => node(i)?.view.enabled !== false,
+    setNodeEnabled: (i, on) => {
+      const n = node(i)
+      if (n === undefined) return
+      commit([
+        n.owner === undefined
+          ? { kind: 'setNodeEnabled', id: n.authored.id, enabled: on }
+          : { kind: 'setOverrideNodeEnabled', owner: n.owner.id, node: n.authored.id, enabled: on },
+      ])
+    },
+    disabledByAncestor: (i) => {
+      // Walked rather than stored: the flag cascades by *omission* — a disabled node's children are never
+      // reached — so nothing writes a derived value onto them and switching a parent back on restores
+      // whatever the children said (ADR 0099).
+      const all = nodes()
+      let at = all[i]?.parent ?? -1
+      while (at >= 0) {
+        if (all[at]?.view.enabled === false) return true
+        at = all[at]?.parent ?? -1
+      }
+      return false
     },
     prefabAt: (id) => level.prefabs?.[id],
     refCount: (id) => {
