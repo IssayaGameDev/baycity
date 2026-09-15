@@ -109,6 +109,7 @@ Pure in `(motions, nowMs)` — `motion.ts`, ADR 0103. `motionOffset(motions, now
 | `spinRadians(s, nowMs)` | `frac(nowMs/1000 × speed/360 + offset) × 2π`. Wrapped to one turn. |
 | `curve(u, smooth)` | cosine when `smooth`, else linear. Both average 1 over a leg, which is what lets `speed` mean the average. |
 | `movesAtAll(motions)` | no distance or no speed ⇒ still ⇒ fixed body. |
+| `motionSlices(fromMs, toMs, maxStep)` | how many equal slices a tick needs so nothing travels more than `maxStep` between two of them (ADR 0104). `1` when still or slow; capped at 8. Position only. |
 | `AXES`, `AXIS_NAMES` | the six cardinal axes, as a literal tuple so `params.axis` narrows. |
 
 `frac` is a flooring fraction, so a negative `offset` wraps forward. Two `Spinner`s would not compose (euler

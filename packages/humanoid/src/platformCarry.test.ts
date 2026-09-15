@@ -307,6 +307,67 @@ describe('platform carry', () => {
     }
   })
 
+  /**
+   * The mirror of the bounce-fall, and the one a longer downward ray cannot reach (ADR 0104).
+   *
+   * A deck rising more than about a metre in a tick — 30 m/s at 30 Hz — ends the tick *above* the capsule's
+   * centre, so a downward cast has nothing to find at any reach. The base was dropped and Rapier pushed the
+   * overlapping capsule out of the bottom: the platform went through the player.
+   *
+   * Authored speeds here, not peak ones: a  eases by default, and a cosine leg peaks at pi/2 times its
+   * average, so 20 m/s authored is 31 m/s at mid-travel. That is the platform this was reported on.
+   */
+  it('is not passed through by a deck rising faster than the probe can look', () => {
+    for (const speed of [20, 25, 30, 35]) {
+      const { world, c, tick, deckTop } = verticalMover(speed, true)
+      let lost = 0
+      let worstBelow = 0
+      let worstAt = -1
+      for (let i = 0; i < 60; i++) {
+        tick(STILL)
+        if (c.base === undefined) lost++
+        // Positive = the deck's top face is above the soles, i.e. it is passing through us.
+        const d = deckTop() - (c.body.translation().y - STAND)
+        if (d > worstBelow) {
+          worstBelow = d
+          worstAt = i
+        }
+      }
+      expect(lost, `${speed} m/s up: ticks without a base`).toBe(0)
+      expect(worstBelow, `${speed} m/s up: worst depth below the deck (tick ${worstAt})`).toBeLessThan(0.05)
+      world.free()
+    }
+  })
+
+  /** The eased shape a  actually produces, at the speed and distance of the content it broke on. */
+  it('rides an eased up-and-down mover at the speed it was reported at', () => {
+    const world = makeWorld()
+    const plat = addPlatform(world, vec3(3, 0.2, 3), vec3(0, 20, 0))
+    const c = addCharacter(world, vec3(0, 20.2 + STAND + 0.02, 0))
+    const platforms = lookupFor(plat)
+    const distance = 10.2
+    const speed = 20.4 // FastElevator: peaks at 32 m/s, 1.07 m per tick
+    const period = (2 * distance) / speed
+    let lost = 0
+    let worstBelow = 0
+    for (let i = 0; i < 180; i++) {
+      const f = (i * TICK_DT) / period
+      const phase = f - Math.floor(f)
+      const curve = (u: number): number => (1 - Math.cos(u * Math.PI)) / 2
+      const y = 20 + distance * (phase < 0.5 ? curve(phase * 2) : 1 - curve((phase - 0.5) * 2))
+      plat.pose(vec3(0, y, 0), quat())
+      world.step(TICK_DT / 2)
+      stepCharacter(c, STILL, TICK_DT, undefined, platforms)
+      world.step(TICK_DT / 2)
+      if (i < 5) continue
+      if (c.base === undefined) lost++
+      worstBelow = Math.max(worstBelow, y + 0.2 - (c.body.translation().y - STAND))
+    }
+    expect(lost, 'ticks without a base over three full cycles').toBe(0)
+    expect(worstBelow, 'worst depth below the deck').toBeLessThan(0.05)
+    world.free()
+  })
+
   it('lands on a platform already descending fast, and keeps it', () => {
     // The controller reports contact before the probe's centre ray can reach a surface dropping away, so
     // `grounded` cancelled the fall while no base was acquired — the fall lost for nothing, on repeat.
@@ -347,6 +408,48 @@ describe('platform carry', () => {
         expect(c.grounded, 'not grounded while climbing away from the deck').toBe(false)
         expect(c.vy, 'gravity only — nothing re-captured the jump').toBeCloseTo(expected, 5)
       }
+      world.free()
+    }
+  })
+
+  /**
+   * The same tick, **sliced** — what the client does when the level reports a mover moving further in a tick
+   * than a rider can follow (ADR 0104, `LoadedLevel.motionSlices`).
+   *
+   * One slice tops out around 1.2 m of deck travel per step, which is a deck at ~36 m/s at 30 Hz. Slicing
+   * buys exactly what it costs: halve the slice, double the speed. Nothing else fixes it — sweeping the
+   * platform instead of teleporting it does not (the controller still will not free a capsule it is inside),
+   * and slicing only the character makes it worse, because by then the overlap has already happened.
+   */
+  it('rides a deck far past one slice, once the tick is sliced', () => {
+    for (const [speed, slices] of [
+      [45, 2],
+      [60, 2],
+      [90, 4],
+      [150, 8],
+    ] as const) {
+      const world = makeWorld()
+      const plat = addPlatform(world, vec3(3, 0.2, 3), vec3(0, 20, 0))
+      const c = addCharacter(world, vec3(0, 20.2 + STAND + 0.02, 0))
+      const platforms = lookupFor(plat)
+      const sub = TICK_DT / slices
+      let y = 20
+      let lost = 0
+      let worstBelow = 0
+      for (let t = 0; t < 60; t++) {
+        for (let n = 0; n < slices; n++) {
+          y += speed * sub * Math.min(1, t / 15)
+          plat.pose(vec3(0, y, 0), quat())
+          world.step(sub / 2)
+          stepCharacter(c, STILL, sub, undefined, platforms)
+          world.step(sub / 2)
+        }
+        if (t < 20) continue
+        if (c.base === undefined) lost++
+        worstBelow = Math.max(worstBelow, y + 0.2 - (c.body.translation().y - STAND))
+      }
+      expect(lost, `${speed} m/s up in ${slices} slices: ticks without a base`).toBe(0)
+      expect(worstBelow, `${speed} m/s up in ${slices} slices: worst depth below the deck`).toBeLessThan(0.05)
       world.free()
     }
   })

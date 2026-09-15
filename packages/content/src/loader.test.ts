@@ -529,6 +529,32 @@ describe('a node that moves itself', () => {
     }
   })
 
+  /**
+   * How finely a tick has to be posed so a rider can stay on (ADR 0104). The number the client slices by.
+   */
+  it('asks for more slices the further a mover travels in a tick', () => {
+    // 10 m at 30 m/s: a 0.333 s leg, and cosine easing peaks at pi/2 times the average, so ~47 m/s at
+    // mid-travel. Sampled across the middle of the leg, where it is fastest.
+    const loaded = load(platform([comp('m0', MOVER, { move: vec3(0, 10, 0), speed: 30, smooth: true })]))
+    const midLeg = 167
+    const step = 1000 / 30
+    expect(loaded.motionSlices(midLeg, midLeg + step, 1), 'about 1.5 m in a tick, so two halves').toBe(2)
+    expect(loaded.motionSlices(midLeg, midLeg + step, 10), 'a generous allowance needs no slicing').toBe(1)
+  })
+
+  it('leaves a still or gentle level at one slice, so nothing else pays for this', () => {
+    const still = load(platform([]))
+    expect(still.motionSlices(0, 1000, 1)).toBe(1)
+    const gentle = load(platform([comp('m0', MOVER, { move: vec3(0, 3, 0), speed: 1.5, smooth: true })]))
+    expect(gentle.motionSlices(0, 1000 / 30, 1)).toBe(1)
+  })
+
+  it('caps the slice count, because past a point no tick rate makes a deck rideable', () => {
+    const silly = load(platform([comp('m0', MOVER, { move: vec3(0, 400, 0), speed: 800, smooth: false })]))
+    expect(silly.motionSlices(0, 1000 / 30, 1)).toBe(8)
+    expect(silly.motionSlices(0, 1000 / 30, 0), 'a nonsense allowance asks for nothing').toBe(1)
+  })
+
   it('stops when the component is switched off', () => {
     const loaded = load(
       levelOf([

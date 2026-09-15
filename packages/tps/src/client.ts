@@ -637,7 +637,23 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
     // Tick 0 at level time 0: the clock has not started, and a component that wants "now" gets it in
     // `onFixedUpdate`. Counted here rather than read off the clock so the number a component sees is the
     // number of steps this level has run, which is what a deterministic fold is indexed by.
+    /**
+     * The furthest a deck may travel in one physics slice and still be ridden (ADR 0104).
+     *
+     * The distance from the capsule's centre to its soles: a deck starts at the soles, so a step longer
+     * than this ends above the centre, where the downward probe begins and where the controller can no
+     * longer sweep the capsule free. Measured exact to 0.02 m at 1.18 m and broken at 1.27 m, which brackets
+     * it. Derived from the character rather than typed, so a taller capsule gets a longer allowance.
+     */
+    const RIDEABLE_STEP = CHAR_HALF_HEIGHT + CHAR_RADIUS
+
     let tickCount = 0
+    /**
+     * The clock at the end of the previous tick, so a sliced tick can pose the level at instants *between*
+     * the two. Starts at the first tick's own time, which makes the first tick a single slice — there is no
+     * previous instant to interpolate from, and nothing has moved yet.
+     */
+    let prevTickMs = -1
     components.attach(tickCount, 0, TICK_DT)
 
     /**
@@ -677,21 +693,49 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
         // the ragdoll's parts did. Neither of the other two things in here is affected: the level's pieces are
         // kinematic and move to a pose the loader sets rather than by integration, and the character's own
         // translation is computed by `stepCharacter` from the full `TICK_DT` and applied through `move`.
-        const half = TICK_DT / 2
         const nowMs = simClock.tick()
         // Components run **before** the frame tree, not after it (ADR 0058). A component can move its own
         // node now, and it writes an offset the frame tree reads — so running `update` first would pose
         // everything from last tick's offsets and land every driven node one tick late. The old order was
         // harmless only while nothing a component could reach was writable.
         components.fixedUpdate(++tickCount, nowMs, TICK_DT)
-        loaded?.update(nowMs, char.base?.colliderHandle)
-        world.step(half) // (A) platforms move
-        // The movement slot (ADR 0061). This was `stepCharacter(...)` called straight from here, which is why
-        // every game had the same locomotion whether it suited them or not. The game's own locomotion
-        // component occupies this moment now — between the two half-steps, so the character resolves against
-        // where the platforms are *now*.
-        components.locomote(tickCount, nowMs, TICK_DT, cmd)
-        world.step(half) // (B) character resolves against the moved platforms
+        /**
+         * **Sliced when something moves too far to be stood on** (ADR 0104).
+         *
+         * A kinematic deck is teleported into place, and a teleport is not swept, so one that travels more
+         * than the rider's centre-to-sole distance in a step lands *above* them — and the character
+         * controller will not sweep a capsule out of a collider it is already inside. Measured at 30 Hz: the
+         * carry is exact to 0.02 m at 1.18 m of travel per step and fails outright at 1.27 m.
+         *
+         * So the tick is posed and resolved in equal slices small enough that no deck crosses that distance
+         * in one of them. Every level without a fast mover reports one slice and runs exactly as before.
+         *
+         * **Inside one `tick()`**, which is what keeps the netcode contract (ADR 0081): the local controller
+         * still sees one step per tick, prediction still replays whole ticks, and the slice count is derived
+         * from the level and the clock, so every client computes the same one.
+         *
+         * `fixedUpdate` stays at one call per tick — a component's `tickCount` and its seeded `ctx.random`
+         * are per tick by definition (ADR 0036), and running hooks several times would fire a rule twice.
+         * Only the frame tree, the physics and the movement slot are sliced.
+         */
+        if (prevTickMs < 0) prevTickMs = nowMs
+        const slices = loaded?.motionSlices(prevTickMs, nowMs, RIDEABLE_STEP) ?? 1
+        const sliceDt = TICK_DT / slices
+        const half = sliceDt / 2
+        for (let s = 1; s <= slices; s++) {
+          // Motion is a pure function of time (ADR 0103), so an intermediate pose is exact rather than
+          // interpolated: the level really is where it would have been at that instant.
+          const at = prevTickMs + ((nowMs - prevTickMs) * s) / slices
+          loaded?.update(at, char.base?.colliderHandle)
+          world.step(half) // (A) platforms move
+          // The movement slot (ADR 0061). This was `stepCharacter(...)` called straight from here, which is
+          // why every game had the same locomotion whether it suited them or not. The game's own locomotion
+          // component occupies this moment now — between the two half-steps, so the character resolves
+          // against where the platforms are *now*.
+          components.locomote(tickCount, at, sliceDt, cmd)
+          world.step(half) // (B) character resolves against the moved platforms
+        }
+        prevTickMs = nowMs
         lastSimTickAt = performance.now()
       },
       readState: () => new Map<EntityId, Vec3>([[id, char.body.translation()]]),
