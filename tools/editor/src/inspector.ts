@@ -183,20 +183,16 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
    * binding would put it in the label column like any other property.
    */
   /**
-   * The active checkbox, left of the name (ADR 0099, moved here by ADR 0102).
+   * The active checkbox, immediately left of the name (ADR 0102).
    *
-   * Where Unity puts it, and Kodjo's call: the Hierarchy is for finding and arranging things, and a column of
-   * checkboxes down it competed with the names. The Hierarchy still **dims** a switched-off row — that is the
-   * feedback — it just is not where you change it.
+   * Exactly a component section's header — `isec-en` then the name — because it is exactly the same control
+   * one level up: a tick, then the thing it switches off. No label. Kodjo's call, and the Hierarchy is for
+   * finding and arranging things, so a column of checkboxes down it competed with the names.
    *
-   * Disabled as a control when an ancestor is off: the node's own flag is then not what is keeping it out of
-   * the level, and a checkbox that changes nothing visible is worse than none.
+   * The Hierarchy still **dims** a switched-off row. That is the feedback; this is where you change it.
    */
-  const activeRow = el('div', 'active')
-  const activeBox = el('input', 'row-on')
+  const activeBox = el('input', 'isec-en')
   activeBox.type = 'checkbox'
-  const activeLabel = el('span', 'who')
-  activeRow.append(activeBox, activeLabel)
   activeBox.addEventListener('change', () => host.onSetEnabled(activeBox.checked))
 
   const nameInput = el('input', 'ctl name')
@@ -221,7 +217,10 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   const linkButton = el('button', 'ctl')
   linkRow.append(linkWho, linkButton)
   const multiNote = el('div', 'multi')
-  head.append(activeRow, nameInput, linkRow, multiNote)
+  /** Tick and name on one line, the way a component section's header reads. */
+  const nameRow = el('div', 'namerow')
+  nameRow.append(activeBox, nameInput)
+  head.append(nameRow, linkRow, multiNote)
 
   /** Name, prefab link, and the multi-selection note. Separate from `rebuild` so renaming is cheap. */
   const renderHead = (): void => {
@@ -233,12 +232,12 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     }
     head.hidden = false
 
-    const off = !doc.nodeEnabled(at)
+    // Off because a parent is off cannot be fixed here, so the control is disabled and the title says why —
+    // a checkbox that changes nothing visible is worse than one you cannot click.
     const offAbove = doc.disabledByAncestor(at)
-    activeBox.checked = !off
+    activeBox.checked = doc.nodeEnabled(at)
     activeBox.disabled = offAbove
-    activeLabel.textContent = offAbove ? 'off — a parent is switched off' : off ? 'off — not in the level' : 'in the level'
-    activeRow.classList.toggle('off', off || offAbove)
+    activeBox.title = offAbove ? 'a parent is switched off' : 'switched off objects and everything under them are not in the level'
 
     // Value = the typed name; placeholder = the fallback, so a clean file shows a sensible name without one
     // being written into the JSON.

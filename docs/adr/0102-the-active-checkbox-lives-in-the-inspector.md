@@ -12,8 +12,14 @@ and a column of checkboxes running down it competes with the names it exists to 
 
 ## Decision
 
-The checkbox moves to the Inspector's header, above the name field, with a line saying what it means — `in the
-level`, `off — not in the level`, or `off — a parent is switched off`.
+The checkbox moves to the Inspector's header, **immediately left of the name field and nothing else** — which
+is exactly a component section's header (`isec-en`, then the name) one level up, because it is exactly the same
+control: a tick, then the thing it switches off.
+
+A first attempt put it on its own line above the name with a label reading `in the level`. Kodjo's response was
+that this is awful and that the component header already shows how it should look. He is right twice: the label
+said nothing a tick does not, and a control that already exists in the product should not get a second shape.
+Why an ancestor's state blocks it is a `title`, not a line of body text.
 
 **The Hierarchy still dims a switched-off row.** That was never the complaint, it is how you see the state of
 a whole tree at a glance, and Unity dims too. `Row.disabled` and `Row.disabledAbove` stay; only the control
