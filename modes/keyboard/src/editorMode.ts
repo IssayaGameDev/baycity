@@ -42,13 +42,14 @@ export const KEYBOARD_MODE: ModeDescriptor = {
    * Three of them, matching what Kodjo's collaborators measured off the genre: starting is instant at every
    * speed, stopping and turning carry inertia that grows with speed, and the air is hardest of all.
    *
-   * - `groundMaxAccel: Infinity` — gaining speed is never limited, so a start is instant.
-   * - `groundBrakeMaxAccel: 200` — losing or redirecting it. Stopping: 0.03 s at Level 0, 0.33 s at Level 500.
-   * - `airMaxAccel: 60` — steering in the air. 0.11 s at Level 0, 1.1 s at Level 500.
+   * - `groundMaxAccel` — `Infinity`: gaining speed is never limited, so a start is instant.
+   * - `groundBrakeMaxAccel` — losing or redirecting it, which is a release and every turn.
+   * - `airMaxAccel` — steering in the air.
    *
-   * First values; the Movement folder has all three sliders.
+   * Tuned by feel on the Movement folder's sliders, which is the only place the numbers are written down:
+   * a second copy in a doc is a copy that goes stale.
    */
-  tuning: { ...DEFAULT_TUNING, groundMaxAccel: Infinity, groundBrakeMaxAccel: 200, airMaxAccel: 60 },
+  tuning: { ...DEFAULT_TUNING, groundMaxAccel: Infinity, groundBrakeMaxAccel: 200, airMaxAccel: 100 },
   /**
    * The palette is shared so two games' hazards look alike; the mapping is each game's own. A `WinsPad` is
    * where a stage ends, which is what the shared palette calls a goal.

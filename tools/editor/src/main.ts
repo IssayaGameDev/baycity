@@ -18,6 +18,7 @@ import {
   type PrefabSource,
   hydratePrefabs,
   stripHydrated,
+  unlinkPrefab,
   type ComponentData,
   type Keyframe,
   type LoadedLevel,
@@ -59,7 +60,7 @@ import {
 import { createCollab, httpTransport, parsePresence, type Hold, type Peer } from './collab'
 import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type ClipItem, type Doc, type KeyEditor, type Mode, type OpBatch } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
-import { askName, askUnsaved } from './confirm'
+import { askDestructive, askName, askUnsaved } from './confirm'
 import { prefabFolder, prefabTarget, sanitisePrefabName } from './prefabPath'
 import {
   acquireLock,
@@ -3272,7 +3273,87 @@ const armAsset = (assetId: string): void => {
 const renameAsset = (path: string, name: string): void =>
   afterFileOp(`renamed to ${name}`, async () => assets?.move(path, renamedTo(path, name)) ?? Promise.resolve())
 
-const deleteAsset = (path: string): void => afterFileOp(`deleted ${path}`, async () => assets?.remove(path) ?? Promise.resolve())
+/** A node id, minted the way `editorDoc` mints them: four random bytes, hex. */
+const freshNodeId = (): string => {
+  const bytes = new Uint8Array(4)
+  crypto.getRandomValues(bytes)
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+/** Every `nodeRef` parameter a component type declares — what a re-id has to follow (ADR 0097). */
+const nodeRefKeysOf = (type: string): string[] => {
+  const def = registry().get(type)
+  return def === undefined ? [] : Object.entries(def.params).filter(([, spec]) => spec.kind === 'nodeRef').map(([key]) => key)
+}
+
+/**
+ * Delete an asset — and for a **prefab**, unlink every placement of it first (ADR 0097).
+ *
+ * Deleting a prefab used to be silent and unrecoverable: no warning, no count of what referenced it, and the
+ * `.meta` sidecar went with the file, so the asset id died and re-creating the prefab could never re-link the
+ * placements. They degraded to objects that kept a transform and drew nothing — right for a file that went
+ * missing by accident, wrong for one somebody chose to delete.
+ *
+ * So the placements are unlinked instead: they keep exactly what they were drawing and stop being copies of
+ * anything. Kodjo's call.
+ *
+ * Two paths, because the editor is the only side that can do this. The unlink needs a component registry —
+ * for which components are singletons, and which parameters are node references that must follow a re-id —
+ * and the editor-server has none by design.
+ *
+ * - the **open** level goes through its own document, as ops: one undo entry, and everyone in the room sees it.
+ * - every **other** level goes through `GET` + `PUT`, which 409s while that level is open live. That refusal
+ *   is the guard: rather than rewrite a file under somebody, the whole delete stops and names the level.
+ *
+ * The prefab file goes last. A failed unlink then costs nothing, where the reverse order would leave
+ * placements pointing at an id that no longer exists.
+ */
+const deleteAsset = (path: string): void => {
+  const entry = assets?.db.entries.find((e) => e.path === path)
+  if (entry === undefined || entry.kind !== 'prefab') {
+    afterFileOp(`deleted ${path}`, async () => assets?.remove(path) ?? Promise.resolve())
+    return
+  }
+  void (async () => {
+    const id = entry.id
+    const all = await listFiles('levels').catch(() => [] as FileEntry[])
+    const users = all.filter((f) => f.prefabs?.includes(id) === true).map((f) => f.name)
+    const openName = fileState.name
+    const here = doc?.refCount(id) ?? 0
+    // The open document is ahead of the listing either way: it may have placed one since the last write, or
+    // removed the last one.
+    const others = users.filter((n) => n !== openName)
+
+    const counts = [
+      here > 0 ? `${here} in this level` : null,
+      others.length > 0 ? `${others.length} other level${others.length === 1 ? '' : 's'} (${others.join(', ')})` : null,
+    ].filter((s) => s !== null)
+    const body =
+      counts.length === 0
+        ? 'Nothing places it. The file and its id go for good — a prefab created again later gets a new id.'
+        : `Used by ${counts.join(' and ')}. Those objects stay where they are and keep what they are drawing; they just stop being copies of this prefab. The file and its id go for good.`
+    if (!(await askDestructive(`Delete ${entry.name}?`, body, 'Delete'))) return setStatus('kept')
+
+    // Other levels first: they are the ones that can refuse, and a refusal must stop the whole thing.
+    for (const name of others) {
+      try {
+        const level = (await loadLevelRaw(name)) as Level
+        hydratePrefabs(level, editorPrefabs)
+        const n = unlinkPrefab(level, id, { types: registry(), freshId: freshNodeId, refKeysOf: nodeRefKeysOf })
+        if (n > 0) await saveFile('levels', name, stripHydrated(level, [id]))
+      } catch (e) {
+        setStatus(`${name} could not be unlinked (${String(e)}) — nothing deleted`)
+        return
+      }
+    }
+    if (here > 0) {
+      doc?.unlinkPrefab(id)
+      recordEdit(`unlinked ${entry.name}`)
+      await collab.flush().catch(() => undefined)
+    }
+    afterFileOp(`deleted ${path}`, async () => assets?.remove(path) ?? Promise.resolve())
+  })()
+}
 
 const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   db: () => assets?.db ?? null,

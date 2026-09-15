@@ -34,9 +34,10 @@ Each frame `main.ts` writes `client.tuning.moveSpeed = speedStuds × METRES_PER_
 Speed for the Level unless the debug speed pick is on (then `min(pick, max)`). `client.tuning` is the live
 object the controller reads; the descriptor's `tuning` is only the starting copy (ADR 0071 correction).
 `groundAccelTime`, `groundStopTime`, `airControl` are deliberately not scaled. What keeps a fast character
-sane is `groundBrakeMaxAccel: 200` and `airMaxAccel: 60`, quoted at `ACCEL_REF_SPEED` and growing with `√speed`
-from there, with `groundMaxAccel: Infinity` so a start stays instant (ADR 0078/0096). A *fixed* ceiling cannot
-work across this curve: Level 500 is 283 m/s, where a fixed 60 would take 4.7 s and 667 m to stop.
+sane is `groundBrakeMaxAccel` and `airMaxAccel`, quoted at `ACCEL_REF_SPEED` and growing with `√speed` from
+there, with `groundMaxAccel` left at `Infinity` so a start stays instant (ADR 0078/0096). Values in
+`src/editorMode.ts`. A *fixed* ceiling cannot work across this curve: Level 500 is 283 m/s, where a fixed 60
+would take 4.7 s and 667 m to stop.
 
 ## Saves
 

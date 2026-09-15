@@ -133,3 +133,54 @@ export const askUnsaved = (name: string): Promise<UnsavedChoice> =>
     document.body.append(scrim)
     row.lastElementChild instanceof HTMLElement && row.lastElementChild.focus()
   })
+
+/**
+ * A yes/no on something that cannot be undone, with the consequences spelled out (ADR 0097).
+ *
+ * `askUnsaved`'s three-way shape with the middle option removed. The destructive button is last and primary,
+ * and Enter does **not** take it: the keyboard default is Cancel, because the dialogue exists for the case
+ * where somebody is about to lose work they did not know about.
+ */
+export const askDestructive = (title: string, body: string, confirmLabel: string): Promise<boolean> =>
+  new Promise<boolean>((resolve) => {
+    const scrim = document.createElement('div')
+    scrim.style.cssText = STYLE.scrim
+    const box = document.createElement('div')
+    box.style.cssText = STYLE.box
+    const heading = document.createElement('div')
+    heading.style.cssText = STYLE.title
+    heading.textContent = title
+    const text = document.createElement('div')
+    text.style.cssText = STYLE.body
+    text.textContent = body
+    const row = document.createElement('div')
+    row.style.cssText = STYLE.row
+
+    let done = false
+    const finish = (value: boolean): void => {
+      if (done) return
+      done = true
+      window.removeEventListener('keydown', onKey, true)
+      scrim.remove()
+      resolve(value)
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      e.stopPropagation()
+      if (e.key === 'Escape' || e.key === 'Enter') finish(false)
+    }
+    const button = (label: string, value: boolean, primary = false): HTMLButtonElement => {
+      const b = document.createElement('button')
+      b.style.cssText = primary ? STYLE.primary : STYLE.button
+      b.textContent = label
+      b.addEventListener('click', () => finish(value))
+      return b
+    }
+    row.append(button('Cancel', false), button(confirmLabel, true, true))
+    box.append(heading, text, row)
+    scrim.append(box)
+    scrim.addEventListener('mousedown', (e) => {
+      if (e.target === scrim) finish(false)
+    })
+    window.addEventListener('keydown', onKey, true)
+    document.body.append(scrim)
+  })

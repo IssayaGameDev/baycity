@@ -144,5 +144,6 @@ why matters.
 | [0094](adr/0094-the-viewport-has-a-navigation-gizmo.md) | The viewport has a navigation gizmo, and an isometric camera behind it |
 | [0095](adr/0095-a-component-can-see-every-player.md) | A component can see every player, and the Boss is what wanted it |
 | [0096](adr/0096-weight-grows-with-the-square-root-of-speed.md) | Weight grows with the square root of speed, and only when you lose it |
+| [0097](adr/0097-deleting-a-prefab-unlinks-its-placements.md) | Deleting a prefab unlinks its placements |
 
 `Design archive/` holds superseded design material and is not maintained.
