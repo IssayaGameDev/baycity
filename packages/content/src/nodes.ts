@@ -19,6 +19,13 @@ export const RENDERER = 'Renderer'
 export const MATERIAL_OVERRIDE = 'MaterialOverride'
 /** Clock-driven keyed motion, evaluated by the loader's frame tree. */
 export const TRACK = 'Track'
+/**
+ * Travels a distance from rest and back, at a speed (ADR 0103). **Repeatable**: offsets from one transform
+ * add, so two of them make a circle without a keyframe in sight.
+ */
+export const MOVER = 'Mover'
+/** Turns about a cardinal axis at a speed (ADR 0103). Singleton — euler angles do not compose by adding. */
+export const SPINNER = 'Spinner'
 /** Where players enter. */
 export const SPAWN = 'Spawn'
 /** A light. Realized by the renderer, but the loader has to surface it, so the engine knows the name. */

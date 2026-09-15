@@ -14,7 +14,9 @@ export {
   LIGHT,
   MATERIAL_OVERRIDE,
   MESH,
+  MOVER,
   RENDERER,
+  SPINNER,
   SPAWN,
   TRACK,
   bakeOverrides,
@@ -59,3 +61,5 @@ export {
 export type { AnimationAsset, AssetDatabase, AssetEntry, AssetKind, AssetMeta, MaterialAsset, MaterialValue } from './assets'
 export { easeAt, isAnimated, moveTrack, poseAt, spinTrack, trackDuration, trackTime } from './track'
 export type { Pose } from './track'
+export { AXES, AXIS_NAMES, MOTIONLESS, motionOffset, motionsOf, moveFraction, movesAtAll, spinRadians } from './motion'
+export type { Motion, MotionOffset } from './motion'

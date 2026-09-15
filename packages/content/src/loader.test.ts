@@ -3,7 +3,7 @@ import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { instantiateLevel, type ClipSource } from './loader'
-import { effectiveNode, COLLIDER, LIGHT, MATERIAL_OVERRIDE, MESH, RENDERER, SPAWN, TRACK, type TypeInfo } from './nodes'
+import { effectiveNode, COLLIDER, LIGHT, MATERIAL_OVERRIDE, MESH, MOVER, RENDERER, SPAWN, SPINNER, TRACK, type TypeInfo } from './nodes'
 import { moveTrack } from './track'
 import type { ComponentData, Node, Level } from './types'
 
@@ -17,7 +17,7 @@ import type { ComponentData, Node, Level } from './types'
 
 /** Only `singleton` matters to resolution, so the real registry is not needed here. */
 const TYPES: TypeInfo = {
-  get: (type) => (type === COLLIDER ? {} : { singleton: true }),
+  get: (type) => (type === COLLIDER || type === MOVER ? {} : { singleton: true }),
 }
 
 const comp = (id: string, type: string, params: Record<string, unknown> = {}): ComponentData => ({ id, type, params })
@@ -498,5 +498,118 @@ describe('a trigger collider', () => {
   it('is solid when the flag is absent, so every collider authored before this is unchanged', () => {
     const loaded = load(levelOf([{ ...wall(false), components: [comp('c0', COLLIDER, box(2))] }]))
     expect(loaded.nodes[0]!.colliderHandles).toHaveLength(1)
+  })
+})
+
+/**
+ * `Mover` and `Spinner` through the frame tree (ADR 0103).
+ *
+ * The maths is proved in `motion.test.ts`, including pose-for-pose equivalence with the keyframe presets
+ * these replace. What is tested here is the loader's part: that a motion earns the node a kinematic body and
+ * a place in the per-tick pass, that the subtree comes with it, and that a node with no motion still costs
+ * what it always did.
+ */
+describe('a node that moves itself', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  /** The drawn position after posing the world at `nowMs`. `render(1)` lands exactly on the tick. */
+  const drawnAt = (loaded: ReturnType<typeof load>, nowMs: number, which = 0): Vec3 => {
+    loaded.update(nowMs)
+    loaded.render(1)
+    return loaded.visuals[which]!.position
+  }
+
+  const platform = (components: ComponentData[], children?: Node[]): Level =>
+    levelOf([
+      {
+        id: 'n0',
+        transform: { position: vec3(0, 0, 0) },
+        components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: '' }), ...components],
+        ...(children === undefined ? {} : { children }),
+      },
+    ])
+
+  it('carries the node, and settles back where it started', () => {
+    // 3 m up at 1.5 m/s: a 2 s leg, so fully out at 2 s and home again at 4 s.
+    const loaded = load(platform([comp('m0', MOVER, { move: vec3(0, 3, 0), speed: 1.5, smooth: true, offset: 0 })]))
+    expect(drawnAt(loaded, 0).y).toBeCloseTo(0, 6)
+    expect(drawnAt(loaded, 2000).y).toBeCloseTo(3, 6)
+    expect(drawnAt(loaded, 4000).y).toBeCloseTo(0, 6)
+  })
+
+  it('carries its children, so a subtree rides its parent', () => {
+    const loaded = load(
+      platform([comp('m0', MOVER, { move: vec3(0, 3, 0), speed: 1.5 })], [
+        { id: 'n1', transform: { position: vec3(0, 1, 0) }, components: [comp('c2', COLLIDER, box()), comp('c3', RENDERER, { material: '' })] },
+      ]),
+    )
+    expect(drawnAt(loaded, 2000, 0).y).toBeCloseTo(3, 6)
+    expect(drawnAt(loaded, 2000, 1).y, 'the child sits 1 m up, on a deck 3 m up').toBeCloseTo(4, 6)
+  })
+
+  it('spins, without touching its position', () => {
+    // 90 deg/s, so a quarter turn per second. Read off a collider offset, which a rotation moves.
+    const loaded = load(
+      levelOf([
+        {
+          id: 'n0',
+          transform: { position: vec3(0, 0, 0) },
+          components: [comp('c0', COLLIDER, { ...box(), center: vec3(2, 0, 0) }), comp('c1', RENDERER, { material: '' }), comp('s0', SPINNER, { axis: '+Y', speed: 90 })],
+        },
+      ]),
+    )
+    const at = drawnAt(loaded, 1000)
+    expect(at.x).toBeCloseTo(0, 6)
+    expect(at.z, 'a quarter turn about +Y swings +X round to -Z').toBeCloseTo(-2, 6)
+  })
+
+  it('adds two Movers, which is how a circle is authored without a keyframe', () => {
+    const loaded = load(
+      platform([
+        comp('m0', MOVER, { move: vec3(0, 4, 0), speed: 2, smooth: false, offset: 0 }),
+        comp('m1', MOVER, { move: vec3(4, 0, 0), speed: 2, smooth: false, offset: 0.25 }),
+      ]),
+    )
+    // 4 m at 2 m/s is a 2 s leg, so a 4 s cycle. At 1 s the first is halfway out and the second is at its far
+    // end; a quarter cycle later they have swapped. Read past zero, which `makeFrame` evaluates for free.
+    const one = drawnAt(loaded, 1000)
+    expect(one.y).toBeCloseTo(2, 6)
+    expect(one.x).toBeCloseTo(4, 6)
+    const two = drawnAt(loaded, 2000)
+    expect(two.y).toBeCloseTo(4, 6)
+    expect(two.x).toBeCloseTo(2, 6)
+  })
+
+  it('adds to a Track on the same node rather than fighting it', () => {
+    // Nothing authored has both, but the two offsets composing is what lets the migration land in stages.
+    const loaded = load(
+      platform([
+        comp('t0', TRACK, { keys: moveTrack(vec3(0, 1, 0), 2, 4000), loop: 'loop' }),
+        comp('m0', MOVER, { move: vec3(0, 3, 0), speed: 1.5 }),
+      ]),
+    )
+    expect(drawnAt(loaded, 2000).y, 'both fully out: 2 m from the track, 3 m from the mover').toBeCloseTo(5, 6)
+  })
+
+  it('stays fixed with no speed or no distance, so a still level costs what it always did', () => {
+    for (const params of [{ move: vec3(0, 3, 0), speed: 0 }, { move: vec3(0, 0, 0), speed: 2 }]) {
+      const loaded = load(platform([comp('m0', MOVER, params)]))
+      expect(drawnAt(loaded, 2000).y, 'never entered the per-tick pose pass').toBeCloseTo(0, 9)
+    }
+  })
+
+  it('stops when the component is switched off', () => {
+    const loaded = load(
+      levelOf([
+        {
+          id: 'n0',
+          transform: { position: vec3(0, 0, 0) },
+          components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: '' }), { id: 'm0', type: MOVER, params: { move: vec3(0, 3, 0), speed: 1.5 }, enabled: false }],
+        },
+      ]),
+    )
+    expect(drawnAt(loaded, 2000).y).toBeCloseTo(0, 9)
   })
 })
