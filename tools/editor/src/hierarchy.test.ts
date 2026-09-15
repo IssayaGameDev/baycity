@@ -268,6 +268,8 @@ describe('dropTarget', () => {
     siblingIndex: 2,
     label: 'x',
     badge: '',
+    disabled: false,
+    disabledAbove: false,
     held: '',
     linked: true,
     hasChildren: false,

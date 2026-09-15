@@ -281,6 +281,17 @@ export interface Node {
   prefab?: string
   /** Per-node overrides on this placement, keyed by the *referenced* tree's node ids, at any depth. */
   overrides?: Record<string, NodeOverride>
+  /**
+   * Absent means enabled. Present and `false` means this node and **everything under it** is not built at all
+   * (ADR 0099) — no collider, no mesh, no light, no component running, in the editor and in the game alike.
+   *
+   * Unity's `SetActive`, and level data rather than a view setting: it is how half-built content or an
+   * alternate route is parked in a level without deleting it.
+   *
+   * Cascades by omission, not by copying: a child of a disabled node is never reached, so its own `enabled`
+   * is irrelevant and switching the parent back on restores whatever the children said.
+   */
+  enabled?: boolean
 }
 
 /**
@@ -305,6 +316,14 @@ export interface NodeOverride {
    * folding it in would make a component that happens to declare a parameter called `enabled` collide with it.
    */
   enabled?: Record<string, boolean>
+  /**
+   * Switch the node **itself** off (or back on) on this placement only (ADR 0099).
+   *
+   * Its own field rather than a key in `enabled`, for the same reason `enabled` is separate from `params`:
+   * `enabled` is keyed by *component* id, and a node is not a component. One placement of a platform prefab
+   * can drop its spikes while every other placement keeps them.
+   */
+  nodeEnabled?: boolean
 }
 
 /** A level: a node forest, plus a prefab table mapping a key to the **root node** of a shared definition. */

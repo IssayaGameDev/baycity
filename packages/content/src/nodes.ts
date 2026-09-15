@@ -93,6 +93,13 @@ export interface Resolved {
   readonly id: string
   readonly name: string | undefined
   readonly transform: Transform
+  /**
+   * `false` when this node and its subtree must not be built (ADR 0099). Absent or `true` means build it.
+   *
+   * A placement's own answer wins over the prefab root's, so a placement can switch itself off without
+   * touching the prefab — and a prefab whose root is disabled is off everywhere it is placed.
+   */
+  readonly enabled: boolean | undefined
   readonly components: readonly ComponentData[]
   /**
    * Inherited children (already patched) followed by the placement's own. Plain `Node`s, so a consumer
@@ -144,6 +151,7 @@ export const bakeOverrides = (node: Node, overrides: Record<string, NodeOverride
   return {
     ...node,
     ...(o?.name !== undefined ? { name: o.name } : {}),
+    ...(o?.nodeEnabled !== undefined ? { enabled: o.nodeEnabled } : {}),
     ...(o?.transform !== undefined ? { transform: o.transform } : {}),
     components: patchComponents(node.components, o),
     ...(patchedKids !== undefined ? { children: patchedKids } : {}),
@@ -180,6 +188,7 @@ export const effectiveNode = (level: Level, node: Node, types: TypeInfo): Resolv
       id: node.id,
       name: node.name,
       transform: node.transform,
+      enabled: node.enabled,
       components: node.components,
       children: node.children ?? [],
       inheritedCount: 0,
@@ -191,6 +200,9 @@ export const effectiveNode = (level: Level, node: Node, types: TypeInfo): Resolv
     id: node.id,
     name: node.name ?? patched.name,
     transform: node.transform,
+    // The placement's own answer first, then the prefab root's: a placement may switch itself off, and a
+    // prefab disabled at its root is off wherever it is placed.
+    enabled: node.enabled ?? patched.enabled,
     components: layerOwn(patched.components, node.components, types),
     children: [...inherited, ...(node.children ?? [])],
     inheritedCount: inherited.length,
@@ -205,6 +217,10 @@ export const walkNodes = (
 ): void => {
   const step = (node: Node, parent: Resolved | undefined): void => {
     const resolved = effectiveNode(level, node, types)
+    // A disabled node is not built, and neither is anything under it (ADR 0099) — so it is not visited and
+    // its children are never reached. Every consumer of this walk wants what the level *is*, and a disabled
+    // subtree is not part of that.
+    if (resolved.enabled === false) return
     visit(resolved, node, parent)
     for (const child of resolved.children) step(child, resolved)
   }

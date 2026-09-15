@@ -410,6 +410,10 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
    */
   const build = (node: Node, parent: Frame | null, inheritedMaterial: string | undefined, scope: number): void => {
     const r = effectiveNode(level, node, types)
+    // Disabled: build nothing, and do not descend (ADR 0099). Returning before `makeFrame` is what makes the
+    // whole subtree absent rather than present-but-hidden — no body, no visual, no light, no component, and
+    // no `baseIndex`, which is only safe because every client loads the same file and so skips the same nodes.
+    if (r.enabled === false) return
     // Does any enabled component on this node say it moves it (ADR 0058)? Asked here because the answer
     // decides the frame's `animated` flag and whether its bodies are kinematic, and neither can change later.
     const driven = r.components.some((c) => c.enabled !== false && types.get(c.type)?.moves === true)
