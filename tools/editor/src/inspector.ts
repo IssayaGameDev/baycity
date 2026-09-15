@@ -144,6 +144,27 @@ const defaultShape = (kind: string, was: ColliderDesc): ColliderDesc => {
   }
 }
 
+/**
+ * The values a component's widgets are bound to: declared defaults, the authored params over them, and
+ * **nothing shared with the document** (ADR 0101).
+ *
+ * The deep copy is load-bearing. A spread is shallow, so `state.shape` would be the very same object as
+ * `params.shape` — and on an *inherited* component that object is the **prefab's own**, because
+ * `bakeOverrides` hands back the prefab's objects untouched where no override changed them (deliberately, so
+ * that editing a shared definition is not a silent no-op, ADR 0033).
+ *
+ * Tweakpane then writes *into* a bound object rather than replacing it: `writePoint3d` calls `writeProperty`,
+ * which does `valueObj[name] = value`. So dragging `half extents` on one placement wrote straight into the
+ * prefab definition, every frame, before any op existed. Every other placement of that prefab in the open
+ * level redrew at the new size while only the one touched got an override, and the next placement's slider
+ * started from the mutated number instead of the prefab's real one.
+ *
+ * Local and transient — a prefab file is only written through the prefab's own live room, whose copy comes
+ * from the server — but the viewport was showing sizes the level did not have.
+ */
+export const boundState = (defaults: Record<string, unknown>, params: Record<string, unknown>): Record<string, unknown> =>
+  structuredClone({ ...defaults, ...params })
+
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] => {
   const node = document.createElement(tag)
   if (className !== undefined) node.className = className
@@ -602,7 +623,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       return
     }
 
-    const state: Record<string, unknown> = { ...doc.registry.defaults(view.type), ...view.params }
+    const state = boundState(doc.registry.defaults(view.type), view.params)
     const shown = visibleParams(def.params, state)
     syncDepth++
     try {

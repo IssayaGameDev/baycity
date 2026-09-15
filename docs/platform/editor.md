@@ -359,6 +359,18 @@ The game's own code, not a copy (ADR 0052):
 
 Esc / pointer-lock loss exits play; play stops track preview.
 
+## Inspector — what the widgets bind to (ADR 0101)
+
+`boundState(defaults, params)` = `structuredClone({ ...defaults, ...params })`. Exported and pure so the
+invariant has a test.
+
+The deep copy is load-bearing. A spread aliases every nested value, and on an **inherited** component those
+values are the **prefab's own** objects (`bakeOverrides` returns them untouched where no override changed them,
+ADR 0033). Tweakpane writes *into* a bound object rather than replacing it — `writePoint3d` → `writeProperty`
+→ `valueObj[name] = value` — so a shallow copy let a drag on one placement edit the prefab definition in
+memory, every frame, before any op existed: other placements of that prefab redrew, and the next one's slider
+started from the mutated number.
+
 ## Inspector — Add Component (`src/inspector.ts`)
 
 `addComponentSection` per component. `Add Component` lists `doc.registry` types not on the node plus `host.adoptable()`; disabled when both empty. Adopted types go through `host.adopt(type)` then are added to the rebuilt document. Params default from `registry.defaults(type)`. Prefab placements: "push into shared prefab" → `Doc.applyOverrides` (host `applyToPrefab`).
