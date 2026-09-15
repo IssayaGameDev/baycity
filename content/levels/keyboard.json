@@ -1740,7 +1740,8 @@
           "type": "Renderer",
           "params": {
             "material": "4a11d049f9f8e5ac"
-          }
+          },
+          "enabled": false
         }
       ],
       "prefab": "5a05991a9190c8d9",
