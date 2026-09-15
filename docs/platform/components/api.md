@@ -16,7 +16,7 @@ Package `packages/components`. Headless; deps `@mp/content`, `@mp/core` (`@mp/ph
 | `color` | `default` | `string` | `#rrggbb` |
 | `enum` | `options: readonly O[]`, `default: O` | `O` (literal union kept) | in options |
 | `vec3` | `default: Vec3` | `Vec3` | finite |
-| `asset` | `of: 'material' \| 'model' \| 'animation'`, `default` (`''` = none) | `string` | string |
+| `asset` | `of: 'material' \| 'model'`, `default` (`''` = none) | `string` | string |
 | `collider` | `default: ColliderDesc` | `ColliderDesc` | per kind; convex ≥ 4 points |
 | `keys` | `clip?` (name of sibling `asset` param) | `readonly Keyframe[]`, default `[]` | `t` finite |
 | `nodeRef` | — | `string \| null`, default `null` | target unchecked |

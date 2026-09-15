@@ -1,5 +1,5 @@
 import { rotateVec3, type Quat, type Vec3 } from '@mp/core'
-import { AXIS_NAMES, MOVER, SPINNER, TRACK } from '@mp/content'
+import { AXIS_NAMES, MOVER, SPINNER } from '@mp/content'
 import { defineComponent } from './define'
 
 /**
@@ -12,7 +12,7 @@ import { defineComponent } from './define'
  * `Goal` has no hook, because the mode has no goal rule — nothing ends a run yet, and writing one here would
  * be a design decision wearing an implementation's clothes.
  *
- * `Track` has no hook either, and that is not an omission: the loader's frame tree evaluates it as a pure
+ * `Mover` and `Spinner` have no hook either, and that is not an omission: the loader's frame tree evaluates
  * function of the synced clock, so a late joiner needs no catch-up and a static subtree costs nothing. An
  * accumulating hook would trade both away for nothing.
  *
@@ -100,32 +100,6 @@ export const Bumper = defineComponent({
    * request in a tick, so a stack of bumpers throws you as hard as the hardest one.
    */
   onContact: (self, ctx) => ctx.character.launch(self.params.power),
-})
-
-/**
- * Clock-driven keyed motion — a pure function of synced time, so no per-object networking (ADR 0013/0021,
- * ADR 0029). **Offsets** the node's local pose per channel rather than replacing it (ADR 0050).
- *
- * The motion comes from one of two places, and both are supported on purpose (ADR 0050):
- *
- * - `keys` — this node's own track. What a one-off mover wants: no file, nothing shared.
- * - `clip` — an animation asset every user of it shares. Edit the clip, every platform playing it changes.
- *
- * **Inline keys win** when a file somehow has both; the editor keeps them exclusive. Duration is the last
- * key's `t`, derived rather than stored so the two cannot disagree.
- *
- * `loop` and `phaseMs` stay here rather than moving into the clip, because they are per-placement: a
- * staggered row of pistons is one clip and six phases.
- */
-export const Track = defineComponent({
-  type: TRACK,
-  params: {
-    clip: { kind: 'asset', of: 'animation', default: '', label: 'clip' },
-    keys: { kind: 'keys', clip: 'clip' },
-    loop: { kind: 'enum', options: ['loop', 'pingPong', 'once'], default: 'loop' },
-    phaseMs: { kind: 'number', default: 0, step: 50, label: 'phase (ms)' },
-  },
-  singleton: true,
 })
 
 /**
@@ -350,7 +324,7 @@ export const Spinner = defineComponent({
   singleton: true,
 })
 
-export const GAMEPLAY_COMPONENTS = [Checkpoint, Goal, Hazard, Bumper, Track, Mover, Spinner, Boss]
+export const GAMEPLAY_COMPONENTS = [Checkpoint, Goal, Hazard, Bumper, Mover, Spinner, Boss]
 
 /**
  * Components a game puts on its **player** rather than in a level (ADR 0059).

@@ -151,14 +151,13 @@ localProgress(mode: string): PersistenceAdapter<PlayerProgress>
 
 ```ts
 ASSET_DB: AssetDatabase                 // buildDatabase over content/assets/**/*.meta sidecars
-CLIP_SOURCE: ClipSource                 // { keys: (assetId) => AnimationAsset['keys'] | undefined }
 PREFAB_SOURCE: PrefabSource             // { root: (assetId) => Node | undefined } — ADR 0091
 assetUrlOf(path: string): string        // bundled URL, or the path itself
 materialOf(assetId: string): MaterialAsset | undefined
 ```
 
 Bundled via `import.meta.glob` over `@content/assets/**` (alias, `content-sync.md`) (`*.meta` as `?raw`, `*` as `?url`, `*.mat.json`,
-`*.anim.json`, `*.prefab.json`). Kind from extension (`kindForPath`); a corrupt or missing sidecar = unknown asset, not a build error.
+`*.prefab.json`). Kind from extension (`kindForPath`); a corrupt or missing sidecar = unknown asset, not a build error.
 Prefabs are parsed and eager for the same reason clips are: resolution has to finish before `instantiateLevel`,
 which stays synchronous (`baseIndex` goes on the wire, ADR 0021). A reference no file resolves draws nothing and
 warns once. Nothing hands a `builtin:` shape or a prefab id to `assets.load`: neither is a file (ADR 0090, 0091).

@@ -82,7 +82,6 @@ const KIND_LABEL: Record<AssetKind, string> = {
   model: 'Models',
   material: 'Materials',
   shader: 'Shaders',
-  animation: 'Animations',
   sound: 'Sounds',
   font: 'Fonts',
 }
@@ -96,9 +95,9 @@ const PLACEABLE = new Set<AssetKind>(['prefab', 'model'])
  * meaningful starting point. A texture or a model arrives as a file, and a prefab is made by extracting one
  * from a level as one (ADR 0091).
  */
-const CREATABLE = new Set<AssetKind>(['material', 'animation'])
+const CREATABLE = new Set<AssetKind>(['material'])
 /** Kinds with no picture worth inventing. */
-const UNPREVIEWABLE = new Set<AssetKind>(['animation', 'sound', 'font'])
+const UNPREVIEWABLE = new Set<AssetKind>(['sound', 'font'])
 
 type PreviewKind = 'prefab' | 'model' | 'material' | 'shader' | 'texture'
 

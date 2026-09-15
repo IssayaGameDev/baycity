@@ -5,25 +5,18 @@ import {
   numberParam,
   motionOffset,
   motionsOf,
-  poseAt,
   vec3Param,
   stringParam,
   COLLIDER,
   LIGHT,
   MATERIAL_OVERRIDE,
-  TRACK,
   MESH,
   RENDERER,
-  type Behavior,
-  type ClipSource,
   type ColliderDesc,
   type ComponentData,
-  type Keyframe,
-  type LoopMode,
   type Node,
   type Level,
   type NodeOverride,
-  type Pose,
   type EnvironmentConfig,
   type ModeRef,
   type Transform,
@@ -42,7 +35,6 @@ import { DEFAULT_REGISTRY, type Registry } from '@mp/components'
 import type { LightDesc } from '@mp/render-three'
 import { vec3, type Vec3 } from '@mp/core'
 
-import { sortedKeys } from './trackEdit'
 
 /**
  * Editor document abstraction, over a **node tree** (PLAN-component-system, stage C1).
@@ -303,21 +295,16 @@ export interface Doc {
    */
   overrideOpsFor: (i: number) => { assetId: string; ops: Op[] } | null
 
-  // ---- keyframes ----------------------------------------------------------------------------------
+  // ---- motion -------------------------------------------------------------------------------------
   /**
-   * Every keyframe parameter on this node — what a timeline can edit.
+   * The node's local pose at a level time, with every `Mover` and `Spinner` on it applied (ADR 0103).
    *
-   * Addressed by **component and parameter name**, not as "the node's Track". A `keys` parameter is a
-   * declaration like any other, so the timeline is the editor for that *kind of parameter* rather than for
-   * one privileged component type. `Track` is the only component that declares one today.
+   * What the viewport draws while previewing. The same composition the loader does, because anything shown
+   * here has to be what the game builds.
    */
-  keyEditors: (i: number) => readonly KeyEditor[]
-  /** The keys of one such parameter, or `null` when the component is no longer there. */
-  keysOf: (i: number, editor: KeyEditor) => readonly Keyframe[] | null
-  /** Replace them. Sorted on the way in, so the strip and the evaluator agree on order. */
-  setKeys: (i: number, editor: KeyEditor, keys: readonly Keyframe[]) => void
-  /** The node's local pose at a track time — what a scrub draws, and what the gizmo writes into a key. */
-  poseOf: (i: number, timeMs: number) => Pose
+  poseOf: (i: number, timeMs: number) => LocalPose
+  /** Whether any `Mover` or `Spinner` sits on this node — what decides whether previewing shows it move. */
+  movesAt: (i: number) => boolean
 
   // ---- clipboard, references, files ---------------------------------------------------------------
   copy: (i: number) => ClipItem | null
@@ -377,25 +364,10 @@ export interface Doc {
   setId: (id: string) => void
 }
 
-/**
- * Which keyframe parameter a timeline is editing: a component on a node, and one of its `keys` parameters.
- *
- * Two names rather than one, because a component may in principle declare more than one keyframe parameter,
- * and because a component id alone would not say which of them the strip has open.
- */
-export interface KeyEditor {
-  readonly componentId: string
-  /** The component's registry type, for the panel's heading. */
-  readonly type: string
-  readonly param: string
-  /**
-   * The sibling asset parameter that may hold these keys as a clip, or `null` when the declaration names none
-   * (ADR 0050).
-   *
-   * Read off the `keys` declaration rather than assumed to be called `clip`, so the panel still addresses a
-   * parameter and not a component it knows the shape of — which is the whole point of ADR 0037.
-   */
-  readonly clipParam: string | null
+/** A node's local pose: its authored transform with whatever is moving it applied. */
+export interface LocalPose {
+  readonly position: Vec3
+  readonly rotation: Vec3
 }
 
 /**
@@ -455,31 +427,6 @@ const solidNode = (shape: ColliderDesc, transform: Transform, name?: string, mod
 })
 
 /**
- * The `Behavior` a `Track` component describes, for posing a node at a track time.
- *
- * Inline keys first, then the clip the component names — the same precedence the loader applies, and it has
- * to be the same or the editor would draw a mover the game plays differently (ADR 0050).
- */
-const behaviorOf = (c: ComponentData | undefined, clips: ClipSource | undefined): Behavior => {
-  if (c === undefined) return { kind: 'static' }
-  const inline = c.params.keys
-  const clip = c.params.clip
-  const keys =
-    Array.isArray(inline) && inline.length > 0
-      ? (inline as readonly Keyframe[])
-      : typeof clip === 'string' && clip !== ''
-        ? (clips?.keys(clip) ?? [])
-        : []
-  if (keys.length === 0) return { kind: 'static' }
-  return {
-    kind: 'track',
-    keys,
-    loop: stringParam(c, 'loop', 'loop') as LoopMode,
-    phaseMs: Number(c.params.phaseMs ?? 0),
-  }
-}
-
-/**
  * Where an item at `from` lands when dropped *before* the original index `to`, in an array of `length`. `to` is
  * expressed against the array as it was, which is what a drop between two rows naturally gives you — hence the
  * shift when moving downward, where removing the item first pulls every later index back by one.
@@ -514,9 +461,9 @@ interface DocNode {
  */
 const docOver = (
   level: Level,
-  opts: { mode: Mode; registry: Registry; clips?: ClipSource; json: () => Level | Node; table?: string },
+  opts: { mode: Mode; registry: Registry; json: () => Level | Node; table?: string },
 ): Doc => {
-  const { mode, registry, clips } = opts
+  const { mode, registry } = opts
   const roots = level.nodes
   /**
    * Every mutation goes through here (ADR 0089): the ops apply to this document's level through the one shared
@@ -693,7 +640,6 @@ const docOver = (
   }
 
   const enabledOf = (c: ComponentData): boolean => c.enabled !== false
-  const trackComponent = (n: DocNode): ComponentData | undefined => n.view.components.find((c) => c.type === TRACK && enabledOf(c))
 
   /** Set some of a component's parameters, on the definition or as an override (`ops.ts` patches an added component in place). */
   /**
@@ -754,21 +700,6 @@ const docOver = (
     const mesh = n.view.components.find((c) => c.type === MESH && enabledOf(c))
     const model = mesh === undefined ? '' : stringParam(mesh, 'model', '')
     return isBuiltinModel(model) ? model : null
-  }
-
-  /** Keyframe parameters on a node, in component order then declaration order. */
-  const keyEditors = (i: number): KeyEditor[] => {
-    const n = node(i)
-    if (n === undefined) return []
-    const out: KeyEditor[] = []
-    for (const c of n.view.components) {
-      if (c.enabled === false) continue
-      const def = registry.get(c.type)
-      if (def === undefined) continue
-      for (const [param, spec] of Object.entries(def.params))
-        if (spec.kind === 'keys') out.push({ componentId: c.id, type: c.type, param, clipParam: spec.clip ?? null })
-    }
-    return out
   }
 
   const canAdd = (i: number, type: string): boolean => {
@@ -1180,25 +1111,23 @@ const docOver = (
       return { assetId: n.owner.prefab, ops }
     },
 
-    keyEditors,
-    keysOf: (i, editor) => {
-      const c = node(i)?.view.components.find((x) => x.id === editor.componentId)
-      const keys = c?.params[editor.param]
-      return Array.isArray(keys) ? (keys as readonly Keyframe[]) : c === undefined ? null : []
-    },
-    setKeys: (i, editor, keys) => patchParams(i, editor.componentId, { [editor.param]: sortedKeys(keys) }),
     poseOf: (i, timeMs) => {
       const n = node(i)
       if (n === undefined) return { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) }
-      // The same composition the loader does (ADR 0103): the authored transform, plus what a track sampled,
-      // plus what the node's movers and spinner contribute. Anything the viewport shows has to be what the
-      // game builds, and these are two separate readers of one rule.
-      const pose = poseAt(behaviorOf(trackComponent(n), clips), n.view.transform, timeMs)
+      // The same composition the loader does (ADR 0103): the authored transform plus whatever its movers and
+      // spinner contribute. Anything the viewport shows has to be what the game builds, and these are two
+      // separate readers of one rule.
+      const t = n.view.transform
+      const rest = t.rotation ?? vec3(0, 0, 0)
       const motion = motionOffset(motionsOf(n.view.components), timeMs)
       return {
-        position: { x: pose.position.x + motion.position.x, y: pose.position.y + motion.position.y, z: pose.position.z + motion.position.z },
-        rotation: { x: pose.rotation.x + motion.rotation.x, y: pose.rotation.y + motion.rotation.y, z: pose.rotation.z + motion.rotation.z },
+        position: { x: t.position.x + motion.position.x, y: t.position.y + motion.position.y, z: t.position.z + motion.position.z },
+        rotation: { x: rest.x + motion.rotation.x, y: rest.y + motion.rotation.y, z: rest.z + motion.rotation.z },
       }
+    },
+    movesAt: (i) => {
+      const n = node(i)
+      return n !== undefined && motionsOf(n.view.components).length > 0
     },
 
     /**
@@ -1366,8 +1295,8 @@ const docOver = (
   return self
 }
 
-export const levelDoc = (level: Level, registry: Registry = DEFAULT_REGISTRY, clips?: ClipSource): Doc =>
-  docOver(level, { mode: 'level', registry, ...(clips !== undefined ? { clips } : {}), json: () => level })
+export const levelDoc = (level: Level, registry: Registry = DEFAULT_REGISTRY): Doc =>
+  docOver(level, { mode: 'level', registry, json: () => level })
 
 /**
  * A prefab, edited as a document of one root node.
@@ -1380,8 +1309,8 @@ export const levelDoc = (level: Level, registry: Registry = DEFAULT_REGISTRY, cl
  * kill plane from deleting the test character — a wrapper working around a rule it had no business carrying
  * (ADR 0052).
  */
-export const prefabDoc = (root: Node, registry: Registry = DEFAULT_REGISTRY, clips?: ClipSource, opts: { table?: string } = {}): Doc =>
+export const prefabDoc = (root: Node, registry: Registry = DEFAULT_REGISTRY, opts: { table?: string } = {}): Doc =>
   docOver(
     { id: root.name ?? root.id, config: {}, nodes: [root] },
-    { mode: 'prefab', registry, ...(clips !== undefined ? { clips } : {}), json: () => root, ...(opts.table !== undefined ? { table: opts.table } : {}) },
+    { mode: 'prefab', registry, json: () => root, ...(opts.table !== undefined ? { table: opts.table } : {}) },
   )

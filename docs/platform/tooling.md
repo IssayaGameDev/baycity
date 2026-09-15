@@ -83,7 +83,7 @@ Extra methods: `setConditions`, `conditions`. Headless (→ `@mp/core` only). Te
 
 | File | Contents |
 | --- | --- |
-| `src/registry.ts` | `ENTRIES`: hand-written catalog, currently one entry — `level1` validated against `PARKOUR_MODE.registry`, `mode: PARKOUR_MODE`; `CLIP_SOURCE` from globbed `@content/assets/**/*.anim.json` + `.meta` |
+| `src/registry.ts` | `ENTRIES`: hand-written catalog, currently one entry — `level1` validated against `PARKOUR_MODE.registry`, `mode: PARKOUR_MODE` |
 | `src/main.ts` | Three stage + greybox environment + post-FX (renderer defaults), `OrbitControls`, Tweakpane panel |
 
 Panel (`Pane`, title "Content viewer"):

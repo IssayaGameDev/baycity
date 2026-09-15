@@ -15,7 +15,6 @@ export type {
   BoolSpec,
   ColliderSpec,
   EnumSpec,
-  KeysSpec,
   NodeRefSpec,
   NumberSpec,
   ParamDecls,
@@ -36,7 +35,7 @@ export type { CharacterAccess, ComponentRuntime, Ctx, Effects, ErasedHooks, Hit,
 export { createRegistry } from './registry'
 export type { AnyComponentDef, Registry } from './registry'
 export { Collider, ENGINE_COMPONENTS, MaterialOverride, Mesh, Renderer, Spawn } from './engine'
-export { Bumper, Checkpoint, Death, GAMEPLAY_COMPONENTS, Goal, Hazard, Mover, PLAYER_COMPONENTS, Spinner, Track } from './gameplay'
+export { Bumper, Checkpoint, Death, GAMEPLAY_COMPONENTS, Goal, Hazard, Mover, PLAYER_COMPONENTS, Spinner } from './gameplay'
 export { DEFAULT_REGISTRY } from './defaults'
 export { assetParamIds, componentOn, hasComponent } from './read'
 export { isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents } from './shared'

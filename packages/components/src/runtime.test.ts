@@ -6,7 +6,7 @@ import { vec3 } from '@mp/core'
 import { createComponentRuntime, characterAccess, hasHooks, HOOK_NAMES, type Effects } from './runtime'
 import { createRegistry } from './registry'
 import { defineComponent } from './define'
-import { Bumper, Checkpoint, Goal, Hazard, Track } from './gameplay'
+import { Bumper, Checkpoint, Goal, Hazard, Mover } from './gameplay'
 import { ENGINE_COMPONENTS } from './engine'
 
 /**
@@ -87,7 +87,7 @@ const Spinner = defineComponent({
   },
 })
 
-const TEST_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Bumper, Checkpoint, Goal, Hazard, Track, Counter, Peeker, Wanderer, Touchy, Riser, Sneak, Spinner])
+const TEST_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Bumper, Checkpoint, Goal, Hazard, Mover, Counter, Peeker, Wanderer, Touchy, Riser, Sneak, Spinner])
 
 const load = (nodes: Node[]): ReturnType<typeof instantiateLevel> =>
   instantiateLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), levelOf(nodes), TEST_REGISTRY)
@@ -128,7 +128,7 @@ describe('which components the runner picks up', () => {
   it('says which definitions have anything to run', () => {
     expect(hasHooks(Bumper)).toBe(true)
     expect(hasHooks(Goal), 'no goal rule exists yet').toBe(false)
-    expect(hasHooks(Track), 'motion is the loader’s pure function of time, not a hook').toBe(false)
+    expect(hasHooks(Mover), 'motion is the loader’s pure function of time, not a hook').toBe(false)
   })
 
   it('skips a component that is switched off', () => {
@@ -430,7 +430,7 @@ describe('node references (stage C4)', () => {
 /**
  * A component moving its own node (ADR 0058).
  *
- * The gap this closed: `WorldNode` is readonly and `Track` is evaluated by the loader as `pose = f(t)`, so
+ * The gap this closed: `WorldNode` is readonly and a `Mover` is evaluated by the loader as `offset = f(t)`, so
  * nothing a hook could reach was writable and "a door that opens when touched" was not expressible in any
  * game. What a component writes is an **offset** from the authored transform, which is why these assert
  * against a node placed away from the origin rather than at it.
@@ -515,18 +515,15 @@ describe('driving a node', () => {
   })
 
   /**
-   * The reason the drive is an offset and not a pose: a node can be moved by a track *and* by a component,
+   * The reason the drive is an offset and not a pose: a node can be moved by a `Mover` *and* by a component,
    * and the answer is both rather than whichever ran last.
    */
-  it('adds to a track rather than fighting it', () => {
-    const keys = [
-      { t: 0, position: vec3(0, 0, 0) },
-      { t: 1000, position: vec3(0, 10, 0) },
-    ]
-    const level = load([at('both', 0, comp('t', 'Track', { keys }), comp('r', 'Riser', { rate: 1 }))])
+  it('adds to a mover rather than fighting it', () => {
+    // 10 m at 10 m/s is a one-second leg, so half a second in it is 5 m up.
+    const level = load([at('both', 0, comp('t', 'Mover', { move: vec3(0, 10, 0), speed: 10, smooth: false }), comp('r', 'Riser', { rate: 1 }))])
     const runtime = createComponentRuntime(level, TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() })
     runtime.attach(0, 0, 1)
-    // Half way along the track is 5; one tick of the riser at rate 1 and dt 1 is another 1.
+    // Half way along the mover's leg is 5; one tick of the riser at rate 1 and dt 1 is another 1.
     tick(level, runtime, 1, 500)
     expect(visualOf(level, 'both').position.y).toBeCloseTo(6, 6)
   })

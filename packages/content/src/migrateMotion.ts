@@ -1,9 +1,12 @@
 import { vec3, type Vec3 } from '@mp/core'
 
 import { AXES, motionOffset, motionsOf } from './motion'
-import { TRACK, walkNodes, type TypeInfo } from './nodes'
-import { moveTrack, poseAt, spinTrack, trackDuration } from './track'
-import type { ComponentData, Keyframe, Level, LoopMode, Node } from './types'
+import { walkNodes, type TypeInfo } from './nodes'
+import { moveTrack, poseAt, spinTrack, trackDuration, type Keyframe, type LoopMode } from './retiredTrack'
+import type { ComponentData, Level, Node } from './types'
+
+/** The retired component's type name. Only this file still knows it (ADR 0103). */
+export const TRACK = 'Track'
 
 /**
  * Turn every `Track` into a `Mover` or a `Spinner` (ADR 0103), once, over existing content.

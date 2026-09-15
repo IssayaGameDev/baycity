@@ -1,6 +1,6 @@
 # `@mp/content` — schema, loader, tracks, assets
 
-Package `packages/content`. Headless; deps `@mp/core`, `@mp/physics`. Never imports `@mp/components`: takes capabilities as arguments (`TypeInfo`, `ParamChecker`, `ClipSource`), all satisfied structurally by a `Registry`. Public surface `packages/content/src/index.ts`. ADR 0014, ADR 0035.
+Package `packages/content`. Headless; deps `@mp/core`, `@mp/physics`. Never imports `@mp/components`: takes capabilities as arguments (`TypeInfo`, `ParamChecker`), both satisfied structurally by a `Registry`. Public surface `packages/content/src/index.ts`. ADR 0014, ADR 0035.
 
 ## Schema — `packages/content/src/types.ts`
 
@@ -31,7 +31,7 @@ interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: Su
 
 | Export | Role |
 |---|---|
-| `COLLIDER, MESH, RENDERER, MATERIAL_OVERRIDE, SPAWN, LIGHT, TRACK` | The seven type constants the loader reads. First six = `ENGINE_COMPONENTS`; `Track` is gameplay-owned but loader-evaluated. |
+| `COLLIDER, MESH, RENDERER, MATERIAL_OVERRIDE, SPAWN, LIGHT, MOVER, SPINNER` | The eight type constants the loader reads. First six = `ENGINE_COMPONENTS`; `Mover`/`Spinner` are gameplay-owned but loader-evaluated (ADR 0103). |
 | `TypeInfo { get(type) → { singleton?, moves? } \| undefined }` | What resolution needs from a registry. |
 | `effectiveNode(level, node, types): Resolved` | `{ id, name, transform, components, children, inheritedCount }`. Placement keeps own `id`/`transform`; `name` falls back to prefab root's. `bakeOverrides` patches the prefab tree (returns the prefab's own object when unchanged); `layerOwn`: own **singleton** replaces inherited same type, repeatable appends. Children = inherited then own. Unknown prefab key → own layer only. |
 | `walkNodes`, `componentsOfType`, `firstOfType`, `numberParam`/`vec3Param`/`stringParam`/`boolParam`, `freeTableKey` | Depth-first walk; untyped readers with fallbacks; table-key dedupe for interning prefabs. |
@@ -43,8 +43,7 @@ interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: Su
 ## Loader — `packages/content/src/loader.ts`
 
 ```ts
-instantiateLevel(world: PhysicsWorld, level: Level, types: TypeInfo, clips?: ClipSource): LoadedLevel
-interface ClipSource { keys(assetId): readonly Keyframe[] | undefined }   // absent → no clip resolves
+instantiateLevel(world: PhysicsWorld, level: Level, types: TypeInfo): LoadedLevel
 interface WorldNode { id; name; components /* resolved */; position, rotation /* world, at load */
                      colliderHandles: readonly number[] /* opaque */
                      colliders: readonly ColliderDesc[] /* world-scaled, same order as handles (ADR 0095) */
@@ -66,11 +65,11 @@ interface VisualItem { collider: ColliderDesc /* scale baked in */; position; ro
 | `basePose`, `baseIndex`, `basePoseOf(i, 'render'\|'tick'\|'prev')`, `baseCarry` | Movement-base lookups for the wire (ADR 0021). |
 
 Build rules:
-- Frame `animated` if `Track` duration > 0, an enabled `moves` component, or an animated ancestor → kinematic bodies; else fixed.
+- Frame `animated` if `movesAtAll(motions)`, an enabled `moves` component, or an animated ancestor → kinematic bodies; else fixed.
 - `Collider.trigger` → sensor (ADR 0054), still in `colliderHandles`. Shape and `center` scaled by frame scale (box/convex exact, ball/capsule averaged). `cylinder` throws.
 - Draw (ADR 0039): `Renderer`+`Mesh.model` → one visual listing all handles; `Renderer` alone → one per collider; else nothing. `MaterialOverride` cascades down over `Renderer.material`; `''` = unsurfaced. `Mesh.model` is an asset id or a **built-in shape** (below).
 - Placement with inherited children opens a new `scope` (own id + prefab root id; first writer wins).
-- `Track` keys: inline `keys` if non-empty, else `clips.keys(clip)`, else static.
+- `motionsOf(components)`: every enabled `Mover` in order, then the first `Spinner`.
 
 ## Ops — `packages/content/src/ops.ts` (ADR 0089)
 
@@ -102,7 +101,22 @@ Tidying (`children: []`, emptied override records) happens here so every copy wr
 
 ## Tracks — `packages/content/src/track.ts` (ADR 0029)
 
-Pure in `(behavior, base, nowMs)`. `poseAt(behavior, base, nowMs): Pose { position; rotation /* euler rad */ }` — base + sampled offset per channel; empty channel returns base. `trackDuration` = max `t`. `trackTime(duration, loop, nowMs, phaseMs)` — flooring modulo; `pingPong` spans 2×; `once` clamps. `easeAt` — `inOut` cosine, `step` = 0; easing belongs to the key a segment leaves. Keys sorted per channel at sample. `isAnimated`. Presets `moveTrack(axis, distance, periodMs)`, `spinTrack(axis, periodMs)` (cardinal axis).
+Pure in `(motions, nowMs)` — `motion.ts`, ADR 0103. `motionOffset(motions, nowMs): MotionOffset { position; rotation /* euler rad */ }`, summed over every motion; `MOTIONLESS` when there are none.
+
+| | |
+|---|---|
+| `moveFraction(m, nowMs)` | `[0,1]` along the travel. Leg = `distance / speed` seconds; `period = 2 × leg`; `phase = frac(nowMs/1000/period + offset)`; out on the first half, back on the second, each leg eased separately. |
+| `spinRadians(s, nowMs)` | `frac(nowMs/1000 × speed/360 + offset) × 2π`. Wrapped to one turn. |
+| `curve(u, smooth)` | cosine when `smooth`, else linear. Both average 1 over a leg, which is what lets `speed` mean the average. |
+| `movesAtAll(motions)` | no distance or no speed ⇒ still ⇒ fixed body. |
+| `AXES`, `AXIS_NAMES` | the six cardinal axes, as a literal tuple so `params.axis` narrows. |
+
+`frac` is a flooring fraction, so a negative `offset` wraps forward. Two `Spinner`s would not compose (euler
+angles about two axes do not add as rotations), which is why it is a singleton.
+
+The retired keyframe model lives on in `retiredTrack.ts`, read by `migrateMotion.ts` alone and exported from
+nowhere: `content/` is only migrated once the `content` branch is merged, so the converter still needs a
+reader. Delete both once no content carries a `Track`.
 
 ## Built-in shapes — `packages/content/src/primitives.ts` (ADR 0090)
 
@@ -209,17 +223,16 @@ completes override transforms from the node they now override — then **throws 
 
 ## Assets — `packages/content/src/assets.ts` (ADR 0026, ADR 0028)
 
-- `AssetKind = 'prefab' | 'texture' | 'model' | 'material' | 'shader' | 'animation' | 'sound' | 'font'`.
-- Identity = sidecar `<file>.meta` → `AssetMeta { id; kind }`, written once. References by **id**, never path. Kind comes from the **path** (`kindForPath`: `.mat.json`, `.shader.json`, `.prefab.json`, `.anim.json`, else extension); sidecar `kind` not trusted.
+- `AssetKind = 'prefab' | 'texture' | 'model' | 'material' | 'shader' | 'sound' | 'font'`. `animation` was retired with the keyframe model (ADR 0103).
+- Identity = sidecar `<file>.meta` → `AssetMeta { id; kind }`, written once. References by **id**, never path. Kind comes from the **path** (`kindForPath`: `.mat.json`, `.shader.json`, `.prefab.json`, else extension); sidecar `kind` not trusted.
 - `AssetEntry { id; kind; path; name }`, `AssetDatabase { entries; byId }`; `buildDatabase`, `entriesFrom`, `entryFor`, `assetsOfKind`, `nameForPath`.
 - `MaterialAsset { shader: 'standard' | 'unlit' | assetId; params: Record<string, MaterialValue> }`; `MaterialValue` kinds color/number/vec2/vec3/boolean/texture(`string|null`). `materialDependencies` = texture ids.
-- `AnimationAsset { keys }`, `isAnimationAsset`; loop/phase stay on `Track` (ADR 0050).
 - `*.prefab.json` = a `Node` root. Placing writes its **asset id** into the level; the definition stays in the file (ADR 0091, below).
 
 ## `content/` layout
 
 | Path | Contents |
 |---|---|
-| `content/assets/{animations,materials,prefabs,textures}/` | `rise-4m-4s.anim.json`; 9 `*.mat.json`; `AlternatingDanger`/`FastElevator`/`Trampoline.prefab.json`; `checker.png`, `warn.png`, `sky_110_2k.webp`. Each with `.meta`. |
+| `content/assets/{materials,prefabs,textures}/` | 9 `*.mat.json`; `AlternatingDanger`/`FastElevator`/`Trampoline`/`board-start`/`kill-plane`/`Stage-End.prefab.json`; `checker.png`, `warn.png`, `sky_110_2k.webp`. Each with `.meta`. |
 | `content/levels/*.json` | `config.mode.name`: parkour → default, level1, Test, FastElevator, mp-demo, mp-cointest; swing → swing; keyboard → keyboard. All set `environment.sun/ambient/sky`; keyboard also `postfx`. Loaded by `?level=<file>`, default `default.json` (ADR 0027). |
 | `content/games/<game>.json` | `{ "components": string[], "settings"?: Record<string, number> }` — shared gameplay types the game opts into (ADR 0077) and its tunable numbers (ADR 0087). parkour, swing: all five; keyboard: Bumper, Hazard; `_template`: Hazard. Read by `modes/<game>/src/rules.ts` via `sharedComponents(game.components)`; appended by the editor's `adopt` (`tools/editor/src/main.ts`). |

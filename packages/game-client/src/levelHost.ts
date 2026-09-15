@@ -15,7 +15,7 @@ import {
   type THREE,
 } from '@mp/render-three'
 
-import { ASSET_DB, CLIP_SOURCE, PREFAB_SOURCE, assetUrlOf, materialOf } from './assets'
+import { ASSET_DB, PREFAB_SOURCE, assetUrlOf, materialOf } from './assets'
 
 /**
  * A level, instantiated into a world and built into a scene (ADR 0065).
@@ -85,7 +85,7 @@ export const loadLevelInto = async ({
    */
   const { missing } = hydratePrefabs(data, PREFAB_SOURCE)
   if (missing.length > 0) console.warn(`level ${data.id}: no prefab file for ${missing.join(', ')}`)
-  const loaded = instantiateLevel(world, data, registry, CLIP_SOURCE)
+  const loaded = instantiateLevel(world, data, registry)
 
   // Assets first, then build: `addLevel` is synchronous, so a level is never briefly walkable with its models
   // still arriving. Marker pads are just their colour-coded box here — radius and overlay visualization

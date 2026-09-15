@@ -4,11 +4,9 @@ import {
   COLLIDER,
   MATERIAL_OVERRIDE,
   SPAWN,
-  TRACK,
   MESH,
   RENDERER,
   instantiateLevel,
-  moveTrack,
   validateLevel,
   type ComponentData,
   type Node,
@@ -479,126 +477,6 @@ describe('editing an inherited node writes an override', () => {
   })
 })
 
-describe('keyframes', () => {
-  const keys = (): ReturnType<typeof moveTrack> => moveTrack(vec3(0, 1, 0), 3, 1000)
-
-  /** The one keyframe parameter on a node — what the timeline would open. */
-  const editor = (doc: Doc, i: number) => {
-    const found = doc.keyEditors(i)[0]
-    if (found === undefined) throw new Error(`nothing animatable on node ${i}`)
-    return found
-  }
-
-  /**
-   * The timeline addresses a **component and a parameter**, not "the node's Track". A `keys` parameter is a
-   * declaration like any other, so a second animatable component would be editable by the same strip with no
-   * new plumbing.
-   */
-  it('reports a keyframe parameter only once a component declares one', () => {
-    const doc = levelDoc(blank())
-    const i = doc.placeModel('m', vec3(0, 0, 0))
-    expect(doc.keyEditors(i)).toEqual([])
-    doc.addComponent(i, TRACK)
-    expect(doc.keyEditors(i)).toEqual([{ componentId: idOf(doc, i, TRACK), type: TRACK, param: 'keys', clipParam: 'clip' }])
-  })
-
-  it('starts a fresh Track empty, so adding one moves nothing', () => {
-    const doc = levelDoc(blank())
-    const i = doc.placeModel('m', vec3(0, 0, 0))
-    doc.addComponent(i, TRACK)
-    expect(doc.keysOf(i, editor(doc, i))).toEqual([])
-    expect(doc.poseOf(i, 500).position, 'no keys means static').toEqual(ZERO)
-  })
-
-  it('writes keys through the component, leaving its other parameters alone', () => {
-    const doc = levelDoc(blank())
-    const i = doc.placeModel('m', vec3(0, 0, 0))
-    doc.addComponent(i, TRACK)
-    const e = editor(doc, i)
-    doc.setParams(i, e.componentId, { loop: 'pingPong', phaseMs: 250 })
-
-    doc.setKeys(i, e, keys())
-
-    expect(doc.keysOf(i, e)).toHaveLength(3)
-    expect(paramOn(doc, i, TRACK, 'loop'), 'a keys edit is not a whole-component write').toBe('pingPong')
-    expect(paramOn(doc, i, TRACK, 'phaseMs')).toBe(250)
-  })
-
-  it('sorts keys on the way in, so the strip and the evaluator agree on order', () => {
-    const doc = levelDoc(blank())
-    const i = doc.placeModel('m', vec3(0, 0, 0))
-    doc.addComponent(i, TRACK)
-    doc.setKeys(i, editor(doc, i), [{ t: 900 }, { t: 100 }, { t: 500 }])
-    expect((doc.keysOf(i, editor(doc, i)) ?? []).map((k) => k.t)).toEqual([100, 500, 900])
-  })
-
-  it('poses a node along its keys, and at its authored transform without them', () => {
-    const doc = levelDoc(blank())
-    const i = doc.placeModel('m', vec3(0, 0, 0))
-    expect(doc.poseOf(i, 500).position).toEqual(ZERO)
-    doc.addComponent(i, TRACK)
-    doc.setKeys(i, editor(doc, i), keys())
-    expect(doc.poseOf(i, 500).position.y).toBeCloseTo(3, 9)
-  })
-
-  it('honours loop mode when posing, since that is the component’s parameter', () => {
-    const doc = levelDoc(blank())
-    const i = doc.placeModel('m', vec3(0, 0, 0))
-    doc.addComponent(i, TRACK)
-    const e = editor(doc, i)
-    doc.setKeys(i, e, keys())
-    doc.setParams(i, e.componentId, { phaseMs: 500 })
-    // Phase shifts the clock, so t=0 now reads what t=500 used to.
-    expect(doc.poseOf(i, 0).position.y).toBeCloseTo(3, 9)
-  })
-
-  it('keys one placement without moving the others', () => {
-    const doc = levelDoc(blank())
-    placeRef(doc, vec3(0, 0, 0))
-    placeRef(doc, vec3(8, 0, 0))
-    doc.addComponent(1, TRACK)
-    doc.setKeys(1, editor(doc, 1), keys())
-    expect(doc.poseOf(1, 500).position.y, 'this one moves').toBeCloseTo(3, 9)
-    expect(doc.poseOf(3, 500).position.y, 'that one does not').toBeCloseTo(0, 9)
-    expect(doc.overridesOf(1).some((x) => x.includes('added')), 'as a structural override').toBe(true)
-  })
-
-  // Absence means inherit, so "does not move here" is removing the inherited component — emptying its keys
-  // says something different and weaker, and both are now expressible.
-  it('tells emptying the keys apart from removing the component', () => {
-    const withTrack = padPrefab()
-    withTrack.children![0]!.components.push(comp('t0', TRACK, { keys: moveTrack(vec3(0, 1, 0), 3, 1000), loop: 'loop', phaseMs: 0 }))
-    const doc = levelDoc(blank())
-    doc.placePrefab(PAD_ID, withTrack, vec3(0, 0, 0))
-    expect(doc.keysOf(1, editor(doc, 1))).toHaveLength(3)
-
-    doc.setKeys(1, editor(doc, 1), [])
-    expect(doc.poseOf(1, 500).position.y, 'no keys, so static').toBeCloseTo(0, 9)
-    expect(typesOn(doc, 1), 'but the component is still there to add keys back to').toContain(TRACK)
-
-    doc.removeComponent(1, editor(doc, 1).componentId)
-    expect(typesOn(doc, 1)).not.toContain(TRACK)
-    expect(doc.overridesOf(1).some((x) => x.includes('removed'))).toBe(true)
-  })
-
-  it('reads nothing for a component that is no longer there', () => {
-    const doc = levelDoc(blank())
-    const i = doc.placeModel('m', vec3(0, 0, 0))
-    doc.addComponent(i, TRACK)
-    const e = editor(doc, i)
-    doc.removeComponent(i, e.componentId)
-    expect(doc.keysOf(i, e)).toBeNull()
-  })
-
-  it('ignores a component that is switched off, since the strip cannot edit what does not run', () => {
-    const doc = levelDoc(blank())
-    const i = doc.placeModel('m', vec3(0, 0, 0))
-    doc.addComponent(i, TRACK)
-    doc.setComponentEnabled(i, idOf(doc, i, TRACK), false)
-    expect(doc.keyEditors(i)).toEqual([])
-  })
-})
-
 describe('clipboard', () => {
   it('carries the definitions the subtree references, so a paste is self-contained', () => {
     expect(Object.keys(placed().doc.copy(0)!.prefabs)).toEqual([PAD_ID])
@@ -1008,7 +886,7 @@ describe('the document reports its edits as ops', () => {
     const { applyBatch } = await import('@mp/content')
     const { level, doc } = placed()
     const key = doc.refOf(0)!
-    const top = prefabDoc(doc.prefabAt(key)!, DEFAULT_REGISTRY, undefined, { table: key })
+    const top = prefabDoc(doc.prefabAt(key)!, DEFAULT_REGISTRY, { table: key })
     const start = structuredClone(level)
     const batches = record(top)
     top.setTransform(1, { position: vec3(0, 9, 0) })

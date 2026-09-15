@@ -19,8 +19,8 @@ const deps = (): UnlinkDeps => {
   return {
     types: { get: (type) => (type === 'Renderer' ? { singleton: true } : undefined) },
     freshId: () => `n${++minted}`,
-    // Only `Track` declares a nodeRef in these fixtures.
-    refKeysOf: (type) => (type === 'Track' ? ['target'] : []),
+    // Only `Boss` declares a nodeRef in these fixtures.
+    refKeysOf: (type) => (type === 'Boss' ? ['target'] : []),
   }
 }
 
@@ -32,7 +32,7 @@ const definition = (): Node => ({
   components: [comp('c0', 'Collider')],
   children: [
     { id: 'lamp', transform: at(1), components: [comp('c1', 'Renderer')] },
-    { id: 'mover', transform: at(2), components: [comp('c2', 'Track', { target: 'lamp' })] },
+    { id: 'mover', transform: at(2), components: [comp('c2', 'Boss', { target: 'lamp' })] },
   ],
 })
 

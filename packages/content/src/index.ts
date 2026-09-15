@@ -8,7 +8,7 @@
  */
 export const CONTENT_VERSION = '0.0.0' as const
 
-export type { Behavior, ColliderDesc, ComponentData, Easing, Keyframe, Level, LevelConfig, ModeRef, SunConfig, AmbientConfig, EnvironmentConfig, PostFXConfig, SkyConfig, LoopMode, Node, NodeOverride, Transform } from './types'
+export type { ColliderDesc, ComponentData, Level, LevelConfig, ModeRef, SunConfig, AmbientConfig, EnvironmentConfig, PostFXConfig, SkyConfig, Node, NodeOverride, Transform } from './types'
 export {
   COLLIDER,
   LIGHT,
@@ -18,7 +18,6 @@ export {
   RENDERER,
   SPINNER,
   SPAWN,
-  TRACK,
   bakeOverrides,
   boolParam,
   componentsOfType,
@@ -45,7 +44,7 @@ export { BUILTIN_MODELS, BUILTIN_LABELS, isBuiltinModel, unitColliderFor, scaleC
 export type { BuiltinModel, PrimitiveKind, PrimitivePreset } from './primitives'
 export { migrateNode, migrateLevel, migratePrefabTree, newReport } from './migratePrimitives'
 export type { MigrationReport } from './migratePrimitives'
-export type { BasePhase, ClipSource, LoadedLevel, NodeDrive, VisualItem, WorldLight, WorldMarker, WorldNode } from './loader'
+export type { BasePhase, LoadedLevel, NodeDrive, VisualItem, WorldLight, WorldMarker, WorldNode } from './loader'
 export {
   ASSET_KINDS,
   META_SUFFIX,
@@ -53,13 +52,10 @@ export {
   buildDatabase,
   entriesFrom,
   entryFor,
-  isAnimationAsset,
   kindForPath,
   materialDependencies,
   nameForPath,
 } from './assets'
-export type { AnimationAsset, AssetDatabase, AssetEntry, AssetKind, AssetMeta, MaterialAsset, MaterialValue } from './assets'
-export { easeAt, isAnimated, moveTrack, poseAt, spinTrack, trackDuration, trackTime } from './track'
-export type { Pose } from './track'
+export type { AssetDatabase, AssetEntry, AssetKind, AssetMeta, MaterialAsset, MaterialValue } from './assets'
 export { AXES, AXIS_NAMES, MOTIONLESS, motionOffset, motionsOf, moveFraction, movesAtAll, spinRadians } from './motion'
 export type { Motion, MotionOffset } from './motion'

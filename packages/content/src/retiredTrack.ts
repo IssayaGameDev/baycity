@@ -1,19 +1,51 @@
 import { lerp, lerpVec3, vec3, type Vec3 } from '@mp/core'
 
-import type { Behavior, Easing, Keyframe, LoopMode, Transform } from './types'
+import type { Transform } from './types'
 
 /**
- * Evaluating a keyframe track (ADR 0029).
+ * **The retired keyframe model** (ADR 0029/0050, superseded by ADR 0103).
  *
- * Pure functions of `(track, base pose, time)` and nothing else — no state, no clock of its own. That is
- * what keeps clock-driven motion off the wire: every client instantiates the same level and asks the same
- * question at the same synced millisecond, so they agree without exchanging anything (ADR 0013/0021).
+ * Nothing in the running stack reads this. It exists for exactly one caller — `migrateMotion.ts`, which has
+ * to be able to read a `Track` in order to convert it — and it is not exported from the package.
  *
- * Headless on purpose: the loader poses colliders with this and the editor scrubs with it, and neither needs
- * a renderer to know where a platform is.
+ * It lives on because `content/` on master is **not migrated until the `content` branch is merged**, so the
+ * tool that converts it still needs a reader. Delete this file and the migration with it, once no content
+ * anywhere carries a `Track`.
+ *
+ * The types came from `types.ts` and the evaluation from `track.ts`; both are folded in here so the live
+ * schema has no keyframes in it. Frozen: this is a snapshot of how motion used to work, and it should not
+ * grow.
  */
 
-/** A track's length: its last key's time. Derived, so it cannot disagree with the keys. */
+/** How the segment *leaving* a key was timed. Named curves, never bezier handles. */
+export type Easing = 'linear' | 'in' | 'out' | 'inOut' | 'step'
+
+/**
+ * One authored **offset** from the node's transform, `t` milliseconds into a track (ADR 0050).
+ *
+ * `rotation` is euler radians, interpolated **per component** rather than as a quaternion, because slerp
+ * between identity and a full turn is degenerate and a spin could not be expressed at all.
+ */
+export interface Keyframe {
+  readonly t: number
+  readonly position?: Vec3
+  readonly rotation?: Vec3
+  readonly easing?: Easing
+}
+
+/** What happened at the end of a track. */
+export type LoopMode = 'loop' | 'pingPong' | 'once'
+
+/** Clock-driven motion as the loader's frame tree used to describe it. */
+export type Behavior =
+  | { readonly kind: 'static' }
+  | {
+      readonly kind: 'track'
+      readonly keys: readonly Keyframe[]
+      readonly loop?: LoopMode
+      readonly phaseMs?: number
+    }
+
 export const trackDuration = (keys: readonly Keyframe[]): number => {
   let end = 0
   for (const k of keys) if (k.t > end) end = k.t

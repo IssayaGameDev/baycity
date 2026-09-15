@@ -2,7 +2,7 @@ import { vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
 import { AXES, MOTIONLESS, motionOffset, motionsOf, moveFraction, movesAtAll, spinRadians, type Motion } from './motion'
-import { moveTrack, poseAt, spinTrack } from './track'
+import { moveTrack, poseAt, spinTrack } from './retiredTrack'
 import type { ComponentData, Transform } from './types'
 
 const mover = (over: Partial<Extract<Motion, { kind: 'move' }>> = {}): Extract<Motion, { kind: 'move' }> => ({

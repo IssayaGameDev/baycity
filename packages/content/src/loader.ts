@@ -3,13 +3,11 @@ import type { PhysicsBody, PhysicsWorld, ShapeDesc } from '@mp/physics'
 
 import { MOTIONLESS, motionOffset, motionsOf, movesAtAll, type Motion } from './motion'
 import { scaleCollider } from './primitives'
-import { isAnimated, poseAt } from './track'
 import {
   COLLIDER,
   LIGHT,
   MATERIAL_OVERRIDE,
   SPAWN,
-  TRACK,
   MESH,
   RENDERER,
   boolParam,
@@ -21,7 +19,7 @@ import {
   vec3Param,
   type TypeInfo,
 } from './nodes'
-import type { Behavior, ColliderDesc, ComponentData, Keyframe, LevelConfig, LoopMode, Node, Level, Transform } from './types'
+import type { ColliderDesc, ComponentData, LevelConfig, Node, Level, Transform } from './types'
 
 /**
  * Turns a **node tree** into a live world (PLAN-component-system, stage C1): Rapier colliders from every
@@ -164,7 +162,6 @@ interface Frame {
   base: Transform
   parentScale: Vec3
   scale: Vec3
-  behavior: Behavior
   /** Every `Mover`/`Spinner` on this node (ADR 0103). Empty on a node with none, which is the common case. */
   motions: readonly Motion[]
   parent: Frame | null
@@ -269,51 +266,6 @@ export interface LoadedLevel {
   baseCarry: (index: number, localPos: Vec3) => Vec3 | undefined
 }
 
-const LOOPS = new Set<string>(['loop', 'pingPong', 'once'])
-
-/**
- * Where a clip's keys come from (ADR 0050).
- *
- * A capability passed in, like `TypeInfo`, rather than an asset database imported here: this package is
- * headless and knows nothing about fetching files. Absent means no clip resolves, which is the right
- * behaviour for a caller that has no asset layer — a level whose movers are all inline still loads.
- */
-export interface ClipSource {
-  readonly keys: (assetId: string) => readonly Keyframe[] | undefined
-}
-
-/**
- * The keys a `Track` plays: its own inline `keys` if it has any, otherwise the clip its `clip` names.
- *
- * **Inline wins**, which is most-local-wins — the same precedence a node's own `MaterialOverride` has over
- * the one it inherited. The editor keeps the two exclusive, so this rule only ever decides a hand-edited
- * file; having a rule at all is what stops such a file from being ambiguous.
- *
- * A `clip` naming an asset that is missing resolves to no keys, so the object stands still at its transform.
- * A dangling reference is a mover that stopped moving, not a level that fails to load.
- */
-const keysOf = (track: ComponentData, clips: ClipSource | undefined): readonly Keyframe[] => {
-  const inline = track.params.keys
-  if (Array.isArray(inline) && inline.length > 0) return inline as readonly Keyframe[]
-  const clip = track.params.clip
-  return typeof clip === 'string' && clip !== '' ? (clips?.keys(clip) ?? []) : []
-}
-
-/** A `Track` component as the `Behavior` the frame tree already evaluates. No keys means no motion. */
-const behaviorOf = (track: ComponentData | undefined, clips: ClipSource | undefined): Behavior => {
-  if (track === undefined) return { kind: 'static' }
-  const keys = keysOf(track, clips)
-  if (keys.length === 0) return { kind: 'static' }
-  const loop = track.params.loop
-  const phaseMs = track.params.phaseMs
-  return {
-    kind: 'track',
-    keys,
-    ...(typeof loop === 'string' && LOOPS.has(loop) ? { loop: loop as LoopMode } : {}),
-    ...(typeof phaseMs === 'number' && Number.isFinite(phaseMs) ? { phaseMs } : {}),
-  }
-}
-
 const UNIT_BOX: ColliderDesc = { kind: 'box', halfExtents: { x: 0.5, y: 0.5, z: 0.5 } }
 const ZERO: Vec3 = { x: 0, y: 0, z: 0 }
 
@@ -324,7 +276,7 @@ const shapeOf = (c: ComponentData): ColliderDesc => {
   return shape !== null && typeof shape === 'object' && 'kind' in shape ? (shape as ColliderDesc) : UNIT_BOX
 }
 
-export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeInfo, clips?: ClipSource): LoadedLevel => {
+export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeInfo): LoadedLevel => {
   const visuals: VisualItem[] = []
   const markers: WorldMarker[] = []
   const lights: WorldLight[] = []
@@ -341,15 +293,13 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
   const dynamicByCollider = new Map<number, number>()
 
   const evaluate = (f: Frame, nowMs: number): void => {
-    const pose = poseAt(f.behavior, f.base, nowMs)
-    // Every contribution is an offset from the same authored transform, so they add and no source has to
-    // know about the others: what a track sampled, what the node's movers and spinner compute (ADR 0103),
-    // and what a component drove (ADR 0058). That is what lets a component nudge a moving platform rather
-    // than having to choose between them.
+    // Both contributions are offsets from the same authored transform, so they add and neither has to know
+    // about the other: what the node's movers and spinner compute (ADR 0103), and what a component drove
+    // (ADR 0058). That is what lets a component nudge a moving platform rather than choose between them.
     const motion = f.motions.length === 0 ? MOTIONLESS : motionOffset(f.motions, nowMs)
     const drive = f.drive ?? MOTIONLESS
-    const localPos = add(add(pose.position, motion.position), drive.position)
-    const localRot = eulerToQuat(add(add(pose.rotation, motion.rotation), drive.rotation))
+    const localPos = add(add(f.base.position, motion.position), drive.position)
+    const localRot = eulerToQuat(add(add(f.base.rotation ?? ZERO, motion.rotation), drive.rotation))
     if (f.parent === null) {
       f.worldPos = localPos
       f.worldRot = localRot
@@ -359,18 +309,17 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     f.worldRot = mulQuat(f.parent.worldRot, localRot)
   }
 
-  const makeFrame = (t: Transform, behavior: Behavior, motions: readonly Motion[], parent: Frame | null, driven = false): Frame => {
+  const makeFrame = (t: Transform, motions: readonly Motion[], parent: Frame | null, driven = false): Frame => {
     const parentScale = parent?.scale ?? vec3(1, 1, 1)
     const f: Frame = {
       base: t,
       parentScale,
       scale: mul(parentScale, scaleOf(t)),
-      behavior,
       motions,
       parent,
       // A driven node is animated for the same reason a moving one is: it needs a kinematic body and a place
       // in the per-tick pose pass. Inherited by children, so moving a parent carries its subtree.
-      animated: driven || isAnimated(behavior) || movesAtAll(motions) || (parent?.animated ?? false),
+      animated: driven || movesAtAll(motions) || (parent?.animated ?? false),
       worldPos: vec3(0, 0, 0),
       worldRot: quat(),
       drive: driven ? { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) } : null,
@@ -425,7 +374,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     // Does any enabled component on this node say it moves it (ADR 0058)? Asked here because the answer
     // decides the frame's `animated` flag and whether its bodies are kinematic, and neither can change later.
     const driven = r.components.some((c) => c.enabled !== false && types.get(c.type)?.moves === true)
-    const f = makeFrame(r.transform, behaviorOf(firstOfType(r.components, TRACK), clips), motionsOf(r.components), parent, driven)
+    const f = makeFrame(r.transform, motionsOf(r.components), parent, driven)
     // A placement opens a scope: everything it inherits from its prefab resolves references among itself.
     // The placement node is the prefab's root, so it belongs to that scope too.
     const inner = r.inheritedCount > 0 ? ++nextScope : scope

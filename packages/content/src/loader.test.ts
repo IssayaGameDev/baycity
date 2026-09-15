@@ -2,9 +2,8 @@ import { vec3, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { instantiateLevel, type ClipSource } from './loader'
-import { effectiveNode, COLLIDER, LIGHT, MATERIAL_OVERRIDE, MESH, MOVER, RENDERER, SPAWN, SPINNER, TRACK, type TypeInfo } from './nodes'
-import { moveTrack } from './track'
+import { instantiateLevel } from './loader'
+import { effectiveNode, COLLIDER, LIGHT, MATERIAL_OVERRIDE, MESH, MOVER, RENDERER, SPAWN, SPINNER, type TypeInfo } from './nodes'
 import type { ComponentData, Node, Level } from './types'
 
 /**
@@ -208,7 +207,8 @@ describe('resolving a placement against its prefab', () => {
     id: 'root',
     name: 'pad',
     transform: { position: vec3(0, 0, 0) },
-    components: [comp('rc0', TRACK, { keys: moveTrack(vec3(0, 1, 0), 2, 1000), loop: 'loop', phaseMs: 0 })],
+    // A repeatable one and a singleton one, so the layering rules below have both to work on.
+    components: [comp('rc0', MOVER, { move: vec3(0, 2, 0), speed: 4, smooth: false, offset: 0 }), comp('rc1', SPINNER, { axis: '+Y', speed: 90, offset: 0 })],
     children: [
       {
         id: 'p0',
@@ -225,7 +225,7 @@ describe('resolving a placement against its prefab', () => {
     const level = placed({ transform: { position: vec3(7, 0, 0) } })
     const r = effectiveNode(level, level.nodes[0]!, TYPES)
     expect(r.transform.position).toEqual(vec3(7, 0, 0))
-    expect(r.components.map((c) => c.type)).toEqual([TRACK])
+    expect(r.components.map((c) => c.type)).toEqual([MOVER, SPINNER])
     expect(r.children.map((c) => c.id)).toEqual(['p0'])
   })
 
@@ -252,10 +252,12 @@ describe('resolving a placement against its prefab', () => {
   })
 
   it('lets the placement’s own singleton beat the prefab’s', () => {
-    const level = placed({ components: [comp('o0', TRACK, { keys: [], loop: 'loop', phaseMs: 0 })] })
+    const level = placed({ components: [comp('o0', SPINNER, { axis: '+X', speed: 45, offset: 0 })] })
     const r = effectiveNode(level, level.nodes[0]!, TYPES)
-    expect(r.components).toHaveLength(1)
-    expect(r.components[0]?.id, 'the placement’s, not the prefab’s').toBe('o0')
+    const spinner = r.components.filter((c) => c.type === SPINNER)
+    expect(spinner, 'one Spinner, not two').toHaveLength(1)
+    expect(spinner[0]?.id, 'the placement’s, not the prefab’s').toBe('o0')
+    expect(r.components.some((c) => c.id === 'rc0'), 'the repeatable one is untouched').toBe(true)
   })
 
   it('appends a repeatable one instead of replacing', () => {
@@ -299,9 +301,10 @@ describe('resolving a placement against its prefab', () => {
       ],
     })
     const loaded = load(level)
+    // 2 m at 4 m/s is a half-second leg, so it is fully out at 500 ms.
     loaded.update(500)
     // Two visuals: the prefab's own piece at the root's pose, then the placement's child one metre above it.
-    expect(loaded.visuals[0]!.position.y, 'the track lifted the prefab piece by 2').toBeCloseTo(2, 6)
+    expect(loaded.visuals[0]!.position.y, 'the mover lifted the prefab piece by 2').toBeCloseTo(2, 6)
     expect(loaded.visuals[1]!.position.y, 'and the rider went with it, keeping its own 1').toBeCloseTo(3, 6)
   })
 })
@@ -382,7 +385,7 @@ describe('a Light component', () => {
         {
           id: 'lamp',
           transform: { position: vec3(0, 0, 0) },
-          components: [comp('c0', LIGHT), comp('c1', TRACK, { keys: moveTrack(vec3(0, 1, 0), 4, 1000), loop: 'loop', phaseMs: 0 })],
+          components: [comp('c0', LIGHT), comp('c1', MOVER, { move: vec3(0, 4, 0), speed: 8, smooth: true, offset: 0 })],
         },
       ]),
     )
@@ -393,75 +396,6 @@ describe('a Light component', () => {
   })
 })
 
-/**
- * A `Track` playing an animation asset instead of its own keys (ADR 0050).
- *
- * The point of the whole asset kind is that one clip drives many movers, so the tests that matter are: a
- * clip resolves at all, two nodes playing one clip each move around *their own* transform, and every way of
- * naming nothing leaves the node standing still rather than throwing.
- */
-describe('a Track that names a clip', () => {
-  beforeAll(async () => {
-    await initPhysics()
-  })
-
-  const RISE = moveTrack(vec3(0, 1, 0), 4, 2000)
-  const clips: ClipSource = { keys: (id) => (id === 'rise' ? RISE : undefined) }
-
-  const mover = (id: string, at: Vec3, params: Record<string, unknown>): Node => ({
-    id,
-    transform: { position: at },
-    components: [comp(`${id}-t`, TRACK, { loop: 'loop', phaseMs: 0, ...params }), comp(`${id}-c`, COLLIDER, box()), comp(`${id}-r`, RENDERER, {})],
-  })
-
-  const loadWith = (nodes: Node[]): ReturnType<typeof instantiateLevel> =>
-    instantiateLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), levelOf(nodes), TYPES, clips)
-
-  it('plays the clip’s keys', () => {
-    const loaded = loadWith([mover('a', vec3(0, 0, 0), { clip: 'rise' })])
-    loaded.update(0)
-    expect(loaded.visuals[0]!.position.y).toBeCloseTo(0, 6)
-    loaded.update(1000)
-    expect(loaded.visuals[0]!.position.y, 'four metres up at the top of the cycle').toBeCloseTo(4, 6)
-  })
-
-  /** The property the asset kind exists for, and the reason keys had to become offsets first. */
-  it('moves two nodes around their own transforms from one clip', () => {
-    const loaded = loadWith([mover('a', vec3(0, 0, 0), { clip: 'rise' }), mover('b', vec3(10, 5, -3), { clip: 'rise' })])
-    loaded.update(1000)
-    expect(loaded.visuals[0]!.position).toMatchObject({ x: 0, z: 0 })
-    expect(loaded.visuals[0]!.position.y).toBeCloseTo(4, 6)
-    expect(loaded.visuals[1]!.position).toMatchObject({ x: 10, z: -3 })
-    expect(loaded.visuals[1]!.position.y, 'the same four metres, from its own rest pose').toBeCloseTo(9, 6)
-  })
-
-  it('lets inline keys win over a clip, so a hand-edited file is never ambiguous', () => {
-    const loaded = loadWith([mover('a', vec3(0, 0, 0), { clip: 'rise', keys: moveTrack(vec3(0, 1, 0), 1, 2000) })])
-    loaded.update(1000)
-    expect(loaded.visuals[0]!.position.y, 'the inline one metre, not the clip’s four').toBeCloseTo(1, 6)
-  })
-
-  it('stands still for a clip that does not resolve, rather than failing to load', () => {
-    for (const params of [{ clip: 'gone' }, { clip: '' }, {}]) {
-      const loaded = loadWith([mover('a', vec3(0, 2, 0), params)])
-      loaded.update(1000)
-      expect(loaded.visuals[0]!.position.y, `${JSON.stringify(params)} holds its transform`).toBeCloseTo(2, 6)
-    }
-  })
-
-  it('stands still when no clip source was supplied at all', () => {
-    const loaded = load(levelOf([mover('a', vec3(0, 2, 0), { clip: 'rise' })]))
-    loaded.update(1000)
-    expect(loaded.visuals[0]!.position.y).toBeCloseTo(2, 6)
-  })
-})
-
-/**
- * A `Collider` with `trigger` on becomes a **sensor** (ADR 0054): overlap is detected, nothing is resolved.
- *
- * The loader's part is small — pass the flag through — but getting it wrong is silent in both directions. Miss
- * it and a kill plane is a floor you stand on; apply it too widely and the level has no collision.
- */
 describe('a trigger collider', () => {
   beforeAll(async () => {
     await initPhysics()
@@ -582,15 +516,10 @@ describe('a node that moves itself', () => {
     expect(two.x).toBeCloseTo(2, 6)
   })
 
-  it('adds to a Track on the same node rather than fighting it', () => {
-    // Nothing authored has both, but the two offsets composing is what lets the migration land in stages.
-    const loaded = load(
-      platform([
-        comp('t0', TRACK, { keys: moveTrack(vec3(0, 1, 0), 2, 4000), loop: 'loop' }),
-        comp('m0', MOVER, { move: vec3(0, 3, 0), speed: 1.5 }),
-      ]),
-    )
-    expect(drawnAt(loaded, 2000).y, 'both fully out: 2 m from the track, 3 m from the mover').toBeCloseTo(5, 6)
+  it('adds a Mover and a Spinner on the same node', () => {
+    const loaded = load(platform([comp('m0', MOVER, { move: vec3(0, 3, 0), speed: 1.5 }), comp('s0', SPINNER, { axis: '+Y', speed: 90 })]))
+    // 3 m up at the top of its leg, and a half turn in at 2 s of 90 deg/s.
+    expect(drawnAt(loaded, 2000).y).toBeCloseTo(3, 6)
   })
 
   it('stays fixed with no speed or no distance, so a still level costs what it always did', () => {

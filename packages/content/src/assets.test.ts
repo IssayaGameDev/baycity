@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest'
 import {
   assetsOfKind,
   buildDatabase,
-  isAnimationAsset,
   kindForPath,
   materialDependencies,
   nameForPath,
@@ -28,11 +27,12 @@ describe('kindForPath', () => {
   })
 
   // Compound extensions rather than a magic folder, so a file keeps its kind wherever it is moved.
-  it('recognises materials, shaders and clips by compound extension, at any path', () => {
+  it('recognises materials and shaders by compound extension, at any path', () => {
     expect(kindForPath('materials/brick.mat.json')).toBe('material')
     expect(kindForPath('anywhere/deep/brick.mat.json')).toBe('material')
     expect(kindForPath('shaders/water.shader.json')).toBe('shader')
-    expect(kindForPath('animations/rise-4m.anim.json')).toBe('animation')
+    // `.anim.json` was an asset kind until ADR 0103 retired keyframe tracks; it now reads as a plain file.
+    expect(kindForPath('animations/rise-4m.anim.json')).toBeUndefined()
   })
 
   it('is not fooled by a plain .json, which is a level or a prefab', () => {
@@ -58,7 +58,7 @@ describe('nameForPath', () => {
   it('strips a compound extension whole', () => {
     expect(nameForPath('materials/brick.mat.json'), 'not "brick.mat"').toBe('brick')
     expect(nameForPath('shaders/water.shader.json')).toBe('water')
-    expect(nameForPath('animations/rise-4m.anim.json'), 'not "rise-4m.anim"').toBe('rise-4m')
+    expect(nameForPath('prefabs/lift.prefab.json'), 'not "lift.prefab"').toBe('lift')
   })
 
   it('leaves a dotfile alone rather than eating its name', () => {
@@ -104,23 +104,5 @@ describe('materialDependencies', () => {
 
   it('is empty for a material with no textures at all', () => {
     expect(materialDependencies(material({ color: { kind: 'color', value: '#fff' } }))).toEqual([])
-  })
-})
-
-describe('isAnimationAsset', () => {
-  it('accepts a clip, including an empty one', () => {
-    expect(isAnimationAsset({ keys: [] })).toBe(true)
-    expect(isAnimationAsset({ keys: [{ t: 0, position: { x: 0, y: 0, z: 0 } }] })).toBe(true)
-  })
-
-  // Every JSON asset kind is told apart structurally, so the checks must not overlap: a prefab has
-  // `components`, a material has `shader`, a clip has `keys`.
-  it('rejects the other JSON assets, and anything shapeless', () => {
-    expect(isAnimationAsset({ shader: 'standard', params: {} }), 'a material').toBe(false)
-    expect(isAnimationAsset({ id: 'root', components: [] }), 'a prefab').toBe(false)
-    expect(isAnimationAsset({ keys: 3 })).toBe(false)
-    expect(isAnimationAsset({})).toBe(false)
-    expect(isAnimationAsset(null)).toBe(false)
-    expect(isAnimationAsset('keys')).toBe(false)
   })
 })

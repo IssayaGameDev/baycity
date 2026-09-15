@@ -17,8 +17,6 @@ export const MESH = 'Mesh'
 export const RENDERER = 'Renderer'
 /** Resurfaces this node and everything below it. */
 export const MATERIAL_OVERRIDE = 'MaterialOverride'
-/** Clock-driven keyed motion, evaluated by the loader's frame tree. */
-export const TRACK = 'Track'
 /**
  * Travels a distance from rest and back, at a speed (ADR 0103). **Repeatable**: offsets from one transform
  * add, so two of them make a circle without a keyframe in sight.

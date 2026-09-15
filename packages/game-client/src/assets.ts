@@ -1,13 +1,10 @@
 import {
   buildDatabase,
   entriesFrom,
-  isAnimationAsset,
   kindForPath,
   META_SUFFIX,
-  type AnimationAsset,
   type AssetDatabase,
   type AssetMeta,
-  type ClipSource,
   type MaterialAsset,
   type Node,
   type PrefabSource,
@@ -33,10 +30,6 @@ const URLS = import.meta.glob('@content/assets/**/*', { eager: true, query: '?ur
   string
 >
 const MATERIALS = import.meta.glob('@content/assets/**/*.mat.json', { eager: true, import: 'default' }) as Record<
-  string,
-  unknown
->
-const CLIPS = import.meta.glob('@content/assets/**/*.anim.json', { eager: true, import: 'default' }) as Record<
   string,
   unknown
 >
@@ -71,7 +64,6 @@ const asMeta = (raw: string): AssetMeta | undefined => {
 const pairs: [string, AssetMeta][] = []
 const urlByPath = new Map<string, string>()
 const materialsById = new Map<string, MaterialAsset>()
-const clipsById = new Map<string, AnimationAsset>()
 const prefabsById = new Map<string, Node>()
 
 for (const [key, url] of Object.entries(URLS)) urlByPath.set(relativeOf(key), url)
@@ -91,9 +83,6 @@ for (const [metaKey, raw] of Object.entries(METAS)) {
     if (typeof material === 'object' && material !== null && typeof (material as { shader?: unknown }).shader === 'string') {
       materialsById.set(meta.id, material as MaterialAsset)
     }
-  } else if (kind === 'animation') {
-    const clip = CLIPS[assetKey]
-    if (isAnimationAsset(clip)) clipsById.set(meta.id, clip)
   } else if (kind === 'prefab') {
     // Structural, as the editor's check is: a root node has a components array. A malformed file is an
     // unresolved reference, not a broken build.
@@ -108,12 +97,6 @@ export const ASSET_DB: AssetDatabase = buildDatabase(entriesFrom(pairs))
 export const assetUrlOf = (path: string): string => urlByPath.get(path) ?? path
 
 export const materialOf = (assetId: string): MaterialAsset | undefined => materialsById.get(assetId)
-
-/**
- * Animation clips, as the `ClipSource` the loader takes (ADR 0050). Bundled like everything else here, so a
- * clip a level references resolves without a fetch and `instantiateLevel` stays synchronous.
- */
-export const CLIP_SOURCE: ClipSource = { keys: (assetId) => clipsById.get(assetId)?.keys }
 
 /** Prefab definitions, as the `PrefabSource` `hydrate` takes (ADR 0091). Bundled, so resolution is synchronous. */
 export const PREFAB_SOURCE: PrefabSource = { root: (assetId) => prefabsById.get(assetId) }

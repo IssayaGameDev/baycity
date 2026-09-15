@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 import {
@@ -11,7 +11,8 @@ import {
   overriddenComponentIds,
   type KeysOf,
 } from '../../../packages/content/src/migrateMotion'
-import type { Keyframe, Level, Node } from '../../../packages/content/src/types'
+import type { Keyframe } from '../../../packages/content/src/retiredTrack'
+import type { Level, Node } from '../../../packages/content/src/types'
 import { importAssets } from './assetImporter'
 
 /**
@@ -56,15 +57,37 @@ const registry = { get: () => undefined }
 const { entries } = importAssets(ASSETS)
 const assetPath = (rel: string): string => join(ASSETS, rel)
 
-/** Every animation clip on disk, by asset id — what a `Track` naming a clip resolves through. */
+/**
+ * Every `*.anim.json` on disk, with its id from the `.meta` sidecar beside it.
+ *
+ * Walked directly rather than asked of the importer, because `animation` **stopped being an asset kind**
+ * when the panel went (ADR 0103): `kindForPath` no longer claims these files, so the importer does not list
+ * them. They may still be on disk in content that has not been migrated, and a `Track` naming one still has
+ * to resolve for the conversion to be faithful.
+ */
+const clipFiles = (root: string): string[] => {
+  const out: string[] = []
+  const walk = (at: string): void => {
+    for (const name of readdirSync(at)) {
+      const p = join(at, name)
+      if (statSync(p).isDirectory()) walk(p)
+      else if (name.endsWith('.anim.json')) out.push(p)
+    }
+  }
+  walk(root)
+  return out
+}
+
 const clips = new Map<string, readonly Keyframe[]>()
-for (const e of entries) {
-  if (e.kind !== 'animation') continue
+const clipPaths: string[] = []
+for (const file of clipFiles(ASSETS)) {
+  clipPaths.push(file)
   try {
-    const doc = JSON.parse(readFileSync(assetPath(e.path), 'utf8')) as { keys?: readonly Keyframe[] }
-    clips.set(e.id, doc.keys ?? [])
+    const doc = JSON.parse(readFileSync(file, 'utf8')) as { keys?: readonly Keyframe[] }
+    const meta = JSON.parse(readFileSync(`${file}.meta`, 'utf8')) as { id?: string }
+    if (typeof meta.id === 'string') clips.set(meta.id, doc.keys ?? [])
   } catch {
-    console.warn(`  ! ${e.path} did not parse; treated as empty`)
+    console.warn(`  ! ${relative(dir, file)} or its .meta did not parse; treated as empty`)
   }
 }
 const keysOf: KeysOf = keysOfWith((id) => clips.get(id))
@@ -167,11 +190,11 @@ if (report.refused.length === 0) {
  * Deleted only when **nothing refused**, because a refused file still holds its `Track` and that track may be
  * the only thing naming a clip. Removing it first would make the refusal unrecoverable.
  */
-const deadClips = report.refused.length > 0 ? [] : entries.filter((e) => e.kind === 'animation')
-for (const e of deadClips) {
+const deadClips = report.refused.length > 0 ? [] : clipPaths
+for (const file of deadClips) {
   if (!write) continue
-  rmSync(assetPath(e.path), { force: true })
-  rmSync(`${assetPath(e.path)}.meta`, { force: true })
+  rmSync(file, { force: true })
+  rmSync(`${file}.meta`, { force: true })
 }
 
 // ---- report -------------------------------------------------------------------------------------------------
@@ -189,7 +212,7 @@ if (regames.length > 0) {
 if (identical.length > 0) console.log(`${identical.length} file(s) already had nothing to change`)
 if (deadClips.length > 0) {
   console.log(`${deadClips.length} animation clip(s) ${write ? 'deleted' : 'would be deleted'}, since no Track is left to name one:`)
-  for (const e of deadClips) console.log(`  – ${e.path}`)
+  for (const file of deadClips) console.log(`  – ${relative(dir, file)}`)
 }
 for (const w of report.warnings) console.log(`  ! ${w}`)
 if (report.refused.length > 0) {

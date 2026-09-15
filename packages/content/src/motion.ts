@@ -29,8 +29,13 @@ export const AXES: Readonly<Record<string, Vec3>> = {
   '-Z': vec3(0, 0, -1),
 }
 
-/** The `axis` options, in the order a picker should offer them. */
-export const AXIS_NAMES: readonly string[] = Object.keys(AXES)
+/**
+ * The `axis` options, in the order a picker should offer them.
+ *
+ * A literal tuple rather than `Object.keys(AXES)`, so a `Spinner`'s `params.axis` narrows to the union and a
+ * typo in a component's own code is a typecheck failure rather than a runtime surprise.
+ */
+export const AXIS_NAMES = ['+X', '-X', '+Y', '-Y', '+Z', '-Z'] as const
 
 /**
  * One source of motion on a node, read off a component.

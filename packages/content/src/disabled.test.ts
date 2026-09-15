@@ -53,9 +53,9 @@ describe('a disabled node', () => {
     const track = (id: string): Node => ({
       id,
       transform: { position: ZERO },
-      components: [comp(`${id}-c`, COLLIDER, { shape: BOX, center: ZERO }), comp(`${id}-t`, 'Track', { keys: [{ t: 0 }, { t: 1 }] })],
+      components: [comp(`${id}-c`, COLLIDER, { shape: BOX, center: ZERO }), comp(`${id}-t`, 'Wanderer', {})],
     })
-    const moved = { get: (t: string) => (t === 'Track' ? { moves: true } : undefined) }
+    const moved = { get: (t: string) => (t === 'Wanderer' ? { moves: true } : undefined) }
     const world = createPhysicsWorld({ gravity: ZERO })
     const all = instantiateLevel(world, { id: 'fx', config: {}, nodes: [track('x'), track('y')] } as Level, moved)
     const second = all.nodes[1]!

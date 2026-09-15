@@ -14,7 +14,6 @@ The definitions this package ships. Declaring and running one: [api.md](api.md).
 | | `Goal` | — | no hook |
 | | `Hazard` | — | `onContact → effects.kill()`; kill plane = Hazard on a trigger (ADR 0053) |
 | | `Bumper` | `power: number` (26, 1–60) | `onContact → character.launch(power)` (ADR 0032) |
-| | `Track` | `clip: asset(animation)`, `keys{clip:'clip'}`, `loop: enum`, `phaseMs` | no hook; loader-evaluated (ADR 0050). **Superseded by `Mover`/`Spinner`** (ADR 0103); still read while content migrates |
 | | `Mover` (ADR 0103) | `move: vec3` metres from rest, `speed: number` m/s averaged over a leg, `smooth: bool`, `offset: number` cycles | no hook; loader-evaluated. **Repeatable** — offsets add, so two make a circle |
 | | `Spinner` (ADR 0103) | `axis: enum` (±X ±Y ±Z), `speed: number` °/s, `offset: number` turns | no hook; loader-evaluated. Singleton, and cardinal axes only: the offset is euler radians |
 | | `Boss` (ADR 0095) | `zone: nodeRef`, `speed: number` (8, 0.5–60 m/s), `turn: number` (180, 15–720 °/s) | `moves`; chases the living player furthest through its zone. Assembling one has rules — [boss.md](boss.md) |
@@ -27,7 +26,7 @@ All gameplay/player built-ins are `singleton` except `Mover`.
 `Mover` and `Spinner` have no hooks. The loader reads them with `motionsOf` and evaluates
 `motionOffset(motions, nowMs)` into the frame tree, which is what keeps clock-driven motion off the wire
 (ADR 0013/0021). Every source of movement is an **offset** from the node's authored transform — what a
-`Track` sampled, what the movers and the spinner compute, and what a component drove into `self.offset`
+the movers and the spinner compute and what a component drove into `self.offset`
 (ADR 0058) — so they add, and none has to know about the others.
 
 A cycle length is **derived**: a leg takes `distance / speed` seconds, so `speed` is the average over a leg
@@ -41,4 +40,4 @@ axes do not compose by adding, and a turn about a slanted axis is not a straight
 
 ## Shared set — `packages/components/src/shared.ts` (ADR 0077)
 
-`SHARED_COMPONENT_TYPES` = `['Boss', 'Bumper', 'Checkpoint', 'Goal', 'Hazard', 'Track']`. `isSharedComponent(type)`. `sharedComponents(types): AnyComponentDef[]` throws on a non-shared name.
+`SHARED_COMPONENT_TYPES` = `['Boss', 'Bumper', 'Checkpoint', 'Goal', 'Hazard', 'Mover', 'Spinner']`. `isSharedComponent(type)`. `sharedComponents(types): AnyComponentDef[]` throws on a non-shared name.

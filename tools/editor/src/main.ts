@@ -8,24 +8,18 @@ import { createLocalController, type LocalController, type LocalWorld } from '@m
 import {
   assetsOfKind,
   instantiateLevel,
-  moveTrack,
-  spinTrack,
-  trackDuration,
   COLLIDER,
   SPAWN,
   RENDERER,
-  type ClipSource,
   type PrefabSource,
   hydratePrefabs,
   stripHydrated,
   unlinkPrefab,
   type ComponentData,
-  type Keyframe,
   type LoadedLevel,
   // Aliased: this file is DOM-heavy and `Node` is taken. A scene node is not a DOM node, and the day the two
   // are confused the error is a type error somewhere unrelated.
   type Level,
-  type Pose,
   type Transform, validateLevel, applyBatch, refKey, OpError, type NodeRef, type Op,
   BUILTIN_LABELS, BUILTIN_MODELS, isBuiltinModel, scaleCollider, PRIMITIVE_LABELS, PRIMITIVE_ORDER, type PrimitiveKind, type EnvironmentConfig } from '@mp/content'
 import { QUANT_BOUND } from '@mp/net'
@@ -58,7 +52,7 @@ import {
   type LightDesc,
 } from '@mp/render-three'
 import { createCollab, httpTransport, parsePresence, type Hold, type Peer } from './collab'
-import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type ClipItem, type Doc, type KeyEditor, type Mode, type OpBatch } from './editorDoc'
+import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type ClipItem, type Doc, type LocalPose, type Mode, type OpBatch } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
 import { askDestructive, askName, askUnsaved } from './confirm'
 import { prefabFolder, prefabTarget, sanitisePrefabName } from './prefabPath'
@@ -92,8 +86,6 @@ import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } fr
 import { createShortcuts } from './shortcuts'
 import { createSplitter, readPx, writePx } from './splitter'
 import { MODES, MODE_LIST, modeOf, soleMode } from './modes'
-import { createTimeline, type Timeline } from './timeline'
-import { DIRS, pathPoints, putChannel, restKeys, setKeyPose, sortedKeys } from './trackEdit'
 import { createToolbar, type GizmoMode, type GizmoSpace, type Toolbar } from './toolbar'
 
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector<T>(sel)!
@@ -421,7 +413,6 @@ const repaintAfterOps = (ops: readonly Op[]): void => {
     }
     scheduleRebuild()
     inspectorSync()
-    updateTrackHelper()
     return
   }
   const keep = selectionRefs()
@@ -452,7 +443,7 @@ const reinstallLevel = (level: Level): void => {
     return
   }
   docStack.length = 1
-  docStack[0] = { doc: withOps(levelDoc(level, registry(), editorClips)), label: root.label }
+  docStack[0] = { doc: withOps(levelDoc(level, registry())), label: root.label }
   showDoc()
   lastHoldKey = null // a reconnect is a new connection: the server holds nothing for it yet
   syncHolds()
@@ -582,14 +573,6 @@ const lockAsset = async (assetId: string): Promise<boolean> => {
   return false
 }
 
-/**
- * Animation clips, for every document this editor opens (ADR 0050).
- *
- * A stable object that reads `assets` on each call rather than the library itself, so it can be handed to a
- * document without caring whether the library has finished loading — and so a clip created mid-session
- * resolves without rebuilding the document.
- */
-const editorClips: ClipSource = { keys: (assetId) => assets?.keys(assetId) }
 /**
  * Prefab definitions, as the `PrefabSource` `hydratePrefabs` takes (ADR 0091). `loadAssetLibrary` already
  * fetched every prefab file at boot, so resolving a level's references costs nothing and needs no await.
@@ -912,75 +895,13 @@ const loadNewReferences = (redraw: () => void): void => {
     .catch((e: unknown) => setProblem(`assets did not load (${String(e)}) — restart pnpm dev:editor`))
 }
 
-/**
- * The track helper: the path a keyframed item follows, drawn in the viewport (ADR 0029).
- *
- * This is where *space* is edited. A line through every positioned key with a handle on each, so the shape
- * of the motion is visible and draggable with the same gizmo as everything else — the timeline strip only
- * ever says *when*. It replaces a widget that could draw one straight line for one `move` behavior, which
- * was all the old vocabulary could express.
- *
- * The polyline is exact rather than sampled: easing changes when the item is between two keys and never
- * where, since every segment is a straight line in space.
- */
-const pathLineMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85, depthTest: false, depthWrite: false, toneMapped: false })
-const keyDotMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, toneMapped: false, depthTest: false })
-const keyDotActiveMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, depthTest: false })
-const keyDotGeo = new THREE.SphereGeometry(0.11, 12, 8)
-const trackHelper = new THREE.Group()
-trackHelper.renderOrder = 10
-stage.scene.add(trackHelper)
-
-/** Key handles, so a viewport click can say which key it hit. */
-let keyHandles: THREE.Mesh[] = []
-
-const clearTrackHelper = (): void => {
-  for (const c of [...trackHelper.children]) {
-    trackHelper.remove(c)
-    if (c instanceof THREE.Line) c.geometry.dispose() // dot geometry and every material are shared
-  }
-  keyHandles = []
-}
-
-const updateTrackHelper = (): void => {
-  clearTrackHelper()
-  trackHelper.visible = false
-  if (selected === null || doc === null || playing) return
-  const keys = selectedKeys()
-  const g = instanceGroups[selected]
-  if (keys === null || keys.length === 0 || g === undefined) return
-  const points = pathPoints(keys, doc.transformOf(selected).position)
-  if (points.length === 0) return // a spin-only track has no path to draw
-
-  // Key offsets land on the item's authored position, giving *local* poses, which are then placed by the
-  // item's parent — which for a nested item is another animated group, and that is exactly right: the path
-  // is drawn where the motion happens.
-  const parent = g.parent ?? instanceRoot
-  parent.updateWorldMatrix(true, false)
-  const world = points.map((p) => parent.localToWorld(new THREE.Vector3(p.position.x, p.position.y, p.position.z)))
-
-  if (world.length > 1) trackHelper.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(world), pathLineMat))
-
-  const chosen = new Set(keySelection)
-  world.forEach((at, n) => {
-    const row = points[n]
-    if (row === undefined) return
-    const dot = new THREE.Mesh(keyDotGeo, chosen.has(row.index) ? keyDotActiveMat : keyDotMat)
-    dot.position.copy(at)
-    dot.userData.keyIndex = row.index
-    trackHelper.add(dot)
-    keyHandles.push(dot)
-  })
-  trackHelper.visible = true
-}
-
 // Re-derive markers/triggers + physics from the current doc (after edits; also a validity check).
 const rebuildLoaded = (): void => {
   if (doc === null) return
   world?.free()
   world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
   try {
-    loaded = instantiateLevel(world, doc.asLevel(), registry(), editorClips)
+    loaded = instantiateLevel(world, doc.asLevel(), registry())
     buildMarkers()
   } catch (e) {
     loaded = null
@@ -1038,7 +959,7 @@ const showDoc = (): void => {
 const reopenWithRegistry = (): void => {
   const root = docStack[0]
   if (root === undefined || prefabOpen !== null) return
-  docStack[0] = { doc: withOps(levelDoc(root.doc.asLevel(), registry(), editorClips)), label: root.label }
+  docStack[0] = { doc: withOps(levelDoc(root.doc.asLevel(), registry())), label: root.label }
   showDoc()
 }
 
@@ -1087,7 +1008,7 @@ const enterPrefab = async (assetId: string): Promise<void> => {
   }
   prefabOpen = { assetId, name: entry.name, from }
   docStack.length = 0
-  docStack.push({ doc: withOps(prefabDoc(root, registry(), editorClips)), label: `prefab: ${entry.name}` })
+  docStack.push({ doc: withOps(prefabDoc(root, registry())), label: `prefab: ${entry.name}` })
   showDoc()
   resetHistory()
   refreshUi()
@@ -1396,44 +1317,17 @@ const setSpace = (space: GizmoSpace): void => {
 
 // ============================== animation editing (ADR 0029) ==============================
 /**
- * The playhead, in milliseconds into the selected item's track. It poses **every** animated item, not only
- * the selection: scrubbing is meant to show what the level does at that instant, and a lift that ignored the
- * playhead while the bar beside it moved would be worse than not scrubbing at all.
+ * The preview clock, in milliseconds of level time (ADR 0103).
+ *
+ * It poses **every** moving item, not only the selection: a preview is meant to show what the level does at
+ * that instant, and a lift that stood still while the platform beside it moved would be worse than no
+ * preview at all. That is also why it is one clock for the whole level rather than one per object — motion is
+ * timed against other motion, and a staggered row is the thing you actually need to look at.
  */
 let previewMs = 0
-/** The strip's own playback. Separate from `playing`, which is the real game loop with pointer lock. */
+/** Whether the clock is running. Separate from `playing`, which is the real game loop with pointer lock. */
 let previewing = false
 let previewLastFrame = 0
-/**
- * Selected keys, as indices into the open track's sorted array, **primary last** (ADR 0051).
- *
- * A list rather than one index, so the panel can box-select and retime a passage in one drag. Primary last is
- * `selection.ts`'s convention (ADR 0031) and for the same reason: everything with a single subject — the
- * gizmo, the numeric fields, the status bar — still reads one index off the end.
- *
- * Selecting a key also parks the playhead on it (the timeline does that), so the item is *already* drawn at
- * that key's pose — which is why the gizmo needs no proxy object to drag. It edits what it is sitting on.
- */
-let keySelection: readonly number[] = []
-/** The key the gizmo writes, or `null` for the item as a whole. */
-const activeKey = (): number | null => (keySelection.length === 0 ? null : (keySelection[keySelection.length - 1] ?? null))
-/**
- * Armed to record: a gizmo drag writes a key at the playhead instead of moving the object's rest pose
- * (ADR 0051).
- *
- * Only the channel the drag touched, taken from the gizmo's own mode — so nudging a platform sideways cannot
- * invent a rotation key that would freeze a spin. Scale is not animatable, so a scale drag is unaffected.
- */
-let recording = false
-/**
- * Which keyframe parameter the timeline has open: a component on the selected node, and one of its `keys`
- * parameters (`KeyEditor`).
- *
- * Re-resolved on every selection change. When the new selection has exactly one keyframe parameter the strip
- * follows it, which is the common case and what "select the platform and edit its animation" should feel like;
- * the Inspector's **Edit keys** button is what picks a different one.
- */
-let keyTarget: KeyEditor | null = null
 /**
  * What each selected item looked like when the current drag began.
  *
@@ -1443,12 +1337,12 @@ let keyTarget: KeyEditor | null = null
  * it, because an offset track moves by its transform and needs nothing to accumulate against.
  */
 interface DragStart {
-  pose: Pose
+  pose: LocalPose
   scale: Vec3
 }
 let dragStart = new Map<number, DragStart>()
 
-/** Pose every item from its track at the playhead. Static items sit at their authored transform. */
+/** Pose every item from its movers at the preview clock. Still items sit at their authored transform. */
 const applyPreviewPoses = (): void => {
   if (doc === null) return
   for (let i = 0; i < doc.count(); i++) {
@@ -1465,190 +1359,21 @@ const applyPreviewPoses = (): void => {
 const setPreviewTime = (ms: number): void => {
   previewMs = Math.max(0, ms)
   applyPreviewPoses()
-  updateTrackHelper()
   inspectorSync()
-  timeline.syncHead()
   renderStatus()
 }
 
 /**
- * The playhead moving during playback, sixty times a second. Deliberately narrower than `setPreviewTime`:
- * the path handles cannot have moved, and rebuilding their geometry every frame would churn a Line buffer
- * and a dozen meshes per frame for a picture that is identical.
+ * The clock moving during playback, sixty times a second. Deliberately narrower than `setPreviewTime`: the
+ * Inspector's own fields cannot have changed, and re-reading them every frame would fight anything being
+ * typed into one.
  */
 const advancePreviewTime = (ms: number): void => {
   previewMs = Math.max(0, ms)
   applyPreviewPoses()
-  timeline.syncHead()
 }
 
-const setKeySelection = (indices: readonly number[]): void => {
-  keySelection = [...indices]
-  updateTrackHelper()
-}
-
-/**
- * The keys of an item's first keyframe parameter — from its clip if it plays one — or `null` when it has no
- * keyframe parameter at all.
- *
- * Per *item*, not per selection: a multi-selection drag writes each item back through its own component, and
- * the panel's target only says what it has open. Clip-aware for the same reason `writeKeys` is: reading the
- * inline keys of a node playing a clip would show the gizmo a track nobody is playing.
- */
-const keysOfItem = (index: number): readonly Keyframe[] | null => {
-  if (doc === null) return null
-  const editor = doc.keyEditors(index)[0]
-  if (editor === undefined) return null
-  const clip = clipIdOf(index, editor)
-  return clip !== '' ? (assets?.keys(clip) ?? []) : doc.keysOf(index, editor)
-}
-
-/**
- * The animation clip a node's keyframe parameter is playing, or `''` for its own inline keys (ADR 0050).
- *
- * Which sibling parameter holds it comes from the `keys` declaration (`KeyEditor.clipParam`), so this stays a
- * question about parameters rather than about `Track`.
- */
-const clipIdOf = (index: number, editor: KeyEditor): string => {
-  if (doc === null || editor.clipParam === null) return ''
-  const c = doc.components(index).find((x) => x.id === editor.componentId)
-  const v = c?.params[editor.clipParam]
-  return typeof v === 'string' ? v : ''
-}
-
-/** The clip the panel has open, or `''`. */
-const openClipId = (): string => (selected === null || keyTarget === null ? '' : clipIdOf(selected, keyTarget))
-
-/**
- * Write keys wherever this node's keys actually live — its clip, or the component's own parameter.
- *
- * **The one seam.** Every path that changes keys goes through here: the panel, the gizmo dragging a key, and
- * Record mode. Routing only some of them would let a gizmo drag write inline keys onto a node playing a clip,
- * which the loader's precedence would then honour — silently overriding the clip for that one object.
- *
- * A clip edit is not a document edit, so it is outside undo. See `setSelectedKeys`.
- */
-const writeKeys = (index: number, editor: KeyEditor, keys: readonly Keyframe[]): void => {
-  const clip = clipIdOf(index, editor)
-  if (clip !== '') {
-    assets?.setClipKeys(clip, sortedKeys(keys))
-    scheduleClipSave(clip)
-    return
-  }
-  doc?.setKeys(index, editor, keys)
-}
-
-/**
- * The keys the panel has open: the clip's when the component names one, otherwise the component's own.
- *
- * Same precedence the loader applies, and it has to be — a panel that edited the inline keys of a component
- * playing a clip would show edits that never reach the viewport.
- *
- * A clip id that resolves to nothing yields `[]` rather than `null`: the component *is* animatable, its clip
- * is just missing or still loading, and saying "nothing animatable selected" would be a lie.
- */
-const selectedKeys = (): readonly Keyframe[] | null => {
-  if (selected === null || doc === null || keyTarget === null) return null
-  const clip = openClipId()
-  if (clip !== '') return assets?.keys(clip) ?? []
-  return doc.keysOf(selected, keyTarget)
-}
-
-/**
- * How the open component says its keys repeat, for the strip's own preview clock.
- *
- * Read off the component by name rather than through a Track-shaped accessor: a keyframe parameter is what the
- * strip edits, and `loop` is just another parameter of whatever declares it. Anything that does not declare one
- * previews as a plain loop.
- */
-const keyLoopMode = (): string => {
-  if (selected === null || doc === null || keyTarget === null) return 'loop'
-  const c = doc.components(selected).find((x) => x.id === keyTarget?.componentId)
-  return typeof c?.params.loop === 'string' ? c.params.loop : 'loop'
-}
-
-/**
- * A clip edit written to disk, debounced.
- *
- * In memory first, on disk later: the panel calls `setKeys` on every pointer event of a drag, and the viewport
- * has to follow at once while a PUT per event would flood the dev server. 400ms after the last edit is late
- * enough to coalesce a drag and early enough that nobody loses work to a closed tab.
- */
-let clipSaveTimer: number | null = null
-const scheduleClipSave = (assetId: string): void => {
-  if (clipSaveTimer !== null) window.clearTimeout(clipSaveTimer)
-  clipSaveTimer = window.setTimeout(() => {
-    clipSaveTimer = null
-    void lockAsset(assetId).then((mine) => {
-      if (mine) return assets?.saveClip(assetId).catch((e: unknown) => setProblem(`clip save failed: ${String(e)}`))
-      return undefined
-    })
-  }, 400)
-}
-
-/**
- * Replace the open keys, then redraw everything they affect: the item's pose at the playhead, the path
- * handles, the physics instance, and the panel.
- *
- * **A clip edit is not a document edit.** It lands in the asset, so it is outside the document history and
- * Ctrl+Z will not take it back — the same as editing a material, and for the same reason: `history.ts`
- * snapshots the document, and an asset file is not in it. The panel says when you are editing a clip.
- */
-const setSelectedKeys = (keys: readonly Keyframe[]): void => {
-  if (selected === null || doc === null || keyTarget === null) return
-  writeKeys(selected, keyTarget, keys)
-  // Only a document edit is undoable, so only a document edit records one. A clip edit lands in the asset.
-  if (openClipId() === '') recordEdit('animation')
-  applyPreviewPoses()
-  updateTrackHelper()
-  scheduleRebuild()
-  timeline.render()
-  hierarchy.render()
-  renderStatus()
-}
-
-/**
- * Lift the open inline keys into a new clip asset, and point the component at it.
- *
- * The inline keys are **emptied** in the same edit, so the two can never disagree and the precedence rule
- * (inline wins) never has to arbitrate something a person authored by accident.
- */
-const saveAsClip = (): void => {
-  void (async () => {
-    const at = selected
-    const target = keyTarget
-    if (at === null || doc === null || target === null || target.clipParam === null || assets === null) return
-    const keys = doc.keysOf(at, target)
-    if (keys === null || keys.length === 0) return
-    const created = await assets.createAnimation(`${doc.label(at)}-clip`, { keys: sortedKeys(keys) }).catch((e: unknown) => {
-      setProblem(`save as clip failed: ${String(e)}`)
-      return undefined
-    })
-    if (created === undefined) return
-    await reloadAssets()
-    doc.setParams(at, target.componentId, { [target.clipParam]: created.id, [target.param]: [] })
-    recordEdit('save as clip')
-    inspectorRebuild()
-    scheduleRebuild()
-    timeline.render()
-    setStatus(`saved ${created.name}`)
-  })()
-}
-
-/** Copy a clip's keys back inline and clear the reference, leaving this object with a track of its own. */
-const unlinkClip = (): void => {
-  const at = selected
-  const target = keyTarget
-  if (at === null || doc === null || target === null || target.clipParam === null) return
-  const clip = openClipId()
-  if (clip === '') return
-  doc.setParams(at, target.componentId, { [target.param]: sortedKeys(assets?.keys(clip) ?? []), [target.clipParam]: '' })
-  recordEdit('unlink clip')
-  inspectorRebuild()
-  scheduleRebuild()
-  timeline.render()
-}
-
+/** A drag has happened, so the click handler knows this pointerup was not a click. */
 let gizmoDragged = false
 /**
  * A drag is in flight, so the gizmo owns the selection's pose.
@@ -1705,7 +1430,6 @@ gizmo.addEventListener('objectChange', () => {
   mirrorDragToSelection()
   if (edit.mode === 'scale') for (const i of selection) rebuildSubtreeMeshes(i)
   inspectorSync()
-  updateTrackHelper()
 })
 
 /**
@@ -1719,9 +1443,6 @@ gizmo.addEventListener('objectChange', () => {
  */
 const mirrorDragToSelection = (): void => {
   if (selection.length < 2 || selected === null || doc === null) return
-  // Dragging a keyframe is single-item by nature: `activeKey` indexes the *primary's* track, and applying that
-  // index to another item's keys would rewrite whichever key happened to sit at that position.
-  if (activeKey() !== null) return
   const primaryStart = dragStart.get(selected)
   const primaryGroup = instanceGroups[selected]
   if (primaryStart === undefined || primaryGroup === undefined) return
@@ -1770,30 +1491,31 @@ const mirrorDragToSelection = (): void => {
 }
 
 /**
- * Where a gizmo drag lands (ADR 0029, simplified by ADR 0050).
+ * Where a gizmo drag lands, per item (ADR 0103).
  *
- * - **No key selected**: the authored transform — animated or not, which is why this is now one row instead
- *   of two. Keys are offsets, so moving the transform carries the whole path with it, and the visible
- *   polyline shows it move. Under absolute keys this case had to rewrite every key by a delta.
- * - **A key selected**: that key's offset. The item is drawn at the key (the playhead is parked on it), so
- *   the gizmo is dragging the key itself.
+ * Always on the node's **authored transform** — there is nothing else a drag could mean now that motion is a
+ * speed rather than a path with handles in the viewport.
  *
- * A channel the track does not animate falls through to the authored transform, so rotating a
- * translation-only lift tilts the lift rather than inventing a one-key rotation channel that would freeze it.
+ * What it has to undo is the preview: while the clock runs, the group sits at rest **plus** its movers'
+ * offset, so writing the group's pose straight back would bake that offset into the transform and the object
+ * would walk across the level every time it was nudged mid-preview. Subtracting the offset is exact rather
+ * than a delta against a snapshot, because a mover's offset depends on the clock and not on the transform
+ * the drag is rewriting.
  */
 const writeBackItem = (index: number): void => {
   if (doc === null) return
   const g = instanceGroups[index]
   if (g === undefined) return
-  const keys = keysOfItem(index)
-  // An **empty** track routes here too when armed: recording the first key is the whole point of arming, and
-  // requiring a key before you can record one would be a chicken-and-egg. Unarmed, an empty track is just an
-  // object, and a drag moves it.
-  if (keys !== null && (keys.length > 0 || recording)) {
-    writeBackIntoTrack(index, keys, g)
-    return
-  }
-  doc.setTransform(index, transformOfGroup(g))
+  const off = motionOffsetAt(index, previewMs)
+  const t = transformOfGroup(g)
+  const rot = t.rotation ?? vec3(0, 0, 0)
+  doc.setTransform(index, {
+    position: vec3(r4(t.position.x - off.position.x), r4(t.position.y - off.position.y), r4(t.position.z - off.position.z)),
+    ...(isZeroRot(new THREE.Euler(rot.x - off.rotation.x, rot.y - off.rotation.y, rot.z - off.rotation.z))
+      ? {}
+      : { rotation: vec3(r4(rot.x - off.rotation.x), r4(rot.y - off.rotation.y), r4(rot.z - off.rotation.z)) }),
+    ...(t.scale !== undefined ? { scale: t.scale } : {}),
+  })
 }
 
 /** The primary's own write-back — what a gizmo drag or a typed Inspector value lands on first. */
@@ -1817,23 +1539,18 @@ const transformOfGroup = (g: THREE.Group): Transform => {
   }
 }
 
-const groupPose = (g: THREE.Group): Pose => {
+const groupPose = (g: THREE.Group): LocalPose => {
   const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
   return { position: vec3(r4(g.position.x), r4(g.position.y), r4(g.position.z)), rotation: vec3(r4(e.x), r4(e.y), r4(e.z)) }
 }
 
 /**
- * How much of an item's posed pose came from its track, at the playhead.
+ * How much of an item's drawn pose came from its movers, at the preview clock (ADR 0103).
  *
  * Measured as the difference between where the item is drawn and where it rests, rather than by evaluating
- * the track again here — so it is right for whatever component owns the keys without this needing to know
- * which one, and it cannot drift from what `applyPreviewPoses` actually drew.
- *
- * Invariant across a drag: keys are offsets, so this depends on the keys and the playhead and not on the
- * transform the drag is rewriting. That is what lets the write-back below be a subtraction instead of a
- * delta against a snapshot.
+ * the motion again here — so it cannot drift from what `applyPreviewPoses` actually drew.
  */
-const trackOffsetAt = (index: number, timeMs: number): Pose => {
+const motionOffsetAt = (index: number, timeMs: number): LocalPose => {
   if (doc === null) return { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) }
   const authored = doc.transformOf(index)
   const rest = authored.rotation ?? vec3(0, 0, 0)
@@ -1844,100 +1561,9 @@ const trackOffsetAt = (index: number, timeMs: number): Pose => {
   }
 }
 
-/** Scale is not animatable, so it always belongs to the transform — key selected, recording, or neither. */
-const keepScaleOnTransform = (index: number, g: THREE.Group): void => {
-  if (doc === null) return
-  const authored = doc.transformOf(index)
-  doc.setTransform(index, {
-    position: authored.position,
-    ...(authored.rotation !== undefined ? { rotation: authored.rotation } : {}),
-    ...(isOne(g.scale) ? {} : { scale: vec3(r4(g.scale.x), r4(g.scale.y), r4(g.scale.z)) }),
-  })
-}
-
-const writeBackIntoTrack = (index: number, keys: readonly Keyframe[], g: THREE.Group): void => {
-  if (doc === null) return
-  const editor = doc.keyEditors(index)[0]
-  if (editor === undefined) return
-  const pose = groupPose(g)
-  const at = activeKey()
-
-  /**
-   * Armed to record: the drag writes a **key at the playhead**, on the one channel the gizmo mode moved
-   * (ADR 0051).
-   *
-   * One channel, not a whole pose, because `putKey` would invent a rotation key the moment you nudged a
-   * platform sideways and freeze whatever spin it had. `putChannel` merges into the key already at the
-   * playhead, so a hundred pointer events in one drag replace rather than stack.
-   *
-   * `scale` falls through: it is not animatable, so a scale drag is an ordinary transform edit even armed.
-   */
-  if (recording && edit.mode !== 'scale') {
-    const authored = doc.transformOf(index)
-    const rest = authored.rotation ?? vec3(0, 0, 0)
-    const written =
-      edit.mode === 'rotate'
-        ? putChannel(keys, previewMs, 'rotation', vec3(r4(pose.rotation.x - rest.x), r4(pose.rotation.y - rest.y), r4(pose.rotation.z - rest.z)))
-        : putChannel(
-            keys,
-            previewMs,
-            'position',
-            vec3(r4(pose.position.x - authored.position.x), r4(pose.position.y - authored.position.y), r4(pose.position.z - authored.position.z)),
-          )
-    writeKeys(index, editor, written.keys)
-    keySelection = [written.index]
-    return
-  }
-
-  if (at === null) {
-    /**
-     * No key selected: the drag moves where the object *rests*, and the whole path rides along because every
-     * key is an offset from it (ADR 0050).
-     *
-     * The group is drawn at rest + the track's offset at the playhead, so stripping that offset back off is
-     * what the transform should be. A subtraction, not a delta against a drag snapshot — so a hundred pointer
-     * events in one drag cannot compound, and a typed Inspector value needs no snapshot to land.
-     */
-    const offset = trackOffsetAt(index, previewMs)
-    const rot = new THREE.Euler(pose.rotation.x - offset.rotation.x, pose.rotation.y - offset.rotation.y, pose.rotation.z - offset.rotation.z)
-    doc.setTransform(index, {
-      position: vec3(r4(pose.position.x - offset.position.x), r4(pose.position.y - offset.position.y), r4(pose.position.z - offset.position.z)),
-      ...(isZeroRot(rot) ? {} : { rotation: vec3(r4(rot.x), r4(rot.y), r4(rot.z)) }),
-      ...(isOne(g.scale) ? {} : { scale: vec3(r4(g.scale.x), r4(g.scale.y), r4(g.scale.z)) }),
-    })
-    return
-  }
-
-  /**
-   * A key selected: the gizmo drags that key. A key holds an offset, so what goes in is the posed group
-   * measured against where the object rests.
-   *
-   * Only the channels **this key already carries** are written, not every channel the track animates: a key
-   * that keys position alone must not sprout a rotation channel because the gizmo was dragged, which is the
-   * same reason Record mode writes one channel.
-   */
-  const authored = doc.transformOf(index)
-  const rest = authored.rotation ?? vec3(0, 0, 0)
-  const key = sortedKeys(keys)[at]
-  keepScaleOnTransform(index, g)
-  if (key === undefined) return
-
-  writeKeys(
-    index,
-    editor,
-    setKeyPose(keys, at, {
-      ...(key.position !== undefined
-        ? { position: vec3(r4(pose.position.x - authored.position.x), r4(pose.position.y - authored.position.y), r4(pose.position.z - authored.position.z)) }
-        : {}),
-      ...(key.rotation !== undefined ? { rotation: vec3(r4(pose.rotation.x - rest.x), r4(pose.rotation.y - rest.y), r4(pose.rotation.z - rest.z)) } : {}),
-    }),
-  )
-}
-
 /**
  * Point the editor at a selection. Everything derived from it is refreshed here, so no caller has to remember
- * the list: the gizmo goes on the primary, the Inspector and the timeline follow it, and the track helper
- * redraws.
+ * the list: the gizmo goes on the primary and the Inspector follows it.
  */
 const applySelection = (next: readonly number[]): void => {
   // Editing is suspended during play, and the item meshes are hidden — attaching a gizmo to one would put a
@@ -1953,17 +1579,12 @@ const applySelection = (next: readonly number[]): void => {
   selection = clampTo(next, doc?.count() ?? 0).filter((i) => heldBy(i) === null)
   const primary = primaryOf(selection)
   selected = primary
-  keySelection = [] // a fresh selection edits the object, not whichever key the last one was on
   // Disarmed too: armed Record left running across a selection change would write keys onto the next object
   // you dragged, which is a surprise nobody asked for.
-  recording = false
-  keyTarget = primary === null || doc === null ? null : (doc.keyEditors(primary)[0] ?? null)
 
   reattachGizmo()
 
   inspectorRebuild()
-  updateTrackHelper()
-  timeline.render()
   uiChanged()
   // After the panel has been rebuilt, not before: a nested object selected in the viewport is inside a
   // collapsed parent as often as not, and marking a row nobody can see is the same as not marking it.
@@ -1996,11 +1617,8 @@ const refuseHeld = (index: number): boolean => {
 const deselect = (): void => {
   selection = []
   selected = null
-  keySelection = []
   gizmo.detach()
   inspectorRebuild()
-  updateTrackHelper()
-  timeline.render()
   uiChanged()
   syncHolds()
 }
@@ -2093,20 +1711,6 @@ canvas.addEventListener('pointerup', (e) => {
       buildItems() // resets the item groups, so the gizmo has to be re-attached
       select(idx)
     })
-    return
-  }
-
-  // A key handle wins over the geometry behind it: the dots sit on the path, which is usually inside or
-  // beside the thing being animated, and a click meant for a handle should never reselect the object.
-  const keyHit = keyHandles.length > 0 ? raycaster.intersectObjects(keyHandles, false)[0] : undefined
-  if (keyHit !== undefined) {
-    const index = keyHit.object.userData.keyIndex as number
-    // Shift extends, matching the panel and the Hierarchy — a path handle is another way to reach the same key.
-    setKeySelection(e.shiftKey ? [...keySelection.filter((i) => i !== index), index] : [index])
-    const keys = selectedKeys()
-    const key = keys === null ? undefined : sortedKeys(keys)[index]
-    if (key !== undefined) setPreviewTime(key.t)
-    timeline.render()
     return
   }
 
@@ -2674,7 +2278,7 @@ const openFile = async (name: string): Promise<void> => {
       const resolved = hydratePrefabs(level, editorPrefabs)
       hydratedPrefabs = resolved.filled
       missingPrefabs = resolved.missing
-      setDoc(withOps(levelDoc(level, registry(), editorClips)), name)
+      setDoc(withOps(levelDoc(level, registry())), name)
       if (missingPrefabs.length > 0) setStatus(`no prefab file for ${missingPrefabs.join(', ')} — those objects are empty`)
     }
   } catch (e) {
@@ -2743,7 +2347,7 @@ const createLevel = async (from: string | null): Promise<void> => {
 const openFirstLevel = async (): Promise<void> => {
   await refreshFileList()
   if (fileNames[0] !== undefined) await openFile(fileNames[0])
-  else setDoc(withOps(levelDoc(blankLevel('untitled'), registry(), editorClips)), 'untitled')
+  else setDoc(withOps(levelDoc(blankLevel('untitled'), registry())), 'untitled')
 }
 
 // --- toolbar ---
@@ -2759,6 +2363,7 @@ const toolbar: Toolbar = createToolbar(
     snap: edit.snap,
     step: edit.step,
     playing,
+    previewing,
     inPrefab: prefabOpen !== null,
     readOnly: readOnlyBy,
     live: live(),
@@ -2812,6 +2417,7 @@ const toolbar: Toolbar = createToolbar(
       if (on) startPlay()
       else stopPlay()
     },
+    setPreviewing,
     setGrid: (on) => {
       grid.visible = on
       axes.visible = on
@@ -3392,7 +2998,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     refreshUi()
     // A material is edited the moment it is selected, so it is locked then — "lock on open" (ADR 0083).
     const kind = assets?.db.byId[assetId]?.kind
-    if (kind === 'material' || kind === 'animation') void lockAsset(assetId).then(() => renderStatus())
+    if (kind === 'material') void lockAsset(assetId).then(() => renderStatus())
   },
   requestPreview: (kind, key, done) => previews.request(kind, key, done),
   onCreateAsset: (kind, folder) => {
@@ -3402,7 +3008,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
       // An empty clip is a legitimate starting point: no keys means no motion, so a fresh one holds the
       // transform of anything that plays it (ADR 0050).
       const make =
-        kind === 'animation' ? assets.createAnimation(name, { keys: [] }, folder) : assets.createMaterial(name, { shader: 'standard', params: {} }, folder)
+        assets.createMaterial(name, { shader: 'standard', params: {} }, folder)
       const created = await make.catch((e: unknown) => {
         setStatus(`new ${kind} failed: ${String(e)}`)
         return undefined
@@ -3732,107 +3338,21 @@ const cutSelected = (): void => {
   deleteSelected()
 }
 
-// --- animation panel (Animation tab, beside Project in the bottom row) ---
+// --- previewing motion in the viewport (ADR 0103) ---
 /**
- * `setPreviewing` lives here rather than beside the other animation state because it is the one piece that
- * has to touch the panel: starting playback resets the frame clock so the first frame advances by ~0 rather
- * than by however long the tab sat idle.
+ * Run or stop the preview clock.
+ *
+ * Starting resets the frame clock so the first frame advances by ~0 rather than by however long the viewport
+ * sat idle, and stopping snaps everything back to its authored transform — a preview that left objects
+ * wherever the clock stopped would look exactly like content someone had moved.
  */
 function setPreviewing(on: boolean): void {
   previewing = on
   previewLastFrame = 0
-  timeline.render()
+  if (!on) setPreviewTime(0)
+  toolbar.render()
+  renderStatus()
 }
-
-/**
- * A preset replaces the keys outright — it is a starting point, not an increment.
- *
- * It leaves `loop` and `phase` alone, because those belong to the component and a preset has no opinion about
- * them. Before, a preset rewrote the whole component and quietly reset both.
- */
-const applyPreset = (keys: readonly Keyframe[]): void => {
-  if (keyTarget === null) addKeyComponent()
-  setSelectedKeys(keys)
-  setKeySelection([])
-  setPreviewTime(0)
-}
-
-/**
- * Give the selection the first component that declares a keyframe parameter, and open it.
- *
- * Found through the registry rather than naming `Track`, so a second animatable component would be reachable
- * from the same button without touching this.
- */
-const addKeyComponent = (): void => {
-  if (selected === null || doc === null) return
-  const def = doc.registry.all().find((d) => Object.values(d.params).some((spec) => spec.kind === 'keys'))
-  if (def === undefined || !doc.canAdd(selected, def.type)) return
-  doc.addComponent(selected, def.type)
-  keyTarget = doc.keyEditors(selected).find((e) => e.type === def.type) ?? null
-  recordEdit('add component')
-  inspectorRebuild()
-  scheduleRebuild()
-}
-
-const timeline: Timeline = createTimeline($<HTMLDivElement>('#timeline'), {
-  menu: contextMenu,
-  keys: selectedKeys,
-  setKeys: setSelectedKeys,
-  hasSelection: () => selected !== null,
-  // Whose keys, and which component's — the strip used to name only the object, which is what let it read as
-  // a panel about the selection rather than an editor for one component on it.
-  label: () =>
-    selected === null || doc === null ? '' : keyTarget === null ? doc.label(selected) : `${doc.label(selected)} · ${keyTarget.type}.${keyTarget.param}`,
-  time: () => previewMs,
-  setTime: setPreviewTime,
-  previewing: () => previewing,
-  setPreviewing,
-  clip: () => {
-    const id = openClipId()
-    const entry = id === '' ? undefined : assets?.db.byId[id]
-    return entry === undefined ? null : { id, name: entry.name }
-  },
-  saveAsClip,
-  unlinkClip,
-  selection: () => keySelection,
-  setSelection: (indices) => {
-    setKeySelection(indices)
-    timeline.render()
-  },
-  recording: () => recording,
-  setRecording: (on) => {
-    recording = on
-    // Not while previewing: the playhead is where a recorded key lands, so a moving playhead would scatter one
-    // drag's worth of keys across the track.
-    if (on && previewing) setPreviewing(false)
-    timeline.render()
-    renderStatus()
-  },
-  poseNow: () => (selected === null || doc === null ? null : doc.poseOf(selected, previewMs)),
-  // The same grid the transform gizmo snaps to, in time: a 0.25 grid means quarter-second keys, which keeps
-  // authored times round without a second setting to forget about.
-  snapMs: () => (edit.snap ? edit.step * 1000 : 0),
-  addKeyComponent: () => {
-    addKeyComponent()
-    // One key at rest, so the strip has something to show and the gizmo something to move. It holds the
-    // object where it stands rather than baking its pose into the key, which is what offsets buy.
-    if (keyTarget !== null && selected !== null && doc !== null) {
-      setSelectedKeys(restKeys())
-      setKeySelection([0])
-    }
-    setPreviewTime(0)
-  },
-  // Neither preset needs the item's pose any more: offsets are measured from rest, so the same keys are
-  // correct for the object wherever it happens to be standing.
-  applyMovePreset: (dir, distance, periodMs) => {
-    if (selected === null || doc === null) return
-    applyPreset(moveTrack(DIRS[dir] ?? vec3(0, 1, 0), distance, periodMs))
-  },
-  applySpinPreset: (dir, periodMs) => {
-    if (selected === null || doc === null) return
-    applyPreset(spinTrack(DIRS[dir] ?? vec3(0, 1, 0), periodMs))
-  },
-})
 
 /**
  * The bottom row's tabs. Project and Animation both want the full width — a file grid needs columns and a
@@ -3846,8 +3366,6 @@ const showBottomTab = (name: string): void => {
     const body = document.getElementById(tab.dataset.tab ?? '')
     if (body !== null) body.hidden = !on
   }
-  // Percentage layout means the strip only needs a re-render when it becomes visible, not on every resize.
-  if (name === 'timeline') timeline.render()
 }
 for (const tab of bottomTabs) tab.addEventListener('click', () => showBottomTab(tab.dataset.tab ?? 'palette'))
 showBottomTab('palette')
@@ -3974,14 +3492,12 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     recordEdit('transform')
     applyPreviewPoses() // the rest pose moved, so the item's drawn pose at the playhead moved with it
     scheduleRebuild()
-    updateTrackHelper()
   },
   onPropsChanged: () => {
     const item = selected
     recordEdit('properties')
     rebuildSelectedMeshes()
     scheduleRebuild()
-    updateTrackHelper()
     hierarchy.render() // a trigger or name change shows in the row's badge/label
     // Draw with what is loaded now, then again once a newly named material has arrived.
     if (item !== null) loadNewReferences(() => rebuildItemMeshes(item))
@@ -4000,14 +3516,6 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   },
   revertOverride,
   applyOverrides: () => void applyOverrides(),
-  editKeys: (componentId, param) => {
-    if (selected === null || doc === null) return
-    keyTarget = doc.keyEditors(selected).find((e) => e.componentId === componentId && e.param === param) ?? null
-    setKeySelection([])
-    setPreviewTime(0)
-    showBottomTab('timeline')
-    timeline.render()
-  },
   assetOptions: (of) => {
     const options: Record<string, string> = { '(none)': '' }
     // The built-in shapes (ADR 0090) sit in the model slot beside the uploaded files.
@@ -4047,13 +3555,7 @@ const renderStatus = (): void => {
   if (selected !== null && doc !== null) {
     parts.push(selection.length > 1 ? `${selection.length} selected · editing ${doc.label(selected)}` : `selected #${selected} (${doc.label(selected)})`)
   }
-  // What the gizmo is about to move is not otherwise visible, and it is the difference between dragging one
-  // key, dragging a whole path, and writing a new key where the playhead is.
-  if (selectedKeys()?.length ?? 0) {
-    const at = activeKey()
-    const what = recording ? 'recording' : keySelection.length > 1 ? `${keySelection.length} keys` : at !== null ? `key ${at + 1}` : 'whole track'
-    parts.push(`t=${(previewMs / 1000).toFixed(2)}s · ${what}`)
-  }
+  if (previewing) parts.push(`preview t=${(previewMs / 1000).toFixed(2)}s`)
   if (placing !== null) {
     const what = assets?.db.byId[placing.assetId]?.name ?? 'asset'
     parts.push(`click in the viewport to place <b>${what}</b>`)
@@ -4147,21 +3649,18 @@ stage.start((dt) => {
     const { rigVisible } = playCamera.update(dt, ownPos, (handles) => playView?.setOccluders(handles))
     charMesh.visible = rigVisible
   } else {
-    // The strip's own playback: real time, wrapped by the track, and only while the panel asks for it. It is
-    // deliberately not the game clock — this previews one authored track, it does not run the level.
+    /**
+     * The preview clock: real time, and only while asked for (ADR 0103).
+     *
+     * Deliberately not the game clock — it poses the level's movers and nothing else, with no physics, no
+     * character and no rules. It runs freely rather than wrapping: every mover derives its own cycle from
+     * its speed, so there is no single length to wrap to, and level time in the game does not wrap either.
+     */
     if (previewing) {
       const now = performance.now()
       const dt = previewLastFrame === 0 ? 0 : now - previewLastFrame
       previewLastFrame = now
-      const keys = selectedKeys()
-      if (keys === null || keys.length === 0) setPreviewing(false)
-      else {
-        const span = trackDuration(keys)
-        const wrapAt = keyLoopMode() === 'pingPong' ? span * 2 : span
-        // `once` holds its last pose rather than restarting, same as the loader does with it.
-        const next = span <= 0 ? 0 : keyLoopMode() === 'once' ? Math.min(span, previewMs + dt) : (previewMs + dt) % wrapAt
-        advancePreviewTime(next)
-      }
+      advancePreviewTime(previewMs + dt)
     }
     viewGizmo.update(dt)
     controls.update()

@@ -101,7 +101,6 @@ export interface InspectorHost {
    */
   assetOptions: (of: AssetSpec['of']) => Record<string, string>
   /** Open the timeline on this component's keyframe parameter (ADR 0037). */
-  editKeys: (componentId: string, param: string) => void
   /** Revert one override — `'transform'`, `'name'`, or a component id — or all of them. */
   revertOverride: (field?: string) => void
   /** Push the selection's overrides into the shared prefab, so every placement of it follows. */
@@ -550,17 +549,6 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
           // point cloud, so this states what is there and leaves it alone.
           section.row('hull', `${shape.points.length} points`)
         }
-        return
-      }
-      case 'keys': {
-        const count = Array.isArray(state[key]) ? (state[key] as unknown[]).length : 0
-        // The timeline owns keys (ADR 0037). What this owes the reader is how many there are and a way there.
-        const row = section.row(label, count === 0 ? 'none yet' : `${count} keys`)
-        const go = el('button', 'ctl tiny', count === 0 ? 'Add' : 'Edit')
-        go.title = 'open the timeline on these keys'
-        go.addEventListener('click', () => host.editKeys(view.id, key))
-        row.append(go)
-        if (view.overridden.includes(key)) row.classList.add('over')
         return
       }
       case 'nodeRef': {

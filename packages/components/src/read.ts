@@ -33,7 +33,7 @@ export const componentOn = <D extends ParamDecls>(components: readonly Component
 export const assetParamIds = (
   nodes: readonly { readonly components: readonly ComponentData[] }[],
   registry: Registry,
-  of?: 'material' | 'model' | 'animation',
+  of?: 'material' | 'model',
 ): string[] => {
   const ids = new Set<string>()
   for (const node of nodes)

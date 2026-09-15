@@ -27,6 +27,14 @@ export interface ToolbarState {
   snap: boolean
   step: number
   playing: boolean
+  /**
+   * The preview clock is running (ADR 0103): every `Mover` and `Spinner` in the level is moving in the
+   * viewport and editing carries on.
+   *
+   * Separate from `playing`, which is the real game loop with pointer lock. This is the cheap answer to "what
+   * does this platform actually do", which used to need entering Play.
+   */
+  previewing: boolean
   /** Depth > 1 in the doc stack: a prefab is open on top of the file. */
   inPrefab: boolean
   /** Who holds this file's lock when it is not you — Save is off and says so (ADR 0083). `null` when yours. */
@@ -51,6 +59,7 @@ export interface ToolbarActions {
   setSnap: (on: boolean) => void
   setStep: (step: number) => void
   setPlaying: (on: boolean) => void
+  setPreviewing: (on: boolean) => void
   setGrid: (on: boolean) => void
   setMarkers: (on: boolean) => void
 }
@@ -185,7 +194,15 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
   markerButton.title = 'spawn and gameplay-rule gizmos'
   markerButton.addEventListener('click', () => actions.setMarkers(!state().markers))
 
-  // --- play ---
+  // --- preview and play ---
+  /**
+   * One toggle for the whole level, not one per object: motion is timed against other motion, so a staggered
+   * row of platforms is the thing you need to look at, and the panel this replaces could only ever show one.
+   */
+  const previewButton = el('button')
+  previewButton.title = 'run the level’s movers and spinners in the viewport, without entering play'
+  previewButton.addEventListener('click', () => actions.setPreviewing(!state().previewing))
+
   const playButton = el('button')
   playButton.addEventListener('click', () => actions.setPlaying(!state().playing))
 
@@ -198,7 +215,7 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
     el('div', 'tb-sep'),
     group(gridButton, markerButton),
     el('div', 'tb-sep'),
-    group(playButton),
+    group(previewButton, playButton),
   )
 
   const render = (): void => {
@@ -235,6 +252,9 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
 
     playButton.textContent = s.playing ? '■ Stop' : '▶ Play'
     playButton.classList.toggle('on', s.playing)
+    previewButton.textContent = s.previewing ? '❙❙ Motion' : '▶ Motion'
+    previewButton.classList.toggle('on', s.previewing)
+    previewButton.disabled = s.playing // the game clock is already running everything
     // Editing is suspended during play; the controls would lie about what they do.
     for (const control of [gameSelect, openSelect, nameInput, newButton, stepInput, snapBox]) {
       control.disabled = s.playing

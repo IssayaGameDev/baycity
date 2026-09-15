@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ComponentError, defaultsOf, readParams, visibleParams, type ParamDecls } from './params'
-import { Bumper, Track } from './gameplay'
+import { Bumper, Spinner } from './gameplay'
 import { Collider, Renderer } from './engine'
 
 const at = 'node[0].components[0]'
@@ -14,12 +14,11 @@ describe('declared parameters', () => {
     e: { kind: 'enum', options: ['a', 'b'], default: 'a' },
     v: { kind: 'vec3', default: { x: 0, y: 1, z: 0 } },
     m: { kind: 'asset', of: 'material', default: '' },
-    k: { kind: 'keys' },
     r: { kind: 'nodeRef' },
   } satisfies ParamDecls
 
-  it('defaults every declared key, and forces the two that have no default of their own', () => {
-    expect(defaultsOf(decls)).toEqual({ n: 7, b: true, s: 'hi', e: 'a', v: { x: 0, y: 1, z: 0 }, m: '', k: [], r: null })
+  it('defaults every declared key, and forces the one that has no default of its own', () => {
+    expect(defaultsOf(decls)).toEqual({ n: 7, b: true, s: 'hi', e: 'a', v: { x: 0, y: 1, z: 0 }, m: '', r: null })
   })
 
   it('fills what is absent and keeps what is authored', () => {
@@ -93,17 +92,6 @@ describe('collider shapes, which nothing validated before this', () => {
   })
 })
 
-describe('keyframe tracks as a parameter', () => {
-  it('accepts a keyed track and defaults to an empty one', () => {
-    expect(readParams(Track.params, {}, at).keys).toEqual([])
-    expect(readParams(Track.params, { keys: [{ t: 0 }, { t: 500, position: vec(1) }] }, at).keys).toHaveLength(2)
-  })
-
-  it('rejects a key with no time', () => {
-    expect(() => readParams(Track.params, { keys: [{ position: vec(1) }] }, at)).toThrow(/keys\[0\]\.t/)
-  })
-})
-
 describe('the declaration drives the value type', () => {
   /**
    * Compile-time assertions: `tsc --noEmit` covers `src/**`, so these annotations fail the typecheck if
@@ -113,9 +101,9 @@ describe('the declaration drives the value type', () => {
    */
   it('keeps a number a number and an enum its own literal union', () => {
     const power: number = readParams(Bumper.params, { power: 30 }, at).power
-    const loop: 'loop' | 'pingPong' | 'once' = readParams(Track.params, {}, at).loop
+    const axis: '+X' | '-X' | '+Y' | '-Y' | '+Z' | '-Z' = readParams(Spinner.params, {}, at).axis
     const material: string = readParams(Renderer.params, {}, at).material
-    expect([power, loop, material]).toEqual([30, 'loop', ''])
+    expect([power, axis, material]).toEqual([30, '+Y', ''])
   })
 })
 

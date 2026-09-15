@@ -25,7 +25,7 @@ import {
 } from '@mp/render-three'
 import { Pane } from 'tweakpane'
 
-import { CLIP_SOURCE, ENTRIES, type Entry } from './registry'
+import { ENTRIES, type Entry } from './registry'
 
 const canvas = document.querySelector<HTMLCanvasElement>('#view')!
 const titleEl = document.querySelector<HTMLDivElement>('#title')!
@@ -272,7 +272,7 @@ const load = (entry: Entry): void => {
   disposeCurrent()
   world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }) // character integrates its own gravity
   current = entry
-  loaded = instantiateLevel(world, entry.level, entry.mode.registry, CLIP_SOURCE)
+  loaded = instantiateLevel(world, entry.level, entry.mode.registry)
   levelView = addLevel(stage.scene, loaded.visuals)
   levelLights = addLights(stage.scene, loaded.lights)
   env.applyEnvironment(loaded.config.environment)

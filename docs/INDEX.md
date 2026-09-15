@@ -77,7 +77,7 @@ why matters.
 | [0026](adr/0026-asset-pipeline.md) | Assets are referenced by id; a material is a shader instance |
 | [0027](adr/0027-content-is-data-only.md) | Geometry is authored data; the code kit is deleted |
 | [0028](adr/0028-materials-replace-styles.md) | `style` is deleted, materials are it |
-| [0029](adr/0029-keyframe-tracks.md) | Motion is a keyframe track, edited on a timeline |
+| [0029](adr/0029-keyframe-tracks.md) | Motion is a keyframe track, edited on a timeline — superseded by 0103 |
 | [0030](adr/0030-keyboard-shortcuts.md) | Shortcuts match the character; undo is a snapshot |
 | [0031](adr/0031-multi-selection.md) | Multi-selection, with a primary |
 | [0032](adr/0032-bumper.md) | A bumper, and triggers that carry parameters |
@@ -85,7 +85,7 @@ why matters.
 | [0034](adr/0034-coyote-time.md) | Coyote time, and two vertical stops |
 | [0035](adr/0035-component-system.md) | A node holds components |
 | [0036](adr/0036-component-runtime.md) | Components run, deterministically |
-| [0037](adr/0037-timeline-edits-a-parameter.md) | The timeline edits a declared parameter |
+| [0037](adr/0037-timeline-edits-a-parameter.md) | The timeline edits a declared parameter — superseded by 0103 |
 | [0038](adr/0038-inspector-chrome.md) | The Inspector's chrome is ours |
 | [0039](adr/0039-mesh-and-renderer.md) | `Visual` splits into `Mesh` and `Renderer` |
 | [0040](adr/0040-context-menus.md) | One context menu |
@@ -97,8 +97,8 @@ why matters.
 | [0046](adr/0046-procedural-sky.md) | A designed gradient sky; the sun as one input |
 | [0047](adr/0047-lights-are-components.md) | A light is a node with a `Light` component |
 | [0048](adr/0048-sun-is-a-level-setting.md) | Lighting is level data |
-| [0050](adr/0050-tracks-are-offsets-and-assets.md) | A keyframe is an offset; a track can be an asset |
-| [0051](adr/0051-dope-sheet.md) | The Animation panel is a dope sheet |
+| [0050](adr/0050-tracks-are-offsets-and-assets.md) | A keyframe is an offset; a track can be an asset — superseded by 0103 |
+| [0051](adr/0051-dope-sheet.md) | The Animation panel is a dope sheet — superseded by 0103 |
 | [0052](adr/0052-a-game-is-a-descriptor.md) | A game is a descriptor the tools take as an argument |
 | [0053](adr/0053-the-kill-plane-is-a-component.md) | The kill plane is a hazard |
 | [0054](adr/0054-trigger-colliders.md) | A collider can be a trigger |

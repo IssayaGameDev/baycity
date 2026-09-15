@@ -1,8 +1,9 @@
 import { vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
-import { easeAt, isAnimated, moveTrack, poseAt, spinTrack, trackDuration, trackTime } from './track'
-import type { Behavior, Keyframe, Transform } from './types'
+import { easeAt, isAnimated, moveTrack, poseAt, spinTrack, trackDuration, trackTime } from './retiredTrack'
+import type { Behavior, Keyframe } from './retiredTrack'
+import type { Transform } from './types'
 
 const AT_ORIGIN: Transform = { position: vec3(0, 0, 0) }
 const track = (keys: Keyframe[], over: Partial<Extract<Behavior, { kind: 'track' }>> = {}): Behavior => ({

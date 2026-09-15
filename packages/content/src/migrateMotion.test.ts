@@ -10,11 +10,12 @@ import {
   migrateTracksIn,
   newMotionReport,
   overriddenComponentIds,
+  TRACK,
   type KeysOf,
 } from './migrateMotion'
-import { COLLIDER, TRACK, type TypeInfo } from './nodes'
-import { moveTrack, spinTrack } from './track'
-import type { ComponentData, Keyframe, Level, Node } from './types'
+import { COLLIDER, type TypeInfo } from './nodes'
+import { moveTrack, spinTrack, type Keyframe } from './retiredTrack'
+import type { ComponentData, Level, Node } from './types'
 
 const TYPES: TypeInfo = { get: (type) => (type === COLLIDER || type === 'Mover' ? {} : { singleton: true }) }
 const INLINE: KeysOf = keysOfWith(() => undefined)
