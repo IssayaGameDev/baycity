@@ -518,38 +518,16 @@
       "components": [
         {
           "id": "o0",
-          "type": "Track",
+          "type": "Mover",
           "params": {
-            "keys": [
-              {
-                "t": 0,
-                "position": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 0
-                },
-                "easing": "inOut"
-              },
-              {
-                "t": 2000,
-                "position": {
-                  "x": 0,
-                  "y": 3,
-                  "z": 0
-                },
-                "easing": "inOut"
-              },
-              {
-                "t": 4000,
-                "position": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 0
-                }
-              }
-            ],
-            "loop": "loop",
-            "phaseMs": 0
+            "move": {
+              "x": 0,
+              "y": 3,
+              "z": 0
+            },
+            "speed": 1.5,
+            "smooth": true,
+            "offset": 0
           }
         }
       ],
@@ -742,29 +720,11 @@
       "components": [
         {
           "id": "o0",
-          "type": "Track",
+          "type": "Spinner",
           "params": {
-            "keys": [
-              {
-                "t": 0,
-                "rotation": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 0
-                },
-                "easing": "linear"
-              },
-              {
-                "t": 6000,
-                "rotation": {
-                  "x": 0,
-                  "y": 6.2832,
-                  "z": 0
-                }
-              }
-            ],
-            "loop": "loop",
-            "phaseMs": 0
+            "axis": "+Y",
+            "speed": 60,
+            "offset": 0
           }
         }
       ],
@@ -939,38 +899,16 @@
             },
             {
               "id": "893c75f8",
-              "type": "Track",
+              "type": "Mover",
               "params": {
-                "keys": [
-                  {
-                    "t": 0,
-                    "position": {
-                      "x": 0,
-                      "y": 0,
-                      "z": 0
-                    },
-                    "easing": "inOut"
-                  },
-                  {
-                    "t": 1000,
-                    "position": {
-                      "x": 0,
-                      "y": 10,
-                      "z": 0
-                    },
-                    "easing": "inOut"
-                  },
-                  {
-                    "t": 2000,
-                    "position": {
-                      "x": 0,
-                      "y": 0,
-                      "z": 0
-                    }
-                  }
-                ],
-                "loop": "loop",
-                "phaseMs": 0
+                "move": {
+                  "x": 0,
+                  "y": 10,
+                  "z": 0
+                },
+                "speed": 10,
+                "smooth": true,
+                "offset": 0
               }
             }
           ]
@@ -1019,42 +957,6 @@
               "params": {
                 "material": "55205761e38bc929"
               }
-            },
-            {
-              "id": "893c75f8",
-              "type": "Track",
-              "params": {
-                "keys": [
-                  {
-                    "t": 0,
-                    "position": {
-                      "x": 0,
-                      "y": 0,
-                      "z": 0
-                    },
-                    "easing": "inOut"
-                  },
-                  {
-                    "t": 0,
-                    "position": {
-                      "x": 0,
-                      "y": 0,
-                      "z": 0
-                    }
-                  },
-                  {
-                    "t": 0,
-                    "position": {
-                      "x": 0,
-                      "y": 10,
-                      "z": 0
-                    },
-                    "easing": "inOut"
-                  }
-                ],
-                "loop": "loop",
-                "phaseMs": 0
-              }
             }
           ],
           "children": [
@@ -1071,29 +973,11 @@
               "components": [
                 {
                   "id": "o0",
-                  "type": "Track",
+                  "type": "Spinner",
                   "params": {
-                    "keys": [
-                      {
-                        "t": 0,
-                        "rotation": {
-                          "x": 0,
-                          "y": 0,
-                          "z": 0
-                        },
-                        "easing": "linear"
-                      },
-                      {
-                        "t": 6000,
-                        "rotation": {
-                          "x": 0,
-                          "y": 6.2832,
-                          "z": 0
-                        }
-                      }
-                    ],
-                    "loop": "loop",
-                    "phaseMs": 0
+                    "axis": "+Y",
+                    "speed": 60,
+                    "offset": 0
                   }
                 }
               ],

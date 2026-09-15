@@ -3,7 +3,8 @@
     "Boss",
     "Bumper",
     "Hazard",
-    "Track"
+    "Mover",
+    "Spinner"
   ],
   "settings": {
     "speed": [

@@ -55,38 +55,16 @@
         },
         {
           "id": "c2",
-          "type": "Track",
+          "type": "Mover",
           "params": {
-            "keys": [
-              {
-                "t": 0,
-                "position": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 0
-                },
-                "easing": "inOut"
-              },
-              {
-                "t": 2000,
-                "position": {
-                  "x": 0,
-                  "y": 10.1,
-                  "z": 0
-                },
-                "easing": "inOut"
-              },
-              {
-                "t": 4000,
-                "position": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 0
-                }
-              }
-            ],
-            "loop": "loop",
-            "phaseMs": 0
+            "move": {
+              "x": 0,
+              "y": 10.1,
+              "z": 0
+            },
+            "speed": 5.05,
+            "smooth": true,
+            "offset": 0
           }
         }
       ]

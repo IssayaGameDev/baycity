@@ -1,3 +1,10 @@
 {
-  "components": ["Bumper", "Checkpoint", "Goal", "Hazard", "Track"]
+  "components": [
+    "Bumper",
+    "Checkpoint",
+    "Goal",
+    "Hazard",
+    "Mover",
+    "Spinner"
+  ]
 }

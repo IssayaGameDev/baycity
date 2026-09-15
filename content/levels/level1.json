@@ -300,38 +300,16 @@
       "components": [
         {
           "id": "o0",
-          "type": "Track",
+          "type": "Mover",
           "params": {
-            "keys": [
-              {
-                "t": 0,
-                "position": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 0
-                },
-                "easing": "inOut"
-              },
-              {
-                "t": 2000,
-                "position": {
-                  "x": 0,
-                  "y": 1.2,
-                  "z": 0
-                },
-                "easing": "inOut"
-              },
-              {
-                "t": 4000,
-                "position": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 0
-                }
-              }
-            ],
-            "loop": "loop",
-            "phaseMs": 0
+            "move": {
+              "x": 0,
+              "y": 1.2,
+              "z": 0
+            },
+            "speed": 0.6,
+            "smooth": true,
+            "offset": 0
           }
         }
       ],
