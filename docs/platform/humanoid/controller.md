@@ -22,9 +22,9 @@ Tick constants live in `@mp/core` (`TICK_RATE_HZ` 30, `TICK_DT`), not here.
 | `gravity` | m/s² | 55 | downward magnitude |
 | `groundAccelTime` | s | 0.1 | rest → full speed; rate = `moveSpeed / groundAccelTime` |
 | `groundStopTime` | s | 0.08 | full speed → stop on released input |
-| `groundMaxAccel` | m/s² | `Infinity` | ceiling on **gaining** ground speed (ADR 0078/0096). Keyboard: `Infinity` — an instant start |
-| `groundBrakeMaxAccel` | m/s² | `Infinity` | ceiling on **losing or redirecting** it: a release, and every turn. Keyboard: 200 |
-| `airMaxAccel` | m/s² | `Infinity` | ceiling on air steering. Keyboard: 60 |
+| `groundMaxAccel` | m/s² | `Infinity` | ceiling on **gaining** ground speed (ADR 0078/0096) |
+| `groundBrakeMaxAccel` | m/s² | `Infinity` | ceiling on **losing or redirecting** it: a release, and every turn |
+| `airMaxAccel` | m/s² | `Infinity` | ceiling on air steering |
 | `maxAccelScaling` | exponent | 0.5 | how the three ceilings grow with speed: `0` fixed, `0.5` with `√v`, `1` constant time. `Infinity` ceilings ignore it |
 | `ACCEL_REF_SPEED` | m/s | 15 (const) | the speed a ceiling is quoted at: `ceiling(v) = ceiling × (v/15) ** maxAccelScaling` |
 | `airControl` | 0..1 | 1 | air rate = ground accel × this |
