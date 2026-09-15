@@ -26,19 +26,44 @@ export interface CharacterTuning {
   groundAccelTime: number // s to reach full speed from rest
   groundStopTime: number // s to brake to a stop when input is released
   /**
-   * m/s² ceilings on how fast horizontal velocity may change, one for the ground and one for the air
-   * (ADR 0078). `Infinity` = off.
+   * m/s² ceilings on how fast horizontal velocity may change, at `ACCEL_REF_SPEED` (ADR 0078, ADR 0096).
+   * `Infinity` = off, which is what every game but keyboard uses.
    *
-   * The rates above are *times to full speed*, so they scale with `moveSpeed`: a character ten times faster
-   * accelerates and reverses ten times harder and steers exactly as it did at walking pace, which at 30 m/s is
-   * total control and no momentum. These cap that. Below a cap nothing changes; above it, reaching speed and
-   * reversing take `speed / cap` seconds and a turn at speed becomes an arc.
+   * The times above are *times to full speed*, so left alone they scale with `moveSpeed`: a character a
+   * hundred times faster reverses a hundred times harder and steers exactly as it did at walking pace, which
+   * is total control and no momentum. These three ceilings are what give it weight.
    *
-   * Two, because one number could not serve both: the ground wants snap and the air wants momentum, and the
-   * first single cap that gave the air its momentum made the ground feel heavy (Kodjo).
+   * **Three, split by what the change does to your speed**, because one number could not describe the feel
+   * Kodjo's collaborators measured off Roblox and its imitators: starting is instant at every speed, while
+   * stopping and turning carry inertia that grows as you get faster.
+   *
+   * - `groundMaxAccel` — *gaining* speed on the ground. Left at `Infinity` for an instant start.
+   * - `groundBrakeMaxAccel` — *losing or redirecting* speed on the ground: releasing the stick, and every
+   *   turn, since a turn at full speed keeps its magnitude and only changes direction.
+   * - `airMaxAccel` — steering in the air, which is all inertia.
+   *
+   * They are **not constant**: see `maxAccelScaling`, without which none of them survive this game's speed
+   * range.
    */
   groundMaxAccel: number
+  groundBrakeMaxAccel: number
   airMaxAccel: number
+  /**
+   * How the three ceilings grow with speed: `ceiling(v) = ceiling × (v / ACCEL_REF_SPEED) ** maxAccelScaling`.
+   *
+   * | value | ceiling | time to stop | why |
+   * |---|---|---|---|
+   * | `0` | fixed | grows with `v` | what ADR 0078 shipped |
+   * | `0.5` | grows with `√v` | grows with `√v` | the default |
+   * | `1` | grows with `v` | constant | the same as no ceiling at all |
+   *
+   * A fixed ceiling cannot survive a wide speed range, and that is arithmetic rather than taste. Stopping
+   * distance under a fixed ceiling is `v² / 2c`, so across keyboard's hundredfold climb — 2.8 m/s at Level 0
+   * to 283 m/s at Level 500 — it grows **ten thousandfold**: a ceiling of 60 means 7 cm at the bottom and
+   * 667 m at the top, taking 4.7 seconds. At `0.5` the same span is 4 cm to 42 m, and stopping goes from
+   * 0.03 s to 0.30 s. Kodjo's call, from what his collaborators reported of the genre.
+   */
+  maxAccelScaling: number
   airControl: number // 0..1 air steering strength relative to ground accel
   maxFallSpeed: number // m/s cap on downward speed (terminal velocity); rising is never capped
   coyoteTime: number // s of grace after losing footing in which a jump still fires (0 = off)
@@ -75,9 +100,13 @@ export const DEFAULT_TUNING: CharacterTuning = {
   groundAccelTime: 0.1,
   groundStopTime: 0.08,
   // Off: the shipped games run at one speed, where the time-based rates are the feel. A game whose speed climbs
-  // sets these (keyboard: ADR 0078).
+  // sets these (keyboard: ADR 0078, ADR 0096). `Infinity` ignores `maxAccelScaling` entirely, so a game that
+  // sets none of them is bit-for-bit unchanged.
   groundMaxAccel: Infinity,
+  groundBrakeMaxAccel: Infinity,
   airMaxAccel: Infinity,
+  // √speed. Only consulted where a ceiling is finite.
+  maxAccelScaling: 0.5,
   // 1.0 = air accel equals ground accel, which is the Roblox model: `TurnSpeedFactor` is 1 in both its
   // GroundController and its AirController, so it does not restrict air steering at all, and
   // `MaintainLinearMomentum` (true) keeps your speed when you let go. Kodjo's call.
@@ -276,6 +305,29 @@ export const addCharacter = (world: PhysicsWorld, spawn: Vec3, layers?: Collisio
   carry: vec3(0, 0, 0),
 })
 
+/**
+ * The speed a ceiling is quoted at (m/s). A ceiling of 150 means 150 m/s² *here*, and more or less elsewhere
+ * according to `maxAccelScaling`.
+ *
+ * 15 m/s because that is where ADR 0078's fixed ceilings began to bite at all — below it the time-based rate
+ * was always the smaller of the two — so the numbers those were tuned with keep their meaning at the speed
+ * they were tuned at.
+ */
+export const ACCEL_REF_SPEED = 15
+
+/**
+ * A ceiling at this character's current speed (ADR 0096).
+ *
+ * `Infinity` short-circuits, so a game that sets no ceiling pays nothing and behaves exactly as before. The
+ * speed read is `moveSpeed`, the target, not the velocity: a ceiling that moved while you were inside a turn
+ * would make the turn's own arithmetic depend on how far through it you were.
+ */
+const scaleCeiling = (ceiling: number, tuning: CharacterTuning): number => {
+  if (!Number.isFinite(ceiling)) return ceiling
+  const ratio = Math.max(tuning.moveSpeed, 1e-3) / ACCEL_REF_SPEED
+  return ceiling * Math.pow(ratio, tuning.maxAccelScaling)
+}
+
 // Move `cur` toward `target` by at most `maxDelta` (frame-rate-independent accel).
 /**
  * Move the horizontal velocity toward a target by at most `maxDelta`, **as one vector** (ADR 0078).
@@ -454,13 +506,28 @@ export const stepCharacter = (
   const targetZ = cmd.moveZ * scale * tuning.moveSpeed
   const hasInput = cmd.moveX !== 0 || cmd.moveZ !== 0
 
-  // Time-based rates, each capped in m/s² so a fast character keeps its momentum (ADR 0078).
+  // Time-based rates, each capped in m/s² so a fast character keeps its momentum (ADR 0078, ADR 0096).
   const accel = tuning.moveSpeed / Math.max(tuning.groundAccelTime, 1e-3)
+  const groundCeiling = (gaining: boolean): number => scaleCeiling(gaining ? tuning.groundMaxAccel : tuning.groundBrakeMaxAccel, tuning)
   if (state.grounded) {
-    const rate = Math.min(hasInput ? accel : tuning.moveSpeed / Math.max(tuning.groundStopTime, 1e-3), tuning.groundMaxAccel)
+    const now = Math.hypot(state.vx, state.vz)
+    /**
+     * Is the change we need speeding us up, or slowing us down?
+     *
+     * The component of the needed change **along the direction we are already travelling**. Negative means
+     * the change is fighting our momentum, which is what braking and turning both are; positive means it adds
+     * to it, which is what a start is. From a standstill there is no direction to fight, so it is a start.
+     *
+     * Comparing *magnitudes* instead would be wrong halfway through a reversal: by then the target is larger
+     * than the speed we have left, so it would read as a start and snap us round at the uncapped rate. This
+     * reads as braking until the moment we actually turn over, then as a start — which is what happens.
+     */
+    const along = now < 1e-4 ? 1 : ((targetX - state.vx) * state.vx + (targetZ - state.vz) * state.vz) / now
+    const time = hasInput ? tuning.groundAccelTime : tuning.groundStopTime
+    const rate = Math.min(tuning.moveSpeed / Math.max(time, 1e-3), groundCeiling(along >= 0))
     approachVec(state, targetX, targetZ, rate * dt)
   } else if (hasInput) {
-    const rate = Math.min(accel * tuning.airControl, tuning.airMaxAccel)
+    const rate = Math.min(accel * tuning.airControl, scaleCeiling(tuning.airMaxAccel, tuning))
     // Air input steers and accelerates. It must never *brake* a character already travelling faster
     // than `moveSpeed`, which is what a plain approach toward a `moveSpeed`-sized target does: launched
     // off a fast mover at 12 m/s, holding the direction of flight measured 5.02 m of travel against

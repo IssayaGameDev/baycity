@@ -34,12 +34,21 @@ export const KEYBOARD_MODE: ModeDescriptor = {
    * (ADR 0057), so nothing written here after startup reaches the character.
    *
    * `groundAccelTime`, `groundStopTime` and `airControl` are times and ratios, so they scale with `moveSpeed`:
-   * left alone, a character at 30 m/s steers exactly like one at 5 — total control, no momentum. The two caps
-   * (m/s², ADR 0078) are what stop that: below a cap nothing changes, above it reversing takes `speed / cap`
-   * seconds and a turn at speed is an arc. Ground high for snap, air low for momentum — one cap for both made
-   * the ground heavy. First values; the Progression folder has both sliders.
+   * left alone, a character at 283 m/s steers exactly like one at 2.8 — total control, no momentum. The
+   * ceilings (m/s², ADR 0078/0096) are what give it weight, and they are quoted at `ACCEL_REF_SPEED` and grow
+   * with `√speed` from there, because a *fixed* ceiling cannot survive this game's hundredfold climb: at
+   * Level 500 a fixed 60 would take 4.7 seconds and 667 metres to stop.
+   *
+   * Three of them, matching what Kodjo's collaborators measured off the genre: starting is instant at every
+   * speed, stopping and turning carry inertia that grows with speed, and the air is hardest of all.
+   *
+   * - `groundMaxAccel: Infinity` — gaining speed is never limited, so a start is instant.
+   * - `groundBrakeMaxAccel: 200` — losing or redirecting it. Stopping: 0.03 s at Level 0, 0.33 s at Level 500.
+   * - `airMaxAccel: 60` — steering in the air. 0.11 s at Level 0, 1.1 s at Level 500.
+   *
+   * First values; the Movement folder has all three sliders.
    */
-  tuning: { ...DEFAULT_TUNING, groundMaxAccel: 150, airMaxAccel: 40 },
+  tuning: { ...DEFAULT_TUNING, groundMaxAccel: Infinity, groundBrakeMaxAccel: 200, airMaxAccel: 60 },
   /**
    * The palette is shared so two games' hazards look alike; the mapping is each game's own. A `WinsPad` is
    * where a stage ends, which is what the shared palette calls a goal.

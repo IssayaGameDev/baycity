@@ -22,8 +22,11 @@ Tick constants live in `@mp/core` (`TICK_RATE_HZ` 30, `TICK_DT`), not here.
 | `gravity` | m/s² | 55 | downward magnitude |
 | `groundAccelTime` | s | 0.1 | rest → full speed; rate = `moveSpeed / groundAccelTime` |
 | `groundStopTime` | s | 0.08 | full speed → stop on released input |
-| `groundMaxAccel` | m/s² | `Infinity` | cap on ground accel **and** brake (ADR 0078). Keyboard: 150 |
-| `airMaxAccel` | m/s² | `Infinity` | cap on air rate (ADR 0078). Keyboard: 40 |
+| `groundMaxAccel` | m/s² | `Infinity` | ceiling on **gaining** ground speed (ADR 0078/0096). Keyboard: `Infinity` — an instant start |
+| `groundBrakeMaxAccel` | m/s² | `Infinity` | ceiling on **losing or redirecting** it: a release, and every turn. Keyboard: 200 |
+| `airMaxAccel` | m/s² | `Infinity` | ceiling on air steering. Keyboard: 60 |
+| `maxAccelScaling` | exponent | 0.5 | how the three ceilings grow with speed: `0` fixed, `0.5` with `√v`, `1` constant time. `Infinity` ceilings ignore it |
+| `ACCEL_REF_SPEED` | m/s | 15 (const) | the speed a ceiling is quoted at: `ceiling(v) = ceiling × (v/15) ** maxAccelScaling` |
 | `airControl` | 0..1 | 1 | air rate = ground accel × this |
 | `maxFallSpeed` | m/s | 60 | terminal velocity; clamps falling only, never a jump/launch |
 | `coyoteTime` | s | 0.1 | jump still fires this long after losing footing; 0 = off |
@@ -72,7 +75,9 @@ Step order:
 2. `jumping = jumpBuffer > 0 && (grounded || coyote > 0)`; `leaving = jumping || launch > 0 || impulse.y > 0` spends both windows. Launch outranks jump.
 3. Jump cut when `jumpCut && !cmd.jump && vy > 0`.
 4. Vertical: riding → `vy = 0`; else gravity × scale, clamp `−maxFallSpeed`.
-5. Horizontal via `approachVec`. Ground rate `min(hasInput ? accel : moveSpeed/groundStopTime, groundMaxAccel)`; air rate `min(accel·airControl, airMaxAccel)`. Above `moveSpeed` only `moveSpeed` worth is steered; the excess is carried untouched (no air-strafing gain).
+5. Horizontal via `approachVec`. Ground rate `min(moveSpeed / (hasInput ? groundAccelTime : groundStopTime), ceiling)`, where the ceiling is `groundMaxAccel` when the change **adds** to current velocity and `groundBrakeMaxAccel` when it fights it; air rate `min(accel·airControl, airMaxAccel)`. Above `moveSpeed` only `moveSpeed` worth is steered; the excess is carried untouched (no air-strafing gain).
+
+   Which ceiling is decided by the component of the needed change along the direction of travel, not by comparing magnitudes: halfway through a reversal the target is larger than what is left, so magnitudes would read it as a start and let it round at the uncapped rate. A turn at speed is therefore braking, which is the point (ADR 0096). Uncapped is not instant — the time-based rate still applies.
 6. Leaving adds ride velocity (`ride/dt`, or `liftVel` from a coyote jump). Impulse added, zeroed.
 7. `body.move(desired)`: own `v·dt` + ride delta; vertical is the trapezoid `½(v₀+v₁)·dt` except when settling.
 8. Update `carry`, `grounded`, `coyote`, `liftVel/liftStore`; ceiling cancels rise; `base` re-anchored.

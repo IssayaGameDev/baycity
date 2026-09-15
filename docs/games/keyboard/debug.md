@@ -8,8 +8,11 @@ Kodjo's list; nothing else is added without his word.
 
 | Control | Binds | Range | Meaning |
 | --- | --- | --- | --- |
-| `ground accel m/s²` | `client.tuning.groundMaxAccel` | 5–500 | cap on ground acceleration/braking (ADR 0078); ships 150 |
-| `air accel m/s²` | `client.tuning.airMaxAccel` | 5–500 | cap on air steering; ships 40 |
+| `ground brake m/s²` | `client.tuning.groundBrakeMaxAccel` | 20–1000 | ceiling on losing or redirecting ground speed, at `ACCEL_REF_SPEED` (ADR 0078/0096); ships 200 |
+| `air accel m/s²` | `client.tuning.airMaxAccel` | 10–500 | ceiling on air steering, same reference; ships 60 |
+| `weight vs speed` | `client.tuning.maxAccelScaling` | 0–1 | how both grow with speed: 0 fixed, 0.5 `√v`, 1 constant time; ships 0.5 |
+
+Gaining speed has no slider: `groundMaxAccel` is `Infinity`, so a start is instant at every Level.
 | `pick speed` | `speedPick.enabled` | on/off | run at a chosen speed instead of Max Speed (stand-in for the real game's picker) |
 | `speed studs/s` | `speedPick.studs` | 1–1000 | the pick; capped at Max Speed when applied |
 
