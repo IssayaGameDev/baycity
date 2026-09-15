@@ -1744,7 +1744,23 @@
           "enabled": false
         }
       ],
-      "prefab": "5a05991a9190c8d9"
+      "prefab": "5a05991a9190c8d9",
+      "overrides": {
+        "root": {
+          "params": {
+            "c0": {
+              "shape": {
+                "kind": "box",
+                "halfExtents": {
+                  "x": 8000.000000000001,
+                  "y": 0.5,
+                  "z": 8000.000000000001
+                }
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }
