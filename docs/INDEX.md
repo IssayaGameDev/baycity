@@ -145,5 +145,6 @@ why matters.
 | [0095](adr/0095-a-component-can-see-every-player.md) | A component can see every player, and the Boss is what wanted it |
 | [0096](adr/0096-weight-grows-with-the-square-root-of-speed.md) | Weight grows with the square root of speed, and only when you lose it |
 | [0097](adr/0097-deleting-a-prefab-unlinks-its-placements.md) | Deleting a prefab unlinks its placements |
+| [0098](adr/0098-a-placement-can-override-its-prefab-roots-components.md) | A placement can override its prefab root's components |
 
 `Design archive/` holds superseded design material and is not maintained.

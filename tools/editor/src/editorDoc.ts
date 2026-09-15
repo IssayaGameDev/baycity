@@ -676,21 +676,56 @@ const docOver = (
   const trackComponent = (n: DocNode): ComponentData | undefined => n.view.components.find((c) => c.type === TRACK && enabledOf(c))
 
   /** Set some of a component's parameters, on the definition or as an override (`ops.ts` patches an added component in place). */
+  /**
+   * Where a write to one component has to land (ADR 0098).
+   *
+   * Three cases, not two, and the third is the one that was missing. A placement's visible component list is
+   * the prefab **root's** layered with its own (`effectiveNode`), but the placement has no `owner` — it *is*
+   * one — so a write to an inherited root component was aimed at the placement itself, where that component
+   * does not exist. `setParams` threw `no component 'c0' on node '<id>'`; remove and enable had a guard and
+   * silently did nothing.
+   *
+   * The override record is keyed by node id and `bakeOverrides` looks up the root's own id, so an override on
+   * the placement keyed by the root's id reaches it. No new op, no schema change.
+   */
+  type WriteTarget = { readonly kind: 'own'; readonly id: string } | { readonly kind: 'override'; readonly holder: Node; readonly node: string }
+
+  const writeTarget = (n: DocNode, componentId: string): WriteTarget | null => {
+    // An inherited child: the override goes on the placement that owns it, keyed by the child.
+    if (n.owner !== undefined) return { kind: 'override', holder: n.owner, node: n.authored.id }
+    // Its own component: edit it.
+    if (n.authored.components.some((c) => c.id === componentId)) return { kind: 'own', id: n.authored.id }
+    // Inherited from this placement's own prefab root.
+    const root = n.authored.prefab === undefined ? undefined : level.prefabs?.[n.authored.prefab]
+    return root === undefined ? null : { kind: 'override', holder: n.authored, node: root.id }
+  }
+
+  /** The override record a `WriteTarget` writes into, if there is one yet. */
+  const recordAt = (t: WriteTarget): NodeOverride | undefined => (t.kind === 'own' ? undefined : t.holder.overrides?.[t.node])
+
   const patchParams = (i: number, componentId: string, patch: Record<string, unknown>): void => {
     const n = node(i)
     if (n === undefined) return
     const target = n.view.components.find((x) => x.id === componentId)
     if (target === undefined) return
-    const paramsOp = (cid: string, p: Record<string, unknown>): Op =>
-      n.owner === undefined ? { kind: 'setParams', id: n.authored.id, componentId: cid, patch: p } : { kind: 'setOverrideParams', owner: n.owner.id, node: n.authored.id, componentId: cid, patch: p }
-    const ops: Op[] = [paramsOp(componentId, patch)]
+    // Per component id, not once: the built-in branch below touches several, and on a placement some may be
+    // its own while others came from the prefab root.
+    const paramsOp = (cid: string, p: Record<string, unknown>): Op | null => {
+      const t = writeTarget(n, cid)
+      if (t === null) return null
+      return t.kind === 'own'
+        ? { kind: 'setParams', id: t.id, componentId: cid, patch: p }
+        : { kind: 'setOverrideParams', owner: t.holder.id, node: t.node, componentId: cid, patch: p }
+    }
+    const ops: (Op | null)[] = [paramsOp(componentId, patch)]
     // A built-in shape picked (ADR 0090): scale is the size, so every collider on the node becomes the unit
     // shape of that built-in. Same batch, one undo.
     if (target.type === MESH && isBuiltinModel(patch.model)) {
       const unit = unitColliderFor(patch.model)
       for (const c of n.view.components) if (c.type === COLLIDER) ops.push(paramsOp(c.id, { shape: unit }))
     }
-    commit(ops)
+    const real = ops.filter((o): o is Op => o !== null)
+    if (real.length > 0) commit(real)
   }
 
   const builtinOf = (i: number): BuiltinModel | null => {
@@ -742,6 +777,9 @@ const docOver = (
   const moveComponent = (i: number, componentId: string, delta: number): void => {
     const n = node(i)
     if (n === undefined || n.owner !== undefined) return
+    // Deliberately **not** given the third case the other writers got (ADR 0098): reordering belongs to the
+    // prefab's own list and there is no override that expresses it. An inherited component simply is not in
+    // `authored.components`, so the index lookup below refuses it — the same way it refuses for a child.
     const list = n.authored.components
     const from = list.findIndex((c) => c.id === componentId)
     const to = from + delta
@@ -752,14 +790,15 @@ const docOver = (
   const removeComponent = (i: number, componentId: string): void => {
     const n = node(i)
     if (n === undefined) return
-    if (n.owner === undefined) {
-      if (!n.authored.components.some((c) => c.id === componentId)) return
-      commit([{ kind: 'removeComponent', id: n.authored.id, componentId }])
+    const t = writeTarget(n, componentId)
+    if (t === null) return
+    if (t.kind === 'own') {
+      commit([{ kind: 'removeComponent', id: t.id, componentId }])
       return
     }
-    const owner = n.owner.id
-    const nodeId = n.authored.id
-    const over = overrideFor(n)
+    const owner = t.holder.id
+    const nodeId = t.node
+    const over = recordAt(t)
     // Removing something this placement added is an undo, not a removal recorded against the prefab.
     if (over?.added?.some((c) => c.id === componentId) === true) {
       commit([{ kind: 'removeOverrideComponent', owner, node: nodeId, componentId }])
@@ -1041,12 +1080,13 @@ const docOver = (
     setComponentEnabled: (i, componentId, on) => {
       const n = node(i)
       if (n === undefined) return
-      if (n.owner === undefined) {
-        if (!n.authored.components.some((x) => x.id === componentId)) return
-        commit([{ kind: 'setComponentEnabled', id: n.authored.id, componentId, enabled: on }])
-        return
-      }
-      commit([{ kind: 'setOverrideEnabled', owner: n.owner.id, node: n.authored.id, componentId, enabled: on }])
+      const t = writeTarget(n, componentId)
+      if (t === null) return
+      commit([
+        t.kind === 'own'
+          ? { kind: 'setComponentEnabled', id: t.id, componentId, enabled: on }
+          : { kind: 'setOverrideEnabled', owner: t.holder.id, node: t.node, componentId, enabled: on },
+      ])
     },
 
     nodeChoices: (i) => {
