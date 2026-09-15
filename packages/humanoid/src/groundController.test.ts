@@ -3,7 +3,7 @@ import { TICK_DT } from '@mp/core'
 import type { InputCommand } from '@mp/core'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, DEFAULT_TUNING, playerSpawn, stepCharacter, type CharacterState, type CharacterTuning, type PlatformPoseLookup } from './groundController'
+import { ACCEL_REF_SPEED, addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, DEFAULT_TUNING, playerSpawn, stepCharacter, type CharacterState, type CharacterTuning, type PlatformPoseLookup } from './groundController'
 
 const cmd = (moveX: number, moveZ: number, jump = false): InputCommand => ({ moveX, moveZ, jump })
 
@@ -511,23 +511,135 @@ describe('groundMaxAccel / airMaxAccel (ADR 0078)', () => {
     expect(vz[5]).toBeCloseTo(-30, 5)
   })
 
-  it('caps the change per tick, so the same reversal takes speed / maxAccel seconds', () => {
-    const fast: CharacterTuning = { ...DEFAULT_TUNING, moveSpeed: 30, groundMaxAccel: 40 }
+  it('caps the change per tick, so the same reversal takes speed / brake ceiling seconds', () => {
+    // `maxAccelScaling: 0` pins the ceiling at its quoted value, so this reads the cap and nothing else.
+    const fast: CharacterTuning = { ...DEFAULT_TUNING, moveSpeed: 30, groundBrakeMaxAccel: 40, maxAccelScaling: 0 }
     const vz = reverse(fast, 60)
-    // Never more than 40 m/s² × dt between ticks.
+    // Never more than 40 m/s² × dt between ticks, *while still slowing down*. Past the turn the character is
+    // accelerating the other way and the accel ceiling takes over, which is ADR 0096's whole point.
     let prev = 30
     for (const v of vz) {
-      expect(prev - v).toBeLessThanOrEqual(40 * TICK_DT + 1e-6)
+      if (prev > 0) expect(prev - v).toBeLessThanOrEqual(40 * TICK_DT + 1e-6)
       prev = v
     }
-    // 60 m/s of change at 40 m/s² is 1.5 s = 45 ticks; not there at 30, there by 50.
-    expect(vz[29]!).toBeGreaterThan(-30)
-    expect(vz[49]!).toBeCloseTo(-30, 5)
+    // 30 m/s down to rest at 40 m/s² is 0.75 s = 22 ticks. Past rest it is gaining speed the other way,
+    // which has no *ceiling* — but still has the time-based rate, 300 m/s², so it takes three more ticks
+    // rather than arriving instantly. Uncapped is not the same as instant.
+    expect(vz[21]!, 'still slowing').toBeGreaterThan(0)
+    expect(vz[25]!, 'turned over and away at the accel rate').toBeCloseTo(-30, 4)
   })
 
-  it('changes nothing at a speed the time-based rate already accelerates more gently than the cap', () => {
-    // 5.5 m/s over 0.1 s is 55 m/s²; a cap of 60 never binds.
-    expect(reverse({ ...DEFAULT_TUNING, groundMaxAccel: 60 }, 10)).toEqual(reverse(DEFAULT_TUNING, 10))
+  it('changes nothing at a speed the time-based rate is already gentler than the ceiling', () => {
+    // 5.5 m/s over 0.08 s is 69 m/s²; a ceiling of 200 never binds. Pinned, so the scaling is not the subject.
+    const gentle: CharacterTuning = { ...DEFAULT_TUNING, groundBrakeMaxAccel: 200, maxAccelScaling: 0 }
+    expect(reverse(gentle, 10)).toEqual(reverse(DEFAULT_TUNING, 10))
+  })
+})
+
+/**
+ * Gaining speed and losing it have separate ceilings, and both grow with speed (ADR 0096).
+ *
+ * The feel this encodes came from Kodjo's collaborators measuring the genre: a start is instant however fast
+ * you are, while stopping and turning carry inertia that grows as you speed up.
+ */
+describe('accelerating and braking are separate, and scale with speed (ADR 0096)', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  /**
+   * A character standing still **on the floor**.
+   *
+   * The landing is not optional and it caught this test twice. `playerSpawn` is two metres up and
+   * `stepCharacter` applies its own gravity whatever the world's is, so a character stepped straight away is
+   * airborne — and every measurement below would silently come from the air branch instead. Landing with no
+   * input keeps a fast character from travelling off the end of the floor while it falls, which is the other
+   * way `grounded` goes false.
+   */
+  const landed = (tuning: CharacterTuning): { world: PhysicsWorld; c: CharacterState } => {
+    const world = makeWideWorld()
+    const c = addCharacter(world, playerSpawn(1000))
+    for (let i = 0; i < 12; i++) {
+      stepCharacter(c, cmd(0, 0), TICK_DT, tuning)
+      world.step(TICK_DT)
+    }
+    expect(c.grounded, 'the test needs it on the ground').toBe(true)
+    return { world, c }
+  }
+
+  /** Land, reach full speed, then push the other way, reporting velocity each tick. */
+  const reverse = (tuning: CharacterTuning, ticks: number): number[] => {
+    const { world, c } = landed(tuning)
+    // Uncapped, full speed is `groundAccelTime / TICK_DT` = three ticks at any speed. Four for slack.
+    for (let i = 0; i < 4; i++) {
+      stepCharacter(c, cmd(0, 1), TICK_DT, tuning)
+      world.step(TICK_DT)
+    }
+    expect(c.vz, 'up to speed before the reversal').toBeCloseTo(tuning.moveSpeed, 4)
+    const out: number[] = []
+    for (let i = 0; i < ticks; i++) {
+      stepCharacter(c, cmd(0, -1), TICK_DT, tuning)
+      world.step(TICK_DT)
+      out.push(c.vz)
+    }
+    world.free()
+    return out
+  }
+
+  /** The m/s² actually applied on the first tick of a reversal — pure ceiling, before anything else bites. */
+  const brakeRate = (tuning: CharacterTuning): number => (tuning.moveSpeed - reverse(tuning, 1)[0]!) / TICK_DT
+
+  /** What keyboard ships: nothing limits gaining speed, a real ceiling limits losing it. */
+  const split = (moveSpeed: number, brake: number, scaling = 0): CharacterTuning => ({
+    ...DEFAULT_TUNING,
+    moveSpeed,
+    groundMaxAccel: Infinity,
+    groundBrakeMaxAccel: brake,
+    maxAccelScaling: scaling,
+  })
+
+  it('starts instantly however fast, while the same character brakes slowly', () => {
+    const fast = split(120, 40)
+    const { world, c } = landed(fast)
+    // 120 m/s over groundAccelTime 0.1 s is 1200 m/s², uncapped — 40 m/s a tick, so three ticks and no more,
+    // at any speed. That constant three is what "instant start however fast" means here.
+    for (const expected of [40, 80, 120]) {
+      stepCharacter(c, cmd(0, 1), TICK_DT, fast)
+      world.step(TICK_DT)
+      expect(c.vz).toBeCloseTo(expected, 4)
+    }
+    world.free()
+    // The reversal is the brake ceiling's: 40 m/s² is 1.33 m/s a tick, so eight ticks barely dent 120.
+    expect(reverse(fast, 8)[7]!).toBeCloseTo(120 - 8 * 40 * TICK_DT, 3)
+  })
+
+  it('brakes until it turns over, then the accel ceiling takes it', () => {
+    // A reversal is not one long brake. 10 m/s to rest at 20 m/s² is 0.5 s = 15 ticks; past rest it is
+    // accelerating the other way with no ceiling, so the time-based 100 m/s² finishes it in three.
+    const vz = reverse(split(10, 20), 20)
+    expect(vz[13]!, 'still coming down').toBeGreaterThan(0)
+    expect(vz[17]!, 'away at the accel rate once it turned over').toBeCloseTo(-10, 4)
+  })
+
+  it('grows a ceiling with the square root of speed', () => {
+    // Quoted at ACCEL_REF_SPEED: four times the speed is twice the ceiling, sixteen times is four.
+    expect(brakeRate(split(ACCEL_REF_SPEED, 60, 0.5))).toBeCloseTo(60, 3)
+    expect(brakeRate(split(ACCEL_REF_SPEED * 4, 60, 0.5))).toBeCloseTo(120, 3)
+    expect(brakeRate(split(ACCEL_REF_SPEED * 16, 60, 0.5))).toBeCloseTo(240, 3)
+  })
+
+  it('spans fixed acceleration at 0 and constant time at 1', () => {
+    const ratio = (scaling: number): number => brakeRate(split(ACCEL_REF_SPEED * 4, 50, scaling)) / brakeRate(split(ACCEL_REF_SPEED, 50, scaling))
+    // Four times the speed, and the ceiling is: the same (so the time quadruples), doubled (the time
+    // doubles), or four times bigger (the time is unchanged). That last one is why 1 means "no weight".
+    expect(ratio(0)).toBeCloseTo(1, 4)
+    expect(ratio(0.5)).toBeCloseTo(2, 4)
+    expect(ratio(1)).toBeCloseTo(4, 4)
+  })
+
+  it('leaves a game that sets no ceiling bit-for-bit unchanged', () => {
+    // Infinity short-circuits the scaling, so parkour and swing cannot be moved by `maxAccelScaling`.
+    expect(reverse({ ...DEFAULT_TUNING, maxAccelScaling: 0 }, 10)).toEqual(reverse({ ...DEFAULT_TUNING, maxAccelScaling: 1 }, 10))
   })
 })
 
@@ -539,7 +651,7 @@ describe('steering is one vector, not two axes (ADR 0078)', () => {
   // A reversal along a diagonal must stay on that diagonal. Per-axis approach let the shorter axis finish first
   // and the velocity swing off the line; forward-back-forward then walked a circle.
   it('keeps a capped reversal on the line it was pushed along', () => {
-    const tuning: CharacterTuning = { ...DEFAULT_TUNING, moveSpeed: 30, groundMaxAccel: 40 }
+    const tuning: CharacterTuning = { ...DEFAULT_TUNING, moveSpeed: 30, groundBrakeMaxAccel: 40, maxAccelScaling: 0 }
     const world = makeWideWorld()
     const c = addCharacter(world, playerSpawn(1000))
     // Diagonal, 30° off the z axis — the case an axis-aligned camera never exercises.
@@ -588,8 +700,8 @@ describe('the two caps are independent (ADR 0078)', () => {
   }
 
   it('a ground cap leaves the air alone, and an air cap binds only there', () => {
-    const groundOnly: CharacterTuning = { ...DEFAULT_TUNING, moveSpeed: 30, groundMaxAccel: 40 }
-    const airOnly: CharacterTuning = { ...DEFAULT_TUNING, moveSpeed: 30, airMaxAccel: 40 }
+    const groundOnly: CharacterTuning = { ...DEFAULT_TUNING, moveSpeed: 30, groundBrakeMaxAccel: 40, maxAccelScaling: 0 }
+    const airOnly: CharacterTuning = { ...DEFAULT_TUNING, moveSpeed: 30, airMaxAccel: 40, maxAccelScaling: 0 }
     // Uncapped air at 30 m/s over 0.1 s is 300 m/s² — ten m/s a tick. The ground cap must not touch that.
     expect(airReverse(groundOnly)[0]).toBeCloseTo(300 * TICK_DT, 5)
     // The air cap holds every air tick to 40 m/s² × dt.

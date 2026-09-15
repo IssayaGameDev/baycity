@@ -328,11 +328,16 @@ client.onFrame((dt) => {
  * caps (ADR 0078); Progression holds the two resets and a grant. The curve, the keycap press feel and the popup
  * feel have defaults and no sliders — nobody asked for sliders.
  */
-// The two movement numbers this game owns (ADR 0078): how hard a fast character may accelerate or turn, on the
-// ground and in the air. Their own folder — they have nothing to do with progression.
+// The movement numbers this game owns (ADR 0078, ADR 0096): how hard a fast character may lose or redirect
+// speed, and how steeply that grows with speed. Their own folder — nothing to do with progression.
+//
+// Gaining speed has no slider because it has no ceiling: a start is instant at every speed, which is what the
+// genre does. `ground brake` and `air` are quoted at ACCEL_REF_SPEED (15 m/s) and scale from there.
 const movement = client.debugPane.addFolder({ title: 'Movement', expanded: false })
-movement.addBinding(client.tuning, 'groundMaxAccel', { min: 5, max: 500, step: 1, label: 'ground accel m/s²' })
-movement.addBinding(client.tuning, 'airMaxAccel', { min: 5, max: 500, step: 1, label: 'air accel m/s²' })
+movement.addBinding(client.tuning, 'groundBrakeMaxAccel', { min: 20, max: 1000, step: 5, label: 'ground brake m/s²' })
+movement.addBinding(client.tuning, 'airMaxAccel', { min: 10, max: 500, step: 5, label: 'air accel m/s²' })
+// 0 = fixed ceiling (unusable past a few Levels), 0.5 = grows with √speed, 1 = constant time, no weight.
+movement.addBinding(client.tuning, 'maxAccelScaling', { min: 0, max: 1, step: 0.05, label: 'weight vs speed' })
 // The speed picker's debug stand-in: on, you run at this many studs/s, capped at Max Speed.
 movement.addBinding(speedPick, 'enabled', { label: 'pick speed' })
 movement.addBinding(speedPick, 'studs', { min: 1, max: 1000, step: 1, label: 'speed studs/s' })
