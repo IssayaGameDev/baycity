@@ -83,6 +83,23 @@ interface GreyboxEnvironment {
 - `installSky(scene, texture): Sky` / `loadSky(scene, url): Promise<Sky | null>` — equirect **background only**
   (ADR 0045); `Sky { texture; dispose }`.
 
+## A cubemap `scene.background` does not fill an orthographic view
+
+Three draws one as a **1 x 1 x 1 box parked at the camera**, inside-out, `depthTest: false`
+(`WebGLBackground`). The perspective divide is what makes that cover the screen — a corner half a metre away
+at 45 degrees lands at the edge. Orthographic has no divide, so half a metre stays half a metre and the box
+projects to a patch a couple of viewport-metres across, leaving the clear colour everywhere else. It reads as
+"the sky went black".
+
+Nothing above the renderer can resize that box; it is created lazily inside three and never exposed. So a
+consumer that offers an orthographic view has to supply its own background for it. The editor swaps in a flat
+`Color` mixed from the level's own sky while isometric and restores the cube on the way out
+(`installEnvironment` / `applyProjectionBackground`, `editor.md`).
+
+Drawing the sky properly in both projections — a large mesh, or a full-screen quad reconstructing the view ray
+from the inverse projection and sampling the cube — is the real fix and costs a draw every frame in the game
+too. Deferred to the render pass (`budgets.md`).
+
 ## Anything holding a scene object goes stale when that object is replaced
 
 Three.js helpers and controls **capture** what they are given and read it every frame. None of them notice it

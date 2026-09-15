@@ -143,6 +143,12 @@ async rebuild landed afterwards and undid the work. `refreshBoundsBox()` is ther
 Snapping never changes the projection: two decisions, deliberately not fused (ADR 0094 on Blender's *Auto
 Perspective*).
 
+**The background.** A cubemap `scene.background` is perspective-only in practice (`rendering.md`), so
+isometric gets a flat `THREE.Color` mixed from the level's `skyParams` instead, and the cube is restored on
+the way back. Every path that installs an environment goes through **`installEnvironment`** — one function
+replacing four pairs of `env.applyEnvironment` + `postfx.apply` calls — because a path that installs a sky
+without re-applying this is a black viewport that only appears in isometric.
+
 **Two cameras.** `stage.camera` stays perspective and stays the game's — play-in-place tunes its `fov` — and
 `orthoCamera` sits beside it in `main.ts`. `activeCamera()` says which is live; `setProjection(ortho)` copies
 the placement across, cuts the frustum so both show the same height at the orbit target, and re-points

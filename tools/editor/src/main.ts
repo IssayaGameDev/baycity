@@ -26,7 +26,7 @@ import {
   type Level,
   type Pose,
   type Transform, validateLevel, applyBatch, refKey, OpError, type NodeRef, type Op,
-  BUILTIN_LABELS, BUILTIN_MODELS, isBuiltinModel, scaleCollider, PRIMITIVE_LABELS, PRIMITIVE_ORDER, type PrimitiveKind } from '@mp/content'
+  BUILTIN_LABELS, BUILTIN_MODELS, isBuiltinModel, scaleCollider, PRIMITIVE_LABELS, PRIMITIVE_ORDER, type PrimitiveKind, type EnvironmentConfig } from '@mp/content'
 import { QUANT_BOUND } from '@mp/net'
 
 import { createViewGizmo } from './viewGizmo'
@@ -425,8 +425,7 @@ const repaintAfterOps = (ops: readonly Op[]): void => {
   }
   const keep = selectionRefs()
   deselect()
-  env.applyEnvironment(open.environment())
-  postfx.apply(open.environment()?.postfx)
+  installEnvironment(open.environment())
   buildItems()
   rebuildLoaded()
   const restored = keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
@@ -1003,8 +1002,7 @@ const showDoc = (): void => {
   doc = docStack[docStack.length - 1]?.doc ?? null
   // The level owns its sun (ADR 0048), so opening one relights the viewport and rebakes the sky. A prefab has
   // none, which `sun()` reports as `undefined`, and that falls back to the renderer's defaults.
-  env.applyEnvironment(doc?.environment())
-  postfx.apply(doc?.environment()?.postfx)
+  installEnvironment(doc?.environment())
   buildItems()
   rebuildLoaded()
   statusMsg = '' // a message about the old document would be a lie about this one
@@ -1194,6 +1192,7 @@ const setProjection = (ortho: boolean): void => {
     stage.camera.position.copy(controls.target).add(back.normalize().multiplyScalar(distance))
   }
   isometric = ortho
+  applyProjectionBackground()
   const camera = activeCamera()
   postfx.setCamera(camera)
   controls.object = camera
@@ -1284,6 +1283,56 @@ const reattachGizmo = (): void => {
   const g = selected === null || playing ? undefined : instanceGroups[selected]
   if (g === undefined) gizmo.detach()
   else gizmo.attach(g)
+}
+
+/**
+ * A flat stand-in for the sky while the camera is orthographic.
+ *
+ * Three draws a cubemap background as a **1 x 1 x 1 box parked at the camera**, inside-out, depth test off
+ * (`WebGLBackground`). A perspective divide is what makes that fill the screen: a corner half a metre away at
+ * 45 degrees lands at the edge. Orthographic has no divide, so half a metre stays half a metre and the box
+ * projects to a few percent of a viewport metres across — a small patch of sky in the middle of the clear
+ * colour, which is what "the skybox goes black in isometric" actually is.
+ *
+ * So isometric gets a flat colour instead, mixed from the level's own sky so it is not jarring. Not tone
+ * mapped, because a `Color` background is a clear colour rather than a drawn surface, so the sky's `gain` is
+ * deliberately left out of it.
+ *
+ * The alternative is drawing the sky ourselves — a mesh, or a full-screen quad reconstructing the view ray —
+ * which is correct in both projections and costs a draw every frame in the game as well. Deferred to the
+ * render pass (`budgets.md`) rather than taken now.
+ */
+const isoBackground = new THREE.Color()
+/** Whatever the sky put there, so leaving isometric restores exactly that. `undefined` = nothing captured. */
+let backgroundBeforeIso: THREE.Scene['background'] | undefined
+
+/**
+ * Install a level's environment, and then make the background match the projection.
+ *
+ * One function rather than the four pairs of calls this replaces, for the reason `buildItems` keeps its own
+ * invariants: every path that installs a sky has to re-apply this, and a path that forgets is a black
+ * viewport that only shows up in isometric.
+ */
+const installEnvironment = (from: Partial<EnvironmentConfig> | undefined): void => {
+  env.applyEnvironment(from)
+  postfx.apply(from?.postfx)
+  applyProjectionBackground()
+}
+
+/** Swap the cubemap background for a flat colour while isometric, and put it back afterwards. */
+const applyProjectionBackground = (): void => {
+  if (isometric) {
+    // Anything but our own colour is the sky the environment just installed: remember it before replacing it.
+    if (stage.scene.background !== isoBackground) backgroundBeforeIso = stage.scene.background
+    const sky = env.skyParams
+    isoBackground.set(sky.bottomColor).lerp(new THREE.Color(sky.topColor), 0.5)
+    stage.scene.background = isoBackground
+    return
+  }
+  if (backgroundBeforeIso !== undefined) {
+    stage.scene.background = backgroundBeforeIso
+    backgroundBeforeIso = undefined
+  }
 }
 
 /** The bound in force for the open document: the level's own, or the platform default. */
@@ -3501,8 +3550,7 @@ const applyHistory = (ops: readonly Op[], keep: readonly NodeRef[], what: string
   if (live() && applied.ops.length > 0) collab.submit(applied)
   pending = []
   deselect()
-  env.applyEnvironment(doc?.environment())
-  postfx.apply(doc?.environment()?.postfx)
+  installEnvironment(doc?.environment())
   buildItems()
   rebuildLoaded()
   const open = doc
@@ -3789,8 +3837,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   boundsReach,
   onEnvironmentChanged: () => {
     // Elevation and azimuth move the sky as well as the light, so this rebakes rather than just relighting.
-    env.applyEnvironment(doc?.environment())
-    postfx.apply(doc?.environment()?.postfx)
+    installEnvironment(doc?.environment())
     recordEdit('environment')
     uiChanged()
   },
