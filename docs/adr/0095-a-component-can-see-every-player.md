@@ -32,8 +32,19 @@ its own death. A boss three centimetres apart on two screens still kills exactly
 says it touched them — nobody is killed by someone else's opinion of where the boss was. Divergence costs
 appearance, never outcome.
 
-**The Boss does not kill.** Put a `Collider` and a `Hazard` on the same node. Dying is already a component,
-and a second way to die would be two rules for one thing.
+**The Boss does not kill.** Put a `Hazard` and a `Collider` with **`trigger` on** on the same node. Dying is
+already a component, and a second way to die would be two rules for one thing.
+
+The trigger is load-bearing, and it was found the hard way — the first prefab used a solid collider and the
+boss shoved players around and often failed to kill them at all. A solid collider is resolved by the character
+controller, so it pushes; and it reaches the `Hazard` only through `CharacterBody.collisions()`, which holds
+what the **character's own movement** ran into. A boss driving into somebody standing still produces nothing.
+A trigger is found by `overlaps()`, an explicit shape query run every tick wherever the capsule is, so it does
+not care which of the two moved (ADR 0054).
+
+**`PlayerView.alive`.** A corpse keeps the position it fell at, so without it the boss orbited a dead body
+until it respawned. From `STATE_DEAD` for a peer and from the client's own `dead` for the local player; `true`
+wherever the host does not say, which is the editor's play-test.
 
 ## Kodjo's choices
 

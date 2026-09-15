@@ -614,7 +614,13 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
        * would put a peer standing on a moving platform a fraction of a step away from where the rule thinks
        * the platform is.
        */
-      peers: () => net.sample().map((e) => ({ id: e.id as number, position: worldFromBase(loaded, e, false).position })),
+      peers: () =>
+        net.sample().map((e) => ({
+          id: e.id as number,
+          position: worldFromBase(loaded, e, false).position,
+          alive: (e.flags & STATE_DEAD) === 0,
+        })),
+      alive: () => !dead,
     })
     // Tick 0 at level time 0: the clock has not started, and a component that wants "now" gets it in
     // `onFixedUpdate`. Counted here rather than read off the clock so the number a component sees is the
