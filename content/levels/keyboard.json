@@ -787,7 +787,7 @@
                       "y": 0,
                       "z": 0
                     },
-                    "trigger": false
+                    "trigger": true
                   }
                 },
                 {
