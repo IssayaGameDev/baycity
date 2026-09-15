@@ -88,7 +88,7 @@ applied and no reader repeats it.
 
 ## Consequences
 
-- `Ctx` gained a non-deterministic method. The header comment in `runtime.ts` and `components.md` both say so
+- `Ctx` gained a non-deterministic method. The header comment in `runtime.ts` and `components/api.md` both say so
   where somebody writing a component will read it.
 - `WorldNode` gained two fields, so every construction site had to fill them — including the synthetic player
   node in the runtime, whose values are placeholders for the same reason its `position` already was.

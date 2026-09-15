@@ -8,7 +8,7 @@ Package `packages/mode` (`@mp/mode`). Headless: no renderer import; gizmo colour
 |---|---|---|
 | `name` | `string` | Stable id; matches `LevelConfig.mode.name`. Never shown. |
 | `label` | `string` | Picker text. |
-| `registry` | `Registry` | Engine + shared (from `content/games/<name>.json`) + own components. Composed, not inherited (see `docs/platform/components.md`). |
+| `registry` | `Registry` | Engine + shared (from `content/games/<name>.json`) + own components. Composed, not inherited (see `docs/platform/components/api.md`). |
 | `tuning` | `CharacterTuning` (`packages/humanoid/src/groundController.ts`) | Starting locomotion numbers. Field because the editor play-tests in place. |
 | `gizmos` | `Readonly<Record<string, number>>` | Component type → `0xrrggbb` marker colour a tool draws over the rule's node. |
 | `spawn` | `(loaded: LoadedLevel, seed?: number) => Vec3` | Start position. `seed` = player id in a game, absent in a tool. |
