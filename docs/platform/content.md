@@ -110,6 +110,12 @@ Pure in `(motions, nowMs)` — `motion.ts`, ADR 0103. `motionOffset(motions, now
 | `curve(u, smooth)` | cosine when `smooth`, else linear. Both average 1 over a leg, which is what lets `speed` mean the average. |
 | `movesAtAll(motions)` | no distance or no speed ⇒ still ⇒ fixed body. |
 | `motionSlices(fromMs, toMs, maxStep)` | how many equal slices a tick needs so nothing travels more than `maxStep` between two of them (ADR 0104). `1` when still or slow; capped at 8. Position only. |
+
+A mover's travel is **re-framed by the loader**, not by `motion.ts` (ADR 0106): the frame tree would put it
+through `parentScale` and the parent's rotation, the same line a node's position goes through, so the loader
+divides by the scale (a metre stays a metre at any parent scale) and picks the frame from `space` —
+un-rotating by the parent's world rotation for `world`, rotating by the node's own authored rotation for
+`local`. Authored, not live, so a `Spinner` on the same node cannot turn a straight `Mover` into an orbit.
 | `AXES`, `AXIS_NAMES` | the six cardinal axes, as a literal tuple so `params.axis` narrows. |
 
 `frac` is a flooring fraction, so a negative `offset` wraps forward. Two `Spinner`s would not compose (euler

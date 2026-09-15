@@ -1,7 +1,7 @@
-import { eulerToQuat, lerpVec3, mulQuat, quat, rotateVec3, slerpQuat, vec3, type Quat, type Vec3 } from '@mp/core'
+import { conjQuat, eulerToQuat, lerpVec3, mulQuat, quat, rotateVec3, slerpQuat, vec3, type Quat, type Vec3 } from '@mp/core'
 import type { PhysicsBody, PhysicsWorld, ShapeDesc } from '@mp/physics'
 
-import { MOTIONLESS, motionOffset, motionsOf, movesAtAll, type Motion } from './motion'
+import { MOTIONLESS, motionOffset, motionsOf, movesAtAll, moveFraction, type Motion } from './motion'
 import { scaleCollider } from './primitives'
 import {
   COLLIDER,
@@ -284,6 +284,9 @@ export interface LoadedLevel {
   baseCarry: (index: number, localPos: Vec3) => Vec3 | undefined
 }
 
+/** Undo a scale factor, treating a degenerate axis as 1 — a zero-scaled parent must not send a node to infinity. */
+const safeDiv = (v: number, by: number): number => (Math.abs(by) < 1e-6 ? v : v / by)
+
 const UNIT_BOX: ColliderDesc = { kind: 'box', halfExtents: { x: 0.5, y: 0.5, z: 0.5 } }
 const ZERO: Vec3 = { x: 0, y: 0, z: 0 }
 
@@ -310,13 +313,53 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
   const dynamics: Dynamic[] = []
   const dynamicByCollider = new Map<number, number>()
 
+  /**
+   * A mover's authored travel, in the frame `localPos` is expressed in (ADR 0106).
+   *
+   * `localPos` is put through `parentScale` and then the parent's world rotation, so an authored offset has
+   * to be pushed back through both to survive as the thing that was typed:
+   *
+   * - **world**: un-rotate by the parent's world rotation, then divide by the parent's scale. What comes out
+   *   the other side is the offset in world axes and world metres, whatever the chain above is doing.
+   * - **local**: rotate by the node's own authored rotation, then divide by the scale. The parent's rotation
+   *   is applied by the frame tree afterwards, which is exactly right — the node's world orientation *is*
+   *   the parent's times its own.
+   *
+   * Dividing rather than multiplying is the whole point: the frame tree scales this offset the same way it
+   * scales the node's position, so undoing it is what makes a metre a metre. Guarded against a zero scale
+   * axis, which would otherwise divide to infinity and put the node nowhere.
+   */
+  const authoredTravel = (f: Frame, m: Extract<Motion, { kind: 'move' }>, u: number): Vec3 => {
+    const want = vec3(m.move.x * u, m.move.y * u, m.move.z * u)
+    const framed =
+      m.space === 'local'
+        ? rotateVec3(eulerToQuat(f.base.rotation ?? ZERO), want)
+        : f.parent === null
+          ? want
+          : rotateVec3(conjQuat(f.parent.worldRot), want)
+    const s = f.parentScale
+    return vec3(safeDiv(framed.x, s.x), safeDiv(framed.y, s.y), safeDiv(framed.z, s.z))
+  }
+
   const evaluate = (f: Frame, nowMs: number): void => {
     // Both contributions are offsets from the same authored transform, so they add and neither has to know
     // about the other: what the node's movers and spinner compute (ADR 0103), and what a component drove
     // (ADR 0058). That is what lets a component nudge a moving platform rather than choose between them.
     const motion = f.motions.length === 0 ? MOTIONLESS : motionOffset(f.motions, nowMs)
     const drive = f.drive ?? MOTIONLESS
-    const localPos = add(add(f.base.position, motion.position), drive.position)
+    // Movers are re-framed here rather than in `motionOffset`, which is headless and knows nothing about a
+    // parent chain. `motionOffset`'s position is the sum of the raw authored travels, so it is recomputed
+    // per mover; a node with none pays nothing, which is every node in a still level.
+    let travel = motion.position
+    if (f.motions.length > 0) {
+      travel = vec3(0, 0, 0)
+      for (const m of f.motions) {
+        if (m.kind !== 'move') continue
+        const at = authoredTravel(f, m, moveFraction(m, nowMs))
+        travel = add(travel, at)
+      }
+    }
+    const localPos = add(add(f.base.position, travel), drive.position)
     const localRot = eulerToQuat(add(add(f.base.rotation ?? ZERO, motion.rotation), drive.rotation))
     if (f.parent === null) {
       f.worldPos = localPos

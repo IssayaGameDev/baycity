@@ -454,6 +454,96 @@ describe('platform carry', () => {
     }
   })
 
+  /**
+   * Boarding a riser **while still rising from the jump that got you there** (ADR 0105).
+   *
+   * `vy <= 0` read that as leaving, so footing was refused while the deck swept up through the capsule — and
+   * a kinematic body moving into a character controller pushes it nowhere, because the controller resolves
+   * only the motion the character asks for. Measured at 26.5 m/s: the deck's top face went 0.055 m above the
+   * soles, then 0.638 m, then 1.52 m, with the rider untouched. Kodjo's "the platform phases through me".
+   *
+   * A surface met **above** the soles has arrived; one met below is being left. That is the discriminator,
+   * and it is geometry rather than velocity, so it cannot confuse the two the way a sign test did.
+   */
+  it('boards a riser that arrives mid-jump instead of being passed through', () => {
+    // Up to what one slice can carry (~1.2 m of deck travel per step, ADR 0104). Faster than that the
+    // client slices the tick, which the sliced test above covers.
+    for (const speed of [12, 20, 26.5]) {
+      const world = makeWorld()
+      // The deck starts below and rises into the jump. A ledge to leave from, beside the shaft so it cannot
+      // steal the ground probe from the platform.
+      const plat = addPlatform(world, vec3(3, 0.2, 3), vec3(0, -2, 0))
+      world.addFixedBody({ position: vec3(0, 0.5, 0), shape: { kind: 'cuboid', halfExtents: vec3(1.2, 0.5, 1.2) } })
+      const c = addCharacter(world, vec3(0, 1 + STAND + 0.02, 0))
+      const platforms = lookupFor(plat)
+      let y = -2
+      let boardedAt = -1
+      let worstInside = 0
+      for (let t = 0; t < 30; t++) {
+        y += speed * TICK_DT
+        plat.pose(vec3(0, y, 0), quat())
+        world.step(TICK_DT / 2)
+        stepCharacter(c, t === 2 ? { moveX: 0, moveZ: 0, jump: true } : STILL, TICK_DT, DEFAULT_TUNING, platforms)
+        world.step(TICK_DT / 2)
+        if (c.base !== undefined && boardedAt < 0) boardedAt = t
+        // How far the deck's top face is above the soles: positive means it is inside or past the capsule.
+        // Measured from the tick *after* contact: a deck arriving at 20 m/s is 0.17 m into the capsule on the
+        // tick it lands, and one tick to resolve that is the tick rate's floor, not a defect.
+        if (boardedAt >= 0 && t > boardedAt) worstInside = Math.max(worstInside, y + 0.2 - (c.body.translation().y - STAND))
+      }
+      expect(boardedAt, `${speed} m/s riser: never boarded`).toBeGreaterThan(0)
+      expect(c.base, `${speed} m/s riser: base at the end`).toBeDefined()
+      expect(worstInside, `${speed} m/s riser: deck passed into the capsule`).toBeLessThan(0.05)
+      world.free()
+    }
+  })
+
+  /**
+   * And once boarded, the rider is **seated on the deck**, not held wherever it happened to be caught.
+   *
+   * The ride reproduces a stored point's motion, so a separation at boarding used to be carried for the whole
+   * ascent — `riding` clamps `vy` to zero, so nothing could close it. Measured: a hover of 0.21 m that lasted
+   * until the apex, where the deck reversed out from under a rider that was never really on it. That is
+   * Kodjo's symptom 1, and symptom 2 is its ending.
+   */
+  it('seats a rider on the deck it boarded, through a reversal', () => {
+    const world = makeWorld()
+    const plat = addPlatform(world, vec3(3, 0.2, 3), vec3(0, -2, 0))
+    world.addFixedBody({ position: vec3(0, 0.5, 0), shape: { kind: 'cuboid', halfExtents: vec3(1.2, 0.5, 1.2) } })
+    const c = addCharacter(world, vec3(0, 1 + STAND + 0.02, 0))
+    const platforms = lookupFor(plat)
+    const speed = 26.5
+    let y = -2
+    let up = true
+    let settledFrom = -1
+    let worstGap = 0
+    let reversals = 0
+    for (let t = 0; t < 60; t++) {
+      if (up && y > 12) {
+        up = false
+        reversals++
+      } else if (!up && y < 2) {
+        up = true
+        reversals++
+      }
+      y += (up ? speed : -speed) * TICK_DT
+      plat.pose(vec3(0, y, 0), quat())
+      world.step(TICK_DT / 2)
+      stepCharacter(c, t === 2 ? { moveX: 0, moveZ: 0, jump: true } : STILL, TICK_DT, DEFAULT_TUNING, platforms)
+      world.step(TICK_DT / 2)
+      if (c.base === undefined) continue
+      const gap = c.body.translation().y - STAND - (y + 0.2)
+      // Allow one tick to seat, then hold it.
+      if (settledFrom < 0 && Math.abs(gap) < 0.05) settledFrom = t
+      if (settledFrom >= 0 && t > settledFrom) worstGap = Math.max(worstGap, Math.abs(gap))
+    }
+    expect(settledFrom, 'never seated on the deck').toBeGreaterThan(0)
+    expect(reversals, 'the platform has to turn round for this to prove anything').toBeGreaterThan(0)
+    expect(worstGap, 'seated, and stays seated across the reversal').toBeLessThan(0.05)
+    expect(c.base, 'still riding at the end').toBeDefined()
+    world.free()
+  })
+
   it('stops carrying the moment the platform is no longer underfoot', () => {
     const world = makeWorld()
     // Narrow platform beside static ground: walk off the side and the ride must end cleanly.

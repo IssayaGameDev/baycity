@@ -11,6 +11,7 @@ const mover = (over: Partial<Extract<Motion, { kind: 'move' }>> = {}): Extract<M
   speed: 1.5,
   smooth: true,
   offset: 0,
+  space: 'world',
   ...over,
 })
 
@@ -174,8 +175,8 @@ describe('motionsOf', () => {
       comp('c2', 'Mover', { move: vec3(3, 0, 0), speed: 1 }),
     ])
     expect(motions).toEqual([
-      { kind: 'move', move: vec3(0, 5, 0), speed: 2, smooth: false, offset: 0.5 },
-      { kind: 'move', move: vec3(3, 0, 0), speed: 1, smooth: true, offset: 0 },
+      { kind: 'move', move: vec3(0, 5, 0), speed: 2, smooth: false, offset: 0.5, space: 'world' },
+      { kind: 'move', move: vec3(3, 0, 0), speed: 1, smooth: true, offset: 0, space: 'world' },
       { kind: 'spin', axis: AXES['-X'], speed: 45, offset: 0.1 },
     ])
   })
@@ -192,7 +193,7 @@ describe('motionsOf', () => {
   })
 
   it('survives a hand-edited file: missing and malformed params fall back rather than throw', () => {
-    expect(motionsOf([comp('c0', 'Mover', {})])).toEqual([{ kind: 'move', move: vec3(0, 0, 0), speed: 0, smooth: true, offset: 0 }])
+    expect(motionsOf([comp('c0', 'Mover', {})])).toEqual([{ kind: 'move', move: vec3(0, 0, 0), speed: 0, smooth: true, offset: 0, space: 'world' }])
     expect(motionsOf([comp('c0', 'Spinner', { axis: 'sideways', speed: 'fast' })])).toEqual([{ kind: 'spin', axis: AXES['+Y'], speed: 0, offset: 0 }])
   })
 
