@@ -1767,9 +1767,9 @@
       "name": "Moving",
       "transform": {
         "position": {
-          "x": 17,
-          "y": 0.5,
-          "z": 12
+          "x": -2,
+          "y": -2.5,
+          "z": 6.5
         },
         "scale": {
           "x": 5,
@@ -1827,7 +1827,7 @@
               "z": 0
             },
             "speed": 26.5,
-            "smooth": true,
+            "smooth": false,
             "offset": 0
           }
         }
