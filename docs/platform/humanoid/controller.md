@@ -86,6 +86,7 @@ interface PlatformFrame { position: Vec3; rotation: Quat }
 Step order:
 
 1. Footing: `body.probeGround()`, then for the ridden base if that missed — a **deeper** probe when the base dropped away (ADR 0042), or the base kept **without** a probe when it rose past the capsule's centre (ADR 0104), bounded by `-away <= 2 × (halfHeight + radius)`, the point still being overhead, and `vy <= 0`.
+1b. Footing is `!leaving && (vy <= 0 || **arrived**)`, where `arrived` means the probe met the surface **above** the soles — it came to us (ADR 0105). `vy <= 0` alone refused a deck arriving under a jump, and a controller pushes nothing out of a kinematic body that moved into it, so the platform swept through. An arrival also cancels the remaining climb.
 2. `jumping = jumpBuffer > 0 && (grounded || coyote > 0)`; `leaving = jumping || launch > 0 || impulse.y > 0` spends both windows. Launch outranks jump.
 3. Jump cut when `jumpCut && !cmd.jump && vy > 0`.
 4. Vertical: riding → `vy = 0`; else gravity × scale, clamp `−maxFallSpeed`.
@@ -93,7 +94,7 @@ Step order:
 
    Which ceiling is decided by the component of the needed change along the direction of travel, not by comparing magnitudes: halfway through a reversal the target is larger than what is left, so magnitudes would read it as a start and let it round at the uncapped rate. A turn at speed is therefore braking, which is the point (ADR 0096). Uncapped is not instant — the time-based rate still applies.
 6. Leaving adds ride velocity (`ride/dt`, or `liftVel` from a coyote jump). Impulse added, zeroed.
-7. `body.move(desired)`: own `v·dt` + ride delta; vertical is the trapezoid `½(v₀+v₁)·dt` except when settling.
+7. `body.move(desired)`: own `v·dt` + ride delta horizontally; **riding, the vertical seats the soles on the probe contact** (`under.point.y + 0.02 − feetY`, ADR 0105) rather than repeating the anchor's motion, which is what stopped a boarding gap being carried. Not riding, the trapezoid `½(v₀+v₁)·dt` except when settling.
 8. Update `carry`, `grounded`, `coyote`, `liftVel/liftStore`; ceiling cancels rise; `base` re-anchored.
 
 ### `approachVec` (ADR 0078)

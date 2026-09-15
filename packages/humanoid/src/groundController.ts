@@ -20,6 +20,20 @@ export const CHAR_HALF_HEIGHT = 0.6
 /** Centre to the top of the head, and to the soles: how far a surface may pass through the capsule. */
 const STAND_HEIGHT = CHAR_HALF_HEIGHT + CHAR_RADIUS
 
+/**
+ * How far above the soles a contact may sit and still be ordinary standing rather than a surface arriving.
+ *
+ * The controller holds the capsule a hair off whatever it rests on, and the probe meets that surface at the
+ * same place, so resting reports a contact a little above the soles every tick. Measured at 0.020 m.
+ */
+const CONTACT_SLACK = 0.05
+
+/**
+ * Where a rider is seated relative to the surface under it: the controller's own resting contact offset,
+ * measured at 0.020 m. Seating to the arrival margin instead would hold every rider a visible 5 cm clear.
+ */
+const SEAT_OFFSET = 0.02
+
 /** Is this world point still under the capsule, rather than somewhere we have walked away from? */
 const overhead = (point: Vec3, at: Vec3): boolean => Math.hypot(point.x - at.x, point.z - at.z) <= CHAR_RADIUS
 
@@ -481,6 +495,8 @@ export const stepCharacter = (
       }
     }
   }
+  /** World height of the soles, as of the start of this tick. The probe's contact is compared against it. */
+  const feetY = state.body.translation().y - STAND_HEIGHT
   const frame = under !== undefined && platforms !== undefined ? platforms(under.colliderHandle) : undefined
   // Where the character *should* be: its stored local point under the surface's new pose. The
   // difference from where it is now is handed to the controller together with the character's own
@@ -703,9 +719,28 @@ export const stepCharacter = (
   // freshly spawned character, so a capsule settling onto a surface for the first time took the exact
   // value, seated at a different depth, and stayed flaky from then on. `under` is this tick's ground.
   const settling = under !== undefined && !leaving && state.vy <= 0
+  /**
+   * **The vertical ride seats the soles on the surface** rather than repeating what the anchor moved by
+   * (ADR 0105).
+   *
+   * The anchor is a stored point on the deck, so the ride reproduces the deck's motion exactly — and with it
+   * any separation that existed when the base was taken. `riding` also clamps `vy` to zero, so neither
+   * gravity nor snap-to-ground can close that separation afterwards. Boarding a riser mid-jump caught the
+   * capsule clear of the deck and it hovered there for the whole ascent, then lost the base at the apex: a
+   * rider that was never really on it.
+   *
+   * The probe already answers it exactly. It runs *after* the platforms have moved, so `under.point` is the
+   * surface where it will be at the end of this tick, and the travel that lands the soles on it is the
+   * difference. Measured riding a 26.5 m/s riser: the anchor asks for 0.883 m and the contact for 0.691 m,
+   * and the 0.192 m between them is the hover. Descending, the two agree to the contact offset.
+   *
+   * Horizontal still comes from the anchor — that is what carries a rider across a platform that is also
+   * turning, which a downward contact says nothing about.
+   */
+  const seatY = riding && under !== undefined ? under.point.y + SEAT_OFFSET - feetY : undefined
   const desired = {
     x: state.vx * dt + (riding ? ride!.x : 0),
-    y: riding ? ride!.y : (settling ? state.vy : 0.5 * (vyStart + state.vy)) * dt,
+    y: riding ? (seatY ?? ride!.y) : (settling ? state.vy : 0.5 * (vyStart + state.vy)) * dt,
     z: state.vz * dt + (riding ? ride!.z : 0),
   }
 
@@ -727,8 +762,30 @@ export const stepCharacter = (
   // and discards the platform velocity it had just inherited (measured 24.4 -> 15.4 m/s off a 9 m/s
   // riser, exactly the platform's speed thrown away), and a released one has `riding` zero the climb
   // outright. Either way the jump dies a tick after it started and the deck collects you.
-  const standing = under !== undefined && !leaving && state.vy <= 0
+  /**
+   * **A surface that has come to us is a landing, whichever way we are moving** (ADR 0105).
+   *
+   * `vy <= 0` alone reads "rising" as "leaving", which is right for a jump and wrong for a deck arriving
+   * underneath one. Jumping onto a platform that is rising at 26 m/s, the deck reaches the capsule while the
+   * jump still has 10 m/s left in it, footing is refused, and the deck sweeps straight through — the
+   * character controller resolves only the motion the *character* asks for, so a kinematic body moving into
+   * a capsule pushes it nowhere. Measured, boarding at 26.5 m/s: the deck's top face goes 0.055 m above the
+   * soles, then 0.638 m, then 1.52 m, and the rider never moves.
+   *
+   * The two cases are told apart by geometry, not velocity: the probe reports **where** it met the surface.
+   * A deck that has arrived is met **above** the soles — the capsule is inside it. A deck being jumped off
+   * is met below them, receding. So a contact above the soles is footing however fast we are rising, and
+   * ADR 0042's rule is otherwise untouched.
+   *
+   * The margin is the controller's own contact offset: resting normally the probe meets the surface a hair
+   * above the soles, and without it every ordinary standing tick would read as an arrival.
+   */
+  const arrived = under !== undefined && under.point.y > feetY + CONTACT_SLACK
+  const standing = under !== undefined && !leaving && (state.vy <= 0 || arrived)
   state.grounded = (grounded && state.vy <= 0) || standing
+  // A deck that arrived cancels the rest of the jump: it caught us, so the climb is over. Without this the
+  // jump keeps its upward velocity while the ride owns the vertical, and spends it the instant the ride ends.
+  if (arrived && !leaving && state.vy > 0) state.vy = 0
   // Refill the grace whenever there is footing, count it down otherwise. Not while leaving: the first tick
   // of a jump can still report footing (the sweep starts on the surface it is pushing off), and refilling
   // there would hand a held button that second jump the line above just took away.
@@ -775,7 +832,11 @@ export const stepCharacter = (
       }
     }
   }
-  if (baseFrame !== undefined && baseHandle !== undefined && !leaving && state.vy <= 0) {
+  // `standing` rather than `vy <= 0`, so a deck that arrived underneath a jump is boarded on the tick it
+  // touches — while the overlap is still shallow enough for `move` to resolve, and before anything has to be
+  // recovered from. Anchoring after `move` then stores the pose the controller settled on, which is what
+  // stops a gap being frozen into the ride (ADR 0105).
+  if (baseFrame !== undefined && baseHandle !== undefined && !leaving && (state.vy <= 0 || arrived)) {
     const finalPos = addVec(state.body.translation(), applied)
     state.base = { colliderHandle: baseHandle, localPos: toLocal(baseFrame, finalPos) }
   } else {
