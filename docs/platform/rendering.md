@@ -92,7 +92,8 @@ leaving the scene. So every long-lived reference is a liability the moment somet
 |---|---|---|---|
 | `TransformControls` | `.object` (attach), `.camera` | `object.parent` is `null`: a per-frame `console.error` ("must be a part of the scene graph"), then a throw on the next click — `pointerDown` dereferences that null parent and guards only `object === undefined` | `attach()` again, or `detach()` |
 | `BoxHelper` | the object it wraps | silent: `update()` measures a disposed group, so the box freezes or collapses. No error at all | rebuild it |
-| `RenderPass`, `GTAOPass` | the camera, at construction | renders through the old camera forever | `PostFX.setCamera` exists for exactly this (ADR 0094) |
+| `RenderPass` | the camera, at construction | renders through the old camera forever | `PostFX.setCamera` exists for exactly this (ADR 0094) |
+| `GTAOPass` | the camera **and its kind**, as a shader define | worse than stale: with the define saying perspective and the matrices saying orthographic, the AO term is garbage, and AO multiplies — the whole viewport goes black | `PostFX.setCamera` also rewrites `PERSPECTIVE_CAMERA` on `gtaoMaterial` and `pdMaterial` and flags a recompile. Three sets it on neither after construction, and on `pdMaterial` never |
 | `OrbitControls` | `.object` | orbits a camera nobody is looking through | assign `.object` |
 
 Two shapes of the same bug, and the quiet one is worse. Attaching a *getter* rather than an object is the
