@@ -2847,19 +2847,6 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
     deselect()
     hierarchy.render()
   },
-  /**
-   * The active checkbox (ADR 0099). A structural change: what the level contains just changed, so the
-   * physics world, the markers and the drawn items all have to be rebuilt, exactly as a delete would.
-   */
-  onSetEnabled: (index, on) => {
-    if (doc === null) return
-    doc.setNodeEnabled(index, on)
-    recordEdit(on ? 'enabled' : 'disabled')
-    rebuildLoaded()
-    buildItems()
-    hierarchy.render()
-    inspectorRebuild()
-  },
   gameSelected: () => gameSelected,
   /**
    * What the row reads. Three states worth telling apart: no game, a game that is installed, and a game the
@@ -3939,6 +3926,20 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     uiChanged()
   },
   boundsReach,
+  /**
+   * The header's active checkbox (ADR 0099, moved to the Inspector by ADR 0102). A structural change: what
+   * the level contains just changed, so the physics world, the markers and the drawn items are all rebuilt,
+   * exactly as a delete would.
+   */
+  onSetEnabled: (on) => {
+    if (doc === null || selected === null) return
+    doc.setNodeEnabled(selected, on)
+    recordEdit(on ? 'enabled' : 'disabled')
+    rebuildLoaded()
+    buildItems()
+    hierarchy.render()
+    inspectorRebuild()
+  },
   onEnvironmentChanged: () => {
     // Elevation and azimuth move the sky as well as the light, so this rebakes rather than just relighting.
     installEnvironment(doc?.environment())
