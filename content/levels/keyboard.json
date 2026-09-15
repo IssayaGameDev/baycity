@@ -1724,6 +1724,26 @@
           "name": "treadmill +1"
         }
       }
+    },
+    {
+      "id": "99b8faab",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -11.5,
+          "z": 0
+        }
+      },
+      "components": [
+        {
+          "id": "9108f8a3",
+          "type": "Renderer",
+          "params": {
+            "material": "4a11d049f9f8e5ac"
+          }
+        }
+      ],
+      "prefab": "5a05991a9190c8d9"
     }
   ]
 }
