@@ -172,6 +172,33 @@ firstDifference(before, after): { at; before?; after? } | null
 size (ADR 0090) compare equal, and leaves out world scale and a name a placement inherits. It is the gate the
 reference migration runs behind.
 
+## Migrating motion — `packages/content/src/migrateMotion.ts` (ADR 0103)
+
+Every `Track` becomes a `Mover` or a `Spinner`, keeping the component **id** so an override still names it.
+
+A conversion is never inferred from the shape of the keys. `convertTrack` reads the candidate's own axis,
+distance and period, **rebuilds the preset from them** (`moveTrack`/`spinTrack`), and requires the rebuild to
+equal the authored keys. Two deliberate exceptions, both stated in the source:
+
+| case | what happens |
+|---|---|
+| no duration, holding the rest pose | dropped — the node never moved |
+| no duration, holding a real offset | refused — one key in a channel is a constant offset (`poseAt`), so dropping it would move the node |
+| a full turn typed rather than generated (`6.2832`) | converted, within `TURN_EPS`, and **reported as rounded** |
+| anything else | refused, and the file is left exactly as it was |
+
+**The gate is motion, not geometry.** `fingerprintGeometry` compares component parameters, and the components
+are what is being replaced, so it would refuse everything. `fingerprintMotion` samples every node's composed
+local offset at `SAMPLE_MS` against a zero base, and `firstMotionDifference` compares numerically —
+`POS_EPS`, and `ROT_EPS` modulo a whole turn, since the keyframe form's last key *is* a full turn and reads
+2π where the wrapped form reads 0.
+
+`migrateGameComponents` also rewrites each game's shared-component list (ADR 0077): a game still naming
+`Track` would build a registry with no `Mover` in it. It runs only when nothing refused, because a refused
+level keeps its `Track`.
+
+Run once by `tools/editor-server/src/migrateMotion.ts` via `deploy/editor/migrate-motion.sh`, dry by default.
+
 ## Migrating to references — `packages/content/src/migratePrefabRefs.ts` (ADR 0091)
 
 `matchEntry(key, entry, files)` → contents, then the same shape under other node ids (with a remap), then the

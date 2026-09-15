@@ -174,7 +174,7 @@ A **service token** (the mirror, `content-sync.md`) arrives as a JWT with `commo
 | `editor-server.service` | `User=editor`, `tsx tools/editor-server/src/main.ts /etc/editor-server/config.json`, `TimeoutStopSec=45` |
 | `mp-relay.service`, `mp-game-keyboard.service` | the staging game (below) |
 | `editor-server.config.example.json` | team `cold-boat-3e59`, branch `content`, 10 MiB |
-| `migrate-primitives.sh`, `migrate-prefab-refs.sh` | one-off content migrations (ADR 0090, ADR 0091). Dry by default; `-- --write` stops the editor server, runs, commits on `content` and pushes. A refusal exits non-zero |
+| `migrate-primitives.sh`, `migrate-prefab-refs.sh`, `migrate-motion.sh` | one-off content migrations (ADR 0090, ADR 0091, ADR 0103). Dry by default; `-- --write` stops the editor server, runs, commits on `content` and pushes. A refusal exits non-zero |
 
 Box: Hetzner CX23 (2 vCPU, 4 GB) `2.28.227.20`, Ubuntu 26.04; cloudflared installed by the dashboard's tunnel
 command, `editor.playgorbo.com → localhost:8080`; Access application `Editor` with two policies: `Team` (Allow,
