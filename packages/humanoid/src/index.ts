@@ -35,5 +35,6 @@ export {
   DEFAULT_TUNING,
   playerSpawn,
   addCharacter,
+  releaseFooting,
   stepCharacter,
 } from './groundController'

@@ -377,6 +377,36 @@ const approachVec = (state: { vx: number; vz: number }, targetX: number, targetZ
  * Call after the platforms have been advanced and stepped for this tick, so the ground probe and
  * `platforms` both see where they are now.
  */
+/**
+ * Forget the last footing, after something **outside the controller** has moved the character (ADR 0100).
+ *
+ * A respawn and a stage teleport both set the body's position directly. That leaves everything the previous
+ * footing owned behind, and `base` is the one that bites: it survives, so the second, longer look above —
+ * the bounce-fall guard — can re-acquire the platform the character was standing on and then move them to
+ * their stored *local* spot on it. A respawn at the spawn point followed one tick later by a yank into the
+ * air, which is exactly what Kodjo reported.
+ *
+ * It reaches other players too: while `base` is set, the position on the wire is the local one (ADR 0021),
+ * so everyone else draws the character at their old spot on that platform wherever it has moved to.
+ *
+ * `carry` is last tick's platform push, and `liftVel`/`liftStore` is a departed mover's momentum kept for a
+ * late jump — the same class, smaller: a free boost handed to a fresh spawn.
+ *
+ * Velocity and footing go too, because both callers were already zeroing them by hand and one call is one
+ * thing to remember. `coyote` and `jumpBuffer` are deliberately **not** cleared: a buffered press surviving a
+ * teleport is arguable either way and nobody has asked.
+ */
+export const releaseFooting = (state: CharacterState): void => {
+  state.vx = 0
+  state.vy = 0
+  state.vz = 0
+  state.grounded = false
+  state.base = undefined
+  state.carry = vec3(0, 0, 0)
+  state.liftVel = vec3(0, 0, 0)
+  state.liftStore = 0
+}
+
 export const stepCharacter = (
   state: CharacterState,
   cmd: InputCommand,

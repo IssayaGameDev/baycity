@@ -147,5 +147,6 @@ why matters.
 | [0097](adr/0097-deleting-a-prefab-unlinks-its-placements.md) | Deleting a prefab unlinks its placements |
 | [0098](adr/0098-a-placement-can-override-its-prefab-roots-components.md) | A placement can override its prefab root's components |
 | [0099](adr/0099-a-node-can-be-switched-off.md) | A node can be switched off, and its subtree with it |
+| [0100](adr/0100-moving-the-character-releases-its-footing.md) | Moving the character from outside the controller releases its footing |
 
 `Design archive/` holds superseded design material and is not maintained.

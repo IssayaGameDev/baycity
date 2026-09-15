@@ -24,6 +24,7 @@ import {
   type CharacterTuning,
   DEFAULT_GAIT,
   type GaitTuning,
+  releaseFooting,
 } from '@mp/humanoid'
 import { createOrbitCamera, type OcclusionQueries, type OrbitCamera } from '@mp/camera'
 import { PLAYER_NODE_ID, type ModeDescriptor, type PlayerHost } from '@mp/mode'
@@ -554,16 +555,27 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
     }
     orbit.observe(queries)
 
-    // Respawn: teleport to wherever the rules say (the last checkpoint, or the spawn) and kill momentum.
-    // Triggered by touching a hazard pad or falling below the kill plane — both are `takeDeath`'s call now.
+    /**
+     * Respawn: move to wherever the rules say (the last checkpoint, or the spawn) and leave nothing behind.
+     *
+     * Triggered by touching a hazard pad or falling below the kill plane — both are `takeDeath`'s call now.
+     *
+     * **Everything the old footing owned has to go with the position**, and forgetting `base` was a real bug
+     * (ADR 0100). It survived death and respawn, so the controller's second, longer look for the surface it
+     * was riding (`groundController.ts`, the bounce-fall guard) could re-acquire the platform the player died
+     * on and then move them to their stored local spot on it — a respawn at the spawn followed a tick later
+     * by a yank into the air. It also reached peers: while `base` is set, the position on the wire is the
+     * *local* one, so everyone else drew the player at their old spot on that platform.
+     *
+     * The other three are the same class, smaller: a leftover `carry` is last tick's platform push, and
+     * `liftVel`/`liftStore` is a departed mover's momentum held for a late jump, which would hand a fresh
+     * spawn a free boost.
+     */
     const respawn = (): void => {
       dead = false
       avatars.reassemble()
       char.body.setPosition(rules.respawnAt())
-      char.vx = 0
-      char.vy = 0
-      char.vz = 0
-      char.grounded = false
+      releaseFooting(char)
     }
     requestRespawn = respawn // let the pause menu's Restart reach it
 
@@ -799,10 +811,9 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
           const teleport = dead ? null : (rules.takeTeleport?.() ?? null)
           if (teleport !== null) {
             char.body.setPosition(teleport)
-            char.vx = 0
-            char.vy = 0
-            char.vz = 0
-            char.grounded = false
+            // The same release a respawn needs, and for the same reason (ADR 0100): cashing out while riding
+            // a platform used to leave `base` set, and the next tick dragged the player back onto it.
+            releaseFooting(char)
           }
         }
       },

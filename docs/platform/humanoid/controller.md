@@ -2,6 +2,18 @@
 
 `packages/humanoid/src/groundController.ts`. One kinematic-capsule controller: fixed-apex jump, time-based ground accel/brake, force-limited air control, riding moving surfaces (ADR 0012). Client-authoritative, run by each client for its own body (ADR 0011). Reached by a game through `createLocomotion` (ADR 0061); not "the" platform controller (ADR 0062).
 
+## Moving the character from outside (ADR 0100)
+
+`releaseFooting(state)`. Call it whenever something that is not `stepCharacter` sets the body's position — a
+respawn, a stage teleport. Clears `base`, `carry`, `liftVel`, `liftStore`, the three velocities and `grounded`.
+
+**`base` is the one that bites.** Left set, the second-look bounce-fall guard (step 1 below) can re-acquire the
+platform the character was standing on and then move it to its stored *local* spot on that platform — a
+respawn followed one tick later by a yank into the air. It also reaches peers: while `base` is set the wire
+carries the local position (ADR 0021), so everyone else draws the character on that platform.
+
+`coyote` and `jumpBuffer` are deliberately not cleared (ADR 0100).
+
 ## Constants
 
 | Symbol | Value | Meaning |
