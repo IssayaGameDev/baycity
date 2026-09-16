@@ -92,7 +92,7 @@
       "transform": {
         "position": {
           "x": 0,
-          "y": -27,
+          "y": -141.5,
           "z": 0
         }
       },
@@ -115,7 +115,7 @@
                 "kind": "box",
                 "halfExtents": {
                   "x": 8000.000000000001,
-                  "y": 0.5,
+                  "y": 100,
                   "z": 8000.000000000001
                 }
               }
@@ -2871,9 +2871,9 @@
                   "z": 0
                 },
                 "space": "world",
-                "speed": 8,
+                "speed": 6,
                 "smooth": true,
-                "offset": 0.982705673185712
+                "offset": 0.5
               }
             },
             {
@@ -2942,9 +2942,9 @@
                   "z": 0
                 },
                 "space": "world",
-                "speed": 8,
+                "speed": 6,
                 "smooth": true,
-                "offset": 0.982705673185712
+                "offset": 0.5
               }
             },
             {
@@ -3013,7 +3013,7 @@
                   "z": 0
                 },
                 "space": "world",
-                "speed": 8,
+                "speed": 6,
                 "smooth": true,
                 "offset": 0
               }
@@ -3084,7 +3084,7 @@
                   "z": 0
                 },
                 "space": "world",
-                "speed": 8,
+                "speed": 6,
                 "smooth": true,
                 "offset": 0
               }
