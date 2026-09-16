@@ -3090,7 +3090,14 @@
             }
           },
           "components": [],
-          "prefab": "d75bc013a11360f2"
+          "prefab": "d75bc013a11360f2",
+          "overrides": {
+            "dffedd8e": {
+              "enabled": {
+                "ecb4beae": false
+              }
+            }
+          }
         },
         {
           "id": "c57725b8",
@@ -3113,7 +3120,14 @@
             }
           },
           "components": [],
-          "prefab": "d75bc013a11360f2"
+          "prefab": "d75bc013a11360f2",
+          "overrides": {
+            "dffedd8e": {
+              "enabled": {
+                "ecb4beae": false
+              }
+            }
+          }
         },
         {
           "id": "27253cbd",
@@ -3150,6 +3164,9 @@
                   "y": 0.3,
                   "z": 33.3
                 }
+              },
+              "enabled": {
+                "ecb4beae": false
               }
             }
           }
@@ -3189,6 +3206,9 @@
                   "y": 0.3,
                   "z": 33.3
                 }
+              },
+              "enabled": {
+                "ecb4beae": false
               }
             }
           }
@@ -3198,14 +3218,14 @@
           "name": "Platform extendable",
           "transform": {
             "position": {
-              "x": 66.5175,
-              "y": 33.1166,
+              "x": 63.4368,
+              "y": 33.3427,
               "z": 60.5592
             },
             "rotation": {
-              "x": -1.8452,
-              "y": 0,
-              "z": -1.5707
+              "x": -1.8555,
+              "y": -0.0084,
+              "z": -1.5746
             },
             "scale": {
               "x": 3,
@@ -3228,6 +3248,9 @@
                   "y": 0.3,
                   "z": 33.3
                 }
+              },
+              "enabled": {
+                "ecb4beae": false
               }
             }
           }
