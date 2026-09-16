@@ -236,7 +236,16 @@ export interface Doc {
   pathOf: (i: number) => string
   childCount: (i: number) => number
   canReparent: (from: number, parent: number | null) => boolean
-  reparent: (from: number, parent: number | null, at: number) => number
+  /**
+   * Move a node to a new parent, optionally re-expressing its transform in that parent's frame.
+   *
+   * **`transform` goes in the same batch as the move** (ADR 0113). A reparent is one edit: preserving the
+   * world pose means the stored local numbers must change, and if that change is a second commit it lands in
+   * the *next* history entry — so one Ctrl+Z restores the parent link while leaving the transform behind, or
+   * restores a transform belonging to a reparent two edits ago. Peers see one message rather than a move
+   * followed by a correction.
+   */
+  reparent: (from: number, parent: number | null, at: number, transform?: Transform) => number
   /** Assets every node in the document references — what to preload before drawing it. */
   assetIds: () => string[]
 
@@ -251,6 +260,11 @@ export interface Doc {
   removeComponent: (i: number, componentId: string) => void
   /** Patch some of a component's parameters, leaving the rest. */
   setParams: (i: number, componentId: string, patch: Record<string, unknown>) => void
+  /**
+   * The same patch on several nodes at once, as **one** commit — so it is one undo entry and one message to
+   * the room (ADR 0112). `targets` pairs each node with its own component id, since ids are per component.
+   */
+  setParamsAcross: (targets: readonly { at: number; componentId: string }[], patch: Record<string, unknown>) => void
   setComponentEnabled: (i: number, componentId: string, on: boolean) => void
   /**
    * Is this node built at all (ADR 0099)? `false` means it and everything under it is absent from the level,
@@ -707,11 +721,15 @@ const docOver = (
   /** The override record a `WriteTarget` writes into, if there is one yet. */
   const recordAt = (t: WriteTarget): NodeOverride | undefined => (t.kind === 'own' ? undefined : t.holder.overrides?.[t.node])
 
-  const patchParams = (i: number, componentId: string, patch: Record<string, unknown>): void => {
+  /**
+   * The ops one node's parameter write comes to. Split out of `setParams` so a multi-selection edit can
+   * concatenate several nodes' worth and commit them **once** — one undo entry, one broadcast (ADR 0112).
+   */
+  const paramOpsFor = (i: number, componentId: string, patch: Record<string, unknown>): Op[] => {
     const n = node(i)
-    if (n === undefined) return
+    if (n === undefined) return []
     const target = n.view.components.find((x) => x.id === componentId)
-    if (target === undefined) return
+    if (target === undefined) return []
     // Per component id, not once: the built-in branch below touches several, and on a placement some may be
     // its own while others came from the prefab root.
     const paramsOp = (cid: string, p: Record<string, unknown>): Op | null => {
@@ -728,8 +746,25 @@ const docOver = (
       const unit = unitColliderFor(patch.model)
       for (const c of n.view.components) if (c.type === COLLIDER) ops.push(paramsOp(c.id, { shape: unit }))
     }
-    const real = ops.filter((o): o is Op => o !== null)
-    if (real.length > 0) commit(real)
+    return ops.filter((o): o is Op => o !== null)
+  }
+
+  const patchParams = (i: number, componentId: string, patch: Record<string, unknown>): void => {
+    const ops = paramOpsFor(i, componentId, patch)
+    if (ops.length > 0) commit(ops)
+  }
+
+  /**
+   * One parameter patch across several nodes, as a single commit (ADR 0112).
+   *
+   * `targets` pairs a node index with the id of *its own* component, because component ids are minted per
+   * component (`freshId`): two cubes' colliders are the same type and never the same id. The Inspector pairs
+   * them up by type and ordinal and hands the result here.
+   */
+  const patchParamsAcross = (targets: readonly { at: number; componentId: string }[], patch: Record<string, unknown>): void => {
+    const ops: Op[] = []
+    for (const t of targets) ops.push(...paramOpsFor(t.at, t.componentId, patch))
+    if (ops.length > 0) commit(ops)
   }
 
   const builtinOf = (i: number): BuiltinModel | null => {
@@ -1006,14 +1041,18 @@ const docOver = (
       return inherited + (n.authored.children?.length ?? 0)
     },
     canReparent,
-    reparent: (from, parent, atIndex) => {
+    reparent: (from, parent, atIndex, transform) => {
       const n = own(from)
       if (n?.siblings === undefined || !canReparent(from, parent)) return from
       const target = parent === null ? undefined : own(parent)!.authored
       const host = target === undefined ? roots : (target.children ?? [])
       const sameList = host === n.siblings
       const insertAt = Math.max(0, Math.min(sameList ? host.length - 1 : host.length, sameList && atIndex > n.index ? atIndex - 1 : atIndex))
-      commit([{ kind: 'moveNode', id: n.authored.id, parent: target?.id ?? null, index: insertAt }])
+      // One batch: the move and the re-expressed transform are one edit (ADR 0113). `applyBatch` inverts as
+      // it goes and reverses the inverses, so undo puts the transform back before the node moves home.
+      const ops: Op[] = [{ kind: 'moveNode', id: n.authored.id, parent: target?.id ?? null, index: insertAt }]
+      if (transform !== undefined) ops.push({ kind: 'setTransform', id: n.authored.id, transform })
+      commit(ops)
       return indexOfId(n.authored.id)
     },
     assetIds: () => {
@@ -1065,6 +1104,7 @@ const docOver = (
     addComponent,
     removeComponent,
     setParams: patchParams,
+    setParamsAcross: patchParamsAcross,
     moveComponent,
     setComponentEnabled: (i, componentId, on) => {
       const n = node(i)

@@ -81,9 +81,20 @@ export interface InspectorHost {
   boundsReach: () => { outside: number; reach: number } | null
   /** How many objects are selected. The panel edits one and has to say so when there are more. */
   selectionCount: () => number
+  /** Every selected index, primary last (ADR 0112). The panel edits what they have in common. */
+  selectionIndices: () => readonly number[]
   /** The selection's current transform, or `null` if there isn't one. */
   readTransform: () => TransformValues | null
   writeTransform: (t: TransformValues) => void
+  /**
+   * Every selected node's transform, primary last. Empty when nothing is selected (ADR 0112).
+   *
+   * With more than one the panel draws its own rows instead of Tweakpane's: an axis whose value differs is
+   * **blank**, and a Tweakpane number cannot be empty.
+   */
+  selectionTransforms: () => readonly TransformValues[]
+  /** Set one axis of one transform field on **every** selected node, as one undo entry (ADR 0112). */
+  writeAxis: (field: 'position' | 'rotationDeg' | 'scale', axis: 'x' | 'y' | 'z', value: number) => void
   /** Anything other than the transform changed — meshes and the physics world need rebuilding. */
   onPropsChanged: () => void
   /** The name changed — the hierarchy row and status bar show it. */
@@ -181,6 +192,75 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
   return node
 }
 
+/**
+ * A Tweakpane number field's drag speed, **without quantising what can be typed** (ADR 0113).
+ *
+ * `step` does two jobs in Tweakpane and they cannot be separated: it sets the pointer-drag increment *and*
+ * it constrains the value. Worse, the constraint is anchored to whatever the field showed when it was built
+ * (`createStepConstraint(params, initialValue)` → `new StepConstraint(step, initialValue)`), so the reachable
+ * values are `origin + n × step`. A field built showing 32.98 with `step: 0.05` can never be set to 33 — it
+ * lands on 32.98 or 33.03, silently, with nothing in the console.
+ *
+ * A transform or a size has a continuous domain: no value is invalid, so nothing may be unreachable.
+ * `pointerScale` is the drag increment on its own, which is the half of `step` actually wanted here.
+ */
+export const dragSpeed = (increment: number): { pointerScale: number } => ({ pointerScale: increment })
+
+/* --- editing several nodes at once (ADR 0112) --- */
+
+/**
+ * One component of one node, as a multi-edit target.
+ *
+ * `componentId` is that node's **own** id: ids are minted per component (`freshId`), so two cubes' colliders
+ * are the same type and never the same id.
+ */
+export interface Peer {
+  at: number
+  componentId: string
+  params: Record<string, unknown>
+}
+
+/** Value equality that copes with the vec3 and collider-shape objects a parameter can hold. */
+export const sameValue = (a: unknown, b: unknown): boolean => a === b || JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+
+/**
+ * The same component on every selected node, or `null` when one of them has not got it.
+ *
+ * Matched by **type and ordinal** — the nth `Collider` lines up with the nth `Collider` — because ids cannot
+ * line up and a node may legitimately carry two of the same type.
+ *
+ * `null` hides the section: a component only some of the selection has is not something they have in common,
+ * and showing it would mean deciding what a write does to the ones without it (ADR 0112).
+ */
+export const peersOf = (doc: Doc, indices: readonly number[], at: number, view: ComponentView): Peer[] | null => {
+  const ordinalOf = (i: number, id: string, type: string): number => {
+    let n = 0
+    for (const c of doc.components(i)) {
+      if (c.id === id) return n
+      if (c.type === type) n++
+    }
+    return -1
+  }
+  const ordinal = ordinalOf(at, view.id, view.type)
+  if (ordinal < 0) return null
+  const out: Peer[] = []
+  for (const i of indices) {
+    let n = 0
+    let found: ComponentView | undefined
+    for (const c of doc.components(i)) {
+      if (c.type !== view.type) continue
+      if (n === ordinal) {
+        found = c
+        break
+      }
+      n++
+    }
+    if (found === undefined) return null
+    out.push({ at: i, componentId: found.id, params: found.params })
+  }
+  return out
+}
+
 export const createInspector = (head: HTMLElement, container: HTMLElement, host: InspectorHost): Inspector => {
   /**
    * The header is ours, not Tweakpane's: Unity's name field is full-width and prominent, and a Tweakpane
@@ -259,7 +339,9 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     // that the panel is not showing you everything you picked.
     const count = host.selectionCount()
     multiNote.hidden = count < 2
-    multiNote.textContent = count < 2 ? '' : `${count} selected · editing ${doc.label(at)}`
+    // It used to read "editing <the primary>", which stopped being true: an edit reaches all of them
+    // (ADR 0112), and what the panel shows is what they have in common.
+    multiNote.textContent = count < 2 ? '' : `${count} selected · editing what they share`
 
     const ref = doc.refOf(at)
     linkRow.classList.toggle('linked', ref !== null)
@@ -459,6 +541,115 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   }
 
   /**
+   * A parameter the selection disagrees about (ADR 0112): blank, and writing sets it on all of them.
+   *
+   * Drawn with plain inputs rather than Tweakpane, because Tweakpane's number box cannot be empty and a
+   * pre-filled one would be a claim about values it has not got. An untouched control writes nothing.
+   *
+   * A compound value — a collider shape — is reported rather than offered: picking one shape for several
+   * objects is a real intention, but it belongs to the shape picker, which is a row of its own and not
+   * something to reconstruct blank.
+   */
+  const addMixedParam = (section: Section, label: string, key: string, spec: ParamSpec, write: (patch: Record<string, unknown>) => void): void => {
+    const line = section.row(label, '')
+    const slot = line.querySelector('.irow-v')
+    if (slot === null) return
+    slot.textContent = ''
+    slot.classList.add('imulti')
+    line.classList.add('mixed')
+
+    const numberBox = (title: string, onSet: (v: number) => void, step?: number): HTMLInputElement => {
+      const input = el('input', 'imulti-n') as HTMLInputElement
+      input.type = 'number'
+      if (step !== undefined) input.step = String(step)
+      input.placeholder = '\u2014'
+      input.title = `${title} \u2014 differs across the selection`
+      const commit = (): void => {
+        const v = Number(input.value)
+        if (input.value.trim() === '' || !Number.isFinite(v)) return
+        onSet(v)
+      }
+      input.addEventListener('change', commit)
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') commit()
+      })
+      return input
+    }
+
+    switch (spec.kind) {
+      case 'number':
+        slot.append(numberBox(label, (v) => write({ [key]: v }), spec.step))
+        return
+      case 'vec3': {
+        // Per axis, like the transform's rows: one axis may agree while the others do not.
+        const draft: Record<'x' | 'y' | 'z', number | null> = { x: null, y: null, z: null }
+        for (const axis of ['x', 'y', 'z'] as const) {
+          slot.append(
+            numberBox(`${label} ${axis}`, (v) => {
+              draft[axis] = v
+              // Only the axes actually typed; an untouched one must stay each node's own.
+              const patch: Record<string, number> = {}
+              for (const a of ['x', 'y', 'z'] as const) if (draft[a] !== null) patch[a] = draft[a]!
+              write({ [key]: patch })
+            }, 0.1),
+          )
+        }
+        return
+      }
+      case 'bool': {
+        const box = el('input', 'imulti-c') as HTMLInputElement
+        box.type = 'checkbox'
+        box.indeterminate = true
+        box.title = `${label} \u2014 differs across the selection`
+        box.addEventListener('change', () => write({ [key]: box.checked }))
+        slot.append(box)
+        return
+      }
+      case 'string':
+      case 'color': {
+        const input = el('input', 'imulti-n') as HTMLInputElement
+        input.type = 'text'
+        input.placeholder = '\u2014'
+        input.title = `${label} \u2014 differs across the selection`
+        input.addEventListener('change', () => {
+          if (input.value.trim() === '') return
+          write({ [key]: input.value })
+        })
+        slot.append(input)
+        return
+      }
+      case 'enum':
+      case 'asset': {
+        const select = el('select', 'imulti-n') as HTMLSelectElement
+        select.title = `${label} \u2014 differs across the selection`
+        const blank = el('option')
+        blank.value = ''
+        blank.textContent = '\u2014'
+        select.append(blank)
+        const options = spec.kind === 'enum' ? Object.fromEntries(spec.options.map((o) => [o, o])) : host.assetOptions(spec.of)
+        for (const [text, value] of Object.entries(options)) {
+          const opt = el('option')
+          opt.value = value
+          opt.textContent = text
+          select.append(opt)
+        }
+        select.value = ''
+        select.addEventListener('change', () => {
+          // The blank entry is "leave them as they are", not a value to write.
+          if (select.value === '' && spec.kind === 'enum') return
+          write({ [key]: spec.kind === 'asset' && select.value === '' ? null : select.value })
+        })
+        slot.append(select)
+        return
+      }
+      default:
+        slot.classList.remove('imulti')
+        slot.textContent = 'differs across the selection'
+        return
+    }
+  }
+
+  /**
    * One control per declared parameter.
    *
    * `state` is the component's values, completed with the declaration's defaults so a parameter added to a
@@ -472,9 +663,30 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     state: Record<string, unknown>,
     key: string,
     spec: ParamSpec,
+    peers: readonly Peer[] | null,
   ): void => {
     const label = spec.label ?? key
-    const write = (patch: Record<string, unknown>): void => edited(() => doc.setParams(at, view.id, patch))
+    /**
+     * One write reaches every selected node (ADR 0112) — `setParamsAcross` is one commit, so it stays one
+     * undo entry and one message to the room. With one node selected `peers` is `null` and nothing changes.
+     */
+    const write = (patch: Record<string, unknown>): void =>
+      edited(() => (peers === null ? doc.setParams(at, view.id, patch) : doc.setParamsAcross(peers, patch)))
+
+    /**
+     * Does every selected node agree about this parameter? A differing value is drawn **blank** rather than
+     * showing the primary's as if it spoke for all of them.
+     *
+     * The declaration's default stands in for a node that has no value written, which is what the bound state
+     * does for the single case too.
+     */
+    const fallback = doc.registry.defaults(view.type)[key]
+    const mixed =
+      peers !== null && peers.length > 1 && !peers.every((pp) => sameValue(pp.params[key] ?? fallback, peers[0]!.params[key] ?? fallback))
+    if (mixed) {
+      addMixedParam(section, label, key, spec, write)
+      return
+    }
     /**
      * Mark an overridden row with a class, which CSS turns into a bar down its left edge — Unity's cue.
      *
@@ -489,7 +701,8 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     switch (spec.kind) {
       case 'number': {
         const opts: Record<string, unknown> = { label }
-        if (spec.step !== undefined) opts.step = spec.step
+        // The declared step is a drag increment, never a constraint on what may be typed (ADR 0113).
+        if (spec.step !== undefined) Object.assign(opts, dragSpeed(spec.step))
         if (spec.min !== undefined) opts.min = spec.min
         if (spec.max !== undefined) opts.max = spec.max
         mark(section.pane().addBinding(state, key, opts).on('change', () => write({ [key]: state[key] })))
@@ -525,7 +738,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         return
       }
       case 'vec3': {
-        const step = { step: 0.1 }
+        const step = dragSpeed(0.1)
         mark(section.pane().addBinding(state, key, { label, x: step, y: step, z: step }).on('change', () => write({ [key]: state[key] })))
         return
       }
@@ -550,18 +763,18 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
           }),
         )
         const dims: Record<string, unknown> = { ...shape }
-        const step = { step: 0.05 }
+        const step = dragSpeed(0.05)
         if (shape.kind === 'box') {
           section.pane().addBinding(dims, 'halfExtents', { label: 'half extents', x: step, y: step, z: step }).on('change', () =>
             write({ [key]: { kind: 'box', halfExtents: dims.halfExtents } }),
           )
         } else if (shape.kind === 'ball') {
-          section.pane().addBinding(dims, 'radius', { label: 'radius', step: 0.05, min: 0.01 }).on('change', () => write({ [key]: { kind: 'ball', radius: dims.radius } }))
+          section.pane().addBinding(dims, 'radius', { label: 'radius', ...dragSpeed(0.05), min: 0.01 }).on('change', () => write({ [key]: { kind: 'ball', radius: dims.radius } }))
         } else if (shape.kind === 'capsule' || shape.kind === 'cylinder') {
           const kind = shape.kind
           const push = (): void => write({ [key]: { kind, halfHeight: dims.halfHeight, radius: dims.radius } })
-          section.pane().addBinding(dims, 'halfHeight', { label: 'half height', step: 0.05, min: 0.01 }).on('change', push)
-          section.pane().addBinding(dims, 'radius', { label: 'radius', step: 0.05, min: 0.01 }).on('change', push)
+          section.pane().addBinding(dims, 'halfHeight', { label: 'half height', ...dragSpeed(0.05), min: 0.01 }).on('change', push)
+          section.pane().addBinding(dims, 'radius', { label: 'radius', ...dragSpeed(0.05), min: 0.01 }).on('change', push)
         } else {
           // A hull is authored by whatever generated it (ADR 0017); there is no useful grid control for a
           // point cloud, so this states what is there and leaves it alone.
@@ -602,7 +815,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   }
 
   /** One section per component: header controls, then its visible parameters. */
-  const addComponentSection = (doc: Doc, at: number, view: ComponentView): void => {
+  const addComponentSection = (doc: Doc, at: number, view: ComponentView, peers: readonly Peer[] | null): void => {
     const def = doc.registry.get(view.type)
     const inherited = doc.kindOf(at) === 'inherited'
     const overridden = view.overridden.length > 0
@@ -617,9 +830,10 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       if (overridden) items.push({ label: 'Revert to prefab', run: () => host.revertOverride(view.id) })
     } else if (def !== undefined) {
       items.push({
-        label: 'Reset to defaults',
+        label: peers === null ? 'Reset to defaults' : `Reset to defaults (${peers.length})`,
         run: () => {
-          edited(() => doc.setParams(at, view.id, { ...doc.registry.defaults(view.type) }))
+          const defaults = { ...doc.registry.defaults(view.type) }
+          edited(() => (peers === null ? doc.setParams(at, view.id, defaults) : doc.setParamsAcross(peers, defaults)))
           rebuildKeepingScroll()
         },
       })
@@ -629,9 +843,11 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       items.push({ label: 'Move down', run: () => moveAndRebuild(doc, at, view.id, 1) })
     }
     items.push({
-      label: inherited ? (view.added ? 'Remove (undo add)' : 'Remove here') : 'Remove',
+      label: `${inherited ? (view.added ? 'Remove (undo add)' : 'Remove here') : 'Remove'}${peers === null ? '' : ` (${peers.length})`}`,
       run: () => {
-        doc.removeComponent(at, view.id)
+        // Each node's own component, matched by type and ordinal (ADR 0112). Not one commit — `removeComponent`
+        // owns its own, and a removal is already its own undo entry per node.
+        for (const pp of peers ?? [{ at, componentId: view.id }]) doc.removeComponent(pp.at, pp.componentId)
         host.onPropsChanged()
         rebuildKeepingScroll()
       },
@@ -643,7 +859,9 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       badge: view.added ? 'added' : overridden ? String(view.overridden.length) : '',
       off: !view.enabled,
       enable: (on) => {
-        edited(() => doc.setComponentEnabled(at, view.id, on))
+        edited(() => {
+          for (const pp of peers ?? [{ at, componentId: view.id }]) doc.setComponentEnabled(pp.at, pp.componentId, on)
+        })
         rebuildKeepingScroll()
       },
       menu: items,
@@ -663,7 +881,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     try {
       for (const key of shown) {
         const spec = def.params[key]
-        if (spec !== undefined) addParam(section, doc, at, view, state, key, spec)
+        if (spec !== undefined) addParam(section, doc, at, view, state, key, spec, peers)
       }
     } finally {
       syncDepth--
@@ -680,9 +898,57 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     transformPane = pane
     if (overridden) section.root.classList.add('over-sec')
 
-    const pos = { step: 0.1 }
-    const rot = { step: 1 }
-    const scl = { step: 0.05 }
+    const pos = dragSpeed(0.1)
+    const rot = dragSpeed(1)
+    const scl = dragSpeed(0.05)
+
+    /**
+     * Several selected: the panel draws the three rows itself (ADR 0112).
+     *
+     * Tweakpane binds a vec3 as one object and a number input cannot be empty, so there is no way to blank
+     * the X of a position while Y and Z show numbers — which is exactly what an honest multi-selection has
+     * to do. Three inputs per row, blank where the selection disagrees, and each writes its own axis to
+     * every selected node.
+     */
+    const many = host.selectionTransforms()
+    if (many.length > 1) {
+      transformPane = null
+      for (const [key, label, step] of [
+        ['position', 'position', pos.pointerScale],
+        ['rotationDeg', 'rotation °', rot.pointerScale],
+        ['scale', 'scale', scl.pointerScale],
+      ] as const) {
+        const line = section.row(label, '')
+        const slot = line.querySelector('.irow-v')
+        if (slot === null) continue
+        slot.textContent = ''
+        slot.classList.add('imulti')
+        for (const axis of ['x', 'y', 'z'] as const) {
+          const values = many.map((t) => t[key][axis])
+          const first = values[0] ?? 0
+          const shared: number | null = values.every((v) => v === first) ? first : null
+          const input = el('input', 'imulti-n') as HTMLInputElement
+          input.type = 'number'
+          input.step = String(step)
+          input.title = `${label} ${axis}${shared === null ? ' — differs across the selection' : ''}`
+          if (shared === null) input.placeholder = '—'
+          else input.value = String(r4(shared))
+          const commitAxis = (): void => {
+            const v = Number(input.value)
+            // An empty box means "leave it alone", which is the whole point of blanking a mixed value.
+            if (input.value.trim() === '' || !Number.isFinite(v)) return
+            host.writeAxis(key, axis, v)
+          }
+          input.addEventListener('change', commitAxis)
+          input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') commitAxis()
+          })
+          slot.append(input)
+        }
+      }
+      return
+    }
+
     syncDepth++
     try {
       const p = pane.addBinding(sel, 'position', { label: 'position', x: pos, y: pos, z: pos }).on('change', applyTransform)
@@ -696,20 +962,35 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
 
   /** One button opening a filtered list, where a dropdown plus a button cost two rows and two clicks. */
   const addAddButton = (doc: Doc, at: number): void => {
+    /**
+     * With several selected, offer a component **any** of them can take, and add it to each that can
+     * (ADR 0112) — which is Unity's behaviour. Offering only what all of them lack would hide the case the
+     * gesture is for: three objects, one of which already has a Collider.
+     */
+    const targets = host.selectionIndices().length > 1 ? host.selectionIndices() : [at]
     const addable = doc.registry
       .all()
       .map((d) => d.type)
-      .filter((type) => doc.canAdd(at, type))
+      .filter((type) => targets.some((i) => doc.canAdd(i, type)))
     // Shared components this game has not opted into yet. Picking one adds it to the game first (ADR 0077).
     const adoptable = host.adoptable()
     const row = el('div', 'iadd')
     const button = el('button', 'ctl wide', 'Add Component')
     button.disabled = addable.length === 0 && adoptable.length === 0
-    button.title = button.disabled ? 'this object already has one of everything' : 'add a component to this object'
+    button.title = button.disabled
+      ? 'these objects already have one of everything'
+      : targets.length > 1
+        ? `add a component to all ${targets.length} selected`
+        : 'add a component to this object'
     const place = (d: Doc, type: string): void => {
-      const id = d.addComponent(at, type)
+      let opened: string | null = null
+      for (const i of targets) {
+        if (!d.canAdd(i, type)) continue // already has one, and it is a singleton
+        const id = d.addComponent(i, type)
+        if (i === at) opened = id
+      }
       host.onPropsChanged()
-      if (id !== null) shut.delete(id) // what you just added should be open
+      if (opened !== null) shut.delete(opened) // what you just added should be open
       rebuildKeepingScroll()
     }
     button.addEventListener('click', (e) => {
@@ -976,7 +1257,19 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
 
     addOverrideStrip(doc, at)
     addTransformSection(doc, at)
-    for (const view of doc.components(at)) addComponentSection(doc, at, view)
+    /**
+     * With several selected, a component is shown only when **every** one of them has it (ADR 0112): the
+     * panel edits what they have in common, and a component only some of them carry is not that. Hidden
+     * rather than shown-and-refused, which is what Unity does and what stops a write having to decide what it
+     * means for a node without the component.
+     */
+    const indices = host.selectionIndices()
+    const multi = indices.length > 1
+    for (const view of doc.components(at)) {
+      const peers = multi ? peersOf(doc, indices, at, view) : null
+      if (multi && peers === null) continue
+      addComponentSection(doc, at, view, peers)
+    }
     addAddButton(doc, at)
     addFooter(doc, at)
     sync()
