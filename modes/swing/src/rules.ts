@@ -3,7 +3,7 @@ import { createRegistry, ENGINE_COMPONENTS, PLAYER_COMPONENTS, sharedComponents 
 import type { LoadedLevel } from '@mp/content'
 import { spawnFrom, type ModeSession, type ModeSessionOptions } from '@mp/mode'
 
-import game from '@content/games/swing.json'
+import game from '@content/swing/game.json'
 
 /**
  * Swing's rules, which are so far only the ones every game needs: spawn somewhere, be able to die, respawn.

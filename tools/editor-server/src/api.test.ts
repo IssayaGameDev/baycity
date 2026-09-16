@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { createContentApi, keyFor } from './api'
+import { levelPath } from './live'
 import { createChangeFeed, type ChangeFeed } from './changes'
 import type { User } from './config'
 import { createLive, type Live } from './live'
@@ -29,11 +30,17 @@ let live: Live
 let liveChanged: { users: string[]; path: string }[]
 
 const LEVEL = { id: 'a', config: { mode: { name: 'parkour' } }, nodes: [] }
+/** A level is named `<game>/<name>` and lives in its game's folder (ADR 0108). */
+const LV = 'parkour/a'
+const LEVEL_FILE_REL = 'parkour/levels/a.level.json'
+const LEVEL_FILE = join('content', LEVEL_FILE_REL)
 
 beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'mp-api-'))
-  mkdirSync(join(root, 'content/levels'), { recursive: true })
-  writeFileSync(join(root, 'content/levels/a.json'), `${JSON.stringify(LEVEL)}\n`)
+  // A game is a folder holding `game.json` and `levels/` (ADR 0108); the level is `parkour/a`.
+  mkdirSync(join(root, 'content/parkour/levels'), { recursive: true })
+  writeFileSync(join(root, 'content/parkour/game.json'), `${JSON.stringify({ components: [], settings: {} })}\n`)
+  writeFileSync(join(root, LEVEL_FILE), `${JSON.stringify(LEVEL)}\n`)
   now = 0
   locks = {}
   changed = []
@@ -42,10 +49,10 @@ beforeEach(async () => {
   liveChanged = []
   live = createLive({
     readLevel: (name) => {
-      const file = join(root, 'content/levels', `${name}.json`)
+      const file = join(root, levelPath(name))
       return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as unknown) : null
     },
-    writeLevel: (name, level) => writeFileSync(join(root, 'content/levels', `${name}.json`), `${JSON.stringify(level, null, 2)}\n`),
+    writeLevel: (name, level) => writeFileSync(join(root, levelPath(name)), `${JSON.stringify(level, null, 2)}\n`),
     changed: (users, path) => liveChanged.push({ users: users.map((u) => u.name), path }),
     idleMs: 20,
     maxMs: 200,
@@ -107,42 +114,43 @@ describe('identity', () => {
 
 describe('levels', () => {
   it('lists, reads, writes, and refuses a broken level', async () => {
-    expect(await json(await call('ada', 'GET', '/api/levels'))).toEqual([{ name: 'a', mode: 'parkour' }])
-    const ok = await call('ada', 'PUT', '/api/levels/a', { ...LEVEL, nodes: [{ id: 'n', transform: { position: { x: 0, y: 0, z: 0 } }, components: [] }] })
+    // `mode` comes from the folder now, not from a tag inside the file (ADR 0108).
+    expect(await json(await call('ada', 'GET', '/api/levels'))).toEqual([{ name: LV, mode: 'parkour' }])
+    const ok = await call('ada', 'PUT', `/api/levels/${LV}`, { ...LEVEL, nodes: [{ id: 'n', transform: { position: { x: 0, y: 0, z: 0 } }, components: [] }] })
     expect(ok.status).toBe(200)
-    expect(changed).toEqual([{ user: 'Ada', paths: [keyFor.level('a')] }])
-    const bad = await call('ada', 'PUT', '/api/levels/a', { nodes: 'nope' })
+    expect(changed).toEqual([{ user: 'Ada', paths: [keyFor.level(LV)] }])
+    const bad = await call('ada', 'PUT', `/api/levels/${LV}`, { nodes: 'nope' })
     expect(bad.status).toBe(400)
-    expect(JSON.parse(readFileSync(join(root, 'content/levels/a.json'), 'utf8')).nodes).toHaveLength(1)
+    expect(JSON.parse(readFileSync(join(root, LEVEL_FILE), 'utf8')).nodes).toHaveLength(1)
   })
 })
 
 describe('locks', () => {
   it('a held file is read-only for everyone else until it goes stale', async () => {
-    expect(await json(await call('ada', 'POST', '/api/locks/acquire', { path: keyFor.level('a') }))).toEqual({ ok: true })
-    expect(await json(await call('bob', 'POST', '/api/locks/acquire', { path: keyFor.level('a') }))).toEqual({ ok: false, owner: { name: 'Ada' } })
-    const refused = await call('bob', 'PUT', '/api/levels/a', LEVEL)
+    expect(await json(await call('ada', 'POST', '/api/locks/acquire', { path: keyFor.level(LV) }))).toEqual({ ok: true })
+    expect(await json(await call('bob', 'POST', '/api/locks/acquire', { path: keyFor.level(LV) }))).toEqual({ ok: false, owner: { name: 'Ada' } })
+    const refused = await call('bob', 'PUT', `/api/levels/${LV}`, LEVEL)
     expect(refused.status).toBe(423)
     expect(await json(refused)).toEqual({ error: 'locked by Ada', owner: { name: 'Ada' } })
-    expect((await call('ada', 'PUT', '/api/levels/a', LEVEL)).status).toBe(200)
+    expect((await call('ada', 'PUT', `/api/levels/${LV}`, LEVEL)).status).toBe(200)
 
     now = 900
-    expect(await json(await call('ada', 'POST', '/api/locks/heartbeat', { paths: [keyFor.level('a'), 'x'] }))).toEqual({ lost: ['x'] })
+    expect(await json(await call('ada', 'POST', '/api/locks/heartbeat', { paths: [keyFor.level(LV), 'x'] }))).toEqual({ lost: ['x'] })
     now = 1899
-    expect((await call('bob', 'PUT', '/api/levels/a', LEVEL)).status).toBe(423)
+    expect((await call('bob', 'PUT', `/api/levels/${LV}`, LEVEL)).status).toBe(423)
     now = 1900
-    expect((await call('bob', 'PUT', '/api/levels/a', LEVEL)).status).toBe(200)
-    expect(await json(await call('bob', 'POST', '/api/locks/acquire', { path: keyFor.level('a') }))).toEqual({ ok: true })
+    expect((await call('bob', 'PUT', `/api/levels/${LV}`, LEVEL)).status).toBe(200)
+    expect(await json(await call('bob', 'POST', '/api/locks/acquire', { path: keyFor.level(LV) }))).toEqual({ ok: true })
   })
 
   it('release reports back to the owner of sessions; status lists live locks', async () => {
-    await call('ada', 'POST', '/api/locks/acquire', { path: keyFor.level('a') })
+    await call('ada', 'POST', '/api/locks/acquire', { path: keyFor.level(LV) })
     const st = await json<{ locks: { path: string; owner: string }[] }>(await call('bob', 'GET', '/api/status'))
-    expect(st.locks).toEqual([{ path: keyFor.level('a'), owner: 'Ada', since: 0 }])
-    expect(await json(await call('bob', 'POST', '/api/locks/release', { path: keyFor.level('a') }))).toEqual({ ok: false })
-    expect(await json(await call('ada', 'POST', '/api/locks/release', { path: keyFor.level('a') }))).toEqual({ ok: true })
+    expect(st.locks).toEqual([{ path: keyFor.level(LV), owner: 'Ada', since: 0 }])
+    expect(await json(await call('bob', 'POST', '/api/locks/release', { path: keyFor.level(LV) }))).toEqual({ ok: false })
+    expect(await json(await call('ada', 'POST', '/api/locks/release', { path: keyFor.level(LV) }))).toEqual({ ok: true })
     expect(released).toEqual(['Bob', 'Ada'])
-    expect(locks[keyFor.level('a')]).toBeUndefined()
+    expect(locks[keyFor.level(LV)]).toBeUndefined()
   })
 })
 
@@ -194,20 +202,20 @@ describe('mirror feed', () => {
   it('tree lists every content file with a hash; changes fold writes; file serves bytes and 404s the gone', async () => {
     const t0 = await json<{ seq: number; files: { path: string; sha1: string; size: number }[] }>(await call('ada', 'GET', '/api/tree'))
     expect(t0.seq).toBe(0)
-    expect(t0.files.map((f) => f.path)).toEqual(['content/levels/a.json'])
+    expect(t0.files.map((f) => f.path)).toEqual(['content/parkour/game.json', `content/${LEVEL_FILE_REL}`])
     expect(t0.files[0]!.sha1).toHaveLength(40)
 
-    await call('ada', 'PUT', '/api/levels/a', LEVEL)
+    await call('ada', 'PUT', `/api/levels/${LV}`, LEVEL)
     await call('ada', 'POST', '/api/assets/upload?path=textures/t.png', undefined, Buffer.from('png'))
     const ch = await json<{ seq: number; paths: string[] }>(await call('bob', 'GET', '/api/changes?since=0&timeout=10'))
     expect(ch.seq).toBe(3)
-    expect(ch.paths.sort()).toEqual([keyFor.asset('textures/t.png'), keyFor.asset('textures/t.png.meta'), keyFor.level('a')])
+    expect(ch.paths.sort()).toEqual([keyFor.asset('textures/t.png'), keyFor.asset('textures/t.png.meta'), keyFor.level(LV)])
     expect(await json(await call('bob', 'GET', `/api/changes?since=${ch.seq}&timeout=10`))).toEqual({ seq: 3, paths: [] })
 
     const f = await call('bob', 'GET', `/api/file?path=${encodeURIComponent(keyFor.asset('textures/t.png'))}`)
     expect(f.status).toBe(200)
     expect(Buffer.from(await f.arrayBuffer()).toString()).toBe('png')
-    expect((await call('bob', 'GET', '/api/file?path=content/levels/nope.json')).status).toBe(404)
+    expect((await call('bob', 'GET', '/api/file?path=content/parkour/levels/nope.level.json')).status).toBe(404)
     expect((await call('bob', 'GET', '/api/file?path=../package.json')).status).toBe(400)
     expect((await call('bob', 'GET', '/api/file?path=content/../package.json')).status).toBe(400)
   })
@@ -262,7 +270,7 @@ const sseReader = (r: Response): { take: (count: number) => Promise<{ event: str
 describe('live editing over the wire', () => {
   it('streams hello + snapshot, applies a batch and echoes it with the seq, serves the live copy, refuses a PUT', async () => {
     const ctrl = new AbortController()
-    const stream = await fetch(`${base}/api/live/level/a/events`, { headers: { 'x-user': 'ada' }, signal: ctrl.signal })
+    const stream = await fetch(`${base}/api/live/level/${LV}/events`, { headers: { 'x-user': 'ada' }, signal: ctrl.signal })
     expect(stream.status).toBe(200)
     expect(stream.headers.get('content-type')).toContain('text/event-stream')
     const sse = sseReader(stream)
@@ -272,12 +280,12 @@ describe('live editing over the wire', () => {
     expect(snapshot!.event).toBe('snapshot')
     expect((snapshot!.data as { seq: number }).seq).toBe(0)
 
-    const r = await call('ada', 'POST', '/api/live/level/a/ops', { connId, batchId: 'b1', ops: [{ kind: 'setName', id: 'a', name: 'A' }] })
+    const r = await call('ada', 'POST', `/api/live/level/${LV}/ops`, { connId, batchId: 'b1', ops: [{ kind: 'setName', id: 'a', name: 'A' }] })
     expect(r.status).toBe(400) // 'a' is the level id, not a node: the fixture has no nodes
-    const put = await call('ada', 'PUT', '/api/levels/a', LEVEL)
+    const put = await call('ada', 'PUT', `/api/levels/${LV}`, LEVEL)
     expect(put.status).toBe(409)
 
-    const ok = await call('ada', 'POST', '/api/live/level/a/ops', {
+    const ok = await call('ada', 'POST', `/api/live/level/${LV}/ops`, {
       connId,
       batchId: 'b2',
       ops: [{ kind: 'insertNode', parent: null, index: 0, node: { id: 'n1', transform: { position: { x: 0, y: 0, z: 0 } }, components: [] } }],
@@ -287,17 +295,17 @@ describe('live editing over the wire', () => {
     expect(echo!.event).toBe('ops')
     expect(echo!.id).toBe(1)
     expect((echo!.data as { from: string; batchId: string }).batchId).toBe('b2')
-    const served = await json<{ nodes: unknown[] }>(await call('bob', 'GET', '/api/levels/a'))
+    const served = await json<{ nodes: unknown[] }>(await call('bob', 'GET', `/api/levels/${LV}`))
     expect(served.nodes).toHaveLength(1)
-    expect(JSON.parse(readFileSync(join(root, 'content/levels/a.json'), 'utf8')).nodes, 'not on disk yet').toHaveLength(0)
+    expect(JSON.parse(readFileSync(join(root, LEVEL_FILE), 'utf8')).nodes, 'not on disk yet').toHaveLength(0)
 
     // Foreign connection, wrong person.
-    expect((await call('bob', 'POST', '/api/live/level/a/ops', { connId, batchId: 'x', ops: [] })).status).toBe(400)
+    expect((await call('bob', 'POST', `/api/live/level/${LV}/ops`, { connId, batchId: 'x', ops: [] })).status).toBe(400)
 
     // Flush writes and reports the contributor; the mirror's tree flushes too.
-    await call('ada', 'POST', '/api/live/level/a/flush', { connId })
-    expect(JSON.parse(readFileSync(join(root, 'content/levels/a.json'), 'utf8')).nodes).toHaveLength(1)
-    expect(liveChanged).toEqual([{ users: ['Ada'], path: 'content/levels/a.json' }])
+    await call('ada', 'POST', `/api/live/level/${LV}/flush`, { connId })
+    expect(JSON.parse(readFileSync(join(root, LEVEL_FILE), 'utf8')).nodes).toHaveLength(1)
+    expect(liveChanged).toEqual([{ users: ['Ada'], path: `content/${LEVEL_FILE_REL}` }])
 
     const status = await json<{ docs: { name: string; peers: { name: string }[] }[] }>(await call('bob', 'GET', '/api/live'))
     expect(status.docs[0]!.peers.map((p) => p.name)).toEqual(['Ada'])
@@ -308,7 +316,7 @@ describe('live editing over the wire', () => {
   })
 
   it('a level that is not there is a 404, not a stream', async () => {
-    const r = await call('ada', 'GET', '/api/live/level/nope/events')
+    const r = await call('ada', 'GET', '/api/live/level/parkour/nope/events')
     expect(r.status).toBe(404)
   })
 })

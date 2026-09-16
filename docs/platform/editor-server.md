@@ -31,10 +31,10 @@ dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` c
 | `POST /api/locks/acquire` | `{ path }` → `{ ok }` or `{ ok: false, owner: { name } }` | |
 | `POST /api/locks/release` | `{ path }` → `{ ok }`; then `onLockReleased(user)` | |
 | `POST /api/locks/heartbeat` | `{ paths }` → `{ lost }` | |
-| `GET /api/levels` | `[{ name, mode? }]` | |
-| `GET/PUT /api/levels/:name` | level JSON — GET serves the **live copy** when the level is open; PUT runs `validateLevel(raw)` (structure only, no registry), **409** while the level is open live | lock |
+| `GET /api/levels` | `[{ name, mode, prefabs? }]` — `name` qualified `<game>/<name>`, `mode` the **folder** it is in, so a file that will not parse still lists with its game (ADR 0108) | |
+| `GET/PUT /api/levels/:game/:name` | level JSON — two segments, because a game is a folder (ADR 0108). GET serves the **live copy** when the level is open; PUT runs `validateLevel(raw)` (structure only, no registry) and makes the game folder on demand, **409** while the level is open live. A name that is not a legal `<game>/<name>` is a 404 | lock |
 | `GET /api/live` | `{ docs: [{ name, seq, peers, holds }] }` | |
-| `GET /api/live/:kind/:name/events` | `:kind` is `level` or `prefab` (ADR 0091). SSE (`text/event-stream`, `:keepalive` every 25 s): `hello { connId, name }`, `snapshot { level, seq, holds, peers }`, then `ops { seq, from, batchId, ops }` with `id: seq`, `holds`, `peers`, `presence`, `error`, and on a **level's** stream `prefab { assetId, ops }` when a prefab it uses was edited. 404 when there is no such document. The stream closing is the leave | |
+| `GET /api/live/:kind/:name/events` | `:kind` is `level` or `prefab` (ADR 0091); a level's `:name` is the qualified `<game>/<name>` and so spans two segments (ADR 0108). SSE (`text/event-stream`, `:keepalive` every 25 s): `hello { connId, name }`, `snapshot { level, seq, holds, peers }`, then `ops { seq, from, batchId, ops }` with `id: seq`, `holds`, `peers`, `presence`, `error`, and on a **level's** stream `prefab { assetId, ops }` when a prefab it uses was edited. 404 when there is no such document. The stream closing is the leave | |
 | `POST /api/live/:kind/:name/ops` | `{ connId, batchId, ops }` → `{ ok, seq }` · 400 an op does not apply (`OpError`) · 423 `{ error, holder }` a node held by another connection. On a **prefab**, a connection in a level that uses it is accepted too — what *Apply to prefab* needs | |
 | `POST /api/live/:kind/:name/hold` | `{ connId, refs }` — **this connection's holds become exactly `refs`** → `{ ok }` / `{ ok: false, holder, refused }` (another's refs named and left out; the rest applies) | |
 | `POST /api/live/:kind/:name/release` | `{ connId, refs }` → `{ ok }` | |
@@ -42,7 +42,8 @@ dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` c
 | `POST /api/live/:kind/:name/presence` | `{ connId, data }` — relayed to the others, unnumbered | |
 | `POST /api/live/:kind/:name/flush` | write the file now (the editor's Play) | |
 | `POST /api/live/:kind/:name/leave` | `{ connId }` — a closing tab's beacon | |
-| `GET/PUT /api/games/:name` | `{ components: string[] }` | lock |
+| `GET /api/games` | `[{ name }]` — the folders at the content root that hold a `game.json` (ADR 0108) | |
+| `GET/PUT /api/games/:name` | `{ components: string[] }` — `content/<name>/game.json`; PUT makes the folder, which is how a new game starts | lock |
 | `GET /api/assets` | `{ entries, folders }` — runs the importer | |
 | `POST /api/assets/mkdir` · `move` · `delete` | `{ path }` · `{ from, to }` · `{ path }` | lock (move/delete; a folder is refused if anything under it is held) |
 | `POST /api/assets/upload?path=` | raw bytes → `{ entry }` | lock; ext ∈ `png jpg jpeg webp ktx2 glb`; `≤ maxUploadBytes` else 413 |
@@ -55,7 +56,8 @@ dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` c
 
 Identity first: `identify(req)` → `null` is 401, `AuthError` is its status (403 signed in but not in `users`, 503
 `aud` unset). **Lock gate**: `blocker(locks, key, user)` non-null → 423 `{ error: 'locked by X', owner }`. Lock
-keys = repo-relative posix paths: `content/levels/<name>.json`, `content/games/<name>.json`,
+keys = repo-relative posix paths, built by `keyFor` from `@mp/content`'s layout (ADR 0108):
+`content/<game>/levels/<name>.level.json`, `content/<game>/game.json`,
 `content/assets/<path>`. Every write reports its paths to `onChanged` and to the change feed (sidecars included; a PUT of a new JSON
 asset rescans so its `.meta` is attributed to the writer; a folder move or delete is reported as the **files** it touched). Upload with the same path **replaces and keeps the
 sidecar**, so the id survives. Anything other than `/api/*` and `/assets/*` resolves `false` for the host to serve. The built editor's own files are under `/app/` (`build.assetsDir`), because `/assets/` is this route.
@@ -106,13 +108,13 @@ minute too. The editor pings on its heartbeat.
 
 **Writes.** `idleMs` after the last edit, `maxMs` at most since the first unflushed one, on the last client leaving,
 on `flush`/`flushAll` (Play, `/api/tree`, `/api/file`, `commit-all`, shutdown): `level.id = name` →
-`writeLevel` → `changed(contributors, content/levels/<name>.json)`. In `server.ts`: `markDirty` per contributor,
+`writeLevel` → `changed(contributors, content/<game>/levels/<name>.level.json)`. In `server.ts`: `markDirty` per contributor,
 then `feed.record([path])` once — disk before the feed, so the mirror always reads the new file. When the last
 client leaves, `onDocClosed(contributors)` commits each contributor's session (the level's equivalent of a lock
 release). A restart loses at most `maxMs` of edits; clients reconnect and take the fresh snapshot.
 
-The dev editor (`tools/editor/vite.config.ts`) mounts the same `createLive` over the repo's `content/levels` with
-`changed: () => {}`; the watcher ignores `content/levels/**`.
+The dev editor (`tools/editor/vite.config.ts`) mounts the same `createLive` over the repo's `content/<game>/levels` with
+`changed: () => {}`; the watcher ignores `content/<game>/levels/**`.
 
 ## Sessions and commits
 
@@ -187,7 +189,7 @@ Dashboard names as of setup: Cloudflare One → *Access controls* (applications,
 | Unit | Runs | Port |
 | --- | --- | --- |
 | `mp-relay.service` | `tsx packages/server/src/main.ts` | 9200 |
-| `mp-game-keyboard.service` | `vite --host 127.0.0.1 --port 5177 --strictPort` in `modes/keyboard` — the **dev server**; with `MP_BASE` set it does **not** watch `content/levels/**` and proxies `/api` → `:8080`, and the page reads its level at boot from `GET /api/levels/<name>` (`pickLevel`, ADR 0089), so a save never reloads a player | 5177 |
+| `mp-game-keyboard.service` | `vite --host 127.0.0.1 --port 5177 --strictPort` in `modes/keyboard` — the **dev server**; with `MP_BASE` set it does **not** watch `content/<game>/levels/**` and proxies `/api` → `:8080`, and the page reads its level at boot from `GET /api/levels/<game>/<name>` (`pickLevel`, ADR 0089), so a save never reloads a player | 5177 |
 
 The game runs with `MP_BASE=/play/keyboard/` and is reached **through this server** at
 `editor.playgorbo.com/play/keyboard/` (ADR 0086): every request under a configured `games[].path` is proxied
@@ -199,7 +201,7 @@ game is another unit, a `games` entry and a hostname.
 
 ## Open
 
-- `content/games/<game>.json` writes are lock-gated but never locked by the editor: two adoptions in the same
+- `content/<game>/game.json` writes are lock-gated but never locked by the editor: two adoptions in the same
   second could drop one. Append-only set; the merge story is the rule that only the editor writes it (ADR 0083).
 - Contributors' names come from `auth.users`, edited by hand on the box.
 - No merge driver for `games.json`; ADR 0083 records the option.

@@ -1,14 +1,15 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 
 // By *relative source path*, not as `@mp/editor-server`: Vite loads its config through plain Node, which
 // cannot load a workspace package whose entry is a `.ts` file. Bundled into the config instead.
 import { REPO_CONTENT, contentAlias } from '../../content-root'
+import { ASSETS_DIR } from '../../packages/content/src/layout'
 import { createContentApi } from '../editor-server/src/api'
 import { DEFAULTS } from '../editor-server/src/config'
-import { createLive } from '../editor-server/src/live'
+import { createLive, levelPath } from '../editor-server/src/live'
 import { createPrefabStore } from '../editor-server/src/prefabStore'
 import { SHARED_GAMES } from '../share/src/index'
 
@@ -16,17 +17,19 @@ const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
 /** The live level sessions of this dev server (ADR 0089): the same code as the box, files on this disk. */
 const live = createLive({
+  // `levelPath` is the one rule for where a level lives: its game's folder (ADR 0108).
   readLevel: (name) => {
-    const file = join(ROOT, 'content', 'levels', `${name}.json`)
+    const file = join(ROOT, levelPath(name))
     return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as unknown) : null
   },
   writeLevel: (name, level) => {
-    mkdirSync(join(ROOT, 'content', 'levels'), { recursive: true })
-    writeFileSync(join(ROOT, 'content', 'levels', `${name}.json`), `${JSON.stringify(level, null, 2)}\n`)
+    const file = join(ROOT, levelPath(name))
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, `${JSON.stringify(level, null, 2)}\n`)
   },
   changed: () => {},
   // A level references a prefab by asset id (ADR 0091); the definitions come off this disk.
-  prefabs: createPrefabStore(join(ROOT, 'content', 'assets')),
+  prefabs: createPrefabStore(join(ROOT, 'content', ASSETS_DIR)),
 })
 let sweeper: ReturnType<typeof setInterval> | null = null
 
@@ -78,8 +81,8 @@ export default defineConfig({
    * wrote it. The editor reads those files live over `/api/games` instead (ADR 0077); the game's own dev server
    * still watches them and reloads, which is the reload that matters.
    */
-  // `content/levels` too: the live session writes those files every few seconds, and the editor does not import them.
-  server: { port: 5176, watch: { ignored: ['**/content/games/**', '**/content/levels/**'] } },
+  // A game's own files too: the live session writes those every few seconds, and the editor does not import them.
+  server: { port: 5176, watch: { ignored: ['**/content/*/game.json', '**/content/*/levels/**'] } },
   // `app/`, not Vite's default `assets/`: that prefix is the content API's asset route (ADR 0083).
   build: { target: 'es2022', assetsDir: 'app' },
 })

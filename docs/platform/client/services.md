@@ -128,7 +128,7 @@ fetchLevel: LevelFetch                       // GET /api/levels/<name> on the pa
 pickLevel(source, requested: string | null, live: LevelFetch | null): Promise<{ name; level; from: 'live' | 'bundled' }>
 ```
 
-- `import.meta.glob('@content/levels/*.json')`, bundled at build; `@content` is the repo's `content/` or the live mirror (`content-sync.md`, ADR 0084).
+- `import.meta.glob('@content/*/levels/*.level.json')`, bundled at build; `@content` is the repo's `content/` or the live mirror (`content-sync.md`, ADR 0084).
 - Filtered by `config.mode.name === mode` **or unassigned**. `names()` = default first, rest sorted.
 - `defaultName` = `'default'` if present else first level. `byName` validates with `validateLevel(data, registry)`;
   throws for an unknown name. `validate(raw)` = the same check plus the game filter, for a copy from elsewhere.

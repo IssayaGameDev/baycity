@@ -1,7 +1,7 @@
 # `Boss` — a chaser with a zone
 
 `packages/components/src/gameplay.ts`, tests in `boss.test.ts`. ADR 0095. Shared, so a game gets it by naming
-it in `content/games/<game>.json`.
+it in `content/<game>/game.json`.
 
 Wakes when a player enters its zone, runs at the one furthest through it, parks itself back home when the zone
 empties. Its own page because assembling one has rules that a table row cannot carry, and each of them was

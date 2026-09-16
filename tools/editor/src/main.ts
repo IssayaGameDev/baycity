@@ -21,7 +21,8 @@ import {
   // are confused the error is a type error somewhere unrelated.
   type Level,
   type Transform, validateLevel, applyBatch, refKey, OpError, type NodeRef, type Op,
-  BUILTIN_LABELS, BUILTIN_MODELS, isBuiltinModel, scaleCollider, PRIMITIVE_LABELS, PRIMITIVE_ORDER, type PrimitiveKind, type EnvironmentConfig } from '@mp/content'
+  BUILTIN_LABELS, BUILTIN_MODELS, isBuiltinModel, scaleCollider, PRIMITIVE_LABELS, PRIMITIVE_ORDER, type PrimitiveKind, type EnvironmentConfig,
+  isSegment, parseQualified, qualify } from '@mp/content'
 import { QUANT_BOUND } from '@mp/net'
 
 import { createViewGizmo } from './viewGizmo'
@@ -558,6 +559,15 @@ const collab = createCollab(httpTransport(), {
 
 /** The key the open file is locked by. Levels and prefabs are live rooms; this is for the rest. */
 const docLockKey = (): string => lockKey.level(fileState.name)
+
+/**
+ * A level's own name, without its game (ADR 0108).
+ *
+ * `fileState.name` is the qualified `<game>/<name>` — what the route, the lock key and the live document key
+ * all use. Two places want the bare half: the toolbar's name field, and the game's `?level=`, which a page
+ * qualifies with its own game. A prefab's name is already bare and passes straight through.
+ */
+const shortName = (qualified: string): string => parseQualified(qualified)?.name ?? qualified
 
 /** Lock an editable asset (a material, a clip) before writing it. `true` when it may be written. */
 const lockAsset = async (assetId: string): Promise<boolean> => {
@@ -2022,7 +2032,8 @@ const startFramePlay = async (url: string): Promise<void> => {
   else if (dirty && !(await saveNow())) return
   const frame = document.createElement('iframe')
   frame.id = 'game-frame'
-  frame.src = `${url}?level=${encodeURIComponent(fileState.name)}`
+  // Bare: the game page resolves it inside its own folder (ADR 0108), so the game must not be in the param.
+  frame.src = `${url}?level=${encodeURIComponent(shortName(fileState.name))}`
   frame.allow = 'fullscreen; pointer-lock'
   document.getElementById('centre')?.append(frame)
   gameFrame = frame
@@ -2236,7 +2247,6 @@ const app = $<HTMLDivElement>('#app')
 const statusBar = $<HTMLDivElement>('#status')
 
 const fileState: { mode: Mode; name: string } = { mode: 'level', name: 'untitled' }
-let fileNames: string[] = []
 
 const openFile = async (name: string): Promise<void> => {
   // The previous file's locks go first — releasing them is what commits that session (ADR 0083).
@@ -2247,9 +2257,10 @@ const openFile = async (name: string): Promise<void> => {
        * A level is a live session, not a file with a lock (ADR 0089): join it and the server answers with its
        * copy — newer than the file whenever someone has it open.
        *
-       * The level says which game it is for, and that decides the registry it is validated against — so
+       * **Its folder is its game** (ADR 0108), and that decides the registry it is validated against — so
        * opening a level that uses a component its game does not declare is a clear load error rather than a
-       * silently broken Inspector (ADR 0052). Read before validating, so the mode can pick the registry.
+       * silently broken Inspector (ADR 0052). The name is qualified, so the game is known before the file is
+       * even read; it used to be read out of `config.mode.name`, which could disagree with reality.
        */
       joining = true
       try {
@@ -2258,8 +2269,8 @@ const openFile = async (name: string): Promise<void> => {
         joining = false
       }
       const raw: unknown = latestSnapshot ?? (await loadLevelRaw(name))
-      const declared = (raw as { config?: { mode?: { name?: unknown } } }).config?.mode?.name
-      activeMode = (typeof declared === 'string' ? MODES[declared] : undefined) ?? soleMode()
+      const ref = parseQualified(name)
+      activeMode = (ref === null ? undefined : MODES[ref.game]) ?? soleMode()
       /**
        * A level that uses a shared component its game has not opted into yet — a trampoline dropped into a
        * game with no `Bumper` — adopts it into the game and opens, rather than refusing to open the very file
@@ -2279,6 +2290,8 @@ const openFile = async (name: string): Promise<void> => {
       hydratedPrefabs = resolved.filled
       missingPrefabs = resolved.missing
       setDoc(withOps(levelDoc(level, registry())), name)
+      // The tree follows the document, so what is open is always visible in it (ADR 0108).
+      if (ref !== null) project?.showGame(ref.game)
       if (missingPrefabs.length > 0) setStatus(`no prefab file for ${missingPrefabs.join(', ')} — those objects are empty`)
     }
   } catch (e) {
@@ -2291,19 +2304,15 @@ const openFile = async (name: string): Promise<void> => {
 let levelEntries: FileEntry[] = []
 
 /**
- * The levels worth offering: the ones for the game being authored for.
+ * Every level on disk, for the Project panel's tree (ADR 0108).
  *
- * A level naming **no** game is always offered, because it is not another game's — it is unassigned, and
- * hiding it would make a file you can see on disk unreachable in the tool that is supposed to fix it. With no
- * active game, everything is offered.
+ * No filtering here any more: the panel groups them by the game whose folder they are in and draws them all,
+ * so narrowing a flat list to one game is exactly the step the tree removed.
  */
-const visibleLevels = (): string[] =>
-  levelEntries.filter((e) => activeMode === undefined || e.mode === undefined || e.mode === activeMode.name).map((e) => e.name)
-
 const refreshFileList = async (): Promise<void> => {
   levelEntries = await listFiles('levels').catch(() => [] as FileEntry[])
-  fileNames = visibleLevels()
   toolbar?.render()
+  project?.render()
 }
 
 /**
@@ -2311,22 +2320,35 @@ const refreshFileList = async (): Promise<void> => {
  * newer than the file while it is open. Names are files, so one that exists is refused.
  */
 const createLevel = async (from: string | null): Promise<void> => {
+  /**
+   * A level is made **in a game's folder** (ADR 0108), so there has to be a game: without one there is
+   * nowhere for the file to go. Duplicating keeps the original's game; a blank one goes to the active game.
+   */
+  const game = (from === null ? activeMode?.name : parseQualified(from)?.game) ?? activeMode?.name
+  if (game === undefined) {
+    setStatus('pick a game first — a level lives in its game\u2019s folder')
+    return
+  }
+  const short = from === null ? 'untitled' : `${parseQualified(from)?.name ?? from}-copy`
   const title = from === null ? 'New level' : `Duplicate ${from}`
-  const name = await askName(title, from === null ? 'untitled' : `${from}-copy`, 'File name in content/levels/. Letters, digits, - and _.')
+  const name = await askName(title, short, `File name in content/${game}/levels/. Letters, digits, - and _.`)
   if (name === null) return
-  if (!/^[\w-]+$/.test(name)) {
+  if (!isSegment(name)) {
     setStatus(`"${name}" is not a file name: letters, digits, - and _ only`)
     return
   }
+  const qual = qualify({ game, name })
   const existing = await listFiles('levels').catch(() => [] as FileEntry[])
-  if (existing.some((e) => e.name === name)) {
-    setStatus(`a level called ${name} already exists`)
+  if (existing.some((e) => e.name === qual)) {
+    setStatus(`${game} already has a level called ${name}`)
     return
   }
   let data: unknown
   if (from === null) {
     const blank = blankLevel(name)
-    if (activeMode !== undefined) blank.config = { ...blank.config, mode: { name: activeMode.name } }
+    // The tag inside the file is kept in step with the folder: the folder is authoritative, but a level
+    // fetched over HTTP has no folder to read, so the game client still checks the tag (ADR 0108).
+    blank.config = { ...blank.config, mode: { name: game } }
     data = blank
   } else {
     const copy = (await loadLevelRaw(from)) as { id?: unknown }
@@ -2334,19 +2356,27 @@ const createLevel = async (from: string | null): Promise<void> => {
     data = copy
   }
   try {
-    await saveFile('levels', name, data)
+    await saveFile('levels', qual, data)
   } catch (e) {
-    setStatus(`could not create ${name}: ${String(e)}`)
+    setStatus(`could not create ${qual}: ${String(e)}`)
     return
   }
   await refreshFileList()
-  await openFile(name)
+  await openFile(qual)
 }
 
-/** Open the first level the active game has, or a blank one when it has none. */
+/**
+ * Open something at boot: the active game's first level, else any game's, else a blank document.
+ *
+ * `soleMode()` is no longer the only way to have a game here — with the picker gone (ADR 0108) there is no
+ * active one until a level opens — so the first level of the first game that has one is what comes up, and
+ * the tree shows where it came from.
+ */
 const openFirstLevel = async (): Promise<void> => {
   await refreshFileList()
-  if (fileNames[0] !== undefined) await openFile(fileNames[0])
+  const mine = levelEntries.filter((e) => activeMode !== undefined && e.mode === activeMode.name)
+  const first = (mine[0] ?? levelEntries[0])?.name
+  if (first !== undefined) await openFile(first)
   else setDoc(withOps(levelDoc(blankLevel('untitled'), registry())), 'untitled')
 }
 
@@ -2354,10 +2384,7 @@ const openFirstLevel = async (): Promise<void> => {
 const toolbar: Toolbar = createToolbar(
   $<HTMLDivElement>('#toolbar'),
   () => ({
-    game: activeMode?.name ?? '',
-    games: MODE_LIST.map((m) => ({ name: m.name, label: m.label })),
-    name: fileState.name,
-    files: fileNames,
+    name: shortName(fileState.name),
     gizmo: edit.mode,
     space: edit.space,
     snap: edit.snap,
@@ -2371,28 +2398,6 @@ const toolbar: Toolbar = createToolbar(
     markers: markerGroup.visible,
   }),
   {
-    setGame: (name) => {
-      /**
-       * The authoring context, not the open level's tag: retagging happens in the Game row, where the
-       * consequences of changing a level's game are in front of you (ADR 0052).
-       *
-       * It **opens that game's first level**, because the file list is filtered by game and leaving the
-       * previous game's document open showed one game's levels while editing another's — and Save writes the
-       * *open* file, so a save after switching to Swing wrote parkour's `default.json`. Harmless with one
-       * game installed, which is why it survived until there were two.
-       */
-      void guardUnsaved().then((go) => {
-        if (!go) return
-        activeMode = MODES[name]
-        void refreshFileList().then(async () => {
-          refreshUi()
-          if (fileNames[0] !== undefined) await openFile(fileNames[0])
-        })
-      })
-    },
-    open: (name) => void guardUnsaved().then(async (go) => {
-      if (go) await openFile(name)
-    }),
     setName: (name) => {
       fileState.name = name === '' ? 'untitled' : name
       refreshUi()
@@ -2973,6 +2978,27 @@ const deleteAsset = (path: string): void => {
 
 const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   db: () => assets?.db ?? null,
+  games: () => MODE_LIST.map((m) => ({ name: m.name, label: m.label })),
+  levels: () => levelEntries,
+  openLevel: () => fileState.name,
+  onOpenLevel: (qualified) =>
+    void guardUnsaved().then(async (go) => {
+      if (go) await openFile(qualified)
+    }),
+  /**
+   * Author for this game without opening anything: it is what `New` makes a level in, and what composes the
+   * registry while nothing is open. It replaced the toolbar's game picker (ADR 0108) and is deliberately
+   * *not* an open: clicking a game in the tree to see its levels must not throw away the document you have.
+   */
+  onPickGame: (game) => {
+    if (activeMode?.name === game) return
+    activeMode = MODES[game]
+    refreshUi()
+  },
+  onNewLevel: (game) => {
+    activeMode = MODES[game] ?? activeMode
+    void createLevel(null)
+  },
   folders: () => assets?.folders ?? [],
   urlOf: (path) => assets?.urlOf(path) ?? path,
   armed: () => placing?.assetId ?? null,

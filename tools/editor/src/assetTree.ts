@@ -153,3 +153,55 @@ export const renamedTo = (path: string, name: string): string => {
   const folder = folderOf(path)
   return folder === '' ? name : `${folder}/${name}`
 }
+
+/**
+ * Where the Project panel is looking (ADR 0108).
+ *
+ * Two kinds of place, because the panel now shows two kinds of thing: a game's levels, and the shared asset
+ * library. They are not one tree of folders — a game is not a folder of assets and its levels are not asset
+ * entries — so the location is a union rather than a path with a special prefix, which is the version that
+ * would need an `if` at every use of `folder`.
+ */
+export type Place = { at: 'game'; game: string } | { at: 'assets'; folder: string | null }
+
+/** One game as the panel's tree draws it: its name, its label, and the levels in its folder. */
+export interface GameRow {
+  name: string
+  label: string
+  /** Qualified `<game>/<name>`, as everything outside the folder calls a level (ADR 0108). */
+  levels: { qualified: string; name: string }[]
+}
+
+/**
+ * Group levels under their games, games in label order and levels with `default` first.
+ *
+ * `default` leads because it is the level the game boots into with no `?level=` — the one you reach for — and
+ * every game may now own one (ADR 0108). A game with no levels is still a row: it is where the first one gets
+ * made, and hiding it would make a new game unreachable.
+ */
+export const gameRows = (
+  games: readonly { name: string; label: string }[],
+  levels: readonly { name: string; mode?: string }[],
+): GameRow[] => {
+  const byGame = new Map<string, { qualified: string; name: string }[]>()
+  for (const g of games) byGame.set(g.name, [])
+  for (const level of levels) {
+    const slash = level.name.indexOf('/')
+    const game = level.mode ?? (slash > 0 ? level.name.slice(0, slash) : undefined)
+    if (game === undefined) continue
+    const short = slash > 0 ? level.name.slice(slash + 1) : level.name
+    const list = byGame.get(game)
+    if (list === undefined) continue // a level whose game this build does not have; the tree cannot place it
+    list.push({ qualified: level.name, name: short })
+  }
+  return [...games]
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .map((g) => ({
+      ...g,
+      levels: (byGame.get(g.name) ?? []).sort((a, b) => {
+        if (a.name === 'default') return -1
+        if (b.name === 'default') return 1
+        return a.name.localeCompare(b.name)
+      }),
+    }))
+}

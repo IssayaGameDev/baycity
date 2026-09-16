@@ -12,7 +12,7 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 | --- | --- |
 | [README.md](platform/README.md) | The stack in ten lines, dependency direction, this list |
 | [workspace.md](platform/workspace.md) | Packages, imports, scripts, ports, adding a package or a game |
-| [content.md](platform/content.md) | Node/component schema, prefabs, levels, assets, `content/games/*.json` |
+| [content.md](platform/content.md) | Node/component schema, prefabs, levels, assets, the per-game folder layout |
 | [components/api.md](platform/components/api.md) | Parameter kinds, `defineComponent`, hooks, the runtime, registries as code + data |
 | [components/built-ins.md](platform/components/built-ins.md) | Every shipped definition and its params; the shared set |
 | [components/boss.md](platform/components/boss.md) | `Boss`: the three-node shape, the trigger rule, what it chases |
@@ -155,5 +155,6 @@ why matters.
 | [0105](adr/0105-boarding-is-arriving-not-rising.md) | Boarding is decided by where a surface is met, and a rider is seated on it |
 | [0106](adr/0106-a-movers-metre-is-a-metre.md) | A Mover's metre is a metre, and it picks its own frame |
 | [0107](adr/0107-the-air-is-not-free.md) | The air is not free |
+| [0108](adr/0108-a-game-is-a-folder.md) | A game is a folder |
 
 `Design archive/` holds superseded design material and is not maintained.

@@ -24,12 +24,12 @@ DEFAULT_ROPE: RopeTuning = { stiffness: 90, damping: 6, pump: 14, minLength: 4, 
 
 ## Rules — `rules.ts`
 
-Registry: engine + player + `Locomotion` def + shared set (`content/games/swing.json`: Bumper, Checkpoint,
+Registry: engine + player + `Locomotion` def + shared set (`content/swing/game.json`: Bumper, Checkpoint,
 Goal, Hazard, Track). Session: spawn, die, respawn at spawn; no progression.
 
 ## Level
 
-`content/levels/swing.json`: a `swingbeams` group of four beams (z 10/26/40/54) to swing between.
+`content/swing/levels/swing.level.json`: a `swingbeams` group of four beams (z 10/26/40/54) to swing between.
 
 ## Tests
 

@@ -1,18 +1,7 @@
 import { buildDatabase, nameForPath, type AssetEntry, type AssetKind } from '@mp/content'
 import { describe, expect, it } from 'vitest'
 
-import {
-  ancestorsOf,
-  buildTree,
-  canMoveFolder,
-  filterEntries,
-  flattenTree,
-  folderOf,
-  movedInto,
-  renamedTo,
-  subfoldersOf,
-  type Filter,
-} from './assetTree'
+import { ancestorsOf, buildTree, canMoveFolder, filterEntries, flattenTree, folderOf, gameRows, movedInto, renamedTo, subfoldersOf, type Filter } from './assetTree'
 
 const entry = (path: string, kind: AssetKind): AssetEntry => ({ id: path, kind, path, name: nameForPath(path) })
 
@@ -172,5 +161,45 @@ describe('movedInto / renamedTo', () => {
   it('keeps the folder when renaming, including at the root', () => {
     expect(renamedTo('textures/stone/brick.png', 'slab.png')).toBe('textures/stone/slab.png')
     expect(renamedTo('root.png', 'other.png')).toBe('other.png')
+  })
+})
+
+describe('grouping levels under their games (ADR 0108)', () => {
+  const GAMES = [
+    { name: 'keyboard', label: 'Keyboard' },
+    { name: 'parkour', label: 'Parkour' },
+    { name: 'swing', label: 'Swing' },
+  ]
+
+  it('puts each level under its own game, games by label and default first', () => {
+    const rows = gameRows(GAMES, [
+      { name: 'parkour/level1', mode: 'parkour' },
+      { name: 'keyboard/keyboard2', mode: 'keyboard' },
+      { name: 'parkour/default', mode: 'parkour' },
+      { name: 'keyboard/default', mode: 'keyboard' },
+    ])
+    expect(rows.map((r) => r.name)).toEqual(['keyboard', 'parkour', 'swing'])
+    // Both games own a `default`, which is the whole point of the folders.
+    expect(rows[0]!.levels.map((l) => l.name)).toEqual(['default', 'keyboard2'])
+    expect(rows[1]!.levels.map((l) => l.name)).toEqual(['default', 'level1'])
+  })
+
+  it('keeps the qualified name, which is what opening one needs', () => {
+    const rows = gameRows(GAMES, [{ name: 'swing/swing', mode: 'swing' }])
+    expect(rows[2]!.levels).toEqual([{ qualified: 'swing/swing', name: 'swing' }])
+  })
+
+  it('still lists a game with no levels — that is where the first one is made', () => {
+    expect(gameRows(GAMES, []).map((r) => r.levels.length)).toEqual([0, 0, 0])
+  })
+
+  it('falls back to the name prefix when the listing carries no mode', () => {
+    expect(gameRows(GAMES, [{ name: 'keyboard/kb' }])[0]!.levels[0]!.name).toBe('kb')
+  })
+
+  it('drops a level whose game this build does not have, rather than inventing a row for it', () => {
+    const rows = gameRows(GAMES, [{ name: 'oldgame/thing', mode: 'oldgame' }, { name: 'swing/swing', mode: 'swing' }])
+    expect(rows.map((r) => r.name)).toEqual(['keyboard', 'parkour', 'swing'])
+    expect(rows.flatMap((r) => r.levels).map((l) => l.qualified)).toEqual(['swing/swing'])
   })
 })

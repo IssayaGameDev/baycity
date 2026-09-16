@@ -4,6 +4,7 @@ import { applyBatch, OpError, refKey, touchedRefs, type NodeRef, type Op } from 
 import type { Level, Node } from '../../../packages/content/src/types'
 import { hydratePrefabs, stripHydrated } from '../../../packages/content/src/prefabs'
 import { validateLevel, validateNodeTree } from '../../../packages/content/src/validate'
+import { assetFile, levelFile, parseQualified } from '../../../packages/content/src/layout'
 import type { User } from './config'
 
 /**
@@ -170,9 +171,19 @@ export interface Live {
   status: () => { name: string; seq: number; peers: Peer[]; holds: number }[]
 }
 
-export const levelPath = (name: string): string => `content/levels/${name}.json`
+/**
+ * Repo-relative path of a level, from its qualified `<game>/<name>` (ADR 0108).
+ *
+ * A name that will not parse falls back to a file under the game folder `_unfiled`, so a malformed document
+ * key can never write outside `content/` — it has nowhere sensible to go, and silently writing it to the
+ * content root is worse than putting it somewhere visible.
+ */
+export const levelPath = (qual: string): string => {
+  const ref = parseQualified(qual)
+  return `content/${levelFile(ref ?? { game: '_unfiled', name: qual.replace(/[^\w-]/g, '_') })}`
+}
 /** Repo-relative path of an asset, from its path inside the assets folder. */
-export const assetPath = (rel: string): string => `content/assets/${rel}`
+export const assetPath = (rel: string): string => `content/${assetFile(rel)}`
 
 export const createLive = (opts: LiveOptions): Live => {
   const now = opts.now ?? (() => Date.now())
@@ -331,7 +342,9 @@ export const createLive = (opts: LiveOptions): Live => {
         if (written === null) throw new Error('the prefab asset is gone')
         path = assetPath(written)
       } else {
-        d.level.id = d.name
+        // The **bare** name: `d.name` is qualified `<game>/<name>` (ADR 0108), and a level's `id` is its file
+        // name, which is what every reader of the file expects to see.
+        d.level.id = parseQualified(d.name)?.name ?? d.name
         validateLevel(d.level)
         // References go to disk, never the definitions they resolve to — and only the ones resolved here, so a
         // level still carrying its own table keeps it.

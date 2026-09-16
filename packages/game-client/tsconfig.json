@@ -6,5 +6,5 @@
     // `vite/client` types `import.meta.glob`, which levels.ts and assets.ts use to bundle `content/`.
     "types": ["vite/client", "node"]
   },
-  "include": ["src/**/*", "../../content/levels/*.json"]
+  "include": ["src/**/*", "../../content/*/levels/*.level.json"]
 }

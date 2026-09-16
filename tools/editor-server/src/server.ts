@@ -1,14 +1,15 @@
 import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { extname, join } from 'node:path'
+import { dirname, extname, join } from 'node:path'
 
 import { createAccessVerifier } from './access'
 import { AuthError, contentTypeFor, createContentApi, safeJoin } from './api'
+import { ASSETS_DIR } from '../../../packages/content/src/layout'
 import { createChangeFeed } from './changes'
 import type { ServerConfig, User } from './config'
 import { commitPaths, push } from './git'
-import { createLive } from './live'
+import { createLive, levelPath } from './live'
 import { heldBy, sweep, type LockTable } from './locks'
 import { createPrefabStore } from './prefabStore'
 import { proxyHttp, proxyUpgrade, routeFor, stripPrefix } from './proxy'
@@ -91,18 +92,21 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
   }
 
   // --- live level documents (ADR 0089) ---
-  const levelsDir = join(config.repoRoot, 'content', 'levels')
+  const CONTENT = join(config.repoRoot, 'content')
+  /** A level is named `<game>/<name>` and lives in its game's folder (ADR 0108); `levelPath` is the one rule. */
+  const levelFileOf = (name: string): string => join(config.repoRoot, levelPath(name))
   const live = createLive({
     staleMs: config.lockStaleMs,
     // A level references a prefab by asset id (ADR 0091); the definitions come off disk.
-    prefabs: createPrefabStore(join(config.repoRoot, 'content', 'assets')),
+    prefabs: createPrefabStore(join(CONTENT, ASSETS_DIR)),
     readLevel: (name) => {
-      const file = join(levelsDir, `${name}.json`)
+      const file = levelFileOf(name)
       return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as unknown) : null
     },
     writeLevel: (name, level) => {
-      mkdirSync(levelsDir, { recursive: true })
-      writeFileSync(join(levelsDir, `${name}.json`), `${JSON.stringify(level, null, 2)}\n`)
+      const file = levelFileOf(name)
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(file, `${JSON.stringify(level, null, 2)}\n`)
     },
     // Disk is written; now every contributor's session goes dirty and the mirror hears the path — once.
     changed: (users, path) => {

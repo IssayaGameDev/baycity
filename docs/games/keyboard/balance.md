@@ -1,7 +1,7 @@
 # Balance: the three curves and the simulator
 
 The loop's shape is three **designed curves** (ADR 0088), not formula parameters: control points Kodjo places
-in the editor's Game row, stored in `content/games/keyboard.json` → `settings`, read at load
+in the editor's Game row, stored in `content/keyboard/game.json` → `settings`, read at load
 (`GAME_CURVE = curveFrom(game.settings)`, `rules.ts`). A change is a save, not a deploy; the staging game and the
 mirror pick it up like a level edit. A curve the file lacks is its default, so the file may hold none.
 

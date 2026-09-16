@@ -236,10 +236,45 @@ completes override transforms from the node they now override — then **throws 
 - `MaterialAsset { shader: 'standard' | 'unlit' | assetId; params: Record<string, MaterialValue> }`; `MaterialValue` kinds color/number/vec2/vec3/boolean/texture(`string|null`). `materialDependencies` = texture ids.
 - `*.prefab.json` = a `Node` root. Placing writes its **asset id** into the level; the definition stays in the file (ADR 0091, below).
 
+## Layout — `packages/content/src/layout.ts` (ADR 0108)
+
+**A game is a folder at the content root**, holding its own `game.json` and its `levels/`. Assets stay one
+shared library at `content/assets/`, because they are shared in fact: of twenty assets nine are used by more
+than one game and four by exactly one.
+
+One module so the server, the editor and the game cannot disagree; every path it returns is relative to
+`content/` and forward-slashed.
+
+| Symbol | Value / signature |
+|---|---|
+| `GAME_FILE` | `'game.json'` |
+| `LEVEL_SUFFIX` | `'.level.json'` — a compound suffix, like `.mat.json` |
+| `ASSETS_DIR` | `'assets'` — and therefore a name no game may take |
+| `LEVELS_DIR` | `'levels'` |
+| `LevelRef` | `{ game: string; name: string }` |
+| `isSegment(s)` | `/^[\w-]+$/` — what may be typed as a name |
+| `isGameName(s)` | `isSegment(s) && s !== 'assets'` |
+| `qualify(ref)` | `` `${game}/${name}` `` |
+| `parseQualified(q)` | `LevelRef \| null` — strict: two segments, both legal |
+| `levelFile(ref)` | `` `${game}/levels/${name}.level.json` `` |
+| `gameFile(game)` | `` `${game}/game.json` `` |
+| `assetFile(rel)` | `` `assets/${rel}` `` |
+| `levelRefForFile(rel)` | `LevelRef \| null` — the game a path names, or `null` for anything that is not a level |
+
+A level's identity outside its own folder is the **qualified** `<game>/<name>`: the API route, the lock key,
+the live document key, the editor's open file. Two things stay bare — the level's own `id` field, which is a
+file name, and the game's `?level=`, which the page qualifies with its own name, so every game may own a
+`default` (`packages/game-client/src/levels.ts` used to carry the apology for why it could not).
+
+Migration: `tools/editor-server/src/layoutMoves.ts` (plan/apply, pure) and `migrateLayout.ts` (the CLI), run by
+`deploy/editor/update.sh` and standalone as `deploy/editor/migrate-layout.sh`. Nothing inside a file changes —
+a level's folder is the game it already declared — so it is a rename, verified byte-for-byte, refusing rather
+than guessing where an unassigned level goes. Idempotent.
+
 ## `content/` layout
 
 | Path | Contents |
 |---|---|
 | `content/assets/{materials,prefabs,textures}/` | 9 `*.mat.json`; `AlternatingDanger`/`FastElevator`/`Trampoline`/`board-start`/`kill-plane`/`Stage-End.prefab.json`; `checker.png`, `warn.png`, `sky_110_2k.webp`. Each with `.meta`. |
-| `content/levels/*.json` | `config.mode.name`: parkour → default, level1, Test, FastElevator, mp-demo, mp-cointest; swing → swing; keyboard → keyboard. All set `environment.sun/ambient/sky`; keyboard also `postfx`. Loaded by `?level=<file>`, default `default.json` (ADR 0027). |
-| `content/games/<game>.json` | `{ "components": string[], "settings"?: Record<string, number> }` — shared gameplay types the game opts into (ADR 0077) and its tunable numbers (ADR 0087). parkour, swing: all five; keyboard: Bumper, Hazard; `_template`: Hazard. Read by `modes/<game>/src/rules.ts` via `sharedComponents(game.components)`; appended by the editor's `adopt` (`tools/editor/src/main.ts`). |
+| `content/<game>/levels/*.level.json` | The game is the **folder** (ADR 0108). parkour → default, level1, Test, FastElevator, mp-demo, mp-cointest; swing → swing; keyboard → keyboard, keyboard2, keyboard-copy. All set `environment.sun/ambient/sky`; keyboard also `postfx`. Loaded by `?level=<name>`, bare and resolved inside the game's own folder, default `default.level.json` (ADR 0027, ADR 0108). `config.mode.name` is kept in step with the folder, for a level fetched over HTTP where there is no folder to read. |
+| `content/<game>/game.json` | `{ "components": string[], "settings"?: Record<string, number> }` — shared gameplay types the game opts into (ADR 0077) and its tunable numbers (ADR 0087). parkour, swing: all five; keyboard: Bumper, Hazard; `_template`: Hazard. Read by `modes/<game>/src/rules.ts` via `sharedComponents(game.components)`; appended by the editor's `adopt` (`tools/editor/src/main.ts`). |

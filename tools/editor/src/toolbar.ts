@@ -12,16 +12,14 @@ export type GizmoSpace = 'world' | 'local'
 
 export interface ToolbarState {
   /**
-   * The **game** being authored for, by `ModeDescriptor.name`, or `''` for none (ADR 0052).
+   * The name of the open document, without its game: a level's file name, or a prefab's.
    *
-   * Called `game` and not `mode` on purpose: `mode` in this editor already means level-versus-prefab, and two
-   * meanings for one word in the same interface is how the wrong one gets read.
+   * The **game picker and the level list are gone** (ADR 0108). A game is a folder holding its levels, so
+   * both are the Project panel's tree: choosing a game in one dropdown and a level in another put the game in
+   * a control nowhere near the file it governed, and made it possible to be authoring for one game while
+   * looking at another's level.
    */
-  game: string
-  /** The installed games, for the picker. */
-  games: readonly { name: string; label: string }[]
   name: string
-  files: readonly string[]
   gizmo: GizmoMode
   space: GizmoSpace
   snap: boolean
@@ -46,9 +44,6 @@ export interface ToolbarState {
 }
 
 export interface ToolbarActions {
-  /** Author for this game from now on: narrows the level list and decides what a new level is for. */
-  setGame: (name: string) => void
-  open: (name: string) => void
   setName: (name: string) => void
   newBlank: () => void
   /** Copy the open level under a new name and open it. */
@@ -93,38 +88,11 @@ const label = (text: string): HTMLSpanElement => {
   return s
 }
 
-const setOptions = (select: HTMLSelectElement, names: readonly string[], selected: string): void => {
-  const wanted = names.join(' ')
-  // Rebuilding an open <select> closes its popup, so only touch it when the list actually changed.
-  if (select.dataset['names'] !== wanted) {
-    select.replaceChildren()
-    for (const n of names) {
-      const opt = el('option')
-      opt.value = n
-      opt.textContent = n
-      select.append(opt)
-    }
-    select.dataset['names'] = wanted
-  }
-  if (names.length === 0) select.value = ''
-  else if (select.value !== selected) select.value = names.includes(selected) ? selected : (names[0] ?? '')
-}
 
 export const createToolbar = (container: HTMLElement, state: () => ToolbarState, actions: ToolbarActions): Toolbar => {
   // --- file ---
-  /**
-   * Which game is being authored for. The level list narrows to it and a new level is made for it — it does
-   * **not** retag the open level, which happens in the Game row where the consequences are visible.
-   */
-  const gameSelect = el('select')
-  gameSelect.title = 'the game being authored for — narrows the level list and decides what a new level is for'
-  gameSelect.addEventListener('change', () => actions.setGame(gameSelect.value))
-
-  const openSelect = el('select')
-  openSelect.addEventListener('change', () => {
-    if (openSelect.value !== '') actions.open(openSelect.value)
-  })
-
+  // Opening is the Project panel's tree (ADR 0108): a game is a folder of levels, so there is nothing here to
+  // pick a game or a file with.
   const nameInput = el('input')
   nameInput.type = 'text'
   nameInput.title = 'file name — the document id follows it on save'
@@ -207,9 +175,8 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
   playButton.addEventListener('click', () => actions.setPlaying(!state().playing))
 
   container.append(
-    group(label('game'), gameSelect),
     el('div', 'tb-sep'),
-    group(label('file'), openSelect, nameInput, newButton, duplicateButton, backButton),
+    group(label('file'), nameInput, newButton, duplicateButton, backButton),
     el('div', 'tb-sep'),
     group(seg, spaceButton, snapBox, snapLabel, stepInput),
     el('div', 'tb-sep'),
@@ -220,23 +187,6 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
 
   const render = (): void => {
     const s = state()
-    /**
-     * `(none)` is offered and is not a placeholder: a level may legitimately belong to no game, and picking it
-     * is how you see every level at once. A build with one game still shows the picker, because *which* game
-     * you are authoring for should never be something you have to infer.
-     */
-    if (gameSelect.dataset['games'] !== s.games.map((g) => g.name).join(' ')) {
-      gameSelect.replaceChildren()
-      for (const g of [{ name: '', label: '(none)' }, ...s.games]) {
-        const opt = el('option')
-        opt.value = g.name
-        opt.textContent = g.label
-        gameSelect.append(opt)
-      }
-      gameSelect.dataset['games'] = s.games.map((g) => g.name).join(' ')
-    }
-    gameSelect.value = s.game
-    setOptions(openSelect, s.files, s.name)
     // Never fight the user's cursor: leave the field alone while it has focus.
     if (document.activeElement !== nameInput) nameInput.value = s.name
     backButton.hidden = !s.inPrefab
@@ -256,7 +206,7 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
     previewButton.classList.toggle('on', s.previewing)
     previewButton.disabled = s.playing // the game clock is already running everything
     // Editing is suspended during play; the controls would lie about what they do.
-    for (const control of [gameSelect, openSelect, nameInput, newButton, stepInput, snapBox]) {
+    for (const control of [nameInput, newButton, stepInput, snapBox]) {
       control.disabled = s.playing
     }
     for (const button of gizmoButtons.values()) button.disabled = s.playing
@@ -270,10 +220,7 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
     duplicateButton.hidden = s.inPrefab
     duplicateButton.disabled = s.playing
     newButton.disabled = s.playing || s.inPrefab
-    newButton.title = s.inPrefab ? 'leave the prefab first' : 'a new level, named now'
-    openSelect.disabled = s.playing || s.inPrefab
-    openSelect.title = s.inPrefab ? 'leave the prefab first' : ''
-    gameSelect.disabled = s.playing || s.inPrefab
+    newButton.title = s.inPrefab ? 'leave the prefab first' : 'a new level in the open game, named now'
   }
 
   render()
