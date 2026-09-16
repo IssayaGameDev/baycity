@@ -6,7 +6,7 @@ Level/prefab editor. `pnpm dev:editor` → `http://localhost:5176` (the dev host
 
 | Document | On disk | Written via |
 | --- | --- | --- |
-| Level (node tree + `config`) | `content/<game>/levels/<name>.level.json` | `PUT /api/levels/<game>/<name>` (`saveFile`, `src/filesApi.ts`); locked while open (ADR 0083) |
+| Level (node tree + `config`) | `content/<game>/levels/<name>.level.json` | `PUT /api/levels/<game>/<name>` (`saveFile`, `src/filesApi.ts`); locked while open (ADR 0083). Renamed and deleted through `POST /api/levels/move\|delete` (ADR 0110) |
 | Prefab (a root `Node`) | `content/assets/prefabs/<name>.prefab.json` — an **asset** with a `.meta` id (ADR 0026) | created once by `Save as prefab…` (`createPrefab`, `src/assetsApi.ts`), then **edited live** in its own room (ADR 0091) |
 | Game shared-component list | `content/<game>/game.json` | `PUT /api/games/<game>` (`saveGame`) — appended by adoption (ADR 0077) |
 | Materials, clips | `content/assets/**` JSON | `PUT /assets/<path>` |
@@ -306,6 +306,22 @@ assets           <- the existing folder tree, unchanged
   lets the editor point the tree at the open document's game, so what is open is always visible.
 - `onPickGame` selects without opening: clicking a game to look at its levels must not discard the document
   you have. It is what `New` makes a level in, and what composes the registry while nothing is open.
+
+## Right-clicking a level (ADR 0110)
+
+`onLevelContext(at, qualified)` — the same split as `onContext`: the panel says what was clicked, `main.ts`
+builds the menu. Open, Duplicate…, Rename…, Copy name, Delete…
+
+| Item | Notes |
+| --- | --- |
+| Open | disabled for the one already open, and inside a prefab |
+| Duplicate… | `createLevel(from)`, the toolbar button's operation; copies the server's current copy, so a level open live duplicates as it is now |
+| Rename… | `askName`, then `renameLevel`. The **open** level works: flush, `collab.leave()`, rename, reopen — the server refuses a rename on an open document. A name in another game's folder moves it there |
+| Copy name | the bare name, which is what `?level=` takes |
+| Delete… | `askDestructive`, body naming what goes: no undo, whether it is the open one, whether it is the game's `default` and what boots instead, whether it is that game's only level. Deleting the open one boots into whatever is left |
+
+A refusal leaves everything as it was and reopens what the editor left, so a 409 from somebody else holding
+the level costs nothing.
 
 ## What opens at boot (`src/lastOpen.ts`, ADR 0109)
 

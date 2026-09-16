@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname, join, normalize, relative, sep } from 'node:path'
 
@@ -29,6 +29,8 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *   POST /api/locks/heartbeat         → { paths } → { lost }
  *   GET  /api/levels                  → [{ name, mode?, prefabs? }] — prefabs: asset ids it references (ADR 0097)
  *   GET/PUT /api/levels/:name         → the JSON (PUT validated structurally)
+ *   POST /api/levels/move             → { from, to } — rename, both qualified (ADR 0110)
+ *   POST /api/levels/delete           → { path } — qualified; the file goes for good (ADR 0110)
  *   GET/PUT /api/games/:name          → { components } (ADR 0077)
  *   GET  /api/assets                  → { entries, folders } (runs the importer)
  *   POST /api/assets/mkdir|move|delete → { path } · { from, to } · { path }
@@ -382,6 +384,64 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     return false
   }
 
+  /**
+   * Renaming and deleting a level (ADR 0110), shaped like `/api/assets/move|delete` because it is the same
+   * job. Checked **before** `handleFiles`, whose `(.+)` would otherwise read `move` as a level name.
+   *
+   * Both refuse while the level is open live: the open document holds its own copy and the next flush would
+   * write it straight back to the old path, so a rename would silently duplicate it and a delete would undo
+   * itself. That is the same reason `PUT` answers 409, and it is a 409 here for the same reason.
+   */
+  const handleLevelOps = async (req: IncomingMessage, res: ServerResponse, url: string, user: User): Promise<boolean> => {
+    const op = url === '/api/levels/move' ? 'move' : url === '/api/levels/delete' ? 'delete' : null
+    if (op === null) return false
+    if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST expected' }), true
+    try {
+      const args = asRecord(await readJson(req))
+      const openLive = (qual: string): boolean => opts.live?.isOpen(qual) === true
+      const fileOf = (ref: { game: string; name: string }): string => join(CONTENT, levelFile(ref))
+
+      if (op === 'move') {
+        const from = parseQualified(strField(args, 'from'))
+        const to = parseQualified(strField(args, 'to'))
+        if (from === null || to === null) throw new AssetOpError('from and to must both be <game>/<name>')
+        if (qualify(from) === qualify(to)) throw new AssetOpError('from and to are the same level')
+        for (const q of [qualify(from), qualify(to)]) {
+          if (openLive(q)) return sendJson(res, 409, { error: `${q} is open live; close it in the editor first` }), true
+        }
+        if (refuseIfLocked(res, user, [keyFor.level(qualify(from)), keyFor.level(qualify(to))])) return true
+        const src = fileOf(from)
+        const dst = fileOf(to)
+        if (!existsSync(src)) return sendJson(res, 404, { error: `no level ${qualify(from)}` }), true
+        if (existsSync(dst)) throw new AssetOpError(`${qualify(to)} already exists`)
+        // The `id` inside follows the file name, as every writer of a level keeps it (see `live.ts`).
+        const level = JSON.parse(readFileSync(src, 'utf8')) as Record<string, unknown>
+        level['id'] = to.name
+        mkdirSync(dirname(dst), { recursive: true })
+        writeFileSync(dst, `${JSON.stringify(level, null, 2)}\n`)
+        rmSync(src)
+        changed(user, [keyFor.level(qualify(from)), keyFor.level(qualify(to))])
+        sendJson(res, 200, { ok: true })
+        return true
+      }
+
+      const ref = parseQualified(strField(args, 'path'))
+      if (ref === null) throw new AssetOpError('path must be <game>/<name>')
+      const qual = qualify(ref)
+      if (openLive(qual)) return sendJson(res, 409, { error: `${qual} is open live; close it in the editor first` }), true
+      if (refuseIfLocked(res, user, [keyFor.level(qual)])) return true
+      const file = fileOf(ref)
+      if (!existsSync(file)) return sendJson(res, 404, { error: `no level ${qual}` }), true
+      rmSync(file)
+      changed(user, [keyFor.level(qual)])
+      sendJson(res, 200, { ok: true })
+      return true
+    } catch (e) {
+      sendJson(res, 400, { error: String(e instanceof Error ? e.message : e) })
+      return true
+    }
+  }
+
   const handleFiles = async (req: IncomingMessage, res: ServerResponse, url: string, user: User): Promise<boolean> => {
     const m = ROUTE_RE.exec(url)
     if (m === null) return false
@@ -662,6 +722,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     if (await handleLive(req, res, url, user)) return true
     if (await handleMirror(req, res, url, query)) return true
     if (await handleLocks(req, res, url, user)) return true
+    if (await handleLevelOps(req, res, url, user)) return true
     if (await handleFiles(req, res, url, user)) return true
     return handleAssets(req, res, url, query, user)
   }

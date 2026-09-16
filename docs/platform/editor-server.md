@@ -42,6 +42,8 @@ dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` c
 | `POST /api/live/:kind/:name/presence` | `{ connId, data }` — relayed to the others, unnumbered | |
 | `POST /api/live/:kind/:name/flush` | write the file now (the editor's Play) | |
 | `POST /api/live/:kind/:name/leave` | `{ connId }` — a closing tab's beacon | |
+| `POST /api/levels/move` | `{ from, to }`, both qualified — rename, or move into another game's folder; the `id` inside follows the file name. **409** while either is open live, 400 on a clash or a bad name, 404 when `from` is not there (ADR 0110) | lock |
+| `POST /api/levels/delete` | `{ path }`, qualified — the file goes for good. **409** while it is open live (ADR 0110) | lock |
 | `GET /api/games` | `[{ name }]` — the folders at the content root that hold a `game.json` (ADR 0108) | |
 | `GET/PUT /api/games/:name` | `{ components: string[] }` — `content/<name>/game.json`; PUT makes the folder, which is how a new game starts | lock |
 | `GET /api/assets` | `{ entries, folders }` — runs the importer | |

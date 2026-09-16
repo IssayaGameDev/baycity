@@ -157,5 +157,6 @@ why matters.
 | [0107](adr/0107-the-air-is-not-free.md) | The air is not free |
 | [0108](adr/0108-a-game-is-a-folder.md) | A game is a folder |
 | [0109](adr/0109-the-editor-reopens-what-you-left.md) | The editor reopens what you left |
+| [0110](adr/0110-a-level-is-managed-like-an-asset.md) | A level is managed like an asset |
 
 `Design archive/` holds superseded design material and is not maintained.

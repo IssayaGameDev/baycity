@@ -43,6 +43,11 @@ export interface ProjectHost {
   onPickGame: (game: string) => void
   /** Make a level in this game's folder. */
   onNewLevel: (game: string) => void
+  /**
+   * Right-click on a level. Same split as `onContext`: the panel says what was clicked, the host decides what
+   * can be done to it, because that needs the open document (is this the one you are in?) and the listing.
+   */
+  onLevelContext: (at: { x: number; y: number }, qualified: string) => void
   /** Folders on disk, including the empty ones no asset path can imply. */
   folders: () => readonly string[]
   urlOf: (path: string) => string
@@ -332,6 +337,7 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
         // One click opens: a level is the thing this panel is for, and a second gesture to confirm was the
         // dropdown's behaviour, not an improvement on it.
         lr.addEventListener('click', () => host.onOpenLevel(level.qualified))
+        levelMenu(lr, level.qualified)
         treePane.append(lr)
       }
     }
@@ -389,6 +395,15 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     text.textContent = label
     b.append(text)
     return b
+  }
+
+  /** The same, for a level row or tile (ADR 0110). */
+  const levelMenu = (target: HTMLElement, qualified: string): void => {
+    target.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      host.onLevelContext({ x: e.clientX, y: e.clientY }, qualified)
+    })
   }
 
   /** Right-click hands the point and the target to the host, which owns the menu. */
@@ -481,6 +496,7 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
         text.textContent = level.name
         t.append(text)
         t.addEventListener('click', () => host.onOpenLevel(level.qualified))
+        levelMenu(t, level.qualified)
         grid.append(t)
       }
       if (rows === undefined || rows.levels.length === 0) grid.append(empty(`${game} has no levels yet`))
