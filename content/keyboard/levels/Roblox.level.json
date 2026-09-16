@@ -92,7 +92,7 @@
       "transform": {
         "position": {
           "x": 0,
-          "y": 0,
+          "y": -27,
           "z": 0
         }
       },
@@ -1020,7 +1020,8 @@
                 "material": "55205761e38bc929"
               }
             }
-          ]
+          ],
+          "enabled": false
         },
         {
           "id": "984cf178",
@@ -3212,9 +3213,9 @@
           "name": "box",
           "transform": {
             "position": {
-              "x": 42.425,
-              "y": 15.431,
-              "z": 20
+              "x": -7.075,
+              "y": -19.6055,
+              "z": -321.4474
             },
             "scale": {
               "x": 10,
@@ -3270,11 +3271,6 @@
                 "smooth": true,
                 "offset": 0
               }
-            },
-            {
-              "id": "5aab5308",
-              "type": "Hazard",
-              "params": {}
             },
             {
               "id": "98bfd39e",
@@ -3286,7 +3282,7 @@
                   "z": 0
                 },
                 "space": "world",
-                "speed": 1.5,
+                "speed": 4,
                 "smooth": true,
                 "offset": 0
               }
@@ -3298,9 +3294,9 @@
           "name": "box",
           "transform": {
             "position": {
-              "x": 43.0457,
-              "y": 15.431,
-              "z": 30
+              "x": -6.4543,
+              "y": -19.6055,
+              "z": -311.4474
             },
             "scale": {
               "x": 10,
@@ -3356,11 +3352,6 @@
                 "smooth": true,
                 "offset": 0.1
               }
-            },
-            {
-              "id": "5aab5308",
-              "type": "Hazard",
-              "params": {}
             },
             {
               "id": "3ca8e0f0",
@@ -3372,7 +3363,7 @@
                   "z": 0
                 },
                 "space": "world",
-                "speed": 1.5,
+                "speed": 4,
                 "smooth": true,
                 "offset": 0.1
               }
@@ -3384,9 +3375,9 @@
           "name": "box",
           "transform": {
             "position": {
-              "x": 44.6707,
-              "y": 15.431,
-              "z": 40
+              "x": -4.8293,
+              "y": -19.6055,
+              "z": -301.4474
             },
             "scale": {
               "x": 10,
@@ -3442,11 +3433,6 @@
                 "smooth": true,
                 "offset": 0.2
               }
-            },
-            {
-              "id": "5aab5308",
-              "type": "Hazard",
-              "params": {}
             },
             {
               "id": "c0875a5a",
@@ -3458,7 +3444,7 @@
                   "z": 0
                 },
                 "space": "world",
-                "speed": 1.5,
+                "speed": 4,
                 "smooth": true,
                 "offset": 0.2
               }
@@ -3470,9 +3456,9 @@
           "name": "box",
           "transform": {
             "position": {
-              "x": 46.6793,
-              "y": 15.431,
-              "z": 50
+              "x": -2.8207,
+              "y": -19.6055,
+              "z": -291.4474
             },
             "scale": {
               "x": 10,
@@ -3528,11 +3514,6 @@
                 "smooth": true,
                 "offset": 0.3
               }
-            },
-            {
-              "id": "5aab5308",
-              "type": "Hazard",
-              "params": {}
             },
             {
               "id": "2b1a61f7",
@@ -3544,7 +3525,7 @@
                   "z": 0
                 },
                 "space": "world",
-                "speed": 1.5,
+                "speed": 4,
                 "smooth": true,
                 "offset": 0.3
               }
@@ -3556,9 +3537,9 @@
           "name": "box",
           "transform": {
             "position": {
-              "x": 48.3043,
-              "y": 15.431,
-              "z": 60.0526
+              "x": -1.1957,
+              "y": -19.6055,
+              "z": -281.3948
             },
             "scale": {
               "x": 10,
@@ -3614,11 +3595,6 @@
                 "smooth": true,
                 "offset": 0.4
               }
-            },
-            {
-              "id": "5aab5308",
-              "type": "Hazard",
-              "params": {}
             },
             {
               "id": "a4115ca3",
@@ -3630,7 +3606,7 @@
                   "z": 0
                 },
                 "space": "world",
-                "speed": 1.5,
+                "speed": 4,
                 "smooth": true,
                 "offset": 0.4
               }
@@ -3642,9 +3618,9 @@
           "name": "box",
           "transform": {
             "position": {
-              "x": 48.925,
-              "y": 15.431,
-              "z": 70.0526
+              "x": -0.575,
+              "y": -19.6055,
+              "z": -271.3948
             },
             "scale": {
               "x": 10,
@@ -3700,11 +3676,6 @@
                 "smooth": true,
                 "offset": 0.5
               }
-            },
-            {
-              "id": "5aab5308",
-              "type": "Hazard",
-              "params": {}
             },
             {
               "id": "9faa1f5d",
@@ -3716,7 +3687,7 @@
                   "z": 0
                 },
                 "space": "world",
-                "speed": 1.5,
+                "speed": 4,
                 "smooth": true,
                 "offset": 0.5
               }
@@ -3728,9 +3699,9 @@
           "name": "box",
           "transform": {
             "position": {
-              "x": 48.3043,
-              "y": 15.431,
-              "z": 80.0526
+              "x": -1.1957,
+              "y": -19.6055,
+              "z": -261.3948
             },
             "scale": {
               "x": 10,
@@ -3788,11 +3759,6 @@
               }
             },
             {
-              "id": "5aab5308",
-              "type": "Hazard",
-              "params": {}
-            },
-            {
               "id": "a678378b",
               "type": "Mover",
               "params": {
@@ -3802,7 +3768,7 @@
                   "z": 0
                 },
                 "space": "world",
-                "speed": 1.5,
+                "speed": 4,
                 "smooth": true,
                 "offset": 0.6
               }
@@ -3814,9 +3780,9 @@
           "name": "box",
           "transform": {
             "position": {
-              "x": 46.6793,
-              "y": 15.431,
-              "z": 90.0526
+              "x": -2.8207,
+              "y": -19.6055,
+              "z": -251.3948
             },
             "scale": {
               "x": 10,
@@ -3874,11 +3840,6 @@
               }
             },
             {
-              "id": "5aab5308",
-              "type": "Hazard",
-              "params": {}
-            },
-            {
               "id": "26531d77",
               "type": "Mover",
               "params": {
@@ -3888,7 +3849,7 @@
                   "z": 0
                 },
                 "space": "world",
-                "speed": 1.5,
+                "speed": 4,
                 "smooth": true,
                 "offset": 0.7
               }
