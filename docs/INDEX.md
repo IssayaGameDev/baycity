@@ -163,5 +163,6 @@ why matters.
 | [0113](adr/0113-a-reparent-is-one-edit.md) | A reparent is one edit, and a step is not a constraint |
 | [0114](adr/0114-one-snap-increment-per-tool.md) | One snap increment per tool, and rotation snaps absolutely |
 | [0115](adr/0115-the-keys-are-the-games-not-the-platforms.md) | The keys belong to the game, on one shared grid |
+| [0116](adr/0116-a-cell-belongs-to-the-board-its-centre-is-on.md) | A cell belongs to the board its centre is on |
 
 `Design archive/` holds superseded design material and is not maintained.

@@ -529,19 +529,26 @@ const numberOr = (v: unknown, fallback: number): number => (typeof v === 'number
  * instead of 0.9. Lining them up meant overlapping the boards by exactly `width mod pitch` — a different
  * number for every board size, and geometry that intersects.
  *
- * A cap is kept only when its **whole footprint** sits on the face (Kodjo's call): clean edges, nothing
- * overhanging into the void. The cost is at a seam — see the note in `capsFor`.
+ * **A cell belongs to the board its centre is on** — the half-open span `[-half, +half)`, so a centre landing
+ * exactly on a seam goes to exactly one of the two boards and never to both.
+ *
+ * That is what makes the lattice cost nothing to author: every cell of a compound ground gets a cap, at any
+ * sizes and any positions, with no rule to satisfy. Requiring the whole footprint to fit instead looked
+ * tidier and was a trap — a cap is then dropped unless the seam lands within `pitch × (1 - fill) / 2` of a
+ * cell boundary, 5.4 cm at the defaults, so 88% of seam positions lost a row and the platforms had to be
+ * aligned to the grid instead of the grid to the platforms (ADR 0116).
+ *
+ * The price is at an **outer** rim, where a cap whose centre is just inside can overhang by up to half its
+ * footprint. Cosmetic: caps are visual only, so nothing is stood on that is not there.
  *
  * `phase` is the board's own origin measured along this axis, so boards sharing a rotation share a lattice.
  * For the axis-aligned boards a compound ground is made of, that is simply the world x or z.
  */
-const axisCells = (phase: number, halfSpan: number, pitch: number, capHalf: number): { start: number; count: number } => {
-  // Local coordinates of the first and last cell whose footprint fits: local = n * pitch - phase.
-  const lo = -halfSpan + capHalf
-  const hi = halfSpan - capHalf
-  if (hi < lo) return { start: 0, count: 0 }
-  const firstN = Math.ceil((lo + phase) / pitch - 1e-9)
-  const lastN = Math.floor((hi + phase) / pitch + 1e-9)
+const axisCells = (phase: number, halfSpan: number, pitch: number): { start: number; count: number } => {
+  // Cell centres in local coordinates are `n * pitch - phase`; keep those in [-halfSpan, +halfSpan).
+  const firstN = Math.ceil((-halfSpan + phase) / pitch - 1e-9)
+  // Half-open at the far end, so a centre exactly on a shared edge is claimed by the next board along only.
+  const lastN = Math.ceil((halfSpan + phase) / pitch - 1e-9) - 1
   const count = lastN - firstN + 1
   return count < 1 ? { start: 0, count: 0 } : { start: firstN * pitch - phase, count }
 }
@@ -554,9 +561,8 @@ export const boardOf = (item: Pick<VisualItem, 'collider' | 'position' | 'rotati
   // The board's own axes in world space, so the phase is measured along the direction the grid runs.
   const axisX = new THREE.Vector3(1, 0, 0).applyQuaternion(quat)
   const axisZ = new THREE.Vector3(0, 0, 1).applyQuaternion(quat)
-  const capHalf = (params.pitch * params.fill) / 2
-  const x = axisCells(origin.dot(axisX), half.x, params.pitch, capHalf)
-  const z = axisCells(origin.dot(axisZ), half.z, params.pitch, capHalf)
+  const x = axisCells(origin.dot(axisX), half.x, params.pitch)
+  const z = axisCells(origin.dot(axisZ), half.z, params.pitch)
   if (x.count < 1 || z.count < 1) return null
   return {
     origin,
@@ -581,10 +587,8 @@ export const boardOf = (item: Pick<VisualItem, 'collider' | 'position' | 'rotati
 /**
  * The caps of one board, on the shared lattice (ADR 0115).
  *
- * **Seams.** A cap is drawn only where its whole footprint fits, so a cap whose cell straddles a join belongs
- * to neither board and that one row is missing. The window is `pitch × fill` wide out of every `pitch`, so at
- * the shipped 0.9 / 0.88 a seam has to land within 5.4 cm of a cell **boundary** to keep the row unbroken.
- * Board widths that are whole multiples of the pitch put every edge on a boundary and make it automatic.
+ * **Seams cost nothing.** Every cell of a compound ground is drawn by whichever board its centre is on, so
+ * two boards placed edge to edge continue each other at any sizes and any positions (ADR 0116).
  */
 export const capsFor = (
   board: Board,
