@@ -4096,9 +4096,10 @@
             }
           },
           "components": [],
-          "prefab": "d75bc013a11360f2",
-          "overrides": {
-            "dffedd8e": {
+          "children": [
+            {
+              "id": "4f8e0152",
+              "name": "Platform",
               "transform": {
                 "position": {
                   "x": 71.1511,
@@ -4106,26 +4107,119 @@
                   "z": 16.6444
                 },
                 "scale": {
-                  "x": 33.3,
+                  "x": 62.6,
                   "y": 0.3,
                   "z": 33.3
                 }
-              }
-            }
-          },
-          "children": [
+              },
+              "components": [
+                {
+                  "id": "4efea79f",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "3e3c1b7c",
+                  "type": "Mesh",
+                  "params": {
+                    "model": "builtin:box"
+                  }
+                },
+                {
+                  "id": "0e9126ea",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "55205761e38bc929"
+                  }
+                },
+                {
+                  "id": "ecb4beae",
+                  "type": "Keyboard",
+                  "params": {
+                    "pitch": 0.9,
+                    "fill": 0.88,
+                    "height": 0.45,
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1
+                  }
+                }
+              ]
+            },
             {
-              "id": "12456fb7",
-              "name": "Stage End",
+              "id": "5e2dc30e",
+              "name": "Platform",
               "transform": {
                 "position": {
-                  "x": 0,
-                  "y": 0.5,
-                  "z": 70
+                  "x": 71.1512,
+                  "y": 87.15,
+                  "z": 16.6658
+                },
+                "scale": {
+                  "x": 62.6,
+                  "y": 0.3,
+                  "z": 33.3
                 }
               },
-              "components": [],
-              "prefab": "8a569d7a7c66c3c7"
+              "components": [
+                {
+                  "id": "4efea79f",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "3e3c1b7c",
+                  "type": "Mesh",
+                  "params": {
+                    "model": "builtin:box"
+                  }
+                },
+                {
+                  "id": "0e9126ea",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "55205761e38bc929"
+                  }
+                },
+                {
+                  "id": "ecb4beae",
+                  "type": "Keyboard",
+                  "params": {
+                    "pitch": 0.9,
+                    "fill": 0.88,
+                    "height": 0.45,
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1
+                  }
+                }
+              ]
             }
           ]
         },
@@ -4134,9 +4228,9 @@
           "name": "wall",
           "transform": {
             "position": {
-              "x": 24.7733,
-              "y": 50.8792,
-              "z": 134.6574
+              "x": 38.7001,
+              "y": 56.6,
+              "z": 135.6
             },
             "rotation": {
               "x": 0,
@@ -4144,7 +4238,7 @@
               "z": 0
             },
             "scale": {
-              "x": 39.9,
+              "x": 62.2,
               "y": 40.2,
               "z": 0.4
             }
@@ -4201,6 +4295,113 @@
                 "speed": 62.06562146436075,
                 "smooth": true,
                 "offset": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "6b2a8403",
+          "name": "wall",
+          "transform": {
+            "position": {
+              "x": 32.2001,
+              "y": 80.1,
+              "z": 135.6
+            },
+            "rotation": {
+              "x": 0,
+              "y": -1.5708,
+              "z": 0
+            },
+            "scale": {
+              "x": 62.2,
+              "y": 87.1,
+              "z": 0.4
+            }
+          },
+          "components": [
+            {
+              "id": "0eed2325",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "4e6ef0aa",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "5f68ad98",
+              "type": "Renderer",
+              "params": {
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "e4cbccf0",
+          "name": "wall",
+          "transform": {
+            "position": {
+              "x": -126.9,
+              "y": 80.05,
+              "z": 166.2
+            },
+            "scale": {
+              "x": 318.2,
+              "y": 87.1,
+              "z": 0.4
+            }
+          },
+          "components": [
+            {
+              "id": "0eed2325",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "4e6ef0aa",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "5f68ad98",
+              "type": "Renderer",
+              "params": {
+                "material": ""
               }
             }
           ]
