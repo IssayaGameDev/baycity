@@ -57,5 +57,5 @@ export {
   nameForPath,
 } from './assets'
 export type { AssetDatabase, AssetEntry, AssetKind, AssetMeta, MaterialAsset, MaterialValue } from './assets'
-export { AXES, AXIS_NAMES, MOTIONLESS, motionOffset, motionsOf, moveFraction, movesAtAll, spinRadians } from './motion'
-export type { Motion, MotionOffset } from './motion'
+export { AXES, AXIS_NAMES, MOTIONLESS, ROOT_FRAME, framedTravel, motionOffset, motionsOf, moveFraction, movesAtAll, spinRadians, travelOffset } from './motion'
+export type { Motion, MotionFrame, MotionOffset, MotionSpace } from './motion'

@@ -71,9 +71,21 @@ through euler space. Same reason its axis is a cardinal enum (ADR 0103).
 - A `Mover` travels its authored metres under any parent scale, uniform or not, and a diagonal keeps its
   angle.
 - `space: local` gives a tilted platform travel along its own tilt with no wrapper object.
-- The travel is re-framed **per mover**, in the loader, because `motion.ts` is headless and knows nothing
-  about a parent chain. A node with no movers pays nothing, which is every node in a still level.
-- Four tests, and the unscaling is verified by reverting it.
+- The travel is re-framed **per mover**, against the node's place in the tree. A node with no movers pays
+  nothing, which is every node in a still level.
+- Nine tests: four on the rule itself, five comparing the preview against the loader. Both the unscaling and
+  the sharing are verified by reverting them.
+
+## The rule is shared, not copied
+
+`framedTravel`/`travelOffset` live in `motion.ts` and are called by **both** the loader and the editor's
+`poseOf`. The first cut put the re-framing in the loader alone, and Kodjo found the result immediately: a
+`local` mover moved correctly in the game and along the world axes in the editor's preview. The viewport
+lying about the level is the failure this seam exists to prevent, so the agreement is now asserted directly —
+five shapes, five instants, preview against loader.
+
+The editor composes the parent chain itself, including an ancestor's live `Spinner`, because the loader
+re-frames against the parent's **world** rotation at that instant rather than its authored one.
 
 ## Rejected
 
