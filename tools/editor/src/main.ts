@@ -82,6 +82,7 @@ import { createAssetInspector, type AssetInspector } from './assetInspector'
 import { loadAssetLibrary, type AssetLibrary } from './assetsApi'
 import { canMoveFolder, movedInto, renamedTo } from './assetTree'
 import { createPreviews, type Previews } from './previews'
+import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
 import { createProjectPanel, type Project } from './projectPanel'
 import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
 import { createShortcuts } from './shortcuts'
@@ -2292,6 +2293,8 @@ const openFile = async (name: string): Promise<void> => {
       setDoc(withOps(levelDoc(level, registry())), name)
       // The tree follows the document, so what is open is always visible in it (ADR 0108).
       if (ref !== null) project?.showGame(ref.game)
+      // Only now, past every throw above: a level that would not load must not be the one we come back to.
+      rememberLevel(name)
       if (missingPrefabs.length > 0) setStatus(`no prefab file for ${missingPrefabs.join(', ')} — those objects are empty`)
     }
   } catch (e) {
@@ -2366,16 +2369,16 @@ const createLevel = async (from: string | null): Promise<void> => {
 }
 
 /**
- * Open something at boot: the active game's first level, else any game's, else a blank document.
+ * Open something at boot: the level this browser was last on, else the active game's first, else any game's,
+ * else a blank document (`bootLevel`, `src/lastOpen.ts`).
  *
  * `soleMode()` is no longer the only way to have a game here — with the picker gone (ADR 0108) there is no
- * active one until a level opens — so the first level of the first game that has one is what comes up, and
- * the tree shows where it came from.
+ * active one until a level opens — so the first level of the first game that has one is the fallback, and the
+ * tree shows where whatever opened came from.
  */
 const openFirstLevel = async (): Promise<void> => {
   await refreshFileList()
-  const mine = levelEntries.filter((e) => activeMode !== undefined && e.mode === activeMode.name)
-  const first = (mine[0] ?? levelEntries[0])?.name
+  const first = bootLevel(lastLevel(), levelEntries, activeMode?.name)
   if (first !== undefined) await openFile(first)
   else setDoc(withOps(levelDoc(blankLevel('untitled'), registry())), 'untitled')
 }
