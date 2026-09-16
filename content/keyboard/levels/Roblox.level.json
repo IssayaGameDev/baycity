@@ -2980,7 +2980,7 @@
         "position": {
           "x": -11.35,
           "y": 29.25,
-          "z": 228.55
+          "z": 254.3
         },
         "scale": {
           "x": 10.1,
@@ -3036,6 +3036,11 @@
             "smooth": true,
             "offset": 0
           }
+        },
+        {
+          "id": "d7704de5",
+          "type": "Hazard",
+          "params": {}
         }
       ]
     },
@@ -3046,7 +3051,7 @@
         "position": {
           "x": 11.55,
           "y": 29.25,
-          "z": 228.55
+          "z": 254.3
         },
         "scale": {
           "x": 10.1,
@@ -3102,8 +3107,26 @@
             "smooth": true,
             "offset": 0
           }
+        },
+        {
+          "id": "5aab5308",
+          "type": "Hazard",
+          "params": {}
         }
       ]
+    },
+    {
+      "id": "da332e55",
+      "name": "Stage End",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 22,
+          "z": 304.5
+        }
+      },
+      "components": [],
+      "prefab": "8a569d7a7c66c3c7"
     }
   ],
   "prefabs": {
