@@ -33,7 +33,7 @@ export default defineConfig({
      * player's page each time. The page reads its level at boot instead (`pickLevel`, ADR 0089). Locally the
      * watch stays: the mirror writing a level is what reloads the game, and that is the loop wanted there.
      */
-    ...(process.env.MP_BASE !== undefined ? { watch: { ignored: ['**/content/levels/**', '**/.content-live/levels/**'] } } : {}),
+    ...(process.env.MP_BASE !== undefined ? { watch: { ignored: ['**/content/*/levels/**', '**/.content-live/*/levels/**'] } } : {}),
   },
   // On the box the game is served under the editor's origin at this path (ADR 0086); locally at /.
   base: process.env.MP_BASE ?? '/',
