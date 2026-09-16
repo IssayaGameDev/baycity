@@ -852,13 +852,22 @@
         input cannot be empty, so an axis whose value differs across the selection is drawn here instead —
         blank, with a placeholder dash. Sized to sit in the same row as a Tweakpane point input's three boxes.
       */
+      /*
+        The slot is an `.irow-v`, which is `flex: 1 1 auto` — so it sizes to its content unless told not to.
+        Three `<input>`s have a large intrinsic width (a text input is ~20 characters by default), which pushed
+        the row past the panel and gave the whole Inspector a horizontal scrollbar. `min-width: 0` lets the
+        slot shrink below its content, and `width: 0` on each input defeats the intrinsic size so `flex-grow`
+        is what decides how wide they are.
+      */
       .imulti {
         display: flex;
         gap: 4px;
-        overflow: visible;
+        min-width: 0;
+        overflow: hidden;
       }
       .imulti-n {
         flex: 1 1 0;
+        width: 0;
         min-width: 0;
         padding: 3px 5px;
         border: 1px solid var(--line);
@@ -877,6 +886,16 @@
       }
       .imulti-n::placeholder {
         color: var(--dim);
+      }
+      /* The spinner arrows cost width the three boxes cannot spare, and the gizmo is how you nudge a value. */
+      .imulti-n[type='number'] {
+        appearance: textfield;
+        -moz-appearance: textfield;
+      }
+      .imulti-n[type='number']::-webkit-inner-spin-button,
+      .imulti-n[type='number']::-webkit-outer-spin-button {
+        appearance: none;
+        margin: 0;
       }
       .imulti-n:focus {
         outline: 1px solid var(--accent);

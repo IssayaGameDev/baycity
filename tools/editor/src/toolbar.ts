@@ -23,7 +23,16 @@ export interface ToolbarState {
   gizmo: GizmoMode
   space: GizmoSpace
   snap: boolean
+  /**
+   * The **active tool's** snap increment, and what it is measured in (ADR 0114).
+   *
+   * One field rather than three, because a grid in metres, one in degrees and one for scale are three
+   * different numbers and only one tool is in use at a time. Switching tool switches which of the three this
+   * field is editing, and the unit beside it says which.
+   */
   step: number
+  stepUnit: string
+  stepLimits: { min: number; max: number; grain: number }
   playing: boolean
   /**
    * The preview clock is running (ADR 0103): every `Mover` and `Spinner` in the level is moving in the
@@ -143,9 +152,8 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
 
   const stepInput = el('input')
   stepInput.type = 'number'
-  stepInput.min = '0.1'
-  stepInput.max = '4'
-  stepInput.step = '0.1'
+  // min/max/grain follow the active tool: see `render`.
+  const stepUnitLabel = el('span', 'tb-label')
   stepInput.title = 'grid step (m)'
   stepInput.addEventListener('change', () => {
     const v = Number.parseFloat(stepInput.value)
@@ -178,7 +186,7 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
     el('div', 'tb-sep'),
     group(label('file'), nameInput, newButton, duplicateButton, backButton),
     el('div', 'tb-sep'),
-    group(seg, spaceButton, snapBox, snapLabel, stepInput),
+    group(seg, spaceButton, snapBox, snapLabel, stepInput, stepUnitLabel),
     el('div', 'tb-sep'),
     group(gridButton, markerButton),
     el('div', 'tb-sep'),
@@ -196,6 +204,12 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
     spaceButton.title = 'the frame the handles point along (Unity: Local/Global)'
     snapBox.checked = s.snap
     if (document.activeElement !== stepInput) stepInput.value = String(s.step)
+    // The bounds belong to the tool, not to the field: 0.05–10 m, 1–90°, 0.05–5× (ADR 0114).
+    stepInput.min = String(s.stepLimits.min)
+    stepInput.max = String(s.stepLimits.max)
+    stepInput.step = String(s.stepLimits.grain)
+    stepUnitLabel.textContent = s.stepUnit
+    stepInput.title = `snap increment for the ${s.gizmo} tool, in ${s.stepUnit === '×' ? 'multiples' : s.stepUnit}`
 
     gridButton.classList.toggle('on', s.grid)
     markerButton.classList.toggle('on', s.markers)

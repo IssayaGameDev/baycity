@@ -19,7 +19,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 
 | Area | Element | Module |
 | --- | --- | --- |
-| Top | `#toolbar` — name (read-only), New, Duplicate, Back, gizmo T/R/S, space, snap/step, Motion, Play, grid, markers. **No game picker and no level list** (ADR 0108): a game is a folder of levels, so opening is the Project panel's tree. No mode select and no Save either: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
+| Top | `#toolbar` — name (read-only), New, Duplicate, Back, gizmo T/R/S, space, snap + the active tool's increment with its unit (ADR 0114), Motion, Play, grid, markers. **No game picker and no level list** (ADR 0108): a game is a folder of levels, so opening is the Project panel's tree. No mode select and no Save either: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
 | Left | `#hierarchy` — node tree + context menu | `src/hierarchy.ts`, `src/menu.ts` |
 | Centre | `#view` — Three stage, orbit, transform gizmo, placement clicks | `src/main.ts` |
 | Right | `#insp-head`, `#inspector`, `#asset-inspector` | `src/inspector.ts`, `src/assetInspector.ts` |
@@ -414,6 +414,23 @@ The game's own code, not a copy (ADR 0052):
 | View | `addLevel(..., { cutout })` — occlusion cutout as in game (ADR 0055) |
 
 Esc / pointer-lock loss exits play; play stops track preview.
+
+## Snapping (ADR 0114)
+
+One increment **per tool**, in `edit.steps`; the toolbar shows the active tool's with its unit and its own
+bounds, so it stays one field.
+
+| Tool | Default | Range | Unit | Snapped by |
+| --- | --- | --- | --- | --- |
+| Move | 0.5 | 0.05–10 | m | `TransformControls.setTranslationSnap` (absolute) |
+| Rotate | 15 | 1–90 | ° | **us** — `snapRotation` on `objectChange` |
+| Scale | 0.1 | 0.05–5 | × | `TransformControls.setScaleSnap` (absolute) |
+
+Rotation is ours because three snaps `rotationAngle`, the distance dragged, so a round amount is added to
+wherever you already were and round angles are unreachable. `snapAnglesDeg` (`src/snap.ts`, pure and tested)
+rounds each Euler axis onto an absolute grid instead. Applied to the **primary only**, before the write-back
+and before `mirrorDragToSelection`, so the others get the snapped delta and a group keeps its relative angles
+— the same shape as translation. The placement grid uses the same `snapToGrid`.
 
 ## Numbers in the Inspector (ADR 0113)
 
