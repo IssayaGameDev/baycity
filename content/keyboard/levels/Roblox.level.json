@@ -5712,6 +5712,29 @@
               }
             }
           ]
+        },
+        {
+          "id": "495f0b55",
+          "name": "Stage End",
+          "transform": {
+            "position": {
+              "x": -113.5,
+              "y": 51.5,
+              "z": 139.6586
+            },
+            "rotation": {
+              "x": 0,
+              "y": 1.5708,
+              "z": 0
+            }
+          },
+          "components": [],
+          "prefab": "8a569d7a7c66c3c7",
+          "overrides": {
+            "e880589a": {
+              "name": "empty"
+            }
+          }
         }
       ]
     },
@@ -5842,15 +5865,6 @@
                   },
                   "components": [
                     {
-                      "id": "22bb73a7",
-                      "type": "Boss",
-                      "params": {
-                        "zone": "5fb42e46",
-                        "speed": 8,
-                        "turn": 360
-                      }
-                    },
-                    {
                       "id": "60ea7460",
                       "type": "Mesh",
                       "params": {
@@ -5885,6 +5899,15 @@
                       "id": "508cc286",
                       "type": "Hazard",
                       "params": {}
+                    },
+                    {
+                      "id": "84c476b7",
+                      "type": "Boss",
+                      "params": {
+                        "zone": "7371a753",
+                        "speed": 8,
+                        "turn": 360
+                      }
                     }
                   ]
                 },
@@ -7111,30 +7134,7 @@
           "name": "Stage End",
           "transform": {
             "position": {
-              "x": -135.6255,
-              "y": -19.0462,
-              "z": -6.536
-            },
-            "rotation": {
-              "x": 0,
-              "y": 1.5708,
-              "z": 0
-            }
-          },
-          "components": [],
-          "prefab": "8a569d7a7c66c3c7",
-          "overrides": {
-            "e880589a": {
-              "name": "empty"
-            }
-          }
-        },
-        {
-          "id": "495f0b55",
-          "name": "Stage End",
-          "transform": {
-            "position": {
-              "x": -8.5,
+              "x": -135,
               "y": -19,
               "z": -6.5
             },
@@ -7239,7 +7239,7 @@
           "transform": {
             "position": {
               "x": -3.7999,
-              "y": -27.95,
+              "y": -32.25,
               "z": -0.6499
             },
             "rotation": {
@@ -7249,7 +7249,7 @@
             },
             "scale": {
               "x": 52.7,
-              "y": 88.1,
+              "y": 98.5,
               "z": 54.4
             }
           },
