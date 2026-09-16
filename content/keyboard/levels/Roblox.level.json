@@ -79,9 +79,9 @@
       "name": "Stage End",
       "transform": {
         "position": {
-          "x": 1,
-          "y": 5.5,
-          "z": 71.5
+          "x": 0.5,
+          "y": 0.5,
+          "z": 70
         }
       },
       "components": [],
@@ -1778,7 +1778,7 @@
                 "scale": {
                   "x": 33.3,
                   "y": 0.3,
-                  "z": 33.3
+                  "z": 35.3
                 }
               },
               "components": [
@@ -1943,40 +1943,6 @@
           ]
         },
         {
-          "id": "67b5089e",
-          "name": "Platform extendable",
-          "transform": {
-            "position": {
-              "x": 0,
-              "y": -0.5,
-              "z": 21.3
-            },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 0.035
-            }
-          },
-          "components": [],
-          "prefab": "d75bc013a11360f2",
-          "overrides": {
-            "dffedd8e": {
-              "transform": {
-                "position": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 16.65
-                },
-                "scale": {
-                  "x": 33.3,
-                  "y": 0.3,
-                  "z": 33.3
-                }
-              }
-            }
-          }
-        },
-        {
           "id": "d43c48ad",
           "name": "Platform extendable",
           "transform": {
@@ -1988,7 +1954,7 @@
             "scale": {
               "x": 1,
               "y": 1,
-              "z": 0.085
+              "z": 0.066
             }
           },
           "components": [],
@@ -2001,30 +1967,12 @@
             "position": {
               "x": 0,
               "y": -0.5,
-              "z": 30.8
+              "z": 28.2427
             },
             "scale": {
               "x": 1,
               "y": 1,
-              "z": 0.085
-            }
-          },
-          "components": [],
-          "prefab": "d75bc013a11360f2"
-        },
-        {
-          "id": "9ec8d47d",
-          "name": "Platform extendable",
-          "transform": {
-            "position": {
-              "x": 0,
-              "y": -0.5,
-              "z": 37.8
-            },
-            "scale": {
-              "x": 1,
-              "y": 1,
-              "z": 0.085
+              "z": 0.1753
             }
           },
           "components": [],
@@ -2047,6 +1995,222 @@
           },
           "components": [],
           "prefab": "d75bc013a11360f2"
+        },
+        {
+          "id": "da66a817",
+          "name": "Wall",
+          "transform": {
+            "position": {
+              "x": -12.1926,
+              "y": 7.3815,
+              "z": 45.3
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 8.55,
+              "y": 0.3,
+              "z": 15.6
+            }
+          },
+          "components": [
+            {
+              "id": "4efea79f",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "3e3c1b7c",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "0e9126ea",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        },
+        {
+          "id": "3cce895f",
+          "name": "Wall",
+          "transform": {
+            "position": {
+              "x": 12.3074,
+              "y": 7.3815,
+              "z": 45.3
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 8.55,
+              "y": 0.3,
+              "z": 15.6
+            }
+          },
+          "components": [
+            {
+              "id": "4efea79f",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "3e3c1b7c",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "0e9126ea",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        },
+        {
+          "id": "a636500e",
+          "name": "Platform extendable",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": -0.5,
+              "z": 20.1554
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 0.066
+            }
+          },
+          "components": [],
+          "prefab": "d75bc013a11360f2"
+        },
+        {
+          "id": "9935c9ac",
+          "name": "Platform extendable",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 14.88,
+              "z": 12.3
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 0.066
+            }
+          },
+          "components": [],
+          "prefab": "d75bc013a11360f2",
+          "overrides": {
+            "dffedd8e": {
+              "transform": {
+                "position": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 16.65
+                },
+                "scale": {
+                  "x": 33.3,
+                  "y": 0.3,
+                  "z": 33.3
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "13f1fe43",
+          "name": "Platform extendable",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": -0.5,
+              "z": 36.0225
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 0.0404
+            }
+          },
+          "components": [],
+          "prefab": "d75bc013a11360f2"
+        },
+        {
+          "id": "82fc507c",
+          "name": "Platform extendable",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": -0.5,
+              "z": 39.3933
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 0.0404
+            }
+          },
+          "components": [],
+          "prefab": "d75bc013a11360f2",
+          "overrides": {
+            "dffedd8e": {
+              "transform": {
+                "position": {
+                  "x": 0,
+                  "y": 0,
+                  "z": -1.1582
+                },
+                "scale": {
+                  "x": 33.3,
+                  "y": 0.3,
+                  "z": 33.3
+                }
+              }
+            }
+          }
         }
       ]
     }
