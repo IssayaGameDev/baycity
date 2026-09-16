@@ -74,9 +74,14 @@ and the gate is exact rather than a sampled fingerprint: every move is verified 
 untouched, so no level or prefab is rewritten. A level declaring no game is refused and named rather than
 filed somewhere invented, and any refusal moves nothing at all.
 
-It runs inside `deploy/editor/update.sh`, before the rebuild and with the server stopped, so the box never
-serves the new code against the old layout — which would be an editor showing no levels. It is idempotent, so
-it stays there: a box, or a clone of an older `content` branch, corrects itself on the next deploy.
+`deploy/editor/migrate-layout.sh` runs it once, by hand, like the three migration scripts beside it: stop the
+server (an open live level holds its own copy and would write it back to the old path), move, commit on
+`content`, push, restart.
+
+It is **not** a step in `deploy/editor/update.sh`. It was, to close the window where the box has the new code
+and the old layout — an editor showing no levels — but a one-off does not belong in the thing that runs every
+deploy, and putting it there also stopped the server for the whole install and build rather than just the
+restart. The window is the price of the transition: deploy, then migrate.
 
 ## Rejected
 
