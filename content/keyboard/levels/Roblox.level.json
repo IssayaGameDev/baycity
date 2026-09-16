@@ -2792,8 +2792,8 @@
           "transform": {
             "position": {
               "x": 49.7675,
-              "y": 21.1318,
-              "z": 18.0844
+              "y": 22.3865,
+              "z": 18.228
             },
             "rotation": {
               "x": -0.2618,
@@ -2803,7 +2803,7 @@
             "scale": {
               "x": 1,
               "y": 1,
-              "z": 2.1
+              "z": 2.4
             }
           },
           "components": [],
@@ -2823,6 +2823,108 @@
                 }
               }
             }
+          }
+        }
+      ]
+    },
+    {
+      "id": "6cb45c30",
+      "name": "box",
+      "transform": {
+        "position": {
+          "x": -4.15,
+          "y": 26.75,
+          "z": 241.55
+        },
+        "scale": {
+          "x": 9.7,
+          "y": 13.5,
+          "z": 34.1
+        }
+      },
+      "components": [
+        {
+          "id": "5f3a84de",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "fa181ca0",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:box"
+          }
+        },
+        {
+          "id": "59d87de7",
+          "type": "Renderer",
+          "params": {
+            "material": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "808df213",
+      "name": "box",
+      "transform": {
+        "position": {
+          "x": 8.35,
+          "y": 26.75,
+          "z": 241.55
+        },
+        "scale": {
+          "x": 9.7,
+          "y": 13.5,
+          "z": 34.1
+        }
+      },
+      "components": [
+        {
+          "id": "5f3a84de",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "fa181ca0",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:box"
+          }
+        },
+        {
+          "id": "59d87de7",
+          "type": "Renderer",
+          "params": {
+            "material": ""
           }
         }
       ]
