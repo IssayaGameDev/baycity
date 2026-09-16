@@ -86,6 +86,7 @@ import { canMoveFolder, movedInto, renamedTo } from './assetTree'
 import { createPreviews, type Previews } from './previews'
 import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
 import { createProjectPanel, type Project } from './projectPanel'
+import { snapAnglesDeg, snapToGrid } from './snap'
 import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
 import { createShortcuts } from './shortcuts'
 import { createSplitter, readPx, writePx } from './splitter'
@@ -597,10 +598,26 @@ let missingPrefabs: string[] = []
 let hydratedPrefabs: string[] = []
 let runtime: AssetRuntime | null = null
 let selectedAsset: string | null = null
-const edit: { mode: GizmoMode; snap: boolean; step: number; space: GizmoSpace } = {
+/**
+ * Snap increments, **one per tool** (ADR 0114).
+ *
+ * One number cannot serve three: 0.5 is a sensible grid in metres, a useless one in degrees, and a coarse one
+ * for scale. Unity and Blender both keep three, and the toolbar shows only the active tool's so it does not
+ * grow three fields wide.
+ *
+ * `rotate` is in **degrees** — what the field shows and what a person thinks in; the radians are the gizmo's
+ * business.
+ */
+const STEP_LIMITS: Record<GizmoMode, { min: number; max: number; grain: number; unit: string }> = {
+  translate: { min: 0.05, max: 10, grain: 0.05, unit: 'm' },
+  rotate: { min: 1, max: 90, grain: 1, unit: '°' },
+  scale: { min: 0.05, max: 5, grain: 0.05, unit: '×' },
+}
+
+const edit: { mode: GizmoMode; snap: boolean; steps: Record<GizmoMode, number>; space: GizmoSpace } = {
   mode: 'translate',
   snap: true,
-  step: 0.5,
+  steps: { translate: 0.5, rotate: 15, scale: 0.1 },
   // Which frame the handles point along. Three forces `local` for scale and `world` for the free-rotate
   // ring, exactly as Unity does, so this only ever changes what it can.
   space: 'world',
@@ -1227,10 +1244,39 @@ document.addEventListener(
 )
 
 const gizmo = new TransformControls(stage.camera, canvas)
+/**
+ * Translation and scale snap to an **absolute** grid anchored at zero, which is what `TransformControls` does
+ * for both: `Math.round(v / snap) * snap`.
+ *
+ * Rotation is left to us (ADR 0114). Three snaps `rotationAngle` — how far the drag has turned — not the
+ * angle it lands on, so an object sitting at 7° goes to 22°, 37°, 52° and can never reach 15° or 30°. That
+ * is a grid anchored to wherever you started, and it means snapping cannot straighten anything. `snapRotation`
+ * below does it absolutely instead.
+ */
 const applySnap = (): void => {
-  gizmo.setTranslationSnap(edit.snap ? edit.step : null)
-  gizmo.setRotationSnap(edit.snap ? THREE.MathUtils.degToRad(15) : null)
-  gizmo.setScaleSnap(edit.snap ? 0.1 : null)
+  gizmo.setTranslationSnap(edit.snap ? edit.steps.translate : null)
+  gizmo.setRotationSnap(null)
+  gizmo.setScaleSnap(edit.snap ? edit.steps.scale : null)
+}
+
+/**
+ * Snap the primary's rotation onto the absolute grid, per axis (ADR 0114).
+ *
+ * Per Euler axis rather than as a whole orientation: a gizmo drag turns about **one** ring, so the other two
+ * angles are already whatever they were and rounding them changes nothing. The free-rotate ring turns about a
+ * camera-facing axis, where this is an approximation — predictable, and the price of a snap that lands on
+ * round angles at all.
+ *
+ * Only the primary, because `mirrorDragToSelection` hands the others its **delta**: that keeps a group's
+ * relative angles, and it is what translation already does, where three snaps the primary and the rest follow.
+ */
+const snapRotation = (): void => {
+  if (edit.mode !== 'rotate' || !edit.snap || selected === null) return
+  const g = instanceGroups[selected]
+  if (g === undefined) return
+  const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
+  const snapped = snapAnglesDeg(e, edit.steps.rotate)
+  g.quaternion.setFromEuler(new THREE.Euler(snapped.x, snapped.y, snapped.z, 'XYZ'))
 }
 stage.scene.add(gizmo.getHelper())
 
@@ -1458,6 +1504,9 @@ gizmo.addEventListener('dragging-changed', (event) => {
   }
 })
 gizmo.addEventListener('objectChange', () => {
+  // Before the write-back and before the mirror, so the document and the other selected items both see the
+  // snapped angle rather than the raw one (ADR 0114).
+  snapRotation()
   writeBackSelected()
   mirrorDragToSelection()
   if (edit.mode === 'scale') for (const i of selection) rebuildSubtreeMeshes(i)
@@ -1692,9 +1741,9 @@ const surfaceUnder = (clientX: number, clientY: number): Vec3 | null => {
   const point = new THREE.Vector3()
   if (surf !== undefined) point.copy(surf.point)
   else if (raycaster.ray.intersectPlane(groundPlane, point) === null) return null
-  const snap = edit.snap ? edit.step : 0
-  const sx = snap !== 0 ? Math.round(point.x / snap) * snap : r4(point.x)
-  const sz = snap !== 0 ? Math.round(point.z / snap) * snap : r4(point.z)
+  const snap = edit.snap ? edit.steps.translate : 0
+  const sx = snap !== 0 ? snapToGrid(point.x, snap) : r4(point.x)
+  const sz = snap !== 0 ? snapToGrid(point.z, snap) : r4(point.z)
   return vec3(sx, r4(point.y), sz)
 }
 
@@ -1716,9 +1765,9 @@ canvas.addEventListener('pointerup', (e) => {
       placing = null
       return
     }
-    const snap = edit.snap ? edit.step : 0
-    const sx = snap !== 0 ? Math.round(point.x / snap) * snap : r4(point.x)
-    const sz = snap !== 0 ? Math.round(point.z / snap) * snap : r4(point.z)
+    const snap = edit.snap ? edit.steps.translate : 0
+    const sx = snap !== 0 ? snapToGrid(point.x, snap) : r4(point.x)
+    const sz = snap !== 0 ? snapToGrid(point.z, snap) : r4(point.z)
     const at = vec3(sx, r4(point.y), sz)
     const prefabAsset = placing.kind === 'prefabAsset' ? assets?.prefabOf(placing.assetId) : undefined
     const idx =
@@ -2412,7 +2461,9 @@ const toolbar: Toolbar = createToolbar(
     gizmo: edit.mode,
     space: edit.space,
     snap: edit.snap,
-    step: edit.step,
+    step: edit.steps[edit.mode],
+    stepUnit: STEP_LIMITS[edit.mode].unit,
+    stepLimits: STEP_LIMITS[edit.mode],
     playing,
     previewing,
     inPrefab: prefabOpen !== null,
@@ -2438,7 +2489,8 @@ const toolbar: Toolbar = createToolbar(
       refreshUi()
     },
     setStep: (step) => {
-      edit.step = step
+      // The active tool's own increment (ADR 0114); the other two keep theirs.
+      edit.steps[edit.mode] = step
       applySnap()
       refreshUi()
     },

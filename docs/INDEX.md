@@ -161,5 +161,6 @@ why matters.
 | [0111](adr/0111-a-placement-can-be-unlinked.md) | A placement can be unlinked |
 | [0112](adr/0112-the-inspector-edits-the-whole-selection.md) | The Inspector edits the whole selection |
 | [0113](adr/0113-a-reparent-is-one-edit.md) | A reparent is one edit, and a step is not a constraint |
+| [0114](adr/0114-one-snap-increment-per-tool.md) | One snap increment per tool, and rotation snaps absolutely |
 
 `Design archive/` holds superseded design material and is not maintained.
