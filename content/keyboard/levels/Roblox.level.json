@@ -1954,7 +1954,95 @@
             "scale": {
               "x": 1,
               "y": 1,
-              "z": 0.1
+              "z": 0.035
+            }
+          },
+          "components": [],
+          "prefab": "d75bc013a11360f2",
+          "overrides": {
+            "dffedd8e": {
+              "transform": {
+                "position": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 16.65
+                },
+                "scale": {
+                  "x": 33.3,
+                  "y": 0.3,
+                  "z": 33.3
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "d43c48ad",
+          "name": "Platform extendable",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": -0.5,
+              "z": 23.8
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 0.085
+            }
+          },
+          "components": [],
+          "prefab": "d75bc013a11360f2"
+        },
+        {
+          "id": "f503238d",
+          "name": "Platform extendable",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": -0.5,
+              "z": 30.8
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 0.085
+            }
+          },
+          "components": [],
+          "prefab": "d75bc013a11360f2"
+        },
+        {
+          "id": "9ec8d47d",
+          "name": "Platform extendable",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": -0.5,
+              "z": 37.8
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 0.085
+            }
+          },
+          "components": [],
+          "prefab": "d75bc013a11360f2"
+        },
+        {
+          "id": "7025481f",
+          "name": "Platform extendable",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": -0.5,
+              "z": 42.8
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 0.085
             }
           },
           "components": [],
