@@ -59,6 +59,7 @@ import { askDestructive, askName, askUnsaved } from './confirm'
 import { prefabFolder, prefabTarget, sanitisePrefabName } from './prefabPath'
 import {
   acquireLock,
+  deleteLevel as apiDeleteLevel,
   heartbeatLocks,
   listFiles,
   loadGame,
@@ -67,6 +68,7 @@ import {
   me as fetchMe,
   releaseLock,
   releaseLockBeacon,
+  renameLevel as apiRenameLevel,
   saveFile,
   saveGame,
   serverStatus,
@@ -2979,6 +2981,82 @@ const deleteAsset = (path: string): void => {
   })()
 }
 
+/**
+ * Rename a level (ADR 0110).
+ *
+ * The open one is handled by leaving its live session first: the server refuses a rename while the document
+ * is open, because the next flush would write the old file straight back. Flush, leave, rename, reopen under
+ * the new name — and a refusal past that point is someone *else* holding it, which is theirs to release.
+ *
+ * A `to` in another game moves the level there, since the folder is the game.
+ */
+const renameLevel = (qualified: string): void => {
+  const ref = parseQualified(qualified)
+  if (ref === null) return
+  void (async () => {
+    const asked = await askName(
+      `Rename ${ref.name}`,
+      ref.name,
+      `File name in content/${ref.game}/levels/. Letters, digits, - and _. Any ?level=${ref.name} link, and the multiplayer room name, change with it.`,
+    )
+    if (asked === null || asked === ref.name) return
+    if (!isSegment(asked)) return setStatus(`"${asked}" is not a file name: letters, digits, - and _ only`)
+    const to = qualify({ game: ref.game, name: asked })
+    const wasOpen = fileState.name === qualified
+    if (wasOpen) {
+      if (live()) await collab.flush().catch(() => undefined)
+      await collab.leave()
+    }
+    try {
+      await apiRenameLevel(qualified, to)
+    } catch (e) {
+      setStatus(`could not rename: ${String(e)}`)
+      if (wasOpen) await openFile(qualified) // put back what we left
+      return
+    }
+    await refreshFileList()
+    if (wasOpen) await openFile(to)
+    setStatus(`renamed to ${asked}`)
+  })()
+}
+
+/**
+ * Delete a level (ADR 0110), behind `askDestructive` with the consequences named.
+ *
+ * Heavier than an asset delete because there is no undo and nothing else holds a copy: a prefab lives on in
+ * the placements that referenced it, a level is the content. So the dialogue says what it is, whether it is
+ * the one you have open, and whether it is the level its game boots into; Cancel is the keyboard default.
+ */
+const deleteLevelFile = (qualified: string): void => {
+  const ref = parseQualified(qualified)
+  if (ref === null) return
+  void (async () => {
+    const siblings = levelEntries.filter((e) => e.mode === ref.game && e.name !== qualified)
+    const isOpen = fileState.name === qualified
+    const isDefault = ref.name === 'default'
+    const notes = [
+      isOpen ? 'It is the level you have open' : null,
+      isDefault ? `it is what ${ref.game} loads with no ?level=, so the game will boot into ${siblings[0] === undefined ? 'nothing' : (parseQualified(siblings[0].name)?.name ?? siblings[0].name)} instead` : null,
+      siblings.length === 0 ? `it is the only level ${ref.game} has` : null,
+    ].filter((n) => n !== null)
+    const body = `The file goes for good \u2014 there is no undo and no copy anywhere else.${notes.length > 0 ? ` ${notes.join(', and ')}.` : ''}`
+    if (!(await askDestructive(`Delete ${ref.name}?`, body, 'Delete for good'))) return setStatus('kept')
+
+    if (isOpen) await collab.leave()
+    try {
+      await apiDeleteLevel(qualified)
+    } catch (e) {
+      setStatus(`could not delete: ${String(e)}`)
+      if (isOpen) await openFile(qualified)
+      return
+    }
+    await refreshFileList()
+    // Nothing is open now, so boot into whatever is left rather than leaving a document with no file.
+    if (isOpen) await openFirstLevel()
+    setStatus(`deleted ${ref.name}`)
+  })()
+}
+
 const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   db: () => assets?.db ?? null,
   games: () => MODE_LIST.map((m) => ({ name: m.name, label: m.label })),
@@ -3114,6 +3192,39 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
         },
       ],
       current,
+    )
+  },
+  onLevelContext: (at, qualified) => {
+    const ref = parseQualified(qualified)
+    const short = ref?.name ?? qualified
+    const isOpen = fileState.name === qualified
+    contextMenu.open(
+      at,
+      [
+        {
+          label: 'Open',
+          enabled: !isOpen && prefabOpen === null,
+          why: isOpen ? 'already open' : 'leave the prefab you are in first',
+          run: () => void guardUnsaved().then(async (go) => {
+            if (go) await openFile(qualified)
+          }),
+        },
+        {
+          label: 'Duplicate\u2026',
+          divider: true,
+          // The same operation the toolbar's button runs, which takes the copy from the server's current
+          // copy rather than the file, so a level open live is duplicated as it is now.
+          run: () => void createLevel(qualified),
+        },
+        { label: 'Rename\u2026', run: () => renameLevel(qualified) },
+        {
+          label: 'Copy name',
+          // What `?level=` takes, and what a teammate needs in order to open the same one.
+          run: () => void navigator.clipboard?.writeText(short).then(() => setStatus(`copied ${short}`)),
+        },
+        { label: 'Delete\u2026', divider: true, run: () => deleteLevelFile(qualified) },
+      ],
+      short,
     )
   },
   onMkdir: (parent, name) => afterFileOp(`created ${name}`, async () => assets?.mkdir(parent, name) ?? Promise.resolve()),

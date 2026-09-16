@@ -77,7 +77,8 @@ export interface Collab {
   join: (name: string, kind?: DocKind) => Promise<void>
   /** Which kind of document is open, or `null`. */
   kind: () => DocKind | null
-  leave: () => void
+  /** Leave the open document. Resolves once the server has been told, which is when it stops being open. */
+  leave: () => Promise<void>
   /** Send a batch the document already applied. */
   submit: (batch: LocalBatch) => void
   flush: () => Promise<void>
@@ -321,12 +322,18 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
     leave: () => {
       stream?.close()
       stream = null
-      if (name !== null && connId !== null) void transport.post(kind, name, 'leave', { connId }).catch(() => undefined)
+      /**
+       * The promise is returned as well as fired: every existing caller is leaving on the way to something
+       * else and does not care, but renaming or deleting the open level has to know the server has closed the
+       * document — while it is open the server refuses both, and rightly (ADR 0110).
+       */
+      const posted = name !== null && connId !== null ? transport.post(kind, name, 'leave', { connId }).then(() => undefined, () => undefined) : Promise.resolve()
       name = null
       connId = null
       unacked = []
       peers = []
       holds = []
+      return posted
     },
     submit: (batch) => submitBatch(batch, newBatchId()),
     flush: async () => {

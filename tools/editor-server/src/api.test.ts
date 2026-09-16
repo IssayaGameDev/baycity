@@ -8,7 +8,7 @@ import { createContentApi, keyFor } from './api'
 import { levelPath } from './live'
 import { createChangeFeed, type ChangeFeed } from './changes'
 import type { User } from './config'
-import { createLive, type Live } from './live'
+import { createLive, docKey, type Live } from './live'
 import type { LockTable } from './locks'
 
 /**
@@ -122,6 +122,67 @@ describe('levels', () => {
     const bad = await call('ada', 'PUT', `/api/levels/${LV}`, { nodes: 'nope' })
     expect(bad.status).toBe(400)
     expect(JSON.parse(readFileSync(join(root, LEVEL_FILE), 'utf8')).nodes).toHaveLength(1)
+  })
+
+  /** Renaming and deleting a level (ADR 0110), the pair `/api/assets/move|delete` has always had. */
+  describe('rename and delete', () => {
+    const renamed = join('content', 'parkour/levels/b.level.json')
+
+    it('renames the file and makes the id follow it', async () => {
+      const r = await call('ada', 'POST', '/api/levels/move', { from: LV, to: 'parkour/b' })
+      expect(r.status).toBe(200)
+      expect(existsSync(join(root, LEVEL_FILE)), 'the old file is gone').toBe(false)
+      // A level's `id` is its file name, so a rename that left it behind would ship a lie in the file.
+      expect(JSON.parse(readFileSync(join(root, renamed), 'utf8')).id).toBe('b')
+      expect(changed.at(-1)).toEqual({ user: 'Ada', paths: [keyFor.level(LV), keyFor.level('parkour/b')] })
+    })
+
+    it('renames into another game, because the folder is the game', async () => {
+      mkdirSync(join(root, 'content/keyboard'), { recursive: true })
+      writeFileSync(join(root, 'content/keyboard/game.json'), '{"components":[],"settings":{}}\n')
+      expect((await call('ada', 'POST', '/api/levels/move', { from: LV, to: 'keyboard/a' })).status).toBe(200)
+      expect(existsSync(join(root, 'content/keyboard/levels/a.level.json'))).toBe(true)
+    })
+
+    it('refuses to overwrite, and refuses a name that is not qualified', async () => {
+      writeFileSync(join(root, renamed), `${JSON.stringify(LEVEL)}\n`)
+      const clash = await call('ada', 'POST', '/api/levels/move', { from: LV, to: 'parkour/b' })
+      expect(clash.status).toBe(400)
+      expect((await json<{ error: string }>(clash)).error).toContain('already exists')
+      // Both files still there: a refused move moves nothing.
+      expect(existsSync(join(root, LEVEL_FILE))).toBe(true)
+      expect((await call('ada', 'POST', '/api/levels/move', { from: 'a', to: 'parkour/c' })).status).toBe(400)
+      expect((await call('ada', 'POST', '/api/levels/move', { from: LV, to: LV })).status).toBe(400)
+    })
+
+    it('404s a level that is not there', async () => {
+      expect((await call('ada', 'POST', '/api/levels/move', { from: 'parkour/nope', to: 'parkour/x' })).status).toBe(404)
+      expect((await call('ada', 'POST', '/api/levels/delete', { path: 'parkour/nope' })).status).toBe(404)
+    })
+
+    it('deletes the file', async () => {
+      expect((await call('ada', 'POST', '/api/levels/delete', { path: LV })).status).toBe(200)
+      expect(existsSync(join(root, LEVEL_FILE))).toBe(false)
+      expect(changed.at(-1)).toEqual({ user: 'Ada', paths: [keyFor.level(LV)] })
+    })
+
+    it('refuses both while the level is open live, or the next flush would undo them', async () => {
+      live.join(docKey('level', LV), { connId: 'c1', user: USERS['ada']!, send: () => {} })
+      expect((await call('ada', 'POST', '/api/levels/move', { from: LV, to: 'parkour/b' })).status).toBe(409)
+      expect((await call('ada', 'POST', '/api/levels/delete', { path: LV })).status).toBe(409)
+      expect(existsSync(join(root, LEVEL_FILE))).toBe(true)
+    })
+
+    it('is gated by the lock table like every other write', async () => {
+      await call('ada', 'POST', '/api/locks/acquire', { path: keyFor.level(LV) })
+      expect((await call('bob', 'POST', '/api/levels/delete', { path: LV })).status).toBe(423)
+      expect((await call('bob', 'POST', '/api/levels/move', { from: LV, to: 'parkour/b' })).status).toBe(423)
+      expect(existsSync(join(root, LEVEL_FILE))).toBe(true)
+    })
+
+    it('answers 405 to anything but POST, rather than reading `move` as a level name', async () => {
+      expect((await call('ada', 'GET', '/api/levels/move')).status).toBe(405)
+    })
   })
 })
 

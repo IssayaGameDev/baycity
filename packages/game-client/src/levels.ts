@@ -7,9 +7,9 @@ import { LEVEL_SUFFIX, validateLevel, type Level, type ParamChecker } from '@mp/
  * every game's and `levelsFor` keeps the ones under its own. `default.level.json` is what loads with no
  * `?level=`, and each game gets to own one — which the flat `content/levels/` could not.
  *
- * A level file is like any other, so the editor opens, edits and saves it — which is the point. It is not
- * *deletable*, because the editor has no delete for levels at all: those routes are read and write only, and
- * deleting exists solely for assets.
+ * A level file is like any other, so the editor opens, edits, renames and deletes it (ADR 0110) — which is
+ * the point. `defaultName` falling back to the game's first level is what keeps a game bootable when its
+ * `default` is one of the ones deleted.
  *
  * That is a deliberate reversal. The default started as a hardcoded module so the game could never boot into
  * nothing, which also made the one level a new player sees the one level nobody could edit.

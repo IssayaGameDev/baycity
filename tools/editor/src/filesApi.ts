@@ -101,6 +101,26 @@ export const loadGame = async (name: string): Promise<GameData> => {
 
 export const saveGame = (name: string, data: GameData): Promise<void> => saveFile('games', name, data)
 
+/**
+ * Rename a level, both names qualified `<game>/<name>` (ADR 0110). A `to` in another game moves it there,
+ * because the folder is the game.
+ *
+ * 409 while anyone has it open live: the open document would write the old file straight back.
+ */
+export const renameLevel = async (from: string, to: string): Promise<void> => {
+  await postOrFail('/api/levels/move', { from, to }, `rename ${from}`)
+}
+
+/** Delete a level for good (ADR 0110). 409 while it is open live. */
+export const deleteLevel = async (path: string): Promise<void> => {
+  await postOrFail('/api/levels/delete', { path }, `delete ${path}`)
+}
+
+const postOrFail = async (url: string, body: unknown, what: string): Promise<void> => {
+  const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  if (!r.ok) await failed(r, what)
+}
+
 export const saveFile = async (kind: FileKind, name: string, data: unknown): Promise<void> => {
   await req(kind, `/${name}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) })
 }
