@@ -307,6 +307,13 @@ assets           <- the existing folder tree, unchanged
 - `onPickGame` selects without opening: clicking a game to look at its levels must not discard the document
   you have. It is what `New` makes a level in, and what composes the registry while nothing is open.
 
+## What opens at boot (`src/lastOpen.ts`, ADR 0109)
+
+`openFile` writes the qualified name to `localStorage` (`editor.lastLevel`) once the open has succeeded;
+`bootLevel(lastLevel(), levelEntries, activeMode?.name)` picks it back up, falling through to the active
+game's first level, then any game's, then a blank document. Per browser, best-effort, and honoured only while
+the name is still in the listing — a deleted or renamed level must not make every reload a load error.
+
 ## Game discovery (`src/modes.ts`)
 
 - `MODES`: `import.meta.glob('../../../modes/*/src/editorMode.ts', { eager: true })`; every export passing structural `isDescriptor` (`name`, `registry`, `session`) is installed by `name`; duplicates warn, first wins.

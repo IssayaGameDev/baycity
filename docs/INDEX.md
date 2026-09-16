@@ -156,5 +156,6 @@ why matters.
 | [0106](adr/0106-a-movers-metre-is-a-metre.md) | A Mover's metre is a metre, and it picks its own frame |
 | [0107](adr/0107-the-air-is-not-free.md) | The air is not free |
 | [0108](adr/0108-a-game-is-a-folder.md) | A game is a folder |
+| [0109](adr/0109-the-editor-reopens-what-you-left.md) | The editor reopens what you left |
 
 `Design archive/` holds superseded design material and is not maintained.
