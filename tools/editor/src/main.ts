@@ -1027,6 +1027,25 @@ const enterPrefab = async (assetId: string): Promise<void> => {
   refreshUi()
 }
 
+/**
+ * Unlink one placement (ADR 0111): it keeps exactly what it was drawing and stops being a copy of the prefab.
+ * The file and every other placement are untouched.
+ *
+ * No confirm. It is one op, so Ctrl+Z puts the link back — unlike deleting the prefab file, which destroys
+ * the id and cannot be undone (ADR 0097), and which is why *that* one asks.
+ */
+const unlinkPlacement = (index: number): void => {
+  if (doc === null) return
+  const label = doc.label(index)
+  if (!doc.unlinkNode(index)) return setStatus(`${label} is not a prefab placement`)
+  recordEdit(`unlinked ${label}`)
+  // A `replaceNode` changes the tree and what is drawn, so the same refresh a revert does.
+  buildItems()
+  rebuildLoaded()
+  applySelection(selection)
+  setStatus(`${label} is its own object now — the prefab is unchanged`)
+}
+
 const openPrefabOf = (index: number): void => {
   const id = doc?.refOf(index)
   if (id === null || id === undefined) return
@@ -2637,6 +2656,12 @@ const menuFor = (index: number): MenuItem[] => {
       run: () => openPrefabOf(index),
     },
     {
+      label: 'Unlink from prefab',
+      enabled: own && ref !== null,
+      why: ref === null ? 'not a prefab placement' : inherited ? 'this is part of a prefab, not a placement of one' : why,
+      run: () => unlinkPlacement(index),
+    },
+    {
       label: 'Save as prefab…',
       enabled: own && ref === null && doc.mode === 'level',
       why: ref !== null ? 'already a prefab' : doc.mode === 'prefab' ? 'already inside a prefab' : why,
@@ -3651,6 +3676,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   duplicate: duplicateSelected,
   remove: deleteSelected,
   saveAsPrefab: () => void (selected !== null && saveAsPrefab(selected)),
+  unlinkPrefab: () => void (selected !== null && unlinkPlacement(selected)),
   openPrefab: () => {
     if (selected !== null) openPrefabOf(selected)
   },

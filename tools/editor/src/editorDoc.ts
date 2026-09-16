@@ -336,6 +336,13 @@ export interface Doc {
    * unlinked through here while the closed ones go through the files API.
    */
   unlinkPrefab: (id: string) => number
+  /**
+   * Turn **one** placement into a plain node keeping what it was drawing, and report whether it did
+   * (ADR 0111). The prefab file and every other placement of it are untouched.
+   *
+   * One op, so it is one undo and it reaches everyone in the room, like every other edit.
+   */
+  unlinkNode: (i: number) => boolean
   /** A level to instantiate for spawn gizmos and physics (prefab mode → wrapped at the origin). */
   asLevel: () => Level
   toJSON: () => Level | Node
@@ -1268,6 +1275,17 @@ const docOver = (
       walk(level.nodes)
       if (ops.length > 0) commit(ops)
       return ops.length
+    },
+    unlinkNode: (i) => {
+      const n = node(i)
+      const id = n?.authored.prefab
+      // Only a placement, and only one this document owns: an inherited node is part of a prefab's own
+      // definition, and there is nothing in this level to rewrite for it.
+      if (n === undefined || id === undefined || n.owner !== undefined) return false
+      const next = unlinkedNode(level, n.authored, id, { types: registry, freshId, refKeysOf: refKeys })
+      if (next === n.authored) return false
+      commit([{ kind: 'replaceNode', id: n.authored.id, node: next }])
+      return true
     },
     nodeEnabled: (i) => node(i)?.view.enabled !== false,
     setNodeEnabled: (i, on) => {

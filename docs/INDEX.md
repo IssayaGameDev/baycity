@@ -158,5 +158,6 @@ why matters.
 | [0108](adr/0108-a-game-is-a-folder.md) | A game is a folder |
 | [0109](adr/0109-the-editor-reopens-what-you-left.md) | The editor reopens what you left |
 | [0110](adr/0110-a-level-is-managed-like-an-asset.md) | A level is managed like an asset |
+| [0111](adr/0111-a-placement-can-be-unlinked.md) | A placement can be unlinked |
 
 `Design archive/` holds superseded design material and is not maintained.

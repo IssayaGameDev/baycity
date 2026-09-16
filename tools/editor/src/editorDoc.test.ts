@@ -1099,3 +1099,79 @@ describe('the viewport preview agrees with the loader', () => {
     })
   }
 })
+
+/**
+ * Unlinking one placement (ADR 0111): it keeps what it was drawing and stops following the prefab. The
+ * whole-prefab version (`unlinkPrefab`) is covered in `packages/content/src/unlink.test.ts`; this is about the
+ * one-node door the hierarchy menu and the Inspector open.
+ */
+describe('unlinking one placement', () => {
+  it('drops the reference and keeps what was on screen', () => {
+    const { doc } = placed()
+    expect(doc.refOf(0)).toBe(PAD_ID)
+    expect(doc.unlinkNode(0)).toBe(true)
+    expect(doc.refOf(0), 'no longer a placement').toBeNull()
+    // The pad it was drawing is still there, now as its own child rather than an inherited one.
+    expect(doc.count()).toBe(2)
+    expect(doc.kindOf(1)).toBe('own')
+    expect(typesOn(doc, 1)).toEqual([COLLIDER, RENDERER])
+  })
+
+  it('leaves the other placements of the same prefab alone', () => {
+    const { doc } = placed()
+    placeRef(doc, vec3(4, 0, 0))
+    expect(doc.refCount(PAD_ID)).toBe(2)
+    expect(doc.unlinkNode(0)).toBe(true)
+    expect(doc.refCount(PAD_ID), 'the other one still follows the prefab').toBe(1)
+  })
+
+  /**
+   * A prefab's **node** ids are minted in its own scope, so inlining two placements unchanged would give the
+   * level duplicates — which `validateLevel` refuses (component ids are per node and may repeat).
+   */
+  it('re-ids the nodes it inlines, so two unlinked placements do not collide', async () => {
+    const { validateLevel } = await import('@mp/content')
+    const { level, doc } = placed()
+    placeRef(doc, vec3(4, 0, 0))
+    expect(doc.unlinkNode(0)).toBe(true)
+    expect(doc.unlinkNode(2)).toBe(true)
+    const ids: string[] = []
+    const walk = (nodes: readonly import('@mp/content').Node[]): void => {
+      for (const n of nodes) {
+        ids.push(n.id)
+        if (n.children !== undefined) walk(n.children)
+      }
+    }
+    walk(level.nodes)
+    expect(new Set(ids).size, `duplicate node id among ${ids.join(', ')}`).toBe(ids.length)
+    expect(() => validateLevel(level)).not.toThrow()
+  })
+
+  it('keeps an override, because it is what was being drawn', () => {
+    const { doc } = placed()
+    doc.setParams(1, idOf(doc, 1, RENDERER), { material: 'mat-1' })
+    expect(doc.unlinkNode(0)).toBe(true)
+    expect(paramOn(doc, 1, RENDERER, 'material'), 'the override became the value').toBe('mat-1')
+  })
+
+  it('refuses a node that is not a placement, and an inherited one', () => {
+    const { doc } = placed()
+    // Index 1 is inherited — part of the prefab's own definition, with nothing here to rewrite.
+    expect(doc.unlinkNode(1)).toBe(false)
+    expect(doc.refOf(0), 'and the placement is untouched').toBe(PAD_ID)
+    doc.unlinkNode(0)
+    expect(doc.unlinkNode(0), 'already unlinked').toBe(false)
+  })
+
+  it('is one batch of ops, and its inverse puts the link back', async () => {
+    const { applyBatch } = await import('@mp/content')
+    const { level, doc } = placed()
+    const start = structuredClone(level)
+    const batches: { ops: import('@mp/content').Op[]; inverses: import('@mp/content').Op[] }[] = []
+    doc.onOps = (b) => batches.push(b)
+    expect(doc.unlinkNode(0)).toBe(true)
+    expect(batches, 'one batch, so one undo').toHaveLength(1)
+    applyBatch(level, batches[0]!.inverses)
+    expect(level).toEqual(start)
+  })
+})
