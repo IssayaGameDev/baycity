@@ -166,5 +166,6 @@ why matters.
 | [0116](adr/0116-a-cell-belongs-to-the-board-its-centre-is-on.md) | A cell belongs to the board its centre is on |
 | [0117](adr/0117-snapping-moves-the-corner.md) | Snapping moves the corner, not the centre |
 | [0118](adr/0118-the-keyboard-grid-goes-back-on-the-platform.md) | The keyboard grid goes back on the platform |
+| [0119](adr/0119-a-face-is-a-handle.md) | A face is a handle |
 
 `Design archive/` holds superseded design material and is not maintained.

@@ -6,7 +6,11 @@
  * which disposed and re-added its controls whenever anything changed — losing focus mid-edit and
  * flickering. Nothing here is recreated after construction except the two option lists.
  */
-export type GizmoMode = 'translate' | 'rotate' | 'scale'
+/**
+ * The transform tools. `face` is the push/pull of ADR 0119 — grab one face of a box and drag it, the opposite
+ * face staying put. Not a `TransformControls` mode: the faces are the handles, so it runs its own drag.
+ */
+export type GizmoMode = 'translate' | 'rotate' | 'scale' | 'face'
 /** Which frame the gizmo handles point along — Unity's Local/Global button. */
 export type GizmoSpace = 'world' | 'local'
 
@@ -128,10 +132,12 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
     ['translate', 'Move', 'T'],
     ['rotate', 'Rotate', 'R'],
     ['scale', 'Scale', 'S'],
+    // No shortcut, Kodjo's call: the letters worth having are taken and this is a button you reach for.
+    ['face', 'Face', ''],
   ] as const) {
     const b = el('button')
     b.textContent = text
-    b.title = `${text} (${key})`
+    b.title = key === '' ? 'pull one face of a box; the opposite face stays put' : `${text} (${key})`
     b.addEventListener('click', () => actions.setGizmo(mode))
     gizmoButtons.set(mode, b)
     seg.append(b)
