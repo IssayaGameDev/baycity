@@ -2719,6 +2719,60 @@
           ]
         }
       ]
+    },
+    {
+      "id": "247a815f",
+      "name": "platform",
+      "transform": {
+        "position": {
+          "x": 2,
+          "y": 2,
+          "z": 26.5
+        }
+      },
+      "components": [
+        {
+          "id": "7b9a4bf5",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "ca05646a",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:box"
+          }
+        },
+        {
+          "id": "4bcc000e",
+          "type": "Renderer",
+          "params": {
+            "material": ""
+          }
+        },
+        {
+          "id": "bfc7eed1",
+          "type": "Keyboard",
+          "params": {
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1
+          }
+        }
+      ]
     }
   ],
   "prefabs": {
