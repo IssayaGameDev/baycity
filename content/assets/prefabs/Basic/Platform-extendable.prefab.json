@@ -1,6 +1,6 @@
 {
   "id": "root",
-  "name": "Ground extendable",
+  "name": "Platform extendable",
   "transform": {
     "position": {
       "x": 0,
@@ -11,22 +11,17 @@
   "components": [],
   "children": [
     {
-      "id": "7d72d7af",
-      "name": "Ground",
+      "id": "dffedd8e",
+      "name": "Platform",
       "transform": {
         "position": {
           "x": 0,
           "y": 0,
-          "z": 16.7
-        },
-        "rotation": {
-          "x": -0.0004,
-          "y": 0,
-          "z": 0
+          "z": 16.65
         },
         "scale": {
           "x": 33.3,
-          "y": 0.3185,
+          "y": 0.3,
           "z": 33.3
         }
       },

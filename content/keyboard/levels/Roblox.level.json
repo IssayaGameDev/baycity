@@ -81,7 +81,7 @@
         "position": {
           "x": 1,
           "y": 5.5,
-          "z": 65.5
+          "z": 71.5
         }
       },
       "components": [],
@@ -1941,6 +1941,24 @@
               }
             }
           ]
+        },
+        {
+          "id": "67b5089e",
+          "name": "Platform extendable",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": -0.5,
+              "z": 21.3
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 0.1
+            }
+          },
+          "components": [],
+          "prefab": "d75bc013a11360f2"
         }
       ]
     }
