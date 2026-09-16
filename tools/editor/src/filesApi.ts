@@ -1,4 +1,4 @@
-import { validateLevel, type Level } from '@mp/content'
+import { assetFile, levelFile, parseQualified, validateLevel, type Level } from '@mp/content'
 import { DEFAULT_REGISTRY, type Registry } from '@mp/components'
 import { normalizePoints, type CurvePoint } from '@mp/mode'
 
@@ -35,10 +35,15 @@ const req = async (kind: FileKind, path = '', init?: RequestInit): Promise<Respo
   return r
 }
 
-/** One level on disk, as a listing needs it: its file name and the game it declares (ADR 0052). */
+/** One level on disk, as a listing needs it: its qualified name and the game whose folder it is in. */
 export interface FileEntry {
+  /** `<game>/<name>` (ADR 0108) — what every route, lock key and live document key calls this level. */
   name: string
-  /** Absent for a level that names no game, and for one whose file will not parse. */
+  /**
+   * The game this level belongs to, which is now the **folder it is in** (ADR 0108) and so is always
+   * present. It used to come from `config.mode.name` inside the file, and was therefore absent for a level
+   * that named no game and for one that would not parse.
+   */
   mode?: string
   /**
    * The asset ids of every prefab this level references (ADR 0097). Absent when it references none, and for
@@ -139,8 +144,12 @@ export const serverStatus = (): Promise<ServerStatus> => getJson('/api/status')
  * a *file*, so what the editor writes is what it locks: the level, the prefab asset, the material, the clip.
  */
 export const lockKey = {
-  level: (name: string): string => `content/levels/${name}.json`,
-  asset: (path: string): string => `content/assets/${path}`,
+  /** `name` is the qualified `<game>/<name>` (ADR 0108). */
+  level: (name: string): string => {
+    const ref = parseQualified(name)
+    return ref === null ? `content/${name}` : `content/${levelFile(ref)}`
+  },
+  asset: (path: string): string => `content/${assetFile(path)}`,
 }
 
 /** Take a lock. Resolves the holder's name when someone else has it live, `null` when it is yours. */

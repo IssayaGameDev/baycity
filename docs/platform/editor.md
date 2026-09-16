@@ -6,9 +6,9 @@ Level/prefab editor. `pnpm dev:editor` → `http://localhost:5176` (the dev host
 
 | Document | On disk | Written via |
 | --- | --- | --- |
-| Level (node tree + `config`) | `content/levels/<name>.json` | `PUT /api/levels/<name>` (`saveFile`, `src/filesApi.ts`); locked while open (ADR 0083) |
+| Level (node tree + `config`) | `content/<game>/levels/<name>.level.json` | `PUT /api/levels/<game>/<name>` (`saveFile`, `src/filesApi.ts`); locked while open (ADR 0083) |
 | Prefab (a root `Node`) | `content/assets/prefabs/<name>.prefab.json` — an **asset** with a `.meta` id (ADR 0026) | created once by `Save as prefab…` (`createPrefab`, `src/assetsApi.ts`), then **edited live** in its own room (ADR 0091) |
-| Game shared-component list | `content/games/<game>.json` | `PUT /api/games/<game>` (`saveGame`) — appended by adoption (ADR 0077) |
+| Game shared-component list | `content/<game>/game.json` | `PUT /api/games/<game>` (`saveGame`) — appended by adoption (ADR 0077) |
 | Materials, clips | `content/assets/**` JSON | `PUT /assets/<path>` |
 
 Both levels and prefabs are live rooms, so there is no Save and no file lock for either (ADR 0089, ADR 0091); only materials and clips are still locked files.
@@ -19,7 +19,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 
 | Area | Element | Module |
 | --- | --- | --- |
-| Top | `#toolbar` — **Game** picker, level list, name (read-only), New, Duplicate, Back, gizmo T/R/S, space, snap/step, Play, grid, markers. No mode select and no Save: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
+| Top | `#toolbar` — name (read-only), New, Duplicate, Back, gizmo T/R/S, space, snap/step, Motion, Play, grid, markers. **No game picker and no level list** (ADR 0108): a game is a folder of levels, so opening is the Project panel's tree. No mode select and no Save either: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
 | Left | `#hierarchy` — node tree + context menu | `src/hierarchy.ts`, `src/menu.ts` |
 | Centre | `#view` — Three stage, orbit, transform gizmo, placement clicks | `src/main.ts` |
 | Right | `#insp-head`, `#inspector`, `#asset-inspector` | `src/inspector.ts`, `src/assetInspector.ts` |
@@ -47,11 +47,11 @@ The routes are `tools/editor-server/src/api.ts`, mounted by `vite.config.ts` (`f
 | `pagehide` | `releaseLockBeacon` per held lock; `collab.beaconLeave()` |
 | upload | `ProjectHost.onUpload(files, folder)` from a desktop drop on a folder row, folder tile or the grid (`dropTargetFor`, `folder` getter; not for *All folders* or the level's own); files over `maxUploadBytes` are named and skipped; `afterFileOp` uploads the rest |
 
-`content/games/<game>.json` is written by `adopt` without a lock (gated only by others' locks).
+`content/<game>/game.json` is written by `adopt` without a lock (gated only by others' locks).
 
 The dev editor's `@content` alias is pinned to the repo's `content/` (`contentAlias(REPO_CONTENT)`): it edits that folder, never the live mirror (`content-sync.md`, ADR 0084).
 
-**Watcher:** `watch.ignored: ['**/content/games/**']`. Every game's `rules.ts` imports its `content/games/<game>.json` and the editor bundles those modules, so a write would full-reload the editor and lose undo history right after the editor wrote it. The editor reads the files live over `/api/games`; the game's dev server still reloads (ADR 0077).
+**Watcher:** `watch.ignored: ['**/content/*/game.json']`. Every game's `rules.ts` imports its `content/<game>/game.json` and the editor bundles those modules, so a write would full-reload the editor and lose undo history right after the editor wrote it. The editor reads the files live over `/api/games`; the game's dev server still reloads (ADR 0077).
 
 ## Edits are ops (ADR 0089)
 
@@ -281,19 +281,45 @@ Others' selection is what the hold boxes and badges show: a selection *is* a hol
 Holds work the same inside a prefab's room. A hold there does **not** block a level's override on the same
 node, and the reverse: they are different edits — the shared definition, and this one placement.
 
+## Project panel — games at the top (ADR 0108)
+
+`src/projectPanel.ts`. The tree is games first, then the shared asset library:
+
+```
+Keyboard  3      <- click: author for this game, its levels as tiles
+  default        <- click: open it
+  keyboard2
+Parkour   6
+assets           <- the existing folder tree, unchanged
+  materials
+  prefabs
+```
+
+- `Place` (`src/assetTree.ts`) is where the panel is looking: `{ at: 'game', game }` or
+  `{ at: 'assets', folder }`. A union rather than a path with a magic prefix, because a game is not a folder of
+  assets and its levels are not asset entries — the prefix version needs an `if` at every use of `folder`.
+- `gameRows(games, levels)` (pure, tested) groups the level listing under its games, games by label and
+  `default` first. A game with no levels is still a row: it is where the first one is made.
+- **A level is not an asset entry.** Nothing references a level by id, so it has no `.meta` and is not in the
+  asset database; it is its own row type keyed by the qualified `<game>/<name>`.
+- Host hooks: `games`, `levels`, `openLevel`, `onOpenLevel`, `onPickGame`, `onNewLevel`. `Project.showGame`
+  lets the editor point the tree at the open document's game, so what is open is always visible.
+- `onPickGame` selects without opening: clicking a game to look at its levels must not discard the document
+  you have. It is what `New` makes a level in, and what composes the registry while nothing is open.
+
 ## Game discovery (`src/modes.ts`)
 
 - `MODES`: `import.meta.glob('../../../modes/*/src/editorMode.ts', { eager: true })`; every export passing structural `isDescriptor` (`name`, `registry`, `session`) is installed by `name`; duplicates warn, first wins.
 - Paths containing `/modes/_` skipped → `modes/_template` never in the picker.
 - `MODE_LIST` sorted by `label`; `modeOf(level)`; `soleMode()` = the only installed game, else `undefined`.
-- `package.json` lists only `@mode/parkour`; other games enter via the glob's relative path. `tsconfig.json` includes `content/levels/*.json`, `content/games/*.json`.
+- `package.json` lists only `@mode/parkour`; other games enter via the glob's relative path. `tsconfig.json` includes `content/<game>/levels/*.level.json`, `content/*/game.json`.
 
 ## Registry a level is edited against (`src/main.ts`)
 
 | Symbol | Role |
 | --- | --- |
-| `activeMode` | from the opened level's `config.mode.name` (fallback `soleMode()`), or the toolbar Game picker (`setGame` also opens that game's first level) |
-| `gameData` | per game, `content/games/<game>.json` via `loadGame` at boot (`reloadAssets`) and after each `adopt` |
+| `activeMode` | the opened level's **folder** — its name is qualified `<game>/<name>` (ADR 0108), so the game is known before the file is read (fallback `soleMode()`) — or a game clicked in the Project tree (`onPickGame`, which selects without opening anything) |
+| `gameData` | per game, `content/<game>/game.json` via `loadGame` at boot (`reloadAssets`) and after each `adopt` |
 | `registryFor(mode)` | `mode.registry` + `sharedComponents(gameData[mode.name] − present)` — live data merged over the bundled code |
 | `registry()` | `registryFor(activeMode)`, or `DEFAULT_REGISTRY` with no game |
 | `adoptable()` | `SHARED_COMPONENT_TYPES` the game lacks (`Boss`, `Bumper`, `Checkpoint`, `Goal`, `Hazard`, `Mover`, `Spinner`) |
@@ -304,7 +330,7 @@ Adoption points (ADR 0077):
 2. **Place** (`armAsset`): `missingIn(assetId)` splits a prefab's unknown types into `shared`/`foreign`; shared adopted before arming — not while a prefab is open on top (a prefab belongs to no game).
 3. **Add Component** (Inspector button, Hierarchy submenu): `adoptable()` listed beside addable types; pick → `adopt` → `doc.addComponent`.
 
-File list filtered by game: `visibleLevels()` keeps entries whose `mode` is absent or equals `activeMode.name`.
+File list filtered by game: `visibleLevels()` keeps entries whose `mode` — the folder they are in — equals `activeMode.name`. There is no unassigned case left: a `.level.json` outside a game's `levels/` is not listed at all (ADR 0108).
 
 ## Refusing another game's private components (ADR 0076)
 
@@ -383,4 +409,4 @@ started from the mutated number.
 
 ## Level validation test (`src/levels.test.ts`)
 
-Every `content/levels/*.json`: `validateLevel(raw, MODES[config.mode.name]?.registry ?? DEFAULT_REGISTRY)` must not throw. Tripwires: level dir non-empty, `MODES` non-empty. Lives here because only the editor can import every game's registry without inverting dependencies.
+Every `content/<game>/levels/*.level.json`: `validateLevel(raw, MODES[<folder>]?.registry ?? DEFAULT_REGISTRY)` must not throw — the folder is the game (ADR 0108), which a tag inside the file could contradict. Tripwires: some levels found, `MODES` non-empty. Lives here because only the editor can import every game's registry without inverting dependencies.

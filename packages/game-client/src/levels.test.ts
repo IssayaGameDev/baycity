@@ -12,8 +12,8 @@ import { levelsFor, pickLevel } from './levels'
 const ANY = DEFAULT_REGISTRY
 
 /**
- * `content/levels/` is shared by every game on the platform, so the list has to be filtered — otherwise a
- * game offers files built for another, whose components it has never heard of.
+ * A game's levels are the ones in its own folder (ADR 0108), so a game can only ever see its own — it used to
+ * be a filter on a tag inside each file, over one shared directory.
  */
 describe('a game\u2019s levels', () => {
   it('lists its own and not another game\u2019s', () => {
@@ -34,9 +34,9 @@ describe('a game\u2019s levels', () => {
   })
 
   /**
-   * A level's name is its **filename**, and the directory is shared, so two games cannot both own
-   * `default.json`. The fallback is therefore the game's *first* level, which is what lets a second game boot
-   * with no `?level=` at all — swing has exactly one level and it is not called `default`.
+   * Every game may now own a `default.level.json`, because the folder keeps them apart (ADR 0108). The
+   * fallback to the game's *first* level stays, for a game that has not made one yet — swing has exactly one
+   * level and it is not called `default`.
    */
   describe('the level that loads with no ?level=', () => {
     it('prefers one actually called default', () => {

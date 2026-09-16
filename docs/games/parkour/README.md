@@ -5,7 +5,7 @@ goal, hazards, bumpers, moving platforms. Run: `pnpm dev:parkour` (port 5174) wi
 
 ## Rules — `modes/parkour/src/rules.ts`
 
-- Registry: engine + player components + `Locomotion` + the shared set in `content/games/parkour.json`
+- Registry: engine + player components + `Locomotion` + the shared set in `content/parkour/game.json`
   (`Bumper`, `Checkpoint`, `Goal`, `Hazard`, `Track`).
 - `parkourSession(loaded, opts)`: progress is a **checkpoint index** in tree order (`checkpointsOf`), only ever
   advancing; `respawnAt()` is the last checkpoint reached (standing height `STAND_OFFSET`) or the spawn;
@@ -20,7 +20,7 @@ goal, hazards, bumpers, moving platforms. Run: `pnpm dev:parkour` (port 5174) wi
 
 ## Client — `main.ts`
 
-`startTpsClient(PARKOUR_MODE)` and nothing else. Levels: `content/levels/*.json` naming `parkour`, picked with
+`startTpsClient(PARKOUR_MODE)` and nothing else. Levels: `content/<game>/levels/*.level.json` naming `parkour`, picked with
 `?level=<name>`, default `default.json`.
 
 ## Tests

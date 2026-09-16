@@ -31,10 +31,10 @@ import { TEMPLATE_MODE } from './editorMode'
  * 4. `vite.config.ts`: pick a free port
  * 5. root `package.json`: add `dev:<yours>`, then `pnpm install`
  * 6. give it a level — author one in the editor with your game selected, or copy an existing
- *    `content/levels/*.json` and set its `id` and `config.mode.name`. Then decide what
+ *    `content/<game>/levels/*.level.json` and set its `id` and `config.mode.name`. Then decide what
  *    `TEMPLATE_REGISTRY` installs.
  *
- * Until step 6 it will not boot: `content/levels/` is filtered by `config.mode.name` and nothing there is
+ * Until step 6 it will not boot: `content/<game>/levels/` is filtered by `config.mode.name` and nothing there is
  * authored for `template`, so this throws with the list of what it does have. `modes/swing` is the worked
  * example.
  */

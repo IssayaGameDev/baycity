@@ -30,10 +30,10 @@ pnpm dev:parkour  # http://localhost:5174  (open it)
 Click the view to capture the mouse. **Mouse** orbits the camera, **WASD** moves (camera-relative; the character faces its movement), **Space** jumps, **Esc** opens the pause screen. Your character is simulated locally (client-authoritative); the server relays your position to other players, who appear interpolated with a nametag. Open a second browser tab — both auto-join one shared room. Touch a green checkpoint pad to respawn there; moving platforms run off the shared clock, so they are in sync across tabs. The **Debug** pane (top-right) tunes movement feel and camera. **On a phone**: drag the left thumbstick to move, tap-and-hold the bottom-right button to jump, drag anywhere else to look, pinch to zoom — untested on a real device so far (see `docs/INDEX.md`).
 
 By default you get the built-in **gym** — the test course below. Add `?level=<name>` to load a level
-file from `content/levels/` instead (`?level=level1`); the name also picks the room, so tabs on
+file from `content/<game>/levels/` instead (`?level=level1`); the name also picks the room, so tabs on
 different levels will not see each other. Author those files with `pnpm dev:editor`.
 
-With no `?level=` you get **`content/levels/default.json`**: a floor, a climb, a gap, an elevator, a
+With no `?level=` you get **`content/<game>/levels/default.level.json`**: a floor, a climb, a gap, an elevator, a
 turntable, a hazard pad, a checkpoint and a goal. One of each mechanic, deliberately a placeholder rather than
 designed content — it exists so the game always boots into something. It is a normal level file, so open it in
 the editor and change it.

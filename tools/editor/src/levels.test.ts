@@ -1,7 +1,7 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 
 import { DEFAULT_REGISTRY } from '@mp/components'
-import { validateLevel } from '@mp/content'
+import { levelRefForFile, LEVELS_DIR, validateLevel } from '@mp/content'
 import { describe, expect, it } from 'vitest'
 
 import { MODES } from './modes'
@@ -15,35 +15,38 @@ import { MODES } from './modes'
  * that is perfectly valid. A package cannot import a game without inverting the dependency; the editor
  * already globs every one of them, so this is where the question can be asked.
  *
- * Stronger than what it replaces, too. Validating against the game named in `config.mode.name` also catches a
- * level authored for a game whose registry does not install the component the level uses — which the old test
- * could not see at all.
- *
- * A level naming no game, or one this build does not have, falls back to the shared registry: those files
- * predate games being explicit and must still be readable (`modeOf`'s own rule).
+ * The game is now the **folder** the level is in (ADR 0108), which is stronger than the `config.mode.name` it
+ * used to read: a tag can be absent, stale or in a file that will not parse, and a folder cannot. A level in
+ * a folder this build has no game for falls back to the shared registry, because a missing sibling app must
+ * not fail the file.
  *
  * It exists because nothing else covers the files themselves. A component renamed, a parameter retyped, or a
  * migration writing a shape the validator rejects would all ship silently and fail in the browser.
  */
 describe('every authored level', () => {
-  const dir = 'content/levels'
-  const files = readdirSync(dir).filter((name) => name.endsWith('.json'))
+  const root = 'content'
+  /** Walk the game folders: `content/<game>/levels/<name>.level.json`. */
+  const files = readdirSync(root, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && existsSync(`${root}/${e.name}/${LEVELS_DIR}`))
+    .flatMap((e) =>
+      readdirSync(`${root}/${e.name}/${LEVELS_DIR}`).map((f) => `${e.name}/${LEVELS_DIR}/${f}`),
+    )
+    .filter((rel) => levelRefForFile(rel) !== null)
 
   it('finds some levels at all, so a bad path cannot make this vacuously pass', () => {
     expect(files.length).toBeGreaterThan(0)
   })
 
-  it('has the games installed that its levels name', () => {
+  it('has the games installed that its level folders name', () => {
     // Not a validity check — a tripwire on the glob. If `MODES` came back empty the loop below would still
     // pass on every file, having quietly fallen back to the shared registry for all of them.
     expect(Object.keys(MODES).length).toBeGreaterThan(0)
   })
 
-  for (const file of files) {
-    it(`${file} validates against its own game, parameters included`, () => {
-      const raw: unknown = JSON.parse(readFileSync(`${dir}/${file}`, 'utf8'))
-      const named = (raw as { config?: { mode?: { name?: unknown } } }).config?.mode?.name
-      const mode = typeof named === 'string' ? MODES[named] : undefined
+  for (const rel of files) {
+    it(`${rel} validates against its own game, parameters included`, () => {
+      const raw: unknown = JSON.parse(readFileSync(`${root}/${rel}`, 'utf8'))
+      const mode = MODES[levelRefForFile(rel)!.game]
       expect(() => validateLevel(raw, mode?.registry ?? DEFAULT_REGISTRY)).not.toThrow()
     })
   }

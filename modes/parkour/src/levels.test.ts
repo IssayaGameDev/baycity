@@ -15,7 +15,7 @@ describe('level selection', () => {
     await initPhysics()
   })
 
-  it('defaults to default.json when no name is given', () => {
+  it('defaults to default.level.json when no name is given', () => {
     expect(levels.byName(null).id).toBe(levels.byName(DEFAULT_NAME).id)
   })
 
@@ -110,8 +110,9 @@ describe('the kill plane', () => {
 })
 
 /**
- * `content/levels/` is shared by every game on the platform, so the list has to be filtered or a mode
- * offers files built for a different game, whose components it has never heard of.
+ * A game's levels are the ones in its own folder, `content/parkour/levels/` (ADR 0108). The tag inside each
+ * file is kept in step with the folder, so it is still worth asserting: a level whose tag says another game
+ * would be refused by `LevelSource.validate` if it ever arrived over HTTP.
  */
 describe('whose levels these are', () => {
   it('only lists levels that name this game, or name none', () => {

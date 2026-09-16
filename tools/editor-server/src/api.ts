@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { join, normalize, relative, sep } from 'node:path'
+import { dirname, join, normalize, relative, sep } from 'node:path'
 
 import { kindForPath, META_SUFFIX } from '../../../packages/content/src/assets'
+import { ASSETS_DIR, gameFile, isGameName, levelFile, levelRefForFile, parseQualified, qualify, LEVELS_DIR } from '../../../packages/content/src/layout'
 import type { NodeRef, Op } from '../../../packages/content/src/ops'
 import { prefabRefsIn } from '../../../packages/content/src/prefabs'
 import type { Level } from '../../../packages/content/src/types'
@@ -97,7 +98,14 @@ export class AuthError extends Error {
   }
 }
 
-const ROUTE_RE = /^\/api\/(levels|games)(?:\/([\w-]+))?$/
+/**
+ * `/api/levels`, `/api/levels/<game>/<name>`, `/api/games`, `/api/games/<game>`.
+ *
+ * A level takes **two** segments because a game is a folder and two games may both own a `default`
+ * (ADR 0108). The trailing group is the whole rest of the path, checked by `parseQualified` rather than by
+ * this regex, so the one definition of a legal name lives in `@mp/content`.
+ */
+const ROUTE_RE = /^\/api\/(levels|games)(?:\/(.+))?$/
 const MAX_JSON_BYTES = 32 * 1024 * 1024
 /** What upload accepts: what the runtime loads. `.gltf` is refused — it drags `.bin` and textures along. */
 export const UPLOAD_EXTENSIONS: ReadonlySet<string> = new Set(['png', 'jpg', 'jpeg', 'webp', 'ktx2', 'glb'])
@@ -173,9 +181,13 @@ const strField = (o: Record<string, unknown>, name: string): string => {
 
 /** Repo-relative lock/commit key for a file the API knows. */
 export const keyFor = {
-  level: (name: string): string => `content/levels/${name}.json`,
-  game: (name: string): string => `content/games/${name}.json`,
-  asset: (path: string): string => `content/assets/${path}`,
+  /** `name` is the qualified `<game>/<name>` (ADR 0108). */
+  level: (name: string): string => {
+    const ref = parseQualified(name)
+    return ref === null ? `content/${name}` : `content/${levelFile(ref)}`
+  },
+  game: (name: string): string => `content/${gameFile(name)}`,
+  asset: (path: string): string => `content/${ASSETS_DIR}/${path}`,
 }
 
 /** Every file under `dir`, as forward-slashed paths relative to `dir`. */
@@ -196,9 +208,30 @@ const filesUnder = (dir: string): string[] => {
 export const createContentApi = (opts: ApiOptions): ApiHandler => {
   const now = opts.now ?? (() => Date.now())
   const CONTENT = join(opts.repoRoot, 'content')
-  const DIRS = { levels: join(CONTENT, 'levels'), games: join(CONTENT, 'games') }
-  const ASSETS = join(CONTENT, 'assets')
-  for (const dir of [...Object.values(DIRS), ASSETS]) if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  const ASSETS = join(CONTENT, ASSETS_DIR)
+  if (!existsSync(ASSETS)) mkdirSync(ASSETS, { recursive: true })
+
+  /** The game folders: a directory at the content root holding a `game.json` (ADR 0108). */
+  const gameNames = (): string[] =>
+    !existsSync(CONTENT)
+      ? []
+      : readdirSync(CONTENT)
+          .filter((n) => isGameName(n) && statSync(join(CONTENT, n)).isDirectory() && existsSync(join(CONTENT, gameFile(n))))
+          .sort()
+
+  /** Every level file, as `{ ref, file }` with `file` absolute. */
+  const levelFiles = (): { ref: { game: string; name: string }; file: string }[] => {
+    const out: { ref: { game: string; name: string }; file: string }[] = []
+    for (const game of gameNames()) {
+      const dir = join(CONTENT, game, LEVELS_DIR)
+      if (!existsSync(dir)) continue
+      for (const f of readdirSync(dir).sort()) {
+        const ref = levelRefForFile(`${game}/${LEVELS_DIR}/${f}`)
+        if (ref !== null) out.push({ ref, file: join(dir, f) })
+      }
+    }
+    return out
+  }
 
   const changed = (user: User, paths: string[]): void => {
     opts.onChanged?.(user, paths)
@@ -353,39 +386,39 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     const m = ROUTE_RE.exec(url)
     if (m === null) return false
     const kind = m[1] as 'levels' | 'games'
-    const dir = DIRS[kind]
-    const name = m[2]
-    if (name === undefined) {
+    const rest = m[2]
+    if (rest === undefined) {
       if (req.method !== 'GET') return false
-      // Name, which game it is for (ADR 0052), and which prefabs it references (ADR 0097). A file that will
-      // not parse is listed without either rather than omitted — you have to be able to see a broken level in
-      // order to fix it.
+      if (kind === 'games') return sendJson(res, 200, gameNames().map((name) => ({ name }))), true
+      // Qualified name, the game it is in, and which prefabs it references (ADR 0097). A file that will not
+      // parse is listed without the prefabs rather than omitted — you have to be able to see a broken level
+      // in order to fix it. `mode` now comes from the **folder** (ADR 0108), which is the game by
+      // construction, so a listing no longer depends on a tag inside a file that may not parse.
       //
       // The prefab ids ride along in the pass this already makes over every level file, which is what makes
       // "N levels use this" affordable enough to put in front of a delete.
-      const entries = readdirSync(dir)
-        .filter((f) => f.endsWith('.json'))
-        .map((f) => {
-          const levelName = f.slice(0, -'.json'.length)
-          try {
-            // An open document is ahead of its file, and a placement made in the last few seconds counts.
-            const live = kind === 'levels' ? opts.live?.levelOf(levelName) : null
-            const parsed = (live ?? JSON.parse(readFileSync(join(dir, f), 'utf8'))) as Level & { config?: { mode?: { name?: unknown } } }
-            const mode = parsed.config?.mode?.name
-            const prefabs = prefabRefsIn(parsed)
-            return {
-              name: levelName,
-              ...(typeof mode === 'string' && mode !== '' ? { mode } : {}),
-              ...(prefabs.length > 0 ? { prefabs } : {}),
-            }
-          } catch {
-            return { name: levelName }
-          }
-        })
+      const entries = levelFiles().map(({ ref, file }) => {
+        const name = qualify(ref)
+        try {
+          // An open document is ahead of its file, and a placement made in the last few seconds counts.
+          const live = opts.live?.levelOf(name)
+          const parsed = (live ?? JSON.parse(readFileSync(file, 'utf8'))) as Level
+          const prefabs = prefabRefsIn(parsed)
+          return { name, mode: ref.game, ...(prefabs.length > 0 ? { prefabs } : {}) }
+        } catch {
+          return { name, mode: ref.game }
+        }
+      })
       sendJson(res, 200, entries)
       return true
     }
-    const file = join(dir, `${name}.json`)
+    // A level is `<game>/<name>`; a game is one segment. Anything else is a 404 rather than a path that
+    // resolves to somewhere unintended.
+    const ref = kind === 'levels' ? parseQualified(rest) : null
+    if (kind === 'levels' && ref === null) return sendJson(res, 404, { error: `${rest} is not a level name: <game>/<name>` }), true
+    if (kind === 'games' && !isGameName(rest)) return sendJson(res, 404, { error: `${rest} is not a game name` }), true
+    const name = ref === null ? rest : qualify(ref)
+    const file = join(CONTENT, ref === null ? gameFile(rest) : levelFile(ref))
     if (req.method === 'GET') {
       // An open live document is newer than its file until the next flush; serve it.
       const open = kind === 'levels' ? opts.live?.levelOf(name) : null
@@ -404,6 +437,8 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
         // registry, which the editor has and this server does not, so the editor checks those before sending.
         if (kind === 'levels') validateLevel(parsed)
         else if (!Array.isArray(asRecord(parsed).components)) throw new LevelError('games: expected { components: string[] }')
+        // A game folder, and its levels folder, is made on demand: a PUT is how a new game comes into being.
+        mkdirSync(dirname(file), { recursive: true })
         writeFileSync(file, `${JSON.stringify(parsed, null, 2)}\n`)
         changed(user, [key])
         sendJson(res, 200, { ok: true })
@@ -455,12 +490,19 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     if (live === undefined || !url.startsWith('/api/live')) return false
     if (url === '/api/live' && req.method === 'GET') return sendJson(res, 200, { docs: live.status() }), true
     /**
-     * `/api/live/level/<name>/…` and `/api/live/prefab/<assetId>/…` (ADR 0091). The kind is its own segment
-     * rather than a prefix in the name, because a name is matched as `[\w-]+` and a `:` in it would not be.
+     * `/api/live/level/<game>/<name>/…` and `/api/live/prefab/<assetId>/…` (ADR 0091). The kind is its own
+     * segment rather than a prefix in the name, because a `:` in a name would not match.
+     *
+     * A level's name carries a slash — it is qualified `<game>/<name>` (ADR 0108) — so the name group admits
+     * one. The action is a fixed alternation anchored at the end, so the greedy group backtracks off it. A
+     * level whose name is not a legal qualified one is not a document here, so the route does not match.
      */
-    const m = /^\/api\/live\/(level|prefab)\/([\w-]+)\/(events|ops|hold|release|presence|flush|leave|ping)$/.exec(url)
+    const m = /^\/api\/live\/(level|prefab)\/([\w\-/]+)\/(events|ops|hold|release|presence|flush|leave|ping)$/.exec(url)
     if (m === null) return false
-    const name = docKey(m[1] as 'level' | 'prefab', m[2]!)
+    const kind = m[1] as 'level' | 'prefab'
+    if (kind === 'level' && parseQualified(m[2]!) === null) return false
+    if (kind === 'prefab' && m[2]!.includes('/')) return false
+    const name = docKey(kind, m[2]!)
     const action = m[3]!
 
     if (action === 'events') {

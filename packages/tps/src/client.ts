@@ -297,10 +297,13 @@ export interface TpsClientOptions {
 export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient> => {
 
   /**
-   * Which level: `?level=<name>` picks a file from `content/levels/`, no param gets `default.json`. A typo
-   * falls back to the default rather than bricking the page, and says so in the console.
+   * Which level: `?level=<name>` picks a file from this game's own folder, `content/<game>/levels/`, and no
+   * param gets its `default.level.json` (ADR 0108). The name stays **bare** — the page knows which game it
+   * is — so every game gets to own a `default`. A typo falls back to the default rather than bricking the
+   * page, and says so in the console.
    *
-   * The name also picks the **room** — see `connect`. Everyone sharing a room has to be on the same
+   * The name also picks the **room** — see `connect`, which filters on game *and* level, so two games'
+   * `default` are two rooms. Everyone sharing a room has to be on the same
    * level: the geometry differs, and so does the movement-base index a rider puts on the wire, which is
    * assigned in instance order at load (ADR 0021). Mismatched clients would place each other on the
    * wrong platform entirely.
@@ -311,7 +314,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
    * hosted editor rewrites level files every few seconds and the dev server no longer watches them (ADR 0089).
    * Locally (`/`) and in a build the bundle is the level: the local loop is the mirror reloading the page.
    */
-  const live = import.meta.env.BASE_URL !== '/' ? fetchLevel : null
+  const live = import.meta.env.BASE_URL !== '/' ? fetchLevel(mode.name) : null
   const picked = await pickLevel(levels, new URLSearchParams(location.search).get('level'), live)
   const levelName = picked.name
   const levelData = picked.level

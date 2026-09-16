@@ -38,6 +38,21 @@ export { instantiateLevel } from './loader'
 export { hydratePrefabs, stripHydrated, prefabRefsIn, unlinkPrefab, unlinkedNode, type UnlinkDeps } from './prefabs'
 export { fingerprintLevel, fingerprintGeometry, firstDifference } from './fingerprint'
 export { matchEntry, migrateLevelRefs, newRefReport } from './migratePrefabRefs'
+export {
+  ASSETS_DIR,
+  GAME_FILE,
+  LEVELS_DIR,
+  LEVEL_SUFFIX,
+  assetFile,
+  gameFile,
+  isGameName,
+  isSegment,
+  levelFile,
+  levelRefForFile,
+  parseQualified,
+  qualify,
+} from './layout'
+export type { LevelRef } from './layout'
 export type { Match, PrefabFile, RefReport } from './migratePrefabRefs'
 export type { PrefabSource } from './prefabs'
 export { BUILTIN_MODELS, BUILTIN_LABELS, isBuiltinModel, unitColliderFor, scaleCollider, builtinShape, PRIMITIVE_ORDER, PRIMITIVE_PRESETS, PRIMITIVE_LABELS } from './primitives'

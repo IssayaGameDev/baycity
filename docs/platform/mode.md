@@ -8,7 +8,7 @@ Package `packages/mode` (`@mp/mode`). Headless: no renderer import; gizmo colour
 |---|---|---|
 | `name` | `string` | Stable id; matches `LevelConfig.mode.name`. Never shown. |
 | `label` | `string` | Picker text. |
-| `registry` | `Registry` | Engine + shared (from `content/games/<name>.json`) + own components. Composed, not inherited (see `docs/platform/components/api.md`). |
+| `registry` | `Registry` | Engine + shared (from `content/<name>/game.json`) + own components. Composed, not inherited (see `docs/platform/components/api.md`). |
 | `tuning` | `CharacterTuning` (`packages/humanoid/src/groundController.ts`) | Starting locomotion numbers. Field because the editor play-tests in place. |
 | `gizmos` | `Readonly<Record<string, number>>` | Component type → `0xrrggbb` marker colour a tool draws over the rule's node. |
 | `spawn` | `(loaded: LoadedLevel, seed?: number) => Vec3` | Start position. `seed` = player id in a game, absent in a tool. |
@@ -84,7 +84,7 @@ The `self.node.id` the local player's components see, in both the game and the e
 
 | descriptor field | use |
 |---|---|
-| `name`, `registry` | `registryFor(mode)` — registry plus live `content/games/<name>.json` extras; `adopt` writes that file |
+| `name`, `registry` | `registryFor(mode)` — registry plus live `content/<name>/game.json` extras; `adopt` writes that file |
 | `label` | picker; status text |
 | `gizmos` | marker colours over rule nodes |
 | `spawn(loaded)` | character placement (no seed); fallback `(0, 3, 0)` with no game |
@@ -107,4 +107,4 @@ sampleCurve(points, x, { interpolation, beyond })   // before the first point: i
 normalizePoints(raw): CurvePoint[] | null  // sorted, deduped, finite
 ```
 
-Stored in `content/games/<game>.json` → `settings`; edited in the editor's Game row (a graph per curve, `editor.md`). Keyboard: `CURVE_SETTINGS`, three curves (`docs/games/keyboard/balance.md`, ADR 0087/0088).
+Stored in `content/<game>/game.json` → `settings`; edited in the editor's Game row (a graph per curve, `editor.md`). Keyboard: `CURVE_SETTINGS`, three curves (`docs/games/keyboard/balance.md`, ADR 0087/0088).

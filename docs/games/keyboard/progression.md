@@ -11,7 +11,7 @@
 ## The curves
 
 Three designed curves (ADR 0088, [balance.md](balance.md)), edited in the editor's Game row and stored in
-`content/games/keyboard.json`; `DEFAULT_CURVE` = the declared defaults, `GAME_CURVE` (`rules.ts`) = the file over them.
+`content/keyboard/game.json`; `DEFAULT_CURVE` = the declared defaults, `GAME_CURVE` (`rules.ts`) = the file over them.
 
 ```ts
 interface ProgressCurve { levelCost: CurvePoint[]; speed: CurvePoint[]; cadence: CurvePoint[] }

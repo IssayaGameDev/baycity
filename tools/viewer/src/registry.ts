@@ -2,7 +2,7 @@ import { validateLevel, type Level } from '@mp/content'
 import type { ModeDescriptor } from '@mp/mode'
 import { PARKOUR_MODE } from '@mode/parkour/editorMode'
 
-import level1 from '@content/levels/level1.json'
+import level1 from '@content/parkour/levels/level1.level.json'
 
 /**
  * The viewer's catalog: the level files in `content/levels/`.

@@ -35,7 +35,7 @@ Each exports `./editorMode` (`<NAME>_MODE: ModeDescriptor`) and `./rules` (headl
 | `swing` | `SWING_MODE` | 5175 | **same port as `tools/viewer`** |
 | `keyboard` | `KEYBOARD_MODE` | 5177 | Keyboard Escape (ADR 0069/0073) |
 
-Every game `vite.config.ts`: `allowedHosts: ['.trycloudflare.com', '.playgorbo.com']`, `proxy: '/relay' → http://localhost:9200` (ws, ADR 0074), `build.target: es2022`; keyboard and `_template` also `base: MP_BASE ?? '/'` (ADR 0086) and, with `MP_BASE` set, `/api` → `:8080` and no watch on `content/levels/**` (ADR 0089).
+Every game `vite.config.ts`: `allowedHosts: ['.trycloudflare.com', '.playgorbo.com']`, `proxy: '/relay' → http://localhost:9200` (ws, ADR 0074), `build.target: es2022`; keyboard and `_template` also `base: MP_BASE ?? '/'` (ADR 0086) and, with `MP_BASE` set, `/api` → `:8080` and no watch on `content/<game>/levels/**` (ADR 0089).
 
 ## Tools — see `tooling.md`, `editor.md`
 
@@ -59,11 +59,11 @@ Every game `vite.config.ts`: `allowedHosts: ['.trycloudflare.com', '.playgorbo.c
 
 Not CI-enforced beyond (2).
 
-## `content/games/<game>.json` (ADR 0077)
+## `content/<game>/game.json` (ADR 0077)
 
 `{ "components": ["Bumper", "Hazard"], "settings"?: { … } }` — shared gameplay components the game opts into, and its settings (ADR 0087, edited in the editor's Game row; absent keys are the game's defaults). Imported by its `rules.ts` (`sharedComponents(game.components)`), appended by the editor over `/api/games`. Current: `_template` Hazard; `keyboard` Bumper, Hazard; `parkour`, `swing` Bumper, Checkpoint, Goal, Hazard, Track. A non-shared name throws at registry build.
 
-**Vite watcher:** the editor ignores `**/content/games/**` (its bundle imports those files via every `rules.ts`; a write would full-reload it). Game dev servers do watch them.
+**Vite watcher:** the editor ignores `**/content/*/game.json` (its bundle imports those files via every `rules.ts`; a write would full-reload it). Game dev servers do watch them.
 
 ## Scripts (root `package.json`)
 
@@ -81,7 +81,7 @@ Not CI-enforced beyond (2).
 
 Build: per browser app, `pnpm --filter <pkg> run build` (`vite build`); no root build script.
 
-Run: `pnpm dev:server` + `pnpm dev:<game>`; two tabs auto-join one room. `?level=<file>` picks a `content/levels` file (also the matchmaking filter); `?server=wss://…` overrides the relay.
+Run: `pnpm dev:server` + `pnpm dev:<game>`; two tabs auto-join one room. `?level=<file>` picks a `content/<game>/levels` file (also the matchmaking filter); `?server=wss://…` overrides the relay.
 
 Conventions: cross-package imports by package name; tests colocated `src/**/*.test.ts`, import from `vitest`; `any` forbidden; `tsconfig.base.json` sets `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `verbatimModuleSyntax`.
 
@@ -99,6 +99,6 @@ Conventions: cross-package imports by package name; tests colocated `src/**/*.te
 3. `package.json` → `@mode/<yours>`.
 4. `vite.config.ts` → free port; keep `allowedHosts` + `/relay`.
 5. Root `dev:<yours>` script → `pnpm install`. Add to `SHARED_GAMES` (`tools/share/src/index.ts`) to make it shareable.
-6. `content/games/<yours>.json` (path imported by `rules.ts`) + a level in `content/levels` with `config.mode.name = <yours>`, authored in the editor with the game selected. Until then it throws at boot.
+6. `content/<yours>/game.json` (path imported by `rules.ts`) + a level in `content/<yours>/levels/`, authored in the editor with the game selected — the folder is what makes it yours (ADR 0108). Until then it throws at boot.
 
 No tool or package edits: the editor globs `modes/*/src/editorMode.ts`; the server filters by `game`.

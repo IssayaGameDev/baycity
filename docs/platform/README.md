@@ -10,7 +10,7 @@
 
 | File | Covers |
 | --- | --- |
-| `workspace.md` | package/game/tool list with deps and ports, dependency laws, scripts, adding a package or game, `content/games` |
+| `workspace.md` | package/game/tool list with deps and ports, dependency laws, scripts, adding a package or game, a game's own folder |
 | `editor.md` | `tools/editor`: authored files, panels, files API routes, game discovery, live registry + adoption, prefab refusal, play-test, level validation test |
 | `tooling.md` | `tools/share`, `tools/bots`, `tools/netsim`, `tools/viewer` — commands, env, ports |
 | `content.md` | level/prefab/asset data model, validation, loader |

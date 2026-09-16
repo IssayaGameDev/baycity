@@ -29,7 +29,7 @@ nothing yet except gating `StepPad`s ([pads.md](pads.md)). Debug grant: Progress
 
 `Hazard` on a kill plane under the level (`kill` node, box 80×0.5×80 at y −12, trigger) → `effects.kill()` →
 `takeDeath()` → the platform's ragdoll and reassembly (`Death` player component, defaults) → `respawnAt()` =
-spawn. `Hazard` is a shared component listed in `content/games/keyboard.json`.
+spawn. `Hazard` is a shared component listed in `content/keyboard/game.json`.
 
 ## The session
 
@@ -48,7 +48,7 @@ editor's play-test calls the session with no callbacks and still teleports and d
 
 ## Level
 
-`content/levels/keyboard.json`: spawn `m0` at (0, 1.75, 0); boards `b0`–`b4` along +z (z 0, 20.5, 29.5, 39.5,
+`content/keyboard/levels/keyboard.level.json`: spawn `m0` at (0, 1.75, 0); boards `b0`–`b4` along +z (z 0, 20.5, 29.5, 39.5,
 51.5); Wins pad `w0` at z 56 (1 Win); treadmill `t0` at x 6; `step-pads` parent at x −12 with eight children;
 Kodjo's trampoline (Bumper prefab); kill plane. The whole run fits the wire's `QUANT_BOUND` of ±1000 m
 (ADR 0092); it did not at ±40, and peers past the last two boards were clamped.
