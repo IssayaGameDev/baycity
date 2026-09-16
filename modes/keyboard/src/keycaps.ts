@@ -26,13 +26,15 @@ import { DEFAULT_KEYCAP_SHAPE, keycapGeometry, type KeycapShape } from './keycap
 export const Keyboard = defineComponent({
   type: 'Keyboard',
   label: 'Keyboard surface',
+  /**
+   * **The key geometry is not here.** Pitch, fill and height are game settings (`KEY_SETTINGS`, ADR 0115):
+   * a level is a succession of platforms — thousands of them — and a pitch per platform means a pitch to
+   * change per platform, and any two that disagree cannot align however the grid is anchored.
+   *
+   * What is left is per-surface because it genuinely differs per surface: which letters this board draws
+   * from, and the seed that scatters them.
+   */
   params: {
-    /** Centre-to-centre spacing (m). Life-size is ~0.2. 0.9 is Kodjo's, after seeing 0.2 then 0.6 in play. */
-    pitch: { kind: 'number', default: 0.9, min: 0.05, max: 3, step: 0.01, label: 'pitch m' },
-    /** Cap footprint as a fraction of the pitch. The remainder is the gap you can see between keys. */
-    fill: { kind: 'number', default: 0.88, min: 0.3, max: 1, step: 0.01, label: 'cap fill' },
-    /** How far a cap stands above the platform's face (m). */
-    height: { kind: 'number', default: 0.45, min: 0.005, max: 1.5, step: 0.005, label: 'cap height m' },
     /**
      * Which letters get used, and in what order — hashed per cell, so the same level always reads the same.
      *
@@ -223,6 +225,11 @@ export const drawKeycaps = (
   look: KeycapLook = DEFAULT_KEYCAP_LOOK,
   shape: KeycapShape = DEFAULT_KEYCAP_SHAPE,
   feel: PressFeel = DEFAULT_PRESS,
+  /**
+   * The key geometry, read from the game's settings by the caller (ADR 0115). A getter rather than a value:
+   * the settings are editable live in the Game row, and the boards are rebuilt when they change.
+   */
+  keyGeometry: () => KeyGeometry = () => DEFAULT_KEY_GEOMETRY,
 ): Keycaps => {
   const meshes: THREE.InstancedMesh[] = []
   const textures: THREE.Texture[] = []
@@ -252,7 +259,7 @@ export const drawKeycaps = (
     const byGlyph = new Map<string, { key: string; matrix: THREE.Matrix4; down: THREE.Vector3 }[]>()
 
     for (const item of loaded.visuals) {
-      const params = keyboardOn(loaded, item)
+      const params = keyboardOn(loaded, item, keyGeometry())
       if (params === null || item.collider.kind !== 'box') continue
       const board = boardOf(item, params)
       if (board === null) continue
@@ -447,7 +454,38 @@ export const capsUnder = <T>(
 }
 
 /** The `Keyboard` params on the node a visual belongs to, or `null` if it is not a board. */
-const keyboardOn = (loaded: LoadedLevel, item: VisualItem): KeyboardParams | null => {
+/**
+ * The key geometry, shared by every board in the game (ADR 0115).
+ *
+ * Read from the game's settings, not from the component. `DEFAULT_KEY_GEOMETRY` is what a game that has never
+ * set them gets, and it is the same three numbers the component used to declare.
+ */
+export interface KeyGeometry {
+  pitch: number
+  fill: number
+  height: number
+}
+
+export const DEFAULT_KEY_GEOMETRY: KeyGeometry = { pitch: 0.9, fill: 0.88, height: 0.45 }
+
+/**
+ * The three numbers as editor settings (ADR 0087): one field each in the Game row, written to
+ * `content/keyboard/game.json`. Changing the pitch is then one edit for the whole level rather than one per
+ * platform.
+ */
+export const KEY_SETTINGS = {
+  keyPitch: { kind: 'number', label: 'Key pitch m', hint: 'centre-to-centre spacing of the keys; the grid every board shares', default: 0.9, min: 0.05, max: 3, step: 0.01 },
+  keyFill: { kind: 'number', label: 'Key fill', hint: 'cap footprint as a fraction of the pitch; the rest is the gap between keys', default: 0.88, min: 0.3, max: 1, step: 0.01 },
+  keyHeight: { kind: 'number', label: 'Key height m', hint: 'how far a cap stands above the platform face', default: 0.45, min: 0.005, max: 1.5, step: 0.005 },
+} as const
+
+/**
+ * This board's parameters: the game's geometry plus this surface's own lettering.
+ *
+ * A `pitch` still sitting in an old component's params is ignored — `readParams` walks the declarations, not
+ * the file — so no level needed rewriting when the three moved (ADR 0115).
+ */
+const keyboardOn = (loaded: LoadedLevel, item: VisualItem, geometry: KeyGeometry): KeyboardParams | null => {
   const handle = item.colliderHandles[0]
   const node = handle === undefined ? undefined : loaded.nodeOf(handle)
   if (node === undefined) return null
@@ -455,9 +493,9 @@ const keyboardOn = (loaded: LoadedLevel, item: VisualItem): KeyboardParams | nul
   if (data === undefined) return null
   const p = data.params as Partial<KeyboardParams>
   return {
-    pitch: numberOr(p.pitch, 0.9),
-    fill: numberOr(p.fill, 0.88),
-    height: numberOr(p.height, 0.45),
+    pitch: geometry.pitch,
+    fill: geometry.fill,
+    height: geometry.height,
     glyphs: typeof p.glyphs === 'string' && p.glyphs.length > 0 ? p.glyphs : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
     seed: numberOr(p.seed, 1),
   }
@@ -479,23 +517,57 @@ const numberOr = (v: unknown, fallback: number): number => (typeof v === 'number
  * The grid is **centred on the face**: the leftover from dividing the face by the pitch is split between the
  * two edges, so a board never has caps hanging over the side.
  */
+/**
+ * One axis of the lattice: which cells of a shared grid land on this board's face (ADR 0115).
+ *
+ * The grid is **not** centred on the board. It is anchored so that cell centres fall on multiples of the
+ * pitch measured along the board's own axis from the world origin, which is what lets two boards form one
+ * continuous keyboard: neither of them decides its own phase, so neither can be out of step with the other.
+ *
+ * Centring was the whole problem. A 5 m board at pitch 0.9 fits five columns spanning 3.6 m and splits the
+ * 0.5 m left over as margin, so placing the next board edge to edge left 1.4 m between the two nearest caps
+ * instead of 0.9. Lining them up meant overlapping the boards by exactly `width mod pitch` — a different
+ * number for every board size, and geometry that intersects.
+ *
+ * A cap is kept only when its **whole footprint** sits on the face (Kodjo's call): clean edges, nothing
+ * overhanging into the void. The cost is at a seam — see the note in `capsFor`.
+ *
+ * `phase` is the board's own origin measured along this axis, so boards sharing a rotation share a lattice.
+ * For the axis-aligned boards a compound ground is made of, that is simply the world x or z.
+ */
+const axisCells = (phase: number, halfSpan: number, pitch: number, capHalf: number): { start: number; count: number } => {
+  // Local coordinates of the first and last cell whose footprint fits: local = n * pitch - phase.
+  const lo = -halfSpan + capHalf
+  const hi = halfSpan - capHalf
+  if (hi < lo) return { start: 0, count: 0 }
+  const firstN = Math.ceil((lo + phase) / pitch - 1e-9)
+  const lastN = Math.floor((hi + phase) / pitch + 1e-9)
+  const count = lastN - firstN + 1
+  return count < 1 ? { start: 0, count: 0 } : { start: firstN * pitch - phase, count }
+}
+
 export const boardOf = (item: Pick<VisualItem, 'collider' | 'position' | 'rotation'>, params: KeyboardParams): Board | null => {
   if (item.collider.kind !== 'box') return null
   const half = item.collider.halfExtents
-  const cols = Math.floor((half.x * 2) / params.pitch)
-  const rows = Math.floor((half.z * 2) / params.pitch)
-  if (cols < 1 || rows < 1) return null
   const quat = new THREE.Quaternion(item.rotation.x, item.rotation.y, item.rotation.z, item.rotation.w)
+  const origin = new THREE.Vector3(item.position.x, item.position.y, item.position.z)
+  // The board's own axes in world space, so the phase is measured along the direction the grid runs.
+  const axisX = new THREE.Vector3(1, 0, 0).applyQuaternion(quat)
+  const axisZ = new THREE.Vector3(0, 0, 1).applyQuaternion(quat)
+  const capHalf = (params.pitch * params.fill) / 2
+  const x = axisCells(origin.dot(axisX), half.x, params.pitch, capHalf)
+  const z = axisCells(origin.dot(axisZ), half.z, params.pitch, capHalf)
+  if (x.count < 1 || z.count < 1) return null
   return {
-    origin: new THREE.Vector3(item.position.x, item.position.y, item.position.z),
+    origin,
     quat,
     inverse: quat.clone().invert(),
     half,
     pitch: params.pitch,
-    startX: -((cols - 1) * params.pitch) / 2,
-    startZ: -((rows - 1) * params.pitch) / 2,
-    cols,
-    rows,
+    startX: x.start,
+    startZ: z.start,
+    cols: x.count,
+    rows: z.count,
   }
 }
 
@@ -505,6 +577,14 @@ export const boardOf = (item: Pick<VisualItem, 'collider' | 'position' | 'rotati
  * Laid out in the box's own frame and then rotated with it, so a tilted platform gets a tilted board rather
  * than caps hanging in the air. Only box colliders tile: a sphere or a capsule has no face to tile, and a
  * convex hull has no cheap answer.
+ */
+/**
+ * The caps of one board, on the shared lattice (ADR 0115).
+ *
+ * **Seams.** A cap is drawn only where its whole footprint fits, so a cap whose cell straddles a join belongs
+ * to neither board and that one row is missing. The window is `pitch × fill` wide out of every `pitch`, so at
+ * the shipped 0.9 / 0.88 a seam has to land within 5.4 cm of a cell **boundary** to keep the row unbroken.
+ * Board widths that are whole multiples of the pitch put every edge on a boundary and make it automatic.
  */
 export const capsFor = (
   board: Board,

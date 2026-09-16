@@ -47,14 +47,65 @@ const placed = (
 }
 
 describe('tiling a board', () => {
-  it('fits whole caps only, and centres the leftover', () => {
+  /**
+   * Caps sit on a lattice shared by every board, not centred on each one (ADR 0115). A cap is kept only where
+   * its whole footprint fits, so nothing overhangs.
+   */
+  it('takes the lattice cells whose footprint fits on the face', () => {
     const board = boardOf(platform(vec3(0, 1, 0), vec3(4, 0.25, 3)), P)!
-    // 8 m / 0.6 = 13.3 -> 13 columns; 6 m / 0.6 = 10 rows.
-    expect(board.cols).toBe(13)
-    expect(board.rows).toBe(10)
-    const first = board.startX
-    const last = board.startX + (board.cols - 1) * board.pitch
-    expect(Math.abs(first)).toBeCloseTo(Math.abs(last), 9)
+    const capHalf = (P.pitch * P.fill) / 2
+    // Centred at the origin, so the lattice cell at 0 is on the board and the cells run out symmetrically.
+    expect(board.startX).toBeCloseTo(-Math.floor((4 - capHalf) / P.pitch) * P.pitch, 9)
+    for (let c = 0; c < board.cols; c += 1) {
+      const x = board.startX + c * P.pitch
+      expect(Math.abs(x) + capHalf, `column ${c} overhangs`).toBeLessThanOrEqual(4 + 1e-9)
+    }
+    // And the next cell along each way would not have fitted.
+    expect(Math.abs(board.startX - P.pitch) + capHalf).toBeGreaterThan(4)
+  })
+
+  /**
+   * The point of the lattice, and the thing that was impossible before: two boards placed edge to edge
+   * continue each other. Centring made this need an overlap of `width mod pitch` — a different number for
+   * every board size (ADR 0115).
+   */
+  it('keeps two boards in step, so a seam is a whole number of cells and never a phase error', () => {
+    const half = vec3(2.5, 0.25, 2.5)
+    const a = boardOf(platform(vec3(0, 1, 0), half), P)!
+    const b = boardOf(platform(vec3(5, 1, 0), half), P)!
+    const worldX = (board: typeof a, col: number): number => board.origin.x + board.startX + col * P.pitch
+    // Every cap of both boards is on one lattice, whatever the sizes and wherever they are put.
+    for (const [board, label] of [[a, 'A'], [b, 'B']] as const)
+      for (let c = 0; c < board.cols; c += 1) {
+        const x = worldX(board, c)
+        expect(Math.abs(x / P.pitch - Math.round(x / P.pitch)), `${label} column ${c} is off the lattice`).toBeLessThan(1e-6)
+      }
+    // So the distance across the seam is a whole number of pitches. Here the seam falls on a cell centre, so
+    // that cap fits on neither board and the gap is two pitches rather than one — the cost of keeping whole
+    // caps only (ADR 0115). What cannot happen is a fractional offset putting the rows out of step.
+    const across = worldX(b, 0) - worldX(a, a.cols - 1)
+    expect(across / P.pitch).toBeCloseTo(Math.round(across / P.pitch), 6)
+  })
+
+  it('joins without a gap when the boards’ edges fall on cell boundaries', () => {
+    // Cell centres are multiples of the pitch, so a boundary is at (n + 0.5) × pitch. An edge there leaves
+    // room for the whole cap on one side and the next whole cap on the other.
+    const half = vec3(4.5 * P.pitch, 0.25, 2.5)
+    const a = boardOf(platform(vec3(0, 1, 0), half), P)!
+    const b = boardOf(platform(vec3(9 * P.pitch, 1, 0), half), P)!
+    const worldX = (board: typeof a, col: number): number => board.origin.x + board.startX + col * P.pitch
+    expect(worldX(b, 0) - worldX(a, a.cols - 1)).toBeCloseTo(P.pitch, 6)
+  })
+
+  it('needs no special position: any offset keeps both boards on the lattice', () => {
+    const half = vec3(2.5, 0.25, 2.5)
+    for (const at of [3.7, 5, 6.25, 11.1]) {
+      const b = boardOf(platform(vec3(at, 1, 0), half), P)!
+      for (let c = 0; c < b.cols; c += 1) {
+        const x = b.origin.x + b.startX + c * P.pitch
+        expect(Math.abs(x / P.pitch - Math.round(x / P.pitch)), `at ${at}, column ${c}`).toBeLessThan(1e-6)
+      }
+    }
   })
 
   it('keeps every cap inside the platform', () => {
@@ -82,7 +133,9 @@ describe('finding the caps under a character', () => {
   /** The one that matters: placement and lookup are two copies of one rule and must agree everywhere. */
   it('always includes the cap being stood on, flat', () => {
     const { board, caps, points } = placed(platform())
-    expect(points.size).toBe(130)
+    // Not a fixed number: how many cells land on a face is the lattice's business (ADR 0115), and this test
+    // is about the lookup finding whichever cap you are stood on.
+    expect(points.size).toBeGreaterThan(0)
     for (const [key, at] of points) {
       const stood = vec3(at.x, at.y + 0.3, at.z)
       expect(capsUnder([board], caps, stood, FOOT)).toContain(key)

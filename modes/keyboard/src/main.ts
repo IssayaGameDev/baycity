@@ -10,7 +10,7 @@ import { DEFAULT_KEYCAP_SHAPE, type KeycapShape } from './keycapGeometry'
 import { DEFAULT_KEYCAP_LOOK, DEFAULT_PRESS, drawKeycaps, type KeycapLook, type PressFeel } from './keycaps'
 import { createPopups, DEFAULT_POPUP, type PopupFeel } from './popups'
 import { abbreviate, BASE_PER_STEP, levelAt, loadExperience, maxSpeedAt, METRES_PER_STUD, saveExperience, type ProgressCurve } from './progression'
-import { keyboardSession, GAME_CURVE } from './rules'
+import { keyboardSession, GAME_CURVE, GAME_KEYS } from './rules'
 import { createStepper, stepsPerSecond } from './steps'
 import { Treadmill, TREADMILL_STATE, treadmillStepValue, type TreadmillTick } from './treadmill'
 import { loadPerStep, loadWins, padTop, savePerStep, saveWins } from './wins'
@@ -150,7 +150,8 @@ const client = await startTpsClient({
     }),
   ],
 })
-const keycaps = drawKeycaps(client, look, shape, feel)
+// The key geometry is the game's, not each platform's (ADR 0115): one pitch for the level.
+const keycaps = drawKeycaps(client, look, shape, feel, () => GAME_KEYS)
 const hud = createHud(client, curve)
 const popups = createPopups(client, pops)
 

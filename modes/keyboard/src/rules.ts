@@ -4,7 +4,7 @@ import type { LoadedLevel, WorldNode } from '@mp/content'
 import type { Vec3 } from '@mp/core'
 import { spawnFrom, type ModeSession, type ModeSessionOptions } from '@mp/mode'
 
-import { Keyboard } from './keycaps'
+import { DEFAULT_KEY_GEOMETRY, Keyboard, type KeyGeometry } from './keycaps'
 import { StepPad, type StepPadOffer } from './stepPad'
 import { STEPPER_DEF } from './steps'
 import { Treadmill, type TreadmillTick } from './treadmill'
@@ -26,8 +26,28 @@ import { curveFrom, type ProgressCurve } from './progression'
  * components, and **the shared components named in `content/games/keyboard.json`** — a data file, so the editor can
  * add to it when a level here needs a `Bumper` or a `Checkpoint` the game did not have yet.
  */
-/** The curve as `content/games/keyboard.json` sets it (ADR 0087) — what the game and the editor's play run on. */
+/** The curve as `content/keyboard/game.json` sets it (ADR 0087) — what the game and the editor's play run on. */
 export const GAME_CURVE: ProgressCurve = curveFrom((game as { settings?: unknown }).settings)
+
+/**
+ * The key geometry the whole game shares (ADR 0115), from the same settings file.
+ *
+ * One pitch for the level, not one per platform: a level is thousands of platforms, and two that disagree
+ * about the pitch cannot align however the grid is anchored. A number the file has not set falls back to the
+ * declared default.
+ */
+export const GAME_KEYS: KeyGeometry = ((): KeyGeometry => {
+  const raw = (game as { settings?: Record<string, unknown> }).settings ?? {}
+  const num = (key: string, fallback: number): number => {
+    const v = raw[key]
+    return typeof v === 'number' && Number.isFinite(v) ? v : fallback
+  }
+  return {
+    pitch: num('keyPitch', DEFAULT_KEY_GEOMETRY.pitch),
+    fill: num('keyFill', DEFAULT_KEY_GEOMETRY.fill),
+    height: num('keyHeight', DEFAULT_KEY_GEOMETRY.height),
+  }
+})()
 
 export const KEYBOARD_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, STEPPER_DEF, Keyboard, WinsPad, Treadmill, StepPad, ...sharedComponents(game.components)])
 
