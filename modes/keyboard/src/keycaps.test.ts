@@ -47,61 +47,18 @@ const placed = (
 }
 
 describe('tiling a board', () => {
-  /**
-   * Caps sit on a lattice shared by every board, not centred on each one (ADR 0115). A cap is kept only where
-   * its whole footprint fits, so nothing overhangs.
-   */
-  it('takes the lattice cells whose centre is on the face', () => {
+  it('fits whole caps only, and centres the leftover', () => {
     const board = boardOf(platform(vec3(0, 1, 0), vec3(4, 0.25, 3)), P)!
-    for (let c = 0; c < board.cols; c += 1) {
-      const x = board.startX + c * P.pitch
-      expect(Math.abs(x), `column ${c} has its centre off the face`).toBeLessThan(4 + 1e-9)
-    }
-    // And the next cell along each way has its centre off the face.
-    expect(Math.abs(board.startX - P.pitch)).toBeGreaterThanOrEqual(4 - 1e-9)
+    // 8 m / 0.6 = 13.3 -> 13 columns; 6 m / 0.6 = 10 rows.
+    expect(board.cols).toBe(13)
+    expect(board.rows).toBe(10)
+    const first = board.startX
+    const last = board.startX + (board.cols - 1) * board.pitch
+    expect(Math.abs(first)).toBeCloseTo(Math.abs(last), 9)
   })
 
-  /**
-   * The point of the lattice, and the thing that was impossible before: two boards placed edge to edge
-   * continue each other. Centring made this need an overlap of `width mod pitch` — a different number for
-   * every board size (ADR 0115).
-   */
-  it('keeps two boards in step, so a seam is a whole number of cells and never a phase error', () => {
-    const half = vec3(2.5, 0.25, 2.5)
-    const a = boardOf(platform(vec3(0, 1, 0), half), P)!
-    const b = boardOf(platform(vec3(5, 1, 0), half), P)!
-    const worldX = (board: typeof a, col: number): number => board.origin.x + board.startX + col * P.pitch
-    // Every cap of both boards is on one lattice, whatever the sizes and wherever they are put.
-    for (const [board, label] of [[a, 'A'], [b, 'B']] as const)
-      for (let c = 0; c < board.cols; c += 1) {
-        const x = worldX(board, c)
-        expect(Math.abs(x / P.pitch - Math.round(x / P.pitch)), `${label} column ${c} is off the lattice`).toBeLessThan(1e-6)
-      }
-    // Consecutive cells across the seam: every cell of the pair belongs to exactly one board (ADR 0116), so
-    // two boards edge to edge continue each other with nothing missing.
-    expect(worldX(b, 0) - worldX(a, a.cols - 1)).toBeCloseTo(P.pitch, 6)
-  })
-
-  it('joins without a gap at any width, which is the whole point', () => {
-    // No rule to satisfy: the author places platforms, not the grid (ADR 0116).
-    for (const width of [5, 4, 3.7, 6.25, 9]) {
-      const half = vec3(width / 2, 0.25, 2.5)
-      const a = boardOf(platform(vec3(0, 1, 0), half), P)!
-      const b = boardOf(platform(vec3(width, 1, 0), half), P)!
-      const worldX = (board: typeof a, col: number): number => board.origin.x + board.startX + col * P.pitch
-      expect(worldX(b, 0) - worldX(a, a.cols - 1), `width ${width}`).toBeCloseTo(P.pitch, 6)
-    }
-  })
-
-  it('needs no special position: any offset keeps both boards on the lattice', () => {
-    const half = vec3(2.5, 0.25, 2.5)
-    for (const at of [3.7, 5, 6.25, 11.1]) {
-      const b = boardOf(platform(vec3(at, 1, 0), half), P)!
-      for (let c = 0; c < b.cols; c += 1) {
-        const x = b.origin.x + b.startX + c * P.pitch
-        expect(Math.abs(x / P.pitch - Math.round(x / P.pitch)), `at ${at}, column ${c}`).toBeLessThan(1e-6)
-      }
-    }
+  it('refuses a platform smaller than one cap', () => {
+    expect(boardOf(platform(vec3(0, 0, 0), vec3(0.2, 0.25, 0.2)), P)).toBeNull()
   })
 
   it('keeps every cap inside the platform', () => {
@@ -111,24 +68,6 @@ describe('tiling a board', () => {
       expect(Math.abs(p.x)).toBeLessThanOrEqual(half.x)
       expect(Math.abs(p.z)).toBeLessThanOrEqual(half.z)
     }
-  })
-
-  /**
-   * A cell belongs to the board its centre is on (ADR 0116), so what decides this is whether a centre lands on
-   * the face — not whether the cap would fit. A small platform in a compound ground getting its cap matters
-   * more than a small isolated one getting an oversized cap: the first is a hole in the floor, the second is
-   * a choice somebody made by putting a Keyboard on something narrower than a key.
-   */
-  it('gives a platform smaller than a cap the cell whose centre lands on it', () => {
-    const board = boardOf(platform(vec3(0, 0, 0), vec3(0.2, 0.25, 0.2)), P)
-    expect(board?.cols).toBe(1)
-    expect(board?.rows).toBe(1)
-  })
-
-  it('refuses a platform no cell centre falls on', () => {
-    // Half a pitch off the lattice, and narrower than half a cell: the nearest centres are both outside it.
-    const off = P.pitch / 2
-    expect(boardOf(platform(vec3(off, 0, off), vec3(0.2, 0.25, 0.2)), P)).toBeNull()
   })
 
   it('sits caps on the face, not half sunk into it', () => {
@@ -143,9 +82,7 @@ describe('finding the caps under a character', () => {
   /** The one that matters: placement and lookup are two copies of one rule and must agree everywhere. */
   it('always includes the cap being stood on, flat', () => {
     const { board, caps, points } = placed(platform())
-    // Not a fixed number: how many cells land on a face is the lattice's business (ADR 0115), and this test
-    // is about the lookup finding whichever cap you are stood on.
-    expect(points.size).toBeGreaterThan(0)
+    expect(points.size).toBe(130)
     for (const [key, at] of points) {
       const stood = vec3(at.x, at.y + 0.3, at.z)
       expect(capsUnder([board], caps, stood, FOOT)).toContain(key)
