@@ -2773,6 +2773,59 @@
           }
         }
       ]
+    },
+    {
+      "id": "17f47def",
+      "name": "Stage 3",
+      "transform": {
+        "position": {
+          "x": -49.7675,
+          "y": -20.6318,
+          "z": 113.4156
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "d5a796f7",
+          "name": "Platform extendable",
+          "transform": {
+            "position": {
+              "x": 49.7675,
+              "y": 21.1318,
+              "z": 18.0844
+            },
+            "rotation": {
+              "x": -0.2618,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1,
+              "z": 2.1
+            }
+          },
+          "components": [],
+          "prefab": "d75bc013a11360f2",
+          "overrides": {
+            "dffedd8e": {
+              "transform": {
+                "position": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 16.65
+                },
+                "scale": {
+                  "x": 33.3,
+                  "y": 0.3,
+                  "z": 33.3
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   ],
   "prefabs": {
