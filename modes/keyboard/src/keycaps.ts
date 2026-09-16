@@ -518,62 +518,30 @@ const numberOr = (v: unknown, fallback: number): number => (typeof v === 'number
  * two edges, so a board never has caps hanging over the side.
  */
 /**
- * One axis of the lattice: which cells of a shared grid land on this board's face (ADR 0115).
+ * The board's frame from its box collider, with the caps **centred on the platform** (ADR 0118).
  *
- * The grid is **not** centred on the board. It is anchored so that cell centres fall on multiples of the
- * pitch measured along the board's own axis from the world origin, which is what lets two boards form one
- * continuous keyboard: neither of them decides its own phase, so neither can be out of step with the other.
- *
- * Centring was the whole problem. A 5 m board at pitch 0.9 fits five columns spanning 3.6 m and splits the
- * 0.5 m left over as margin, so placing the next board edge to edge left 1.4 m between the two nearest caps
- * instead of 0.9. Lining them up meant overlapping the boards by exactly `width mod pitch` — a different
- * number for every board size, and geometry that intersects.
- *
- * **A cell belongs to the board its centre is on** — the half-open span `[-half, +half)`, so a centre landing
- * exactly on a seam goes to exactly one of the two boards and never to both.
- *
- * That is what makes the lattice cost nothing to author: every cell of a compound ground gets a cap, at any
- * sizes and any positions, with no rule to satisfy. Requiring the whole footprint to fit instead looked
- * tidier and was a trap — a cap is then dropped unless the seam lands within `pitch × (1 - fill) / 2` of a
- * cell boundary, 5.4 cm at the defaults, so 88% of seam positions lost a row and the platforms had to be
- * aligned to the grid instead of the grid to the platforms (ADR 0116).
- *
- * The price is at an **outer** rim, where a cap whose centre is just inside can overhang by up to half its
- * footprint. Cosmetic: caps are visual only, so nothing is stood on that is not there.
- *
- * `phase` is the board's own origin measured along this axis, so boards sharing a rotation share a lattice.
- * For the axis-aligned boards a compound ground is made of, that is simply the world x or z.
+ * Whole caps only, and the leftover split as margin, which is what it was before the world lattice of
+ * ADR 0115. The lattice made two platforms continue each other, and it was reverted: it moved the caps off
+ * centre on every platform, and getting a clean join then meant sizing and placing platforms to the grid
+ * instead of the other way round. Corner snapping (ADR 0117) is the part of that attempt worth keeping.
  */
-const axisCells = (phase: number, halfSpan: number, pitch: number): { start: number; count: number } => {
-  // Cell centres in local coordinates are `n * pitch - phase`; keep those in [-halfSpan, +halfSpan).
-  const firstN = Math.ceil((-halfSpan + phase) / pitch - 1e-9)
-  // Half-open at the far end, so a centre exactly on a shared edge is claimed by the next board along only.
-  const lastN = Math.ceil((halfSpan + phase) / pitch - 1e-9) - 1
-  const count = lastN - firstN + 1
-  return count < 1 ? { start: 0, count: 0 } : { start: firstN * pitch - phase, count }
-}
-
 export const boardOf = (item: Pick<VisualItem, 'collider' | 'position' | 'rotation'>, params: KeyboardParams): Board | null => {
   if (item.collider.kind !== 'box') return null
   const half = item.collider.halfExtents
+  const cols = Math.floor((half.x * 2) / params.pitch)
+  const rows = Math.floor((half.z * 2) / params.pitch)
+  if (cols < 1 || rows < 1) return null
   const quat = new THREE.Quaternion(item.rotation.x, item.rotation.y, item.rotation.z, item.rotation.w)
-  const origin = new THREE.Vector3(item.position.x, item.position.y, item.position.z)
-  // The board's own axes in world space, so the phase is measured along the direction the grid runs.
-  const axisX = new THREE.Vector3(1, 0, 0).applyQuaternion(quat)
-  const axisZ = new THREE.Vector3(0, 0, 1).applyQuaternion(quat)
-  const x = axisCells(origin.dot(axisX), half.x, params.pitch)
-  const z = axisCells(origin.dot(axisZ), half.z, params.pitch)
-  if (x.count < 1 || z.count < 1) return null
   return {
-    origin,
+    origin: new THREE.Vector3(item.position.x, item.position.y, item.position.z),
     quat,
     inverse: quat.clone().invert(),
     half,
     pitch: params.pitch,
-    startX: x.start,
-    startZ: z.start,
-    cols: x.count,
-    rows: z.count,
+    startX: -((cols - 1) * params.pitch) / 2,
+    startZ: -((rows - 1) * params.pitch) / 2,
+    cols,
+    rows,
   }
 }
 
@@ -583,12 +551,6 @@ export const boardOf = (item: Pick<VisualItem, 'collider' | 'position' | 'rotati
  * Laid out in the box's own frame and then rotated with it, so a tilted platform gets a tilted board rather
  * than caps hanging in the air. Only box colliders tile: a sphere or a capsule has no face to tile, and a
  * convex hull has no cheap answer.
- */
-/**
- * The caps of one board, on the shared lattice (ADR 0115).
- *
- * **Seams cost nothing.** Every cell of a compound ground is drawn by whichever board its centre is on, so
- * two boards placed edge to edge continue each other at any sizes and any positions (ADR 0116).
  */
 export const capsFor = (
   board: Board,
