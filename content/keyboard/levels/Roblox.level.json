@@ -5811,18 +5811,28 @@
                   "x": 0,
                   "y": 0,
                   "z": 0
+                },
+                "scale": {
+                  "x": 1,
+                  "y": 1,
+                  "z": 1.0202
                 }
               },
               "components": [],
               "children": [
                 {
                   "id": "d87b6d0c",
-                  "name": "capsule",
+                  "name": "boss",
                   "transform": {
                     "position": {
-                      "x": 0,
-                      "y": 0,
-                      "z": 0
+                      "x": -0.0005,
+                      "y": 20.304,
+                      "z": 0.0396
+                    },
+                    "scale": {
+                      "x": 0.0298,
+                      "y": 18.8417,
+                      "z": 0.0662
                     }
                   },
                   "components": [
@@ -5891,17 +5901,17 @@
                 },
                 {
                   "id": "7371a753",
-                  "name": "rounded-box",
+                  "name": "zone",
                   "transform": {
                     "position": {
-                      "x": 0,
-                      "y": 0,
-                      "z": 0
+                      "x": 0.0004,
+                      "y": 37.2373,
+                      "z": -0.0013
                     },
                     "scale": {
                       "x": 1,
                       "y": 78.5,
-                      "z": 1
+                      "z": 1.0112
                     }
                   },
                   "components": [
@@ -5921,7 +5931,8 @@
                           "x": 0,
                           "y": 0,
                           "z": 0
-                        }
+                        },
+                        "trigger": true
                       }
                     },
                     {
@@ -5936,7 +5947,8 @@
                       "type": "Renderer",
                       "params": {
                         "material": ""
-                      }
+                      },
+                      "enabled": false
                     }
                   ]
                 }
@@ -7505,7 +7517,7 @@
           "name": "Platform",
           "transform": {
             "position": {
-              "x": 18.8,
+              "x": 18.6,
               "y": 56.9,
               "z": 20.9
             },
