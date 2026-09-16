@@ -103,6 +103,11 @@ export interface InspectorHost {
   /** Open the timeline on this component's keyframe parameter (ADR 0037). */
   /** Revert one override — `'transform'`, `'name'`, or a component id — or all of them. */
   revertOverride: (field?: string) => void
+  /**
+   * Turn this placement into a plain object, keeping what it draws (ADR 0111). The prefab file and every
+   * other placement are untouched, and one Ctrl+Z puts the link back.
+   */
+  unlinkPrefab: () => void
   /** Push the selection's overrides into the shared prefab, so every placement of it follows. */
   applyOverrides: () => void
   /**
@@ -213,8 +218,15 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
 
   const linkRow = el('div', 'link')
   const linkWho = el('span', 'who')
+  /**
+   * Unlink sits **left of** Open, so the two read in the order of how far they reach: this object, then the
+   * shared definition behind it. It is only ever shown on a placement, where the row says which prefab.
+   */
+  const unlinkButton = el('button', 'ctl')
+  unlinkButton.textContent = 'Unlink'
+  unlinkButton.title = 'make this a plain object keeping what it draws \u2014 the prefab and its other placements are untouched'
   const linkButton = el('button', 'ctl')
-  linkRow.append(linkWho, linkButton)
+  linkRow.append(linkWho, unlinkButton, linkButton)
   const multiNote = el('div', 'multi')
   /** Tick and name on one line, the way a component section's header reads. */
   const nameRow = el('div', 'namerow')
@@ -258,14 +270,20 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       linkButton.title = 'edit the shared definition — every placement follows'
       linkButton.onclick = host.openPrefab
       linkButton.hidden = false
+      // Only on a placement this document owns. An *inherited* node also has a `prefab` ref — it is part of
+      // some prefab's definition — and there is nothing in this level to unlink for it.
+      unlinkButton.hidden = doc.kindOf(at) !== 'own'
+      unlinkButton.onclick = host.unlinkPrefab
     } else if (doc.mode === 'level' && doc.kindOf(at) === 'own') {
       linkWho.textContent = 'not saved as a prefab'
+      unlinkButton.hidden = true
       linkButton.textContent = 'Save as prefab…'
       linkButton.title = 'write this into a prefab file — every level can then place it, and your edits reach all of them'
       linkButton.onclick = host.saveAsPrefab
       linkButton.hidden = false
     } else {
       linkWho.textContent = doc.kindOf(at) === 'inherited' ? 'part of a prefab — edits become overrides' : 'part of this prefab'
+      unlinkButton.hidden = true
       linkButton.hidden = true
     }
   }
