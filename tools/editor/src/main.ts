@@ -289,6 +289,7 @@ let prefabOpen: { assetId: string; name: string; from: string } | null = null
 let latestSnapshot: Level | null = null
 /** True while `openFile` awaits its first snapshot; a later one (reconnect) reinstalls the document itself. */
 let joining = false
+let playing = false // play-in-place active (editing is suspended)
 /** Remote ops that landed mid-drag: applied to the data already, repainted when the drag ends. */
 let deferredRemote: Op[] = []
 /** Is the open document a level in a live session? Prefabs and materials are files with locks, as before. */
@@ -401,9 +402,14 @@ const onHoldsChanged = (holds: Hold[]): void => {
  * Redraw after ops changed the level from outside the document — a remote batch, an undo. Transforms alone
  * move groups; anything else rebuilds from data, as every structural edit does, and puts the selection back
  * by identity. Mid-drag, the redraw waits: the gizmo owns the groups until the pointer comes up.
+ *
+ * **And while playing.** `rebuildLoaded` frees the physics world and builds a new one, and a play session
+ * lives in that world: its character is a body in it, its visuals came from that `loaded`. Repainting under
+ * a play-test therefore pulled the floor out from under the player on every remote edit. Editing is
+ * suspended while playing anyway, so the redraw waits exactly as a drag's does and `stopPlay` drains it.
  */
 const repaintAfterOps = (ops: readonly Op[]): void => {
-  if (gizmoDragging) {
+  if (gizmoDragging || playing) {
     deferredRemote.push(...ops)
     return
   }
@@ -431,6 +437,14 @@ const repaintAfterOps = (ops: readonly Op[]): void => {
   refreshUi()
   inspectorRebuild()
   loadNewReferences(buildItems)
+}
+
+/** Repaint what arrived while the redraw was held off — the end of a gizmo drag, the end of a play-test. */
+const drainDeferredRemote = (): void => {
+  if (deferredRemote.length === 0) return
+  const ops = deferredRemote
+  deferredRemote = []
+  repaintAfterOps(ops)
 }
 
 /**
@@ -624,7 +638,6 @@ const edit: { mode: GizmoMode; snap: boolean; steps: Record<GizmoMode, number>; 
   // ring, exactly as Unity does, so this only ever changes what it can.
   space: 'world',
 }
-let playing = false // play-in-place active (editing is suspended)
 let lastSimTickAt = 0
 
 /** Asset id of the prefab open in prefab mode, or `null` for a level or an unsaved prefab. */
@@ -1545,11 +1558,7 @@ gizmo.addEventListener('dragging-changed', (event) => {
     recordEdit(selection.length > 1 ? `${edit.mode} ${selection.length}` : edit.mode)
     dragStart = new Map()
     rebuildLoaded()
-    if (deferredRemote.length > 0) {
-      const ops = deferredRemote
-      deferredRemote = []
-      repaintAfterOps(ops)
-    }
+    drainDeferredRemote()
   }
 })
 gizmo.addEventListener('objectChange', () => {
@@ -2527,6 +2536,7 @@ const stopPlay = (): void => {
     controls.enabled = true
     statusMsg = ''
     uiChanged()
+    drainDeferredRemote() // what the room did while the frame was up
     return
   }
   playLoop?.stop()
@@ -2549,6 +2559,7 @@ const stopPlay = (): void => {
   statusMsg = ''
   uiChanged()
   rebuildLoaded() // restore the edit world + markers
+  drainDeferredRemote() // what the room did while the play-test held the world
 }
 
 // ============================ panels ============================
