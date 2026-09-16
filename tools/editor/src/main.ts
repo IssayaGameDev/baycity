@@ -86,7 +86,7 @@ import { canMoveFolder, movedInto, renamedTo } from './assetTree'
 import { createPreviews, type Previews } from './previews'
 import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
 import { createProjectPanel, type Project } from './projectPanel'
-import { snapAnglesDeg, snapToGrid } from './snap'
+import { cornerSnapDelta, snapAnglesDeg, snapToGrid, worldHalfExtents } from './snap'
 import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
 import { createShortcuts } from './shortcuts'
 import { createSplitter, readPx, writePx } from './splitter'
@@ -1254,9 +1254,51 @@ const gizmo = new TransformControls(stage.camera, canvas)
  * below does it absolutely instead.
  */
 const applySnap = (): void => {
-  gizmo.setTranslationSnap(edit.snap ? edit.steps.translate : null)
+  // Translation and rotation are ours: three snaps a position's **centre** and a rotation's **delta**, and
+  // neither is what snapping is for (ADR 0114, ADR 0117). Scale it does absolutely, which is right.
+  gizmo.setTranslationSnap(null)
   gizmo.setRotationSnap(null)
   gizmo.setScaleSnap(edit.snap ? edit.steps.scale : null)
+}
+
+/**
+ * Snap the primary's **minimum corner** to the grid, not its centre (ADR 0117).
+ *
+ * Snapping the centre made half of all sizes wrong: a box three cells wide, centred on a grid line, has its
+ * edges halfway between lines, so its end cells are half covered — which is where keycaps hung over a
+ * platform's edge. The edge is what meets the next platform; the centre is a number nobody looks at.
+ *
+ * The corner is of the **world axis-aligned** box, so a wall rotated on its edge snaps by the face you are
+ * butting against something. Snapped in world space and converted back through the parent, so a child of a
+ * moved or rotated group lands where the grid is rather than where its parent's frame happens to put it.
+ *
+ * Only the primary; `mirrorDragToSelection` gives the others its delta, as translation always has.
+ */
+const snapTranslation = (): void => {
+  if (edit.mode !== 'translate' || !edit.snap || selected === null) return
+  const g = instanceGroups[selected]
+  const step = edit.steps.translate
+  if (g === undefined || step <= 0) return
+  g.updateWorldMatrix(true, false)
+  const world = new THREE.Vector3()
+  const quat = new THREE.Quaternion()
+  const scale = new THREE.Vector3()
+  g.matrixWorld.decompose(world, quat, scale)
+  // A built-in shape is a unit box at scale 1 (ADR 0090), so the world scale *is* the size in metres.
+  const half = worldHalfExtents(new THREE.Matrix4().makeRotationFromQuaternion(quat).elements, {
+    x: Math.abs(scale.x) / 2,
+    y: Math.abs(scale.y) / 2,
+    z: Math.abs(scale.z) / 2,
+  })
+  const min = { x: world.x - half.x, y: world.y - half.y, z: world.z - half.z }
+  const d = cornerSnapDelta(min, step)
+  if (d.x === 0 && d.y === 0 && d.z === 0) return
+  // The delta is a world translation; the group's position is in its parent's frame.
+  const parent = g.parent ?? instanceRoot
+  parent.updateWorldMatrix(true, false)
+  const before = parent.worldToLocal(world.clone())
+  const after = parent.worldToLocal(world.clone().add(new THREE.Vector3(d.x, d.y, d.z)))
+  g.position.add(after.sub(before))
 }
 
 /**
@@ -1505,7 +1547,8 @@ gizmo.addEventListener('dragging-changed', (event) => {
 })
 gizmo.addEventListener('objectChange', () => {
   // Before the write-back and before the mirror, so the document and the other selected items both see the
-  // snapped angle rather than the raw one (ADR 0114).
+  // snapped value rather than the raw one (ADR 0114, ADR 0117).
+  snapTranslation()
   snapRotation()
   writeBackSelected()
   mirrorDragToSelection()

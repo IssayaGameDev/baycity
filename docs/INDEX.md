@@ -164,5 +164,6 @@ why matters.
 | [0114](adr/0114-one-snap-increment-per-tool.md) | One snap increment per tool, and rotation snaps absolutely |
 | [0115](adr/0115-the-keys-are-the-games-not-the-platforms.md) | The keys belong to the game, on one shared grid |
 | [0116](adr/0116-a-cell-belongs-to-the-board-its-centre-is-on.md) | A cell belongs to the board its centre is on |
+| [0117](adr/0117-snapping-moves-the-corner.md) | Snapping moves the corner, not the centre |
 
 `Design archive/` holds superseded design material and is not maintained.

@@ -422,9 +422,15 @@ bounds, so it stays one field.
 
 | Tool | Default | Range | Unit | Snapped by |
 | --- | --- | --- | --- | --- |
-| Move | 0.5 | 0.05–10 | m | `TransformControls.setTranslationSnap` (absolute) |
+| Move | 0.5 | 0.05–10 | m | **us** — `snapTranslation`, on the **corner** (ADR 0117) |
 | Rotate | 15 | 1–90 | ° | **us** — `snapRotation` on `objectChange` |
 | Scale | 0.1 | 0.05–5 | × | `TransformControls.setScaleSnap` (absolute) |
+
+**Translation snaps the minimum corner of the world axis-aligned box**, not the centre (ADR 0117). A box is a
+centre plus a size, so centre-snapping puts the edges on the grid only for even cell counts and halfway
+between for odd ones — which is where keycaps hung over a platform's edge. Corner-snapped, any size fills
+whole cells. `worldHalfExtents` (`|R| · h`) is why a wall rotated onto its edge snaps by the face you are
+butting against something. Placing a new object still snaps the click point, so its centre lands on the grid.
 
 Rotation is ours because three snaps `rotationAngle`, the distance dragged, so a round amount is added to
 wherever you already were and round angles are unreachable. `snapAnglesDeg` (`src/snap.ts`, pure and tested)

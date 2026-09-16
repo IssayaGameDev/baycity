@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { snapAnglesDeg, snapToGrid } from './snap'
+import { cornerSnapDelta, snapAnglesDeg, snapToGrid, worldHalfExtents } from './snap'
 
 const deg = (radians: number): number => Number(((radians * 180) / Math.PI).toFixed(6))
 
@@ -60,5 +60,68 @@ describe('snapAnglesDeg', () => {
 
   it('passes through with no increment', () => {
     expect(snapAnglesDeg({ x: 1.23, y: 0, z: 0 }, 0)).toEqual({ x: 1.23, y: 0, z: 0 })
+  })
+})
+
+describe('worldHalfExtents', () => {
+  /** A rotation matrix's 3x3 part, column-major, as THREE.Matrix4.elements gives it. */
+  const yaw = (deg: number): number[] => {
+    const r = (deg * Math.PI) / 180
+    const c = Math.cos(r)
+    const s = Math.sin(r)
+    // Column-major: columns are the rotated basis vectors.
+    return [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]
+  }
+
+  it('is the box itself when there is no rotation', () => {
+    const out = worldHalfExtents(yaw(0), { x: 2, y: 0.5, z: 3 })
+    expect(out.x).toBeCloseTo(2, 6)
+    expect(out.y).toBeCloseTo(0.5, 6)
+    expect(out.z).toBeCloseTo(3, 6)
+  })
+
+  it('swaps the two axes at a right angle, which is what a wall on its edge needs', () => {
+    const out = worldHalfExtents(yaw(90), { x: 2, y: 0.5, z: 3 })
+    expect(out.x).toBeCloseTo(3, 6)
+    expect(out.y).toBeCloseTo(0.5, 6)
+    expect(out.z).toBeCloseTo(2, 6)
+  })
+
+  it('reaches further along both axes at 45°, as a rotated box does', () => {
+    const out = worldHalfExtents(yaw(45), { x: 1, y: 1, z: 1 })
+    expect(out.x).toBeCloseTo(Math.SQRT2, 6)
+    expect(out.z).toBeCloseTo(Math.SQRT2, 6)
+  })
+})
+
+describe('cornerSnapDelta', () => {
+  it('moves the minimum corner onto the grid', () => {
+    const d = cornerSnapDelta({ x: 2.3, y: 0, z: -1.2 }, 1)
+    // Nearest line, so 2.3 comes back to 2 and -1.2 goes out to -1.
+    expect(d.x).toBeCloseTo(-0.3, 6)
+    expect(d.z).toBeCloseTo(0.2, 6)
+  })
+
+  it('does nothing when the corner is already on it', () => {
+    expect(cornerSnapDelta({ x: 3, y: 0, z: -2 }, 1)).toEqual({ x: 0, y: 0, z: 0 })
+  })
+
+  /**
+   * The whole point (ADR 0117). A box an odd number of cells wide, centre-snapped, has its edges halfway
+   * between grid lines; corner-snapped it fills whole cells whatever its size.
+   */
+  it('fills whole cells at any size, where centre snapping cannot', () => {
+    for (const cells of [1, 2, 3, 4, 5, 7]) {
+      const size = cells * 1
+      // Centre snapping: put the centre on a line and see where the edges land.
+      const centreLo = snapToGrid(4.37, 1) - size / 2
+      const centreOnGrid = Math.abs(centreLo - Math.round(centreLo)) < 1e-9
+      // Corner snapping: the low edge is on a line by construction, so the high edge is too.
+      const cornerLo = 4.37 - size / 2 + cornerSnapDelta({ x: 4.37 - size / 2, y: 0, z: 0 }, 1).x
+      expect(Math.abs(cornerLo - Math.round(cornerLo)), `${cells} cells`).toBeLessThan(1e-9)
+      expect(Math.abs(cornerLo + size - Math.round(cornerLo + size)), `${cells} cells, far edge`).toBeLessThan(1e-9)
+      // And centre snapping only manages it for the even ones.
+      expect(centreOnGrid, `${cells} cells under centre snapping`).toBe(cells % 2 === 0)
+    }
   })
 })
