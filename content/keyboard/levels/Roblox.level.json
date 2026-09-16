@@ -5821,23 +5821,28 @@
               "components": [],
               "children": [
                 {
-                  "id": "d87b6d0c",
+                  "id": "128b8544",
                   "name": "boss",
                   "transform": {
                     "position": {
-                      "x": -0.0005,
-                      "y": 20.304,
-                      "z": 0.0396
+                      "x": -0.1238,
+                      "y": 28.797,
+                      "z": 0.0964
+                    },
+                    "rotation": {
+                      "x": 0,
+                      "y": 1.5708,
+                      "z": 0
                     },
                     "scale": {
-                      "x": 0.0298,
-                      "y": 18.8417,
-                      "z": 0.0662
+                      "x": 0.0669,
+                      "y": 21.273,
+                      "z": 0.0286
                     }
                   },
                   "components": [
                     {
-                      "id": "36fdac07",
+                      "id": "6887611c",
                       "type": "Collider",
                       "params": {
                         "shape": {
@@ -5853,21 +5858,35 @@
                       }
                     },
                     {
-                      "id": "a2b79e41",
+                      "id": "d50f2d0a",
                       "type": "Mesh",
                       "params": {
                         "model": "builtin:capsule"
                       }
                     },
                     {
-                      "id": "f471ca90",
+                      "id": "e62b9537",
                       "type": "Renderer",
                       "params": {
-                        "material": "4a11d049f9f8e5ac"
+                        "material": ""
                       }
                     },
                     {
-                      "id": "c1f559ab",
+                      "id": "cbb9a7e7",
+                      "type": "Boss",
+                      "params": {
+                        "zone": null,
+                        "speed": 8,
+                        "turn": 180
+                      }
+                    },
+                    {
+                      "id": "17f06c4a",
+                      "type": "Hazard",
+                      "params": {}
+                    },
+                    {
+                      "id": "feffe85f",
                       "type": "Collider",
                       "params": {
                         "shape": {
@@ -5880,28 +5899,14 @@
                           "y": 0,
                           "z": 0
                         },
-                        "trigger": true
-                      }
-                    },
-                    {
-                      "id": "9db804c3",
-                      "type": "Hazard",
-                      "params": {}
-                    },
-                    {
-                      "id": "f5934595",
-                      "type": "Boss",
-                      "params": {
-                        "zone": null,
-                        "speed": 8,
-                        "turn": 180
+                        "trigger": false
                       }
                     }
                   ]
                 },
                 {
                   "id": "7371a753",
-                  "name": "zone",
+                  "name": "zone 2",
                   "transform": {
                     "position": {
                       "x": 0.0004,
@@ -7240,6 +7245,88 @@
                 "height": 0.45,
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                 "seed": 1
+              }
+            }
+          ]
+        },
+        {
+          "id": "163ce15b",
+          "name": "Platform",
+          "transform": {
+            "position": {
+              "x": -3.7999,
+              "y": -27.95,
+              "z": -0.6499
+            },
+            "rotation": {
+              "x": 0,
+              "y": -1.5708,
+              "z": 0
+            },
+            "scale": {
+              "x": 52.7,
+              "y": 88.1,
+              "z": 54.4
+            }
+          },
+          "components": [
+            {
+              "id": "4efea79f",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "3e3c1b7c",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:box"
+              }
+            },
+            {
+              "id": "0e9126ea",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "ecb4beae",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1
+              }
+            },
+            {
+              "id": "62e801bf",
+              "type": "Mover",
+              "params": {
+                "move": {
+                  "x": 0,
+                  "y": 3,
+                  "z": 0
+                },
+                "space": "world",
+                "speed": 1.5,
+                "smooth": true,
+                "offset": 0
               }
             }
           ]
