@@ -2859,7 +2859,7 @@
             "scale": {
               "x": 1,
               "y": 1,
-              "z": 2.4
+              "z": 2.5
             }
           },
           "components": [],
@@ -2869,13 +2869,18 @@
               "transform": {
                 "position": {
                   "x": 0,
+                  "y": -0.2977,
+                  "z": 17.1129
+                },
+                "rotation": {
+                  "x": -0.0658,
                   "y": 0,
-                  "z": 16.65
+                  "z": 0
                 },
                 "scale": {
                   "x": 33.3,
                   "y": 0.3,
-                  "z": 33.3
+                  "z": 33.4
                 }
               }
             }
@@ -2956,11 +2961,152 @@
             "position": {
               "x": 49.7675,
               "y": 44.6318,
-              "z": 109.5844
+              "z": 113.5844
             }
           },
           "components": [],
           "prefab": "8a569d7a7c66c3c7"
+        },
+        {
+          "id": "baad59aa",
+          "name": "Platform extendable",
+          "transform": {
+            "position": {
+              "x": 49.7675,
+              "y": 21.3818,
+              "z": 12.7768
+            },
+            "scale": {
+              "x": 1,
+              "y": 1.5,
+              "z": 0.2083
+            }
+          },
+          "components": [],
+          "prefab": "d75bc013a11360f2",
+          "overrides": {
+            "dffedd8e": {
+              "transform": {
+                "position": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 16.65
+                },
+                "scale": {
+                  "x": 33.3,
+                  "y": 0.3,
+                  "z": 33.3
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "c25e07a1",
+          "name": "Platform extendable",
+          "transform": {
+            "position": {
+              "x": 49.7675,
+              "y": 44.94,
+              "z": 99.5405
+            },
+            "scale": {
+              "x": 1,
+              "y": 1.5,
+              "z": 0.1906
+            }
+          },
+          "components": [],
+          "prefab": "d75bc013a11360f2",
+          "overrides": {
+            "dffedd8e": {
+              "transform": {
+                "position": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 16.65
+                },
+                "scale": {
+                  "x": 33.3,
+                  "y": 0.3,
+                  "z": 33.3
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "7681686f",
+          "name": "Platform extendable",
+          "transform": {
+            "position": {
+              "x": 52.7675,
+              "y": 44.8818,
+              "z": 121.1844
+            },
+            "scale": {
+              "x": 1,
+              "y": 1.5,
+              "z": 0.172
+            }
+          },
+          "components": [],
+          "prefab": "d75bc013a11360f2",
+          "overrides": {
+            "dffedd8e": {
+              "transform": {
+                "position": {
+                  "x": -3.3398,
+                  "y": -0.2861,
+                  "z": 16.65
+                },
+                "scale": {
+                  "x": 33.3,
+                  "y": 0.3,
+                  "z": 33.3
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "f0b99b14",
+          "name": "Platform extendable",
+          "transform": {
+            "position": {
+              "x": 49.7675,
+              "y": 21.3818,
+              "z": 12.7768
+            },
+            "rotation": {
+              "x": -1.5708,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 1.5,
+              "z": 0.2083
+            }
+          },
+          "components": [],
+          "prefab": "d75bc013a11360f2",
+          "overrides": {
+            "dffedd8e": {
+              "transform": {
+                "position": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 16.65
+                },
+                "scale": {
+                  "x": 33.3,
+                  "y": 0.3,
+                  "z": 33.3
+                }
+              }
+            }
+          }
         }
       ]
     },
@@ -2970,7 +3116,7 @@
       "transform": {
         "position": {
           "x": 11.5,
-          "y": 8.5,
+          "y": 10.5,
           "z": 259
         }
       },
