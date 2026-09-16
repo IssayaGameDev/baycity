@@ -5,6 +5,8 @@ import {
   numberParam,
   motionOffset,
   motionsOf,
+  travelOffset,
+  type MotionFrame,
   vec3Param,
   stringParam,
   COLLIDER,
@@ -33,7 +35,7 @@ import {
 } from '@mp/content'
 import { DEFAULT_REGISTRY, type Registry } from '@mp/components'
 import type { LightDesc } from '@mp/render-three'
-import { vec3, type Vec3 } from '@mp/core'
+import { eulerToQuat, mulQuat, quat, vec3, type Vec3 } from '@mp/core'
 
 
 /**
@@ -520,6 +522,35 @@ const docOver = (
   }
 
   const node = (i: number): DocNode | undefined => nodes()[i]
+
+  /**
+   * Where a node sits in the tree, for re-framing its movers' travel (ADR 0106).
+   *
+   * Walked root-first, composing rotation and multiplying scale exactly as the loader's frame tree does, so
+   * the preview and the game agree. An ancestor's own `Spinner` is included: the loader reads the parent's
+   * **world** rotation at that instant, so a mover under a turning parent must be re-framed against the turn
+   * it actually has, not the one it was authored with.
+   */
+  const motionFrameOf = (i: number, timeMs: number): MotionFrame => {
+    const all = nodes()
+    const chain: DocNode[] = []
+    for (let at = all[i]?.parent ?? -1; at >= 0; at = all[at]?.parent ?? -1) {
+      const p = all[at]
+      if (p === undefined) break
+      chain.unshift(p)
+    }
+    let rot = quat()
+    let scale = vec3(1, 1, 1)
+    for (const p of chain) {
+      const t = p.view.transform
+      const own = t.rotation ?? vec3(0, 0, 0)
+      const spin = motionOffset(motionsOf(p.view.components), timeMs).rotation
+      rot = mulQuat(rot, eulerToQuat(vec3(own.x + spin.x, own.y + spin.y, own.z + spin.z)))
+      const s = t.scale
+      if (s !== undefined) scale = vec3(scale.x * s.x, scale.y * s.y, scale.z * s.z)
+    }
+    return { parentRot: rot, parentScale: scale, ownRotation: node(i)?.view.transform.rotation ?? vec3(0, 0, 0) }
+  }
   /**
    * Own nodes only, for the structural operations.
    *
@@ -1116,12 +1147,16 @@ const docOver = (
       if (n === undefined) return { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) }
       // The same composition the loader does (ADR 0103): the authored transform plus whatever its movers and
       // spinner contribute. Anything the viewport shows has to be what the game builds, and these are two
-      // separate readers of one rule.
+      // separate readers of **one** rule — `travelOffset` is that rule, shared, because when the re-framing
+      // lived only in the loader this drew a `local` mover along the world axes while the game moved it
+      // correctly (ADR 0106).
       const t = n.view.transform
       const rest = t.rotation ?? vec3(0, 0, 0)
-      const motion = motionOffset(motionsOf(n.view.components), timeMs)
+      const motions = motionsOf(n.view.components)
+      const motion = motionOffset(motions, timeMs)
+      const travel = motions.length === 0 ? motion.position : travelOffset(motions, timeMs, motionFrameOf(i, timeMs))
       return {
-        position: { x: t.position.x + motion.position.x, y: t.position.y + motion.position.y, z: t.position.z + motion.position.z },
+        position: { x: t.position.x + travel.x, y: t.position.y + travel.y, z: t.position.z + travel.z },
         rotation: { x: rest.x + motion.rotation.x, y: rest.y + motion.rotation.y, z: rest.z + motion.rotation.z },
       }
     },

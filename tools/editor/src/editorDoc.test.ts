@@ -13,7 +13,7 @@ import {
   type Level,
 } from '@mp/content'
 import { Bumper, Checkpoint, DEFAULT_REGISTRY, ENGINE_COMPONENTS, GAMEPLAY_COMPONENTS, Hazard, createRegistry, defineComponent } from '@mp/components'
-import { vec3, type Vec3 } from '@mp/core'
+import { eulerToQuat, mulQuat, quat, rotateVec3, vec3, type Vec3 } from '@mp/core'
 
 import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type Doc } from './editorDoc'
 
@@ -999,4 +999,103 @@ describe('a component inherited from the prefab root', () => {
     expect(level.nodes[0]!.overrides, 'no override can express a reordering').toBeUndefined()
     expect(typesOn(doc, 0)).toEqual([COLLIDER, Hazard.type])
   })
+})
+
+/**
+ * **The preview and the game must agree** (ADR 0106).
+ *
+ * `poseOf` draws the viewport and `instantiateLevel` builds the world, and they are two readers of one rule.
+ * When the mover re-framing lived in the loader alone, a `local` mover was drawn travelling along the world
+ * axes while the game moved it along the object's own forward: the editor lied about the level. Kodjo found
+ * it by playing the level and then pressing the preview button.
+ *
+ * So this compares them directly, on the shapes that make them differ: a turned node, a scaled parent, a
+ * turned parent, and a parent that is itself spinning.
+ */
+describe('the viewport preview agrees with the loader', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  const rad = (deg: number): number => (deg * Math.PI) / 180
+
+  const mover = (over: Record<string, unknown>): ComponentData => ({
+    id: 'm0',
+    type: 'Mover',
+    params: { move: vec3(0, 0, 10), speed: 20, smooth: false, space: 'world', ...over },
+  })
+
+  const drawnByGame = (nodes: Node[], atMs: number): Vec3 => {
+    const level: Level = { id: 'fx', config: {}, nodes: structuredClone(nodes) }
+    const loaded = instantiateLevel(createPhysicsWorld({ gravity: vec3(0, 0, 0) }), level, DEFAULT_REGISTRY)
+    loaded.update(atMs)
+    loaded.render(1)
+    return loaded.visuals[0]!.position
+  }
+
+  /** The preview's answer for the deepest node, composed through its ancestors the way the tree does. */
+  const drawnByEditor = (nodes: Node[], atMs: number): Vec3 => {
+    const doc = levelDoc({ id: 'fx', config: {}, nodes: structuredClone(nodes) }, DEFAULT_REGISTRY)
+    const last = doc.count() - 1
+    // Walk down composing, which is what the editor's instance groups do with each node's local pose.
+    const chain: number[] = []
+    for (let at = last; at >= 0; at = doc.parentOf(at) ?? -1) chain.unshift(at)
+    let pos = vec3(0, 0, 0)
+    let rot = quat()
+    let scale = vec3(1, 1, 1)
+    for (const i of chain) {
+      const p = doc.poseOf(i, atMs)
+      const turned = rotateVec3(rot, vec3(p.position.x * scale.x, p.position.y * scale.y, p.position.z * scale.z))
+      pos = vec3(pos.x + turned.x, pos.y + turned.y, pos.z + turned.z)
+      rot = mulQuat(rot, eulerToQuat(p.rotation))
+      const s = doc.transformOf(i).scale
+      if (s !== undefined) scale = vec3(scale.x * s.x, scale.y * s.y, scale.z * s.z)
+    }
+    return pos
+  }
+
+  const lift = (components: ComponentData[], transform: Node['transform']): Node => ({
+    id: 'lift',
+    transform,
+    components: [{ id: 'c0', type: 'Collider', params: { shape: { kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) } } }, { id: 'c1', type: 'Renderer', params: { material: '' } }, ...components],
+  })
+
+  const cases: { name: string; nodes: Node[] }[] = [
+    { name: 'a plain world mover', nodes: [lift([mover({})], { position: vec3(0, 0, 0) })] },
+    {
+      name: 'a local mover on a turned node',
+      nodes: [lift([mover({ space: 'local' })], { position: vec3(0, 0, 0), rotation: vec3(rad(160), rad(-90), 0) })],
+    },
+    {
+      name: 'a world mover under a scaled parent',
+      nodes: [{ id: 'holder', transform: { position: vec3(0, 0, 0), scale: vec3(2, 0.5, 3) }, components: [], children: [lift([mover({})], { position: vec3(0, 0, 0) })] }],
+    },
+    {
+      name: 'a world mover under a turned parent',
+      nodes: [{ id: 'holder', transform: { position: vec3(0, 0, 0), rotation: vec3(0, rad(90), 0) }, components: [], children: [lift([mover({})], { position: vec3(0, 0, 0) })] }],
+    },
+    {
+      name: 'a local mover under a spinning parent',
+      nodes: [
+        {
+          id: 'holder',
+          transform: { position: vec3(0, 0, 0) },
+          components: [{ id: 's0', type: 'Spinner', params: { axis: '+Y', speed: 90, offset: 0 } }],
+          children: [lift([mover({ space: 'local' })], { position: vec3(0, 0, 0), rotation: vec3(0, rad(45), 0) })],
+        },
+      ],
+    },
+  ]
+
+  for (const c of cases) {
+    it(`agrees on ${c.name}`, () => {
+      for (const t of [0, 125, 250, 375, 500]) {
+        const game = drawnByGame(c.nodes, t)
+        const editor = drawnByEditor(c.nodes, t)
+        expect(editor.x, `${c.name} x at ${t}ms`).toBeCloseTo(game.x, 4)
+        expect(editor.y, `${c.name} y at ${t}ms`).toBeCloseTo(game.y, 4)
+        expect(editor.z, `${c.name} z at ${t}ms`).toBeCloseTo(game.z, 4)
+      }
+    })
+  }
 })

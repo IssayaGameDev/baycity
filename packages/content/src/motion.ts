@@ -1,4 +1,4 @@
-import { vec3, type Vec3 } from '@mp/core'
+import { conjQuat, eulerToQuat, quat, rotateVec3, vec3, type Quat, type Vec3 } from '@mp/core'
 
 import { MOVER, SPINNER, boolParam, componentsOfType, firstOfType, numberParam, stringParam, vec3Param } from './nodes'
 import type { ComponentData } from './types'
@@ -125,6 +125,69 @@ export const moveFraction = (m: Extract<Motion, { kind: 'move' }>, nowMs: number
  */
 export const spinRadians = (s: Extract<Motion, { kind: 'spin' }>, nowMs: number): number =>
   frac((nowMs / 1000) * (s.speed / 360) + s.offset) * TAU
+
+/**
+ * Where a node sits in the tree, as far as re-framing a mover's travel is concerned (ADR 0106).
+ *
+ * `parentRot` and `parentScale` are the accumulated world rotation and scale **of the parent**, and
+ * `ownRotation` is the node's own authored euler. Identity for a node at the top of a level.
+ */
+export interface MotionFrame {
+  readonly parentRot: Quat
+  readonly parentScale: Vec3
+  readonly ownRotation: Vec3
+}
+
+/** A node with nothing above it and no turn of its own. */
+export const ROOT_FRAME: MotionFrame = { parentRot: quat(), parentScale: vec3(1, 1, 1), ownRotation: vec3(0, 0, 0) }
+
+/** Undo a scale factor, treating a degenerate axis as 1 — a zero-scaled parent must not send a node to infinity. */
+const safeDiv = (v: number, by: number): number => (Math.abs(by) < 1e-6 ? v : v / by)
+
+/**
+ * One mover's travel, in the local frame a node's position is expressed in (ADR 0106).
+ *
+ * **The one place this rule lives.** A frame tree composes
+ * `world = parent.world + rotate(parentRot, parentScale × local)`, so an authored travel has to be pushed
+ * back through both to survive as the thing that was typed:
+ *
+ * - `world` — un-rotate by the parent's world rotation, then divide by the parent's scale. What comes out is
+ *   world axes and world metres, whatever the chain above is doing.
+ * - `local` — rotate by the node's own authored rotation, then divide by the scale. The parent's rotation is
+ *   applied by the frame tree afterwards, which is right: a node's world orientation *is* its parent's times
+ *   its own.
+ *
+ * Dividing rather than multiplying is the point: the tree scales this offset exactly as it scales the node's
+ * position, so undoing it is what makes a metre a metre.
+ *
+ * Shared because it has to be. The loader and the editor's preview are two readers of one rule, and when the
+ * re-framing lived in the loader alone the editor drew a `local` mover travelling along the world axes while
+ * the game moved it correctly — which is the disagreement this whole seam exists to prevent.
+ */
+export const framedTravel = (m: Extract<Motion, { kind: 'move' }>, u: number, at: MotionFrame): Vec3 => {
+  const want = vec3(m.move.x * u, m.move.y * u, m.move.z * u)
+  const framed = m.space === 'local' ? rotateVec3(eulerToQuat(at.ownRotation), want) : rotateVec3(conjQuat(at.parentRot), want)
+  const s = at.parentScale
+  return vec3(safeDiv(framed.x, s.x), safeDiv(framed.y, s.y), safeDiv(framed.z, s.z))
+}
+
+/**
+ * Every mover's travel on a node, summed, in that node's local frame. What the frame tree adds to its
+ * authored position. `MOTIONLESS.position` when nothing moves it.
+ */
+export const travelOffset = (motions: readonly Motion[], nowMs: number, at: MotionFrame): Vec3 => {
+  let x = 0
+  let y = 0
+  let z = 0
+  for (const m of motions) {
+    if (m.kind !== 'move') continue
+    const t = framedTravel(m, moveFraction(m, nowMs), at)
+    x += t.x
+    y += t.y
+    z += t.z
+  }
+  return vec3(x, y, z)
+}
 
 /**
  * What every motion on a node adds to its authored transform at `nowMs`.
