@@ -19,7 +19,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 
 | Area | Element | Module |
 | --- | --- | --- |
-| Top | `#toolbar` — name (read-only), New, Duplicate, Back, gizmo T/R/S, space, snap + the active tool's increment with its unit (ADR 0114), Motion, Play, grid, markers. **No game picker and no level list** (ADR 0108): a game is a folder of levels, so opening is the Project panel's tree. No mode select and no Save either: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
+| Top | `#toolbar` — name (read-only), New, Duplicate, Back, gizmo Move/Rotate/Scale/**Face** (ADR 0119), space, snap + the active tool's increment with its unit (ADR 0114), Motion, Play, grid, markers. **No game picker and no level list** (ADR 0108): a game is a folder of levels, so opening is the Project panel's tree. No mode select and no Save either: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
 | Left | `#hierarchy` — node tree + context menu | `src/hierarchy.ts`, `src/menu.ts` |
 | Centre | `#view` — Three stage, orbit, transform gizmo, placement clicks | `src/main.ts` |
 | Right | `#insp-head`, `#inspector`, `#asset-inspector` | `src/inspector.ts`, `src/assetInspector.ts` |
@@ -415,6 +415,26 @@ The game's own code, not a copy (ADR 0052):
 
 Esc / pointer-lock loss exits play; play stops track preview.
 
+## Pulling a face (ADR 0119)
+
+A fourth tool, **Face**: hover the selected box and the face under the pointer lights up; drag it and that
+face moves along its own normal while the opposite one stays. The scale tool grows a box about its centre, so
+both faces move — which is why a wall butted against a floor edge came away from it.
+
+The face is the handle, so there is nothing to aim at. No shortcut (the useful letters are taken). Not a
+`TransformControls` mode: the gizmo detaches while Face is active and the canvas runs its own press/move/release.
+
+| Piece | Function |
+| --- | --- |
+| which face a hit normal names | `faceFromNormal` — largest component, so a rounded box's fillets resolve to their face |
+| how far the pointer dragged | `distanceAlongAxis` — nearest point on the normal line to the pointer ray; `null` down the axis, caller holds the last value |
+| where it lands | `snappedPull` — snaps the face's **plane offset along its normal**, not the distance dragged |
+| the transform | `pulled` — size `+= d`, centre `+= d/2 × sign`; clamped on the *size* so the far face holds |
+
+All four pure and tested (`src/facePull.ts`). **Built-in box and rounded box only**, since for those scale is
+the whole size (ADR 0090) and a pull is a transform edit; an authored collider would need its half-extents
+edited too. Selected object only. One history entry per drag, coalesced like a gizmo drag.
+
 ## Snapping (ADR 0114)
 
 One increment **per tool**, in `edit.steps`; the toolbar shows the active tool's with its unit and its own
@@ -425,6 +445,7 @@ bounds, so it stays one field.
 | Move | 0.5 | 0.05–10 | m | **us** — `snapTranslation`, on the **corner** (ADR 0117) |
 | Rotate | 15 | 1–90 | ° | **us** — `snapRotation` on `objectChange` |
 | Scale | 0.1 | 0.05–5 | × | `TransformControls.setScaleSnap` (absolute) |
+| Face | 0.5 | 0.05–10 | m | **us** — `snappedPull`, on the face's plane (ADR 0119) |
 
 **Translation snaps the minimum corner of the world axis-aligned box**, not the centre (ADR 0117). A box is a
 centre plus a size, so centre-snapping puts the edges on the grid only for even cell counts and halfway

@@ -86,6 +86,7 @@ import { canMoveFolder, movedInto, renamedTo } from './assetTree'
 import { createPreviews, type Previews } from './previews'
 import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
 import { createProjectPanel, type Project } from './projectPanel'
+import { distanceAlongAxis, faceFromNormal, pulled, snappedPull, type Face } from './facePull'
 import { cornerSnapDelta, snapAnglesDeg, snapToGrid, worldHalfExtents } from './snap'
 import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
 import { createShortcuts } from './shortcuts'
@@ -612,12 +613,13 @@ const STEP_LIMITS: Record<GizmoMode, { min: number; max: number; grain: number; 
   translate: { min: 0.05, max: 10, grain: 0.05, unit: 'm' },
   rotate: { min: 1, max: 90, grain: 1, unit: '°' },
   scale: { min: 0.05, max: 5, grain: 0.05, unit: '×' },
+  face: { min: 0.05, max: 10, grain: 0.05, unit: 'm' },
 }
 
 const edit: { mode: GizmoMode; snap: boolean; steps: Record<GizmoMode, number>; space: GizmoSpace } = {
   mode: 'translate',
   snap: true,
-  steps: { translate: 0.5, rotate: 15, scale: 0.1 },
+  steps: { translate: 0.5, rotate: 15, scale: 0.1, face: 0.5 },
   // Which frame the handles point along. Three forces `local` for scale and `world` for the free-rotate
   // ring, exactly as Unity does, so this only ever changes what it can.
   space: 'world',
@@ -1332,7 +1334,9 @@ stage.scene.add(gizmo.getHelper())
  * (`loadNewReferences`) never went through a selection change, which is how the stale attachment survived.
  */
 const reattachGizmo = (): void => {
-  const g = selected === null || playing ? undefined : instanceGroups[selected]
+  // Face is not a `TransformControls` mode (ADR 0119): the handles are the faces themselves, so the gizmo
+  // would only be three arrows in the way.
+  const g = selected === null || playing || edit.mode === 'face' ? undefined : instanceGroups[selected]
   if (g === undefined) gizmo.detach()
   else gizmo.attach(g)
 }
@@ -1425,7 +1429,10 @@ const boundsReach = (): { outside: number; reach: number } | null => {
 /** Switch transform tool (toolbar buttons and the T/R/S keys are the same path). */
 const setMode = (mode: GizmoMode): void => {
   edit.mode = mode
-  gizmo.setMode(mode)
+  // `setMode` only knows the three it draws; Face detaches it instead (ADR 0119).
+  if (mode !== 'face') gizmo.setMode(mode)
+  faceHover.visible = false
+  reattachGizmo()
   uiChanged()
 }
 
@@ -1756,7 +1763,199 @@ canvas.addEventListener('pointerdown', (e) => {
   downX = e.clientX
   downY = e.clientY
   gizmoDragged = false
+  // Face mode claims a left press on a face of the selected box (ADR 0119). Orbit is suppressed for the drag
+  // and `gizmoDragged` marks it, so the pointerup that follows is not read as a click that changes selection.
+  if (e.button === 0 && !playing && edit.mode === 'face' && beginFacePull(e.clientX, e.clientY)) {
+    gizmoDragged = true
+    controls.enabled = false
+    canvas.setPointerCapture(e.pointerId)
+  }
 })
+
+canvas.addEventListener('pointermove', (e) => {
+  if (playing || edit.mode !== 'face') return
+  if (facePull !== null) {
+    moveFacePull(e.clientX, e.clientY)
+    return
+  }
+  const found = faceUnder(e.clientX, e.clientY)
+  if (found === null) faceHover.visible = false
+  else showFaceHover(found.index, found.face)
+})
+
+canvas.addEventListener('pointerup', (e) => {
+  if (facePull === null) return
+  endFacePull()
+  controls.enabled = true
+  if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId)
+})
+
+/* ============================ pulling a face (ADR 0119) ============================ */
+
+/**
+ * The translucent square drawn over the face under the pointer.
+ *
+ * The face **is** the handle, so there is nothing to aim at but the box itself — SketchUp's model rather than
+ * ProBuilder's select-then-drag. `depthTest: false` so it reads on a face pointing away from the light, and
+ * `renderOrder` above the meshes so it is not z-fought by the surface it sits on.
+ */
+const faceHover = new THREE.Mesh(
+  new THREE.PlaneGeometry(1, 1),
+  new THREE.MeshBasicMaterial({ color: 0x4a8cf7, transparent: true, opacity: 0.35, depthTest: false, side: THREE.DoubleSide }),
+)
+faceHover.renderOrder = 10
+faceHover.visible = false
+// Beside the gizmo: scene furniture, not part of the level.
+stage.scene.add(faceHover)
+
+/** What a pull needs to remember from the moment the pointer went down. */
+let facePull: {
+  index: number
+  face: Face
+  /** The line the face travels along, in world space; `dir` is the outward normal, unit length. */
+  origin: THREE.Vector3
+  dir: THREE.Vector3
+  /** `distanceAlongAxis` at the press, so a move is measured as a change rather than an absolute. */
+  t0: number
+  /** Where the face's plane sits along its own normal, for snapping where it *lands* (ADR 0113/0117). */
+  faceAt: number
+  startScale: THREE.Vector3
+  startPos: THREE.Vector3
+  /** Local units per world metre along this axis, so a world drag becomes a local scale. */
+  perMetre: number
+  /** The last good distance, held when the camera looks straight down the axis. */
+  last: number
+} | null = null
+
+/**
+ * The face of the **selected** box under a client position, or `null`.
+ *
+ * Only the selected object, so a stray drag cannot reshape something else, and so the highlight only ever
+ * appears on one thing. Only a built-in box or rounded box: scale is the whole size for those (ADR 0090), so
+ * a pull is a transform edit and nothing else. A sphere has no faces.
+ */
+const faceUnder = (clientX: number, clientY: number): { index: number; face: Face; hit: THREE.Intersection } | null => {
+  if (selected === null || doc === null) return null
+  const builtin = doc.builtinOf(selected)
+  if (builtin !== 'builtin:box' && builtin !== 'builtin:rounded-box') return null
+  const g = instanceGroups[selected]
+  if (g === undefined) return null
+  castFrom(clientX, clientY)
+  const hit = raycaster.intersectObject(meshHolderOf(g), true)[0]
+  if (hit === undefined || hit.face === null || hit.face === undefined) return null
+  // The normal arrives in the hit mesh's own space; the face belongs to the node's.
+  const world = hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
+  g.updateWorldMatrix(true, false)
+  const local = world.clone().transformDirection(new THREE.Matrix4().copy(g.matrixWorld).invert())
+  const face = faceFromNormal(local)
+  return face === null ? null : { index: selected, face, hit }
+}
+
+/** Draw the highlight over a face, sized to it. */
+const showFaceHover = (index: number, face: Face): void => {
+  const g = instanceGroups[index]
+  if (g === undefined) return
+  g.updateWorldMatrix(true, false)
+  const pos = new THREE.Vector3()
+  const quat = new THREE.Quaternion()
+  const scale = new THREE.Vector3()
+  g.matrixWorld.decompose(pos, quat, scale)
+  const half = { x: Math.abs(scale.x) / 2, y: Math.abs(scale.y) / 2, z: Math.abs(scale.z) / 2 }
+  // A plane's own normal is +z, so point it along the face and slide it out to the surface.
+  const localNormal = new THREE.Vector3(face.axis === 'x' ? face.sign : 0, face.axis === 'y' ? face.sign : 0, face.axis === 'z' ? face.sign : 0)
+  const centre = localNormal.clone().multiply(new THREE.Vector3(half.x, half.y, half.z)).applyQuaternion(quat).add(pos)
+  const spread = face.axis === 'x' ? [half.z, half.y] : face.axis === 'y' ? [half.x, half.z] : [half.x, half.y]
+  faceHover.position.copy(centre)
+  faceHover.quaternion.copy(quat).multiply(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), localNormal))
+  faceHover.scale.set((spread[0] ?? 0.5) * 2, (spread[1] ?? 0.5) * 2, 1)
+  faceHover.visible = true
+}
+
+/** Begin a pull. `false` when there is no face under the pointer, so the caller falls through to selection. */
+const beginFacePull = (clientX: number, clientY: number): boolean => {
+  const found = faceUnder(clientX, clientY)
+  if (found === null || doc === null) return false
+  const g = instanceGroups[found.index]
+  if (g === undefined) return false
+  g.updateWorldMatrix(true, false)
+  const pos = new THREE.Vector3()
+  const quat = new THREE.Quaternion()
+  const worldScale = new THREE.Vector3()
+  g.matrixWorld.decompose(pos, quat, worldScale)
+
+  const { face } = found
+  const localNormal = new THREE.Vector3(face.axis === 'x' ? face.sign : 0, face.axis === 'y' ? face.sign : 0, face.axis === 'z' ? face.sign : 0)
+  const dir = localNormal.clone().applyQuaternion(quat).normalize()
+  const halfWorld = Math.abs(worldScale[face.axis]) / 2
+  const faceCentre = dir.clone().multiplyScalar(halfWorld).add(pos)
+  const t0 = distanceAlongAxis(raycaster.ray.origin, raycaster.ray.direction, pos, dir)
+  if (t0 === null) return false
+  // Local units per world metre: the node's own scale is local, and the world size is that times the parent's.
+  const localSize = Math.abs(g.scale[face.axis])
+  const perMetre = localSize > 1e-9 && halfWorld > 1e-9 ? localSize / (halfWorld * 2) : 1
+
+  facePull = {
+    index: found.index,
+    face,
+    origin: pos.clone(),
+    dir,
+    t0,
+    // Where the face's plane sits along its own normal. For an axis-aligned box this is just its world x, y
+    // or z; rotated, it is the plane's offset, which is what a grid of parallel planes snaps to.
+    faceAt: faceCentre.dot(dir),
+    startScale: g.scale.clone(),
+    startPos: g.position.clone(),
+    perMetre,
+    last: 0,
+  }
+  coalescing = true
+  heldBack = []
+  return true
+}
+
+/** Apply the pointer's position to the pull in progress. */
+const moveFacePull = (clientX: number, clientY: number): void => {
+  const pull = facePull
+  if (pull === null || doc === null) return
+  const g = instanceGroups[pull.index]
+  if (g === undefined) return
+  castFrom(clientX, clientY)
+  const t = distanceAlongAxis(raycaster.ray.origin, raycaster.ray.direction, pull.origin, pull.dir)
+  // Looking straight down the axis there is no answer; hold the last one rather than jumping.
+  const raw = t === null ? pull.last : t - pull.t0
+  pull.last = raw
+  const metres = snappedPull(pull.faceAt, raw, edit.snap ? edit.steps.face : 0)
+  const step = edit.snap ? edit.steps.face : 0.05
+  const next = pulled(
+    { x: pull.startScale.x, y: pull.startScale.y, z: pull.startScale.z },
+    { x: pull.startPos.x, y: pull.startPos.y, z: pull.startPos.z },
+    pull.face,
+    metres * pull.perMetre,
+    Math.max(step, 0.05) * pull.perMetre,
+  )
+  g.scale.set(next.scale.x, next.scale.y, next.scale.z)
+  g.position.set(next.position.x, next.position.y, next.position.z)
+  writeBackItem(pull.index)
+  rebuildSubtreeMeshes(pull.index)
+  showFaceHover(pull.index, pull.face)
+  inspectorSync()
+  const size = next.scale
+  setStatus(`${r4(size.x)} \u00d7 ${r4(size.y)} \u00d7 ${r4(size.z)}`)
+}
+
+/** Finish a pull: one history entry and one message to the room, like a gizmo drag. */
+const endFacePull = (): void => {
+  const pull = facePull
+  facePull = null
+  coalescing = false
+  if (pull === null) return
+  const drag = foldBatches(heldBack, 'face', [])
+  heldBack = []
+  if (drag !== null && live()) collab.submit({ ops: drag.ops, inverses: drag.inverses })
+  recordEdit('face')
+  rebuildLoaded()
+  applyPreviewPoses()
+}
 
 /** Point the raycaster at a client position. Shared by picking, placement and the right-click menu. */
 const castFrom = (clientX: number, clientY: number): void => {
