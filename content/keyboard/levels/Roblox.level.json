@@ -5850,11 +5850,20 @@
                     },
                     "scale": {
                       "x": 0.0166,
-                      "y": 6.8649,
-                      "z": 0.0201
+                      "y": 7.0241,
+                      "z": 0.0174
                     }
                   },
                   "components": [
+                    {
+                      "id": "eb7de8d5",
+                      "type": "Boss",
+                      "params": {
+                        "zone": "7371a753",
+                        "speed": 8,
+                        "turn": 360
+                      }
+                    },
                     {
                       "id": "60ea7460",
                       "type": "Mesh",
@@ -5890,15 +5899,6 @@
                       "id": "508cc286",
                       "type": "Hazard",
                       "params": {}
-                    },
-                    {
-                      "id": "84c476b7",
-                      "type": "Boss",
-                      "params": {
-                        "zone": "#7ca67053",
-                        "speed": 8,
-                        "turn": 360
-                      }
                     }
                   ]
                 },
@@ -5919,6 +5919,13 @@
                   },
                   "components": [
                     {
+                      "id": "fc712273",
+                      "type": "Mesh",
+                      "params": {
+                        "model": "builtin:rounded-box"
+                      }
+                    },
+                    {
                       "id": "684d31ce",
                       "type": "Collider",
                       "params": {
@@ -5936,13 +5943,6 @@
                           "z": 0
                         },
                         "trigger": true
-                      }
-                    },
-                    {
-                      "id": "fc712273",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:rounded-box"
                       }
                     },
                     {
