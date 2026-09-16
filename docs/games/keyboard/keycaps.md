@@ -9,14 +9,36 @@
 
 | Param | Default | Meaning |
 | --- | --- | --- |
-| `pitch` (m) | 0.9 | centre-to-centre spacing |
-| `fill` | 0.88 | cap footprint as a fraction of the pitch |
-| `height` (m) | 0.45 | cap height above the face |
 | `glyphs` | `A…Z` | alphabet the letters come from |
 | `seed` | 1 | deterministic lettering (`glyphAt`); same seed, same board everywhere |
 
-`boardOf(node)` → the board's frame from the box collider; `capsFor(board)` tiles whole caps only and centres
-the leftover. Caps are drawn as **one `InstancedMesh` per glyph** across the whole level, `castShadow: false`,
+**The geometry is the game's, not the platform's** (ADR 0115). `pitch`, `fill` and `height` are settings in
+`content/keyboard/game.json`, one field each in the editor's Game row, read by `GAME_KEYS` (`rules.ts`) and
+handed to `drawKeycaps`. A level is thousands of platforms: a pitch per platform is a pitch to change per
+platform, and two that disagree cannot align however the grid is anchored. Old components still carrying a
+`pitch` are unaffected — `readParams` walks the declarations, not the file's keys, so nothing needed rewriting.
+
+| Setting | Default | Range |
+| --- | --- | --- |
+| `keyPitch` (m) | 0.9 | 0.05–3 |
+| `keyFill` | 0.88 | 0.3–1 |
+| `keyHeight` (m) | 0.45 | 0.005–1.5 |
+
+`boardOf(node)` → the board's frame from the box collider; `capsFor(board)` takes the cells of a **shared
+world lattice** that fall on the face (ADR 0115). Cell centres are multiples of the pitch measured along the
+board's own axis from the world origin (`axisCells`), so no platform decides its own phase and no two can be
+out of step — any sizes, any positions.
+
+Centring was the bug: a 5 m board at 0.9 fitted five columns spanning 3.6 m and split the 0.5 m leftover as
+margin, so the next board placed edge to edge left 1.4 m between the nearest caps and lining them up needed an
+overlap of `width mod pitch`.
+
+A cap is kept only where its **whole footprint** fits, so a cell straddling a join belongs to neither board and
+that row is missing. A seam must land within `pitch × (1 − fill) / 2` of a cell boundary — 5.4 cm at the
+defaults — to stay unbroken. Widths that are odd multiples of the pitch put every edge on a boundary: at pitch
+1, 5 × 5 platforms 5 apart join perfectly. **Axis-aligned only**; two boards with different yaw cannot share a
+lattice. **Lettering still restarts per board** (`glyphAt` is keyed on the per-board column and row), left
+alone deliberately. Caps are drawn as **one `InstancedMesh` per glyph** across the whole level, `castShadow: false`,
 `receiveShadow: true`, `DynamicDrawUsage`. Geometry: `keycapGeometry(shape)` — superellipse outline, taper 0.82,
 dish 0.28, 12 segments, 2 dish rings (~84 tris); top face UVs into the legend tile, walls sample one flat point
 (so the letter is only on top, reads correctly from behind).
