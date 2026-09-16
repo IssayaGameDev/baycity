@@ -709,3 +709,106 @@ describe('the two caps are independent (ADR 0078)', () => {
     expect(airReverse(airOnly)[0]).toBeCloseTo(40 * TICK_DT, 5)
   })
 })
+
+/**
+ * Air drag (ADR 0107): horizontal speed decays every airborne tick, stick or no stick, by a fraction of
+ * itself. Off by default.
+ */
+describe('airDrag (ADR 0107)', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  /** Run up to speed, jump, then fly for `ticks` air ticks on the given stick. Horizontal speed each tick. */
+  const fly = (tuning: CharacterTuning, stick: InputCommand, ticks: number): number[] => {
+    const world = makeWideWorld()
+    const c = addCharacter(world, playerSpawn(1000))
+    for (let i = 0; i < 40; i++) {
+      stepCharacter(c, cmd(0, 1), TICK_DT, tuning)
+      world.step(TICK_DT)
+    }
+    // Jump, held so `jumpCutScale` does not read it as a deliberate short hop.
+    stepCharacter(c, cmd(0, 1, true), TICK_DT, tuning)
+    world.step(TICK_DT)
+    const out: number[] = []
+    for (let i = 0; i < ticks; i++) {
+      stepCharacter(c, { ...stick, jump: c.vy > 0 }, TICK_DT, tuning)
+      world.step(TICK_DT)
+      out.push(Math.hypot(c.vx, c.vz))
+    }
+    world.free()
+    return out
+  }
+
+  it('is off in DEFAULT_TUNING — speed is held through the whole flight, as before', () => {
+    const coast = fly(DEFAULT_TUNING, cmd(0, 0), 10)
+    for (const v of coast) expect(v).toBeCloseTo(DEFAULT_TUNING.moveSpeed, 6)
+  })
+
+  it('decays a coast by the implicit fraction, exactly', () => {
+    const drag: CharacterTuning = { ...DEFAULT_TUNING, airDrag: 0.5 }
+    const keep = 1 / (1 + 0.5 * TICK_DT)
+    const coast = fly(drag, cmd(0, 0), 8)
+    let want = DEFAULT_TUNING.moveSpeed
+    for (const v of coast) {
+      want *= keep
+      expect(v).toBeCloseTo(want, 6)
+    }
+  })
+
+  it('slows you with the stick held too, not only on release', () => {
+    const drag: CharacterTuning = { ...DEFAULT_TUNING, airDrag: 0.5 }
+    const held = fly(drag, cmd(0, 1), 6)
+    // Air control re-accelerates toward `moveSpeed` each tick and drag then takes its cut, so holding
+    // forward settles just under the target rather than at it. Held is still slower than no drag at all.
+    for (const v of held) {
+      expect(v).toBeLessThan(DEFAULT_TUNING.moveSpeed)
+      expect(v).toBeGreaterThan(DEFAULT_TUNING.moveSpeed * 0.95)
+    }
+  })
+
+  it('slows a fling — the excess air control may not spend is not exempt', () => {
+    const drag: CharacterTuning = { ...DEFAULT_TUNING, airDrag: 0.5 }
+    const world = makeWideWorld()
+    const c = addCharacter(world, playerSpawn(1000))
+    // Airborne with a 100 m/s fling: twenty times `moveSpeed`, so every tick is ADR 0096's excess branch.
+    stepCharacter(c, cmd(0, 1, true), TICK_DT, drag)
+    world.step(TICK_DT)
+    c.vz = 100
+    const keep = 1 / (1 + 0.5 * TICK_DT)
+    let want = 100
+    for (let i = 0; i < 6; i++) {
+      // Pressing the way you are going: air control is a no-op on the excess, so this reads drag alone.
+      stepCharacter(c, { moveX: 0, moveZ: 1, jump: c.vy > 0 }, TICK_DT, drag)
+      world.step(TICK_DT)
+      want *= keep
+      expect(c.vz).toBeCloseTo(want, 4)
+    }
+    world.free()
+  })
+
+  it('never reverses or overshoots, whatever the drag and the step', () => {
+    // k·dt > 1 — a slider at the top with a long step. The explicit `1 − k·dt` would fling us backwards.
+    const fierce: CharacterTuning = { ...DEFAULT_TUNING, airDrag: 40 }
+    const coast = fly(fierce, cmd(0, 0), 4)
+    let prev = DEFAULT_TUNING.moveSpeed
+    for (const v of coast) {
+      expect(v).toBeGreaterThan(0)
+      expect(v).toBeLessThan(prev)
+      prev = v
+    }
+  })
+
+  it('leaves the ground alone: a walk at speed is untouched', () => {
+    const drag: CharacterTuning = { ...DEFAULT_TUNING, airDrag: 2 }
+    const world = makeWideWorld()
+    const c = addCharacter(world, playerSpawn(1000))
+    for (let i = 0; i < 40; i++) {
+      stepCharacter(c, cmd(0, 1), TICK_DT, drag)
+      world.step(TICK_DT)
+    }
+    expect(c.grounded).toBe(true)
+    expect(Math.hypot(c.vx, c.vz)).toBeCloseTo(drag.moveSpeed, 6)
+    world.free()
+  })
+})

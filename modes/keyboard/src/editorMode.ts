@@ -45,11 +45,13 @@ export const KEYBOARD_MODE: ModeDescriptor = {
    * - `groundMaxAccel` — `Infinity`: gaining speed is never limited, so a start is instant.
    * - `groundBrakeMaxAccel` — losing or redirecting it, which is a release and every turn.
    * - `airMaxAccel` — steering in the air.
+   * - `airDrag` — and the air itself is not free: speed decays while airborne, stick or no stick (ADR 0107).
+   *   A fraction per second, so the one number holds across the whole Level range.
    *
    * Tuned by feel on the Movement folder's sliders, which is the only place the numbers are written down:
    * a second copy in a doc is a copy that goes stale.
    */
-  tuning: { ...DEFAULT_TUNING, groundMaxAccel: Infinity, groundBrakeMaxAccel: 200, airMaxAccel: 100 },
+  tuning: { ...DEFAULT_TUNING, groundMaxAccel: Infinity, groundBrakeMaxAccel: 200, airMaxAccel: 100, airDrag: 0.5 },
   /**
    * The palette is shared so two games' hazards look alike; the mapping is each game's own. A `WinsPad` is
    * where a stage ends, which is what the shared palette calls a goal.

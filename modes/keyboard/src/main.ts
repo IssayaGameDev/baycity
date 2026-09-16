@@ -336,6 +336,9 @@ client.onFrame((dt) => {
 const movement = client.debugPane.addFolder({ title: 'Movement', expanded: false })
 movement.addBinding(client.tuning, 'groundBrakeMaxAccel', { min: 20, max: 1000, step: 5, label: 'ground brake m/s²' })
 movement.addBinding(client.tuning, 'airMaxAccel', { min: 10, max: 500, step: 5, label: 'air accel m/s²' })
+// Air drag (ADR 0107): the fraction of horizontal speed lost per second while airborne, stick or no stick.
+// 0 = off (the other games), 0.5 = half a second's worth per second. Not an m/s², so it holds at every Level.
+movement.addBinding(client.tuning, 'airDrag', { min: 0, max: 4, step: 0.05, label: 'air drag /s' })
 // 0 = fixed ceiling (unusable past a few Levels), 0.5 = grows with √speed, 1 = constant time, no weight.
 movement.addBinding(client.tuning, 'maxAccelScaling', { min: 0, max: 1, step: 0.05, label: 'weight vs speed' })
 // The speed picker's debug stand-in: on, you run at this many studs/s, capped at Max Speed.

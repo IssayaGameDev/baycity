@@ -84,6 +84,22 @@ export interface CharacterTuning {
    */
   maxAccelScaling: number
   airControl: number // 0..1 air steering strength relative to ground accel
+  /**
+   * Horizontal air drag, in **fractions of speed per second** (ADR 0107). `0` = off, and off is the default,
+   * so every game that does not ask for it is bit-for-bit unchanged.
+   *
+   * `v *= 1 / (1 + airDrag · dt)` every airborne tick, stick or no stick: `0.5` loses half your speed over a
+   * second, `2` loses two thirds. It never reaches zero and never reverses, whatever `dt` is.
+   *
+   * **Proportional, not an m/s² brake**, for the same arithmetic that forced `maxAccelScaling` to exist: a
+   * fixed brake across keyboard's hundredfold speed climb is 7 cm of effect at Level 0 and hundreds of metres
+   * at Level 500. A fraction per second means the same thing at every speed, so one number spans the range.
+   *
+   * It is the last word on airborne speed, applied **after** steering, so it slows the part of your velocity
+   * air control may not touch — a mover's fling, a bumper (ADR 0096's protected excess). Applied *before* the
+   * ride/launch inherit, so the tick you leave a surface hands you its full velocity undragged.
+   */
+  airDrag: number
   maxFallSpeed: number // m/s cap on downward speed (terminal velocity); rising is never capped
   coyoteTime: number // s of grace after losing footing in which a jump still fires (0 = off)
   jumpBufferTime: number // s a jump press is held pending, so a press before landing still fires (0 = off)
@@ -130,6 +146,9 @@ export const DEFAULT_TUNING: CharacterTuning = {
   // GroundController and its AirController, so it does not restrict air steering at all, and
   // `MaintainLinearMomentum` (true) keeps your speed when you let go. Kodjo's call.
   airControl: 1,
+  // Off: `MaintainLinearMomentum` is the Roblox model above, and the shipped games are built on it. Keyboard
+  // sets it (ADR 0107), where air momentum at 283 m/s is a different problem from air momentum at 2.8.
+  airDrag: 0,
   // A safety net, not a feel value — deliberately above anything the shipped levels can reach (the
   // longest fall to a kill plane peaks near 30 m/s), so today it never engages. It exists for a
   // `physical-fall` level, which has no kill plane at all: there the fall grows without bound, and at
@@ -652,6 +671,26 @@ export const stepCharacter = (
     } else {
       approachVec(state, targetX, targetZ, rate * dt)
     }
+  }
+
+  /**
+   * Air drag (ADR 0107). The air is not free: horizontal speed decays every airborne tick whether the stick is
+   * held or not, by a fraction of itself rather than a fixed m/s².
+   *
+   * `1 / (1 + k·dt)` is the implicit form, chosen over `1 − k·dt` because it cannot go negative: at `k·dt > 1`
+   * the explicit form flings the character backwards, and `k` is a live slider.
+   *
+   * Placed **after** the steering branch, so the excess above `moveSpeed` that air control is forbidden to
+   * spend still decays — a 100 m/s fling slows like everything else — and **before** the ride/launch inherit
+   * below, so the tick you leave a mover you get its velocity whole.
+   *
+   * `state.grounded` is last tick's footing, the same reading the steering branch above uses, so a jump's
+   * take-off tick is grounded and undragged.
+   */
+  if (!state.grounded && tuning.airDrag > 0) {
+    const keep = 1 / (1 + tuning.airDrag * dt)
+    state.vx *= keep
+    state.vz *= keep
   }
 
   // Jumping off a mover inherits its velocity: the distance it would have carried us, over dt.
