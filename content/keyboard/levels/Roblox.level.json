@@ -5444,10 +5444,10 @@
               }
             },
             {
-              "id": "f819c3cc",
+              "id": "de2e0d78",
               "type": "Boss",
               "params": {
-                "zone": null,
+                "zone": "f56e782f",
                 "speed": 8,
                 "turn": 180
               }
