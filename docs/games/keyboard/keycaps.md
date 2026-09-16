@@ -33,12 +33,18 @@ Centring was the bug: a 5 m board at 0.9 fitted five columns spanning 3.6 m and 
 margin, so the next board placed edge to edge left 1.4 m between the nearest caps and lining them up needed an
 overlap of `width mod pitch`.
 
-A cap is kept only where its **whole footprint** fits, so a cell straddling a join belongs to neither board and
-that row is missing. A seam must land within `pitch × (1 − fill) / 2` of a cell boundary — 5.4 cm at the
-defaults — to stay unbroken. Widths that are odd multiples of the pitch put every edge on a boundary: at pitch
-1, 5 × 5 platforms 5 apart join perfectly. **Axis-aligned only**; two boards with different yaw cannot share a
-lattice. **Lettering still restarts per board** (`glyphAt` is keyed on the per-board column and row), left
-alone deliberately. Caps are drawn as **one `InstancedMesh` per glyph** across the whole level, `castShadow: false`,
+**A cell belongs to the board its centre is on** (ADR 0116), over the half-open span `[-half, +half)` so a
+centre on a shared edge goes to one board and never both. Every cell of a compound ground therefore gets
+exactly one cap, at any sizes and any positions — measured at pitch 1, widths 5, 4, 3.7, 6.25 and 9 all join
+with spacing 1.0. The price is at an **outer** rim, where a cap can overhang by up to half its footprint;
+cosmetic, since caps are visual only. A platform narrower than a cap gets the cell whose centre lands on it.
+
+Requiring the whole footprint to fit was tried first and reversed: it dropped a cap unless the seam landed
+within 5.4 cm of a cell boundary, so 88% of seam positions lost a row and the platforms had to be aligned to
+the grid rather than the other way round.
+
+**Axis-aligned only**; two boards with different yaw cannot share a lattice. **Lettering still restarts per
+board** (`glyphAt` is keyed on the per-board column and row), left alone deliberately. Caps are drawn as **one `InstancedMesh` per glyph** across the whole level, `castShadow: false`,
 `receiveShadow: true`, `DynamicDrawUsage`. Geometry: `keycapGeometry(shape)` — superellipse outline, taper 0.82,
 dish 0.28, 12 segments, 2 dish rings (~84 tris); top face UVs into the legend tile, walls sample one flat point
 (so the letter is only on top, reads correctly from behind).
