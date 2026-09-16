@@ -10,6 +10,7 @@ Kodjo's list; nothing else is added without his word.
 | --- | --- | --- | --- |
 | `ground brake m/s²` | `client.tuning.groundBrakeMaxAccel` | 20–1000 | ceiling on losing or redirecting ground speed, at `ACCEL_REF_SPEED` (ADR 0078/0096) |
 | `air accel m/s²` | `client.tuning.airMaxAccel` | 10–500 | ceiling on air steering, same reference |
+| `air drag /s` | `client.tuning.airDrag` | 0–4 | fraction of horizontal speed lost per airborne second, stick or no stick (ADR 0107) |
 | `weight vs speed` | `client.tuning.maxAccelScaling` | 0–1 | how both grow with speed: 0 fixed, 0.5 `√v`, 1 constant time |
 
 The shipped values are in `KEYBOARD_MODE.tuning` (`src/editorMode.ts`) and nowhere else. `weight vs speed` has

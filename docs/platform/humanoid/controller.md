@@ -40,6 +40,7 @@ Tick constants live in `@mp/core` (`TICK_RATE_HZ` 30, `TICK_DT`), not here.
 | `maxAccelScaling` | exponent | 0.5 | how the three ceilings grow with speed: `0` fixed, `0.5` with `√v`, `1` constant time. `Infinity` ceilings ignore it |
 | `ACCEL_REF_SPEED` | m/s | 15 (const) | the speed a ceiling is quoted at: `ceiling(v) = ceiling × (v/15) ** maxAccelScaling` |
 | `airControl` | 0..1 | 1 | air rate = ground accel × this |
+| `airDrag` | 1/s | 0 | fraction of horizontal speed lost per airborne second, stick or no stick: `v *= 1/(1 + airDrag·dt)`; 0 = off (ADR 0107) |
 | `maxFallSpeed` | m/s | 60 | terminal velocity; clamps falling only, never a jump/launch |
 | `coyoteTime` | s | 0.1 | jump still fires this long after losing footing; 0 = off |
 | `jumpBufferTime` | s | 0.1 | press held pending this long; fires on landing; 0 = off |
@@ -91,6 +92,16 @@ Step order:
 3. Jump cut when `jumpCut && !cmd.jump && vy > 0`.
 4. Vertical: riding → `vy = 0`; else gravity × scale, clamp `−maxFallSpeed`.
 5. Horizontal via `approachVec`. Ground rate `min(moveSpeed / (hasInput ? groundAccelTime : groundStopTime), ceiling)`, where the ceiling is `groundMaxAccel` when the change **adds** to current velocity and `groundBrakeMaxAccel` when it fights it; air rate `min(accel·airControl, airMaxAccel)`. Above `moveSpeed` only `moveSpeed` worth is steered; the excess is carried untouched (no air-strafing gain).
+
+   **Air drag** then runs on the result, every airborne tick, whether or not there is input:
+   `vx, vz *= 1 / (1 + airDrag·dt)`. After the steering, so the excess air control may not spend decays too
+   (a fling slows); before step 6, so the tick you leave a mover hands you its velocity whole. Implicit form,
+   because `1 − k·dt` reverses the character once `k·dt > 1` and `k` is a live slider. `state.grounded` is last
+   tick's footing, the same reading the branch above uses, so a jump's take-off tick is undragged.
+
+   Reach cost, measured, identical at every `moveSpeed` from 2.8 to 283 m/s (`airDrag` 0.5): **−1.6 % holding
+   the stick, −16.2 % coasting**. Holding forward costs almost nothing because air control refills the tick's
+   loss on the next tick; the drag's real bite is a release, and anything above `moveSpeed`.
 
    Which ceiling is decided by the component of the needed change along the direction of travel, not by comparing magnitudes: halfway through a reversal the target is larger than what is left, so magnitudes would read it as a start and let it round at the uncapped rate. A turn at speed is therefore braking, which is the point (ADR 0096). Uncapped is not instant — the time-based rate still applies.
 6. Leaving adds ride velocity (`ride/dt`, or `liftVel` from a coyote jump). Impulse added, zeroed.

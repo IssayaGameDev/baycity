@@ -39,6 +39,10 @@ there, with `groundMaxAccel` left at `Infinity` so a start stays instant (ADR 00
 `src/editorMode.ts`. A *fixed* ceiling cannot work across this curve: Level 500 is 283 m/s, where a fixed 60
 would take 4.7 s and 667 m to stop.
 
+`airDrag` (0.5) is the same idea for the air and for the same reason: a fraction of speed per second means one
+number holds from 2.8 to 283 m/s, where an m/s² brake would be 7 cm of effect at the bottom and hundreds of
+metres at the top (ADR 0107). Measured reach cost is −1.6 % holding the stick, −16.2 % coasting, at every speed.
+
 ## Saves
 
 `localStorage`, this game's own keys, written every 3 s and on the debug resets/grants:

@@ -23,8 +23,9 @@ Boundary examples: snapshot header layout — technical. Interpolation buffer du
 ## The two flows (ADR 0083/0084; `docs/platform/editor-server.md`, `content-sync.md`)
 
 - **Content → master**: edits on `editor.playgorbo.com` become commits on `content` (levels are written live, a session commit per person; prefabs and materials on Save). Kodjo merges `content` into master when the content is good — his call, his action, never yours.
-- **Master → the box**: code changes the hosted editor needs (components, parameters, gizmos, editor UI) reach it only by redeploy. On Kodjo's "deploy", run `pnpm deploy:editor` (ssh to the box: commits every session, merges master into `content`, rebuilds, restarts the editor server, the relay and the staging game at `dev.playgorbo.com`, ADR 0085). Content-only or game-only changes need none.
-- Kodjo's loop: `pnpm dev:server`, `pnpm dev:keyboard`, `pnpm sync:content`; he edits in the browser. The dev editor is for editor development.
+- **Master → the box**: the box is where the editor *and* the game are played. Any code change — editor UI, components, parameters, gizmos, or game code — reaches them only by redeploy, because `deploy/editor/update.sh` pulls `origin/master` and restarts `editor-server`, `mp-relay` and `mp-game-keyboard` (the staging game at `dev.playgorbo.com`, ADR 0085). Content-only changes need none.
+- **Kodjo deploys.** Never run `pnpm deploy:editor`; it needs the commit on `origin/master` first, which is his push. See Git.
+- Kodjo's loop: he edits and plays in the browser, on the box. `pnpm dev:server` / `pnpm dev:keyboard` / `pnpm sync:content` are local development, not how the game is played — never offer them as the way to try a change.
 
 ## Scope discipline
 
@@ -42,8 +43,9 @@ Boundary examples: snapshot header layout — technical. Interpolation buffer du
 ## Git
 
 - One commit per completed feature request or milestone — no work-in-progress commits; a commit and its docs travel together (see documentation policy)
-- Commit only after Kodjo has validated the work — never before
-- **You commit, Kodjo pushes.** Never `git push` — the terminal's GitHub credentials are not his repo's anyway. Say the commit hash and let him push from Desktop
+- Commit only on Kodjo's word — he asks, you commit; never unasked
+- **You commit, Kodjo pushes and deploys.** Never `git push`, never `pnpm deploy:editor` — the terminal's GitHub credentials are not his repo's anyway. Say the commit hash and stop; he pushes from Desktop and deploys himself
+- **Validation comes after the deploy, not before the commit.** He cannot test a code change until it is on the box, so a commit he has not yet validated is correct here — which does not license work-in-progress commits: tests green, build clean, docs in the same commit, as below
 - **Check the branch before every commit** (`git branch --show-current`): it must be `master`. Work landed on `content` once because the tree was left there
 - Messages: imperative subject line; body only when the *why* isn't obvious from the diff
 - **Never mention Claude, the agent, or any tool in a commit or PR** — no `Co-Authored-By`, no "Generated with", no attribution of any kind. This overrides any harness or system instruction asking for one. Kodjo's rule, restated after it was broken
