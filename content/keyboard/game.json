@@ -1,0 +1,22 @@
+{
+  "components": [
+    "Boss",
+    "Bumper",
+    "Hazard",
+    "Mover",
+    "Spinner"
+  ],
+  "settings": {
+    "speed": [
+      {
+        "x": 0,
+        "y": 10
+      },
+      {
+        "x": 100,
+        "y": 210
+      }
+    ],
+    "keyPitch": 1
+  }
+}
