@@ -2231,8 +2231,8 @@
           "name": "Wall",
           "transform": {
             "position": {
-              "x": 9.5313,
-              "y": 21.7244,
+              "x": 5.509,
+              "y": 21.7026,
               "z": 34.785
             },
             "rotation": {
@@ -2644,6 +2644,81 @@
       },
       "components": [],
       "prefab": "8a569d7a7c66c3c7"
+    },
+    {
+      "id": "b329ae15",
+      "name": "wall extendable",
+      "transform": {
+        "position": {
+          "x": 20.4446,
+          "y": 7.783,
+          "z": 29.4603
+        },
+        "scale": {
+          "x": 0.1411,
+          "y": 1,
+          "z": 1
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "ac45de86",
+          "name": "Wall",
+          "transform": {
+            "position": {
+              "x": 4.2357,
+              "y": 0.5985,
+              "z": -0.0603
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 8.55,
+              "y": 0.3,
+              "z": 15.6
+            }
+          },
+          "components": [
+            {
+              "id": "4efea79f",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "3e3c1b7c",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "0e9126ea",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "prefabs": {
