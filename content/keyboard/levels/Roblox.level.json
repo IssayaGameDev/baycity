@@ -3857,6 +3857,18 @@
           ]
         }
       ]
+    },
+    {
+      "id": "f56e782f",
+      "transform": {
+        "position": {
+          "x": 47.5,
+          "y": 8,
+          "z": 90.5
+        }
+      },
+      "components": [],
+      "prefab": "1d337f785a982c50"
     }
   ],
   "prefabs": {
