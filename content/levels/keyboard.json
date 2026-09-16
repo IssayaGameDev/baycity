@@ -1702,12 +1702,12 @@
     },
     {
       "id": "114e57f4",
-      "name": "Stage End 3",
+      "name": "Stage End 4",
       "transform": {
         "position": {
           "x": 1,
           "y": 5.5,
-          "z": 272.5
+          "z": 273
         }
       },
       "components": [],
@@ -1853,84 +1853,171 @@
       ]
     },
     {
-      "id": "4ce966f8",
-      "name": "board-5",
+      "id": "c6a76766",
+      "name": "Stage End 5",
       "transform": {
         "position": {
-          "x": 1.5,
-          "y": 10.5,
-          "z": 298.5
-        },
-        "rotation": {
-          "x": -0.2618,
-          "y": 0,
-          "z": 0
-        },
-        "scale": {
-          "x": 23.4,
-          "y": 0.5,
-          "z": 37.1
+          "x": 18.4039,
+          "y": 16.0825,
+          "z": 267.5824
         }
       },
-      "components": [
+      "components": [],
+      "children": [
         {
-          "id": "c0",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.5
+          "id": "4ce966f8",
+          "name": "board-5",
+          "transform": {
+            "position": {
+              "x": -16.9039,
+              "y": -5.5825,
+              "z": 30.9176
+            },
+            "rotation": {
+              "x": -0.2618,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 23.4,
+              "y": 0.5,
+              "z": 37.1
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 280
               }
             }
-          }
+          ]
         },
         {
-          "id": "mesh",
-          "type": "Mesh",
-          "params": {
-            "model": "builtin:rounded-box"
-          }
-        },
-        {
-          "id": "c1",
-          "type": "Renderer",
-          "params": {
-            "material": "55205761e38bc929"
-          }
-        },
-        {
-          "id": "c2",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 280
-          }
+          "id": "c59e002c",
+          "name": "Rouleau",
+          "transform": {
+            "position": {
+              "x": -16.9039,
+              "y": -8.0825,
+              "z": 14.4176
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": -1.5708
+            },
+            "scale": {
+              "x": 2.2,
+              "y": 17.5,
+              "z": 2.2
+            }
+          },
+          "components": [
+            {
+              "id": "b5092501",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "capsule",
+                  "halfHeight": 0.5,
+                  "radius": 0.5
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                },
+                "trigger": false
+              }
+            },
+            {
+              "id": "a3d7c5fd",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:capsule"
+              }
+            },
+            {
+              "id": "c8ce6624",
+              "type": "Renderer",
+              "params": {
+                "material": ""
+              }
+            },
+            {
+              "id": "9a9a6e8c",
+              "type": "Mover",
+              "params": {
+                "move": {
+                  "x": -1.6653345369377348e-16,
+                  "y": 9.999999999999996,
+                  "z": 33.300000000000004
+                },
+                "speed": 13.5,
+                "smooth": true,
+                "offset": 0
+              }
+            },
+            {
+              "id": "6364e278",
+              "type": "Hazard",
+              "params": {}
+            }
+          ]
         }
       ]
     },
     {
-      "id": "c59e002c",
+      "id": "0f5f61f5",
       "name": "capsule",
       "transform": {
         "position": {
-          "x": 2.5,
-          "y": 8,
-          "z": 282
+          "x": 1.5,
+          "y": 16.036,
+          "z": 314.4869
         },
         "rotation": {
-          "x": 0,
+          "x": 2.7925,
           "y": 0,
           "z": -1.5708
         },
         "scale": {
           "x": 2.2,
-          "y": 24.2,
+          "y": 17.5,
           "z": 2.2
         }
       },
@@ -1972,12 +2059,13 @@
           "params": {
             "move": {
               "x": -1.6653345369377348e-16,
-              "y": 9.999999999999996,
-              "z": 33.300000000000004
+              "y": -4.107825191113079e-15,
+              "z": 10.000000000000002
             },
             "speed": 13.5,
             "smooth": true,
-            "offset": 0
+            "offset": 0,
+            "space": "local"
           }
         },
         {
@@ -1986,6 +2074,50 @@
           "params": {}
         }
       ]
+    },
+    {
+      "id": "577aa4dc",
+      "name": "Stage End 5",
+      "transform": {
+        "position": {
+          "x": 1,
+          "y": 15.5,
+          "z": 324
+        }
+      },
+      "components": [],
+      "prefab": "8a569d7a7c66c3c7",
+      "overrides": {
+        "43638615": {
+          "params": {
+            "fd50a89a": {
+              "wins": 3
+            }
+          }
+        },
+        "8509bf48": {
+          "name": "treadmill +1"
+        },
+        "e880589a": {
+          "transform": {
+            "position": {
+              "x": -6.5,
+              "y": 2.3174,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 1.5708
+            },
+            "scale": {
+              "x": 4.6,
+              "y": 0.3,
+              "z": 15.3
+            }
+          }
+        }
+      }
     }
   ]
 }
