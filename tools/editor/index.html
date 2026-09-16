@@ -847,6 +847,41 @@
         white-space: nowrap;
       }
 
+      /*
+        A multi-selection's own number boxes (ADR 0112). Tweakpane binds a vec3 as one object and its number
+        input cannot be empty, so an axis whose value differs across the selection is drawn here instead —
+        blank, with a placeholder dash. Sized to sit in the same row as a Tweakpane point input's three boxes.
+      */
+      .imulti {
+        display: flex;
+        gap: 4px;
+        overflow: visible;
+      }
+      .imulti-n {
+        flex: 1 1 0;
+        min-width: 0;
+        padding: 3px 5px;
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        background: var(--bg);
+        color: var(--text);
+        font: inherit;
+      }
+      .imulti-c {
+        margin: 0;
+        accent-color: var(--accent);
+      }
+      /* A row the selection disagrees about, so the blank reads as "differs" rather than as empty. */
+      .isec-body .irow.mixed .irow-l {
+        font-style: italic;
+      }
+      .imulti-n::placeholder {
+        color: var(--dim);
+      }
+      .imulti-n:focus {
+        outline: 1px solid var(--accent);
+      }
+
       /* Unity's cue for an overridden value: a bar down the left edge of the row. */
       #inspector .over,
       .isec-body .irow.over {

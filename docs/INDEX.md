@@ -159,5 +159,7 @@ why matters.
 | [0109](adr/0109-the-editor-reopens-what-you-left.md) | The editor reopens what you left |
 | [0110](adr/0110-a-level-is-managed-like-an-asset.md) | A level is managed like an asset |
 | [0111](adr/0111-a-placement-can-be-unlinked.md) | A placement can be unlinked |
+| [0112](adr/0112-the-inspector-edits-the-whole-selection.md) | The Inspector edits the whole selection |
+| [0113](adr/0113-a-reparent-is-one-edit.md) | A reparent is one edit, and a step is not a constraint |
 
 `Design archive/` holds superseded design material and is not maintained.

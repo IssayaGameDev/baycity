@@ -63,7 +63,7 @@ Every `Doc` mutator builds `Op`s (`@mp/content` `ops.ts`, `content.md`) and comm
 | --- | --- |
 | `setTransform` / `setName` / `setParams` / `setComponentEnabled` / `addComponent` / `removeComponent` / `moveComponent` | the own op on an own node; the `setOverride*` / `addOverrideComponent` / `removeOverrideComponent` flavour on an inherited one (an inherited component's removal = `setOverrideParams unset` + `setOverrideEnabled null` + `setOverrideRemoved`). **Three cases, not two** (ADR 0098): `writeTarget` also catches a component a *placement* shows but does not have — inherited from its prefab **root** — and writes an override on the placement keyed by the root's id. `setParams` resolves it per component id, since the built-in-shape branch writes several at once. `moveComponent` stays refused: order belongs to the prefab's list |
 | `placePrefab` / `placeNamed` / `placeEmpty` / `placePrimitive` / `placeModel` / `duplicate` / `paste` | `insertNode` (ids minted client-side; `reidSubtree` for copies). `placePrefab` writes the prefab's **asset id** and resolves the definition into `level.prefabs` without an op (ADR 0091) |
-| `remove` / `move` / `reparent` | `removeNode` / `moveNode` |
+| `remove` / `move` / `reparent` | `removeNode` / `moveNode`. **`reparent` takes the re-expressed local transform and commits `moveNode` + `setTransform` in one batch** (ADR 0113): preserving the world pose changes the stored local numbers, and as a second commit that op landed in the *next* history entry — one Ctrl+Z then restored a transform belonging to an earlier reparent and a child jumped by its parent's whole transform |
 | `linkToPrefab` | `replaceNode` (the node keeps its transform and name, loses its own components, gains the reference). `definitionOf` is pure: the definition becomes a **file**, which is the host's to write |
 | `revert` | `setNodeOverride` (the record with the field gone, or `null`) |
 | `overrideOpsFor` | pure — the ops the **prefab's own room** would take. The host sends them there, then calls `revert` here (ADR 0091) |
@@ -415,6 +415,16 @@ The game's own code, not a copy (ADR 0052):
 
 Esc / pointer-lock loss exits play; play stops track preview.
 
+## Numbers in the Inspector (ADR 0113)
+
+Every numeric field in the object-editing path passes `dragSpeed(n)` — `{ pointerScale: n }` — and **never
+`step`**. Tweakpane's `step` is both a drag increment and a constraint anchored to the value the field was
+built with (`new StepConstraint(step, initialValue)`), so a scale field built at 32.98 with `step: 0.05` can
+only reach `32.98 ± n × 0.05` and 33 is unreachable, silently. A transform or a size has a continuous domain,
+so nothing may be unreachable; `pointerScale` is independent, so the drag feel is unchanged. Covered by a
+tripwire test that reproduces the constraint arithmetic. The Environment and Network **sliders** keep `step`
+deliberately — they are bounded and snapping suits a slider.
+
 ## Inspector — what the widgets bind to (ADR 0101)
 
 `boundState(defaults, params)` = `structuredClone({ ...defaults, ...params })`. Exported and pure so the
@@ -427,9 +437,24 @@ ADR 0033). Tweakpane writes *into* a bound object rather than replacing it — `
 memory, every frame, before any op existed: other placements of that prefab redrew, and the next one's slider
 started from the mutated number.
 
+## Inspector — several objects at once (ADR 0112)
+
+With more than one selected the panel edits **what they have in common**.
+
+| Piece | Behaviour |
+| --- | --- |
+| which components | the intersection, paired by **type and ordinal** (`peersOf`, pure and tested): the nth `Collider` with the nth `Collider`. Ids cannot pair them (minted per component) and type alone cannot (a node may carry two). A component only some of them have is **hidden** |
+| a value they agree about | the normal Tweakpane widget, showing it |
+| a value they differ about | a plain input, **blank**, `—` placeholder, in a `.irow` (`addMixedParam`). Tweakpane's number box cannot be empty, and a pre-filled one would be a claim about values it has not got. Untouched writes nothing. Per **axis** for vec3 and the transform |
+| a compound value | a collider shape is reported as differing, not offered blank |
+| writing | `Doc.setParamsAcross(targets, patch)` — each node's ops concatenated into **one** commit, so one undo entry and one message to the room |
+| transform | `host.selectionTransforms()` + `host.writeAxis(field, axis, value)`; three inputs per row, each writing its axis to every selected node. Also what fixed typing moving only the primary while a drag moved all |
+| Reset / Remove / enable | every selected node; the menu labels carry the count |
+| Add Component | anything **any** of them can take, added to each that can |
+
 ## Inspector — Add Component (`src/inspector.ts`)
 
-`addComponentSection` per component. `Add Component` lists `doc.registry` types not on the node plus `host.adoptable()`; disabled when both empty. Adopted types go through `host.adopt(type)` then are added to the rebuilt document. Params default from `registry.defaults(type)`. Prefab placements: "push into shared prefab" → `Doc.applyOverrides` (host `applyToPrefab`).
+`addComponentSection` per component. `Add Component` lists `doc.registry` types not on the node plus `host.adoptable()`; disabled when both empty. With several selected it lists what **any** of them can take and adds it to each that can (ADR 0112). Adopted types go through `host.adopt(type)` then are added to the rebuilt document. Params default from `registry.defaults(type)`. Prefab placements: "push into shared prefab" → `Doc.applyOverrides` (host `applyToPrefab`).
 
 ## Level validation test (`src/levels.test.ts`)
 

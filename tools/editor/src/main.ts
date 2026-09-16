@@ -2520,17 +2520,27 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
     const local = localInside(instanceGroups[from], parent === null ? null : (instanceGroups[parent] ?? null))
     const wasSelected = selected === from
 
-    const landed = doc.reparent(from, parent, at)
+    /**
+     * The move and the re-expressed transform go in **one** batch (ADR 0113).
+     *
+     * They used to be two commits with `recordEdit` between them, which put the transform in the *next*
+     * history entry: undoing a later edit restored a transform belonging to this reparent, so a child jumped
+     * by its parent's whole transform while its sibling stayed put.
+     */
+    const reframed =
+      local === null
+        ? undefined
+        : {
+            position: local.position,
+            ...(isZeroRot(new THREE.Euler(local.rotation.x, local.rotation.y, local.rotation.z, 'XYZ'))
+              ? {}
+              : { rotation: vec3(r4(local.rotation.x), r4(local.rotation.y), r4(local.rotation.z)) }),
+            ...(isOne(new THREE.Vector3(local.scale.x, local.scale.y, local.scale.z))
+              ? {}
+              : { scale: vec3(r4(local.scale.x), r4(local.scale.y), r4(local.scale.z)) }),
+          }
+    const landed = doc.reparent(from, parent, at, reframed)
     recordEdit(parent === doc.parentOf(landed) ? 'reorder' : 'reparent')
-    if (local !== null) {
-      const rot = new THREE.Euler(local.rotation.x, local.rotation.y, local.rotation.z, 'XYZ')
-      const scale = new THREE.Vector3(local.scale.x, local.scale.y, local.scale.z)
-      doc.setTransform(landed, {
-        position: local.position,
-        ...(isZeroRot(rot) ? {} : { rotation: vec3(r4(local.rotation.x), r4(local.rotation.y), r4(local.rotation.z)) }),
-        ...(isOne(scale) ? {} : { scale: vec3(r4(local.scale.x), r4(local.scale.y), r4(local.scale.z)) }),
-      })
-    }
 
     // Depth-first indices *are* the identity here (meshes, selection, the gizmo's target) and a reparent
     // renumbers everything after it, so the scene graph and the physics world are rebuilt rather than
@@ -3630,6 +3640,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     uiChanged()
   },
   selectionCount: () => selection.length,
+  selectionIndices: () => selection,
   readTransform: () => {
     if (selected === null) return null
     const g = instanceGroups[selected]
@@ -3640,6 +3651,63 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
       rotationDeg: vec3(THREE.MathUtils.radToDeg(e.x), THREE.MathUtils.radToDeg(e.y), THREE.MathUtils.radToDeg(e.z)),
       scale: vec3(g.scale.x, g.scale.y, g.scale.z),
     }
+  },
+  /**
+   * Every selected node's transform, in selection order so the primary is last (ADR 0112).
+   *
+   * Read off the scene groups, like `readTransform`, so the numbers the panel compares for "do these agree"
+   * are the same numbers it would have shown for one node.
+   */
+  selectionTransforms: () =>
+    selection.flatMap((i) => {
+      const g = instanceGroups[i]
+      if (g === undefined) return []
+      const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
+      return [
+        {
+          position: vec3(g.position.x, g.position.y, g.position.z),
+          rotationDeg: vec3(THREE.MathUtils.radToDeg(e.x), THREE.MathUtils.radToDeg(e.y), THREE.MathUtils.radToDeg(e.z)),
+          scale: vec3(g.scale.x, g.scale.y, g.scale.z),
+        },
+      ]
+    }),
+  /**
+   * One axis of one field, on every selected node, as one undo entry (ADR 0112).
+   *
+   * Only the axis asked for: the others keep each node's own value, which is what makes blanking a mixed
+   * axis honest — an empty box leaves that axis alone rather than flattening it to the primary's number.
+   *
+   * `coalescing` holds the per-node ops back so `recordEdit` folds them into a single history entry and one
+   * message to the room, the same way a gizmo drag across a selection does.
+   */
+  writeAxis: (field, axis, value) => {
+    if (doc === null || gizmoDragging || selection.length === 0) return
+    coalescing = true
+    heldBack = []
+    try {
+      for (const i of selection) {
+        const g = instanceGroups[i]
+        if (g === undefined) continue
+        if (field === 'position') g.position[axis] = value
+        else if (field === 'scale') g.scale[axis] = value
+        else {
+          const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
+          e[axis] = THREE.MathUtils.degToRad(value)
+          g.quaternion.setFromEuler(e)
+        }
+        writeBackItem(i)
+        if (field === 'scale') rebuildSubtreeMeshes(i)
+      }
+    } finally {
+      coalescing = false
+    }
+    const folded = foldBatches(heldBack, field, [])
+    heldBack = []
+    if (folded !== null && live()) collab.submit({ ops: folded.ops, inverses: folded.inverses })
+    recordEdit(selection.length > 1 ? `${field} ${selection.length}` : field)
+    rebuildLoaded()
+    applyPreviewPoses()
+    inspector.sync()
   },
   writeTransform: (t) => {
     // The gizmo is the authority while it is dragging: see `gizmoDragging`.
@@ -3719,7 +3787,7 @@ const renderStatus = (): void => {
     parts.push(others.length === 0 ? 'live' : `live · with ${[...new Set(others)].join(', ')}`)
   }
   if (selected !== null && doc !== null) {
-    parts.push(selection.length > 1 ? `${selection.length} selected · editing ${doc.label(selected)}` : `selected #${selected} (${doc.label(selected)})`)
+    parts.push(selection.length > 1 ? `${selection.length} selected · editing what they share` : `selected #${selected} (${doc.label(selected)})`)
   }
   if (previewing) parts.push(`preview t=${(previewMs / 1000).toFixed(2)}s`)
   if (placing !== null) {

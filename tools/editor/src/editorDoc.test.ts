@@ -1175,3 +1175,133 @@ describe('unlinking one placement', () => {
     expect(level).toEqual(start)
   })
 })
+
+/**
+ * One parameter patch across several nodes (ADR 0112). Component ids are minted per component, so the caller
+ * pairs each node with its own — this is about it being **one** commit, hence one undo and one broadcast.
+ */
+describe('editing several nodes at once', () => {
+  /** Two plain sibling solids, each with its own Renderer whose id is its own (`freshId`). */
+  const twoSolids = (): { level: Level; doc: Doc } => {
+    const level: Level = { id: 'lv', config: {}, nodes: [solid('a', vec3(0, 0, 0)), solid('b', vec3(2, 0, 0))] }
+    return { level, doc: levelDoc(level) }
+  }
+
+  it('patches every target in a single batch', () => {
+    const { level, doc } = twoSolids()
+    void level
+    const batches: { ops: import('@mp/content').Op[]; inverses: import('@mp/content').Op[] }[] = []
+    doc.onOps = (b) => batches.push(b)
+
+    const targets = [0, 1].map((at) => ({ at, componentId: idOf(doc, at, RENDERER) }))
+    doc.setParamsAcross(targets, { material: MAT_A })
+
+    expect(batches, 'one batch, so one undo entry and one message').toHaveLength(1)
+    expect(batches[0]!.ops).toHaveLength(2)
+    expect(paramOn(doc, 0, RENDERER, 'material')).toBe(MAT_A)
+    expect(paramOn(doc, 1, RENDERER, 'material')).toBe(MAT_A)
+  })
+
+  it('reverses as one', async () => {
+    const { applyBatch } = await import('@mp/content')
+    const { level, doc } = twoSolids()
+    const start = structuredClone(level)
+    const batches: { ops: import('@mp/content').Op[]; inverses: import('@mp/content').Op[] }[] = []
+    doc.onOps = (b) => batches.push(b)
+    doc.setParamsAcross([0, 1].map((at) => ({ at, componentId: idOf(doc, at, RENDERER) })), { material: MAT_A })
+    applyBatch(level, batches[0]!.inverses)
+    expect(level).toEqual(start)
+  })
+
+  it('skips a target that is not there rather than failing the whole patch', () => {
+    const { doc } = twoSolids()
+    const batches: { ops: import('@mp/content').Op[]; inverses: import('@mp/content').Op[] }[] = []
+    doc.onOps = (b) => batches.push(b)
+    doc.setParamsAcross(
+      [
+        { at: 0, componentId: idOf(doc, 0, RENDERER) },
+        { at: 99, componentId: 'nope' },
+      ],
+      { material: MAT_A },
+    )
+    expect(batches).toHaveLength(1)
+    expect(batches[0]!.ops).toHaveLength(1)
+    expect(paramOn(doc, 0, RENDERER, 'material')).toBe(MAT_A)
+  })
+
+  it('writes nothing, and no batch, when no target resolves', () => {
+    const doc = levelDoc(blank())
+    const batches: unknown[] = []
+    doc.onOps = (b) => batches.push(b)
+    doc.setParamsAcross([{ at: 0, componentId: 'nope' }], { material: MAT_A })
+    expect(batches).toHaveLength(0)
+  })
+})
+
+/**
+ * A reparent is **one** edit (ADR 0113).
+ *
+ * Preserving the world pose means the stored local numbers must change, so the move and the re-expressed
+ * transform belong in one batch. As two commits the transform landed in the *next* history entry: undoing a
+ * later edit restored a transform from this reparent, and a child jumped by its parent's whole transform
+ * while its sibling — whose re-expression happened to be in an earlier entry — stayed put.
+ */
+describe('reparenting is one edit', () => {
+  const threeSolids = (): { level: Level; doc: Doc } => {
+    const level: Level = {
+      id: 'lv',
+      config: {},
+      nodes: [solid('a', vec3(1, 0, 0)), solid('b', vec3(2, 0, 0)), solid('c', vec3(10, 0, 0))],
+    }
+    return { level, doc: levelDoc(level) }
+  }
+  const record = (doc: Doc): { ops: import('@mp/content').Op[]; inverses: import('@mp/content').Op[] }[] => {
+    const batches: { ops: import('@mp/content').Op[]; inverses: import('@mp/content').Op[] }[] = []
+    doc.onOps = (bb) => batches.push(bb)
+    return batches
+  }
+
+  it('reports the move and the transform as one batch', () => {
+    const { doc } = threeSolids()
+    const batches = record(doc)
+    doc.reparent(0, 2, 0, { position: vec3(-9, 0, 0) })
+    expect(batches, 'one batch, so one undo entry and one message').toHaveLength(1)
+    expect(batches[0]!.ops.map((o) => o.kind)).toEqual(['moveNode', 'setTransform'])
+  })
+
+  it('undoes both together, putting the node back where it was', async () => {
+    const { applyBatch } = await import('@mp/content')
+    const { level, doc } = threeSolids()
+    const start = structuredClone(level)
+    const batches = record(doc)
+    doc.reparent(0, 2, 0, { position: vec3(-9, 0, 0) })
+    applyBatch(level, batches[0]!.inverses)
+    // Parent link *and* transform restored: as two commits, one of them was left behind.
+    expect(level).toEqual(start)
+  })
+
+  it('leaves nothing pending for the next edit to pick up', async () => {
+    const { applyBatch } = await import('@mp/content')
+    const { level, doc } = threeSolids()
+    const batches = record(doc)
+    // Two reparents into the same new parent, then an unrelated edit — Kodjo's sequence. Indices are
+    // re-derived by name after each move, because a reparent renumbers everything after it.
+    doc.reparent(named(doc, 'a'), named(doc, 'c'), 0, { position: vec3(-9, 0, 0) })
+    doc.reparent(named(doc, 'b'), named(doc, 'c'), 1, { position: vec3(-8, 0, 0) })
+    const afterMoves = structuredClone(level)
+    const parent = named(doc, 'c')
+    doc.setTransform(parent, { position: vec3(20, 0, 0) })
+    expect(batches, 'three edits, three batches').toHaveLength(3)
+
+    // Undoing only the last one must move the parent back and touch neither child.
+    applyBatch(level, batches[2]!.inverses)
+    expect(level).toEqual(afterMoves)
+  })
+
+  it('still works with no transform to re-express', () => {
+    const { doc } = threeSolids()
+    const batches = record(doc)
+    doc.reparent(0, 2, 0)
+    expect(batches[0]!.ops.map((o) => o.kind)).toEqual(['moveNode'])
+  })
+})
