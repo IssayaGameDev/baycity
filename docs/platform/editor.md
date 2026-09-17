@@ -23,6 +23,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | --- | --- | --- |
 | `itemMeshes.ts` | `instanceRoot`, `markerGroup`, the groups, the shadow budget, the cell toggle | `doc`, `loaded`, `runtime`, `mode`, `gameSettings`, `selected`, `afterBuild` |
 | `play.ts` | the character, controller, loop, play view and lights, component runtime, game frame | `PlayHost` (23 getters) |
+| `historyStore.ts` | the history, pending batches, `coalescing`, the held-back drag batches, `dirty`, the clipboard | `HistoryHost` |
 
 
 | Area | Element | Module |
@@ -81,13 +82,19 @@ Every `Doc` mutator builds `Op`s (`@mp/content` `ops.ts`, `content.md`) and comm
 `prefabDoc(root, registry, clips)` — a prefab is edited as a document of one root node, in its own live room
 (below), so its ops carry no table scope.
 
-**Undo** (`src/opHistory.ts`): `main.ts` attaches `onDocOps` to every document (`withOps`); batches collect in
-`pending`; `recordEdit(label)` folds them (`foldBatches`: one transform op per target, last value, first inverse)
+**Undo** (`src/historyStore.ts` over `src/opHistory.ts`, ADR 0121): `createHistoryStore(host)` → `edits`.
+`edits.withOps(d)` attaches `onDocOps` to every document; batches collect in `pending`; `edits.recordEdit(label)`
+folds them (`foldBatches`: one transform op per target, last value, first inverse)
 into `{ ops, inverses, label, selection: NodeRef[] }`. `undo` applies `inverses` with `applyBatch` straight on the
 root level (nothing re-reported), rebuilds, restores the selection by ref; an entry whose ops no longer apply is
-dropped with a status line. `coalescing` still holds `recordEdit` off during a gizmo drag. Undo inside a prefab
+dropped with a status line. Undo inside a prefab
 opened on top no longer pops back to the level. Live, the applied inverses go to the server as an ordinary batch
-(`collab.submit`): an undo is an edit the room sees.
+(`host.submit`): an undo is an edit the room sees.
+
+**A drag is one entry**: `edits.beginDrag()` holds recording off while a hundred transform ops are reported, and
+`edits.endDrag(label)` folds them, sends the room one message and records one entry. `abortDrag` clears without
+folding. The gizmo, the face tool and the Inspector's `writeAxis` each held a verbatim copy of that sequence;
+they call these now, and `coalescing` and `heldBack` are private to the module.
 
 ## Live levels (`src/collab.ts`, ADR 0089)
 

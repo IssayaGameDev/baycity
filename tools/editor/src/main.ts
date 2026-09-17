@@ -34,9 +34,9 @@ import {
   type AssetRuntime,
 } from '@mp/render-three'
 import { createCollab, httpTransport, parsePresence, type Hold, type Peer } from './collab'
-import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type ClipItem, type Doc, type LocalPose, type Mode, type OpBatch } from './editorDoc'
+import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type Doc, type LocalPose, type Mode } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
-import { askDestructive, askName, askUnsaved } from './confirm'
+import { askDestructive, askName } from './confirm'
 import { prefabFolder, prefabTarget, sanitisePrefabName } from './prefabPath'
 import {
   acquireLock,
@@ -59,7 +59,6 @@ import {
   type Me,
 } from './filesApi'
 import { createHierarchy, type Hierarchy } from './hierarchy'
-import { createOpHistory, foldBatches } from './opHistory'
 import { createInspector, type Inspector } from './inspector'
 import { createAssetInspector, type AssetInspector } from './assetInspector'
 import { loadAssetLibrary, type AssetLibrary } from './assetsApi'
@@ -69,6 +68,7 @@ import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
 import { createProjectPanel, type Project } from './projectPanel'
 import { distanceAlongAxis, faceFromNormal, pulled, snappedPull, type Face } from './facePull'
 import { cornerSnapDelta, snapAnglesDeg, snapToGrid, worldHalfExtents } from './snap'
+import { createHistoryStore } from './historyStore'
 import { createItemMeshes } from './itemMeshes'
 import { createPlay } from './play'
 import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
@@ -251,7 +251,7 @@ const dropAllLocks = async (): Promise<void> => {
   collab.leave()
   holdMap = new Map()
   lastHoldKey = null
-  heldBack = []
+  edits.discardHeld()
   if (presenceTimer !== null) {
     clearInterval(presenceTimer)
     presenceTimer = null
@@ -441,7 +441,7 @@ const reinstallLevel = (level: Level): void => {
     return
   }
   docStack.length = 1
-  docStack[0] = { doc: withOps(levelDoc(level, registry())), label: root.label }
+  docStack[0] = { doc: edits.withOps(levelDoc(level, registry())), label: root.label }
   showDoc()
   lastHoldKey = null // a reconnect is a new connection: the server holds nothing for it yet
   syncHolds()
@@ -452,7 +452,6 @@ const reinstallLevel = (level: Level): void => {
 const PRESENCE_MS = 100
 let presenceTimer: ReturnType<typeof setInterval> | null = null
 /** Batches the document reported during a gizmo drag: held back and sent as one op at drag end. */
-let heldBack: OpBatch[] = []
 
 /** The poses of what I am dragging, off the groups: what the gizmo has set, whatever the document will store. */
 const dragPoses = (): { ref: NodeRef; position: Vec3; rotation: Vec3; scale: Vec3 }[] => {
@@ -540,7 +539,7 @@ const collab = createCollab(httpTransport(), {
   onApplied: (ops) => repaintAfterOps(ops),
   onRejected: (batch, reason) => {
     // The batch is already rolled back in the data; forget the history entry that holds it, then redraw.
-    history.dropWhere((entry) => entry.ops.some((o) => batch.ops.includes(o)) || entry.inverses.some((o) => batch.ops.includes(o)))
+    edits.dropWhere((entry) => entry.ops.some((o) => batch.ops.includes(o)) || entry.inverses.some((o) => batch.ops.includes(o)))
     setStatus(`edit refused: ${reason}`)
     repaintAfterOps(batch.inverses)
   },
@@ -765,7 +764,7 @@ const showDoc = (): void => {
 const reopenWithRegistry = (): void => {
   const root = docStack[0]
   if (root === undefined || prefabOpen !== null) return
-  docStack[0] = { doc: withOps(levelDoc(root.doc.asLevel(), registry())), label: root.label }
+  docStack[0] = { doc: edits.withOps(levelDoc(root.doc.asLevel(), registry())), label: root.label }
   showDoc()
 }
 
@@ -775,7 +774,7 @@ const setDoc = (next: Doc, name: string): void => {
   fileState.name = name
   showDoc()
   // Another file's edits are not this one's, and its snapshots would restore the wrong document entirely.
-  resetHistory()
+  edits.reset()
 }
 
 /**
@@ -814,9 +813,9 @@ const enterPrefab = async (assetId: string): Promise<void> => {
   }
   prefabOpen = { assetId, name: entry.name, from }
   docStack.length = 0
-  docStack.push({ doc: withOps(prefabDoc(root, registry())), label: `prefab: ${entry.name}` })
+  docStack.push({ doc: edits.withOps(prefabDoc(root, registry())), label: `prefab: ${entry.name}` })
   showDoc()
-  resetHistory()
+  edits.reset()
   refreshUi()
 }
 
@@ -831,7 +830,7 @@ const unlinkPlacement = (index: number): void => {
   if (doc === null) return
   const label = doc.label(index)
   if (!doc.unlinkNode(index)) return setStatus(`${label} is not a prefab placement`)
-  recordEdit(`unlinked ${label}`)
+  edits.recordEdit(`unlinked ${label}`)
   // A `replaceNode` changes the tree and what is drawn, so the same refresh a revert does.
   meshes.buildAll()
   rebuildLoaded()
@@ -1292,8 +1291,7 @@ gizmo.addEventListener('dragging-changed', (event) => {
     gizmoDragged = true
     // One history entry per drag, recorded when it ends. `coalescing` holds `recordEdit` off while the hundred
     // pointer events each report a transform op; the record at the end folds them into one.
-    coalescing = true
-    heldBack = []
+    edits.beginDrag()
     startPresence()
     dragStart = new Map()
     if (doc !== null) {
@@ -1310,13 +1308,9 @@ gizmo.addEventListener('dragging-changed', (event) => {
       }
     }
   } else {
-    coalescing = false
     stopPresence()
     // The whole drag as one op per node — what the history holds, and what the room gets.
-    const drag = foldBatches(heldBack, edit.mode, [])
-    heldBack = []
-    if (drag !== null && live()) collab.submit({ ops: drag.ops, inverses: drag.inverses })
-    recordEdit(selection.length > 1 ? `${edit.mode} ${selection.length}` : edit.mode)
+    edits.endDrag(selection.length > 1 ? `${edit.mode} ${selection.length}` : edit.mode)
     dragStart = new Map()
     rebuildLoaded()
     drainDeferredRemote()
@@ -1678,8 +1672,7 @@ const beginFacePull = (clientX: number, clientY: number): boolean => {
     perMetre,
     last: 0,
   }
-  coalescing = true
-  heldBack = []
+  edits.beginDrag()
   return true
 }
 
@@ -1717,12 +1710,11 @@ const moveFacePull = (clientX: number, clientY: number): void => {
 const endFacePull = (): void => {
   const pull = facePull
   facePull = null
-  coalescing = false
-  if (pull === null) return
-  const drag = foldBatches(heldBack, 'face', [])
-  heldBack = []
-  if (drag !== null && live()) collab.submit({ ops: drag.ops, inverses: drag.inverses })
-  recordEdit('face')
+  if (pull === null) {
+    edits.abortDrag()
+    return
+  }
+  edits.endDrag('face')
   rebuildLoaded()
   applyPreviewPoses()
 }
@@ -1795,7 +1787,7 @@ canvas.addEventListener('pointerup', (e) => {
       return
     }
     placing = null
-    recordEdit('place')
+    edits.recordEdit('place')
     meshes.buildAll()
     rebuildLoaded()
     select(idx)
@@ -1840,7 +1832,7 @@ const deleteSelected = (): void => {
   if (doc === null || selection.length === 0) return
   const roots = selectionRoots()
   for (const i of roots) doc.remove(i)
-  recordEdit(roots.length > 1 ? `delete ${roots.length}` : 'delete')
+  edits.recordEdit(roots.length > 1 ? `delete ${roots.length}` : 'delete')
   deselect()
   meshes.buildAll()
   rebuildLoaded()
@@ -1858,7 +1850,7 @@ const duplicateSelected = (): void => {
     for (let n = 0; n < made.length; n++) made[n]! += inserted
     made.push(at)
   }
-  recordEdit(made.length > 1 ? `duplicate ${made.length}` : 'duplicate')
+  edits.recordEdit(made.length > 1 ? `duplicate ${made.length}` : 'duplicate')
   meshes.buildAll()
   rebuildLoaded()
   // Reversed, so the primary ends up on the copy of what was the primary rather than on the lowest one.
@@ -1919,7 +1911,7 @@ const saveAsPrefab = async (index: number): Promise<void> => {
     refreshUi()
     return
   }
-  recordEdit('save as prefab')
+  edits.recordEdit('save as prefab')
   meshes.buildAll()
   rebuildLoaded()
   applySelection([open.indexOfRef(ref) ?? at])
@@ -1940,18 +1932,18 @@ const saveAsPrefab = async (index: number): Promise<void> => {
  * duplicates fail loudly instead of one silently losing, and a cheat sheet can be generated from it.
  */
 const editorShortcuts = createShortcuts([
-  { id: 'undo', chords: ['mod+z'], label: 'Undo', run: () => undo(), enabled: () => !play.active() },
+  { id: 'undo', chords: ['mod+z'], label: 'Undo', run: () => edits.undo(), enabled: () => !play.active() },
   // Both spellings: Ctrl+Y is the Windows convention and Ctrl+Shift+Z the one every other editor also takes.
-  { id: 'redo', chords: ['mod+y', 'mod+shift+z'], label: 'Redo', run: () => redo(), enabled: () => !play.active() },
-  { id: 'copy', chords: ['mod+c'], label: 'Copy', run: () => copySelected(), enabled: () => !play.active() && selection.length > 0 },
-  { id: 'cut', chords: ['mod+x'], label: 'Cut', run: () => cutSelected(), enabled: () => !play.active() && selection.length > 0 },
-  { id: 'paste', chords: ['mod+v'], label: 'Paste', run: () => pasteClipboard(false), enabled: () => !play.active() && clipboard.length > 0 },
+  { id: 'redo', chords: ['mod+y', 'mod+shift+z'], label: 'Redo', run: () => edits.redo(), enabled: () => !play.active() },
+  { id: 'copy', chords: ['mod+c'], label: 'Copy', run: () => edits.copySelected(), enabled: () => !play.active() && selection.length > 0 },
+  { id: 'cut', chords: ['mod+x'], label: 'Cut', run: () => edits.cutSelected(), enabled: () => !play.active() && selection.length > 0 },
+  { id: 'paste', chords: ['mod+v'], label: 'Paste', run: () => edits.pasteClipboard(false), enabled: () => !play.active() && edits.clipboardSize() > 0 },
   {
     id: 'paste-child',
     chords: ['mod+shift+v'],
     label: 'Paste as child',
-    run: () => pasteClipboard(true),
-    enabled: () => !play.active() && clipboard.length > 0 && selected !== null,
+    run: () => edits.pasteClipboard(true),
+    enabled: () => !play.active() && edits.clipboardSize() > 0 && selected !== null,
   },
   { id: 'duplicate', chords: ['mod+d'], label: 'Duplicate', run: () => duplicateSelected(), enabled: () => !play.active() && selection.length > 0 },
   {
@@ -2022,8 +2014,8 @@ const play = createPlay({
   levelName: () => shortName(fileState.name),
   live: () => live(),
   flush: () => collab.flush(),
-  dirty: () => dirty,
-  saveNow: () => saveNow(),
+  dirty: () => edits.dirty(),
+  saveNow: () => edits.saveNow(),
   setPreviewing: (on) => setPreviewing(on),
   rebuildLoaded: () => rebuildLoaded(),
   deselect: () => deselect(),
@@ -2085,7 +2077,7 @@ const openFile = async (name: string): Promise<void> => {
       const resolved = hydratePrefabs(level, editorPrefabs)
       hydratedPrefabs = resolved.filled
       missingPrefabs = resolved.missing
-      setDoc(withOps(levelDoc(level, registry())), name)
+      setDoc(edits.withOps(levelDoc(level, registry())), name)
       // The tree follows the document, so what is open is always visible in it (ADR 0108).
       if (ref !== null) project?.showGame(ref.game)
       // Only now, past every throw above: a level that would not load must not be the one we come back to.
@@ -2175,7 +2167,7 @@ const openFirstLevel = async (): Promise<void> => {
   await refreshFileList()
   const first = bootLevel(lastLevel(), levelEntries, activeMode?.name)
   if (first !== undefined) await openFile(first)
-  else setDoc(withOps(levelDoc(blankLevel('untitled'), registry())), 'untitled')
+  else setDoc(edits.withOps(levelDoc(blankLevel('untitled'), registry())), 'untitled')
 }
 
 // --- toolbar ---
@@ -2294,7 +2286,7 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
   heldBy,
   onRename: (index, name) => {
     doc?.setName(index, name)
-    recordEdit('rename')
+    edits.recordEdit('rename')
     inspectorRebuild() // the inspector's own name field mirrors this one
     uiChanged()
   },
@@ -2327,7 +2319,7 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
               : { scale: vec3(r4(local.scale.x), r4(local.scale.y), r4(local.scale.z)) }),
           }
     const landed = doc.reparent(from, parent, at, reframed)
-    recordEdit(parent === doc.parentOf(landed) ? 'reorder' : 'reparent')
+    edits.recordEdit(parent === doc.parentOf(landed) ? 'reorder' : 'reparent')
 
     // Depth-first indices *are* the identity here (meshes, selection, the gizmo's target) and a reparent
     // renumbers everything after it, so the scene graph and the physics world are rebuilt rather than
@@ -2351,7 +2343,7 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
 const revertOverride = (field?: string): void => {
   if (selected === null || doc === null) return
   doc.revert(selected, field)
-  recordEdit(field === undefined ? 'revert overrides' : `revert ${field}`)
+  edits.recordEdit(field === undefined ? 'revert overrides' : `revert ${field}`)
   meshes.buildAll()
   rebuildLoaded()
   applySelection(selection)
@@ -2382,7 +2374,7 @@ const applyOverrides = async (): Promise<void> => {
   }
   if (doc !== open) return // the document moved under the round trip
   open.revert(at)
-  recordEdit('apply to prefab')
+  edits.recordEdit('apply to prefab')
   meshes.buildAll()
   rebuildLoaded()
   applySelection(selection)
@@ -2418,7 +2410,7 @@ const menuFor = (index: number): MenuItem[] => {
             label: type,
             run: () => {
               doc?.addComponent(index, type)
-              recordEdit('add component')
+              edits.recordEdit('add component')
               scheduleRebuild()
               inspectorRebuild()
               uiChanged()
@@ -2430,7 +2422,7 @@ const menuFor = (index: number): MenuItem[] => {
           run: () => {
             void adopt([type]).then(() => {
               doc?.addComponent(index, type)
-              recordEdit('add component')
+              edits.recordEdit('add component')
               scheduleRebuild()
               inspectorRebuild()
               uiChanged()
@@ -2442,9 +2434,9 @@ const menuFor = (index: number): MenuItem[] => {
     { label: 'Create child', divider: true, enabled: own, why, items: createMenu(index) },
     { label: 'Duplicate', hint: 'Ctrl+D', enabled: own, why, run: () => duplicateSelected() },
     { label: 'Delete', hint: 'Del', enabled: own, why, run: () => deleteSelected() },
-    { label: 'Copy', hint: 'Ctrl+C', divider: true, enabled: own, why, run: () => copySelected() },
-    { label: 'Cut', hint: 'Ctrl+X', enabled: own, why, run: () => cutSelected() },
-    { label: 'Paste as child', hint: 'Ctrl+Shift+V', enabled: own && clipboard.length > 0, why: own ? 'nothing copied' : why, run: () => pasteClipboard(true) },
+    { label: 'Copy', hint: 'Ctrl+C', divider: true, enabled: own, why, run: () => edits.copySelected() },
+    { label: 'Cut', hint: 'Ctrl+X', enabled: own, why, run: () => edits.cutSelected() },
+    { label: 'Paste as child', hint: 'Ctrl+Shift+V', enabled: own && edits.clipboardSize() > 0, why: own ? 'nothing copied' : why, run: () => edits.pasteClipboard(true) },
     {
       label: shared > 1 ? `Open prefab (${shared} placements)` : 'Open prefab',
       divider: true,
@@ -2478,7 +2470,7 @@ const createMenu = (parent: number | null, at?: Vec3): MenuItem[] => [
 /** The blank-space menu: what you can make when you are not pointing at anything. */
 const blankMenu = (): MenuItem[] => [
   { label: 'Create', items: createMenu(null) },
-  { label: 'Paste', hint: 'Ctrl+V', enabled: clipboard.length > 0, why: 'nothing copied', divider: true, run: () => pasteClipboard(false) },
+  { label: 'Paste', hint: 'Ctrl+V', enabled: edits.clipboardSize() > 0, why: 'nothing copied', divider: true, run: () => edits.pasteClipboard(false) },
   { label: 'Expand all', divider: true, run: () => hierarchy.setAllOpen(true) },
   { label: 'Collapse all', run: () => hierarchy.setAllOpen(false) },
 ]
@@ -2497,7 +2489,7 @@ const createEmpty = (parent: number | null, at?: Vec3): void => {
     setStatus('nowhere to put that')
     return
   }
-  recordEdit('create empty')
+  edits.recordEdit('create empty')
   meshes.buildAll()
   scheduleRebuild()
   select(landed)
@@ -2513,7 +2505,7 @@ const createPrimitive = (kind: PrimitiveKind, parent: number | null, at?: Vec3):
     setStatus('nowhere to put that')
     return
   }
-  recordEdit(`create ${PRIMITIVE_LABELS[kind].toLowerCase()}`)
+  edits.recordEdit(`create ${PRIMITIVE_LABELS[kind].toLowerCase()}`)
   meshes.buildAll()
   scheduleRebuild()
   select(landed)
@@ -2563,9 +2555,9 @@ const focusSelection = (): void => {
  * puts the group where you clicked instead of collapsing it onto one spot.
  */
 const pasteAt = (point: Vec3): void => {
-  if (doc === null || clipboard.length === 0) return
+  if (doc === null || edits.clipboardSize() === 0) return
   const landed: number[] = []
-  for (const item of clipboard) {
+  for (const item of edits.items()) {
     const at = doc.paste(item, null)
     if (at >= 0) landed.push(at)
   }
@@ -2580,7 +2572,7 @@ const pasteAt = (point: Vec3): void => {
     const t = doc.transformOf(i)
     doc.setTransform(i, { ...t, position: vec3(r4(t.position.x + d.x), r4(t.position.y + d.y), r4(t.position.z + d.z)) })
   }
-  recordEdit(landed.length > 1 ? `paste ${landed.length} here` : 'paste here')
+  edits.recordEdit(landed.length > 1 ? `paste ${landed.length} here` : 'paste here')
   meshes.buildAll()
   rebuildLoaded()
   applySelection(landed)
@@ -2599,7 +2591,7 @@ const pasteAt = (point: Vec3): void => {
 const viewportMenu = (index: number | null, point: Vec3 | null): MenuItem[] => {
   if (index !== null) return [{ label: 'Focus', hint: 'F', run: () => focusSelection() }, ...menuFor(index).map((m, n) => (n === 0 ? { ...m, divider: true } : m))]
   return [
-    { label: 'Paste here', enabled: clipboard.length > 0 && point !== null, why: clipboard.length === 0 ? 'nothing copied' : 'no surface under the pointer', run: () => point !== null && pasteAt(point) },
+    { label: 'Paste here', enabled: edits.clipboardSize() > 0 && point !== null, why: edits.clipboardSize() === 0 ? 'nothing copied' : 'no surface under the pointer', run: () => point !== null && pasteAt(point) },
     { label: 'Create here', enabled: point !== null, why: 'no surface under the pointer', items: createMenu(null, point ?? undefined) },
     { label: 'Focus on the selection', divider: true, enabled: selection.length > 0, why: 'nothing selected', run: () => focusSelection() },
   ]
@@ -2796,7 +2788,7 @@ const deleteAsset = (path: string): void => {
     }
     if (here > 0) {
       doc?.unlinkPrefab(id)
-      recordEdit(`unlinked ${entry.name}`)
+      edits.recordEdit(`unlinked ${entry.name}`)
       await collab.flush().catch(() => undefined)
     }
     afterFileOp(`deleted ${path}`, async () => assets?.remove(path) ?? Promise.resolve())
@@ -2885,7 +2877,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   levels: () => levelEntries,
   openLevel: () => fileState.name,
   onOpenLevel: (qualified) =>
-    void guardUnsaved().then(async (go) => {
+    void edits.guardUnsaved().then(async (go) => {
       if (go) await openFile(qualified)
     }),
   /**
@@ -3027,7 +3019,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
           label: 'Open',
           enabled: !isOpen && prefabOpen === null,
           why: isOpen ? 'already open' : 'leave the prefab you are in first',
-          run: () => void guardUnsaved().then(async (go) => {
+          run: () => void edits.guardUnsaved().then(async (go) => {
             if (go) await openFile(qualified)
           }),
         },
@@ -3071,91 +3063,6 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
  * edit as far as everything else is concerned — and never touches what anyone else did. Snapshots of the whole
  * document (ADR 0030) went with the per-file lock: a snapshot cannot belong to one person.
  */
-const history = createOpHistory()
-/** Batches the open documents reported since the last `recordEdit`. A gizmo drag piles up a hundred. */
-let pending: OpBatch[] = []
-const onDocOps = (batch: OpBatch): void => {
-  pending.push(batch)
-  if (!live()) return
-  // Mid-drag the room sees presence, not a hundred ops: the batches wait and go as one when the drag ends.
-  if (coalescing) heldBack.push(batch)
-  else collab.submit(batch)
-}
-/** Every document this file builds reports its ops here; the top of the stack and the root alike. */
-const withOps = (d: Doc): Doc => {
-  d.onOps = onDocOps
-  return d
-}
-/** True while a gizmo drag is in flight: one history entry per drag, not one per pointer event. */
-let coalescing = false
-/**
- * Are there edits not on disk?
- *
- * Set at `recordEdit`, the one seam every mutation already goes through, and cleared by `resetHistory` —
- * which runs on save and on opening a document, the two moments after which there is nothing to lose. A
- * separate flag rather than `history.canUndo()`: undo depth survives a save, and asking "can I undo" is not
- * asking "is this on disk".
- */
-let dirty = false
-
-/**
- * Write the open document to disk. Awaitable, because the unsaved-edits prompt has to be able to save
- * *and then* continue with whatever the person was doing.
- *
- * Resolves `true` on success. A failed write resolves `false` rather than throwing, so a caller that was
- * about to replace the document does not replace it after a save that did not happen.
- */
-const saveNow = async (): Promise<boolean> => {
-  const root = docStack[0]?.doc
-  if (root === undefined) return false
-  if (live()) return true // every edit already reached the server; the file follows within a second
-  if (readOnlyBy !== null) {
-    setStatus(`not saved: ${fileState.name} is locked by ${readOnlyBy}`)
-    return false
-  }
-  // The name may have changed since the file was opened (Save-as), or this may be a new file: the lock follows
-  // what is about to be written. Refused means someone else has a file by that name open.
-  const key = docLockKey()
-  if (!heldLocks.has(key)) {
-    const owner = await takeLock(key)
-    if (owner !== null) {
-      setStatus(`not saved: ${fileState.name} is locked by ${owner}`)
-      return false
-    }
-  }
-  // Saving writes the *file*, not whatever prefab is open on top of it, and the id follows the name. Letting
-  // them drift is how content/levels ended up with three files all claiming "level1".
-  root.setId(fileState.name)
-  try {
-    await saveFile('levels', fileState.name, stripHydrated(root.toJSON() as Level, hydratedPrefabs))
-  } catch (e: unknown) {
-    setStatus(`save failed: ${String(e)}`)
-    return false
-  }
-  dirty = false
-  setStatus(`saved ${fileState.name}`)
-  previews.invalidate()
-  await reloadAssets()
-  await refreshFileList()
-  refreshUi()
-  return true
-}
-
-/**
- * May the open document be replaced? Asks first if it has edits that are not on disk.
- *
- * Every path that unloads a document goes through this: switching game, switching between levels and
- * prefabs, and opening another file. Nothing else may replace `docStack` — the undo history is cleared with
- * the document, so unsaved work is gone for good rather than one Ctrl+Z away.
- */
-const guardUnsaved = async (): Promise<boolean> => {
-  if (!dirty) return true
-  const choice = await askUnsaved(fileState.name)
-  if (choice === 'cancel') return false
-  if (choice === 'discard') return true
-  return saveNow()
-}
-
 /** The selection, by identity that survives renumbering — what an undo puts back. */
 const selectionRefs = (): NodeRef[] => {
   const open = doc
@@ -3163,142 +3070,55 @@ const selectionRefs = (): NodeRef[] => {
   return selection.map((i) => open.refAt(i)).filter((r): r is NodeRef => r !== null)
 }
 
-/**
- * Record that an edit just happened: fold the batches the document reported since the last record into one
- * history entry. An edit that changed nothing reported nothing — the document drops an op whose inverse is
- * `null` — so a click on a gizmo handle, or picking the material a piece already had, records nothing, and
- * Ctrl+Z never needs pressing twice for one visible change.
- */
-const recordEdit = (label: string): void => {
-  if (coalescing) return
-  const entry = foldBatches(pending, label, selectionRefs())
-  pending = []
-  if (entry === null) return
-  history.push(entry)
-  dirty = !live() // a live level is saved as it is edited
-  renderStatus()
-}
-
-/** Start a fresh history: a different file's edits are not this one's. */
-const resetHistory = (): void => {
-  history.clear()
-  pending = []
-  dirty = false
-}
-
 /** The level every op applies to: the open file's. A prefab opened on top is one of its table entries. */
 const rootLevel = (): Level | null => docStack[0]?.doc.asLevel() ?? null
 
 /**
- * Apply a history entry's ops straight to the level — not through a document, so nothing is re-reported — then
- * rebuild everything from the data, as any structural edit does, and put the selection back by identity.
- * Resolves `false` when the ops no longer apply (the node is gone); the entry is dropped and the status bar
- * says why.
+ * Undo, redo, the clipboard and edits.dirty() tracking (`historyStore.ts`, ADR 0121). It owns the history, the
+ * pending batches, the coalescing flag, the held-back drag batches, `edits.dirty()` and the clipboard.
  */
-const applyHistory = (ops: readonly Op[], keep: readonly NodeRef[], what: string): boolean => {
-  const level = rootLevel()
-  if (level === null) return false
-  let applied: { ops: Op[]; inverses: Op[] }
-  try {
-    applied = applyBatch(level, ops)
-  } catch (e) {
-    setStatus(`cannot ${what}: ${e instanceof OpError ? e.message : String(e)}`)
-    return false
-  }
-  // An undo is an edit like any other to the room.
-  if (live() && applied.ops.length > 0) collab.submit(applied)
-  pending = []
-  deselect()
-  installEnvironment(doc?.environment())
-  meshes.buildAll()
-  rebuildLoaded()
-  const open = doc
-  const restored = open === null ? [] : keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
-  if (restored.length > 0) applySelection(restored)
-  dirty = !live()
-  refreshUi()
-  inspectorRebuild()
-  loadNewReferences(meshes.buildAll)
-  return true
-}
-
-const undo = (): void => {
-  const entry = history.undo()
-  if (entry === null) {
-    setStatus('nothing to undo')
-    return
-  }
-  if (!applyHistory(entry.inverses, entry.selection, `undo ${entry.label}`)) {
-    history.drop(entry)
-    return
-  }
-  setStatus(`undid: ${entry.label}`)
-}
-
-const redo = (): void => {
-  const entry = history.redo()
-  if (entry === null) {
-    setStatus('nothing to redo')
-    return
-  }
-  if (!applyHistory(entry.ops, entry.selection, `redo ${entry.label}`)) {
-    history.drop(entry)
-    return
-  }
-  setStatus(`redid: ${entry.label}`)
-}
-
-/**
- * The clipboard: one item, in memory.
- *
- * Not the system clipboard. Reading it needs a permission prompt or a paste event, and a scene object is not
- * text anybody would paste elsewhere — so a copy here would be a permission dialog in exchange for nothing.
- * The cost is that copying between two browser tabs of the editor does not work.
- */
-let clipboard: ClipItem[] = []
-
-const copySelected = (): void => {
-  if (doc === null || selection.length === 0) return
-  // Ascending, so pasting a multi-item copy puts things back in the order they were in.
-  const open = doc
-  const roots = selectionRoots().reverse()
-  const items = roots.map((i) => open.copy(i)).filter((item): item is ClipItem => item !== null)
-  if (items.length === 0) return
-  clipboard = items
-  setStatus(items.length > 1 ? `copied ${items.length} items` : `copied ${doc.label(roots[0]!)}`)
-  refreshUi()
-}
-
-const pasteClipboard = (asChild: boolean): void => {
-  if (doc === null || clipboard.length === 0) return
-  // A sibling of the selection by default, which is what every editor does; into it on the Shift variant,
-  // since nesting is a placement decision and worth its own gesture (ADR 0025).
-  const parent = selected === null ? null : asChild ? selected : doc.parentOf(selected)
-  const landed: number[] = []
-  for (const item of clipboard) {
-    const at = doc.paste(item, parent)
-    if (at >= 0) landed.push(at)
-  }
-  if (landed.length === 0) {
-    setStatus(doc.mode === 'level' ? 'the clipboard holds prefab pieces, not instances' : 'the clipboard holds instances, not pieces')
-    return
-  }
-  recordEdit(landed.length > 1 ? `paste ${landed.length}` : 'paste')
-  meshes.buildAll()
-  rebuildLoaded()
-  applySelection(landed)
-  // A pasted item can name a material this document had never referenced.
-  loadNewReferences(() => {
+const edits = createHistoryStore({
+  doc: () => doc,
+  rootDoc: () => docStack[0]?.doc,
+  rootLevel,
+  selection: () => selection,
+  selected: () => selected,
+  selectionRefs: () => selectionRefs(),
+  selectionRoots: () => selectionRoots(),
+  applySelection: (indices) => applySelection(indices),
+  deleteSelected: () => deleteSelected(),
+  live: () => live(),
+  submit: (batch) => collab.submit(batch),
+  fileName: () => fileState.name,
+  readOnlyBy: () => readOnlyBy,
+  // The name may have changed since the file was opened (Save-as), or this may be a new file: the lock
+  // follows what is about to be written.
+  claimFileLock: async () => {
+    const key = docLockKey()
+    return heldLocks.has(key) ? null : takeLock(key)
+  },
+  hydratedPrefabs: () => hydratedPrefabs,
+  afterSave: async () => {
+    previews.invalidate()
+    await reloadAssets()
+    await refreshFileList()
+  },
+  rebuildViewport: () => {
     meshes.buildAll()
-    applySelection(landed)
-  })
-}
-
-const cutSelected = (): void => {
-  if (doc === null || selection.length === 0) return
-  copySelected()
-  deleteSelected()
-}
+    rebuildLoaded()
+  },
+  rebuildFromData: () => {
+    deselect()
+    installEnvironment(doc?.environment())
+    meshes.buildAll()
+    rebuildLoaded()
+  },
+  loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
+  setStatus: (message) => setStatus(message),
+  renderStatus: () => renderStatus(),
+  refreshUi: () => refreshUi(),
+  inspectorRebuild: () => inspectorRebuild(),
+})
 
 // --- previewing motion in the viewport (ADR 0103) ---
 /**
@@ -3405,7 +3225,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   },
   onNetBoundsChanged: () => {
     refreshBoundsBox()
-    recordEdit('network bounds')
+    edits.recordEdit('network bounds')
     uiChanged()
   },
   boundsReach,
@@ -3417,7 +3237,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   onSetEnabled: (on) => {
     if (doc === null || selected === null) return
     doc.setNodeEnabled(selected, on)
-    recordEdit(on ? 'enabled' : 'disabled')
+    edits.recordEdit(on ? 'enabled' : 'disabled')
     rebuildLoaded()
     meshes.buildAll()
     hierarchy.render()
@@ -3426,7 +3246,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   onEnvironmentChanged: () => {
     // Elevation and azimuth move the sky as well as the light, so this rebakes rather than just relighting.
     installEnvironment(doc?.environment())
-    recordEdit('environment')
+    edits.recordEdit('environment')
     uiChanged()
   },
   selectionCount: () => selection.length,
@@ -3472,8 +3292,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
    */
   writeAxis: (field, axis, value) => {
     if (doc === null || gizmoDragging || selection.length === 0) return
-    coalescing = true
-    heldBack = []
+    edits.beginDrag()
     try {
       for (const i of selection) {
         const g = meshes.groupAt(i)
@@ -3489,12 +3308,10 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
         if (field === 'scale') meshes.rebuildSubtree(i)
       }
     } finally {
-      coalescing = false
+      // Cleared here too, so a throw inside the loop cannot leave recording switched off.
+      edits.abortDrag()
     }
-    const folded = foldBatches(heldBack, field, [])
-    heldBack = []
-    if (folded !== null && live()) collab.submit({ ops: folded.ops, inverses: folded.inverses })
-    recordEdit(selection.length > 1 ? `${field} ${selection.length}` : field)
+    edits.endDrag(selection.length > 1 ? `${field} ${selection.length}` : field)
     rebuildLoaded()
     applyPreviewPoses()
     inspector.sync()
@@ -3512,13 +3329,13 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     g.scale.set(t.scale.x, t.scale.y, t.scale.z)
     writeBackSelected()
     meshes.rebuildSubtree(selected) // the scale may have changed, and the meshes are built from it
-    recordEdit('transform')
+    edits.recordEdit('transform')
     applyPreviewPoses() // the rest pose moved, so the item's drawn pose at the playhead moved with it
     scheduleRebuild()
   },
   onPropsChanged: () => {
     const item = selected
-    recordEdit('properties')
+    edits.recordEdit('properties')
     meshes.rebuildSelected()
     scheduleRebuild()
     hierarchy.render() // a trigger or name change shows in the row's badge/label
@@ -3528,7 +3345,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   // A rename only changes a label: redraw the chrome, leave the property grid and the meshes alone.
   // Called through the hook, since `refreshUi` is declared below this block.
   onRenamed: () => {
-    recordEdit('rename')
+    edits.recordEdit('rename')
     uiChanged()
   },
   duplicate: duplicateSelected,
@@ -3586,9 +3403,9 @@ const renderStatus = (): void => {
   }
   // Undo depth in the status bar because nothing else says whether Ctrl+Z will do anything, and the answer
   // changes with every edit. The clipboard likewise: a paste that silently does nothing reads as broken.
-  const depth = history.depth()
+  const depth = edits.depth()
   if (depth.undo > 0 || depth.redo > 0) parts.push(`undo ${depth.undo}${depth.redo > 0 ? ` · redo ${depth.redo}` : ''}`)
-  if (clipboard.length > 0) parts.push(`clipboard: ${clipboard.length} object${clipboard.length > 1 ? 's' : ''}`)
+  if (edits.clipboardSize() > 0) parts.push(`clipboard: ${edits.clipboardSize()} object${edits.clipboardSize() > 1 ? 's' : ''}`)
   if (statusMsg !== '') parts.push(statusMsg)
   if (problemMsg !== '') parts.push(`<span class="problem">${problemMsg}</span>`)
   if (pushProblem !== '') parts.push(`<span class="problem">not on GitHub yet: ${pushProblem}</span>`)
