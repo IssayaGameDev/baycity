@@ -169,5 +169,6 @@ why matters.
 | [0119](adr/0119-a-face-is-a-handle.md) | A face is a handle |
 | [0121](adr/0121-a-hill-is-followed-not-fallen-down.md) | A hill is followed, not fallen down |
 | [0120](adr/0120-a-game-describes-what-a-tool-draws.md) | A game describes what a tool draws |
+| [0121](adr/0121-the-editor-is-a-shell-around-subsystems.md) | The editor is a shell around subsystems |
 
 `Design archive/` holds superseded design material and is not maintained.

@@ -1,11 +1,4 @@
 import {
-  addCharacter,
-  CHAR_HALF_HEIGHT,
-  CHAR_RADIUS,
-  type CharacterState,
-} from '@mp/humanoid'
-import { createLocalController, type LocalController, type LocalWorld } from '@mp/client'
-import {
   assetsOfKind,
   instantiateLevel,
   COLLIDER,
@@ -26,14 +19,11 @@ import {
 import { QUANT_BOUND } from '@mp/net'
 
 import { createViewGizmo } from './viewGizmo'
-import { DEFAULT_REGISTRY, characterAccess, createComponentRuntime, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type ComponentRuntime, type Registry } from '@mp/components'
-import { createOrbitCamera } from '@mp/camera'
-import { PLAYER_NODE_ID, actionsHeld, type ModeDescriptor, readSettings } from '@mp/mode'
-import { createSimClock, eulerToQuat, quat, startFixedLoop, TICK_DT, TICK_RATE_HZ, vec3, type EntityId, type LoopHandle, type Vec3 } from '@mp/core'
+import { DEFAULT_REGISTRY, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type Registry } from '@mp/components'
+import { type ModeDescriptor, readSettings } from '@mp/mode'
+import { eulerToQuat, quat, vec3, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
-  addLevel,
-  addLights,
   applyGreyboxEnvironment,
   colorForMarker,
   createLight,
@@ -48,8 +38,6 @@ import {
   THREE,
   TransformControls,
   type AssetRuntime,
-  type ContentLights,
-  type LevelView,
   type LightDesc,
 } from '@mp/render-three'
 import { createCollab, httpTransport, parsePresence, type Hold, type Peer } from './collab'
@@ -88,6 +76,7 @@ import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
 import { createProjectPanel, type Project } from './projectPanel'
 import { distanceAlongAxis, faceFromNormal, pulled, snappedPull, type Face } from './facePull'
 import { cornerSnapDelta, snapAnglesDeg, snapToGrid, worldHalfExtents } from './snap'
+import { createPlay } from './play'
 import { gridQuads } from './surfaceGrid'
 import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
 import { createShortcuts } from './shortcuts'
@@ -290,7 +279,6 @@ let prefabOpen: { assetId: string; name: string; from: string } | null = null
 let latestSnapshot: Level | null = null
 /** True while `openFile` awaits its first snapshot; a later one (reconnect) reinstalls the document itself. */
 let joining = false
-let playing = false // play-in-place active (editing is suspended)
 /** Remote ops that landed mid-drag: applied to the data already, repainted when the drag ends. */
 let deferredRemote: Op[] = []
 /** Is the open document a level in a live session? Prefabs and materials are files with locks, as before. */
@@ -407,10 +395,10 @@ const onHoldsChanged = (holds: Hold[]): void => {
  * **And while playing.** `rebuildLoaded` frees the physics world and builds a new one, and a play session
  * lives in that world: its character is a body in it, its visuals came from that `loaded`. Repainting under
  * a play-test therefore pulled the floor out from under the player on every remote edit. Editing is
- * suspended while playing anyway, so the redraw waits exactly as a drag's does and `stopPlay` drains it.
+ * suspended while playing anyway, so the redraw waits exactly as a drag's does and `play.stop` drains it.
  */
 const repaintAfterOps = (ops: readonly Op[]): void => {
-  if (gizmoDragging || playing) {
+  if (gizmoDragging || play.active()) {
     deferredRemote.push(...ops)
     return
   }
@@ -639,7 +627,6 @@ const edit: { mode: GizmoMode; snap: boolean; steps: Record<GizmoMode, number>; 
   // ring, exactly as Unity does, so this only ever changes what it can.
   space: 'world',
 }
-let lastSimTickAt = 0
 
 /** Asset id of the prefab open in prefab mode, or `null` for a level or an unsaved prefab. */
 
@@ -1302,7 +1289,7 @@ const viewGizmo = createViewGizmo({
  */
 stage.setRenderStep(() => {
   postfx.render()
-  if (!playing) viewGizmo.render(stage.renderer)
+  if (!play.active()) viewGizmo.render(stage.renderer)
 })
 
 /**
@@ -1317,7 +1304,7 @@ let viewGizmoHolding = false
 document.addEventListener(
   'pointerdown',
   (e) => {
-    if (e.target !== canvas || playing || e.button !== 0) return
+    if (e.target !== canvas || play.active() || e.button !== 0) return
     if (!viewGizmo.pointerDown(e)) return
     viewGizmoHolding = true
     e.stopPropagation()
@@ -1436,7 +1423,7 @@ stage.scene.add(gizmo.getHelper())
 const reattachGizmo = (): void => {
   // Face is not a `TransformControls` mode (ADR 0119): the handles are the faces themselves, so the gizmo
   // would only be three arrows in the way.
-  const g = selected === null || playing || edit.mode === 'face' ? undefined : instanceGroups[selected]
+  const g = selected === null || play.active() || edit.mode === 'face' ? undefined : instanceGroups[selected]
   if (g === undefined) gizmo.detach()
   else gizmo.attach(g)
 }
@@ -1552,7 +1539,7 @@ const setSpace = (space: GizmoSpace): void => {
  * timed against other motion, and a staggered row is the thing you actually need to look at.
  */
 let previewMs = 0
-/** Whether the clock is running. Separate from `playing`, which is the real game loop with pointer lock. */
+/** Whether the clock is running. Separate from play, which is the real game loop with pointer lock. */
 let previewing = false
 let previewLastFrame = 0
 /**
@@ -1796,7 +1783,7 @@ const applySelection = (next: readonly number[]): void => {
   // Editing is suspended during play, and the item meshes are hidden — attaching a gizmo to one would put a
   // handle in mid-air over a level you are walking. The Hierarchy panel can reach here too, so the guard
   // belongs on the selection itself rather than on the viewport's click handler alone.
-  if (playing) return
+  if (play.active()) return
   // The Inspector shows one thing: a scene item or an asset, never both.
   if (selectedAsset !== null && next.length > 0) {
     selectedAsset = null
@@ -1861,7 +1848,7 @@ canvas.addEventListener('pointerdown', (e) => {
   gizmoDragged = false
   // Face mode claims a left press on a face of the selected box (ADR 0119). Orbit is suppressed for the drag
   // and `gizmoDragged` marks it, so the pointerup that follows is not read as a click that changes selection.
-  if (e.button === 0 && !playing && edit.mode === 'face' && beginFacePull(e.clientX, e.clientY)) {
+  if (e.button === 0 && !play.active() && edit.mode === 'face' && beginFacePull(e.clientX, e.clientY)) {
     gizmoDragged = true
     controls.enabled = false
     canvas.setPointerCapture(e.pointerId)
@@ -1869,7 +1856,7 @@ canvas.addEventListener('pointerdown', (e) => {
 })
 
 canvas.addEventListener('pointermove', (e) => {
-  if (playing || edit.mode !== 'face') return
+  if (play.active() || edit.mode !== 'face') return
   if (facePull !== null) {
     moveFacePull(e.clientX, e.clientY)
     return
@@ -2089,7 +2076,7 @@ canvas.addEventListener('pointerup', (e) => {
   // Left button only. Without this a right-click placed the armed prefab and moved the selection on its way
   // to opening a menu, which is the sort of thing that gets blamed on the menu.
   if (e.button !== 0) return
-  if (playing) return // editing suspended during play (pointer = camera only)
+  if (play.active()) return // editing suspended during play (pointer = camera only)
   if (gizmoDragged) return // was dragging the gizmo, not a click
   if (Math.hypot(e.clientX - downX, e.clientY - downY) > 4) return // was an orbit drag
   castFrom(e.clientX, e.clientY)
@@ -2266,46 +2253,46 @@ const saveAsPrefab = async (index: number): Promise<void> => {
  * duplicates fail loudly instead of one silently losing, and a cheat sheet can be generated from it.
  */
 const editorShortcuts = createShortcuts([
-  { id: 'undo', chords: ['mod+z'], label: 'Undo', run: () => undo(), enabled: () => !playing },
+  { id: 'undo', chords: ['mod+z'], label: 'Undo', run: () => undo(), enabled: () => !play.active() },
   // Both spellings: Ctrl+Y is the Windows convention and Ctrl+Shift+Z the one every other editor also takes.
-  { id: 'redo', chords: ['mod+y', 'mod+shift+z'], label: 'Redo', run: () => redo(), enabled: () => !playing },
-  { id: 'copy', chords: ['mod+c'], label: 'Copy', run: () => copySelected(), enabled: () => !playing && selection.length > 0 },
-  { id: 'cut', chords: ['mod+x'], label: 'Cut', run: () => cutSelected(), enabled: () => !playing && selection.length > 0 },
-  { id: 'paste', chords: ['mod+v'], label: 'Paste', run: () => pasteClipboard(false), enabled: () => !playing && clipboard.length > 0 },
+  { id: 'redo', chords: ['mod+y', 'mod+shift+z'], label: 'Redo', run: () => redo(), enabled: () => !play.active() },
+  { id: 'copy', chords: ['mod+c'], label: 'Copy', run: () => copySelected(), enabled: () => !play.active() && selection.length > 0 },
+  { id: 'cut', chords: ['mod+x'], label: 'Cut', run: () => cutSelected(), enabled: () => !play.active() && selection.length > 0 },
+  { id: 'paste', chords: ['mod+v'], label: 'Paste', run: () => pasteClipboard(false), enabled: () => !play.active() && clipboard.length > 0 },
   {
     id: 'paste-child',
     chords: ['mod+shift+v'],
     label: 'Paste as child',
     run: () => pasteClipboard(true),
-    enabled: () => !playing && clipboard.length > 0 && selected !== null,
+    enabled: () => !play.active() && clipboard.length > 0 && selected !== null,
   },
-  { id: 'duplicate', chords: ['mod+d'], label: 'Duplicate', run: () => duplicateSelected(), enabled: () => !playing && selection.length > 0 },
+  { id: 'duplicate', chords: ['mod+d'], label: 'Duplicate', run: () => duplicateSelected(), enabled: () => !play.active() && selection.length > 0 },
   {
     id: 'delete',
     chords: ['delete', 'backspace'],
     label: 'Delete',
     run: () => deleteSelected(),
-    enabled: () => !playing && selection.length > 0,
+    enabled: () => !play.active() && selection.length > 0,
   },
   {
     id: 'select-all',
     chords: ['mod+a'],
     label: 'Select all',
     run: () => applySelection(doc === null ? [] : Array.from({ length: doc.count() }, (_, i) => i)),
-    enabled: () => !playing && doc !== null && doc.count() > 0,
+    enabled: () => !play.active() && doc !== null && doc.count() > 0,
   },
   // The menu offers Focus with `F` beside it, so the key has to exist or the menu is lying.
-  { id: 'focus', chords: ['f'], label: 'Focus the selection', run: () => focusSelection(), enabled: () => !playing && selection.length > 0 },
-  { id: 'translate', chords: ['t', 'g'], label: 'Translate tool', run: () => setMode('translate'), enabled: () => !playing },
-  { id: 'rotate', chords: ['r'], label: 'Rotate tool', run: () => setMode('rotate'), enabled: () => !playing },
-  { id: 'scale', chords: ['s'], label: 'Scale tool', run: () => setMode('scale'), enabled: () => !playing },
+  { id: 'focus', chords: ['f'], label: 'Focus the selection', run: () => focusSelection(), enabled: () => !play.active() && selection.length > 0 },
+  { id: 'translate', chords: ['t', 'g'], label: 'Translate tool', run: () => setMode('translate'), enabled: () => !play.active() },
+  { id: 'rotate', chords: ['r'], label: 'Rotate tool', run: () => setMode('rotate'), enabled: () => !play.active() },
+  { id: 'scale', chords: ['s'], label: 'Scale tool', run: () => setMode('scale'), enabled: () => !play.active() },
   {
     id: 'cancel',
     chords: ['escape'],
     label: 'Cancel / deselect',
     run: () => {
-      if (playing) {
-        stopPlay()
+      if (play.active()) {
+        play.stop()
         return
       }
       if (placing !== null) {
@@ -2325,329 +2312,40 @@ window.addEventListener('keydown', (e) => {
 
 
 
-// ============================ play-in-place (identical to the game) ============================
-// Same building blocks as modes/parkour: createLocalController (fixed tick + render interpolation),
-// the two-phase step (move platforms, then resolve the character against them), and stepCharacter
-// with DEFAULT_TUNING. The viewer skipped the controller/interpolation, which is why it felt off.
-const PLAYER_ID = 0 as EntityId
-
-const keys = new Set<string>()
-window.addEventListener('keydown', (e) => {
-  keys.add(e.code)
-  if (playing && (e.code === 'Space' || e.code.startsWith('Arrow'))) e.preventDefault()
-})
-window.addEventListener('keyup', (e) => keys.delete(e.code))
-
-const charMesh = new THREE.Mesh(
-  new THREE.CapsuleGeometry(CHAR_RADIUS, CHAR_HALF_HEIGHT * 2, 8, 20),
-  new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.6 }),
-)
-charMesh.castShadow = true
-charMesh.visible = false
-stage.scene.add(charMesh)
-
-let char: CharacterState | null = null
-let controller: LocalController | null = null
-let playLoop: LoopHandle | null = null
-let playView: LevelView | null = null
-// Play mode hides instanceRoot, which hides the authored lights with it, so it needs its own (ADR 0047).
-let playLights: ContentLights | null = null
-let ownPos: Vec3 = { x: 0, y: 1, z: 0 }
-
+// ============================ play-in-place and in the real game ============================
 /**
- * The game's third-person camera — `@mp/camera`, the same object the game builds (ADR 0059).
- *
- * This was a **third** hand-written third-person camera: its own yaw and pitch, a fixed distance, `lookAt`
- * instead of a boom, and no occlusion at all. So every camera fix since ADR 0055 — the see-through hole, the
- * below-the-feet rule, the three sightlines down the body — was invisible in the editor, which is the one
- * place you would go to check whether a level plays well. ADR 0056 recorded this file as using
- * `OrbitControls` for it; that was wrong, and the duplicate is why.
- *
- * Built once rather than per play, so zoom and pitch survive stopping and starting — and because the cutout
- * mask it owns clones a material per occluder, which is not worth rebuilding on every play.
+ * Play is its own module (`play.ts`): it owns the character, the controller, the loop, the play view and
+ * lights, the component runtime and the game frame, and asks for the rest through `PlayHost`. What is left
+ * here is that host — the getter bag every panel is wired with.
  */
-const playCamera = createOrbitCamera(stage.camera)
-window.addEventListener('mousemove', (e) => {
-  if (!playing || document.pointerLockElement !== canvas) return
-  playCamera.lookMouse(e.movementX, e.movementY)
+const play = createPlay({
+  stage,
+  canvas,
+  controls,
+  instanceRoot,
+  doc: () => doc,
+  loaded: () => loaded,
+  world: () => world,
+  mode: () => activeMode,
+  registry: () => registry(),
+  // Not a level, no game, or the server knows no page for it (ADR 0086).
+  gamePageUrl: () =>
+    fileState.mode !== 'level' || activeMode === undefined ? null : (me?.games[activeMode.name] ?? null),
+  fileName: () => fileState.name,
+  levelName: () => shortName(fileState.name),
+  live: () => live(),
+  flush: () => collab.flush(),
+  dirty: () => dirty,
+  saveNow: () => saveNow(),
+  setPreviewing: (on) => setPreviewing(on),
+  rebuildLoaded: () => rebuildLoaded(),
+  deselect: () => deselect(),
+  setStatus: (message) => setStatus(message),
+  clearStatus: () => void (statusMsg = ''),
+  uiChanged: () => uiChanged(),
+  drainDeferred: () => drainDeferredRemote(),
+  setProjection: (isometric) => setProjection(isometric),
 })
-// Wheel zoom, which the hand-written camera simply did not have.
-window.addEventListener(
-  'wheel',
-  (e) => {
-    if (!playing || document.pointerLockElement !== canvas) return
-    e.preventDefault()
-    playCamera.zoomNotch(Math.sign(e.deltaY))
-  },
-  { passive: false },
-)
-canvas.addEventListener('click', () => {
-  if (playing && document.pointerLockElement !== canvas) void canvas.requestPointerLock()
-})
-document.addEventListener('pointerlockchange', () => {
-  if (playing && gameFrame === null && document.pointerLockElement !== canvas) stopPlay() // Esc / lost lock exits play
-})
-
-// WASD/arrows relative to the camera yaw (identical to the game).
-const worldMove = (): { x: number; z: number } => {
-  let rx = 0
-  let rz = 0
-  if (keys.has('KeyW') || keys.has('ArrowUp')) rz -= 1
-  if (keys.has('KeyS') || keys.has('ArrowDown')) rz += 1
-  if (keys.has('KeyA') || keys.has('ArrowLeft')) rx -= 1
-  if (keys.has('KeyD') || keys.has('ArrowRight')) rx += 1
-  if (rx === 0 && rz === 0) return { x: 0, z: 0 }
-  const facing = playCamera.yaw()
-  const fwdX = -Math.sin(facing)
-  const fwdZ = -Math.cos(facing)
-  let x = fwdX * -rz + -fwdZ * rx
-  let z = fwdZ * -rz + fwdX * rx
-  const l = Math.hypot(x, z)
-  if (l > 1) {
-    x /= l
-    z /= l
-  }
-  return { x, z }
-}
-
-/**
- * The active game's own actions that are held right now, by name (ADR 0061).
- *
- * Read off `activeMode` per tick rather than flattened once, because the game can change while the editor is
- * open. `actionsHeld` is shared with the game client on purpose: two copies of this mapping is how the editor
- * and the game came to disagree about post-FX (ADR 0057).
- */
-const heldActions = (): ReadonlySet<string> => actionsHeld(activeMode?.actions, keys)
-
-/** The live components while playing. Detached on stop, so a component's teardown runs like the game's. */
-let playComponents: ComponentRuntime | null = null
-
-// ============================== Play = the real game, in a frame (ADR 0086) ==============================
-/** The frame showing the game while a level is being play-tested; `null` otherwise. */
-let gameFrame: HTMLIFrameElement | null = null
-/** Where the open level's game plays, or `null`: not a level, no game, or the server knows no page for it. */
-const gamePageUrl = (): string | null => {
-  if (fileState.mode !== 'level' || activeMode === undefined) return null
-  return me?.games[activeMode.name] ?? null
-}
-
-/**
- * Play a level in the **real game** — HUD, progression, other players — rather than the editor's own loop. The
- * game page reads the saved file, so unsaved edits are saved first; a save that fails (read-only, locked) means
- * no play. Stop is the toolbar button: Esc inside the frame is the game's pause, not ours.
- */
-const startFramePlay = async (url: string): Promise<void> => {
-  if (live()) await collab.flush() // the game reads the file: make it current first
-  else if (dirty && !(await saveNow())) return
-  const frame = document.createElement('iframe')
-  frame.id = 'game-frame'
-  // Bare: the game page resolves it inside its own folder (ADR 0108), so the game must not be in the param.
-  frame.src = `${url}?level=${encodeURIComponent(shortName(fileState.name))}`
-  frame.allow = 'fullscreen; pointer-lock'
-  document.getElementById('centre')?.append(frame)
-  gameFrame = frame
-  playing = true
-  controls.enabled = false
-  setStatus(`playing ${fileState.name} in the game — Stop to come back`)
-  uiChanged()
-}
-
-const startPlay = (): void => {
-  if (doc === null || playing) return
-  const url = gamePageUrl()
-  if (url !== null) {
-    void startFramePlay(url)
-    return
-  }
-  // Two clocks running at once would be two answers to "where is this platform". Play wins: it is the real
-  // one, and the track helper hides itself while playing anyway.
-  setPreviewing(false)
-  rebuildLoaded() // fresh world + loaded from the current data
-  if (loaded === null || world === null) return
-  deselect()
-  /**
-   * Play-in-place runs **the game's own rules**, not a copy of them (ADR 0052).
-   *
-   * `mode.session` is the same function the game's client calls, so spawn, progress and death cannot drift
-   * from it. They had: this used to die on any fall, ignoring `fallBehavior`, so a `physical-fall` tower
-   * killed you here and let you fall in the game. The only difference left is what a client *does* about a
-   * death — no ragdoll, no persistence, just a teleport back.
-   *
-   * With no game (an unassigned level, or one whose game is missing) there are no rules to run: you get the
-   * character and the geometry, which is still the useful half of a play-test.
-   */
-  const mode = activeMode
-  const spawn: Vec3 = mode?.spawn(loaded) ?? { x: 0, y: 3, z: 0 }
-  char = addCharacter(world, spawn)
-  const rules = mode?.session(loaded)
-  playComponents =
-    rules === undefined
-      ? null
-      : createComponentRuntime(loaded, registry(), {
-          character: characterAccess(char),
-          effects: rules.effects,
-          // The game's player components too, so a play-test has the abilities the game has (ADR 0059) —
-          // the same reason it runs the game's own `tuning` and rules rather than a default. Their
-          // definitions come from the game as well (ADR 0061), which is what gives a play-test the game's
-          // *locomotion* and not the stack's.
-          ...(mode?.player === undefined
-            ? {}
-            : {
-                player: {
-                  id: PLAYER_NODE_ID,
-                  components: mode.player,
-                  ...(mode.playerDefs === undefined
-                    ? {}
-                    : {
-                        defs: mode.playerDefs({
-                          character: () => char,
-                          tuning: () => mode.tuning,
-                          platforms: () => loaded?.basePose,
-                          // The play-test has a real world and a real level, so a game's component gets the
-                          // same two handles here as it does in the game (ADR 0066). Anything it draws will
-                          // not appear — the editor has no frame hook of its own to offer — which is the
-                          // known limit of play-in-place.
-                          world: () => world,
-                          level: () => loaded,
-                        }),
-                      }),
-                },
-              }),
-        })
-  let playTick = 0
-  playComponents?.attach(playTick, 0, TICK_DT)
-
-  // One fixed step of platform time per fixed step — see @mp/core simClock (reading the wall
-  // clock inside the tick stalls the platforms during a multi-tick wake and jitters carry).
-  const simClock = createSimClock({ tickMs: TICK_DT * 1000, reference: () => performance.now() })
-
-  const local: LocalWorld = {
-    applyInput: (cmd) => {
-      if (world === null || loaded === null || char === null) return
-      const nowMs = simClock.tick()
-      // Components first, then the frame tree — the same order as the game (ADR 0058), because a component
-      // that moves its node writes an offset the frame tree reads, and posing first lands it a tick late.
-      playComponents?.fixedUpdate(++playTick, nowMs, TICK_DT)
-      loaded.update(nowMs, char.base?.colliderHandle) // only the ridden piece is frozen
-      world.step(TICK_DT) // (A) platforms move
-      /**
-       * The movement slot (ADR 0061), same as the game's. A game whose locomotion is its own component feels
-       * like itself here, where before this ran `stepCharacter` with the game's *numbers* and the stack's
-       * mechanics.
-       *
-       * A level with no game, or a game with no locomotion component, does not move — which is honest: there
-       * is nothing to ask. It used to fall back to `DEFAULT_TUNING`, quietly play-testing parkour.
-       */
-      playComponents?.locomote(playTick, nowMs, TICK_DT, cmd)
-      world.step(TICK_DT) // (B) character resolves against the moved platforms
-      lastSimTickAt = performance.now()
-    },
-    readState: () => new Map<EntityId, Vec3>([[PLAYER_ID, char!.body.translation()]]),
-  }
-  controller = createLocalController({ world: local, tickRateHz: TICK_RATE_HZ })
-
-  instanceRoot.visible = false
-  // The cutout mask, so an obstruction dithers away here exactly as it does in the game (ADR 0055). The edit
-  // view deliberately does not get one — it would clone a material per occluder for a camera nobody is
-  // playing through.
-  playView = addLevel(stage.scene, loaded.visuals, { cutout: playCamera.cutout })
-  /**
-   * The two queries the camera needs, over the play world (ADR 0056: the camera imports no physics, it is
-   * handed the casts). Self-exclusion is the character's own capsule; there is no ragdoll here to skip.
-   */
-  playCamera.observe({
-    cast: (origin, direction, maxDistance, skip) => {
-      const hit = world?.castSphere({
-        origin,
-        direction,
-        maxDistance,
-        radius: playCamera.probeRadius,
-        exclude: [...(char === null ? [] : [char.body.colliderHandle]), ...(skip ?? [])],
-      })
-      return hit === undefined ? undefined : { distance: hit.distance, colliderHandle: hit.colliderHandle }
-    },
-    occupied: (point) =>
-      world?.sphereOverlaps({
-        center: point,
-        radius: playCamera.probeRadius,
-        exclude: char === null ? [] : [char.body.colliderHandle],
-      }) === true,
-  })
-  playLights = addLights(stage.scene, loaded.lights)
-  charMesh.visible = true
-  // The player camera is `stage.camera` and tunes its fov (`createOrbitCamera`), so play is perspective.
-  setProjection(false)
-  playing = true
-  controls.enabled = false // editor orbit off; the player camera takes over
-  void canvas.requestPointerLock()
-  setStatus('playing — WASD + Space · mouse to look · Esc to stop')
-  uiChanged()
-
-  playLoop = startFixedLoop({
-    tickRateHz: TICK_RATE_HZ,
-    onTick: () => {
-      if (char === null || controller === null) return
-      const m = worldMove()
-      // The game's own actions too (ADR 0061), so a play-test has the controls the game has — the same
-      // reason it runs the game's `tuning`, its rules and its player components rather than defaults.
-      controller.step({ moveX: m.x, moveZ: m.z, jump: keys.has('Space'), actions: heldActions() })
-      // Solids and triggers both: a sensor resolves no movement, so it is not in `collisions` (ADR 0054).
-      playComponents?.contact([...char.body.collisions(), ...char.body.overlaps()])
-      // One question, asked of the game's rules, which also consume the flag. A level with no game never dies.
-      if (rules?.takeDeath() === true) {
-        char.body.setPosition(rules.respawnAt())
-        char.vx = 0
-        char.vy = 0
-        char.vz = 0
-        char.grounded = false
-      }
-      // A rule that relocates without killing (ADR 0073) — a play-test cashes out the way the game does.
-      const teleport = rules?.takeTeleport?.() ?? null
-      if (teleport !== null) {
-        char.body.setPosition(teleport)
-        char.vx = 0
-        char.vy = 0
-        char.vz = 0
-        char.grounded = false
-      }
-    },
-  })
-}
-
-const stopPlay = (): void => {
-  if (!playing) return
-  if (gameFrame !== null) {
-    gameFrame.remove()
-    gameFrame = null
-    playing = false
-    controls.enabled = true
-    statusMsg = ''
-    uiChanged()
-    drainDeferredRemote() // what the room did while the frame was up
-    return
-  }
-  playLoop?.stop()
-  playLoop = null
-  playComponents?.detach()
-  playComponents = null
-  char?.body.remove()
-  char = null
-  controller = null
-  playView?.dispose()
-  playView = null
-  playLights?.dispose()
-  playLights = null
-  charMesh.visible = false
-  instanceRoot.visible = true
-  playing = false
-  if (document.pointerLockElement === canvas) document.exitPointerLock()
-  controls.target.set(ownPos.x, ownPos.y + 1, ownPos.z) // resume orbit around where you stopped
-  controls.enabled = true
-  statusMsg = ''
-  uiChanged()
-  rebuildLoaded() // restore the edit world + markers
-  drainDeferredRemote() // what the room did while the play-test held the world
-}
 
 // ============================ panels ============================
 // The shell is CSS grid (see index.html); each panel is its own module, and every one of them reads
@@ -2804,7 +2502,7 @@ const toolbar: Toolbar = createToolbar(
     step: edit.steps[edit.mode],
     stepUnit: STEP_LIMITS[edit.mode].unit,
     stepLimits: STEP_LIMITS[edit.mode],
-    playing,
+    playing: play.active(),
     previewing,
     inPrefab: prefabOpen !== null,
     readOnly: readOnlyBy,
@@ -2836,8 +2534,8 @@ const toolbar: Toolbar = createToolbar(
       refreshUi()
     },
     setPlaying: (on) => {
-      if (on) startPlay()
-      else stopPlay()
+      if (on) play.start()
+      else play.stop()
     },
     setPreviewing,
     setGrid: (on) => {
@@ -3238,7 +2936,7 @@ canvas.addEventListener('pointerdown', (e) => {
 // depend on its internals.
 canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 canvas.addEventListener('pointerup', (e) => {
-  if (e.button !== 2 || playing || doc === null) return
+  if (e.button !== 2 || play.active() || doc === null) return
   if (Math.hypot(e.clientX - rightDownX, e.clientY - rightDownY) > 4) return // was a pan
   const index = indexUnder(e.clientX, e.clientY)
   // Right-clicking an object selects it first, so the menu and the gizmo agree about the subject.
@@ -3252,7 +2950,7 @@ canvas.addEventListener('pointerup', (e) => {
 
 $<HTMLDivElement>('#hierarchy').addEventListener('contextmenu', (e) => {
   e.preventDefault()
-  if (playing || doc === null) return
+  if (play.active() || doc === null) return
   const row = (e.target as HTMLElement).closest<HTMLElement>('[data-index]')
   const index = row?.dataset.index === undefined ? null : Number(row.dataset.index)
   // Right-clicking a row selects it first: a menu that acts on a *different* object than the one under the
@@ -4274,20 +3972,8 @@ createSplitter({
 // --- render loop ---
 stage.start((dt) => {
   updateHoldHelpers()
-  if (playing && controller !== null && loaded !== null) {
-    // Interpolate clock-driven pieces + the character between the last two sim ticks (same
-    // timeline as the game), then place the player camera (mouselook orbit) around the character.
-    const alpha = Math.min(1, Math.max(0, (performance.now() - lastSimTickAt) / (1000 / TICK_RATE_HZ)))
-    loaded.render(alpha)
-    playView?.sync()
-    playLights?.sync()
-    ownPos = controller.renderPositions().get(PLAYER_ID) ?? ownPos
-    charMesh.position.set(ownPos.x, ownPos.y, ownPos.z)
-    // The camera places itself around the capsule's centre and reports whether we are inside our own rig;
-    // `setOccluders` is what puts the hole in whatever is in the way.
-    const { rigVisible } = playCamera.update(dt, ownPos, (handles) => playView?.setOccluders(handles))
-    charMesh.visible = rigVisible
-  } else {
+  // A session takes the frame, or it does not and the edit clock does — the same either/or as before.
+  if (!play.frame(dt)) {
     /**
      * The preview clock: real time, and only while asked for (ADR 0103).
      *

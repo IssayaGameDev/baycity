@@ -17,11 +17,13 @@ Both levels and prefabs are live rooms, so there is no Save and no file lock for
 
 One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (`src/splitter.ts`). No UI framework; Tweakpane only inside the Inspector (ADR 0024).
 
+`main.ts` is a **shell** (ADR 0121): the state it owns, construction, host literals, boot. A subsystem is its own module holding its own mutable state, reached through a getter-bag host — the convention the panels already use. Pure arithmetic is its own module again (`selection.ts`, `snap.ts`, `facePull.ts`, `surfaceGrid.ts`). Host entries are always arrows: a subsystem is constructed at module init and half of what it wants is declared further down.
+
 | Area | Element | Module |
 | --- | --- | --- |
 | Top | `#toolbar` — name (read-only), New, Duplicate, Back, gizmo Move/Rotate/Scale/**Face** (ADR 0119), space, snap + the active tool's increment with its unit (ADR 0114), Motion, Play, grid, markers, **Keys** (ADR 0120; hidden unless the game declares `surfaceGrid`). **No game picker and no level list** (ADR 0108): a game is a folder of levels, so opening is the Project panel's tree. No mode select and no Save either: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
 | Left | `#hierarchy` — node tree + context menu | `src/hierarchy.ts`, `src/menu.ts` |
-| Centre | `#view` — Three stage, orbit, transform gizmo, placement clicks | `src/main.ts` |
+| Centre | `#view` — Three stage, orbit, transform gizmo, placement clicks | `src/main.ts`, `src/play.ts` |
 | Right | `#insp-head`, `#inspector`, `#asset-inspector` | `src/inspector.ts`, `src/assetInspector.ts` |
 | Bottom panel | `#palette` **Project** (asset tree, previews) | `src/projectPanel.ts`, `src/assetTree.ts`, `src/previews.ts` |
 | Status | `#status` | `setStatus` |
@@ -408,24 +410,30 @@ row edit to the key pitch re-lays every preview.
 | toggle | its own button, not `Markers`: fitting platforms together is when spawn discs and rule pillars are clutter. `setSurfaceCells` rebuilds rather than setting `visible`, since three raycasts invisible objects. Hidden when the game declares no `surfaceGrid` |
 | culling | `computeBoundingSphere()` per mesh, against the instances rather than the unit quad at the origin |
 
-## Play
+## Play — `src/play.ts`
 
-**A level plays in the real game** (ADR 0086): `startPlay` → `gamePageUrl()` (`me.games[activeMode.name]`,
-from `/api/me`) → `startFramePlay(url)`: live level → `collab.flush()`; prefab → `saveNow()` if dirty (a refused save is no play); then an
-`<iframe id="game-frame">` over `#centre` at `${url}?level=${fileState.name}`; `playing = true`, orbit off. Stop
+`createPlay(host)` → `Play { active, start, stop, frame }` (ADR 0121). It owns `char`, `controller`, `playLoop`,
+`playView`, `playLights`, `playComponents`, `gameFrame`, `ownPos`, `lastSimTickAt` and the `active` flag; the
+twenty-three things it needs from the editor arrive as `PlayHost`, all getters. `main.ts` holds only that host
+literal and calls `play.frame(dt)` from the render loop — `true` when a session took the frame, so the edit
+clock runs only when it did not.
+
+**A level plays in the real game** (ADR 0086): `start` → `host.gamePageUrl()` (`me.games[activeMode.name]`,
+from `/api/me`) → `startFramePlay(url)`: live level → `host.flush()`; prefab → `host.saveNow()` if dirty (a refused save is no play); then an
+`<iframe id="game-frame">` over `#centre` at `${url}?level=${host.levelName()}` (bare, ADR 0108); `active = true`, orbit off. Stop
 (toolbar) removes the frame. Esc inside the frame is the game's pause; the `pointerlockchange` exit applies only
 to the in-editor loop. Hosted: `url` is the proxied `/play/<game>/`; dev: `http://localhost:<port>/` with
 `pnpm dev:<game>` running. A prefab, or a game the server has no page for, falls through to the loop below.
 
-## Play-test in place (`startPlay`/`stopPlay`) — prefabs
+## Play-test in place (`play.start`/`play.stop`) — prefabs
 
 The game's own code, not a copy (ADR 0052):
 
 | Piece | Source |
 | --- | --- |
-| Spawn | `activeMode.spawn(loaded)`; `{0,3,0}` with no game |
-| Rules | `activeMode.session(loaded)` → `ModeSession` |
-| Components | `createComponentRuntime(loaded, registry(), { character, effects: rules.effects, … })` incl. `player` components and `playerDefs(host)` (ADR 0059/0061) |
+| Spawn | `host.mode().spawn(loaded)`; `{0,3,0}` with no game |
+| Rules | `host.mode().session(loaded)` → `ModeSession` |
+| Components | `createComponentRuntime(loaded, host.registry(), { character, effects: rules.effects, … })` incl. `player` components and `playerDefs(host)` (ADR 0059/0061) |
 | Movement | `playComponents.locomote(...)` — no game / no locomotion component → no movement |
 | Actions | `heldActions()` from the game's `actions` |
 | Loop | `createLocalController` + `startFixedLoop`; tick: `fixedUpdate` → `loaded.update` → `world.step` → `locomote` → `world.step` (ADR 0058) |
