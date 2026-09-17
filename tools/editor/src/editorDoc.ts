@@ -356,6 +356,16 @@ export interface Doc {
   linkToPrefab: (i: number, assetId: string, root: Node) => boolean
   /** The definition behind an asset id, as this document resolved it — the object every placement reads. */
   prefabAt: (id: string) => Node | undefined
+  /**
+   * Prefab ids **this document** put in the resolution map, so a save can strip them (`stripHydrated`).
+   *
+   * Three doors add one mid-session — placing a prefab, pasting a clip that carries definitions, and Save as
+   * prefab — and each used to add it with nothing recording that it had. The claim in their comments, that the
+   * definition is "never written to the level", was then only true of the ids resolved when the file opened.
+   * A definition that reached disk is a frozen copy the level reads *instead of* the asset, for good
+   * (ADR 0124).
+   */
+  resolvedPrefabs: () => readonly string[]
   /** How many placements in **this level** reference `id`. A prefab is shared across levels the editor cannot see. */
   refCount: (id: string) => number
   /**
@@ -612,6 +622,14 @@ const docOver = (
 
   /** This placement's override record for an inherited node, as it is. Writes go through ops (`ops.ts` tidies). */
   const overrideFor = (n: DocNode): NodeOverride | undefined => n.owner?.overrides?.[n.authored.id]
+
+  /**
+   * Prefab ids this document resolved into `level.prefabs`, which a save must strip (ADR 0124).
+   *
+   * The ids present when the file opened are the caller's to track — it did that hydration. These are the
+   * ones added since, by the three doors below.
+   */
+  const resolved = new Set<string>()
 
   /**
    * One past the last node of `i`'s subtree. In a depth-first walk a subtree is the contiguous run of deeper
@@ -961,9 +979,10 @@ const docOver = (
       /**
         * The definition is put in the resolution map so this document can read the placement's inherited
         * nodes at once — **not** as an op and never written to the level: the server resolves it from the file
-        * on its own side, and the save strips whatever was resolved (`prefabs.ts`).
+        * on its own side, and the save strips whatever was resolved (`prefabs.ts`, `resolvedPrefabs`).
         */
       ;(level.prefabs ??= {})[assetId] = root
+      resolved.add(assetId)
       const placed: Node = { id: freshId(), transform: { position }, components: [], prefab: assetId }
       commit([{ kind: 'insertNode', parent: null, index: roots.length, node: placed }])
       return indexOfId(placed.id)
@@ -1311,7 +1330,10 @@ const docOver = (
       const resolve = (x: Node): void => {
         if (x.prefab !== undefined && level.prefabs?.[x.prefab] === undefined) {
           const carried = item.prefabs[x.prefab]
-          if (carried !== undefined) (level.prefabs ??= {})[x.prefab] = structuredClone(carried)
+          if (carried !== undefined) {
+            ;(level.prefabs ??= {})[x.prefab] = structuredClone(carried)
+            resolved.add(x.prefab)
+          }
         }
         for (const kid of x.children ?? []) resolve(kid)
       }
@@ -1352,8 +1374,10 @@ const docOver = (
     linkToPrefab: (i, assetId, root) => {
       const n = own(i)
       if (n === undefined || n.authored.prefab !== undefined || mode === 'prefab') return false
-      // Resolved for this document so the inherited nodes read at once; not an op, never written (`prefabs.ts`).
+      // Resolved for this document so the inherited nodes read at once; not an op, and stripped on the way
+      // out because it is recorded here (`prefabs.ts`, `resolvedPrefabs`, ADR 0124).
       ;(level.prefabs ??= {})[assetId] = root
+      resolved.add(assetId)
       const { children: _kids, ...rest } = n.authored
       const placement: Node = { ...rest, components: [], prefab: assetId }
       commit([{ kind: 'replaceNode', id: n.authored.id, node: placement }])
@@ -1408,6 +1432,7 @@ const docOver = (
       return false
     },
     prefabAt: (id) => level.prefabs?.[id],
+    resolvedPrefabs: () => [...resolved],
     refCount: (id) => {
       let count = 0
       const walk = (x: Node): void => {

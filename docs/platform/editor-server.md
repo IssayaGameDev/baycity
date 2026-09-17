@@ -96,7 +96,7 @@ forgets a document with neither clients nor dependents.
 (ADR 0123). `hydratePrefabs` skips an id the level already carries inline — which `stripHydrated` preserves on
 purpose — so such a level used to leave the prefab's document shut, and `apply` on a prefab needs an open one:
 *Apply to prefab* answered 404 "is not open" while every visible thing about the placement worked. The inline
-definition is neither adopted nor stripped by opening it; a level keeping a frozen copy is a separate defect.
+definition is neither adopted nor stripped by opening it. A level keeping a frozen copy is repaired by `deploy/editor/fix-inline-prefabs.sh` (ADR 0124): dry by default, `--write` drops the table entry where a prefab asset has that id, so the placement resolves against the asset again. An entry with **no** asset is kept and named — there the table is genuinely the only source. Each rewrite is read back and refused unless the table is the only difference. Idempotent; the server is stopped while it runs, since an open live level would write the table straight back.
 
 **One delivery path.** After a prefab's batch, every dependent level's clients get `prefab { assetId, ops }` —
 no sequence, because the level's own file did not change. A tab is in one document at a time, so nobody gets a

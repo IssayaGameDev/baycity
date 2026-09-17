@@ -1509,7 +1509,10 @@ const edits = createHistoryStore({
     const key = docLockKey()
     return heldLocks.has(key) ? null : takeLock(key)
   },
-  hydratedPrefabs: () => hydratedPrefabs,
+  // What the open pass resolved, plus whatever the document has resolved since — placing a prefab, pasting
+  // one, Save as prefab. A definition that reaches disk is a frozen copy the level reads instead of the
+  // asset, for good (ADR 0124).
+  hydratedPrefabs: () => [...new Set([...hydratedPrefabs, ...(doc?.resolvedPrefabs() ?? [])])],
   afterSave: async () => {
     previews.invalidate()
     await reloadAssets()
