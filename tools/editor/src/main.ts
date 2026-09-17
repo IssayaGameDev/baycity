@@ -12,7 +12,7 @@ import {
   // are confused the error is a type error somewhere unrelated.
   type Level,
   type Transform, validateLevel, type NodeRef,
-  BUILTIN_LABELS, BUILTIN_MODELS, PRIMITIVE_LABELS, PRIMITIVE_ORDER, type PrimitiveKind,
+  BUILTIN_LABELS, BUILTIN_MODELS, PRIMITIVE_LABELS, PRIMITIVE_ORDER,
   isSegment, parseQualified, qualify } from '@mp/content'
 
 import { DEFAULT_REGISTRY, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type Registry } from '@mp/components'
@@ -66,9 +66,10 @@ import { createLiveSession } from './liveSession'
 import { createCameraView } from './cameraView'
 import { createFileActions } from './fileActions'
 import { createMotionPreview } from './motionPreview'
+import { createNodeActions } from './nodeActions'
 import { createPrefabActions } from './prefabActions'
 import { createPlay } from './play'
-import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
+import { applySelect, clampTo, modeFor, primaryOf, type SelectMode } from './selection'
 import { createShortcuts } from './shortcuts'
 import { createSplitter, readPx, writePx } from './splitter'
 import { MODES, MODE_LIST, modeOf, soleMode } from './modes'
@@ -1303,45 +1304,30 @@ canvas.addEventListener('pointerup', (e) => {
 })
 
 /**
- * The selection reduced to what a structural operation should act on: **roots only**, highest index first.
- *
- * Roots, because deleting a parent takes its children with it and duplicating both would produce the child
- * twice. Descending, because removing or inserting only shifts the indices *after* the node touched — so
- * working from the bottom up leaves every index still to be processed valid, with no bookkeeping.
+ * What you do to the nodes you have (`nodeActions.ts`, ADR 0121): delete, duplicate, create, frame, paste
+ * at a point. Each operates on the roots of the selection, which is the arithmetic that groups them.
  */
-const selectionRoots = (): number[] => {
-  const open = doc
-  return open === null ? [] : rootsOf(selection, (i) => open.depthOf(i)).sort((a, b) => b - a)
-}
+const nodes = createNodeActions({
+  stage,
+  controls,
+  doc: () => doc,
+  selection: () => selection,
+  applySelection: (indices) => applySelection(indices),
+  select: (index) => select(index),
+  deselect: () => deselect(),
+  groupAt: (i) => meshes.groupAt(i),
+  view,
+  edits: () => edits,
+  rebuildMeshes: () => meshes.buildAll(),
+  rebuildLoaded: () => rebuildLoaded(),
+  scheduleRebuild: () => scheduleRebuild(),
+  loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
+  inspectorSync: () => inspectorSync(),
+  setStatus: (message) => setStatus(message),
+  refreshUi: () => refreshUi(),
+  uiChanged: () => uiChanged(),
+})
 
-const deleteSelected = (): void => {
-  if (doc === null || selection.length === 0) return
-  const roots = selectionRoots()
-  for (const i of roots) doc.remove(i)
-  edits.recordEdit(roots.length > 1 ? `delete ${roots.length}` : 'delete')
-  deselect()
-  meshes.buildAll()
-  rebuildLoaded()
-}
-
-const duplicateSelected = (): void => {
-  if (doc === null || selection.length === 0) return
-  const made: number[] = []
-  for (const i of selectionRoots()) {
-    const before = doc.count()
-    const at = doc.duplicate(i)
-    // A copy is a whole subtree, so it inserts more than one node. Everything already recorded sits after this
-    // insertion point (we are working downward), so it shifts by however many nodes went in.
-    const inserted = doc.count() - before
-    for (let n = 0; n < made.length; n++) made[n]! += inserted
-    made.push(at)
-  }
-  edits.recordEdit(made.length > 1 ? `duplicate ${made.length}` : 'duplicate')
-  meshes.buildAll()
-  rebuildLoaded()
-  // Reversed, so the primary ends up on the copy of what was the primary rather than on the lowest one.
-  applySelection(made.reverse())
-}
 /** Give an inline one-off a shared identity, so it can be referenced and edited in one place. */
 /**
  * The editor's shortcuts (ADR 0030).
@@ -1367,12 +1353,12 @@ const editorShortcuts = createShortcuts([
     run: () => edits.pasteClipboard(true),
     enabled: () => !play.active() && edits.clipboardSize() > 0 && selected !== null,
   },
-  { id: 'duplicate', chords: ['mod+d'], label: 'Duplicate', run: () => duplicateSelected(), enabled: () => !play.active() && selection.length > 0 },
+  { id: 'duplicate', chords: ['mod+d'], label: 'Duplicate', run: () => nodes.duplicateSelected(), enabled: () => !play.active() && selection.length > 0 },
   {
     id: 'delete',
     chords: ['delete', 'backspace'],
     label: 'Delete',
-    run: () => deleteSelected(),
+    run: () => nodes.deleteSelected(),
     enabled: () => !play.active() && selection.length > 0,
   },
   {
@@ -1383,7 +1369,7 @@ const editorShortcuts = createShortcuts([
     enabled: () => !play.active() && doc !== null && doc.count() > 0,
   },
   // The menu offers Focus with `F` beside it, so the key has to exist or the menu is lying.
-  { id: 'focus', chords: ['f'], label: 'Focus the selection', run: () => focusSelection(), enabled: () => !play.active() && selection.length > 0 },
+  { id: 'focus', chords: ['f'], label: 'Focus the selection', run: () => nodes.focusSelection(), enabled: () => !play.active() && selection.length > 0 },
   { id: 'translate', chords: ['t', 'g'], label: 'Translate tool', run: () => setMode('translate'), enabled: () => !play.active() },
   { id: 'rotate', chords: ['r'], label: 'Rotate tool', run: () => setMode('rotate'), enabled: () => !play.active() },
   { id: 'scale', chords: ['s'], label: 'Scale tool', run: () => setMode('scale'), enabled: () => !play.active() },
@@ -1802,8 +1788,8 @@ const menuFor = (index: number): MenuItem[] => {
       ],
     },
     { label: 'Create child', divider: true, enabled: own, why, items: createMenu(index) },
-    { label: 'Duplicate', hint: 'Ctrl+D', enabled: own, why, run: () => duplicateSelected() },
-    { label: 'Delete', hint: 'Del', enabled: own, why, run: () => deleteSelected() },
+    { label: 'Duplicate', hint: 'Ctrl+D', enabled: own, why, run: () => nodes.duplicateSelected() },
+    { label: 'Delete', hint: 'Del', enabled: own, why, run: () => nodes.deleteSelected() },
     { label: 'Copy', hint: 'Ctrl+C', divider: true, enabled: own, why, run: () => edits.copySelected() },
     { label: 'Cut', hint: 'Ctrl+X', enabled: own, why, run: () => edits.cutSelected() },
     { label: 'Paste as child', hint: 'Ctrl+Shift+V', enabled: own && edits.clipboardSize() > 0, why: own ? 'nothing copied' : why, run: () => edits.pasteClipboard(true) },
@@ -1833,8 +1819,8 @@ const menuFor = (index: number): MenuItem[] => {
 
 /** What can be made: the built-in shapes at their preset sizes (ADR 0090), and an empty. */
 const createMenu = (parent: number | null, at?: Vec3): MenuItem[] => [
-  ...PRIMITIVE_ORDER.map((kind) => ({ label: PRIMITIVE_LABELS[kind], run: () => createPrimitive(kind, parent, at) })),
-  { label: 'Empty', divider: true, run: () => createEmpty(parent, at) },
+  ...PRIMITIVE_ORDER.map((kind) => ({ label: PRIMITIVE_LABELS[kind], run: () => nodes.createPrimitive(kind, parent, at) })),
+  { label: 'Empty', divider: true, run: () => nodes.createEmpty(parent, at) },
 ]
 
 /** The blank-space menu: what you can make when you are not pointing at anything. */
@@ -1846,124 +1832,17 @@ const blankMenu = (): MenuItem[] => [
 ]
 
 /**
- * Create an empty node and select it.
- *
- * Placed at `at` when given (the point that was right-clicked), otherwise on the parent it groups, otherwise
- * at the camera's focus — which is where a new object is expected to appear rather than at the world origin.
- */
-const createEmpty = (parent: number | null, at?: Vec3): void => {
-  if (doc === null) return
-  const where = at ?? (parent === null ? vec3(r4(controls.target.x), r4(controls.target.y), r4(controls.target.z)) : vec3(0, 0, 0))
-  const landed = doc.placeEmpty(where, parent)
-  if (landed < 0) {
-    setStatus('nowhere to put that')
-    return
-  }
-  edits.recordEdit('create empty')
-  meshes.buildAll()
-  scheduleRebuild()
-  select(landed)
-  uiChanged()
-}
-
-/** Create a built-in shape at its preset size (ADR 0090) and select it. Placed like `createEmpty`. */
-const createPrimitive = (kind: PrimitiveKind, parent: number | null, at?: Vec3): void => {
-  if (doc === null) return
-  const where = at ?? (parent === null ? vec3(r4(controls.target.x), r4(controls.target.y), r4(controls.target.z)) : vec3(0, 0, 0))
-  const landed = doc.placePrimitive(kind, where, parent)
-  if (landed < 0) {
-    setStatus('nowhere to put that')
-    return
-  }
-  edits.recordEdit(`create ${PRIMITIVE_LABELS[kind].toLowerCase()}`)
-  meshes.buildAll()
-  scheduleRebuild()
-  select(landed)
-  uiChanged()
-  loadNewReferences(meshes.buildAll)
-}
-
-/**
- * Frame the selection: put the orbit target on it and pull the camera back far enough to see all of it.
- *
- * Along the camera's *current* direction, so framing something never also spins the view — the one thing
- * that makes a focus command disorienting rather than useful. A bounding sphere rather than the box's
- * diagonal, so a long thin platform is framed by its length and not by a corner-to-corner measurement that
- * would push the camera into the next county.
- */
-const focusSelection = (): void => {
-  const box = new THREE.Box3()
-  for (const i of selection) {
-    const g = meshes.groupAt(i)
-    if (g !== undefined) box.expandByObject(g)
-  }
-  if (box.isEmpty()) return
-  const centre = box.getCenter(new THREE.Vector3())
-  const radius = Math.max(0.5, box.getBoundingSphere(new THREE.Sphere()).radius)
-  const camera = view.activeCamera()
-  const back = camera.position.clone().sub(controls.target)
-  // Degenerate only if the camera is already at its own target, which the controls do not allow.
-  if (back.lengthSq() < 1e-6) back.set(0, 1, 1)
-  controls.target.copy(centre)
-  if (view.isometric()) {
-    // No fov to frame with: an orthographic camera frames by how much world its frustum holds, so the
-    // distance only has to clear the geometry and the frustum does the framing.
-    view.orthoCamera.zoom = 1
-    view.syncOrthoFrustum(radius * 1.4)
-    view.orthoCamera.position.copy(centre).add(back.normalize().multiplyScalar(Math.max(radius * 4, 10)))
-  } else {
-    const distance = (radius / Math.tan((stage.camera.fov * Math.PI) / 360)) * 1.4
-    stage.camera.position.copy(centre).add(back.normalize().multiplyScalar(distance))
-  }
-  controls.update()
-}
-
-/**
- * Paste at a world point rather than beside the selection.
- *
- * The **first** item lands on the point and the rest keep their offsets from it, so pasting a group of five
- * puts the group where you clicked instead of collapsing it onto one spot.
- */
-const pasteAt = (point: Vec3): void => {
-  if (doc === null || edits.clipboardSize() === 0) return
-  const landed: number[] = []
-  for (const item of edits.items()) {
-    const at = doc.paste(item, null)
-    if (at >= 0) landed.push(at)
-  }
-  const first = landed[0]
-  if (first === undefined) {
-    setStatus(doc.mode === 'level' ? 'the clipboard holds prefab nodes, not placements' : 'the clipboard holds placements, not nodes')
-    return
-  }
-  const from = doc.transformOf(first).position
-  const d = vec3(point.x - from.x, point.y - from.y, point.z - from.z)
-  for (const i of landed) {
-    const t = doc.transformOf(i)
-    doc.setTransform(i, { ...t, position: vec3(r4(t.position.x + d.x), r4(t.position.y + d.y), r4(t.position.z + d.z)) })
-  }
-  edits.recordEdit(landed.length > 1 ? `paste ${landed.length} here` : 'paste here')
-  meshes.buildAll()
-  rebuildLoaded()
-  applySelection(landed)
-  loadNewReferences(() => {
-    meshes.buildAll()
-    applySelection(landed)
-  })
-}
-
-/**
  * The viewport's right-click menu.
  *
  * On an object it is the Hierarchy's own list with Focus on top, because the same object should offer the same
  * things wherever it is right-clicked. On empty space it is what can be *made* at the point under the pointer.
  */
 const viewportMenu = (index: number | null, point: Vec3 | null): MenuItem[] => {
-  if (index !== null) return [{ label: 'Focus', hint: 'F', run: () => focusSelection() }, ...menuFor(index).map((m, n) => (n === 0 ? { ...m, divider: true } : m))]
+  if (index !== null) return [{ label: 'Focus', hint: 'F', run: () => nodes.focusSelection() }, ...menuFor(index).map((m, n) => (n === 0 ? { ...m, divider: true } : m))]
   return [
-    { label: 'Paste here', enabled: edits.clipboardSize() > 0 && point !== null, why: edits.clipboardSize() === 0 ? 'nothing copied' : 'no surface under the pointer', run: () => point !== null && pasteAt(point) },
+    { label: 'Paste here', enabled: edits.clipboardSize() > 0 && point !== null, why: edits.clipboardSize() === 0 ? 'nothing copied' : 'no surface under the pointer', run: () => point !== null && nodes.pasteAt(point) },
     { label: 'Create here', enabled: point !== null, why: 'no surface under the pointer', items: createMenu(null, point ?? undefined) },
-    { label: 'Focus on the selection', divider: true, enabled: selection.length > 0, why: 'nothing selected', run: () => focusSelection() },
+    { label: 'Focus on the selection', divider: true, enabled: selection.length > 0, why: 'nothing selected', run: () => nodes.focusSelection() },
   ]
 }
 
@@ -2267,9 +2146,9 @@ const edits = createHistoryStore({
   selection: () => selection,
   selected: () => selected,
   selectionRefs: () => selectionRefs(),
-  selectionRoots: () => selectionRoots(),
+  selectionRoots: () => nodes.selectionRoots(),
   applySelection: (indices) => applySelection(indices),
-  deleteSelected: () => deleteSelected(),
+  deleteSelected: () => nodes.deleteSelected(),
   live: () => live(),
   submit: (batch) => room.submit(batch),
   fileName: () => fileState.name,
@@ -2524,8 +2403,8 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     edits.recordEdit('rename')
     uiChanged()
   },
-  duplicate: duplicateSelected,
-  remove: deleteSelected,
+  duplicate: nodes.duplicateSelected,
+  remove: nodes.deleteSelected,
   saveAsPrefab: () => void (selected !== null && prefabs.saveAsPrefab(selected)),
   unlinkPrefab: () => void (selected !== null && prefabs.unlinkPlacement(selected)),
   openPrefab: () => {
