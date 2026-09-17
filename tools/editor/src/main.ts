@@ -14,11 +14,9 @@ import {
   // are confused the error is a type error somewhere unrelated.
   type Level,
   type Transform, validateLevel, type NodeRef,
-  BUILTIN_LABELS, BUILTIN_MODELS, PRIMITIVE_LABELS, PRIMITIVE_ORDER, type PrimitiveKind, type EnvironmentConfig,
+  BUILTIN_LABELS, BUILTIN_MODELS, PRIMITIVE_LABELS, PRIMITIVE_ORDER, type PrimitiveKind,
   isSegment, parseQualified, qualify } from '@mp/content'
-import { QUANT_BOUND } from '@mp/net'
 
-import { createViewGizmo } from './viewGizmo'
 import { DEFAULT_REGISTRY, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type Registry } from '@mp/components'
 import { type ModeDescriptor, readSettings } from '@mp/mode'
 import { eulerToQuat, vec3, type Vec3 } from '@mp/core'
@@ -70,6 +68,7 @@ import { cornerSnapDelta, snapAnglesDeg, snapToGrid, worldHalfExtents } from './
 import { createHistoryStore } from './historyStore'
 import { createItemMeshes } from './itemMeshes'
 import { createLiveSession } from './liveSession'
+import { createCameraView } from './cameraView'
 import { createMotionPreview } from './motionPreview'
 import { createPlay } from './play'
 import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
@@ -98,18 +97,7 @@ const grid = new THREE.GridHelper(80, 80, 0x475569, 0x1f2937)
 ;(grid.material as THREE.Material).opacity = 0.5
 const axes = new THREE.AxesHelper(3)
 
-/**
- * The network bounds, drawn (ADR 0093): the cube a peer's position is quantized over, centred on the origin.
- *
- * Off unless asked for. A level is almost always well inside it, so left on it would be a red box around
- * everything forever; the reason to draw it at all is the half-hour when someone is deciding how big it
- * should be, or checking that a level which grew still fits.
- */
-const boundsBox = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color(0xef4444))
-boundsBox.visible = false
-let showBoundsBox = false
-
-stage.scene.add(grid, axes, boundsBox)
+stage.scene.add(grid, axes)
 
 // --- editor state ---
 let world: PhysicsWorld | null = null
@@ -297,7 +285,7 @@ const room = createLiveSession({
   },
   rebuildSubtree: (i) => meshes.rebuildSubtree(i),
   scheduleRebuild: () => scheduleRebuild(),
-  installEnvironment: (config) => installEnvironment(config),
+  installEnvironment: (config) => view.installEnvironment(config),
   loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
   invalidatePreviews: () => previews.invalidate(),
   hierarchyRender: () => hierarchy.render(),
@@ -398,7 +386,7 @@ const meshes = createItemMeshes({
     motion.applyPoses()
     reattachGizmo()
     room.rebuildHolds()
-    refreshBoundsBox()
+    view.refreshBoundsBox()
   },
 })
 const instanceRoot = meshes.root
@@ -499,7 +487,7 @@ const showDoc = (): void => {
   doc = docStack[docStack.length - 1]?.doc ?? null
   // The level owns its sun (ADR 0048), so opening one relights the viewport and rebakes the sky. A prefab has
   // none, which `sun()` reports as `undefined`, and that falls back to the renderer's defaults.
-  installEnvironment(doc?.environment())
+  view.installEnvironment(doc?.environment())
   meshes.buildAll()
   rebuildLoaded()
   statusMsg = '' // a message about the old document would be a lie about this one
@@ -649,132 +637,33 @@ const blankLevel = (id: string): Level => ({
 
 // --- selection + transform gizmo ---
 /**
- * The isometric camera (ADR 0094). `stage.camera` stays the perspective one and stays the game's — play mode
- * hands it to `createOrbitCamera`, which tunes its `fov` — so this is a second camera the editor swaps in,
- * not a change to the stage.
- *
- * "Isometric" is Unity's word for it and the one on the label; it is an orthographic projection, not the
- * 30-degree angle the word means in drawing.
+ * How the level is looked at (`cameraView.ts`, ADR 0121): the projection, the navigation gizmo, the
+ * background that projection needs, and the network-bounds box. What is left here is its host.
  */
-const orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 2000)
-let isometric = false
-
-/** The camera actually being looked through. Everything that casts a ray or draws must ask for it. */
-const activeCamera = (): THREE.PerspectiveCamera | THREE.OrthographicCamera => (isometric ? orthoCamera : stage.camera)
-
-/** Half the world height the orthographic camera shows, chosen to match what perspective shows at the target. */
-const orthoHalfHeight = (): number => {
-  const distance = Math.max(0.001, stage.camera.position.distanceTo(controls.target))
-  return distance * Math.tan((stage.camera.fov * Math.PI) / 360)
-}
-
-/** Re-cut the orthographic frustum for the canvas's aspect, keeping the height it is already showing. */
-const syncOrthoFrustum = (halfHeight: number): void => {
-  const aspect = Math.max(0.001, canvas.clientWidth / Math.max(1, canvas.clientHeight))
-  orthoCamera.top = halfHeight
-  orthoCamera.bottom = -halfHeight
-  orthoCamera.left = -halfHeight * aspect
-  orthoCamera.right = halfHeight * aspect
-  orthoCamera.updateProjectionMatrix()
-}
-
-/**
- * Swap projection, keeping the view.
- *
- * The outgoing camera's placement carries over, and the frustum is cut so the two show the same thing at the
- * orbit target — so the toggle reads as the perspective draining out of the picture rather than as a jump.
- * Going back, the distance is recovered from the frustum, since orthographic has no distance of its own.
- *
- * Everything holding a camera is re-pointed rather than rebuilt: the post-FX passes took theirs at
- * construction, and rebuilding the composer would throw away the AO and bloom the level asked for.
- */
-const setProjection = (ortho: boolean): void => {
-  if (ortho === isometric) return
-  if (ortho) {
-    const half = orthoHalfHeight()
-    orthoCamera.position.copy(stage.camera.position)
-    orthoCamera.quaternion.copy(stage.camera.quaternion)
-    orthoCamera.zoom = 1
-    syncOrthoFrustum(half)
-  } else {
-    // Orthographic distance is meaningless, so put the perspective camera where it shows the same height.
-    const half = (orthoCamera.top - orthoCamera.bottom) / 2 / orthoCamera.zoom
-    const distance = half / Math.tan((stage.camera.fov * Math.PI) / 360)
-    const back = orthoCamera.position.clone().sub(controls.target)
-    if (back.lengthSq() < 1e-6) back.set(0, 1, 1)
-    stage.camera.quaternion.copy(orthoCamera.quaternion)
-    stage.camera.position.copy(controls.target).add(back.normalize().multiplyScalar(distance))
-  }
-  isometric = ortho
-  applyProjectionBackground()
-  const camera = activeCamera()
-  postfx.setCamera(camera)
-  controls.object = camera
-  gizmo.camera = camera
-  controls.update()
-  viewGizmo.setLabel(ortho ? 'Iso' : 'Persp')
-  setStatus(ortho ? 'isometric' : 'perspective')
-  uiChanged()
-}
-
-/**
- * The navigation gizmo, top right (ADR 0094). Blender's ball-and-stick, Unity's click-the-middle to toggle
- * isometric, and no auto-switch: looking down an axis and dropping perspective are two decisions.
- */
-const viewGizmo = createViewGizmo({
-  camera: activeCamera,
-  target: () => controls.target,
-  dom: canvas,
+const view = createCameraView({
+  stage,
+  canvas,
+  controls,
+  instanceRoot,
+  groups: () => meshes.all(),
+  doc: () => doc,
+  inPrefab: () => prefabOpen !== null,
+  playing: () => play.active(),
+  useCamera: (camera) => {
+    postfx.setCamera(camera)
+    controls.object = camera
+    gizmo.camera = camera
+  },
+  applyEnvironment: (from) => {
+    env.applyEnvironment(from)
+    postfx.apply(from?.postfx)
+  },
+  skyParams: () => env.skyParams,
+  renderPostFX: () => postfx.render(),
+  setStatus: (message) => setStatus(message),
+  uiChanged: () => uiChanged(),
 })
-
-/**
- * Drawn after post-processing, because it clears depth and paints over the finished image — composite
- * anything afterwards and it would be covered. Hidden during play, where the viewport is the game's.
- */
-stage.setRenderStep(() => {
-  postfx.render()
-  if (!play.active()) viewGizmo.render(stage.renderer)
-})
-
-/**
- * The gizmo gets the pointer before anything else does.
- *
- * On the document in the **capture** phase rather than on the canvas: `OrbitControls` and the rest listen on
- * the canvas itself, and listeners on one element fire in the order they were added, so there is no way to
- * get in front of them from there. Capturing on an ancestor is, and `stopPropagation` then means the event
- * never reaches the canvas at all — no orbit, no selection click, no context menu.
- */
-let viewGizmoHolding = false
-document.addEventListener(
-  'pointerdown',
-  (e) => {
-    if (e.target !== canvas || play.active() || e.button !== 0) return
-    if (!viewGizmo.pointerDown(e)) return
-    viewGizmoHolding = true
-    e.stopPropagation()
-    e.preventDefault()
-  },
-  true,
-)
-document.addEventListener(
-  'pointermove',
-  (e) => {
-    if (!viewGizmoHolding) return
-    viewGizmo.pointerMove(e)
-    e.stopPropagation()
-  },
-  true,
-)
-document.addEventListener(
-  'pointerup',
-  (e) => {
-    if (!viewGizmoHolding) return
-    viewGizmoHolding = false
-    if (viewGizmo.pointerUp(e) === 'centre') setProjection(!isometric)
-    e.stopPropagation()
-  },
-  true,
-)
+stage.scene.add(view.boundsBox)
 
 const gizmo = new TransformControls(stage.camera, canvas)
 /**
@@ -870,91 +759,6 @@ const reattachGizmo = (): void => {
   const g = selected === null || play.active() || edit.mode === 'face' ? undefined : meshes.groupAt(selected)
   if (g === undefined) gizmo.detach()
   else gizmo.attach(g)
-}
-
-/**
- * A flat stand-in for the sky while the camera is orthographic.
- *
- * Three draws a cubemap background as a **1 x 1 x 1 box parked at the camera**, inside-out, depth test off
- * (`WebGLBackground`). A perspective divide is what makes that fill the screen: a corner half a metre away at
- * 45 degrees lands at the edge. Orthographic has no divide, so half a metre stays half a metre and the box
- * projects to a few percent of a viewport metres across — a small patch of sky in the middle of the clear
- * colour, which is what "the skybox goes black in isometric" actually is.
- *
- * So isometric gets a flat colour instead, mixed from the level's own sky so it is not jarring. Not tone
- * mapped, because a `Color` background is a clear colour rather than a drawn surface, so the sky's `gain` is
- * deliberately left out of it.
- *
- * The alternative is drawing the sky ourselves — a mesh, or a full-screen quad reconstructing the view ray —
- * which is correct in both projections and costs a draw every frame in the game as well. Deferred to the
- * render pass (`budgets.md`) rather than taken now.
- */
-const isoBackground = new THREE.Color()
-/** Whatever the sky put there, so leaving isometric restores exactly that. `undefined` = nothing captured. */
-let backgroundBeforeIso: THREE.Scene['background'] | undefined
-
-/**
- * Install a level's environment, and then make the background match the projection.
- *
- * One function rather than the four pairs of calls this replaces, for the reason `meshes.buildAll` keeps its own
- * invariants: every path that installs a sky has to re-apply this, and a path that forgets is a black
- * viewport that only shows up in isometric.
- */
-const installEnvironment = (from: Partial<EnvironmentConfig> | undefined): void => {
-  env.applyEnvironment(from)
-  postfx.apply(from?.postfx)
-  applyProjectionBackground()
-}
-
-/** Swap the cubemap background for a flat colour while isometric, and put it back afterwards. */
-const applyProjectionBackground = (): void => {
-  if (isometric) {
-    // Anything but our own colour is the sky the environment just installed: remember it before replacing it.
-    if (stage.scene.background !== isoBackground) backgroundBeforeIso = stage.scene.background
-    const sky = env.skyParams
-    isoBackground.set(sky.bottomColor).lerp(new THREE.Color(sky.topColor), 0.5)
-    stage.scene.background = isoBackground
-    return
-  }
-  if (backgroundBeforeIso !== undefined) {
-    stage.scene.background = backgroundBeforeIso
-    backgroundBeforeIso = undefined
-  }
-}
-
-/** The bound in force for the open document: the level's own, or the platform default. */
-const effectiveBounds = (): number => doc?.netBounds() ?? QUANT_BOUND
-
-/**
- * Re-size the box and decide whether it is drawn.
- *
- * Hidden inside a prefab as well as when switched off: a prefab has no bounds of its own (it is placed into
- * a level, and the level's box is the one that matters), so drawing the default around it would be a lie.
- */
-const refreshBoundsBox = (): void => {
-  const b = effectiveBounds()
-  boundsBox.box.set(new THREE.Vector3(-b, -b, -b), new THREE.Vector3(b, b, b))
-  boundsBox.visible = showBoundsBox && prefabOpen === null && doc !== null
-}
-
-/**
- * How far the level actually reaches, and how much of it is outside the bound.
- *
- * Measured off the drawn objects rather than the authored positions, so a wide platform counts by its edge
- * and not by its origin — the edge is where a player can stand, and standing there is what the bound has to
- * carry. Top-level objects only, or a nested child would be counted twice with its parent.
- */
-const boundsReach = (): { outside: number; reach: number } | null => {
-  if (doc === null) return null
-  const b = effectiveBounds()
-  const far = (box: THREE.Box3): number =>
-    box.isEmpty() ? 0 : Math.max(Math.abs(box.min.x), Math.abs(box.min.y), Math.abs(box.min.z), box.max.x, box.max.y, box.max.z)
-  let outside = 0
-  for (const g of meshes.all()) {
-    if (g === undefined || g.parent !== instanceRoot) continue
-    if (far(new THREE.Box3().setFromObject(g)) > b) outside += 1
-  }
-  return { outside, reach: far(new THREE.Box3().setFromObject(instanceRoot)) }
 }
 
 /** Switch transform tool (toolbar buttons and the T/R/S keys are the same path). */
@@ -1448,7 +1252,7 @@ const endFacePull = (): void => {
 const castFrom = (clientX: number, clientY: number): void => {
   const rect = canvas.getBoundingClientRect()
   ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
-  raycaster.setFromCamera(ndc, activeCamera())
+  raycaster.setFromCamera(ndc, view.activeCamera())
 }
 
 /** The document index under a client position, or `null`. */
@@ -1748,7 +1552,7 @@ const play = createPlay({
   clearStatus: () => void (statusMsg = ''),
   uiChanged: () => uiChanged(),
   drainDeferred: () => room.drainDeferred(),
-  setProjection: (isometric) => setProjection(isometric),
+  setProjection: (ortho) => view.setProjection(ortho),
 })
 
 // ============================ panels ============================
@@ -2250,17 +2054,17 @@ const focusSelection = (): void => {
   if (box.isEmpty()) return
   const centre = box.getCenter(new THREE.Vector3())
   const radius = Math.max(0.5, box.getBoundingSphere(new THREE.Sphere()).radius)
-  const camera = activeCamera()
+  const camera = view.activeCamera()
   const back = camera.position.clone().sub(controls.target)
   // Degenerate only if the camera is already at its own target, which the controls do not allow.
   if (back.lengthSq() < 1e-6) back.set(0, 1, 1)
   controls.target.copy(centre)
-  if (isometric) {
+  if (view.isometric()) {
     // No fov to frame with: an orthographic camera frames by how much world its frustum holds, so the
     // distance only has to clear the geometry and the frustum does the framing.
-    orthoCamera.zoom = 1
-    syncOrthoFrustum(radius * 1.4)
-    orthoCamera.position.copy(centre).add(back.normalize().multiplyScalar(Math.max(radius * 4, 10)))
+    view.orthoCamera.zoom = 1
+    view.syncOrthoFrustum(radius * 1.4)
+    view.orthoCamera.position.copy(centre).add(back.normalize().multiplyScalar(Math.max(radius * 4, 10)))
   } else {
     const distance = (radius / Math.tan((stage.camera.fov * Math.PI) / 360)) * 1.4
     stage.camera.position.copy(centre).add(back.normalize().multiplyScalar(distance))
@@ -2829,7 +2633,7 @@ const edits = createHistoryStore({
   },
   rebuildFromData: () => {
     deselect()
-    installEnvironment(doc?.environment())
+    view.installEnvironment(doc?.environment())
     meshes.buildAll()
     rebuildLoaded()
   },
@@ -2934,17 +2738,14 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     reopenWithRegistry()
     void refreshFileList()
   },
-  boundsBoxShown: () => showBoundsBox,
-  showBoundsBox: (on) => {
-    showBoundsBox = on
-    refreshBoundsBox()
-  },
+  boundsBoxShown: () => view.showBounds(),
+  showBoundsBox: (on) => view.setShowBounds(on),
   onNetBoundsChanged: () => {
-    refreshBoundsBox()
+    view.refreshBoundsBox()
     edits.recordEdit('network bounds')
     uiChanged()
   },
-  boundsReach,
+  boundsReach: () => view.boundsReach(),
   /**
    * The header's active checkbox (ADR 0099, moved to the Inspector by ADR 0102). A structural change: what
    * the level contains just changed, so the physics world, the markers and the drawn items are all rebuilt,
@@ -2961,7 +2762,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   },
   onEnvironmentChanged: () => {
     // Elevation and azimuth move the sky as well as the light, so this rebakes rather than just relighting.
-    installEnvironment(doc?.environment())
+    view.installEnvironment(doc?.environment())
     edits.recordEdit('environment')
     uiChanged()
   },
@@ -3150,7 +2951,7 @@ const relayout = (): void => {
     relayoutQueued = false
     stage.resize()
     // `stage.resize` only knows the perspective camera; this one is the editor's.
-    if (isometric) syncOrthoFrustum((orthoCamera.top - orthoCamera.bottom) / 2)
+    if (view.isometric()) view.syncOrthoFrustum(view.orthoHalfHeight())
     const size = stage.renderer.getSize(new THREE.Vector2())
     postfx.setSize(size.x, size.y)
   })
@@ -3202,7 +3003,7 @@ stage.start((dt) => {
      * its speed, so there is no single length to wrap to, and level time in the game does not wrap either.
      */
     motion.frame()
-    viewGizmo.update(dt)
+    view.update(dt)
     controls.update()
   }
 })
