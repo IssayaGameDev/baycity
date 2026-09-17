@@ -11,7 +11,7 @@ import {
   // Aliased: this file is DOM-heavy and `Node` is taken. A scene node is not a DOM node, and the day the two
   // are confused the error is a type error somewhere unrelated.
   type Level,
-  type Transform, validateLevel, type NodeRef,
+  validateLevel, type NodeRef,
   BUILTIN_LABELS, BUILTIN_MODELS,
   isSegment, parseQualified, qualify } from '@mp/content'
 
@@ -26,10 +26,9 @@ import {
   OrbitControls,
   createAssetRuntime,
   THREE,
-  TransformControls,
   type AssetRuntime,
 } from '@mp/render-three'
-import { componentTypesInRaw, levelDoc, type Doc, type LocalPose, type Mode } from './editorDoc'
+import { componentTypesInRaw, levelDoc, type Doc, type Mode } from './editorDoc'
 import { createContextMenu, type ContextMenu } from './menu'
 import { askName } from './confirm'
 import {
@@ -58,7 +57,6 @@ import { canMoveFolder, movedInto } from './assetTree'
 import { createPreviews, type Previews } from './previews'
 import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
 import { createProjectPanel, type Project } from './projectPanel'
-import { cornerSnapDelta, snapAnglesDeg, worldHalfExtents } from './snap'
 import { createHistoryStore } from './historyStore'
 import { createItemMeshes } from './itemMeshes'
 import { createLiveSession } from './liveSession'
@@ -67,6 +65,7 @@ import { createFileActions } from './fileActions'
 import { createMotionPreview } from './motionPreview'
 import { createMenus } from './menus'
 import { createNodeActions } from './nodeActions'
+import { createGizmoTool } from './gizmoTool'
 import { createPickTool } from './pickTool'
 import { createPrefabActions } from './prefabActions'
 import { createPlay } from './play'
@@ -74,7 +73,7 @@ import { applySelect, clampTo, primaryOf, type SelectMode } from './selection'
 import { createShortcuts } from './shortcuts'
 import { createSplitter, readPx, writePx } from './splitter'
 import { MODES, MODE_LIST, modeOf, soleMode } from './modes'
-import { createToolbar, type GizmoMode, type GizmoSpace, type Toolbar } from './toolbar'
+import { createToolbar, type Toolbar } from './toolbar'
 
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector<T>(sel)!
 const canvas = $<HTMLCanvasElement>('#view')
@@ -274,8 +273,8 @@ const room = createLiveSession({
   deselect: () => deselect(),
   groupAt: (i) => meshes.groupAt(i),
   holderOf: (g) => meshes.holderOf(g),
-  groupPose: (g) => groupPose(g),
-  gizmoDragging: () => gizmoDragging,
+  groupPose: (g) => tool.groupPose(g),
+  gizmoDragging: () => tool.dragging(),
   playing: () => play.active(),
   applyPreviewPoses: () => motion.applyPoses(),
   rebuildViewport: () => {
@@ -338,30 +337,33 @@ let hydratedPrefabs: string[] = []
 let runtime: AssetRuntime | null = null
 let selectedAsset: string | null = null
 /**
- * Snap increments, **one per tool** (ADR 0114).
- *
- * One number cannot serve three: 0.5 is a sensible grid in metres, a useless one in degrees, and a coarse one
- * for scale. Unity and Blender both keep three, and the toolbar shows only the active tool's so it does not
- * grow three fields wide.
- *
- * `rotate` is in **degrees** — what the field shows and what a person thinks in; the radians are the gizmo's
- * business.
+ * The transform gizmo (`gizmoTool.ts`, ADR 0121): the handles, what they snap to, and how a drag reaches
+ * the document. It owns `edit`, the pose each item held when the drag began, and the two drag flags.
  */
-const STEP_LIMITS: Record<GizmoMode, { min: number; max: number; grain: number; unit: string }> = {
-  translate: { min: 0.05, max: 10, grain: 0.05, unit: 'm' },
-  rotate: { min: 1, max: 90, grain: 1, unit: '°' },
-  scale: { min: 0.05, max: 5, grain: 0.05, unit: '×' },
-  face: { min: 0.05, max: 10, grain: 0.05, unit: 'm' },
-}
-
-const edit: { mode: GizmoMode; snap: boolean; steps: Record<GizmoMode, number>; space: GizmoSpace } = {
-  mode: 'translate',
-  snap: true,
-  steps: { translate: 0.5, rotate: 15, scale: 0.1, face: 0.5 },
-  // Which frame the handles point along. Three forces `local` for scale and `world` for the free-rotate
-  // ring, exactly as Unity does, so this only ever changes what it can.
-  space: 'world',
-}
+const tool = createGizmoTool({
+  stage,
+  canvas,
+  controls,
+  scene: stage.scene,
+  instanceRoot: () => instanceRoot,
+  doc: () => doc,
+  selection: () => selection,
+  selected: () => selected,
+  groupAt: (i) => meshes.groupAt(i),
+  rebuildSubtree: (i) => meshes.rebuildSubtree(i),
+  rebuildLoaded: () => rebuildLoaded(),
+  playing: () => play.active(),
+  previewMs: () => motion.timeMs(),
+  motionOffsetAt: (index, timeMs) => motion.offsetAt(index, timeMs),
+  clearFaceHover: () => pick.clearFaceHover(),
+  edits: () => edits,
+  room,
+  inspectorSync: () => inspectorSync(),
+  uiChanged: () => uiChanged(),
+  setStatus: (message) => setStatus(message),
+})
+const edit = tool.edit
+const STEP_LIMITS = tool.stepLimits
 
 /** Asset id of the prefab open in prefab mode, or `null` for a level or an unsaved prefab. */
 
@@ -383,7 +385,7 @@ const meshes = createItemMeshes({
   // Each of these reads the groups that were just replaced, and none of them is that module's business.
   afterBuild: () => {
     motion.applyPoses()
-    reattachGizmo()
+    tool.reattach()
     room.rebuildHolds()
     view.refreshBoundsBox()
   },
@@ -611,7 +613,7 @@ const view = createCameraView({
   useCamera: (camera) => {
     postfx.setCamera(camera)
     controls.object = camera
-    gizmo.camera = camera
+    tool.control.camera = camera
   },
   applyEnvironment: (from) => {
     env.applyEnvironment(from)
@@ -623,141 +625,6 @@ const view = createCameraView({
   uiChanged: () => uiChanged(),
 })
 stage.scene.add(view.boundsBox)
-
-const gizmo = new TransformControls(stage.camera, canvas)
-/**
- * Translation and scale snap to an **absolute** grid anchored at zero, which is what `TransformControls` does
- * for both: `Math.round(v / snap) * snap`.
- *
- * Rotation is left to us (ADR 0114). Three snaps `rotationAngle` — how far the drag has turned — not the
- * angle it lands on, so an object sitting at 7° goes to 22°, 37°, 52° and can never reach 15° or 30°. That
- * is a grid anchored to wherever you started, and it means snapping cannot straighten anything. `snapRotation`
- * below does it absolutely instead.
- */
-const applySnap = (): void => {
-  // Translation and rotation are ours: three snaps a position's **centre** and a rotation's **delta**, and
-  // neither is what snapping is for (ADR 0114, ADR 0117). Scale it does absolutely, which is right.
-  gizmo.setTranslationSnap(null)
-  gizmo.setRotationSnap(null)
-  gizmo.setScaleSnap(edit.snap ? edit.steps.scale : null)
-}
-
-/**
- * Snap the primary's **minimum corner** to the grid, not its centre (ADR 0117).
- *
- * Snapping the centre made half of all sizes wrong: a box three cells wide, centred on a grid line, has its
- * edges halfway between lines, so its end cells are half covered — which is where keycaps hung over a
- * platform's edge. The edge is what meets the next platform; the centre is a number nobody looks at.
- *
- * The corner is of the **world axis-aligned** box, so a wall rotated on its edge snaps by the face you are
- * butting against something. Snapped in world space and converted back through the parent, so a child of a
- * moved or rotated group lands where the grid is rather than where its parent's frame happens to put it.
- *
- * Only the primary; `mirrorDragToSelection` gives the others its delta, as translation always has.
- */
-const snapTranslation = (): void => {
-  if (edit.mode !== 'translate' || !edit.snap || selected === null) return
-  const g = meshes.groupAt(selected)
-  const step = edit.steps.translate
-  if (g === undefined || step <= 0) return
-  g.updateWorldMatrix(true, false)
-  const world = new THREE.Vector3()
-  const quat = new THREE.Quaternion()
-  const scale = new THREE.Vector3()
-  g.matrixWorld.decompose(world, quat, scale)
-  // A built-in shape is a unit box at scale 1 (ADR 0090), so the world scale *is* the size in metres.
-  const half = worldHalfExtents(new THREE.Matrix4().makeRotationFromQuaternion(quat).elements, {
-    x: Math.abs(scale.x) / 2,
-    y: Math.abs(scale.y) / 2,
-    z: Math.abs(scale.z) / 2,
-  })
-  const min = { x: world.x - half.x, y: world.y - half.y, z: world.z - half.z }
-  const d = cornerSnapDelta(min, step)
-  if (d.x === 0 && d.y === 0 && d.z === 0) return
-  // The delta is a world translation; the group's position is in its parent's frame.
-  const parent = g.parent ?? instanceRoot
-  parent.updateWorldMatrix(true, false)
-  const before = parent.worldToLocal(world.clone())
-  const after = parent.worldToLocal(world.clone().add(new THREE.Vector3(d.x, d.y, d.z)))
-  g.position.add(after.sub(before))
-}
-
-/**
- * Snap the primary's rotation onto the absolute grid, per axis (ADR 0114).
- *
- * Per Euler axis rather than as a whole orientation: a gizmo drag turns about **one** ring, so the other two
- * angles are already whatever they were and rounding them changes nothing. The free-rotate ring turns about a
- * camera-facing axis, where this is an approximation — predictable, and the price of a snap that lands on
- * round angles at all.
- *
- * Only the primary, because `mirrorDragToSelection` hands the others its **delta**: that keeps a group's
- * relative angles, and it is what translation already does, where three snaps the primary and the rest follow.
- */
-const snapRotation = (): void => {
-  if (edit.mode !== 'rotate' || !edit.snap || selected === null) return
-  const g = meshes.groupAt(selected)
-  if (g === undefined) return
-  const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
-  const snapped = snapAnglesDeg(e, edit.steps.rotate)
-  g.quaternion.setFromEuler(new THREE.Euler(snapped.x, snapped.y, snapped.z, 'XYZ'))
-}
-stage.scene.add(gizmo.getHelper())
-
-/**
- * Point the gizmo at the primary's group, or at nothing.
- *
- * `meshes.buildAll` replaces every group, so anything holding one is stale the moment it returns — and a gizmo
- * holding a group that is no longer in the scene throws on the next click ("the attached 3D object must be a
- * part of the scene graph", then a null `updateMatrixWorld` in `pointerDown`). Called at both of `meshes.buildAll`'
- * exits, so the invariant holds however it was reached: a redraw after an async asset load
- * (`loadNewReferences`) never went through a selection change, which is how the stale attachment survived.
- */
-const reattachGizmo = (): void => {
-  // Face is not a `TransformControls` mode (ADR 0119): the handles are the faces themselves, so the gizmo
-  // would only be three arrows in the way.
-  const g = selected === null || play.active() || edit.mode === 'face' ? undefined : meshes.groupAt(selected)
-  if (g === undefined) gizmo.detach()
-  else gizmo.attach(g)
-}
-
-/** Switch transform tool (toolbar buttons and the T/R/S keys are the same path). */
-const setMode = (mode: GizmoMode): void => {
-  edit.mode = mode
-  // `setMode` only knows the three it draws; Face detaches it instead (ADR 0119).
-  if (mode !== 'face') gizmo.setMode(mode)
-  pick.clearFaceHover()
-  reattachGizmo()
-  uiChanged()
-}
-
-const setSpace = (space: GizmoSpace): void => {
-  edit.space = space
-  gizmo.space = space
-  uiChanged()
-}
-
-// ============================== animation editing (ADR 0029) ==============================
-/**
- * The preview clock, in milliseconds of level time (ADR 0103).
- *
- * It poses **every** moving item, not only the selection: a preview is meant to show what the level does at
- * that instant, and a lift that stood still while the platform beside it moved would be worse than no
- * preview at all. That is also why it is one clock for the whole level rather than one per object — motion is
- * timed against other motion, and a staggered row is the thing you actually need to look at.
- */
-/**
- * What each selected item looked like when the current drag began.
- *
- * One job now: a multi-selection mirrors the primary's delta onto everything else, which is meaningless
- * without the pose each of them started from (ADR 0031). It used to have a second — snapshotting the keys of
- * an animated item, whose whole track was rewritten by a delta on every pointer event — and ADR 0050 removed
- * it, because an offset track moves by its transform and needs nothing to accumulate against.
- */
-interface DragStart {
-  pose: LocalPose
-  scale: Vec3
-}
-let dragStart = new Map<number, DragStart>()
 
 /**
  * The preview clock (`motionPreview.ts`, ADR 0103, ADR 0121). It owns the clock, whether it is running and
@@ -772,178 +639,6 @@ const motion = createMotionPreview({
   toolbarRender: () => toolbar.render(),
 })
 
-/** A drag has happened, so the click handler knows this pointerup was not a click. */
-let gizmoDragged = false
-/**
- * A drag is in flight, so the gizmo owns the selection's pose.
- *
- * Separate from `gizmoDragged`, which latches for the click handler. This one gates the *other* way into a
- * transform — the Inspector's numeric fields — because a typed value cannot legitimately arrive from a person
- * mid-drag, and letting one through mid-drag re-poses the item from the document underneath the drag.
- */
-let gizmoDragging = false
-gizmo.addEventListener('dragging-changed', (event) => {
-  const dragging = event.value as boolean
-  controls.enabled = !dragging
-  gizmoDragging = dragging
-  if (dragging) {
-    gizmoDragged = true
-    // One history entry per drag, recorded when it ends. `coalescing` holds `recordEdit` off while the hundred
-    // pointer events each report a transform op; the record at the end folds them into one.
-    edits.beginDrag()
-    room.startPresence()
-    dragStart = new Map()
-    if (doc !== null) {
-      for (const i of selection) {
-        const g = meshes.groupAt(i)
-        if (g === undefined) continue
-        dragStart.set(i, {
-          // Read off the group, not from `poseOf`, though at this instant they agree: every value compared
-          // against it later is also read off a group, so both sides share one rounding and one euler branch.
-          // Mixing the stored euler with a re-derived one leaves a residue in the delta that accumulates.
-          pose: groupPose(g),
-          scale: vec3(g.scale.x, g.scale.y, g.scale.z),
-        })
-      }
-    }
-  } else {
-    room.stopPresence()
-    // The whole drag as one op per node — what the history holds, and what the room gets.
-    edits.endDrag(selection.length > 1 ? `${edit.mode} ${selection.length}` : edit.mode)
-    dragStart = new Map()
-    rebuildLoaded()
-    room.drainDeferred()
-  }
-})
-gizmo.addEventListener('objectChange', () => {
-  // Before the write-back and before the mirror, so the document and the other selected items both see the
-  // snapped value rather than the raw one (ADR 0114, ADR 0117).
-  snapTranslation()
-  snapRotation()
-  writeBackSelected()
-  mirrorDragToSelection()
-  if (edit.mode === 'scale') for (const i of selection) meshes.rebuildSubtree(i)
-  inspectorSync()
-})
-
-/**
- * Apply the primary's drag delta to every other selected item (ADR 0031).
- *
- * Translation is a shared world delta, which is the obvious reading of dragging five platforms. Rotation and
- * scale apply the same **local** delta to each item about its own origin — they do *not* orbit the selection
- * about a shared pivot, which is what Unity does and what this deliberately is not: orbiting needs a pivot
- * object and a decision about where the pivot goes, and moving five things by the same amount is the case
- * that actually comes up when laying out a level.
- */
-const mirrorDragToSelection = (): void => {
-  if (selection.length < 2 || selected === null || doc === null) return
-  const primaryStart = dragStart.get(selected)
-  const primaryGroup = meshes.groupAt(selected)
-  if (primaryStart === undefined || primaryGroup === undefined) return
-
-  const now = groupPose(primaryGroup)
-  // Rotation as a local delta about each item's own origin, and scale as a ratio — a difference would be
-  // meaningless for scale, and a zero start would make the ratio meaningless too.
-  const dr = vec3(now.rotation.x - primaryStart.pose.rotation.x, now.rotation.y - primaryStart.pose.rotation.y, now.rotation.z - primaryStart.pose.rotation.z)
-  const ds = vec3(
-    primaryStart.scale.x === 0 ? 1 : primaryGroup.scale.x / primaryStart.scale.x,
-    primaryStart.scale.y === 0 ? 1 : primaryGroup.scale.y / primaryStart.scale.y,
-    primaryStart.scale.z === 0 ? 1 : primaryGroup.scale.z / primaryStart.scale.z,
-  )
-
-  /**
-   * Translation is shared in **world** space, then converted into each item's own parent frame.
-   *
-   * A local delta would only be right for items that share a parent. Selecting a top-level platform and a crate
-   * nested under a moving deck is ordinary, and their local frames differ by the deck's whole transform — so a
-   * local delta would send the crate somewhere unrelated to the drag.
-   */
-  const worldOf = (group: THREE.Object3D, local: Vec3): THREE.Vector3 => {
-    const parent = group.parent ?? instanceRoot
-    parent.updateWorldMatrix(true, false)
-    return parent.localToWorld(new THREE.Vector3(local.x, local.y, local.z))
-  }
-  const worldDelta = worldOf(primaryGroup, now.position).sub(worldOf(primaryGroup, primaryStart.pose.position))
-
-  for (const i of selection) {
-    if (i === selected) continue
-    const g = meshes.groupAt(i)
-    const start = dragStart.get(i)
-    if (g === undefined || start === undefined) continue
-
-    // Posed from the *start* pose plus the delta, never from the running one: a hundred pointer events during
-    // one drag must produce one offset, not a hundred compounding ones.
-    const parent = g.parent ?? instanceRoot
-    parent.updateWorldMatrix(true, false)
-    const target = parent.worldToLocal(worldOf(g, start.pose.position).add(worldDelta))
-    g.position.copy(target)
-    const q = eulerToQuat(vec3(start.pose.rotation.x + dr.x, start.pose.rotation.y + dr.y, start.pose.rotation.z + dr.z))
-    g.quaternion.set(q.x, q.y, q.z, q.w)
-    g.scale.set(start.scale.x * ds.x, start.scale.y * ds.y, start.scale.z * ds.z)
-    writeBackItem(i)
-  }
-}
-
-/**
- * Where a gizmo drag lands, per item (ADR 0103).
- *
- * Always on the node's **authored transform** — there is nothing else a drag could mean now that motion is a
- * speed rather than a path with handles in the viewport.
- *
- * What it has to undo is the preview: while the clock runs, the group sits at rest **plus** its movers'
- * offset, so writing the group's pose straight back would bake that offset into the transform and the object
- * would walk across the level every time it was nudged mid-preview. Subtracting the offset is exact rather
- * than a delta against a snapshot, because a mover's offset depends on the clock and not on the transform
- * the drag is rewriting.
- */
-const writeBackItem = (index: number): void => {
-  if (doc === null) return
-  const g = meshes.groupAt(index)
-  if (g === undefined) return
-  const off = motion.offsetAt(index, motion.timeMs())
-  const t = transformOfGroup(g)
-  const rot = t.rotation ?? vec3(0, 0, 0)
-  doc.setTransform(index, {
-    position: vec3(r4(t.position.x - off.position.x), r4(t.position.y - off.position.y), r4(t.position.z - off.position.z)),
-    ...(isZeroRot(new THREE.Euler(rot.x - off.rotation.x, rot.y - off.rotation.y, rot.z - off.rotation.z))
-      ? {}
-      : { rotation: vec3(r4(rot.x - off.rotation.x), r4(rot.y - off.rotation.y), r4(rot.z - off.rotation.z)) }),
-    ...(t.scale !== undefined ? { scale: t.scale } : {}),
-  })
-}
-
-/** The primary's own write-back — what a gizmo drag or a typed Inspector value lands on first. */
-const writeBackSelected = (): void => {
-  if (selected !== null) writeBackItem(selected)
-}
-
-/**
- * A group's local pose as a `Transform`, with `rotation`/`scale` left out when they are the identity.
- *
- * Built and handed to `doc.setTransform` rather than mutating what `transformOf` returned: for an overridden
- * piece those are different objects, since reading gives the prefab's value and writing creates the
- * placement's own (ADR 0033).
- */
-const transformOfGroup = (g: THREE.Group): Transform => {
-  const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
-  return {
-    position: vec3(r4(g.position.x), r4(g.position.y), r4(g.position.z)),
-    ...(isZeroRot(e) ? {} : { rotation: vec3(r4(e.x), r4(e.y), r4(e.z)) }),
-    ...(isOne(g.scale) ? {} : { scale: vec3(r4(g.scale.x), r4(g.scale.y), r4(g.scale.z)) }),
-  }
-}
-
-const groupPose = (g: THREE.Group): LocalPose => {
-  const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
-  return { position: vec3(r4(g.position.x), r4(g.position.y), r4(g.position.z)), rotation: vec3(r4(e.x), r4(e.y), r4(e.z)) }
-}
-
-/**
- * How much of an item's drawn pose came from its movers, at the preview clock (ADR 0103).
- *
- * Measured as the difference between where the item is drawn and where it rests, rather than by evaluating
- * the motion again here — so it cannot drift from what `applyPreviewPoses` actually drew.
- */
 /**
  * Point the editor at a selection. Everything derived from it is refreshed here, so no caller has to remember
  * the list: the gizmo goes on the primary and the Inspector follows it.
@@ -965,7 +660,7 @@ const applySelection = (next: readonly number[]): void => {
   // Disarmed too: armed Record left running across a selection change would write keys onto the next object
   // you dragged, which is a surprise nobody asked for.
 
-  reattachGizmo()
+  tool.reattach()
 
   inspectorRebuild()
   uiChanged()
@@ -1000,7 +695,7 @@ const refuseHeld = (index: number): boolean => {
 const deselect = (): void => {
   selection = []
   selected = null
-  gizmo.detach()
+  tool.control.detach()
   inspectorRebuild()
   uiChanged()
   room.syncHolds()
@@ -1029,16 +724,14 @@ const pick = createPickTool({
   snapping: () => edit.snap,
   snapStep: () => edit.steps.translate,
   faceStep: () => edit.steps.face,
-  dragged: () => gizmoDragged,
-  setDragged: (value) => {
-    gizmoDragged = value
-  },
+  dragged: () => tool.dragged(),
+  setDragged: (value) => tool.setDragged(value),
   placing: () => placing,
   disarm: () => {
     placing = null
   },
   edits: () => edits,
-  writeBackItem: (index) => writeBackItem(index),
+  writeBackItem: (index) => tool.writeBackItem(index),
   rebuildMeshes: () => meshes.buildAll(),
   rebuildSubtree: (i) => meshes.rebuildSubtree(i),
   rebuildLoaded: () => rebuildLoaded(),
@@ -1115,9 +808,9 @@ const editorShortcuts = createShortcuts([
   },
   // The menu offers Focus with `F` beside it, so the key has to exist or the menu is lying.
   { id: 'focus', chords: ['f'], label: 'Focus the selection', run: () => nodes.focusSelection(), enabled: () => !play.active() && selection.length > 0 },
-  { id: 'translate', chords: ['t', 'g'], label: 'Translate tool', run: () => setMode('translate'), enabled: () => !play.active() },
-  { id: 'rotate', chords: ['r'], label: 'Rotate tool', run: () => setMode('rotate'), enabled: () => !play.active() },
-  { id: 'scale', chords: ['s'], label: 'Scale tool', run: () => setMode('scale'), enabled: () => !play.active() },
+  { id: 'translate', chords: ['t', 'g'], label: 'Translate tool', run: () => tool.setMode('translate'), enabled: () => !play.active() },
+  { id: 'rotate', chords: ['r'], label: 'Rotate tool', run: () => tool.setMode('rotate'), enabled: () => !play.active() },
+  { id: 'scale', chords: ['s'], label: 'Scale tool', run: () => tool.setMode('scale'), enabled: () => !play.active() },
   {
     id: 'cancel',
     chords: ['escape'],
@@ -1347,17 +1040,17 @@ const toolbar: Toolbar = createToolbar(
     newBlank: () => void createLevel(null),
     duplicate: () => void createLevel(fileState.name),
     back: prefabs.closePrefab,
-    setGizmo: setMode,
-    setSpace,
+    setGizmo: (mode) => tool.setMode(mode),
+    setSpace: (space) => tool.setSpace(space),
     setSnap: (on) => {
       edit.snap = on
-      applySnap()
+      tool.applySnap()
       refreshUi()
     },
     setStep: (step) => {
       // The active tool's own increment (ADR 0114); the other two keep theirs.
       edit.steps[edit.mode] = step
-      applySnap()
+      tool.applySnap()
       refreshUi()
     },
     setPlaying: (on) => {
@@ -2003,7 +1696,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
    * message to the room, the same way a gizmo drag across a selection does.
    */
   writeAxis: (field, axis, value) => {
-    if (doc === null || gizmoDragging || selection.length === 0) return
+    if (doc === null || tool.dragging() || selection.length === 0) return
     edits.beginDrag()
     try {
       for (const i of selection) {
@@ -2016,7 +1709,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
           e[axis] = THREE.MathUtils.degToRad(value)
           g.quaternion.setFromEuler(e)
         }
-        writeBackItem(i)
+        tool.writeBackItem(i)
         if (field === 'scale') meshes.rebuildSubtree(i)
       }
     } finally {
@@ -2029,8 +1722,8 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     inspector.sync()
   },
   writeTransform: (t) => {
-    // The gizmo is the authority while it is dragging: see `gizmoDragging`.
-    if (selected === null || gizmoDragging) return
+    // The gizmo is the authority while it is dragging: see `tool.dragging()`.
+    if (selected === null || tool.dragging()) return
     const g = meshes.groupAt(selected)
     if (g === undefined) return
     // No snapshot needed: an offset track's write-back is a subtraction, not a delta against the pose the
@@ -2039,7 +1732,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     const q = eulerToQuat(vec3(THREE.MathUtils.degToRad(t.rotationDeg.x), THREE.MathUtils.degToRad(t.rotationDeg.y), THREE.MathUtils.degToRad(t.rotationDeg.z)))
     g.quaternion.set(q.x, q.y, q.z, q.w)
     g.scale.set(t.scale.x, t.scale.y, t.scale.z)
-    writeBackSelected()
+    tool.writeBackSelected()
     meshes.rebuildSubtree(selected) // the scale may have changed, and the meshes are built from it
     edits.recordEdit('transform')
     motion.applyPoses() // the rest pose moved, so the item's drawn pose at the playhead moved with it
@@ -2234,7 +1927,7 @@ const reloadAssets = async (): Promise<void> => {
 
 // --- boot ---
 await initPhysics()
-applySnap()
+tool.applySnap()
 // Who you are, and the lock rules. A dev server answers `local`; the hosted one, whoever Access let in.
 me = await fetchMe().catch((e: unknown) => {
   setProblem(`who am I? ${String(e)} — restart pnpm dev:editor`)
