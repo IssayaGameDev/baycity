@@ -6,6 +6,7 @@ import type { Vec3 } from '@mp/core'
 
 import type { ActionBindings } from './actions'
 import type { SettingDecls } from './settings'
+import type { SurfaceGridOf } from './surface'
 
 /**
  * `@mp/mode` — what a **game** contributes to the platform, as one object.
@@ -144,6 +145,16 @@ export interface ModeDescriptor {
    * and nothing else could get a marker at all.
    */
   readonly gizmos: Readonly<Record<string, number>>
+  /**
+   * What this game would tile onto a box surface, for a tool to preview before the game has run (ADR 0120).
+   *
+   * The same seam as `gizmos` and for the same reason — a tool draws what only the game can describe — one
+   * step further along: a colour per component type, against a grid per surface. Keyboard's caps are
+   * generated at load, so without this an author places platforms with no way to see where the keys land.
+   *
+   * Absent means a game whose surfaces hold nothing generated, which is every game but keyboard.
+   */
+  readonly surfaceGrid?: SurfaceGridOf
   /** Where the character starts, before any progress. */
   /**
    * Where a player starts. `seed` spreads arrivals so two players do not stack — a player id in the game,
@@ -232,3 +243,5 @@ export const PLAYER_NODE_ID = 'player'
 
 export type { ActionBindings } from './actions'
 export { actionsHeld } from './actions'
+
+export { gridCells, gridMargin, type SurfaceGrid, type SurfaceGridOf } from './surface'

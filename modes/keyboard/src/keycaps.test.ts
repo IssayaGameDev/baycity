@@ -2,7 +2,7 @@ import { vec3 } from '@mp/core'
 import { THREE } from '@mp/render-three'
 import { describe, expect, it } from 'vitest'
 
-import { advancePress, boardOf, capsFor, capsUnder, DEFAULT_PRESS, glyphAt, MAX_SWEEP, sweepPoints, type KeyboardParams, type PressState } from './keycaps'
+import { advancePress, boardGrid, boardOf, capsFor, capsUnder, DEFAULT_KEY_GEOMETRY, DEFAULT_PRESS, glyphAt, keyGeometryFrom, keyboardGridOf, MAX_SWEEP, sweepPoints, type KeyboardParams, type PressState } from './keycaps'
 
 /**
  * Turning a standing character back into the caps under them (ADR 0069).
@@ -75,6 +75,77 @@ describe('tiling a board', () => {
     const { points } = placed(platform(vec3(0, 1, 0), half))
     // The geometry runs y 0…1 from its own base, so a cap's origin belongs exactly on the top face.
     for (const p of points.values()) expect(p.y).toBeCloseTo(1 + half.y, 9)
+  })
+})
+
+/**
+ * The grid the **editor** previews (ADR 0120).
+ *
+ * The point of these is that `boardGrid` and `boardOf` cannot drift: the editor draws from the first and the
+ * game tiles from the second, so a difference between them is a preview that lies about where the keys go.
+ */
+describe('the grid a face carries', () => {
+  it('agrees with the board the game tiles, cell for cell', () => {
+    for (const half of [vec3(4, 0.25, 3), vec3(2.5, 0.1, 2.5), vec3(0.45, 1, 7.3)]) {
+      const board = boardOf(platform(vec3(0, 1, 0), half), P)
+      const grid = boardGrid(vec3(half.x * 2, half.y * 2, half.z * 2), P)
+      expect(grid, `${half.x} x ${half.z}`).not.toBeNull()
+      expect({ cols: grid!.cols, rows: grid!.rows, startX: grid!.startX, startZ: grid!.startZ, pitch: grid!.pitch }).toEqual({
+        cols: board!.cols,
+        rows: board!.rows,
+        startX: board!.startX,
+        startZ: board!.startZ,
+        pitch: board!.pitch,
+      })
+    }
+  })
+
+  it('takes a full extent, not a half extent', () => {
+    // 4.2 m wide on a 0.6 pitch is 7 columns; reading it as a half extent would have said 3.
+    expect(boardGrid(vec3(4.2, 0.5, 0.6), P)!.cols).toBe(7)
+  })
+
+  it('reports the cell footprint, which is smaller than the pitch', () => {
+    expect(boardGrid(vec3(4.2, 0.5, 0.6), P)!.size).toBeCloseTo(0.6 * 0.88, 9)
+  })
+
+  it('has no grid for a face too small for one whole cell', () => {
+    expect(boardGrid(vec3(0.4, 0.5, 4), P)).toBeNull()
+    expect(boardGrid(vec3(4, 0.5, 0.4), P)).toBeNull()
+  })
+
+  /** A pitch of zero would divide by nothing and tile forever. */
+  it('has no grid without a pitch', () => {
+    expect(boardGrid(vec3(4, 0.5, 4), { ...P, pitch: 0 })).toBeNull()
+  })
+})
+
+describe('what the editor asks the game', () => {
+  const kb = (enabled?: boolean) => [{ id: 'k0', type: 'Keyboard', params: {}, ...(enabled === undefined ? {} : { enabled }) }]
+
+  it('gives a grid for a node carrying a Keyboard', () => {
+    expect(keyboardGridOf(kb(), vec3(4.5, 0.5, 4.5), { keyPitch: 0.9 })?.cols).toBe(5)
+  })
+
+  it('gives nothing for a node without one', () => {
+    expect(keyboardGridOf([{ id: 'm0', type: 'Mover', params: {} }], vec3(4.5, 0.5, 4.5), {})).toBeNull()
+  })
+
+  /** A switched-off component generates no caps, so it must preview none either. */
+  it('gives nothing for a switched-off Keyboard', () => {
+    expect(keyboardGridOf(kb(false), vec3(4.5, 0.5, 4.5), {})).toBeNull()
+  })
+
+  it('reads the live pitch, so the preview follows the Game row', () => {
+    const size = vec3(6, 0.5, 6)
+    expect(keyboardGridOf(kb(), size, { keyPitch: 1 })?.cols).toBe(6)
+    expect(keyboardGridOf(kb(), size, { keyPitch: 2 })?.cols).toBe(3)
+  })
+
+  it('falls back to the declared defaults for anything unset', () => {
+    expect(keyGeometryFrom({})).toEqual(DEFAULT_KEY_GEOMETRY)
+    expect(keyGeometryFrom(undefined)).toEqual(DEFAULT_KEY_GEOMETRY)
+    expect(keyGeometryFrom({ keyPitch: 'wide' })).toEqual(DEFAULT_KEY_GEOMETRY)
   })
 })
 

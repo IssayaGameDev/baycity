@@ -88,6 +88,7 @@ import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
 import { createProjectPanel, type Project } from './projectPanel'
 import { distanceAlongAxis, faceFromNormal, pulled, snappedPull, type Face } from './facePull'
 import { cornerSnapDelta, snapAnglesDeg, snapToGrid, worldHalfExtents } from './snap'
+import { gridQuads } from './surfaceGrid'
 import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
 import { createShortcuts } from './shortcuts'
 import { createSplitter, readPx, writePx } from './splitter'
@@ -815,6 +816,68 @@ const buildItemMeshes = (g: THREE.Group, i: number): void => {
     }
     holder.add(lightGizmo(light))
   }
+
+  buildSurfaceCells(holder, i, worldScale)
+}
+
+/**
+ * Whether the key/cell preview is on (ADR 0120). `null` when the open level's game describes no grid, which
+ * is what hides the toolbar button rather than leaving a dead one.
+ */
+let showCells = true
+const cellsToggle = (): boolean | null => (activeMode?.surfaceGrid === undefined ? null : showCells)
+
+/** One flat square per cell, shared by every board: the geometry and the material are built once. */
+const CELL_GEOMETRY = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2)
+const CELL_MATERIAL = new THREE.MeshBasicMaterial({
+  color: 0x6fa8ff,
+  transparent: true,
+  opacity: 0.38,
+  // Written depth would z-fight the face it lies on, and it is a hint rather than a surface.
+  depthWrite: false,
+  toneMapped: false,
+  side: THREE.DoubleSide,
+})
+
+/**
+ * Draw the cells the active game would generate on this node's surface, inside its mesh holder (ADR 0120).
+ *
+ * Asked of the **game**, which decides from the node's own components whether this is one of its surfaces —
+ * the editor never learns what a `Keyboard` is. Built-in box and rounded box only: for those the collider is
+ * the unit shape and the scale is the size (ADR 0090), which is the only case where a node's scale *is* the
+ * surface. A sphere has no face, and an authored collider could sit anywhere on the node.
+ *
+ * Nothing here runs on a move or a turn — the holder is a child of the node's group, so three composes that.
+ * A size change rebuilds the item's meshes, and this rides along, so a face pull re-lays the cells live.
+ */
+const buildSurfaceCells = (holder: THREE.Group, i: number, worldSize: Vec3): void => {
+  const open = doc
+  const grid = activeMode?.surfaceGrid
+  if (open === null || grid === undefined || !showCells) return
+  const builtin = open.builtinOf(i)
+  if (builtin !== 'builtin:box' && builtin !== 'builtin:rounded-box') return
+  const described = grid(open.components(i), worldSize, gameData[activeMode?.name ?? '']?.settings ?? {})
+  if (described === null) return
+  const quads = gridQuads(described, worldSize)
+  if (quads.length === 0) return
+  const mesh = new THREE.InstancedMesh(CELL_GEOMETRY, CELL_MATERIAL, quads.length)
+  /**
+   * **Not pickable.** Picking raycasts the mesh holder, so without this the quads would swallow clicks — and
+   * worse, hand `faceUnder` a flat upward normal and break the face tool on every board (ADR 0119).
+   */
+  mesh.raycast = () => {}
+  mesh.castShadow = false
+  mesh.receiveShadow = false
+  const m = new THREE.Matrix4()
+  const one = new THREE.Quaternion()
+  quads.forEach((q, n) => {
+    m.compose(new THREE.Vector3(q.x, q.y, q.z), one, new THREE.Vector3(q.side, 1, q.side))
+    mesh.setMatrixAt(n, m)
+  })
+  mesh.instanceMatrix.needsUpdate = true
+  // Against the instances, not the unit quad at the mesh's origin, or a board is culled from most angles.
+  mesh.computeBoundingSphere()
+  holder.add(mesh)
 }
 
 const buildItems = (): void => {
@@ -2724,6 +2787,7 @@ const toolbar: Toolbar = createToolbar(
     live: live(),
     grid: grid.visible,
     markers: markerGroup.visible,
+    surfaceCells: cellsToggle(),
   }),
   {
     setName: (name) => {
@@ -2759,6 +2823,15 @@ const toolbar: Toolbar = createToolbar(
     },
     setMarkers: (on) => {
       markerGroup.visible = on
+      refreshUi()
+    },
+    /**
+     * The cells live inside each item's mesh holder (ADR 0120), so this is a rebuild rather than a `visible`
+     * flag: an invisible mesh is still raycast by three, and the alternative is tracking every one of them.
+     */
+    setSurfaceCells: (on) => {
+      showCells = on
+      buildItems()
       refreshUi()
     },
   },
@@ -3901,6 +3974,9 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     const have = gameData[mode.name] ?? { components: [], settings: {} }
     const next: GameData = { ...have, settings: { ...have.settings, [key]: value } }
     gameData[mode.name] = next
+    // A setting the game lays its surface cells out from — the key pitch (ADR 0120) — so the preview follows
+    // the field instead of the last reload. Cheap: only nodes the game claims build any.
+    if (mode.surfaceGrid !== undefined) buildItems()
     void saveGame(mode.name, next).then(
       () => setStatus(`${mode.label}: ${key} = ${Array.isArray(value) ? `${value.length} points` : value}`),
       (e: unknown) => setStatus(`settings save failed: ${String(e)}`),

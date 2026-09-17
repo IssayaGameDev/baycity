@@ -54,6 +54,14 @@ export interface ToolbarState {
   live: boolean
   grid: boolean
   markers: boolean
+  /**
+   * The cells a game would generate on a surface, drawn in place (ADR 0120).
+   *
+   * Its own toggle rather than riding `markers`: fitting platforms together is exactly when spawn discs and
+   * rule pillars are clutter, so the two are wanted at different times. `null` when the open level's game
+   * describes no surface grid, and the button is then hidden rather than dead.
+   */
+  surfaceCells: boolean | null
 }
 
 export interface ToolbarActions {
@@ -69,6 +77,7 @@ export interface ToolbarActions {
   setPlaying: (on: boolean) => void
   setPreviewing: (on: boolean) => void
   setGrid: (on: boolean) => void
+  setSurfaceCells: (on: boolean) => void
   setMarkers: (on: boolean) => void
 }
 
@@ -176,6 +185,11 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
   markerButton.title = 'spawn and gameplay-rule gizmos'
   markerButton.addEventListener('click', () => actions.setMarkers(!state().markers))
 
+  const cellsButton = el('button')
+  cellsButton.textContent = 'Keys'
+  cellsButton.title = 'where this game would generate cells on a surface — the keyboard’s caps (ADR 0120)'
+  cellsButton.addEventListener('click', () => actions.setSurfaceCells(state().surfaceCells !== true))
+
   // --- preview and play ---
   /**
    * One toggle for the whole level, not one per object: motion is timed against other motion, so a staggered
@@ -194,7 +208,7 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
     el('div', 'tb-sep'),
     group(seg, spaceButton, snapBox, snapLabel, stepInput, stepUnitLabel),
     el('div', 'tb-sep'),
-    group(gridButton, markerButton),
+    group(gridButton, markerButton, cellsButton),
     el('div', 'tb-sep'),
     group(previewButton, playButton),
   )
@@ -219,6 +233,9 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
 
     gridButton.classList.toggle('on', s.grid)
     markerButton.classList.toggle('on', s.markers)
+    // Hidden, not disabled: a game with nothing to preview has no use for the word.
+    cellsButton.hidden = s.surfaceCells === null
+    cellsButton.classList.toggle('on', s.surfaceCells === true)
 
     playButton.textContent = s.playing ? '■ Stop' : '▶ Play'
     playButton.classList.toggle('on', s.playing)
