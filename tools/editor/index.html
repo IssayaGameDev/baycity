@@ -421,13 +421,18 @@
         user-select: none;
       }
       /* Zebra striping, by **rendered** position rather than by depth or document index: what the eye counts
-         is the rows it can see, and a collapsed subtree removes them. Before `:hover` and `.sel` on purpose —
-         same specificity, so source order lets both of those win over the stripe.
+         is the rows it can see, and a collapsed subtree removes them.
+
+         The exclusion is `:where(:not(.env))`, not `:not(.env)`, and that is the whole point of the line:
+         `:not()` carries its argument's specificity, so `.row:not(.env):nth-child(even)` counts as three and
+         outranked `.row:hover` and `.row.sel` at two — the stripe won, and a hovered or selected row kept the
+         stripe's colour. `:where()` contributes nothing, so this is two, ties with both, and source order
+         (stripe first) lets hover and selection win.
 
          The Environment and Game rows are skipped: they are level settings above the tree, already set apart
          by their own rule, and striping them would make the first object's shade depend on whether they are
          there. They still count for `nth-child`, so the tree's alternation is stable. */
-      .row:not(.env):nth-child(even) {
+      .row:where(:not(.env)):nth-child(even) {
         background: var(--row-alt);
       }
       .row:hover {
