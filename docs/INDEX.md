@@ -167,6 +167,7 @@ why matters.
 | [0117](adr/0117-snapping-moves-the-corner.md) | Snapping moves the corner, not the centre |
 | [0118](adr/0118-the-keyboard-grid-goes-back-on-the-platform.md) | The keyboard grid goes back on the platform |
 | [0119](adr/0119-a-face-is-a-handle.md) | A face is a handle |
+| [0121](adr/0121-a-hill-is-followed-not-fallen-down.md) | A hill is followed, not fallen down |
 | [0120](adr/0120-a-game-describes-what-a-tool-draws.md) | A game describes what a tool draws |
 
 `Design archive/` holds superseded design material and is not maintained.

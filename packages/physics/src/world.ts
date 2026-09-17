@@ -145,8 +145,17 @@ export interface CharacterBody {
    * `ceiling` is the vertical counterpart of `grounded`: the step asked to rise and something
    * overhead was in the way. Read off contact normals rather than by comparing `applied.y` to
    * `desired.y`, because autostep and snap-to-ground both move the capsule vertically on their
-   * own and a shortfall alone cannot tell a roof from either of those. */
-  move: (desired: Vec3) => { grounded: boolean; applied: Vec3; ceiling: boolean }
+   * own and a shortfall alone cannot tell a roof from either of those.
+   *
+   * `snapAtLeast` (metres) raises the snap-to-ground distance for this one call, for a caller that knows
+   * it is asking for a descent a shortfall in would cost it its footing. A character following a slope
+   * downhill asks to drop a whole tick's worth at once, and the resolve occasionally comes back with only
+   * part of it — measured half of a 1.14 m descent, once in a 120-tick run down 40° at 40 m/s. The
+   * remainder is what snap-to-ground exists to absorb, but the default 0.4 m is shorter than one tick of
+   * descent from about 15 m/s up, so instead the gap opened, footing went with it, and the character arced
+   * 8 m off the hill (ADR 0121). Only ever widens it, and restores it before returning. Left unset the
+   * configured distance stands, so flat ground, ledges and steps are untouched. */
+  move: (desired: Vec3, snapAtLeast?: number) => { grounded: boolean; applied: Vec3; ceiling: boolean }
   /**
    * Cast straight down from the capsule's centre to find the surface it is standing on —
    * which collider, and where. Independent of `move`: the KCC only reports the contacts it
@@ -412,7 +421,11 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
         collider.setTranslation({ x: p.x, y: p.y, z: p.z })
         queriesStale = true
       },
-      move: (desired) => {
+      move: (desired, snapAtLeast) => {
+        // Widened for this call only, and put back before returning, so one caller's descent cannot
+        // change what the next one gets.
+        const wider = snapAtLeast !== undefined && snap !== false && snapAtLeast > snap ? snapAtLeast : undefined
+        if (wider !== undefined) controller.enableSnapToGround(wider)
         // `computedMovement` returns a view into WASM memory that the next call reuses — copy it.
         const resolve = (dy: number): Vec3 => {
           // `EXCLUDE_SENSORS` is what makes a trigger a trigger (ADR 0054). Rapier's character controller
@@ -457,9 +470,22 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
         ) {
           const retry = resolve(CONTACT_NUDGE)
           if (Math.hypot(retry.x, retry.z) > Math.hypot(c.x, c.z)) {
-            // Keep the nudge out of the result — it is there to un-stick the query, not to lift
-            // the character, which over many ticks would float it off the surface.
-            c = vec3(retry.x, Math.min(retry.y, 0), retry.z)
+            // **The nudge is subtracted, not clamped away.** It is there to un-stick the query,
+            // not to lift the character, which over many ticks would float it off the surface.
+            //
+            // `Math.min(retry.y, 0)` was the old reading and it clamped a genuine *climb* away
+            // along with the nudge: on an incline the retry's vertical is the nudge plus the rise,
+            // so a capsule walking uphill took its full horizontal and none of its rise, and was
+            // driven a little deeper into the hill every tick. Measured 150 m clean through a 17°
+            // slope at walking pace. Only slopes shallower than ~17.5° could reach it — a steeper
+            // normal leans `sin θ > 0.3` against the direction of travel, trips `blockedAlong`, and
+            // skips the retry outright — which is why it read as an occasional inexplicable sink.
+            //
+            // Two other readings were tried and measured worse, both on shallow uphills at walking
+            // pace: keeping the first attempt's `c.y` (0.33 m in) and rebuilding the vertical from
+            // `desired.y` in proportion to the horizontal recovered (1.09 m in). Subtracting leaves
+            // flat ground where it was, since there the retry's vertical *is* the nudge.
+            c = vec3(retry.x, retry.y - CONTACT_NUDGE, retry.z)
             grounded = controller.computedGrounded()
           }
         }
@@ -480,6 +506,7 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
           // reporting it as one would stop the fall.
           if (desired.y > 0 && hit !== null && hit.normal1.y < CEILING_NORMAL_MAX_Y) ceiling = true
         }
+        if (wider !== undefined && snap !== false) controller.enableSnapToGround(snap)
         return { grounded, applied: c, ceiling }
       },
       probeGround: (extraReach = 0) => {

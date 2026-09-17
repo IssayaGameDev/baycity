@@ -285,6 +285,21 @@ export interface CharacterState {
    */
   liftVel: Vec3
   liftStore: number
+  /**
+   * How far below the soles the ground probe may look, beyond its default reach, because last tick was
+   * spent descending a slope (ADR 0121). The length of that step, or 0.
+   *
+   * A descent's resolve occasionally comes up short, and the leftover gap can be wider than the probe's
+   * own 0.4 m: footing is lost while the character is in fact a few centimetres off a hill it is running
+   * down, and the arc that follows is the bounce-fall. Snap-to-ground closes the gap inside `move`, but
+   * only if footing survives long enough to ask for it, and footing is this probe. Measured at 58.8 m/s:
+   * a 10 degree descent drops 0.346 m a tick and still opened a 0.53 m gap.
+   *
+   * Conditioned on the previous tick rather than guessed from speed, for the same reason ADR 0042's deeper
+   * probe is conditioned on riding a base: on the flat, at any speed, the probe keeps its ordinary reach,
+   * so what a ledge does is unchanged.
+   */
+  slopeReach: number
 }
 
 const addVec = (a: Vec3, b: Vec3): Vec3 => vec3(a.x + b.x, a.y + b.y, a.z + b.z)
@@ -315,6 +330,7 @@ export const addCharacterWith = (world: PhysicsWorld, spawn: Vec3, opts: Partial
   jumpCut: false,
   liftVel: vec3(0, 0, 0),
   liftStore: 0,
+  slopeReach: 0,
   grounded: false,
   base: undefined,
   carry: vec3(0, 0, 0),
@@ -338,6 +354,7 @@ export const addCharacter = (world: PhysicsWorld, spawn: Vec3, layers?: Collisio
   jumpCut: false,
   liftVel: vec3(0, 0, 0),
   liftStore: 0,
+  slopeReach: 0,
   grounded: false,
   base: undefined,
   carry: vec3(0, 0, 0),
@@ -443,6 +460,7 @@ export const releaseFooting = (state: CharacterState): void => {
   state.carry = vec3(0, 0, 0)
   state.liftVel = vec3(0, 0, 0)
   state.liftStore = 0
+  state.slopeReach = 0
 }
 
 export const stepCharacter = (
@@ -457,7 +475,7 @@ export const stepCharacter = (
   // reports false for isolated ticks while resting (measured on a moving platform), which would
   // drop jumps and release the ride. The probe runs first, from where the character is now — the
   // platforms have already moved this tick — so `frame` is the pose to measure against.
-  let under = state.body.probeGround()
+  let under = state.body.probeGround(state.slopeReach)
   // A platform can descend faster than the probe reaches. The ray covers the snap distance — 0.4 m below
   // the feet — while a rider sits up to about a tick of travel behind a descending deck, so from roughly
   // 7 m/s down the lag plus one tick of drop is further than the ray goes: footing vanishes, gravity takes
@@ -777,13 +795,77 @@ export const stepCharacter = (
    * turning, which a downward contact says nothing about.
    */
   const seatY = riding && under !== undefined ? under.point.y + SEAT_OFFSET - feetY : undefined
+  /**
+   * **Following the ground instead of running off the front of it** (ADR 0121).
+   *
+   * Velocity is flat: `vx`/`vz` and nothing else, so on a slope every tick asked to move *horizontally* off a
+   * surface that is going down. The only thing holding the capsule to the hill was Rapier's snap-to-ground,
+   * a fixed 0.4 m, and once a tick's drop passed that the footing was gone: gravity, an arc, a landing, and
+   * the same thing again. Measured running down 30° for 4 s — airborne 41 % of ticks at 5.5 m/s, 90 % at
+   * 30 m/s, and one 155 m launch at 283 m/s. Small hops walking, the hill abandoned at speed.
+   *
+   * Neither obvious lever fixes it, both measured: a snap distance scaled to the tick's drop takes 90 % to
+   * 77 %, because snap only engages for a capsule that was *already* grounded, so one bad tick starts an arc
+   * nothing can interrupt; and eight sub-steps per tick make it **worse** (97 %), since the shortfall is not
+   * a resolution problem.
+   *
+   * So the height change is asked for rather than discovered. `dy` is exactly what keeps the soles on the
+   * plane the probe found — the plane through its contact with its normal — for this tick's horizontal
+   * travel. Downhill it descends, uphill it climbs.
+   *
+   * Uphill this is also what stops the sinking: pressing straight down into a rising surface and letting the
+   * controller slide the result up left the capsule 0.05–0.3 m inside the hill at every speed (and neither
+   * sub-stepping nor the contact-nudge retry was the cause — both tested and ruled out). Moving *along* the
+   * surface asks nothing of the contact offset.
+   *
+   * Only ever on footing that is staying put:
+   * - `!riding` — a mover's vertical belongs to its anchor and its contact (ADR 0105), not to a plane.
+   * - `settling` — footing, not leaving, not rising. A jump is `leaving` and gets the pure arc, so every
+   *   number in the envelope table is untouched, as is every airborne tick.
+   * - `state.grounded` — last tick's footing, the same reading the steering branch and air drag use. The
+   *   probe reaches 0.4 m below the soles, so the tick a fall first *sees* a slope it is still well above it;
+   *   following the plane from up there would maintain the gap and glide the character up the hill. One tick
+   *   of delay lands it first.
+   *
+   * `under.normal.y` needs no guard: `probeGround` returns nothing for a normal flatter than the 50° climb
+   * limit, so anything here is floor.
+   *
+   * Speed is not touched, by decision (ADR 0121): downhill grants none and uphill costs none, because Max
+   * Speed is what a Level buys and a hill that gives or takes speed moves a stage's gate.
+   */
+  const slopeDy =
+    state.grounded && settling && !riding && under !== undefined
+      ? -(under.normal.x * state.vx * dt + under.normal.z * state.vz * dt) / under.normal.y
+      : 0
   const desired = {
     x: state.vx * dt + (riding ? ride!.x : 0),
-    y: riding ? (seatY ?? ride!.y) : (settling ? state.vy : 0.5 * (vyStart + state.vy)) * dt,
+    y: riding ? (seatY ?? ride!.y) : slopeDy + (settling ? state.vy : 0.5 * (vyStart + state.vy)) * dt,
     z: state.vz * dt + (riding ? ride!.z : 0),
   }
 
-  const { grounded, applied, ceiling } = state.body.move(desired)
+  /**
+   * **Descending, the step's own length is offered as the snap distance.**
+   *
+   * The resolve occasionally delivers only part of a step — the same intermittency `CONTACT_NUDGE`
+   * documents, seen on the vertical: measured once in a 120-tick run down 40° at 40 m/s, half of a 1.14 m
+   * descent arrived. Snap-to-ground is exactly what absorbs a shortfall like that, but its default 0.4 m
+   * is shorter than one tick of descent from about 15 m/s up, so instead a gap opened, the probe could no
+   * longer reach the surface, footing went with it, and the character arced 8 m off the hill before
+   * gravity brought it back. That was the last of the bounce-falling.
+   *
+   * The length of the whole requested step, not the descent alone, because the shortfall scales with the
+   * step and not with its tilt: a 10° descent at 58.8 m/s drops only 0.346 m a tick and still needed a
+   * metre of snap to stay glued, while 15° at the same speed never faltered. Which angles fault at which
+   * speed is Rapier's business and not a pattern worth modelling — being generous by one step's length is.
+   *
+   * Only while `slopeDy` is descending, so flat ground, ledges, steps and every climb keep the configured
+   * 0.4 m and nothing outside a downhill can feel it.
+   */
+  // The step's own length, kept for `move`'s snap distance and for next tick's probe reach. Both want the
+  // same number, and both want it only on a descent.
+  const slopeStep = slopeDy < 0 ? Math.hypot(desired.x, desired.y, desired.z) : 0
+  const { grounded, applied, ceiling } = state.body.move(desired, slopeStep > 0 ? slopeStep : undefined)
+  state.slopeReach = slopeStep
 
   // Everything the controller resolved horizontally that locomotion did not ask for: the ride, a
   // sweeping piece's shove, and a wall taking momentum away. Vertically it is the ride alone —

@@ -53,7 +53,7 @@ interface CharacterOptions { position; radius; halfHeight; offset?; snapToGround
 interface CharacterBody {
   colliderHandle
   translation(); setPosition(p)          // setPosition also syncs the collider immediately
-  move(desired: Vec3): { grounded; applied: Vec3; ceiling }
+  move(desired: Vec3, snapAtLeast?: number): { grounded; applied: Vec3; ceiling }
   probeGround(extraReach?): GroundContact | undefined   // { colliderHandle, point, normal }
   collisions(): number[]                 // solids contacted during the last move
   overlaps(): number[]                   // sensors currently overlapped (ADR 0054)
@@ -71,10 +71,12 @@ Defaults and constants (`world.ts`):
 | `MAX_SLOPE_CLIMB_RAD` | 50° (also `probeGround`'s floor-normal threshold) |
 | min slope slide angle | 45° |
 | `CEILING_NORMAL_MAX_Y` | −0.5 — `ceiling` only while `desired.y > 0` |
-| `CONTACT_NUDGE` | 0.0005 m — `move` retries once with this vertical when a resting step resolves to < 90 % of its horizontal and nothing is blocking along it; the nudge is clamped out of the result |
+| `CONTACT_NUDGE` | 0.0005 m — `move` retries once with this vertical when a resting step resolves to < 90 % of its horizontal and nothing is blocking along it; the nudge is **subtracted** from the result, not clamped to zero (ADR 0121) |
 | `GROUND_PROBE_FALLBACK` | 0.05 m reach when `snapToGround === false` |
 
 - `probeGround` reach = `halfHeight + radius + snap + extraReach`, ray from the capsule centre, own collider excluded. Caller must check `colliderHandle` when passing `extraReach` (ADR 0042).
+- `move`'s `snapAtLeast` raises snap-to-ground for that one call and is restored afterwards; only ever widened, never narrowed. For a caller asking for a descent a shortfall in would cost it its footing — a character following a slope downhill (ADR 0121). Unset, the configured distance stands.
+- **A step's resolve is not reliable.** Rapier returns part of a step intermittently — `CONTACT_NUDGE` has it at 33 of 200 ticks on the horizontal, and it happens on the vertical too (half of a 1.14 m descent, once in a 120-tick run). Anything asking for a large single-tick translation needs a recovery path; snap-to-ground is it, which is what `snapAtLeast` exists to size.
 - `collisions()` and `overlaps()` are disjoint; hosts concatenate them (`packages/tps/src/client.ts`: `components.contact([...collisions(), ...overlaps()])`).
 
 ## Sensors / triggers (ADR 0054)
