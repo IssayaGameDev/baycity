@@ -1,0 +1,188 @@
+{
+  "id": "root",
+  "name": "Boss",
+  "transform": {
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    }
+  },
+  "components": [],
+  "children": [
+    {
+      "id": "b23ad75b",
+      "name": "Ground",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 40,
+          "y": 1,
+          "z": 40
+        }
+      },
+      "components": [
+        {
+          "id": "3cfed622",
+          "type": "Renderer",
+          "params": {
+            "material": "55205761e38bc929"
+          }
+        },
+        {
+          "id": "ef79a853",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:rounded-box"
+          }
+        },
+        {
+          "id": "aac1df41",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "trigger": false
+          }
+        },
+        {
+          "id": "0ebcf91c",
+          "type": "Keyboard",
+          "params": {
+            "pitch": 0.9,
+            "fill": 0.88,
+            "height": 0.45,
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "e67565c1",
+      "name": "Boss",
+      "transform": {
+        "position": {
+          "x": -0.0309,
+          "y": 2,
+          "z": -0.0046
+        }
+      },
+      "components": [
+        {
+          "id": "22bb73a7",
+          "type": "Boss",
+          "params": {
+            "zone": "41ae6098",
+            "speed": 8,
+            "turn": 360
+          }
+        },
+        {
+          "id": "60ea7460",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:capsule"
+          }
+        },
+        {
+          "id": "c0ba838f",
+          "type": "Renderer",
+          "params": {
+            "material": "4a11d049f9f8e5ac"
+          }
+        },
+        {
+          "id": "ac8250d2",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "capsule",
+              "halfHeight": 0.5,
+              "radius": 0.5
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "trigger": true
+          }
+        },
+        {
+          "id": "508cc286",
+          "type": "Hazard",
+          "params": {}
+        }
+      ]
+    },
+    {
+      "id": "41ae6098",
+      "name": "Zone",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 12.5,
+          "z": 0
+        },
+        "scale": {
+          "x": 40,
+          "y": 25,
+          "z": 40
+        }
+      },
+      "components": [
+        {
+          "id": "c66f4fd1",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:rounded-box"
+          }
+        },
+        {
+          "id": "3bffcb0e",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "trigger": true
+          }
+        },
+        {
+          "id": "6f0a89ae",
+          "type": "Renderer",
+          "params": {
+            "material": ""
+          },
+          "enabled": false
+        }
+      ]
+    }
+  ]
+}
