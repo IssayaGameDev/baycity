@@ -263,6 +263,53 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     host.applySelection(host.selection())
     host.setStatus(`applied to ${name} — every level using it follows; undo puts this placement's override back`)
   }
+  /**
+   * Revert every override in the placement at `index` — the whole instance, not one piece (ADR 0122).
+   *
+   * The placement root carries no override of its own, so this is the only Revert that means anything when
+   * the prefab object itself is what you selected. One batch underneath, so it is one Ctrl+Z.
+   */
+  const revertPlacement = (index: number): void => {
+    const open = host.doc()
+    if (open === null) return
+    const count = open.placementOverrides(index).length
+    if (count === 0) return
+    open.revertPlacement(index)
+    host.edits().recordEdit('revert prefab overrides')
+    host.rebuildMeshes()
+    host.rebuildLoaded()
+    host.applySelection(host.selection())
+    host.setStatus(`reverted ${count} object${count === 1 ? '' : 's'} to the prefab`)
+  }
+
+  /**
+   * Push every override in the placement into the shared prefab (ADR 0122).
+   *
+   * The same two-room gesture as the per-piece Apply: the ops go to the prefab's own document, and the
+   * overrides here are dropped only if it took them. Every piece in one submission, so a partial failure
+   * cannot leave half the instance applied.
+   */
+  const applyPlacementOverrides = async (index: number): Promise<void> => {
+    const open = host.doc()
+    if (open === null) return
+    const plan = open.placementOverrideOps(index)
+    if (plan === null) return
+    const count = open.placementOverrides(index).length
+    const name = host.assets()?.db.byId[plan.assetId]?.name ?? 'the prefab'
+    const refused = await host.room.submitToPrefab(plan.assetId, plan.ops)
+    if (refused !== null) {
+      host.setStatus(`${name} did not take it: ${refused} — this placement is unchanged`)
+      return
+    }
+    if (host.doc() !== open) return // the document moved under the round trip
+    open.revertPlacement(index)
+    host.edits().recordEdit('apply to prefab')
+    host.rebuildMeshes()
+    host.rebuildLoaded()
+    host.applySelection(host.selection())
+    host.setStatus(`applied ${count} object${count === 1 ? '' : 's'} to ${name} — every level using it follows`)
+  }
+
   return {
     /** Edit the prefab behind a placement, in its own live room (ADR 0091). */
     enterPrefab,
@@ -279,5 +326,8 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     revertOverride,
     /** Push this placement's overrides into the prefab, for everyone (ADR 0091). */
     applyOverrides,
+    /** The same two, from the placement root, over every piece of it (ADR 0122). */
+    revertPlacement,
+    applyPlacementOverrides,
   }
 }

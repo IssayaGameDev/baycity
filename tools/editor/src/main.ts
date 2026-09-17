@@ -1762,6 +1762,8 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   },
   revertOverride: (field) => prefabs.revertOverride(field),
   applyOverrides: () => void prefabs.applyOverrides(),
+  revertPlacement: (index) => prefabs.revertPlacement(index),
+  applyPlacementOverrides: (index) => prefabs.applyPlacementOverrides(index),
   assetOptions: (of) => {
     const options: Record<string, string> = { '(none)': '' }
     // The built-in shapes (ADR 0090) sit in the model slot beside the uploaded files.

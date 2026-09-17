@@ -310,6 +310,22 @@ export interface Doc {
    * clears the override afterwards with `revert`.
    */
   overrideOpsFor: (i: number) => { assetId: string; ops: Op[] } | null
+  /**
+   * Every piece of the placement at `i` that carries an override, and what each one overrides.
+   *
+   * The placement **root** holds no override of its own and never will: its transform is its own, and an
+   * override is by definition a difference from the prefab, which only the inherited pieces have. So the
+   * root's answer to "has anything changed here" has to be asked of its pieces, which is what this does —
+   * Unity's Revert All / Apply All on an instance root. Empty for a node that is not a placement.
+   *
+   * Only pieces owned by **this** placement: a prefab containing a placement of another prefab has pieces
+   * owned by that inner one, and those belong to it.
+   */
+  placementOverrides: (i: number) => { index: number; fields: string[] }[]
+  /** Drop every override in a placement, in one batch — one undo entry, one message to the room. */
+  revertPlacement: (i: number) => void
+  /** Every override in a placement as one batch of ops for the prefab's own document (ADR 0091). */
+  placementOverrideOps: (i: number) => { assetId: string; ops: Op[] } | null
 
   // ---- motion -------------------------------------------------------------------------------------
   /**
@@ -1187,6 +1203,48 @@ const docOver = (
       }
       for (const c of over.added ?? []) ops.push({ kind: 'addComponent', id, component: structuredClone(c) })
       return { assetId: n.owner.prefab, ops }
+    },
+
+    placementOverrides: (i) => {
+      const root = node(i)
+      if (root?.authored.prefab === undefined) return []
+      const all = nodes()
+      const out: { index: number; fields: string[] }[] = []
+      for (let j = i + 1; j < subtreeEnd(i); j++) {
+        const piece = all[j]
+        // Owned by *this* placement: a nested placement's pieces are that placement's business.
+        if (piece?.owner?.id !== root.authored.id) continue
+        const fields = self.overridesOf(j)
+        if (fields.length > 0) out.push({ index: j, fields })
+      }
+      return out
+    },
+
+    revertPlacement: (i) => {
+      const root = node(i)
+      if (root?.authored.prefab === undefined) return
+      const all = nodes()
+      const ops: Op[] = []
+      for (const { index } of self.placementOverrides(i)) {
+        const piece = all[index]
+        if (piece?.owner === undefined) continue
+        ops.push({ kind: 'setNodeOverride', owner: piece.owner.id, node: piece.authored.id, override: null })
+      }
+      // One batch, so the whole revert is one undo press and the room sees one edit rather than a dozen.
+      if (ops.length > 0) commit(ops)
+    },
+
+    placementOverrideOps: (i) => {
+      const root = node(i)
+      const assetId = root?.authored.prefab
+      if (assetId === undefined) return null
+      const ops: Op[] = []
+      for (const { index } of self.placementOverrides(i)) {
+        const piece = self.overrideOpsFor(index)
+        // Same prefab by construction — the filter in `placementOverrides` already said so.
+        if (piece !== null) ops.push(...piece.ops)
+      }
+      return ops.length === 0 ? null : { assetId, ops }
     },
 
     poseOf: (i, timeMs) => {

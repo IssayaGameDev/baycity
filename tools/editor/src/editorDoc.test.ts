@@ -1305,3 +1305,86 @@ describe('reparenting is one edit', () => {
     expect(batches[0]!.ops.map((o) => o.kind)).toEqual(['moveNode'])
   })
 })
+
+/**
+ * Revert and Apply from the placement **root** (ADR 0122).
+ *
+ * The root holds no override of its own and never will \u2014 its transform is its own, and an override is a
+ * difference from the prefab, which only the inherited pieces have. So the root's answer to "has anything
+ * changed here" has to be asked of its pieces. Before this, right-clicking the prefab object offered Revert
+ * and Apply permanently greyed out, whatever you had edited inside it.
+ */
+describe('overrides across a whole placement', () => {
+  it('finds nothing when the placement matches its prefab', () => {
+    const { doc } = placed()
+    expect(doc.placementOverrides(0)).toEqual([])
+    expect(doc.placementOverrideOps(0)).toBeNull()
+  })
+
+  it('finds a piece the root itself knows nothing about', () => {
+    const { doc } = placed()
+    expect(doc.overridesOf(0), 'the root is not itself overridden').toEqual([])
+    doc.setTransform(1, { position: vec3(1, 2, 3) })
+    expect(doc.placementOverrides(0)).toEqual([{ index: 1, fields: ['transform'] }])
+  })
+
+  it('gathers every overridden piece', () => {
+    const { doc } = placed()
+    doc.setTransform(1, { position: vec3(1, 2, 3) })
+    doc.setName(1, 'moved')
+    const found = doc.placementOverrides(0)
+    expect(found).toHaveLength(1)
+    expect(found[0]!.fields).toEqual(['transform', 'name'])
+  })
+
+  it('is empty for a node that is not a placement', () => {
+    const { doc } = placed()
+    doc.setTransform(1, { position: vec3(1, 2, 3) })
+    expect(doc.placementOverrides(1), 'a piece is not a placement').toEqual([])
+  })
+
+  /** One batch, so the whole revert is one Ctrl+Z and the room sees one edit rather than a dozen. */
+  it('reverts every piece at once', () => {
+    const { doc } = placed()
+    doc.setTransform(1, { position: vec3(1, 2, 3) })
+    doc.setName(1, 'moved')
+    doc.revertPlacement(0)
+    expect(doc.placementOverrides(0)).toEqual([])
+    expect(doc.overridesOf(1)).toEqual([])
+  })
+
+  it('reverting a placement that matches its prefab writes nothing', () => {
+    const { level, doc } = placed()
+    const before = JSON.stringify(level)
+    doc.revertPlacement(0)
+    expect(JSON.stringify(level)).toBe(before)
+  })
+
+  /** Apply sends the pieces' ops to the prefab's own document, and names which prefab (ADR 0091). */
+  it('merges every piece into one batch of ops for the prefab', () => {
+    const { doc } = placed()
+    doc.setTransform(1, { position: vec3(1, 2, 3) })
+    doc.setName(1, 'moved')
+    const plan = doc.placementOverrideOps(0)
+    expect(plan?.assetId).toBe(PAD_ID)
+    expect(plan?.ops.map((o) => o.kind)).toEqual(['setTransform', 'setName'])
+  })
+
+  /** The two must agree, or the button is enabled with nothing to send, or disabled with something to say. */
+  it('offers ops exactly when it reports overrides', () => {
+    const { doc } = placed()
+    for (const step of [() => undefined, () => doc.setTransform(1, { position: vec3(1, 0, 0) }), () => doc.revertPlacement(0)]) {
+      step()
+      expect(doc.placementOverrideOps(0) === null).toBe(doc.placementOverrides(0).length === 0)
+    }
+  })
+
+  it('leaves a second placement of the same prefab alone', () => {
+    const doc = levelDoc(blank())
+    placeRef(doc, vec3(0, 0, 0))
+    placeRef(doc, vec3(8, 0, 0))
+    doc.setTransform(1, { position: vec3(1, 2, 3) })
+    expect(doc.placementOverrides(0)).toHaveLength(1)
+    expect(doc.placementOverrides(2), 'the sibling placement matches the prefab').toEqual([])
+  })
+})

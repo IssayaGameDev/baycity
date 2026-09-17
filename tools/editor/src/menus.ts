@@ -43,6 +43,9 @@ export interface MenuHost {
     saveAsPrefab: (index: number) => Promise<void>
     revertOverride: (field?: string) => void
     applyOverrides: () => Promise<void>
+    /** The same two over a whole placement, for the root, which holds no override of its own (ADR 0122). */
+    revertPlacement: (index: number) => void
+    applyPlacementOverrides: (index: number) => Promise<void>
   }
   /** Shared components the game has not opted into: picking one adds it to the game first (ADR 0077). */
   adoptable: () => readonly string[]
@@ -129,8 +132,50 @@ export const createMenus = (host: MenuHost) => {
         why: ref !== null ? 'already a prefab' : open.mode === 'prefab' ? 'already inside a prefab' : why,
         run: () => void host.prefabs.saveAsPrefab(index),
       },
-      { label: 'Revert to prefab', divider: true, enabled: inherited && open.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => host.prefabs.revertOverride() },
-      { label: 'Apply to prefab', enabled: inherited && open.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => void host.prefabs.applyOverrides() },
+      ...overrideItems(index, inherited, ref !== null),
+    ]
+  }
+
+  /**
+   * Revert and Apply, scoped to what was right-clicked (ADR 0122).
+   *
+   * Two scopes, because overrides are stored per **piece** and the placement **root** has none of its own. On
+   * the root the pair therefore acts on the whole instance, which is Unity's Revert All / Apply All and what
+   * an author means by right-clicking the prefab object; on a piece it acts on that piece alone. The label
+   * says which, and the count on the right says how much — a menu entry that reads the same at two scopes is
+   * how you apply more than you meant to.
+   *
+   * Before this the pair asked only the clicked node, so on the root it was permanently greyed with
+   * "nothing overridden here" while the pieces inside it were full of changes.
+   */
+  const overrideItems = (index: number, inherited: boolean, isPlacement: boolean): MenuItem[] => {
+    if (isPlacement) {
+      const changed = host.doc()?.placementOverrides(index) ?? []
+      const objects = changed.length
+      const total = changed.reduce((n, o) => n + o.fields.length, 0)
+      return [
+        {
+          label: 'Revert all to prefab',
+          divider: true,
+          ...(objects === 0 ? {} : { hint: `${objects} object${objects === 1 ? '' : 's'}` }),
+          enabled: objects > 0,
+          why: 'this prefab matches — nothing has been changed inside it',
+          run: () => host.prefabs.revertPlacement(index),
+        },
+        {
+          label: 'Apply all to prefab',
+          ...(objects === 0 ? {} : { hint: `${total} change${total === 1 ? '' : 's'}` }),
+          enabled: objects > 0,
+          why: 'this prefab matches — nothing has been changed inside it',
+          run: () => void host.prefabs.applyPlacementOverrides(index),
+        },
+      ]
+    }
+    const fields = inherited ? (host.doc()?.overridesOf(index) ?? []) : []
+    const why = inherited ? 'this object matches the prefab' : 'not part of a prefab'
+    return [
+      { label: 'Revert to prefab', divider: true, enabled: fields.length > 0, why, run: () => host.prefabs.revertOverride() },
+      { label: 'Apply to prefab', enabled: fields.length > 0, why, run: () => void host.prefabs.applyOverrides() },
     ]
   }
 
