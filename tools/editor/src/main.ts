@@ -6,19 +6,15 @@ import {
   RENDERER,
   type PrefabSource,
   hydratePrefabs,
-  stripHydrated,
-  unlinkPrefab,
   type ComponentData,
   type LoadedLevel,
   // Aliased: this file is DOM-heavy and `Node` is taken. A scene node is not a DOM node, and the day the two
   // are confused the error is a type error somewhere unrelated.
   type Level,
-  type Transform, validateLevel, type NodeRef,
-  BUILTIN_LABELS, BUILTIN_MODELS, PRIMITIVE_LABELS, PRIMITIVE_ORDER, type PrimitiveKind, type EnvironmentConfig,
+  validateLevel, type NodeRef,
+  BUILTIN_LABELS, BUILTIN_MODELS,
   isSegment, parseQualified, qualify } from '@mp/content'
-import { QUANT_BOUND } from '@mp/net'
 
-import { createViewGizmo } from './viewGizmo'
 import { DEFAULT_REGISTRY, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type Registry } from '@mp/components'
 import { type ModeDescriptor, readSettings } from '@mp/mode'
 import { eulerToQuat, vec3, type Vec3 } from '@mp/core'
@@ -30,16 +26,13 @@ import {
   OrbitControls,
   createAssetRuntime,
   THREE,
-  TransformControls,
   type AssetRuntime,
 } from '@mp/render-three'
-import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type Doc, type LocalPose, type Mode } from './editorDoc'
-import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
-import { askDestructive, askName } from './confirm'
-import { prefabFolder, prefabTarget, sanitisePrefabName } from './prefabPath'
+import { componentTypesInRaw, levelDoc, type Doc, type Mode } from './editorDoc'
+import { createContextMenu, type ContextMenu } from './menu'
+import { askName } from './confirm'
 import {
   acquireLock,
-  deleteLevel as apiDeleteLevel,
   heartbeatLocks,
   listFiles,
   loadGame,
@@ -48,7 +41,6 @@ import {
   me as fetchMe,
   releaseLock,
   releaseLockBeacon,
-  renameLevel as apiRenameLevel,
   saveFile,
   saveGame,
   serverStatus,
@@ -61,21 +53,27 @@ import { createHierarchy, type Hierarchy } from './hierarchy'
 import { createInspector, type Inspector } from './inspector'
 import { createAssetInspector, type AssetInspector } from './assetInspector'
 import { loadAssetLibrary, type AssetLibrary } from './assetsApi'
-import { canMoveFolder, movedInto, renamedTo } from './assetTree'
+import { canMoveFolder, movedInto } from './assetTree'
 import { createPreviews, type Previews } from './previews'
 import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
 import { createProjectPanel, type Project } from './projectPanel'
-import { distanceAlongAxis, faceFromNormal, pulled, snappedPull, type Face } from './facePull'
-import { cornerSnapDelta, snapAnglesDeg, snapToGrid, worldHalfExtents } from './snap'
 import { createHistoryStore } from './historyStore'
 import { createItemMeshes } from './itemMeshes'
 import { createLiveSession } from './liveSession'
+import { createCameraView } from './cameraView'
+import { createFileActions } from './fileActions'
+import { createMotionPreview } from './motionPreview'
+import { createMenus } from './menus'
+import { createNodeActions } from './nodeActions'
+import { createGizmoTool } from './gizmoTool'
+import { createPickTool } from './pickTool'
+import { createPrefabActions } from './prefabActions'
 import { createPlay } from './play'
-import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
+import { applySelect, clampTo, primaryOf, type SelectMode } from './selection'
 import { createShortcuts } from './shortcuts'
 import { createSplitter, readPx, writePx } from './splitter'
 import { MODES, MODE_LIST, modeOf, soleMode } from './modes'
-import { createToolbar, type GizmoMode, type GizmoSpace, type Toolbar } from './toolbar'
+import { createToolbar, type Toolbar } from './toolbar'
 
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector<T>(sel)!
 const canvas = $<HTMLCanvasElement>('#view')
@@ -97,18 +95,7 @@ const grid = new THREE.GridHelper(80, 80, 0x475569, 0x1f2937)
 ;(grid.material as THREE.Material).opacity = 0.5
 const axes = new THREE.AxesHelper(3)
 
-/**
- * The network bounds, drawn (ADR 0093): the cube a peer's position is quantized over, centred on the origin.
- *
- * Off unless asked for. A level is almost always well inside it, so left on it would be a red box around
- * everything forever; the reason to draw it at all is the half-hour when someone is deciding how big it
- * should be, or checking that a level which grew still fits.
- */
-const boundsBox = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color(0xef4444))
-boundsBox.visible = false
-let showBoundsBox = false
-
-stage.scene.add(grid, axes, boundsBox)
+stage.scene.add(grid, axes)
 
 // --- editor state ---
 let world: PhysicsWorld | null = null
@@ -286,17 +273,17 @@ const room = createLiveSession({
   deselect: () => deselect(),
   groupAt: (i) => meshes.groupAt(i),
   holderOf: (g) => meshes.holderOf(g),
-  groupPose: (g) => groupPose(g),
-  gizmoDragging: () => gizmoDragging,
+  groupPose: (g) => tool.groupPose(g),
+  gizmoDragging: () => tool.dragging(),
   playing: () => play.active(),
-  applyPreviewPoses: () => applyPreviewPoses(),
+  applyPreviewPoses: () => motion.applyPoses(),
   rebuildViewport: () => {
     meshes.buildAll()
     rebuildLoaded()
   },
   rebuildSubtree: (i) => meshes.rebuildSubtree(i),
   scheduleRebuild: () => scheduleRebuild(),
-  installEnvironment: (config) => installEnvironment(config),
+  installEnvironment: (config) => view.installEnvironment(config),
   loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
   invalidatePreviews: () => previews.invalidate(),
   hierarchyRender: () => hierarchy.render(),
@@ -350,30 +337,33 @@ let hydratedPrefabs: string[] = []
 let runtime: AssetRuntime | null = null
 let selectedAsset: string | null = null
 /**
- * Snap increments, **one per tool** (ADR 0114).
- *
- * One number cannot serve three: 0.5 is a sensible grid in metres, a useless one in degrees, and a coarse one
- * for scale. Unity and Blender both keep three, and the toolbar shows only the active tool's so it does not
- * grow three fields wide.
- *
- * `rotate` is in **degrees** — what the field shows and what a person thinks in; the radians are the gizmo's
- * business.
+ * The transform gizmo (`gizmoTool.ts`, ADR 0121): the handles, what they snap to, and how a drag reaches
+ * the document. It owns `edit`, the pose each item held when the drag began, and the two drag flags.
  */
-const STEP_LIMITS: Record<GizmoMode, { min: number; max: number; grain: number; unit: string }> = {
-  translate: { min: 0.05, max: 10, grain: 0.05, unit: 'm' },
-  rotate: { min: 1, max: 90, grain: 1, unit: '°' },
-  scale: { min: 0.05, max: 5, grain: 0.05, unit: '×' },
-  face: { min: 0.05, max: 10, grain: 0.05, unit: 'm' },
-}
-
-const edit: { mode: GizmoMode; snap: boolean; steps: Record<GizmoMode, number>; space: GizmoSpace } = {
-  mode: 'translate',
-  snap: true,
-  steps: { translate: 0.5, rotate: 15, scale: 0.1, face: 0.5 },
-  // Which frame the handles point along. Three forces `local` for scale and `world` for the free-rotate
-  // ring, exactly as Unity does, so this only ever changes what it can.
-  space: 'world',
-}
+const tool = createGizmoTool({
+  stage,
+  canvas,
+  controls,
+  scene: stage.scene,
+  instanceRoot: () => instanceRoot,
+  doc: () => doc,
+  selection: () => selection,
+  selected: () => selected,
+  groupAt: (i) => meshes.groupAt(i),
+  rebuildSubtree: (i) => meshes.rebuildSubtree(i),
+  rebuildLoaded: () => rebuildLoaded(),
+  playing: () => play.active(),
+  previewMs: () => motion.timeMs(),
+  motionOffsetAt: (index, timeMs) => motion.offsetAt(index, timeMs),
+  clearFaceHover: () => pick.clearFaceHover(),
+  edits: () => edits,
+  room,
+  inspectorSync: () => inspectorSync(),
+  uiChanged: () => uiChanged(),
+  setStatus: (message) => setStatus(message),
+})
+const edit = tool.edit
+const STEP_LIMITS = tool.stepLimits
 
 /** Asset id of the prefab open in prefab mode, or `null` for a level or an unsaved prefab. */
 
@@ -394,10 +384,10 @@ const meshes = createItemMeshes({
   selected: () => selected,
   // Each of these reads the groups that were just replaced, and none of them is that module's business.
   afterBuild: () => {
-    applyPreviewPoses()
-    reattachGizmo()
+    motion.applyPoses()
+    tool.reattach()
     room.rebuildHolds()
-    refreshBoundsBox()
+    view.refreshBoundsBox()
   },
 })
 const instanceRoot = meshes.root
@@ -498,7 +488,7 @@ const showDoc = (): void => {
   doc = docStack[docStack.length - 1]?.doc ?? null
   // The level owns its sun (ADR 0048), so opening one relights the viewport and rebakes the sky. A prefab has
   // none, which `sun()` reports as `undefined`, and that falls back to the renderer's defaults.
-  installEnvironment(doc?.environment())
+  view.installEnvironment(doc?.environment())
   meshes.buildAll()
   rebuildLoaded()
   statusMsg = '' // a message about the old document would be a lie about this one
@@ -537,85 +527,45 @@ const setDoc = (next: Doc, name: string): void => {
 }
 
 /**
- * Edit the prefab behind a placement — in **its own live room** (ADR 0091), not as a lens over this level's
- * copy, because there is no copy any more. Its edits are ops on that document, everyone in it sees them, and
- * every open level following it repaints. There is no Save.
- *
- * The level's session is left, so this tab is in one document at a time: the viewport, the physics world, the
- * selection and the holds are all singletons keyed to the open document, and two joined rooms would be two
- * streams repainting one screen. Back rejoins the level, and the server greets that with a fresh snapshot, so
- * what everyone else did while you were away is there when you return.
+ * The prefab gestures (`prefabActions.ts`, ADR 0121): open one in its own room, come back out, unlink a
+ * placement, save a selection as a new prefab, and the two override directions. Its host is here.
  */
-const enterPrefab = async (assetId: string): Promise<void> => {
-  const entry = assets?.db.byId[assetId]
-  if (entry === undefined) {
-    setStatus('that prefab is not in the project')
-    return
-  }
-  const from = fileState.name
-  room.leave()
-  let greeting: Level | null
-  try {
-    greeting = await room.joinRoom(assetId, 'prefab')
-  } catch (e) {
-    setStatus(`could not open ${entry.name}: ${e instanceof Error ? e.message : String(e)}`)
-    void rejoinLevel(from)
-    return
-  }
-  const root = greeting?.nodes[0]
-  if (root === undefined) {
-    setStatus('that prefab did not load')
-    void rejoinLevel(from)
-    return
-  }
-  prefabOpen = { assetId, name: entry.name, from }
-  docStack.length = 0
-  docStack.push({ doc: edits.withOps(prefabDoc(root, registry())), label: `prefab: ${entry.name}` })
-  showDoc()
-  edits.reset()
-  refreshUi()
-}
-
-/**
- * Unlink one placement (ADR 0111): it keeps exactly what it was drawing and stops being a copy of the prefab.
- * The file and every other placement are untouched.
- *
- * No confirm. It is one op, so Ctrl+Z puts the link back — unlike deleting the prefab file, which destroys
- * the id and cannot be undone (ADR 0097), and which is why *that* one asks.
- */
-const unlinkPlacement = (index: number): void => {
-  if (doc === null) return
-  const label = doc.label(index)
-  if (!doc.unlinkNode(index)) return setStatus(`${label} is not a prefab placement`)
-  edits.recordEdit(`unlinked ${label}`)
-  // A `replaceNode` changes the tree and what is drawn, so the same refresh a revert does.
-  meshes.buildAll()
-  rebuildLoaded()
-  applySelection(selection)
-  setStatus(`${label} is its own object now — the prefab is unchanged`)
-}
-
-const openPrefabOf = (index: number): void => {
-  const id = doc?.refOf(index)
-  if (id === null || id === undefined) return
-  void enterPrefab(id)
-}
-
-/** Leave the prefab and rejoin the level it was opened from, which arrives as a fresh snapshot. */
-const closePrefab = (): void => {
-  const open = prefabOpen
-  if (open === null) return
-  prefabOpen = null
-  room.leave()
-  void rejoinLevel(open.from)
-}
-
-/** Reopen a level by name, as `openFile` does — used on the way back out of a prefab. */
-const rejoinLevel = async (name: string): Promise<void> => {
-  prefabOpen = null
-  fileState.mode = 'level'
-  await openFile(name)
-}
+const prefabs = createPrefabActions({
+  doc: () => doc,
+  docStack: () => docStack,
+  selection: () => selection,
+  selected: () => selected,
+  applySelection: (indices) => applySelection(indices),
+  deselect: () => deselect(),
+  assets: () => assets,
+  registry: () => registry(),
+  prefabOpen: () => prefabOpen,
+  setPrefabOpen: (value) => {
+    prefabOpen = value
+  },
+  fileName: () => fileState.name,
+  setMode: (mode) => {
+    fileState.mode = mode
+  },
+  setDoc: (next, name) => setDoc(next, name),
+  showDoc: () => showDoc(),
+  openFile: (qualified) => openFile(qualified),
+  room,
+  edits: () => edits,
+  refuseHeld: (index) => refuseHeld(index),
+  projectFolder: () => project.folder(),
+  reloadAssets: () => reloadAssets(),
+  setProblem: (message) => setProblem(message),
+  rebuildMeshes: () => meshes.buildAll(),
+  rebuildLoaded: () => rebuildLoaded(),
+  scheduleRebuild: () => scheduleRebuild(),
+  loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
+  invalidatePreviews: () => previews.invalidate(),
+  inspectorRebuild: () => inspectorRebuild(),
+  setStatus: (message) => setStatus(message),
+  refreshUi: () => refreshUi(),
+  uiChanged: () => uiChanged(),
+})
 
 /** A component with a stable id — blank documents are authored here, so the ids may as well read plainly. */
 const comp = (id: string, type: string, params: Record<string, unknown>): ComponentData => ({ id, type, params })
@@ -648,570 +598,46 @@ const blankLevel = (id: string): Level => ({
 
 // --- selection + transform gizmo ---
 /**
- * The isometric camera (ADR 0094). `stage.camera` stays the perspective one and stays the game's — play mode
- * hands it to `createOrbitCamera`, which tunes its `fov` — so this is a second camera the editor swaps in,
- * not a change to the stage.
- *
- * "Isometric" is Unity's word for it and the one on the label; it is an orthographic projection, not the
- * 30-degree angle the word means in drawing.
+ * How the level is looked at (`cameraView.ts`, ADR 0121): the projection, the navigation gizmo, the
+ * background that projection needs, and the network-bounds box. What is left here is its host.
  */
-const orthoCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 2000)
-let isometric = false
-
-/** The camera actually being looked through. Everything that casts a ray or draws must ask for it. */
-const activeCamera = (): THREE.PerspectiveCamera | THREE.OrthographicCamera => (isometric ? orthoCamera : stage.camera)
-
-/** Half the world height the orthographic camera shows, chosen to match what perspective shows at the target. */
-const orthoHalfHeight = (): number => {
-  const distance = Math.max(0.001, stage.camera.position.distanceTo(controls.target))
-  return distance * Math.tan((stage.camera.fov * Math.PI) / 360)
-}
-
-/** Re-cut the orthographic frustum for the canvas's aspect, keeping the height it is already showing. */
-const syncOrthoFrustum = (halfHeight: number): void => {
-  const aspect = Math.max(0.001, canvas.clientWidth / Math.max(1, canvas.clientHeight))
-  orthoCamera.top = halfHeight
-  orthoCamera.bottom = -halfHeight
-  orthoCamera.left = -halfHeight * aspect
-  orthoCamera.right = halfHeight * aspect
-  orthoCamera.updateProjectionMatrix()
-}
-
-/**
- * Swap projection, keeping the view.
- *
- * The outgoing camera's placement carries over, and the frustum is cut so the two show the same thing at the
- * orbit target — so the toggle reads as the perspective draining out of the picture rather than as a jump.
- * Going back, the distance is recovered from the frustum, since orthographic has no distance of its own.
- *
- * Everything holding a camera is re-pointed rather than rebuilt: the post-FX passes took theirs at
- * construction, and rebuilding the composer would throw away the AO and bloom the level asked for.
- */
-const setProjection = (ortho: boolean): void => {
-  if (ortho === isometric) return
-  if (ortho) {
-    const half = orthoHalfHeight()
-    orthoCamera.position.copy(stage.camera.position)
-    orthoCamera.quaternion.copy(stage.camera.quaternion)
-    orthoCamera.zoom = 1
-    syncOrthoFrustum(half)
-  } else {
-    // Orthographic distance is meaningless, so put the perspective camera where it shows the same height.
-    const half = (orthoCamera.top - orthoCamera.bottom) / 2 / orthoCamera.zoom
-    const distance = half / Math.tan((stage.camera.fov * Math.PI) / 360)
-    const back = orthoCamera.position.clone().sub(controls.target)
-    if (back.lengthSq() < 1e-6) back.set(0, 1, 1)
-    stage.camera.quaternion.copy(orthoCamera.quaternion)
-    stage.camera.position.copy(controls.target).add(back.normalize().multiplyScalar(distance))
-  }
-  isometric = ortho
-  applyProjectionBackground()
-  const camera = activeCamera()
-  postfx.setCamera(camera)
-  controls.object = camera
-  gizmo.camera = camera
-  controls.update()
-  viewGizmo.setLabel(ortho ? 'Iso' : 'Persp')
-  setStatus(ortho ? 'isometric' : 'perspective')
-  uiChanged()
-}
-
-/**
- * The navigation gizmo, top right (ADR 0094). Blender's ball-and-stick, Unity's click-the-middle to toggle
- * isometric, and no auto-switch: looking down an axis and dropping perspective are two decisions.
- */
-const viewGizmo = createViewGizmo({
-  camera: activeCamera,
-  target: () => controls.target,
-  dom: canvas,
-})
-
-/**
- * Drawn after post-processing, because it clears depth and paints over the finished image — composite
- * anything afterwards and it would be covered. Hidden during play, where the viewport is the game's.
- */
-stage.setRenderStep(() => {
-  postfx.render()
-  if (!play.active()) viewGizmo.render(stage.renderer)
-})
-
-/**
- * The gizmo gets the pointer before anything else does.
- *
- * On the document in the **capture** phase rather than on the canvas: `OrbitControls` and the rest listen on
- * the canvas itself, and listeners on one element fire in the order they were added, so there is no way to
- * get in front of them from there. Capturing on an ancestor is, and `stopPropagation` then means the event
- * never reaches the canvas at all — no orbit, no selection click, no context menu.
- */
-let viewGizmoHolding = false
-document.addEventListener(
-  'pointerdown',
-  (e) => {
-    if (e.target !== canvas || play.active() || e.button !== 0) return
-    if (!viewGizmo.pointerDown(e)) return
-    viewGizmoHolding = true
-    e.stopPropagation()
-    e.preventDefault()
+const view = createCameraView({
+  stage,
+  canvas,
+  controls,
+  instanceRoot,
+  groups: () => meshes.all(),
+  doc: () => doc,
+  inPrefab: () => prefabOpen !== null,
+  playing: () => play.active(),
+  useCamera: (camera) => {
+    postfx.setCamera(camera)
+    controls.object = camera
+    tool.control.camera = camera
   },
-  true,
-)
-document.addEventListener(
-  'pointermove',
-  (e) => {
-    if (!viewGizmoHolding) return
-    viewGizmo.pointerMove(e)
-    e.stopPropagation()
+  applyEnvironment: (from) => {
+    env.applyEnvironment(from)
+    postfx.apply(from?.postfx)
   },
-  true,
-)
-document.addEventListener(
-  'pointerup',
-  (e) => {
-    if (!viewGizmoHolding) return
-    viewGizmoHolding = false
-    if (viewGizmo.pointerUp(e) === 'centre') setProjection(!isometric)
-    e.stopPropagation()
-  },
-  true,
-)
-
-const gizmo = new TransformControls(stage.camera, canvas)
-/**
- * Translation and scale snap to an **absolute** grid anchored at zero, which is what `TransformControls` does
- * for both: `Math.round(v / snap) * snap`.
- *
- * Rotation is left to us (ADR 0114). Three snaps `rotationAngle` — how far the drag has turned — not the
- * angle it lands on, so an object sitting at 7° goes to 22°, 37°, 52° and can never reach 15° or 30°. That
- * is a grid anchored to wherever you started, and it means snapping cannot straighten anything. `snapRotation`
- * below does it absolutely instead.
- */
-const applySnap = (): void => {
-  // Translation and rotation are ours: three snaps a position's **centre** and a rotation's **delta**, and
-  // neither is what snapping is for (ADR 0114, ADR 0117). Scale it does absolutely, which is right.
-  gizmo.setTranslationSnap(null)
-  gizmo.setRotationSnap(null)
-  gizmo.setScaleSnap(edit.snap ? edit.steps.scale : null)
-}
-
-/**
- * Snap the primary's **minimum corner** to the grid, not its centre (ADR 0117).
- *
- * Snapping the centre made half of all sizes wrong: a box three cells wide, centred on a grid line, has its
- * edges halfway between lines, so its end cells are half covered — which is where keycaps hung over a
- * platform's edge. The edge is what meets the next platform; the centre is a number nobody looks at.
- *
- * The corner is of the **world axis-aligned** box, so a wall rotated on its edge snaps by the face you are
- * butting against something. Snapped in world space and converted back through the parent, so a child of a
- * moved or rotated group lands where the grid is rather than where its parent's frame happens to put it.
- *
- * Only the primary; `mirrorDragToSelection` gives the others its delta, as translation always has.
- */
-const snapTranslation = (): void => {
-  if (edit.mode !== 'translate' || !edit.snap || selected === null) return
-  const g = meshes.groupAt(selected)
-  const step = edit.steps.translate
-  if (g === undefined || step <= 0) return
-  g.updateWorldMatrix(true, false)
-  const world = new THREE.Vector3()
-  const quat = new THREE.Quaternion()
-  const scale = new THREE.Vector3()
-  g.matrixWorld.decompose(world, quat, scale)
-  // A built-in shape is a unit box at scale 1 (ADR 0090), so the world scale *is* the size in metres.
-  const half = worldHalfExtents(new THREE.Matrix4().makeRotationFromQuaternion(quat).elements, {
-    x: Math.abs(scale.x) / 2,
-    y: Math.abs(scale.y) / 2,
-    z: Math.abs(scale.z) / 2,
-  })
-  const min = { x: world.x - half.x, y: world.y - half.y, z: world.z - half.z }
-  const d = cornerSnapDelta(min, step)
-  if (d.x === 0 && d.y === 0 && d.z === 0) return
-  // The delta is a world translation; the group's position is in its parent's frame.
-  const parent = g.parent ?? instanceRoot
-  parent.updateWorldMatrix(true, false)
-  const before = parent.worldToLocal(world.clone())
-  const after = parent.worldToLocal(world.clone().add(new THREE.Vector3(d.x, d.y, d.z)))
-  g.position.add(after.sub(before))
-}
-
-/**
- * Snap the primary's rotation onto the absolute grid, per axis (ADR 0114).
- *
- * Per Euler axis rather than as a whole orientation: a gizmo drag turns about **one** ring, so the other two
- * angles are already whatever they were and rounding them changes nothing. The free-rotate ring turns about a
- * camera-facing axis, where this is an approximation — predictable, and the price of a snap that lands on
- * round angles at all.
- *
- * Only the primary, because `mirrorDragToSelection` hands the others its **delta**: that keeps a group's
- * relative angles, and it is what translation already does, where three snaps the primary and the rest follow.
- */
-const snapRotation = (): void => {
-  if (edit.mode !== 'rotate' || !edit.snap || selected === null) return
-  const g = meshes.groupAt(selected)
-  if (g === undefined) return
-  const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
-  const snapped = snapAnglesDeg(e, edit.steps.rotate)
-  g.quaternion.setFromEuler(new THREE.Euler(snapped.x, snapped.y, snapped.z, 'XYZ'))
-}
-stage.scene.add(gizmo.getHelper())
-
-/**
- * Point the gizmo at the primary's group, or at nothing.
- *
- * `meshes.buildAll` replaces every group, so anything holding one is stale the moment it returns — and a gizmo
- * holding a group that is no longer in the scene throws on the next click ("the attached 3D object must be a
- * part of the scene graph", then a null `updateMatrixWorld` in `pointerDown`). Called at both of `meshes.buildAll`'
- * exits, so the invariant holds however it was reached: a redraw after an async asset load
- * (`loadNewReferences`) never went through a selection change, which is how the stale attachment survived.
- */
-const reattachGizmo = (): void => {
-  // Face is not a `TransformControls` mode (ADR 0119): the handles are the faces themselves, so the gizmo
-  // would only be three arrows in the way.
-  const g = selected === null || play.active() || edit.mode === 'face' ? undefined : meshes.groupAt(selected)
-  if (g === undefined) gizmo.detach()
-  else gizmo.attach(g)
-}
-
-/**
- * A flat stand-in for the sky while the camera is orthographic.
- *
- * Three draws a cubemap background as a **1 x 1 x 1 box parked at the camera**, inside-out, depth test off
- * (`WebGLBackground`). A perspective divide is what makes that fill the screen: a corner half a metre away at
- * 45 degrees lands at the edge. Orthographic has no divide, so half a metre stays half a metre and the box
- * projects to a few percent of a viewport metres across — a small patch of sky in the middle of the clear
- * colour, which is what "the skybox goes black in isometric" actually is.
- *
- * So isometric gets a flat colour instead, mixed from the level's own sky so it is not jarring. Not tone
- * mapped, because a `Color` background is a clear colour rather than a drawn surface, so the sky's `gain` is
- * deliberately left out of it.
- *
- * The alternative is drawing the sky ourselves — a mesh, or a full-screen quad reconstructing the view ray —
- * which is correct in both projections and costs a draw every frame in the game as well. Deferred to the
- * render pass (`budgets.md`) rather than taken now.
- */
-const isoBackground = new THREE.Color()
-/** Whatever the sky put there, so leaving isometric restores exactly that. `undefined` = nothing captured. */
-let backgroundBeforeIso: THREE.Scene['background'] | undefined
-
-/**
- * Install a level's environment, and then make the background match the projection.
- *
- * One function rather than the four pairs of calls this replaces, for the reason `meshes.buildAll` keeps its own
- * invariants: every path that installs a sky has to re-apply this, and a path that forgets is a black
- * viewport that only shows up in isometric.
- */
-const installEnvironment = (from: Partial<EnvironmentConfig> | undefined): void => {
-  env.applyEnvironment(from)
-  postfx.apply(from?.postfx)
-  applyProjectionBackground()
-}
-
-/** Swap the cubemap background for a flat colour while isometric, and put it back afterwards. */
-const applyProjectionBackground = (): void => {
-  if (isometric) {
-    // Anything but our own colour is the sky the environment just installed: remember it before replacing it.
-    if (stage.scene.background !== isoBackground) backgroundBeforeIso = stage.scene.background
-    const sky = env.skyParams
-    isoBackground.set(sky.bottomColor).lerp(new THREE.Color(sky.topColor), 0.5)
-    stage.scene.background = isoBackground
-    return
-  }
-  if (backgroundBeforeIso !== undefined) {
-    stage.scene.background = backgroundBeforeIso
-    backgroundBeforeIso = undefined
-  }
-}
-
-/** The bound in force for the open document: the level's own, or the platform default. */
-const effectiveBounds = (): number => doc?.netBounds() ?? QUANT_BOUND
-
-/**
- * Re-size the box and decide whether it is drawn.
- *
- * Hidden inside a prefab as well as when switched off: a prefab has no bounds of its own (it is placed into
- * a level, and the level's box is the one that matters), so drawing the default around it would be a lie.
- */
-const refreshBoundsBox = (): void => {
-  const b = effectiveBounds()
-  boundsBox.box.set(new THREE.Vector3(-b, -b, -b), new THREE.Vector3(b, b, b))
-  boundsBox.visible = showBoundsBox && prefabOpen === null && doc !== null
-}
-
-/**
- * How far the level actually reaches, and how much of it is outside the bound.
- *
- * Measured off the drawn objects rather than the authored positions, so a wide platform counts by its edge
- * and not by its origin — the edge is where a player can stand, and standing there is what the bound has to
- * carry. Top-level objects only, or a nested child would be counted twice with its parent.
- */
-const boundsReach = (): { outside: number; reach: number } | null => {
-  if (doc === null) return null
-  const b = effectiveBounds()
-  const far = (box: THREE.Box3): number =>
-    box.isEmpty() ? 0 : Math.max(Math.abs(box.min.x), Math.abs(box.min.y), Math.abs(box.min.z), box.max.x, box.max.y, box.max.z)
-  let outside = 0
-  for (const g of meshes.all()) {
-    if (g === undefined || g.parent !== instanceRoot) continue
-    if (far(new THREE.Box3().setFromObject(g)) > b) outside += 1
-  }
-  return { outside, reach: far(new THREE.Box3().setFromObject(instanceRoot)) }
-}
-
-/** Switch transform tool (toolbar buttons and the T/R/S keys are the same path). */
-const setMode = (mode: GizmoMode): void => {
-  edit.mode = mode
-  // `setMode` only knows the three it draws; Face detaches it instead (ADR 0119).
-  if (mode !== 'face') gizmo.setMode(mode)
-  faceHover.visible = false
-  reattachGizmo()
-  uiChanged()
-}
-
-const setSpace = (space: GizmoSpace): void => {
-  edit.space = space
-  gizmo.space = space
-  uiChanged()
-}
-
-// ============================== animation editing (ADR 0029) ==============================
-/**
- * The preview clock, in milliseconds of level time (ADR 0103).
- *
- * It poses **every** moving item, not only the selection: a preview is meant to show what the level does at
- * that instant, and a lift that stood still while the platform beside it moved would be worse than no
- * preview at all. That is also why it is one clock for the whole level rather than one per object — motion is
- * timed against other motion, and a staggered row is the thing you actually need to look at.
- */
-let previewMs = 0
-/** Whether the clock is running. Separate from play, which is the real game loop with pointer lock. */
-let previewing = false
-let previewLastFrame = 0
-/**
- * What each selected item looked like when the current drag began.
- *
- * One job now: a multi-selection mirrors the primary's delta onto everything else, which is meaningless
- * without the pose each of them started from (ADR 0031). It used to have a second — snapshotting the keys of
- * an animated item, whose whole track was rewritten by a delta on every pointer event — and ADR 0050 removed
- * it, because an offset track moves by its transform and needs nothing to accumulate against.
- */
-interface DragStart {
-  pose: LocalPose
-  scale: Vec3
-}
-let dragStart = new Map<number, DragStart>()
-
-/** Pose every item from its movers at the preview clock. Still items sit at their authored transform. */
-const applyPreviewPoses = (): void => {
-  if (doc === null) return
-  for (let i = 0; i < doc.count(); i++) {
-    const g = meshes.groupAt(i)
-    if (g === undefined) continue
-    const pose = doc.poseOf(i, previewMs)
-    g.position.set(pose.position.x, pose.position.y, pose.position.z)
-    const q = eulerToQuat(pose.rotation)
-    g.quaternion.set(q.x, q.y, q.z, q.w)
-    // Scale is not animated: a track that resized a collider would rebuild physics every tick.
-  }
-}
-
-const setPreviewTime = (ms: number): void => {
-  previewMs = Math.max(0, ms)
-  applyPreviewPoses()
-  inspectorSync()
-  renderStatus()
-}
-
-/**
- * The clock moving during playback, sixty times a second. Deliberately narrower than `setPreviewTime`: the
- * Inspector's own fields cannot have changed, and re-reading them every frame would fight anything being
- * typed into one.
- */
-const advancePreviewTime = (ms: number): void => {
-  previewMs = Math.max(0, ms)
-  applyPreviewPoses()
-}
-
-/** A drag has happened, so the click handler knows this pointerup was not a click. */
-let gizmoDragged = false
-/**
- * A drag is in flight, so the gizmo owns the selection's pose.
- *
- * Separate from `gizmoDragged`, which latches for the click handler. This one gates the *other* way into a
- * transform — the Inspector's numeric fields — because a typed value cannot legitimately arrive from a person
- * mid-drag, and letting one through mid-drag re-poses the item from the document underneath the drag.
- */
-let gizmoDragging = false
-gizmo.addEventListener('dragging-changed', (event) => {
-  const dragging = event.value as boolean
-  controls.enabled = !dragging
-  gizmoDragging = dragging
-  if (dragging) {
-    gizmoDragged = true
-    // One history entry per drag, recorded when it ends. `coalescing` holds `recordEdit` off while the hundred
-    // pointer events each report a transform op; the record at the end folds them into one.
-    edits.beginDrag()
-    room.startPresence()
-    dragStart = new Map()
-    if (doc !== null) {
-      for (const i of selection) {
-        const g = meshes.groupAt(i)
-        if (g === undefined) continue
-        dragStart.set(i, {
-          // Read off the group, not from `poseOf`, though at this instant they agree: every value compared
-          // against it later is also read off a group, so both sides share one rounding and one euler branch.
-          // Mixing the stored euler with a re-derived one leaves a residue in the delta that accumulates.
-          pose: groupPose(g),
-          scale: vec3(g.scale.x, g.scale.y, g.scale.z),
-        })
-      }
-    }
-  } else {
-    room.stopPresence()
-    // The whole drag as one op per node — what the history holds, and what the room gets.
-    edits.endDrag(selection.length > 1 ? `${edit.mode} ${selection.length}` : edit.mode)
-    dragStart = new Map()
-    rebuildLoaded()
-    room.drainDeferred()
-  }
+  skyParams: () => env.skyParams,
+  renderPostFX: () => postfx.render(),
+  setStatus: (message) => setStatus(message),
+  uiChanged: () => uiChanged(),
 })
-gizmo.addEventListener('objectChange', () => {
-  // Before the write-back and before the mirror, so the document and the other selected items both see the
-  // snapped value rather than the raw one (ADR 0114, ADR 0117).
-  snapTranslation()
-  snapRotation()
-  writeBackSelected()
-  mirrorDragToSelection()
-  if (edit.mode === 'scale') for (const i of selection) meshes.rebuildSubtree(i)
-  inspectorSync()
+stage.scene.add(view.boundsBox)
+
+/**
+ * The preview clock (`motionPreview.ts`, ADR 0103, ADR 0121). It owns the clock, whether it is running and
+ * the frame it last advanced on; `motion.applyPoses()` is what puts every item at its motion's pose, which
+ * is where anything with a mover belongs after any rebuild.
+ */
+const motion = createMotionPreview({
+  doc: () => doc,
+  groupAt: (i) => meshes.groupAt(i),
+  inspectorSync: () => inspectorSync(),
+  renderStatus: () => renderStatus(),
+  toolbarRender: () => toolbar.render(),
 })
-
-/**
- * Apply the primary's drag delta to every other selected item (ADR 0031).
- *
- * Translation is a shared world delta, which is the obvious reading of dragging five platforms. Rotation and
- * scale apply the same **local** delta to each item about its own origin — they do *not* orbit the selection
- * about a shared pivot, which is what Unity does and what this deliberately is not: orbiting needs a pivot
- * object and a decision about where the pivot goes, and moving five things by the same amount is the case
- * that actually comes up when laying out a level.
- */
-const mirrorDragToSelection = (): void => {
-  if (selection.length < 2 || selected === null || doc === null) return
-  const primaryStart = dragStart.get(selected)
-  const primaryGroup = meshes.groupAt(selected)
-  if (primaryStart === undefined || primaryGroup === undefined) return
-
-  const now = groupPose(primaryGroup)
-  // Rotation as a local delta about each item's own origin, and scale as a ratio — a difference would be
-  // meaningless for scale, and a zero start would make the ratio meaningless too.
-  const dr = vec3(now.rotation.x - primaryStart.pose.rotation.x, now.rotation.y - primaryStart.pose.rotation.y, now.rotation.z - primaryStart.pose.rotation.z)
-  const ds = vec3(
-    primaryStart.scale.x === 0 ? 1 : primaryGroup.scale.x / primaryStart.scale.x,
-    primaryStart.scale.y === 0 ? 1 : primaryGroup.scale.y / primaryStart.scale.y,
-    primaryStart.scale.z === 0 ? 1 : primaryGroup.scale.z / primaryStart.scale.z,
-  )
-
-  /**
-   * Translation is shared in **world** space, then converted into each item's own parent frame.
-   *
-   * A local delta would only be right for items that share a parent. Selecting a top-level platform and a crate
-   * nested under a moving deck is ordinary, and their local frames differ by the deck's whole transform — so a
-   * local delta would send the crate somewhere unrelated to the drag.
-   */
-  const worldOf = (group: THREE.Object3D, local: Vec3): THREE.Vector3 => {
-    const parent = group.parent ?? instanceRoot
-    parent.updateWorldMatrix(true, false)
-    return parent.localToWorld(new THREE.Vector3(local.x, local.y, local.z))
-  }
-  const worldDelta = worldOf(primaryGroup, now.position).sub(worldOf(primaryGroup, primaryStart.pose.position))
-
-  for (const i of selection) {
-    if (i === selected) continue
-    const g = meshes.groupAt(i)
-    const start = dragStart.get(i)
-    if (g === undefined || start === undefined) continue
-
-    // Posed from the *start* pose plus the delta, never from the running one: a hundred pointer events during
-    // one drag must produce one offset, not a hundred compounding ones.
-    const parent = g.parent ?? instanceRoot
-    parent.updateWorldMatrix(true, false)
-    const target = parent.worldToLocal(worldOf(g, start.pose.position).add(worldDelta))
-    g.position.copy(target)
-    const q = eulerToQuat(vec3(start.pose.rotation.x + dr.x, start.pose.rotation.y + dr.y, start.pose.rotation.z + dr.z))
-    g.quaternion.set(q.x, q.y, q.z, q.w)
-    g.scale.set(start.scale.x * ds.x, start.scale.y * ds.y, start.scale.z * ds.z)
-    writeBackItem(i)
-  }
-}
-
-/**
- * Where a gizmo drag lands, per item (ADR 0103).
- *
- * Always on the node's **authored transform** — there is nothing else a drag could mean now that motion is a
- * speed rather than a path with handles in the viewport.
- *
- * What it has to undo is the preview: while the clock runs, the group sits at rest **plus** its movers'
- * offset, so writing the group's pose straight back would bake that offset into the transform and the object
- * would walk across the level every time it was nudged mid-preview. Subtracting the offset is exact rather
- * than a delta against a snapshot, because a mover's offset depends on the clock and not on the transform
- * the drag is rewriting.
- */
-const writeBackItem = (index: number): void => {
-  if (doc === null) return
-  const g = meshes.groupAt(index)
-  if (g === undefined) return
-  const off = motionOffsetAt(index, previewMs)
-  const t = transformOfGroup(g)
-  const rot = t.rotation ?? vec3(0, 0, 0)
-  doc.setTransform(index, {
-    position: vec3(r4(t.position.x - off.position.x), r4(t.position.y - off.position.y), r4(t.position.z - off.position.z)),
-    ...(isZeroRot(new THREE.Euler(rot.x - off.rotation.x, rot.y - off.rotation.y, rot.z - off.rotation.z))
-      ? {}
-      : { rotation: vec3(r4(rot.x - off.rotation.x), r4(rot.y - off.rotation.y), r4(rot.z - off.rotation.z)) }),
-    ...(t.scale !== undefined ? { scale: t.scale } : {}),
-  })
-}
-
-/** The primary's own write-back — what a gizmo drag or a typed Inspector value lands on first. */
-const writeBackSelected = (): void => {
-  if (selected !== null) writeBackItem(selected)
-}
-
-/**
- * A group's local pose as a `Transform`, with `rotation`/`scale` left out when they are the identity.
- *
- * Built and handed to `doc.setTransform` rather than mutating what `transformOf` returned: for an overridden
- * piece those are different objects, since reading gives the prefab's value and writing creates the
- * placement's own (ADR 0033).
- */
-const transformOfGroup = (g: THREE.Group): Transform => {
-  const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
-  return {
-    position: vec3(r4(g.position.x), r4(g.position.y), r4(g.position.z)),
-    ...(isZeroRot(e) ? {} : { rotation: vec3(r4(e.x), r4(e.y), r4(e.z)) }),
-    ...(isOne(g.scale) ? {} : { scale: vec3(r4(g.scale.x), r4(g.scale.y), r4(g.scale.z)) }),
-  }
-}
-
-const groupPose = (g: THREE.Group): LocalPose => {
-  const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
-  return { position: vec3(r4(g.position.x), r4(g.position.y), r4(g.position.z)), rotation: vec3(r4(e.x), r4(e.y), r4(e.z)) }
-}
-
-/**
- * How much of an item's drawn pose came from its movers, at the preview clock (ADR 0103).
- *
- * Measured as the difference between where the item is drawn and where it rests, rather than by evaluating
- * the motion again here — so it cannot drift from what `applyPreviewPoses` actually drew.
- */
-const motionOffsetAt = (index: number, timeMs: number): LocalPose => {
-  if (doc === null) return { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) }
-  const authored = doc.transformOf(index)
-  const rest = authored.rotation ?? vec3(0, 0, 0)
-  const at = doc.poseOf(index, timeMs)
-  return {
-    position: vec3(at.position.x - authored.position.x, at.position.y - authored.position.y, at.position.z - authored.position.z),
-    rotation: vec3(at.rotation.x - rest.x, at.rotation.y - rest.y, at.rotation.z - rest.z),
-  }
-}
 
 /**
  * Point the editor at a selection. Everything derived from it is refreshed here, so no caller has to remember
@@ -1234,7 +660,7 @@ const applySelection = (next: readonly number[]): void => {
   // Disarmed too: armed Record left running across a selection change would write keys onto the next object
   // you dragged, which is a surprise nobody asked for.
 
-  reattachGizmo()
+  tool.reattach()
 
   inspectorRebuild()
   uiChanged()
@@ -1269,415 +695,78 @@ const refuseHeld = (index: number): boolean => {
 const deselect = (): void => {
   selection = []
   selected = null
-  gizmo.detach()
+  tool.control.detach()
   inspectorRebuild()
   uiChanged()
   room.syncHolds()
 }
 
-const raycaster = new THREE.Raycaster()
-const ndc = new THREE.Vector2()
-const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
-let downX = 0
-let downY = 0
-canvas.addEventListener('pointerdown', (e) => {
-  downX = e.clientX
-  downY = e.clientY
-  gizmoDragged = false
-  // Face mode claims a left press on a face of the selected box (ADR 0119). Orbit is suppressed for the drag
-  // and `gizmoDragged` marks it, so the pointerup that follows is not read as a click that changes selection.
-  if (e.button === 0 && !play.active() && edit.mode === 'face' && beginFacePull(e.clientX, e.clientY)) {
-    gizmoDragged = true
-    controls.enabled = false
-    canvas.setPointerCapture(e.pointerId)
-  }
-})
-
-canvas.addEventListener('pointermove', (e) => {
-  if (play.active() || edit.mode !== 'face') return
-  if (facePull !== null) {
-    moveFacePull(e.clientX, e.clientY)
-    return
-  }
-  const found = faceUnder(e.clientX, e.clientY)
-  if (found === null) faceHover.visible = false
-  else showFaceHover(found.index, found.face)
-})
-
-canvas.addEventListener('pointerup', (e) => {
-  if (facePull === null) return
-  endFacePull()
-  controls.enabled = true
-  if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId)
-})
-
-/* ============================ pulling a face (ADR 0119) ============================ */
-
 /**
- * The translucent square drawn over the face under the pointer.
- *
- * The face **is** the handle, so there is nothing to aim at but the box itself — SketchUp's model rather than
- * ProBuilder's select-then-drag. `depthTest: false` so it reads on a face pointing away from the light, and
- * `renderOrder` above the meshes so it is not z-fought by the surface it sits on.
+ * The pointer in the viewport (`pickTool.ts`, ADR 0121): what is under it, what it places, and pulling a
+ * box by its face. It owns the raycaster, the ground plane, where a press landed, and the pull in progress.
  */
-const faceHover = new THREE.Mesh(
-  new THREE.PlaneGeometry(1, 1),
-  new THREE.MeshBasicMaterial({ color: 0x4a8cf7, transparent: true, opacity: 0.35, depthTest: false, side: THREE.DoubleSide }),
-)
-faceHover.renderOrder = 10
-faceHover.visible = false
-// Beside the gizmo: scene furniture, not part of the level.
-stage.scene.add(faceHover)
-
-/** What a pull needs to remember from the moment the pointer went down. */
-let facePull: {
-  index: number
-  face: Face
-  /** The line the face travels along, in world space; `dir` is the outward normal, unit length. */
-  origin: THREE.Vector3
-  dir: THREE.Vector3
-  /** `distanceAlongAxis` at the press, so a move is measured as a change rather than an absolute. */
-  t0: number
-  /** Where the face's plane sits along its own normal, for snapping where it *lands* (ADR 0113/0117). */
-  faceAt: number
-  startScale: THREE.Vector3
-  startPos: THREE.Vector3
-  /** Local units per world metre along this axis, so a world drag becomes a local scale. */
-  perMetre: number
-  /** The last good distance, held when the camera looks straight down the axis. */
-  last: number
-} | null = null
-
-/**
- * The face of the **selected** box under a client position, or `null`.
- *
- * Only the selected object, so a stray drag cannot reshape something else, and so the highlight only ever
- * appears on one thing. Only a built-in box or rounded box: scale is the whole size for those (ADR 0090), so
- * a pull is a transform edit and nothing else. A sphere has no faces.
- */
-const faceUnder = (clientX: number, clientY: number): { index: number; face: Face; hit: THREE.Intersection } | null => {
-  if (selected === null || doc === null) return null
-  const builtin = doc.builtinOf(selected)
-  if (builtin !== 'builtin:box' && builtin !== 'builtin:rounded-box') return null
-  const g = meshes.groupAt(selected)
-  if (g === undefined) return null
-  castFrom(clientX, clientY)
-  const hit = raycaster.intersectObject(meshes.holderOf(g), true)[0]
-  if (hit === undefined || hit.face === null || hit.face === undefined) return null
-  // The normal arrives in the hit mesh's own space; the face belongs to the node's.
-  const world = hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
-  g.updateWorldMatrix(true, false)
-  const local = world.clone().transformDirection(new THREE.Matrix4().copy(g.matrixWorld).invert())
-  const face = faceFromNormal(local)
-  return face === null ? null : { index: selected, face, hit }
-}
-
-/** Draw the highlight over a face, sized to it. */
-const showFaceHover = (index: number, face: Face): void => {
-  const g = meshes.groupAt(index)
-  if (g === undefined) return
-  g.updateWorldMatrix(true, false)
-  const pos = new THREE.Vector3()
-  const quat = new THREE.Quaternion()
-  const scale = new THREE.Vector3()
-  g.matrixWorld.decompose(pos, quat, scale)
-  const half = { x: Math.abs(scale.x) / 2, y: Math.abs(scale.y) / 2, z: Math.abs(scale.z) / 2 }
-  // A plane's own normal is +z, so point it along the face and slide it out to the surface.
-  const localNormal = new THREE.Vector3(face.axis === 'x' ? face.sign : 0, face.axis === 'y' ? face.sign : 0, face.axis === 'z' ? face.sign : 0)
-  const centre = localNormal.clone().multiply(new THREE.Vector3(half.x, half.y, half.z)).applyQuaternion(quat).add(pos)
-  const spread = face.axis === 'x' ? [half.z, half.y] : face.axis === 'y' ? [half.x, half.z] : [half.x, half.y]
-  faceHover.position.copy(centre)
-  faceHover.quaternion.copy(quat).multiply(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), localNormal))
-  faceHover.scale.set((spread[0] ?? 0.5) * 2, (spread[1] ?? 0.5) * 2, 1)
-  faceHover.visible = true
-}
-
-/** Begin a pull. `false` when there is no face under the pointer, so the caller falls through to selection. */
-const beginFacePull = (clientX: number, clientY: number): boolean => {
-  const found = faceUnder(clientX, clientY)
-  if (found === null || doc === null) return false
-  const g = meshes.groupAt(found.index)
-  if (g === undefined) return false
-  g.updateWorldMatrix(true, false)
-  const pos = new THREE.Vector3()
-  const quat = new THREE.Quaternion()
-  const worldScale = new THREE.Vector3()
-  g.matrixWorld.decompose(pos, quat, worldScale)
-
-  const { face } = found
-  const localNormal = new THREE.Vector3(face.axis === 'x' ? face.sign : 0, face.axis === 'y' ? face.sign : 0, face.axis === 'z' ? face.sign : 0)
-  const dir = localNormal.clone().applyQuaternion(quat).normalize()
-  const halfWorld = Math.abs(worldScale[face.axis]) / 2
-  const faceCentre = dir.clone().multiplyScalar(halfWorld).add(pos)
-  const t0 = distanceAlongAxis(raycaster.ray.origin, raycaster.ray.direction, pos, dir)
-  if (t0 === null) return false
-  // Local units per world metre: the node's own scale is local, and the world size is that times the parent's.
-  const localSize = Math.abs(g.scale[face.axis])
-  const perMetre = localSize > 1e-9 && halfWorld > 1e-9 ? localSize / (halfWorld * 2) : 1
-
-  facePull = {
-    index: found.index,
-    face,
-    origin: pos.clone(),
-    dir,
-    t0,
-    // Where the face's plane sits along its own normal. For an axis-aligned box this is just its world x, y
-    // or z; rotated, it is the plane's offset, which is what a grid of parallel planes snaps to.
-    faceAt: faceCentre.dot(dir),
-    startScale: g.scale.clone(),
-    startPos: g.position.clone(),
-    perMetre,
-    last: 0,
-  }
-  edits.beginDrag()
-  return true
-}
-
-/** Apply the pointer's position to the pull in progress. */
-const moveFacePull = (clientX: number, clientY: number): void => {
-  const pull = facePull
-  if (pull === null || doc === null) return
-  const g = meshes.groupAt(pull.index)
-  if (g === undefined) return
-  castFrom(clientX, clientY)
-  const t = distanceAlongAxis(raycaster.ray.origin, raycaster.ray.direction, pull.origin, pull.dir)
-  // Looking straight down the axis there is no answer; hold the last one rather than jumping.
-  const raw = t === null ? pull.last : t - pull.t0
-  pull.last = raw
-  const metres = snappedPull(pull.faceAt, raw, edit.snap ? edit.steps.face : 0)
-  const step = edit.snap ? edit.steps.face : 0.05
-  const next = pulled(
-    { x: pull.startScale.x, y: pull.startScale.y, z: pull.startScale.z },
-    { x: pull.startPos.x, y: pull.startPos.y, z: pull.startPos.z },
-    pull.face,
-    metres * pull.perMetre,
-    Math.max(step, 0.05) * pull.perMetre,
-  )
-  g.scale.set(next.scale.x, next.scale.y, next.scale.z)
-  g.position.set(next.position.x, next.position.y, next.position.z)
-  writeBackItem(pull.index)
-  meshes.rebuildSubtree(pull.index)
-  showFaceHover(pull.index, pull.face)
-  inspectorSync()
-  const size = next.scale
-  setStatus(`${r4(size.x)} \u00d7 ${r4(size.y)} \u00d7 ${r4(size.z)}`)
-}
-
-/** Finish a pull: one history entry and one message to the room, like a gizmo drag. */
-const endFacePull = (): void => {
-  const pull = facePull
-  facePull = null
-  if (pull === null) {
-    edits.abortDrag()
-    return
-  }
-  edits.endDrag('face')
-  rebuildLoaded()
-  applyPreviewPoses()
-}
-
-/** Point the raycaster at a client position. Shared by picking, placement and the right-click menu. */
-const castFrom = (clientX: number, clientY: number): void => {
-  const rect = canvas.getBoundingClientRect()
-  ndc.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
-  raycaster.setFromCamera(ndc, activeCamera())
-}
-
-/** The document index under a client position, or `null`. */
-const indexUnder = (clientX: number, clientY: number): number | null => {
-  castFrom(clientX, clientY)
-  const hit = raycaster.intersectObjects(instanceRoot.children, true)[0]?.object
-  let o: THREE.Object3D | null = hit ?? null
-  while (o !== null && o.userData.index === undefined) o = o.parent
-  return o !== null && typeof o.userData.index === 'number' ? o.userData.index : null
-}
-
-/**
- * The world point under a client position: the surface hit, or the ground plane behind it, snapped like a
- * placement. `null` when the ray leaves the world entirely — pointing at the sky above the horizon.
- */
-const surfaceUnder = (clientX: number, clientY: number): Vec3 | null => {
-  castFrom(clientX, clientY)
-  const surf = raycaster.intersectObjects(instanceRoot.children, true)[0]
-  const point = new THREE.Vector3()
-  if (surf !== undefined) point.copy(surf.point)
-  else if (raycaster.ray.intersectPlane(groundPlane, point) === null) return null
-  const snap = edit.snap ? edit.steps.translate : 0
-  const sx = snap !== 0 ? snapToGrid(point.x, snap) : r4(point.x)
-  const sz = snap !== 0 ? snapToGrid(point.z, snap) : r4(point.z)
-  return vec3(sx, r4(point.y), sz)
-}
-
-canvas.addEventListener('pointerup', (e) => {
-  // Left button only. Without this a right-click placed the armed prefab and moved the selection on its way
-  // to opening a menu, which is the sort of thing that gets blamed on the menu.
-  if (e.button !== 0) return
-  if (play.active()) return // editing suspended during play (pointer = camera only)
-  if (gizmoDragged) return // was dragging the gizmo, not a click
-  if (Math.hypot(e.clientX - downX, e.clientY - downY) > 4) return // was an orbit drag
-  castFrom(e.clientX, e.clientY)
-
-  // Placement mode: drop the chosen palette entry on the surface (or ground plane).
-  if (placing !== null && doc !== null) {
-    const surf = raycaster.intersectObjects(instanceRoot.children, true)[0]
-    const point = new THREE.Vector3()
-    if (surf !== undefined) point.copy(surf.point)
-    else if (raycaster.ray.intersectPlane(groundPlane, point) === null) {
-      placing = null
-      return
-    }
-    const snap = edit.snap ? edit.steps.translate : 0
-    const sx = snap !== 0 ? snapToGrid(point.x, snap) : r4(point.x)
-    const sz = snap !== 0 ? snapToGrid(point.z, snap) : r4(point.z)
-    const at = vec3(sx, r4(point.y), sz)
-    const prefabAsset = placing.kind === 'prefabAsset' ? assets?.prefabOf(placing.assetId) : undefined
-    const idx =
-      placing.kind === 'model'
-        ? doc.placeModel(placing.assetId, at)
-        : prefabAsset !== undefined
-          ? doc.placePrefab(placing.assetId, prefabAsset, at)
-          : -1
-    if (idx < 0) {
-      const unknown = prefabAsset === undefined ? [] : unknownComponentTypes(prefabAsset, doc.registry)
-      setStatus(unknown.length > 0 ? `uses ${unknown.join(', ')}, which this game does not have` : 'that prefab did not load')
-      placing = null
-      return
-    }
+const pick = createPickTool({
+  canvas,
+  controls,
+  scene: stage.scene,
+  instanceRoot,
+  doc: () => doc,
+  assets: () => assets,
+  selected: () => selected,
+  select: (index) => select(index),
+  selectWith: (index, mode, order) => selectWith(index, mode, order),
+  deselect: () => deselect(),
+  groupAt: (i) => meshes.groupAt(i),
+  holderOf: (g) => meshes.holderOf(g),
+  activeCamera: () => view.activeCamera(),
+  playing: () => play.active(),
+  tool: () => edit.mode,
+  snapping: () => edit.snap,
+  snapStep: () => edit.steps.translate,
+  faceStep: () => edit.steps.face,
+  dragged: () => tool.dragged(),
+  setDragged: (value) => tool.setDragged(value),
+  placing: () => placing,
+  disarm: () => {
     placing = null
-    edits.recordEdit('place')
-    meshes.buildAll()
-    rebuildLoaded()
-    select(idx)
-    // A placed prefab file can reference a material this document had never named before.
-    loadNewReferences(() => {
-      meshes.buildAll() // resets the item groups, so the gizmo has to be re-attached
-      select(idx)
-    })
-    return
-  }
-
-  const hit = raycaster.intersectObjects(instanceRoot.children, true)[0]?.object
-  if (hit === undefined) {
-    // Ctrl-clicking empty space is a miss, not "clear everything": losing a five-item selection to a stray
-    // click is the kind of thing that makes people stop using multi-select.
-    if (!e.ctrlKey && !e.metaKey) deselect()
-    return
-  }
-  let o: THREE.Object3D | null = hit
-  while (o !== null && o.userData.index === undefined) o = o.parent
-  if (o !== null && typeof o.userData.index === 'number') {
-    // Ctrl toggles in the viewport, as it does in the Hierarchy. Shift is *not* offered here: a range needs an
-    // order, and the viewport has none — what looks adjacent on screen is an accident of the camera.
-    const mode = modeFor(e)
-    selectWith(o.userData.index, mode === 'range' ? 'toggle' : mode, [])
-  }
+  },
+  edits: () => edits,
+  writeBackItem: (index) => tool.writeBackItem(index),
+  rebuildMeshes: () => meshes.buildAll(),
+  rebuildSubtree: (i) => meshes.rebuildSubtree(i),
+  rebuildLoaded: () => rebuildLoaded(),
+  loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
+  applyPreviewPoses: () => motion.applyPoses(),
+  inspectorSync: () => inspectorSync(),
+  setStatus: (message) => setStatus(message),
 })
 
 /**
- * The selection reduced to what a structural operation should act on: **roots only**, highest index first.
- *
- * Roots, because deleting a parent takes its children with it and duplicating both would produce the child
- * twice. Descending, because removing or inserting only shifts the indices *after* the node touched — so
- * working from the bottom up leaves every index still to be processed valid, with no bookkeeping.
+ * What you do to the nodes you have (`nodeActions.ts`, ADR 0121): delete, duplicate, create, frame, paste
+ * at a point. Each operates on the roots of the selection, which is the arithmetic that groups them.
  */
-const selectionRoots = (): number[] => {
-  const open = doc
-  return open === null ? [] : rootsOf(selection, (i) => open.depthOf(i)).sort((a, b) => b - a)
-}
+const nodes = createNodeActions({
+  stage,
+  controls,
+  doc: () => doc,
+  selection: () => selection,
+  applySelection: (indices) => applySelection(indices),
+  select: (index) => select(index),
+  deselect: () => deselect(),
+  groupAt: (i) => meshes.groupAt(i),
+  view,
+  edits: () => edits,
+  rebuildMeshes: () => meshes.buildAll(),
+  rebuildLoaded: () => rebuildLoaded(),
+  scheduleRebuild: () => scheduleRebuild(),
+  loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
+  inspectorSync: () => inspectorSync(),
+  setStatus: (message) => setStatus(message),
+  refreshUi: () => refreshUi(),
+  uiChanged: () => uiChanged(),
+})
 
-const deleteSelected = (): void => {
-  if (doc === null || selection.length === 0) return
-  const roots = selectionRoots()
-  for (const i of roots) doc.remove(i)
-  edits.recordEdit(roots.length > 1 ? `delete ${roots.length}` : 'delete')
-  deselect()
-  meshes.buildAll()
-  rebuildLoaded()
-}
-
-const duplicateSelected = (): void => {
-  if (doc === null || selection.length === 0) return
-  const made: number[] = []
-  for (const i of selectionRoots()) {
-    const before = doc.count()
-    const at = doc.duplicate(i)
-    // A copy is a whole subtree, so it inserts more than one node. Everything already recorded sits after this
-    // insertion point (we are working downward), so it shifts by however many nodes went in.
-    const inserted = doc.count() - before
-    for (let n = 0; n < made.length; n++) made[n]! += inserted
-    made.push(at)
-  }
-  edits.recordEdit(made.length > 1 ? `duplicate ${made.length}` : 'duplicate')
-  meshes.buildAll()
-  rebuildLoaded()
-  // Reversed, so the primary ends up on the copy of what was the primary rather than on the lowest one.
-  applySelection(made.reverse())
-}
 /** Give an inline one-off a shared identity, so it can be referenced and edited in one place. */
-/**
- * Write the selection into a prefab file and point it at that file (ADR 0091) — the one action that makes a
- * prefab, replacing both `Extract to prefab`, which wrote no file, and prefab mode's Save, which made no
- * reference.
- *
- * **The file goes first.** A failed write costs nothing but a status line, where the reverse order would leave
- * a placement pointing at a prefab that does not exist. If the write lands and the level edit does not, the
- * file is simply an unreferenced prefab, which is visible in the Project panel and placeable by hand.
- *
- * The undo entry holds the level's `replaceNode` and its inverse. It does **not** delete the file: by the time
- * anyone presses Ctrl+Z another level may already reference it, and deleting a file on an undo is a surprise
- * nobody recovers from. The Project panel is where a prefab is deleted.
- */
-const saveAsPrefab = async (index: number): Promise<void> => {
-  const open = doc
-  if (open === null || open.mode !== 'level' || assets === null) return
-  const definition = open.definitionOf(index)
-  if (definition === null) return
-  if (refuseHeld(index)) return
-
-  // Identity that survives the awaits: an index shifts under a remote edit, a ref does not.
-  const ref = open.refAt(index)
-  if (ref === null) return
-
-  const folder = project.folder()
-  const asked = await askName('Save as prefab', sanitisePrefabName(open.nameOf(index) || open.label(index)), `Saved in content/assets/${prefabFolder(folder)}/ — the folder open in the Project panel. Letters, digits, - and _.`)
-  if (asked === null) return
-  const target = prefabTarget(folder, asked, assets.db.entries.map((e) => e.path))
-  if ('error' in target) {
-    setStatus(target.error)
-    return
-  }
-
-  let created
-  try {
-    created = await assets.createPrefab(target.path, definition)
-  } catch (e) {
-    setStatus(`could not save ${target.path}: ${String(e)}`)
-    return
-  }
-  if (created === undefined) {
-    setProblem(`wrote ${target.path} but it was given no id — reload the editor`)
-    return
-  }
-  previews.invalidate()
-  await reloadAssets()
-
-  // The document may have moved under the dialog and the two requests.
-  const at = doc === open ? open.indexOfRef(ref) : null
-  if (at === null || !open.linkToPrefab(at, created.id, definition)) {
-    setStatus(`saved ${created.name} to ${target.path}, but that object is gone — place it from the Project panel`)
-    refreshUi()
-    return
-  }
-  edits.recordEdit('save as prefab')
-  meshes.buildAll()
-  rebuildLoaded()
-  applySelection([open.indexOfRef(ref) ?? at])
-  inspectorRebuild()
-  uiChanged()
-  loadNewReferences(meshes.buildAll)
-  setStatus(`saved ${created.name} to ${target.path} — every level can place it now`)
-}
-
 /**
  * The editor's shortcuts (ADR 0030).
  *
@@ -1702,12 +791,12 @@ const editorShortcuts = createShortcuts([
     run: () => edits.pasteClipboard(true),
     enabled: () => !play.active() && edits.clipboardSize() > 0 && selected !== null,
   },
-  { id: 'duplicate', chords: ['mod+d'], label: 'Duplicate', run: () => duplicateSelected(), enabled: () => !play.active() && selection.length > 0 },
+  { id: 'duplicate', chords: ['mod+d'], label: 'Duplicate', run: () => nodes.duplicateSelected(), enabled: () => !play.active() && selection.length > 0 },
   {
     id: 'delete',
     chords: ['delete', 'backspace'],
     label: 'Delete',
-    run: () => deleteSelected(),
+    run: () => nodes.deleteSelected(),
     enabled: () => !play.active() && selection.length > 0,
   },
   {
@@ -1718,10 +807,10 @@ const editorShortcuts = createShortcuts([
     enabled: () => !play.active() && doc !== null && doc.count() > 0,
   },
   // The menu offers Focus with `F` beside it, so the key has to exist or the menu is lying.
-  { id: 'focus', chords: ['f'], label: 'Focus the selection', run: () => focusSelection(), enabled: () => !play.active() && selection.length > 0 },
-  { id: 'translate', chords: ['t', 'g'], label: 'Translate tool', run: () => setMode('translate'), enabled: () => !play.active() },
-  { id: 'rotate', chords: ['r'], label: 'Rotate tool', run: () => setMode('rotate'), enabled: () => !play.active() },
-  { id: 'scale', chords: ['s'], label: 'Scale tool', run: () => setMode('scale'), enabled: () => !play.active() },
+  { id: 'focus', chords: ['f'], label: 'Focus the selection', run: () => nodes.focusSelection(), enabled: () => !play.active() && selection.length > 0 },
+  { id: 'translate', chords: ['t', 'g'], label: 'Translate tool', run: () => tool.setMode('translate'), enabled: () => !play.active() },
+  { id: 'rotate', chords: ['r'], label: 'Rotate tool', run: () => tool.setMode('rotate'), enabled: () => !play.active() },
+  { id: 'scale', chords: ['s'], label: 'Scale tool', run: () => tool.setMode('scale'), enabled: () => !play.active() },
   {
     id: 'cancel',
     chords: ['escape'],
@@ -1780,7 +869,7 @@ const play = createPlay({
   clearStatus: () => void (statusMsg = ''),
   uiChanged: () => uiChanged(),
   drainDeferred: () => room.drainDeferred(),
-  setProjection: (isometric) => setProjection(isometric),
+  setProjection: (ortho) => view.setProjection(ortho),
 })
 
 // ============================ panels ============================
@@ -1934,7 +1023,7 @@ const toolbar: Toolbar = createToolbar(
     stepUnit: STEP_LIMITS[edit.mode].unit,
     stepLimits: STEP_LIMITS[edit.mode],
     playing: play.active(),
-    previewing,
+    previewing: motion.playing(),
     inPrefab: prefabOpen !== null,
     readOnly: readOnlyBy,
     live: live(),
@@ -1950,18 +1039,18 @@ const toolbar: Toolbar = createToolbar(
     // A live level exists the moment it is named: the file is created on the server, then joined.
     newBlank: () => void createLevel(null),
     duplicate: () => void createLevel(fileState.name),
-    back: closePrefab,
-    setGizmo: setMode,
-    setSpace,
+    back: prefabs.closePrefab,
+    setGizmo: (mode) => tool.setMode(mode),
+    setSpace: (space) => tool.setSpace(space),
     setSnap: (on) => {
       edit.snap = on
-      applySnap()
+      tool.applySnap()
       refreshUi()
     },
     setStep: (step) => {
       // The active tool's own increment (ADR 0114); the other two keep theirs.
       edit.steps[edit.mode] = step
-      applySnap()
+      tool.applySnap()
       refreshUi()
     },
     setPlaying: (on) => {
@@ -2087,267 +1176,25 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
 })
 
 /**
- * Drop this placement's overrides, or push them into the prefab.
- *
- * Named rather than inline in the Inspector's host, because the Hierarchy's menu offers the same two and a
- * second copy would be a second set of edge cases.
+ * What the right-click menus offer (`menus.ts`, ADR 0121). Declarative: a label, whether it is available,
+ * why not when it is not, and one call into the subsystem that owns the work.
  */
-const revertOverride = (field?: string): void => {
-  if (selected === null || doc === null) return
-  doc.revert(selected, field)
-  edits.recordEdit(field === undefined ? 'revert overrides' : `revert ${field}`)
-  meshes.buildAll()
-  rebuildLoaded()
-  applySelection(selection)
-  setStatus('reverted to the prefab')
-}
-
-/** Push this placement's overrides into the shared prefab. Named for the same reason as `revertOverride`. */
-/**
- * Push this placement's overrides into the shared prefab — two documents, one gesture (ADR 0091). The prefab's
- * ops go to its own room, and only once the server has taken them does the override here go, so a refusal
- * leaves the placement exactly as it was rather than clean but unapplied.
- *
- * Ctrl+Z afterwards puts **this placement's** override back; it does not take the change out of the prefab.
- * The result looks the same either way, and the status line says so, because pushing into a prefab is a
- * deliberate act on something other levels share.
- */
-const applyOverrides = async (): Promise<void> => {
-  const open = doc
-  const at = selected
-  if (at === null || open === null) return
-  const plan = open.overrideOpsFor(at)
-  if (plan === null) return
-  const name = assets?.db.byId[plan.assetId]?.name ?? 'the prefab'
-  const refused = await room.submitToPrefab(plan.assetId, plan.ops)
-  if (refused !== null) {
-    setStatus(`${name} did not take it: ${refused} — this placement is unchanged`)
-    return
-  }
-  if (doc !== open) return // the document moved under the round trip
-  open.revert(at)
-  edits.recordEdit('apply to prefab')
-  meshes.buildAll()
-  rebuildLoaded()
-  applySelection(selection)
-  setStatus(`applied to ${name} — every level using it follows; undo puts this placement's override back`)
-}
-
-/**
- * The Hierarchy's right-click menus.
- *
- * Almost every entry is a command that already existed and could only be reached from the keyboard or by a
- * gesture nobody discovers: rename was double-click only, Save as prefab and Open lived in the Inspector's header,
- * and delete on an inherited node did nothing at all with no explanation. The menu is where they become
- * findable, which is why every disabled entry carries a reason rather than being left out.
- */
-const menuFor = (index: number): MenuItem[] => {
-  if (doc === null) return []
-  const inherited = doc.kindOf(index) === 'inherited'
-  const ref = doc.refOf(index)
-  const shared = ref === null ? 0 : doc.refCount(ref)
-  const own = !inherited
-  const why = 'part of a prefab — its place belongs to the shared definition'
-  return [
-    { label: 'Rename', hint: 'double-click', run: () => hierarchy.beginRename(index) },
-    {
-      label: 'Add component',
-      // The submenu the Inspector's Add Component button opens, reachable without going there first.
-      items: [
-        ...doc.registry
-          .all()
-          .map((d) => d.type)
-          .filter((type) => doc?.canAdd(index, type) === true)
-          .map((type) => ({
-            label: type,
-            run: () => {
-              doc?.addComponent(index, type)
-              edits.recordEdit('add component')
-              scheduleRebuild()
-              inspectorRebuild()
-              uiChanged()
-            },
-          })),
-        // Shared components the game has not opted into: picking one adds it to the game first (ADR 0077).
-        ...adoptable().map((type) => ({
-          label: `${type} (adds to game)`,
-          run: () => {
-            void adopt([type]).then(() => {
-              doc?.addComponent(index, type)
-              edits.recordEdit('add component')
-              scheduleRebuild()
-              inspectorRebuild()
-              uiChanged()
-            })
-          },
-        })),
-      ],
-    },
-    { label: 'Create child', divider: true, enabled: own, why, items: createMenu(index) },
-    { label: 'Duplicate', hint: 'Ctrl+D', enabled: own, why, run: () => duplicateSelected() },
-    { label: 'Delete', hint: 'Del', enabled: own, why, run: () => deleteSelected() },
-    { label: 'Copy', hint: 'Ctrl+C', divider: true, enabled: own, why, run: () => edits.copySelected() },
-    { label: 'Cut', hint: 'Ctrl+X', enabled: own, why, run: () => edits.cutSelected() },
-    { label: 'Paste as child', hint: 'Ctrl+Shift+V', enabled: own && edits.clipboardSize() > 0, why: own ? 'nothing copied' : why, run: () => edits.pasteClipboard(true) },
-    {
-      label: shared > 1 ? `Open prefab (${shared} placements)` : 'Open prefab',
-      divider: true,
-      enabled: ref !== null || inherited,
-      why: 'not linked to a prefab',
-      run: () => openPrefabOf(index),
-    },
-    {
-      label: 'Unlink from prefab',
-      enabled: own && ref !== null,
-      why: ref === null ? 'not a prefab placement' : inherited ? 'this is part of a prefab, not a placement of one' : why,
-      run: () => unlinkPlacement(index),
-    },
-    {
-      label: 'Save as prefab…',
-      enabled: own && ref === null && doc.mode === 'level',
-      why: ref !== null ? 'already a prefab' : doc.mode === 'prefab' ? 'already inside a prefab' : why,
-      run: () => void saveAsPrefab(index),
-    },
-    { label: 'Revert to prefab', divider: true, enabled: inherited && doc.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => revertOverride() },
-    { label: 'Apply to prefab', enabled: inherited && doc.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => void applyOverrides() },
-  ]
-}
-
-/** What can be made: the built-in shapes at their preset sizes (ADR 0090), and an empty. */
-const createMenu = (parent: number | null, at?: Vec3): MenuItem[] => [
-  ...PRIMITIVE_ORDER.map((kind) => ({ label: PRIMITIVE_LABELS[kind], run: () => createPrimitive(kind, parent, at) })),
-  { label: 'Empty', divider: true, run: () => createEmpty(parent, at) },
-]
-
-/** The blank-space menu: what you can make when you are not pointing at anything. */
-const blankMenu = (): MenuItem[] => [
-  { label: 'Create', items: createMenu(null) },
-  { label: 'Paste', hint: 'Ctrl+V', enabled: edits.clipboardSize() > 0, why: 'nothing copied', divider: true, run: () => edits.pasteClipboard(false) },
-  { label: 'Expand all', divider: true, run: () => hierarchy.setAllOpen(true) },
-  { label: 'Collapse all', run: () => hierarchy.setAllOpen(false) },
-]
-
-/**
- * Create an empty node and select it.
- *
- * Placed at `at` when given (the point that was right-clicked), otherwise on the parent it groups, otherwise
- * at the camera's focus — which is where a new object is expected to appear rather than at the world origin.
- */
-const createEmpty = (parent: number | null, at?: Vec3): void => {
-  if (doc === null) return
-  const where = at ?? (parent === null ? vec3(r4(controls.target.x), r4(controls.target.y), r4(controls.target.z)) : vec3(0, 0, 0))
-  const landed = doc.placeEmpty(where, parent)
-  if (landed < 0) {
-    setStatus('nowhere to put that')
-    return
-  }
-  edits.recordEdit('create empty')
-  meshes.buildAll()
-  scheduleRebuild()
-  select(landed)
-  uiChanged()
-}
-
-/** Create a built-in shape at its preset size (ADR 0090) and select it. Placed like `createEmpty`. */
-const createPrimitive = (kind: PrimitiveKind, parent: number | null, at?: Vec3): void => {
-  if (doc === null) return
-  const where = at ?? (parent === null ? vec3(r4(controls.target.x), r4(controls.target.y), r4(controls.target.z)) : vec3(0, 0, 0))
-  const landed = doc.placePrimitive(kind, where, parent)
-  if (landed < 0) {
-    setStatus('nowhere to put that')
-    return
-  }
-  edits.recordEdit(`create ${PRIMITIVE_LABELS[kind].toLowerCase()}`)
-  meshes.buildAll()
-  scheduleRebuild()
-  select(landed)
-  uiChanged()
-  loadNewReferences(meshes.buildAll)
-}
-
-/**
- * Frame the selection: put the orbit target on it and pull the camera back far enough to see all of it.
- *
- * Along the camera's *current* direction, so framing something never also spins the view — the one thing
- * that makes a focus command disorienting rather than useful. A bounding sphere rather than the box's
- * diagonal, so a long thin platform is framed by its length and not by a corner-to-corner measurement that
- * would push the camera into the next county.
- */
-const focusSelection = (): void => {
-  const box = new THREE.Box3()
-  for (const i of selection) {
-    const g = meshes.groupAt(i)
-    if (g !== undefined) box.expandByObject(g)
-  }
-  if (box.isEmpty()) return
-  const centre = box.getCenter(new THREE.Vector3())
-  const radius = Math.max(0.5, box.getBoundingSphere(new THREE.Sphere()).radius)
-  const camera = activeCamera()
-  const back = camera.position.clone().sub(controls.target)
-  // Degenerate only if the camera is already at its own target, which the controls do not allow.
-  if (back.lengthSq() < 1e-6) back.set(0, 1, 1)
-  controls.target.copy(centre)
-  if (isometric) {
-    // No fov to frame with: an orthographic camera frames by how much world its frustum holds, so the
-    // distance only has to clear the geometry and the frustum does the framing.
-    orthoCamera.zoom = 1
-    syncOrthoFrustum(radius * 1.4)
-    orthoCamera.position.copy(centre).add(back.normalize().multiplyScalar(Math.max(radius * 4, 10)))
-  } else {
-    const distance = (radius / Math.tan((stage.camera.fov * Math.PI) / 360)) * 1.4
-    stage.camera.position.copy(centre).add(back.normalize().multiplyScalar(distance))
-  }
-  controls.update()
-}
-
-/**
- * Paste at a world point rather than beside the selection.
- *
- * The **first** item lands on the point and the rest keep their offsets from it, so pasting a group of five
- * puts the group where you clicked instead of collapsing it onto one spot.
- */
-const pasteAt = (point: Vec3): void => {
-  if (doc === null || edits.clipboardSize() === 0) return
-  const landed: number[] = []
-  for (const item of edits.items()) {
-    const at = doc.paste(item, null)
-    if (at >= 0) landed.push(at)
-  }
-  const first = landed[0]
-  if (first === undefined) {
-    setStatus(doc.mode === 'level' ? 'the clipboard holds prefab nodes, not placements' : 'the clipboard holds placements, not nodes')
-    return
-  }
-  const from = doc.transformOf(first).position
-  const d = vec3(point.x - from.x, point.y - from.y, point.z - from.z)
-  for (const i of landed) {
-    const t = doc.transformOf(i)
-    doc.setTransform(i, { ...t, position: vec3(r4(t.position.x + d.x), r4(t.position.y + d.y), r4(t.position.z + d.z)) })
-  }
-  edits.recordEdit(landed.length > 1 ? `paste ${landed.length} here` : 'paste here')
-  meshes.buildAll()
-  rebuildLoaded()
-  applySelection(landed)
-  loadNewReferences(() => {
-    meshes.buildAll()
-    applySelection(landed)
-  })
-}
-
-/**
- * The viewport's right-click menu.
- *
- * On an object it is the Hierarchy's own list with Focus on top, because the same object should offer the same
- * things wherever it is right-clicked. On empty space it is what can be *made* at the point under the pointer.
- */
-const viewportMenu = (index: number | null, point: Vec3 | null): MenuItem[] => {
-  if (index !== null) return [{ label: 'Focus', hint: 'F', run: () => focusSelection() }, ...menuFor(index).map((m, n) => (n === 0 ? { ...m, divider: true } : m))]
-  return [
-    { label: 'Paste here', enabled: edits.clipboardSize() > 0 && point !== null, why: edits.clipboardSize() === 0 ? 'nothing copied' : 'no surface under the pointer', run: () => point !== null && pasteAt(point) },
-    { label: 'Create here', enabled: point !== null, why: 'no surface under the pointer', items: createMenu(null, point ?? undefined) },
-    { label: 'Focus on the selection', divider: true, enabled: selection.length > 0, why: 'nothing selected', run: () => focusSelection() },
-  ]
-}
+const menus = createMenus({
+  doc: () => doc,
+  selection: () => selection,
+  hierarchy: {
+    beginRename: (index) => hierarchy.beginRename(index),
+    setAllOpen: (open) => hierarchy.setAllOpen(open),
+  },
+  edits: () => edits,
+  nodes,
+  prefabs,
+  adoptable: () => adoptable(),
+  adopt: (types) => adopt(types),
+  scheduleRebuild: () => scheduleRebuild(),
+  inspectorRebuild: () => inspectorRebuild(),
+  uiChanged: () => uiChanged(),
+})
 
 /**
  * Right-click in the viewport, opened on the **release** rather than the press.
@@ -2369,12 +1216,12 @@ canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 canvas.addEventListener('pointerup', (e) => {
   if (e.button !== 2 || play.active() || doc === null) return
   if (Math.hypot(e.clientX - rightDownX, e.clientY - rightDownY) > 4) return // was a pan
-  const index = indexUnder(e.clientX, e.clientY)
+  const index = pick.indexUnder(e.clientX, e.clientY)
   // Right-clicking an object selects it first, so the menu and the gizmo agree about the subject.
   if (index !== null && !selection.includes(index)) select(index)
   contextMenu.open(
     { x: e.clientX, y: e.clientY },
-    viewportMenu(index, surfaceUnder(e.clientX, e.clientY)),
+    menus.viewportMenu(index, pick.surfaceUnder(e.clientX, e.clientY)),
     index === null ? undefined : doc.label(index),
   )
 })
@@ -2387,7 +1234,7 @@ $<HTMLDivElement>('#hierarchy').addEventListener('contextmenu', (e) => {
   // Right-clicking a row selects it first: a menu that acts on a *different* object than the one under the
   // pointer is the classic way to delete the wrong thing.
   if (index !== null && !selection.includes(index)) select(index)
-  contextMenu.open({ x: e.clientX, y: e.clientY }, index === null ? blankMenu() : menuFor(index), index === null ? undefined : doc.label(index))
+  contextMenu.open({ x: e.clientX, y: e.clientY }, index === null ? menus.blankMenu() : menus.menuFor(index), index === null ? undefined : doc.label(index))
 })
 
 // --- asset previews (thumbnails, cached) ---
@@ -2407,221 +1254,34 @@ const previews: Previews = createPreviews({
 })
 
 // --- project explorer (folder tree + assets + the kit) ---
-/** Run a file operation, then rebuild the database — every one of them changes what is on disk. */
-const afterFileOp = (label: string, run: () => Promise<void>): void => {
-  void (async () => {
-    try {
-      await run()
-    } catch (e) {
-      setStatus(`${label} failed: ${String(e)}`)
-      return
-    }
-    previews.invalidate()
-    await reloadAssets()
-    setStatus(label)
-    refreshUi()
-  })()
-}
-
-/** Arm a placeable asset for the next viewport click, or disarm the one already waiting. */
 /**
- * The component types a prefab file uses that the open document's registry lacks, split into the shared ones
- * the game can adopt (ADR 0077) and another game's private ones, which it cannot (ADR 0076).
+ * Operations on the project tree's files (`fileActions.ts`, ADR 0121): arming an asset, renaming,
+ * deleting, and the two deletes that are more than a file removal. What is left here is its host.
  */
-const missingIn = (assetId: string): { shared: string[]; foreign: string[] } => {
-  const entry = assets?.db.byId[assetId]
-  const root = entry?.kind === 'prefab' ? assets?.prefabOf(assetId) : undefined
-  if (root === undefined || doc === null) return { shared: [], foreign: [] }
-  const unknown = unknownComponentTypes(root, doc.registry)
-  return { shared: unknown.filter(isSharedComponent), foreign: unknown.filter((t) => !isSharedComponent(t)) }
-}
-
-/** Why this asset cannot be placed into the open document, or `null`. Only another game's private component is a reason. */
-const unplaceableWhy = (assetId: string): string | null => {
-  const { foreign } = missingIn(assetId)
-  return foreign.length === 0 ? null : `uses ${foreign.join(', ')}, which this game does not have`
-}
-
-const armAsset = (assetId: string): void => {
-  const entry = assets?.db.byId[assetId]
-  if (entry === undefined) return
-  const why = unplaceableWhy(assetId)
-  if (why !== null) {
-    setStatus(`${entry.name} ${why}`)
-    return
-  }
-  // A shared component the game lacks is adopted on the way to arming, so the click that places it never sees
-  // a registry without it (ADR 0077). Not while a prefab is open on top: a prefab belongs to no game.
-  const { shared } = missingIn(assetId)
-  if (shared.length > 0 && activeMode !== undefined && docStack.length === 1) {
-    void adopt(shared).then(() => armAsset(assetId))
-    return
-  }
-  const kind = entry.kind === 'prefab' ? ('prefabAsset' as const) : ('model' as const)
-  placing = placing?.assetId === assetId ? null : { kind, assetId }
-  refreshUi()
-}
-
-const renameAsset = (path: string, name: string): void =>
-  afterFileOp(`renamed to ${name}`, async () => assets?.move(path, renamedTo(path, name)) ?? Promise.resolve())
-
-/** A node id, minted the way `editorDoc` mints them: four random bytes, hex. */
-const freshNodeId = (): string => {
-  const bytes = new Uint8Array(4)
-  crypto.getRandomValues(bytes)
-  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-/** Every `nodeRef` parameter a component type declares — what a re-id has to follow (ADR 0097). */
-const nodeRefKeysOf = (type: string): string[] => {
-  const def = registry().get(type)
-  return def === undefined ? [] : Object.entries(def.params).filter(([, spec]) => spec.kind === 'nodeRef').map(([key]) => key)
-}
-
-/**
- * Delete an asset — and for a **prefab**, unlink every placement of it first (ADR 0097).
- *
- * Deleting a prefab used to be silent and unrecoverable: no warning, no count of what referenced it, and the
- * `.meta` sidecar went with the file, so the asset id died and re-creating the prefab could never re-link the
- * placements. They degraded to objects that kept a transform and drew nothing — right for a file that went
- * missing by accident, wrong for one somebody chose to delete.
- *
- * So the placements are unlinked instead: they keep exactly what they were drawing and stop being copies of
- * anything. Kodjo's call.
- *
- * Two paths, because the editor is the only side that can do this. The unlink needs a component registry —
- * for which components are singletons, and which parameters are node references that must follow a re-id —
- * and the editor-server has none by design.
- *
- * - the **open** level goes through its own document, as ops: one undo entry, and everyone in the room sees it.
- * - every **other** level goes through `GET` + `PUT`, which 409s while that level is open live. That refusal
- *   is the guard: rather than rewrite a file under somebody, the whole delete stops and names the level.
- *
- * The prefab file goes last. A failed unlink then costs nothing, where the reverse order would leave
- * placements pointing at an id that no longer exists.
- */
-const deleteAsset = (path: string): void => {
-  const entry = assets?.db.entries.find((e) => e.path === path)
-  if (entry === undefined || entry.kind !== 'prefab') {
-    afterFileOp(`deleted ${path}`, async () => assets?.remove(path) ?? Promise.resolve())
-    return
-  }
-  void (async () => {
-    const id = entry.id
-    const all = await listFiles('levels').catch(() => [] as FileEntry[])
-    const users = all.filter((f) => f.prefabs?.includes(id) === true).map((f) => f.name)
-    const openName = fileState.name
-    const here = doc?.refCount(id) ?? 0
-    // The open document is ahead of the listing either way: it may have placed one since the last write, or
-    // removed the last one.
-    const others = users.filter((n) => n !== openName)
-
-    const counts = [
-      here > 0 ? `${here} in this level` : null,
-      others.length > 0 ? `${others.length} other level${others.length === 1 ? '' : 's'} (${others.join(', ')})` : null,
-    ].filter((s) => s !== null)
-    const body =
-      counts.length === 0
-        ? 'Nothing places it. The file and its id go for good — a prefab created again later gets a new id.'
-        : `Used by ${counts.join(' and ')}. Those objects stay where they are and keep what they are drawing; they just stop being copies of this prefab. The file and its id go for good.`
-    if (!(await askDestructive(`Delete ${entry.name}?`, body, 'Delete'))) return setStatus('kept')
-
-    // Other levels first: they are the ones that can refuse, and a refusal must stop the whole thing.
-    for (const name of others) {
-      try {
-        const level = (await loadLevelRaw(name)) as Level
-        hydratePrefabs(level, editorPrefabs)
-        const n = unlinkPrefab(level, id, { types: registry(), freshId: freshNodeId, refKeysOf: nodeRefKeysOf })
-        if (n > 0) await saveFile('levels', name, stripHydrated(level, [id]))
-      } catch (e) {
-        setStatus(`${name} could not be unlinked (${String(e)}) — nothing deleted`)
-        return
-      }
-    }
-    if (here > 0) {
-      doc?.unlinkPrefab(id)
-      edits.recordEdit(`unlinked ${entry.name}`)
-      await room.flush().catch(() => undefined)
-    }
-    afterFileOp(`deleted ${path}`, async () => assets?.remove(path) ?? Promise.resolve())
-  })()
-}
-
-/**
- * Rename a level (ADR 0110).
- *
- * The open one is handled by leaving its live session first: the server refuses a rename while the document
- * is open, because the next flush would write the old file straight back. Flush, leave, rename, reopen under
- * the new name — and a refusal past that point is someone *else* holding it, which is theirs to release.
- *
- * A `to` in another game moves the level there, since the folder is the game.
- */
-const renameLevel = (qualified: string): void => {
-  const ref = parseQualified(qualified)
-  if (ref === null) return
-  void (async () => {
-    const asked = await askName(
-      `Rename ${ref.name}`,
-      ref.name,
-      `File name in content/${ref.game}/levels/. Letters, digits, - and _. Any ?level=${ref.name} link, and the multiplayer room name, change with it.`,
-    )
-    if (asked === null || asked === ref.name) return
-    if (!isSegment(asked)) return setStatus(`"${asked}" is not a file name: letters, digits, - and _ only`)
-    const to = qualify({ game: ref.game, name: asked })
-    const wasOpen = fileState.name === qualified
-    if (wasOpen) {
-      if (live()) await room.flush().catch(() => undefined)
-      await room.leave()
-    }
-    try {
-      await apiRenameLevel(qualified, to)
-    } catch (e) {
-      setStatus(`could not rename: ${String(e)}`)
-      if (wasOpen) await openFile(qualified) // put back what we left
-      return
-    }
-    await refreshFileList()
-    if (wasOpen) await openFile(to)
-    setStatus(`renamed to ${asked}`)
-  })()
-}
-
-/**
- * Delete a level (ADR 0110), behind `askDestructive` with the consequences named.
- *
- * Heavier than an asset delete because there is no undo and nothing else holds a copy: a prefab lives on in
- * the placements that referenced it, a level is the content. So the dialogue says what it is, whether it is
- * the one you have open, and whether it is the level its game boots into; Cancel is the keyboard default.
- */
-const deleteLevelFile = (qualified: string): void => {
-  const ref = parseQualified(qualified)
-  if (ref === null) return
-  void (async () => {
-    const siblings = levelEntries.filter((e) => e.mode === ref.game && e.name !== qualified)
-    const isOpen = fileState.name === qualified
-    const isDefault = ref.name === 'default'
-    const notes = [
-      isOpen ? 'It is the level you have open' : null,
-      isDefault ? `it is what ${ref.game} loads with no ?level=, so the game will boot into ${siblings[0] === undefined ? 'nothing' : (parseQualified(siblings[0].name)?.name ?? siblings[0].name)} instead` : null,
-      siblings.length === 0 ? `it is the only level ${ref.game} has` : null,
-    ].filter((n) => n !== null)
-    const body = `The file goes for good \u2014 there is no undo and no copy anywhere else.${notes.length > 0 ? ` ${notes.join(', and ')}.` : ''}`
-    if (!(await askDestructive(`Delete ${ref.name}?`, body, 'Delete for good'))) return setStatus('kept')
-
-    if (isOpen) await room.leave()
-    try {
-      await apiDeleteLevel(qualified)
-    } catch (e) {
-      setStatus(`could not delete: ${String(e)}`)
-      if (isOpen) await openFile(qualified)
-      return
-    }
-    await refreshFileList()
-    // Nothing is open now, so boot into whatever is left rather than leaving a document with no file.
-    if (isOpen) await openFirstLevel()
-    setStatus(`deleted ${ref.name}`)
-  })()
-}
+const fileOps = createFileActions({
+  doc: () => doc,
+  assets: () => assets,
+  registry: () => registry(),
+  prefabSource: editorPrefabs,
+  fileName: () => fileState.name,
+  levelEntries: () => levelEntries,
+  hasGame: () => activeMode !== undefined,
+  inPrefab: () => docStack.length > 1,
+  adoptable: () => adoptable(),
+  adopt: (types) => adopt(types),
+  arm: (kind, assetId) => {
+    placing = placing?.assetId === assetId ? null : { kind, assetId }
+  },
+  recordEdit: (label) => edits.recordEdit(label),
+  room: { live: () => live(), flush: () => room.flush(), leave: () => room.leave() },
+  openFile: (qualified) => openFile(qualified),
+  openFirstLevel: () => openFirstLevel(),
+  refreshFileList: () => refreshFileList(),
+  reloadAssets: () => reloadAssets(),
+  invalidatePreviews: () => previews.invalidate(),
+  setStatus: (message) => setStatus(message),
+  refreshUi: () => refreshUi(),
+})
 
 const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   db: () => assets?.db ?? null,
@@ -2650,15 +1310,15 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   urlOf: (path) => assets?.urlOf(path) ?? path,
   armed: () => placing?.assetId ?? null,
   selectedAsset: () => selectedAsset,
-  onPickAsset: armAsset,
-  unplaceableWhy,
+  onPickAsset: fileOps.armAsset,
+  unplaceableWhy: (id) => fileOps.unplaceableWhy(id),
   onUpload: (files, folder) => {
     const cap = me?.maxUploadBytes ?? Infinity
     const tooBig = files.filter((f) => f.size > cap).map((f) => f.name)
     if (tooBig.length > 0) setStatus(`too big (cap ${Math.round(cap / 1024 / 1024)} MB): ${tooBig.join(', ')}`)
     const fits = files.filter((f) => f.size <= cap)
     if (fits.length === 0) return
-    afterFileOp(`uploaded ${fits.map((f) => f.name).join(', ')}`, async () => {
+    fileOps.afterFileOp(`uploaded ${fits.map((f) => f.name).join(', ')}`, async () => {
       for (const f of fits) await uploadAsset(folder === '' ? f.name : `${folder}/${f.name}`, f)
     })
   },
@@ -2706,7 +1366,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     const inFolder = isFolder ? (assets?.db.entries.filter((e) => e.path.startsWith(`${path}/`)).length ?? 0) : 0
     const entry = isFolder ? undefined : assets?.db.entries.find((e) => e.path === path)
     const placeable = entry?.kind === 'prefab' || entry?.kind === 'model'
-    const foreign = entry === undefined ? null : unplaceableWhy(entry.id)
+    const foreign = entry === undefined ? null : fileOps.unplaceableWhy(entry.id)
     const prefabHere = entry?.kind === 'prefab' ? entry.id : null
     contextMenu.open(
       at,
@@ -2717,7 +1377,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
           why: isFolder ? 'a folder is not an asset' : foreign ?? 'nothing to open for this kind',
           run: () => {
             if (entry === undefined) return
-            if (placeable) armAsset(entry.id)
+            if (placeable) fileOps.armAsset(entry.id)
             else {
               selectedAsset = entry.id
               assetInspector.show(entry.id)
@@ -2730,7 +1390,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
           label: 'Open prefab',
           enabled: prefabHere !== null && prefabOpen === null,
           why: prefabHere === null ? 'not a prefab' : 'leave the prefab you are in first',
-          run: () => void (prefabHere !== null && enterPrefab(prefabHere)),
+          run: () => void (prefabHere !== null && prefabs.enterPrefab(prefabHere)),
         },
         {
           label: 'Copy path',
@@ -2743,7 +1403,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
           run: () => {
             const name = prompt('Rename', current)
             if (name === null || name.trim() === '' || name.trim() === current) return
-            renameAsset(path, name.trim())
+            fileOps.renameAsset(path, name.trim())
           },
         },
         {
@@ -2753,7 +1413,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
             // A confirm only where it is warranted: a folder takes everything under it, and an id that
             // disappears greyboxes silently rather than failing (ADR 0028).
             if (inFolder > 0 && !confirm(`Delete ${current} and the ${inFolder} asset${inFolder === 1 ? '' : 's'} in it?`)) return
-            deleteAsset(path)
+            fileOps.deleteAsset(path)
           },
         },
       ],
@@ -2782,20 +1442,20 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
           // copy rather than the file, so a level open live is duplicated as it is now.
           run: () => void createLevel(qualified),
         },
-        { label: 'Rename\u2026', run: () => renameLevel(qualified) },
+        { label: 'Rename\u2026', run: () => fileOps.renameLevel(qualified) },
         {
           label: 'Copy name',
           // What `?level=` takes, and what a teammate needs in order to open the same one.
           run: () => void navigator.clipboard?.writeText(short).then(() => setStatus(`copied ${short}`)),
         },
-        { label: 'Delete\u2026', divider: true, run: () => deleteLevelFile(qualified) },
+        { label: 'Delete\u2026', divider: true, run: () => fileOps.deleteLevelFile(qualified) },
       ],
       short,
     )
   },
-  onMkdir: (parent, name) => afterFileOp(`created ${name}`, async () => assets?.mkdir(parent, name) ?? Promise.resolve()),
-  onRename: renameAsset,
-  onDelete: deleteAsset,
+  onMkdir: (parent, name) => fileOps.afterFileOp(`created ${name}`, async () => assets?.mkdir(parent, name) ?? Promise.resolve()),
+  onRename: fileOps.renameAsset,
+  onDelete: fileOps.deleteAsset,
   onMove: (from, toFolder) => {
     // Refuse a folder into its own subtree here as well as on the server: a rejected drop should not need a
     // round trip to say so.
@@ -2803,7 +1463,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
       setStatus('a folder cannot move inside itself')
       return
     }
-    afterFileOp(`moved into ${toFolder === '' ? 'assets' : toFolder}`, async () => assets?.move(from, movedInto(from, toFolder)) ?? Promise.resolve())
+    fileOps.afterFileOp(`moved into ${toFolder === '' ? 'assets' : toFolder}`, async () => assets?.move(from, movedInto(from, toFolder)) ?? Promise.resolve())
   },
 })
 
@@ -2836,9 +1496,9 @@ const edits = createHistoryStore({
   selection: () => selection,
   selected: () => selected,
   selectionRefs: () => selectionRefs(),
-  selectionRoots: () => selectionRoots(),
+  selectionRoots: () => nodes.selectionRoots(),
   applySelection: (indices) => applySelection(indices),
-  deleteSelected: () => deleteSelected(),
+  deleteSelected: () => nodes.deleteSelected(),
   live: () => live(),
   submit: (batch) => room.submit(batch),
   fileName: () => fileState.name,
@@ -2861,7 +1521,7 @@ const edits = createHistoryStore({
   },
   rebuildFromData: () => {
     deselect()
-    installEnvironment(doc?.environment())
+    view.installEnvironment(doc?.environment())
     meshes.buildAll()
     rebuildLoaded()
   },
@@ -2872,7 +1532,7 @@ const edits = createHistoryStore({
   inspectorRebuild: () => inspectorRebuild(),
 })
 
-// --- previewing motion in the viewport (ADR 0103) ---
+// --- motion.playing() motion in the viewport (ADR 0103) ---
 /**
  * Run or stop the preview clock.
  *
@@ -2881,11 +1541,7 @@ const edits = createHistoryStore({
  * wherever the clock stopped would look exactly like content someone had moved.
  */
 function setPreviewing(on: boolean): void {
-  previewing = on
-  previewLastFrame = 0
-  if (!on) setPreviewTime(0)
-  toolbar.render()
-  renderStatus()
+  motion.setPlaying(on)
 }
 
 /**
@@ -2970,17 +1626,14 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     reopenWithRegistry()
     void refreshFileList()
   },
-  boundsBoxShown: () => showBoundsBox,
-  showBoundsBox: (on) => {
-    showBoundsBox = on
-    refreshBoundsBox()
-  },
+  boundsBoxShown: () => view.showBounds(),
+  showBoundsBox: (on) => view.setShowBounds(on),
   onNetBoundsChanged: () => {
-    refreshBoundsBox()
+    view.refreshBoundsBox()
     edits.recordEdit('network bounds')
     uiChanged()
   },
-  boundsReach,
+  boundsReach: () => view.boundsReach(),
   /**
    * The header's active checkbox (ADR 0099, moved to the Inspector by ADR 0102). A structural change: what
    * the level contains just changed, so the physics world, the markers and the drawn items are all rebuilt,
@@ -2997,7 +1650,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   },
   onEnvironmentChanged: () => {
     // Elevation and azimuth move the sky as well as the light, so this rebakes rather than just relighting.
-    installEnvironment(doc?.environment())
+    view.installEnvironment(doc?.environment())
     edits.recordEdit('environment')
     uiChanged()
   },
@@ -3043,7 +1696,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
    * message to the room, the same way a gizmo drag across a selection does.
    */
   writeAxis: (field, axis, value) => {
-    if (doc === null || gizmoDragging || selection.length === 0) return
+    if (doc === null || tool.dragging() || selection.length === 0) return
     edits.beginDrag()
     try {
       for (const i of selection) {
@@ -3056,7 +1709,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
           e[axis] = THREE.MathUtils.degToRad(value)
           g.quaternion.setFromEuler(e)
         }
-        writeBackItem(i)
+        tool.writeBackItem(i)
         if (field === 'scale') meshes.rebuildSubtree(i)
       }
     } finally {
@@ -3065,12 +1718,12 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     }
     edits.endDrag(selection.length > 1 ? `${field} ${selection.length}` : field)
     rebuildLoaded()
-    applyPreviewPoses()
+    motion.applyPoses()
     inspector.sync()
   },
   writeTransform: (t) => {
-    // The gizmo is the authority while it is dragging: see `gizmoDragging`.
-    if (selected === null || gizmoDragging) return
+    // The gizmo is the authority while it is dragging: see `tool.dragging()`.
+    if (selected === null || tool.dragging()) return
     const g = meshes.groupAt(selected)
     if (g === undefined) return
     // No snapshot needed: an offset track's write-back is a subtraction, not a delta against the pose the
@@ -3079,10 +1732,10 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     const q = eulerToQuat(vec3(THREE.MathUtils.degToRad(t.rotationDeg.x), THREE.MathUtils.degToRad(t.rotationDeg.y), THREE.MathUtils.degToRad(t.rotationDeg.z)))
     g.quaternion.set(q.x, q.y, q.z, q.w)
     g.scale.set(t.scale.x, t.scale.y, t.scale.z)
-    writeBackSelected()
+    tool.writeBackSelected()
     meshes.rebuildSubtree(selected) // the scale may have changed, and the meshes are built from it
     edits.recordEdit('transform')
-    applyPreviewPoses() // the rest pose moved, so the item's drawn pose at the playhead moved with it
+    motion.applyPoses() // the rest pose moved, so the item's drawn pose at the playhead moved with it
     scheduleRebuild()
   },
   onPropsChanged: () => {
@@ -3100,15 +1753,15 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     edits.recordEdit('rename')
     uiChanged()
   },
-  duplicate: duplicateSelected,
-  remove: deleteSelected,
-  saveAsPrefab: () => void (selected !== null && saveAsPrefab(selected)),
-  unlinkPrefab: () => void (selected !== null && unlinkPlacement(selected)),
+  duplicate: nodes.duplicateSelected,
+  remove: nodes.deleteSelected,
+  saveAsPrefab: () => void (selected !== null && prefabs.saveAsPrefab(selected)),
+  unlinkPrefab: () => void (selected !== null && prefabs.unlinkPlacement(selected)),
   openPrefab: () => {
-    if (selected !== null) openPrefabOf(selected)
+    if (selected !== null) prefabs.openPrefabOf(selected)
   },
-  revertOverride,
-  applyOverrides: () => void applyOverrides(),
+  revertOverride: (field) => prefabs.revertOverride(field),
+  applyOverrides: () => void prefabs.applyOverrides(),
   assetOptions: (of) => {
     const options: Record<string, string> = { '(none)': '' }
     // The built-in shapes (ADR 0090) sit in the model slot beside the uploaded files.
@@ -3148,7 +1801,7 @@ const renderStatus = (): void => {
   if (selected !== null && doc !== null) {
     parts.push(selection.length > 1 ? `${selection.length} selected · editing what they share` : `selected #${selected} (${doc.label(selected)})`)
   }
-  if (previewing) parts.push(`preview t=${(previewMs / 1000).toFixed(2)}s`)
+  if (motion.playing()) parts.push(`preview t=${(motion.timeMs() / 1000).toFixed(2)}s`)
   if (placing !== null) {
     const what = assets?.db.byId[placing.assetId]?.name ?? 'asset'
     parts.push(`click in the viewport to place <b>${what}</b>`)
@@ -3186,7 +1839,7 @@ const relayout = (): void => {
     relayoutQueued = false
     stage.resize()
     // `stage.resize` only knows the perspective camera; this one is the editor's.
-    if (isometric) syncOrthoFrustum((orthoCamera.top - orthoCamera.bottom) / 2)
+    if (view.isometric()) view.syncOrthoFrustum(view.orthoHalfHeight())
     const size = stage.renderer.getSize(new THREE.Vector2())
     postfx.setSize(size.x, size.y)
   })
@@ -3237,13 +1890,8 @@ stage.start((dt) => {
      * character and no rules. It runs freely rather than wrapping: every mover derives its own cycle from
      * its speed, so there is no single length to wrap to, and level time in the game does not wrap either.
      */
-    if (previewing) {
-      const now = performance.now()
-      const dt = previewLastFrame === 0 ? 0 : now - previewLastFrame
-      previewLastFrame = now
-      advancePreviewTime(previewMs + dt)
-    }
-    viewGizmo.update(dt)
+    motion.frame()
+    view.update(dt)
     controls.update()
   }
 })
@@ -3279,7 +1927,7 @@ const reloadAssets = async (): Promise<void> => {
 
 // --- boot ---
 await initPhysics()
-applySnap()
+tool.applySnap()
 // Who you are, and the lock rules. A dev server answers `local`; the hosted one, whoever Access let in.
 me = await fetchMe().catch((e: unknown) => {
   setProblem(`who am I? ${String(e)} — restart pnpm dev:editor`)
