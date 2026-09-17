@@ -55,6 +55,25 @@ anything found mid-move is reported and fixed separately.
 Play first because its boundary is the cleanest and a failure is unmistakable. Panel wiring last because it is
 the largest and the most mechanical, by which point the pattern is settled.
 
+## Outcome, and two corrections to the plan above
+
+Eleven modules, not six. `main.ts` went 4361 → 1969. The subsystem table in `docs/platform/editor.md` is the
+current list; two of the six phases were wrong as written:
+
+- **Phase 6 was mis-specified.** Moving a panel's host literal needs a second identical host, because a host
+  literal already *is* the thin adapter — nothing gains an owner. The real work behind those literals was the
+  action clusters: `fileActions`, `prefabActions`, `nodeActions`, and then `menus`, which had to come **after**
+  them. Built first, `menus` would have needed sixteen injected callbacks.
+- **Phase 5 was not one module.** Mapping it showed five: `motionPreview`, `cameraView`, `pickTool`,
+  `nodeActions`, `gizmoTool`. It looked like three scattered slices only because the camera and environment
+  code sits between the gizmo's — two adjacent clusters, not one broken-up one.
+
+`gizmoTool` went last deliberately: the groups its handles attach to, the history a drag folds into, and the
+pointer that tells a click from a drag all had to own themselves first.
+
+Found on the way, and fixed as its own commit: the drag sequence (`coalescing` on, batches held, fold, submit,
+record) was held **verbatim in three places** — the gizmo, the face tool and the Inspector's `writeAxis`.
+
 ## Rejected
 
 - **One shared `editorState.ts`** holding the 78 variables, imported everywhere. The quickest route and the
