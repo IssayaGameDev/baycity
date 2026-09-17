@@ -6,8 +6,6 @@ import {
   RENDERER,
   type PrefabSource,
   hydratePrefabs,
-  stripHydrated,
-  unlinkPrefab,
   type ComponentData,
   type LoadedLevel,
   // Aliased: this file is DOM-heavy and `Node` is taken. A scene node is not a DOM node, and the day the two
@@ -33,11 +31,10 @@ import {
 } from '@mp/render-three'
 import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type Doc, type LocalPose, type Mode } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
-import { askDestructive, askName } from './confirm'
+import { askName } from './confirm'
 import { prefabFolder, prefabTarget, sanitisePrefabName } from './prefabPath'
 import {
   acquireLock,
-  deleteLevel as apiDeleteLevel,
   heartbeatLocks,
   listFiles,
   loadGame,
@@ -46,7 +43,6 @@ import {
   me as fetchMe,
   releaseLock,
   releaseLockBeacon,
-  renameLevel as apiRenameLevel,
   saveFile,
   saveGame,
   serverStatus,
@@ -59,7 +55,7 @@ import { createHierarchy, type Hierarchy } from './hierarchy'
 import { createInspector, type Inspector } from './inspector'
 import { createAssetInspector, type AssetInspector } from './assetInspector'
 import { loadAssetLibrary, type AssetLibrary } from './assetsApi'
-import { canMoveFolder, movedInto, renamedTo } from './assetTree'
+import { canMoveFolder, movedInto } from './assetTree'
 import { createPreviews, type Previews } from './previews'
 import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
 import { createProjectPanel, type Project } from './projectPanel'
@@ -69,6 +65,7 @@ import { createHistoryStore } from './historyStore'
 import { createItemMeshes } from './itemMeshes'
 import { createLiveSession } from './liveSession'
 import { createCameraView } from './cameraView'
+import { createFileActions } from './fileActions'
 import { createMotionPreview } from './motionPreview'
 import { createPlay } from './play'
 import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
@@ -2179,221 +2176,34 @@ const previews: Previews = createPreviews({
 })
 
 // --- project explorer (folder tree + assets + the kit) ---
-/** Run a file operation, then rebuild the database — every one of them changes what is on disk. */
-const afterFileOp = (label: string, run: () => Promise<void>): void => {
-  void (async () => {
-    try {
-      await run()
-    } catch (e) {
-      setStatus(`${label} failed: ${String(e)}`)
-      return
-    }
-    previews.invalidate()
-    await reloadAssets()
-    setStatus(label)
-    refreshUi()
-  })()
-}
-
-/** Arm a placeable asset for the next viewport click, or disarm the one already waiting. */
 /**
- * The component types a prefab file uses that the open document's registry lacks, split into the shared ones
- * the game can adopt (ADR 0077) and another game's private ones, which it cannot (ADR 0076).
+ * Operations on the project tree's files (`fileActions.ts`, ADR 0121): arming an asset, renaming,
+ * deleting, and the two deletes that are more than a file removal. What is left here is its host.
  */
-const missingIn = (assetId: string): { shared: string[]; foreign: string[] } => {
-  const entry = assets?.db.byId[assetId]
-  const root = entry?.kind === 'prefab' ? assets?.prefabOf(assetId) : undefined
-  if (root === undefined || doc === null) return { shared: [], foreign: [] }
-  const unknown = unknownComponentTypes(root, doc.registry)
-  return { shared: unknown.filter(isSharedComponent), foreign: unknown.filter((t) => !isSharedComponent(t)) }
-}
-
-/** Why this asset cannot be placed into the open document, or `null`. Only another game's private component is a reason. */
-const unplaceableWhy = (assetId: string): string | null => {
-  const { foreign } = missingIn(assetId)
-  return foreign.length === 0 ? null : `uses ${foreign.join(', ')}, which this game does not have`
-}
-
-const armAsset = (assetId: string): void => {
-  const entry = assets?.db.byId[assetId]
-  if (entry === undefined) return
-  const why = unplaceableWhy(assetId)
-  if (why !== null) {
-    setStatus(`${entry.name} ${why}`)
-    return
-  }
-  // A shared component the game lacks is adopted on the way to arming, so the click that places it never sees
-  // a registry without it (ADR 0077). Not while a prefab is open on top: a prefab belongs to no game.
-  const { shared } = missingIn(assetId)
-  if (shared.length > 0 && activeMode !== undefined && docStack.length === 1) {
-    void adopt(shared).then(() => armAsset(assetId))
-    return
-  }
-  const kind = entry.kind === 'prefab' ? ('prefabAsset' as const) : ('model' as const)
-  placing = placing?.assetId === assetId ? null : { kind, assetId }
-  refreshUi()
-}
-
-const renameAsset = (path: string, name: string): void =>
-  afterFileOp(`renamed to ${name}`, async () => assets?.move(path, renamedTo(path, name)) ?? Promise.resolve())
-
-/** A node id, minted the way `editorDoc` mints them: four random bytes, hex. */
-const freshNodeId = (): string => {
-  const bytes = new Uint8Array(4)
-  crypto.getRandomValues(bytes)
-  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-/** Every `nodeRef` parameter a component type declares — what a re-id has to follow (ADR 0097). */
-const nodeRefKeysOf = (type: string): string[] => {
-  const def = registry().get(type)
-  return def === undefined ? [] : Object.entries(def.params).filter(([, spec]) => spec.kind === 'nodeRef').map(([key]) => key)
-}
-
-/**
- * Delete an asset — and for a **prefab**, unlink every placement of it first (ADR 0097).
- *
- * Deleting a prefab used to be silent and unrecoverable: no warning, no count of what referenced it, and the
- * `.meta` sidecar went with the file, so the asset id died and re-creating the prefab could never re-link the
- * placements. They degraded to objects that kept a transform and drew nothing — right for a file that went
- * missing by accident, wrong for one somebody chose to delete.
- *
- * So the placements are unlinked instead: they keep exactly what they were drawing and stop being copies of
- * anything. Kodjo's call.
- *
- * Two paths, because the editor is the only side that can do this. The unlink needs a component registry —
- * for which components are singletons, and which parameters are node references that must follow a re-id —
- * and the editor-server has none by design.
- *
- * - the **open** level goes through its own document, as ops: one undo entry, and everyone in the room sees it.
- * - every **other** level goes through `GET` + `PUT`, which 409s while that level is open live. That refusal
- *   is the guard: rather than rewrite a file under somebody, the whole delete stops and names the level.
- *
- * The prefab file goes last. A failed unlink then costs nothing, where the reverse order would leave
- * placements pointing at an id that no longer exists.
- */
-const deleteAsset = (path: string): void => {
-  const entry = assets?.db.entries.find((e) => e.path === path)
-  if (entry === undefined || entry.kind !== 'prefab') {
-    afterFileOp(`deleted ${path}`, async () => assets?.remove(path) ?? Promise.resolve())
-    return
-  }
-  void (async () => {
-    const id = entry.id
-    const all = await listFiles('levels').catch(() => [] as FileEntry[])
-    const users = all.filter((f) => f.prefabs?.includes(id) === true).map((f) => f.name)
-    const openName = fileState.name
-    const here = doc?.refCount(id) ?? 0
-    // The open document is ahead of the listing either way: it may have placed one since the last write, or
-    // removed the last one.
-    const others = users.filter((n) => n !== openName)
-
-    const counts = [
-      here > 0 ? `${here} in this level` : null,
-      others.length > 0 ? `${others.length} other level${others.length === 1 ? '' : 's'} (${others.join(', ')})` : null,
-    ].filter((s) => s !== null)
-    const body =
-      counts.length === 0
-        ? 'Nothing places it. The file and its id go for good — a prefab created again later gets a new id.'
-        : `Used by ${counts.join(' and ')}. Those objects stay where they are and keep what they are drawing; they just stop being copies of this prefab. The file and its id go for good.`
-    if (!(await askDestructive(`Delete ${entry.name}?`, body, 'Delete'))) return setStatus('kept')
-
-    // Other levels first: they are the ones that can refuse, and a refusal must stop the whole thing.
-    for (const name of others) {
-      try {
-        const level = (await loadLevelRaw(name)) as Level
-        hydratePrefabs(level, editorPrefabs)
-        const n = unlinkPrefab(level, id, { types: registry(), freshId: freshNodeId, refKeysOf: nodeRefKeysOf })
-        if (n > 0) await saveFile('levels', name, stripHydrated(level, [id]))
-      } catch (e) {
-        setStatus(`${name} could not be unlinked (${String(e)}) — nothing deleted`)
-        return
-      }
-    }
-    if (here > 0) {
-      doc?.unlinkPrefab(id)
-      edits.recordEdit(`unlinked ${entry.name}`)
-      await room.flush().catch(() => undefined)
-    }
-    afterFileOp(`deleted ${path}`, async () => assets?.remove(path) ?? Promise.resolve())
-  })()
-}
-
-/**
- * Rename a level (ADR 0110).
- *
- * The open one is handled by leaving its live session first: the server refuses a rename while the document
- * is open, because the next flush would write the old file straight back. Flush, leave, rename, reopen under
- * the new name — and a refusal past that point is someone *else* holding it, which is theirs to release.
- *
- * A `to` in another game moves the level there, since the folder is the game.
- */
-const renameLevel = (qualified: string): void => {
-  const ref = parseQualified(qualified)
-  if (ref === null) return
-  void (async () => {
-    const asked = await askName(
-      `Rename ${ref.name}`,
-      ref.name,
-      `File name in content/${ref.game}/levels/. Letters, digits, - and _. Any ?level=${ref.name} link, and the multiplayer room name, change with it.`,
-    )
-    if (asked === null || asked === ref.name) return
-    if (!isSegment(asked)) return setStatus(`"${asked}" is not a file name: letters, digits, - and _ only`)
-    const to = qualify({ game: ref.game, name: asked })
-    const wasOpen = fileState.name === qualified
-    if (wasOpen) {
-      if (live()) await room.flush().catch(() => undefined)
-      await room.leave()
-    }
-    try {
-      await apiRenameLevel(qualified, to)
-    } catch (e) {
-      setStatus(`could not rename: ${String(e)}`)
-      if (wasOpen) await openFile(qualified) // put back what we left
-      return
-    }
-    await refreshFileList()
-    if (wasOpen) await openFile(to)
-    setStatus(`renamed to ${asked}`)
-  })()
-}
-
-/**
- * Delete a level (ADR 0110), behind `askDestructive` with the consequences named.
- *
- * Heavier than an asset delete because there is no undo and nothing else holds a copy: a prefab lives on in
- * the placements that referenced it, a level is the content. So the dialogue says what it is, whether it is
- * the one you have open, and whether it is the level its game boots into; Cancel is the keyboard default.
- */
-const deleteLevelFile = (qualified: string): void => {
-  const ref = parseQualified(qualified)
-  if (ref === null) return
-  void (async () => {
-    const siblings = levelEntries.filter((e) => e.mode === ref.game && e.name !== qualified)
-    const isOpen = fileState.name === qualified
-    const isDefault = ref.name === 'default'
-    const notes = [
-      isOpen ? 'It is the level you have open' : null,
-      isDefault ? `it is what ${ref.game} loads with no ?level=, so the game will boot into ${siblings[0] === undefined ? 'nothing' : (parseQualified(siblings[0].name)?.name ?? siblings[0].name)} instead` : null,
-      siblings.length === 0 ? `it is the only level ${ref.game} has` : null,
-    ].filter((n) => n !== null)
-    const body = `The file goes for good \u2014 there is no undo and no copy anywhere else.${notes.length > 0 ? ` ${notes.join(', and ')}.` : ''}`
-    if (!(await askDestructive(`Delete ${ref.name}?`, body, 'Delete for good'))) return setStatus('kept')
-
-    if (isOpen) await room.leave()
-    try {
-      await apiDeleteLevel(qualified)
-    } catch (e) {
-      setStatus(`could not delete: ${String(e)}`)
-      if (isOpen) await openFile(qualified)
-      return
-    }
-    await refreshFileList()
-    // Nothing is open now, so boot into whatever is left rather than leaving a document with no file.
-    if (isOpen) await openFirstLevel()
-    setStatus(`deleted ${ref.name}`)
-  })()
-}
+const fileOps = createFileActions({
+  doc: () => doc,
+  assets: () => assets,
+  registry: () => registry(),
+  prefabSource: editorPrefabs,
+  fileName: () => fileState.name,
+  levelEntries: () => levelEntries,
+  hasGame: () => activeMode !== undefined,
+  inPrefab: () => docStack.length > 1,
+  adoptable: () => adoptable(),
+  adopt: (types) => adopt(types),
+  arm: (kind, assetId) => {
+    placing = placing?.assetId === assetId ? null : { kind, assetId }
+  },
+  recordEdit: (label) => edits.recordEdit(label),
+  room: { live: () => live(), flush: () => room.flush(), leave: () => room.leave() },
+  openFile: (qualified) => openFile(qualified),
+  openFirstLevel: () => openFirstLevel(),
+  refreshFileList: () => refreshFileList(),
+  reloadAssets: () => reloadAssets(),
+  invalidatePreviews: () => previews.invalidate(),
+  setStatus: (message) => setStatus(message),
+  refreshUi: () => refreshUi(),
+})
 
 const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   db: () => assets?.db ?? null,
@@ -2422,15 +2232,15 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   urlOf: (path) => assets?.urlOf(path) ?? path,
   armed: () => placing?.assetId ?? null,
   selectedAsset: () => selectedAsset,
-  onPickAsset: armAsset,
-  unplaceableWhy,
+  onPickAsset: fileOps.armAsset,
+  unplaceableWhy: (id) => fileOps.unplaceableWhy(id),
   onUpload: (files, folder) => {
     const cap = me?.maxUploadBytes ?? Infinity
     const tooBig = files.filter((f) => f.size > cap).map((f) => f.name)
     if (tooBig.length > 0) setStatus(`too big (cap ${Math.round(cap / 1024 / 1024)} MB): ${tooBig.join(', ')}`)
     const fits = files.filter((f) => f.size <= cap)
     if (fits.length === 0) return
-    afterFileOp(`uploaded ${fits.map((f) => f.name).join(', ')}`, async () => {
+    fileOps.afterFileOp(`uploaded ${fits.map((f) => f.name).join(', ')}`, async () => {
       for (const f of fits) await uploadAsset(folder === '' ? f.name : `${folder}/${f.name}`, f)
     })
   },
@@ -2478,7 +2288,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     const inFolder = isFolder ? (assets?.db.entries.filter((e) => e.path.startsWith(`${path}/`)).length ?? 0) : 0
     const entry = isFolder ? undefined : assets?.db.entries.find((e) => e.path === path)
     const placeable = entry?.kind === 'prefab' || entry?.kind === 'model'
-    const foreign = entry === undefined ? null : unplaceableWhy(entry.id)
+    const foreign = entry === undefined ? null : fileOps.unplaceableWhy(entry.id)
     const prefabHere = entry?.kind === 'prefab' ? entry.id : null
     contextMenu.open(
       at,
@@ -2489,7 +2299,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
           why: isFolder ? 'a folder is not an asset' : foreign ?? 'nothing to open for this kind',
           run: () => {
             if (entry === undefined) return
-            if (placeable) armAsset(entry.id)
+            if (placeable) fileOps.armAsset(entry.id)
             else {
               selectedAsset = entry.id
               assetInspector.show(entry.id)
@@ -2515,7 +2325,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
           run: () => {
             const name = prompt('Rename', current)
             if (name === null || name.trim() === '' || name.trim() === current) return
-            renameAsset(path, name.trim())
+            fileOps.renameAsset(path, name.trim())
           },
         },
         {
@@ -2525,7 +2335,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
             // A confirm only where it is warranted: a folder takes everything under it, and an id that
             // disappears greyboxes silently rather than failing (ADR 0028).
             if (inFolder > 0 && !confirm(`Delete ${current} and the ${inFolder} asset${inFolder === 1 ? '' : 's'} in it?`)) return
-            deleteAsset(path)
+            fileOps.deleteAsset(path)
           },
         },
       ],
@@ -2554,20 +2364,20 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
           // copy rather than the file, so a level open live is duplicated as it is now.
           run: () => void createLevel(qualified),
         },
-        { label: 'Rename\u2026', run: () => renameLevel(qualified) },
+        { label: 'Rename\u2026', run: () => fileOps.renameLevel(qualified) },
         {
           label: 'Copy name',
           // What `?level=` takes, and what a teammate needs in order to open the same one.
           run: () => void navigator.clipboard?.writeText(short).then(() => setStatus(`copied ${short}`)),
         },
-        { label: 'Delete\u2026', divider: true, run: () => deleteLevelFile(qualified) },
+        { label: 'Delete\u2026', divider: true, run: () => fileOps.deleteLevelFile(qualified) },
       ],
       short,
     )
   },
-  onMkdir: (parent, name) => afterFileOp(`created ${name}`, async () => assets?.mkdir(parent, name) ?? Promise.resolve()),
-  onRename: renameAsset,
-  onDelete: deleteAsset,
+  onMkdir: (parent, name) => fileOps.afterFileOp(`created ${name}`, async () => assets?.mkdir(parent, name) ?? Promise.resolve()),
+  onRename: fileOps.renameAsset,
+  onDelete: fileOps.deleteAsset,
   onMove: (from, toFolder) => {
     // Refuse a folder into its own subtree here as well as on the server: a rejected drop should not need a
     // round trip to say so.
@@ -2575,7 +2385,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
       setStatus('a folder cannot move inside itself')
       return
     }
-    afterFileOp(`moved into ${toFolder === '' ? 'assets' : toFolder}`, async () => assets?.move(from, movedInto(from, toFolder)) ?? Promise.resolve())
+    fileOps.afterFileOp(`moved into ${toFolder === '' ? 'assets' : toFolder}`, async () => assets?.move(from, movedInto(from, toFolder)) ?? Promise.resolve())
   },
 })
 
