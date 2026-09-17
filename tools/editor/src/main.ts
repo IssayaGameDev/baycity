@@ -29,10 +29,9 @@ import {
   TransformControls,
   type AssetRuntime,
 } from '@mp/render-three'
-import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type Doc, type LocalPose, type Mode } from './editorDoc'
+import { componentTypesInRaw, levelDoc, unknownComponentTypes, type Doc, type LocalPose, type Mode } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
 import { askName } from './confirm'
-import { prefabFolder, prefabTarget, sanitisePrefabName } from './prefabPath'
 import {
   acquireLock,
   heartbeatLocks,
@@ -67,6 +66,7 @@ import { createLiveSession } from './liveSession'
 import { createCameraView } from './cameraView'
 import { createFileActions } from './fileActions'
 import { createMotionPreview } from './motionPreview'
+import { createPrefabActions } from './prefabActions'
 import { createPlay } from './play'
 import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
 import { createShortcuts } from './shortcuts'
@@ -523,85 +523,45 @@ const setDoc = (next: Doc, name: string): void => {
 }
 
 /**
- * Edit the prefab behind a placement — in **its own live room** (ADR 0091), not as a lens over this level's
- * copy, because there is no copy any more. Its edits are ops on that document, everyone in it sees them, and
- * every open level following it repaints. There is no Save.
- *
- * The level's session is left, so this tab is in one document at a time: the viewport, the physics world, the
- * selection and the holds are all singletons keyed to the open document, and two joined rooms would be two
- * streams repainting one screen. Back rejoins the level, and the server greets that with a fresh snapshot, so
- * what everyone else did while you were away is there when you return.
+ * The prefab gestures (`prefabActions.ts`, ADR 0121): open one in its own room, come back out, unlink a
+ * placement, save a selection as a new prefab, and the two override directions. Its host is here.
  */
-const enterPrefab = async (assetId: string): Promise<void> => {
-  const entry = assets?.db.byId[assetId]
-  if (entry === undefined) {
-    setStatus('that prefab is not in the project')
-    return
-  }
-  const from = fileState.name
-  room.leave()
-  let greeting: Level | null
-  try {
-    greeting = await room.joinRoom(assetId, 'prefab')
-  } catch (e) {
-    setStatus(`could not open ${entry.name}: ${e instanceof Error ? e.message : String(e)}`)
-    void rejoinLevel(from)
-    return
-  }
-  const root = greeting?.nodes[0]
-  if (root === undefined) {
-    setStatus('that prefab did not load')
-    void rejoinLevel(from)
-    return
-  }
-  prefabOpen = { assetId, name: entry.name, from }
-  docStack.length = 0
-  docStack.push({ doc: edits.withOps(prefabDoc(root, registry())), label: `prefab: ${entry.name}` })
-  showDoc()
-  edits.reset()
-  refreshUi()
-}
-
-/**
- * Unlink one placement (ADR 0111): it keeps exactly what it was drawing and stops being a copy of the prefab.
- * The file and every other placement are untouched.
- *
- * No confirm. It is one op, so Ctrl+Z puts the link back — unlike deleting the prefab file, which destroys
- * the id and cannot be undone (ADR 0097), and which is why *that* one asks.
- */
-const unlinkPlacement = (index: number): void => {
-  if (doc === null) return
-  const label = doc.label(index)
-  if (!doc.unlinkNode(index)) return setStatus(`${label} is not a prefab placement`)
-  edits.recordEdit(`unlinked ${label}`)
-  // A `replaceNode` changes the tree and what is drawn, so the same refresh a revert does.
-  meshes.buildAll()
-  rebuildLoaded()
-  applySelection(selection)
-  setStatus(`${label} is its own object now — the prefab is unchanged`)
-}
-
-const openPrefabOf = (index: number): void => {
-  const id = doc?.refOf(index)
-  if (id === null || id === undefined) return
-  void enterPrefab(id)
-}
-
-/** Leave the prefab and rejoin the level it was opened from, which arrives as a fresh snapshot. */
-const closePrefab = (): void => {
-  const open = prefabOpen
-  if (open === null) return
-  prefabOpen = null
-  room.leave()
-  void rejoinLevel(open.from)
-}
-
-/** Reopen a level by name, as `openFile` does — used on the way back out of a prefab. */
-const rejoinLevel = async (name: string): Promise<void> => {
-  prefabOpen = null
-  fileState.mode = 'level'
-  await openFile(name)
-}
+const prefabs = createPrefabActions({
+  doc: () => doc,
+  docStack: () => docStack,
+  selection: () => selection,
+  selected: () => selected,
+  applySelection: (indices) => applySelection(indices),
+  deselect: () => deselect(),
+  assets: () => assets,
+  registry: () => registry(),
+  prefabOpen: () => prefabOpen,
+  setPrefabOpen: (value) => {
+    prefabOpen = value
+  },
+  fileName: () => fileState.name,
+  setMode: (mode) => {
+    fileState.mode = mode
+  },
+  setDoc: (next, name) => setDoc(next, name),
+  showDoc: () => showDoc(),
+  openFile: (qualified) => openFile(qualified),
+  room,
+  edits: () => edits,
+  refuseHeld: (index) => refuseHeld(index),
+  projectFolder: () => project.folder(),
+  reloadAssets: () => reloadAssets(),
+  setProblem: (message) => setProblem(message),
+  rebuildMeshes: () => meshes.buildAll(),
+  rebuildLoaded: () => rebuildLoaded(),
+  scheduleRebuild: () => scheduleRebuild(),
+  loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
+  invalidatePreviews: () => previews.invalidate(),
+  inspectorRebuild: () => inspectorRebuild(),
+  setStatus: (message) => setStatus(message),
+  refreshUi: () => refreshUi(),
+  uiChanged: () => uiChanged(),
+})
 
 /** A component with a stable id — blank documents are authored here, so the ids may as well read plainly. */
 const comp = (id: string, type: string, params: Record<string, unknown>): ComponentData => ({ id, type, params })
@@ -1384,70 +1344,6 @@ const duplicateSelected = (): void => {
 }
 /** Give an inline one-off a shared identity, so it can be referenced and edited in one place. */
 /**
- * Write the selection into a prefab file and point it at that file (ADR 0091) — the one action that makes a
- * prefab, replacing both `Extract to prefab`, which wrote no file, and prefab mode's Save, which made no
- * reference.
- *
- * **The file goes first.** A failed write costs nothing but a status line, where the reverse order would leave
- * a placement pointing at a prefab that does not exist. If the write lands and the level edit does not, the
- * file is simply an unreferenced prefab, which is visible in the Project panel and placeable by hand.
- *
- * The undo entry holds the level's `replaceNode` and its inverse. It does **not** delete the file: by the time
- * anyone presses Ctrl+Z another level may already reference it, and deleting a file on an undo is a surprise
- * nobody recovers from. The Project panel is where a prefab is deleted.
- */
-const saveAsPrefab = async (index: number): Promise<void> => {
-  const open = doc
-  if (open === null || open.mode !== 'level' || assets === null) return
-  const definition = open.definitionOf(index)
-  if (definition === null) return
-  if (refuseHeld(index)) return
-
-  // Identity that survives the awaits: an index shifts under a remote edit, a ref does not.
-  const ref = open.refAt(index)
-  if (ref === null) return
-
-  const folder = project.folder()
-  const asked = await askName('Save as prefab', sanitisePrefabName(open.nameOf(index) || open.label(index)), `Saved in content/assets/${prefabFolder(folder)}/ — the folder open in the Project panel. Letters, digits, - and _.`)
-  if (asked === null) return
-  const target = prefabTarget(folder, asked, assets.db.entries.map((e) => e.path))
-  if ('error' in target) {
-    setStatus(target.error)
-    return
-  }
-
-  let created
-  try {
-    created = await assets.createPrefab(target.path, definition)
-  } catch (e) {
-    setStatus(`could not save ${target.path}: ${String(e)}`)
-    return
-  }
-  if (created === undefined) {
-    setProblem(`wrote ${target.path} but it was given no id — reload the editor`)
-    return
-  }
-  previews.invalidate()
-  await reloadAssets()
-
-  // The document may have moved under the dialog and the two requests.
-  const at = doc === open ? open.indexOfRef(ref) : null
-  if (at === null || !open.linkToPrefab(at, created.id, definition)) {
-    setStatus(`saved ${created.name} to ${target.path}, but that object is gone — place it from the Project panel`)
-    refreshUi()
-    return
-  }
-  edits.recordEdit('save as prefab')
-  meshes.buildAll()
-  rebuildLoaded()
-  applySelection([open.indexOfRef(ref) ?? at])
-  inspectorRebuild()
-  uiChanged()
-  loadNewReferences(meshes.buildAll)
-  setStatus(`saved ${created.name} to ${target.path} — every level can place it now`)
-}
-
-/**
  * The editor's shortcuts (ADR 0030).
  *
  * Matched by the **character** each key produces, not by its physical position, so Ctrl+Z is the key marked Z
@@ -1719,7 +1615,7 @@ const toolbar: Toolbar = createToolbar(
     // A live level exists the moment it is named: the file is created on the server, then joined.
     newBlank: () => void createLevel(null),
     duplicate: () => void createLevel(fileState.name),
-    back: closePrefab,
+    back: prefabs.closePrefab,
     setGizmo: setMode,
     setSpace,
     setSnap: (on) => {
@@ -1856,53 +1752,6 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
 })
 
 /**
- * Drop this placement's overrides, or push them into the prefab.
- *
- * Named rather than inline in the Inspector's host, because the Hierarchy's menu offers the same two and a
- * second copy would be a second set of edge cases.
- */
-const revertOverride = (field?: string): void => {
-  if (selected === null || doc === null) return
-  doc.revert(selected, field)
-  edits.recordEdit(field === undefined ? 'revert overrides' : `revert ${field}`)
-  meshes.buildAll()
-  rebuildLoaded()
-  applySelection(selection)
-  setStatus('reverted to the prefab')
-}
-
-/** Push this placement's overrides into the shared prefab. Named for the same reason as `revertOverride`. */
-/**
- * Push this placement's overrides into the shared prefab — two documents, one gesture (ADR 0091). The prefab's
- * ops go to its own room, and only once the server has taken them does the override here go, so a refusal
- * leaves the placement exactly as it was rather than clean but unapplied.
- *
- * Ctrl+Z afterwards puts **this placement's** override back; it does not take the change out of the prefab.
- * The result looks the same either way, and the status line says so, because pushing into a prefab is a
- * deliberate act on something other levels share.
- */
-const applyOverrides = async (): Promise<void> => {
-  const open = doc
-  const at = selected
-  if (at === null || open === null) return
-  const plan = open.overrideOpsFor(at)
-  if (plan === null) return
-  const name = assets?.db.byId[plan.assetId]?.name ?? 'the prefab'
-  const refused = await room.submitToPrefab(plan.assetId, plan.ops)
-  if (refused !== null) {
-    setStatus(`${name} did not take it: ${refused} — this placement is unchanged`)
-    return
-  }
-  if (doc !== open) return // the document moved under the round trip
-  open.revert(at)
-  edits.recordEdit('apply to prefab')
-  meshes.buildAll()
-  rebuildLoaded()
-  applySelection(selection)
-  setStatus(`applied to ${name} — every level using it follows; undo puts this placement's override back`)
-}
-
-/**
  * The Hierarchy's right-click menus.
  *
  * Almost every entry is a command that already existed and could only be reached from the keyboard or by a
@@ -1963,22 +1812,22 @@ const menuFor = (index: number): MenuItem[] => {
       divider: true,
       enabled: ref !== null || inherited,
       why: 'not linked to a prefab',
-      run: () => openPrefabOf(index),
+      run: () => prefabs.openPrefabOf(index),
     },
     {
       label: 'Unlink from prefab',
       enabled: own && ref !== null,
       why: ref === null ? 'not a prefab placement' : inherited ? 'this is part of a prefab, not a placement of one' : why,
-      run: () => unlinkPlacement(index),
+      run: () => prefabs.unlinkPlacement(index),
     },
     {
       label: 'Save as prefab…',
       enabled: own && ref === null && doc.mode === 'level',
       why: ref !== null ? 'already a prefab' : doc.mode === 'prefab' ? 'already inside a prefab' : why,
-      run: () => void saveAsPrefab(index),
+      run: () => void prefabs.saveAsPrefab(index),
     },
-    { label: 'Revert to prefab', divider: true, enabled: inherited && doc.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => revertOverride() },
-    { label: 'Apply to prefab', enabled: inherited && doc.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => void applyOverrides() },
+    { label: 'Revert to prefab', divider: true, enabled: inherited && doc.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => prefabs.revertOverride() },
+    { label: 'Apply to prefab', enabled: inherited && doc.overridesOf(index).length > 0, why: 'nothing overridden here', run: () => void prefabs.applyOverrides() },
   ]
 }
 
@@ -2312,7 +2161,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
           label: 'Open prefab',
           enabled: prefabHere !== null && prefabOpen === null,
           why: prefabHere === null ? 'not a prefab' : 'leave the prefab you are in first',
-          run: () => void (prefabHere !== null && enterPrefab(prefabHere)),
+          run: () => void (prefabHere !== null && prefabs.enterPrefab(prefabHere)),
         },
         {
           label: 'Copy path',
@@ -2677,13 +2526,13 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   },
   duplicate: duplicateSelected,
   remove: deleteSelected,
-  saveAsPrefab: () => void (selected !== null && saveAsPrefab(selected)),
-  unlinkPrefab: () => void (selected !== null && unlinkPlacement(selected)),
+  saveAsPrefab: () => void (selected !== null && prefabs.saveAsPrefab(selected)),
+  unlinkPrefab: () => void (selected !== null && prefabs.unlinkPlacement(selected)),
   openPrefab: () => {
-    if (selected !== null) openPrefabOf(selected)
+    if (selected !== null) prefabs.openPrefabOf(selected)
   },
-  revertOverride,
-  applyOverrides: () => void applyOverrides(),
+  revertOverride: (field) => prefabs.revertOverride(field),
+  applyOverrides: () => void prefabs.applyOverrides(),
   assetOptions: (of) => {
     const options: Record<string, string> = { '(none)': '' }
     // The built-in shapes (ADR 0090) sit in the model slot beside the uploaded files.
