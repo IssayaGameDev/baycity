@@ -121,6 +121,9 @@ export interface InspectorHost {
   unlinkPrefab: () => void
   /** Push the selection's overrides into the shared prefab, so every placement of it follows. */
   applyOverrides: () => void
+  /** The same two over a whole placement, from its root, which holds no override of its own (ADR 0122). */
+  revertPlacement: (index: number) => void
+  applyPlacementOverrides: (index: number) => Promise<void>
   /**
    * The editor's one context menu (`menu.ts`).
    *
@@ -1013,11 +1016,51 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     container.append(row)
   }
 
-  /** The placement-wide override strip, right under the header where it describes what follows. */
+  /**
+   * The override strip, right under the header where it describes what follows.
+   *
+   * **Two scopes** (ADR 0122). Overrides are stored per inherited **piece**, so selecting the prefab object
+   * itself — the placement root, which holds no override of its own and never will — used to show nothing at
+   * all, which is the first place an author looks after editing inside a prefab. The root now reports its
+   * pieces and acts on all of them.
+   *
+   * The wording carries the scope, because the two buttons do very different amounts: on a piece they mean
+   * this object, on the root they mean the whole instance.
+   */
   const addOverrideStrip = (doc: Doc, at: number): void => {
-    if (doc.kindOf(at) !== 'inherited') return
-    const overridden = doc.overridesOf(at)
+    const kind = doc.kindOf(at)
+    const isPlacement = kind === 'own' && doc.refOf(at) !== null
+    if (kind !== 'inherited' && !isPlacement) return
+
     const strip = el('div', 'iover')
+    if (isPlacement) {
+      const changed = doc.placementOverrides(at)
+      if (changed.length === 0) {
+        strip.append(el('span', 'iover-t', 'matches the prefab'))
+        container.append(strip)
+        return
+      }
+      const total = changed.reduce((n, o) => n + o.fields.length, 0)
+      strip.classList.add('on')
+      strip.append(
+        el(
+          'span',
+          'iover-t',
+          `${total} override${total === 1 ? '' : 's'} on ${changed.length} object${changed.length === 1 ? '' : 's'}`,
+        ),
+      )
+      const revert = el('button', 'ctl tiny', 'Revert all')
+      revert.title = `drop every change made inside this prefab (${changed.map((o) => `${doc.label(o.index)}: ${o.fields.join(', ')}`).join(' · ')})`
+      revert.addEventListener('click', () => host.revertPlacement(at))
+      const apply = el('button', 'ctl tiny', 'Apply all')
+      apply.title = 'push every change inside this prefab into the shared definition — every placement of it follows'
+      apply.addEventListener('click', () => void host.applyPlacementOverrides(at))
+      strip.append(revert, apply)
+      container.append(strip)
+      return
+    }
+
+    const overridden = doc.overridesOf(at)
     if (overridden.length === 0) {
       strip.append(el('span', 'iover-t', 'matches the prefab'))
       container.append(strip)

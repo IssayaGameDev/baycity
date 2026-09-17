@@ -170,5 +170,6 @@ why matters.
 | [0121](adr/0121-a-hill-is-followed-not-fallen-down.md) | A hill is followed, not fallen down |
 | [0120](adr/0120-a-game-describes-what-a-tool-draws.md) | A game describes what a tool draws |
 | [0121](adr/0121-the-editor-is-a-shell-around-subsystems.md) | The editor is a shell around subsystems |
+| [0122](adr/0122-revert-and-apply-have-two-scopes.md) | Revert and Apply have two scopes |
 
 `Design archive/` holds superseded design material and is not maintained.
