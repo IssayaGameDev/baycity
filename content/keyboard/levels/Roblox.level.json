@@ -3034,7 +3034,15 @@
               "z": 0.99
             }
           },
-          "components": [],
+          "components": [
+            {
+              "id": "a0e00e53",
+              "type": "MaterialOverride",
+              "params": {
+                "material": ""
+              }
+            }
+          ],
           "prefab": "d75bc013a11360f2",
           "overrides": {
             "dffedd8e": {
