@@ -837,6 +837,20 @@ const CELL_MATERIAL = new THREE.MeshBasicMaterial({
   depthWrite: false,
   toneMapped: false,
   side: THREE.DoubleSide,
+  /**
+   * The bias that keeps a cell off the face it is drawn on, which a lift in metres cannot.
+   *
+   * The camera is near 0.1 / far 1000 (`stage.ts`), and that ratio spends nearly all of the depth buffer's
+   * precision close in — so `LIFT`'s two millimetres have no bits left to win with fifty metres out, and the
+   * cells flickered against the platform at any distance. This biases in **depth-buffer** units and is
+   * slope-scaled by the driver, so it holds at every distance and every viewing angle.
+   *
+   * Not `depthTest: false`, which is what the marker pillars use: a whole floor of cells drawing through a
+   * wall in front of it is worse than the flicker was.
+   */
+  polygonOffset: true,
+  polygonOffsetFactor: -1,
+  polygonOffsetUnits: -1,
 })
 
 /**
