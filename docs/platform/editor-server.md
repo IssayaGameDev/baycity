@@ -92,6 +92,12 @@ open document, opening one where there is none, so a prefab edit is in every ope
 instant it applies. A prefab stays open while any level resolves from it (`dependents`); `close` writes and
 forgets a document with neither clients nor dependents.
 
+`hydrate` opens and registers **every** reference, not only the ones whose definition it had to fetch
+(ADR 0123). `hydratePrefabs` skips an id the level already carries inline — which `stripHydrated` preserves on
+purpose — so such a level used to leave the prefab's document shut, and `apply` on a prefab needs an open one:
+*Apply to prefab* answered 404 "is not open" while every visible thing about the placement worked. The inline
+definition is neither adopted nor stripped by opening it; a level keeping a frozen copy is a separate defect.
+
 **One delivery path.** After a prefab's batch, every dependent level's clients get `prefab { assetId, ops }` —
 no sequence, because the level's own file did not change. A tab is in one document at a time, so nobody gets a
 batch twice. `apply` also accepts a connection that is in a level **using** this prefab (`editorOf`), which is

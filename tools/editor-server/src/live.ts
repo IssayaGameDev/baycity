@@ -2,7 +2,7 @@
 // bundles this file for the dev editor cannot load.
 import { applyBatch, OpError, refKey, touchedRefs, type NodeRef, type Op } from '../../../packages/content/src/ops'
 import type { Level, Node } from '../../../packages/content/src/types'
-import { hydratePrefabs, stripHydrated } from '../../../packages/content/src/prefabs'
+import { hydratePrefabs, prefabRefsIn, stripHydrated } from '../../../packages/content/src/prefabs'
 import { validateLevel, validateNodeTree } from '../../../packages/content/src/validate'
 import { assetFile, levelFile, parseQualified } from '../../../packages/content/src/layout'
 import type { User } from './config'
@@ -278,18 +278,26 @@ export const createLive = (opts: LiveOptions): Live => {
    * opening one where there is none. So there is exactly one object per prefab in this process, and a level's
    * resolution is right the instant a prefab edit applies. Idempotent: a batch that places a prefab nobody had
    * referenced calls it again.
+   *
+   * **Every reference, not only the ones that needed filling.** `hydratePrefabs` skips an id the level already
+   * carries in its own table, so for such a level nothing asked for the prefab's document and it stayed shut —
+   * and `apply` on a prefab demands an open one, so *Apply to prefab* answered 404 "is not open" from a level
+   * whose table was inline (ADR 0123). The invariant this function exists to keep is that a prefab document is
+   * open while any level references it; that has to be true of a reference however it happens to resolve.
    */
   const hydrate = (d: LiveDoc): void => {
     if (opts.prefabs === undefined || d.kind !== 'level') return
-    const source = {
-      root: (assetId: string): Node | undefined => {
-        if (opts.prefabs?.root(assetId) === undefined) return undefined
-        const prefab = open(docKey('prefab', assetId))
-        prefab.dependents.add(d.key)
-        return prefab.level.nodes[0]
-      },
+    /** Open the prefab's document and record that this level depends on it. `undefined` when there is no asset. */
+    const attach = (assetId: string): LiveDoc | undefined => {
+      if (opts.prefabs?.root(assetId) === undefined) return undefined
+      const prefab = open(docKey('prefab', assetId))
+      prefab.dependents.add(d.key)
+      return prefab
     }
-    for (const id of hydratePrefabs(d.level, source).filled) d.hydrated.push(id)
+    for (const id of hydratePrefabs(d.level, { root: (assetId) => attach(assetId)?.level.nodes[0] }).filled) d.hydrated.push(id)
+    // The ones `hydratePrefabs` had nothing to do for. Their definition stays whatever the level carries —
+    // replacing an inline table is a separate question — but their document is open and this level is on it.
+    for (const id of prefabRefsIn(d.level)) attach(id)
   }
 
   const must = (given: string): LiveDoc => {
