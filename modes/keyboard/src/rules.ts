@@ -4,7 +4,7 @@ import type { LoadedLevel, WorldNode } from '@mp/content'
 import type { Vec3 } from '@mp/core'
 import { spawnFrom, type ModeSession, type ModeSessionOptions } from '@mp/mode'
 
-import { DEFAULT_KEY_GEOMETRY, Keyboard, type KeyGeometry } from './keycaps'
+import { Keyboard, keyGeometryFrom, type KeyGeometry } from './keycaps'
 import { StepPad, type StepPadOffer } from './stepPad'
 import { STEPPER_DEF } from './steps'
 import { Treadmill, type TreadmillTick } from './treadmill'
@@ -36,18 +36,7 @@ export const GAME_CURVE: ProgressCurve = curveFrom((game as { settings?: unknown
  * about the pitch cannot align however the grid is anchored. A number the file has not set falls back to the
  * declared default.
  */
-export const GAME_KEYS: KeyGeometry = ((): KeyGeometry => {
-  const raw = (game as { settings?: Record<string, unknown> }).settings ?? {}
-  const num = (key: string, fallback: number): number => {
-    const v = raw[key]
-    return typeof v === 'number' && Number.isFinite(v) ? v : fallback
-  }
-  return {
-    pitch: num('keyPitch', DEFAULT_KEY_GEOMETRY.pitch),
-    fill: num('keyFill', DEFAULT_KEY_GEOMETRY.fill),
-    height: num('keyHeight', DEFAULT_KEY_GEOMETRY.height),
-  }
-})()
+export const GAME_KEYS: KeyGeometry = keyGeometryFrom((game as { settings?: Record<string, unknown> }).settings)
 
 export const KEYBOARD_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, STEPPER_DEF, Keyboard, WinsPad, Treadmill, StepPad, ...sharedComponents(game.components)])
 

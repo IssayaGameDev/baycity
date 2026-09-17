@@ -13,8 +13,8 @@
 | `seed` | 1 | deterministic lettering (`glyphAt`); same seed, same board everywhere |
 
 **The geometry is the game's, not the platform's** (ADR 0115). `pitch`, `fill` and `height` are settings in
-`content/keyboard/game.json`, one field each in the editor's Game row, read by `GAME_KEYS` (`rules.ts`) and
-handed to `drawKeycaps`. A level is thousands of platforms: a pitch per platform is a pitch to change per
+`content/keyboard/game.json`, one field each in the editor's Game row, read by `keyGeometryFrom(settings)`
+(`keycaps.ts`; `GAME_KEYS` in `rules.ts` is that applied to the bundled file) and handed to `drawKeycaps`. A level is thousands of platforms: a pitch per platform is a pitch to change per
 platform, and two that disagree cannot align however the grid is anchored. Old components still carrying a
 `pitch` are unaffected — `readParams` walks the declarations, not the file's keys, so nothing needed rewriting.
 
@@ -24,8 +24,16 @@ platform, and two that disagree cannot align however the grid is anchored. Old c
 | `keyFill` | 0.88 | 0.3–1 |
 | `keyHeight` (m) | 0.45 | 0.005–1.5 |
 
-`boardOf(node)` → the board's frame from the box collider; `capsFor(board)` tiles **whole caps only and
-centres the leftover**, so each platform's board is centred on itself.
+`boardGrid(size, geometry)` → `SurfaceGrid | null`: the cell grid a box face carries, **whole cells only and
+the leftover split between the two edges**, so each platform's board is centred on itself. `null` for a face
+with no room for one whole cell. `boardOf(node)` builds the runtime board's frame on it; `capsFor(board)` tiles
+the caps.
+
+One copy of that arithmetic on purpose: the editor previews the same grid (ADR 0120) through
+`keyboardGridOf` — this game's `ModeDescriptor.surfaceGrid`, which decides from the node's own components
+whether a surface is a board and reads the pitch from the settings the editor currently holds. A test asserts
+`boardGrid` and `boardOf` agree cell for cell, because a preview computing its own answer is a preview that can
+lie about where the keys go.
 
 Two platforms edge to edge therefore do not continue each other. A world lattice was tried and reverted
 (ADR 0118): it moved the caps off centre on every platform, and a clean join then needed platforms sized and

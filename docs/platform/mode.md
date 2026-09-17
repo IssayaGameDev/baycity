@@ -11,6 +11,7 @@ Package `packages/mode` (`@mp/mode`). Headless: no renderer import; gizmo colour
 | `registry` | `Registry` | Engine + shared (from `content/<name>/game.json`) + own components. Composed, not inherited (see `docs/platform/components/api.md`). |
 | `tuning` | `CharacterTuning` (`packages/humanoid/src/groundController.ts`) | Starting locomotion numbers. Field because the editor play-tests in place. |
 | `gizmos` | `Readonly<Record<string, number>>` | Component type → `0xrrggbb` marker colour a tool draws over the rule's node. |
+| `surfaceGrid?` | `(components, size: Vec3, settings) => SurfaceGrid \| null` (`src/surface.ts`) | What this game would tile onto a box surface, for a tool to draw before the game runs (ADR 0120). Returns the **grid** (`cols`, `rows`, `pitch`, `size`, `startX`, `startZ`), never geometry — six numbers whatever the cell count, so a tool may ask per drag frame, and `@mp/mode` stays headless. The game reads the node's own components, so a tool never learns what one means. Helpers: `gridCells`, `gridMargin`. Absent = nothing generated on this game's surfaces. |
 | `spawn` | `(loaded: LoadedLevel, seed?: number) => Vec3` | Start position. `seed` = player id in a game, absent in a tool. |
 | `player?` | `readonly ComponentData[]` | Components the player carries at runtime, validated against `registry` (ADR 0059). Absent = none. |
 | `playerDefs?` | `(host: PlayerHost) => readonly ComponentDef[]` | Session-bound definitions for the `player` list, closing over the live character (ADR 0061). Must agree with `player` by type — a mismatch logs `console.error` in `createComponentRuntime`. Absent = player components are data only (`Death`). |
@@ -87,6 +88,7 @@ The `self.node.id` the local player's components see, in both the game and the e
 | `name`, `registry` | `registryFor(mode)` — registry plus live `content/<name>/game.json` extras; `adopt` writes that file |
 | `label` | picker; status text |
 | `gizmos` | marker colours over rule nodes |
+| `surfaceGrid?` | the `Keys` overlay: cells drawn in each item's mesh holder, built-in box and rounded box only (ADR 0120) |
 | `spawn(loaded)` | character placement (no seed); fallback `(0, 3, 0)` with no game |
 | `session(loaded)` | rules; `effects` → `createComponentRuntime`; per tick `takeDeath()` → `setPosition(respawnAt())`, `takeTeleport?.()` → `setPosition(to)`; velocities zeroed (no ragdoll, no persistence) |
 | `player`, `playerDefs(host)` | `PlayerEntity { id: PLAYER_NODE_ID, components, defs }`; host = `{ character: () => char, tuning: () => mode.tuning, platforms: () => loaded?.basePose, world: () => world, level: () => loaded }` |

@@ -1,6 +1,7 @@
 import { defineComponent } from '@mp/components'
 import type { Vec3 } from '@mp/core'
 import type { LoadedLevel, VisualItem } from '@mp/content'
+import type { SurfaceGrid, SurfaceGridOf } from '@mp/mode'
 import { THREE } from '@mp/render-three'
 import type { TpsClient } from '@mp/tps'
 
@@ -528,20 +529,80 @@ const numberOr = (v: unknown, fallback: number): number => (typeof v === 'number
 export const boardOf = (item: Pick<VisualItem, 'collider' | 'position' | 'rotation'>, params: KeyboardParams): Board | null => {
   if (item.collider.kind !== 'box') return null
   const half = item.collider.halfExtents
-  const cols = Math.floor((half.x * 2) / params.pitch)
-  const rows = Math.floor((half.z * 2) / params.pitch)
-  if (cols < 1 || rows < 1) return null
+  const grid = boardGrid({ x: half.x * 2, y: half.y * 2, z: half.z * 2 }, params)
+  if (grid === null) return null
   const quat = new THREE.Quaternion(item.rotation.x, item.rotation.y, item.rotation.z, item.rotation.w)
   return {
     origin: new THREE.Vector3(item.position.x, item.position.y, item.position.z),
     quat,
     inverse: quat.clone().invert(),
     half,
-    pitch: params.pitch,
-    startX: -((cols - 1) * params.pitch) / 2,
-    startZ: -((rows - 1) * params.pitch) / 2,
+    pitch: grid.pitch,
+    startX: grid.startX,
+    startZ: grid.startZ,
+    cols: grid.cols,
+    rows: grid.rows,
+  }
+}
+
+/**
+ * The cell grid one box face carries, from its size alone (ADR 0120).
+ *
+ * Extracted from `boardOf` so the **editor** can draw the cells before the game has run without a second copy
+ * of the rule — a preview computed its own way is a preview that can disagree with the runtime, which is the
+ * fault ADR 0113, ADR 0114, ADR 0117 and ADR 0119 each fixed in turn.
+ *
+ * Whole cells only (ADR 0118), and the remainder split between the two edges, so a board never hangs over the
+ * side. `null` for a face with no room for even one cell, which is what makes a Keyboard on a thin wall draw
+ * nothing rather than one cap overhanging both ways.
+ *
+ * `size` is the box's **full extent** in metres, not its half-extents: it is what a node's scale is for a
+ * built-in box (ADR 0090), which is the form the editor has and the form a person types.
+ */
+export const boardGrid = (size: Vec3, geometry: KeyGeometry): SurfaceGrid | null => {
+  if (!(geometry.pitch > 0)) return null
+  const cols = Math.floor(size.x / geometry.pitch)
+  const rows = Math.floor(size.z / geometry.pitch)
+  if (cols < 1 || rows < 1) return null
+  return {
     cols,
     rows,
+    pitch: geometry.pitch,
+    size: geometry.pitch * geometry.fill,
+    startX: -((cols - 1) * geometry.pitch) / 2,
+    startZ: -((rows - 1) * geometry.pitch) / 2,
+  }
+}
+
+/**
+ * The grid a node's own components put on its surface, or `null` — this game's `ModeDescriptor.surfaceGrid`.
+ *
+ * The editor asks per node and knows nothing about what a `Keyboard` is; the decision that this surface is a
+ * board, and what its pitch is, stays here. `settings` are the editor's live values, so dragging the Key
+ * pitch field re-lays every preview without a reload.
+ */
+export const keyboardGridOf: SurfaceGridOf = (components, size, settings) => {
+  const data = components.find((c) => c.type === Keyboard.type && c.enabled !== false)
+  if (data === undefined) return null
+  return boardGrid(size, keyGeometryFrom(settings))
+}
+
+/**
+ * The key geometry from a game's `settings`, with the declared defaults for anything unset (ADR 0115).
+ *
+ * Takes the values rather than reading the file, so the same function serves the game (its bundled
+ * `game.json`) and the editor (the copy it is editing live).
+ */
+export const keyGeometryFrom = (settings: Readonly<Record<string, unknown>> | undefined): KeyGeometry => {
+  const raw = settings ?? {}
+  const num = (key: string, fallback: number): number => {
+    const v = raw[key]
+    return typeof v === 'number' && Number.isFinite(v) ? v : fallback
+  }
+  return {
+    pitch: num('keyPitch', DEFAULT_KEY_GEOMETRY.pitch),
+    fill: num('keyFill', DEFAULT_KEY_GEOMETRY.fill),
+    height: num('keyHeight', DEFAULT_KEY_GEOMETRY.height),
   }
 }
 

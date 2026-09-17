@@ -19,7 +19,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 
 | Area | Element | Module |
 | --- | --- | --- |
-| Top | `#toolbar` — name (read-only), New, Duplicate, Back, gizmo Move/Rotate/Scale/**Face** (ADR 0119), space, snap + the active tool's increment with its unit (ADR 0114), Motion, Play, grid, markers. **No game picker and no level list** (ADR 0108): a game is a folder of levels, so opening is the Project panel's tree. No mode select and no Save either: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
+| Top | `#toolbar` — name (read-only), New, Duplicate, Back, gizmo Move/Rotate/Scale/**Face** (ADR 0119), space, snap + the active tool's increment with its unit (ADR 0114), Motion, Play, grid, markers, **Keys** (ADR 0120; hidden unless the game declares `surfaceGrid`). **No game picker and no level list** (ADR 0108): a game is a folder of levels, so opening is the Project panel's tree. No mode select and no Save either: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
 | Left | `#hierarchy` — node tree + context menu | `src/hierarchy.ts`, `src/menu.ts` |
 | Centre | `#view` — Three stage, orbit, transform gizmo, placement clicks | `src/main.ts` |
 | Right | `#insp-head`, `#inspector`, `#asset-inspector` | `src/inspector.ts`, `src/assetInspector.ts` |
@@ -386,6 +386,26 @@ colliders are held at the matching unit shape — so scale is the one size a per
 | drawn at final size | `buildItemMeshes` counter-scales the mesh holder by the group's world scale and builds every shape from the **world** dimensions (`geometryForBuiltin(id, ws)`, or `geometryForCollider(scaleCollider(shape, ws))`), a model file keeping the scale. So a bevel is computed on the real size, as the game computes it from the baked collider — the editor used to stretch it |
 | redraw on scale | `rebuildSubtreeMeshes(i)` after a scale gizmo drag, a typed transform, and a remote transform op: meshes are built from the world scale, so a node's change is its subtree's |
 | previews | `previews.ts` walks with the accumulated scale and does the same, so a Project tile shows the shape the viewport does |
+
+## The game's surface cells (ADR 0120)
+
+The `Keys` toggle draws what the active game would generate on a box surface, so a platform can be sized and
+placed before the level has run. Keyboard's caps are generated at load and are neither nodes nor colliders
+(ADR 0069), which left an author placing platforms blind.
+
+The editor names no game: it asks `activeMode.surfaceGrid(components, worldSize, settings)` (`mode.md`) and the
+game decides from the node's own components. `settings` is the live `gameData[mode.name].settings`, so a Game
+row edit to the key pitch re-lays every preview.
+
+| Piece | Behaviour |
+| --- | --- |
+| geometry | `surfaceGrid.ts` — `gridQuads(grid, size)` → one `CellQuad { x, y, z, side }` per cell, in the node's own metres, at `size.y / 2 + 0.002` (the top face, where `capsFor` puts a cap's base). Pure and tested |
+| drawn | one `THREE.InstancedMesh` per board over a shared `PlaneGeometry` rotated flat and a shared translucent material, added by `buildSurfaceCells` **inside the item's mesh holder** — which already carries the inverse world scale, so a child of it is in world metres oriented with the node |
+| live for free | the holder is under the node's group, so a move, a turn or a reparent re-runs nothing. A **size** change rebuilds the item's meshes, and this rides along: a face pull (ADR 0119) re-lays the cells on every drag frame |
+| not pickable | `mesh.raycast = () => {}`. Picking raycasts the mesh holder, so without it the quads would swallow clicks and hand `faceUnder` a flat upward normal, breaking the Face tool on every board |
+| which nodes | `builtin:box` and `builtin:rounded-box` only — there scale *is* the surface (ADR 0090). A sphere has no face, and a `Keyboard` on one generates nothing, which the empty preview now shows |
+| toggle | its own button, not `Markers`: fitting platforms together is when spawn discs and rule pillars are clutter. `setSurfaceCells` rebuilds rather than setting `visible`, since three raycasts invisible objects. Hidden when the game declares no `surfaceGrid` |
+| culling | `computeBoundingSphere()` per mesh, against the instances rather than the unit quad at the origin |
 
 ## Play
 

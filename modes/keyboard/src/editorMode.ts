@@ -5,7 +5,7 @@ import { MARKER_COLORS } from '@mp/render-three'
 
 import { KEYBOARD_REGISTRY, keyboardSession, spawnOf, GAME_CURVE } from './rules'
 import { createStepper } from './steps'
-import { KEY_SETTINGS } from './keycaps'
+import { KEY_SETTINGS, keyboardGridOf } from './keycaps'
 import { CURVE_SETTINGS } from './progression'
 import { StepPad } from './stepPad'
 import { Treadmill } from './treadmill'
@@ -69,6 +69,11 @@ export const KEYBOARD_MODE: ModeDescriptor = {
   ],
   /** The editor's play-test carries the Stepper with nowhere to report to; `main.ts` binds the sink. */
   playerDefs: (host) => [createLocomotion(host), createStepper({ curve: () => GAME_CURVE, level: () => 0 })],
+  /**
+   * Where this game's keys land on a box face, so the editor can draw them before the level has run
+   * (ADR 0120). The caps themselves are generated at load, which left an author placing platforms blind.
+   */
+  surfaceGrid: keyboardGridOf,
   // The progression curves and the key geometry, in one Game row (ADR 0087, ADR 0115).
   settings: { ...CURVE_SETTINGS, ...KEY_SETTINGS },
   spawn: spawnOf,
