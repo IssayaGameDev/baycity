@@ -7261,7 +7261,8 @@
                   "x": 0,
                   "y": 0,
                   "z": 0
-                }
+                },
+                "trigger": true
               }
             },
             {
@@ -7275,7 +7276,7 @@
               "id": "0e9126ea",
               "type": "Renderer",
               "params": {
-                "material": "55205761e38bc929"
+                "material": "4a11d049f9f8e5ac"
               }
             },
             {
@@ -7299,7 +7300,7 @@
                   "z": 0
                 },
                 "space": "world",
-                "speed": 1.5,
+                "speed": 39.67054990942442,
                 "smooth": true,
                 "offset": 0
               }
