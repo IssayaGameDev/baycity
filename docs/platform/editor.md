@@ -17,11 +17,19 @@ Both levels and prefabs are live rooms, so there is no Save and no file lock for
 
 One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (`src/splitter.ts`). No UI framework; Tweakpane only inside the Inspector (ADR 0024).
 
+`main.ts` is a **shell** (ADR 0121): the state it owns, construction, host literals, boot. A subsystem is its own module holding its own mutable state, reached through a getter-bag host — the convention the panels already use. Pure arithmetic is its own module again (`selection.ts`, `snap.ts`, `facePull.ts`, `surfaceGrid.ts`). Host entries are always arrows: a subsystem is constructed at module init and half of what it wants is declared further down.
+
+| Subsystem | Owns | Host |
+| --- | --- | --- |
+| `itemMeshes.ts` | `instanceRoot`, `markerGroup`, the groups, the shadow budget, the cell toggle | `doc`, `loaded`, `runtime`, `mode`, `gameSettings`, `selected`, `afterBuild` |
+| `play.ts` | the character, controller, loop, play view and lights, component runtime, game frame | `PlayHost` (23 getters) |
+
+
 | Area | Element | Module |
 | --- | --- | --- |
 | Top | `#toolbar` — name (read-only), New, Duplicate, Back, gizmo Move/Rotate/Scale/**Face** (ADR 0119), space, snap + the active tool's increment with its unit (ADR 0114), Motion, Play, grid, markers, **Keys** (ADR 0120; hidden unless the game declares `surfaceGrid`). **No game picker and no level list** (ADR 0108): a game is a folder of levels, so opening is the Project panel's tree. No mode select and no Save either: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
 | Left | `#hierarchy` — node tree + context menu | `src/hierarchy.ts`, `src/menu.ts` |
-| Centre | `#view` — Three stage, orbit, transform gizmo, placement clicks | `src/main.ts` |
+| Centre | `#view` — Three stage, orbit, transform gizmo, placement clicks | `src/main.ts`, `src/itemMeshes.ts`, `src/play.ts` |
 | Right | `#insp-head`, `#inspector`, `#asset-inspector` | `src/inspector.ts`, `src/assetInspector.ts` |
 | Bottom panel | `#palette` **Project** (asset tree, previews) | `src/projectPanel.ts`, `src/assetTree.ts`, `src/previews.ts` |
 | Status | `#status` | `setStatus` |
@@ -383,8 +391,8 @@ colliders are held at the matching unit shape — so scale is the one size a per
 | locked collider | `Doc.setParams` on a `Mesh` with a built-in rewrites every `Collider` on the node to `unitColliderFor(model)` **in the same batch** (one undo); `addComponent(Collider)` on such a node is born unit; `Doc.builtinOf(i)` says which built-in, or `null` |
 | Inspector | with `builtinOf` non-null the `collider` field is one row — `unit box · size is the object's scale` — instead of the kind picker and the dimensions |
 | Create | `createMenu` (blank space, Hierarchy *Create child*, viewport *Create here*) offers Box, Rounded box, Platform, Wall, Sphere, Capsule (`PRIMITIVE_ORDER`) then `Empty`; each is `Doc.placePrimitive(kind, position, parent)` = unit collider + `Mesh` + unsurfaced `Renderer` + the preset scale. In a prefab's room the same menu applies (`placeNamed` is the by-name variant its palette used) |
-| drawn at final size | `buildItems` **parents each group before building its meshes**, because the next row asks for the group's *world* scale; asked first it reported the node's own, leaving the holder carrying the parent chain's scale (invisible for meshes built at `ws`, which the leftover cancelled; wrong for anything at an absolute size, ADR 0120). `buildItemMeshes` counter-scales the mesh holder by the group's world scale and builds every shape from the **world** dimensions (`geometryForBuiltin(id, ws)`, or `geometryForCollider(scaleCollider(shape, ws))`), a model file keeping the scale. So a bevel is computed on the real size, as the game computes it from the baked collider — the editor used to stretch it |
-| redraw on scale | `rebuildSubtreeMeshes(i)` after a scale gizmo drag, a typed transform, and a remote transform op: meshes are built from the world scale, so a node's change is its subtree's |
+| drawn at final size | `buildAll` **parents each group before building its meshes**, because the next row asks for the group's *world* scale; asked first it reported the node's own, leaving the holder carrying the parent chain's scale (invisible for meshes built at `ws`, which the leftover cancelled; wrong for anything at an absolute size, ADR 0120). `buildItemMeshes` (`itemMeshes.ts`) counter-scales the mesh holder by the group's world scale and builds every shape from the **world** dimensions (`geometryForBuiltin(id, ws)`, or `geometryForCollider(scaleCollider(shape, ws))`), a model file keeping the scale. So a bevel is computed on the real size, as the game computes it from the baked collider — the editor used to stretch it |
+| redraw on scale | `meshes.rebuildSubtree(i)` after a scale gizmo drag, a typed transform, and a remote transform op: meshes are built from the world scale, so a node's change is its subtree's |
 | previews | `previews.ts` walks with the accumulated scale and does the same, so a Project tile shows the shape the viewport does |
 
 ## The game's surface cells (ADR 0120)
@@ -400,32 +408,38 @@ row edit to the key pitch re-lays every preview.
 | Piece | Behaviour |
 | --- | --- |
 | geometry | `surfaceGrid.ts` — `gridQuads(grid, size)` → one `CellQuad { x, y, z, side }` per cell, in the node's own metres, at `size.y / 2 + 0.002` (the top face, where `capsFor` puts a cap's base). Pure and tested |
-| drawn | one `THREE.InstancedMesh` per board over a shared `PlaneGeometry` rotated flat and a shared translucent material (`depthWrite: false`, `polygonOffset` −1/−1 — the camera's 0.1/1000 range leaves the 2 mm lift no depth precision at distance, so the bias is in buffer units and slope-scaled; not `depthTest: false`, which would draw a floor of cells through a wall in front of it), added by `buildSurfaceCells` **inside the item's mesh holder** — which already carries the inverse world scale, so a child of it is in world metres oriented with the node |
+| drawn | one `THREE.InstancedMesh` per board over a shared `PlaneGeometry` rotated flat and a shared translucent material (`depthWrite: false`, `polygonOffset` −1/−1 — the camera's 0.1/1000 range leaves the 2 mm lift no depth precision at distance, so the bias is in buffer units and slope-scaled; not `depthTest: false`, which would draw a floor of cells through a wall in front of it), added by `buildSurfaceCells` (`itemMeshes.ts`) **inside the item's mesh holder** — which already carries the inverse world scale, so a child of it is in world metres oriented with the node |
 | the frame | the holder's world scale must be 1, which needs the **true** world scale, which needs the group already parented (see *Shapes are built-in meshes*). A cell is placed at an absolute size, so nothing cancels a leftover parent scale: it came out stretched by it and on the wrong cell count. `surfaceGrid.test.ts` locks the invariant |
 | live for free | the holder is under the node's group, so a move, a turn or a reparent re-runs nothing. A **size** change rebuilds the item's meshes, and this rides along: a face pull (ADR 0119) re-lays the cells on every drag frame |
 | not pickable | `mesh.raycast = () => {}`. Picking raycasts the mesh holder, so without it the quads would swallow clicks and hand `faceUnder` a flat upward normal, breaking the Face tool on every board |
 | which nodes | `builtin:box` and `builtin:rounded-box` only — there scale *is* the surface (ADR 0090). A sphere has no face, and a `Keyboard` on one generates nothing, which the empty preview now shows |
-| toggle | its own button, not `Markers`: fitting platforms together is when spawn discs and rule pillars are clutter. `setSurfaceCells` rebuilds rather than setting `visible`, since three raycasts invisible objects. Hidden when the game declares no `surfaceGrid` |
+| toggle | its own button, not `Markers`: fitting platforms together is when spawn discs and rule pillars are clutter. `meshes.setCells` + a rebuild rather than setting `visible`, since three raycasts invisible objects. Hidden when the game declares no `surfaceGrid` |
 | culling | `computeBoundingSphere()` per mesh, against the instances rather than the unit quad at the origin |
 
-## Play
+## Play — `src/play.ts`
 
-**A level plays in the real game** (ADR 0086): `startPlay` → `gamePageUrl()` (`me.games[activeMode.name]`,
-from `/api/me`) → `startFramePlay(url)`: live level → `collab.flush()`; prefab → `saveNow()` if dirty (a refused save is no play); then an
-`<iframe id="game-frame">` over `#centre` at `${url}?level=${fileState.name}`; `playing = true`, orbit off. Stop
+`createPlay(host)` → `Play { active, start, stop, frame }` (ADR 0121). It owns `char`, `controller`, `playLoop`,
+`playView`, `playLights`, `playComponents`, `gameFrame`, `ownPos`, `lastSimTickAt` and the `active` flag; the
+twenty-three things it needs from the editor arrive as `PlayHost`, all getters. `main.ts` holds only that host
+literal and calls `play.frame(dt)` from the render loop — `true` when a session took the frame, so the edit
+clock runs only when it did not.
+
+**A level plays in the real game** (ADR 0086): `start` → `host.gamePageUrl()` (`me.games[activeMode.name]`,
+from `/api/me`) → `startFramePlay(url)`: live level → `host.flush()`; prefab → `host.saveNow()` if dirty (a refused save is no play); then an
+`<iframe id="game-frame">` over `#centre` at `${url}?level=${host.levelName()}` (bare, ADR 0108); `active = true`, orbit off. Stop
 (toolbar) removes the frame. Esc inside the frame is the game's pause; the `pointerlockchange` exit applies only
 to the in-editor loop. Hosted: `url` is the proxied `/play/<game>/`; dev: `http://localhost:<port>/` with
 `pnpm dev:<game>` running. A prefab, or a game the server has no page for, falls through to the loop below.
 
-## Play-test in place (`startPlay`/`stopPlay`) — prefabs
+## Play-test in place (`play.start`/`play.stop`) — prefabs
 
 The game's own code, not a copy (ADR 0052):
 
 | Piece | Source |
 | --- | --- |
-| Spawn | `activeMode.spawn(loaded)`; `{0,3,0}` with no game |
-| Rules | `activeMode.session(loaded)` → `ModeSession` |
-| Components | `createComponentRuntime(loaded, registry(), { character, effects: rules.effects, … })` incl. `player` components and `playerDefs(host)` (ADR 0059/0061) |
+| Spawn | `host.mode().spawn(loaded)`; `{0,3,0}` with no game |
+| Rules | `host.mode().session(loaded)` → `ModeSession` |
+| Components | `createComponentRuntime(loaded, host.registry(), { character, effects: rules.effects, … })` incl. `player` components and `playerDefs(host)` (ADR 0059/0061) |
 | Movement | `playComponents.locomote(...)` — no game / no locomotion component → no movement |
 | Actions | `heldActions()` from the game's `actions` |
 | Loop | `createLocalController` + `startFixedLoop`; tick: `fixedUpdate` → `loaded.update` → `world.step` → `locomote` → `world.step` (ADR 0058) |

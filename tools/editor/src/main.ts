@@ -1,11 +1,4 @@
 import {
-  addCharacter,
-  CHAR_HALF_HEIGHT,
-  CHAR_RADIUS,
-  type CharacterState,
-} from '@mp/humanoid'
-import { createLocalController, type LocalController, type LocalWorld } from '@mp/client'
-import {
   assetsOfKind,
   instantiateLevel,
   COLLIDER,
@@ -21,36 +14,24 @@ import {
   // are confused the error is a type error somewhere unrelated.
   type Level,
   type Transform, validateLevel, applyBatch, refKey, OpError, type NodeRef, type Op,
-  BUILTIN_LABELS, BUILTIN_MODELS, isBuiltinModel, scaleCollider, PRIMITIVE_LABELS, PRIMITIVE_ORDER, type PrimitiveKind, type EnvironmentConfig,
+  BUILTIN_LABELS, BUILTIN_MODELS, PRIMITIVE_LABELS, PRIMITIVE_ORDER, type PrimitiveKind, type EnvironmentConfig,
   isSegment, parseQualified, qualify } from '@mp/content'
 import { QUANT_BOUND } from '@mp/net'
 
 import { createViewGizmo } from './viewGizmo'
-import { DEFAULT_REGISTRY, characterAccess, createComponentRuntime, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type ComponentRuntime, type Registry } from '@mp/components'
-import { createOrbitCamera } from '@mp/camera'
-import { PLAYER_NODE_ID, actionsHeld, type ModeDescriptor, readSettings } from '@mp/mode'
-import { createSimClock, eulerToQuat, quat, startFixedLoop, TICK_DT, TICK_RATE_HZ, vec3, type EntityId, type LoopHandle, type Vec3 } from '@mp/core'
+import { DEFAULT_REGISTRY, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type Registry } from '@mp/components'
+import { type ModeDescriptor, readSettings } from '@mp/mode'
+import { eulerToQuat, vec3, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
-  addLevel,
-  addLights,
   applyGreyboxEnvironment,
-  colorForMarker,
-  createLight,
   createPostFX,
-  createGreyboxMaterial,
   createThreeStage,
-  geometryForBuiltin,
-  geometryForCollider,
-  lightAims,
   OrbitControls,
   createAssetRuntime,
   THREE,
   TransformControls,
   type AssetRuntime,
-  type ContentLights,
-  type LevelView,
-  type LightDesc,
 } from '@mp/render-three'
 import { createCollab, httpTransport, parsePresence, type Hold, type Peer } from './collab'
 import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type ClipItem, type Doc, type LocalPose, type Mode, type OpBatch } from './editorDoc'
@@ -88,7 +69,8 @@ import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
 import { createProjectPanel, type Project } from './projectPanel'
 import { distanceAlongAxis, faceFromNormal, pulled, snappedPull, type Face } from './facePull'
 import { cornerSnapDelta, snapAnglesDeg, snapToGrid, worldHalfExtents } from './snap'
-import { gridQuads } from './surfaceGrid'
+import { createItemMeshes } from './itemMeshes'
+import { createPlay } from './play'
 import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
 import { createShortcuts } from './shortcuts'
 import { createSplitter, readPx, writePx } from './splitter'
@@ -144,10 +126,6 @@ let uiChanged: () => void = () => {}
 let inspectorRebuild: () => void = () => {}
 let inspectorSync: () => void = () => {}
 
-const instanceRoot = new THREE.Group() // one Group per editable item (userData.index → data)
-const markerGroup = new THREE.Group()
-stage.scene.add(instanceRoot, markerGroup)
-let instanceGroups: THREE.Group[] = []
 /**
  * Every selected item, primary last (ADR 0031).
  *
@@ -290,7 +268,6 @@ let prefabOpen: { assetId: string; name: string; from: string } | null = null
 let latestSnapshot: Level | null = null
 /** True while `openFile` awaits its first snapshot; a later one (reconnect) reinstalls the document itself. */
 let joining = false
-let playing = false // play-in-place active (editing is suspended)
 /** Remote ops that landed mid-drag: applied to the data already, repainted when the drag ends. */
 let deferredRemote: Op[] = []
 /** Is the open document a level in a live session? Prefabs and materials are files with locks, as before. */
@@ -354,7 +331,7 @@ const holdColour = (connId: string): number => {
 /**
  * Rebuild every collaborator's hold box.
  *
- * Called from `buildItems` as well as on a holds event, and that is the load-bearing part: a `BoxHelper` wraps
+ * Called from `meshes.buildAll` as well as on a holds event, and that is the load-bearing part: a `BoxHelper` wraps
  * the object it was built around, so a rebuild leaves every one of them wrapping a group that is no longer in
  * the scene and whose meshes have been disposed. It draws a stale box rather than throwing, which is why this
  * outlived the same bug in the gizmo (see `reattachGizmo`).
@@ -377,9 +354,9 @@ const rebuildHoldHelpers = (): void => {
     // run of deeper indices right after the node.
     const depth = open.depthOf(i)
     for (let j = i; j < open.count() && (j === i || open.depthOf(j) > depth); j++) {
-      const g = instanceGroups[j]
-      if (g === undefined || holdHelpers.has(j) || meshHolderOf(g).children.length === 0) continue
-      const helper = new THREE.BoxHelper(meshHolderOf(g), holdColour(h.connId))
+      const g = meshes.groupAt(j)
+      if (g === undefined || holdHelpers.has(j) || meshes.holderOf(g).children.length === 0) continue
+      const helper = new THREE.BoxHelper(meshes.holderOf(g), holdColour(h.connId))
       ;(helper.material as THREE.LineBasicMaterial).depthTest = false
       helper.renderOrder = 1
       holdRoot.add(helper)
@@ -407,10 +384,10 @@ const onHoldsChanged = (holds: Hold[]): void => {
  * **And while playing.** `rebuildLoaded` frees the physics world and builds a new one, and a play session
  * lives in that world: its character is a body in it, its visuals came from that `loaded`. Repainting under
  * a play-test therefore pulled the floor out from under the player on every remote edit. Editing is
- * suspended while playing anyway, so the redraw waits exactly as a drag's does and `stopPlay` drains it.
+ * suspended while playing anyway, so the redraw waits exactly as a drag's does and `play.stop` drains it.
  */
 const repaintAfterOps = (ops: readonly Op[]): void => {
-  if (gizmoDragging || playing) {
+  if (gizmoDragging || play.active()) {
     deferredRemote.push(...ops)
     return
   }
@@ -422,7 +399,7 @@ const repaintAfterOps = (ops: readonly Op[]): void => {
     for (const o of ops) {
       const ref: NodeRef | null = o.kind === 'setTransform' ? (o.table !== undefined ? { table: o.table, id: o.id } : { id: o.id }) : o.kind === 'setOverrideTransform' ? { owner: o.owner, node: o.node } : null
       const i = ref === null ? null : open.indexOfRef(ref)
-      if (i !== null) rebuildSubtreeMeshes(i)
+      if (i !== null) meshes.rebuildSubtree(i)
     }
     scheduleRebuild()
     inspectorSync()
@@ -431,13 +408,13 @@ const repaintAfterOps = (ops: readonly Op[]): void => {
   const keep = selectionRefs()
   deselect()
   installEnvironment(open.environment())
-  buildItems()
+  meshes.buildAll()
   rebuildLoaded()
   const restored = keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
   if (restored.length > 0) applySelection(restored)
   refreshUi()
   inspectorRebuild()
-  loadNewReferences(buildItems)
+  loadNewReferences(meshes.buildAll)
 }
 
 /** Repaint what arrived while the redraw was held off — the end of a gizmo drag, the end of a play-test. */
@@ -483,7 +460,7 @@ const dragPoses = (): { ref: NodeRef; position: Vec3; rotation: Vec3; scale: Vec
   if (open === null) return []
   const out: { ref: NodeRef; position: Vec3; rotation: Vec3; scale: Vec3 }[] = []
   for (const i of selection) {
-    const g = instanceGroups[i]
+    const g = meshes.groupAt(i)
     const ref = open.refAt(i)
     if (g === undefined || ref === null) continue
     const pose = groupPose(g)
@@ -514,7 +491,7 @@ const onPresence = (data: unknown): void => {
   }
   for (const pose of p.poses) {
     const i = open.indexOfRef(pose.ref)
-    const g = i === null ? undefined : instanceGroups[i]
+    const g = i === null ? undefined : meshes.groupAt(i)
     if (i === null || g === undefined || (gizmoDragging && selection.includes(i))) continue
     g.position.set(pose.position.x, pose.position.y, pose.position.z)
     const q = eulerToQuat(pose.rotation)
@@ -544,14 +521,14 @@ const onPrefabOps = (assetId: string, ops: Op[]): void => {
   if (open === null) return
   const keep = selectionRefs()
   deselect()
-  buildItems()
+  meshes.buildAll()
   rebuildLoaded()
   const restored = keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
   if (restored.length > 0) applySelection(restored)
   refreshUi()
   inspectorRebuild()
   previews.invalidate()
-  loadNewReferences(buildItems)
+  loadNewReferences(meshes.buildAll)
 }
 
 const collab = createCollab(httpTransport(), {
@@ -639,7 +616,6 @@ const edit: { mode: GizmoMode; snap: boolean; steps: Record<GizmoMode, number>; 
   // ring, exactly as Unity does, so this only ever changes what it can.
   space: 'world',
 }
-let lastSimTickAt = 0
 
 /** Asset id of the prefab open in prefab mode, or `null` for a level or an unsaved prefab. */
 
@@ -647,307 +623,28 @@ const r4 = (n: number): number => Math.round(n * 1e4) / 1e4
 const isOne = (v: THREE.Vector3): boolean => Math.abs(v.x - 1) < 1e-4 && Math.abs(v.y - 1) < 1e-4 && Math.abs(v.z - 1) < 1e-4
 const isZeroRot = (e: THREE.Euler): boolean => Math.abs(e.x) < 1e-5 && Math.abs(e.y) < 1e-5 && Math.abs(e.z) < 1e-5
 
-const disposeMeshes = (g: THREE.Object3D): void => {
-  for (const child of [...g.children]) {
-    g.remove(child)
-    child.traverse((o) => {
-      if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments || o instanceof THREE.Line) {
-        o.geometry.dispose()
-        ;(o.material as THREE.Material).dispose()
-      }
-    })
-  }
-}
-
-const applyTransform = (o: THREE.Object3D, position: Vec3, rotation: Vec3 | undefined, scale: Vec3 | undefined): void => {
-  o.position.set(position.x, position.y, position.z)
-  const q = rotation !== undefined ? eulerToQuat(rotation) : quat()
-  o.quaternion.set(q.x, q.y, q.z, q.w)
-  if (scale !== undefined) o.scale.set(scale.x, scale.y, scale.z)
-  else o.scale.set(1, 1, 1)
-}
-
-// --- marker/trigger gizmos (a translucent disc + pillar, coloured by kind) ---
-const markerGizmo = (position: Vec3, color: number): THREE.Group => {
-  const g = new THREE.Group()
-  const disc = new THREE.Mesh(
-    new THREE.CylinderGeometry(1, 1, 0.05, 32),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.3, depthWrite: false, toneMapped: false }),
-  )
-  const pillar = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1.5, 0)]),
-    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false, toneMapped: false }),
-  )
-  g.add(disc, pillar)
-  g.position.set(position.x, position.y + 0.03, position.z)
-  return g
-}
-
-const buildMarkers = (): void => {
-  disposeMeshes(markerGroup)
-  if (loaded === null) return
-  // Spawn is the engine's: every game starts a player somewhere, and `Spawn` is an engine component.
-  for (const m of loaded.markers) if (m.kind === 'spawn') markerGroup.add(markerGizmo(m.position, colorForMarker('spawn')))
-  /**
-   * A gizmo per gameplay rule, on the node that owns the collider you would touch — coloured by **the game's**
-   * table (ADR 0052), so a new game's rules get markers without touching this file.
-   *
-   * This was `RULE_KINDS` from `@mp/components`, which covered exactly parkour's four because they were the
-   * only rules that existed. The editor no longer names a rule anywhere.
-   */
-  const gizmos = activeMode?.gizmos
-  if (gizmos !== undefined)
-    for (const n of loaded.nodes)
-      for (const c of n.components) {
-        const color = gizmos[c.type]
-        if (color !== undefined) markerGroup.add(markerGizmo(n.position, color))
-      }
-}
-
-// --- editable item meshes ---
 /**
- * One Group per item, **parented to its own parent's Group**, so Three composes the transform chain and a
- * gizmo on a child reads and writes that child's *local* pose — which is exactly what the document stores.
- *
- * Each item group holds a dedicated mesh holder rather than its meshes directly: rebuilding one item's
- * meshes must not take its child items with it, and `disposeMeshes` cannot tell a mesh it added from a
- * child group it did not.
+ * The viewport's item meshes and marker gizmos (`itemMeshes.ts`, ADR 0121). It owns the groups, the two
+ * scene roots, the shadow budget and the surface-cell toggle; what is left here is its host.
  */
-const meshHolderOf = (g: THREE.Group): THREE.Group => g.userData.meshes as THREE.Group
-
-/**
- * Shadow cap for the authored viewport (ADR 0047). Three renders forward, so each caster is an extra scene
- * render per frame and a point light is six of them. Reset per rebuild, and counted in document order so the
- * same lights win each time rather than flickering between rebuilds.
- */
-const EDITOR_SHADOW_CAP = 4
-let editorShadowCasters = 0
-
-/**
- * A pickable wireframe for a light. Chrome, not content: it never casts, never writes depth, and is not
- * tone-mapped, so it reads the same against a bright sky as a dark one.
- *
- * Shape says the kind at a glance — a sphere for the omnidirectional ones, a cone down -Z for a spot, a
- * line down -Z for a directional. Tinted with the light's own colour so a wall of them is still legible.
- */
-const lightGizmo = (light: LightDesc): THREE.Object3D => {
-  const color = new THREE.Color().setStyle(light.color, THREE.SRGBColorSpace)
-  const material = new THREE.MeshBasicMaterial({ color, wireframe: true, depthWrite: false, toneMapped: false })
-  const group = new THREE.Group()
-  if (light.kind === 'spot') {
-    const h = 1.2
-    const r = Math.tan(THREE.MathUtils.degToRad(light.angleDeg)) * h
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(r, h, 12, 1, true), material)
-    // ConeGeometry points up +Y with its apex at the top; put the apex on the node and lay it down -Z.
-    cone.rotation.x = -Math.PI / 2
-    cone.position.z = -h / 2
-    group.add(cone)
-  } else {
-    group.add(new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 6), material))
-  }
-  if (light.kind === 'directional') {
-    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1.6)]), new THREE.LineBasicMaterial({ color, toneMapped: false })))
-  }
-  return group
-}
-
-const buildItemMeshes = (g: THREE.Group, i: number): void => {
-  if (doc === null) return
-  const holder = meshHolderOf(g)
-  /**
-   * Drawn at final size (ADR 0090). The group carries the node's scale for its children and the gizmo; the
-   * holder undoes it, and every shape here is built from the *world* dimensions — as the game builds them
-   * from the baked collider. So a rounded edge is computed on the real size instead of being stretched with
-   * the scale, and a built-in shape is the unit shape times the scale. A model file gets the scale back.
-   */
-  g.updateWorldMatrix(true, false)
-  const ws = g.getWorldScale(new THREE.Vector3())
-  const inv = (v: number): number => (Math.abs(v) < 1e-6 ? 1 : 1 / v)
-  holder.scale.set(inv(ws.x), inv(ws.y), inv(ws.z))
-  const worldScale = vec3(ws.x, ws.y, ws.z)
-  for (const spec of doc.meshSpecs(i)) {
-    // The same precedence the game's level view uses, so the editor is never showing a different scene:
-    // a model replaces the greybox shape, a material replaces the greybox style, and either falling
-    // through leaves the piece as its collider, greyboxed when no material is assigned.
-    const builtin = isBuiltinModel(spec.model) ? spec.model : null
-    const model = spec.model !== undefined && builtin === null ? (runtime?.model(spec.model) ?? null) : null
-    const material = spec.material !== undefined ? (runtime?.material(spec.material) ?? null) : null
-    let object: THREE.Object3D
-    if (model !== null) {
-      if (material !== null) model.traverse((o) => void (o instanceof THREE.Mesh && (o.material = material)))
-      object = model
-    } else {
-      const geometry = builtin !== null ? geometryForBuiltin(builtin, worldScale) : geometryForCollider(scaleCollider(spec.collider, worldScale))
-      object = new THREE.Mesh(geometry, material ?? createGreyboxMaterial())
-    }
-    const p = spec.transform.position
-    applyTransform(object, vec3(p.x * ws.x, p.y * ws.y, p.z * ws.z), spec.transform.rotation, spec.transform.scale)
-    if (model !== null) object.scale.multiply(ws)
-    object.traverse((o) => {
-      if (o instanceof THREE.Mesh) {
-        o.castShadow = true
-        o.receiveShadow = true
-      }
-    })
-    holder.add(object)
-  }
-
-  /**
-   * The node's light, if it has one (ADR 0047). Two objects, both parented into the node's own group so its
-   * transform places and aims them with no extra bookkeeping:
-   *
-   * - the real `THREE.Light`, so the viewport shows what the level will actually look like
-   * - a wireframe **gizmo**, because a light node has no `Renderer` and no `Collider`, so without one there is
-   *   nothing under the cursor to click. It sits inside the group that carries `userData.index`, so the
-   *   existing pick walk finds it for free.
-   */
-  const light = doc.lightSpec(i)
-  if (light !== undefined) {
-    const casts = light.castShadow && light.kind !== 'ambient' && editorShadowCasters < EDITOR_SHADOW_CAP
-    if (casts) editorShadowCasters += 1
-    const object = createLight(light, casts)
-    holder.add(object)
-    if (lightAims(light.kind)) {
-      // Aimed down the group's -Z, which is the node's forward. Three needs the target in the graph.
-      const target = new THREE.Object3D()
-      target.position.set(0, 0, -1)
-      holder.add(target)
-      ;(object as THREE.SpotLight | THREE.DirectionalLight).target = target
-    }
-    holder.add(lightGizmo(light))
-  }
-
-  buildSurfaceCells(holder, i, worldScale)
-}
-
-/**
- * Whether the key/cell preview is on (ADR 0120). `null` when the open level's game describes no grid, which
- * is what hides the toolbar button rather than leaving a dead one.
- */
-let showCells = true
-const cellsToggle = (): boolean | null => (activeMode?.surfaceGrid === undefined ? null : showCells)
-
-/** One flat square per cell, shared by every board: the geometry and the material are built once. */
-const CELL_GEOMETRY = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2)
-const CELL_MATERIAL = new THREE.MeshBasicMaterial({
-  color: 0x6fa8ff,
-  transparent: true,
-  opacity: 0.38,
-  // Written depth would z-fight the face it lies on, and it is a hint rather than a surface.
-  depthWrite: false,
-  toneMapped: false,
-  side: THREE.DoubleSide,
-  /**
-   * The bias that keeps a cell off the face it is drawn on, which a lift in metres cannot.
-   *
-   * The camera is near 0.1 / far 1000 (`stage.ts`), and that ratio spends nearly all of the depth buffer's
-   * precision close in — so `LIFT`'s two millimetres have no bits left to win with fifty metres out, and the
-   * cells flickered against the platform at any distance. This biases in **depth-buffer** units and is
-   * slope-scaled by the driver, so it holds at every distance and every viewing angle.
-   *
-   * Not `depthTest: false`, which is what the marker pillars use: a whole floor of cells drawing through a
-   * wall in front of it is worse than the flicker was.
-   */
-  polygonOffset: true,
-  polygonOffsetFactor: -1,
-  polygonOffsetUnits: -1,
-})
-
-/**
- * Draw the cells the active game would generate on this node's surface, inside its mesh holder (ADR 0120).
- *
- * Asked of the **game**, which decides from the node's own components whether this is one of its surfaces —
- * the editor never learns what a `Keyboard` is. Built-in box and rounded box only: for those the collider is
- * the unit shape and the scale is the size (ADR 0090), which is the only case where a node's scale *is* the
- * surface. A sphere has no face, and an authored collider could sit anywhere on the node.
- *
- * Nothing here runs on a move or a turn — the holder is a child of the node's group, so three composes that.
- * A size change rebuilds the item's meshes, and this rides along, so a face pull re-lays the cells live.
- */
-const buildSurfaceCells = (holder: THREE.Group, i: number, worldSize: Vec3): void => {
-  const open = doc
-  const grid = activeMode?.surfaceGrid
-  if (open === null || grid === undefined || !showCells) return
-  const builtin = open.builtinOf(i)
-  if (builtin !== 'builtin:box' && builtin !== 'builtin:rounded-box') return
-  const described = grid(open.components(i), worldSize, gameData[activeMode?.name ?? '']?.settings ?? {})
-  if (described === null) return
-  const quads = gridQuads(described, worldSize)
-  if (quads.length === 0) return
-  const mesh = new THREE.InstancedMesh(CELL_GEOMETRY, CELL_MATERIAL, quads.length)
-  /**
-   * **Not pickable.** Picking raycasts the mesh holder, so without this the quads would swallow clicks — and
-   * worse, hand `faceUnder` a flat upward normal and break the face tool on every board (ADR 0119).
-   */
-  mesh.raycast = () => {}
-  mesh.castShadow = false
-  mesh.receiveShadow = false
-  const m = new THREE.Matrix4()
-  const one = new THREE.Quaternion()
-  quads.forEach((q, n) => {
-    m.compose(new THREE.Vector3(q.x, q.y, q.z), one, new THREE.Vector3(q.side, 1, q.side))
-    mesh.setMatrixAt(n, m)
-  })
-  mesh.instanceMatrix.needsUpdate = true
-  // Against the instances, not the unit quad at the mesh's origin, or a board is culled from most angles.
-  mesh.computeBoundingSphere()
-  holder.add(mesh)
-}
-
-const buildItems = (): void => {
-  disposeMeshes(instanceRoot)
-  instanceGroups = []
-  // Counted fresh each rebuild, in document order, so the same lights keep their shadows instead of the cap
-  // handing them to whichever node happened to rebuild first.
-  editorShadowCasters = 0
-  if (doc === null) {
+const meshes = createItemMeshes({
+  doc: () => doc,
+  loaded: () => loaded,
+  runtime: () => runtime,
+  mode: () => activeMode,
+  gameSettings: () => gameData[activeMode?.name ?? '']?.settings ?? {},
+  selected: () => selected,
+  // Each of these reads the groups that were just replaced, and none of them is that module's business.
+  afterBuild: () => {
+    applyPreviewPoses()
     reattachGizmo()
     rebuildHoldHelpers()
     refreshBoundsBox()
-    return
-  }
-  // Depth-first order, so a parent's group always exists before its children ask for it.
-  for (let i = 0; i < doc.count(); i++) {
-    const g = new THREE.Group()
-    const t = doc.transformOf(i)
-    applyTransform(g, t.position, t.rotation, t.scale)
-    g.userData.index = i
-    const holder = new THREE.Group()
-    g.userData.meshes = holder
-    g.add(holder)
-    /**
-     * A switched-off node draws nothing (ADR 0099) — Kodjo's call, the same as Unity's scene view.
-     *
-     * **No meshes rather than an invisible group.** Three does not skip invisible objects when raycasting
-     * (`Raycaster.js`), so `visible = false` would leave it clickable in the viewport: you would select
-     * something you cannot see. Building nothing is also what the loader does, so the two agree.
-     *
-     * The group itself still exists, so document indices, the Hierarchy's selection and the gizmo all keep
-     * working — you can still move a disabled object, you just cannot see it.
-     */
-    /**
-     * **Parented before its meshes are built**, because `buildItemMeshes` asks for the group's *world* scale.
-     * Built the other way round it got the node's own scale instead, leaving the mesh holder's real world
-     * scale equal to the parent chain's — invisible for the meshes, which are built at `ws` and then
-     * multiplied by exactly that leftover, but not for anything placed at an absolute size. The game's
-     * surface cells (ADR 0120) are, and came out scaled by the parent and laid on the wrong cell count.
-     *
-     * It also made `buildItems` and `rebuildItemMeshes` disagree: the latter runs on a group that is already
-     * in the scene, so it always saw the true world scale.
-     */
-    const parent = doc.parentOf(i)
-    ;(parent === null ? instanceRoot : (instanceGroups[parent] ?? instanceRoot)).add(g)
-    if (doc.nodeEnabled(i) && !doc.disabledByAncestor(i)) buildItemMeshes(g, i)
-    instanceGroups[i] = g
-  }
-  // Authored transforms are only where *static* items sit. An animated one belongs at its track's pose for
-  // the current playhead — which at 0 is where the game starts it, so the two now agree (ADR 0029).
-  applyPreviewPoses()
-  reattachGizmo()
-  rebuildHoldHelpers()
-  refreshBoundsBox()
-}
-
+  },
+})
+const instanceRoot = meshes.root
+const markerGroup = meshes.markers
+stage.scene.add(instanceRoot, markerGroup)
 /**
  * The local transform `child` would need to keep its current world pose while sitting under `parent`
  * (`null` = the level root): `parent⁻¹ · child`, decomposed.
@@ -976,29 +673,6 @@ const localInside = (
     rotation: vec3(e.x, e.y, e.z),
     scale: vec3(scale.x, scale.y, scale.z),
   }
-}
-
-const rebuildItemMeshes = (index: number): void => {
-  const g = instanceGroups[index]
-  if (g === undefined) return
-  disposeMeshes(meshHolderOf(g)) // only this item's own meshes; its child items are siblings of the holder
-  buildItemMeshes(g, index)
-}
-
-const rebuildSelectedMeshes = (): void => {
-  if (selected === null) return
-  rebuildItemMeshes(selected)
-}
-
-/**
- * Meshes are built from the world scale (ADR 0090), so a scale change on a node redraws it and everything
- * under it. Depth-first order makes the subtree the run of deeper indices right after the node.
- */
-const rebuildSubtreeMeshes = (i: number): void => {
-  const open = doc
-  if (open === null) return
-  const depth = open.depthOf(i)
-  for (let j = i; j < open.count() && (j === i || open.depthOf(j) > depth); j++) rebuildItemMeshes(j)
 }
 
 /**
@@ -1034,10 +708,10 @@ const rebuildLoaded = (): void => {
   world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
   try {
     loaded = instantiateLevel(world, doc.asLevel(), registry())
-    buildMarkers()
+    meshes.buildMarkers()
   } catch (e) {
     loaded = null
-    disposeMeshes(markerGroup)
+    meshes.clearMarkers()
     setStatus(`invalid: ${String(e)}`)
   }
 }
@@ -1067,15 +741,15 @@ const showDoc = (): void => {
   // The level owns its sun (ADR 0048), so opening one relights the viewport and rebakes the sky. A prefab has
   // none, which `sun()` reports as `undefined`, and that falls back to the renderer's defaults.
   installEnvironment(doc?.environment())
-  buildItems()
+  meshes.buildAll()
   rebuildLoaded()
   statusMsg = '' // a message about the old document would be a lie about this one
   uiChanged()
   // The document's own preload, and the only one there is. `reloadAssets` also loads `doc.assetIds()`, but
   // at boot it runs *before* the first document exists, so that call has always been over an empty list —
   // which left every open drawing against an empty runtime, and every material in the viewport greyboxed.
-  // Deselected above, so the re-`buildItems` has no gizmo to re-attach.
-  loadNewReferences(buildItems)
+  // Deselected above, so the re-`meshes.buildAll` has no gizmo to re-attach.
+  loadNewReferences(meshes.buildAll)
 }
 
 /** Open a file — the stack starts over at its root. */
@@ -1159,7 +833,7 @@ const unlinkPlacement = (index: number): void => {
   if (!doc.unlinkNode(index)) return setStatus(`${label} is not a prefab placement`)
   recordEdit(`unlinked ${label}`)
   // A `replaceNode` changes the tree and what is drawn, so the same refresh a revert does.
-  buildItems()
+  meshes.buildAll()
   rebuildLoaded()
   applySelection(selection)
   setStatus(`${label} is its own object now — the prefab is unchanged`)
@@ -1302,7 +976,7 @@ const viewGizmo = createViewGizmo({
  */
 stage.setRenderStep(() => {
   postfx.render()
-  if (!playing) viewGizmo.render(stage.renderer)
+  if (!play.active()) viewGizmo.render(stage.renderer)
 })
 
 /**
@@ -1317,7 +991,7 @@ let viewGizmoHolding = false
 document.addEventListener(
   'pointerdown',
   (e) => {
-    if (e.target !== canvas || playing || e.button !== 0) return
+    if (e.target !== canvas || play.active() || e.button !== 0) return
     if (!viewGizmo.pointerDown(e)) return
     viewGizmoHolding = true
     e.stopPropagation()
@@ -1378,7 +1052,7 @@ const applySnap = (): void => {
  */
 const snapTranslation = (): void => {
   if (edit.mode !== 'translate' || !edit.snap || selected === null) return
-  const g = instanceGroups[selected]
+  const g = meshes.groupAt(selected)
   const step = edit.steps.translate
   if (g === undefined || step <= 0) return
   g.updateWorldMatrix(true, false)
@@ -1416,7 +1090,7 @@ const snapTranslation = (): void => {
  */
 const snapRotation = (): void => {
   if (edit.mode !== 'rotate' || !edit.snap || selected === null) return
-  const g = instanceGroups[selected]
+  const g = meshes.groupAt(selected)
   if (g === undefined) return
   const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
   const snapped = snapAnglesDeg(e, edit.steps.rotate)
@@ -1427,16 +1101,16 @@ stage.scene.add(gizmo.getHelper())
 /**
  * Point the gizmo at the primary's group, or at nothing.
  *
- * `buildItems` replaces every group, so anything holding one is stale the moment it returns — and a gizmo
+ * `meshes.buildAll` replaces every group, so anything holding one is stale the moment it returns — and a gizmo
  * holding a group that is no longer in the scene throws on the next click ("the attached 3D object must be a
- * part of the scene graph", then a null `updateMatrixWorld` in `pointerDown`). Called at both of `buildItems`'
+ * part of the scene graph", then a null `updateMatrixWorld` in `pointerDown`). Called at both of `meshes.buildAll`'
  * exits, so the invariant holds however it was reached: a redraw after an async asset load
  * (`loadNewReferences`) never went through a selection change, which is how the stale attachment survived.
  */
 const reattachGizmo = (): void => {
   // Face is not a `TransformControls` mode (ADR 0119): the handles are the faces themselves, so the gizmo
   // would only be three arrows in the way.
-  const g = selected === null || playing || edit.mode === 'face' ? undefined : instanceGroups[selected]
+  const g = selected === null || play.active() || edit.mode === 'face' ? undefined : meshes.groupAt(selected)
   if (g === undefined) gizmo.detach()
   else gizmo.attach(g)
 }
@@ -1465,7 +1139,7 @@ let backgroundBeforeIso: THREE.Scene['background'] | undefined
 /**
  * Install a level's environment, and then make the background match the projection.
  *
- * One function rather than the four pairs of calls this replaces, for the reason `buildItems` keeps its own
+ * One function rather than the four pairs of calls this replaces, for the reason `meshes.buildAll` keeps its own
  * invariants: every path that installs a sky has to re-apply this, and a path that forgets is a black
  * viewport that only shows up in isometric.
  */
@@ -1519,7 +1193,7 @@ const boundsReach = (): { outside: number; reach: number } | null => {
   const far = (box: THREE.Box3): number =>
     box.isEmpty() ? 0 : Math.max(Math.abs(box.min.x), Math.abs(box.min.y), Math.abs(box.min.z), box.max.x, box.max.y, box.max.z)
   let outside = 0
-  for (const g of instanceGroups) {
+  for (const g of meshes.all()) {
     if (g === undefined || g.parent !== instanceRoot) continue
     if (far(new THREE.Box3().setFromObject(g)) > b) outside += 1
   }
@@ -1552,7 +1226,7 @@ const setSpace = (space: GizmoSpace): void => {
  * timed against other motion, and a staggered row is the thing you actually need to look at.
  */
 let previewMs = 0
-/** Whether the clock is running. Separate from `playing`, which is the real game loop with pointer lock. */
+/** Whether the clock is running. Separate from play, which is the real game loop with pointer lock. */
 let previewing = false
 let previewLastFrame = 0
 /**
@@ -1573,7 +1247,7 @@ let dragStart = new Map<number, DragStart>()
 const applyPreviewPoses = (): void => {
   if (doc === null) return
   for (let i = 0; i < doc.count(); i++) {
-    const g = instanceGroups[i]
+    const g = meshes.groupAt(i)
     if (g === undefined) continue
     const pose = doc.poseOf(i, previewMs)
     g.position.set(pose.position.x, pose.position.y, pose.position.z)
@@ -1624,7 +1298,7 @@ gizmo.addEventListener('dragging-changed', (event) => {
     dragStart = new Map()
     if (doc !== null) {
       for (const i of selection) {
-        const g = instanceGroups[i]
+        const g = meshes.groupAt(i)
         if (g === undefined) continue
         dragStart.set(i, {
           // Read off the group, not from `poseOf`, though at this instant they agree: every value compared
@@ -1655,7 +1329,7 @@ gizmo.addEventListener('objectChange', () => {
   snapRotation()
   writeBackSelected()
   mirrorDragToSelection()
-  if (edit.mode === 'scale') for (const i of selection) rebuildSubtreeMeshes(i)
+  if (edit.mode === 'scale') for (const i of selection) meshes.rebuildSubtree(i)
   inspectorSync()
 })
 
@@ -1671,7 +1345,7 @@ gizmo.addEventListener('objectChange', () => {
 const mirrorDragToSelection = (): void => {
   if (selection.length < 2 || selected === null || doc === null) return
   const primaryStart = dragStart.get(selected)
-  const primaryGroup = instanceGroups[selected]
+  const primaryGroup = meshes.groupAt(selected)
   if (primaryStart === undefined || primaryGroup === undefined) return
 
   const now = groupPose(primaryGroup)
@@ -1700,7 +1374,7 @@ const mirrorDragToSelection = (): void => {
 
   for (const i of selection) {
     if (i === selected) continue
-    const g = instanceGroups[i]
+    const g = meshes.groupAt(i)
     const start = dragStart.get(i)
     if (g === undefined || start === undefined) continue
 
@@ -1731,7 +1405,7 @@ const mirrorDragToSelection = (): void => {
  */
 const writeBackItem = (index: number): void => {
   if (doc === null) return
-  const g = instanceGroups[index]
+  const g = meshes.groupAt(index)
   if (g === undefined) return
   const off = motionOffsetAt(index, previewMs)
   const t = transformOfGroup(g)
@@ -1796,7 +1470,7 @@ const applySelection = (next: readonly number[]): void => {
   // Editing is suspended during play, and the item meshes are hidden — attaching a gizmo to one would put a
   // handle in mid-air over a level you are walking. The Hierarchy panel can reach here too, so the guard
   // belongs on the selection itself rather than on the viewport's click handler alone.
-  if (playing) return
+  if (play.active()) return
   // The Inspector shows one thing: a scene item or an asset, never both.
   if (selectedAsset !== null && next.length > 0) {
     selectedAsset = null
@@ -1821,14 +1495,14 @@ const applySelection = (next: readonly number[]): void => {
 
 /** Select one item outright — the plain click, and what every command that lands on a new item does. */
 const select = (index: number): void => {
-  if (instanceGroups[index] === undefined || doc === null) return
+  if (meshes.groupAt(index) === undefined || doc === null) return
   if (refuseHeld(index)) return
   applySelection([index])
 }
 
 /** A click that carries modifiers: Ctrl toggles one, Shift extends a range over `order`. */
 const selectWith = (index: number, mode: SelectMode, order: readonly number[]): void => {
-  if (instanceGroups[index] === undefined || doc === null) return
+  if (meshes.groupAt(index) === undefined || doc === null) return
   if (refuseHeld(index)) return
   applySelection(applySelect(selection, index, mode, order))
 }
@@ -1861,7 +1535,7 @@ canvas.addEventListener('pointerdown', (e) => {
   gizmoDragged = false
   // Face mode claims a left press on a face of the selected box (ADR 0119). Orbit is suppressed for the drag
   // and `gizmoDragged` marks it, so the pointerup that follows is not read as a click that changes selection.
-  if (e.button === 0 && !playing && edit.mode === 'face' && beginFacePull(e.clientX, e.clientY)) {
+  if (e.button === 0 && !play.active() && edit.mode === 'face' && beginFacePull(e.clientX, e.clientY)) {
     gizmoDragged = true
     controls.enabled = false
     canvas.setPointerCapture(e.pointerId)
@@ -1869,7 +1543,7 @@ canvas.addEventListener('pointerdown', (e) => {
 })
 
 canvas.addEventListener('pointermove', (e) => {
-  if (playing || edit.mode !== 'face') return
+  if (play.active() || edit.mode !== 'face') return
   if (facePull !== null) {
     moveFacePull(e.clientX, e.clientY)
     return
@@ -1934,10 +1608,10 @@ const faceUnder = (clientX: number, clientY: number): { index: number; face: Fac
   if (selected === null || doc === null) return null
   const builtin = doc.builtinOf(selected)
   if (builtin !== 'builtin:box' && builtin !== 'builtin:rounded-box') return null
-  const g = instanceGroups[selected]
+  const g = meshes.groupAt(selected)
   if (g === undefined) return null
   castFrom(clientX, clientY)
-  const hit = raycaster.intersectObject(meshHolderOf(g), true)[0]
+  const hit = raycaster.intersectObject(meshes.holderOf(g), true)[0]
   if (hit === undefined || hit.face === null || hit.face === undefined) return null
   // The normal arrives in the hit mesh's own space; the face belongs to the node's.
   const world = hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
@@ -1949,7 +1623,7 @@ const faceUnder = (clientX: number, clientY: number): { index: number; face: Fac
 
 /** Draw the highlight over a face, sized to it. */
 const showFaceHover = (index: number, face: Face): void => {
-  const g = instanceGroups[index]
+  const g = meshes.groupAt(index)
   if (g === undefined) return
   g.updateWorldMatrix(true, false)
   const pos = new THREE.Vector3()
@@ -1971,7 +1645,7 @@ const showFaceHover = (index: number, face: Face): void => {
 const beginFacePull = (clientX: number, clientY: number): boolean => {
   const found = faceUnder(clientX, clientY)
   if (found === null || doc === null) return false
-  const g = instanceGroups[found.index]
+  const g = meshes.groupAt(found.index)
   if (g === undefined) return false
   g.updateWorldMatrix(true, false)
   const pos = new THREE.Vector3()
@@ -2013,7 +1687,7 @@ const beginFacePull = (clientX: number, clientY: number): boolean => {
 const moveFacePull = (clientX: number, clientY: number): void => {
   const pull = facePull
   if (pull === null || doc === null) return
-  const g = instanceGroups[pull.index]
+  const g = meshes.groupAt(pull.index)
   if (g === undefined) return
   castFrom(clientX, clientY)
   const t = distanceAlongAxis(raycaster.ray.origin, raycaster.ray.direction, pull.origin, pull.dir)
@@ -2032,7 +1706,7 @@ const moveFacePull = (clientX: number, clientY: number): void => {
   g.scale.set(next.scale.x, next.scale.y, next.scale.z)
   g.position.set(next.position.x, next.position.y, next.position.z)
   writeBackItem(pull.index)
-  rebuildSubtreeMeshes(pull.index)
+  meshes.rebuildSubtree(pull.index)
   showFaceHover(pull.index, pull.face)
   inspectorSync()
   const size = next.scale
@@ -2089,7 +1763,7 @@ canvas.addEventListener('pointerup', (e) => {
   // Left button only. Without this a right-click placed the armed prefab and moved the selection on its way
   // to opening a menu, which is the sort of thing that gets blamed on the menu.
   if (e.button !== 0) return
-  if (playing) return // editing suspended during play (pointer = camera only)
+  if (play.active()) return // editing suspended during play (pointer = camera only)
   if (gizmoDragged) return // was dragging the gizmo, not a click
   if (Math.hypot(e.clientX - downX, e.clientY - downY) > 4) return // was an orbit drag
   castFrom(e.clientX, e.clientY)
@@ -2122,12 +1796,12 @@ canvas.addEventListener('pointerup', (e) => {
     }
     placing = null
     recordEdit('place')
-    buildItems()
+    meshes.buildAll()
     rebuildLoaded()
     select(idx)
     // A placed prefab file can reference a material this document had never named before.
     loadNewReferences(() => {
-      buildItems() // resets the item groups, so the gizmo has to be re-attached
+      meshes.buildAll() // resets the item groups, so the gizmo has to be re-attached
       select(idx)
     })
     return
@@ -2168,7 +1842,7 @@ const deleteSelected = (): void => {
   for (const i of roots) doc.remove(i)
   recordEdit(roots.length > 1 ? `delete ${roots.length}` : 'delete')
   deselect()
-  buildItems()
+  meshes.buildAll()
   rebuildLoaded()
 }
 
@@ -2185,7 +1859,7 @@ const duplicateSelected = (): void => {
     made.push(at)
   }
   recordEdit(made.length > 1 ? `duplicate ${made.length}` : 'duplicate')
-  buildItems()
+  meshes.buildAll()
   rebuildLoaded()
   // Reversed, so the primary ends up on the copy of what was the primary rather than on the lowest one.
   applySelection(made.reverse())
@@ -2246,12 +1920,12 @@ const saveAsPrefab = async (index: number): Promise<void> => {
     return
   }
   recordEdit('save as prefab')
-  buildItems()
+  meshes.buildAll()
   rebuildLoaded()
   applySelection([open.indexOfRef(ref) ?? at])
   inspectorRebuild()
   uiChanged()
-  loadNewReferences(buildItems)
+  loadNewReferences(meshes.buildAll)
   setStatus(`saved ${created.name} to ${target.path} — every level can place it now`)
 }
 
@@ -2266,46 +1940,46 @@ const saveAsPrefab = async (index: number): Promise<void> => {
  * duplicates fail loudly instead of one silently losing, and a cheat sheet can be generated from it.
  */
 const editorShortcuts = createShortcuts([
-  { id: 'undo', chords: ['mod+z'], label: 'Undo', run: () => undo(), enabled: () => !playing },
+  { id: 'undo', chords: ['mod+z'], label: 'Undo', run: () => undo(), enabled: () => !play.active() },
   // Both spellings: Ctrl+Y is the Windows convention and Ctrl+Shift+Z the one every other editor also takes.
-  { id: 'redo', chords: ['mod+y', 'mod+shift+z'], label: 'Redo', run: () => redo(), enabled: () => !playing },
-  { id: 'copy', chords: ['mod+c'], label: 'Copy', run: () => copySelected(), enabled: () => !playing && selection.length > 0 },
-  { id: 'cut', chords: ['mod+x'], label: 'Cut', run: () => cutSelected(), enabled: () => !playing && selection.length > 0 },
-  { id: 'paste', chords: ['mod+v'], label: 'Paste', run: () => pasteClipboard(false), enabled: () => !playing && clipboard.length > 0 },
+  { id: 'redo', chords: ['mod+y', 'mod+shift+z'], label: 'Redo', run: () => redo(), enabled: () => !play.active() },
+  { id: 'copy', chords: ['mod+c'], label: 'Copy', run: () => copySelected(), enabled: () => !play.active() && selection.length > 0 },
+  { id: 'cut', chords: ['mod+x'], label: 'Cut', run: () => cutSelected(), enabled: () => !play.active() && selection.length > 0 },
+  { id: 'paste', chords: ['mod+v'], label: 'Paste', run: () => pasteClipboard(false), enabled: () => !play.active() && clipboard.length > 0 },
   {
     id: 'paste-child',
     chords: ['mod+shift+v'],
     label: 'Paste as child',
     run: () => pasteClipboard(true),
-    enabled: () => !playing && clipboard.length > 0 && selected !== null,
+    enabled: () => !play.active() && clipboard.length > 0 && selected !== null,
   },
-  { id: 'duplicate', chords: ['mod+d'], label: 'Duplicate', run: () => duplicateSelected(), enabled: () => !playing && selection.length > 0 },
+  { id: 'duplicate', chords: ['mod+d'], label: 'Duplicate', run: () => duplicateSelected(), enabled: () => !play.active() && selection.length > 0 },
   {
     id: 'delete',
     chords: ['delete', 'backspace'],
     label: 'Delete',
     run: () => deleteSelected(),
-    enabled: () => !playing && selection.length > 0,
+    enabled: () => !play.active() && selection.length > 0,
   },
   {
     id: 'select-all',
     chords: ['mod+a'],
     label: 'Select all',
     run: () => applySelection(doc === null ? [] : Array.from({ length: doc.count() }, (_, i) => i)),
-    enabled: () => !playing && doc !== null && doc.count() > 0,
+    enabled: () => !play.active() && doc !== null && doc.count() > 0,
   },
   // The menu offers Focus with `F` beside it, so the key has to exist or the menu is lying.
-  { id: 'focus', chords: ['f'], label: 'Focus the selection', run: () => focusSelection(), enabled: () => !playing && selection.length > 0 },
-  { id: 'translate', chords: ['t', 'g'], label: 'Translate tool', run: () => setMode('translate'), enabled: () => !playing },
-  { id: 'rotate', chords: ['r'], label: 'Rotate tool', run: () => setMode('rotate'), enabled: () => !playing },
-  { id: 'scale', chords: ['s'], label: 'Scale tool', run: () => setMode('scale'), enabled: () => !playing },
+  { id: 'focus', chords: ['f'], label: 'Focus the selection', run: () => focusSelection(), enabled: () => !play.active() && selection.length > 0 },
+  { id: 'translate', chords: ['t', 'g'], label: 'Translate tool', run: () => setMode('translate'), enabled: () => !play.active() },
+  { id: 'rotate', chords: ['r'], label: 'Rotate tool', run: () => setMode('rotate'), enabled: () => !play.active() },
+  { id: 'scale', chords: ['s'], label: 'Scale tool', run: () => setMode('scale'), enabled: () => !play.active() },
   {
     id: 'cancel',
     chords: ['escape'],
     label: 'Cancel / deselect',
     run: () => {
-      if (playing) {
-        stopPlay()
+      if (play.active()) {
+        play.stop()
         return
       }
       if (placing !== null) {
@@ -2325,329 +1999,40 @@ window.addEventListener('keydown', (e) => {
 
 
 
-// ============================ play-in-place (identical to the game) ============================
-// Same building blocks as modes/parkour: createLocalController (fixed tick + render interpolation),
-// the two-phase step (move platforms, then resolve the character against them), and stepCharacter
-// with DEFAULT_TUNING. The viewer skipped the controller/interpolation, which is why it felt off.
-const PLAYER_ID = 0 as EntityId
-
-const keys = new Set<string>()
-window.addEventListener('keydown', (e) => {
-  keys.add(e.code)
-  if (playing && (e.code === 'Space' || e.code.startsWith('Arrow'))) e.preventDefault()
-})
-window.addEventListener('keyup', (e) => keys.delete(e.code))
-
-const charMesh = new THREE.Mesh(
-  new THREE.CapsuleGeometry(CHAR_RADIUS, CHAR_HALF_HEIGHT * 2, 8, 20),
-  new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.6 }),
-)
-charMesh.castShadow = true
-charMesh.visible = false
-stage.scene.add(charMesh)
-
-let char: CharacterState | null = null
-let controller: LocalController | null = null
-let playLoop: LoopHandle | null = null
-let playView: LevelView | null = null
-// Play mode hides instanceRoot, which hides the authored lights with it, so it needs its own (ADR 0047).
-let playLights: ContentLights | null = null
-let ownPos: Vec3 = { x: 0, y: 1, z: 0 }
-
+// ============================ play-in-place and in the real game ============================
 /**
- * The game's third-person camera — `@mp/camera`, the same object the game builds (ADR 0059).
- *
- * This was a **third** hand-written third-person camera: its own yaw and pitch, a fixed distance, `lookAt`
- * instead of a boom, and no occlusion at all. So every camera fix since ADR 0055 — the see-through hole, the
- * below-the-feet rule, the three sightlines down the body — was invisible in the editor, which is the one
- * place you would go to check whether a level plays well. ADR 0056 recorded this file as using
- * `OrbitControls` for it; that was wrong, and the duplicate is why.
- *
- * Built once rather than per play, so zoom and pitch survive stopping and starting — and because the cutout
- * mask it owns clones a material per occluder, which is not worth rebuilding on every play.
+ * Play is its own module (`play.ts`): it owns the character, the controller, the loop, the play view and
+ * lights, the component runtime and the game frame, and asks for the rest through `PlayHost`. What is left
+ * here is that host — the getter bag every panel is wired with.
  */
-const playCamera = createOrbitCamera(stage.camera)
-window.addEventListener('mousemove', (e) => {
-  if (!playing || document.pointerLockElement !== canvas) return
-  playCamera.lookMouse(e.movementX, e.movementY)
+const play = createPlay({
+  stage,
+  canvas,
+  controls,
+  instanceRoot,
+  doc: () => doc,
+  loaded: () => loaded,
+  world: () => world,
+  mode: () => activeMode,
+  registry: () => registry(),
+  // Not a level, no game, or the server knows no page for it (ADR 0086).
+  gamePageUrl: () =>
+    fileState.mode !== 'level' || activeMode === undefined ? null : (me?.games[activeMode.name] ?? null),
+  fileName: () => fileState.name,
+  levelName: () => shortName(fileState.name),
+  live: () => live(),
+  flush: () => collab.flush(),
+  dirty: () => dirty,
+  saveNow: () => saveNow(),
+  setPreviewing: (on) => setPreviewing(on),
+  rebuildLoaded: () => rebuildLoaded(),
+  deselect: () => deselect(),
+  setStatus: (message) => setStatus(message),
+  clearStatus: () => void (statusMsg = ''),
+  uiChanged: () => uiChanged(),
+  drainDeferred: () => drainDeferredRemote(),
+  setProjection: (isometric) => setProjection(isometric),
 })
-// Wheel zoom, which the hand-written camera simply did not have.
-window.addEventListener(
-  'wheel',
-  (e) => {
-    if (!playing || document.pointerLockElement !== canvas) return
-    e.preventDefault()
-    playCamera.zoomNotch(Math.sign(e.deltaY))
-  },
-  { passive: false },
-)
-canvas.addEventListener('click', () => {
-  if (playing && document.pointerLockElement !== canvas) void canvas.requestPointerLock()
-})
-document.addEventListener('pointerlockchange', () => {
-  if (playing && gameFrame === null && document.pointerLockElement !== canvas) stopPlay() // Esc / lost lock exits play
-})
-
-// WASD/arrows relative to the camera yaw (identical to the game).
-const worldMove = (): { x: number; z: number } => {
-  let rx = 0
-  let rz = 0
-  if (keys.has('KeyW') || keys.has('ArrowUp')) rz -= 1
-  if (keys.has('KeyS') || keys.has('ArrowDown')) rz += 1
-  if (keys.has('KeyA') || keys.has('ArrowLeft')) rx -= 1
-  if (keys.has('KeyD') || keys.has('ArrowRight')) rx += 1
-  if (rx === 0 && rz === 0) return { x: 0, z: 0 }
-  const facing = playCamera.yaw()
-  const fwdX = -Math.sin(facing)
-  const fwdZ = -Math.cos(facing)
-  let x = fwdX * -rz + -fwdZ * rx
-  let z = fwdZ * -rz + fwdX * rx
-  const l = Math.hypot(x, z)
-  if (l > 1) {
-    x /= l
-    z /= l
-  }
-  return { x, z }
-}
-
-/**
- * The active game's own actions that are held right now, by name (ADR 0061).
- *
- * Read off `activeMode` per tick rather than flattened once, because the game can change while the editor is
- * open. `actionsHeld` is shared with the game client on purpose: two copies of this mapping is how the editor
- * and the game came to disagree about post-FX (ADR 0057).
- */
-const heldActions = (): ReadonlySet<string> => actionsHeld(activeMode?.actions, keys)
-
-/** The live components while playing. Detached on stop, so a component's teardown runs like the game's. */
-let playComponents: ComponentRuntime | null = null
-
-// ============================== Play = the real game, in a frame (ADR 0086) ==============================
-/** The frame showing the game while a level is being play-tested; `null` otherwise. */
-let gameFrame: HTMLIFrameElement | null = null
-/** Where the open level's game plays, or `null`: not a level, no game, or the server knows no page for it. */
-const gamePageUrl = (): string | null => {
-  if (fileState.mode !== 'level' || activeMode === undefined) return null
-  return me?.games[activeMode.name] ?? null
-}
-
-/**
- * Play a level in the **real game** — HUD, progression, other players — rather than the editor's own loop. The
- * game page reads the saved file, so unsaved edits are saved first; a save that fails (read-only, locked) means
- * no play. Stop is the toolbar button: Esc inside the frame is the game's pause, not ours.
- */
-const startFramePlay = async (url: string): Promise<void> => {
-  if (live()) await collab.flush() // the game reads the file: make it current first
-  else if (dirty && !(await saveNow())) return
-  const frame = document.createElement('iframe')
-  frame.id = 'game-frame'
-  // Bare: the game page resolves it inside its own folder (ADR 0108), so the game must not be in the param.
-  frame.src = `${url}?level=${encodeURIComponent(shortName(fileState.name))}`
-  frame.allow = 'fullscreen; pointer-lock'
-  document.getElementById('centre')?.append(frame)
-  gameFrame = frame
-  playing = true
-  controls.enabled = false
-  setStatus(`playing ${fileState.name} in the game — Stop to come back`)
-  uiChanged()
-}
-
-const startPlay = (): void => {
-  if (doc === null || playing) return
-  const url = gamePageUrl()
-  if (url !== null) {
-    void startFramePlay(url)
-    return
-  }
-  // Two clocks running at once would be two answers to "where is this platform". Play wins: it is the real
-  // one, and the track helper hides itself while playing anyway.
-  setPreviewing(false)
-  rebuildLoaded() // fresh world + loaded from the current data
-  if (loaded === null || world === null) return
-  deselect()
-  /**
-   * Play-in-place runs **the game's own rules**, not a copy of them (ADR 0052).
-   *
-   * `mode.session` is the same function the game's client calls, so spawn, progress and death cannot drift
-   * from it. They had: this used to die on any fall, ignoring `fallBehavior`, so a `physical-fall` tower
-   * killed you here and let you fall in the game. The only difference left is what a client *does* about a
-   * death — no ragdoll, no persistence, just a teleport back.
-   *
-   * With no game (an unassigned level, or one whose game is missing) there are no rules to run: you get the
-   * character and the geometry, which is still the useful half of a play-test.
-   */
-  const mode = activeMode
-  const spawn: Vec3 = mode?.spawn(loaded) ?? { x: 0, y: 3, z: 0 }
-  char = addCharacter(world, spawn)
-  const rules = mode?.session(loaded)
-  playComponents =
-    rules === undefined
-      ? null
-      : createComponentRuntime(loaded, registry(), {
-          character: characterAccess(char),
-          effects: rules.effects,
-          // The game's player components too, so a play-test has the abilities the game has (ADR 0059) —
-          // the same reason it runs the game's own `tuning` and rules rather than a default. Their
-          // definitions come from the game as well (ADR 0061), which is what gives a play-test the game's
-          // *locomotion* and not the stack's.
-          ...(mode?.player === undefined
-            ? {}
-            : {
-                player: {
-                  id: PLAYER_NODE_ID,
-                  components: mode.player,
-                  ...(mode.playerDefs === undefined
-                    ? {}
-                    : {
-                        defs: mode.playerDefs({
-                          character: () => char,
-                          tuning: () => mode.tuning,
-                          platforms: () => loaded?.basePose,
-                          // The play-test has a real world and a real level, so a game's component gets the
-                          // same two handles here as it does in the game (ADR 0066). Anything it draws will
-                          // not appear — the editor has no frame hook of its own to offer — which is the
-                          // known limit of play-in-place.
-                          world: () => world,
-                          level: () => loaded,
-                        }),
-                      }),
-                },
-              }),
-        })
-  let playTick = 0
-  playComponents?.attach(playTick, 0, TICK_DT)
-
-  // One fixed step of platform time per fixed step — see @mp/core simClock (reading the wall
-  // clock inside the tick stalls the platforms during a multi-tick wake and jitters carry).
-  const simClock = createSimClock({ tickMs: TICK_DT * 1000, reference: () => performance.now() })
-
-  const local: LocalWorld = {
-    applyInput: (cmd) => {
-      if (world === null || loaded === null || char === null) return
-      const nowMs = simClock.tick()
-      // Components first, then the frame tree — the same order as the game (ADR 0058), because a component
-      // that moves its node writes an offset the frame tree reads, and posing first lands it a tick late.
-      playComponents?.fixedUpdate(++playTick, nowMs, TICK_DT)
-      loaded.update(nowMs, char.base?.colliderHandle) // only the ridden piece is frozen
-      world.step(TICK_DT) // (A) platforms move
-      /**
-       * The movement slot (ADR 0061), same as the game's. A game whose locomotion is its own component feels
-       * like itself here, where before this ran `stepCharacter` with the game's *numbers* and the stack's
-       * mechanics.
-       *
-       * A level with no game, or a game with no locomotion component, does not move — which is honest: there
-       * is nothing to ask. It used to fall back to `DEFAULT_TUNING`, quietly play-testing parkour.
-       */
-      playComponents?.locomote(playTick, nowMs, TICK_DT, cmd)
-      world.step(TICK_DT) // (B) character resolves against the moved platforms
-      lastSimTickAt = performance.now()
-    },
-    readState: () => new Map<EntityId, Vec3>([[PLAYER_ID, char!.body.translation()]]),
-  }
-  controller = createLocalController({ world: local, tickRateHz: TICK_RATE_HZ })
-
-  instanceRoot.visible = false
-  // The cutout mask, so an obstruction dithers away here exactly as it does in the game (ADR 0055). The edit
-  // view deliberately does not get one — it would clone a material per occluder for a camera nobody is
-  // playing through.
-  playView = addLevel(stage.scene, loaded.visuals, { cutout: playCamera.cutout })
-  /**
-   * The two queries the camera needs, over the play world (ADR 0056: the camera imports no physics, it is
-   * handed the casts). Self-exclusion is the character's own capsule; there is no ragdoll here to skip.
-   */
-  playCamera.observe({
-    cast: (origin, direction, maxDistance, skip) => {
-      const hit = world?.castSphere({
-        origin,
-        direction,
-        maxDistance,
-        radius: playCamera.probeRadius,
-        exclude: [...(char === null ? [] : [char.body.colliderHandle]), ...(skip ?? [])],
-      })
-      return hit === undefined ? undefined : { distance: hit.distance, colliderHandle: hit.colliderHandle }
-    },
-    occupied: (point) =>
-      world?.sphereOverlaps({
-        center: point,
-        radius: playCamera.probeRadius,
-        exclude: char === null ? [] : [char.body.colliderHandle],
-      }) === true,
-  })
-  playLights = addLights(stage.scene, loaded.lights)
-  charMesh.visible = true
-  // The player camera is `stage.camera` and tunes its fov (`createOrbitCamera`), so play is perspective.
-  setProjection(false)
-  playing = true
-  controls.enabled = false // editor orbit off; the player camera takes over
-  void canvas.requestPointerLock()
-  setStatus('playing — WASD + Space · mouse to look · Esc to stop')
-  uiChanged()
-
-  playLoop = startFixedLoop({
-    tickRateHz: TICK_RATE_HZ,
-    onTick: () => {
-      if (char === null || controller === null) return
-      const m = worldMove()
-      // The game's own actions too (ADR 0061), so a play-test has the controls the game has — the same
-      // reason it runs the game's `tuning`, its rules and its player components rather than defaults.
-      controller.step({ moveX: m.x, moveZ: m.z, jump: keys.has('Space'), actions: heldActions() })
-      // Solids and triggers both: a sensor resolves no movement, so it is not in `collisions` (ADR 0054).
-      playComponents?.contact([...char.body.collisions(), ...char.body.overlaps()])
-      // One question, asked of the game's rules, which also consume the flag. A level with no game never dies.
-      if (rules?.takeDeath() === true) {
-        char.body.setPosition(rules.respawnAt())
-        char.vx = 0
-        char.vy = 0
-        char.vz = 0
-        char.grounded = false
-      }
-      // A rule that relocates without killing (ADR 0073) — a play-test cashes out the way the game does.
-      const teleport = rules?.takeTeleport?.() ?? null
-      if (teleport !== null) {
-        char.body.setPosition(teleport)
-        char.vx = 0
-        char.vy = 0
-        char.vz = 0
-        char.grounded = false
-      }
-    },
-  })
-}
-
-const stopPlay = (): void => {
-  if (!playing) return
-  if (gameFrame !== null) {
-    gameFrame.remove()
-    gameFrame = null
-    playing = false
-    controls.enabled = true
-    statusMsg = ''
-    uiChanged()
-    drainDeferredRemote() // what the room did while the frame was up
-    return
-  }
-  playLoop?.stop()
-  playLoop = null
-  playComponents?.detach()
-  playComponents = null
-  char?.body.remove()
-  char = null
-  controller = null
-  playView?.dispose()
-  playView = null
-  playLights?.dispose()
-  playLights = null
-  charMesh.visible = false
-  instanceRoot.visible = true
-  playing = false
-  if (document.pointerLockElement === canvas) document.exitPointerLock()
-  controls.target.set(ownPos.x, ownPos.y + 1, ownPos.z) // resume orbit around where you stopped
-  controls.enabled = true
-  statusMsg = ''
-  uiChanged()
-  rebuildLoaded() // restore the edit world + markers
-  drainDeferredRemote() // what the room did while the play-test held the world
-}
 
 // ============================ panels ============================
 // The shell is CSS grid (see index.html); each panel is its own module, and every one of them reads
@@ -2804,14 +2189,14 @@ const toolbar: Toolbar = createToolbar(
     step: edit.steps[edit.mode],
     stepUnit: STEP_LIMITS[edit.mode].unit,
     stepLimits: STEP_LIMITS[edit.mode],
-    playing,
+    playing: play.active(),
     previewing,
     inPrefab: prefabOpen !== null,
     readOnly: readOnlyBy,
     live: live(),
     grid: grid.visible,
     markers: markerGroup.visible,
-    surfaceCells: cellsToggle(),
+    surfaceCells: meshes.cells(),
   }),
   {
     setName: (name) => {
@@ -2836,8 +2221,8 @@ const toolbar: Toolbar = createToolbar(
       refreshUi()
     },
     setPlaying: (on) => {
-      if (on) startPlay()
-      else stopPlay()
+      if (on) play.start()
+      else play.stop()
     },
     setPreviewing,
     setGrid: (on) => {
@@ -2854,8 +2239,8 @@ const toolbar: Toolbar = createToolbar(
      * flag: an invisible mesh is still raycast by three, and the alternative is tracking every one of them.
      */
     setSurfaceCells: (on) => {
-      showCells = on
-      buildItems()
+      meshes.setCells(on)
+      meshes.buildAll()
       refreshUi()
     },
   },
@@ -2919,7 +2304,7 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
     // Preserve the world pose, as dragging in Unity's hierarchy does: the stored numbers are re-expressed
     // in the new parent's frame so the object does not jump. Read off the scene graph, which is where the
     // composed matrices already live — the document only ever holds local transforms.
-    const local = localInside(instanceGroups[from], parent === null ? null : (instanceGroups[parent] ?? null))
+    const local = localInside(meshes.groupAt(from), parent === null ? null : (meshes.groupAt(parent) ?? null))
     const wasSelected = selected === from
 
     /**
@@ -2947,7 +2332,7 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
     // Depth-first indices *are* the identity here (meshes, selection, the gizmo's target) and a reparent
     // renumbers everything after it, so the scene graph and the physics world are rebuilt rather than
     // patched. `reparent` hands back where the item went, which is the one index worth keeping.
-    buildItems()
+    meshes.buildAll()
     rebuildLoaded()
     if (wasSelected) select(landed)
     else {
@@ -2967,7 +2352,7 @@ const revertOverride = (field?: string): void => {
   if (selected === null || doc === null) return
   doc.revert(selected, field)
   recordEdit(field === undefined ? 'revert overrides' : `revert ${field}`)
-  buildItems()
+  meshes.buildAll()
   rebuildLoaded()
   applySelection(selection)
   setStatus('reverted to the prefab')
@@ -2998,7 +2383,7 @@ const applyOverrides = async (): Promise<void> => {
   if (doc !== open) return // the document moved under the round trip
   open.revert(at)
   recordEdit('apply to prefab')
-  buildItems()
+  meshes.buildAll()
   rebuildLoaded()
   applySelection(selection)
   setStatus(`applied to ${name} — every level using it follows; undo puts this placement's override back`)
@@ -3113,7 +2498,7 @@ const createEmpty = (parent: number | null, at?: Vec3): void => {
     return
   }
   recordEdit('create empty')
-  buildItems()
+  meshes.buildAll()
   scheduleRebuild()
   select(landed)
   uiChanged()
@@ -3129,11 +2514,11 @@ const createPrimitive = (kind: PrimitiveKind, parent: number | null, at?: Vec3):
     return
   }
   recordEdit(`create ${PRIMITIVE_LABELS[kind].toLowerCase()}`)
-  buildItems()
+  meshes.buildAll()
   scheduleRebuild()
   select(landed)
   uiChanged()
-  loadNewReferences(buildItems)
+  loadNewReferences(meshes.buildAll)
 }
 
 /**
@@ -3147,7 +2532,7 @@ const createPrimitive = (kind: PrimitiveKind, parent: number | null, at?: Vec3):
 const focusSelection = (): void => {
   const box = new THREE.Box3()
   for (const i of selection) {
-    const g = instanceGroups[i]
+    const g = meshes.groupAt(i)
     if (g !== undefined) box.expandByObject(g)
   }
   if (box.isEmpty()) return
@@ -3196,11 +2581,11 @@ const pasteAt = (point: Vec3): void => {
     doc.setTransform(i, { ...t, position: vec3(r4(t.position.x + d.x), r4(t.position.y + d.y), r4(t.position.z + d.z)) })
   }
   recordEdit(landed.length > 1 ? `paste ${landed.length} here` : 'paste here')
-  buildItems()
+  meshes.buildAll()
   rebuildLoaded()
   applySelection(landed)
   loadNewReferences(() => {
-    buildItems()
+    meshes.buildAll()
     applySelection(landed)
   })
 }
@@ -3238,7 +2623,7 @@ canvas.addEventListener('pointerdown', (e) => {
 // depend on its internals.
 canvas.addEventListener('contextmenu', (e) => e.preventDefault())
 canvas.addEventListener('pointerup', (e) => {
-  if (e.button !== 2 || playing || doc === null) return
+  if (e.button !== 2 || play.active() || doc === null) return
   if (Math.hypot(e.clientX - rightDownX, e.clientY - rightDownY) > 4) return // was a pan
   const index = indexUnder(e.clientX, e.clientY)
   // Right-clicking an object selects it first, so the menu and the gizmo agree about the subject.
@@ -3252,7 +2637,7 @@ canvas.addEventListener('pointerup', (e) => {
 
 $<HTMLDivElement>('#hierarchy').addEventListener('contextmenu', (e) => {
   e.preventDefault()
-  if (playing || doc === null) return
+  if (play.active() || doc === null) return
   const row = (e.target as HTMLElement).closest<HTMLElement>('[data-index]')
   const index = row?.dataset.index === undefined ? null : Number(row.dataset.index)
   // Right-clicking a row selects it first: a menu that acts on a *different* object than the one under the
@@ -3825,7 +3210,7 @@ const applyHistory = (ops: readonly Op[], keep: readonly NodeRef[], what: string
   pending = []
   deselect()
   installEnvironment(doc?.environment())
-  buildItems()
+  meshes.buildAll()
   rebuildLoaded()
   const open = doc
   const restored = open === null ? [] : keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
@@ -3833,7 +3218,7 @@ const applyHistory = (ops: readonly Op[], keep: readonly NodeRef[], what: string
   dirty = !live()
   refreshUi()
   inspectorRebuild()
-  loadNewReferences(buildItems)
+  loadNewReferences(meshes.buildAll)
   return true
 }
 
@@ -3899,12 +3284,12 @@ const pasteClipboard = (asChild: boolean): void => {
     return
   }
   recordEdit(landed.length > 1 ? `paste ${landed.length}` : 'paste')
-  buildItems()
+  meshes.buildAll()
   rebuildLoaded()
   applySelection(landed)
   // A pasted item can name a material this document had never referenced.
   loadNewReferences(() => {
-    buildItems()
+    meshes.buildAll()
     applySelection(landed)
   })
 }
@@ -3967,7 +3352,7 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
       previews.invalidate()
       await reloadAssets()
       assetInspector.show(id)
-      buildItems()
+      meshes.buildAll()
       refreshUi()
     })()
   },
@@ -4000,7 +3385,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     gameData[mode.name] = next
     // A setting the game lays its surface cells out from — the key pitch (ADR 0120) — so the preview follows
     // the field instead of the last reload. Cheap: only nodes the game claims build any.
-    if (mode.surfaceGrid !== undefined) buildItems()
+    if (mode.surfaceGrid !== undefined) meshes.buildAll()
     void saveGame(mode.name, next).then(
       () => setStatus(`${mode.label}: ${key} = ${Array.isArray(value) ? `${value.length} points` : value}`),
       (e: unknown) => setStatus(`settings save failed: ${String(e)}`),
@@ -4034,7 +3419,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     doc.setNodeEnabled(selected, on)
     recordEdit(on ? 'enabled' : 'disabled')
     rebuildLoaded()
-    buildItems()
+    meshes.buildAll()
     hierarchy.render()
     inspectorRebuild()
   },
@@ -4048,7 +3433,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   selectionIndices: () => selection,
   readTransform: () => {
     if (selected === null) return null
-    const g = instanceGroups[selected]
+    const g = meshes.groupAt(selected)
     if (g === undefined) return null
     const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
     return {
@@ -4065,7 +3450,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
    */
   selectionTransforms: () =>
     selection.flatMap((i) => {
-      const g = instanceGroups[i]
+      const g = meshes.groupAt(i)
       if (g === undefined) return []
       const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
       return [
@@ -4091,7 +3476,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     heldBack = []
     try {
       for (const i of selection) {
-        const g = instanceGroups[i]
+        const g = meshes.groupAt(i)
         if (g === undefined) continue
         if (field === 'position') g.position[axis] = value
         else if (field === 'scale') g.scale[axis] = value
@@ -4101,7 +3486,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
           g.quaternion.setFromEuler(e)
         }
         writeBackItem(i)
-        if (field === 'scale') rebuildSubtreeMeshes(i)
+        if (field === 'scale') meshes.rebuildSubtree(i)
       }
     } finally {
       coalescing = false
@@ -4117,7 +3502,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   writeTransform: (t) => {
     // The gizmo is the authority while it is dragging: see `gizmoDragging`.
     if (selected === null || gizmoDragging) return
-    const g = instanceGroups[selected]
+    const g = meshes.groupAt(selected)
     if (g === undefined) return
     // No snapshot needed: an offset track's write-back is a subtraction, not a delta against the pose the
     // drag started from (ADR 0050), so a typed value lands the same way a dragged one does.
@@ -4126,7 +3511,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     g.quaternion.set(q.x, q.y, q.z, q.w)
     g.scale.set(t.scale.x, t.scale.y, t.scale.z)
     writeBackSelected()
-    rebuildSubtreeMeshes(selected) // the scale may have changed, and the meshes are built from it
+    meshes.rebuildSubtree(selected) // the scale may have changed, and the meshes are built from it
     recordEdit('transform')
     applyPreviewPoses() // the rest pose moved, so the item's drawn pose at the playhead moved with it
     scheduleRebuild()
@@ -4134,11 +3519,11 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   onPropsChanged: () => {
     const item = selected
     recordEdit('properties')
-    rebuildSelectedMeshes()
+    meshes.rebuildSelected()
     scheduleRebuild()
     hierarchy.render() // a trigger or name change shows in the row's badge/label
     // Draw with what is loaded now, then again once a newly named material has arrived.
-    if (item !== null) loadNewReferences(() => rebuildItemMeshes(item))
+    if (item !== null) loadNewReferences(() => meshes.rebuildItem(item))
   },
   // A rename only changes a label: redraw the chrome, leave the property grid and the meshes alone.
   // Called through the hook, since `refreshUi` is declared below this block.
@@ -4274,20 +3659,8 @@ createSplitter({
 // --- render loop ---
 stage.start((dt) => {
   updateHoldHelpers()
-  if (playing && controller !== null && loaded !== null) {
-    // Interpolate clock-driven pieces + the character between the last two sim ticks (same
-    // timeline as the game), then place the player camera (mouselook orbit) around the character.
-    const alpha = Math.min(1, Math.max(0, (performance.now() - lastSimTickAt) / (1000 / TICK_RATE_HZ)))
-    loaded.render(alpha)
-    playView?.sync()
-    playLights?.sync()
-    ownPos = controller.renderPositions().get(PLAYER_ID) ?? ownPos
-    charMesh.position.set(ownPos.x, ownPos.y, ownPos.z)
-    // The camera places itself around the capsule's centre and reports whether we are inside our own rig;
-    // `setOccluders` is what puts the hole in whatever is in the way.
-    const { rigVisible } = playCamera.update(dt, ownPos, (handles) => playView?.setOccluders(handles))
-    charMesh.visible = rigVisible
-  } else {
+  // A session takes the frame, or it does not and the edit clock does — the same either/or as before.
+  if (!play.frame(dt)) {
     /**
      * The preview clock: real time, and only while asked for (ADR 0103).
      *
@@ -4309,7 +3682,7 @@ stage.start((dt) => {
 /**
  * (Re)read the asset database and rebuild the runtime, then fetch everything the open document needs.
  *
- * Loading is a separate pass from drawing on purpose: `buildItems` is synchronous, so a piece is never
+ * Loading is a separate pass from drawing on purpose: `meshes.buildAll` is synchronous, so a piece is never
  * briefly a grey box that becomes a model a moment later. The cost is that every asset edit reloads the
  * runtime, which at this scale is cheaper than tracking which cache entries a change invalidated.
  */
