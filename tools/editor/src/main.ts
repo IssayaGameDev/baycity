@@ -13,7 +13,7 @@ import {
   // Aliased: this file is DOM-heavy and `Node` is taken. A scene node is not a DOM node, and the day the two
   // are confused the error is a type error somewhere unrelated.
   type Level,
-  type Transform, validateLevel, applyBatch, refKey, OpError, type NodeRef, type Op,
+  type Transform, validateLevel, type NodeRef,
   BUILTIN_LABELS, BUILTIN_MODELS, PRIMITIVE_LABELS, PRIMITIVE_ORDER, type PrimitiveKind, type EnvironmentConfig,
   isSegment, parseQualified, qualify } from '@mp/content'
 import { QUANT_BOUND } from '@mp/net'
@@ -33,7 +33,6 @@ import {
   TransformControls,
   type AssetRuntime,
 } from '@mp/render-three'
-import { createCollab, httpTransport, parsePresence, type Hold, type Peer } from './collab'
 import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type Doc, type LocalPose, type Mode } from './editorDoc'
 import { createContextMenu, type ContextMenu, type MenuItem } from './menu'
 import { askDestructive, askName } from './confirm'
@@ -70,6 +69,7 @@ import { distanceAlongAxis, faceFromNormal, pulled, snappedPull, type Face } fro
 import { cornerSnapDelta, snapAnglesDeg, snapToGrid, worldHalfExtents } from './snap'
 import { createHistoryStore } from './historyStore'
 import { createItemMeshes } from './itemMeshes'
+import { createLiveSession } from './liveSession'
 import { createPlay } from './play'
 import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
 import { createShortcuts } from './shortcuts'
@@ -248,310 +248,69 @@ const dropAllLocks = async (): Promise<void> => {
   heldLocks.clear()
   lockedAssets.clear()
   readOnlyBy = null
-  collab.leave()
-  holdMap = new Map()
-  lastHoldKey = null
+  room.leaveAll()
   edits.discardHeld()
-  if (presenceTimer !== null) {
-    clearInterval(presenceTimer)
-    presenceTimer = null
-  }
   await Promise.all(paths.map((p) => releaseLock(p).catch(() => undefined)))
 }
 
-// ============================== live levels (ADR 0089) ==============================
-/** Who else has this level open, for the status bar. */
-let livePeers: Peer[] = []
+// ============================== live levels (ADR 0089, ADR 0091) ==============================
 /** The prefab this tab is editing in its own room, and the level to go back to. `null` in a level. */
 let prefabOpen: { assetId: string; name: string; from: string } | null = null
-/** The level the last snapshot carried, for `openFile` to build its document over. */
-let latestSnapshot: Level | null = null
-/** True while `openFile` awaits its first snapshot; a later one (reconnect) reinstalls the document itself. */
-let joining = false
-/** Remote ops that landed mid-drag: applied to the data already, repainted when the drag ends. */
-let deferredRemote: Op[] = []
-/** Is the open document a level in a live session? Prefabs and materials are files with locks, as before. */
-/** Is the open document a live room? Both kinds are now (ADR 0091); a material is still a file with a lock. */
-const live = (): boolean => collab.name() !== null
-
-const TRANSFORM_KINDS = new Set<string>(['setTransform', 'setOverrideTransform'])
-
-// ------------------------------ holds (phase 3) ------------------------------
-/** Every hold in the room by `refKey`, theirs and mine. */
-let holdMap = new Map<string, Hold>()
-/** The selection the server was last told to hold, as a key, so an unchanged selection sends nothing. */
-let lastHoldKey: string | null = null
-
-/** The name of another connection holding node `index` or any node above it; `null` when it is free. */
-const heldBy = (index: number): string | null => {
-  const open = doc
-  if (open === null || holdMap.size === 0) return null
-  const mine = collab.connId()
-  for (let i: number | null = index; i !== null; i = open.parentOf(i)) {
-    const ref = open.refAt(i)
-    if (ref === null) continue
-    const h = holdMap.get(refKey(ref))
-    if (h !== undefined && h.connId !== mine) return h.name
-  }
-  return null
-}
 
 /**
- * Tell the room what I hold: the selection, whole, every time it changes. The server refuses a ref someone
- * else has (a race the local filter lost): the refused nodes drop out of the selection.
+ * The live room is its own module (`liveSession.ts`, ADR 0121): the document stream, the peer list, the
+ * holds and their boxes, the presence poses, and the deferred repaint. What is left here is its host.
  */
-const syncHolds = (): void => {
-  if (!live()) return
-  const refs = selectionRefs()
-  const key = refs.map(refKey).sort().join('|')
-  if (key === lastHoldKey) return
-  lastHoldKey = key
-  void collab.setHolds(refs).then((r) => {
-    if (r.ok) return
-    setStatus(`${r.holder} has that selected`)
-    const refused = new Set(r.refused.map(refKey))
-    const open = doc
-    if (open === null) return
-    applySelection(selection.filter((i) => {
-      const ref = open.refAt(i)
-      return ref === null || !refused.has(refKey(ref))
-    }))
-  })
-}
-
-/** Tinted boxes over nodes others hold, in world space and refreshed each frame so a drag keeps up. */
-const holdRoot = new THREE.Group()
-stage.scene.add(holdRoot)
-const holdHelpers = new Map<number, THREE.BoxHelper>()
-const holdColour = (connId: string): number => {
-  let h = 0
-  for (let i = 0; i < connId.length; i++) h = (h * 31 + connId.charCodeAt(i)) >>> 0
-  return new THREE.Color().setHSL((h % 360) / 360, 0.75, 0.6).getHex()
-}
-/**
- * Rebuild every collaborator's hold box.
- *
- * Called from `meshes.buildAll` as well as on a holds event, and that is the load-bearing part: a `BoxHelper` wraps
- * the object it was built around, so a rebuild leaves every one of them wrapping a group that is no longer in
- * the scene and whose meshes have been disposed. It draws a stale box rather than throwing, which is why this
- * outlived the same bug in the gizmo (see `reattachGizmo`).
- */
-const rebuildHoldHelpers = (): void => {
-  for (const helper of holdHelpers.values()) {
-    holdRoot.remove(helper)
-    helper.dispose()
-  }
-  holdHelpers.clear()
-  const open = doc
-  if (open === null || !live()) return
-  const mine = collab.connId()
-  for (const h of holdMap.values()) {
-    if (h.connId === mine) continue
-    const i = open.indexOfRef(h.ref)
-    if (i === null) continue
-    // A hold covers the node and everything under it, so every node of the subtree gets its own box: a group
-    // with no meshes of its own would otherwise show nothing at all. Depth-first order makes the subtree the
-    // run of deeper indices right after the node.
-    const depth = open.depthOf(i)
-    for (let j = i; j < open.count() && (j === i || open.depthOf(j) > depth); j++) {
-      const g = meshes.groupAt(j)
-      if (g === undefined || holdHelpers.has(j) || meshes.holderOf(g).children.length === 0) continue
-      const helper = new THREE.BoxHelper(meshes.holderOf(g), holdColour(h.connId))
-      ;(helper.material as THREE.LineBasicMaterial).depthTest = false
-      helper.renderOrder = 1
-      holdRoot.add(helper)
-      holdHelpers.set(j, helper)
+const room = createLiveSession({
+  stage,
+  doc: () => doc,
+  rootLevel: () => rootLevel(),
+  isLevel: () => fileState.mode === 'level',
+  reinstallRoot: (level) => {
+    const root = docStack[0]
+    if (root === undefined || prefabOpen !== null) return false
+    try {
+      validateLevel(level, registry())
+    } catch (e) {
+      setProblem(`the server's copy does not load: ${String(e)}`)
+      return false
     }
-  }
-}
-const updateHoldHelpers = (): void => {
-  for (const helper of holdHelpers.values()) helper.update()
-}
-
-/** The room's holds changed: drop what I can no longer have, redraw the badges and the boxes. */
-const onHoldsChanged = (holds: Hold[]): void => {
-  holdMap = new Map(holds.map((h) => [refKey(h.ref), h]))
-  if (selection.some((i) => heldBy(i) !== null)) applySelection(selection.filter((i) => heldBy(i) === null))
-  rebuildHoldHelpers()
-  hierarchy.render()
-}
-
-/**
- * Redraw after ops changed the level from outside the document — a remote batch, an undo. Transforms alone
- * move groups; anything else rebuilds from data, as every structural edit does, and puts the selection back
- * by identity. Mid-drag, the redraw waits: the gizmo owns the groups until the pointer comes up.
- *
- * **And while playing.** `rebuildLoaded` frees the physics world and builds a new one, and a play session
- * lives in that world: its character is a body in it, its visuals came from that `loaded`. Repainting under
- * a play-test therefore pulled the floor out from under the player on every remote edit. Editing is
- * suspended while playing anyway, so the redraw waits exactly as a drag's does and `play.stop` drains it.
- */
-const repaintAfterOps = (ops: readonly Op[]): void => {
-  if (gizmoDragging || play.active()) {
-    deferredRemote.push(...ops)
-    return
-  }
-  const open = doc
-  if (open === null) return
-  if (ops.every((o) => TRANSFORM_KINDS.has(o.kind))) {
-    applyPreviewPoses()
-    // A remote scale change: the meshes are built from the scale (ADR 0090), so the touched subtrees redraw.
-    for (const o of ops) {
-      const ref: NodeRef | null = o.kind === 'setTransform' ? (o.table !== undefined ? { table: o.table, id: o.id } : { id: o.id }) : o.kind === 'setOverrideTransform' ? { owner: o.owner, node: o.node } : null
-      const i = ref === null ? null : open.indexOfRef(ref)
-      if (i !== null) meshes.rebuildSubtree(i)
-    }
-    scheduleRebuild()
-    inspectorSync()
-    return
-  }
-  const keep = selectionRefs()
-  deselect()
-  installEnvironment(open.environment())
-  meshes.buildAll()
-  rebuildLoaded()
-  const restored = keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
-  if (restored.length > 0) applySelection(restored)
-  refreshUi()
-  inspectorRebuild()
-  loadNewReferences(meshes.buildAll)
-}
-
-/** Repaint what arrived while the redraw was held off — the end of a gizmo drag, the end of a play-test. */
-const drainDeferredRemote = (): void => {
-  if (deferredRemote.length === 0) return
-  const ops = deferredRemote
-  deferredRemote = []
-  repaintAfterOps(ops)
-}
-
-/**
- * A fresh copy of the **level** arrived (a reconnect): rebuild the document over it, keeping the history.
- *
- * Refused while a prefab room is open: that stream's snapshots are a prefab wrapper, and building a level
- * document over one would put a prefab's root in the level's place.
- */
-const reinstallLevel = (level: Level): void => {
-  const root = docStack[0]
-  if (root === undefined || prefabOpen !== null) return
-  try {
-    validateLevel(level, registry())
-  } catch (e) {
-    setProblem(`the server's copy does not load: ${String(e)}`)
-    return
-  }
-  docStack.length = 1
-  docStack[0] = { doc: edits.withOps(levelDoc(level, registry())), label: root.label }
-  showDoc()
-  lastHoldKey = null // a reconnect is a new connection: the server holds nothing for it yet
-  syncHolds()
-}
-
-// ------------------------------ presence (phase 4) ------------------------------
-/** ~10 Hz: what a pointer drag looks like from across the room without a POST per pointer event. */
-const PRESENCE_MS = 100
-let presenceTimer: ReturnType<typeof setInterval> | null = null
-/** Batches the document reported during a gizmo drag: held back and sent as one op at drag end. */
-
-/** The poses of what I am dragging, off the groups: what the gizmo has set, whatever the document will store. */
-const dragPoses = (): { ref: NodeRef; position: Vec3; rotation: Vec3; scale: Vec3 }[] => {
-  const open = doc
-  if (open === null) return []
-  const out: { ref: NodeRef; position: Vec3; rotation: Vec3; scale: Vec3 }[] = []
-  for (const i of selection) {
-    const g = meshes.groupAt(i)
-    const ref = open.refAt(i)
-    if (g === undefined || ref === null) continue
-    const pose = groupPose(g)
-    out.push({ ref, position: pose.position, rotation: pose.rotation, scale: vec3(g.scale.x, g.scale.y, g.scale.z) })
-  }
-  return out
-}
-const startPresence = (): void => {
-  if (!live() || presenceTimer !== null) return
-  presenceTimer = setInterval(() => collab.presence({ kind: 'pose', poses: dragPoses() }), PRESENCE_MS)
-}
-const stopPresence = (): void => {
-  if (presenceTimer === null) return
-  clearInterval(presenceTimer)
-  presenceTimer = null
-  collab.presence({ kind: 'pose', poses: [], end: true })
-}
-
-/** A peer's drag: pose their groups where they are, write nothing. `end` puts every group back on its data. */
-const onPresence = (data: unknown): void => {
-  const p = parsePresence(data)
-  const open = doc
-  if (p === null || open === null) return
-  if (p.end === true) {
-    // Not while my own gizmo owns the groups: my drag end repaints, and the deferred remote ops with it.
-    if (!gizmoDragging) applyPreviewPoses()
-    return
-  }
-  for (const pose of p.poses) {
-    const i = open.indexOfRef(pose.ref)
-    const g = i === null ? undefined : meshes.groupAt(i)
-    if (i === null || g === undefined || (gizmoDragging && selection.includes(i))) continue
-    g.position.set(pose.position.x, pose.position.y, pose.position.z)
-    const q = eulerToQuat(pose.rotation)
-    g.quaternion.set(q.x, q.y, q.z, q.w)
-    g.scale.set(pose.scale.x, pose.scale.y, pose.scale.z)
-  }
-}
-
-/**
- * A prefab the open level uses was edited in its own document (ADR 0091). Its ops are written against that
- * prefab's wrapper, whose one root **is** the definition this level resolved, so wrapping and applying them
- * writes through to every placement at once. Nothing is sent back: this level's own sequence did not move.
- */
-const onPrefabOps = (assetId: string, ops: Op[]): void => {
-  const level = rootLevel()
-  const root = level?.prefabs?.[assetId]
-  if (level === undefined || level === null || root === undefined) return
-  try {
-    applyBatch({ id: assetId, config: {}, nodes: [root] }, ops)
-  } catch (e) {
-    // The definition here is behind the server's; the next open will take a fresh copy.
-    setStatus(`a prefab changed in a way this level could not follow: ${e instanceof OpError ? e.message : String(e)}`)
-    return
-  }
-  // Every placement of it changed shape, so this is the structural repaint, not the cheap one.
-  const open = doc
-  if (open === null) return
-  const keep = selectionRefs()
-  deselect()
-  meshes.buildAll()
-  rebuildLoaded()
-  const restored = keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
-  if (restored.length > 0) applySelection(restored)
-  refreshUi()
-  inspectorRebuild()
-  previews.invalidate()
-  loadNewReferences(meshes.buildAll)
-}
-
-const collab = createCollab(httpTransport(), {
-  level: () => (fileState.mode === 'level' ? rootLevel() : null),
-  onSnapshot: (level) => {
-    latestSnapshot = level
-    if (!joining) reinstallLevel(level)
+    docStack.length = 1
+    docStack[0] = { doc: edits.withOps(levelDoc(level, registry())), label: root.label }
+    showDoc()
+    return true
   },
-  onApplied: (ops) => repaintAfterOps(ops),
-  onRejected: (batch, reason) => {
-    // The batch is already rolled back in the data; forget the history entry that holds it, then redraw.
-    edits.dropWhere((entry) => entry.ops.some((o) => batch.ops.includes(o)) || entry.inverses.some((o) => batch.ops.includes(o)))
-    setStatus(`edit refused: ${reason}`)
-    repaintAfterOps(batch.inverses)
+  selection: () => selection,
+  selectionRefs: () => selectionRefs(),
+  applySelection: (indices) => applySelection(indices),
+  deselect: () => deselect(),
+  groupAt: (i) => meshes.groupAt(i),
+  holderOf: (g) => meshes.holderOf(g),
+  groupPose: (g) => groupPose(g),
+  gizmoDragging: () => gizmoDragging,
+  playing: () => play.active(),
+  applyPreviewPoses: () => applyPreviewPoses(),
+  rebuildViewport: () => {
+    meshes.buildAll()
+    rebuildLoaded()
   },
-  onPeers: (peers) => {
-    livePeers = peers
-    renderStatus()
-  },
-  onHolds: (holds) => onHoldsChanged(holds),
-  onPresence: (_from, _name, data) => onPresence(data),
-  onPrefabOps: (assetId, ops) => onPrefabOps(assetId, ops),
-  onError: (message) => setStatus(`live: ${message}`),
+  rebuildSubtree: (i) => meshes.rebuildSubtree(i),
+  scheduleRebuild: () => scheduleRebuild(),
+  installEnvironment: (config) => installEnvironment(config),
+  loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
+  invalidatePreviews: () => previews.invalidate(),
+  hierarchyRender: () => hierarchy.render(),
+  refreshUi: () => refreshUi(),
+  inspectorRebuild: () => inspectorRebuild(),
+  inspectorSync: () => inspectorSync(),
+  setStatus: (message) => setStatus(message),
+  setProblem: (message) => setProblem(message),
+  renderStatus: () => renderStatus(),
+  dropHistoryWhere: (predicate) => edits.dropWhere(predicate),
 })
+
+/** Is the open document a live room? Prefabs are too (ADR 0091); a material is a file with a lock. */
+const live = (): boolean => room.live()
 
 /** The key the open file is locked by. Levels and prefabs are live rooms; this is for the rest. */
 const docLockKey = (): string => lockKey.level(fileState.name)
@@ -637,7 +396,7 @@ const meshes = createItemMeshes({
   afterBuild: () => {
     applyPreviewPoses()
     reattachGizmo()
-    rebuildHoldHelpers()
+    room.rebuildHolds()
     refreshBoundsBox()
   },
 })
@@ -794,18 +553,16 @@ const enterPrefab = async (assetId: string): Promise<void> => {
     return
   }
   const from = fileState.name
-  collab.leave()
-  joining = true
+  room.leave()
+  let greeting: Level | null
   try {
-    await collab.join(assetId, 'prefab')
+    greeting = await room.joinRoom(assetId, 'prefab')
   } catch (e) {
-    joining = false
     setStatus(`could not open ${entry.name}: ${e instanceof Error ? e.message : String(e)}`)
     void rejoinLevel(from)
     return
   }
-  joining = false
-  const root = latestSnapshot?.nodes[0]
+  const root = greeting?.nodes[0]
   if (root === undefined) {
     setStatus('that prefab did not load')
     void rejoinLevel(from)
@@ -849,7 +606,7 @@ const closePrefab = (): void => {
   const open = prefabOpen
   if (open === null) return
   prefabOpen = null
-  collab.leave()
+  room.leave()
   void rejoinLevel(open.from)
 }
 
@@ -1292,7 +1049,7 @@ gizmo.addEventListener('dragging-changed', (event) => {
     // One history entry per drag, recorded when it ends. `coalescing` holds `recordEdit` off while the hundred
     // pointer events each report a transform op; the record at the end folds them into one.
     edits.beginDrag()
-    startPresence()
+    room.startPresence()
     dragStart = new Map()
     if (doc !== null) {
       for (const i of selection) {
@@ -1308,12 +1065,12 @@ gizmo.addEventListener('dragging-changed', (event) => {
       }
     }
   } else {
-    stopPresence()
+    room.stopPresence()
     // The whole drag as one op per node — what the history holds, and what the room gets.
     edits.endDrag(selection.length > 1 ? `${edit.mode} ${selection.length}` : edit.mode)
     dragStart = new Map()
     rebuildLoaded()
-    drainDeferredRemote()
+    room.drainDeferred()
   }
 })
 gizmo.addEventListener('objectChange', () => {
@@ -1471,7 +1228,7 @@ const applySelection = (next: readonly number[]): void => {
     assetInspector.show(null)
   }
   // A node someone else holds is theirs: never in the selection, so the gizmo never lands on it (ADR 0089).
-  selection = clampTo(next, doc?.count() ?? 0).filter((i) => heldBy(i) === null)
+  selection = clampTo(next, doc?.count() ?? 0).filter((i) => room.heldBy(i) === null)
   const primary = primaryOf(selection)
   selected = primary
   // Disarmed too: armed Record left running across a selection change would write keys onto the next object
@@ -1484,7 +1241,7 @@ const applySelection = (next: readonly number[]): void => {
   // After the panel has been rebuilt, not before: a nested object selected in the viewport is inside a
   // collapsed parent as often as not, and marking a row nobody can see is the same as not marking it.
   if (primary !== null) hierarchy.reveal(primary)
-  syncHolds()
+  room.syncHolds()
 }
 
 /** Select one item outright — the plain click, and what every command that lands on a new item does. */
@@ -1503,7 +1260,7 @@ const selectWith = (index: number, mode: SelectMode, order: readonly number[]): 
 
 /** A click on a node someone else holds: say who, do nothing. */
 const refuseHeld = (index: number): boolean => {
-  const holder = heldBy(index)
+  const holder = room.heldBy(index)
   if (holder === null) return false
   setStatus(`${holder} has that selected`)
   return true
@@ -1515,7 +1272,7 @@ const deselect = (): void => {
   gizmo.detach()
   inspectorRebuild()
   uiChanged()
-  syncHolds()
+  room.syncHolds()
 }
 
 const raycaster = new THREE.Raycaster()
@@ -2013,7 +1770,7 @@ const play = createPlay({
   fileName: () => fileState.name,
   levelName: () => shortName(fileState.name),
   live: () => live(),
-  flush: () => collab.flush(),
+  flush: () => room.flush(),
   dirty: () => edits.dirty(),
   saveNow: () => edits.saveNow(),
   setPreviewing: (on) => setPreviewing(on),
@@ -2022,7 +1779,7 @@ const play = createPlay({
   setStatus: (message) => setStatus(message),
   clearStatus: () => void (statusMsg = ''),
   uiChanged: () => uiChanged(),
-  drainDeferred: () => drainDeferredRemote(),
+  drainDeferred: () => room.drainDeferred(),
   setProjection: (isometric) => setProjection(isometric),
 })
 
@@ -2050,13 +1807,8 @@ const openFile = async (name: string): Promise<void> => {
        * silently broken Inspector (ADR 0052). The name is qualified, so the game is known before the file is
        * even read; it used to be read out of `config.mode.name`, which could disagree with reality.
        */
-      joining = true
-      try {
-        await collab.join(name)
-      } finally {
-        joining = false
-      }
-      const raw: unknown = latestSnapshot ?? (await loadLevelRaw(name))
+      const greeting = await room.joinRoom(name)
+      const raw: unknown = greeting ?? (await loadLevelRaw(name))
       const ref = parseQualified(name)
       activeMode = (ref === null ? undefined : MODES[ref.game]) ?? soleMode()
       /**
@@ -2283,7 +2035,7 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
     gameSelected = false
     selectWith(index, mode, order)
   },
-  heldBy,
+  heldBy: (index) => room.heldBy(index),
   onRename: (index, name) => {
     doc?.setName(index, name)
     edits.recordEdit('rename')
@@ -2367,7 +2119,7 @@ const applyOverrides = async (): Promise<void> => {
   const plan = open.overrideOpsFor(at)
   if (plan === null) return
   const name = assets?.db.byId[plan.assetId]?.name ?? 'the prefab'
-  const refused = await collab.submitToPrefab(plan.assetId, plan.ops)
+  const refused = await room.submitToPrefab(plan.assetId, plan.ops)
   if (refused !== null) {
     setStatus(`${name} did not take it: ${refused} — this placement is unchanged`)
     return
@@ -2789,7 +2541,7 @@ const deleteAsset = (path: string): void => {
     if (here > 0) {
       doc?.unlinkPrefab(id)
       edits.recordEdit(`unlinked ${entry.name}`)
-      await collab.flush().catch(() => undefined)
+      await room.flush().catch(() => undefined)
     }
     afterFileOp(`deleted ${path}`, async () => assets?.remove(path) ?? Promise.resolve())
   })()
@@ -2818,8 +2570,8 @@ const renameLevel = (qualified: string): void => {
     const to = qualify({ game: ref.game, name: asked })
     const wasOpen = fileState.name === qualified
     if (wasOpen) {
-      if (live()) await collab.flush().catch(() => undefined)
-      await collab.leave()
+      if (live()) await room.flush().catch(() => undefined)
+      await room.leave()
     }
     try {
       await apiRenameLevel(qualified, to)
@@ -2856,7 +2608,7 @@ const deleteLevelFile = (qualified: string): void => {
     const body = `The file goes for good \u2014 there is no undo and no copy anywhere else.${notes.length > 0 ? ` ${notes.join(', and ')}.` : ''}`
     if (!(await askDestructive(`Delete ${ref.name}?`, body, 'Delete for good'))) return setStatus('kept')
 
-    if (isOpen) await collab.leave()
+    if (isOpen) await room.leave()
     try {
       await apiDeleteLevel(qualified)
     } catch (e) {
@@ -3080,7 +2832,7 @@ const rootLevel = (): Level | null => docStack[0]?.doc.asLevel() ?? null
 const edits = createHistoryStore({
   doc: () => doc,
   rootDoc: () => docStack[0]?.doc,
-  rootLevel,
+  rootLevel: () => rootLevel(),
   selection: () => selection,
   selected: () => selected,
   selectionRefs: () => selectionRefs(),
@@ -3088,7 +2840,7 @@ const edits = createHistoryStore({
   applySelection: (indices) => applySelection(indices),
   deleteSelected: () => deleteSelected(),
   live: () => live(),
-  submit: (batch) => collab.submit(batch),
+  submit: (batch) => room.submit(batch),
   fileName: () => fileState.name,
   readOnlyBy: () => readOnlyBy,
   // The name may have changed since the file was opened (Save-as), or this may be a new file: the lock
@@ -3390,7 +3142,7 @@ const renderStatus = (): void => {
   parts.push(breadcrumb())
   if (readOnlyBy !== null) parts.push(`<span class="problem">read-only · locked by ${readOnlyBy}</span>`)
   if (live()) {
-    const others = livePeers.filter((p) => p.connId !== collab.connId()).map((p) => p.name)
+    const others = room.peers().filter((p) => p.connId !== room.connId()).map((p) => p.name)
     parts.push(others.length === 0 ? 'live' : `live · with ${[...new Set(others)].join(', ')}`)
   }
   if (selected !== null && doc !== null) {
@@ -3475,7 +3227,7 @@ createSplitter({
 
 // --- render loop ---
 stage.start((dt) => {
-  updateHoldHelpers()
+  room.updateHolds()
   // A session takes the frame, or it does not and the edit clock does — the same either/or as before.
   if (!play.frame(dt)) {
     /**
@@ -3552,7 +3304,7 @@ window.setInterval(() => {
         refreshUi()
       }
     }
-    if (live()) collab.ping() // the server drops a connection it has not heard from, holds included
+    if (live()) room.ping() // the server drops a connection it has not heard from, holds included
     const status = await serverStatus().catch(() => null)
     const next = status?.pushError ?? ''
     if (next !== pushProblem) {
@@ -3565,5 +3317,5 @@ window.setInterval(() => {
 // A closing tab lets go of its locks at once rather than waiting out the stale window.
 window.addEventListener('pagehide', () => {
   for (const p of heldLocks) releaseLockBeacon(p)
-  collab.beaconLeave()
+  room.beaconLeave()
 })

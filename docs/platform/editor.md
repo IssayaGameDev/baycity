@@ -24,6 +24,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | `itemMeshes.ts` | `instanceRoot`, `markerGroup`, the groups, the shadow budget, the cell toggle | `doc`, `loaded`, `runtime`, `mode`, `gameSettings`, `selected`, `afterBuild` |
 | `play.ts` | the character, controller, loop, play view and lights, component runtime, game frame | `PlayHost` (23 getters) |
 | `historyStore.ts` | the history, pending batches, `coalescing`, the held-back drag batches, `dirty`, the clipboard | `HistoryHost` |
+| `liveSession.ts` | `collab`, the peer list, the last snapshot, `joining`, the deferred ops, the hold map and its key, the hold boxes, the presence timer | `LiveHost` |
 
 
 | Area | Element | Module |
@@ -47,7 +48,7 @@ The routes are `tools/editor-server/src/api.ts`, mounted by `vite.config.ts` (`f
 | --- | --- |
 | `me` | `GET /api/me` at boot; name shown first in the status bar; `heartbeatMs`/`maxUploadBytes` read from it |
 | `heldLocks` | every key this tab holds; `takeLock(path)` → holder's name or `null`; `dropAllLocks()` releases all (→ the server commits the session) |
-| `openFile` | `dropAllLocks()`, then **joins the level's live room** (`collab.join(name)`, below). Levels only: a prefab is entered with `enterPrefab`, not opened as a file |
+| `openFile` | `dropAllLocks()`, then **joins the level's live room** (`room.joinRoom(name)`, below). Levels only: a prefab is entered with `enterPrefab`, not opened as a file |
 | `readOnlyBy` | a material or clip this tab could not lock; status bar shows `read-only · locked by X` |
 | `saveNow` | returns `true` at once for a live room: every edit is already on the server |
 | `newBlank` | `createLevel(null)` — a level exists the moment it is named (below) |
@@ -112,11 +113,11 @@ httpTransport(): LiveTransport   // EventSource in, fetch POST out, sendBeacon f
 
 | Piece | Behaviour |
 | --- | --- |
-| join | `openFile` (level) → `collab.join(name)`; the snapshot's level (`latestSnapshot`) is what adoption, validation and `levelDoc` run on. A join the server refuses is the load error |
+| join | `openFile` (level) → `room.joinRoom(name)`, which resolves the snapshot it was greeted with — that level is what adoption, validation and `levelDoc` run on. `joining` is `joinRoom`'s own, so the first snapshot builds the caller's document while a later one (a reconnect) reinstalls it (ADR 0121). A join the server refuses is the load error |
 | outbound | `onDocOps` → `pending` (history) **and** `collab.submit(batch)`; the batch is *unacked* until its echo. `applyHistory` submits the inverses it applied |
-| inbound | a remote batch: unacked batches rolled back (inverses, newest first), remote applied, unacked re-applied (inverses recomputed; one that no longer applies is dropped and reported); `hooks.onApplied(ops)` → `repaintAfterOps`. A seq gap or a failing apply reopens the stream: the server greets with a fresh snapshot, `reinstallLevel` rebuilds the document over it (history kept), unacked batches are re-applied and re-sent |
+| inbound | a remote batch: unacked batches rolled back (inverses, newest first), remote applied, unacked re-applied (inverses recomputed; one that no longer applies is dropped and reported); `hooks.onApplied(ops)` → `repaintAfterOps` (`liveSession.ts`). A seq gap or a failing apply reopens the stream: the server greets with a fresh snapshot, `reinstallLevel` rebuilds the document over it (history kept), unacked batches are re-applied and re-sent |
 | rejected | a 4xx on the POST: that batch and everything after it rolled back, the later ones re-applied, `onRejected` → `history.dropWhere` (the entry holding it) + status line + repaint |
-| repaint | `repaintAfterOps(ops)`: transforms only (`setTransform` / `setOverrideTransform`) → `applyPreviewPoses` + `scheduleRebuild` + `inspectorSync` + track helper; anything else → environment/postfx re-applied, `buildItems` + `rebuildLoaded`, selection put back by `indexOfRef`, `refreshUi` + `inspectorRebuild`. During a gizmo drag **or a play-test** ops queue in `deferredRemote` (the data is already changed) and repaint when it ends (`drainDeferredRemote`, from the drag's `mouseUp` and from both `stopPlay` exits) — `rebuildLoaded` frees the physics world a play session's character lives in |
+| repaint | `repaintAfterOps(ops)`: transforms only (`setTransform` / `setOverrideTransform`) → `applyPreviewPoses` + `scheduleRebuild` + `inspectorSync` + track helper; anything else → environment/postfx re-applied, `host.rebuildViewport()`, selection put back by `indexOfRef`, `refreshUi` + `inspectorRebuild`. During a gizmo drag **or a play-test** ops queue in `deferredRemote` (the data is already changed) and repaint when it ends (`room.drainDeferred()`, from the drag's `mouseUp` and from both `play.stop` exits) — `rebuildLoaded` frees the physics world a play session's character lives in |
 | Save | toolbar `live` hides Save and disables the name field; `dirty` stays `false` live (`recordEdit`, `applyHistory`), so `guardUnsaved` never asks. `saveNow` returns `true` |
 | Play | `startFramePlay`: live → `collab.flush()` first (the game reads the file), else the prefab path `saveNow()` |
 | New / Duplicate | `createLevel(from)`: `askName` (`confirm.ts`) → `^[\w-]+$` → refused if `listFiles('levels')` has it → `PUT /api/levels/<name>` a `blankLevel` with the active mode, or the open level (`loadLevelRaw`, the server's live copy) with `id` set → `refreshFileList` → `openFile`. Toolbar `Duplicate` in level mode |
@@ -204,7 +205,7 @@ uses it. It does, because a prefab is a live document of its own.
 | Piece | Behaviour |
 | --- | --- |
 | resolve on open | `openFile` runs `hydratePrefabs(level, editorPrefabs)` — `assets.prefabOf`, already in memory from boot — and keeps `hydratedPrefabs` (what it filled) and `missingPrefabs` (what it could not), naming the missing in the status line |
-| enter a prefab | `enterPrefab(assetId)`: leave the level's room, `collab.join(assetId, 'prefab')`, build `prefabDoc` over the snapshot's one root, `prefabOpen = { assetId, name, from }`. From a placement (`openPrefabOf`, the Inspector's **Open**, the Hierarchy and viewport menus) or from a prefab's Project tile — which is the only way to reach one that is placed nowhere |
+| enter a prefab | `enterPrefab(assetId)`: leave the level's room, `room.joinRoom(assetId, 'prefab')`, build `prefabDoc` over the snapshot's one root, `prefabOpen = { assetId, name, from }`. From a placement (`openPrefabOf`, the Inspector's **Open**, the Hierarchy and viewport menus) or from a prefab's Project tile — which is the only way to reach one that is placed nowhere |
 | one at a time | The viewport, the physics world, the selection and the holds are singletons keyed to the open document, so a tab is in one room. **Back** (`closePrefab`) rejoins the level, which the server answers with a fresh snapshot, so anything that changed meanwhile is there |
 | follow a prefab | a `prefab { assetId, ops }` event on the **level's** stream → `onPrefabOps`: `applyBatch` over `{ id, config: {}, nodes: [root] }`, whose root *is* the resolved definition, then a structural repaint and `previews.invalidate()`. No sequence and nothing sent back: the level's own file did not change |
 | Apply to prefab | two rooms, one gesture. `Doc.overrideOpsFor(i)` → `collab.submitToPrefab(assetId, ops)` → only if the server took them, `Doc.revert(i)` here. Undo puts **this placement's** override back and does not take the change out of the prefab; the status line says so |
@@ -286,7 +287,7 @@ Others' selection is what the hold boxes and badges show: a selection *is* a hol
 
 | Piece | Behaviour |
 | --- | --- |
-| `syncHolds` | after every `applySelection`/`deselect`: `collab.setHolds(selectionRefs())` — the **whole** selection, skipped when unchanged (`lastHoldKey`). Hold messages queue one behind another in `collab.ts`, so a release can never overtake the hold before it. A refusal (`{ ok: false, holder, refused }`, a lost race) drops the refused nodes from the selection with a status line. `reinstallLevel` (new `connId`) re-sends; a `hello` with a new `connId` posts `leave` for the old one |
+| `syncHolds` | after every `applySelection`/`deselect`: `room.syncHolds()` → `collab.setHolds(host.selectionRefs())` — the **whole** selection, skipped when unchanged (`lastHoldKey`). Hold messages queue one behind another in `collab.ts`, so a release can never overtake the hold before it. A refusal (`{ ok: false, holder, refused }`, a lost race) drops the refused nodes from the selection with a status line. `reinstallLevel` (new `connId`) re-sends; a `hello` with a new `connId` posts `leave` for the old one |
 | heartbeat | the lock heartbeat also `collab.ping()`s while live: the server sweeps a connection it has not heard from in two minutes, holds with it |
 | `heldBy(index)` | the name of another connection holding this node **or any ancestor** (`holdMap` by `refKey`), else `null` |
 | `applySelection` | filters `heldBy(i) !== null` out, so the gizmo never attaches to a held node; `select`/`selectWith` say `X has that selected` (`refuseHeld`) |
