@@ -171,5 +171,6 @@ why matters.
 | [0120](adr/0120-a-game-describes-what-a-tool-draws.md) | A game describes what a tool draws |
 | [0121](adr/0121-the-editor-is-a-shell-around-subsystems.md) | The editor is a shell around subsystems |
 | [0122](adr/0122-revert-and-apply-have-two-scopes.md) | Revert and Apply have two scopes |
+| [0123](adr/0123-a-prefab-document-is-open-for-every-reference.md) | A prefab document is open for every reference |
 
 `Design archive/` holds superseded design material and is not maintained.

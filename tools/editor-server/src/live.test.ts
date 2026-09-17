@@ -323,6 +323,41 @@ describe('prefab references (ADR 0091)', () => {
     expect(written.prefabs!['Trampoline']!.name).toBe('mine')
   })
 
+  /**
+   * Apply to prefab from a level whose table is **inline** (ADR 0123).
+   *
+   * `hydratePrefabs` skips an id the level already carries, so nothing asked for that prefab's document and
+   * it stayed shut — and `apply` on a prefab needs an open one. The gesture answered 404 "is not open" while
+   * the placement itself worked perfectly, because the inline copy resolved it.
+   */
+  it('takes an apply for a prefab whose definition the level carried inline', () => {
+    const w = world({ prefabs: store({ [PAD]: padFile() }) })
+    const own = padFile()
+    own.name = 'mine'
+    w.disk.set(LV, { id: 'lv', config: {}, prefabs: { [PAD]: own }, nodes: [{ id: 'n0', transform: { position: v3(0, 0, 0) }, components: [], prefab: PAD }] })
+    const a = fake('c1')
+    w.live.join(LV, a.client)
+
+    // The level resolved from its own table, so nothing was filled — and the document must still be open.
+    expect(w.live.status().map((d) => d.name)).toContain(PAD)
+    const r = w.live.apply(docKey('prefab', PAD), 'c1', ADA, { batchId: 'b', ops: [{ kind: 'setName', id: 'p0', name: 'applied' }] })
+    expect(r.ok, 'the connection comes from a level that depends on it').toBe(true)
+  })
+
+  it('keeps the inline definition the level carried, even though the document is now open', () => {
+    const w = world({ prefabs: store({ [PAD]: padFile() }) })
+    const own = padFile()
+    own.name = 'mine'
+    w.disk.set(LV, { id: 'lv', config: {}, prefabs: { [PAD]: own }, nodes: [{ id: 'n0', transform: { position: v3(0, 0, 0) }, components: [], prefab: PAD }] })
+    const a = fake('c1')
+    w.live.join(LV, a.client)
+    w.live.apply(LV, 'c1', ADA, { batchId: 'b', ops: [{ kind: 'setName', id: 'n0', name: 'x' }] })
+    w.live.flush(LV)
+    const written = w.writes.at(-1)!.level
+    expect(Object.keys(written.prefabs ?? {}), 'opening the document does not adopt or strip it').toEqual([PAD])
+    expect(written.prefabs![PAD]!.name).toBe('mine')
+  })
+
   it('a reference with no file leaves the placement with nothing inherited, and the level still opens', () => {
     const w = world({ prefabs: store({}) })
     w.disk.set(LV, withPlacement())
