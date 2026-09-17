@@ -70,6 +70,7 @@ import { cornerSnapDelta, snapAnglesDeg, snapToGrid, worldHalfExtents } from './
 import { createHistoryStore } from './historyStore'
 import { createItemMeshes } from './itemMeshes'
 import { createLiveSession } from './liveSession'
+import { createMotionPreview } from './motionPreview'
 import { createPlay } from './play'
 import { applySelect, clampTo, modeFor, primaryOf, rootsOf, type SelectMode } from './selection'
 import { createShortcuts } from './shortcuts'
@@ -289,7 +290,7 @@ const room = createLiveSession({
   groupPose: (g) => groupPose(g),
   gizmoDragging: () => gizmoDragging,
   playing: () => play.active(),
-  applyPreviewPoses: () => applyPreviewPoses(),
+  applyPreviewPoses: () => motion.applyPoses(),
   rebuildViewport: () => {
     meshes.buildAll()
     rebuildLoaded()
@@ -394,7 +395,7 @@ const meshes = createItemMeshes({
   selected: () => selected,
   // Each of these reads the groups that were just replaced, and none of them is that module's business.
   afterBuild: () => {
-    applyPreviewPoses()
+    motion.applyPoses()
     reattachGizmo()
     room.rebuildHolds()
     refreshBoundsBox()
@@ -981,10 +982,6 @@ const setSpace = (space: GizmoSpace): void => {
  * preview at all. That is also why it is one clock for the whole level rather than one per object — motion is
  * timed against other motion, and a staggered row is the thing you actually need to look at.
  */
-let previewMs = 0
-/** Whether the clock is running. Separate from play, which is the real game loop with pointer lock. */
-let previewing = false
-let previewLastFrame = 0
 /**
  * What each selected item looked like when the current drag began.
  *
@@ -999,36 +996,18 @@ interface DragStart {
 }
 let dragStart = new Map<number, DragStart>()
 
-/** Pose every item from its movers at the preview clock. Still items sit at their authored transform. */
-const applyPreviewPoses = (): void => {
-  if (doc === null) return
-  for (let i = 0; i < doc.count(); i++) {
-    const g = meshes.groupAt(i)
-    if (g === undefined) continue
-    const pose = doc.poseOf(i, previewMs)
-    g.position.set(pose.position.x, pose.position.y, pose.position.z)
-    const q = eulerToQuat(pose.rotation)
-    g.quaternion.set(q.x, q.y, q.z, q.w)
-    // Scale is not animated: a track that resized a collider would rebuild physics every tick.
-  }
-}
-
-const setPreviewTime = (ms: number): void => {
-  previewMs = Math.max(0, ms)
-  applyPreviewPoses()
-  inspectorSync()
-  renderStatus()
-}
-
 /**
- * The clock moving during playback, sixty times a second. Deliberately narrower than `setPreviewTime`: the
- * Inspector's own fields cannot have changed, and re-reading them every frame would fight anything being
- * typed into one.
+ * The preview clock (`motionPreview.ts`, ADR 0103, ADR 0121). It owns the clock, whether it is running and
+ * the frame it last advanced on; `motion.applyPoses()` is what puts every item at its motion's pose, which
+ * is where anything with a mover belongs after any rebuild.
  */
-const advancePreviewTime = (ms: number): void => {
-  previewMs = Math.max(0, ms)
-  applyPreviewPoses()
-}
+const motion = createMotionPreview({
+  doc: () => doc,
+  groupAt: (i) => meshes.groupAt(i),
+  inspectorSync: () => inspectorSync(),
+  renderStatus: () => renderStatus(),
+  toolbarRender: () => toolbar.render(),
+})
 
 /** A drag has happened, so the click handler knows this pointerup was not a click. */
 let gizmoDragged = false
@@ -1158,7 +1137,7 @@ const writeBackItem = (index: number): void => {
   if (doc === null) return
   const g = meshes.groupAt(index)
   if (g === undefined) return
-  const off = motionOffsetAt(index, previewMs)
+  const off = motion.offsetAt(index, motion.timeMs())
   const t = transformOfGroup(g)
   const rot = t.rotation ?? vec3(0, 0, 0)
   doc.setTransform(index, {
@@ -1202,17 +1181,6 @@ const groupPose = (g: THREE.Group): LocalPose => {
  * Measured as the difference between where the item is drawn and where it rests, rather than by evaluating
  * the motion again here — so it cannot drift from what `applyPreviewPoses` actually drew.
  */
-const motionOffsetAt = (index: number, timeMs: number): LocalPose => {
-  if (doc === null) return { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) }
-  const authored = doc.transformOf(index)
-  const rest = authored.rotation ?? vec3(0, 0, 0)
-  const at = doc.poseOf(index, timeMs)
-  return {
-    position: vec3(at.position.x - authored.position.x, at.position.y - authored.position.y, at.position.z - authored.position.z),
-    rotation: vec3(at.rotation.x - rest.x, at.rotation.y - rest.y, at.rotation.z - rest.z),
-  }
-}
-
 /**
  * Point the editor at a selection. Everything derived from it is refreshed here, so no caller has to remember
  * the list: the gizmo goes on the primary and the Inspector follows it.
@@ -1473,7 +1441,7 @@ const endFacePull = (): void => {
   }
   edits.endDrag('face')
   rebuildLoaded()
-  applyPreviewPoses()
+  motion.applyPoses()
 }
 
 /** Point the raycaster at a client position. Shared by picking, placement and the right-click menu. */
@@ -1934,7 +1902,7 @@ const toolbar: Toolbar = createToolbar(
     stepUnit: STEP_LIMITS[edit.mode].unit,
     stepLimits: STEP_LIMITS[edit.mode],
     playing: play.active(),
-    previewing,
+    previewing: motion.playing(),
     inPrefab: prefabOpen !== null,
     readOnly: readOnlyBy,
     live: live(),
@@ -2872,7 +2840,7 @@ const edits = createHistoryStore({
   inspectorRebuild: () => inspectorRebuild(),
 })
 
-// --- previewing motion in the viewport (ADR 0103) ---
+// --- motion.playing() motion in the viewport (ADR 0103) ---
 /**
  * Run or stop the preview clock.
  *
@@ -2881,11 +2849,7 @@ const edits = createHistoryStore({
  * wherever the clock stopped would look exactly like content someone had moved.
  */
 function setPreviewing(on: boolean): void {
-  previewing = on
-  previewLastFrame = 0
-  if (!on) setPreviewTime(0)
-  toolbar.render()
-  renderStatus()
+  motion.setPlaying(on)
 }
 
 /**
@@ -3065,7 +3029,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     }
     edits.endDrag(selection.length > 1 ? `${field} ${selection.length}` : field)
     rebuildLoaded()
-    applyPreviewPoses()
+    motion.applyPoses()
     inspector.sync()
   },
   writeTransform: (t) => {
@@ -3082,7 +3046,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     writeBackSelected()
     meshes.rebuildSubtree(selected) // the scale may have changed, and the meshes are built from it
     edits.recordEdit('transform')
-    applyPreviewPoses() // the rest pose moved, so the item's drawn pose at the playhead moved with it
+    motion.applyPoses() // the rest pose moved, so the item's drawn pose at the playhead moved with it
     scheduleRebuild()
   },
   onPropsChanged: () => {
@@ -3148,7 +3112,7 @@ const renderStatus = (): void => {
   if (selected !== null && doc !== null) {
     parts.push(selection.length > 1 ? `${selection.length} selected · editing what they share` : `selected #${selected} (${doc.label(selected)})`)
   }
-  if (previewing) parts.push(`preview t=${(previewMs / 1000).toFixed(2)}s`)
+  if (motion.playing()) parts.push(`preview t=${(motion.timeMs() / 1000).toFixed(2)}s`)
   if (placing !== null) {
     const what = assets?.db.byId[placing.assetId]?.name ?? 'asset'
     parts.push(`click in the viewport to place <b>${what}</b>`)
@@ -3237,12 +3201,7 @@ stage.start((dt) => {
      * character and no rules. It runs freely rather than wrapping: every mover derives its own cycle from
      * its speed, so there is no single length to wrap to, and level time in the game does not wrap either.
      */
-    if (previewing) {
-      const now = performance.now()
-      const dt = previewLastFrame === 0 ? 0 : now - previewLastFrame
-      previewLastFrame = now
-      advancePreviewTime(previewMs + dt)
-    }
+    motion.frame()
     viewGizmo.update(dt)
     controls.update()
   }

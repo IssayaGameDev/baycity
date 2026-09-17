@@ -25,6 +25,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | `play.ts` | the character, controller, loop, play view and lights, component runtime, game frame | `PlayHost` (23 getters) |
 | `historyStore.ts` | the history, pending batches, `coalescing`, the held-back drag batches, `dirty`, the clipboard | `HistoryHost` |
 | `liveSession.ts` | `collab`, the peer list, the last snapshot, `joining`, the deferred ops, the hold map and its key, the hold boxes, the presence timer | `LiveHost` |
+| `motionPreview.ts` | the preview clock, whether it runs, the last frame | `MotionPreviewHost` |
 
 
 | Area | Element | Module |
