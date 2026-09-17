@@ -911,9 +911,19 @@ const buildItems = (): void => {
      * The group itself still exists, so document indices, the Hierarchy's selection and the gizmo all keep
      * working — you can still move a disabled object, you just cannot see it.
      */
-    if (doc.nodeEnabled(i) && !doc.disabledByAncestor(i)) buildItemMeshes(g, i)
+    /**
+     * **Parented before its meshes are built**, because `buildItemMeshes` asks for the group's *world* scale.
+     * Built the other way round it got the node's own scale instead, leaving the mesh holder's real world
+     * scale equal to the parent chain's — invisible for the meshes, which are built at `ws` and then
+     * multiplied by exactly that leftover, but not for anything placed at an absolute size. The game's
+     * surface cells (ADR 0120) are, and came out scaled by the parent and laid on the wrong cell count.
+     *
+     * It also made `buildItems` and `rebuildItemMeshes` disagree: the latter runs on a group that is already
+     * in the scene, so it always saw the true world scale.
+     */
     const parent = doc.parentOf(i)
     ;(parent === null ? instanceRoot : (instanceGroups[parent] ?? instanceRoot)).add(g)
+    if (doc.nodeEnabled(i) && !doc.disabledByAncestor(i)) buildItemMeshes(g, i)
     instanceGroups[i] = g
   }
   // Authored transforms are only where *static* items sit. An animated one belongs at its track's pose for

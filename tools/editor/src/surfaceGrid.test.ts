@@ -1,4 +1,5 @@
 import { gridMargin, type SurfaceGrid } from '@mp/mode'
+import { THREE } from '@mp/render-three'
 import { describe, expect, it } from 'vitest'
 
 import { gridQuads } from './surfaceGrid'
@@ -80,5 +81,76 @@ describe('gridMargin', () => {
     const m = gridMargin(gridFor(5, 3), v(4.5, 1, 2.7))
     expect(m.x).toBeCloseTo(0, 9)
     expect(m.z).toBeCloseTo(0, 9)
+  })
+})
+
+/**
+ * The frame the cells are drawn in, which is the part that actually broke (ADR 0120).
+ *
+ * `buildItemMeshes` counter-scales the mesh holder by the group's **world** scale, so a child of it sits in
+ * world metres. That only holds if the group is already in the scene when it is asked — built before
+ * parenting it reports its own scale instead, and the holder is then left carrying the parent chain's scale.
+ *
+ * The meshes hid that: they are built at `ws` and multiplied by exactly the leftover, so the two errors
+ * cancelled. A cell placed at an absolute size has nothing to cancel with, and came out scaled by the parent.
+ */
+describe('the frame a cell is drawn in', () => {
+  const chain = (parentScale: [number, number, number], localScale: [number, number, number], parentFirst: boolean) => {
+    const root = new THREE.Group()
+    const parent = new THREE.Group()
+    parent.scale.set(...parentScale)
+    root.add(parent)
+    const g = new THREE.Group()
+    g.scale.set(...localScale)
+    const holder = new THREE.Group()
+    g.add(holder)
+    const counterScale = (): THREE.Vector3 => {
+      g.updateWorldMatrix(true, false)
+      const ws = g.getWorldScale(new THREE.Vector3())
+      const inv = (v: number): number => (Math.abs(v) < 1e-6 ? 1 : 1 / v)
+      holder.scale.set(inv(ws.x), inv(ws.y), inv(ws.z))
+      return ws
+    }
+    let seen: THREE.Vector3
+    if (parentFirst) {
+      parent.add(g)
+      seen = counterScale()
+    } else {
+      seen = counterScale()
+      parent.add(g)
+    }
+    // One cell, as `gridQuads` gives it: 0.792 m square, one 0.9 m pitch out along x.
+    const cell = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2))
+    cell.position.set(0.9, 0, 0)
+    cell.scale.set(0.792, 1, 0.792)
+    holder.add(cell)
+    root.updateWorldMatrix(true, true)
+    return {
+      seen,
+      size: cell.getWorldScale(new THREE.Vector3()),
+      at: cell.getWorldPosition(new THREE.Vector3()),
+    }
+  }
+
+  const PARENT: [number, number, number] = [5, 1, 1]
+  const LOCAL: [number, number, number] = [33.3, 0.3, 33.3]
+
+  it('keeps a cell square and one pitch out under a scaled parent', () => {
+    const { size, at } = chain(PARENT, LOCAL, true)
+    expect(size.x).toBeCloseTo(0.792, 6)
+    expect(size.z).toBeCloseTo(0.792, 6)
+    expect(at.x).toBeCloseTo(0.9, 6)
+  })
+
+  it('reports the true world scale, which is what the cell count comes from', () => {
+    expect(chain(PARENT, LOCAL, true).seen.x).toBeCloseTo(166.5, 6)
+  })
+
+  /** What the bug looked like: the parent's 5 landed on the cell's size and on its spacing. */
+  it('is wrong when the group is asked before it is in the scene', () => {
+    const { seen, size, at } = chain(PARENT, LOCAL, false)
+    expect(seen.x).toBeCloseTo(33.3, 6)
+    expect(size.x).toBeCloseTo(3.96, 6)
+    expect(at.x).toBeCloseTo(4.5, 6)
   })
 })
