@@ -248,9 +248,9 @@
       "name": "treadmill +1",
       "transform": {
         "position": {
-          "x": 6,
-          "y": 0.5,
-          "z": -3.5
+          "x": -4,
+          "y": 0.75,
+          "z": 0
         },
         "scale": {
           "x": 3,
