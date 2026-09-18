@@ -8613,7 +8613,7 @@
             "space": "world",
             "speed": 31.032810732180376,
             "smooth": true,
-            "offset": 0.4
+            "offset": 0
           }
         }
       ]
@@ -8684,7 +8684,7 @@
             "space": "world",
             "speed": 45.514789073864556,
             "smooth": true,
-            "offset": 0
+            "offset": 0.4
           }
         }
       ]
