@@ -47,6 +47,16 @@ export interface MotionPreview {
   advance: (ms: number) => void
   /** Pose every item from its motion at the current clock. Still items sit at their authored transform. */
   applyPoses: () => void
+  /**
+   * Run `read` with every group at its **authored** transform, then put the preview poses back (ADR 0126).
+   *
+   * For anything that derives a stored value from the scene graph. The groups normally hold authored *plus*
+   * whatever the movers contribute, so reading a world matrix and writing it back bakes the animation in —
+   * permanently, in the file. Every other write path subtracts the offset (`motionOffsetAt`); a caller that
+   * reads a composed matrix cannot, because the offset is in the old parent's frame and the value it is
+   * computing is in the new one.
+   */
+  withAuthoredPoses: <T>(read: () => T) => T
   /** One item's offset from its authored transform at a given time — what an offset track is (ADR 0050). */
   offsetAt: (index: number, timeMs: number) => LocalPose
   /** Advance by wall-clock time. `false` when the clock is not running, so the caller does nothing. */
@@ -82,6 +92,26 @@ export const createMotionPreview = (host: MotionPreviewHost): MotionPreview => {
     }
   }
 
+  /**
+   * Pose every group at the document's authored transform — no motion, whatever the clock says.
+   *
+   * Not the same as posing at time zero: a mover with a phase `offset` is partway along its travel at zero,
+   * which is where the game starts it and therefore what the preview should draw. Authored is where the
+   * document says the object *is*.
+   */
+  const applyAuthored = (): void => {
+    const open = host.doc()
+    if (open === null) return
+    for (let i = 0; i < open.count(); i += 1) {
+      const g = host.groupAt(i)
+      if (g === undefined) continue
+      const t = open.transformOf(i)
+      g.position.set(t.position.x, t.position.y, t.position.z)
+      const q = eulerToQuat(t.rotation ?? vec3(0, 0, 0))
+      g.quaternion.set(q.x, q.y, q.z, q.w)
+    }
+  }
+
   const setTime = (ms: number): void => {
     previewMs = Math.max(0, ms)
     applyPoses()
@@ -107,6 +137,15 @@ export const createMotionPreview = (host: MotionPreviewHost): MotionPreview => {
     setTime,
     advance,
     applyPoses,
+    withAuthoredPoses: (read) => {
+      applyAuthored()
+      try {
+        return read()
+      } finally {
+        // Back to the preview even if the caller threw, or the viewport would silently stop animating.
+        applyPoses()
+      }
+    },
     offsetAt: (index, timeMs) => {
       const open = host.doc()
       if (open === null) return { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) }
