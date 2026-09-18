@@ -10201,7 +10201,7 @@
             "position": {
               "x": 0.7143,
               "y": 0,
-              "z": -2.5
+              "z": -6.6667
             }
           },
           "components": [
@@ -10247,7 +10247,7 @@
             "position": {
               "x": 0,
               "y": 0,
-              "z": -5
+              "z": -8.3333
             }
           },
           "components": [
@@ -10293,7 +10293,7 @@
             "position": {
               "x": 0.7143,
               "y": 0,
-              "z": -7.5
+              "z": -10
             }
           },
           "components": [
@@ -10341,7 +10341,7 @@
         "position": {
           "x": -630.9,
           "y": 109.45,
-          "z": 350.6
+          "z": 349.5999
         },
         "scale": {
           "x": 4.2,
@@ -10392,7 +10392,7 @@
             "position": {
               "x": 0.7143,
               "y": 0,
-              "z": -2.5
+              "z": -3.3334
             }
           },
           "components": [
@@ -10438,7 +10438,7 @@
             "position": {
               "x": 0,
               "y": 0,
-              "z": -5
+              "z": -6.6665
             }
           },
           "components": [
@@ -10484,7 +10484,7 @@
             "position": {
               "x": 0.7143,
               "y": 0,
-              "z": -7.5
+              "z": -9.9999
             }
           },
           "components": [
@@ -10583,7 +10583,7 @@
             "position": {
               "x": 0.7143,
               "y": 0,
-              "z": -2.5
+              "z": -3.3334
             }
           },
           "components": [
@@ -10629,7 +10629,7 @@
             "position": {
               "x": 0,
               "y": 0,
-              "z": -5
+              "z": -6.6667
             }
           },
           "components": [
@@ -10675,7 +10675,106 @@
             "position": {
               "x": 0.7143,
               "y": 0,
-              "z": -7.5
+              "z": -10
+            }
+          },
+          "components": [
+            {
+              "id": "508b2397",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "7e681e7a",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:box"
+              }
+            },
+            {
+              "id": "965f6971",
+              "type": "Renderer",
+              "params": {
+                "material": ""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "7ea663e2",
+      "name": "box",
+      "transform": {
+        "position": {
+          "x": -630.9,
+          "y": 109.45,
+          "z": 311.6001
+        },
+        "scale": {
+          "x": 4.2,
+          "y": 5.9,
+          "z": 1.2
+        }
+      },
+      "components": [
+        {
+          "id": "508b2397",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "7e681e7a",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:box"
+          }
+        },
+        {
+          "id": "965f6971",
+          "type": "Renderer",
+          "params": {
+            "material": ""
+          }
+        }
+      ],
+      "children": [
+        {
+          "id": "c41d3b3b",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": 0.7143,
+              "y": 0,
+              "z": -5.8332
             }
           },
           "components": [
