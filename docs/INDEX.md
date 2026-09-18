@@ -174,5 +174,6 @@ why matters.
 | [0123](adr/0123-a-prefab-document-is-open-for-every-reference.md) | A prefab document is open for every reference |
 | [0124](adr/0124-a-resolved-definition-never-reaches-disk.md) | A resolved definition never reaches disk |
 | [0125](adr/0125-the-preview-poses-the-tree-in-one-walk.md) | The preview poses the tree in one walk |
+| [0126](adr/0126-a-reparent-re-expresses-the-authored-pose.md) | A reparent re-expresses the authored pose |
 
 `Design archive/` holds superseded design material and is not maintained.

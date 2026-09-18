@@ -1134,10 +1134,20 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
   onReparent: (from, parent, at) => {
     if (doc === null || !doc.canReparent(from, parent)) return
     if (parent !== null && refuseHeld(parent)) return
-    // Preserve the world pose, as dragging in Unity's hierarchy does: the stored numbers are re-expressed
-    // in the new parent's frame so the object does not jump. Read off the scene graph, which is where the
-    // composed matrices already live — the document only ever holds local transforms.
-    const local = localInside(meshes.groupAt(from), parent === null ? null : (meshes.groupAt(parent) ?? null))
+    /**
+     * Preserve the world pose, as dragging in Unity's hierarchy does: the stored numbers are re-expressed in
+     * the new parent's frame so the object does not jump. Read off the scene graph, which is where the
+     * composed matrices already live — the document only ever holds local transforms.
+     *
+     * **From the authored poses** (ADR 0126). The groups normally hold authored plus whatever the movers
+     * contribute — while the preview clock runs, and also at rest for any mover with a phase `offset`, which
+     * is drawn partway along its travel. Reading those matrices wrote the animation's current position into
+     * the file, for good. Every other write path subtracts the offset; this one cannot, because the offset is
+     * in the old parent's frame and the value being computed is in the new one.
+     */
+    const local = motion.withAuthoredPoses(() =>
+      localInside(meshes.groupAt(from), parent === null ? null : (meshes.groupAt(parent) ?? null)),
+    )
     const wasSelected = selected === from
 
     /**
