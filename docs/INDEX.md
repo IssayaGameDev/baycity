@@ -173,5 +173,6 @@ why matters.
 | [0122](adr/0122-revert-and-apply-have-two-scopes.md) | Revert and Apply have two scopes |
 | [0123](adr/0123-a-prefab-document-is-open-for-every-reference.md) | A prefab document is open for every reference |
 | [0124](adr/0124-a-resolved-definition-never-reaches-disk.md) | A resolved definition never reaches disk |
+| [0125](adr/0125-the-preview-poses-the-tree-in-one-walk.md) | The preview poses the tree in one walk |
 
 `Design archive/` holds superseded design material and is not maintained.

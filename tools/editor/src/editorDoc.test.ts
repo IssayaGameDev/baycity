@@ -1099,6 +1099,33 @@ describe('the viewport preview agrees with the loader', () => {
       }
     })
   }
+
+  /**
+   * `posesAt` is `poseOf` for the whole tree in one walk (ADR 0125), and the *only* thing that makes it worth
+   * having is that it answers the same. It accumulates each parent's rotation and scale downward where
+   * `motionFrameOf` rebuilds them by climbing up, so these are the shapes that would catch it: a turned node,
+   * a scaled parent, a turned parent, and a parent that is itself spinning.
+   */
+  for (const c of cases) {
+    it(`poses the whole tree the same way it poses one node: ${c.name}`, () => {
+      const doc = levelDoc({ id: 'fx', config: {}, nodes: structuredClone(c.nodes) }, DEFAULT_REGISTRY)
+      for (const t of [0, 125, 250, 375, 500]) {
+        const all = doc.posesAt(t)
+        expect(all, `one entry per node at ${t}ms`).toHaveLength(doc.count())
+        for (let i = 0; i < doc.count(); i += 1) {
+          const one = doc.poseOf(i, t)
+          for (const axis of ['x', 'y', 'z'] as const) {
+            expect(all[i]!.position[axis], `${c.name} node ${i} position.${axis} at ${t}ms`).toBeCloseTo(one.position[axis], 9)
+            expect(all[i]!.rotation[axis], `${c.name} node ${i} rotation.${axis} at ${t}ms`).toBeCloseTo(one.rotation[axis], 9)
+          }
+        }
+      }
+    })
+  }
+
+  it('poses an empty document as an empty list', () => {
+    expect(levelDoc({ id: 'fx', config: {}, nodes: [] }, DEFAULT_REGISTRY).posesAt(0)).toEqual([])
+  })
 })
 
 /**

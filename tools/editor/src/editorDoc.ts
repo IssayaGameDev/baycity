@@ -335,6 +335,21 @@ export interface Doc {
    * here has to be what the game builds.
    */
   poseOf: (i: number, timeMs: number) => LocalPose
+  /**
+   * Every node's pose at a level time, in document order — `poseOf` for the whole tree, in **one** walk
+   * (ADR 0125).
+   *
+   * What the preview clock needs sixty times a second. Asking `poseOf` per index instead costs four full
+   * document walks per node: `nodes()` is recomputed per call on purpose (see the note at the top of this
+   * file), and `poseOf` reaches it twice itself and twice more through `motionFrameOf`, which also climbs
+   * every node's ancestors separately. Quadratic, on a level with hundreds of platforms, per frame.
+   *
+   * Here the list is walked once and each parent's accumulated rotation and scale are carried **down**, which
+   * is the same product `motionFrameOf` rebuilds by climbing up — a depth-first list puts a parent before its
+   * children, so its accumulation is always ready. No cache, so the note at the top still holds: `nodes()` is
+   * called once rather than made to persist.
+   */
+  posesAt: (timeMs: number) => LocalPose[]
   /** Whether any `Mover` or `Spinner` sits on this node — what decides whether previewing shows it move. */
   movesAt: (i: number) => boolean
 
@@ -1264,6 +1279,51 @@ const docOver = (
         if (piece !== null) ops.push(...piece.ops)
       }
       return ops.length === 0 ? null : { assetId, ops }
+    },
+
+    posesAt: (timeMs) => {
+      const all = nodes()
+      /** Each node's own rotation including its spinner, and its own scale: what its children accumulate. */
+      const ownRot: ReturnType<typeof quat>[] = []
+      const ownScale: Vec3[] = []
+      /** The product of every ancestor's — `motionFrameOf`'s `parentRot` and `parentScale`, built downward. */
+      const chainRot: ReturnType<typeof quat>[] = []
+      const chainScale: Vec3[] = []
+      const out: LocalPose[] = []
+      for (let i = 0; i < all.length; i += 1) {
+        const n = all[i]!
+        const t = n.view.transform
+        const rest = t.rotation ?? vec3(0, 0, 0)
+        const motions = motionsOf(n.view.components)
+        const motion = motionOffset(motions, timeMs)
+
+        const p = n.parent
+        // A parent precedes its children in a depth-first list, so its own contribution is already computed.
+        const pr = p >= 0 ? (chainRot[p] ?? quat()) : quat()
+        const ps = p >= 0 ? (chainScale[p] ?? vec3(1, 1, 1)) : vec3(1, 1, 1)
+        const parentRot = p >= 0 ? mulQuat(pr, ownRot[p] ?? quat()) : quat()
+        const parentScale =
+          p >= 0
+            ? (() => {
+                const s = ownScale[p] ?? vec3(1, 1, 1)
+                return vec3(ps.x * s.x, ps.y * s.y, ps.z * s.z)
+              })()
+            : vec3(1, 1, 1)
+        chainRot[i] = parentRot
+        chainScale[i] = parentScale
+        ownRot[i] = eulerToQuat(vec3(rest.x + motion.rotation.x, rest.y + motion.rotation.y, rest.z + motion.rotation.z))
+        ownScale[i] = t.scale ?? vec3(1, 1, 1)
+
+        // Identical to `poseOf`: a node with no motion travels nowhere, and re-framing is only asked for when
+        // there is travel to re-frame (ADR 0106).
+        const travel =
+          motions.length === 0 ? motion.position : travelOffset(motions, timeMs, { parentRot, parentScale, ownRotation: rest })
+        out.push({
+          position: { x: t.position.x + travel.x, y: t.position.y + travel.y, z: t.position.z + travel.z },
+          rotation: { x: rest.x + motion.rotation.x, y: rest.y + motion.rotation.y, z: rest.z + motion.rotation.z },
+        })
+      }
+      return out
     },
 
     poseOf: (i, timeMs) => {

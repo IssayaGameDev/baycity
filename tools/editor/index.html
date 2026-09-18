@@ -24,6 +24,9 @@
         --accent-dim: #2f5fa8;
         --hover: #2a2f37;
         --sel: #3a4a63;
+        /* Every other Hierarchy row, so a long list reads as rows and not as one block. Well below --hover,
+           so hovering still says which row the pointer is on. */
+        --row-alt: #21252c;
         --link: #6ab0ff;
       }
       * {
@@ -416,6 +419,21 @@
         cursor: default;
         white-space: nowrap;
         user-select: none;
+      }
+      /* Zebra striping, by **rendered** position rather than by depth or document index: what the eye counts
+         is the rows it can see, and a collapsed subtree removes them.
+
+         The exclusion is `:where(:not(.env))`, not `:not(.env)`, and that is the whole point of the line:
+         `:not()` carries its argument's specificity, so `.row:not(.env):nth-child(even)` counts as three and
+         outranked `.row:hover` and `.row.sel` at two — the stripe won, and a hovered or selected row kept the
+         stripe's colour. `:where()` contributes nothing, so this is two, ties with both, and source order
+         (stripe first) lets hover and selection win.
+
+         The Environment and Game rows are skipped: they are level settings above the tree, already set apart
+         by their own rule, and striping them would make the first object's shade depend on whether they are
+         there. They still count for `nth-child`, so the tree's alternation is stable. */
+      .row:where(:not(.env)):nth-child(even) {
+        background: var(--row-alt);
       }
       .row:hover {
         background: var(--hover);
