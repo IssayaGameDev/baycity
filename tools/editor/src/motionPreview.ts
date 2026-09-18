@@ -61,10 +61,20 @@ export const createMotionPreview = (host: MotionPreviewHost): MotionPreview => {
   const applyPoses = (): void => {
     const open = host.doc()
     if (open === null) return
-    for (let i = 0; i < open.count(); i++) {
+    /**
+     * **One pass, not one `poseOf` per node** (ADR 0125).
+     *
+     * This runs sixty times a second while the clock is on. `poseOf` per index cost four full document walks
+     * per node — `nodes()` is recomputed per call by design, and `poseOf` reaches it twice itself and twice
+     * more through `motionFrameOf`, which also climbs each node's ancestors separately. Quadratic on a level
+     * of hundreds of platforms, which is why Motion dropped the frame rate while play mode did not: play
+     * poses the instantiated frame tree, which is flat arrays.
+     */
+    const poses = open.posesAt(previewMs)
+    for (let i = 0; i < poses.length; i += 1) {
       const g = host.groupAt(i)
-      if (g === undefined) continue
-      const pose = open.poseOf(i, previewMs)
+      const pose = poses[i]
+      if (g === undefined || pose === undefined) continue
       g.position.set(pose.position.x, pose.position.y, pose.position.z)
       const q = eulerToQuat(pose.rotation)
       g.quaternion.set(q.x, q.y, q.z, q.w)

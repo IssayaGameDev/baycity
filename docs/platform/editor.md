@@ -25,7 +25,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | `play.ts` | the character, controller, loop, play view and lights, component runtime, game frame | `PlayHost` (23 getters) |
 | `historyStore.ts` | the history, pending batches, `coalescing`, the held-back drag batches, `dirty`, the clipboard | `HistoryHost` |
 | `liveSession.ts` | `collab`, the peer list, the last snapshot, `joining`, the deferred ops, the hold map and its key, the hold boxes, the presence timer | `LiveHost` |
-| `motionPreview.ts` | the preview clock, whether it runs, the last frame | `MotionPreviewHost` |
+| `motionPreview.ts` | the preview clock, whether it runs, the last frame. Poses via `Doc.posesAt(timeMs)` — one walk, not `poseOf` per node (ADR 0125) | `MotionPreviewHost` |
 | `cameraView.ts` | the orthographic camera, `isometric`, the nav gizmo and its drag flag, the stand-in background, the bounds box | `CameraViewHost` |
 | `fileActions.ts` | nothing — it is behaviour: arm, rename, delete an asset or a level (ADR 0097, ADR 0110) | `FileActionsHost` |
 | `prefabActions.ts` | nothing — enter, close, unlink, save as, revert, apply (ADR 0091, ADR 0111) | `PrefabActionsHost` |
@@ -433,6 +433,24 @@ row edit to the key pitch re-lays every preview.
 | which nodes | `builtin:box` and `builtin:rounded-box` only — there scale *is* the surface (ADR 0090). A sphere has no face, and a `Keyboard` on one generates nothing, which the empty preview now shows |
 | toggle | its own button, not `Markers`: fitting platforms together is when spawn discs and rule pillars are clutter. `meshes.setCells` + a rebuild rather than setting `visible`, since three raycasts invisible objects. Hidden when the game declares no `surfaceGrid` |
 | culling | `computeBoundingSphere()` per mesh, against the instances rather than the unit quad at the origin |
+
+## The preview clock (ADR 0103, ADR 0125)
+
+**Motion** runs the level's movers and spinners in the viewport with no physics, no character and no rules. It
+poses the editor's item groups, so it goes through the **document**, where play goes through the instantiated
+frame tree.
+
+That is why it has to pose the whole tree in **one** walk. `Doc` addresses nodes by depth-first index and
+recomputes the list per call on purpose (the note at the top of `editorDoc.ts`); asking `poseOf` per index cost
+four full walks per node, each resolving every placement and baking every override, plus a separate ancestor
+climb in `motionFrameOf`. Measured at 400 nodes: 17.17 ms a frame, against 0.20 ms for `posesAt`. At 1000
+nodes, 96.32 ms against 0.21 ms.
+
+`posesAt(timeMs)` carries each parent's accumulated rotation and scale **down**, which is the product
+`motionFrameOf` rebuilds by climbing up — a depth-first list puts a parent before its children. No cache: the
+index-per-call rule is unchanged, `nodes()` is just called once instead of `4n` times. `poseOf` remains for a
+single node on demand (the Inspector's `offsetAt`), and a test pins the two to the same answer on the shapes
+ADR 0106 was about.
 
 ## Play — `src/play.ts`
 
