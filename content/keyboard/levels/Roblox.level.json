@@ -145,9 +145,9 @@
           "id": "2d23a1ab",
           "transform": {
             "position": {
-              "x": 1.8074,
-              "y": 1.1315,
-              "z": 1.334
+              "x": -236.8501,
+              "y": 95.5,
+              "z": 376.5
             },
             "scale": {
               "x": 3.2997,
@@ -5815,148 +5815,6 @@
                 "seed": 1
               }
             }
-          ],
-          "children": [
-            {
-              "id": "edf886f2",
-              "name": "boss",
-              "transform": {
-                "position": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 0
-                },
-                "scale": {
-                  "x": 1,
-                  "y": 1,
-                  "z": 1.0202
-                }
-              },
-              "components": [],
-              "children": [
-                {
-                  "id": "f1258c50",
-                  "name": "Boss",
-                  "transform": {
-                    "position": {
-                      "x": 0.0274,
-                      "y": 5.9373,
-                      "z": 0.0389
-                    },
-                    "rotation": {
-                      "x": 0,
-                      "y": 1.5708,
-                      "z": 0
-                    },
-                    "scale": {
-                      "x": 0.0166,
-                      "y": 7.0241,
-                      "z": 0.0174
-                    }
-                  },
-                  "components": [
-                    {
-                      "id": "eb7de8d5",
-                      "type": "Boss",
-                      "params": {
-                        "zone": "7371a753",
-                        "speed": 8,
-                        "turn": 360
-                      }
-                    },
-                    {
-                      "id": "60ea7460",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:capsule"
-                      }
-                    },
-                    {
-                      "id": "c0ba838f",
-                      "type": "Renderer",
-                      "params": {
-                        "material": "4a11d049f9f8e5ac"
-                      }
-                    },
-                    {
-                      "id": "ac8250d2",
-                      "type": "Collider",
-                      "params": {
-                        "shape": {
-                          "kind": "capsule",
-                          "halfHeight": 0.5,
-                          "radius": 0.5
-                        },
-                        "center": {
-                          "x": 0,
-                          "y": 0,
-                          "z": 0
-                        },
-                        "trigger": true
-                      }
-                    },
-                    {
-                      "id": "508cc286",
-                      "type": "Hazard",
-                      "params": {}
-                    }
-                  ]
-                },
-                {
-                  "id": "7371a753",
-                  "name": "zone 2",
-                  "transform": {
-                    "position": {
-                      "x": 0.0004,
-                      "y": 37.2373,
-                      "z": -0.0013
-                    },
-                    "scale": {
-                      "x": 1,
-                      "y": 78.5,
-                      "z": 1.0112
-                    }
-                  },
-                  "components": [
-                    {
-                      "id": "fc712273",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:rounded-box"
-                      }
-                    },
-                    {
-                      "id": "684d31ce",
-                      "type": "Collider",
-                      "params": {
-                        "shape": {
-                          "kind": "box",
-                          "halfExtents": {
-                            "x": 0.5,
-                            "y": 0.5,
-                            "z": 0.5
-                          }
-                        },
-                        "center": {
-                          "x": 0,
-                          "y": 0,
-                          "z": 0
-                        },
-                        "trigger": true
-                      }
-                    },
-                    {
-                      "id": "1a79cecc",
-                      "type": "Renderer",
-                      "params": {
-                        "material": ""
-                      },
-                      "enabled": false
-                    }
-                  ]
-                }
-              ]
-            }
           ]
         },
         {
@@ -11163,6 +11021,136 @@
         }
       },
       "components": []
+    },
+    {
+      "id": "b95cd432",
+      "transform": {
+        "position": {
+          "x": -136.5,
+          "y": 18,
+          "z": 356.5
+        }
+      },
+      "components": [],
+      "name": "Boss",
+      "children": [
+        {
+          "id": "864960bb",
+          "name": "Boss",
+          "transform": {
+            "position": {
+              "x": -0.0309,
+              "y": 2,
+              "z": -0.0046
+            },
+            "scale": {
+              "x": 7.2,
+              "y": 7.2,
+              "z": 7.2
+            }
+          },
+          "components": [
+            {
+              "id": "22bb73a7",
+              "type": "Boss",
+              "params": {
+                "zone": "5f732213",
+                "speed": 8,
+                "turn": 360
+              }
+            },
+            {
+              "id": "60ea7460",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:capsule"
+              }
+            },
+            {
+              "id": "c0ba838f",
+              "type": "Renderer",
+              "params": {
+                "material": "4a11d049f9f8e5ac"
+              }
+            },
+            {
+              "id": "ac8250d2",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "capsule",
+                  "halfHeight": 0.5,
+                  "radius": 0.5
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                },
+                "trigger": true
+              }
+            },
+            {
+              "id": "508cc286",
+              "type": "Hazard",
+              "params": {}
+            }
+          ]
+        },
+        {
+          "id": "5f732213",
+          "name": "Zone",
+          "transform": {
+            "position": {
+              "x": 1,
+              "y": 12.5,
+              "z": -0.75
+            },
+            "scale": {
+              "x": 101,
+              "y": 25,
+              "z": 84.5
+            }
+          },
+          "components": [
+            {
+              "id": "c66f4fd1",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "3bffcb0e",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                },
+                "trigger": true
+              }
+            },
+            {
+              "id": "6f0a89ae",
+              "type": "Renderer",
+              "params": {
+                "material": ""
+              },
+              "enabled": false
+            }
+          ]
+        }
+      ]
     }
   ],
   "prefabs": {
