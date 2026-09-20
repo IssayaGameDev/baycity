@@ -8888,6 +8888,11 @@
                 "seed": 1
               },
               "enabled": false
+            },
+            {
+              "id": "edd693c4",
+              "type": "Hazard",
+              "params": {}
             }
           ]
         }
