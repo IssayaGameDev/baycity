@@ -8408,9 +8408,9 @@
           "name": "Platform",
           "transform": {
             "position": {
-              "x": -58.6868,
+              "x": -64.6868,
               "y": -9.6383,
-              "z": 11.4145
+              "z": -4.5855
             },
             "rotation": {
               "x": 0,
@@ -8676,9 +8676,9 @@
           "name": "Platform",
           "transform": {
             "position": {
-              "x": -94.1868,
-              "y": -8.6383,
-              "z": 10.9145
+              "x": -94.6868,
+              "y": -9.3883,
+              "z": -4.5855
             },
             "rotation": {
               "x": 0,
@@ -8687,7 +8687,7 @@
             },
             "scale": {
               "x": 8.8,
-              "y": 8.4,
+              "y": 8.9,
               "z": 11.2
             }
           },
@@ -8744,7 +8744,7 @@
           "transform": {
             "position": {
               "x": -118.1868,
-              "y": -9.1383,
+              "y": -9.3883,
               "z": 10.9145
             },
             "rotation": {
@@ -8754,7 +8754,7 @@
             },
             "scale": {
               "x": 8.8,
-              "y": 8.4,
+              "y": 8.9,
               "z": 11.2
             }
           },
@@ -11024,73 +11024,6 @@
               "enabled": false
             }
           ]
-        }
-      ]
-    },
-    {
-      "id": "78812405",
-      "name": "Platform",
-      "transform": {
-        "position": {
-          "x": -285,
-          "y": 0,
-          "z": 438
-        },
-        "rotation": {
-          "x": 0,
-          "y": -1.5708,
-          "z": 0
-        },
-        "scale": {
-          "x": 8.8,
-          "y": 0.5,
-          "z": 11.2
-        }
-      },
-      "components": [
-        {
-          "id": "4efea79f",
-          "type": "Collider",
-          "params": {
-            "shape": {
-              "kind": "box",
-              "halfExtents": {
-                "x": 0.5,
-                "y": 0.5,
-                "z": 0.5
-              }
-            },
-            "center": {
-              "x": 0,
-              "y": 0,
-              "z": 0
-            }
-          }
-        },
-        {
-          "id": "3e3c1b7c",
-          "type": "Mesh",
-          "params": {
-            "model": "builtin:box"
-          }
-        },
-        {
-          "id": "0e9126ea",
-          "type": "Renderer",
-          "params": {
-            "material": "55205761e38bc929"
-          }
-        },
-        {
-          "id": "ecb4beae",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 1
-          }
         }
       ]
     }
