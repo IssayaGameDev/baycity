@@ -512,12 +512,12 @@
           "transform": {
             "position": {
               "x": 0,
-              "y": -1,
+              "y": -5.5,
               "z": 28.5
             },
             "scale": {
               "x": 24,
-              "y": 1,
+              "y": 10,
               "z": 3
             }
           },
@@ -571,12 +571,12 @@
           "transform": {
             "position": {
               "x": 0,
-              "y": -1,
+              "y": -5.5,
               "z": 33
             },
             "scale": {
               "x": 24,
-              "y": 1,
+              "y": 10,
               "z": 3
             }
           },
@@ -630,12 +630,12 @@
           "transform": {
             "position": {
               "x": 0,
-              "y": -1,
+              "y": -5.5,
               "z": 40.5
             },
             "scale": {
               "x": 24,
-              "y": 1,
+              "y": 10,
               "z": 9
             }
           },
@@ -689,12 +689,12 @@
           "transform": {
             "position": {
               "x": 0,
-              "y": -1,
+              "y": -5.5,
               "z": 48
             },
             "scale": {
               "x": 24,
-              "y": 1,
+              "y": 10,
               "z": 2
             }
           },
@@ -748,12 +748,12 @@
           "transform": {
             "position": {
               "x": 0,
-              "y": -1,
+              "y": -5.5,
               "z": 52
             },
             "scale": {
               "x": 24,
-              "y": 1,
+              "y": 10,
               "z": 2
             }
           },
@@ -807,12 +807,12 @@
           "transform": {
             "position": {
               "x": 0,
-              "y": -1,
+              "y": -5.5,
               "z": 61
             },
             "scale": {
               "x": 24,
-              "y": 1,
+              "y": 10,
               "z": 10
             }
           },
@@ -922,8 +922,8 @@
           "transform": {
             "position": {
               "x": 12.5,
-              "y": 3,
-              "z": 39.75
+              "y": -1.5001,
+              "z": 39.5
             },
             "rotation": {
               "x": 1.5708,
@@ -931,9 +931,9 @@
               "z": 1.5708
             },
             "scale": {
-              "x": 52.5001,
+              "x": 53,
               "y": 1,
-              "z": 9
+              "z": 18.0002
             }
           },
           "components": [
@@ -1034,7 +1034,7 @@
           "transform": {
             "position": {
               "x": -12.5,
-              "y": 3,
+              "y": -1.5001,
               "z": 39.75
             },
             "rotation": {
@@ -1045,7 +1045,7 @@
             "scale": {
               "x": 52.5,
               "y": 1,
-              "z": 9
+              "z": 18.0002
             }
           },
           "components": [
@@ -1090,13 +1090,13 @@
           "transform": {
             "position": {
               "x": 0,
-              "y": -1,
-              "z": 20
+              "y": -5.5,
+              "z": 19.75
             },
             "scale": {
               "x": 24,
-              "y": 1,
-              "z": 12
+              "y": 10,
+              "z": 12.5
             }
           },
           "components": [
@@ -1193,6 +1193,75 @@
               }
             }
           ]
+        },
+        {
+          "id": "8c9d658d",
+          "name": "Lava",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": -7.75,
+              "z": 39.5
+            },
+            "scale": {
+              "x": 24,
+              "y": 5.5,
+              "z": 51
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "f0392856",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:box"
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "material": "4a11d049f9f8e5ac"
+              }
+            },
+            {
+              "id": "b1c5b807",
+              "type": "Hazard",
+              "params": {}
+            }
+          ]
+        },
+        {
+          "id": "87dd2d2e",
+          "name": "InterLevel",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": -1,
+              "z": 73.5
+            }
+          },
+          "components": [],
+          "prefab": "f8977c969798fd96"
         }
       ]
     }
