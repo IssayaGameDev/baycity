@@ -1,6 +1,6 @@
 # Humanoid ground controller (`@mp/humanoid`)
 
-`packages/humanoid/src/groundController.ts`. One kinematic-capsule controller: fixed-apex jump, time-based ground accel/brake, force-limited air control, riding moving surfaces (ADR 0012), following the ground it stands on (ADR 0121). Client-authoritative, run by each client for its own body (ADR 0011). Reached by a game through `createLocomotion` (ADR 0061); not "the" platform controller (ADR 0062).
+`packages/humanoid/src/groundController.ts`. One kinematic-capsule controller: fixed-apex jump, time-based ground accel/brake, force-limited air control, riding moving surfaces (ADR 0012), following the ground it stands on (ADR 0127). Client-authoritative, run by each client for its own body (ADR 0011). Reached by a game through `createLocomotion` (ADR 0061); not "the" platform controller (ADR 0062).
 
 ## Moving the character from outside (ADR 0100)
 
@@ -69,7 +69,7 @@ Gravity scale is chosen from `vy` at tick start, only when airborne (`under === 
 | `jumpBuffer` | s | press pending; refilled while `cmd.jump`, spent on fire |
 | `jumpCut` | boolean | current rise is a player jump cuttable by release; cleared by cut, launch, landing |
 | `liftVel`, `liftStore` | `Vec3`, s | last ride velocity and how long it stays on offer |
-| `slopeReach` | m | extra ground-probe reach, = last tick's step length if that step descended a slope, else 0 (ADR 0121) |
+| `slopeReach` | m | extra ground-probe reach, = last tick's step length if that step descended a slope, else 0 (ADR 0127) |
 
 Constructors: `addCharacter(world, spawn, layers?)`, `addCharacterWith(world, spawn, opts)` (tests/experiments). `playerSpawn(id)` — deterministic fallback ring (r 5 m, y 2).
 
@@ -107,8 +107,8 @@ Step order:
 
    Which ceiling is decided by the component of the needed change along the direction of travel, not by comparing magnitudes: halfway through a reversal the target is larger than what is left, so magnitudes would read it as a start and let it round at the uncapped rate. A turn at speed is therefore braking, which is the point (ADR 0096). Uncapped is not instant — the time-based rate still applies.
 6. Leaving adds ride velocity (`ride/dt`, or `liftVel` from a coyote jump). Impulse added, zeroed.
-6b. **Slope following** (ADR 0121). Not riding, with footing that is staying put (`settling`) and `state.grounded` as of last tick, the vertical carries what keeps the soles on the probe's plane: `slopeDy = −(n.x·dx + n.z·dz) / n.y`, added to the settling press. Zero while airborne, leaving or rising, so no arc and no envelope number moves. `n.y` needs no guard — `probeGround` rejects anything flatter than the 50° limit.
-7. `body.move(desired, snapAtLeast)`: own `v·dt` + ride delta horizontally; **riding, the vertical seats the soles on the probe contact** (`under.point.y + 0.02 − feetY`, ADR 0105) rather than repeating the anchor's motion, which is what stopped a boarding gap being carried. Not riding, `slopeDy` plus the trapezoid `½(v₀+v₁)·dt`, except when settling where the press is `vy·dt`. Descending a slope, `snapAtLeast` is the step's own length and is also stored in `slopeReach` for next tick's probe: the resolve intermittently returns part of a step, and snap-to-ground is the only thing that absorbs the remainder (ADR 0121).
+6b. **Slope following** (ADR 0127). Not riding, with footing that is staying put (`settling`) and `state.grounded` as of last tick, the vertical carries what keeps the soles on the probe's plane: `slopeDy = −(n.x·dx + n.z·dz) / n.y`, added to the settling press. Zero while airborne, leaving or rising, so no arc and no envelope number moves. `n.y` needs no guard — `probeGround` rejects anything flatter than the 50° limit.
+7. `body.move(desired, snapAtLeast)`: own `v·dt` + ride delta horizontally; **riding, the vertical seats the soles on the probe contact** (`under.point.y + 0.02 − feetY`, ADR 0105) rather than repeating the anchor's motion, which is what stopped a boarding gap being carried. Not riding, `slopeDy` plus the trapezoid `½(v₀+v₁)·dt`, except when settling where the press is `vy·dt`. Descending a slope, `snapAtLeast` is the step's own length and is also stored in `slopeReach` for next tick's probe: the resolve intermittently returns part of a step, and snap-to-ground is the only thing that absorbs the remainder (ADR 0127).
 8. Update `carry`, `grounded`, `coyote`, `liftVel/liftStore`; ceiling cancels rise; `base` re-anchored.
 
 ### `approachVec` (ADR 0078)
@@ -143,7 +143,7 @@ Moves `(vx, vz)` toward the target by at most `maxDelta` **along the difference 
 
 The `DEFAULT_TUNING` comment quoting a 3.6 m gap predates ADR 0041; the current envelope run gives the numbers above (autostep 0.45 m).
 
-## Slopes (ADR 0121)
+## Slopes (ADR 0127)
 
 A grounded character follows the surface under it. **Speed is unchanged** going up, down and flat: no gravity
 gain downhill, no cost uphill, because in keyboard Max Speed is what a Level buys and a hill that moved it
@@ -164,7 +164,7 @@ Above the authored curve the tick is the limit, not the slope: at 283 m/s a step
 capsule, and on 25° and steeper the capsule tunnels through. Sub-stepping does not help (measured worse),
 the same wall ADR 0104 hit from the platform side.
 
-Before ADR 0121, for comparison: running down 30° gave 41 % of ticks airborne at 5.5 m/s, 90 % at 30 m/s,
+Before ADR 0127, for comparison: running down 30° gave 41 % of ticks airborne at 5.5 m/s, 90 % at 30 m/s,
 and one 155 m launch at 283 m/s; uphill the capsule sat 0.05–0.30 m inside the surface, and below 17.5° it
 went through.
 

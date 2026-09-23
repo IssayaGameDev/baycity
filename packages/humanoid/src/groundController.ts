@@ -287,7 +287,7 @@ export interface CharacterState {
   liftStore: number
   /**
    * How far below the soles the ground probe may look, beyond its default reach, because last tick was
-   * spent descending a slope (ADR 0121). The length of that step, or 0.
+   * spent descending a slope (ADR 0127). The length of that step, or 0.
    *
    * A descent's resolve occasionally comes up short, and the leftover gap can be wider than the probe's
    * own 0.4 m: footing is lost while the character is in fact a few centimetres off a hill it is running
@@ -796,7 +796,7 @@ export const stepCharacter = (
    */
   const seatY = riding && under !== undefined ? under.point.y + SEAT_OFFSET - feetY : undefined
   /**
-   * **Following the ground instead of running off the front of it** (ADR 0121).
+   * **Following the ground instead of running off the front of it** (ADR 0127).
    *
    * Velocity is flat: `vx`/`vz` and nothing else, so on a slope every tick asked to move *horizontally* off a
    * surface that is going down. The only thing holding the capsule to the hill was Rapier's snap-to-ground,
@@ -830,7 +830,7 @@ export const stepCharacter = (
    * `under.normal.y` needs no guard: `probeGround` returns nothing for a normal flatter than the 50° climb
    * limit, so anything here is floor.
    *
-   * Speed is not touched, by decision (ADR 0121): downhill grants none and uphill costs none, because Max
+   * Speed is not touched, by decision (ADR 0127): downhill grants none and uphill costs none, because Max
    * Speed is what a Level buys and a hill that gives or takes speed moves a stage's gate.
    */
   const slopeDy =

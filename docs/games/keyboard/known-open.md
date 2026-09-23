@@ -6,7 +6,7 @@ What the game lacks or has unresolved, in one place. Each item names the doc or 
 
 - **The click sound.** No audio system exists anywhere in the stack. The biggest feedback gap (ADR 0069).
 - **Speed picker.** The real game lets you run below Max Speed. Only a debug stand-in exists ([debug.md](debug.md)).
-- **A climb penalty.** Slopes cost and grant no speed (ADR 0121). Kodjo wants going uphill to slow you
+- **A climb penalty.** Slopes cost and grant no speed (ADR 0127). Kodjo wants going uphill to slow you
   eventually; it is not built, and it would need every built stage re-checked against its speed gate.
 - **Treadmill lock/unlock.** Every placed treadmill is usable (ADR 0080).
 - **Rebirth, trails, auras, more worlds.** Not started.
@@ -20,7 +20,7 @@ What the game lacks or has unresolved, in one place. Each item names the doc or 
   on them; the look is Kodjo's to judge.
 - **Slopes past the authored curve.** Footing holds across 10°–45° up to 58.8 m/s (Level 100), and two cells
   at that top speed still blip 0.2–0.7 m. Beyond it a step is metres long and the capsule tunnels through a
-  hill — the tick, not the slope (ADR 0121, ADR 0104). Only reachable above Level 100.
+  hill — the tick, not the slope (ADR 0127, ADR 0104). Only reachable above Level 100.
 - **Saves reset per share link** — the origin changes each run (ADR 0074). Real hosting is the fix.
 - **Signs are built once**; a pad edited live keeps its old sign until reload (ADR 0082).
 - **The editor does not render keycaps**; a board is a plain box there (ADR 0069).
