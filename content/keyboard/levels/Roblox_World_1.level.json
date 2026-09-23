@@ -4955,6 +4955,65 @@
           }
         }
       ]
+    },
+    {
+      "id": "eeaf2be9",
+      "name": "Ground",
+      "transform": {
+        "position": {
+          "x": -66,
+          "y": -1.25,
+          "z": 446.5
+        },
+        "scale": {
+          "x": 186,
+          "y": 10.5,
+          "z": 50
+        }
+      },
+      "components": [
+        {
+          "id": "e94eb0e6",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "f0392856",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:box"
+          }
+        },
+        {
+          "id": "efa7dd05",
+          "type": "Renderer",
+          "params": {
+            "material": ""
+          }
+        },
+        {
+          "id": "93eb0bc1",
+          "type": "Keyboard",
+          "params": {
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1
+          }
+        }
+      ]
     }
   ]
 }
