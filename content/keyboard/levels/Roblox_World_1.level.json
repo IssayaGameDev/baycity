@@ -270,7 +270,12 @@
             }
           ]
         }
-      ]
+      ],
+      "overrides": {
+        "dd138869": {
+          "nodeEnabled": false
+        }
+      }
     },
     {
       "id": "55fd325f",
@@ -1261,7 +1266,62 @@
             }
           },
           "components": [],
-          "prefab": "f8977c969798fd96"
+          "prefab": "f8977c969798fd96",
+          "children": [
+            {
+              "id": "e8a157cf",
+              "name": "treadmill +1",
+              "transform": {
+                "position": {
+                  "x": 4.5,
+                  "y": 1.25,
+                  "z": 0.5
+                },
+                "scale": {
+                  "x": 3,
+                  "y": 0.5,
+                  "z": 3
+                }
+              },
+              "components": [
+                {
+                  "id": "c0",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "mesh",
+                  "type": "Mesh",
+                  "params": {
+                    "model": "builtin:rounded-box"
+                  }
+                },
+                {
+                  "id": "c1",
+                  "type": "Renderer",
+                  "params": {
+                    "material": "d67ddcac4f57efc8"
+                  }
+                },
+                {
+                  "id": "c2",
+                  "type": "Treadmill",
+                  "params": {
+                    "multiplier": 1
+                  }
+                }
+              ]
+            }
+          ]
         }
       ]
     }
