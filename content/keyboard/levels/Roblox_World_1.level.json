@@ -5125,8 +5125,8 @@
               "name": "Wall",
               "transform": {
                 "position": {
-                  "x": 27.5,
-                  "y": 4.9992,
+                  "x": 27.5001,
+                  "y": -10.0007,
                   "z": 17.5001
                 },
                 "rotation": {
@@ -5353,9 +5353,9 @@
       "name": "InterLevel",
       "transform": {
         "position": {
-          "x": -166.5,
+          "x": -181,
           "y": 3.5,
-          "z": 438.5
+          "z": 439
         },
         "rotation": {
           "x": 0,
@@ -5371,13 +5371,72 @@
       "name": "Obstacle 7",
       "transform": {
         "position": {
-          "x": -174,
+          "x": -254,
           "y": 3.5,
           "z": 438.5
         }
       },
       "components": [],
       "children": [
+        {
+          "id": "aafa2ce7",
+          "name": "Ground",
+          "transform": {
+            "position": {
+              "x": -50.5,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 101,
+              "y": 1,
+              "z": 13
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "f0392856",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:box"
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "material": ""
+              }
+            },
+            {
+              "id": "93eb0bc1",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1
+              }
+            }
+          ]
+        },
         {
           "id": "7b16d1b8",
           "transform": {
@@ -5402,8 +5461,8 @@
               "transform": {
                 "position": {
                   "x": -21.5,
-                  "y": -0.0004,
-                  "z": -67.4991
+                  "y": -0.0005,
+                  "z": -50.9991
                 },
                 "rotation": {
                   "x": 1.5708,
@@ -5412,7 +5471,7 @@
                 },
                 "scale": {
                   "x": 29,
-                  "y": 132.9986,
+                  "y": 99.9986,
                   "z": 49.9988
                 }
               },
@@ -5458,8 +5517,8 @@
               "transform": {
                 "position": {
                   "x": 21.5,
-                  "y": 0.0002,
-                  "z": -67.4991
+                  "y": 0.0001,
+                  "z": -50.7491
                 },
                 "rotation": {
                   "x": 1.5708,
@@ -5468,7 +5527,7 @@
                 },
                 "scale": {
                   "x": 29,
-                  "y": 132.9986,
+                  "y": 100,
                   "z": 50
                 }
               },
@@ -5511,6 +5570,57 @@
           ]
         }
       ]
+    },
+    {
+      "id": "0177e3ae",
+      "name": "InterLevel",
+      "transform": {
+        "position": {
+          "x": -361.5,
+          "y": 3.5,
+          "z": 438.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": -1.5708,
+          "z": 0
+        }
+      },
+      "components": [],
+      "prefab": "7b146287b66c6a52",
+      "overrides": {
+        "d1d3088a": {
+          "transform": {
+            "position": {
+              "x": 0.5001,
+              "y": 1.5,
+              "z": 0
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 1.5708
+            },
+            "scale": {
+              "x": 15,
+              "y": 1,
+              "z": 9
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "cd316813",
+      "name": "obstacle 8",
+      "transform": {
+        "position": {
+          "x": -369,
+          "y": 2.5,
+          "z": 439
+        }
+      },
+      "components": []
     }
   ]
 }
