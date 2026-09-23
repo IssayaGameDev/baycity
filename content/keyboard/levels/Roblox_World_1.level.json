@@ -5620,33 +5620,58 @@
         }
       },
       "components": [],
+      "prefab": "66e24dff3a514b74",
       "children": [
         {
-          "id": "426d09da",
+          "id": "f573b4a4",
           "name": "platform",
           "transform": {
             "position": {
-              "x": -1.5,
-              "y": 0.15,
+              "x": 0,
+              "y": 0,
               "z": 0
             },
             "scale": {
               "x": 3,
               "y": 0.3,
-              "z": 5
+              "z": 3
             }
           },
           "components": [
             {
-              "id": "572297af",
-              "type": "Keyboard",
+              "id": "a69d5bc8",
+              "type": "Collider",
               "params": {
-                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                "seed": 1
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "79d97b31",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "e5c7feb7",
+              "type": "Renderer",
+              "params": {
+                "material": ""
               }
             }
-          ],
-          "prefab": "86d604d0603125b8"
+          ]
         }
       ]
     },
@@ -5661,7 +5686,7 @@
         },
         "rotation": {
           "x": 0,
-          "y": -1.5708,
+          "y": 1.5708,
           "z": 0
         }
       },
@@ -5718,6 +5743,23 @@
               "y": 12.0012,
               "z": 9.5
             }
+          }
+        },
+        "c65ac1fb": {
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 16,
+              "y": 1,
+              "z": 15
+            }
+          },
+          "enabled": {
+            "93eb0bc1": true
           }
         }
       }
