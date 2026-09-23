@@ -111,10 +111,19 @@ export const createPickTool = (host: PickHost) => {
   const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
   let downX = 0
   let downY = 0
+  /**
+   * A release that chose a face, so the selection click below must let it past (ADR 0129).
+   *
+   * Both handlers are on the canvas and both fire. The selection one re-selects the box the face is on, and
+   * every selection change clears the chosen face — so choosing one and losing it happened on the same click,
+   * the plates went out, and the next press found nothing to pull and orbited instead.
+   */
+  let faceClickTaken = false
   host.canvas.addEventListener('pointerdown', (e) => {
     downX = e.clientX
     downY = e.clientY
     host.setDragged(false)
+    faceClickTaken = false
     if (e.button !== 0 || host.playing() || host.tool() !== 'face') return
     /**
      * **A press only pulls the face that is already chosen** (ADR 0129).
@@ -165,6 +174,9 @@ export const createPickTool = (host: PickHost) => {
     const found = faceUnder(e.clientX, e.clientY)
     // A face under the pointer is chosen; anywhere else clears, which is the only way back to none.
     chooseFace(found === null ? null : facesForSelection(found.index, found.face))
+    // Taken only when it landed on a face. A click on empty space or on a box that is not selected has to
+    // reach the selection click, which is still how you choose what to work on while the tool is active.
+    faceClickTaken = found !== null
   })
 
   /* ============================ pulling a face (ADR 0119) ============================ */
@@ -519,6 +531,7 @@ export const createPickTool = (host: PickHost) => {
     if (e.button !== 0) return
     if (host.playing()) return // editing suspended during play (pointer = camera only)
     if (host.dragged()) return // was dragging the gizmo, not a click
+    if (faceClickTaken) return // chose a face; re-selecting its box here would clear the choice again
     if (Math.hypot(e.clientX - downX, e.clientY - downY) > CLICK_SLOP) return // was an orbit drag
     castFrom(e.clientX, e.clientY)
 
