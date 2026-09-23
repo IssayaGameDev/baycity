@@ -780,12 +780,12 @@
         "position": {
           "x": 0,
           "y": -1,
-          "z": 0
+          "z": 0.5
         },
         "scale": {
           "x": 30,
           "y": 1,
-          "z": 30
+          "z": 31
         }
       },
       "components": [
@@ -812,7 +812,7 @@
           "id": "f0392856",
           "type": "Mesh",
           "params": {
-            "model": "builtin:rounded-box"
+            "model": "builtin:box"
           }
         },
         {
@@ -876,7 +876,7 @@
           "id": "f0392856",
           "type": "Mesh",
           "params": {
-            "model": "builtin:rounded-box"
+            "model": "builtin:box"
           }
         },
         {
@@ -927,7 +927,7 @@
           "id": "f0392856",
           "type": "Mesh",
           "params": {
-            "model": "builtin:rounded-box"
+            "model": "builtin:box"
           }
         },
         {
@@ -983,7 +983,7 @@
           "id": "f0392856",
           "type": "Mesh",
           "params": {
-            "model": "builtin:rounded-box"
+            "model": ""
           }
         },
         {
@@ -1039,7 +1039,7 @@
           "id": "f0392856",
           "type": "Mesh",
           "params": {
-            "model": "builtin:rounded-box"
+            "model": "builtin:box"
           }
         },
         {

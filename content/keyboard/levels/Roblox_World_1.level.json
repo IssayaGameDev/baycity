@@ -90,7 +90,7 @@
               "id": "f0392856",
               "type": "Mesh",
               "params": {
-                "model": "builtin:rounded-box"
+                "model": "builtin:box"
               }
             },
             {
@@ -146,7 +146,7 @@
               "id": "f0392856",
               "type": "Mesh",
               "params": {
-                "model": "builtin:rounded-box"
+                "model": "builtin:box"
               }
             },
             {
@@ -202,7 +202,7 @@
               "id": "f0392856",
               "type": "Mesh",
               "params": {
-                "model": "builtin:rounded-box"
+                "model": "builtin:box"
               }
             },
             {
@@ -258,7 +258,7 @@
               "id": "f0392856",
               "type": "Mesh",
               "params": {
-                "model": "builtin:rounded-box"
+                "model": "builtin:box"
               }
             },
             {
@@ -270,38 +270,7 @@
             }
           ]
         }
-      ],
-      "overrides": {
-        "a1f94a2c": {
-          "transform": {
-            "position": {
-              "x": 0,
-              "y": -1,
-              "z": 0.5
-            },
-            "scale": {
-              "x": 30,
-              "y": 1,
-              "z": 31
-            }
-          },
-          "params": {
-            "f0392856": {
-              "model": "builtin:box"
-            },
-            "e94eb0e6": {
-              "shape": {
-                "kind": "box",
-                "halfExtents": {
-                  "x": 0.5,
-                  "y": 0.5,
-                  "z": 0.5
-                }
-              }
-            }
-          }
-        }
-      }
+      ]
     },
     {
       "id": "55fd325f",
@@ -322,7 +291,7 @@
             "position": {
               "x": -7.5,
               "y": 7,
-              "z": 11
+              "z": 6.25
             },
             "rotation": {
               "x": 1.5708,
@@ -330,7 +299,7 @@
               "z": 1.5708
             },
             "scale": {
-              "x": 25,
+              "x": 15.5,
               "y": 1,
               "z": 17.0001
             }
@@ -378,7 +347,7 @@
             "position": {
               "x": 7.5,
               "y": 7,
-              "z": 11
+              "z": 6.25
             },
             "rotation": {
               "x": 1.5708,
@@ -386,7 +355,7 @@
               "z": 1.5708
             },
             "scale": {
-              "x": 25,
+              "x": 15.5001,
               "y": 1,
               "z": 17.0001
             }
@@ -429,17 +398,17 @@
         },
         {
           "id": "c1d8dc52",
-          "name": "Wall",
+          "name": "Ground",
           "transform": {
             "position": {
-              "x": -0.5,
+              "x": 0,
               "y": -1,
-              "z": 7.5
+              "z": 6.375
             },
             "scale": {
-              "x": 25,
+              "x": 16,
               "y": 1,
-              "z": 17.0001
+              "z": 15
             }
           },
           "components": [
@@ -482,6 +451,57 @@
               "params": {
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                 "seed": 1
+              }
+            }
+          ]
+        },
+        {
+          "id": "14a2d303",
+          "name": "Ceilling",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 15,
+              "z": 6.5
+            },
+            "scale": {
+              "x": 16,
+              "y": 1,
+              "z": 15
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "f0392856",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:box"
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "material": ""
               }
             }
           ]
