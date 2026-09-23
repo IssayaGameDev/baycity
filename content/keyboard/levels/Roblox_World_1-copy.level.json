@@ -5697,6 +5697,71 @@
           }
         }
       }
+    },
+    {
+      "id": "48cab871",
+      "name": "Obstacle 8",
+      "transform": {
+        "position": {
+          "x": -369,
+          "y": 3,
+          "z": 438.5
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "82ab961b",
+          "name": "platform",
+          "transform": {
+            "position": {
+              "x": -1,
+              "y": 0.15,
+              "z": 0
+            },
+            "scale": {
+              "x": 3,
+              "y": 0.3,
+              "z": 3
+            }
+          },
+          "components": [
+            {
+              "id": "bbe53ca1",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "131fb4a2",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "ac003518",
+              "type": "Renderer",
+              "params": {
+                "material": ""
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "prefabs": {
