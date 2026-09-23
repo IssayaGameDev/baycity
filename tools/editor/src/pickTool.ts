@@ -39,6 +39,11 @@ const r4 = (n: number): number => Math.round(n * 1e4) / 1e4
  */
 const MATCH_FACE_BY_WORLD_DIRECTION = true
 
+/** How far a press may travel and still be a click rather than an orbit. */
+const CLICK_SLOP = 4
+
+const sameFace = (a: Face, b: Face): boolean => a.axis === b.axis && a.sign === b.sign
+
 /** What the pointer needs from the editor around it. */
 export interface PickHost {
   canvas: HTMLCanvasElement
@@ -88,6 +93,19 @@ export interface PickHost {
 }
 
 export const createPickTool = (host: PickHost) => {
+  /**
+   * **The face that is chosen, and stays chosen** (ADR 0129).
+   *
+   * Kodjo asked for the face to survive the pointer leaving it: click to choose, drag to pull, click away to
+   * let go. That reverses ADR 0119's "the face is the handle" — a pull is two gestures now rather than one —
+   * and he took that cost knowingly, because a highlight that vanishes the moment you look elsewhere cannot
+   * be checked before you commit to a drag.
+   *
+   * The whole matched set, not one face: the drag moves one face on every selected box (ADR 0128), so what
+   * is chosen has to be the same set, or the plates would promise less than the drag delivers. `faces[0]` is
+   * the one that was clicked.
+   */
+  let chosen: { dir: THREE.Vector3; faces: { index: number; face: Face }[] } | null = null
   const raycaster = new THREE.Raycaster()
   const ndc = new THREE.Vector2()
   const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
@@ -97,12 +115,24 @@ export const createPickTool = (host: PickHost) => {
     downX = e.clientX
     downY = e.clientY
     host.setDragged(false)
-    // Face mode claims a left press on a face of the selected box (ADR 0119). Orbit is suppressed for the drag
-    // and `host.dragged()` marks it, so the pointerup that follows is not read as a click that changes selection.
-    if (e.button === 0 && !host.playing() && host.tool() === 'face' && beginFacePull(e.clientX, e.clientY)) {
-      host.setDragged(true)
-      host.controls.enabled = false
-      host.canvas.setPointerCapture(e.pointerId)
+    if (e.button !== 0 || host.playing() || host.tool() !== 'face') return
+    /**
+     * **A press only pulls the face that is already chosen** (ADR 0129).
+     *
+     * Face selection is a click of its own now, so a press somewhere else is not a pull: it is the start of
+     * either choosing a different face or losing the one held. Deciding here rather than on release is what
+     * lets the drag begin on the same press, so a chosen face still pulls in one motion.
+     *
+     * Orbit is suppressed for the drag and `host.dragged()` marks it, so the pointerup that follows is not
+     * read as a click that changes selection.
+     */
+    const found = faceUnder(e.clientX, e.clientY)
+    if (found !== null && chosen !== null && chosen.faces[0]?.index === found.index && sameFace(chosen.faces[0].face, found.face)) {
+      if (beginFacePull(e.clientX, e.clientY, chosen)) {
+        host.setDragged(true)
+        host.controls.enabled = false
+        host.canvas.setPointerCapture(e.pointerId)
+      }
     }
   })
 
@@ -112,6 +142,9 @@ export const createPickTool = (host: PickHost) => {
       moveFacePull(e.clientX, e.clientY)
       return
     }
+    // A chosen face owns the plates; the hover preview only runs when nothing is chosen, so there is never
+    // more than one set of faces lit and no question about which of them a drag would move.
+    if (chosen !== null) return
     const found = faceUnder(e.clientX, e.clientY)
     const matched = found === null ? null : facesForSelection(found.index, found.face)
     if (matched === null) hideFacePlates()
@@ -119,10 +152,19 @@ export const createPickTool = (host: PickHost) => {
   })
 
   host.canvas.addEventListener('pointerup', (e) => {
-    if (facePull === null) return
-    endFacePull()
-    host.controls.enabled = true
-    if (host.canvas.hasPointerCapture(e.pointerId)) host.canvas.releasePointerCapture(e.pointerId)
+    if (facePull !== null) {
+      endFacePull()
+      host.controls.enabled = true
+      if (host.canvas.hasPointerCapture(e.pointerId)) host.canvas.releasePointerCapture(e.pointerId)
+      return
+    }
+    if (e.button !== 0 || host.playing() || host.tool() !== 'face') return
+    // A click, not the end of an orbit: a press that travelled is the camera being moved, and must not
+    // change what is chosen. The same slop the selection click uses.
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) > CLICK_SLOP) return
+    const found = faceUnder(e.clientX, e.clientY)
+    // A face under the pointer is chosen; anywhere else clears, which is the only way back to none.
+    chooseFace(found === null ? null : facesForSelection(found.index, found.face))
   })
 
   /* ============================ pulling a face (ADR 0119) ============================ */
@@ -242,6 +284,13 @@ export const createPickTool = (host: PickHost) => {
     return face === null ? null : { index: best.index, face, hit: best.hit }
   }
 
+  /** Choose a matched set of faces, or `null` to let go of the one held. */
+  const chooseFace = (next: { dir: THREE.Vector3; faces: { index: number; face: Face }[] } | null): void => {
+    chosen = next
+    if (next === null) hideFacePlates()
+    else showFaceHovers(next.faces)
+  }
+
   /** Lay one plate over one box's face, sized to it. */
   const placePlate = (plate: THREE.Mesh, index: number, face: Face): boolean => {
     const g = host.groupAt(index)
@@ -346,14 +395,17 @@ export const createPickTool = (host: PickHost) => {
     }
   }
 
-  /** Begin a pull. `false` when there is no face under the pointer, so the caller falls through to selection. */
-  const beginFacePull = (clientX: number, clientY: number): boolean => {
-    const found = faceUnder(clientX, clientY)
-    if (found === null || host.doc() === null) return false
-    const g = host.groupAt(found.index)
+  /**
+   * Begin a pull on the set already chosen and drawn, so what is lit is exactly what moves.
+   *
+   * `false` when the press cannot become a drag, and the caller falls through to selection.
+   */
+  const beginFacePull = (clientX: number, clientY: number, matched: { dir: THREE.Vector3; faces: { index: number; face: Face }[] }): boolean => {
+    const first = matched.faces[0]
+    if (first === undefined || host.doc() === null) return false
+    const g = host.groupAt(first.index)
     if (g === undefined) return false
-    const matched = facesForSelection(found.index, found.face)
-    if (matched === null) return false
+    castFrom(clientX, clientY)
     g.updateWorldMatrix(true, false)
     const pos = new THREE.Vector3()
     g.matrixWorld.decompose(pos, new THREE.Quaternion(), new THREE.Vector3())
@@ -369,7 +421,7 @@ export const createPickTool = (host: PickHost) => {
     }
     if (targets.length === 0) return false
 
-    facePull = { targets, origin: pos.clone(), dir: matched.dir, t0, primary: found.index, primaryFace: found.face, last: 0 }
+    facePull = { targets, origin: pos.clone(), dir: matched.dir, t0, primary: first.index, primaryFace: first.face, last: 0 }
     host.edits().beginDrag()
     return true
   }
@@ -467,7 +519,7 @@ export const createPickTool = (host: PickHost) => {
     if (e.button !== 0) return
     if (host.playing()) return // editing suspended during play (pointer = camera only)
     if (host.dragged()) return // was dragging the gizmo, not a click
-    if (Math.hypot(e.clientX - downX, e.clientY - downY) > 4) return // was an orbit drag
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) > CLICK_SLOP) return // was an orbit drag
     castFrom(e.clientX, e.clientY)
 
     // Placement mode: drop the chosen palette entry on the surface (or ground plane).
@@ -535,6 +587,10 @@ export const createPickTool = (host: PickHost) => {
     /** The world point on the surface under a client position, or on the ground plane. */
     surfaceUnder,
     /** Clear the face highlight — leaving the face tool, or entering play. */
-    clearFaceHover: () => hideFacePlates(),
+    /** Tool change, or a selection that no longer contains the chosen box: the choice goes with it. */
+    clearFaceHover: () => {
+      chosen = null
+      hideFacePlates()
+    },
   }
 }

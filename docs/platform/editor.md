@@ -486,14 +486,20 @@ The game's own code, not a copy (ADR 0052):
 
 Esc / pointer-lock loss exits play; play stops track preview.
 
-## Pulling a face (ADR 0119)
+## Pulling a face (ADR 0119, amended by 0128 and 0129)
 
-A fourth tool, **Face**: hover the selected box and the face under the pointer lights up; drag it and that
-face moves along its own normal while the opposite one stays. The scale tool grows a box about its centre, so
-both faces move — which is why a wall butted against a floor edge came away from it.
+A fourth tool, **Face**: click a face on a selected box and it stays lit; drag it and that face moves along
+its own normal while the opposite one stays. The scale tool grows a box about its centre, so both faces move —
+which is why a wall butted against a floor edge came away from it.
 
-The face is the handle, so there is nothing to aim at. No shortcut (the useful letters are taken). Not a
-`TransformControls` mode: the gizmo detaches while Face is active and the canvas runs its own press/move/release.
+**A face is chosen, then pulled** (ADR 0129, which reverses ADR 0119's "the face is the handle"). A click
+chooses; a press on the already-chosen face drags it in one motion; a click on another face or on empty space
+lets go. A press that travels more than `CLICK_SLOP` is an orbit and changes nothing. The choice is released
+on a tool change and whenever the object selection drops the chosen box — done in `reattachGizmo`, because
+every selection change goes through it and `pickTool` is constructed below the selection code (ADR 0121).
+
+No shortcut (the useful letters are taken). Not a `TransformControls` mode: the gizmo detaches while Face is
+active and the canvas runs its own press/move/release.
 
 | Piece | Function |
 | --- | --- |
@@ -513,9 +519,10 @@ box moves its own face that far along its own normal; each snaps where *its* fac
 off the grid come out flush. Snapping off, they all move by the same amount instead — both behaviours out of
 the one toggle. Non-box nodes in the selection drop out silently.
 
-**One highlight per selected box**, on hover and during the drag, so which face each one will move is visible
-before you commit — the question the world-direction rule raises. A pool of plates over one shared geometry
-and material. The status line carries the grabbed box's size plus `+N`.
+**One highlight per selected box**, kept until the choice is released, so which face each one will move is
+visible for as long as you want to look at it — the question the world-direction rule raises. The hover
+preview runs only while nothing is chosen, so one set of plates is lit at a time. A pool of plates over one
+shared geometry and material. The status line carries the grabbed box's size plus `+N`.
 `MATCH_FACE_BY_WORLD_DIRECTION` in `pickTool.ts` is the switch between world direction and the same lettered
 axis on every box.
 

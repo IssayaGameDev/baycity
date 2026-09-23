@@ -176,6 +176,10 @@ export const createGizmoTool = (host: GizmoHost) => {
     const g = at === null || host.playing() || edit.mode === 'face' ? undefined : host.groupAt(at)
     if (g === undefined) gizmo.detach()
     else gizmo.attach(g)
+    // Every selection change comes through here, and a face chosen on a box that is no longer selected
+    // cannot be pulled (ADR 0129). Cleared from here rather than from `applySelection` because the host's
+    // entry is an arrow: `pickTool` is constructed after the selection code that would otherwise call it.
+    if (edit.mode === 'face') host.clearFaceHover()
   }
 
   /** Switch transform tool (toolbar buttons and the T/R/S keys are the same path). */
