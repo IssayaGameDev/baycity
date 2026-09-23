@@ -5370,7 +5370,7 @@
       "name": "InterLevel",
       "transform": {
         "position": {
-          "x": -166.5,
+          "x": -198,
           "y": 3.5,
           "z": 439
         },
@@ -5381,7 +5381,23 @@
         }
       },
       "components": [],
-      "prefab": "7b146287b66c6a52"
+      "prefab": "7b146287b66c6a52",
+      "overrides": {
+        "c65ac1fb": {
+          "transform": {
+            "position": {
+              "x": -0.0004,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 15.9993,
+              "y": 1,
+              "z": 15
+            }
+          }
+        }
+      }
     },
     {
       "id": "5ba7b7e1",
@@ -5643,59 +5659,7 @@
         }
       },
       "components": [],
-      "children": [
-        {
-          "id": "d44e7c45",
-          "name": "platform",
-          "transform": {
-            "position": {
-              "x": -1.5,
-              "y": 0.15,
-              "z": 0.0132
-            },
-            "scale": {
-              "x": 3,
-              "y": 0.3,
-              "z": 3
-            }
-          },
-          "components": [
-            {
-              "id": "bbce6778",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 0.5,
-                    "y": 0.5,
-                    "z": 0.5
-                  }
-                },
-                "center": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 0
-                }
-              }
-            },
-            {
-              "id": "c0645a8d",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:rounded-box"
-              }
-            },
-            {
-              "id": "eb405344",
-              "type": "Renderer",
-              "params": {
-                "material": ""
-              }
-            }
-          ]
-        }
-      ]
+      "prefab": "c9dd2e7e24fd909d"
     }
   ]
 }
