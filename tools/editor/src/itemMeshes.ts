@@ -44,6 +44,14 @@ export interface ItemMeshHost {
   gameSettings: () => Readonly<Record<string, unknown>>
   selected: () => number | null
   /**
+   * Is this node hidden in the viewport (ADR 0132)?
+   *
+   * Building no meshes is the whole implementation: nothing is drawn, and picking raycasts the meshes, so
+   * it cannot be clicked either — which is the other half of what hiding has to mean. The group still
+   * exists, so indices, the Hierarchy and every child's frame are untouched.
+   */
+  hidden: (i: number) => boolean
+  /**
    * Run after a full rebuild: the preview poses, the gizmo's re-attach, the collaborators' hold boxes and the
    * bounds box. All of them read the groups that were just replaced, and none of them is this module's
    * business.
@@ -376,7 +384,7 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
        */
       const parent = open.parentOf(i)
       ;(parent === null ? instanceRoot : (instanceGroups[parent] ?? instanceRoot)).add(g)
-      if (open.nodeEnabled(i) && !open.disabledByAncestor(i)) buildItemMeshes(g, i)
+      if (open.nodeEnabled(i) && !open.disabledByAncestor(i) && !host.hidden(i)) buildItemMeshes(g, i)
       instanceGroups[i] = g
     }
     // Authored transforms are only where *static* items sit. An animated one belongs at its track's pose for
@@ -388,7 +396,7 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
     const g = instanceGroups[index]
     if (g === undefined) return
     disposeMeshes(meshHolderOf(g)) // only this item's own meshes; its child items are siblings of the holder
-    buildItemMeshes(g, index)
+    if (!host.hidden(index)) buildItemMeshes(g, index)
   }
 
   const rebuildSelectedMeshes = (): void => {

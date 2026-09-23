@@ -179,5 +179,6 @@ why matters.
 | [0129](adr/0129-a-face-is-chosen-before-it-is-pulled.md) | A face is chosen before it is pulled |
 | [0130](adr/0130-a-child-added-to-a-placement-can-be-applied.md) | A child added to a placement can be applied |
 | [0131](adr/0131-a-prefabs-piece-can-be-copied.md) | A prefab's piece can be copied |
+| [0132](adr/0132-hiding-a-node-is-a-view-not-an-edit.md) | Hiding a node is a view, not an edit |
 
 `Design archive/` holds superseded design material and is not maintained.

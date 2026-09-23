@@ -85,6 +85,16 @@ export interface LiveOptions {
   changed: (users: User[], path: string) => void
   /** The last editor left and the file is written: their sessions may commit. */
   onDocClosed?: (users: User[]) => void
+  /**
+   * Which nodes are hidden in the editor's viewport, by `refKey`, per document (ADR 0132).
+   *
+   * Read when a document opens and written when it changes. **Not the level's business**: hiding is a view
+   * of it, it never reaches the game, and putting it in the file would make it a content edit that everyone
+   * has to merge. It lives in the server's `stateDir` beside `locks.json`, which is why these are callbacks
+   * rather than fs calls in here.
+   */
+  readHidden?: (key: string) => string[]
+  writeHidden?: (key: string, keys: string[]) => void
   now?: () => number
   idleMs?: number
   maxMs?: number
@@ -135,6 +145,8 @@ interface LiveDoc {
   /** When each connection last said anything, for `sweep`. */
   seen: Map<string, number>
   holds: Map<string, Hold>
+  /** `refKey`s hidden in the viewport (ADR 0132). Not part of the level, not written to it. */
+  hidden: Set<string>
   /** Who edited since the last write, by email. */
   dirtyBy: Map<string, User>
   /** Everyone who ever edited while the doc was open, for the commit when it closes. */
@@ -155,6 +167,14 @@ export interface Live {
   apply: (name: string, connId: string, user: User, batch: { batchId: string; ops: Op[] }) => ApplyResult
   /** This connection's holds become exactly `refs`. Refused refs (another's) are named and left out. */
   hold: (name: string, connId: string, user: User, refs: NodeRef[]) => { ok: true } | { ok: false; holder: string; refused: NodeRef[] }
+  /**
+   * Hide or show nodes in every editor looking at this document (ADR 0132).
+   *
+   * Not an op and not held: hiding is a view of the level, not a change to it, so it takes no sequence
+   * number, contends with nobody, and never reaches the file. Everyone sees it because everyone is looking
+   * at the same room; it survives a restart because the server keeps it beside its locks.
+   */
+  setHidden: (name: string, keys: string[], hidden: boolean) => void
   /** The connection is alive. Any message counts; the editor sends this while idle. */
   ping: (name: string, connId: string, user: User) => void
   /** Leave every connection silent for `staleMs`. Called on a timer by the host. */
@@ -213,6 +233,8 @@ export const createLive = (opts: LiveOptions): Live => {
     clients: new Map(),
     seen: new Map(),
     holds: new Map(),
+    // Read once, when the document opens: what was hidden before the last restart is still hidden.
+    hidden: new Set(opts.readHidden?.(key) ?? []),
     dirtyBy: new Map(),
     contributors: new Map(),
     cancelIdle: null,
@@ -409,7 +431,9 @@ export const createLive = (opts: LiveOptions): Live => {
       d.clients.set(client.connId, client)
       d.seen.set(client.connId, now())
       client.send('hello', { connId: client.connId, name })
-      client.send('snapshot', { level: d.level, seq: d.seq, holds: holdsOf(d), peers: peersOf(d) }, d.seq)
+      // `hidden` rides the snapshot rather than a route of its own: a joiner needs it at the same moment it
+      // needs the level, and one less round trip is one less frame drawing things that should not be there.
+      client.send('snapshot', { level: d.level, seq: d.seq, holds: holdsOf(d), peers: peersOf(d), hidden: [...d.hidden] }, d.seq)
       for (const c of d.clients.values()) if (c !== client) c.send('peers', { peers: peersOf(d) })
     },
 
@@ -498,6 +522,21 @@ export const createLive = (opts: LiveOptions): Live => {
         armFlush(d)
       }
       return { ok: true, seq: d.seq }
+    },
+
+    setHidden: (name, keys, hidden) => {
+      const d = must(name)
+      let changed = false
+      for (const key of keys) {
+        if (hidden ? d.hidden.has(key) : !d.hidden.has(key)) continue
+        if (hidden) d.hidden.add(key)
+        else d.hidden.delete(key)
+        changed = true
+      }
+      if (!changed) return
+      // Everyone, the sender included: the echo is the ack, the same as an op batch.
+      broadcast(d, 'hidden', { hidden: [...d.hidden] })
+      opts.writeHidden?.(d.key, [...d.hidden])
     },
 
     hold: (name, connId, user, refs) => {

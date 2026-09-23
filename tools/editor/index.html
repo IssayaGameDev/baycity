@@ -413,6 +413,7 @@
       /* ---- hierarchy ---- */
       .row {
         display: flex;
+        position: relative; /* the eye is placed against this, outside the indentation (ADR 0132) */
         align-items: center;
         gap: 4px;
         padding: 2px 6px;
@@ -458,6 +459,30 @@
       .row.off .name {
         color: var(--dim);
         font-style: italic;
+      }
+      /* The eye (ADR 0132): hidden in the viewport, which is NOT the same as switched off above. It sits in
+         a fixed gutter at the left of the panel, outside the row's indentation, so the column lines up
+         however deep the tree goes — indented, the eyes would zigzag down the list. */
+      .row .eye {
+        position: absolute;
+        left: 4px;
+        width: 14px;
+        text-align: center;
+        cursor: pointer;
+        color: var(--dim);
+        /* Empty until the row is hovered. A column of controls on every row is what ADR 0102 removed from
+           here; costing nothing when unused is what lets this one back in. */
+        opacity: 0;
+        flex: 0 0 auto;
+      }
+      .row:hover .eye {
+        opacity: 1;
+      }
+      /* Hidden stays visible without hovering, or you could not find what you hid. The name is left alone:
+         a dimmed name already means switched off, and the two mean entirely different things. */
+      .row.eyeshut .eye {
+        opacity: 1;
+        color: var(--accent);
       }
       .row .twist {
         width: 12px;

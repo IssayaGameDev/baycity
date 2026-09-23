@@ -44,11 +44,22 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
   mkdirSync(config.stateDir, { recursive: true })
   const locksFile = join(config.stateDir, 'locks.json')
   const tokenFile = join(config.stateDir, 'admin.token')
+  /**
+   * Which nodes are hidden in the editor's viewport, by document key (ADR 0132).
+   *
+   * Beside `locks.json` and for the same reason: it belongs to this server, not to the content. Hiding
+   * never reaches the game and must not become a content edit everyone has to merge, so it is neither in
+   * the level file nor in the repo. Rewritten whole per toggle -- a handful of string keys, and the lock
+   * table is written the same way on every acquire.
+   */
+  const hiddenFile = join(config.stateDir, 'hidden.json')
 
   const locks: LockTable = existsSync(locksFile) ? (JSON.parse(readFileSync(locksFile, 'utf8')) as LockTable) : {}
   const saveLocks = (): void => writeFileSync(locksFile, `${JSON.stringify(locks, null, 2)}\n`)
   if (!existsSync(tokenFile)) writeFileSync(tokenFile, randomBytes(24).toString('hex'), { mode: 0o600 })
   const adminToken = readFileSync(tokenFile, 'utf8').trim()
+  const hidden: Record<string, string[]> = existsSync(hiddenFile) ? (JSON.parse(readFileSync(hiddenFile, 'utf8')) as Record<string, string[]>) : {}
+  const saveHidden = (): void => writeFileSync(hiddenFile, JSON.stringify(hidden, null, 2) + '\n')
 
   const sessions: SessionTable = new Map()
   let pushError: string | null = null
@@ -99,6 +110,12 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
     staleMs: config.lockStaleMs,
     // A level references a prefab by asset id (ADR 0091); the definitions come off disk.
     prefabs: createPrefabStore(join(CONTENT, ASSETS_DIR)),
+    readHidden: (key) => hidden[key] ?? [],
+    writeHidden: (key, keys) => {
+      if (keys.length === 0) delete hidden[key]
+      else hidden[key] = keys
+      saveHidden()
+    },
     readLevel: (name) => {
       const file = levelFileOf(name)
       return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as unknown) : null

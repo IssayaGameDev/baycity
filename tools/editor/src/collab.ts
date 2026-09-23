@@ -13,11 +13,13 @@ import { applyBatch, type Level, type NodeRef, type Op } from '@mp/content'
  */
 export type ServerEvent =
   | { event: 'hello'; data: { connId: string; name: string } }
-  | { event: 'snapshot'; data: { level: Level; seq: number; holds: Hold[]; peers: Peer[] } }
+  | { event: 'snapshot'; data: { level: Level; seq: number; holds: Hold[]; peers: Peer[]; hidden?: string[] } }
   | { event: 'ops'; data: { seq: number; from: string; batchId: string; ops: Op[] } }
   | { event: 'holds'; data: { holds: Hold[] } }
   | { event: 'peers'; data: { peers: Peer[] } }
   | { event: 'presence'; data: { from: string; name: string; data: unknown } }
+  /** Nodes hidden in the viewport, by `refKey` (ADR 0132). A view of the level, so it carries no sequence. */
+  | { event: 'hidden'; data: { hidden: string[] } }
   /** A prefab this level references was edited, in its own document (ADR 0091). Repaint, do not re-send. */
   | { event: 'prefab'; data: { assetId: string; ops: Op[] } }
   | { event: 'error'; data: { message: string } }
@@ -65,6 +67,11 @@ export interface CollabHooks {
   onHolds: (holds: Hold[]) => void
   onPresence: (from: string, name: string, data: unknown) => void
   /**
+   * The whole hidden set, by `refKey` (ADR 0132) — never a delta, so a dropped event cannot leave two
+   * editors disagreeing about what is on screen.
+   */
+  onHidden: (keys: string[]) => void
+  /**
    * A prefab the open level uses changed. The ops are against that prefab's own document, whose one root is
    * the definition this level resolved, so applying them there is what makes the placements follow.
    */
@@ -95,6 +102,11 @@ export interface Collab {
    */
   submitToPrefab: (assetId: string, ops: Op[]) => Promise<string | null>
   presence: (data: unknown) => void
+  /**
+   * Hide or show nodes for everyone in the room (ADR 0132). Fire and forget: the server's `hidden` event is
+   * the ack, exactly as an op batch's echo is, so nothing here has to guess the result.
+   */
+  setHidden: (keys: string[], hidden: boolean) => void
   /** Release everything and say goodbye without waiting — for `pagehide`. */
   beaconLeave: () => void
   connId: () => string | null
@@ -204,6 +216,8 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
         hooks.onSnapshot(e.data.level, seq)
         hooks.onPeers(peers)
         hooks.onHolds(holds)
+        // Part of the snapshot, so the first paint already leaves out what is hidden.
+        hooks.onHidden(e.data.hidden ?? [])
         // Local edits the server has not confirmed are put back on the fresh copy and sent again.
         const level = hooks.level()
         if (level !== null && unacked.length > 0) {
@@ -256,6 +270,9 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
         return
       case 'presence':
         hooks.onPresence(e.data.from, e.data.name, e.data.data)
+        return
+      case 'hidden':
+        hooks.onHidden(e.data.hidden)
         return
       case 'prefab':
         hooks.onPrefabOps(e.data.assetId, e.data.ops)
@@ -355,6 +372,10 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
       if (name === null || connId === null) return
       void transport.post(kind, name, 'ping', { connId }).catch(() => undefined)
     },
+    setHidden: (keys, hidden) => {
+      if (name === null || connId === null || keys.length === 0) return
+      void transport.post(kind, name, 'hidden', { connId, keys, hidden }).catch(() => undefined)
+    },
     submitToPrefab: async (assetId, ops) => {
       if (connId === null) return 'not in a live room'
       const r = await transport.post('prefab', assetId, 'ops', { connId, batchId: newBatchId(), ops })
@@ -382,7 +403,7 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
 export const httpTransport = (): LiveTransport => ({
   connect: (kind, name, onEvent, onDrop) => {
     const source = new EventSource(`/api/live/${kind}/${encodeURIComponent(name)}/events`)
-    for (const event of ['hello', 'snapshot', 'ops', 'holds', 'peers', 'presence', 'prefab', 'error'] as const) {
+    for (const event of ['hello', 'snapshot', 'ops', 'holds', 'peers', 'presence', 'hidden', 'prefab', 'error'] as const) {
       source.addEventListener(event, (m) => onEvent({ event, data: JSON.parse((m as MessageEvent<string>).data) } as ServerEvent))
     }
     // EventSource retries on its own after a network drop. A 4xx is a closed stream that never opened: the

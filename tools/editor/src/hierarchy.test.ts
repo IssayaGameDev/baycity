@@ -262,6 +262,7 @@ describe('dropTarget', () => {
     kind: 'item',
     index: 5,
     pieceIndex: -1,
+    hidden: false,
     depth: 1,
     path: '0/2',
     parent: 0,

@@ -22,6 +22,11 @@ import type { Doc, LocalPose } from './editorDoc'
 
 /** What the room needs from the editor around it. Getters, so nothing here holds a stale document. */
 export interface LiveHost {
+  /**
+   * The whole hidden set arrived from the room (ADR 0132) — on the snapshot, and whenever anyone toggles.
+   * The host stores it and repaints; nothing about the level changed, so no ops and no history.
+   */
+  onHidden: (keys: string[]) => void
   stage: ReturnType<typeof createThreeStage>
   doc: () => Doc | null
   /** The level every op applies to: the open file's, whatever prefab is open on top of it. */
@@ -331,6 +336,7 @@ export const createLiveSession = (host: LiveHost) => {
       if (!joining) reinstallLevel(level)
     },
     onApplied: (ops) => repaintAfterOps(ops),
+    onHidden: (keys) => host.onHidden(keys),
     onRejected: (batch, reason) => {
       // The batch is already rolled back in the data; forget the history entry that holds it, then redraw.
       host.dropHistoryWhere((entry) => entry.ops.some((o) => batch.ops.includes(o)) || entry.inverses.some((o) => batch.ops.includes(o)))
@@ -398,5 +404,7 @@ export const createLiveSession = (host: LiveHost) => {
     updateHolds: updateHoldHelpers,
     startPresence,
     stopPresence,
+    /** Hide or show nodes for everyone in the room (ADR 0132). The server's echo is the ack. */
+    setHidden: (keys: string[], hidden: boolean) => collab.setHidden(keys, hidden),
   }
 }
