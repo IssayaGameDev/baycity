@@ -494,11 +494,13 @@ A fourth tool, **Face**: click a face on a selected box and it stays lit; drag i
 its own normal while the opposite one stays. The scale tool grows a box about its centre, so both faces move —
 which is why a wall butted against a floor edge came away from it.
 
-**A face is chosen, then pulled** (ADR 0129, which reverses ADR 0119's "the face is the handle"). A click
-chooses; a press on the already-chosen face drags it in one motion; a click on another face or on empty space
-lets go. A press that travels more than `CLICK_SLOP` is an orbit and changes nothing. The choice is released
-on a tool change and whenever the object selection drops the chosen box — done in `reattachGizmo`, because
-every selection change goes through it and `pickTool` is constructed below the selection code (ADR 0121).
+**A press claims any face it lands on**, chooses it and starts the drag in one motion (ADR 0119's press,
+ADR 0129's lasting highlight). A press that never moves aborts the pull, so the same gesture means "just
+choose this one" and no empty entry reaches the history. The plates always show what a press right now would
+pull: a face under the pointer wins, and with the pointer off every face the chosen set stays lit. A click on
+empty space lets go; a press that travels from empty space is an orbit. The choice is released on a tool
+change and whenever the object selection drops the chosen box — done in `reattachGizmo`, because every
+selection change goes through it and `pickTool` is constructed below the selection code (ADR 0121).
 
 No shortcut (the useful letters are taken). Not a `TransformControls` mode: the gizmo detaches while Face is
 active and the canvas runs its own press/move/release.

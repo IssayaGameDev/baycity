@@ -1,8 +1,9 @@
 # ADR 0129 — A face is chosen before it is pulled
 
-Status: accepted. **Reverses the central decision of [ADR 0119](0119-a-face-is-a-handle.md)** — the face is no
-longer the handle. Builds on [ADR 0128](0128-a-pull-moves-the-whole-selection.md); everything about which
-faces move and how far is unchanged.
+Status: accepted, **amended below**. Keeps [ADR 0119](0119-a-face-is-a-handle.md)'s press — the first shape
+of this, which required a face to be chosen before it could be pulled, was wrong and is recorded at the end.
+Builds on [ADR 0128](0128-a-pull-moves-the-whole-selection.md); everything about which faces move and how far
+is unchanged.
 
 ## Context
 
@@ -20,21 +21,22 @@ chose the full one knowing a pull becomes two gestures.
 
 ## Decision
 
-**A click chooses a face. A drag on the chosen face pulls it. A click anywhere else lets it go.**
+**A press takes the face under it, chooses it, and drags it. A click on empty space lets it go.**
+The title is the shape this started as; the amendment below is what it became.
 
 | | |
 |---|---|
-| click a face on a selected box | it and its matched set on the other selected boxes light up, and stay lit |
-| press on the chosen face and drag | pulls, exactly as ADR 0128 describes |
-| press on any other face, or empty space | the choice is released; a face under the pointer becomes the new one |
-| pointer travels more than `CLICK_SLOP` | an orbit, not a click: the choice is untouched |
+| press a face on a selected box | it and its matched set light up, are chosen, and the drag begins |
+| drag | pulls, exactly as ADR 0128 describes |
+| press and release without moving | chose that face and nothing else — the pull is aborted, so no entry lands in the history |
+| pointer off every face | the chosen set stays lit: the highlight outliving the pointer is the whole point |
+| click empty space | the choice is released, which is the way back to none |
+| pointer travels more than `CLICK_SLOP` from empty space | an orbit, and the choice is untouched |
 | tool change, or a selection that drops the chosen box | released (`clearFaceHover`) |
 
-**Chosen and pulled in one press where it is already chosen.** The press decides, not the release, so a face
-you have chosen still pulls in a single motion. Only the first pull on a face costs the extra click.
-
-**The hover preview runs only while nothing is chosen.** Otherwise two sets of plates would be lit and
-neither would say which one a drag moves.
+**The plates always show what a press right now would pull.** A face under the pointer wins, because that is
+what a press would take; with the pointer off every face, the chosen set stays lit. One rule, and no state
+where something is lit that a drag would not move.
 
 **What is chosen is the whole matched set, not one face** — the same set `facesForSelection` hands the drag.
 The plates would otherwise promise less than the pull delivers.
@@ -53,13 +55,26 @@ In `reattachGizmo`, not in `applySelection`. Every selection change goes through
 entries are arrows (ADR 0121): `pickTool` is constructed well below the selection code, so calling it from
 there directly would reference a `const` in its temporal dead zone.
 
+## The amendment, and why
+
+The first shape of this required the face to be **chosen** before a press would pull it, and drew the hover
+preview only while nothing was chosen. Those two rules contradict each other: a face lit by hovering was, by
+construction, one that `chosen` did not name — so the press refused it and fell through to orbiting the
+camera. Both states drew the same plate in the same colour, so nothing on screen told the draggable highlight
+from the one that would spin the view. It reached Kodjo's box and cost him two deploys.
+
+The fault was not the extra click. It was **lighting something up and then refusing the gesture it invites**.
+So the press claims whatever face it finds and chooses it on the way, which is ADR 0119's press exactly; what
+ADR 0129 keeps is the highlight that outlives the pointer, which is what was actually asked for. A press with
+no movement behind it is not a drag, so the same gesture still means "just choose this one".
+
 ## Rejected
 
 - **Keeping the plates lit with no click**, the cheap version: the highlight persists but a drag still starts
   anywhere on a selected box. One gesture kept, and the lit faces stop meaning "what a drag will move" the
   moment the pointer moves off them. Offered; Kodjo chose the explicit model.
-- **Choosing on release instead of on press.** Costs the chosen face its one-motion pull for nothing.
+- **Choosing on release instead of on press.** Costs every face its one-motion pull for nothing.
+- **Making the hover preview look different from the chosen one**, so the two states are told apart. It fixes
+  the *telling* and leaves the trap: a press on a lit face would still sometimes orbit.
 - **A separate keypress or modifier to choose.** A second thing to learn for a gesture that already has an
   obvious one.
-- **Leaving the hover preview running under a chosen face**, dimmer. Two sets of plates, and the question
-  "which of these moves?" is the one the feature exists to answer.
