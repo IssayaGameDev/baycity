@@ -5703,9 +5703,14 @@
       "name": "Obstacle 8",
       "transform": {
         "position": {
-          "x": -369,
+          "x": -368.9,
           "y": 3,
           "z": 438.5
+        },
+        "scale": {
+          "x": 6.2,
+          "y": 1,
+          "z": 6
         }
       },
       "components": [],
@@ -5715,13 +5720,13 @@
           "name": "platform",
           "transform": {
             "position": {
-              "x": -1,
-              "y": 0.15,
+              "x": -1.5,
+              "y": 0.25,
               "z": 0
             },
             "scale": {
               "x": 3,
-              "y": 0.3,
+              "y": 0.5,
               "z": 3
             }
           },
@@ -5757,6 +5762,14 @@
               "type": "Renderer",
               "params": {
                 "material": ""
+              }
+            },
+            {
+              "id": "425319ba",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1
               }
             }
           ]
