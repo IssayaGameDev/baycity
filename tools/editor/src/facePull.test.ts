@@ -1,8 +1,14 @@
+import { eulerToQuat, rotateVec3, vec3, type Vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
-import { distanceAlongAxis, faceFromNormal, pulled, snappedPull } from './facePull'
+import { distanceAlongAxis, faceFromNormal, pulled, snappedPull, type Axis, type Face } from './facePull'
 
 const v = (x: number, y: number, z: number) => ({ x, y, z })
+const DEG = Math.PI / 180
+/** The pulled axis as a unit vector. Unrotated, so parent frame and node frame are the same one. */
+const flat = (a: Axis): Vec3 => v(a === 'x' ? 1 : 0, a === 'y' ? 1 : 0, a === 'z' ? 1 : 0)
+/** The same axis carried into the parent's frame by the node's own rotation, in degrees. */
+const turned = (a: Axis, deg: Vec3): Vec3 => rotateVec3(eulerToQuat(vec3(deg.x * DEG, deg.y * DEG, deg.z * DEG)), flat(a))
 
 describe('faceFromNormal', () => {
   it('names each of the six faces', () => {
@@ -77,13 +83,13 @@ describe('pulled', () => {
   const position = v(10, 0, 0)
 
   it('grows the size by the distance and the centre by half, toward the face pulled', () => {
-    const out = pulled(scale, position, { axis: 'x', sign: 1 }, 2, 0.1)
+    const out = pulled(scale, position, { axis: 'x', sign: 1 }, 2, 0.1, flat('x'))
     expect(out.scale.x).toBeCloseTo(4, 6)
     expect(out.position.x).toBeCloseTo(11, 6)
   })
 
   it('moves the centre the other way for the opposite face', () => {
-    const out = pulled(scale, position, { axis: 'x', sign: -1 }, 2, 0.1)
+    const out = pulled(scale, position, { axis: 'x', sign: -1 }, 2, 0.1, flat('x'))
     expect(out.scale.x).toBeCloseTo(4, 6)
     expect(out.position.x).toBeCloseTo(9, 6)
   })
@@ -92,30 +98,85 @@ describe('pulled', () => {
   it('leaves the opposite face exactly where it was', () => {
     for (const sign of [1, -1] as const) {
       const far = position.x - (sign * scale.x) / 2
-      const out = pulled(scale, position, { axis: 'x', sign }, 1.7, 0.1)
+      const out = pulled(scale, position, { axis: 'x', sign }, 1.7, 0.1, flat('x'))
       expect(out.position.x - (sign * out.scale.x) / 2, `sign ${sign}`).toBeCloseTo(far, 6)
     }
   })
 
   it('pulls inward too', () => {
-    const out = pulled(scale, position, { axis: 'x', sign: 1 }, -1, 0.1)
+    const out = pulled(scale, position, { axis: 'x', sign: 1 }, -1, 0.1, flat('x'))
     expect(out.scale.x).toBeCloseTo(1, 6)
     expect(out.position.x).toBeCloseTo(9.5, 6)
   })
 
   it('stops at the minimum instead of inverting', () => {
-    const out = pulled(scale, position, { axis: 'x', sign: 1 }, -50, 0.5)
+    const out = pulled(scale, position, { axis: 'x', sign: 1 }, -50, 0.5, flat('x'))
     expect(out.scale.x).toBe(0.5)
     // And the far face still has not moved, even though the pull was refused partway.
     expect(out.position.x - out.scale.x / 2).toBeCloseTo(position.x - scale.x / 2, 6)
   })
 
   it('touches only the axis pulled', () => {
-    const out = pulled(scale, position, { axis: 'z', sign: 1 }, 1, 0.1)
+    const out = pulled(scale, position, { axis: 'z', sign: 1 }, 1, 0.1, flat('z'))
     expect(out.scale.x).toBe(2)
     expect(out.scale.y).toBe(1)
     expect(out.scale.z).toBeCloseTo(5, 6)
     expect(out.position.x).toBe(10)
     expect(out.position.z).toBeCloseTo(0.5, 6)
+  })
+})
+
+/**
+ * A rotated box (ADR 0119).
+ *
+ * Scale is in the node's own frame and position is in its parent's, and they are not the same frame. The
+ * first version moved the centre along the parent's axis while the face moved along the node's, so a rotated
+ * box slid away as it grew. None of the tests above could see it: every one of them uses an unrotated box.
+ */
+describe('pulled, on a rotated box', () => {
+  /** Centre of the face opposite the one grabbed, in the parent's frame. This is what must not move. */
+  const farFace = (pos: Vec3, scale: Vec3, face: Face, axis: Vec3): Vec3 => {
+    const half = (scale[face.axis] * face.sign) / 2
+    return v(pos.x - axis.x * half, pos.y - axis.y * half, pos.z - axis.z * half)
+  }
+  const apart = (a: Vec3, b: Vec3): number => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z)
+
+  /** Kodjo's authored platform, the one the bug was reported on. */
+  const position = v(-4.11, 61.8, 21.2)
+  const rotation = v(-90, -75.0002, -90)
+  const scale = v(8.4, 0.3, 38)
+
+  it('leaves the opposite face where it was, at every rotation and on every face', () => {
+    // 180 degrees was the worst of these: the centre used to move the whole pull, backwards.
+    for (const rot of [v(0, 0, 0), v(0, 5, 0), v(0, 45, 0), v(0, 90, 0), v(0, 180, 0), v(90, 0, 0), v(0, 0, 90), rotation]) {
+      for (const ax of ['x', 'y', 'z'] as const) {
+        for (const sign of [1, -1] as const) {
+          const face: Face = { axis: ax, sign }
+          const axis = turned(ax, rot)
+          const before = farFace(position, scale, face, axis)
+          const out = pulled(scale, position, face, 5, 0.1, axis)
+          const label = `(${rot.x}, ${rot.y}, ${rot.z}) ${sign > 0 ? '+' : '-'}${ax}`
+          expect(apart(before, farFace(out.position, out.scale, face, axis)), label).toBeCloseTo(0, 6)
+        }
+      }
+    }
+  })
+
+  it('moves the centre along the box own axis, not the parent one', () => {
+    // Turned 90 degrees about y, the node's local +x points along the parent's -z.
+    const axis = turned('x', v(0, 90, 0))
+    const out = pulled(v(2, 1, 4), v(0, 0, 0), { axis: 'x', sign: 1 }, 2, 0.1, axis)
+    expect(out.scale.x).toBeCloseTo(4, 6)
+    expect(out.position.x).toBeCloseTo(0, 6)
+    expect(out.position.z).toBeCloseTo(-1, 6)
+  })
+
+  it('still refuses to invert, and holds the far face when it does', () => {
+    const face: Face = { axis: 'y', sign: 1 }
+    const axis = turned('y', rotation)
+    const before = farFace(position, scale, face, axis)
+    const out = pulled(scale, position, face, -50, 0.5, axis)
+    expect(out.scale.y).toBe(0.5)
+    expect(apart(before, farFace(out.position, out.scale, face, axis))).toBeCloseTo(0, 6)
   })
 })

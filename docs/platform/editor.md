@@ -500,11 +500,19 @@ The face is the handle, so there is nothing to aim at. No shortcut (the useful l
 | which face a hit normal names | `faceFromNormal` — largest component, so a rounded box's fillets resolve to their face |
 | how far the pointer dragged | `distanceAlongAxis` — nearest point on the normal line to the pointer ray; `null` down the axis, caller holds the last value |
 | where it lands | `snappedPull` — snaps the face's **plane offset along its normal**, not the distance dragged |
-| the transform | `pulled` — size `+= d`, centre `+= d/2 × sign`; clamped on the *size* so the far face holds |
+| the transform | `pulled` — size `+= d`, centre `+= d/2 × sign` **along the node's axis rotated into the parent's frame**; clamped on the *size* so the far face holds |
 
 All four pure and tested (`src/facePull.ts`). **Built-in box and rounded box only**, since for those scale is
 the whole size (ADR 0090) and a pull is a transform edit; an authored collider would need its half-extents
 edited too. Selected object only. One history entry per drag, coalesced like a gizmo drag.
+
+**Scale is the node's frame, position is the parent's**, and `pulled` takes the pulled axis carried into the
+parent's frame (`g.quaternion` applied to it) as a required argument for exactly that reason. Nudging
+`position[axis]` instead moves the centre along the *parent's* axis while the face moves along the *node's*,
+so a rotated box slid sideways as it grew and the anchored face did not hold: measured on an authored platform
+at rotation (-90, -75, -90), a 5 m pull dragged that face 3.54 m; a box turned 180° moved the whole 5 m,
+backwards. Every rotated box was affected bar one turned about the axis being pulled. The rotated cases are in
+`facePull.test.ts`; the six original ones all used an unrotated box, which is why it stood.
 
 ## Snapping (ADR 0114)
 

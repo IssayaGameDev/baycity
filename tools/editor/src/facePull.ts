@@ -79,10 +79,22 @@ export const snappedPull = (faceAt: number, raw: number, step: number): number =
   step > 0 ? snapToGrid(faceAt + raw, step) - faceAt : raw
 
 /**
- * The local scale and position a pull comes to, in the node's own frame.
+ * The scale and position a pull comes to: the scale in the node's own frame, the position in its **parent's**.
  *
  * `distance` is in **local** units along the face's axis and is positive outward, whichever face it is: the
  * caller has already turned a world drag into "how much bigger this side wants to be".
+ *
+ * `axisInParent` is the node's own `face.axis` as a unit vector **in the parent's frame** — the node's
+ * rotation applied to that axis, unsigned. It is what the half-growth is moved along, and it is required
+ * rather than defaulted precisely because the default is the bug it fixes.
+ *
+ * **The two frames are not the same one.** Scale is the node's own, so growing `scale.x` moves the face along
+ * the node's local x; position is stored in the parent's frame, so nudging `position.x` moves the centre along
+ * the *parent's* x. They coincide only when the node is unrotated. Rotated, the box grew one way and its
+ * centre slid another, which read as the whole object teleporting mid-drag: measured on an authored platform
+ * at rotation (-90, -75, -90), a 5 m pull dragged the anchored face 3.54 m. A box turned 180 degrees was
+ * worst — the centre moved the full 5 m, backwards. Every pull on every rotated box was affected, except one
+ * whose rotation is about the pulled axis itself, where the axis does not move.
  *
  * Clamped so the box never inverts and never shrinks below `minSize`. The clamp is applied to the *size*, and
  * the position follows from whatever size survived it, so a pull held past the far face simply stops.
@@ -93,13 +105,19 @@ export const pulled = (
   face: Face,
   distance: number,
   minSize: number,
+  axisInParent: V3,
 ): { scale: V3; position: V3 } => {
   const size = scale[face.axis]
   const next = Math.max(minSize, size + distance)
   const grew = next - size
+  // Half the growth, toward the face that moved: the other face has to stay put.
+  const step = (grew / 2) * face.sign
   return {
     scale: { ...scale, [face.axis]: next },
-    // Half the growth, toward the face that moved: the other face has to stay put.
-    position: { ...position, [face.axis]: position[face.axis] + (grew / 2) * face.sign },
+    position: {
+      x: position.x + axisInParent.x * step,
+      y: position.y + axisInParent.y * step,
+      z: position.z + axisInParent.z * step,
+    },
   }
 }
