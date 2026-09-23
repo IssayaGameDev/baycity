@@ -713,6 +713,7 @@ const pick = createPickTool({
   doc: () => doc,
   assets: () => assets,
   selected: () => selected,
+  selection: () => selection,
   select: (index) => select(index),
   selectWith: (index, mode, order) => selectWith(index, mode, order),
   deselect: () => deselect(),

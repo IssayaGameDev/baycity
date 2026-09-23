@@ -1,3 +1,5 @@
+import { conjQuat, rotateVec3, type Quat } from '@mp/core'
+
 import { snapToGrid } from './snap'
 
 /**
@@ -45,6 +47,21 @@ export const faceFromNormal = (n: V3): Face | null => {
   if (ay >= az) return { axis: 'y', sign: n.y >= 0 ? 1 : -1 }
   return { axis: 'z', sign: n.z >= 0 ? 1 : -1 }
 }
+
+/**
+ * The face of a box that points most nearly along a **world** direction, given the box's world rotation.
+ *
+ * What lets one drag move a face on every selected box (ADR 0119). The grabbed box names its face from the
+ * pointer; the others are asked which of their six faces looks the way the drag is going, so a row of
+ * platforms grows together instead of each growing along its own lettered axis. Identical for boxes that
+ * share a rotation, which is the ordinary case; it is mixed rotations the question is really about.
+ *
+ * The direction is carried into the box's own frame and handed to `faceFromNormal`, so the same
+ * largest-component rule decides both, and a direction exactly between two faces resolves the same way here
+ * as it does under the pointer.
+ */
+export const faceTowards = (worldDir: V3, rotation: Quat): Face | null =>
+  faceFromNormal(rotateVec3(conjQuat(rotation), worldDir))
 
 /**
  * How far along a line the point nearest a ray sits.

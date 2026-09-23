@@ -6,7 +6,7 @@ import { OrbitControls } from '@mp/render-three'
 
 import type { AssetLibrary } from './assetsApi'
 import type { Doc } from './editorDoc'
-import { distanceAlongAxis, faceFromNormal, pulled, snappedPull, type Face } from './facePull'
+import { distanceAlongAxis, faceFromNormal, faceTowards, pulled, snappedPull, type Face } from './facePull'
 import { modeFor } from './selection'
 import { snapToGrid } from './snap'
 import type { GizmoMode } from './toolbar'
@@ -27,6 +27,18 @@ import type { GizmoMode } from './toolbar'
 /** Rounded the way the document stores numbers. */
 const r4 = (n: number): number => Math.round(n * 1e4) / 1e4
 
+/**
+ * **Which face of each *other* selected box a pull moves** (ADR 0119).
+ *
+ * `true` — the face pointing most nearly the way the grabbed one points, so everything grows the way you are
+ * dragging. `false` — the same lettered axis and sign on every box, so a ring of walls each rotated to face
+ * outward would expand outward instead of all sliding one way.
+ *
+ * The two are identical whenever the selected boxes share a rotation, which is the ordinary case. Kodjo chose
+ * world direction and may want the other after playing with it; flipping this constant is the whole change.
+ */
+const MATCH_FACE_BY_WORLD_DIRECTION = true
+
 /** What the pointer needs from the editor around it. */
 export interface PickHost {
   canvas: HTMLCanvasElement
@@ -37,6 +49,8 @@ export interface PickHost {
   doc: () => Doc | null
   assets: () => AssetLibrary | null
   selected: () => number | null
+  /** The whole selection, primary last (ADR 0031). A face pull applies to all of it. */
+  selection: () => readonly number[]
   select: (index: number) => void
   selectWith: (index: number, mode: 'replace' | 'toggle' | 'range', order: readonly number[]) => void
   deselect: () => void
@@ -99,8 +113,9 @@ export const createPickTool = (host: PickHost) => {
       return
     }
     const found = faceUnder(e.clientX, e.clientY)
-    if (found === null) faceHover.visible = false
-    else showFaceHover(found.index, found.face)
+    const matched = found === null ? null : facesForSelection(found.index, found.face)
+    if (matched === null) hideFacePlates()
+    else showFaceHovers(matched.faces)
   })
 
   host.canvas.addEventListener('pointerup', (e) => {
@@ -113,31 +128,42 @@ export const createPickTool = (host: PickHost) => {
   /* ============================ pulling a face (ADR 0119) ============================ */
 
   /**
-   * The translucent square drawn over the face under the pointer.
+   * The translucent squares drawn over the faces a drag would move — **one per selected box** (ADR 0128).
    *
    * The face **is** the handle, so there is nothing to aim at but the box itself — SketchUp's model rather than
    * ProBuilder's select-then-drag. `depthTest: false` so it reads on a face pointing away from the light, and
    * `renderOrder` above the meshes so it is not z-fought by the surface it sits on.
+   *
+   * A pool rather than one, because with several boxes selected exactly one face on each of them moves, and
+   * which face that is on a box rotated away from the others is the thing you cannot predict. Grown on
+   * demand and never shrunk: a selection size is reached once and the plates are two triangles each.
    */
-  const faceHover = new THREE.Mesh(
-    new THREE.PlaneGeometry(1, 1),
-    new THREE.MeshBasicMaterial({ color: 0x4a8cf7, transparent: true, opacity: 0.35, depthTest: false, side: THREE.DoubleSide }),
-  )
-  faceHover.renderOrder = 10
-  faceHover.visible = false
-  // Beside the gizmo: scene furniture, not part of the level.
-  host.scene.add(faceHover)
+  const plateGeometry = new THREE.PlaneGeometry(1, 1)
+  const plateMaterial = new THREE.MeshBasicMaterial({ color: 0x4a8cf7, transparent: true, opacity: 0.35, depthTest: false, side: THREE.DoubleSide })
+  const facePlates: THREE.Mesh[] = []
+  const plateAt = (slot: number): THREE.Mesh => {
+    const made = facePlates[slot]
+    if (made !== undefined) return made
+    const plate = new THREE.Mesh(plateGeometry, plateMaterial)
+    plate.renderOrder = 10
+    plate.visible = false
+    // Beside the gizmo: scene furniture, not part of the level.
+    host.scene.add(plate)
+    facePlates[slot] = plate
+    return plate
+  }
+  const hideFacePlates = (from = 0): void => {
+    for (let i = from; i < facePlates.length; i++) {
+      const plate = facePlates[i]
+      if (plate !== undefined) plate.visible = false
+    }
+  }
 
-  /** What a pull needs to remember from the moment the pointer went down. */
-  let facePull: {
+  /** One box taking part in a pull. The grabbed box is one of these; the rest of the selection are the others. */
+  interface PullTarget {
     index: number
     face: Face
-    /** The line the face travels along, in world space; `dir` is the outward normal, unit length. */
-    origin: THREE.Vector3
-    dir: THREE.Vector3
-    /** `distanceAlongAxis` at the press, so a move is measured as a change rather than an absolute. */
-    t0: number
-    /** Where the face's plane sits along its own normal, for snapping where it *lands* (ADR 0113/0117). */
+    /** Where this box's own face plane sits along its own normal, for snapping where it *lands* (ADR 0113/0117). */
     faceAt: number
     startScale: THREE.Vector3
     startPos: THREE.Vector3
@@ -151,40 +177,75 @@ export const createPickTool = (host: PickHost) => {
      * away as it grows (ADR 0119).
      */
     axisInParent: THREE.Vector3
+  }
+
+  /** What a pull needs to remember from the moment the pointer went down. */
+  let facePull: {
+    /**
+     * Every selected box the drag moves, the grabbed one included (ADR 0119).
+     *
+     * **The distance is the drag's, the plane is each box's own.** One `raw` comes off the pointer, measured
+     * on the grabbed face's line, and every target moves its own face by that much along its own normal —
+     * so five platforms all grow by what you dragged. What is *not* shared is the snap: each target snaps
+     * where its own face lands, so boxes that started off the grid all arrive on it and end up flush, which
+     * is the reason for selecting them together. Snapping off, `snappedPull` returns `raw` untouched and they
+     * move identically instead, so both behaviours fall out of the toggle that already exists.
+     */
+    targets: PullTarget[]
+    /** The line the grabbed face travels along, in world space; `dir` is its outward normal, unit length. */
+    origin: THREE.Vector3
+    dir: THREE.Vector3
+    /** `distanceAlongAxis` at the press, so a move is measured as a change rather than an absolute. */
+    t0: number
+    /** The grabbed box, whose face the highlight follows. */
+    primary: number
+    primaryFace: Face
     /** The last good distance, held when the camera looks straight down the axis. */
     last: number
   } | null = null
 
   /**
-   * The face of the **selected** box under a client position, or `null`.
+   * The face of a **selected** box under a client position, or `null`.
    *
-   * Only the selected object, so a stray drag cannot reshape something else, and so the highlight only ever
-   * appears on one thing. Only a built-in box or rounded box: scale is the whole size for those (ADR 0090), so
-   * a pull is a transform edit and nothing else. A sphere has no faces.
+   * Any of them, nearest first — not just the primary (ADR 0128). With five platforms selected the drag moves
+   * all five, so having to find the last-clicked one to start it is an arbitrary hunt; whichever you point at
+   * begins the gesture and names the face.
+   *
+   * Selected boxes only, so a stray drag cannot reshape something you were not working on (ADR 0119). Only a
+   * built-in box or rounded box: scale is the whole size for those (ADR 0090), so a pull is a transform edit
+   * and nothing else. A sphere has no faces.
    */
   const faceUnder = (clientX: number, clientY: number): { index: number; face: Face; hit: THREE.Intersection } | null => {
-    const at = host.selected()
     const open = host.doc()
-    if (at === null || open === null) return null
-    const builtin = open.builtinOf(at)
-    if (builtin !== 'builtin:box' && builtin !== 'builtin:rounded-box') return null
-    const g = host.groupAt(at)
-    if (g === undefined) return null
+    if (open === null) return null
     castFrom(clientX, clientY)
-    const hit = raycaster.intersectObject(host.holderOf(g), true)[0]
-    if (hit === undefined || hit.face === null || hit.face === undefined) return null
-    // The normal arrives in the hit mesh's own space; the face belongs to the node's.
-    const world = hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
+    let best: { index: number; hit: THREE.Intersection; world: THREE.Vector3 } | null = null
+    for (const i of host.selection()) {
+      const builtin = open.builtinOf(i)
+      if (builtin !== 'builtin:box' && builtin !== 'builtin:rounded-box') continue
+      const g = host.groupAt(i)
+      if (g === undefined) continue
+      const hit = raycaster.intersectObject(host.holderOf(g), true)[0]
+      if (hit === undefined || hit.face === null || hit.face === undefined) continue
+      // Nearest wins, so a box in front of another takes the gesture, as picking does. The normal is read
+      // here, where it is still known to exist — carrying the hit and re-checking it later needs an assertion.
+      if (best === null || hit.distance < best.hit.distance)
+        best = { index: i, hit, world: hit.face.normal.clone().transformDirection(hit.object.matrixWorld) }
+    }
+    if (best === null) return null
+    const g = host.groupAt(best.index)
+    if (g === undefined) return null
+    // The normal arrived in the hit mesh's own space; the face belongs to the node's.
     g.updateWorldMatrix(true, false)
-    const local = world.clone().transformDirection(new THREE.Matrix4().copy(g.matrixWorld).invert())
+    const local = best.world.transformDirection(new THREE.Matrix4().copy(g.matrixWorld).invert())
     const face = faceFromNormal(local)
-    return face === null ? null : { index: at, face, hit }
+    return face === null ? null : { index: best.index, face, hit: best.hit }
   }
 
-  /** Draw the highlight over a face, sized to it. */
-  const showFaceHover = (index: number, face: Face): void => {
+  /** Lay one plate over one box's face, sized to it. */
+  const placePlate = (plate: THREE.Mesh, index: number, face: Face): boolean => {
     const g = host.groupAt(index)
-    if (g === undefined) return
+    if (g === undefined) return false
     g.updateWorldMatrix(true, false)
     const pos = new THREE.Vector3()
     const quat = new THREE.Quaternion()
@@ -195,10 +256,94 @@ export const createPickTool = (host: PickHost) => {
     const localNormal = new THREE.Vector3(face.axis === 'x' ? face.sign : 0, face.axis === 'y' ? face.sign : 0, face.axis === 'z' ? face.sign : 0)
     const centre = localNormal.clone().multiply(new THREE.Vector3(half.x, half.y, half.z)).applyQuaternion(quat).add(pos)
     const spread = face.axis === 'x' ? [half.z, half.y] : face.axis === 'y' ? [half.x, half.z] : [half.x, half.y]
-    faceHover.position.copy(centre)
-    faceHover.quaternion.copy(quat).multiply(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), localNormal))
-    faceHover.scale.set((spread[0] ?? 0.5) * 2, (spread[1] ?? 0.5) * 2, 1)
-    faceHover.visible = true
+    plate.position.copy(centre)
+    plate.quaternion.copy(quat).multiply(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), localNormal))
+    plate.scale.set((spread[0] ?? 0.5) * 2, (spread[1] ?? 0.5) * 2, 1)
+    plate.visible = true
+    return true
+  }
+
+  /** Light every face a drag would move, and put out the plates left over from a bigger selection. */
+  const showFaceHovers = (faces: readonly { index: number; face: Face }[]): void => {
+    let slot = 0
+    for (const f of faces) if (placePlate(plateAt(slot), f.index, f.face)) slot++
+    hideFacePlates(slot)
+  }
+
+  /**
+   * The face each selected box would move if the grabbed one moved `face`, and the world direction that is.
+   *
+   * The grabbed box keeps the face under the pointer. The rest are matched by `faceTowards`, so they grow the
+   * way the drag is going rather than along their own lettered axis (ADR 0128). Shared by the hover preview
+   * and the drag itself, so what lights up is exactly what will move.
+   */
+  const facesForSelection = (index: number, face: Face): { dir: THREE.Vector3; faces: { index: number; face: Face }[] } | null => {
+    const g = host.groupAt(index)
+    const open = host.doc()
+    if (g === undefined || open === null) return null
+    g.updateWorldMatrix(true, false)
+    const quat = new THREE.Quaternion()
+    g.matrixWorld.decompose(new THREE.Vector3(), quat, new THREE.Vector3())
+    const dir = new THREE.Vector3(face.axis === 'x' ? face.sign : 0, face.axis === 'y' ? face.sign : 0, face.axis === 'z' ? face.sign : 0)
+      .applyQuaternion(quat)
+      .normalize()
+    const faces = [{ index, face }]
+    for (const i of host.selection()) {
+      if (i === index) continue
+      const builtin = open.builtinOf(i)
+      if (builtin !== 'builtin:box' && builtin !== 'builtin:rounded-box') continue
+      const other = host.groupAt(i)
+      if (other === undefined) continue
+      other.updateWorldMatrix(true, false)
+      const q = new THREE.Quaternion()
+      other.matrixWorld.decompose(new THREE.Vector3(), q, new THREE.Vector3())
+      const matched = MATCH_FACE_BY_WORLD_DIRECTION ? faceTowards(dir, q) : face
+      if (matched !== null) faces.push({ index: i, face: matched })
+    }
+    return { dir, faces }
+  }
+
+  /**
+   * Everything one box contributes to a pull, or `null` if it cannot take part.
+   *
+   * The face is decided already — `facesForSelection` matched it and the hover drew it — so this only
+   * measures: where that face's plane sits, the box's scale and position at the press, and the frame
+   * conversions the drag needs.
+   */
+  const targetFor = (index: number, face: Face): PullTarget | null => {
+    const open = host.doc()
+    if (open === null) return null
+    const builtin = open.builtinOf(index)
+    if (builtin !== 'builtin:box' && builtin !== 'builtin:rounded-box') return null
+    const g = host.groupAt(index)
+    if (g === undefined) return null
+    g.updateWorldMatrix(true, false)
+    const pos = new THREE.Vector3()
+    const quat = new THREE.Quaternion()
+    const worldScale = new THREE.Vector3()
+    g.matrixWorld.decompose(pos, quat, worldScale)
+
+    const normal = new THREE.Vector3(face.axis === 'x' ? face.sign : 0, face.axis === 'y' ? face.sign : 0, face.axis === 'z' ? face.sign : 0)
+      .applyQuaternion(quat)
+      .normalize()
+    const halfWorld = Math.abs(worldScale[face.axis]) / 2
+    // Local units per world metre: the node's own scale is local, and the world size is that times the parent's.
+    const localSize = Math.abs(g.scale[face.axis])
+    return {
+      index,
+      face,
+      // Where this box's face plane sits along its own normal. Axis-aligned that is just its world x, y or z;
+      // rotated, it is the plane's offset, which is what a grid of parallel planes snaps to.
+      faceAt: normal.clone().multiplyScalar(halfWorld).add(pos).dot(normal),
+      startScale: g.scale.clone(),
+      startPos: g.position.clone(),
+      perMetre: localSize > 1e-9 && halfWorld > 1e-9 ? localSize / (halfWorld * 2) : 1,
+      // `g.quaternion` and not the decomposed world one: `g.position` is in the parent's frame, so the axis
+      // has to be carried into that same frame and no further.
+      axisInParent: new THREE.Vector3(face.axis === 'x' ? 1 : 0, face.axis === 'y' ? 1 : 0, face.axis === 'z' ? 1 : 0)
+        .applyQuaternion(g.quaternion)
+        .normalize(),
+    }
   }
 
   /** Begin a pull. `false` when there is no face under the pointer, so the caller falls through to selection. */
@@ -207,42 +352,24 @@ export const createPickTool = (host: PickHost) => {
     if (found === null || host.doc() === null) return false
     const g = host.groupAt(found.index)
     if (g === undefined) return false
+    const matched = facesForSelection(found.index, found.face)
+    if (matched === null) return false
     g.updateWorldMatrix(true, false)
     const pos = new THREE.Vector3()
-    const quat = new THREE.Quaternion()
-    const worldScale = new THREE.Vector3()
-    g.matrixWorld.decompose(pos, quat, worldScale)
-
-    const { face } = found
-    const localNormal = new THREE.Vector3(face.axis === 'x' ? face.sign : 0, face.axis === 'y' ? face.sign : 0, face.axis === 'z' ? face.sign : 0)
-    const dir = localNormal.clone().applyQuaternion(quat).normalize()
-    const halfWorld = Math.abs(worldScale[face.axis]) / 2
-    const faceCentre = dir.clone().multiplyScalar(halfWorld).add(pos)
-    const t0 = distanceAlongAxis(raycaster.ray.origin, raycaster.ray.direction, pos, dir)
+    g.matrixWorld.decompose(pos, new THREE.Quaternion(), new THREE.Vector3())
+    const t0 = distanceAlongAxis(raycaster.ray.origin, raycaster.ray.direction, pos, matched.dir)
     if (t0 === null) return false
-    // Local units per world metre: the node's own scale is local, and the world size is that times the parent's.
-    const localSize = Math.abs(g.scale[face.axis])
-    const perMetre = localSize > 1e-9 && halfWorld > 1e-9 ? localSize / (halfWorld * 2) : 1
 
-    facePull = {
-      index: found.index,
-      face,
-      origin: pos.clone(),
-      dir,
-      // `g.quaternion` and not the decomposed world one: `g.position` is in the parent's frame, so the axis
-      // has to be carried into that same frame and no further.
-      axisInParent: new THREE.Vector3(face.axis === 'x' ? 1 : 0, face.axis === 'y' ? 1 : 0, face.axis === 'z' ? 1 : 0)
-        .applyQuaternion(g.quaternion)
-        .normalize(),
-      t0,
-      // Where the face's plane sits along its own normal. For an axis-aligned box this is just its world x, y
-      // or z; rotated, it is the plane's offset, which is what a grid of parallel planes snaps to.
-      faceAt: faceCentre.dot(dir),
-      startScale: g.scale.clone(),
-      startPos: g.position.clone(),
-      perMetre,
-      last: 0,
+    // Exactly what the hover lit up. Anything that is not a built-in box has already dropped out, so a mixed
+    // selection pulls the boxes in it rather than refusing the gesture.
+    const targets: PullTarget[] = []
+    for (const f of matched.faces) {
+      const t = targetFor(f.index, f.face)
+      if (t !== null) targets.push(t)
     }
+    if (targets.length === 0) return false
+
+    facePull = { targets, origin: pos.clone(), dir: matched.dir, t0, primary: found.index, primaryFace: found.face, last: 0 }
     host.edits().beginDrag()
     return true
   }
@@ -251,31 +378,42 @@ export const createPickTool = (host: PickHost) => {
   const moveFacePull = (clientX: number, clientY: number): void => {
     const pull = facePull
     if (pull === null || host.doc() === null) return
-    const g = host.groupAt(pull.index)
-    if (g === undefined) return
     castFrom(clientX, clientY)
     const t = distanceAlongAxis(raycaster.ray.origin, raycaster.ray.direction, pull.origin, pull.dir)
     // Looking straight down the axis there is no answer; hold the last one rather than jumping.
     const raw = t === null ? pull.last : t - pull.t0
     pull.last = raw
-    const metres = snappedPull(pull.faceAt, raw, host.snapping() ? host.faceStep() : 0)
-    const step = host.snapping() ? host.faceStep() : 0.05
-    const next = pulled(
-      { x: pull.startScale.x, y: pull.startScale.y, z: pull.startScale.z },
-      { x: pull.startPos.x, y: pull.startPos.y, z: pull.startPos.z },
-      pull.face,
-      metres * pull.perMetre,
-      Math.max(step, 0.05) * pull.perMetre,
-      pull.axisInParent,
-    )
-    g.scale.set(next.scale.x, next.scale.y, next.scale.z)
-    g.position.set(next.position.x, next.position.y, next.position.z)
-    host.writeBackItem(pull.index)
-    host.rebuildSubtree(pull.index)
-    showFaceHover(pull.index, pull.face)
+    const step = host.snapping() ? host.faceStep() : 0
+    const floor = Math.max(host.snapping() ? host.faceStep() : 0.05, 0.05)
+
+    // One distance off the pointer, applied to every target on its own plane. Each snaps where *its* face
+    // lands, so boxes that began off the grid arrive on it and come out flush; with snapping off `snappedPull`
+    // hands back `raw` untouched and they all move by the same amount instead.
+    let shown: { x: number; y: number; z: number } | null = null
+    for (const target of pull.targets) {
+      const g = host.groupAt(target.index)
+      if (g === undefined) continue
+      const next = pulled(
+        { x: target.startScale.x, y: target.startScale.y, z: target.startScale.z },
+        { x: target.startPos.x, y: target.startPos.y, z: target.startPos.z },
+        target.face,
+        snappedPull(target.faceAt, raw, step) * target.perMetre,
+        floor * target.perMetre,
+        target.axisInParent,
+      )
+      g.scale.set(next.scale.x, next.scale.y, next.scale.z)
+      g.position.set(next.position.x, next.position.y, next.position.z)
+      host.writeBackItem(target.index)
+      host.rebuildSubtree(target.index)
+      if (target.index === pull.primary) shown = next.scale
+    }
+    showFaceHovers(pull.targets)
     host.inspectorSync()
-    const size = next.scale
-    host.setStatus(`${r4(size.x)} \u00d7 ${r4(size.y)} \u00d7 ${r4(size.z)}`)
+    // The grabbed box's size, and how many others came along. The rest have their own sizes, which the
+    // Inspector shows; one status line cannot carry five.
+    const extra = pull.targets.length - 1
+    if (shown !== null)
+      host.setStatus(`${r4(shown.x)} × ${r4(shown.y)} × ${r4(shown.z)}${extra > 0 ? ` +${extra}` : ''}`)
   }
 
   /** Finish a pull: one history entry and one message to the room, like a gizmo drag. */
@@ -397,6 +535,6 @@ export const createPickTool = (host: PickHost) => {
     /** The world point on the surface under a client position, or on the ground plane. */
     surfaceUnder,
     /** Clear the face highlight — leaving the face tool, or entering play. */
-    clearFaceHover: () => void (faceHover.visible = false),
+    clearFaceHover: () => hideFacePlates(),
   }
 }

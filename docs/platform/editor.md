@@ -498,13 +498,26 @@ The face is the handle, so there is nothing to aim at. No shortcut (the useful l
 | Piece | Function |
 | --- | --- |
 | which face a hit normal names | `faceFromNormal` — largest component, so a rounded box's fillets resolve to their face |
+| which face the *other* selected boxes move | `faceTowards` — the one pointing most nearly the way the drag is going (ADR 0128) |
 | how far the pointer dragged | `distanceAlongAxis` — nearest point on the normal line to the pointer ray; `null` down the axis, caller holds the last value |
 | where it lands | `snappedPull` — snaps the face's **plane offset along its normal**, not the distance dragged |
 | the transform | `pulled` — size `+= d`, centre `+= d/2 × sign` **along the node's axis rotated into the parent's frame**; clamped on the *size* so the far face holds |
 
-All four pure and tested (`src/facePull.ts`). **Built-in box and rounded box only**, since for those scale is
+All five pure and tested (`src/facePull.ts`). **Built-in box and rounded box only**, since for those scale is
 the whole size (ADR 0090) and a pull is a transform edit; an authored collider would need its half-extents
-edited too. Selected object only. One history entry per drag, coalesced like a gizmo drag.
+edited too. One history entry per drag, coalesced like a gizmo drag.
+
+**The drag moves the whole selection** (ADR 0128), not just the primary, and **starts on any selected box** —
+nearest under the pointer. One distance comes off the pointer on the grabbed face's line and every selected
+box moves its own face that far along its own normal; each snaps where *its* face lands, so boxes that began
+off the grid come out flush. Snapping off, they all move by the same amount instead — both behaviours out of
+the one toggle. Non-box nodes in the selection drop out silently.
+
+**One highlight per selected box**, on hover and during the drag, so which face each one will move is visible
+before you commit — the question the world-direction rule raises. A pool of plates over one shared geometry
+and material. The status line carries the grabbed box's size plus `+N`.
+`MATCH_FACE_BY_WORLD_DIRECTION` in `pickTool.ts` is the switch between world direction and the same lettered
+axis on every box.
 
 **Scale is the node's frame, position is the parent's**, and `pulled` takes the pulled axis carried into the
 parent's frame (`g.quaternion` applied to it) as a required argument for exactly that reason. Nudging
