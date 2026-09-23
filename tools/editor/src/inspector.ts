@@ -1035,22 +1035,24 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     const strip = el('div', 'iover')
     if (isPlacement) {
       const changed = doc.placementOverrides(at)
-      if (changed.length === 0) {
+      // Children dropped onto the placement are the level's, not the prefab's, until they are applied
+      // (ADR 0130). They belong in this count or the strip would read "matches the prefab" beside one.
+      const added = doc.placementAdded(at)
+      if (changed.length === 0 && added.length === 0) {
         strip.append(el('span', 'iover-t', 'matches the prefab'))
         container.append(strip)
         return
       }
       const total = changed.reduce((n, o) => n + o.fields.length, 0)
       strip.classList.add('on')
-      strip.append(
-        el(
-          'span',
-          'iover-t',
-          `${total} override${total === 1 ? '' : 's'} on ${changed.length} object${changed.length === 1 ? '' : 's'}`,
-        ),
-      )
+      const overridePart = total === 0 ? '' : `${total} override${total === 1 ? '' : 's'} on ${changed.length} object${changed.length === 1 ? '' : 's'}`
+      const addedPart = added.length === 0 ? '' : `${added.length} added object${added.length === 1 ? '' : 's'}`
+      strip.append(el('span', 'iover-t', [overridePart, addedPart].filter((x) => x !== '').join(', ')))
       const revert = el('button', 'ctl tiny', 'Revert all')
-      revert.title = `drop every change made inside this prefab (${changed.map((o) => `${doc.label(o.index)}: ${o.fields.join(', ')}`).join(' · ')})`
+      const revertWhat = changed.map((o) => `${doc.label(o.index)}: ${o.fields.join(', ')}`)
+      // Named one by one, because reverting deletes them and the button should say which.
+      for (const i of added) revertWhat.push(`${doc.label(i)}: added, would be deleted`)
+      revert.title = `drop every change made inside this prefab (${revertWhat.join(' · ')})`
       revert.addEventListener('click', () => host.revertPlacement(at))
       const apply = el('button', 'ctl tiny', 'Apply all')
       apply.title = 'push every change inside this prefab into the shared definition — every placement of it follows'

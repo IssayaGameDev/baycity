@@ -108,9 +108,12 @@ export const createMenus = (host: MenuHost) => {
         ],
       },
       { label: 'Create child', divider: true, enabled: own, why, items: createMenu(index) },
-      { label: 'Duplicate', hint: 'Ctrl+D', enabled: own, why, run: () => host.nodes.duplicateSelected() },
+      // Duplicate and Copy are open to a prefab's piece (ADR 0131): a copy of one is a plain object, even
+      // though the piece itself belongs to the prefab. Delete, Cut and the paste targets stay shut, because
+      // each of them would have to change the prefab.
+      { label: 'Duplicate', hint: 'Ctrl+D', enabled: true, run: () => host.nodes.duplicateSelected() },
       { label: 'Delete', hint: 'Del', enabled: own, why, run: () => host.nodes.deleteSelected() },
-      { label: 'Copy', hint: 'Ctrl+C', divider: true, enabled: own, why, run: () => host.edits().copySelected() },
+      { label: 'Copy', hint: 'Ctrl+C', divider: true, enabled: true, run: () => host.edits().copySelected() },
       { label: 'Cut', hint: 'Ctrl+X', enabled: own, why, run: () => host.edits().cutSelected() },
       { label: 'Paste as child', hint: 'Ctrl+Shift+V', enabled: own && host.edits().clipboardSize() > 0, why: own ? 'nothing copied' : why, run: () => host.edits().pasteClipboard(true) },
       {
@@ -151,8 +154,11 @@ export const createMenus = (host: MenuHost) => {
   const overrideItems = (index: number, inherited: boolean, isPlacement: boolean): MenuItem[] => {
     if (isPlacement) {
       const changed = host.doc()?.placementOverrides(index) ?? []
-      const objects = changed.length
-      const total = changed.reduce((n, o) => n + o.fields.length, 0)
+      // An added child is an override of the placement in everything but the record it is stored in
+      // (ADR 0130), so it counts toward both the enabling and the hint.
+      const added = host.doc()?.placementAdded(index).length ?? 0
+      const objects = changed.length + added
+      const total = changed.reduce((n, o) => n + o.fields.length, 0) + added
       return [
         {
           label: 'Revert all to prefab',

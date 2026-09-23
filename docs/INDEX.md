@@ -177,5 +177,7 @@ why matters.
 | [0127](adr/0127-a-hill-is-followed-not-fallen-down.md) | A hill is followed, not fallen down |
 | [0128](adr/0128-a-pull-moves-the-whole-selection.md) | A pull moves the whole selection |
 | [0129](adr/0129-a-face-is-chosen-before-it-is-pulled.md) | A face is chosen before it is pulled |
+| [0130](adr/0130-a-child-added-to-a-placement-can-be-applied.md) | A child added to a placement can be applied |
+| [0131](adr/0131-a-prefabs-piece-can-be-copied.md) | A prefab's piece can be copied |
 
 `Design archive/` holds superseded design material and is not maintained.
