@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, DEFAULT_TUNING, stepCharacter } from './groundController'
 
 /**
- * Slopes (ADR 0121). A grounded character follows the surface it is on; speed is unchanged going up, down
+ * Slopes (ADR 0127). A grounded character follows the surface it is on; speed is unchanged going up, down
  * and flat.
  *
  * The tuning is Keyboard Escape's, because that is the game whose `moveSpeed` spans a hundredfold range:
@@ -64,7 +64,7 @@ const restY = (s: Slope, x: number, deg: number): number =>
   surfaceY(s, x) + CHAR_HALF_HEIGHT + CHAR_RADIUS / Math.cos((deg * Math.PI) / 180) + 0.02
 
 interface Run {
-  /** Fraction of ticks with no footing. Running downhill this reached 0.98 before ADR 0121. */
+  /** Fraction of ticks with no footing. Running downhill this reached 0.98 before ADR 0127. */
   readonly airFrac: number
   /** Furthest the soles got above the surface: the hop. */
   readonly maxGap: number
@@ -151,7 +151,7 @@ describe('slopes', () => {
     }
   })
 
-  it('neither gains speed downhill nor loses it uphill (ADR 0121)', () => {
+  it('neither gains speed downhill nor loses it uphill (ADR 0127)', () => {
     for (const deg of ANGLES) {
       for (const speed of SPEEDS) {
         // Held forward throughout, so air drag never gets an airborne tick to bite on.
@@ -177,7 +177,7 @@ describe('slopes', () => {
 
   it('does not launch off a crest: over a ridge it takes the far side', () => {
     // Two slabs meeting in a ridge at x = 0, up one side and down the other, which is running off the top of
-    // a hill. Glue, not a ski jump (ADR 0121).
+    // a hill. Glue, not a ski jump (ADR 0127).
     const a = (20 * Math.PI) / 180
     for (const speed of [2.8, 15, 30]) {
       const w = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })

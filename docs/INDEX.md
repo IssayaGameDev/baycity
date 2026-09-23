@@ -167,7 +167,6 @@ why matters.
 | [0117](adr/0117-snapping-moves-the-corner.md) | Snapping moves the corner, not the centre |
 | [0118](adr/0118-the-keyboard-grid-goes-back-on-the-platform.md) | The keyboard grid goes back on the platform |
 | [0119](adr/0119-a-face-is-a-handle.md) | A face is a handle |
-| [0121](adr/0121-a-hill-is-followed-not-fallen-down.md) | A hill is followed, not fallen down |
 | [0120](adr/0120-a-game-describes-what-a-tool-draws.md) | A game describes what a tool draws |
 | [0121](adr/0121-the-editor-is-a-shell-around-subsystems.md) | The editor is a shell around subsystems |
 | [0122](adr/0122-revert-and-apply-have-two-scopes.md) | Revert and Apply have two scopes |
@@ -175,5 +174,6 @@ why matters.
 | [0124](adr/0124-a-resolved-definition-never-reaches-disk.md) | A resolved definition never reaches disk |
 | [0125](adr/0125-the-preview-poses-the-tree-in-one-walk.md) | The preview poses the tree in one walk |
 | [0126](adr/0126-a-reparent-re-expresses-the-authored-pose.md) | A reparent re-expresses the authored pose |
+| [0127](adr/0127-a-hill-is-followed-not-fallen-down.md) | A hill is followed, not fallen down |
 
 `Design archive/` holds superseded design material and is not maintained.

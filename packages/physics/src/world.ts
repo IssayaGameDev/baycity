@@ -153,7 +153,7 @@ export interface CharacterBody {
    * part of it — measured half of a 1.14 m descent, once in a 120-tick run down 40° at 40 m/s. The
    * remainder is what snap-to-ground exists to absorb, but the default 0.4 m is shorter than one tick of
    * descent from about 15 m/s up, so instead the gap opened, footing went with it, and the character arced
-   * 8 m off the hill (ADR 0121). Only ever widens it, and restores it before returning. Left unset the
+   * 8 m off the hill (ADR 0127). Only ever widens it, and restores it before returning. Left unset the
    * configured distance stands, so flat ground, ledges and steps are untouched. */
   move: (desired: Vec3, snapAtLeast?: number) => { grounded: boolean; applied: Vec3; ceiling: boolean }
   /**

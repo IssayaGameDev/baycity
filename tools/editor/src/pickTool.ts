@@ -143,6 +143,14 @@ export const createPickTool = (host: PickHost) => {
     startPos: THREE.Vector3
     /** Local units per world metre along this axis, so a world drag becomes a local scale. */
     perMetre: number
+    /**
+     * The pulled axis as it points in the **parent's** frame — the node's own rotation applied to it.
+     *
+     * The node's rotation, not its world one, because that is the frame `position` is stored in. Without it
+     * the centre moves along the parent's x while the face moves along the node's x, and a rotated box slides
+     * away as it grows (ADR 0119).
+     */
+    axisInParent: THREE.Vector3
     /** The last good distance, held when the camera looks straight down the axis. */
     last: number
   } | null = null
@@ -221,6 +229,11 @@ export const createPickTool = (host: PickHost) => {
       face,
       origin: pos.clone(),
       dir,
+      // `g.quaternion` and not the decomposed world one: `g.position` is in the parent's frame, so the axis
+      // has to be carried into that same frame and no further.
+      axisInParent: new THREE.Vector3(face.axis === 'x' ? 1 : 0, face.axis === 'y' ? 1 : 0, face.axis === 'z' ? 1 : 0)
+        .applyQuaternion(g.quaternion)
+        .normalize(),
       t0,
       // Where the face's plane sits along its own normal. For an axis-aligned box this is just its world x, y
       // or z; rotated, it is the plane's offset, which is what a grid of parallel planes snaps to.
@@ -253,6 +266,7 @@ export const createPickTool = (host: PickHost) => {
       pull.face,
       metres * pull.perMetre,
       Math.max(step, 0.05) * pull.perMetre,
+      pull.axisInParent,
     )
     g.scale.set(next.scale.x, next.scale.y, next.scale.z)
     g.position.set(next.position.x, next.position.y, next.position.z)

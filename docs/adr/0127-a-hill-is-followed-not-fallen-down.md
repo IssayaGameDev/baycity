@@ -1,4 +1,4 @@
-# ADR 0121 — A hill is followed, not fallen down
+# ADR 0127 — A hill is followed, not fallen down
 
 Status: accepted. Unconditional in `stepCharacter`, so every game gets it; nothing is added to
 `CharacterTuning`. Adds one field to `CharacterState` and one optional argument to `CharacterBody.move`.
