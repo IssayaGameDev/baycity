@@ -42,7 +42,6 @@ const MATCH_FACE_BY_WORLD_DIRECTION = true
 /** How far a press may travel and still be a click rather than an orbit. */
 const CLICK_SLOP = 4
 
-const sameFace = (a: Face, b: Face): boolean => a.axis === b.axis && a.sign === b.sign
 
 /** What the pointer needs from the editor around it. */
 export interface PickHost {
@@ -111,37 +110,35 @@ export const createPickTool = (host: PickHost) => {
   const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
   let downX = 0
   let downY = 0
-  /**
-   * A release that chose a face, so the selection click below must let it past (ADR 0129).
-   *
-   * Both handlers are on the canvas and both fire. The selection one re-selects the box the face is on, and
-   * every selection change clears the chosen face — so choosing one and losing it happened on the same click,
-   * the plates went out, and the next press found nothing to pull and orbited instead.
-   */
-  let faceClickTaken = false
   host.canvas.addEventListener('pointerdown', (e) => {
     downX = e.clientX
     downY = e.clientY
     host.setDragged(false)
-    faceClickTaken = false
     if (e.button !== 0 || host.playing() || host.tool() !== 'face') return
     /**
-     * **A press only pulls the face that is already chosen** (ADR 0129).
+     * **A press on a lit face pulls it, chosen or not** (ADR 0129, amended).
      *
-     * Face selection is a click of its own now, so a press somewhere else is not a pull: it is the start of
-     * either choosing a different face or losing the one held. Deciding here rather than on release is what
-     * lets the drag begin on the same press, so a chosen face still pulls in one motion.
+     * Requiring it to be chosen first made the plates a liar. The hover preview only draws while nothing is
+     * chosen, so a face lit by hovering was by construction one that `chosen` did not name — and the press
+     * refused it and fell through to orbiting the camera. Both states drew the same plate in the same
+     * colour, so there was no way to tell the draggable highlight from the one that would spin the view.
      *
-     * Orbit is suppressed for the drag and `host.dragged()` marks it, so the pointerup that follows is not
-     * read as a click that changes selection.
+     * So the press claims any face it finds, chooses it, and starts the drag: ADR 0119's press behaviour,
+     * with ADR 0129's highlight that outlives the pointer. A press that never moves is not a drag at all —
+     * `endFacePull` aborts it — so the same gesture still means "just choose this one".
+     *
+     * Orbit is suppressed and `host.dragged()` marks the press, so the pointerup behind this is not read as
+     * a click that changes the selection — which would clear the very choice just made.
      */
     const found = faceUnder(e.clientX, e.clientY)
-    if (found !== null && chosen !== null && chosen.faces[0]?.index === found.index && sameFace(chosen.faces[0].face, found.face)) {
-      if (beginFacePull(e.clientX, e.clientY, chosen)) {
-        host.setDragged(true)
-        host.controls.enabled = false
-        host.canvas.setPointerCapture(e.pointerId)
-      }
+    if (found === null) return // empty space, or a box that is not selected: the selection click has it
+    const matched = facesForSelection(found.index, found.face)
+    if (matched === null) return
+    chooseFace(matched)
+    if (beginFacePull(e.clientX, e.clientY, matched)) {
+      host.setDragged(true)
+      host.controls.enabled = false
+      host.canvas.setPointerCapture(e.pointerId)
     }
   })
 
@@ -151,11 +148,15 @@ export const createPickTool = (host: PickHost) => {
       moveFacePull(e.clientX, e.clientY)
       return
     }
-    // A chosen face owns the plates; the hover preview only runs when nothing is chosen, so there is never
-    // more than one set of faces lit and no question about which of them a drag would move.
-    if (chosen !== null) return
+    /**
+     * **The plates always show what a press right now would pull.**
+     *
+     * A face under the pointer wins, because that is what a press would take; with the pointer off every
+     * face, the chosen set stays lit, which is the highlight outliving the pointer. One rule, and no state
+     * where something is lit that a drag would not move.
+     */
     const found = faceUnder(e.clientX, e.clientY)
-    const matched = found === null ? null : facesForSelection(found.index, found.face)
+    const matched = found === null ? chosen : facesForSelection(found.index, found.face)
     if (matched === null) hideFacePlates()
     else showFaceHovers(matched.faces)
   })
@@ -168,15 +169,10 @@ export const createPickTool = (host: PickHost) => {
       return
     }
     if (e.button !== 0 || host.playing() || host.tool() !== 'face') return
-    // A click, not the end of an orbit: a press that travelled is the camera being moved, and must not
-    // change what is chosen. The same slop the selection click uses.
+    // Nothing was pressed on a face — the pointerdown above would have claimed it. A click on empty space
+    // lets the choice go, which is the way back to none; a travelled press was an orbit and changes nothing.
     if (Math.hypot(e.clientX - downX, e.clientY - downY) > CLICK_SLOP) return
-    const found = faceUnder(e.clientX, e.clientY)
-    // A face under the pointer is chosen; anywhere else clears, which is the only way back to none.
-    chooseFace(found === null ? null : facesForSelection(found.index, found.face))
-    // Taken only when it landed on a face. A click on empty space or on a box that is not selected has to
-    // reach the selection click, which is still how you choose what to work on while the tool is active.
-    faceClickTaken = found !== null
+    chooseFace(null)
   })
 
   /* ============================ pulling a face (ADR 0119) ============================ */
@@ -256,6 +252,14 @@ export const createPickTool = (host: PickHost) => {
     primaryFace: Face
     /** The last good distance, held when the camera looks straight down the axis. */
     last: number
+    /**
+     * Whether the pointer ever asked for a distance.
+     *
+     * A press now claims any face it lands on, so the gesture that only *chooses* one is a press with no
+     * movement behind it. Without this it would close as a drag and leave an empty entry in the history for
+     * every face anyone clicked on.
+     */
+    moved: boolean
   } | null = null
 
   /**
@@ -433,7 +437,7 @@ export const createPickTool = (host: PickHost) => {
     }
     if (targets.length === 0) return false
 
-    facePull = { targets, origin: pos.clone(), dir: matched.dir, t0, primary: first.index, primaryFace: first.face, last: 0 }
+    facePull = { targets, origin: pos.clone(), dir: matched.dir, t0, primary: first.index, primaryFace: first.face, last: 0, moved: false }
     host.edits().beginDrag()
     return true
   }
@@ -447,6 +451,7 @@ export const createPickTool = (host: PickHost) => {
     // Looking straight down the axis there is no answer; hold the last one rather than jumping.
     const raw = t === null ? pull.last : t - pull.t0
     pull.last = raw
+    if (Math.abs(raw) > 1e-6) pull.moved = true
     const step = host.snapping() ? host.faceStep() : 0
     const floor = Math.max(host.snapping() ? host.faceStep() : 0.05, 0.05)
 
@@ -488,7 +493,9 @@ export const createPickTool = (host: PickHost) => {
       host.edits().abortDrag()
       return
     }
-    host.edits().endDrag('face')
+    // A press that never moved chose a face and did nothing else, so there is no edit to record.
+    if (pull.moved) host.edits().endDrag('face')
+    else host.edits().abortDrag()
     host.rebuildLoaded()
     host.applyPreviewPoses()
   }
@@ -530,8 +537,7 @@ export const createPickTool = (host: PickHost) => {
     // to opening a menu, which is the sort of thing that gets blamed on the menu.
     if (e.button !== 0) return
     if (host.playing()) return // editing suspended during play (pointer = camera only)
-    if (host.dragged()) return // was dragging the gizmo, not a click
-    if (faceClickTaken) return // chose a face; re-selecting its box here would clear the choice again
+    if (host.dragged()) return // was dragging the gizmo or pulling a face, not a click
     if (Math.hypot(e.clientX - downX, e.clientY - downY) > CLICK_SLOP) return // was an orbit drag
     castFrom(e.clientX, e.clientY)
 
