@@ -3,12 +3,39 @@
   "config": {
     "mode": {
       "name": "keyboard"
+    },
+    "environment": {
+      "sun": {
+        "elevation": 30,
+        "azimuth": 38,
+        "intensity": 2.4,
+        "color": "#ffffff",
+        "shadows": false
+      },
+      "ambient": {
+        "intensity": 0.2
+      },
+      "sky": {
+        "topColor": "#2f86cc",
+        "bottomColor": "#0a1424",
+        "gradientBias": 1.15,
+        "gain": 2.6,
+        "glowColor": "#ffe6c0",
+        "glowSharpness": 200,
+        "glowStrength": 0.25,
+        "sunDiskIntensity": 400
+      },
+      "postfx": {
+        "ao": true,
+        "bloom": true,
+        "bloomStrength": 0.1
+      }
     }
   },
   "nodes": [
     {
       "id": "6da7ad6d",
-      "name": "empty",
+      "name": "Spawn",
       "transform": {
         "position": {
           "x": 0,
@@ -952,9 +979,9 @@
           "name": "Floor",
           "transform": {
             "position": {
-              "x": 0,
-              "y": 13.5,
-              "z": -15.4999
+              "x": -15.4999,
+              "y": 13.5001,
+              "z": -0.5
             },
             "rotation": {
               "x": 1.5708,
@@ -962,7 +989,63 @@
               "z": 1.5708
             },
             "scale": {
-              "x": 30,
+              "x": 31.0001,
+              "y": 1,
+              "z": 30
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "f0392856",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "63f32967",
+          "name": "Floor",
+          "transform": {
+            "position": {
+              "x": 15.5001,
+              "y": 13.5001,
+              "z": -0.4999
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 1.5708
+            },
+            "scale": {
+              "x": 31.0001,
               "y": 1,
               "z": 30
             }
