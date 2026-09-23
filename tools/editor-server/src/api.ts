@@ -617,6 +617,13 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
           sendJson(res, 200, { ok: true })
           return true
         }
+        case 'hidden': {
+          // Not an op: hiding is a view of the level, so it carries no batch and takes no sequence number.
+          const keys = Array.isArray(args.keys) ? (args.keys as unknown[]).filter((k): k is string => typeof k === 'string') : []
+          live.setHidden(name, keys, args.hidden === true)
+          sendJson(res, 200, { ok: true })
+          return true
+        }
         case 'presence': {
           live.presence(name, connId, user, args.data)
           sendJson(res, 200, { ok: true })

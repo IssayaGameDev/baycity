@@ -11,7 +11,7 @@ import {
   // Aliased: this file is DOM-heavy and `Node` is taken. A scene node is not a DOM node, and the day the two
   // are confused the error is a type error somewhere unrelated.
   type Level,
-  validateLevel, type NodeRef,
+  validateLevel, type NodeRef, refKey,
   BUILTIN_LABELS, BUILTIN_MODELS,
   isSegment, parseQualified, qualify } from '@mp/content'
 
@@ -66,6 +66,7 @@ import { createMotionPreview } from './motionPreview'
 import { createMenus } from './menus'
 import { createNodeActions } from './nodeActions'
 import { createGizmoTool } from './gizmoTool'
+import { createHiddenView, keysUnder } from './hiddenView'
 import { createPickTool } from './pickTool'
 import { createPrefabActions } from './prefabActions'
 import { createPlay } from './play'
@@ -123,6 +124,14 @@ let inspectorSync: () => void = () => {}
  */
 let selection: number[] = []
 let selected: number | null = null
+/**
+ * What the viewport is not drawing (ADR 0132) — Unity's eye column.
+ *
+ * A view of the level and not a change to it: it never reaches the game, it is not in the level file, and
+ * the server keeps it beside its locks and relays it to everyone in the room. Not to be confused with the
+ * `active` checkbox (ADR 0099), which switches a node off *in the level* and is content.
+ */
+const hiddenView = createHiddenView()
 /**
  * The Environment row is picked rather than a node (ADR 0048). Its own flag rather than a sentinel index in
  * `selection`, because every structural operation reads that list — delete, duplicate, reparent — and a fake
@@ -277,6 +286,14 @@ const room = createLiveSession({
   gizmoDragging: () => tool.dragging(),
   playing: () => play.active(),
   applyPreviewPoses: () => motion.applyPoses(),
+  onHidden: (keys) => {
+    hiddenView.set(keys)
+    // Nothing about the level changed, so there is no op, no history entry and nothing to send back: only
+    // what is drawn, what can be clicked, and the eyes down the Hierarchy.
+    meshes.buildAll()
+    hierarchy.render()
+    uiChanged()
+  },
   rebuildViewport: () => {
     meshes.buildAll()
     rebuildLoaded()
@@ -382,6 +399,7 @@ const meshes = createItemMeshes({
   mode: () => activeMode,
   gameSettings: () => gameData[activeMode?.name ?? '']?.settings ?? {},
   selected: () => selected,
+  hidden: (i) => doc !== null && hiddenView.hiddenAt(doc, i),
   // Each of these reads the groups that were just replaced, and none of them is that module's business.
   afterBuild: () => {
     motion.applyPoses()
@@ -1031,6 +1049,8 @@ const toolbar: Toolbar = createToolbar(
     grid: grid.visible,
     markers: markerGroup.visible,
     surfaceCells: meshes.cells(),
+    // `null` while nothing is hidden, so the button stays out of the way until it means something.
+    showingAll: hiddenView.any() || hiddenView.showingAll() ? hiddenView.showingAll() : null,
   }),
   {
     setName: (name) => {
@@ -1075,6 +1095,13 @@ const toolbar: Toolbar = createToolbar(
     setSurfaceCells: (on) => {
       meshes.setCells(on)
       meshes.buildAll()
+      refreshUi()
+    },
+    setShowingAll: (on) => {
+      // Nobody else is told: revealing is a way to look at the level, not a change to what is hidden.
+      hiddenView.setShowingAll(on)
+      meshes.buildAll()
+      hierarchy.render()
       refreshUi()
     },
   },
@@ -1126,6 +1153,18 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
     selectWith(index, mode, order)
   },
   heldBy: (index) => room.heldBy(index),
+  isHidden: (index) => doc !== null && hiddenView.hiddenAt(doc, index),
+  /**
+   * Hiding is sent to the room and comes back as the whole set (ADR 0132) — the echo is the ack, so
+   * nothing is applied locally first and two editors cannot end up disagreeing about what is on screen.
+   */
+  onToggleHidden: (index, onlyThis) => {
+    const open = doc
+    if (open === null) return
+    const keys = keysUnder(open, index, onlyThis)
+    const ref = open.refAt(index)
+    room.setHidden(keys, ref === null || !hiddenView.keys().has(refKey(ref)))
+  },
   onRename: (index, name) => {
     doc?.setName(index, name)
     edits.recordEdit('rename')

@@ -62,6 +62,14 @@ export interface ToolbarState {
    * describes no surface grid, and the button is then hidden rather than dead.
    */
   surfaceCells: boolean | null
+  /**
+   * Reveal everything hidden, without forgetting it (ADR 0132).
+   *
+   * `null` when nothing is hidden, so the button is out of the way until it means something. Local and
+   * momentary: a way to look, not a change, so it is not sent to the room and not remembered across a
+   * reload. It is also the way out of somebody else's hiding, which is reachable now the set is shared.
+   */
+  showingAll: boolean | null
 }
 
 export interface ToolbarActions {
@@ -78,6 +86,7 @@ export interface ToolbarActions {
   setPreviewing: (on: boolean) => void
   setGrid: (on: boolean) => void
   setSurfaceCells: (on: boolean) => void
+  setShowingAll: (on: boolean) => void
   setMarkers: (on: boolean) => void
 }
 
@@ -190,6 +199,11 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
   cellsButton.title = 'where this game would generate cells on a surface — the keyboard’s caps (ADR 0120)'
   cellsButton.addEventListener('click', () => actions.setSurfaceCells(state().surfaceCells !== true))
 
+  const revealButton = el('button')
+  revealButton.textContent = 'Reveal'
+  revealButton.title = 'show everything hidden in the viewport, without un-hiding it (ADR 0132)'
+  revealButton.addEventListener('click', () => actions.setShowingAll(state().showingAll !== true))
+
   // --- preview and play ---
   /**
    * One toggle for the whole level, not one per object: motion is timed against other motion, so a staggered
@@ -208,7 +222,7 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
     el('div', 'tb-sep'),
     group(seg, spaceButton, snapBox, snapLabel, stepInput, stepUnitLabel),
     el('div', 'tb-sep'),
-    group(gridButton, markerButton, cellsButton),
+    group(gridButton, markerButton, cellsButton, revealButton),
     el('div', 'tb-sep'),
     group(previewButton, playButton),
   )
@@ -236,6 +250,8 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
     // Hidden, not disabled: a game with nothing to preview has no use for the word.
     cellsButton.hidden = s.surfaceCells === null
     cellsButton.classList.toggle('on', s.surfaceCells === true)
+    revealButton.hidden = s.showingAll === null
+    revealButton.classList.toggle('on', s.showingAll === true)
 
     playButton.textContent = s.playing ? '■ Stop' : '▶ Play'
     playButton.classList.toggle('on', s.playing)

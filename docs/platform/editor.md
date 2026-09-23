@@ -538,6 +538,20 @@ at rotation (-90, -75, -90), a 5 m pull dragged that face 3.54 m; a box turned 1
 backwards. Every rotated box was affected bar one turned about the axis being pulled. The rotated cases are in
 `facePull.test.ts`; the six original ones all used an unrotated box, which is why it stood.
 
+## Hiding a node in the viewport (ADR 0132)
+
+Unity's eye column: hidden nodes are **not drawn and cannot be clicked**, and the game is unaffected. Not
+the `active` checkbox (ADR 0099), which switches a node off *in the level* and is content.
+
+| Piece | Where |
+|---|---|
+| the set, and what a toggle covers | `src/hiddenView.ts` — `createHiddenView`, `keysUnder(doc, i, onlyThis)`. Pure and tested. Keyed by `refKey`, so a prefab's piece is keyed by its placement and hiding one wall does not hide it in every tower. Every descendant is named rather than hidden by implication, which keeps alt-click and a branch toggle two different sets |
+| not drawn, not clickable | `itemMeshes` builds no meshes for a hidden node (`PickHost.hidden`). Picking raycasts the meshes, so both halves fall out of the one rule; the group survives, so indices and child frames are untouched |
+| the control | a fixed 18 px gutter at the left of a Hierarchy row, **outside** the indentation so the column lines up at any depth. Empty until the row is hovered, always drawn once hidden — which is the condition ADR 0102 set for a control living here. A hidden row does **not** dim: dimming already means switched off |
+| alt-click | that node alone; a plain click takes the subtree |
+| **Reveal** | a toolbar toggle showing everything without forgetting it; hidden while nothing is hidden. Local and momentary, never sent |
+| shared and durable | `POST .../hidden` → the server's `stateDir/hidden.json`, relayed live as the `hidden` event and carried on the `snapshot` (`editor-server.md`). The whole set every time, never a delta |
+
 ## Snapping (ADR 0114)
 
 One increment **per tool**, in `edit.steps`; the toolbar shows the active tool's with its unit and its own

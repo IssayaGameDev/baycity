@@ -91,6 +91,7 @@ const setUp = async (): Promise<{
     onRejected: (batch, reason) => out.rejected.push({ batch, reason }),
     onPeers: (p) => out.peers.push(p),
     onHolds: (x) => out.holds.push(x),
+    onHidden: () => undefined,
     onPresence: () => undefined,
     onPrefabOps: () => undefined,
     onError: (m) => out.errors.push(m),
@@ -117,7 +118,8 @@ describe('collab', () => {
 
   it('a refused stream rejects the join', async () => {
     const h = harness()
-    const collab = createCollab(h.transport, { level: () => null, onSnapshot: () => undefined, onApplied: () => undefined, onRejected: () => undefined, onPeers: () => undefined, onHolds: () => undefined, onPresence: () => undefined, onPrefabOps: () => undefined, onError: () => undefined })
+    const collab = createCollab(h.transport, { level: () => null, onSnapshot: () => undefined, onApplied: () => undefined, onRejected: () => undefined, onPeers: () => undefined, onHolds: () => undefined, onHidden: () => undefined,
+    onPresence: () => undefined, onPrefabOps: () => undefined, onError: () => undefined })
     const joined = collab.join('nope')
     h.drop('not there')
     await expect(joined).rejects.toThrow('not there')

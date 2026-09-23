@@ -49,6 +49,12 @@ export interface Row {
   disabled: boolean
   /** An **ancestor** is switched off, so this is absent whatever its own flag says — the row dims the same. */
   disabledAbove: boolean
+  /**
+   * Not drawn in the viewport (ADR 0132) — Unity's eye. **Not the same as `disabled`**, and deliberately
+   * shown differently: `disabled` means gone from the level and from the game, this means "I am not looking
+   * at it right now". A row that dimmed for both would say neither.
+   */
+  hidden: boolean
   hasChildren: boolean
   /** Something can be opened under this row: inherited nodes, own children, or both. */
   expandable: boolean
@@ -75,7 +81,15 @@ export interface Openness {
  * Rows for a document. Pure, so the parts worth getting right — which descendants a collapsed row hides,
  * what a drop above a row would insert at, how a piece row is addressed — are testable without a DOM.
  */
-export const rowsOf = (doc: Doc, open: Openness, heldBy: (index: number) => string | null = () => null): Row[] => {
+/** Width of the fixed gutter the eyes live in, left of everything and outside the indentation. */
+const EYE_GUTTER = 18
+
+export const rowsOf = (
+  doc: Doc,
+  open: Openness,
+  heldBy: (index: number) => string | null = () => null,
+  isHidden: (index: number) => boolean = () => false,
+): Row[] => {
   const rows: Row[] = []
   // Anything deeper than this is inside a collapsed subtree. A depth-first walk means we are back out of
   // it the moment a row appears at that depth or shallower.
@@ -109,6 +123,7 @@ export const rowsOf = (doc: Doc, open: Openness, heldBy: (index: number) => stri
       linked: ref !== null,
       disabled: !doc.nodeEnabled(i),
       disabledAbove: doc.disabledByAncestor(i),
+      hidden: isHidden(i),
       hasChildren: contents > 0,
       expandable: contents > 0,
       expanded: contents > 0 && shown,
@@ -166,6 +181,13 @@ export interface HierarchyHost {
    * panel knows which rows are on screen.
    */
   onSelect: (index: number, mode: SelectMode, order: readonly number[]) => void
+  /** Is this node hidden in the viewport (ADR 0132)? What the eye in the left gutter draws. */
+  isHidden: (index: number) => boolean
+  /**
+   * The eye was clicked. `onlyThis` is an alt-click: the node alone, leaving its children where they are;
+   * plain, it is the node and everything under it.
+   */
+  onToggleHidden: (index: number, onlyThis: boolean) => void
   /** Whether the Game row is the current selection (ADR 0052). */
   gameSelected: () => boolean
   /** What the Game row reads: the game's label, or that the level has none. */
@@ -262,7 +284,7 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
 
     const selection = host.selection()
     const primary = selection[selection.length - 1] ?? null
-    const rows = rowsOf(doc, { expanded }, host.heldBy)
+    const rows = rowsOf(doc, { expanded }, host.heldBy, host.isHidden)
     // Every visible row in draw order: what a Shift-range runs over. Pieces are selectable too, so they are
     // in it — a range that skipped them would jump over what the eye sees between two rows.
     const order = rows.map((r) => r.index)
@@ -281,12 +303,36 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
         // Off itself, or off because something above it is: both read as absent, and the second cannot be
         // fixed on this row, so they look the same and the checkbox says which.
         row.disabled || row.disabledAbove ? 'off' : '',
+        // Its own class, never `off`: hidden and switched-off mean different things and must not look alike.
+        row.hidden ? 'eyeshut' : '',
       ]
         .filter((c) => c !== '')
         .join(' ')
       // Indentation is the only thing that says "inside", so it comes from the data, not from a class.
-      el.style.paddingLeft = `${6 + row.depth * 14}px`
+      // The eye sits in a fixed gutter at the left of the panel, **outside** the indentation, so the column
+      // lines up however deep the tree goes. Indented, the eyes would zigzag down the list (ADR 0132).
+      el.style.paddingLeft = `${EYE_GUTTER + 6 + row.depth * 14}px`
       el.dataset.index = String(row.index) // what `reveal` scrolls to after a render
+
+      /**
+       * The eye. Empty until the row is hovered, and always drawn once the node is hidden — so the column
+       * costs nothing when unused, which is what ADR 0102 objected to about a column of controls here.
+       * Alt-click takes the node alone and leaves its children visible, as Unity's does.
+       */
+      const eye = document.createElement('span')
+      eye.className = 'eye'
+      eye.textContent = row.hidden ? '◉' : '○'
+      eye.title = row.hidden ? 'hidden in the viewport (alt-click: this object only)' : 'hide in the viewport (alt-click: this object only)'
+      eye.addEventListener('pointerdown', (ev) => {
+        // Before the row's own handler, so hiding something never also selects it.
+        ev.stopPropagation()
+        ev.preventDefault()
+      })
+      eye.addEventListener('click', (ev) => {
+        ev.stopPropagation()
+        host.onToggleHidden(row.index, ev.altKey)
+      })
+      el.append(eye)
 
       const twist = document.createElement('span')
       twist.className = 'twist'
