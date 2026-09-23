@@ -176,5 +176,6 @@ why matters.
 | [0126](adr/0126-a-reparent-re-expresses-the-authored-pose.md) | A reparent re-expresses the authored pose |
 | [0127](adr/0127-a-hill-is-followed-not-fallen-down.md) | A hill is followed, not fallen down |
 | [0128](adr/0128-a-pull-moves-the-whole-selection.md) | A pull moves the whole selection |
+| [0129](adr/0129-a-face-is-chosen-before-it-is-pulled.md) | A face is chosen before it is pulled |
 
 `Design archive/` holds superseded design material and is not maintained.
