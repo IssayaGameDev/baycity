@@ -1,7 +1,7 @@
 import { eulerToQuat, rotateVec3, vec3, type Vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
-import { distanceAlongAxis, faceFromNormal, pulled, snappedPull, type Axis, type Face } from './facePull'
+import { distanceAlongAxis, faceFromNormal, faceTowards, pulled, snappedPull, type Axis, type Face } from './facePull'
 
 const v = (x: number, y: number, z: number) => ({ x, y, z })
 const DEG = Math.PI / 180
@@ -178,5 +178,55 @@ describe('pulled, on a rotated box', () => {
     const out = pulled(scale, position, face, -50, 0.5, axis)
     expect(out.scale.y).toBe(0.5)
     expect(apart(before, farFace(out.position, out.scale, face, axis))).toBeCloseTo(0, 6)
+  })
+})
+
+/**
+ * One drag, every selected box (ADR 0119).
+ *
+ * The grabbed box names its face from the pointer. Every other selected box is asked which of its six faces
+ * points most nearly the way the drag is going, so a row of platforms grows together rather than each growing
+ * along its own lettered axis.
+ */
+describe('faceTowards', () => {
+  const q = (deg: Vec3): { x: number; y: number; z: number; w: number } =>
+    eulerToQuat(vec3(deg.x * DEG, deg.y * DEG, deg.z * DEG))
+  const east = v(1, 0, 0)
+
+  it('is the face under the pointer when the box is unrotated', () => {
+    expect(faceTowards(east, q(v(0, 0, 0)))).toEqual({ axis: 'x', sign: 1 })
+    expect(faceTowards(v(-1, 0, 0), q(v(0, 0, 0)))).toEqual({ axis: 'x', sign: -1 })
+    expect(faceTowards(v(0, 1, 0), q(v(0, 0, 0)))).toEqual({ axis: 'y', sign: 1 })
+    expect(faceTowards(v(0, 0, -1), q(v(0, 0, 0)))).toEqual({ axis: 'z', sign: -1 })
+  })
+
+  /** The whole point: a box turned 90 degrees grows the same way in the world, on a different local axis. */
+  it('follows the world direction, not the letter, on a rotated box', () => {
+    // Turned +90 about y, the box's local +z is what now points east, so that is the face that moves.
+    expect(faceTowards(east, q(v(0, 90, 0)))).toEqual({ axis: 'z', sign: 1 })
+    expect(faceTowards(east, q(v(0, -90, 0)))).toEqual({ axis: 'z', sign: -1 })
+    expect(faceTowards(east, q(v(0, 180, 0)))).toEqual({ axis: 'x', sign: -1 })
+  })
+
+  /** A box turned 180 degrees must not grow away from the drag while its neighbour grows toward it. */
+  it('never picks a face pointing against the drag', () => {
+    for (const deg of [0, 30, 90, 150, 180, 210, 270, 330]) {
+      const face = faceTowards(east, q(v(0, deg, 0)))
+      expect(face, `${deg} deg`).not.toBeNull()
+      // The chosen face, back in world space, must not oppose the drag.
+      const n = rotateVec3(q(v(0, deg, 0)), flat(face!.axis))
+      const along = (face!.sign === 1 ? 1 : -1) * n.x
+      expect(along, `${deg} deg`).toBeGreaterThan(0)
+    }
+  })
+
+  it('is stable at 45 degrees rather than undefined', () => {
+    // Exactly between two faces: the largest-component rule decides, the same rule the pointer uses.
+    expect(faceTowards(east, q(v(0, 45, 0)))).not.toBeNull()
+  })
+
+  it('reads a tilted drag on a tilted box', () => {
+    // Turned +90 about x, the box's local +y points along world +z, so a drag along -z moves its -y face.
+    expect(faceTowards(v(0, 0, -1), q(v(90, 0, 0)))).toEqual({ axis: 'y', sign: -1 })
   })
 })

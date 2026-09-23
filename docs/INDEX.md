@@ -175,5 +175,6 @@ why matters.
 | [0125](adr/0125-the-preview-poses-the-tree-in-one-walk.md) | The preview poses the tree in one walk |
 | [0126](adr/0126-a-reparent-re-expresses-the-authored-pose.md) | A reparent re-expresses the authored pose |
 | [0127](adr/0127-a-hill-is-followed-not-fallen-down.md) | A hill is followed, not fallen down |
+| [0128](adr/0128-a-pull-moves-the-whole-selection.md) | A pull moves the whole selection |
 
 `Design archive/` holds superseded design material and is not maintained.
