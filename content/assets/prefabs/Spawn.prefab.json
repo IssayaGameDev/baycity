@@ -983,7 +983,7 @@
           "id": "f0392856",
           "type": "Mesh",
           "params": {
-            "model": ""
+            "model": "builtin:box"
           }
         },
         {
