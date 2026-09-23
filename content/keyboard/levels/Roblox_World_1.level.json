@@ -4975,7 +4975,7 @@
                 "position": {
                   "x": -66,
                   "y": 5.0006,
-                  "z": 35.5001
+                  "z": 34.5001
                 },
                 "rotation": {
                   "x": 1.5708,
@@ -5366,40 +5366,6 @@
       ]
     },
     {
-      "id": "faebdbee",
-      "name": "InterLevel",
-      "transform": {
-        "position": {
-          "x": -198,
-          "y": 3.5,
-          "z": 439
-        },
-        "rotation": {
-          "x": 0,
-          "y": -1.5708,
-          "z": 0
-        }
-      },
-      "components": [],
-      "prefab": "7b146287b66c6a52",
-      "overrides": {
-        "c65ac1fb": {
-          "transform": {
-            "position": {
-              "x": -0.0004,
-              "y": 0,
-              "z": 0
-            },
-            "scale": {
-              "x": 15.9993,
-              "y": 1,
-              "z": 15
-            }
-          }
-        }
-      }
-    },
-    {
       "id": "5ba7b7e1",
       "name": "Obstacle 7",
       "transform": {
@@ -5644,22 +5610,63 @@
       }
     },
     {
-      "id": "cd316813",
-      "name": "obstacle 8",
+      "id": "9751fcc8",
+      "name": "Obstacle 8",
       "transform": {
         "position": {
           "x": -369,
           "y": 3,
-          "z": 438.8
-        },
-        "scale": {
-          "x": 9,
-          "y": 1,
-          "z": 7.6
+          "z": 438.5
         }
       },
       "components": [],
-      "prefab": "c9dd2e7e24fd909d"
+      "children": [
+        {
+          "id": "426d09da",
+          "name": "platform",
+          "transform": {
+            "position": {
+              "x": -1.5,
+              "y": 0.15,
+              "z": 0
+            },
+            "scale": {
+              "x": 3,
+              "y": 0.3,
+              "z": 5
+            }
+          },
+          "components": [
+            {
+              "id": "572297af",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1
+              }
+            }
+          ],
+          "prefab": "86d604d0603125b8"
+        }
+      ]
+    },
+    {
+      "id": "aa638208",
+      "name": "InterLevel",
+      "transform": {
+        "position": {
+          "x": -166.5,
+          "y": 3.5,
+          "z": 438.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": -1.5708,
+          "z": 0
+        }
+      },
+      "components": [],
+      "prefab": "7b146287b66c6a52"
     }
   ]
 }
