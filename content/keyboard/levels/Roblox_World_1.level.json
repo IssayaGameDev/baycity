@@ -1254,21 +1254,21 @@
               "params": {}
             }
           ]
-        },
-        {
-          "id": "87dd2d2e",
-          "name": "InterLevel",
-          "transform": {
-            "position": {
-              "x": 0,
-              "y": -1,
-              "z": 73.5
-            }
-          },
-          "components": [],
-          "prefab": "7b146287b66c6a52"
         }
       ]
+    },
+    {
+      "id": "87dd2d2e",
+      "name": "InterLevel",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -1,
+          "z": 90.5
+        }
+      },
+      "components": [],
+      "prefab": "7b146287b66c6a52"
     },
     {
       "id": "3f777ba0",
@@ -1303,18 +1303,49 @@
           },
           "transform": {
             "position": {
-              "x": 0,
+              "x": 0.5,
               "y": -1,
               "z": 0
             },
             "scale": {
-              "x": 30,
+              "x": 40,
               "y": 1,
-              "z": 30
+              "z": 40
+            }
+          }
+        },
+        "41ae6098": {
+          "enabled": {
+            "6f0a89ae": false
+          },
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 12,
+              "z": 0
+            },
+            "scale": {
+              "x": 40,
+              "y": 25,
+              "z": 40
             }
           }
         }
-      }
+      },
+      "name": "Obstacle 2"
+    },
+    {
+      "id": "718a66d3",
+      "name": "InterLevel",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -1,
+          "z": 145.5
+        }
+      },
+      "components": [],
+      "prefab": "7b146287b66c6a52"
     }
   ]
 }
