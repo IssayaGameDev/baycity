@@ -557,7 +557,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
      * one. The action is a fixed alternation anchored at the end, so the greedy group backtracks off it. A
      * level whose name is not a legal qualified one is not a document here, so the route does not match.
      */
-    const m = /^\/api\/live\/(level|prefab)\/([\w\-/]+)\/(events|ops|hold|release|presence|flush|leave|ping)$/.exec(url)
+    const m = /^\/api\/live\/(level|prefab)\/([\w\-/]+)\/(events|ops|hold|release|presence|hidden|flush|leave|ping)$/.exec(url)
     if (m === null) return false
     const kind = m[1] as 'level' | 'prefab'
     if (kind === 'level' && parseQualified(m[2]!) === null) return false
