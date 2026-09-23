@@ -208,14 +208,33 @@ describe('structure', () => {
     expect(doc.count()).toBe(0)
   })
 
-  it('refuses to delete, reorder or copy an inherited node', () => {
+  it('refuses to delete or reorder an inherited node, whose place belongs to the prefab', () => {
     const { doc } = placed()
     expect(doc.kindOf(1)).toBe('inherited')
     doc.remove(1)
     expect(doc.count(), 'still there — its place belongs to the prefab').toBe(2)
-    expect(doc.duplicate(1)).toBe(1)
-    expect(doc.copy(1)).toBeNull()
     expect(doc.canReparent(1, null)).toBe(false)
+  })
+
+  /**
+   * Copying one is a different question from editing one (ADR 0131): the copy is a plain object, so it is
+   * allowed, and it carries what was on screen — the piece with this placement's overrides baked in.
+   */
+  it('copies an inherited node as its resolved self', () => {
+    const { doc } = placed()
+    doc.setTransform(1, { position: vec3(7, 8, 9) })
+    const item = doc.copy(1)
+    expect(item, 'used to be null, so Ctrl+C silently did nothing').not.toBeNull()
+    expect(item!.node.transform?.position, 'what you saw is what you copied').toEqual(vec3(7, 8, 9))
+  })
+
+  /** Its siblings are the prefab's, so the nearest place this level can put a copy is under the placement. */
+  it('duplicates an inherited node as an added child of its placement', () => {
+    const { doc } = placed()
+    const at = doc.duplicate(1)
+    expect(at, 'a new node, not the one asked about').not.toBe(1)
+    expect(doc.kindOf(at)).toBe('own')
+    expect(doc.placementAdded(0), 'and Apply can put it in the prefab (ADR 0130)').toEqual([at])
   })
 
   it('re-mints ids when duplicating, so the copy is a distinct node', () => {
@@ -1483,3 +1502,143 @@ describe('prefab definitions a document resolved', () => {
     expect(stripHydrated(doc.asLevel(), doc.resolvedPrefabs()).prefabs?.[PAD_ID]).toBe(own)
   })
 })
+
+/**
+ * A child added to a placement, and applying it into the prefab (ADR 0130).
+ *
+ * Unity's *Added GameObject*. A placement's children are the prefab's, resolved; anything dropped on it here
+ * is the level's own and sits beside them. Nothing in the override record can describe that, so it is asked
+ * for separately and carried by the same Revert and Apply.
+ */
+describe('a child added to a placement', () => {
+  /** Drop an empty onto the placement, the way the Hierarchy and the viewport menu do. */
+  const addChild = (doc: Doc): number => doc.placeEmpty(vec3(1, 2, 3), 0)
+  const record = (doc: Doc): { ops: import('@mp/content').Op[]; inverses: import('@mp/content').Op[] }[] => {
+    const batches: { ops: import('@mp/content').Op[]; inverses: import('@mp/content').Op[] }[] = []
+    doc.onOps = (b) => batches.push(b)
+    return batches
+  }
+
+  it('is the level own child, not one of the prefab pieces', () => {
+    const { doc } = placed()
+    const at = addChild(doc)
+    expect(at).toBeGreaterThan(0)
+    expect(doc.kindOf(at), 'dropped here, so this level authored it').toBe('own')
+    expect(doc.kindOf(1), 'the prefab piece beside it is still inherited').toBe('inherited')
+  })
+
+  it('is found by placementAdded, and the prefab pieces are not', () => {
+    const { doc } = placed()
+    expect(doc.placementAdded(0)).toEqual([])
+    const at = addChild(doc)
+    expect(doc.placementAdded(0)).toEqual([at])
+  })
+
+  it('does not count as an override, since nothing about the prefab changed', () => {
+    const { doc } = placed()
+    addChild(doc)
+    expect(doc.placementOverrides(0)).toEqual([])
+  })
+
+  /** The strip used to read "matches the prefab" beside a child you had just dropped on it. */
+  it('makes Apply available where overrides alone would not', () => {
+    const { doc } = placed()
+    addChild(doc)
+    const plan = doc.placementOverrideOps(0)
+    expect(plan).not.toBeNull()
+    expect(plan!.ops.map((o) => o.kind)).toEqual(['insertNode'])
+  })
+
+  it('goes into the prefab root, carrying its transform', () => {
+    const { doc } = placed()
+    addChild(doc)
+    const insert = doc.placementOverrideOps(0)!.ops[0]
+    expect(insert?.kind).toBe('insertNode')
+    if (insert?.kind !== 'insertNode') throw new Error('not an insert')
+    expect(insert.parent, 'the prefab root, whose children the pieces are').toBe('root')
+    // A child of the placement and a child of the prefab root are in the same frame, so nothing converts.
+    expect(insert.node.transform?.position).toEqual(vec3(1, 2, 3))
+  })
+
+  /** A prefab's node ids are its own, and the level keeps its copy until the revert that follows a submit. */
+  it('mints a fresh id rather than reusing one the prefab already has', () => {
+    const { doc } = placed()
+    addChild(doc)
+    addChild(doc)
+    const ids = doc
+      .placementOverrideOps(0)!
+      .ops.map((o) => (o.kind === 'insertNode' ? o.node.id : ''))
+    expect(ids).toHaveLength(2)
+    expect(new Set(ids).size, 'two adds, two distinct ids').toBe(2)
+    expect(ids).not.toContain('pad')
+    expect(ids).not.toContain('root')
+  })
+
+  it('appends after the pieces the prefab already has', () => {
+    const { doc } = placed()
+    addChild(doc)
+    const insert = doc.placementOverrideOps(0)!.ops[0]
+    if (insert?.kind !== 'insertNode') throw new Error('not an insert')
+    expect(insert.index, 'the pad prefab has one child already').toBe(1)
+  })
+
+  it('carries several, each after the last', () => {
+    const { doc } = placed()
+    addChild(doc)
+    addChild(doc)
+    const ops = doc.placementOverrideOps(0)!.ops
+    expect(ops).toHaveLength(2)
+    expect(ops.map((o) => (o.kind === 'insertNode' ? o.index : -1))).toEqual([1, 2])
+  })
+
+  it('travels alongside the overrides, in one submission', () => {
+    const { doc } = placed()
+    doc.setTransform(1, { position: vec3(9, 9, 9) })
+    addChild(doc)
+    const kinds = doc.placementOverrideOps(0)!.ops.map((o) => o.kind)
+    expect(kinds).toContain('setTransform')
+    expect(kinds).toContain('insertNode')
+  })
+
+  /** Revert means "look like the prefab", and the prefab has no such child. Unity deletes it too. */
+  it('is deleted by a revert', () => {
+    const { doc } = placed()
+    const before = doc.count()
+    addChild(doc)
+    expect(doc.count()).toBe(before + 1)
+    doc.revertPlacement(0)
+    expect(doc.count()).toBe(before)
+    expect(doc.placementAdded(0)).toEqual([])
+  })
+
+  it('is deleted in the same batch as the overrides it came with', () => {
+    const { doc } = placed()
+    doc.setTransform(1, { position: vec3(9, 9, 9) })
+    addChild(doc)
+    const batches = record(doc)
+    doc.revertPlacement(0)
+    expect(batches, 'one batch, so one Ctrl+Z and one message to the room').toHaveLength(1)
+    expect(batches[0]!.ops.map((o) => o.kind).sort()).toEqual(['removeNode', 'setNodeOverride'])
+  })
+
+  it('leaves a subtree inside the added child alone, as one entry', () => {
+    const { doc } = placed()
+    const at = addChild(doc)
+    doc.placeEmpty(vec3(0, 0, 0), at)
+    expect(doc.placementAdded(0), 'the grandchild rides inside its parent').toEqual([at])
+  })
+
+  /** Nesting a prefab in a prefab needs the inner definition resolved in the prefab's room; not built. */
+  it('does not offer a placement dropped onto a placement', () => {
+    const { doc } = placed()
+    const inner = doc.placePrefab(PAD_ID, padPrefab(), vec3(4, 0, 0))
+    doc.reparent(inner, 0, 0)
+    expect(doc.placementAdded(0)).toEqual([])
+  })
+
+  it('is not offered on something that is not a placement', () => {
+    const { doc } = placed()
+    expect(doc.placementAdded(1), 'a prefab piece is not a placement').toEqual([])
+  })
+})
+

@@ -322,9 +322,31 @@ export interface Doc {
    * owned by that inner one, and those belong to it.
    */
   placementOverrides: (i: number) => { index: number; fields: string[] }[]
-  /** Drop every override in a placement, in one batch — one undo entry, one message to the room. */
+  /**
+   * Children this level has added under a placement — Unity's *Added GameObject* (ADR 0130).
+   *
+   * A placement's children are the prefab's, resolved; anything dropped on it here is the level's own and
+   * sits beside them. Nothing in the override record can describe it, so it is asked for separately and
+   * carried by the same Revert and Apply as the overrides.
+   *
+   * Direct children only. A child of an added child travels inside it and is not its own entry. A child that
+   * is itself a **placement** is excluded: inserting one into a prefab means a prefab referencing a prefab,
+   * whose definition would have to resolve in the prefab's own room (ADR 0124), and that is not built.
+   */
+  placementAdded: (i: number) => number[]
+  /**
+   * Drop every override in a placement **and delete every child added to it**, in one batch — one undo
+   * entry, one message to the room.
+   *
+   * Deleting is what Revert means: it makes the placement match the prefab, and the prefab does not have
+   * that child. Unity does the same. One Ctrl+Z puts it back (ADR 0130).
+   */
   revertPlacement: (i: number) => void
-  /** Every override in a placement as one batch of ops for the prefab's own document (ADR 0091). */
+  /**
+   * Every override in a placement **and every child added to it** as one batch of ops for the prefab's own
+   * document (ADR 0091, ADR 0130). Added children arrive as `insertNode` on the prefab's root, with fresh
+   * ids, since a prefab's node ids are its own.
+   */
   placementOverrideOps: (i: number) => { assetId: string; ops: Op[] } | null
 
   // ---- motion -------------------------------------------------------------------------------------
@@ -1046,7 +1068,21 @@ const docOver = (
     },
     // A clone of a placement references the same table entry. Cloning the *definition* would quietly break
     // the very link the reference exists to provide. Children come along; ids are re-minted.
+    /**
+     * A copy beside the original — except a prefab's piece, whose siblings belong to the prefab.
+     *
+     * There the copy goes **under the placement**, as an added child (ADR 0130), which is the nearest place
+     * this level can put one and what Unity does with the same gesture. Apply then puts it in the prefab.
+     */
     duplicate: (i) => {
+      const inherited = own(i) === undefined ? node(i) : undefined
+      if (inherited?.owner !== undefined) {
+        const host = inherited.owner
+        const copy = structuredClone(inherited.view)
+        reidSubtree(copy)
+        commit([{ kind: 'insertNode', parent: host.id, index: host.children?.length ?? 0, node: copy }])
+        return indexOfId(copy.id)
+      }
       const n = own(i)
       if (n?.siblings === undefined) return i
       const copy = structuredClone(n.authored)
@@ -1254,6 +1290,24 @@ const docOver = (
       return out
     },
 
+    placementAdded: (i) => {
+      const root = node(i)
+      if (root?.authored.prefab === undefined) return []
+      const all = nodes()
+      const out: number[] = []
+      for (let j = i + 1; j < subtreeEnd(i); j++) {
+        const kid = all[j]
+        // A direct child this document authored. The prefab's own pieces have an `owner`; a deeper node has
+        // a different parent and rides along inside whichever added child holds it.
+        if (kid === undefined || kid.parent !== i || kid.owner !== undefined) continue
+        // A placement inside a prefab needs that prefab's definition resolved in the prefab's own room, and
+        // nothing does that yet — so it is not offered rather than half-working.
+        if (kid.authored.prefab !== undefined) continue
+        out.push(j)
+      }
+      return out
+    },
+
     revertPlacement: (i) => {
       const root = node(i)
       if (root?.authored.prefab === undefined) return
@@ -1263,6 +1317,11 @@ const docOver = (
         const piece = all[index]
         if (piece?.owner === undefined) continue
         ops.push({ kind: 'setNodeOverride', owner: piece.owner.id, node: piece.authored.id, override: null })
+      }
+      // Reverting to the prefab means looking like the prefab, and the prefab has no such child (ADR 0130).
+      for (const index of self.placementAdded(i)) {
+        const kid = all[index]
+        if (kid !== undefined) ops.push({ kind: 'removeNode', id: kid.authored.id })
       }
       // One batch, so the whole revert is one undo press and the room sees one edit rather than a dozen.
       if (ops.length > 0) commit(ops)
@@ -1277,6 +1336,24 @@ const docOver = (
         const piece = self.overrideOpsFor(index)
         // Same prefab by construction — the filter in `placementOverrides` already said so.
         if (piece !== null) ops.push(...piece.ops)
+      }
+      /**
+       * Added children become nodes of the prefab itself (ADR 0130).
+       *
+       * Ids are re-minted, because a prefab's node ids are scoped to it and the copy here keeps living until
+       * the revert that follows a successful submit. The transform needs no conversion: a child of the
+       * placement and a child of the prefab's root are in the same frame.
+       */
+      const definition = level.prefabs?.[assetId]
+      const all = nodes()
+      let at = definition?.children?.length ?? 0
+      for (const index of self.placementAdded(i)) {
+        const kid = all[index]
+        if (kid === undefined || definition === undefined) continue
+        const copy = structuredClone(kid.authored)
+        reidSubtree(copy)
+        ops.push({ kind: 'insertNode', parent: definition.id, index: at, node: copy })
+        at++
       }
       return ops.length === 0 ? null : { assetId, ops }
     },
@@ -1356,9 +1433,21 @@ const docOver = (
      * The references themselves travel unchanged: an asset id means the same prefab in every level (ADR 0091),
      * which is what makes copying a placement between levels *share* the prefab instead of duplicating it.
      */
+    /**
+     * The subtree on the clipboard.
+     *
+     * **A prefab's piece copies as what it looks like** (ADR 0131). An inherited node belongs to the prefab
+     * and cannot be edited here, but a *copy* of it is a plain object like any other, so the clipboard takes
+     * its resolved view — overrides baked in, since that is the thing on screen that was copied. Before this
+     * it returned `null` and `copySelected` dropped it, so Ctrl+C on a prefab piece silently did nothing.
+     *
+     * `view` is already the whole resolved subtree: `bakeOverrides` recurses. Ids are not re-minted here
+     * because `paste` does it, the same as for an own node.
+     */
     copy: (i) => {
-      const n = own(i)
+      const n = own(i) ?? node(i)
       if (n === undefined) return null
+      const source = n.owner === undefined ? n.authored : n.view
       const prefabs: Record<string, Node> = {}
       const collect = (x: Node): void => {
         if (x.prefab !== undefined) {
@@ -1367,8 +1456,8 @@ const docOver = (
         }
         for (const kid of x.children ?? []) collect(kid)
       }
-      collect(n.authored)
-      return { node: structuredClone(n.authored), prefabs }
+      collect(source)
+      return { node: structuredClone(source), prefabs }
     },
     paste: (item, parent) => {
       const fresh = structuredClone(item.node)
