@@ -1245,7 +1245,8 @@
                   "x": 0,
                   "y": 0,
                   "z": 0
-                }
+                },
+                "trigger": true
               }
             },
             {
@@ -1778,7 +1779,7 @@
             "position": {
               "x": 16,
               "y": 6.4997,
-              "z": 55.2501
+              "z": 55.7501
             },
             "rotation": {
               "x": 1.5708,
@@ -1834,7 +1835,7 @@
             "position": {
               "x": -16,
               "y": 6.4997,
-              "z": 55.0001
+              "z": 56.0001
             },
             "rotation": {
               "x": 1.5708,
@@ -2002,7 +2003,7 @@
             "position": {
               "x": -0.5,
               "y": 1.9996,
-              "z": 55
+              "z": 56
             },
             "rotation": {
               "x": 1.5708,
@@ -2048,6 +2049,63 @@
               "params": {
                 "material": ""
               }
+            }
+          ]
+        },
+        {
+          "id": "5fd8fd5d",
+          "name": "Lava",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": -5.5,
+              "z": 27.75
+            },
+            "scale": {
+              "x": 49,
+              "y": 1,
+              "z": 55.5
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                },
+                "trigger": true
+              }
+            },
+            {
+              "id": "f0392856",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:box"
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "material": "4a11d049f9f8e5ac"
+              }
+            },
+            {
+              "id": "d01d4f4e",
+              "type": "Hazard",
+              "params": {}
             }
           ]
         }
