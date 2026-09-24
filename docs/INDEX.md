@@ -183,5 +183,6 @@ why matters.
 | [0133](adr/0133-a-placement-can-do-without-a-piece.md) | A placement can do without a piece |
 | [0134](adr/0134-a-drag-carries-the-whole-selection.md) | A drag carries the whole selection |
 | [0135](adr/0135-a-difference-is-recorded-on-any-piece.md) | A difference is recorded on any piece |
+| [0136](adr/0136-an-angle-is-rounded-in-degrees.md) | An angle is rounded in degrees |
 
 `Design archive/` holds superseded design material and is not maintained.

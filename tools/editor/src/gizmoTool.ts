@@ -3,7 +3,7 @@ import { eulerToQuat, vec3, type Vec3 } from '@mp/core'
 import { createThreeStage, OrbitControls, THREE, TransformControls } from '@mp/render-three'
 
 import type { Doc, LocalPose } from './editorDoc'
-import { cornerSnapDelta, snapAnglesDeg, worldHalfExtents } from './snap'
+import { cornerSnapDelta, roundAngle, snapAnglesDeg, worldHalfExtents } from './snap'
 import type { GizmoMode, GizmoSpace } from './toolbar'
 
 /**
@@ -20,7 +20,7 @@ import type { GizmoMode, GizmoSpace } from './toolbar'
  * the Inspector's numeric fields, because a typed value cannot legitimately arrive mid-drag.
  */
 
-/** Rounded the way the document stores numbers. */
+/** Rounded the way the document stores numbers. Angles use `roundAngle`, which rounds in degrees. */
 const r4 = (n: number): number => Math.round(n * 1e4) / 1e4
 const isOne = (v: THREE.Vector3): boolean => Math.abs(v.x - 1) < 1e-4 && Math.abs(v.y - 1) < 1e-4 && Math.abs(v.z - 1) < 1e-4
 const isZeroRot = (e: THREE.Euler): boolean => Math.abs(e.x) < 1e-5 && Math.abs(e.y) < 1e-5 && Math.abs(e.z) < 1e-5
@@ -359,7 +359,7 @@ export const createGizmoTool = (host: GizmoHost) => {
       position: vec3(r4(t.position.x - off.position.x), r4(t.position.y - off.position.y), r4(t.position.z - off.position.z)),
       ...(isZeroRot(new THREE.Euler(rot.x - off.rotation.x, rot.y - off.rotation.y, rot.z - off.rotation.z))
         ? {}
-        : { rotation: vec3(r4(rot.x - off.rotation.x), r4(rot.y - off.rotation.y), r4(rot.z - off.rotation.z)) }),
+        : { rotation: vec3(roundAngle(rot.x - off.rotation.x), roundAngle(rot.y - off.rotation.y), roundAngle(rot.z - off.rotation.z)) }),
       ...(t.scale !== undefined ? { scale: t.scale } : {}),
     })
   }
@@ -381,14 +381,14 @@ export const createGizmoTool = (host: GizmoHost) => {
     const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
     return {
       position: vec3(r4(g.position.x), r4(g.position.y), r4(g.position.z)),
-      ...(isZeroRot(e) ? {} : { rotation: vec3(r4(e.x), r4(e.y), r4(e.z)) }),
+      ...(isZeroRot(e) ? {} : { rotation: vec3(roundAngle(e.x), roundAngle(e.y), roundAngle(e.z)) }),
       ...(isOne(g.scale) ? {} : { scale: vec3(r4(g.scale.x), r4(g.scale.y), r4(g.scale.z)) }),
     }
   }
 
   const groupPose = (g: THREE.Group): LocalPose => {
     const e = new THREE.Euler().setFromQuaternion(g.quaternion, 'XYZ')
-    return { position: vec3(r4(g.position.x), r4(g.position.y), r4(g.position.z)), rotation: vec3(r4(e.x), r4(e.y), r4(e.z)) }
+    return { position: vec3(r4(g.position.x), r4(g.position.y), r4(g.position.z)), rotation: vec3(roundAngle(e.x), roundAngle(e.y), roundAngle(e.z)) }
   }
 
   /**
