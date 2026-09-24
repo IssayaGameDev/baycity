@@ -145,9 +145,9 @@
           "id": "2d23a1ab",
           "transform": {
             "position": {
-              "x": -236.8501,
-              "y": 95.5,
-              "z": 376.5
+              "x": -653.8501,
+              "y": 106,
+              "z": 256.5
             },
             "scale": {
               "x": 3.2997,
@@ -12793,7 +12793,76 @@
           "z": 239.7342
         }
       },
-      "components": []
+      "components": [],
+      "children": [
+        {
+          "id": "000433ba",
+          "name": "platform",
+          "transform": {
+            "position": {
+              "x": -6.3191,
+              "y": -52.4872,
+              "z": -59.0842
+            },
+            "rotation": {
+              "x": -3.141585672272785,
+              "y": 0,
+              "z": -3.141585672272785
+            },
+            "scale": {
+              "x": 12.9,
+              "y": 0.3,
+              "z": 15.3
+            }
+          },
+          "components": [
+            {
+              "id": "df9919a3",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "3884a96a",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "1bdef26e",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "aa1b93e0",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "b95cd432",
