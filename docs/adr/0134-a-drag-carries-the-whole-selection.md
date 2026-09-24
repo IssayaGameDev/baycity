@@ -1,6 +1,6 @@
 # ADR 0134 — A drag carries the whole selection
 
-Status: accepted. Brings the Hierarchy's drag in line with
+Status: accepted, **amended below**. Brings the Hierarchy's drag in line with
 [ADR 0112](0112-the-inspector-edits-the-whole-selection.md) and
 [ADR 0128](0128-a-pull-moves-the-whole-selection.md); keeps
 [ADR 0113](0113-a-reparent-is-one-edit.md)'s one-edit rule. Uses
@@ -47,6 +47,15 @@ Four cases refuse, and after enumerating them the common one decided the rule:
 was the first recommendation here and it was wrong: it was reasoning about a category that had not been
 listed out, and the most likely case in it — dropping onto a member of the selection — is one where doing
 the rest is plainly what was meant.
+
+## The amendment: the press collapsed the selection first
+
+Shipped, it still moved one row. The row's `pointerdown` selected it with `replace`, so the selection was down
+to the grabbed row before `dragstart` read it. The tests covered the move, not the order of the events.
+
+**A plain press on a row of a multi-selection now leaves the selection alone, and the click collapses it**
+(`defersToClick`, `src/selection.ts`, tested). A drag never produces the click, so the selection survives it.
+This is Unity's order. Primary button only; Ctrl, Shift and right-click are unchanged.
 
 ## Rejected
 

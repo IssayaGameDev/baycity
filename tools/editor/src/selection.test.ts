@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { applySelect, clampTo, modeFor, primaryOf, rangeIn, rootsOf, toggleIn } from './selection'
+import { applySelect, clampTo, defersToClick, modeFor, primaryOf, rangeIn, rootsOf, toggleIn } from './selection'
 
 const mods = (over: { ctrl?: boolean; meta?: boolean; shift?: boolean } = {}) => ({
   ctrlKey: over.ctrl ?? false,
@@ -174,5 +174,29 @@ describe('rootsOf', () => {
   it('passes a single item and an empty selection straight through', () => {
     expect(rootsOf([2], depth)).toEqual([2])
     expect(rootsOf([], depth)).toEqual([])
+  })
+})
+
+describe('defersToClick', () => {
+  /** The bug: the press collapsed the selection before the drag could read it, so a drag carried one row. */
+  it('holds a multi-selection on a plain press of one of its rows', () => {
+    expect(defersToClick([1, 4, 7], 4, 'replace', 0)).toBe(true)
+  })
+
+  it('selects at once when the row is not in the selection', () => {
+    expect(defersToClick([1, 4, 7], 5, 'replace', 0)).toBe(false)
+  })
+
+  it('selects at once when only that row is selected, since there is nothing to keep', () => {
+    expect(defersToClick([4], 4, 'replace', 0)).toBe(false)
+  })
+
+  it('leaves Ctrl and Shift presses alone', () => {
+    expect(defersToClick([1, 4, 7], 4, 'toggle', 0)).toBe(false)
+    expect(defersToClick([1, 4, 7], 4, 'range', 0)).toBe(false)
+  })
+
+  it('leaves a right-click alone', () => {
+    expect(defersToClick([1, 4, 7], 4, 'replace', 2)).toBe(false)
   })
 })
