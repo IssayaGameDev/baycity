@@ -72,6 +72,7 @@ import { createPrefabActions } from './prefabActions'
 import { createPlay } from './play'
 import { applySelect, clampTo, primaryOf, rootsOf, type SelectMode } from './selection'
 import { createShortcuts } from './shortcuts'
+import { roundAngle } from './snap'
 import { createSplitter, readPx, writePx } from './splitter'
 import { MODES, MODE_LIST, modeOf, soleMode } from './modes'
 import { createToolbar, type Toolbar } from './toolbar'
@@ -1218,7 +1219,7 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
               position: local.position,
               ...(isZeroRot(new THREE.Euler(local.rotation.x, local.rotation.y, local.rotation.z, 'XYZ'))
                 ? {}
-                : { rotation: vec3(r4(local.rotation.x), r4(local.rotation.y), r4(local.rotation.z)) }),
+                : { rotation: vec3(roundAngle(local.rotation.x), roundAngle(local.rotation.y), roundAngle(local.rotation.z)) }),
               ...(isOne(new THREE.Vector3(local.scale.x, local.scale.y, local.scale.z))
                 ? {}
                 : { scale: vec3(r4(local.scale.x), r4(local.scale.y), r4(local.scale.z)) }),

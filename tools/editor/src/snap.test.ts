@@ -1,6 +1,7 @@
+import { THREE } from '@mp/render-three'
 import { describe, expect, it } from 'vitest'
 
-import { cornerSnapDelta, snapAnglesDeg, snapToGrid, worldHalfExtents } from './snap'
+import { cornerSnapDelta, roundAngle, snapAnglesDeg, snapToGrid, worldHalfExtents } from './snap'
 
 const deg = (radians: number): number => Number(((radians * 180) / Math.PI).toFixed(6))
 
@@ -60,6 +61,40 @@ describe('snapAnglesDeg', () => {
 
   it('passes through with no increment', () => {
     expect(snapAnglesDeg({ x: 1.23, y: 0, z: 0 }, 0)).toEqual({ x: 1.23, y: 0, z: 0 })
+  })
+})
+
+describe('roundAngle', () => {
+  /** What the Inspector shows: the group's quaternion read back as XYZ degrees, to four places. */
+  const shown = (radians: { x: number; y: number; z: number }): { x: number; y: number; z: number } => {
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(radians.x, radians.y, radians.z, 'XYZ'))
+    const e = new THREE.Euler().setFromQuaternion(q, 'XYZ')
+    const r4 = (n: number): number => Math.round(THREE.MathUtils.radToDeg(n) * 1e4) / 1e4 + 0
+    return { x: r4(e.x), y: r4(e.y), z: r4(e.z) }
+  }
+  const stored = (degrees: number): number => roundAngle(THREE.MathUtils.degToRad(degrees))
+
+  /** Kodjo's report: 0 90 0 typed, 0 89.9998 0 on reselect. 90° about Y is XYZ's gimbal lock. */
+  it('keeps 90 about Y at 90', () => {
+    expect(shown({ x: 0, y: stored(90), z: 0 })).toEqual({ x: 0, y: 90, z: 0 })
+  })
+
+  it('is what rounding the radians got wrong', () => {
+    const r4 = (n: number): number => Math.round(n * 1e4) / 1e4
+    expect(shown({ x: 0, y: r4(Math.PI / 2), z: 0 }).y, 'the old storage').toBe(89.9998)
+  })
+
+  /** ±180 left out: the same angle, and the read-back is free to pick either sign. */
+  it('reads back every whole degree as typed', () => {
+    for (let d = -179; d <= 179; d++) {
+      expect(shown({ x: 0, y: 0, z: stored(d) }).z, `${d}° about Z`).toBe(d)
+      expect(shown({ x: stored(d), y: 0, z: 0 }).x, `${d}° about X`).toBe(d)
+    }
+    for (let d = -90; d <= 90; d++) expect(shown({ x: 0, y: stored(d), z: 0 }).y, `${d}° about Y`).toBe(d)
+  })
+
+  it('still rounds to four places of a degree', () => {
+    expect(THREE.MathUtils.radToDeg(roundAngle(THREE.MathUtils.degToRad(12.345678)))).toBeCloseTo(12.3457, 10)
   })
 })
 

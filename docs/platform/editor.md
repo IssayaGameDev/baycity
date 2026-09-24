@@ -579,6 +579,10 @@ rounds each Euler axis onto an absolute grid instead. Applied to the **primary o
 and before `mirrorDragToSelection`, so the others get the snapped delta and a group keeps its relative angles
 — the same shape as translation. The placement grid uses the same `snapToGrid`.
 
+**A written rotation is rounded in degrees**, not radians: `roundAngle` (`src/snap.ts`) keeps four places of
+a degree and stores the radians unrounded, so a typed 90 reads back 90 (ADR 0136). Positions and scales keep
+`r4`.
+
 ## Numbers in the Inspector (ADR 0113)
 
 Every numeric field in the object-editing path passes `dragSpeed(n)` — `{ pointerScale: n }` — and **never

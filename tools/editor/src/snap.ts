@@ -16,6 +16,15 @@
 export const snapToGrid = (value: number, step: number): number => (step > 0 ? Math.round(value / step) * step : value)
 
 /**
+ * An angle in **radians**, rounded to four decimals **of a degree** (ADR 0136).
+ *
+ * The file stores radians and the Inspector shows degrees, so the rounding belongs to the unit a person reads.
+ * Rounding the radians instead saved 90° as 1.5708, which is 90.0002° — and about Y that is at the XYZ
+ * decomposition's gimbal lock, where it read back as 89.9998.
+ */
+export const roundAngle = (radians: number): number => ((Math.round(((radians * 180) / Math.PI) * 1e4) / 1e4) * Math.PI) / 180
+
+/**
  * Snap an XYZ Euler, given in **radians**, to a grid given in **degrees**.
  *
  * Per axis rather than as one orientation: a gizmo drag turns about a single ring, so the other two angles are
