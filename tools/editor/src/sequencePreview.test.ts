@@ -1,5 +1,5 @@
 import { COLLIDER, RENDERER, SEQUENCE, type ComponentData, type Level, type Node, type Stage, type Step } from '@mp/content'
-import { ENGINE_COMPONENTS, GAMEPLAY_COMPONENTS, Sequence, createRegistry } from '@mp/components'
+import { ENGINE_COMPONENTS, GAMEPLAY_COMPONENTS, createRegistry } from '@mp/components'
 import { axisAngleToQuat, eulerToQuat, mulQuat, quat, rotateVec3, vec3, type Quat, type Vec3 } from '@mp/core'
 import { THREE } from '@mp/render-three'
 import { describe, expect, it } from 'vitest'
@@ -13,7 +13,7 @@ import { createMotionPreview } from './motionPreview'
  * writes back. The same rule the loader follows, read from the editor's document.
  */
 
-const REG = createRegistry([...ENGINE_COMPONENTS, ...GAMEPLAY_COMPONENTS, Sequence])
+const REG = createRegistry([...ENGINE_COMPONENTS, ...GAMEPLAY_COMPONENTS])
 const ZERO: Vec3 = { x: 0, y: 0, z: 0 }
 let n = 0
 const id = (): string => `x${++n}`

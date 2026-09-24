@@ -46,7 +46,7 @@ describe('the registry', () => {
 })
 
 describe('the built-in registry', () => {
-  it('holds the thirteen built-in components, engine first', () => {
+  it('holds the fourteen built-in components, engine first', () => {
     expect(DEFAULT_REGISTRY.all().map((d) => d.type)).toEqual([
       'Collider',
       'Mesh',
@@ -60,6 +60,7 @@ describe('the built-in registry', () => {
       'Bumper',
       'Mover',
       'Spinner',
+      'Sequence',
       'Boss',
     ])
   })

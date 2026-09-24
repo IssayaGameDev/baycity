@@ -346,8 +346,7 @@ export const Spinner = defineComponent({
  * are ordinary parameters, so a placement overrides them like any other; its `stages` are patched step by
  * step (ADR 0139).
  *
- * Not in `GAMEPLAY_COMPONENTS` yet, so the Add Component menu does not offer it: the Inspector cannot edit
- * its stages until the stage editor exists.
+ * Shared, like `Mover`: a game adopts it the first time one is added to its level (ADR 0077).
  */
 export const Sequence = defineComponent({
   type: SEQUENCE,
@@ -367,7 +366,7 @@ export const Sequence = defineComponent({
   },
 })
 
-export const GAMEPLAY_COMPONENTS = [Checkpoint, Goal, Hazard, Bumper, Mover, Spinner, Boss]
+export const GAMEPLAY_COMPONENTS = [Checkpoint, Goal, Hazard, Bumper, Mover, Spinner, Sequence, Boss]
 
 /**
  * Components a game puts on its **player** rather than in a level (ADR 0059).

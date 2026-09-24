@@ -1,5 +1,5 @@
 import { vec3, type Vec3 } from '@mp/core'
-import { unitColliderFor, type ColliderDesc } from '@mp/content'
+import { SEQUENCE, compileSequence, readStages, sequenceOf, unitColliderFor, type ColliderDesc } from '@mp/content'
 import { visibleParams, type AssetSpec, type ParamSpec } from '@mp/components'
 import { QUANT_BOUND } from '@mp/net'
 import { DEFAULT_POSTFX, DEFAULT_SKY_PARAMS } from '@mp/render-three'
@@ -10,6 +10,8 @@ import type { ContextMenu, MenuItem } from './menu'
 import { isCurveSetting, type CurvePoint, type SettingDecls } from '@mp/mode'
 
 import { createCurveEditor } from './curveEditor'
+import { sequenceSummary } from './sequenceEdit'
+import { sequenceEditor } from './sequenceEditor'
 
 /**
  * The Inspector panel: a stack of **sections**, one per component, with the fields inside each generated from
@@ -469,6 +471,8 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     readonly pane: () => Pane
     /** Append one of our own rows, and end the current pane's run. */
     readonly row: (label: string, value: string) => HTMLElement
+    /** Append something of our own that is not a row — the sequence editor — and end the pane's run too. */
+    readonly append: (node: HTMLElement) => void
   }
 
   /**
@@ -480,7 +484,19 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
    */
   const addSection = (
     key: string,
-    opts: { title: string; badge?: string; off?: boolean; enable?: (on: boolean) => void; menu?: readonly MenuItem[] },
+    opts: {
+      title: string
+      badge?: string
+      off?: boolean
+      enable?: (on: boolean) => void
+      menu?: readonly MenuItem[]
+      /** Dim text after the title, for what a component amounts to at a glance (a sequence's settings and length). */
+      summary?: string
+      /** A warning sign in the header, with the reason on hover — so a problem shows with the section closed. */
+      warn?: string
+      /** Buttons of the component's own, between the header's text and its ⋯. */
+      tools?: readonly HTMLElement[]
+    },
   ): Section => {
     const root = el('div', 'isec')
     const header = el('div', 'isec-h')
@@ -505,7 +521,14 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     }
 
     header.append(el('span', 'isec-t', opts.title))
+    if (opts.summary !== undefined && opts.summary !== '') header.append(el('span', 'isec-sum', opts.summary))
     if (opts.badge !== undefined && opts.badge !== '') header.append(el('span', 'isec-badge', opts.badge))
+    if (opts.warn !== undefined) {
+      const w = el('span', 'isec-warn', '⚠')
+      w.title = opts.warn
+      header.append(w)
+    }
+    for (const tool of opts.tools ?? []) header.append(tool)
 
     if (opts.menu !== undefined && opts.menu.length > 0) {
       const dots = el('button', 'isec-m', '⋯')
@@ -540,7 +563,11 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       body.append(line)
       return line
     }
-    return { root, pane, row }
+    const append = (node: HTMLElement): void => {
+      current = null
+      body.append(node)
+    }
+    return { root, pane, row, append }
   }
 
   /**
@@ -824,11 +851,115 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     rebuildKeepingScroll()
   }
 
+  /** Sequences whose settings are showing (the header's ⚙), by component id. Closed unless opened, and kept. */
+  const sequenceSettingsOpen = new Set<string>()
+  /** Which of a sequence's steps are open, by step id — kept across the rebuild every edit causes. */
+  const openSteps = new Set<string>()
+  /** The settings a sequence's ⚙ shows, in the component's own declaration order. */
+  const SEQUENCE_SETTINGS = ['name', 'clock', 'axes', 'loop', 'times', 'offset'] as const
+
+  /** A step or stage id, minted the way every other id in the editor is: four random bytes, hex. */
+  const freshId = (): string => {
+    const bytes = new Uint8Array(4)
+    crypto.getRandomValues(bytes)
+    return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
+  }
+
+  /**
+   * A `Sequence`'s section (ADR 0143): its settings behind ⚙, and its stages as boxes. The header says what it
+   * amounts to — the settings that differ from the defaults and how long a pass is — and shows ⚠ when anything
+   * inside is wrong, so a problem is visible with the section closed.
+   */
+  const sequenceHead = (doc: Doc, at: number, view: ComponentView): { title: string; summary: string; warn?: string; gear: HTMLElement } => {
+    const data = sequenceOf({ id: view.id, type: view.type, params: view.params })
+    const compiled = compileSequence(data)
+    const targets = new Set(doc.childTargets(at).map((t) => t.id))
+    let gone = 0
+    for (const stage of data.stages) for (const step of stage.steps) if (step.target !== undefined && !targets.has(step.target)) gone++
+    const count = compiled.problems.length + gone
+    const gear = el('button', 'isec-g', '⚙')
+    gear.title = sequenceSettingsOpen.has(view.id) ? 'hide the settings' : 'settings: name, clock, axes, loop, repeat, offset'
+    gear.classList.toggle('on', sequenceSettingsOpen.has(view.id))
+    gear.addEventListener('click', (e) => {
+      e.stopPropagation()
+      if (sequenceSettingsOpen.has(view.id)) sequenceSettingsOpen.delete(view.id)
+      else sequenceSettingsOpen.add(view.id)
+      rebuildKeepingScroll()
+    })
+    return {
+      title: data.name === '' ? 'Sequence' : `Sequence  ${data.name}`,
+      summary: sequenceSummary(data, compiled.passSeconds),
+      ...(count > 0 ? { warn: `${count} thing${count === 1 ? '' : 's'} in this sequence will not work as written — see ⚠ below` } : {}),
+      gear,
+    }
+  }
+
+  const addSequenceBody = (section: Section, doc: Doc, at: number, view: ComponentView, state: Record<string, unknown>, peers: readonly Peer[] | null): void => {
+    const def = doc.registry.get(view.type)
+    if (def === undefined) return
+    if (sequenceSettingsOpen.has(view.id)) {
+      syncDepth++
+      try {
+        for (const key of SEQUENCE_SETTINGS) {
+          const spec = def.params[key]
+          if (spec !== undefined) addParam(section, doc, at, view, state, key, spec, peers)
+        }
+      } finally {
+        syncDepth--
+      }
+    }
+    // Stages differ per object, so a multi-selection edits the settings they share and nothing else.
+    if (peers !== null && peers.length > 1) {
+      section.row('stages', 'select one object to edit its stages')
+      return
+    }
+    const data = sequenceOf({ id: view.id, type: view.type, params: view.params })
+    const diff = doc.sequenceOverrideOf(at, view.id)
+    const marked = new Set([...Object.keys(diff?.steps ?? {}), ...(diff?.addedSteps ?? []).map((s) => s.id), ...(diff?.addedStages ?? [])])
+    const afterEdit = (): void => {
+      host.onPropsChanged()
+      rebuildKeepingScroll()
+    }
+    section.append(
+      sequenceEditor({
+        node: at,
+        componentId: view.id,
+        stages: data.stages,
+        compiled: compileSequence(data),
+        targets: doc.childTargets(at),
+        commit: (stages) => {
+          doc.setSequenceStages(at, view.id, stages)
+          afterEdit()
+        },
+        stagesOf: (componentId) => {
+          const other = doc.components(at).find((c) => c.id === componentId && c.type === SEQUENCE)
+          return other === undefined ? null : readStages(other.params.stages)
+        },
+        commitMany: (changes) => {
+          doc.setSequencesStages(at, changes)
+          afterEdit()
+        },
+        openMenu: (where, items, title) => host.menu.open(where, items, title),
+        open: openSteps,
+        rerender: rebuildKeepingScroll,
+        freshId,
+        marked,
+      }),
+    )
+  }
+
   /** One section per component: header controls, then its visible parameters. */
   const addComponentSection = (doc: Doc, at: number, view: ComponentView, peers: readonly Peer[] | null): void => {
     const def = doc.registry.get(view.type)
-    const inherited = doc.kindOf(at) === 'inherited'
-    const overridden = view.overridden.length > 0
+    // Per component, not per node: a placement's root shows its prefab root's components beside its own.
+    const inherited = doc.kindOf(at) === 'inherited' || view.inherited
+    // A sequence's differences are recorded apart from its params (ADR 0139), so they are counted apart too.
+    const sequenceDiff = view.type === SEQUENCE ? doc.sequenceOverrideOf(at, view.id) : undefined
+    const sequenceChanges =
+      sequenceDiff === undefined
+        ? 0
+        : Object.keys(sequenceDiff.steps ?? {}).length + (sequenceDiff.addedSteps?.length ?? 0) + (sequenceDiff.removedSteps?.length ?? 0) + (sequenceDiff.addedStages?.length ?? 0)
+    const overridden = view.overridden.length > 0 || sequenceChanges > 0
     const items: MenuItem[] = []
     /**
      * Reset and Revert are the same gesture pointed at different baselines, and only one of them applies at a
@@ -863,10 +994,12 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       },
     })
 
+    const seqHead = view.type === SEQUENCE && def !== undefined ? sequenceHead(doc, at, view) : null
     const section = addSection(view.id, {
-      title: def?.label ?? view.type,
+      title: seqHead?.title ?? def?.label ?? view.type,
+      ...(seqHead === null ? {} : { summary: seqHead.summary, tools: [seqHead.gear], ...(seqHead.warn === undefined ? {} : { warn: seqHead.warn }) }),
       // What used to be spelled into the folder's title string, as a badge that cannot push the name out.
-      badge: view.added ? 'added' : overridden ? String(view.overridden.length) : '',
+      badge: view.added ? 'added' : overridden ? String(view.overridden.length + sequenceChanges) : '',
       off: !view.enabled,
       enable: (on) => {
         edited(() => {
@@ -886,6 +1019,10 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     }
 
     const state = boundState(doc.registry.defaults(view.type), view.params)
+    if (view.type === SEQUENCE) {
+      addSequenceBody(section, doc, at, view, state, peers)
+      return
+    }
     const shown = visibleParams(def.params, state)
     syncDepth++
     try {

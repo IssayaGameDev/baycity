@@ -625,7 +625,29 @@ ADR 0033). Tweakpane writes *into* a bound object rather than replacing it — `
 memory, every frame, before any op existed: other placements of that prefab redrew, and the next one's slider
 started from the mutated number.
 
-A `stages` parameter shows as one summary row, `N stages · M steps`, until the stage editor exists (ADR 0137).
+A `stages` parameter shows as one summary row, `N stages · M steps`, where it is not a `Sequence`'s.
+
+## Inspector — a sequence (ADR 0143)
+
+A `Sequence`'s section is drawn by `sequenceEditor.ts` from its stages; every edit is a pure function in
+`sequenceEdit.ts` and one `Doc.setSequenceStages` (or `setSequencesStages` for a drag between two sequences on
+the node — one commit). The Inspector keeps which sequences show their settings (`⚙`) and which steps are
+open, so both survive the rebuild each edit causes.
+
+| | |
+| --- | --- |
+| header | `sequenceSummary`: non-default settings, then the pass length; ⚠ with a count |
+| box | stage; grip, ⚠, length; `+` on hover; right-click duplicate / delete stage; a step dropped anywhere in it joins it |
+| row | `stepLine`; click opens `.seq-fields`; `×` on hover; right-click duplicate / delete; dropped on: before it in the upper half, after in the lower |
+| gap | between and around boxes: a step dropped becomes its own stage, a stage dropped moves there |
+| fields | target (`Doc.childTargets`), then per kind: point / axis + angle / factor / opacity; timing as the step allows (seconds, speed, as long as its stage, and for a turn spin for its stage); ease (31) |
+| drag | HTML5, by the grip only; `dragging` is module-level so a drop can land in another sequence on the same node, and one on another node is refused |
+
+A multi-selection shows the shared settings and says to select one object for the stages. On a placement,
+`Doc.sequenceOverrideOf(i, id)` gives the record: its changed and added steps and added stages get `.over`,
+and the header's badge adds changed, added and removed steps to the parameter count. `ComponentView.inherited`
+is per component — a placement root's components from its prefab are inherited — so the ⋯ offers Revert rather
+than Reset for them.
 
 ## Inspector — several objects at once (ADR 0112)
 

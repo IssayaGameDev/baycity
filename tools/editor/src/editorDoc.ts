@@ -29,6 +29,7 @@ import {
   retargetSequenceOverride,
   retargetSequenceParams,
   type Stage,
+  type SequenceOverride,
   type ColliderDesc,
   type ComponentData,
   type Node,
@@ -281,6 +282,22 @@ export interface Doc {
    * (`diffStages`) and recorded whole, so the placement keeps following its prefab everywhere else.
    */
   setSequenceStages: (i: number, componentId: string, stages: readonly Stage[]) => void
+  /**
+   * Several of one node's sequences at once, as **one** commit — a step dragged from one sequence into another
+   * is one edit and one Ctrl+Z, not two.
+   */
+  setSequencesStages: (i: number, changes: readonly { readonly componentId: string; readonly stages: readonly Stage[] }[]) => void
+  /**
+   * The node's direct children, by the id a step's `target` names them with (ADR 0137) — for the target
+   * picker, and for saying a target is gone. Inherited children answer with their prefab ids, which is what a
+   * prefab's own sequence aims at.
+   */
+  childTargets: (i: number) => { readonly id: string; readonly label: string }[]
+  /**
+   * How this placement's copy of an inherited `Sequence` differs from the prefab's (ADR 0139), or `undefined`
+   * when it does not — what the Inspector marks steps and counts overrides from (ADR 0143).
+   */
+  sequenceOverrideOf: (i: number, componentId: string) => SequenceOverride | undefined
   /**
    * The same patch on several nodes at once, as **one** commit — so it is one undo entry and one message to
    * the room (ADR 0112). `targets` pairs each node with its own component id, since ids are per component.
@@ -926,26 +943,30 @@ const docOver = (
     if (ops.length > 0) commit(ops)
   }
 
-  const setSequenceStages = (i: number, componentId: string, stages: readonly Stage[]): void => {
+  /** The op that makes one sequence show `stages`, wherever its data lives (ADR 0139). */
+  const sequenceOpFor = (i: number, componentId: string, stages: readonly Stage[]): Op | null => {
     const n = node(i)
-    if (n === undefined) return
+    if (n === undefined) return null
     const t = writeTarget(n, componentId)
-    if (t === null) return
-    if (t.kind === 'own') {
-      commit([{ kind: 'setParams', id: t.id, componentId, patch: { stages } }])
-      return
-    }
+    if (t === null) return null
+    if (t.kind === 'own') return { kind: 'setParams', id: t.id, componentId, patch: { stages } }
     const over = recordAt(t)
     // Added on this placement: it is the placement's own, and is written whole.
     if (over?.added?.some((c) => c.id === componentId) === true) {
-      commit([{ kind: 'setOverrideParams', owner: t.holder.id, node: t.node, componentId, patch: { stages } }])
-      return
+      return { kind: 'setOverrideParams', owner: t.holder.id, node: t.node, componentId, patch: { stages } }
     }
     // What the placement would show with no sequence record: the prefab's, under any params patch it holds.
     const prefab = definitionOf(n)?.components.find((c) => c.id === componentId)
     const base = readStages(over?.params?.[componentId]?.stages ?? prefab?.params.stages)
-    commit([{ kind: 'setOverrideSequence', owner: t.holder.id, node: t.node, componentId, override: diffStages(base, stages) ?? null }])
+    return { kind: 'setOverrideSequence', owner: t.holder.id, node: t.node, componentId, override: diffStages(base, stages) ?? null }
   }
+
+  const setSequencesStages = (i: number, changes: readonly { readonly componentId: string; readonly stages: readonly Stage[] }[]): void => {
+    const ops = changes.map((c) => sequenceOpFor(i, c.componentId, c.stages)).filter((o): o is Op => o !== null)
+    if (ops.length > 0) commit(ops)
+  }
+
+  const setSequenceStages = (i: number, componentId: string, stages: readonly Stage[]): void => setSequencesStages(i, [{ componentId, stages }])
 
   /**
    * One parameter patch across several nodes, as a single commit (ADR 0112).
@@ -1385,6 +1406,8 @@ const docOver = (
       if (n === undefined) return []
       const over = overrideFor(n)
       const addedIds = new Set((over?.added ?? []).map((c) => c.id))
+      // A placement's root shows its prefab root's components beside its own: those are inherited too (ADR 0098).
+      const ownIds = new Set(n.owner === undefined ? n.authored.components.map((c) => c.id) : [])
       return n.view.components.map((c) => {
         const patch = over?.params?.[c.id]
         const overridden = patch === undefined ? [] : Object.keys(patch)
@@ -1394,7 +1417,7 @@ const docOver = (
           type: c.type,
           params: c.params,
           enabled: enabledOf(c),
-          inherited: n.owner !== undefined && !addedIds.has(c.id),
+          inherited: !addedIds.has(c.id) && (n.owner !== undefined || !ownIds.has(c.id)),
           added: addedIds.has(c.id),
           overridden,
         }
@@ -1405,6 +1428,21 @@ const docOver = (
     removeComponent,
     setParams: patchParams,
     setSequenceStages,
+    setSequencesStages,
+    sequenceOverrideOf: (i, componentId) => {
+      const n = node(i)
+      return n === undefined ? undefined : overrideFor(n)?.sequences?.[componentId]
+    },
+    childTargets: (i) => {
+      const all = nodes()
+      const out: { id: string; label: string }[] = []
+      for (let j = i + 1; j < all.length; j++) {
+        const kid = all[j]!
+        if (kid.depth <= (all[i]?.depth ?? -1)) break
+        if (kid.parent === i) out.push({ id: kid.authored.id, label: labelAt(j) })
+      }
+      return out
+    },
     setParamsAcross: patchParamsAcross,
     moveComponent,
     setComponentEnabled: (i, componentId, on) => {

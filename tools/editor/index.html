@@ -862,6 +862,233 @@
       .isec-body {
         padding: 3px 5px 5px;
       }
+      /* A section header's own extras: a dim summary, a warning, and a tool button (a sequence's ⚙). */
+      .isec-sum {
+        flex: 0 1 auto;
+        min-width: 0;
+        color: var(--dim);
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .isec-warn,
+      .seq-warn {
+        flex: 0 0 auto;
+        color: #e8b04a;
+        cursor: help;
+      }
+      .isec-g {
+        flex: 0 0 auto;
+        margin-left: auto;
+        width: 18px;
+        height: 16px;
+        padding: 0;
+        line-height: 14px;
+        font-size: 11px;
+        color: var(--dim);
+        background: none;
+        border: 0;
+        border-radius: 2px;
+        cursor: pointer;
+      }
+      .isec-g + .isec-m {
+        margin-left: 0;
+      }
+      .isec-g:hover,
+      .isec-g.on {
+        color: var(--text);
+        background: #3a414c;
+      }
+
+      /*
+        A sequence's stages (ADR 0143): a box per stage, a line per step, and nothing else visible until it is
+        wanted — the + and × show while the pointer is over their box or row, so a long sequence stays compact.
+      */
+      .seq {
+        display: flex;
+        flex-direction: column;
+        margin-top: 2px;
+      }
+      .seq-gap {
+        height: 5px;
+        margin: 0 2px;
+        border-radius: 2px;
+      }
+      .seq-gap.drop-gap {
+        height: 9px;
+        background: var(--accent);
+      }
+      .seq-stage {
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        background: #191c21;
+        padding: 1px 2px 2px;
+      }
+      .seq-stage.drop-into {
+        outline: 2px solid var(--accent);
+        outline-offset: -1px;
+      }
+      .seq-stage.dragging,
+      .seq-step-w.dragging {
+        opacity: 0.4;
+      }
+      .seq-stage-h {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 14px;
+        font-size: 10px;
+        color: var(--dim);
+      }
+      .seq-len {
+        margin-left: auto;
+        padding-right: 2px;
+      }
+      .seq-grip {
+        flex: 0 0 auto;
+        width: 10px;
+        color: #5b626d;
+        font-size: 10px;
+        letter-spacing: -2px;
+        cursor: grab;
+        user-select: none;
+      }
+      .seq-grip:hover {
+        color: var(--text);
+      }
+      .seq-step {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+        padding: 1px 2px;
+        border-radius: 2px;
+      }
+      .seq-step:hover {
+        background: var(--hover);
+      }
+      .seq-step.open {
+        background: #262b33;
+      }
+      .seq-step.drop-before {
+        box-shadow: inset 0 2px 0 0 var(--accent);
+      }
+      .seq-step.drop-after {
+        box-shadow: inset 0 -2px 0 0 var(--accent);
+      }
+      .seq-line {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: pre;
+        font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .seq-x {
+        flex: 0 0 auto;
+        visibility: hidden;
+        width: 14px;
+        height: 14px;
+        padding: 0;
+        line-height: 12px;
+        color: var(--dim);
+        background: none;
+        border: 0;
+        border-radius: 2px;
+        cursor: pointer;
+      }
+      .seq-step:hover .seq-x {
+        visibility: visible;
+      }
+      .seq-x:hover {
+        color: var(--text);
+        background: #5a2a2a;
+      }
+      .seq-add {
+        display: block;
+        visibility: hidden;
+        width: 100%;
+        height: 14px;
+        margin-top: 1px;
+        padding: 0;
+        line-height: 12px;
+        color: var(--dim);
+        background: none;
+        border: 1px dashed var(--line);
+        border-radius: 3px;
+        cursor: pointer;
+      }
+      .seq-stage:hover .seq-add {
+        visibility: visible;
+      }
+      .seq-add:hover,
+      .seq-add-stage:hover {
+        color: var(--text);
+        border-color: var(--accent);
+      }
+      .seq-add-stage {
+        margin-top: 1px;
+        padding: 2px 0;
+        color: var(--dim);
+        background: none;
+        border: 1px dashed var(--line);
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .seq-empty {
+        padding: 4px 2px;
+        color: var(--dim);
+        font-style: italic;
+      }
+      .seq-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin: 1px 0 3px 14px;
+        padding: 3px 4px;
+        border-left: 1px solid var(--line);
+      }
+      .seq-f {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+      }
+      .seq-f-l {
+        flex: 0 0 52px;
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .seq-n,
+      .seq-s {
+        flex: 1 1 0;
+        width: 0;
+        min-width: 0;
+        padding: 2px 4px;
+        border: 1px solid var(--line);
+        border-radius: 3px;
+        background: var(--bg);
+        color: var(--text);
+        font: inherit;
+        font-size: 11px;
+      }
+      .seq-n[type='number'] {
+        appearance: textfield;
+        -moz-appearance: textfield;
+      }
+      .seq-n[type='number']::-webkit-inner-spin-button,
+      .seq-n[type='number']::-webkit-outer-spin-button {
+        appearance: none;
+        margin: 0;
+      }
+      .seq-n:focus,
+      .seq-s:focus {
+        outline: 1px solid var(--accent);
+      }
+
       /* A section with overrides gets the same left bar its rows do, so it reads at a glance while scrolling. */
       .isec.over-sec {
         border-left: 2px solid var(--link);

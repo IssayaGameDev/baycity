@@ -1,5 +1,5 @@
 import { COLLIDER, SEQUENCE, validateLevel, type ComponentData, type Level, type Node, type Stage, type Step } from '@mp/content'
-import { ENGINE_COMPONENTS, GAMEPLAY_COMPONENTS, Sequence, createRegistry } from '@mp/components'
+import { ENGINE_COMPONENTS, GAMEPLAY_COMPONENTS, createRegistry } from '@mp/components'
 import { vec3, type Vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
@@ -12,8 +12,8 @@ import { levelDoc, type Doc } from './editorDoc'
  */
 
 const ZERO: Vec3 = { x: 0, y: 0, z: 0 }
-/** `Sequence` is not in the default registry until the Inspector can edit its stages. */
-const REG = createRegistry([...ENGINE_COMPONENTS, ...GAMEPLAY_COMPONENTS, Sequence])
+/** A game's registry: the engine's components and the shared ones, `Sequence` among them. */
+const REG = createRegistry([...ENGINE_COMPONENTS, ...GAMEPLAY_COMPONENTS])
 const PAD_ID = 'aaaaaaaaaaaaaaaa'
 const move = (id: string, x: number, target?: string): Step => ({
   id,
@@ -159,5 +159,22 @@ describe('duplicating an object with a sequence', () => {
     expect(targets).toEqual(kids)
     expect(kids).not.toContain('left')
     expect((level.nodes[0]!.components[0]!.params.stages as Stage[])[0]!.steps.map((s) => s.target), 'the original is untouched').toEqual(['left', 'right'])
+  })
+})
+
+describe('what the Inspector reads about a placement', () => {
+  it('reports the sequence record a placement holds, and nothing when it holds none', () => {
+    const { doc } = placedDoor()
+    expect(doc.sequenceOverrideOf(0, 'seq')).toBeUndefined()
+    doc.setSequenceStages(0, 'seq', [{ id: 's1', steps: [move('a', 4, 'left'), move('b', -1, 'right')] }, STAGES[1]!])
+    expect(doc.sequenceOverrideOf(0, 'seq')).toEqual({ steps: { a: { to: vec3(4, 0, 0) } } })
+  })
+
+  /** Otherwise its ⋯ offered "Reset to defaults", which writes an override for every parameter. */
+  it('calls a root’s components from the prefab inherited, and its own not', () => {
+    const { doc } = placedDoor()
+    const own = doc.addComponent(0, COLLIDER)!
+    const kinds = Object.fromEntries(doc.components(0).map((c) => [c.id, c.inherited]))
+    expect(kinds).toEqual({ rc: true, seq: true, [own]: false })
   })
 })

@@ -4,10 +4,10 @@ An object's motion as **stages of steps**, a pure function of time (ADR 0137). T
 formulas are `d3-ease` (ADR 0138). Headless, in `@mp/content`, because the loader and the editor's preview are
 two readers of one rule.
 
-**Status: the engine, the data, the game and the preview.** The loader runs sequences (`content.md`,
-ADR 0141), so the game and the editor's play-test do, and the editor's Motion button previews them
-(`editor.md`, ADR 0142). Nothing offers the component yet — it is not in `GAMEPLAY_COMPONENTS`, so no registry
-has it. `Mover`/`Spinner` still work.
+**Status: everything but the viewport handles.** The loader runs sequences (`content.md`, ADR 0141), the
+editor's Motion button previews them (ADR 0142), and the Inspector edits them (`editor.md`, ADR 0143). A move's
+point is typed; dragging it in the viewport, and the route line, are not built yet. `Mover`/`Spinner` still
+work.
 
 ## Data
 
