@@ -1,6 +1,6 @@
 {
   "id": "root",
-  "name": "board-start",
+  "name": "Spawn",
   "transform": {
     "position": {
       "x": 0,
@@ -8,53 +8,20 @@
       "z": 0
     }
   },
-  "components": [
-    {
-      "id": "c0",
-      "type": "Collider",
-      "params": {
-        "shape": {
-          "kind": "box",
-          "halfExtents": {
-            "x": 4,
-            "y": 0.25,
-            "z": 3
-          }
-        }
-      }
-    },
-    {
-      "id": "c1",
-      "type": "Renderer",
-      "params": {
-        "material": "55205761e38bc929"
-      }
-    },
-    {
-      "id": "c2",
-      "type": "Keyboard",
-      "params": {
-        "pitch": 0.9,
-        "fill": 0.88,
-        "height": 0.45,
-        "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-        "seed": 0
-      }
-    }
-  ],
+  "components": [],
   "children": [
     {
-      "id": "m0",
+      "id": "c0527796",
       "transform": {
         "position": {
-          "x": 0,
-          "y": 1.75,
+          "x": 0.1499,
+          "y": 0.5,
           "z": 0
         },
         "scale": {
-          "x": 0.9999,
+          "x": 3.2997,
           "y": 1,
-          "z": 1
+          "z": 5
         }
       },
       "components": [
@@ -66,24 +33,298 @@
       ]
     },
     {
-      "id": "steppads",
-      "name": "step-pads",
+      "id": "fdbdd347",
+      "name": "Treadmills",
       "transform": {
         "position": {
-          "x": -3.6364,
-          "y": 0,
-          "z": 0
-        },
-        "scale": {
-          "x": 0.303,
-          "y": 1,
-          "z": 0.2
+          "x": 0.5,
+          "y": -1,
+          "z": 5.5
         }
       },
       "components": [],
       "children": [
         {
-          "id": "sp1",
+          "id": "ae9c109f",
+          "name": "treadmill +1",
+          "transform": {
+            "position": {
+              "x": -5.8509,
+              "y": 0.866,
+              "z": -17.5061
+            },
+            "scale": {
+              "x": 3,
+              "y": 0.5,
+              "z": 3
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "d67ddcac4f57efc8"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Treadmill",
+              "params": {
+                "multiplier": 1
+              }
+            }
+          ]
+        },
+        {
+          "id": "37a75516",
+          "name": "treadmill +5",
+          "transform": {
+            "position": {
+              "x": -1.8509,
+              "y": 0.866,
+              "z": -17.5061
+            },
+            "scale": {
+              "x": 3,
+              "y": 0.5,
+              "z": 3
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "d67ddcac4f57efc8"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Treadmill",
+              "params": {
+                "multiplier": 5
+              }
+            }
+          ]
+        },
+        {
+          "id": "02574ddb",
+          "name": "treadmill +10",
+          "transform": {
+            "position": {
+              "x": 2.1491,
+              "y": 0.866,
+              "z": -17.5061
+            },
+            "scale": {
+              "x": 3,
+              "y": 0.5,
+              "z": 3
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "d67ddcac4f57efc8"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Treadmill",
+              "params": {
+                "multiplier": 10
+              }
+            }
+          ]
+        },
+        {
+          "id": "e6e6020a",
+          "name": "treadmill +50",
+          "transform": {
+            "position": {
+              "x": 6.1491,
+              "y": 0.866,
+              "z": -17.5061
+            },
+            "scale": {
+              "x": 3,
+              "y": 0.5,
+              "z": 3
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "d67ddcac4f57efc8"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Treadmill",
+              "params": {
+                "multiplier": 50
+              }
+            }
+          ]
+        },
+        {
+          "id": "e601e4e5",
+          "name": "treadmill +100",
+          "transform": {
+            "position": {
+              "x": 10.1491,
+              "y": 0.866,
+              "z": -17.5061
+            },
+            "scale": {
+              "x": 3,
+              "y": 0.5,
+              "z": 3
+            }
+          },
+          "components": [
+            {
+              "id": "c0",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                }
+              }
+            },
+            {
+              "id": "mesh",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "c1",
+              "type": "Renderer",
+              "params": {
+                "material": "d67ddcac4f57efc8"
+              }
+            },
+            {
+              "id": "c2",
+              "type": "Treadmill",
+              "params": {
+                "multiplier": 100
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "72e2baf1",
+      "name": "Upgrades",
+      "transform": {
+        "position": {
+          "x": -11.9926,
+          "y": -0.6185,
+          "z": 0.034
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "a8f81298",
           "name": "step-pad-1",
           "transform": {
             "position": {
@@ -139,7 +380,7 @@
           ]
         },
         {
-          "id": "sp2",
+          "id": "403d60ab",
           "name": "step-pad-2",
           "transform": {
             "position": {
@@ -195,7 +436,7 @@
           ]
         },
         {
-          "id": "sp3",
+          "id": "5566df73",
           "name": "step-pad-3",
           "transform": {
             "position": {
@@ -251,7 +492,7 @@
           ]
         },
         {
-          "id": "sp4",
+          "id": "10c9d477",
           "name": "step-pad-4",
           "transform": {
             "position": {
@@ -307,7 +548,7 @@
           ]
         },
         {
-          "id": "sp5",
+          "id": "b877bd9e",
           "name": "step-pad-5",
           "transform": {
             "position": {
@@ -363,7 +604,7 @@
           ]
         },
         {
-          "id": "sp6",
+          "id": "8974f5ff",
           "name": "step-pad-6",
           "transform": {
             "position": {
@@ -419,7 +660,7 @@
           ]
         },
         {
-          "id": "sp7",
+          "id": "8a51f2fc",
           "name": "step-pad-7",
           "transform": {
             "position": {
@@ -475,7 +716,7 @@
           ]
         },
         {
-          "id": "sp8",
+          "id": "4fee5094",
           "name": "step-pad-8",
           "transform": {
             "position": {
@@ -533,286 +774,280 @@
       ]
     },
     {
-      "id": "54515f53",
-      "name": "Treadmills",
+      "id": "a1f94a2c",
+      "name": "Floor",
       "transform": {
         "position": {
-          "x": -0.3482,
-          "y": -0.366,
-          "z": 0.9012
+          "x": 0,
+          "y": -1,
+          "z": 0.5
         },
         "scale": {
-          "x": 0.303,
+          "x": 30,
           "y": 1,
-          "z": 0.2
+          "z": 31
         }
       },
-      "components": [],
-      "children": [
+      "components": [
         {
-          "id": "t0",
-          "name": "treadmill +1",
-          "transform": {
-            "position": {
-              "x": -5.8509,
-              "y": 0.866,
-              "z": -17.5061
+          "id": "e94eb0e6",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
             },
-            "scale": {
-              "x": 3,
-              "y": 0.5,
-              "z": 3
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
             }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 0.5,
-                    "y": 0.5,
-                    "z": 0.5
-                  }
-                }
-              }
-            },
-            {
-              "id": "mesh",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:rounded-box"
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "d67ddcac4f57efc8"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Treadmill",
-              "params": {
-                "multiplier": 1
-              }
-            }
-          ]
+          }
         },
         {
-          "id": "e5f507ee",
-          "name": "treadmill +5",
-          "transform": {
-            "position": {
-              "x": -1.8509,
-              "y": 0.866,
-              "z": -17.5061
-            },
-            "scale": {
-              "x": 3,
-              "y": 0.5,
-              "z": 3
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 0.5,
-                    "y": 0.5,
-                    "z": 0.5
-                  }
-                }
-              }
-            },
-            {
-              "id": "mesh",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:rounded-box"
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "d67ddcac4f57efc8"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Treadmill",
-              "params": {
-                "multiplier": 5
-              }
-            }
-          ]
+          "id": "f0392856",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:box"
+          }
         },
         {
-          "id": "f1682fde",
-          "name": "treadmill +10",
-          "transform": {
-            "position": {
-              "x": 2.1491,
-              "y": 0.866,
-              "z": -17.5061
-            },
-            "scale": {
-              "x": 3,
-              "y": 0.5,
-              "z": 3
-            }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 0.5,
-                    "y": 0.5,
-                    "z": 0.5
-                  }
-                }
-              }
-            },
-            {
-              "id": "mesh",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:rounded-box"
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "d67ddcac4f57efc8"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Treadmill",
-              "params": {
-                "multiplier": 10
-              }
-            }
-          ]
+          "id": "efa7dd05",
+          "type": "Renderer",
+          "params": {
+            "material": ""
+          }
         },
         {
-          "id": "546bb4bd",
-          "name": "treadmill +50",
-          "transform": {
-            "position": {
-              "x": 6.1491,
-              "y": 0.866,
-              "z": -17.5061
+          "id": "8c82eb4b",
+          "type": "Keyboard",
+          "params": {
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "15831e72",
+      "name": "Wall",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 7,
+          "z": -15.4999
+        },
+        "rotation": {
+          "x": 1.5708,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 30,
+          "y": 1,
+          "z": 17.0001
+        }
+      },
+      "components": [
+        {
+          "id": "e94eb0e6",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
             },
-            "scale": {
-              "x": 3,
-              "y": 0.5,
-              "z": 3
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
             }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 0.5,
-                    "y": 0.5,
-                    "z": 0.5
-                  }
-                }
-              }
-            },
-            {
-              "id": "mesh",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:rounded-box"
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "d67ddcac4f57efc8"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Treadmill",
-              "params": {
-                "multiplier": 50
-              }
-            }
-          ]
+          }
         },
         {
-          "id": "bd3140bd",
-          "name": "treadmill +100",
-          "transform": {
-            "position": {
-              "x": 10.1491,
-              "y": 0.866,
-              "z": -17.5061
+          "id": "f0392856",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:box"
+          }
+        },
+        {
+          "id": "efa7dd05",
+          "type": "Renderer",
+          "params": {
+            "material": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "dd138869",
+      "name": "Wall",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 15,
+          "z": 0
+        },
+        "scale": {
+          "x": 30,
+          "y": 1,
+          "z": 30
+        }
+      },
+      "components": [
+        {
+          "id": "e94eb0e6",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
             },
-            "scale": {
-              "x": 3,
-              "y": 0.5,
-              "z": 3
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
             }
-          },
-          "components": [
-            {
-              "id": "c0",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 0.5,
-                    "y": 0.5,
-                    "z": 0.5
-                  }
-                }
+          }
+        },
+        {
+          "id": "f0392856",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:box"
+          }
+        },
+        {
+          "id": "efa7dd05",
+          "type": "Renderer",
+          "params": {
+            "material": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "2a3d3c4a",
+      "name": "Wall",
+      "transform": {
+        "position": {
+          "x": -15.4999,
+          "y": 7.0001,
+          "z": -0.5
+        },
+        "rotation": {
+          "x": 1.5708,
+          "y": 0,
+          "z": 1.5708
+        },
+        "scale": {
+          "x": 31.0001,
+          "y": 1,
+          "z": 16.9999
+        }
+      },
+      "components": [
+        {
+          "id": "e94eb0e6",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
               }
             },
-            {
-              "id": "mesh",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:rounded-box"
-              }
-            },
-            {
-              "id": "c1",
-              "type": "Renderer",
-              "params": {
-                "material": "d67ddcac4f57efc8"
-              }
-            },
-            {
-              "id": "c2",
-              "type": "Treadmill",
-              "params": {
-                "multiplier": 100
-              }
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
             }
-          ]
+          }
+        },
+        {
+          "id": "f0392856",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:box"
+          }
+        },
+        {
+          "id": "efa7dd05",
+          "type": "Renderer",
+          "params": {
+            "material": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "63f32967",
+      "name": "Wall",
+      "transform": {
+        "position": {
+          "x": 15.5001,
+          "y": 7.0001,
+          "z": -0.4999
+        },
+        "rotation": {
+          "x": 1.5708,
+          "y": 0,
+          "z": 1.5708
+        },
+        "scale": {
+          "x": 31.0001,
+          "y": 1,
+          "z": 16.9999
+        }
+      },
+      "components": [
+        {
+          "id": "e94eb0e6",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "f0392856",
+          "type": "Mesh",
+          "params": {
+            "model": "builtin:box"
+          }
+        },
+        {
+          "id": "efa7dd05",
+          "type": "Renderer",
+          "params": {
+            "material": ""
+          }
         }
       ]
     }

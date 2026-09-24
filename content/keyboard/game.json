@@ -2,6 +2,7 @@
   "components": [
     "Boss",
     "Bumper",
+    "Checkpoint",
     "Hazard",
     "Mover",
     "Spinner"
