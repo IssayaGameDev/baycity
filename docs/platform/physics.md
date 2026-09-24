@@ -44,7 +44,7 @@ type ShapeDesc =
 
 ### `PhysicsBody`
 
-`handle`, `colliderHandle`, `translation()`, `rotation()`, `linvel()`, `setLinvel(v)`, `setAngvel(v)`, `teleport(p)` (zeros lin+ang velocity), `setPosition(p)` (keeps velocity), `setRotation(q)`, `setNextKinematicTranslation(p)`, `setNextKinematicRotation(q)`, `remove()`.
+`handle`, `colliderHandle`, `translation()`, `rotation()`, `linvel()`, `setLinvel(v)`, `setAngvel(v)`, `teleport(p)` (zeros lin+ang velocity), `setPosition(p)` (keeps velocity), `setRotation(q)`, `setNextKinematicTranslation(p)`, `setNextKinematicRotation(q)`, `setEnabled(on)` (collider off: no contacts, no triggers, out of every query), `setShape(shape)` (replace in place, same handle), `remove()`. The last two are what a sequence needs (ADR 0141).
 
 ## Character controller
 

@@ -127,7 +127,7 @@ addLevel(scene, visuals: VisualItem[], opts: LevelViewOptions = {}): LevelView
 interface LevelViewOptions { shadows? = true; assets?: AssetRuntime; cutout?: CutoutMask }
 interface LevelView {
   group: THREE.Group
-  sync: () => void                                     // copy visual position/rotation → object (moving pieces)
+  sync: () => void                                     // visual → object: position, rotation, scale × drawScale, visible, opacity (ADR 0141)
   setOccluders: (handles: readonly number[]) => void   // swap masked material variants; no-op without cutout
   occluding: () => readonly THREE.Object3D[]           // meshes currently masked → PostFXOptions.aoIgnores
   meshesOf: (handle: number) => readonly THREE.Mesh[]  // collider handle → drawn meshes (ADR 0082)
@@ -210,7 +210,9 @@ scale `(heightM × w/h, heightM, 1)`.
 
 Nametag = `worldLabel([{ text, size: 32 }], { heightM: 0.5 })` (`packages/tps/src/nametag.ts`).
 
-Also exported: `addLights(scene, lights: WorldLight[]): ContentLights { sync; dispose }` (ADR 0047),
+A visual with `fades` gets its **own** material copy per mesh at build, `transparent` from the start, so fading one piece fades no other and never recompiles; its see-through-hole copy (ADR 0055) fades with it. Faded to 0 it is not drawn at all, so it casts nothing.
+
+Also exported: `addLights(scene, lights: WorldLight[]): ContentLights { sync; dispose }` (ADR 0047; `sync` also applies `visible`),
 `createCharacterRig`/`createLooseParts`, `createThumbnailer`/`fitDistance`.
 
 ## `@mp/render-pixi` — `packages/render-pixi/src`

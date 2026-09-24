@@ -14,7 +14,10 @@ import { colorForMarker, createGreyboxMaterial, geometryForBuiltin, geometryForC
  */
 export interface LevelView {
   group: THREE.Group
-  /** Copy each visual's current position/rotation onto its mesh (moving/rotating pieces). */
+  /**
+   * Copy each visual's current pose onto its mesh: position, rotation, and what a sequence does to it
+   * (ADR 0137) — drawn or not, stretched by `drawScale`, faded by `opacity`.
+   */
   sync: () => void
   /**
    * Which colliders are between the eye and the character right now (ADR 0055). Their meshes get a masked
@@ -64,7 +67,11 @@ export const addLevel = (scene: THREE.Scene, visuals: VisualItem[], opts: LevelV
   const assets = opts.assets
   const cutout = opts.cutout
   const group = new THREE.Group()
-  const pairs: { v: VisualItem; object: THREE.Object3D }[] = []
+  /**
+   * `base` is the object's own scale as built, which `drawScale` multiplies. `fading` is every material copy a
+   * fadeable visual was given, with the opacity it started at.
+   */
+  const pairs: { v: VisualItem; object: THREE.Object3D; base: THREE.Vector3; fading: { mat: THREE.Material; base: number }[] }[] = []
   /**
    * A cast answers with a collider handle; this is the way back to what is on screen. A node drawing a
    * model lists all of its colliders against the one mesh, and a mesh can appear under several handles.
@@ -107,8 +114,22 @@ export const addLevel = (scene: THREE.Scene, visuals: VisualItem[], opts: LevelV
 
     object.position.set(v.position.x, v.position.y, v.position.z)
     object.quaternion.set(v.rotation.x, v.rotation.y, v.rotation.z, v.rotation.w)
+    /**
+     * A visual a sequence can fade gets its **own** material, copied here and transparent from the start
+     * (ADR 0137): the original may be shared by every piece using it, and switching transparency on later would
+     * recompile the shader mid-fade.
+     */
+    const fading: { mat: THREE.Material; base: number }[] = []
+    const ownCopy = (m: THREE.Material): THREE.Material => {
+      const copy = m.clone()
+      copy.transparent = true
+      owned.materials.push(copy)
+      fading.push({ mat: copy, base: m.opacity })
+      return copy
+    }
     object.traverse((o) => {
       if (o instanceof THREE.Mesh) {
+        if (v.fades) o.material = Array.isArray(o.material) ? o.material.map(ownCopy) : ownCopy(o.material)
         o.castShadow = shadows
         o.receiveShadow = shadows
         if (cutout !== undefined) {
@@ -121,7 +142,7 @@ export const addLevel = (scene: THREE.Scene, visuals: VisualItem[], opts: LevelV
       }
     })
     group.add(object)
-    pairs.push({ v, object })
+    pairs.push({ v, object, base: object.scale.clone(), fading })
   }
   scene.add(group)
 
@@ -147,9 +168,18 @@ export const addLevel = (scene: THREE.Scene, visuals: VisualItem[], opts: LevelV
     group,
     meshesOf: (handle) => meshesByHandle.get(handle) ?? [],
     sync: () => {
-      for (const { v, object } of pairs) {
+      for (const { v, object, base, fading } of pairs) {
         object.position.set(v.position.x, v.position.y, v.position.z)
         object.quaternion.set(v.rotation.x, v.rotation.y, v.rotation.z, v.rotation.w)
+        object.scale.set(base.x * v.drawScale.x, base.y * v.drawScale.y, base.z * v.drawScale.z)
+        // Faded all the way out draws nothing — and so casts nothing, which a transparent mesh otherwise would.
+        object.visible = v.visible && !(v.fades && v.opacity <= 0)
+        for (const f of fading) {
+          f.mat.opacity = f.base * v.opacity
+          // The see-through hole's copy of it, if the camera made one (ADR 0055), fades the same.
+          const hole = variants.get(f.mat)
+          if (hole !== undefined) hole.opacity = f.mat.opacity
+        }
       }
     },
     setOccluders: (handles) => {

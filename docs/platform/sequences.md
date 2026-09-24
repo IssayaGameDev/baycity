@@ -4,10 +4,9 @@ An object's motion as **stages of steps**, a pure function of time (ADR 0137). T
 formulas are `d3-ease` (ADR 0138). Headless, in `@mp/content`, because the loader and the editor's preview are
 two readers of one rule.
 
-**Status: the engine and the data.** The `Sequence` component exists, is checked on load and records a
-prefab placement's differences; nothing evaluates it yet, and nothing offers it — it is not in
-`GAMEPLAY_COMPONENTS`, so no registry has it. The loader and the editor still move things with
-`Mover`/`Spinner` (`content.md`).
+**Status: the engine, the data, and the game.** The loader runs sequences (`content.md`, ADR 0141), so the
+game and the editor's play-test do. The editor's own viewport does not preview them yet, and nothing offers
+the component — it is not in `GAMEPLAY_COMPONENTS`, so no registry has it. `Mover`/`Spinner` still work.
 
 ## Data
 
@@ -107,6 +106,22 @@ takes no time.
 
 `NodeFrame { parentRot; parentScale; ownRotation }` has `motion.ts`'s `MotionFrame` shape, so a loader frame
 satisfies both.
+
+## In the game — `loader.ts` (ADR 0141)
+
+| channel | reaches |
+| --- | --- |
+| move, turn | the frame's local pose, like a mover's travel; a turn is multiplied onto the authored rotation on the right |
+| scale | the frame's world scale, and every frame under it; collider shapes re-set with `setShape` when it changed; `VisualItem.drawScale` stretches what is drawn |
+| fade | `VisualItem.opacity`, on the target only — not its children; the renderer fades an own copy of the material |
+| collider on / off | the target's own bodies, `setEnabled` — not its children's |
+| enable / disable | the target **and its branch**: not drawn, bodies off, lights off |
+
+A `Collider` switched off in the Inspector is not built, so no step can switch it on. `WorldNode.colliders`
+stays the load-time size: a rule measuring a volume reads it as built.
+
+Riding: `sequenceRide.test.ts` (`@mp/tps`) rides a sequence lift through the loader and the character as the
+game ticks them, sliced, to 10 cm at up to a 63 m/s peak; without slicing it falls 434 m.
 
 ## Tests — `sequence.test.ts`
 

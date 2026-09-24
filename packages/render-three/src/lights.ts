@@ -166,6 +166,8 @@ export const addLights = (scene: THREE.Scene, lights: readonly WorldLight[], opt
   const dir = new THREE.Vector3()
   const sync = (): void => {
     for (const { light, object, target } of posed) {
+      // Off while a sequence has its node disabled (ADR 0137), whatever kind it is.
+      object.visible = light.visible
       // Neither of these reads a position, so there is nothing to re-pose.
       if (light.kind === 'ambient' || light.kind === 'hemisphere') continue
       object.position.set(light.position.x, light.position.y, light.position.z)

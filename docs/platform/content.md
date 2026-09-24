@@ -50,7 +50,9 @@ interface WorldNode { id; name; components /* resolved */; position, rotation /*
                      colliderHandles: readonly number[] /* opaque */
                      colliders: readonly ColliderDesc[] /* world-scaled, same order as handles (ADR 0095) */
                      scope: number }
-interface VisualItem { collider: ColliderDesc /* scale baked in */; position; rotation: Quat; scale: Vec3 /* world, sizes a built-in */; model?: string; material?: string; colliderHandles: number[] }
+interface VisualItem { collider: ColliderDesc /* scale baked in */; position; rotation: Quat; scale: Vec3 /* world, sizes a built-in */; model?: string; material?: string; colliderHandles: number[]
+                      visible: boolean; opacity: number; drawScale: Vec3 /* mutated per tick by sequences */; fades: boolean /* at load */ }   // ADR 0141
+interface WorldLight { …; position; rotation; visible: boolean /* off while its node is disabled */ }
 ```
 
 | `LoadedLevel` | Meaning |
@@ -63,8 +65,8 @@ interface VisualItem { collider: ColliderDesc /* scale baked in */; position; ro
 | `findNode(from, id)` | `nodeRef` resolution: `from.scope`, then scope 0 (level). |
 | `visuals`, `lights: WorldLight[]` | Draw list, light list; poses mutated by `update`/`render`. |
 | `driveOf(node)` | `NodeDrive { position; rotation }` local offset (ADR 0058); only for nodes with a `moves` component. |
-| `update(nowMs, ridingHandle?)`, `render(alpha)` | Kinematic tick pose (riding body posed frozen); interpolated render pose. |
-| `basePose`, `baseIndex`, `basePoseOf(i, 'render'\|'tick'\|'prev')`, `baseCarry` | Movement-base lookups for the wire (ADR 0021). |
+| `update(nowMs, ridingHandle?)`, `render(alpha)` | Kinematic tick pose (riding body posed frozen); interpolated render pose. Sequences (ADR 0141): `shared` on `nowMs`, `local` on `nowMs −` the first `update`'s; collider shapes re-set when the scale changed, bodies switched with `shown && solid`; `render` interpolates `drawScale` and `opacity` too. |
+| `basePose`, `baseIndex`, `basePoseOf(i, 'render'\|'tick'\|'prev')`, `baseCarry` | Movement-base lookups for the wire (ADR 0021). `baseIndex` is `undefined` for a piece a `local` sequence moves (ADR 0141); `basePose` still carries a rider on it here. |
 
 Build rules:
 - Frame `animated` if `movesAtAll(motions)`, an enabled `moves` component, or an animated ancestor → kinematic bodies; else fixed.
@@ -72,6 +74,7 @@ Build rules:
 - Draw (ADR 0039): `Renderer`+`Mesh.model` → one visual listing all handles; `Renderer` alone → one per collider; else nothing. `MaterialOverride` cascades down over `Renderer.material`; `''` = unsurfaced. `Mesh.model` is an asset id or a **built-in shape** (below).
 - Placement with inherited children opens a new `scope` (own id + prefab root id; first writer wins).
 - `motionsOf(components)`: every enabled `Mover` in order, then the first `Spinner`.
+- **Sequences** (ADR 0141, `sequences.md`): each enabled `Sequence` compiled once. A frame is moved by its own aimed at `SELF` and its parent's aimed at its id. Any ⇒ `animated`. Posed at level time 0 while building, so what starts off is built off. Flags fixed at load: `scaling` (a scale track here or above ⇒ colliders re-shaped), `fading` (a fade here ⇒ `VisualItem.fades`), `localOnly` (a `local` sequence moving it or above ⇒ no `baseIndex`). Per tick: `shown` (not disabled here **or above**), `solid` (collider not switched off **here**), `drawScale` = world scale ÷ load scale, `opacity` = the fade here.
 
 ## Ops — `packages/content/src/ops.ts` (ADR 0089)
 
@@ -128,7 +131,7 @@ Pure in `(motions, nowMs)` — `motion.ts`, ADR 0103. `motionOffset(motions, now
 | `spinRadians(s, nowMs)` | `frac(nowMs/1000 × speed/360 + offset) × 2π`. Wrapped to one turn. |
 | `curve(u, smooth)` | cosine when `smooth`, else linear. Both average 1 over a leg, which is what lets `speed` mean the average. |
 | `movesAtAll(motions)` | no distance or no speed ⇒ still ⇒ fixed body. |
-| `motionSlices(fromMs, toMs, maxStep)` | how many equal slices a tick needs so nothing travels more than `maxStep` between two of them (ADR 0104). `1` when still or slow; capped at 8. Position only. |
+| `motionSlices(fromMs, toMs, maxStep)` | how many equal slices a tick needs so nothing travels more than `maxStep` between two of them (ADR 0104). `1` when still or slow; capped at 8. Position only; a frame's movers and sequences add. |
 
 A mover's travel is **re-framed by the loader**, not by `motion.ts` (ADR 0106): the frame tree would put it
 through `parentScale` and the parent's rotation, the same line a node's position goes through, so the loader

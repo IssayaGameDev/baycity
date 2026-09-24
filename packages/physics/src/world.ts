@@ -88,6 +88,13 @@ export interface PhysicsBody {
   /** Kinematic bodies only: set the target orientation for the next step (spinning
    * obstacles — rotating bars). */
   setNextKinematicRotation: (rotation: Quat) => void
+  /**
+   * Switch the collider off, or back on (ADR 0137). Off, it touches nothing, triggers nothing and is missing
+   * from every query, while the body keeps its pose — what a sequence's "collider off" and "disable" mean.
+   */
+  setEnabled: (on: boolean) => void
+  /** Replace the collider's shape in place — a sequence scaling the node it sits on (ADR 0137). */
+  setShape: (shape: ShapeDesc) => void
   /** Remove this body (and its colliders) from the world. */
   remove: () => void
 }
@@ -300,6 +307,28 @@ const descFor = (shape: ShapeDesc): RAPIER.ColliderDesc => {
   }
 }
 
+/** The same shapes as a live `Shape`, for replacing one on a collider that already exists (`setShape`). */
+const liveShapeFor = (shape: ShapeDesc): RAPIER.Shape => {
+  switch (shape.kind) {
+    case 'ball':
+      return new RAPIER.Ball(shape.radius)
+    case 'cuboid':
+      return new RAPIER.Cuboid(shape.halfExtents.x, shape.halfExtents.y, shape.halfExtents.z)
+    case 'capsule':
+      return new RAPIER.Capsule(shape.halfHeight, shape.radius)
+    case 'convex': {
+      const flat = new Float32Array(shape.points.length * 3)
+      shape.points.forEach((p, i) => {
+        flat[i * 3] = p.x
+        flat[i * 3 + 1] = p.y
+        flat[i * 3 + 2] = p.z
+      })
+      // No indices: the hull of the points, as `ColliderDesc.convexHull` builds it.
+      return new RAPIER.ConvexPolyhedron(flat, null)
+    }
+  }
+}
+
 /** Rapier packs interaction groups into one u32: memberships in the high half, filter in the low half. */
 const packLayers = (l: CollisionLayers): number => ((l.belongsTo & 0xffff) << 16) | (l.collidesWith & 0xffff)
 
@@ -379,6 +408,15 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
       },
       setNextKinematicTranslation: (p) => body.setNextKinematicTranslation({ x: p.x, y: p.y, z: p.z }),
       setNextKinematicRotation: (r) => body.setNextKinematicRotation({ x: r.x, y: r.y, z: r.z, w: r.w }),
+      setEnabled: (on) => {
+        if (collider.isEnabled() === on) return
+        collider.setEnabled(on)
+        queriesStale = true
+      },
+      setShape: (shape) => {
+        collider.setShape(liveShapeFor(shape))
+        queriesStale = true
+      },
       remove: () => {
         world.removeRigidBody(body)
         queriesStale = true

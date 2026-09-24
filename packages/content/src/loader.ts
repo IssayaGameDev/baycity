@@ -4,6 +4,20 @@ import type { PhysicsBody, PhysicsWorld, ShapeDesc } from '@mp/physics'
 import { MOTIONLESS, motionOffset, motionsOf, movesAtAll, travelOffset, type Motion, type MotionFrame } from './motion'
 import { scaleCollider } from './primitives'
 import {
+  AT_REST_POSE,
+  SELF,
+  UNMOVED,
+  channelsOf,
+  combineSequences,
+  compileSequence,
+  sampleSequence,
+  type CompiledSequence,
+  type SequenceClocks,
+  type SequenceOffset,
+  type SequencePose,
+} from './sequence'
+import { SEQUENCE, sequenceOf } from './sequenceData'
+import {
   COLLIDER,
   LIGHT,
   MATERIAL_OVERRIDE,
@@ -63,6 +77,21 @@ export interface VisualItem {
    * is (ADR 0055). Written during the build and read-only afterwards.
    */
   colliderHandles: number[]
+  /** Drawn at all (ADR 0137): `false` while a sequence has this node, or one above it, disabled. Mutated by `update`. */
+  visible: boolean
+  /** A factor of the material's opacity — a sequence's fade, 1 unless one fades it. Mutated by `update`/`render`. */
+  opacity: number
+  /**
+   * `true` when a sequence can fade this, decided at load: the renderer gives it its **own** copy of its
+   * material, transparent from the start, so fading one piece does not fade every piece sharing the material,
+   * and nothing recompiles a shader mid-fade.
+   */
+  fades: boolean
+  /**
+   * The node's world scale now, over `scale` — how far the geometry built at load is stretched while a
+   * sequence scales the node. `(1,1,1)` otherwise. Mutated by `update`/`render`.
+   */
+  drawScale: Vec3
 }
 
 /**
@@ -91,6 +120,8 @@ export interface WorldLight {
   position: Vec3
   /** `directional` and `spot` shine along the node's forward; the others ignore this. */
   rotation: Quat
+  /** Off while a sequence has its node, or one above it, disabled (ADR 0137). Mutated by `update`. */
+  visible: boolean
 }
 
 /** Which of a clock-driven node's three known poses to read — see `LoadedLevel.basePoseOf`. */
@@ -158,12 +189,40 @@ export interface WorldNode {
   readonly scope: number
 }
 
+/** A sequence moving a frame, and which of its targets that frame is (ADR 0137). */
+interface FrameSequence {
+  readonly compiled: CompiledSequence
+  /** `SELF` for a sequence on this node; this node's id for its parent's, which aim steps at it. */
+  readonly key: string
+}
+
 interface Frame {
   base: Transform
+  /** The parent's world scale — live, since a sequence above may be scaling this whole branch. */
   parentScale: Vec3
+  /** World scale, live. */
   scale: Vec3
+  /** The world scale its shapes and geometry were built at. */
+  loadScale: Vec3
   /** Every `Mover`/`Spinner` on this node (ADR 0103). Empty on a node with none, which is the common case. */
   motions: readonly Motion[]
+  /** Every sequence moving this node: its own, and its parent's that aim at it. Empty is the common case. */
+  sequences: readonly FrameSequence[]
+  /** What they added at the last evaluation (`UNMOVED` when there are none). */
+  seq: SequenceOffset
+  /** Not disabled by a sequence — this node's, or one above it: switching a node off takes its branch. */
+  shown: boolean
+  /** Its colliders on: `false` while one of its sequences has switched them off. Does not cascade. */
+  solid: boolean
+  /** Its world scale can change: a sequence scales it, or something above it. Its colliders are re-shaped. */
+  scaling: boolean
+  /** A sequence can fade it. Its visuals get their own material copies. Does not cascade: a fade is a material's. */
+  fading: boolean
+  /**
+   * Moved by a sequence on this browser's own clock, or under something that is (ADR 0137). Another screen has
+   * it somewhere else, so it is never a base on the wire: a rider on it is sent in world coordinates.
+   */
+  localOnly: boolean
   parent: Frame | null
   animated: boolean
   worldPos: Vec3
@@ -188,10 +247,18 @@ interface Dynamic {
   /** A light riding this frame. Its own entry, since a node's light is independent of its collider count. */
   light: WorldLight | undefined
   /**
-   * The collider's own offset from the frame, already scaled — `undefined` when it sits on the origin, which
-   * is every migrated piece. Re-applied each tick, since the frame pose is what moves.
+   * The collider's own offset from the frame, **before** scale — `undefined` when it sits on the origin, which
+   * is every migrated piece. Scaled and re-applied each tick, since the frame's pose and scale are what move.
    */
-  offset: Vec3 | undefined
+  centre: Vec3 | undefined
+  /** The collider's authored shape, before scale, for re-shaping it while its frame is `scaling`. */
+  shape: ColliderDesc | undefined
+  /** The world scale the body's shape was last built for. */
+  shapeScale: Vec3
+  prevScale: Vec3
+  currScale: Vec3
+  prevOpacity: number
+  currOpacity: number
   prevPos: Vec3
   prevRot: Quat
   currPos: Vec3
@@ -286,6 +353,11 @@ export interface LoadedLevel {
 
 const UNIT_BOX: ColliderDesc = { kind: 'box', halfExtents: { x: 0.5, y: 0.5, z: 0.5 } }
 const ZERO: Vec3 = { x: 0, y: 0, z: 0 }
+/** Level time 0, on both clocks: where the build poses everything. */
+const AT_START: SequenceClocks = { shared: 0, local: 0 }
+/** `a / b`, with a degenerate `b` giving 1 — a node scaled to nothing at load stretches by nothing. */
+const ratio = (a: number, b: number): number => (Math.abs(b) < 1e-9 ? 1 : a / b)
+const sameVec = (a: Vec3, b: Vec3): boolean => a.x === b.x && a.y === b.y && a.z === b.z
 
 const shapeOf = (c: ComponentData): ColliderDesc => {
   const shape = c.params.shape
@@ -317,18 +389,48 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     ownRotation: f.base.rotation ?? ZERO,
   })
 
-  const evaluate = (f: Frame, nowMs: number): void => {
-    // Both contributions are offsets from the same authored transform, so they add and neither has to know
-    // about the other: what the node's movers and spinner compute (ADR 0103), and what a component drove
-    // (ADR 0058). That is what lets a component nudge a moving platform rather than choose between them.
+  /**
+   * Each compiled sequence sampled once per instant, however many frames it moves — a door's sequence aims at
+   * both halves, and each half would otherwise sample the whole of it.
+   */
+  const sampled = new Map<CompiledSequence, ReadonlyMap<string, SequencePose>>()
+  let sampledAt: SequenceClocks | null = null
+  const poseOf = (s: FrameSequence, clocks: SequenceClocks): SequencePose => {
+    if (sampledAt === null || sampledAt.shared !== clocks.shared || sampledAt.local !== clocks.local) {
+      sampled.clear()
+      sampledAt = clocks
+    }
+    let poses = sampled.get(s.compiled)
+    if (poses === undefined) {
+      poses = sampleSequence(s.compiled, clocks)
+      sampled.set(s.compiled, poses)
+    }
+    return poses.get(s.key) ?? AT_REST_POSE
+  }
+
+  const evaluate = (f: Frame, clocks: SequenceClocks): void => {
+    const nowMs = clocks.shared
+    // Every contribution is an offset from the same authored transform, so they add and none has to know
+    // about the others: what the node's movers and spinner compute (ADR 0103), what a component drove
+    // (ADR 0058), and what its sequences say (ADR 0137). That is what lets a component nudge a moving
+    // platform rather than choose between them.
     const motion = f.motions.length === 0 ? MOTIONLESS : motionOffset(f.motions, nowMs)
     const drive = f.drive ?? MOTIONLESS
+    // Live, and first: `frameOf` below reads it, and a sequence above may be scaling this whole branch.
+    if (f.parent !== null) f.parentScale = f.parent.scale
+    const seq = f.sequences.length === 0 ? UNMOVED : combineSequences(f.sequences.map((s) => ({ pose: poseOf(s, clocks), axes: s.compiled.sequence.axes })), frameOf(f))
+    f.seq = seq
     // Movers are re-framed against this node's place in the tree, which `motionOffset` cannot know: it is
     // headless and has no parent chain. `motion.position` is the raw authored sum and is not used for
     // position at all; `travelOffset` is the framed one. A node with no motions pays nothing.
     const travel = f.motions.length === 0 ? motion.position : travelOffset(f.motions, nowMs, frameOf(f))
-    const localPos = add(add(f.base.position, travel), drive.position)
-    const localRot = eulerToQuat(add(add(f.base.rotation ?? ZERO, motion.rotation), drive.rotation))
+    const localPos = add(add(add(f.base.position, travel), drive.position), seq.position)
+    const authored = eulerToQuat(add(add(f.base.rotation ?? ZERO, motion.rotation), drive.rotation))
+    // A sequence's turn goes on the right of the authored rotation: inside the node's own frame (ADR 0137).
+    const localRot = f.sequences.length === 0 ? authored : mulQuat(authored, seq.rotation)
+    f.scale = mul(f.parentScale, f.sequences.length === 0 ? scaleOf(f.base) : mul(scaleOf(f.base), seq.scale))
+    f.shown = seq.enabled !== false && (f.parent?.shown ?? true)
+    f.solid = seq.collider !== false
     if (f.parent === null) {
       f.worldPos = localPos
       f.worldRot = localRot
@@ -338,23 +440,36 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     f.worldRot = mulQuat(f.parent.worldRot, localRot)
   }
 
-  const makeFrame = (t: Transform, motions: readonly Motion[], parent: Frame | null, driven = false): Frame => {
+  const makeFrame = (t: Transform, motions: readonly Motion[], parent: Frame | null, driven = false, sequences: readonly FrameSequence[] = []): Frame => {
     const parentScale = parent?.scale ?? vec3(1, 1, 1)
+    const drives = (pick: (c: ReturnType<typeof channelsOf>) => boolean): boolean => sequences.some((s) => pick(channelsOf(s.compiled, s.key)))
+    const moves = (c: ReturnType<typeof channelsOf>): boolean => c.position || c.rotation || c.scale
     const f: Frame = {
       base: t,
       parentScale,
       scale: mul(parentScale, scaleOf(t)),
+      loadScale: vec3(1, 1, 1),
       motions,
+      sequences,
+      seq: UNMOVED,
+      shown: true,
+      solid: true,
+      scaling: drives((c) => c.scale) || (parent?.scaling ?? false),
+      fading: drives((c) => c.opacity),
+      localOnly: sequences.some((s) => s.compiled.sequence.clock === 'local' && moves(channelsOf(s.compiled, s.key))) || (parent?.localOnly ?? false),
       parent,
       // A driven node is animated for the same reason a moving one is: it needs a kinematic body and a place
-      // in the per-tick pose pass. Inherited by children, so moving a parent carries its subtree.
-      animated: driven || movesAtAll(motions) || (parent?.animated ?? false),
+      // in the per-tick pose pass. So is one with a sequence, whatever it drives: switching a collider or a
+      // fade happens per tick too. Inherited by children, so moving a parent carries its subtree.
+      animated: driven || movesAtAll(motions) || sequences.length > 0 || (parent?.animated ?? false),
       worldPos: vec3(0, 0, 0),
       worldRot: quat(),
       drive: driven ? { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) } : null,
     }
     frames.push(f)
-    evaluate(f, 0)
+    // Posed at level time 0, where every sequence starts: a platform that begins hidden is built hidden.
+    evaluate(f, AT_START)
+    f.loadScale = { ...f.scale }
     return f
   }
 
@@ -362,21 +477,33 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
   const placeAt = (f: Frame, offset: Vec3 | undefined): Vec3 =>
     offset === undefined ? f.worldPos : add(f.worldPos, rotateVec3(f.worldRot, offset))
 
+  /** A collider's centre as the frame is scaled now. */
+  const scaledCentre = (f: Frame, centre: Vec3 | undefined): Vec3 | undefined => (centre === undefined ? undefined : mul(f.scale, centre))
+  /** The frame's world scale over the one its geometry was built at. */
+  const drawScaleOf = (f: Frame): Vec3 => vec3(ratio(f.scale.x, f.loadScale.x), ratio(f.scale.y, f.loadScale.y), ratio(f.scale.z, f.loadScale.z))
+
   const addDynamic = (
     frame: Frame,
     body: PhysicsBody | undefined,
     visual: VisualItem | undefined,
-    offset: Vec3 | undefined,
+    centre: Vec3 | undefined,
     light: WorldLight | undefined = undefined,
+    shape: ColliderDesc | undefined = undefined,
   ): void => {
     if (body !== undefined) dynamicByCollider.set(body.colliderHandle, dynamics.length)
-    const at = placeAt(frame, offset)
+    const at = placeAt(frame, scaledCentre(frame, centre))
     dynamics.push({
       frame,
       body,
       visual,
       light,
-      offset,
+      centre,
+      shape,
+      shapeScale: { ...frame.scale },
+      prevScale: vec3(1, 1, 1),
+      currScale: vec3(1, 1, 1),
+      prevOpacity: frame.seq.opacity,
+      currOpacity: frame.seq.opacity,
       prevPos: { ...at },
       prevRot: { ...frame.worldRot },
       currPos: { ...at },
@@ -394,7 +521,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
    * It cascades to children, where `PrefabInstance.material` stopped at the instance's own pieces; there is
    * no longer a distinction between a node's pieces and its children to stop at.
    */
-  const build = (node: Node, parent: Frame | null, inheritedMaterial: string | undefined, scope: number): void => {
+  const build = (node: Node, parent: Frame | null, inheritedMaterial: string | undefined, scope: number, fromParent: readonly CompiledSequence[]): void => {
     const r = effectiveNode(level, node, types)
     // Disabled: build nothing, and do not descend (ADR 0099). Returning before `makeFrame` is what makes the
     // whole subtree absent rather than present-but-hidden — no body, no visual, no light, no component, and
@@ -403,7 +530,15 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     // Does any enabled component on this node say it moves it (ADR 0058)? Asked here because the answer
     // decides the frame's `animated` flag and whether its bodies are kinematic, and neither can change later.
     const driven = r.components.some((c) => c.enabled !== false && types.get(c.type)?.moves === true)
-    const f = makeFrame(r.transform, motionsOf(r.components), parent, driven)
+    // Compiled once, here (ADR 0137): every start and duration is fixed by the file, so a tick only samples.
+    // A node is moved by its own sequences' steps aimed at itself, and by its parent's aimed at it by id —
+    // targets are children only, so nothing further up can reach it.
+    const ownSequences = componentsOfType(r.components, SEQUENCE).map((c) => compileSequence(sequenceOf(c)))
+    const sequences: FrameSequence[] = [
+      ...ownSequences.filter((c) => c.tracks.has(SELF)).map((compiled) => ({ compiled, key: SELF })),
+      ...fromParent.filter((c) => c.tracks.has(r.id)).map((compiled) => ({ compiled, key: r.id })),
+    ]
+    const f = makeFrame(r.transform, motionsOf(r.components), parent, driven, sequences)
     // A placement opens a scope: everything it inherits from its prefab resolves references among itself.
     // The placement node is the prefab's root, so it belongs to that scope too.
     const inner = r.inheritedCount > 0 ? ++nextScope : scope
@@ -429,6 +564,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         castShadow: boolParam(lightOn, 'castShadow', false),
         position: { ...f.worldPos },
         rotation: { ...f.worldRot },
+        visible: f.shown,
       }
       lights.push(light)
       // Its own dynamic, so a light rides a moving frame whether or not the node has a collider.
@@ -494,6 +630,10 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         model: drawsModel ? model : undefined,
         material: surfaced === '' ? undefined : surfaced,
         colliderHandles: [],
+        visible: f.shown,
+        opacity: f.seq.opacity,
+        fades: f.fading,
+        drawScale: vec3(1, 1, 1),
       }
       visuals.push(v)
       return v
@@ -507,10 +647,10 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         const collider = scaleCollider(shapeOf(c), f.scale)
         worldColliders.push(collider)
         const shape = toShape(collider)
-        const centre = vec3Param(c, 'center', ZERO)
+        const authoredCentre = vec3Param(c, 'center', ZERO)
+        const centre = authoredCentre.x === 0 && authoredCentre.y === 0 && authoredCentre.z === 0 ? undefined : authoredCentre
         // Scaled like any local offset, so a scaled node moves its colliders apart by the same factor.
-        const offset = centre.x === 0 && centre.y === 0 && centre.z === 0 ? undefined : mul(f.scale, centre)
-        const at = placeAt(f, offset)
+        const at = placeAt(f, scaledCentre(f, centre))
         // A trigger is a sensor: overlap is detected, nothing is resolved (ADR 0054). Still a body and still
         // in `colliderHandles`, so a rule on this node fires the same way — it is only the physical response
         // that goes away.
@@ -519,6 +659,8 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         // platform travels through the world and a fixed body would leave it behind.
         const desc = { position: at, rotation: f.worldRot, shape, ...(trigger ? { sensor: true } : {}) }
         const body = f.animated ? world.addKinematicBody(desc) : world.addFixedBody(desc)
+        // Built the way level time 0 has it: a platform whose sequence starts with it switched off starts off.
+        if (!(f.shown && f.solid)) body.setEnabled(false)
         nodeByCollider.set(body.colliderHandle, worldNode)
         handles.push(body.colliderHandle)
         // A model draws once for the whole node and rides the first body, so a single-collider node still
@@ -534,7 +676,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
             paired.colliderHandles.push(body.colliderHandle)
           }
         }
-        if (f.animated) addDynamic(f, body, paired, offset)
+        if (f.animated) addDynamic(f, body, paired, centre, undefined, shapeOf(c))
       })
     } else if (drawsModel) {
       /**
@@ -549,10 +691,10 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
       if (f.animated) addDynamic(f, undefined, only, undefined)
     }
 
-    r.children.forEach((child, n) => build(child, f, material, n < r.inheritedCount ? inner : scope))
+    r.children.forEach((child, n) => build(child, f, material, n < r.inheritedCount ? inner : scope, ownSequences))
   }
 
-  for (const node of level.nodes) build(node, null, undefined, 0)
+  for (const node of level.nodes) build(node, null, undefined, 0, [])
 
   let primed = false
 
@@ -570,17 +712,34 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
 
   let prevMs = 0
   let currMs = 0
+  /**
+   * The level time this browser's own clock counts from (ADR 0137): the first instant it was posed at. So a
+   * `local` sequence starts when this screen loaded the level, and keeps step with the tick — slicing a tick
+   * (ADR 0104) moves both clocks by the same amount.
+   */
+  let localStart: number | null = null
+  const clocksAt = (nowMs: number): SequenceClocks => ({ shared: nowMs, local: nowMs - (localStart ?? nowMs) })
+
+  const distance = (a: Vec3, b: Vec3): number => Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z)
 
   /** The furthest any animated frame's local pose travels between two instants. */
   const widestStep = (fromMs: number, toMs: number): number => {
     let widest = 0
+    const from = clocksAt(fromMs)
+    const to = clocksAt(toMs)
     for (const f of frames) {
-      if (!f.animated || f.motions.length === 0) continue
-      const a = motionOffset(f.motions, fromMs)
-      const b = motionOffset(f.motions, toMs)
+      if (!f.animated || (f.motions.length === 0 && f.sequences.length === 0)) continue
       // Position only: a spin's reach depends on how far the collider extends from the axis, and a node
-      // large enough for that to matter is not a thing a rider stands on the top face of.
-      widest = Math.max(widest, Math.hypot(b.position.x - a.position.x, b.position.y - a.position.y, b.position.z - a.position.z))
+      // large enough for that to matter is not a thing a rider stands on the top face of. What its movers and
+      // its sequences move it by adds, so their distances do.
+      let step = 0
+      if (f.motions.length > 0) step += distance(motionOffset(f.motions, fromMs).position, motionOffset(f.motions, toMs).position)
+      for (const s of f.sequences) {
+        const a = sampleSequence(s.compiled, from).get(s.key)
+        const b = sampleSequence(s.compiled, to).get(s.key)
+        if (a !== undefined && b !== undefined) step += distance(a.position, b.position)
+      }
+      widest = Math.max(widest, step)
     }
     return widest
   }
@@ -588,22 +747,40 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
   const update = (nowMs: number, ridingColliderHandle?: number): void => {
     prevMs = primed ? currMs : nowMs
     currMs = nowMs
-    for (const f of frames) if (f.animated) evaluate(f, nowMs)
+    if (localStart === null) localStart = nowMs
+    const clocks = clocksAt(nowMs)
+    for (const f of frames) if (f.animated) evaluate(f, clocks)
 
     for (const d of dynamics) {
-      const at = placeAt(d.frame, d.offset)
+      const f = d.frame
+      const at = placeAt(f, scaledCentre(f, d.centre))
       if (d.body !== undefined) {
         const poseIt = d.body.colliderHandle === ridingColliderHandle ? poseFrozen : pose
-        poseIt(d.body, at, d.frame.worldRot)
+        poseIt(d.body, at, f.worldRot)
+        // Re-shaped only when the scale actually changed: a sequence that scales pauses, and most never do.
+        if (f.scaling && d.shape !== undefined && !sameVec(f.scale, d.shapeScale)) {
+          d.body.setShape(toShape(scaleCollider(d.shape, f.scale)))
+          d.shapeScale = { ...f.scale }
+        }
+        d.body.setEnabled(f.shown && f.solid)
       }
       d.prevPos = primed ? d.currPos : at
-      d.prevRot = primed ? d.currRot : d.frame.worldRot
+      d.prevRot = primed ? d.currRot : f.worldRot
       d.currPos = at
-      d.currRot = d.frame.worldRot
+      d.currRot = f.worldRot
+      const drawn = drawScaleOf(f)
+      d.prevScale = primed ? d.currScale : drawn
+      d.currScale = drawn
+      d.prevOpacity = primed ? d.currOpacity : f.seq.opacity
+      d.currOpacity = f.seq.opacity
       if (d.visual !== undefined) {
         d.visual.position = d.currPos
         d.visual.rotation = d.currRot
+        d.visual.drawScale = d.currScale
+        d.visual.opacity = d.currOpacity
+        d.visual.visible = f.shown
       }
+      if (d.light !== undefined) d.light.visible = f.shown
     }
     primed = true
   }
@@ -615,6 +792,8 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
       if (d.visual !== undefined) {
         d.visual.position = d.renderPos
         d.visual.rotation = d.renderRot
+        d.visual.drawScale = lerpVec3(d.prevScale, d.currScale, alpha)
+        d.visual.opacity = d.prevOpacity + (d.currOpacity - d.prevOpacity) * alpha
       }
       if (d.light !== undefined) {
         d.light.position = d.renderPos
@@ -632,7 +811,15 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     return { position: d.currPos, rotation: d.currRot }
   }
 
-  const baseIndex = (colliderHandle: number): number | undefined => dynamicByCollider.get(colliderHandle)
+  /**
+   * The index a rider puts on the wire (ADR 0021) — never for a piece a `local` sequence moves (ADR 0137):
+   * another screen has it somewhere else, so a position relative to it would place the rider wrongly there.
+   * Such a rider is sent in world coordinates. The carry here is untouched; it reads `basePose`.
+   */
+  const baseIndex = (colliderHandle: number): number | undefined => {
+    const i = dynamicByCollider.get(colliderHandle)
+    return i === undefined || dynamics[i]!.frame.localOnly ? undefined : i
+  }
 
   const basePoseOf = (index: number, phase: BasePhase): { position: Vec3; rotation: Quat } | undefined => {
     const d = dynamics[index]

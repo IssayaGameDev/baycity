@@ -22,6 +22,10 @@ const visual = (colliderHandles: number[]): VisualItem => ({
   scale: { x: 1, y: 1, z: 1 },
   model: undefined,
   material: undefined,
+  visible: true,
+  opacity: 1,
+  fades: false,
+  drawScale: { x: 1, y: 1, z: 1 },
   colliderHandles,
 })
 
@@ -120,6 +124,56 @@ describe('setOccluders', () => {
     const before = mesh.material
     view.setOccluders([10])
     expect(mesh.material).toBe(before)
+    view.dispose()
+  })
+})
+
+/** What a sequence does to a drawn piece (ADR 0137): shown or not, stretched, faded on a copy of its own. */
+describe('sync', () => {
+  const two = () => {
+    const scene = new THREE.Scene()
+    const faded = { ...visual([1]), fades: true }
+    const other = visual([2])
+    const view = addLevel(scene, [faded, other], { cutout: mask() })
+    const meshes = view.group.children.map((o) => o as THREE.Mesh)
+    return { view, faded, other, meshes }
+  }
+
+  it('gives a fadeable piece its own transparent material, and leaves the rest shared', () => {
+    const { view, meshes } = two()
+    const own = meshes[0]!.material as THREE.Material
+    expect(own.transparent).toBe(true)
+    expect((meshes[1]!.material as THREE.Material).transparent).toBe(false)
+    view.dispose()
+  })
+
+  it('fades, stretches and hides from the visual it draws', () => {
+    const { view, faded, other, meshes } = two()
+    faded.opacity = 0.25
+    faded.drawScale = { x: 2, y: 1, z: 3 }
+    other.visible = false
+    view.sync()
+    expect((meshes[0]!.material as THREE.Material).opacity).toBeCloseTo(0.25, 9)
+    expect(meshes[0]!.scale.toArray()).toEqual([2, 1, 3])
+    expect(meshes[1]!.visible).toBe(false)
+    view.dispose()
+  })
+
+  /** A transparent mesh still casts a full shadow, so faded all the way out it is not drawn at all. */
+  it('draws nothing of a piece faded all the way out', () => {
+    const { view, faded, meshes } = two()
+    faded.opacity = 0
+    view.sync()
+    expect(meshes[0]!.visible).toBe(false)
+    view.dispose()
+  })
+
+  it('fades the see-through hole’s copy along with it', () => {
+    const { view, faded, meshes } = two()
+    view.setOccluders([1])
+    faded.opacity = 0.5
+    view.sync()
+    expect((meshes[0]!.material as THREE.Material).opacity).toBeCloseTo(0.5, 9)
     view.dispose()
   })
 })

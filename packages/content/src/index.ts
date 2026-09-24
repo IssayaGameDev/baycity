@@ -37,7 +37,7 @@ export type { ParamChecker, TreeContext } from './validate'
 export { applyOp, applyBatch, invertOp, touchedRefs, refKey, isInherited, OpError } from './ops'
 export type { Op, OpBody, OpKind, NodeRef, OwnRef, InheritedRef } from './ops'
 export { instantiateLevel } from './loader'
-export { EASES, SELF, TOP_FRAME, UNMOVED, combineSequences, compileSequence, easeAt, sampleSequence, sequenceTime } from './sequence'
+export { AT_REST_POSE, EASES, SELF, TOP_FRAME, UNMOVED, channelsOf, combineSequences, compileSequence, easeAt, sampleSequence, sequenceTime } from './sequence'
 export {
   diffStages,
   readStages,
@@ -57,6 +57,7 @@ export type {
   NodeFrame,
   Sequence,
   SequenceAxes,
+  SequenceChannels,
   SequenceClock,
   SequenceClocks,
   SequenceLoop,

@@ -254,6 +254,34 @@ describe('physics world', () => {
     world.free()
   })
 
+  /** What a sequence does to a collider it switches off, or scales (ADR 0137). */
+  describe('changing a live collider', () => {
+    const cast = { origin: { x: 0, y: 0, z: 0 }, direction: { x: 1, y: 0, z: 0 }, maxDistance: 20, radius: 0.3 }
+    const walled = () => {
+      const world = createPhysicsWorld()
+      const wall = world.addKinematicBody({ position: { x: 5, y: 0, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 0.25, y: 5, z: 5 } } })
+      return { world, wall }
+    }
+
+    it('switches off, missing from every query, and back on', () => {
+      const { world, wall } = walled()
+      wall.setEnabled(false)
+      expect(world.castSphere(cast)).toBeUndefined()
+      wall.setEnabled(true)
+      expect(world.castSphere(cast)?.colliderHandle).toBe(wall.colliderHandle)
+      world.free()
+    })
+
+    it('takes a new shape in place, keeping its handle', () => {
+      const { world, wall } = walled()
+      wall.setShape({ kind: 'cuboid', halfExtents: { x: 2.25, y: 5, z: 5 } })
+      const hit = world.castSphere(cast)
+      expect(hit?.colliderHandle).toBe(wall.colliderHandle)
+      expect(hit?.distance, 'the near face moved from 4.75 to 2.75').toBeCloseTo(2.45, 3)
+      world.free()
+    })
+  })
+
   describe('castSphere', () => {
     // A wall centred 5 m along +x, 0.5 m thick, so its near face is at x = 4.75.
     const walled = () => {

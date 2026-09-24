@@ -414,6 +414,31 @@ export const compileSequence = (sequence: Sequence): CompiledSequence => {
   }
 }
 
+/** Which channels a sequence drives on one target — what the loader has to decide before it builds anything. */
+export interface SequenceChannels {
+  readonly position: boolean
+  readonly rotation: boolean
+  readonly scale: boolean
+  readonly opacity: boolean
+  readonly collider: boolean
+  readonly enabled: boolean
+}
+
+const NO_CHANNELS: SequenceChannels = { position: false, rotation: false, scale: false, opacity: false, collider: false, enabled: false }
+
+export const channelsOf = (c: CompiledSequence, target: string): SequenceChannels => {
+  const t = c.tracks.get(target)
+  if (t === undefined) return NO_CHANNELS
+  return {
+    position: t.moves.length > 0,
+    rotation: t.turns.length > 0,
+    scale: t.scales.length > 0,
+    opacity: t.fades.length > 0,
+    collider: t.colliders.length > 0,
+    enabled: t.enables.length > 0,
+  }
+}
+
 // --- sampling ---------------------------------------------------------------------------------------
 
 /** A flooring fraction, so a negative `offset` wraps forward rather than running the sequence backwards. */
@@ -453,6 +478,9 @@ export interface SequencePose {
   readonly collider: boolean | undefined
   readonly enabled: boolean | undefined
 }
+
+/** A target no step has touched yet: where it was placed, as it was set up. */
+export const AT_REST_POSE: SequencePose = { position: ZERO, turn: quat(), scale: ONE, opacity: 1, collider: undefined, enabled: undefined }
 
 /** Where a ramp is at `u`: `undefined` before it starts, so an earlier one keeps its value. */
 const rampAt = (r: Span & { readonly ease: Ease }, u: number): number | undefined =>

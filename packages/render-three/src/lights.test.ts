@@ -30,6 +30,7 @@ const world = (over: Partial<WorldLight> = {}): WorldLight => ({
   ...desc(),
   position: vec3(0, 0, 0),
   rotation: quat(0, 0, 0, 1),
+  visible: true,
   ...over,
 })
 
@@ -185,6 +186,25 @@ describe('a hemisphere light', () => {
     lights.sync()
     const object = lights.group.children.find((o) => o instanceof THREE.HemisphereLight)!
     expect(object.position.toArray()).toEqual([0, 0, 0])
+    lights.dispose()
+  })
+})
+
+/** A sequence disabling a node takes its light with it (ADR 0137), whatever kind the light is. */
+describe('a light whose node is disabled', () => {
+  it('goes off on the next sync, and comes back', () => {
+    const scene = new THREE.Scene()
+    const point = world({ kind: 'point' })
+    const ambient = world({ kind: 'ambient' })
+    const lights = addLights(scene, [point, ambient])
+    const objects = lights.group.children.filter((o): o is THREE.Light => o instanceof THREE.Light)
+    point.visible = false
+    ambient.visible = false
+    lights.sync()
+    expect(objects.map((o) => o.visible)).toEqual([false, false])
+    point.visible = true
+    lights.sync()
+    expect(objects[0]!.visible).toBe(true)
     lights.dispose()
   })
 })
