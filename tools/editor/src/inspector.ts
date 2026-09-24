@@ -9,7 +9,9 @@ import type { ComponentView, Doc } from './editorDoc'
 import type { ContextMenu, MenuItem } from './menu'
 import { isCurveSetting, type CurvePoint, type SettingDecls } from '@mp/mode'
 
+import { closePopover, openPopover, popoverOpenFor, scrubField, segmented } from './controls'
 import { createCurveEditor } from './curveEditor'
+import { icon, type IconName } from './seqIcons'
 import { sequenceSummary } from './sequenceEdit'
 import { sequenceEditor } from './sequenceEditor'
 
@@ -866,8 +868,11 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     rebuildKeepingScroll()
   }
 
-  /** Sequences whose settings are showing (the header's ⚙), by component id. Closed unless opened, and kept. */
-  const sequenceSettingsOpen = new Set<string>()
+  /**
+   * The sequence whose ⚙ popover is open, by component id (ADR 0147). An edit in it rebuilds the panel, which
+   * takes the popover with it, so the new header opens it again; a press elsewhere or Escape forgets it.
+   */
+  let settingsOpen: string | null = null
   /** Which of a sequence's steps are open, by step id — kept across the rebuild every edit causes. */
   const openSteps = new Set<string>()
   /**
@@ -880,8 +885,6 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     for (const id of openSteps) last = shownMoves.find((m) => m.stepId === id) ?? last
     return last
   }
-  /** The settings a sequence's ⚙ shows, in the component's own declaration order. */
-  const SEQUENCE_SETTINGS = ['name', 'clock', 'axes', 'loop', 'times', 'offset'] as const
 
   /** A step or stage id, minted the way every other id in the editor is: four random bytes, hex. */
   const freshId = (): string => {
@@ -890,49 +893,145 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
   }
 
+  /** One of a setting's two values: what it is called, and how the header draws it. */
+  interface Choice {
+    readonly value: string
+    readonly icon: IconName
+    readonly label: string
+  }
+  /** The three settings the header shows as icons, each first choice its default. */
+  const SEQUENCE_TOGGLES: readonly { readonly key: 'clock' | 'loop' | 'axes'; readonly choices: readonly [Choice, Choice] }[] = [
+    {
+      key: 'clock',
+      choices: [
+        { value: 'shared', icon: 'shared', label: 'Shared clock: the same on every screen' },
+        { value: 'local', icon: 'local', label: 'Local clock: this screen’s own' },
+      ],
+    },
+    {
+      key: 'loop',
+      choices: [
+        { value: 'restart', icon: 'restart', label: 'Restart: plays again from the start' },
+        { value: 'yoyo', icon: 'yoyo', label: 'Yo-yo: plays back the way it came' },
+      ],
+    },
+    {
+      key: 'axes',
+      choices: [
+        { value: 'object', icon: 'object', label: 'Object axes: points and turns go with the object' },
+        { value: 'level', icon: 'level', label: 'Level axes: up stays up' },
+      ],
+    },
+  ]
+
   /**
-   * A `Sequence`'s section (ADR 0143): its settings behind ⚙, and its stages as boxes. The header says what it
-   * amounts to — the settings that differ from the defaults and how long a pass is — and shows ⚠ when anything
-   * inside is wrong, so a problem is visible with the section closed.
+   * A `Sequence`'s header (ADR 0143, ADR 0147): its name, clock, loop and axes as icons you click to flip —
+   * lit when not the default — the length, and ⚙ for the name, repeat and offset. ⚠ when anything inside is
+   * wrong, so a problem shows with the section closed. With several selected, a click sets every one of them.
    */
-  const sequenceHead = (doc: Doc, at: number, view: ComponentView): { title: string; summary: string; warn?: string; gear: HTMLElement } => {
+  const sequenceHead = (doc: Doc, at: number, view: ComponentView, peers: readonly Peer[] | null): { title: string; summary: string; warn?: string; tools: HTMLElement[]; settings: HTMLElement } => {
     const data = sequenceOf({ id: view.id, type: view.type, params: view.params })
     const compiled = compileSequence(data)
     const targets = new Set(doc.childTargets(at).map((t) => t.id))
     let gone = 0
     for (const stage of data.stages) for (const step of stage.steps) if (step.target !== undefined && !targets.has(step.target)) gone++
     const count = compiled.problems.length + gone
-    const gear = el('button', 'isec-g', '⚙')
-    gear.title = sequenceSettingsOpen.has(view.id) ? 'hide the settings' : 'settings: name, clock, axes, loop, repeat, offset'
-    gear.classList.toggle('on', sequenceSettingsOpen.has(view.id))
+    const defaults = doc.registry.defaults(view.type)
+    const write = (patch: Record<string, unknown>): void => {
+      edited(() => (peers === null ? doc.setParams(at, view.id, patch) : doc.setParamsAcross(peers, patch)))
+      rebuildKeepingScroll()
+    }
+    const mixed = (key: string): boolean =>
+      peers !== null && peers.length > 1 && !peers.every((pp) => sameValue(pp.params[key] ?? defaults[key], peers[0]!.params[key] ?? defaults[key]))
+
+    const tools: HTMLElement[] = SEQUENCE_TOGGLES.map(({ key, choices }) => {
+      const current = data[key]
+      const at0 = choices[0].value === current
+      const shown = at0 ? choices[0] : choices[1]
+      const next = at0 ? choices[1] : choices[0]
+      const b = el('button', 'isec-g seq-tog')
+      b.type = 'button'
+      b.append(icon(shown.icon))
+      b.classList.toggle('lit', !at0)
+      if (view.overridden.includes(key)) b.classList.add('over')
+      if (mixed(key)) b.classList.add('mixed')
+      b.title = `${mixed(key) ? 'Mixed across the selection. ' : ''}${shown.label} — click for ${next.label.split(':')[0]!.toLowerCase()}`
+      b.addEventListener('click', (e) => {
+        e.stopPropagation()
+        write({ [key]: next.value })
+      })
+      return b
+    })
+
+    const gear = el('button', 'isec-g seq-gear')
+    gear.type = 'button'
+    gear.append(icon('settings'))
+    gear.title = 'name, repeat and offset'
+    if (['name', 'times', 'offset'].some((k) => view.overridden.includes(k))) gear.classList.add('over')
+    const panel = (): HTMLElement => {
+      const box = el('div', 'seq-settings')
+      const row = (key: string, label: string, ...controls: HTMLElement[]): void => {
+        const r = el('div', `seq-f${view.overridden.includes(key) ? ' over' : ''}`)
+        const c = el('div', 'seq-fc')
+        c.append(...controls)
+        r.append(el('span', 'seq-fl', label), c)
+        box.append(r)
+      }
+      const name = el('input', 'seq-text')
+      name.type = 'text'
+      name.placeholder = 'unnamed'
+      name.value = data.name
+      name.addEventListener('change', () => write({ name: name.value.trim() }))
+      row('name', 'Name', name)
+      const forever = data.times <= 0
+      const repeat = segmented(
+        [
+          { value: 'forever', label: 'Forever' },
+          { value: 'count', label: 'Count' },
+        ],
+        forever ? 'forever' : 'count',
+        (v) => write({ times: v === 'forever' ? 0 : 2 }),
+      )
+      const passes = forever
+        ? []
+        : [scrubField({ value: data.times, unit: '×', spec: { perPixel: 0.1, grain: 1, min: 1 }, title: 'passes before it holds — a yo-yo’s out and back is two', commit: (v) => write({ times: Math.max(1, Math.round(v)) }) })]
+      row('times', 'Repeat', repeat, ...passes)
+      row(
+        'offset',
+        'Offset',
+        scrubField({
+          value: data.offset,
+          unit: '%',
+          spec: { perPixel: 0.5, grain: 1, min: 0, max: 100 },
+          title: 'where in its cycle it starts, for staggering a row',
+          toShown: (v) => v * 100,
+          fromShown: (v) => v / 100,
+          commit: (v) => write({ offset: v }),
+        }),
+      )
+      return box
+    }
     gear.addEventListener('click', (e) => {
       e.stopPropagation()
-      if (sequenceSettingsOpen.has(view.id)) sequenceSettingsOpen.delete(view.id)
-      else sequenceSettingsOpen.add(view.id)
-      rebuildKeepingScroll()
+      if (popoverOpenFor(gear)) {
+        settingsOpen = null
+        closePopover()
+        return
+      }
+      settingsOpen = view.id
+      openPopover(gear, panel(), { className: 'pop-settings', onDismiss: () => (settingsOpen = null) })
     })
+    tools.push(gear)
     return {
       title: data.name === '' ? 'Sequence' : `Sequence  ${data.name}`,
       summary: sequenceSummary(data, compiled.passSeconds),
       ...(count > 0 ? { warn: `${count} thing${count === 1 ? '' : 's'} in this sequence will not work as written — see ⚠ below` } : {}),
-      gear,
+      tools,
+      settings: gear,
     }
   }
 
-  const addSequenceBody = (section: Section, doc: Doc, at: number, view: ComponentView, state: Record<string, unknown>, peers: readonly Peer[] | null): void => {
-    const def = doc.registry.get(view.type)
-    if (def === undefined) return
-    if (sequenceSettingsOpen.has(view.id)) {
-      syncDepth++
-      try {
-        for (const key of SEQUENCE_SETTINGS) {
-          const spec = def.params[key]
-          if (spec !== undefined) addParam(section, doc, at, view, state, key, spec, peers)
-        }
-      } finally {
-        syncDepth--
-      }
-    }
+  const addSequenceBody = (section: Section, doc: Doc, at: number, view: ComponentView, peers: readonly Peer[] | null): void => {
     // Stages differ per object, so a multi-selection edits the settings they share and nothing else.
     if (peers !== null && peers.length > 1) {
       section.row('stages', 'select one object to edit its stages')
@@ -1022,10 +1121,10 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       },
     })
 
-    const seqHead = view.type === SEQUENCE && def !== undefined ? sequenceHead(doc, at, view) : null
+    const seqHead = view.type === SEQUENCE && def !== undefined ? sequenceHead(doc, at, view, peers) : null
     const section = addSection(view.id, {
       title: seqHead?.title ?? def?.label ?? view.type,
-      ...(seqHead === null ? {} : { summary: seqHead.summary, tools: [seqHead.gear], ...(seqHead.warn === undefined ? {} : { warn: seqHead.warn }) }),
+      ...(seqHead === null ? {} : { summary: seqHead.summary, tools: seqHead.tools, ...(seqHead.warn === undefined ? {} : { warn: seqHead.warn }) }),
       // What used to be spelled into the folder's title string, as a badge that cannot push the name out.
       badge: view.added ? 'added' : overridden ? String(view.overridden.length + sequenceChanges) : '',
       off: !view.enabled,
@@ -1046,11 +1145,19 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       return
     }
 
-    const state = boundState(doc.registry.defaults(view.type), view.params)
     if (view.type === SEQUENCE) {
-      addSequenceBody(section, doc, at, view, state, peers)
+      // Open again what the edit's rebuild took away (see `settingsOpen`) — once the rebuild has put the scroll
+      // back, or it would hang where the header was before.
+      if (seqHead !== null && settingsOpen === view.id) {
+        const gear = seqHead.settings
+        queueMicrotask(() => {
+          if (gear.isConnected && !popoverOpenFor(gear)) gear.click()
+        })
+      }
+      addSequenceBody(section, doc, at, view, peers)
       return
     }
+    const state = boundState(doc.registry.defaults(view.type), view.params)
     const shown = visibleParams(def.params, state)
     syncDepth++
     try {
@@ -1465,6 +1572,8 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   }
 
   const build = (): void => {
+    // A popover belongs to the panel it came from; the new one opens its own again if it should.
+    closePopover()
     for (const pane of panes) pane.dispose()
     panes = []
     transformPane = null

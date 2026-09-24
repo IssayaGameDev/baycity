@@ -1,5 +1,7 @@
-import { EASES, type Ease, type Sequence, type Stage, type Step, type Timing } from '@mp/content'
+import type { Ease, Sequence, Stage, Step, Timing } from '@mp/content'
 import { vec3, type Vec3 } from '@mp/core'
+
+import type { IconName } from './seqIcons'
 
 /**
  * Every edit the Inspector's sequence editor makes, as plain functions from stages to stages (ADR 0143).
@@ -14,88 +16,95 @@ import { vec3, type Vec3 } from '@mp/core'
 
 // --- what a step says on its one line -----------------------------------------------------------------
 
-/** `in-out-sine` → `sine in-out`, which is how the brief writes it and how it reads on a line. */
-export const easeLabel = (e: Ease): string => {
-  if (e === 'linear') return 'linear'
-  const at = e.lastIndexOf('-')
-  return `${e.slice(at + 1)} ${e.slice(0, at)}`
-}
-
-/** The ease names, in picker order, with their labels. */
-export const EASE_OPTIONS: readonly { readonly value: Ease; readonly label: string }[] = EASES.map((e) => ({ value: e, label: easeLabel(e) }))
-
 /** A number as a person would write it: at most three decimals, no trailing zeros. */
-export const num = (v: number): string => String(Math.round(v * 1000) / 1000)
-const vec = (v: Vec3): string => `(${num(v.x)}, ${num(v.y)}, ${num(v.z)})`
+export const num = (v: number): string => String(Math.round(v * 1000) / 1000 + 0)
 
-const timingText = (t: Timing, unit: string): string => {
-  switch (t.by) {
-    case 'seconds':
-      return `${num(t.seconds)} s`
-    case 'speed':
-      return `${num(t.speed)} ${unit}`
-    case 'stage':
-      return t.speed === undefined ? 'stage' : `${num(t.speed)}${unit}  stage`
-  }
+/** A number short enough for a step's line: one decimal, and a real minus sign. The fields keep the rest. */
+export const short = (v: number): string => String(Math.round(v * 10) / 10 + 0).replace('-', '\u2212')
+
+/** A length of time for the duration column: at most two decimals. */
+export const seconds = (s: number): string => `${Math.round(s * 100) / 100 + 0} s`
+
+/** How a step is drawn closed (ADR 0147): its icon and tint, its name, and what it does, briefly. */
+export interface StepFace {
+  readonly icon: IconName
+  /** The kind's colour: a CSS class suffix, `tint-move` and so on. */
+  readonly tint: 'move' | 'turn' | 'scale' | 'fade' | 'collider' | 'enabled' | 'wait'
+  readonly name: string
+  /** The values, rounded, or `''`. */
+  readonly detail: string
+  /** The curve to draw after the duration, for the steps that have one. */
+  readonly ease?: Ease
 }
 
-/**
- * The line a closed step shows (the brief's table). `target` is the child's name when the step is aimed at one,
- * and it goes after an arrow: `move → LeftHalf  (-1, 0, 0)   1 s`.
- */
-export const stepLine = (step: Step, target?: string): string => {
-  const head = (verb: string): string => (target === undefined ? verb : `${verb} → ${target}`)
+/** `Y`, `−X`: an axis along one of the three, by its letter; anything else as its numbers. */
+const axisText = (a: Vec3): string => {
+  const len = Math.hypot(a.x, a.y, a.z)
+  if (len > 1e-9) {
+    for (const [letter, v] of [['X', a.x], ['Y', a.y], ['Z', a.z]] as const) {
+      if (Math.abs(Math.abs(v) - len) < 1e-6) return `${v < 0 ? '\u2212' : ''}${letter}`
+    }
+  }
+  return `${short(a.x)}, ${short(a.y)}, ${short(a.z)}`
+}
+
+const speedText = (t: Timing, unit: string): string => (t.by === 'speed' || (t.by === 'stage' && t.speed !== undefined) ? ` · ${short(t.speed!)} ${unit}` : '')
+
+export const stepFace = (step: Step): StepFace => {
   switch (step.kind) {
     case 'move':
-      return `${head('move')}  ${vec(step.to)}   ${timingText(step.timing, 'm/s')}   ${easeLabel(step.ease)}`
+      return { icon: 'move', tint: 'move', name: 'Move', detail: `${short(step.to.x)}, ${short(step.to.y)}, ${short(step.to.z)}${speedText(step.timing, 'm/s')}`, ease: step.ease }
     case 'turn': {
       const spin = step.timing.by === 'stage' && step.timing.speed !== undefined
-      const amount = spin ? '' : `${num(step.angle)}°   `
-      return `${head('turn')}  ${vec(step.axis)}  ${amount}${timingText(step.timing, '°/s')}${spin ? '' : `   ${easeLabel(step.ease)}`}`
+      const amount = spin ? '' : ` ${short(step.angle)}°`
+      return { icon: 'turn', tint: 'turn', name: spin ? 'Spin' : 'Turn', detail: `${axisText(step.axis)}${amount}${speedText(step.timing, '°/s')}`, ...(spin ? {} : { ease: step.ease }) }
     }
-    case 'scale':
-      return `${head('scale')}  ×${vec(step.to)}   ${timingText(step.timing, '')}   ${easeLabel(step.ease)}`
+    case 'scale': {
+      const t = step.to
+      const uniform = t.x === t.y && t.y === t.z
+      return { icon: 'scale', tint: 'scale', name: 'Scale', detail: uniform ? `\u00d7${short(t.x)}` : `\u00d7${short(t.x)}, ${short(t.y)}, ${short(t.z)}`, ease: step.ease }
+    }
     case 'fade':
-      return `${head('fade')}  to ${num(step.to)}   ${timingText(step.timing, '')}   ${easeLabel(step.ease)}`
+      return { icon: 'fade', tint: 'fade', name: 'Fade', detail: `to ${Math.round(step.to * 100)}%`, ease: step.ease }
     case 'collider':
-      return `${head('collider')} ${step.on ? 'on' : 'off'}`
+      return { icon: step.on ? 'colliderOn' : 'colliderOff', tint: 'collider', name: step.on ? 'Collider on' : 'Collider off', detail: '' }
     case 'enabled':
-      return head(step.on ? 'enable' : 'disable')
+      return { icon: step.on ? 'enable' : 'disable', tint: 'enabled', name: step.on ? 'Enable' : 'Disable', detail: '' }
     case 'wait':
-      return `${head('wait')}   ${num(step.seconds)} s`
+      return { icon: 'wait', tint: 'wait', name: 'Wait', detail: '' }
   }
 }
 
+/** A step that happens at an instant, and so has no length to show. */
+export const isInstant = (step: Step): boolean => step.kind === 'collider' || step.kind === 'enabled'
+
 /**
- * The header's summary: **only what differs from the defaults**, then the length (the brief). A local clock
- * always shows, since a sequence other screens do not see the same way must never pass unnoticed.
+ * The header's summary beside its icons (ADR 0147): repeat and offset when they are not the defaults — clock,
+ * loop and axes are the icons themselves — then the length.
  */
 export const sequenceSummary = (s: Sequence, passSeconds: number): string => {
   const parts: string[] = []
-  if (s.clock === 'local') parts.push('local')
-  if (s.axes === 'level') parts.push('level axes')
-  if (s.loop === 'yoyo') parts.push('yo-yo')
-  if (s.times > 0) parts.push(s.times === 1 ? 'once' : `${s.times} times`)
-  if (s.offset !== 0) parts.push(`offset ${num(s.offset)}`)
-  parts.push(`${num(passSeconds)} s`)
+  if (s.times > 0) parts.push(s.times === 1 ? 'once' : `\u00d7${s.times}`)
+  if (s.offset !== 0) parts.push(`+${Math.round(s.offset * 100)}%`)
+  parts.push(seconds(passSeconds))
   return parts.join(' · ')
 }
 
 // --- what a new step is -----------------------------------------------------------------------------
 
-/** What the `+` menu offers, in the brief's order. */
+/** What the `+` palette offers, in the brief's order, each with its icon and tint. */
 export type StepChoice = 'move' | 'turn' | 'scale' | 'fade' | 'collider-on' | 'collider-off' | 'enable' | 'disable' | 'wait'
 
-export const STEP_CHOICES: readonly { readonly choice: StepChoice; readonly label: string }[] = [
-  { choice: 'move', label: 'move' },
-  { choice: 'turn', label: 'turn' },
-  { choice: 'scale', label: 'scale' },
-  { choice: 'fade', label: 'fade' },
-  { choice: 'collider-on', label: 'collider on' },
-  { choice: 'collider-off', label: 'collider off' },
-  { choice: 'enable', label: 'enable' },
-  { choice: 'disable', label: 'disable' },
-  { choice: 'wait', label: 'wait' },
+export const STEP_CHOICES: readonly { readonly choice: StepChoice; readonly label: string; readonly icon: IconName; readonly tint: StepFace['tint'] }[] = [
+  { choice: 'move', label: 'Move', icon: 'move', tint: 'move' },
+  { choice: 'turn', label: 'Turn', icon: 'turn', tint: 'turn' },
+  { choice: 'scale', label: 'Scale', icon: 'scale', tint: 'scale' },
+  { choice: 'fade', label: 'Fade', icon: 'fade', tint: 'fade' },
+  { choice: 'collider-on', label: 'Collider on', icon: 'colliderOn', tint: 'collider' },
+  { choice: 'collider-off', label: 'Collider off', icon: 'colliderOff', tint: 'collider' },
+  { choice: 'enable', label: 'Enable', icon: 'enable', tint: 'enabled' },
+  { choice: 'disable', label: 'Disable', icon: 'disable', tint: 'enabled' },
+  { choice: 'wait', label: 'Wait', icon: 'wait', tint: 'wait' },
 ]
 
 /** A fresh step of a kind: a second of it, going somewhere visible, linear. Edited from there. */

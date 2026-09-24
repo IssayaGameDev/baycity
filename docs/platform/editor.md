@@ -643,23 +643,42 @@ started from the mutated number.
 
 A `stages` parameter shows as one summary row, `N stages · M steps`, where it is not a `Sequence`'s.
 
-## Inspector — a sequence (ADR 0143)
+## Inspector — a sequence (ADR 0143, ADR 0147)
 
-A `Sequence`'s section is drawn by `sequenceEditor.ts` from its stages; every edit is a pure function in
-`sequenceEdit.ts` and one `Doc.setSequenceStages` (or `setSequencesStages` for a drag between two sequences on
-the node — one commit). The Inspector keeps which sequences show their settings (`⚙`) and which steps are
-open, so both survive the rebuild each edit causes.
+A `Sequence`'s section is drawn by `sequenceEditor.ts` from its stages, in our own DOM and one look (no
+Tweakpane); every edit is a pure function in `sequenceEdit.ts` and one `Doc.setSequenceStages` (or
+`setSequencesStages` for a drag between two sequences on the node — one commit). The Inspector keeps which
+steps are open (several at once) and which sequence's ⚙ popover is open, so both survive the rebuild each edit
+causes.
 
 | | |
 | --- | --- |
-| header | `sequenceSummary`: non-default settings, then the pass length; ⚠ with a count |
-| box | stage; grip, ⚠, length; `+` on hover; right-click duplicate / delete stage; a step dropped anywhere in it joins it |
-| row | `stepLine`; click opens `.seq-fields`; `×` on hover; right-click duplicate / delete; dropped on: before it in the upper half, after in the lower |
-| gap | between and around boxes: a step dropped becomes its own stage, a stage dropped moves there |
-| fields | target (`Doc.childTargets`), then per kind: point / axis + angle / factor / opacity; timing as the step allows (seconds, speed, as long as its stage, and for a turn spin for its stage); ease (31) |
-| drag | HTML5, by the grip only; `dragging` is module-level so a drop can land in another sequence on the same node, and one on another node is refused |
+| header | `Sequence  <name>`, `sequenceSummary` (repeat and offset when not the defaults, then the pass length), ⚠ with a count, then **clock, loop and axes as icon toggles** (`SEQUENCE_TOGGLES`: a click flips it, lit when not the default, `.over` when overridden, dim when mixed across a selection) and **⚙**: a popover of name, repeat (Forever / Count + passes) and offset (%) |
+| bar | each stage's length in proportion, a click scrolls to its card |
+| card | a stage: number, ⚠, length, `+` on hover (the step palette, into this stage); dragged by its header; right-click duplicate / delete |
+| rail | a `.seq-link` above each card and one at the end: a `+` on hover inserts a stage there; a step dropped on it becomes a stage of its own there |
+| row | `stepFace`: the kind's icon on a tinted chip, name, `→ child`, values rounded to a tenth, the duration from `compiled.steps` in a right-hand column (none for an instant), the ease's curve; `×` on hover; click opens; right-click duplicate / delete. Open, it is only icon, name and × — the fields say the rest |
+| palette | a 3×3 popover of step kinds with their icons (`STEP_CHOICES`); the new step is added **open** |
+| fields | target (`Doc.childTargets`), then per kind: point / axis + angle / factor / opacity %, as `scrubField`s with red/green/blue X Y Z; time as a segmented switch (Seconds / Speed / Stage, and Spin for a turn) and its number; ease as a button with its curve, opening a grid of every curve (linear, then ten families × in / out / in-out); collider and enable as a switch |
+| drag | `sequenceDrag.ts` (below) |
 
-A multi-selection shows the shared settings and says to select one object for the stages. On a placement,
+**Controls** (`controls.ts`): `scrubField` — drag sideways to change (`scrubbed`: `perPixel`, landing on `grain`,
+Shift ten times finer), click to type (Enter / blur commits, Escape reverts), **one commit when the drag or the
+typing ends**; its `key` (`<component>:<step>:<field>`) lets the field clicked next take the focus back after the
+first one's edit rebuilt the panel. `segmented`. One popover at a time (`openPopover` / `closePopover`), gone on a
+press elsewhere, Escape, a resize or a scroll outside it; `onDismiss` only for the person's dismissal.
+Icons: `seqIcons.ts`, SVG paths on a 24-unit grid, stroked in `currentColor`; curves: `easeCurve.ts`, drawn from
+`easeAt`, the box grown to hold an overshoot.
+
+**Drag** (`sequenceDrag.ts`): pointer events, not HTML5. A press on a row or a card header becomes a drag after
+4 px, so a click still opens; the original is hidden, a copy follows the pointer, and a placeholder opens where
+it would land — `placeFor(kind, y, layout)`, pure: a stage before the first stage whose middle is below the
+pointer; a step on a rail link becomes a stage there, over a card joins it before the first step whose middle
+is below, past either end a stage there. Neighbours slide (FLIP, 140 ms); the panel scrolls within 36 px of its
+edge; Escape cancels. Every editor on screen registers a `DropTarget`, so a drop can land in another sequence
+on the same node, and one from another node is refused.
+
+A multi-selection edits the header's settings on every node and says to select one object for the stages. On a placement,
 `Doc.sequenceOverrideOf(i, id)` gives the record: its changed and added steps and added stages get `.over`,
 and the header's badge adds changed, added and removed steps to the parameter count. `ComponentView.inherited`
 is per component — a placement root's components from its prefab are inherited — so the ⋯ offers Revert rather

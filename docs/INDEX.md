@@ -196,5 +196,6 @@ why matters.
 | [0144](adr/0144-a-move-point-is-dragged-on-a-copy-in-the-viewport.md) | A move point is dragged on a copy in the viewport |
 | [0145](adr/0145-a-selection-is-outlined-in-one-pass.md) | A selection is outlined, everyone's in one pass |
 | [0146](adr/0146-my-selection-shows-its-edges.md) | My selection shows its edges |
+| [0147](adr/0147-a-sequence-is-edited-as-cards-on-a-rail.md) | A sequence is edited as cards on a rail, with its own controls |
 
 `Design archive/` holds superseded design material and is not maintained.

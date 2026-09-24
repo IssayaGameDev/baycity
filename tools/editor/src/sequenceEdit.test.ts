@@ -3,12 +3,10 @@ import { vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
 import {
-  EASE_OPTIONS,
   STEP_CHOICES,
   addStep,
   duplicateStage,
   duplicateStep,
-  easeLabel,
   moveStage,
   moveStageAcross,
   moveStep,
@@ -17,7 +15,8 @@ import {
   removeStep,
   replaceStep,
   sequenceSummary,
-  stepLine,
+  short,
+  stepFace,
 } from './sequenceEdit'
 
 let n = 0
@@ -32,25 +31,37 @@ const ABC: readonly Stage[] = [
   { id: 'C', steps: [wait('d')] },
 ]
 
+/** A closed step's line (ADR 0147): its name, and its values rounded — the fields keep every digit. */
 describe('what a step says', () => {
-  it('reads the way the brief writes it', () => {
-    expect(stepLine({ id: 's', kind: 'move', to: vec3(0, -7, 10), timing: { by: 'speed', speed: 8 }, ease: 'linear' })).toBe('move  (0, -7, 10)   8 m/s   linear')
-    expect(stepLine({ id: 's', kind: 'turn', axis: vec3(1, 0, 0), angle: 540, timing: { by: 'stage' }, ease: 'linear' })).toBe('turn  (1, 0, 0)  540°   stage   linear')
-    expect(stepLine({ id: 's', kind: 'turn', axis: vec3(1, 0, 0), angle: 0, timing: { by: 'stage', speed: 360 }, ease: 'linear' })).toBe('turn  (1, 0, 0)  360°/s  stage')
-    expect(stepLine({ id: 's', kind: 'scale', to: vec3(1, 2, 1), timing: { by: 'seconds', seconds: 0.5 }, ease: 'in-out-sine' })).toBe('scale  ×(1, 2, 1)   0.5 s   sine in-out')
-    expect(stepLine({ id: 's', kind: 'fade', to: 0.3, timing: { by: 'seconds', seconds: 0.5 }, ease: 'linear' })).toBe('fade  to 0.3   0.5 s   linear')
-    expect(stepLine({ id: 's', kind: 'collider', on: false })).toBe('collider off')
-    expect(stepLine({ id: 's', kind: 'enabled', on: false })).toBe('disable')
-    expect(stepLine(wait('s', 2))).toBe('wait   2 s')
+  const secs = { by: 'seconds', seconds: 1 } as const
+  const face = (step: Step): [string, string] => {
+    const f = stepFace(step)
+    return [f.name, f.detail]
+  }
+
+  it('says each kind briefly, rounded to a tenth with a real minus', () => {
+    expect(face({ id: 's', kind: 'move', to: vec3(0.5, -9.617, -2.74), timing: secs, ease: 'linear' })).toEqual(['Move', '0.5, \u22129.6, \u22122.7'])
+    expect(face({ id: 's', kind: 'move', to: vec3(0, -7, 10), timing: { by: 'speed', speed: 8 }, ease: 'linear' })).toEqual(['Move', '0, \u22127, 10 · 8 m/s'])
+    expect(face({ id: 's', kind: 'turn', axis: vec3(0, 1, 0), angle: 90, timing: secs, ease: 'linear' })).toEqual(['Turn', 'Y 90°'])
+    expect(face({ id: 's', kind: 'turn', axis: vec3(-2, 0, 0), angle: 540, timing: { by: 'stage' }, ease: 'linear' })).toEqual(['Turn', '\u2212X 540°'])
+    expect(face({ id: 's', kind: 'turn', axis: vec3(1, 1, 0), angle: 45, timing: secs, ease: 'linear' })).toEqual(['Turn', '1, 1, 0 45°'])
+    expect(face({ id: 's', kind: 'turn', axis: vec3(0, 1, 0), angle: 0, timing: { by: 'stage', speed: 360 }, ease: 'linear' })).toEqual(['Spin', 'Y · 360 °/s'])
+    expect(face({ id: 's', kind: 'scale', to: vec3(1.5, 1.5, 1.5), timing: secs, ease: 'linear' })).toEqual(['Scale', '\u00d71.5'])
+    expect(face({ id: 's', kind: 'scale', to: vec3(1, 2, 1), timing: secs, ease: 'linear' })).toEqual(['Scale', '\u00d71, 2, 1'])
+    expect(face({ id: 's', kind: 'fade', to: 0.3, timing: secs, ease: 'linear' })).toEqual(['Fade', 'to 30%'])
+    expect(face({ id: 's', kind: 'collider', on: false })).toEqual(['Collider off', ''])
+    expect(face({ id: 's', kind: 'enabled', on: false })).toEqual(['Disable', ''])
+    expect(face(wait('s', 2))).toEqual(['Wait', ''])
   })
 
-  it('names the child a step is aimed at', () => {
-    expect(stepLine({ id: 's', kind: 'move', to: vec3(-1, 0, 0), timing: { by: 'seconds', seconds: 1 }, ease: 'linear' }, 'LeftHalf')).toBe('move → LeftHalf  (-1, 0, 0)   1 s   linear')
+  it('draws a curve for the steps that ease, and none for a spin or an instant', () => {
+    expect(stepFace({ id: 's', kind: 'move', to: vec3(0, 1, 0), timing: secs, ease: 'out-bounce' }).ease).toBe('out-bounce')
+    expect(stepFace({ id: 's', kind: 'turn', axis: vec3(0, 1, 0), angle: 0, timing: { by: 'stage', speed: 90 }, ease: 'linear' }).ease).toBeUndefined()
+    expect(stepFace({ id: 's', kind: 'collider', on: true }).ease).toBeUndefined()
   })
 
-  it('labels every ease', () => {
-    expect(EASE_OPTIONS).toHaveLength(31)
-    expect(easeLabel('out-bounce')).toBe('bounce out')
+  it('rounds to a tenth and never shows a negative zero', () => {
+    expect([short(-0.04), short(2.25), short(-45.666)]).toEqual(['0', '2.3', '\u221245.7'])
   })
 })
 
@@ -61,14 +72,16 @@ describe('the header summary', () => {
     expect(sequenceSummary(plain, 4.5)).toBe('4.5 s')
   })
 
-  it('shows what differs, a local clock always among it', () => {
-    expect(sequenceSummary({ ...plain, clock: 'local', loop: 'yoyo', times: 3 }, 2)).toBe('local · yo-yo · 3 times · 2 s')
+  /** Clock, loop and axes are the header's icons (ADR 0147), so the words are only what they cannot show. */
+  it('shows a repeat and an offset, and leaves the rest to the icons', () => {
+    expect(sequenceSummary({ ...plain, clock: 'local', loop: 'yoyo', times: 3, offset: 0.25 }, 2)).toBe('\u00d73 · +25% · 2 s')
+    expect(sequenceSummary({ ...plain, times: 1 }, 1)).toBe('once · 1 s')
   })
 })
 
 describe('new steps', () => {
   it('offers every kind, in the brief’s order, each one valid', () => {
-    expect(STEP_CHOICES.map((c) => c.label)).toEqual(['move', 'turn', 'scale', 'fade', 'collider on', 'collider off', 'enable', 'disable', 'wait'])
+    expect(STEP_CHOICES.map((c) => c.label)).toEqual(['Move', 'Turn', 'Scale', 'Fade', 'Collider on', 'Collider off', 'Enable', 'Disable', 'Wait'])
     for (const { choice } of STEP_CHOICES) expect(newStep(choice, 'x').id).toBe('x')
   })
 })
