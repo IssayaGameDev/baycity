@@ -5370,7 +5370,7 @@
       "name": "Obstacle 7",
       "transform": {
         "position": {
-          "x": -254,
+          "x": -175,
           "y": 3.5,
           "z": 438.5
         }
@@ -5571,45 +5571,6 @@
       ]
     },
     {
-      "id": "0177e3ae",
-      "name": "InterLevel",
-      "transform": {
-        "position": {
-          "x": -361.5,
-          "y": 3.5,
-          "z": 438.5
-        },
-        "rotation": {
-          "x": 0,
-          "y": -1.5708,
-          "z": 0
-        }
-      },
-      "components": [],
-      "prefab": "7b146287b66c6a52",
-      "overrides": {
-        "d1d3088a": {
-          "transform": {
-            "position": {
-              "x": 7.5001,
-              "y": 4,
-              "z": 0
-            },
-            "rotation": {
-              "x": 1.5708,
-              "y": 0,
-              "z": 1.5708
-            },
-            "scale": {
-              "x": 15,
-              "y": 1,
-              "z": 9
-            }
-          }
-        }
-      }
-    },
-    {
       "id": "aa638208",
       "name": "InterLevel",
       "transform": {
@@ -5703,7 +5664,7 @@
       "name": "Obstacle 8",
       "transform": {
         "position": {
-          "x": -401.8035,
+          "x": -323.8035,
           "y": -28.7759,
           "z": 441.6643
         }
@@ -5715,9 +5676,9 @@
           "name": "Obstacle 8",
           "transform": {
             "position": {
-              "x": 32.9035,
-              "y": 31.7759,
-              "z": -3.1643
+              "x": 32.8535,
+              "y": 32.2759,
+              "z": -3.2143
             },
             "scale": {
               "x": 11.1,
@@ -5729,6 +5690,45 @@
           "prefab": "29bd5680cb775f98"
         }
       ]
+    },
+    {
+      "id": "0177e3ae",
+      "name": "InterLevel",
+      "transform": {
+        "position": {
+          "x": -283.5,
+          "y": 3.5,
+          "z": 438.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": -1.5708,
+          "z": 0
+        }
+      },
+      "components": [],
+      "prefab": "7b146287b66c6a52",
+      "overrides": {
+        "d1d3088a": {
+          "transform": {
+            "position": {
+              "x": 7.5001,
+              "y": 4,
+              "z": 0
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 1.5708
+            },
+            "scale": {
+              "x": 15,
+              "y": 1,
+              "z": 9
+            }
+          }
+        }
+      }
     }
   ],
   "prefabs": {
