@@ -6245,9 +6245,9 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -108.75,
+                  "x": -123.443,
                   "y": 1.5,
-                  "z": 0
+                  "z": -0.193
                 },
                 "scale": {
                   "x": 12.5,
@@ -6304,7 +6304,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -151,
+                  "x": -181.5,
                   "y": -5.5,
                   "z": 0
                 },
@@ -6363,7 +6363,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -162.1865,
+                  "x": -192.6865,
                   "y": -3.9846,
                   "z": 0
                 },
@@ -6427,7 +6427,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -171.2993,
+                  "x": -201.7993,
                   "y": -0.4766,
                   "z": 0
                 },
@@ -6491,7 +6491,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -220.25,
+                  "x": -258.75,
                   "y": 0,
                   "z": 0
                 },
@@ -6550,8 +6550,8 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -283.75,
-                  "y": 6,
+                  "x": -318.8553,
+                  "y": 6.2231,
                   "z": 0
                 },
                 "rotation": {
@@ -6614,8 +6614,8 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -330.25,
-                  "y": 7,
+                  "x": -364.75,
+                  "y": 10.9956,
                   "z": 0
                 },
                 "scale": {
@@ -6673,8 +6673,8 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -339.7562,
-                  "y": 8.4753,
+                  "x": -374.2562,
+                  "y": 12.4709,
                   "z": 0
                 },
                 "rotation": {
@@ -6737,8 +6737,8 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -385.75,
-                  "y": 11,
+                  "x": -424.25,
+                  "y": 19.5,
                   "z": 0
                 },
                 "scale": {
@@ -6796,7 +6796,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -439.25,
+                  "x": -477.75,
                   "y": 11,
                   "z": -9.75
                 },
@@ -6855,7 +6855,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -439.25,
+                  "x": -477.75,
                   "y": 11,
                   "z": 7.75
                 },
@@ -6914,7 +6914,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -460.5,
+                  "x": -499,
                   "y": 11,
                   "z": -0.75
                 },
@@ -6973,7 +6973,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -454.0884,
+                  "x": -492.5884,
                   "y": 11,
                   "z": -7.123
                 },
@@ -7037,7 +7037,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -454.0092,
+                  "x": -492.5092,
                   "y": 11,
                   "z": 4.9908
                 },
@@ -7101,7 +7101,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -468.0878,
+                  "x": -506.5878,
                   "y": 12.5681,
                   "z": -0.75
                 },
@@ -7165,7 +7165,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -504.25,
+                  "x": -542.75,
                   "y": 11,
                   "z": -0.25
                 },
@@ -7224,7 +7224,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -505.5878,
+                  "x": -544.0878,
                   "y": 12.5681,
                   "z": -0.75
                 },
@@ -7438,9 +7438,9 @@
             "95257ff4": {
               "transform": {
                 "position": {
-                  "x": -43.5,
+                  "x": -58.193,
                   "y": -1.5,
-                  "z": 0
+                  "z": -0.193
                 },
                 "scale": {
                   "x": 13,
@@ -7452,9 +7452,9 @@
             "f955106f": {
               "transform": {
                 "position": {
-                  "x": -65.25,
+                  "x": -79.943,
                   "y": 8.5,
-                  "z": 0
+                  "z": -0.193
                 },
                 "scale": {
                   "x": 16.5,
@@ -7466,9 +7466,9 @@
             "205be29c": {
               "transform": {
                 "position": {
-                  "x": -53.545,
+                  "x": -68.238,
                   "y": 3.455,
-                  "z": 0
+                  "z": -0.193
                 },
                 "rotation": {
                   "x": 0,
@@ -7491,7 +7491,7 @@
       "name": "InterLevel",
       "transform": {
         "position": {
-          "x": -852,
+          "x": -890.5,
           "y": 90,
           "z": 439
         },
