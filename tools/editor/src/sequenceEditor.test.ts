@@ -83,12 +83,10 @@ describe('what it draws', () => {
     expect(text(q(r, '.seq-to')[0]), 'aimed at a child, by its name').toBe('→ Left half')
   })
 
-  it('shows each stage’s length in proportion at the top, and the rail between cards', () => {
-    const r = rig([{ id: 'A', steps: [wait('a')] }, { id: 'B', steps: [{ id: 'x', kind: 'collider', on: true }] }])
-    const bar = q(r, '.seq-bar-s')
-    expect(bar.map((s) => s.style.flexGrow)).toEqual(['1', '0'])
-    expect(bar[1]!.classList.contains('instant')).toBe(true)
+  it('puts the rail between the cards, above the first and below the last', () => {
+    const r = rig()
     expect(q(r, '.seq-link').map((l) => l.dataset.before ?? 'end')).toEqual(['A', 'B', 'end'])
+    expect(r.root.querySelector('.seq')!.firstElementChild!.classList.contains('seq-link'), 'nothing above the first card but the rail').toBe(true)
   })
 
   it('opens a step on a click, keeps it open across the rebuild, and does not repeat its numbers', () => {

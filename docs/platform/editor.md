@@ -654,7 +654,6 @@ causes.
 | | |
 | --- | --- |
 | header | `Sequence  <name>`, `sequenceSummary` (repeat and offset when not the defaults, then the pass length), ⚠ with a count, then **clock, loop and axes as icon toggles** (`SEQUENCE_TOGGLES`: a click flips it, lit when not the default, `.over` when overridden, dim when mixed across a selection) and **⚙**: a popover of name, repeat (Forever / Count + passes) and offset (%) |
-| bar | each stage's length in proportion, a click scrolls to its card |
 | card | a stage: number, ⚠, length, `+` on hover (the step palette, into this stage); dragged by its header; right-click duplicate / delete |
 | rail | a `.seq-link` above each card and one at the end: a `+` on hover inserts a stage there; a step dropped on it becomes a stage of its own there |
 | row | `stepFace`: the kind's icon on a tinted chip, name, `→ child`, values rounded to a tenth, the duration from `compiled.steps` in a right-hand column (none for an instant), the ease's curve; `×` on hover; click opens; right-click duplicate / delete. Open, it is only icon, name and × — the fields say the rest |

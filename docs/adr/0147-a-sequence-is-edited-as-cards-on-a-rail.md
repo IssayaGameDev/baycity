@@ -1,8 +1,10 @@
 # ADR 0147 — A sequence is edited as cards on a rail, with its own controls
 
-Status: accepted. Restyles [ADR 0143](0143-a-sequence-is-edited-as-boxes-in-the-inspector.md)'s boxes; the
-model and what each gesture commits are unchanged. Every choice below that a person sees is Kodjo's, asked with
-the question tool and two options each.
+Status: accepted, amended once: the bar of stage lengths was taken out after Kodjo tried it — with no playhead
+and no scrubbing it only restated the cards' own lengths. Restyles
+[ADR 0143](0143-a-sequence-is-edited-as-boxes-in-the-inspector.md)'s boxes; the model and what each gesture
+commits are unchanged. Every choice below that a person sees is Kodjo's, asked with the question tool and two
+options each.
 
 ## Context
 
@@ -15,7 +17,7 @@ the pointer to land on a 5 px gap.
 
 | | |
 | --- | --- |
-| layout | stages as **cards on a rail**, a `+` on the rail to insert a stage anywhere, and a bar of stage lengths in proportion |
+| layout | stages as **cards on a rail**, a `+` on the rail to insert a stage anywhere (a bar of stage lengths above them was tried, then removed) |
 | a step, closed | **one line**: an icon per kind on a chip **tinted by kind**, the name, the values rounded to a tenth, the duration in a column that lines up down the sequence, the ease as a tiny curve. Grip and × on hover |
 | a step, open | only its icon and name above the fields: nothing repeated. Several may be open at once |
 | fields | numbers you **drag sideways** or click to type, with red/green/blue X Y Z; timing as a switch; the ease picked from a **grid of curves** |

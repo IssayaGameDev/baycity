@@ -376,20 +376,6 @@ export const sequenceEditor = (host: SequenceEditorHost): HTMLElement => {
     return l
   }
 
-  /** Each stage's length at a glance, in proportion; a click finds its card. */
-  if (host.stages.length > 0) {
-    const bar = el('div', 'seq-bar')
-    host.compiled.stages.forEach((s, n) => {
-      const seg = el('span', 'seq-bar-s')
-      seg.style.flexGrow = String(s.duration)
-      if (s.duration <= 0) seg.classList.add('instant')
-      seg.title = `stage ${n + 1} · ${seconds(s.duration)}`
-      seg.addEventListener('click', () => root.querySelector<HTMLElement>(`.seq-card[data-stage="${CSS.escape(s.id)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
-      bar.append(seg)
-    })
-    root.append(bar)
-  }
-
   host.stages.forEach((stage, n) => {
     root.append(link(stage.id))
     const card = el('div', 'seq-card')
