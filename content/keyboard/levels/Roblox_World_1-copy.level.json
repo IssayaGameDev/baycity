@@ -5695,6 +5695,20 @@
               "z": 9
             }
           }
+        },
+        "c65ac1fb": {
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": -1,
+              "z": 0
+            },
+            "scale": {
+              "x": 16,
+              "y": 3,
+              "z": 15
+            }
+          }
         }
       }
     },
@@ -6207,18 +6221,19 @@
         }
       },
       "components": [],
+      "prefab": "087f18a37dcb0f49",
       "children": [
         {
-          "id": "f8ebd7e9",
+          "id": "9c005393",
           "name": "platform",
           "transform": {
             "position": {
-              "x": -7.5,
-              "y": 0.25,
+              "x": -93.75,
+              "y": 2.25,
               "z": 0
             },
             "scale": {
-              "x": 15,
+              "x": 12.5,
               "y": 0.5,
               "z": 24
             }
