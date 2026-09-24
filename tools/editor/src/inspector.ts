@@ -1038,7 +1038,9 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       // Children dropped onto the placement are the level's, not the prefab's, until they are applied
       // (ADR 0130). They belong in this count or the strip would read "matches the prefab" beside one.
       const added = doc.placementAdded(at)
-      if (changed.length === 0 && added.length === 0) {
+      // Pieces this placement does without (ADR 0133). No index, so `placementOverrides` cannot see them.
+      const gone = doc.placementRemoved(at)
+      if (changed.length === 0 && added.length === 0 && gone.length === 0) {
         strip.append(el('span', 'iover-t', 'matches the prefab'))
         container.append(strip)
         return
@@ -1047,11 +1049,13 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       strip.classList.add('on')
       const overridePart = total === 0 ? '' : `${total} override${total === 1 ? '' : 's'} on ${changed.length} object${changed.length === 1 ? '' : 's'}`
       const addedPart = added.length === 0 ? '' : `${added.length} added object${added.length === 1 ? '' : 's'}`
-      strip.append(el('span', 'iover-t', [overridePart, addedPart].filter((x) => x !== '').join(', ')))
+      const gonePart = gone.length === 0 ? '' : `${gone.length} removed piece${gone.length === 1 ? '' : 's'}`
+      strip.append(el('span', 'iover-t', [overridePart, addedPart, gonePart].filter((x) => x !== '').join(', ')))
       const revert = el('button', 'ctl tiny', 'Revert all')
       const revertWhat = changed.map((o) => `${doc.label(o.index)}: ${o.fields.join(', ')}`)
       // Named one by one, because reverting deletes them and the button should say which.
       for (const i of added) revertWhat.push(`${doc.label(i)}: added, would be deleted`)
+      for (const id of gone) revertWhat.push(`${id}: removed, would come back`)
       revert.title = `drop every change made inside this prefab (${revertWhat.join(' · ')})`
       revert.addEventListener('click', () => host.revertPlacement(at))
       const apply = el('button', 'ctl tiny', 'Apply all')

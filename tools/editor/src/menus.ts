@@ -107,15 +107,20 @@ export const createMenus = (host: MenuHost) => {
           })),
         ],
       },
-      { label: 'Create child', divider: true, enabled: own, why, items: createMenu(index) },
+      // Open on a piece too (ADR 0135): the child goes in that piece's override record, so it belongs to
+      // this placement and no other. Every hierarchy operation now works on a piece.
+      { label: 'Create child', divider: true, enabled: true, items: createMenu(index) },
       // Duplicate and Copy are open to a prefab's piece (ADR 0131): a copy of one is a plain object, even
       // though the piece itself belongs to the prefab. Delete, Cut and the paste targets stay shut, because
       // each of them would have to change the prefab.
       { label: 'Duplicate', hint: 'Ctrl+D', enabled: true, run: () => host.nodes.duplicateSelected() },
-      { label: 'Delete', hint: 'Del', enabled: own, why, run: () => host.nodes.deleteSelected() },
+      // Delete and Cut are open to a prefab's piece too (ADR 0133): removing one is recorded on **this**
+      // placement, so the prefab keeps it and every other placement keeps it. Create-child and the paste
+      // targets stay shut, because there is still nowhere in this level to put a child of a piece.
+      { label: 'Delete', hint: 'Del', enabled: true, run: () => host.nodes.deleteSelected() },
       { label: 'Copy', hint: 'Ctrl+C', divider: true, enabled: true, run: () => host.edits().copySelected() },
-      { label: 'Cut', hint: 'Ctrl+X', enabled: own, why, run: () => host.edits().cutSelected() },
-      { label: 'Paste as child', hint: 'Ctrl+Shift+V', enabled: own && host.edits().clipboardSize() > 0, why: own ? 'nothing copied' : why, run: () => host.edits().pasteClipboard(true) },
+      { label: 'Cut', hint: 'Ctrl+X', enabled: true, run: () => host.edits().cutSelected() },
+      { label: 'Paste as child', hint: 'Ctrl+Shift+V', enabled: host.edits().clipboardSize() > 0, why: 'nothing copied', run: () => host.edits().pasteClipboard(true) },
       {
         label: shared > 1 ? `Open prefab (${shared} placements)` : 'Open prefab',
         divider: true,
@@ -157,8 +162,11 @@ export const createMenus = (host: MenuHost) => {
       // An added child is an override of the placement in everything but the record it is stored in
       // (ADR 0130), so it counts toward both the enabling and the hint.
       const added = host.doc()?.placementAdded(index).length ?? 0
-      const objects = changed.length + added
-      const total = changed.reduce((n, o) => n + o.fields.length, 0) + added
+      // A removed piece has no index and so never reaches `placementOverrides` (ADR 0133); counted here or
+      // the menu would grey out beside a placement that is visibly missing something.
+      const gone = host.doc()?.placementRemoved(index).length ?? 0
+      const objects = changed.length + added + gone
+      const total = changed.reduce((n, o) => n + o.fields.length, 0) + added + gone
       return [
         {
           label: 'Revert all to prefab',

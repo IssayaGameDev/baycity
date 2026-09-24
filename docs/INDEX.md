@@ -180,5 +180,8 @@ why matters.
 | [0130](adr/0130-a-child-added-to-a-placement-can-be-applied.md) | A child added to a placement can be applied |
 | [0131](adr/0131-a-prefabs-piece-can-be-copied.md) | A prefab's piece can be copied |
 | [0132](adr/0132-hiding-a-node-is-a-view-not-an-edit.md) | Hiding a node is a view, not an edit |
+| [0133](adr/0133-a-placement-can-do-without-a-piece.md) | A placement can do without a piece |
+| [0134](adr/0134-a-drag-carries-the-whole-selection.md) | A drag carries the whole selection |
+| [0135](adr/0135-a-difference-is-recorded-on-any-piece.md) | A difference is recorded on any piece |
 
 `Design archive/` holds superseded design material and is not maintained.

@@ -208,12 +208,16 @@ describe('structure', () => {
     expect(doc.count()).toBe(0)
   })
 
-  it('refuses to delete or reorder an inherited node, whose place belongs to the prefab', () => {
+  it('lets a piece go anywhere a node can, and nowhere a node cannot', () => {
     const { doc } = placed()
     expect(doc.kindOf(1)).toBe('inherited')
-    doc.remove(1)
-    expect(doc.count(), 'still there — its place belongs to the prefab').toBe(2)
-    expect(doc.canReparent(1, null)).toBe(false)
+    // Out to the level (ADR 0133), and into another placement's piece (ADR 0135): both land it somewhere
+    // this level can store it, and both record that the placement it left does without it.
+    expect(doc.canReparent(1, null), 'out to the level').toBe(true)
+    placeRef(doc, vec3(10, 0, 0))
+    expect(doc.canReparent(1, 3), 'into a piece of another placement').toBe(true)
+    // What is still refused is what is refused for any node: itself.
+    expect(doc.canReparent(1, 1), 'into itself').toBe(false)
   })
 
   /**
@@ -1639,6 +1643,293 @@ describe('a child added to a placement', () => {
   it('is not offered on something that is not a placement', () => {
     const { doc } = placed()
     expect(doc.placementAdded(1), 'a prefab piece is not a placement').toEqual([])
+  })
+})
+
+/**
+ * A piece removed from one placement (ADR 0133) — Unity's removed GameObject, the last of its four override
+ * kinds to arrive here.
+ *
+ * Different from switching the piece off, which keeps it and dims it. Removing takes it away, which is what
+ * deleting a piece, cutting one and dragging one out of a placement all need to be able to say.
+ */
+describe('a piece removed from a placement', () => {
+  it('goes from this placement and stays in the prefab', () => {
+    const { level, doc } = placed()
+    expect(doc.count(), 'the placement and its one piece').toBe(2)
+    doc.remove(1)
+    expect(doc.count(), 'the piece is gone from the tree').toBe(1)
+    expect(level.prefabs?.[PAD_ID]?.children, 'the prefab still has it').toHaveLength(1)
+  })
+
+  it('leaves every other placement of the same prefab alone', () => {
+    const { doc } = placed()
+    placeRef(doc, vec3(10, 0, 0))
+    expect(doc.count(), 'two placements, one piece each').toBe(4)
+    doc.remove(1)
+    expect(doc.count(), 'only the first lost its piece').toBe(3)
+    // The indices close up behind it: placement, placement, piece.
+    expect(doc.kindOf(1), 'the second placement').toBe('own')
+    expect(doc.kindOf(2), 'still has its piece').toBe('inherited')
+    expect(doc.placementRemoved(1), 'and nothing removed on it').toEqual([])
+  })
+
+  it('is reported on the placement, which is the only thing left to ask', () => {
+    const { doc } = placed()
+    expect(doc.placementRemoved(0)).toEqual([])
+    doc.remove(1)
+    // No index survives a removal, so `placementOverrides` cannot see it and the count would read zero.
+    expect(doc.placementOverrides(0)).toEqual([])
+    expect(doc.placementRemoved(0)).toEqual(['pad'])
+  })
+
+  it('comes back on a revert, because the prefab has it', () => {
+    const { doc } = placed()
+    doc.remove(1)
+    expect(doc.count()).toBe(1)
+    doc.revertPlacement(0)
+    expect(doc.count(), 'the piece is back').toBe(2)
+    expect(doc.placementRemoved(0)).toEqual([])
+  })
+
+  /** Apply means "make the prefab match this copy", and this copy does not have it (Kodjo's call). */
+  it('deletes the piece from the prefab on apply', () => {
+    const { doc } = placed()
+    doc.remove(1)
+    const plan = doc.placementOverrideOps(0)
+    expect(plan).not.toBeNull()
+    expect(plan!.ops).toEqual([{ kind: 'removeNode', id: 'pad' }])
+  })
+
+  it('travels in one batch with the overrides and the added children', () => {
+    const { doc } = placed()
+    const kid = doc.placeEmpty(vec3(1, 0, 0), 0)
+    expect(kid).toBeGreaterThan(0)
+    doc.remove(1)
+    const kinds = doc.placementOverrideOps(0)!.ops.map((o) => o.kind)
+    expect(kinds, 'the deletion before the insert, so the insert index is the one left after it').toEqual([
+      'removeNode',
+      'insertNode',
+    ])
+  })
+
+  it('is one undo, and the piece comes back', async () => {
+    const { level, doc } = placed()
+    const { applyBatch } = await import('@mp/content')
+    const batches: { ops: import('@mp/content').Op[]; inverses: import('@mp/content').Op[] }[] = []
+    doc.onOps = (b) => batches.push(b)
+    doc.remove(1)
+    expect(batches).toHaveLength(1)
+    expect(doc.count()).toBe(1)
+    applyBatch(level, batches[0]!.inverses)
+    expect(doc.count(), 'Ctrl+Z puts it back').toBe(2)
+  })
+
+  it('still refuses to delete a prefab document own root, which is the file', () => {
+    const doc = prefabDoc(padPrefab())
+    doc.remove(0)
+    expect(doc.count()).toBe(2)
+  })
+})
+
+/** Dragging a piece out of its placement (ADR 0133): resolved here, removed there, in one batch. */
+describe('a piece dragged out of its placement', () => {
+  it('lands in the level as an ordinary node', () => {
+    const { doc } = placed()
+    const at = doc.reparent(1, null, 1)
+    expect(at, 'a node of this document now').toBeGreaterThanOrEqual(0)
+    expect(doc.kindOf(at)).toBe('own')
+  })
+
+  it('leaves the placement without it', () => {
+    const { doc } = placed()
+    doc.reparent(1, null, 1)
+    expect(doc.placementRemoved(0), 'the placement records it is gone').toEqual(['pad'])
+  })
+
+  it('carries what was on screen, overrides and all', () => {
+    const { doc } = placed()
+    doc.setTransform(1, { position: vec3(4, 5, 6) })
+    const at = doc.reparent(1, null, 1)
+    expect(doc.transformOf(at).position, 'the piece as you saw it').toEqual(vec3(4, 5, 6))
+  })
+
+  it('takes the transform the drop re-expressed, when there is one', () => {
+    const { doc } = placed()
+    const at = doc.reparent(1, null, 1, { position: vec3(9, 9, 9) })
+    expect(doc.transformOf(at).position).toEqual(vec3(9, 9, 9))
+  })
+
+  it('is one batch, so one Ctrl+Z puts it back', async () => {
+    const { level, doc } = placed()
+    const { applyBatch } = await import('@mp/content')
+    const batches: { ops: import('@mp/content').Op[]; inverses: import('@mp/content').Op[] }[] = []
+    doc.onOps = (b) => batches.push(b)
+    doc.reparent(1, null, 1)
+    expect(batches, 'one edit, not an insert and a removal').toHaveLength(1)
+    expect(batches[0]!.ops.map((o) => o.kind)).toEqual(['insertNode', 'setOverrideNodeRemoved'])
+    applyBatch(level, batches[0]!.inverses)
+    expect(doc.count(), 'the placement and its piece, as they were').toBe(2)
+    expect(doc.kindOf(1)).toBe('inherited')
+  })
+
+  it('mints a fresh id, since a prefab node id belongs to the prefab', () => {
+    const { level, doc } = placed()
+    const at = doc.reparent(1, null, 1)
+    expect(doc.refAt(at)).not.toEqual({ id: 'pad' })
+    expect(level.prefabs?.[PAD_ID]?.children?.[0]?.id, 'the prefab keeps its own').toBe('pad')
+  })
+
+  it('leaves every other placement of the prefab untouched', () => {
+    const { doc } = placed()
+    placeRef(doc, vec3(10, 0, 0))
+    doc.reparent(1, null, 0)
+    expect(doc.placementRemoved(named(doc, 'pad') - 1)).toEqual([])
+  })
+})
+
+/**
+ * Moving several nodes in one drag (ADR 0134).
+ *
+ * The editor does this by ref, not by index, because each `reparent` renumbers the tree depth-first and
+ * every index after the first is stale. This walks the same loop the drag does.
+ */
+describe('reparenting several, one after another', () => {
+  const four = (): { doc: Doc } => {
+    const level = blank()
+    const doc = levelDoc(level)
+    doc.placeEmpty(vec3(0, 0, 0), null) // 0: the destination
+    doc.placeEmpty(vec3(1, 0, 0), null) // 1
+    doc.placeEmpty(vec3(2, 0, 0), null) // 2
+    doc.placeEmpty(vec3(3, 0, 0), null) // 3
+    return { doc }
+  }
+
+  it('puts all of them under the target, in the order they were in', () => {
+    const { doc } = four()
+    const host = doc.refAt(0)!
+    const refs = [doc.refAt(1)!, doc.refAt(2)!, doc.refAt(3)!]
+    let slot = 0
+    for (const ref of refs) {
+      const here = doc.indexOfRef(ref)!
+      const into = doc.indexOfRef(host)!
+      doc.reparent(here, into, slot)
+      slot++
+    }
+    expect(doc.count(), 'nothing lost or duplicated').toBe(4)
+    // Depth-first: the host, then its three children in the order they went in.
+    expect([1, 2, 3].map((i) => doc.depthOf(i))).toEqual([1, 1, 1])
+    expect([1, 2, 3].map((i) => doc.parentOf(i))).toEqual([0, 0, 0])
+    expect([1, 2, 3].map((i) => doc.refAt(i))).toEqual(refs)
+  })
+
+  /** Indices are what goes stale; a ref survives every renumbering in between. */
+  it('finds each one again after the moves before it renumbered the tree', () => {
+    const { doc } = four()
+    const last = doc.refAt(3)!
+    doc.reparent(1, 0, 0)
+    doc.reparent(doc.indexOfRef(doc.refAt(2)!)!, 0, 1)
+    expect(doc.indexOfRef(last), 'still addressable').not.toBeNull()
+  })
+})
+
+/**
+ * Every hierarchy operation, against a prefab's piece (ADR 0135).
+ *
+ * The point of the whole set: a prefab in a level behaves like any other object, and each difference is
+ * recorded on the placement so it can be applied or reverted. This is the checklist for that claim.
+ */
+describe('a piece behaves like any other object', () => {
+  /** The pad prefab's one piece. Index 1: the placement is 0, and it is *also* labelled `pad`. */
+  const piece = (_doc: Doc): number => 1
+
+  it('takes a child, which belongs to this placement alone', () => {
+    const { doc } = placed()
+    placeRef(doc, vec3(10, 0, 0))
+    const at = doc.placeEmpty(vec3(0, 1, 0), piece(doc))
+    expect(at, 'a real node in the tree').toBeGreaterThan(0)
+    expect(doc.kindOf(at), 'this level authored it').toBe('own')
+    expect(doc.depthOf(at), 'under the piece, not beside it').toBe(2)
+    expect(doc.count(), 'the other placement did not gain one').toBe(5)
+  })
+
+  it('takes a built-in shape too, by the same door', () => {
+    const { doc } = placed()
+    const at = doc.placePrimitive('box', vec3(0, 1, 0), piece(doc))
+    expect(doc.kindOf(at)).toBe('own')
+    expect(doc.parentOf(at)).toBe(piece(doc))
+  })
+
+  /** The added child is an ordinary node: every existing op has to reach it where it lives. */
+  it('lets that child be edited, moved and deleted like anything else', () => {
+    const { doc } = placed()
+    const at = doc.placeEmpty(vec3(0, 1, 0), piece(doc))
+    doc.setName(at, 'lamp')
+    expect(doc.label(at)).toBe('lamp')
+    doc.setTransform(at, { position: vec3(2, 2, 2) })
+    expect(doc.transformOf(at).position).toEqual(vec3(2, 2, 2))
+    const before = doc.count()
+    doc.remove(at)
+    expect(doc.count()).toBe(before - 1)
+  })
+
+  it('reorders its children, on this placement only', () => {
+    const { doc } = placed()
+    const host = piece(doc)
+    const a = doc.placeEmpty(vec3(0, 1, 0), host)
+    doc.setName(a, 'a')
+    const b = doc.placeEmpty(vec3(0, 2, 0), host)
+    doc.setName(b, 'b')
+    expect([doc.label(a), doc.label(b)]).toEqual(['a', 'b'])
+    // `move`'s target is a **sibling** index: b is the piece's second child, going to first.
+    doc.move(named(doc, 'b'), 0)
+    expect(named(doc, 'b') < named(doc, 'a'), 'b now sits before a').toBe(true)
+  })
+
+  it('reorders the prefab pieces themselves, without touching the prefab', () => {
+    const level = blank()
+    const doc = levelDoc(level)
+    const two: Node = {
+      id: 'root',
+      name: 'pad',
+      transform: { position: ZERO },
+      components: [],
+      children: [solid('one', ZERO), solid('two', ZERO)],
+    }
+    doc.placePrefab(PAD_ID, two, vec3(0, 0, 0))
+    expect([doc.label(1), doc.label(2)]).toEqual(['one', 'two'])
+    doc.move(2, 0) // the second piece to the first sibling slot
+    expect([doc.label(1), doc.label(2)], 'swapped here').toEqual(['two', 'one'])
+    expect(level.prefabs?.[PAD_ID]?.children?.map((k) => k.id), 'the prefab is as it was').toEqual(['one', 'two'])
+  })
+
+  it('accepts something dropped into it', () => {
+    const { doc } = placed()
+    const loose = doc.placeEmpty(vec3(5, 0, 0), null)
+    doc.setName(loose, 'lamp')
+    doc.reparent(named(doc, 'lamp'), piece(doc), 0)
+    const moved = named(doc, 'lamp')
+    expect(doc.parentOf(moved), 'inside the piece now').toBe(piece(doc))
+    expect(doc.kindOf(moved)).toBe('own')
+  })
+
+  it('carries the added child into the prefab on apply, under the piece it hangs from', () => {
+    const { doc } = placed()
+    doc.placeEmpty(vec3(0, 1, 0), piece(doc))
+    const ops = doc.placementOverrideOps(0)!.ops
+    const insert = ops.find((o) => o.kind === 'insertNode')
+    expect(insert).toBeDefined()
+    if (insert?.kind !== 'insertNode') throw new Error('not an insert')
+    expect(insert.parent, 'the piece, not the prefab root').toBe('pad')
+  })
+
+  it('takes the added child away again on revert', () => {
+    const { doc } = placed()
+    const before = doc.count()
+    doc.placeEmpty(vec3(0, 1, 0), piece(doc))
+    expect(doc.count()).toBe(before + 1)
+    doc.revertPlacement(0)
+    expect(doc.count()).toBe(before)
   })
 })
 

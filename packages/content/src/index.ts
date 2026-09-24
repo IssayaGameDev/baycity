@@ -19,6 +19,7 @@ export {
   SPINNER,
   SPAWN,
   bakeOverrides,
+  childrenFor,
   boolParam,
   componentsOfType,
   effectiveNode,

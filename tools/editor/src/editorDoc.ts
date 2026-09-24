@@ -1,5 +1,6 @@
 import {
   bakeOverrides,
+  childrenFor,
   boolParam,
   effectiveNode,
   numberParam,
@@ -333,6 +334,13 @@ export interface Doc {
    * is itself a **placement** is excluded: inserting one into a prefab means a prefab referencing a prefab,
    * whose definition would have to resolve in the prefab's own room (ADR 0124), and that is not built.
    */
+  /**
+   * Prefab node ids this placement does without (ADR 0133) — Unity's removed GameObject.
+   *
+   * Read off the placement's override records rather than the tree, because a removed piece is not in the
+   * tree and has no index to ask about. Carried by the placement-scope Revert and Apply like the rest.
+   */
+  placementRemoved: (i: number) => string[]
   placementAdded: (i: number) => number[]
   /**
    * Drop every override in a placement **and delete every child added to it**, in one batch — one undo
@@ -588,13 +596,32 @@ const docOver = (
       }
       out.push({ view, authored, owner, siblings, index, parent, depth, path })
 
+      /**
+       * What a placement shows under a piece (ADR 0135): the prefab's children minus the removed, plus the
+       * ones this placement added, in this placement's order. `childrenFor` is the same function the loader
+       * bakes with, so the editor and the game agree by construction.
+       *
+       * An **added** child is pushed with no `owner` and with its `addedChildren` array as its siblings, so
+       * `own()` accepts it and every structural operation works on it unchanged — it is an ordinary
+       * authored node that happens to live in an override record.
+       */
+      const showChildren = (source: Node, placement: Node): void => {
+        const over = placement.overrides?.[source.id]
+        const added = over?.addedChildren
+        const kids = childrenFor(source, over, placement.overrides) ?? []
+        kids.forEach((kid, k) => {
+          const at = added?.indexOf(kid) ?? -1
+          if (at >= 0) push(kid, undefined, added, at, self, depth + 1, `${path}+${k}`)
+          else push(kid, placement, undefined, k, self, depth + 1, `${path}#${k}`)
+        })
+      }
       const ref = owner === undefined ? authored.prefab : undefined
       if (ref !== undefined) {
         // Inherited: the prefab's own child objects, so a write can reach the definition.
         const root = level.prefabs?.[ref]
-        ;(root?.children ?? []).forEach((kid, k) => push(kid, authored, undefined, k, self, depth + 1, `${path}#${k}`))
+        if (root !== undefined) showChildren(root, authored)
       } else if (owner !== undefined) {
-        ;(authored.children ?? []).forEach((kid, k) => push(kid, owner, undefined, k, self, depth + 1, `${path}#${k}`))
+        showChildren(authored, owner)
       }
       if (owner === undefined) {
         const own = authored.children
@@ -647,6 +674,20 @@ const docOver = (
     return n?.owner === undefined ? n : undefined
   }
   /** An own node by id. Ids are unique per tree, and an inserted op clones its node, so identity is the id. */
+  /**
+   * When `parent` is a **piece**, where a new child of it goes (ADR 0135): the placement that owns the
+   * piece, the piece, and the end of what it already adds there. `undefined` for anything else.
+   */
+  const pieceHost = (parent: number): { owner: string; node: string; index: number } | undefined => {
+    const p = node(parent)
+    if (p?.owner === undefined) return undefined
+    return {
+      owner: p.owner.id,
+      node: p.authored.id,
+      index: (p.owner.overrides?.[p.authored.id]?.addedChildren ?? []).length,
+    }
+  }
+
   const indexOfId = (id: string): number => nodes().findIndex((n) => n.owner === undefined && n.authored.id === id)
   const refOf = (n: DocNode): NodeRef => (n.owner === undefined ? (table_ === undefined ? { id: n.authored.id } : { table: table_, id: n.authored.id }) : { owner: n.owner.id, node: n.authored.id })
 
@@ -681,9 +722,16 @@ const docOver = (
   }
 
   const canReparent = (from: number, parent: number | null): boolean => {
-    if (own(from) === undefined) return false
+    // A **piece** may be dragged out of its placement (ADR 0133): it is resolved into a node of this level
+    // at the destination and removed from the placement it came from, in one batch. What it may not do is
+    // move *within* the prefab, which the destination test below refuses along with everything else.
+    const n = node(from)
+    if (n === undefined) return false
+    if (n.owner === undefined && own(from) === undefined) return false // a prefab document's root
     if (parent === null) return true
-    if (parent === from || own(parent) === undefined) return false
+    if (parent === from) return false
+    // A piece is a destination too (ADR 0135): what lands there goes in its placement's override record.
+    if (own(parent) === undefined && node(parent)?.owner === undefined) return false
     return !(parent > from && parent < subtreeEnd(from))
   }
 
@@ -1026,10 +1074,16 @@ const docOver = (
     },
     placeEmpty: (position, parent) => {
       const fresh: Node = { id: freshId(), name: 'empty', transform: { position }, components: [] }
+      // Under a piece it goes in that piece's override record (ADR 0135), because a piece is not a node of
+      // this level and has nowhere else to put one. Everywhere else is an ordinary insert.
+      const onPiece = parent === null ? undefined : pieceHost(parent)
+      if (onPiece !== undefined) {
+        commit([{ kind: 'insertOverrideChild', owner: onPiece.owner, node: onPiece.node, index: onPiece.index, child: fresh }])
+        return indexOfId(fresh.id)
+      }
       let host: Node | undefined
       if (parent !== null) {
         host = own(parent)?.authored
-        // An inherited node's children belong to the prefab, so there is nowhere here to put one.
         if (host === undefined) return -1
       } else if (mode === 'prefab') {
         host = roots[0]
@@ -1040,6 +1094,12 @@ const docOver = (
     },
     placePrimitive: (kind, position, parent) => {
       const fresh = primitiveNode(kind, position)
+      // Under a piece, into that piece's override record (ADR 0135) — the same door `placeEmpty` uses.
+      const onPiece = parent === null ? undefined : pieceHost(parent)
+      if (onPiece !== undefined) {
+        commit([{ kind: 'insertOverrideChild', owner: onPiece.owner, node: onPiece.node, index: onPiece.index, child: fresh }])
+        return indexOfId(fresh.id)
+      }
       let host: Node | undefined
       if (parent !== null) {
         host = own(parent)?.authored
@@ -1062,9 +1122,21 @@ const docOver = (
     // Removing takes the subtree with it: children are placed relative to this node and have nowhere to be
     // without it. An inherited node cannot go — it would have to go from every placement of the prefab.
     remove: (i) => {
-      const n = own(i)
-      if (n?.siblings === undefined) return
-      commit([{ kind: 'removeNode', id: n.authored.id }])
+      const n = node(i)
+      if (n === undefined) return
+      /**
+       * A piece of a prefab is removed **on this placement only** (ADR 0133) — Unity's removed GameObject.
+       * The prefab keeps it and every other placement keeps it; this one does without. That is what makes
+       * deleting, cutting and dragging a piece out possible at all, none of which could be said before.
+       */
+      if (n.owner !== undefined) {
+        commit([{ kind: 'setOverrideNodeRemoved', owner: n.owner.id, node: n.authored.id, removed: true }])
+        return
+      }
+      // `own`, not `n`: it is what refuses a prefab document's root, which is the file itself.
+      const o = own(i)
+      if (o?.siblings === undefined) return
+      commit([{ kind: 'removeNode', id: o.authored.id }])
     },
     // A clone of a placement references the same table entry. Cloning the *definition* would quietly break
     // the very link the reference exists to provide. Children come along; ids are re-minted.
@@ -1103,6 +1175,31 @@ const docOver = (
     // Order is not cosmetic (checkpoint progression, the replicated movement-base index — ADR 0021), and an
     // inherited node's order belongs to the prefab.
     move: (from, to) => {
+      /**
+       * **Reordering a piece is recorded on the placement** (ADR 0135), not on the prefab: the whole list
+       * of that parent's children in this placement's order, so the other placements keep theirs.
+       *
+       * The list names every child, inherited and added alike, because they interleave — an added child
+       * cannot be ordered against its inherited siblings by any rule that does not name them all.
+       */
+      const piece = node(from)
+      if (piece?.owner !== undefined) {
+        const parentIndex = piece.parent
+        const host = parentIndex < 0 ? undefined : node(parentIndex)
+        if (host === undefined) return from
+        const placement = piece.owner
+        const source = host.owner === undefined ? level.prefabs?.[host.authored.prefab ?? ''] : host.authored
+        if (source === undefined) return from
+        const shown = childrenFor(source, placement.overrides?.[source.id], placement.overrides) ?? []
+        const at = moveTarget(shown.length, piece.index, to)
+        if (at === piece.index) return from
+        const ids = shown.map((k) => k.id)
+        const [moved] = ids.splice(piece.index, 1)
+        if (moved === undefined) return from
+        ids.splice(at, 0, moved)
+        commit([{ kind: 'setOverrideChildOrder', owner: placement.id, node: source.id, order: ids }])
+        return indexOfId(moved) >= 0 ? indexOfId(moved) : from
+      }
       const n = own(from)
       if (n?.siblings === undefined) return from
       const at = moveTarget(n.siblings.length, n.index, to)
@@ -1128,8 +1225,50 @@ const docOver = (
     },
     canReparent,
     reparent: (from, parent, atIndex, transform) => {
+      if (!canReparent(from, parent)) return from
+      /**
+       * **Into a piece** (ADR 0135): whatever lands there becomes a child in that piece's override record,
+       * which is the only place this level has to put one. Leaving where it came from is the ordinary
+       * `removeNode`, or a removal override when it was itself a piece — both in the same batch, so the
+       * whole drop is one Ctrl+Z.
+       */
+      const into = parent === null ? undefined : pieceHost(parent)
+      if (into !== undefined) {
+        const moving = node(from)
+        if (moving === undefined) return from
+        const landed = structuredClone(moving.owner === undefined ? moving.authored : moving.view)
+        if (moving.owner !== undefined) reidSubtree(landed)
+        if (transform !== undefined) landed.transform = transform
+        commit([
+          moving.owner === undefined
+            ? { kind: 'removeNode', id: moving.authored.id }
+            : { kind: 'setOverrideNodeRemoved', owner: moving.owner.id, node: moving.authored.id, removed: true },
+          { kind: 'insertOverrideChild', owner: into.owner, node: into.node, index: Math.max(0, Math.min(into.index, atIndex)), child: landed },
+        ])
+        return indexOfId(landed.id)
+      }
+      const piece = own(from) === undefined ? node(from) : undefined
+      /**
+       * **Dragging a piece out of its placement** (ADR 0133): the two halves, in one batch.
+       *
+       * It becomes a node of this level at the destination — the resolved view, so what you were looking at
+       * is what lands, with fresh ids because a prefab's are its own — and the placement records that it
+       * does without it. One `commit`, so it is one Ctrl+Z and one message to the room.
+       */
+      if (piece?.owner !== undefined) {
+        const target = parent === null ? undefined : own(parent)!.authored
+        const host = target === undefined ? roots : (target.children ?? [])
+        const landed = structuredClone(piece.view)
+        reidSubtree(landed)
+        if (transform !== undefined) landed.transform = transform
+        commit([
+          { kind: 'insertNode', parent: target?.id ?? null, index: Math.max(0, Math.min(host.length, atIndex)), node: landed },
+          { kind: 'setOverrideNodeRemoved', owner: piece.owner.id, node: piece.authored.id, removed: true },
+        ])
+        return indexOfId(landed.id)
+      }
       const n = own(from)
-      if (n?.siblings === undefined || !canReparent(from, parent)) return from
+      if (n?.siblings === undefined) return from
       const target = parent === null ? undefined : own(parent)!.authored
       const host = target === undefined ? roots : (target.children ?? [])
       const sameList = host === n.siblings
@@ -1290,6 +1429,20 @@ const docOver = (
       return out
     },
 
+    placementRemoved: (i) => {
+      const root = node(i)
+      if (root?.authored.prefab === undefined) return []
+      /**
+       * Read off the **override records**, not the resolved tree: a removed piece is not in the tree, so it
+       * has no index to ask about. Its record is keyed by its own prefab node id and names itself.
+       */
+      const out: string[] = []
+      for (const [id, over] of Object.entries(root.authored.overrides ?? {})) {
+        if (over.removedNodes?.includes(id) === true) out.push(id)
+      }
+      return out
+    },
+
     placementAdded: (i) => {
       const root = node(i)
       if (root?.authored.prefab === undefined) return []
@@ -1297,9 +1450,16 @@ const docOver = (
       const out: number[] = []
       for (let j = i + 1; j < subtreeEnd(i); j++) {
         const kid = all[j]
-        // A direct child this document authored. The prefab's own pieces have an `owner`; a deeper node has
-        // a different parent and rides along inside whichever added child holds it.
-        if (kid === undefined || kid.parent !== i || kid.owner !== undefined) continue
+        if (kid === undefined || kid.owner !== undefined) continue
+        /**
+         * The **root** of an added subtree, at any depth (ADR 0135): a node this document authored whose
+         * parent is a piece, or the placement itself. Its own children ride inside it and are not entries.
+         *
+         * ADR 0130 could only find the placement's direct children, because that was the only place one
+         * could be. Now they hang off any piece, and this is the same question asked of the whole subtree.
+         */
+        const above: DocNode | undefined = kid.parent === i ? root : all[kid.parent]
+        if (above === undefined || (above !== root && above.owner === undefined)) continue
         // A placement inside a prefab needs that prefab's definition resolved in the prefab's own room, and
         // nothing does that yet — so it is not offered rather than half-working.
         if (kid.authored.prefab !== undefined) continue
@@ -1323,6 +1483,11 @@ const docOver = (
         const kid = all[index]
         if (kid !== undefined) ops.push({ kind: 'removeNode', id: kid.authored.id })
       }
+      // And it *does* have the pieces this placement threw away, so they come back (ADR 0133). Not covered
+      // by the loop above: a removed piece has no index, so `placementOverrides` never sees it.
+      for (const id of self.placementRemoved(i)) {
+        ops.push({ kind: 'setOverrideNodeRemoved', owner: root.authored.id, node: id, removed: false })
+      }
       // One batch, so the whole revert is one undo press and the room sees one edit rather than a dozen.
       if (ops.length > 0) commit(ops)
     },
@@ -1344,16 +1509,35 @@ const docOver = (
        * the revert that follows a successful submit. The transform needs no conversion: a child of the
        * placement and a child of the prefab's root are in the same frame.
        */
+      /**
+       * A piece this placement did without is deleted from the prefab (ADR 0133), which is what Apply means
+       * everywhere else: make the prefab match this copy. It is the far-reaching one — every placement in
+       * every level loses it — and Ctrl+Z is the way back.
+       *
+       * Before the inserts, so the indices the inserts are appended at are the ones left after the deletions.
+       */
+      for (const id of self.placementRemoved(i)) ops.push({ kind: 'removeNode', id })
+
       const definition = level.prefabs?.[assetId]
       const all = nodes()
-      let at = definition?.children?.length ?? 0
+      /**
+       * Each added child goes under the **piece it hangs from** (ADR 0135), not always the prefab's root:
+       * it can hang off any of them now, and applying it anywhere else would move it.
+       *
+       * One running index per host, so several added under the same piece keep their order.
+       */
+      const nextAt = new Map<string, number>()
       for (const index of self.placementAdded(i)) {
         const kid = all[index]
         if (kid === undefined || definition === undefined) continue
+        const above = kid.parent === i ? definition : all[kid.parent]?.authored
+        if (above === undefined) continue
+        const host = above === definition ? definition.id : above.id
+        const at = nextAt.get(host) ?? (above.children?.length ?? 0)
         const copy = structuredClone(kid.authored)
         reidSubtree(copy)
-        ops.push({ kind: 'insertNode', parent: definition.id, index: at, node: copy })
-        at++
+        ops.push({ kind: 'insertNode', parent: host, index: at, node: copy })
+        nextAt.set(host, at + 1)
       }
       return ops.length === 0 ? null : { assetId, ops }
     },

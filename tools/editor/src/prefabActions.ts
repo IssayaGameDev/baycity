@@ -274,7 +274,8 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     if (open === null) return
     const count = open.placementOverrides(index).length
     const added = open.placementAdded(index).length
-    if (count + added === 0) return
+    const gone = open.placementRemoved(index).length
+    if (count + added + gone === 0) return
     open.revertPlacement(index)
     host.edits().recordEdit('revert prefab overrides')
     host.rebuildMeshes()
@@ -282,7 +283,8 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     host.applySelection(host.selection())
     // Deleting is said out loud: it is the one part of a revert that loses work, and Ctrl+Z is the way back.
     const removed = added === 0 ? '' : `, removed ${added} added object${added === 1 ? '' : 's'}`
-    host.setStatus(`reverted ${count} object${count === 1 ? '' : 's'} to the prefab${removed}`)
+    const back = gone === 0 ? '' : `, put ${gone} piece${gone === 1 ? '' : 's'} back`
+    host.setStatus(`reverted ${count} object${count === 1 ? '' : 's'} to the prefab${removed}${back}`)
   }
 
   /**
@@ -297,7 +299,7 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     if (open === null) return
     const plan = open.placementOverrideOps(index)
     if (plan === null) return
-    const count = open.placementOverrides(index).length + open.placementAdded(index).length
+    const count = open.placementOverrides(index).length + open.placementAdded(index).length + open.placementRemoved(index).length
     const name = host.assets()?.db.byId[plan.assetId]?.name ?? 'the prefab'
     const refused = await host.room.submitToPrefab(plan.assetId, plan.ops)
     if (refused !== null) {
