@@ -13,6 +13,7 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 | [README.md](platform/README.md) | The stack in ten lines, dependency direction, this list |
 | [workspace.md](platform/workspace.md) | Packages, imports, scripts, ports, adding a package or a game |
 | [content.md](platform/content.md) | Node/component schema, prefabs, levels, assets, the per-game folder layout |
+| [sequences.md](platform/sequences.md) | Stages of steps as a pure function of time: data, API, timing and combining rules |
 | [components/api.md](platform/components/api.md) | Parameter kinds, `defineComponent`, hooks, the runtime, registries as code + data |
 | [components/built-ins.md](platform/components/built-ins.md) | Every shipped definition and its params; the shared set |
 | [components/boss.md](platform/components/boss.md) | `Boss`: the three-node shape, the trigger rule, what it chases |
@@ -184,5 +185,7 @@ why matters.
 | [0134](adr/0134-a-drag-carries-the-whole-selection.md) | A drag carries the whole selection |
 | [0135](adr/0135-a-difference-is-recorded-on-any-piece.md) | A difference is recorded on any piece |
 | [0136](adr/0136-an-angle-is-rounded-in-degrees.md) | An angle is rounded in degrees |
+| [0137](adr/0137-motion-is-a-sequence-of-stages.md) | Motion is a sequence of stages |
+| [0138](adr/0138-only-easing-is-borrowed.md) | Only easing is borrowed |
 
 `Design archive/` holds superseded design material and is not maintained.

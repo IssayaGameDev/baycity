@@ -36,6 +36,26 @@ export type { ParamChecker, TreeContext } from './validate'
 export { applyOp, applyBatch, invertOp, touchedRefs, refKey, isInherited, OpError } from './ops'
 export type { Op, OpBody, OpKind, NodeRef, OwnRef, InheritedRef } from './ops'
 export { instantiateLevel } from './loader'
+export { EASES, SELF, TOP_FRAME, UNMOVED, combineSequences, compileSequence, easeAt, sampleSequence, sequenceTime } from './sequence'
+export type {
+  CompiledSequence,
+  Ease,
+  NodeFrame,
+  Sequence,
+  SequenceAxes,
+  SequenceClock,
+  SequenceClocks,
+  SequenceLoop,
+  SequenceOffset,
+  SequencePart,
+  SequencePose,
+  SequenceProblem,
+  Span,
+  Stage,
+  Step,
+  StepKind,
+  Timing,
+} from './sequence'
 export { hydratePrefabs, stripHydrated, prefabRefsIn, unlinkPrefab, unlinkedNode, type UnlinkDeps } from './prefabs'
 export { fingerprintLevel, fingerprintGeometry, firstDifference } from './fingerprint'
 export { matchEntry, migrateLevelRefs, newRefReport } from './migratePrefabRefs'

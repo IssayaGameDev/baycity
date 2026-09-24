@@ -115,6 +115,8 @@ unnamed children keep their place at the end, so a prefab gaining a piece does n
 
 ## Tracks — `packages/content/src/track.ts` (ADR 0029)
 
+Being replaced by sequences (`sequences.md`, ADR 0137); the engine exists and nothing reads it yet.
+
 Pure in `(motions, nowMs)` — `motion.ts`, ADR 0103. `motionOffset(motions, nowMs): MotionOffset { position; rotation /* euler rad */ }`, summed over every motion; `MOTIONLESS` when there are none.
 
 | | |

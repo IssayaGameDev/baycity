@@ -11,6 +11,10 @@
   },
   "dependencies": {
     "@mp/core": "workspace:*",
-    "@mp/physics": "workspace:*"
+    "@mp/physics": "workspace:*",
+    "d3-ease": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/d3-ease": "^3.0.2"
   }
 }
