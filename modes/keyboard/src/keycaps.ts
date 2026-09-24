@@ -465,19 +465,28 @@ export interface KeyGeometry {
   pitch: number
   fill: number
   height: number
+  /**
+   * The most caps one board may carry; a bigger board carries none (ADR 0142).
+   *
+   * Not geometry, but read from the same settings and needed at the same place — `boardGrid`, the one rule
+   * both the game and the editor's preview count cells with. A mistyped scale (800 000 m) once asked every
+   * browser for tens of millions of caps and froze each one that opened the level.
+   */
+  maxKeys: number
 }
 
-export const DEFAULT_KEY_GEOMETRY: KeyGeometry = { pitch: 0.9, fill: 0.88, height: 0.45 }
+export const DEFAULT_KEY_GEOMETRY: KeyGeometry = { pitch: 0.9, fill: 0.88, height: 0.45, maxKeys: 20_000 }
 
 /**
- * The three numbers as editor settings (ADR 0087): one field each in the Game row, written to
+ * The key numbers as editor settings (ADR 0087): one field each in the Game row, written to
  * `content/keyboard/game.json`. Changing the pitch is then one edit for the whole level rather than one per
- * platform.
+ * platform. The budget is here so it can be raised without a deploy (ADR 0142).
  */
 export const KEY_SETTINGS = {
   keyPitch: { kind: 'number', label: 'Key pitch m', hint: 'centre-to-centre spacing of the keys; the grid every board shares', default: 0.9, min: 0.05, max: 3, step: 0.01 },
   keyFill: { kind: 'number', label: 'Key fill', hint: 'cap footprint as a fraction of the pitch; the rest is the gap between keys', default: 0.88, min: 0.3, max: 1, step: 0.01 },
   keyHeight: { kind: 'number', label: 'Key height m', hint: 'how far a cap stands above the platform face', default: 0.45, min: 0.005, max: 1.5, step: 0.005 },
+  keyBudget: { kind: 'number', label: 'Key budget', hint: 'most keys one board may carry; a bigger board gets none, in the game and in the preview', default: 20_000, min: 1_000, max: 100_000, step: 1_000 },
 } as const
 
 /**
@@ -497,6 +506,7 @@ const keyboardOn = (loaded: LoadedLevel, item: VisualItem, geometry: KeyGeometry
     pitch: geometry.pitch,
     fill: geometry.fill,
     height: geometry.height,
+    maxKeys: geometry.maxKeys,
     glyphs: typeof p.glyphs === 'string' && p.glyphs.length > 0 ? p.glyphs : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
     seed: numberOr(p.seed, 1),
   }
@@ -506,6 +516,7 @@ export interface KeyboardParams {
   pitch: number
   fill: number
   height: number
+  maxKeys: number
   glyphs: string
   seed: number
 }
@@ -558,12 +569,17 @@ export const boardOf = (item: Pick<VisualItem, 'collider' | 'position' | 'rotati
  *
  * `size` is the box's **full extent** in metres, not its half-extents: it is what a node's scale is for a
  * built-in box (ADR 0090), which is the form the editor has and the form a person types.
+ *
+ * `null` too for a board over `maxKeys` (ADR 0142) — **none** rather than the first `maxKeys`, so an oversized
+ * board reads as plain in the game and bare in the preview instead of half-tiled. Written as `!(… <= …)` so a
+ * `NaN` or infinite size is refused as well: that is the input that reaches here when a scale is mistyped.
  */
 export const boardGrid = (size: Vec3, geometry: KeyGeometry): SurfaceGrid | null => {
   if (!(geometry.pitch > 0)) return null
   const cols = Math.floor(size.x / geometry.pitch)
   const rows = Math.floor(size.z / geometry.pitch)
   if (cols < 1 || rows < 1) return null
+  if (!(cols * rows <= geometry.maxKeys)) return null
   return {
     cols,
     rows,
@@ -603,6 +619,7 @@ export const keyGeometryFrom = (settings: Readonly<Record<string, unknown>> | un
     pitch: num('keyPitch', DEFAULT_KEY_GEOMETRY.pitch),
     fill: num('keyFill', DEFAULT_KEY_GEOMETRY.fill),
     height: num('keyHeight', DEFAULT_KEY_GEOMETRY.height),
+    maxKeys: num('keyBudget', DEFAULT_KEY_GEOMETRY.maxKeys),
   }
 }
 

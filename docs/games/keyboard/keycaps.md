@@ -23,10 +23,14 @@ platform, and two that disagree cannot align however the grid is anchored. Old c
 | `keyPitch` (m) | 0.9 | 0.05–3 |
 | `keyFill` | 0.88 | 0.3–1 |
 | `keyHeight` (m) | 0.45 | 0.005–1.5 |
+| `keyBudget` (caps per board) | 20 000 | 1 000–100 000 |
+
+`KeyGeometry = { pitch, fill, height, maxKeys }` (`maxKeys` ← `keyBudget`).
 
 `boardGrid(size, geometry)` → `SurfaceGrid | null`: the cell grid a box face carries, **whole cells only and
 the leftover split between the two edges**, so each platform's board is centred on itself. `null` for a face
-with no room for one whole cell. `boardOf(node)` builds the runtime board's frame on it; `capsFor(board)` tiles
+with no room for one whole cell, and for a board of more than `maxKeys` cells or a non-finite size — **no
+caps at all**, in the game and in the preview (ADR 0142). `boardOf(node)` builds the runtime board's frame on it; `capsFor(board)` tiles
 the caps.
 
 One copy of that arithmetic on purpose: the editor previews the same grid (ADR 0120) through

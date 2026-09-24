@@ -14,7 +14,7 @@ import { advancePress, boardGrid, boardOf, capsFor, capsUnder, DEFAULT_KEY_GEOME
  * Headless. There is no renderer here and none is needed — the maths is the part that goes wrong.
  */
 
-const P: KeyboardParams = { pitch: 0.6, fill: 0.88, height: 0.3, glyphs: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', seed: 1 }
+const P: KeyboardParams = { pitch: 0.6, fill: 0.88, height: 0.3, maxKeys: 20_000, glyphs: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', seed: 1 }
 /** A character's footprint: the capsule's radius. */
 const FOOT = 0.4
 
@@ -117,6 +117,40 @@ describe('the grid a face carries', () => {
   /** A pitch of zero would divide by nothing and tile forever. */
   it('has no grid without a pitch', () => {
     expect(boardGrid(vec3(4, 0.5, 4), { ...P, pitch: 0 })).toBeNull()
+  })
+})
+
+/**
+ * The key budget (ADR 0142). The level that froze every editor: one platform typed 800 000 m long, which
+ * tiled as tens of millions of caps.
+ */
+describe('the key budget', () => {
+  const ONE: KeyboardParams = { ...P, pitch: 1, maxKeys: 100 }
+
+  it('tiles a board of exactly the budget, and none a cap over it', () => {
+    expect(boardGrid(vec3(10, 0.5, 10), ONE)?.cols).toBe(10)
+    expect(boardGrid(vec3(11, 0.5, 10), ONE)).toBeNull()
+  })
+
+  it('refuses the platform that froze the editor', () => {
+    expect(boardGrid(vec3(33, 0.3, 800_000), { ...P, pitch: 1 })).toBeNull()
+  })
+
+  it('refuses a size that is not a number', () => {
+    expect(boardGrid(vec3(NaN, 0.5, 4), P)).toBeNull()
+    expect(boardGrid(vec3(Infinity, 0.5, 4), P)).toBeNull()
+  })
+
+  /** The game tiles through `boardOf`, the editor previews through `keyboardGridOf`: both must stop. */
+  it('stops the game and the preview alike', () => {
+    expect(boardOf(platform(vec3(0, 1, 0), vec3(5.5, 0.25, 5)), ONE)).toBeNull()
+    const kb = [{ id: 'k0', type: 'Keyboard', params: {} }]
+    expect(keyboardGridOf(kb, vec3(11, 0.5, 10), { keyPitch: 1, keyBudget: 100 })).toBeNull()
+    expect(keyboardGridOf(kb, vec3(11, 0.5, 10), { keyPitch: 1, keyBudget: 110 })?.cols).toBe(11)
+  })
+
+  it('is 20 000 when the game has not set one', () => {
+    expect(keyGeometryFrom({}).maxKeys).toBe(20_000)
   })
 })
 
