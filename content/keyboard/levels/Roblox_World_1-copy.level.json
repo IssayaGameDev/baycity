@@ -8077,19 +8077,14 @@
               "name": "floor",
               "transform": {
                 "position": {
-                  "x": -270.3247,
-                  "y": 5.6482,
-                  "z": 10.9034
-                },
-                "rotation": {
-                  "x": -1.5707963267948966,
-                  "y": 0,
-                  "z": 0
+                  "x": -168.8247,
+                  "y": 162.6982,
+                  "z": -30.7966
                 },
                 "scale": {
-                  "x": 502,
-                  "y": 80,
-                  "z": 1
+                  "x": 200,
+                  "y": 1,
+                  "z": 800000
                 }
               },
               "components": [
@@ -8127,9 +8122,12 @@
                   }
                 },
                 {
-                  "id": "a6a904ec",
-                  "type": "Hazard",
-                  "params": {}
+                  "id": "eec994bf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1
+                  }
                 }
               ]
             }
