@@ -8,8 +8,8 @@
 # (SIGTERM commits again, harmlessly), and the merged branch pushed. Locks live outside the repo and survive.
 #
 # One-off content migrations are their own scripts, not steps here: `migrate-layout.sh`, `migrate-motion.sh`,
-# `migrate-primitives.sh`, `migrate-prefab-refs.sh`. Each runs once, by hand, and a deploy is not the place to
-# keep checking whether it already has.
+# `migrate-primitives.sh`, `migrate-prefab-refs.sh`, `strip-motion.sh`. Each runs once, by hand, and a deploy
+# is not the place to keep checking whether it already has.
 set -euo pipefail
 
 APP_USER=editor
