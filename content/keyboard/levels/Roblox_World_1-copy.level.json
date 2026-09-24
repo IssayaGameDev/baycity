@@ -6183,6 +6183,30 @@
           }
         }
       }
+    },
+    {
+      "id": "a84e2d39",
+      "name": "Obstacle 9",
+      "transform": {
+        "position": {
+          "x": -282.67,
+          "y": 5.4822,
+          "z": 361.5026
+        }
+      },
+      "components": []
+    },
+    {
+      "id": "f922310c",
+      "name": "Obstacle 9",
+      "transform": {
+        "position": {
+          "x": -282.67,
+          "y": 5.4822,
+          "z": 361.5026
+        }
+      },
+      "components": []
     }
   ],
   "prefabs": {
