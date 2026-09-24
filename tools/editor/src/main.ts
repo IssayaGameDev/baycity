@@ -87,7 +87,16 @@ const stage = createThreeStage({ canvas, cameraPosition: [12, 10, 16], lookAt: [
 // Same defaults as the game, on purpose: this pinned `shadowRadius: 40` and `bloomStrength: 0.3` against the
 // game's 30 and 0.1, so the editor did not show what you would play. Post-FX now follows the open document.
 const env = applyGreyboxEnvironment(stage.renderer, stage.scene, { sunIntensity: 2.4 })
-const postfx = createPostFX(stage.renderer, stage.scene, stage.camera)
+/** My selection's outline colour (ADR 0145): collaborators get strong hues, so white can never be one of theirs. */
+const MY_OUTLINE = 0xffffff
+const postfx = createPostFX(stage.renderer, stage.scene, stage.camera, {
+  // Every selection in the room, mine and theirs, outlined in one pass; none while playing, where the viewport
+  // is the game's. A node's group carries its subtree, so a parent's outline takes its children in, as Unity's.
+  outlines: () =>
+    play.active()
+      ? []
+      : [{ roots: selection.flatMap((i) => meshes.groupAt(i) ?? []), color: MY_OUTLINE }, ...room.holdOutlines()],
+})
 
 const controls = new OrbitControls(stage.camera, canvas)
 controls.enableDamping = true
@@ -283,7 +292,6 @@ const room = createLiveSession({
   applySelection: (indices) => applySelection(indices),
   deselect: () => deselect(),
   groupAt: (i) => meshes.groupAt(i),
-  holderOf: (g) => meshes.holderOf(g),
   groupPose: (g) => tool.groupPose(g),
   gizmoDragging: () => tool.dragging() || points.dragging(),
   playing: () => play.active(),
@@ -679,9 +687,9 @@ const view = createCameraView({
 stage.scene.add(view.boundsBox)
 
 /**
- * The preview clock (`motionPreview.ts`, ADR 0103, ADR 0121). It owns the clock, whether it is running and
- * the frame it last advanced on; `motion.applyPoses()` is what puts every item at its motion's pose, which
- * is where anything with a mover belongs after any rebuild.
+ * The preview clock (`motionPreview.ts`, ADR 0142, ADR 0121). It owns the clock, whether it is running and
+ * the frame it last advanced on; `motion.applyPoses()` is what puts every item at its sequences' pose, which
+ * is where anything a sequence moves belongs after any rebuild while the clock runs.
  */
 const motion = createMotionPreview({
   doc: () => doc,
@@ -1227,7 +1235,7 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
      *
      * The world pose is re-expressed in the new parent's frame so nothing jumps, and it is read off the
      * scene graph — which the first move invalidates for everyone after it. The groups otherwise hold
-     * authored plus whatever the movers contribute, and reading those wrote the animation's position into
+     * authored plus whatever the sequences contribute, and reading those wrote the animation's position into
      * the file for good.
      */
     const parentGroup = parent === null ? null : (meshes.groupAt(parent) ?? null)
@@ -1991,15 +1999,14 @@ createSplitter({
 
 // --- render loop ---
 stage.start((dt) => {
-  room.updateHolds()
   // A session takes the frame, or it does not and the edit clock does — the same either/or as before.
   if (!play.frame(dt)) {
     /**
-     * The preview clock: real time, and only while asked for (ADR 0103).
+     * The preview clock: real time, and only while asked for (ADR 0142).
      *
-     * Deliberately not the game clock — it poses the level's movers and nothing else, with no physics, no
-     * character and no rules. It runs freely rather than wrapping: every mover derives its own cycle from
-     * its speed, so there is no single length to wrap to, and level time in the game does not wrap either.
+     * Deliberately not the game clock — it poses the level's sequences and nothing else, with no physics, no
+     * character and no rules. It runs freely rather than wrapping: every sequence has its own cycle, so there
+     * is no single length to wrap to, and level time in the game does not wrap either.
      */
     motion.frame()
     view.update(dt)

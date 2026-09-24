@@ -1026,15 +1026,15 @@ describe('a component inherited from the prefab root', () => {
 })
 
 /**
- * **The preview and the game must agree** (ADR 0106).
+ * **The preview and the game must agree** (ADR 0106, ADR 0142).
  *
  * `poseOf` draws the viewport and `instantiateLevel` builds the world, and they are two readers of one rule.
- * When the mover re-framing lived in the loader alone, a `local` mover was drawn travelling along the world
- * axes while the game moved it along the object's own forward: the editor lied about the level. Kodjo found
- * it by playing the level and then pressing the preview button.
+ * When the re-framing of motion lived in the loader alone, a platform moving along its own axes was drawn
+ * travelling along the world's while the game moved it along the object's own forward: the editor lied about
+ * the level. Kodjo found it by playing the level and then pressing the preview button.
  *
- * So this compares them directly, on the shapes that make them differ: a turned node, a scaled parent, a
- * turned parent, and a parent that is itself spinning.
+ * So this compares them directly, on the shapes that make them differ: a turned node in either axes, a scaled
+ * parent, a turned parent, and a parent that is itself turning.
  */
 describe('the viewport preview agrees with the loader', () => {
   beforeAll(async () => {
@@ -1043,11 +1043,30 @@ describe('the viewport preview agrees with the loader', () => {
 
   const rad = (deg: number): number => (deg * Math.PI) / 180
 
+  /** Ten metres in half a second, then a rest, so every instant sampled is inside the one move. */
   const mover = (over: Record<string, unknown>): ComponentData => ({
-    id: 'm0',
-    type: 'Mover',
-    params: { move: vec3(0, 0, 10), speed: 20, smooth: false, space: 'world', ...over },
+    id: 'q0',
+    type: 'Sequence',
+    params: {
+      axes: 'level',
+      stages: [
+        { id: 'A', steps: [{ id: 'm', kind: 'move', to: vec3(0, 0, 10), timing: { by: 'seconds', seconds: 0.5 }, ease: 'linear' }] },
+        { id: 'B', steps: [{ id: 'w', kind: 'wait', seconds: 1 }] },
+      ],
+      ...over,
+    },
   })
+  /** A quarter turn about up over the same half second. */
+  const turning: ComponentData = {
+    id: 't0',
+    type: 'Sequence',
+    params: {
+      stages: [
+        { id: 'A', steps: [{ id: 'q', kind: 'turn', axis: vec3(0, 1, 0), angle: 90, timing: { by: 'seconds', seconds: 0.5 }, ease: 'linear' }] },
+        { id: 'B', steps: [{ id: 'w', kind: 'wait', seconds: 1 }] },
+      ],
+    },
+  }
 
   const drawnByGame = (nodes: Node[], atMs: number): Vec3 => {
     const level: Level = { id: 'fx', config: {}, nodes: structuredClone(nodes) }
@@ -1068,12 +1087,12 @@ describe('the viewport preview agrees with the loader', () => {
     let rot = quat()
     let scale = vec3(1, 1, 1)
     for (const i of chain) {
-      const p = doc.poseOf(i, atMs)
+      const p = doc.poseOf(i, atMs, { sequences: true })
       const turned = rotateVec3(rot, vec3(p.position.x * scale.x, p.position.y * scale.y, p.position.z * scale.z))
       pos = vec3(pos.x + turned.x, pos.y + turned.y, pos.z + turned.z)
-      rot = mulQuat(rot, eulerToQuat(p.rotation))
-      const s = doc.transformOf(i).scale
-      if (s !== undefined) scale = vec3(scale.x * s.x, scale.y * s.y, scale.z * s.z)
+      // As `motionPreview.ts` poses a group: the authored euler, then a sequence's turn inside it.
+      rot = mulQuat(rot, mulQuat(eulerToQuat(p.rotation), p.turn))
+      scale = vec3(scale.x * p.scale.x, scale.y * p.scale.y, scale.z * p.scale.z)
     }
     return pos
   }
@@ -1085,27 +1104,42 @@ describe('the viewport preview agrees with the loader', () => {
   })
 
   const cases: { name: string; nodes: Node[] }[] = [
-    { name: 'a plain world mover', nodes: [lift([mover({})], { position: vec3(0, 0, 0) })] },
+    { name: 'a plain move', nodes: [lift([mover({})], { position: vec3(0, 0, 0) })] },
     {
-      name: 'a local mover on a turned node',
-      nodes: [lift([mover({ space: 'local' })], { position: vec3(0, 0, 0), rotation: vec3(rad(160), rad(-90), 0) })],
+      name: 'a move in the object’s axes on a turned node',
+      nodes: [lift([mover({ axes: 'object' })], { position: vec3(0, 0, 0), rotation: vec3(rad(160), rad(-90), 0) })],
     },
     {
-      name: 'a world mover under a scaled parent',
+      name: 'a move in the level’s axes on a turned node',
+      nodes: [lift([mover({})], { position: vec3(0, 0, 0), rotation: vec3(rad(160), rad(-90), 0) })],
+    },
+    {
+      name: 'a move under a scaled parent',
       nodes: [{ id: 'holder', transform: { position: vec3(0, 0, 0), scale: vec3(2, 0.5, 3) }, components: [], children: [lift([mover({})], { position: vec3(0, 0, 0) })] }],
     },
     {
-      name: 'a world mover under a turned parent',
+      name: 'a move under a turned parent',
       nodes: [{ id: 'holder', transform: { position: vec3(0, 0, 0), rotation: vec3(0, rad(90), 0) }, components: [], children: [lift([mover({})], { position: vec3(0, 0, 0) })] }],
     },
     {
-      name: 'a local mover under a spinning parent',
+      name: 'a move in the object’s axes under a turning parent',
       nodes: [
         {
           id: 'holder',
           transform: { position: vec3(0, 0, 0) },
-          components: [{ id: 's0', type: 'Spinner', params: { axis: '+Y', speed: 90, offset: 0 } }],
-          children: [lift([mover({ space: 'local' })], { position: vec3(0, 0, 0), rotation: vec3(0, rad(45), 0) })],
+          components: [turning],
+          children: [lift([mover({ axes: 'object' })], { position: vec3(0, 0, 0), rotation: vec3(0, rad(45), 0) })],
+        },
+      ],
+    },
+    {
+      name: 'a move in the level’s axes under a turning parent',
+      nodes: [
+        {
+          id: 'holder',
+          transform: { position: vec3(0, 0, 0) },
+          components: [turning],
+          children: [lift([mover({})], { position: vec3(0, 0, 0), rotation: vec3(0, rad(45), 0) })],
         },
       ],
     },
@@ -1125,18 +1159,18 @@ describe('the viewport preview agrees with the loader', () => {
 
   /**
    * `posesAt` is `poseOf` for the whole tree in one walk (ADR 0125), and the *only* thing that makes it worth
-   * having is that it answers the same. It accumulates each parent's rotation and scale downward where
-   * `motionFrameOf` rebuilds them by climbing up, so these are the shapes that would catch it: a turned node,
-   * a scaled parent, a turned parent, and a parent that is itself spinning.
+   * having is that it answers the same. It accumulates each parent's rotation and scale downward, so these
+   * are the shapes that would catch a slip: a turned node, a scaled parent, a turned parent, and a parent that
+   * is itself turning.
    */
   for (const c of cases) {
     it(`poses the whole tree the same way it poses one node: ${c.name}`, () => {
       const doc = levelDoc({ id: 'fx', config: {}, nodes: structuredClone(c.nodes) }, DEFAULT_REGISTRY)
       for (const t of [0, 125, 250, 375, 500]) {
-        const all = doc.posesAt(t)
+        const all = doc.posesAt(t, { sequences: true })
         expect(all, `one entry per node at ${t}ms`).toHaveLength(doc.count())
         for (let i = 0; i < doc.count(); i += 1) {
-          const one = doc.poseOf(i, t)
+          const one = doc.poseOf(i, t, { sequences: true })
           for (const axis of ['x', 'y', 'z'] as const) {
             expect(all[i]!.position[axis], `${c.name} node ${i} position.${axis} at ${t}ms`).toBeCloseTo(one.position[axis], 9)
             expect(all[i]!.rotation[axis], `${c.name} node ${i} rotation.${axis} at ${t}ms`).toBeCloseTo(one.rotation[axis], 9)

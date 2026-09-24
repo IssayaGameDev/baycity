@@ -503,7 +503,7 @@ export const sampleSequence = (c: CompiledSequence, clocks: SequenceClocks): Rea
 
 /**
  * Where a node sits in the tree: the accumulated world rotation and scale **of its parent**, and its own
- * authored euler. The same shape `motion.ts`'s `MotionFrame` has, so a loader frame satisfies both.
+ * authored euler.
  */
 export interface NodeFrame {
   readonly parentRot: Quat

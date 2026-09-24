@@ -19,7 +19,7 @@ import game from '@content/swing/game.json'
  * What Swing's levels may contain: the engine's components plus the whole shared gameplay library.
  *
  * **Composed, not inherited** (ADR 0052) — the list is the choice. Swing takes all of it because its first
- * level is a copy of parkour's, which uses movers, a trampoline, checkpoints and a goal; a game that wants
+ * level is a copy of parkour's, which uses moving platforms, a trampoline, checkpoints and a goal; a game that wants
  * none of those simply does not list them and the editor stops offering them.
  *
  * Note what this does *not* imply: `Checkpoint` and `Goal` are authorable and touchable, but `swingSession`

@@ -25,6 +25,9 @@ export type { ProceduralSky, SkyParams, SunAngles } from './sky'
 export { createProceduralSky, DEFAULT_SKY_PARAMS, skyUniformValues, sunDirection } from './sky'
 export type { PostFX, PostFXOptions } from './postfx'
 export { DEFAULT_POSTFX, createPostFX } from './postfx'
+// The editor's selection outline: every colour in one pass, drawn whatever is in front.
+export type { OutlineGroup } from './selectionOutline'
+export { SelectionOutlinePass } from './selectionOutline'
 export type { LevelView, LevelViewOptions, MarkersView } from './levelView'
 // The see-through hole (ADR 0055): level surfaces dither away between the eye and the character.
 export type { CutoutMask, CutoutState } from './cutout'

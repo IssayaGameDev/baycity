@@ -39,8 +39,8 @@ export interface ToolbarState {
   stepLimits: { min: number; max: number; grain: number }
   playing: boolean
   /**
-   * The preview clock is running (ADR 0103): every `Mover` and `Spinner` in the level is moving in the
-   * viewport and editing carries on.
+   * The preview clock is running (ADR 0142): every sequence in the level is playing in the viewport and
+   * editing carries on.
    *
    * Separate from `playing`, which is the real game loop with pointer lock. This is the cheap answer to "what
    * does this platform actually do", which used to need entering Play.
@@ -210,7 +210,7 @@ export const createToolbar = (container: HTMLElement, state: () => ToolbarState,
    * row of platforms is the thing you need to look at, and the panel this replaces could only ever show one.
    */
   const previewButton = el('button')
-  previewButton.title = 'run the level’s movers and spinners in the viewport, without entering play'
+  previewButton.title = 'run the level’s sequences in the viewport, without entering play'
   previewButton.addEventListener('click', () => actions.setPreviewing(!state().previewing))
 
   const playButton = el('button')

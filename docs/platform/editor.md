@@ -24,7 +24,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | `itemMeshes.ts` | `instanceRoot`, `markerGroup`, the groups, the shadow budget, the cell toggle | `doc`, `loaded`, `runtime`, `mode`, `gameSettings`, `selected`, `afterBuild` |
 | `play.ts` | the character, controller, loop, play view and lights, component runtime, game frame | `PlayHost` (23 getters) |
 | `historyStore.ts` | the history, pending batches, `coalescing`, the held-back drag batches, `dirty`, the clipboard | `HistoryHost` |
-| `liveSession.ts` | `collab`, the peer list, the last snapshot, `joining`, the deferred ops, the hold map and its key, the hold boxes, the presence timer | `LiveHost` |
+| `liveSession.ts` | `collab`, the peer list, the last snapshot, `joining`, the deferred ops, the hold map and its key, the hold outlines, the presence timer | `LiveHost` |
 | `motionPreview.ts` | the preview clock, whether it runs, the last frame. Poses via `Doc.posesAt(timeMs, { sequences: playing })` — one walk, not `poseOf` per node (ADR 0125, ADR 0142) | `MotionPreviewHost` |
 | `cameraView.ts` | the orthographic camera, `isometric`, the nav gizmo and its drag flag, the stand-in background, the bounds box | `CameraViewHost` |
 | `fileActions.ts` | nothing — it is behaviour: arm, rename, delete an asset or a level (ADR 0097, ADR 0110) | `FileActionsHost` |
@@ -82,7 +82,7 @@ Every `Doc` mutator builds `Op`s (`@mp/content` `ops.ts`, `content.md`) and comm
 | --- | --- |
 | `setTransform` / `setName` / `setParams` / `setComponentEnabled` / `addComponent` / `removeComponent` / `moveComponent` | the own op on an own node; the `setOverride*` / `addOverrideComponent` / `removeOverrideComponent` flavour on an inherited one (an inherited component's removal = `setOverrideParams unset` + `setOverrideEnabled null` + `setOverrideRemoved`). **Three cases, not two** (ADR 0098): `writeTarget` also catches a component a *placement* shows but does not have — inherited from its prefab **root** — and writes an override on the placement keyed by the root's id. `setParams` resolves it per component id, since the built-in-shape branch writes several at once. `moveComponent` stays refused: order belongs to the prefab's list. `setSequenceStages(i, id, stages)` takes the stages as shown: `setParams` on an own node, `setOverrideParams` on a component the placement added, otherwise `setOverrideSequence` with `diffStages(prefab's, shown)` (ADR 0139) |
 | `placePrefab` / `placeNamed` / `placeEmpty` / `placePrimitive` / `placeModel` / `duplicate` / `paste` | `insertNode` (ids minted client-side; `reidSubtree` for copies, which repoints `nodeRef` parameters and sequence step targets, and the targets in a placement's `sequences` records). `placePrefab` writes the prefab's **asset id** and resolves the definition into `level.prefabs` without an op (ADR 0091) |
-| `remove` / `move` / `reparent` | `removeNode` / `moveNode`. **`reparent` takes the re-expressed local transform and commits `moveNode` + `setTransform` in one batch** (ADR 0113): preserving the world pose changes the stored local numbers, and as a second commit that op landed in the *next* history entry — one Ctrl+Z then restored a transform belonging to an earlier reparent and a child jumped by its parent's whole transform. The transform is `localInside` over the **authored** poses (`motion.withAuthoredPoses`, ADR 0126): the groups hold authored *plus* the motion offset — while the clock runs, and at rest for any mover with a phase `offset`, drawn partway along its travel — so reading them wrote the animation's position into the file for good. It is the one write path that cannot subtract the offset afterwards, because the offset is in the old parent's frame and the value is in the new one |
+| `remove` / `move` / `reparent` | `removeNode` / `moveNode`. **`reparent` takes the re-expressed local transform and commits `moveNode` + `setTransform` in one batch** (ADR 0113): preserving the world pose changes the stored local numbers, and as a second commit that op landed in the *next* history entry — one Ctrl+Z then restored a transform belonging to an earlier reparent and a child jumped by its parent's whole transform. The transform is `localInside` over the **authored** poses (`motion.withAuthoredPoses`, ADR 0126): the groups hold authored *plus* the motion offset while the clock runs, so reading them wrote the animation's position into the file for good. It is the one write path that cannot subtract the offset afterwards, because the offset is in the old parent's frame and the value is in the new one |
 | `linkToPrefab` | `replaceNode` (the node keeps its transform and name, loses its own components, gains the reference). `definitionOf` is pure: the definition becomes a **file**, which is the host's to write |
 | `revert` | `setNodeOverride` (the record with the field gone, or `null`) |
 | `overrideOpsFor` | pure — the ops the **prefab's own room** would take. The host sends them there, then calls `revert` here (ADR 0091) |
@@ -148,7 +148,7 @@ Two things hold those groups, and both are re-pointed **inside** `buildItems`, a
 | Holder | Function | Was stale as |
 |---|---|---|
 | the transform gizmo | `reattachGizmo()` | `TransformControls: The attached 3D object must be a part of the scene graph`, every frame, then a null `updateMatrixWorld` on the next click |
-| collaborators' hold boxes | `rebuildHoldHelpers()` | a frozen or collapsed outline on somebody else's selection — silent, which is how it outlived the gizmo's version |
+| collaborators' hold outlines | `rebuildHoldOutlines()` (`room.rebuildHolds`) | no outline at all on somebody else's selection: a group no longer in the scene draws nothing — silent, which is how the boxes before them outlived the gizmo's version |
 
 Putting them at the call sites is what failed before: both sites ran them *before* `loadNewReferences`, so the
 async rebuild landed afterwards and undid the work. `refreshBoundsBox()` is there for the same reason.
@@ -294,10 +294,10 @@ parsePresence(data: unknown): PosePresence | null   // collab.ts — peers' data
 | --- | --- |
 | send | gizmo `dragging-changed` true → `startPresence()`: every 100 ms `collab.presence({ kind: 'pose', poses: dragPoses() })` — the selection's groups' local poses (`groupPose` + scale), not the document's. Drag end → `stopPresence()`: `{ poses: [], end: true }` |
 | ops | `onDocOps` while `coalescing` pushes to `heldBack` instead of submitting; drag end folds them (`foldBatches`) and submits **one** batch, the same ops the history entry holds. Nothing else changes: without a drag every batch still goes at once |
-| receive | `onPresence(data)`: `parsePresence` → for each pose `indexOfRef` → set the group's position/quaternion/scale; skipped for a node in my own selection while my gizmo drags. `end` → `applyPreviewPoses()` unless my gizmo is dragging (my drag end repaints). The hold box follows, since it updates each frame |
+| receive | `onPresence(data)`: `parsePresence` → for each pose `indexOfRef` → set the group's position/quaternion/scale; skipped for a node in my own selection while my gizmo drags. `end` → `applyPreviewPoses()` unless my gizmo is dragging (my drag end repaints). The hold outline follows, since it is drawn from the group each frame |
 | nothing kept | presence is unnumbered and never written; the op at drag end is what lands, and a drag that came back to its start lands nothing |
 
-Others' selection is what the hold boxes and badges show: a selection *is* a hold.
+Others' selection is what the hold outlines and badges show: a selection *is* a hold.
 
 ### Holds — a node is yours while selected
 
@@ -307,12 +307,20 @@ Others' selection is what the hold boxes and badges show: a selection *is* a hol
 | heartbeat | the lock heartbeat also `collab.ping()`s while live: the server sweeps a connection it has not heard from in two minutes, holds with it |
 | `heldBy(index)` | the name of another connection holding this node **or any ancestor** (`holdMap` by `refKey`), else `null` |
 | `applySelection` | filters `heldBy(i) !== null` out, so the gizmo never attaches to a held node; `select`/`selectWith` say `X has that selected` (`refuseHeld`) |
-| `onHoldsChanged` | on every `holds` event: `holdMap` rebuilt, my selection loses what someone else now holds, `rebuildHoldHelpers`, `hierarchy.render()` |
+| `onHoldsChanged` | on every `holds` event: `holdMap` rebuilt, my selection loses what someone else now holds, `rebuildHoldOutlines`, `hierarchy.render()` |
 | Hierarchy | `rowsOf(doc, open, heldBy)` → `Row.held` (name or `''`); a held row has class `held` (dimmed), a `.badge.held` with the name, and only `onSelect` wired (no rename, no drag); `onReparent` onto a held parent is refused |
-| viewport | one `THREE.BoxHelper` per node of the held subtree (the held node and everything under it, skipping nodes with no meshes of their own) over its mesh holder, in `holdRoot` (world space, `depthTest: false`), colour from a hash of the holder's `connId`; `helper.update()` every frame so a remote drag keeps up; rebuilt on holds events and after structural repaints |
+| viewport | an outline of the held node's group — its subtree — in a colour from a hash of the holder's `connId` (`HSL(h, 0.75, 0.6)`): `room.holdOutlines()`, one `OutlineGroup` per connection, cached and rebuilt on holds events and after structural repaints; drawn by the same pass as my own (below) |
 
 Holds work the same inside a prefab's room. A hold there does **not** block a level's override on the same
 node, and the reverse: they are different edits — the shared definition, and this one placement.
+
+### The selection outline (ADR 0145)
+
+`createPostFX(..., { outlines })` in `main.ts` asks each frame for my selection's groups in **white**
+(`MY_OUTLINE` — collaborators' colours are all strong hues, so white is never one of theirs) followed by
+`room.holdOutlines()`; nothing while playing. A group is a node's whole subtree, so a parent's outline takes
+its children in, as Unity's does. Drawn whether or not something is in front — the whole silhouette, as
+bright behind a wall as before it. `rendering.md` has the pass.
 
 ## Project panel — games at the top (ADR 0108)
 
@@ -378,7 +386,7 @@ the name is still in the listing — a deleted or renamed level must not make ev
 | `gameData` | per game, `content/<game>/game.json` via `loadGame` at boot (`reloadAssets`) and after each `adopt` |
 | `registryFor(mode)` | `mode.registry` + `sharedComponents(gameData[mode.name] − present)` — live data merged over the bundled code |
 | `registry()` | `registryFor(activeMode)`, or `DEFAULT_REGISTRY` with no game |
-| `adoptable()` | `SHARED_COMPONENT_TYPES` the game lacks (`Boss`, `Bumper`, `Checkpoint`, `Goal`, `Hazard`, `Mover`, `Spinner`) |
+| `adoptable()` | `SHARED_COMPONENT_TYPES` the game lacks (`Boss`, `Bumper`, `Checkpoint`, `Goal`, `Hazard`, `Sequence`) |
 | `adopt(types)` | shared ∧ new → `saveGame` → `gameData` → `reopenWithRegistry()` |
 
 Adoption points (ADR 0077):
@@ -440,23 +448,23 @@ row edit to the key pitch re-lays every preview.
 | toggle | its own button, not `Markers`: fitting platforms together is when spawn discs and rule pillars are clutter. `meshes.setCells` + a rebuild rather than setting `visible`, since three raycasts invisible objects. Hidden when the game declares no `surfaceGrid` |
 | culling | `computeBoundingSphere()` per mesh, against the instances rather than the unit quad at the origin |
 
-## The preview clock (ADR 0103, ADR 0125)
+## The preview clock (ADR 0142, ADR 0125)
 
-**Motion** runs the level's movers and spinners in the viewport with no physics, no character and no rules. It
+**Motion** runs the level's sequences in the viewport with no physics, no character and no rules. It
 poses the editor's item groups, so it goes through the **document**, where play goes through the instantiated
 frame tree.
 
 That is why it has to pose the whole tree in **one** walk. `Doc` addresses nodes by depth-first index and
 recomputes the list per call on purpose (the note at the top of `editorDoc.ts`); asking `poseOf` per index cost
 four full walks per node, each resolving every placement and baking every override, plus a separate ancestor
-climb in `motionFrameOf`. Measured at 400 nodes: 17.17 ms a frame, against 0.20 ms for `posesAt`. At 1000
+climb. Measured at 400 nodes: 17.17 ms a frame, against 0.20 ms for `posesAt`. At 1000
 nodes, 96.32 ms against 0.21 ms.
 
 `posesAt(timeMs, { sequences? })` carries each parent's accumulated rotation and scale **down** — a
 depth-first list puts a parent before its children. No cache: the index-per-call rule is unchanged, `nodes()`
-is just called once instead of `4n` times. `poseOf(i, t, opts)` is `posesAt(t, opts)[i]`: the ancestor climb
-it used to do separately (`motionFrameOf`) is gone, so there is one composition to keep agreeing with the
-loader, not two.
+is just called once instead of `4n` times. `poseOf(i, t, opts)` is `posesAt(t, opts)[i]`, so there is one
+composition to keep agreeing with the loader, not two — `editorDoc.test.ts` compares it with the loader's on a
+turned node, a scaled parent, a turned parent and a turning one.
 
 **Sequences** (ADR 0142). `PreviewPose` = `LocalPose` + `turn: Quat` (multiplied on the right of the euler) +
 `scale` (the local scale now) + `opacity` + `shown`. The loader's rule, read from the document: a node's own
@@ -473,10 +481,10 @@ Inspector patches params in place).
 | fade | a node `fadesAt` gets its own transparent material copies in `buildItemMeshes` (`holder.userData.fading`); the preview sets their opacity and hides the holder at 0 |
 | collider on / off | nothing to draw — the editor has no physics |
 
-A drag mid-preview writes `unpreviewed(group, offsetAt(i, t))` (`gizmoTool.ts`, pure, tested): travel and a
-spinner's euler subtracted, a sequence's turn divided off the right, its scale divided out — so the file gets
-the authored transform, never the animation (ADR 0050, ADR 0126). `offsetAt` is a `PreviewOffset`
-`{ position, rotation, turn, scale }`, with sequences exactly when the preview shows them.
+A drag mid-preview writes `unpreviewed(group, offsetAt(i, t))` (`gizmoTool.ts`, pure, tested): a sequence's
+move subtracted, its turn divided off the right, its scale divided out — so the file gets the authored
+transform, never the animation (ADR 0050, ADR 0126). `offsetAt` is a `PreviewOffset`
+`{ position, turn, scale }`, with sequences exactly when the preview shows them.
 
 ## Play — `src/play.ts`
 

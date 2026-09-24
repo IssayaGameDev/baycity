@@ -58,20 +58,17 @@ describe('the built-in registry', () => {
       'Goal',
       'Hazard',
       'Bumper',
-      'Mover',
-      'Spinner',
       'Sequence',
       'Boss',
     ])
   })
 
-  it('makes colliders and movers repeatable, and everything else at most one per node', () => {
-    // A node can genuinely have two colliders, and two Movers is how a circle is authored (ADR 0103): their
-    // offsets add. A second Spinner is not the same kind of thing — euler angles about two axes do not
-    // compose by adding — so it stays a singleton.
+  it('makes colliders and sequences repeatable, and everything else at most one per node', () => {
+    // A node can genuinely have two colliders, and several sequences on one node each loop on their own and
+    // combine (ADR 0137).
     expect(Collider.singleton).toBeUndefined()
-    expect(DEFAULT_REGISTRY.get('Mover')?.singleton).toBeUndefined()
-    for (const type of ['Mesh', 'Renderer', 'MaterialOverride', 'Spawn', 'Checkpoint', 'Goal', 'Hazard', 'Bumper', 'Spinner'])
+    expect(DEFAULT_REGISTRY.get('Sequence')?.singleton).toBeUndefined()
+    for (const type of ['Mesh', 'Renderer', 'MaterialOverride', 'Spawn', 'Checkpoint', 'Goal', 'Hazard', 'Bumper'])
       expect(DEFAULT_REGISTRY.get(type)?.singleton, type).toBe(true)
   })
 
@@ -85,14 +82,6 @@ describe('the built-in registry', () => {
   it('starts a renderer unsurfaced, and a mesh naming nothing', () => {
     expect(DEFAULT_REGISTRY.defaults('Renderer')).toEqual({ material: '' })
     expect(DEFAULT_REGISTRY.defaults('Mesh')).toEqual({ model: '' })
-  })
-
-  it('starts a Mover at the Move preset’s own defaults, so a fresh one behaves like the thing it replaced', () => {
-    expect(DEFAULT_REGISTRY.defaults('Mover')).toEqual({ move: { x: 0, y: 3, z: 0 }, speed: 1.5, smooth: true, offset: 0, space: 'world' })
-  })
-
-  it('offers only cardinal axes to a Spinner, because the offset it contributes is euler radians', () => {
-    expect(DEFAULT_REGISTRY.get('Spinner')?.params.axis).toMatchObject({ kind: 'enum', options: ['+X', '-X', '+Y', '-Y', '+Z', '-Z'] })
   })
 
   it('offers only material assets where a material belongs', () => {

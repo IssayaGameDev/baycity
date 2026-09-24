@@ -219,3 +219,104 @@ describe('tick slicing (ADR 0104)', () => {
     expect(loaded.motionSlices(1100, 1100 + 1000 / 30, 1), 'during the wait nothing moves').toBe(1)
   })
 })
+
+/**
+ * A sequence through the frame tree: what the loader adds to the engine's maths (`sequence.test.ts`) — a
+ * kinematic body and a place in the per-tick pass, the subtree carried, a metre kept a metre whatever a parent
+ * is scaled to (ADR 0106), and a node with nothing to do costing what a still one always did.
+ */
+describe('through the frame tree', () => {
+  /** The drawn position after posing the world at `nowMs`. `render(1)` lands exactly on the tick. */
+  const drawnAt = (loaded: ReturnType<typeof load>, nowMs: number, which = 0): Vec3 => {
+    loaded.update(nowMs)
+    loaded.render(1)
+    return loaded.visuals[which]!.position
+  }
+  /** Out to `to` in `seconds`, then a second's rest there, so the end of the move is not the end of a pass. */
+  const out = (to: Vec3, seconds: number): Stage[] => [stage(move(to, seconds)), stage(wait(1))]
+  const turned = (quarterAboutZ: boolean): Partial<Node> => ({ transform: { position: vec3(0, 0, 0), ...(quarterAboutZ ? { rotation: vec3(0, 0, Math.PI / 2) } : {}) } })
+
+  it('carries the node out and back, and starts each pass from where it was placed', () => {
+    const loaded = load(levelOf([node('p', [...solidBox('p'), sequence([stage(move(vec3(0, 3, 0), 2)), stage(move(vec3(0, 0, 0), 2))])])]))
+    expect(drawnAt(loaded, 0).y).toBeCloseTo(0, 6)
+    expect(drawnAt(loaded, 2000).y).toBeCloseTo(3, 6)
+    expect(drawnAt(loaded, 3000).y).toBeCloseTo(1.5, 6)
+    expect(drawnAt(loaded, 4000).y).toBeCloseTo(0, 6)
+  })
+
+  it('carries its children, so a subtree rides its parent', () => {
+    const loaded = load(levelOf([node('p', [...solidBox('p'), sequence(out(vec3(0, 3, 0), 2))], { children: [node('kid', solidBox('kid'), { transform: { position: vec3(0, 1, 0) } })] })]))
+    expect(drawnAt(loaded, 2000, 0).y).toBeCloseTo(3, 6)
+    expect(drawnAt(loaded, 2000, 1).y, 'the child sits 1 m up, on a deck 3 m up').toBeCloseTo(4, 6)
+  })
+
+  it('turns, without moving its place', () => {
+    // Read off a collider offset, which a turn swings round.
+    const offset = [comp('c', COLLIDER, { shape: { kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) }, center: vec3(2, 0, 0) }), comp('r', RENDERER, { material: '' })]
+    const quarter: Step = { id: id(), kind: 'turn', axis: vec3(0, 1, 0), angle: 90, timing: secs(1), ease: 'linear' }
+    const at = drawnAt(load(levelOf([node('p', [...offset, sequence([stage(quarter), stage(wait(1))])])])), 1000)
+    expect(at.x).toBeCloseTo(0, 6)
+    expect(at.z, 'a quarter turn about +Y swings +X round to -Z').toBeCloseTo(-2, 6)
+  })
+
+  it('adds two sequences on one node, each playing its own stages', () => {
+    const loaded = load(levelOf([node('p', [...solidBox('p'), sequence(out(vec3(0, 4, 0), 2)), sequence(out(vec3(4, 0, 0), 1))])]))
+    const at = drawnAt(loaded, 1000)
+    expect(at.y, 'halfway up').toBeCloseTo(2, 6)
+    expect(at.x, 'and all the way across').toBeCloseTo(4, 6)
+  })
+
+  it('moves the metres written, under a scaled parent', () => {
+    for (const scale of [vec3(2, 2, 2), vec3(2, 1, 1), vec3(0.5, 3, 0.25)]) {
+      const loaded = load(levelOf([node('holder', [], { transform: { position: vec3(0, 0, 0), scale }, children: [node('lift', [...solidBox('lift'), sequence(out(vec3(0, 3, 0), 0.5))])] })]))
+      expect(drawnAt(loaded, 500).y, `scale ${scale.x},${scale.y},${scale.z}`).toBeCloseTo(3, 6)
+    }
+  })
+
+  it('keeps a diagonal pointing where it was written, under a parent stretched on one axis', () => {
+    const loaded = load(levelOf([node('holder', [], { transform: { position: vec3(0, 0, 0), scale: vec3(4, 1, 1) }, children: [node('lift', [...solidBox('lift'), sequence(out(vec3(3, 3, 0), 0.5))])] })]))
+    const at = drawnAt(loaded, 500)
+    expect(at.x, 'x is not stretched by the parent').toBeCloseTo(3, 5)
+    expect(at.y).toBeCloseTo(3, 5)
+  })
+
+  it('moves along the object’s own axes, or along the level’s', () => {
+    // Turned a quarter about +Z: the object's own +Y now points along the level's -X.
+    const lift = (axes: string): Vec3 => drawnAt(load(levelOf([node('lift', [...solidBox('lift'), sequence(out(vec3(0, 3, 0), 0.5), { axes })], turned(true))])), 500)
+    expect(lift('object').x, 'its own up is the level’s -X').toBeCloseTo(-3, 5)
+    expect(lift('object').y).toBeCloseTo(0, 5)
+    expect(lift('level').y, 'the level’s up whatever it is turned to').toBeCloseTo(3, 5)
+    expect(lift('level').x).toBeCloseTo(0, 5)
+  })
+
+  it('keeps level axes level under a turned parent, and turns object axes with it', () => {
+    const lift = (axes: string): Vec3 =>
+      drawnAt(load(levelOf([node('holder', [], { ...turned(true), children: [node('lift', [...solidBox('lift'), sequence(out(vec3(0, 3, 0), 0.5), { axes })])] })])), 500)
+    expect(lift('level').y).toBeCloseTo(3, 5)
+    expect(lift('level').x).toBeCloseTo(0, 5)
+    expect(lift('object').x, 'the parent’s up is the level’s -X').toBeCloseTo(-3, 5)
+  })
+
+  it('leaves a node whose sequence does nothing out of the per-tick pass', () => {
+    const loaded = load(levelOf([node('p', [...solidBox('p'), sequence([])])]))
+    expect(loaded.basePose(loaded.nodes[0]!.colliderHandles[0]!), 'a fixed body, as before any sequence').toBeUndefined()
+    expect(drawnAt(loaded, 2000).y).toBeCloseTo(0, 9)
+  })
+
+  it('leaves a still or gentle level at one slice, so nothing else pays for slicing', () => {
+    expect(load(levelOf([node('p', solidBox('p'))])).motionSlices(0, 1000, 1)).toBe(1)
+    const easy: Step = { id: id(), kind: 'move', to: vec3(0, 3, 0), timing: { by: 'speed', speed: 1.5 }, ease: 'in-out-sine' }
+    expect(load(levelOf([node('p', [...solidBox('p'), sequence([stage(easy)])])])).motionSlices(0, 1000 / 30, 1)).toBe(1)
+  })
+
+  it('caps the slice count, because past a point no tick rate makes a deck rideable', () => {
+    const silly = load(levelOf([node('p', [...solidBox('p'), sequence(out(vec3(0, 400, 0), 0.5))])]))
+    expect(silly.motionSlices(0, 1000 / 30, 1)).toBe(8)
+    expect(silly.motionSlices(0, 1000 / 30, 0), 'a nonsense allowance asks for nothing').toBe(1)
+  })
+
+  it('stops when the component is switched off', () => {
+    const loaded = load(levelOf([node('p', [...solidBox('p'), { ...sequence(out(vec3(0, 3, 0), 2)), enabled: false }])]))
+    expect(drawnAt(loaded, 2000).y).toBeCloseTo(0, 9)
+  })
+})

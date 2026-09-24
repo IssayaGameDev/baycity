@@ -7,9 +7,8 @@ import { describe, expect, it } from 'vitest'
  *
  * Dragging a node onto a new parent keeps its world pose, and the editor computes the new local transform off
  * the **scene graph** — `parent⁻¹ · child`, where the composed matrices already live. That is the right place
- * to read it from and the wrong pose to read: the groups hold the authored transform **plus** whatever the
- * movers contribute, while the preview clock runs and also at rest for any mover with a phase `offset`, which
- * is drawn partway along its travel.
+ * to read it from and the wrong pose to read: while the preview clock runs, the groups hold the authored
+ * transform **plus** whatever the sequences contribute.
  *
  * So the reparent wrote the animation's current position into the file, permanently. Every other write path
  * subtracts the offset (`motionOffsetAt`); this one cannot, because the offset is in the old parent's frame
@@ -31,7 +30,7 @@ const localInside = (child: THREE.Object3D, parent: THREE.Object3D | null): THRE
   return position
 }
 
-/** The authored transform, and the offset a mover contributes at the clock the preview is showing. */
+/** The authored transform, and the offset a sequence contributes at the clock the preview is showing. */
 const AUTHORED = vec3(1, 2, 3)
 const MOTION = vec3(0, 7, 0)
 
@@ -48,7 +47,7 @@ const scene = (): { root: THREE.Group; newParent: THREE.Group; child: THREE.Grou
   return { root, newParent, child }
 }
 
-/** Pose the child as the editor's groups are posed: authored, or authored plus the mover's offset. */
+/** Pose the child as the editor's groups are posed: authored, or authored plus the sequence's offset. */
 const pose = (child: THREE.Group, previewing: boolean): void => {
   child.position.set(
     AUTHORED.x + (previewing ? MOTION.x : 0),
@@ -75,7 +74,7 @@ describe('the pose a reparent re-expresses', () => {
     expect(worldAfter.z).toBeCloseTo(worldBefore.z, 9)
   })
 
-  /** What the bug was: the mover's whole offset, baked into the stored local transform. */
+  /** What the bug was: the motion's whole offset, baked into the stored local transform. */
   it('bakes the motion offset in when read from the previewed pose', () => {
     const { root, newParent, child } = scene()
     pose(child, true)
@@ -86,7 +85,7 @@ describe('the pose a reparent re-expresses', () => {
     root.updateWorldMatrix(true, true)
     const authored = localInside(child, newParent)
 
-    expect(previewed.y - authored.y, 'exactly the offset the mover contributed').toBeCloseTo(MOTION.y, 9)
+    expect(previewed.y - authored.y, 'exactly the offset the motion contributed').toBeCloseTo(MOTION.y, 9)
   })
 
   /** A still node has nothing to bake, which is why this went unnoticed on most of a level. */

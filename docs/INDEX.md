@@ -151,7 +151,7 @@ why matters.
 | [0100](adr/0100-moving-the-character-releases-its-footing.md) | Moving the character from outside the controller releases its footing |
 | [0101](adr/0101-the-inspector-binds-to-a-copy.md) | The Inspector binds to a deep copy, never to the document |
 | [0102](adr/0102-the-active-checkbox-lives-in-the-inspector.md) | The active checkbox lives in the Inspector, not the Hierarchy |
-| [0103](adr/0103-motion-is-a-speed-not-a-keyframe.md) | Object motion is a speed on a component, not a keyframe track |
+| [0103](adr/0103-motion-is-a-speed-not-a-keyframe.md) | Object motion is a speed on a component, not a keyframe track — superseded by 0137 |
 | [0104](adr/0104-a-deck-may-not-outrun-its-rider.md) | A deck may not outrun its rider: the overtake probe, and slicing the tick |
 | [0105](adr/0105-boarding-is-arriving-not-rising.md) | Boarding is decided by where a surface is met, and a rider is seated on it |
 | [0106](adr/0106-a-movers-metre-is-a-metre.md) | A Mover's metre is a metre, and it picks its own frame |
@@ -194,5 +194,6 @@ why matters.
 | [0143](adr/0143-a-sequence-is-edited-as-boxes-in-the-inspector.md) | A sequence is edited as boxes in the Inspector |
 | [0142](adr/0142-a-board-has-a-key-budget.md) | A board has a key budget |
 | [0144](adr/0144-a-move-point-is-dragged-on-a-copy-in-the-viewport.md) | A move point is dragged on a copy in the viewport |
+| [0145](adr/0145-a-selection-is-outlined-in-one-pass.md) | A selection is outlined, everyone's in one pass |
 
 `Design archive/` holds superseded design material and is not maintained.

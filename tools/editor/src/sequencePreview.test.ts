@@ -104,7 +104,7 @@ describe('the preview pose', () => {
 describe('taking the preview back out', () => {
   it('recovers the authored transform from a group that shows a sequence’s turn and scale', () => {
     const authored = { position: vec3(1, 2, 3), rotation: vec3(0.3, -0.4, 0.2), scale: vec3(2, 1, 0.5) }
-    const off = { position: vec3(0, 4, 0), rotation: vec3(0, 0, 0), turn: axisAngleToQuat(vec3(1, 1, 0), 1.1), scale: vec3(3, 1, 2) }
+    const off = { position: vec3(0, 4, 0), turn: axisAngleToQuat(vec3(1, 1, 0), 1.1), scale: vec3(3, 1, 2) }
     const shown = mulQuat(eulerToQuat(authored.rotation), off.turn)
     const group = {
       position: vec3(authored.position.x + off.position.x, authored.position.y + off.position.y, authored.position.z + off.position.z),
@@ -118,7 +118,7 @@ describe('taking the preview back out', () => {
   })
 
   it('leaves a group with no preview on it exactly as it is', () => {
-    const back = unpreviewed({ position: vec3(1, 1, 1), quaternion: quat(), scale: vec3(1, 1, 1) }, { position: ZERO, rotation: ZERO, turn: quat(), scale: vec3(1, 1, 1) })
+    const back = unpreviewed({ position: vec3(1, 1, 1), quaternion: quat(), scale: vec3(1, 1, 1) }, { position: ZERO, turn: quat(), scale: vec3(1, 1, 1) })
     expectVec(back.position, vec3(1, 1, 1))
     expectVec(back.rotation, ZERO)
   })

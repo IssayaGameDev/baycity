@@ -33,7 +33,7 @@ interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: Su
 
 | Export | Role |
 |---|---|
-| `COLLIDER, MESH, RENDERER, MATERIAL_OVERRIDE, SPAWN, LIGHT, MOVER, SPINNER, SEQUENCE` | The type constants the loader reads. First six = `ENGINE_COMPONENTS`; `Mover`/`Spinner` are gameplay-owned but loader-evaluated (ADR 0103). `SEQUENCE` is declared in `sequenceData.ts` and re-exported here; `patchComponents` applies a placement's `sequences` record to its `stages` (ADR 0139). |
+| `COLLIDER, MESH, RENDERER, MATERIAL_OVERRIDE, SPAWN, LIGHT, SEQUENCE` | The type constants the loader reads. First six = `ENGINE_COMPONENTS`; `Sequence` is gameplay-owned but loader-evaluated (ADR 0141), declared in `sequenceData.ts` and re-exported here; `patchComponents` applies a placement's `sequences` record to its `stages` (ADR 0139). |
 | `TypeInfo { get(type) → { singleton?, moves? } \| undefined }` | What resolution needs from a registry. |
 | `effectiveNode(level, node, types): Resolved` | `{ id, name, transform, components, children, inheritedCount }`. Placement keeps own `id`/`transform`; `name` falls back to prefab root's. `bakeOverrides` patches the prefab tree (returns the prefab's own object when unchanged); `layerOwn`: own **singleton** replaces inherited same type, repeatable appends. Children = inherited then own. Unknown prefab key → own layer only. |
 | `walkNodes`, `componentsOfType`, `firstOfType`, `numberParam`/`vec3Param`/`stringParam`/`boolParam`, `freeTableKey` | Depth-first walk; untyped readers with fallbacks; table-key dedupe for interning prefabs. |
@@ -69,11 +69,10 @@ interface WorldLight { …; position; rotation; visible: boolean /* off while it
 | `basePose`, `baseIndex`, `basePoseOf(i, 'render'\|'tick'\|'prev')`, `baseCarry` | Movement-base lookups for the wire (ADR 0021). `baseIndex` is `undefined` for a piece a `local` sequence moves (ADR 0141); `basePose` still carries a rider on it here. |
 
 Build rules:
-- Frame `animated` if `movesAtAll(motions)`, an enabled `moves` component, or an animated ancestor → kinematic bodies; else fixed.
+- Frame `animated` if a sequence moves it (below), an enabled `moves` component, or an animated ancestor → kinematic bodies; else fixed.
 - `Collider.trigger` → sensor (ADR 0054), still in `colliderHandles`. Shape and `center` scaled by frame scale (box/convex exact, ball/capsule averaged). `cylinder` throws.
 - Draw (ADR 0039): `Renderer`+`Mesh.model` → one visual listing all handles; `Renderer` alone → one per collider; else nothing. `MaterialOverride` cascades down over `Renderer.material`; `''` = unsurfaced. `Mesh.model` is an asset id or a **built-in shape** (below).
 - Placement with inherited children opens a new `scope` (own id + prefab root id; first writer wins).
-- `motionsOf(components)`: every enabled `Mover` in order, then the first `Spinner`.
 - **Sequences** (ADR 0141, `sequences.md`): each enabled `Sequence` compiled once. A frame is moved by its own aimed at `SELF` and its parent's aimed at its id. Any ⇒ `animated`. Posed at level time 0 while building, so what starts off is built off. Flags fixed at load: `scaling` (a scale track here or above ⇒ colliders re-shaped), `fading` (a fade here ⇒ `VisualItem.fades`), `localOnly` (a `local` sequence moving it or above ⇒ no `baseIndex`). Per tick: `shown` (not disabled here **or above**), `solid` (collider not switched off **here**), `drawScale` = world scale ÷ load scale, `opacity` = the fade here.
 
 ## Ops — `packages/content/src/ops.ts` (ADR 0089)
@@ -119,33 +118,14 @@ children are resolved (prefab's, minus removed, plus added, in `childOrder`), ex
 and the editor's tree walk cannot disagree. `childOrder` is a preference: missing ids are skipped and
 unnamed children keep their place at the end, so a prefab gaining a piece does not invalidate it.
 
-## Tracks — `packages/content/src/track.ts` (ADR 0029)
+## Motion — `sequences.md` (ADR 0137)
 
-Being replaced by sequences (`sequences.md`, ADR 0137); the engine exists and nothing reads it yet.
+A node moves by its sequences; how the loader runs them is `sequences.md`. What a node adds is an **offset**
+from its authored transform, and a component's drive (`NodeDrive`, ADR 0058) adds to it.
 
-Pure in `(motions, nowMs)` — `motion.ts`, ADR 0103. `motionOffset(motions, nowMs): MotionOffset { position; rotation /* euler rad */ }`, summed over every motion; `MOTIONLESS` when there are none.
-
-| | |
-|---|---|
-| `moveFraction(m, nowMs)` | `[0,1]` along the travel. Leg = `distance / speed` seconds; `period = 2 × leg`; `phase = frac(nowMs/1000/period + offset)`; out on the first half, back on the second, each leg eased separately. |
-| `spinRadians(s, nowMs)` | `frac(nowMs/1000 × speed/360 + offset) × 2π`. Wrapped to one turn. |
-| `curve(u, smooth)` | cosine when `smooth`, else linear. Both average 1 over a leg, which is what lets `speed` mean the average. |
-| `movesAtAll(motions)` | no distance or no speed ⇒ still ⇒ fixed body. |
-| `motionSlices(fromMs, toMs, maxStep)` | how many equal slices a tick needs so nothing travels more than `maxStep` between two of them (ADR 0104). `1` when still or slow; capped at 8. Position only; a frame's movers and sequences add. |
-
-A mover's travel is **re-framed by the loader**, not by `motion.ts` (ADR 0106): the frame tree would put it
-through `parentScale` and the parent's rotation, the same line a node's position goes through, so the loader
-divides by the scale (a metre stays a metre at any parent scale) and picks the frame from `space` —
-un-rotating by the parent's world rotation for `world`, rotating by the node's own authored rotation for
-`local`. Authored, not live, so a `Spinner` on the same node cannot turn a straight `Mover` into an orbit.
-| `AXES`, `AXIS_NAMES` | the six cardinal axes, as a literal tuple so `params.axis` narrows. |
-
-`frac` is a flooring fraction, so a negative `offset` wraps forward. Two `Spinner`s would not compose (euler
-angles about two axes do not add as rotations), which is why it is a singleton.
-
-The retired keyframe model lives on in `retiredTrack.ts`, read by `migrateMotion.ts` alone and exported from
-nowhere: `content/` is only migrated once the `content` branch is merged, so the converter still needs a
-reader. Delete both once no content carries a `Track`.
+`motionSlices(fromMs, toMs, maxStep)`: how many equal slices a tick needs so nothing travels more than
+`maxStep` between two of them (ADR 0104). `1` when still or slow; capped at 8. Position only; a frame's
+sequences add.
 
 ## Built-in shapes — `packages/content/src/primitives.ts` (ADR 0090)
 
@@ -214,33 +194,6 @@ firstDifference(before, after): { at; before?; after? } | null
 `fingerprintGeometry` bakes scale into colliders and resolves built-in shapes, so the two ways of writing one
 size (ADR 0090) compare equal, and leaves out world scale and a name a placement inherits. It is the gate the
 reference migration runs behind.
-
-## Migrating motion — `packages/content/src/migrateMotion.ts` (ADR 0103)
-
-Every `Track` becomes a `Mover` or a `Spinner`, keeping the component **id** so an override still names it.
-
-A conversion is never inferred from the shape of the keys. `convertTrack` reads the candidate's own axis,
-distance and period, **rebuilds the preset from them** (`moveTrack`/`spinTrack`), and requires the rebuild to
-equal the authored keys. Two deliberate exceptions, both stated in the source:
-
-| case | what happens |
-|---|---|
-| no duration, holding the rest pose | dropped — the node never moved |
-| no duration, holding a real offset | refused — one key in a channel is a constant offset (`poseAt`), so dropping it would move the node |
-| a full turn typed rather than generated (`6.2832`) | converted, within `TURN_EPS`, and **reported as rounded** |
-| anything else | refused, and the file is left exactly as it was |
-
-**The gate is motion, not geometry.** `fingerprintGeometry` compares component parameters, and the components
-are what is being replaced, so it would refuse everything. `fingerprintMotion` samples every node's composed
-local offset at `SAMPLE_MS` against a zero base, and `firstMotionDifference` compares numerically —
-`POS_EPS`, and `ROT_EPS` modulo a whole turn, since the keyframe form's last key *is* a full turn and reads
-2π where the wrapped form reads 0.
-
-`migrateGameComponents` also rewrites each game's shared-component list (ADR 0077): a game still naming
-`Track` would build a registry with no `Mover` in it. It runs only when nothing refused, because a refused
-level keeps its `Track`.
-
-Run once by `tools/editor-server/src/migrateMotion.ts` via `deploy/editor/migrate-motion.sh`, dry by default.
 
 ## Migrating to references — `packages/content/src/migratePrefabRefs.ts` (ADR 0091)
 

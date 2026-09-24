@@ -1,7 +1,6 @@
 import { eulerToQuat, lerpVec3, mulQuat, quat, rotateVec3, slerpQuat, vec3, type Quat, type Vec3 } from '@mp/core'
 import type { PhysicsBody, PhysicsWorld, ShapeDesc } from '@mp/physics'
 
-import { MOTIONLESS, motionOffset, motionsOf, movesAtAll, travelOffset, type Motion, type MotionFrame } from './motion'
 import { scaleCollider } from './primitives'
 import {
   AT_REST_POSE,
@@ -12,6 +11,7 @@ import {
   compileSequence,
   sampleSequence,
   type CompiledSequence,
+  type NodeFrame,
   type SequenceClocks,
   type SequenceOffset,
   type SequencePose,
@@ -204,8 +204,6 @@ interface Frame {
   scale: Vec3
   /** The world scale its shapes and geometry were built at. */
   loadScale: Vec3
-  /** Every `Mover`/`Spinner` on this node (ADR 0103). Empty on a node with none, which is the common case. */
-  motions: readonly Motion[]
   /** Every sequence moving this node: its own, and its parent's that aim at it. Empty is the common case. */
   sequences: readonly FrameSequence[]
   /** What they added at the last evaluation (`UNMOVED` when there are none). */
@@ -329,9 +327,9 @@ export interface LoadedLevel {
   /**
    * How many equal slices this tick has to be posed in so nothing moves more than `maxStep` metres
    * between two of them (ADR 0104). `1` when the level is still or slow, which is every level without a
-   * fast mover, so the common path is unchanged.
+   * fast sequence, so the common path is unchanged.
    *
-   * Free to ask, because motion is a pure function of time (ADR 0103): the pose at any instant is
+   * Free to ask, because motion is a pure function of time (ADR 0137): the pose at any instant is
    * computable without stepping anything, so the largest move this tick is two evaluations and a
    * subtraction, over animated frames only.
    *
@@ -353,6 +351,8 @@ export interface LoadedLevel {
 
 const UNIT_BOX: ColliderDesc = { kind: 'box', halfExtents: { x: 0.5, y: 0.5, z: 0.5 } }
 const ZERO: Vec3 = { x: 0, y: 0, z: 0 }
+/** What a node no component drives adds. Shared, so the still case allocates nothing per tick. */
+const UNDRIVEN: NodeDrive = { position: ZERO, rotation: ZERO }
 /** Level time 0, on both clocks: where the build poses everything. */
 const AT_START: SequenceClocks = { shared: 0, local: 0 }
 /** `a / b`, with a degenerate `b` giving 1 — a node scaled to nothing at load stretches by nothing. */
@@ -382,8 +382,8 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
   const dynamics: Dynamic[] = []
   const dynamicByCollider = new Map<number, number>()
 
-  /** Where a frame sits in the tree, for re-framing its movers' travel (ADR 0106, `motion.ts`). */
-  const frameOf = (f: Frame): MotionFrame => ({
+  /** Where a frame sits in the tree, for framing its sequences' points and turns (ADR 0106, ADR 0137). */
+  const frameOf = (f: Frame): NodeFrame => ({
     parentRot: f.parent === null ? quat() : f.parent.worldRot,
     parentScale: f.parentScale,
     ownRotation: f.base.rotation ?? ZERO,
@@ -409,23 +409,16 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
   }
 
   const evaluate = (f: Frame, clocks: SequenceClocks): void => {
-    const nowMs = clocks.shared
-    // Every contribution is an offset from the same authored transform, so they add and none has to know
-    // about the others: what the node's movers and spinner compute (ADR 0103), what a component drove
-    // (ADR 0058), and what its sequences say (ADR 0137). That is what lets a component nudge a moving
-    // platform rather than choose between them.
-    const motion = f.motions.length === 0 ? MOTIONLESS : motionOffset(f.motions, nowMs)
-    const drive = f.drive ?? MOTIONLESS
+    // Every contribution is an offset from the same authored transform, so they add and neither has to know
+    // about the other: what a component drove (ADR 0058) and what its sequences say (ADR 0137). That is what
+    // lets a component nudge a moving platform rather than choose between them.
+    const drive = f.drive ?? UNDRIVEN
     // Live, and first: `frameOf` below reads it, and a sequence above may be scaling this whole branch.
     if (f.parent !== null) f.parentScale = f.parent.scale
     const seq = f.sequences.length === 0 ? UNMOVED : combineSequences(f.sequences.map((s) => ({ pose: poseOf(s, clocks), axes: s.compiled.sequence.axes })), frameOf(f))
     f.seq = seq
-    // Movers are re-framed against this node's place in the tree, which `motionOffset` cannot know: it is
-    // headless and has no parent chain. `motion.position` is the raw authored sum and is not used for
-    // position at all; `travelOffset` is the framed one. A node with no motions pays nothing.
-    const travel = f.motions.length === 0 ? motion.position : travelOffset(f.motions, nowMs, frameOf(f))
-    const localPos = add(add(add(f.base.position, travel), drive.position), seq.position)
-    const authored = eulerToQuat(add(add(f.base.rotation ?? ZERO, motion.rotation), drive.rotation))
+    const localPos = add(add(f.base.position, drive.position), seq.position)
+    const authored = eulerToQuat(add(f.base.rotation ?? ZERO, drive.rotation))
     // A sequence's turn goes on the right of the authored rotation: inside the node's own frame (ADR 0137).
     const localRot = f.sequences.length === 0 ? authored : mulQuat(authored, seq.rotation)
     f.scale = mul(f.parentScale, f.sequences.length === 0 ? scaleOf(f.base) : mul(scaleOf(f.base), seq.scale))
@@ -440,7 +433,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     f.worldRot = mulQuat(f.parent.worldRot, localRot)
   }
 
-  const makeFrame = (t: Transform, motions: readonly Motion[], parent: Frame | null, driven = false, sequences: readonly FrameSequence[] = []): Frame => {
+  const makeFrame = (t: Transform, parent: Frame | null, driven = false, sequences: readonly FrameSequence[] = []): Frame => {
     const parentScale = parent?.scale ?? vec3(1, 1, 1)
     const drives = (pick: (c: ReturnType<typeof channelsOf>) => boolean): boolean => sequences.some((s) => pick(channelsOf(s.compiled, s.key)))
     const moves = (c: ReturnType<typeof channelsOf>): boolean => c.position || c.rotation || c.scale
@@ -449,7 +442,6 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
       parentScale,
       scale: mul(parentScale, scaleOf(t)),
       loadScale: vec3(1, 1, 1),
-      motions,
       sequences,
       seq: UNMOVED,
       shown: true,
@@ -461,7 +453,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
       // A driven node is animated for the same reason a moving one is: it needs a kinematic body and a place
       // in the per-tick pose pass. So is one with a sequence, whatever it drives: switching a collider or a
       // fade happens per tick too. Inherited by children, so moving a parent carries its subtree.
-      animated: driven || movesAtAll(motions) || sequences.length > 0 || (parent?.animated ?? false),
+      animated: driven || sequences.length > 0 || (parent?.animated ?? false),
       worldPos: vec3(0, 0, 0),
       worldRot: quat(),
       drive: driven ? { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) } : null,
@@ -538,7 +530,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
       ...ownSequences.filter((c) => c.tracks.has(SELF)).map((compiled) => ({ compiled, key: SELF })),
       ...fromParent.filter((c) => c.tracks.has(r.id)).map((compiled) => ({ compiled, key: r.id })),
     ]
-    const f = makeFrame(r.transform, motionsOf(r.components), parent, driven, sequences)
+    const f = makeFrame(r.transform, parent, driven, sequences)
     // A placement opens a scope: everything it inherits from its prefab resolves references among itself.
     // The placement node is the prefab's root, so it belongs to that scope too.
     const inner = r.inheritedCount > 0 ? ++nextScope : scope
@@ -728,12 +720,11 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     const from = clocksAt(fromMs)
     const to = clocksAt(toMs)
     for (const f of frames) {
-      if (!f.animated || (f.motions.length === 0 && f.sequences.length === 0)) continue
-      // Position only: a spin's reach depends on how far the collider extends from the axis, and a node
-      // large enough for that to matter is not a thing a rider stands on the top face of. What its movers and
-      // its sequences move it by adds, so their distances do.
+      if (!f.animated || f.sequences.length === 0) continue
+      // Position only: a turn's reach depends on how far the collider extends from the axis, and a node
+      // large enough for that to matter is not a thing a rider stands on the top face of. What its sequences
+      // move it by adds, so their distances do.
       let step = 0
-      if (f.motions.length > 0) step += distance(motionOffset(f.motions, fromMs).position, motionOffset(f.motions, toMs).position)
       for (const s of f.sequences) {
         const a = sampleSequence(s.compiled, from).get(s.key)
         const b = sampleSequence(s.compiled, to).get(s.key)

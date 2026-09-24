@@ -14,10 +14,8 @@ export {
   LIGHT,
   MATERIAL_OVERRIDE,
   MESH,
-  MOVER,
   RENDERER,
   SEQUENCE,
-  SPINNER,
   SPAWN,
   bakeOverrides,
   childrenFor,
@@ -108,5 +106,3 @@ export {
   nameForPath,
 } from './assets'
 export type { AssetDatabase, AssetEntry, AssetKind, AssetMeta, MaterialAsset, MaterialValue } from './assets'
-export { AXES, AXIS_NAMES, MOTIONLESS, ROOT_FRAME, framedTravel, motionOffset, motionsOf, moveFraction, movesAtAll, spinRadians, travelOffset } from './motion'
-export type { Motion, MotionFrame, MotionOffset, MotionSpace } from './motion'

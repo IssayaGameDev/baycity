@@ -8,6 +8,8 @@ import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js'
 import { Pass } from 'three/examples/jsm/postprocessing/Pass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 
+import { SelectionOutlinePass, type OutlineGroup } from './selectionOutline'
+
 /**
  * A pass that renders nothing and only flips visibility, so the AO pass between the two of them sees a
  * different scene from the one that was drawn. Two of these bracket it: the composer runs passes in order,
@@ -73,6 +75,11 @@ export interface PostFXOptions {
   bloomStrength?: number
   bloomRadius?: number
   bloomThreshold?: number
+  /**
+   * What to outline, asked for afresh each frame (`selectionOutline.ts`) — the editor's selections. Absent,
+   * there is no outline pass at all, which is the game's case.
+   */
+  outlines?: () => readonly OutlineGroup[]
 }
 
 /**
@@ -168,6 +175,9 @@ export const createPostFX = (
   composer.addPass(bloom)
 
   composer.addPass(new OutputPass())
+  // After tone mapping, so an outline's colour is the colour drawn; before antialiasing, so it is smoothed.
+  const outline = opts.outlines === undefined ? null : new SelectionOutlinePass(camera)
+  if (outline !== null) composer.addPass(outline)
   composer.addPass(new SMAAPass(size.x, size.y))
 
   // From the canvas's own layout size, after layout (see `createThreeStage`): reading the renderer's size
@@ -214,7 +224,10 @@ export const createPostFX = (
       Object.assign(params, DEFAULT_POSTFX, from)
       refresh()
     },
-    render: () => composer.render(),
+    render: () => {
+      if (outline !== null && opts.outlines !== undefined) outline.setGroups(opts.outlines())
+      composer.render()
+    },
     /**
      * Re-point every pass, and **recompile the AO shaders when the camera's kind changes**.
      *
@@ -233,6 +246,7 @@ export const createPostFX = (
      */
     setCamera: (next) => {
       renderPass.camera = next
+      if (outline !== null) outline.camera = next
       if (gtao === null) return
       gtao.camera = next
       const perspective = (next as THREE.PerspectiveCamera).isPerspectiveCamera === true ? 1 : 0

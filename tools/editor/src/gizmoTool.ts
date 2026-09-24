@@ -28,8 +28,8 @@ const isZeroRot = (e: THREE.Euler): boolean => Math.abs(e.x) < 1e-5 && Math.abs(
 
 /**
  * A group's pose with the preview taken back out (ADR 0141): the transform the document should hold, given what
- * the group shows and what the preview added to it. Each part comes out the way it went in — travel and a
- * spinner's euler subtracted, a sequence's turn divided off the right of the rotation, its scale divided out.
+ * the group shows and what the preview added to it. Each part comes out the way it went in — a sequence's move
+ * subtracted, its turn divided off the right of the rotation, its scale divided out.
  *
  * Pure, and exported, because it is the whole of what keeps a drag mid-preview from baking the animation into
  * the file (ADR 0050, ADR 0126).
@@ -44,7 +44,7 @@ export const unpreviewed = (
   const div = (a: number, b: number): number => (Math.abs(b) < 1e-9 ? a : a / b)
   return {
     position: vec3(g.position.x - off.position.x, g.position.y - off.position.y, g.position.z - off.position.z),
-    rotation: vec3(e.x - off.rotation.x, e.y - off.rotation.y, e.z - off.rotation.z),
+    rotation: vec3(e.x, e.y, e.z),
     scale: vec3(div(g.scale.x, off.scale.x), div(g.scale.y, off.scale.y), div(g.scale.z, off.scale.z)),
   }
 }
@@ -83,7 +83,7 @@ export interface GizmoHost {
   rebuildSubtree: (i: number) => void
   rebuildLoaded: () => void
   playing: () => boolean
-  /** The preview clock, which a write-back subtracts so a mover's offset is not baked in (ADR 0050). */
+  /** The preview clock, which a write-back subtracts so a sequence's offset is not baked in (ADR 0050). */
   previewMs: () => number
   motionOffsetAt: (index: number, timeMs: number) => PreviewOffset
   /** Clear the face highlight when the tool changes away from Face (ADR 0119). */
@@ -371,16 +371,16 @@ export const createGizmoTool = (host: GizmoHost) => {
   }
 
   /**
-   * Where a gizmo drag lands, per item (ADR 0103).
+   * Where a gizmo drag lands, per item (ADR 0103, ADR 0142).
    *
-   * Always on the node's **authored transform** — there is nothing else a drag could mean now that motion is a
-   * speed rather than a path with handles in the viewport.
+   * Always on the node's **authored transform**: a sequence's points are its own, relative to that, and are
+   * dragged on their copy (ADR 0144).
    *
-   * What it has to undo is the preview: while the clock runs, the group sits at rest **plus** its movers'
+   * What it has to undo is the preview: while the clock runs, the group sits at rest **plus** its sequences'
    * offset, so writing the group's pose straight back would bake that offset into the transform and the object
-   * would walk across the level every time it was nudged mid-preview. Subtracting the offset is exact rather
-   * than a delta against a snapshot, because a mover's offset depends on the clock and not on the transform
-   * the drag is rewriting.
+   * would walk across the level every time it was nudged mid-preview. Taking the offset out is exact rather
+   * than a delta against a snapshot, because a sequence's offset depends on the clock and not on the
+   * transform the drag is rewriting.
    */
   const writeBackItem = (index: number): void => {
     const open = host.doc()
@@ -425,12 +425,6 @@ export const createGizmoTool = (host: GizmoHost) => {
     return { position: vec3(r4(g.position.x), r4(g.position.y), r4(g.position.z)), rotation: vec3(roundAngle(e.x), roundAngle(e.y), roundAngle(e.z)) }
   }
 
-  /**
-   * How much of an item's drawn pose came from its movers, at the preview clock (ADR 0103).
-   *
-   * Measured as the difference between where the item is drawn and where it rests, rather than by evaluating
-   * the motion again here — so it cannot drift from what `applyPreviewPoses` actually drew.
-   */
   return {
     /** The three.js control itself, for a caller that has to re-point its camera. */
     control: gizmo,

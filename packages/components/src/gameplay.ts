@@ -1,5 +1,5 @@
 import { rotateVec3, type Quat, type Vec3 } from '@mp/core'
-import { AXIS_NAMES, MOVER, SEQUENCE, SPINNER } from '@mp/content'
+import { SEQUENCE } from '@mp/content'
 import { defineComponent } from './define'
 
 /**
@@ -12,7 +12,7 @@ import { defineComponent } from './define'
  * `Goal` has no hook, because the mode has no goal rule — nothing ends a run yet, and writing one here would
  * be a design decision wearing an implementation's clothes.
  *
- * `Mover` and `Spinner` have no hook either, and that is not an omission: the loader's frame tree evaluates
+ * `Sequence` has no hook either, and that is not an omission: the loader's frame tree evaluates it as a pure
  * function of the synced clock, so a late joiner needs no catch-up and a static subtree costs nothing. An
  * accumulating hook would trade both away for nothing.
  *
@@ -261,92 +261,14 @@ export const Boss = defineComponent({
 })
 
 /**
- * Travels `move` metres from rest and back, forever, averaging `speed` m/s over each leg (ADR 0103).
- *
- * The loader evaluates it as `offset = f(params, time)` while building the frame tree, so there is no hook:
- * clock-driven motion is a pure function of synced time and costs no networking at all (ADR 0013/0021).
- *
- * **Authored as a speed, not a period.** How long the cycle takes falls out of the distance and the speed.
- * The reverse meant that making a platform travel further silently made it faster, which is the road to
- * ADR 0042's riding bugs — and speed is the number that decides whether a platform can be ridden or jumped
- * onto, in the same m/s the character's own `moveSpeed` uses.
- *
- * **Repeatable.** Offsets from one transform add, so an up-and-down plus a side-to-side a quarter cycle
- * apart is a circle. That is the compound path a keyframe track used to be needed for. Each instance gets
- * its own Inspector header and its own enable tick for free, which a list inside one component would have
- * had to rebuild — and overrides key on a component id, which is stable, where a list index is not.
- *
- * Defaults reproduce the keyframe editor's `Move` preset at its own default settings: 3 m over 4 s is
- * 1.5 m/s, so a freshly added Mover behaves like the thing it replaces.
- */
-export const Mover = defineComponent({
-  type: MOVER,
-  label: 'Mover',
-  params: {
-    /**
-     * Metres from rest. `(0, 3, 0)` is three metres up, and they are **real metres** whatever any parent is
-     * scaled to (ADR 0106) — the frame tree's own scaling is undone so the number authored is the number
-     * travelled.
-     */
-    move: { kind: 'vec3', default: { x: 0, y: 3, z: 0 }, label: 'move (m)' },
-    /**
-     * Which way `move` points: along the world axes, or along the node's own authored orientation
-     * (ADR 0106). Unity's `Space.World` / `Space.Self`.
-     *
-     * `world` by default, which is what a platform going up wants and is what every mover authored before
-     * this did. `local` is for a tilted platform that should travel along its own tilt rather than the
-     * world's — without it, the only way to say that was a rotated wrapper object.
-     */
-    space: { kind: 'enum', options: ['world', 'local'], default: 'world', label: 'space' },
-    /**
-     * Average metres per second over one leg. A leg takes `distance / speed` seconds whatever `smooth` does,
-     * so the curve redistributes time inside a leg and never changes the cycle length.
-     */
-    speed: { kind: 'number', default: 1.5, min: 0, max: 100, step: 0.5, label: 'speed (m/s)' },
-    /** Ease both ends (cosine), or run at a constant speed and reverse instantly. */
-    smooth: { kind: 'bool', default: true, label: 'smooth' },
-    /**
-     * Where in the cycle it starts, as a fraction: `0.5` is half a cycle in, so two otherwise identical
-     * platforms pass each other. A fraction rather than seconds because the cycle length is derived, so a
-     * time would go stale the moment the speed or the distance changed.
-     */
-    offset: { kind: 'number', default: 0, min: 0, max: 1, step: 0.05, label: 'offset (cycles)' },
-  },
-})
-
-/**
- * Turns about a cardinal axis at `speed` degrees per second (ADR 0103). Loader-evaluated, like `Mover`.
- *
- * **Singleton, and the axis is an enum.** Both are the same constraint: the offset it contributes is euler
- * radians. Summing euler angles about two axes is not composing the two rotations — the result depends on
- * order — so two spinners cannot be allowed, and a turn about a slanted axis is not a straight line through
- * euler space, so a vec3 axis would accept `(1,1,0)` and produce something that is not a diagonal spin.
- *
- * No `smooth`: a spin that eases has to stop, and a turntable does not stop.
- */
-export const Spinner = defineComponent({
-  type: SPINNER,
-  label: 'Spinner',
-  params: {
-    axis: { kind: 'enum', options: AXIS_NAMES, default: '+Y', label: 'axis' },
-    /** Degrees per second. Negative turns the other way, the same as picking the opposite axis. */
-    speed: { kind: 'number', default: 90, min: -720, max: 720, step: 15, label: 'speed (°/s)' },
-    /** Where in the turn it starts, as a fraction. See `Mover.offset`. */
-    offset: { kind: 'number', default: 0, min: 0, max: 1, step: 0.05, label: 'offset (turns)' },
-  },
-  singleton: true,
-})
-
-/**
- * An object's motion as stages of steps, a pure function of time (ADR 0137). Loader-evaluated, like `Mover`,
- * and with no hook for the same reason: the editor only runs hooks while playing, and a sequence has to
- * preview while editing.
+ * An object's motion as stages of steps, a pure function of time (ADR 0137). Loader-evaluated, with no hook:
+ * the editor only runs hooks while playing, and a sequence has to preview while editing.
  *
  * **Repeatable**: each loops on its own, and several on one node combine (moves add, off wins). Its settings
  * are ordinary parameters, so a placement overrides them like any other; its `stages` are patched step by
  * step (ADR 0139).
  *
- * Shared, like `Mover`: a game adopts it the first time one is added to its level (ADR 0077).
+ * Shared: a game adopts it the first time one is added to its level (ADR 0077).
  */
 export const Sequence = defineComponent({
   type: SEQUENCE,
@@ -366,7 +288,7 @@ export const Sequence = defineComponent({
   },
 })
 
-export const GAMEPLAY_COMPONENTS = [Checkpoint, Goal, Hazard, Bumper, Mover, Spinner, Sequence, Boss]
+export const GAMEPLAY_COMPONENTS = [Checkpoint, Goal, Hazard, Bumper, Sequence, Boss]
 
 /**
  * Components a game puts on its **player** rather than in a level (ADR 0059).
