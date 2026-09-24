@@ -1,6 +1,7 @@
 import type { Vec3 } from '@mp/core'
 
-import { EASES, type Sequence, type Stage, type Step } from './sequence'
+import { EASES } from './eases'
+import type { Sequence, Stage, Step } from './sequence'
 import type { ComponentData } from './types'
 
 /**

@@ -30,6 +30,8 @@ import {
   easeSinOut,
 } from 'd3-ease'
 
+import type { Ease } from './eases'
+
 /**
  * Sequences: an object's motion as stages of steps, evaluated as a pure function of time (ADR 0137).
  *
@@ -50,45 +52,8 @@ import {
 
 // --- easing -----------------------------------------------------------------------------------------
 
-/**
- * The easing names, in the order a picker should offer them. The standard set every tween library ships,
- * named as DOTween and easings.net name them rather than as `d3-ease` does, so the file does not depend on
- * which library supplies the formula.
- */
-export const EASES = [
-  'linear',
-  'in-sine',
-  'out-sine',
-  'in-out-sine',
-  'in-quad',
-  'out-quad',
-  'in-out-quad',
-  'in-cubic',
-  'out-cubic',
-  'in-out-cubic',
-  'in-quart',
-  'out-quart',
-  'in-out-quart',
-  'in-quint',
-  'out-quint',
-  'in-out-quint',
-  'in-expo',
-  'out-expo',
-  'in-out-expo',
-  'in-circ',
-  'out-circ',
-  'in-out-circ',
-  'in-back',
-  'out-back',
-  'in-out-back',
-  'in-elastic',
-  'out-elastic',
-  'in-out-elastic',
-  'in-bounce',
-  'out-bounce',
-  'in-out-bounce',
-] as const
-export type Ease = (typeof EASES)[number]
+/** The names, in their own module so that checking a stored sequence needs none of this (see `eases.ts`). */
+export { EASES, type Ease } from './eases'
 
 const EASE_FNS: Readonly<Record<Ease, (t: number) => number>> = {
   linear: easeLinear,

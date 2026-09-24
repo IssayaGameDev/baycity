@@ -3,7 +3,9 @@
 The content API the editor talks to, as one implementation with two hosts (ADR 0083): a Vite middleware in
 `pnpm dev:editor` (no login, no git) and a Node server on the box behind Cloudflare Access (`editor.playgorbo.com`,
 login, locks, commits on the `content` branch). `@mp/editor-server`, `tsx src/main.ts <config.json>`, no
-dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` can bundle it).
+dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` can bundle it). What that reaches
+must not import a workspace package **as a value** — plain Node loads the bundle, and the editor's build, which
+is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walks the imports to hold.
 
 | File | Contents |
 | --- | --- |

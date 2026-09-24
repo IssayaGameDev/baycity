@@ -25,6 +25,9 @@ Timing   = { by: 'seconds'; seconds } | { by: 'speed'; speed } | { by: 'stage'; 
 EASES    // 31: 'linear', then in-/out-/in-out- × sine quad cubic quart quint expo circ back elastic bounce
 ```
 
+`EASES` lives in `eases.ts`, which imports nothing: checking a stored sequence needs it and is reached from the
+editor's `vite.config.ts` (`editor-server.md`).
+
 ## Stored — `sequenceData.ts`
 
 A `Sequence` component (`SEQUENCE`, repeatable) carries the settings as ordinary parameters and `stages` as the
