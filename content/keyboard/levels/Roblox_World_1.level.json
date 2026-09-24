@@ -3194,6 +3194,110 @@
               ]
             }
           ]
+        },
+        {
+          "id": "e52470b3",
+          "name": "sphere",
+          "transform": {
+            "position": {
+              "x": 0.25,
+              "y": 29.25,
+              "z": 45.25
+            },
+            "rotation": {
+              "x": -0.27755622028615423,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 16.5,
+              "y": 16.5,
+              "z": 16.5
+            }
+          },
+          "components": [
+            {
+              "id": "79b30d7d",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "ball",
+                  "radius": 0.5
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "b29d4737",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:sphere"
+              }
+            },
+            {
+              "id": "618ab992",
+              "type": "Renderer",
+              "params": {
+                "material": ""
+              }
+            },
+            {
+              "id": "4222a450",
+              "type": "Sequence",
+              "params": {
+                "name": "",
+                "clock": "shared",
+                "axes": "object",
+                "loop": "restart",
+                "times": 0,
+                "offset": 0,
+                "stages": [
+                  {
+                    "id": "171e7f4a",
+                    "steps": [
+                      {
+                        "id": "0b506d2b",
+                        "kind": "move",
+                        "to": {
+                          "x": 0,
+                          "y": -10.2032,
+                          "z": -0.8848
+                        },
+                        "timing": {
+                          "by": "seconds",
+                          "seconds": 1
+                        },
+                        "ease": "linear"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "c6e7e450",
+                    "steps": [
+                      {
+                        "id": "5a5238cb",
+                        "kind": "move",
+                        "to": {
+                          "x": 0,
+                          "y": 1,
+                          "z": 0
+                        },
+                        "timing": {
+                          "by": "seconds",
+                          "seconds": 1
+                        },
+                        "ease": "linear"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
         }
       ]
     },
