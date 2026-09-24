@@ -1,3 +1,4 @@
+import { sequenceOverrideProblem } from './sequenceData'
 import type { LevelConfig, Level } from './types'
 
 /**
@@ -141,6 +142,13 @@ export const checkOverrides = (value: unknown, at: string, checker: ParamChecker
       if (!isObj(o.enabled)) throw new LevelError(`${oAt}.enabled: expected an object keyed by component id`)
       for (const [cid, on] of Object.entries(o.enabled))
         if (typeof on !== 'boolean') throw new LevelError(`${oAt}.enabled['${cid}']: expected true or false`)
+    }
+    if (o.sequences !== undefined) {
+      if (!isObj(o.sequences)) throw new LevelError(`${oAt}.sequences: expected an object keyed by component id`)
+      for (const [cid, seq] of Object.entries(o.sequences)) {
+        const bad = sequenceOverrideProblem(seq, `${oAt}.sequences['${cid}']`)
+        if (bad !== null) throw new LevelError(bad)
+      }
     }
     if (o.added !== undefined) checkComponents(o.added, `${oAt}.added`, checker)
     if (o.removed !== undefined) {

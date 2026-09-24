@@ -165,3 +165,26 @@ describe('unlinkPrefab', () => {
     expect(a.children).toEqual([])
   })
 })
+
+/**
+ * A sequence's steps target children by id (ADR 0137), and unlinking re-mints those children's ids. The root's
+ * own components are not in the re-minted forest, and a sequence on a root always targets its children — so
+ * they have to follow the same map, or the door's halves stop opening the moment its prefab is deleted.
+ */
+describe('a sequence in an unlinked placement', () => {
+  const step = (id: string, target: string): Record<string, unknown> => ({ id, kind: 'move', to: { x: 1, y: 0, z: 0 }, timing: { by: 'seconds', seconds: 1 }, ease: 'linear', target })
+  const doorDefinition = (): Node => ({
+    ...definition(),
+    components: [comp('c0', 'Collider'), comp('seq', 'Sequence', { stages: [{ id: 's', steps: [step('a', 'lamp'), step('b', 'mover')] }] })],
+  })
+
+  it('follows its targets to their new ids', () => {
+    const level: Level = { id: 'fx', config: {}, prefabs: { P: doorDefinition() }, nodes: [{ id: 'placed', transform: at(9), components: [], prefab: 'P' }] }
+    unlinkPrefab(level, 'P', deps())
+    const node = level.nodes[0]!
+    const ids = (node.children ?? []).map((k) => k.id)
+    const stages = node.components.find((c) => c.id === 'seq')?.params.stages as { steps: { target: string }[] }[]
+    expect(stages[0]!.steps.map((s) => s.target)).toEqual(ids)
+    expect(ids).not.toContain('lamp')
+  })
+})

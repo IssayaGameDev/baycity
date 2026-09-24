@@ -18,7 +18,7 @@ Package `packages/components`. Headless; deps `@mp/content`, `@mp/core` (`@mp/ph
 | `vec3` | `default: Vec3` | `Vec3` | finite |
 | `asset` | `of: 'material' \| 'model'`, `default` (`''` = none) | `string` | string |
 | `collider` | `default: ColliderDesc` | `ColliderDesc` | per kind; convex ≥ 4 points |
-| `keys` | `clip?` (name of sibling `asset` param) | `readonly Keyframe[]`, default `[]` | `t` finite |
+| `stages` | `default: readonly Stage[]` | a sequence's stages of steps (ADR 0137) | whole, by `stagesProblem` (`sequences.md`) |
 | `nodeRef` | — | `string \| null`, default `null` | target unchecked |
 
 `readParams(decls, raw, at): Params<D>` — absent key → default; unknown key dropped; throws `ComponentError`. `defaultsOf`, `Params<D>`, `ParamDecls`, `RawParams`.

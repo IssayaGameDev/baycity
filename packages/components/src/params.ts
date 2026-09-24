@@ -1,5 +1,5 @@
 import type { Vec3 } from '@mp/core'
-import type { ColliderDesc } from '@mp/content'
+import { stagesProblem, type ColliderDesc, type Stage } from '@mp/content'
 
 /**
  * Declared component parameters — the single source the Inspector, the validator, the defaults and the
@@ -90,7 +90,17 @@ export interface NodeRefSpec extends SpecBase {
   readonly kind: 'nodeRef'
 }
 
-export type ParamSpec = NumberSpec | BoolSpec | StringSpec | ColorSpec | EnumSpec | Vec3Spec | AssetSpec | ColliderSpec | NodeRefSpec
+/**
+ * A sequence's stages of steps (ADR 0137). Its own kind because it is structured the way no other parameter
+ * is — a list of lists, with ids a prefab placement's record names (ADR 0139) — so the validator checks it
+ * whole (`stagesProblem`) and the Inspector draws it as boxes rather than as a row.
+ */
+export interface StagesSpec extends SpecBase {
+  readonly kind: 'stages'
+  readonly default: readonly Stage[]
+}
+
+export type ParamSpec = NumberSpec | BoolSpec | StringSpec | ColorSpec | EnumSpec | Vec3Spec | AssetSpec | ColliderSpec | NodeRefSpec | StagesSpec
 
 /**
  * Runtime value per spec kind. A lookup table keyed on `kind` rather than a chain of `S extends …`,
@@ -107,6 +117,7 @@ interface ValueByKind {
   asset: string
   collider: ColliderDesc
   nodeRef: string | null
+  stages: readonly Stage[]
 }
 
 /** `enum` keeps its literal union, so `self.params.loop` narrows to `'loop' | 'pingPong' | 'once'`. */
@@ -201,6 +212,11 @@ const checkOne = (spec: ParamSpec, value: unknown, at: string): void => {
     case 'nodeRef':
       if (value !== null && typeof value !== 'string') throw new ComponentError(`${at}: expected a node id or null`)
       return
+    case 'stages': {
+      const bad = stagesProblem(value, at)
+      if (bad !== null) throw new ComponentError(bad)
+      return
+    }
   }
 }
 

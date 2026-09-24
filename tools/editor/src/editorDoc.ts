@@ -15,6 +15,11 @@ import {
   MATERIAL_OVERRIDE,
   MESH,
   RENDERER,
+  diffStages,
+  readStages,
+  retargetSequenceOverride,
+  retargetSequenceParams,
+  type Stage,
   type ColliderDesc,
   type ComponentData,
   type Node,
@@ -261,6 +266,12 @@ export interface Doc {
   removeComponent: (i: number, componentId: string) => void
   /** Patch some of a component's parameters, leaving the rest. */
   setParams: (i: number, componentId: string, patch: Record<string, unknown>) => void
+  /**
+   * A `Sequence`'s stages, as the person now sees them (ADR 0139). On a node of this document it is a params
+   * write; on a prefab's piece, or a placement's inherited root, the difference from the prefab is worked out
+   * (`diffStages`) and recorded whole, so the placement keeps following its prefab everywhere else.
+   */
+  setSequenceStages: (i: number, componentId: string, stages: readonly Stage[]) => void
   /**
    * The same patch on several nodes at once, as **one** commit — so it is one undo entry and one message to
    * the room (ADR 0112). `targets` pairs each node with its own component id, since ids are per component.
@@ -699,7 +710,26 @@ const docOver = (
   }
 
   /** This placement's override record for an inherited node, as it is. Writes go through ops (`ops.ts` tidies). */
-  const overrideFor = (n: DocNode): NodeOverride | undefined => n.owner?.overrides?.[n.authored.id]
+  /**
+   * Where the override record that speaks for `n` lives: a piece's on the placement that owns it, keyed by the
+   * piece; a placement's **own inherited root** on the placement itself, keyed by the prefab root's id — where
+   * `writeTarget` has written it since ADR 0098. Without the second case a change to a root component was
+   * saved but counted, applied and reverted by nothing.
+   */
+  const recordKey = (n: DocNode): { readonly holder: Node; readonly node: string } | null => {
+    if (n.owner !== undefined) return { holder: n.owner, node: n.authored.id }
+    const root = n.authored.prefab === undefined ? undefined : level.prefabs?.[n.authored.prefab]
+    return root === undefined ? null : { holder: n.authored, node: root.id }
+  }
+
+  const overrideFor = (n: DocNode): NodeOverride | undefined => {
+    const k = recordKey(n)
+    return k === null ? undefined : k.holder.overrides?.[k.node]
+  }
+
+  /** The prefab-side node `n` shows: the piece itself, or a placement's prefab root. */
+  const definitionOf = (n: DocNode): Node | undefined =>
+    n.owner !== undefined ? n.authored : n.authored.prefab === undefined ? undefined : level.prefabs?.[n.authored.prefab]
 
   /**
    * Prefab ids this document resolved into `level.prefabs`, which a save must strip (ADR 0124).
@@ -775,6 +805,8 @@ const docOver = (
         const to = map.get(was)
         if (to !== undefined) c.params[key] = to
       }
+      // A step's target names a child by id, the same as a `nodeRef` does (ADR 0137).
+      retargetSequenceParams(c, (id) => map.get(id))
     }
     const repoint = (x: Node): void => {
       for (const c of x.components) retarget(c)
@@ -783,6 +815,7 @@ const docOver = (
       const inherited = x.prefab === undefined ? undefined : level.prefabs?.[x.prefab]
       for (const over of Object.values(x.overrides ?? {})) {
         for (const c of over.added ?? []) retarget(c)
+        for (const [cid, seq] of Object.entries(over.sequences ?? {})) over.sequences![cid] = retargetSequenceOverride(seq, (id) => map.get(id))
         for (const [cid, patch] of Object.entries(over.params ?? {})) {
           const type = inherited === undefined ? undefined : typeOfComponent(inherited, cid)
           if (type === undefined) continue
@@ -873,6 +906,27 @@ const docOver = (
     if (ops.length > 0) commit(ops)
   }
 
+  const setSequenceStages = (i: number, componentId: string, stages: readonly Stage[]): void => {
+    const n = node(i)
+    if (n === undefined) return
+    const t = writeTarget(n, componentId)
+    if (t === null) return
+    if (t.kind === 'own') {
+      commit([{ kind: 'setParams', id: t.id, componentId, patch: { stages } }])
+      return
+    }
+    const over = recordAt(t)
+    // Added on this placement: it is the placement's own, and is written whole.
+    if (over?.added?.some((c) => c.id === componentId) === true) {
+      commit([{ kind: 'setOverrideParams', owner: t.holder.id, node: t.node, componentId, patch: { stages } }])
+      return
+    }
+    // What the placement would show with no sequence record: the prefab's, under any params patch it holds.
+    const prefab = definitionOf(n)?.components.find((c) => c.id === componentId)
+    const base = readStages(over?.params?.[componentId]?.stages ?? prefab?.params.stages)
+    commit([{ kind: 'setOverrideSequence', owner: t.holder.id, node: t.node, componentId, override: diffStages(base, stages) ?? null }])
+  }
+
   /**
    * One parameter patch across several nodes, as a single commit (ADR 0112).
    *
@@ -951,6 +1005,7 @@ const docOver = (
     const params = over?.params?.[componentId]
     if (params !== undefined && Object.keys(params).length > 0) ops.push({ kind: 'setOverrideParams', owner, node: nodeId, componentId, patch: {}, unset: Object.keys(params) })
     if (over?.enabled?.[componentId] !== undefined) ops.push({ kind: 'setOverrideEnabled', owner, node: nodeId, componentId, enabled: null })
+    if (over?.sequences?.[componentId] !== undefined) ops.push({ kind: 'setOverrideSequence', owner, node: nodeId, componentId, override: null })
     ops.push({ kind: 'setOverrideRemoved', owner, node: nodeId, componentId, removed: true })
     commit(ops)
   }
@@ -1329,6 +1384,7 @@ const docOver = (
     addComponent,
     removeComponent,
     setParams: patchParams,
+    setSequenceStages,
     setParamsAcross: patchParamsAcross,
     moveComponent,
     setComponentEnabled: (i, componentId, on) => {
@@ -1363,13 +1419,15 @@ const docOver = (
       const typeOf = (id: string): string => n.view.components.find((c) => c.id === id)?.type ?? id
       for (const id of Object.keys(over.params ?? {})) out.push(typeOf(id))
       for (const id of Object.keys(over.enabled ?? {})) out.push(`${typeOf(id)} (off)`)
+      for (const id of Object.keys(over.sequences ?? {})) out.push(`${typeOf(id)} (stages)`)
       for (const c of over.added ?? []) out.push(`${c.type} (added)`)
       for (const id of over.removed ?? []) out.push(`${id} (removed)`)
       return out
     },
     revert: (i, field) => {
       const n = node(i)
-      if (n?.owner === undefined) return
+      const k = n === undefined ? null : recordKey(n)
+      if (n === undefined || k === null) return
       const current = overrideFor(n)
       if (current === undefined) return
       // The record as it will be: everything, or one field, or one component's every trace, gone.
@@ -1379,10 +1437,11 @@ const docOver = (
       else {
         delete next.params?.[field]
         delete next.enabled?.[field]
+        delete next.sequences?.[field]
         if (next.added !== undefined) next.added = next.added.filter((c) => c.id !== field)
         if (next.removed !== undefined) next.removed = next.removed.filter((id) => id !== field)
       }
-      commit([{ kind: 'setNodeOverride', owner: n.owner.id, node: n.authored.id, override: next }])
+      commit([{ kind: 'setNodeOverride', owner: k.holder.id, node: k.node, override: next }])
     },
     /**
      * Promote this placement's overrides into the shared prefab, then drop them.
@@ -1392,12 +1451,15 @@ const docOver = (
      */
     overrideOpsFor: (i) => {
       const n = node(i)
-      if (n?.owner?.prefab === undefined) return null
+      const k = n === undefined ? null : recordKey(n)
+      const assetId = n?.owner?.prefab ?? n?.authored.prefab
+      const target = n === undefined ? undefined : definitionOf(n)
+      if (n === undefined || k === null || assetId === undefined || target === undefined) return null
       const over = overrideFor(n)
       if (over === undefined) return null
       // Plain ops, with no table scope: they go to the prefab's own document, whose forest is its one root.
-      const id = n.authored.id
-      const target = n.authored
+      // Addressed by the prefab-side id: the piece's own, or the prefab root's for a placement's root.
+      const id = k.node
       const ops: Op[] = []
       if (over.transform !== undefined) ops.push({ kind: 'setTransform', id, transform: over.transform })
       if (over.name !== undefined) ops.push({ kind: 'setName', id, name: over.name === '' ? null : over.name })
@@ -1411,14 +1473,23 @@ const docOver = (
         if (target.components.some((x) => x.id === componentId)) ops.push({ kind: 'removeComponent', id, componentId })
       }
       for (const c of over.added ?? []) ops.push({ kind: 'addComponent', id, component: structuredClone(c) })
-      return { assetId: n.owner.prefab, ops }
+      // A sequence's differences go as the stages this placement shows: the prefab is to match this copy.
+      for (const componentId of Object.keys(over.sequences ?? {})) {
+        const shown = n.view.components.find((x) => x.id === componentId)
+        if (shown !== undefined && target.components.some((x) => x.id === componentId)) {
+          ops.push({ kind: 'setParams', id, componentId, patch: { stages: structuredClone(shown.params.stages) } })
+        }
+      }
+      return { assetId, ops }
     },
 
     placementOverrides: (i) => {
       const root = node(i)
       if (root?.authored.prefab === undefined) return []
       const all = nodes()
-      const out: { index: number; fields: string[] }[] = []
+      // The placement's own inherited root first: its component changes live on the placement itself.
+      const own = self.overridesOf(i)
+      const out: { index: number; fields: string[] }[] = own.length > 0 ? [{ index: i, fields: own }] : []
       for (let j = i + 1; j < subtreeEnd(i); j++) {
         const piece = all[j]
         // Owned by *this* placement: a nested placement's pieces are that placement's business.
@@ -1475,8 +1546,9 @@ const docOver = (
       const ops: Op[] = []
       for (const { index } of self.placementOverrides(i)) {
         const piece = all[index]
-        if (piece?.owner === undefined) continue
-        ops.push({ kind: 'setNodeOverride', owner: piece.owner.id, node: piece.authored.id, override: null })
+        const k = piece === undefined ? null : recordKey(piece)
+        if (k === null) continue
+        ops.push({ kind: 'setNodeOverride', owner: k.holder.id, node: k.node, override: null })
       }
       // Reverting to the prefab means looking like the prefab, and the prefab has no such child (ADR 0130).
       for (const index of self.placementAdded(i)) {

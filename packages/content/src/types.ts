@@ -1,5 +1,7 @@
 import type { Vec3 } from '@mp/core'
 
+import type { SequenceOverride } from './sequenceData'
+
 /**
  * Data-driven content schema. A **level** is a tree of **nodes**; a node is a transform plus a **list of
  * components**, and may reference a shared prefab (ADR 0035). Content is a shared resource any game mode can
@@ -289,6 +291,14 @@ export interface NodeOverride {
    * prefab that gains a piece does not invalidate a placement's ordering.
    */
   childOrder?: string[]
+  /**
+   * `Sequence` component id → how this placement's sequence differs from the prefab's (ADR 0139): changed
+   * steps, removed and added steps and stages, and their order. Resolved by `stagesFor`.
+   *
+   * Beside `params` rather than inside it, for the reason `enabled` is: a params patch replaces a key whole,
+   * and a sequence has to keep following its prefab everywhere this placement has not said otherwise.
+   */
+  sequences?: Record<string, SequenceOverride>
 }
 
 /** A level: a node forest, plus a prefab table mapping a key to the **root node** of a shared definition. */

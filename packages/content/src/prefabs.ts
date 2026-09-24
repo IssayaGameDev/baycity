@@ -1,4 +1,5 @@
 import { effectiveNode, type TypeInfo } from './nodes'
+import { retargetSequenceParams } from './sequenceData'
 
 import type { ComponentData, Level, Node } from './types'
 
@@ -123,11 +124,15 @@ export const unlinkedNode = (level: Level, node: Node, assetId: string, deps: Un
   const { prefab: _dropped, overrides: _also, ...own } = node
   // The placement's own children were already its own; only the inherited ones are new to this id space.
   const inherited = resolved.children.slice(0, resolved.inheritedCount).map((k) => structuredClone(k))
-  reidForest(inherited, deps)
+  const repoint = reidForest(inherited, deps)
+  // The placement's own components can name the children just re-minted too — a sequence on a prefab's root
+  // always does, since its steps target the root's children — so they follow the same map.
+  const components = structuredClone(resolved.components) as ComponentData[]
+  for (const c of components) repoint(c)
   return {
     ...own,
     ...(resolved.name === undefined ? {} : { name: resolved.name }),
-    components: structuredClone(resolved.components) as ComponentData[],
+    components,
     children: [...inherited, ...resolved.children.slice(resolved.inheritedCount)],
   }
 }
@@ -143,7 +148,7 @@ export const unlinkedNode = (level: Level, node: Node, assetId: string, deps: Un
  * reference is left naming an id that no longer exists anywhere. One map over all of them, then one pass to
  * re-point.
  */
-const reidForest = (roots: readonly Node[], deps: UnlinkDeps): void => {
+const reidForest = (roots: readonly Node[], deps: UnlinkDeps): ((c: ComponentData) => void) => {
   const map = new Map<string, string>()
   const rename = (x: Node): void => {
     const fresh = deps.freshId()
@@ -152,18 +157,22 @@ const reidForest = (roots: readonly Node[], deps: UnlinkDeps): void => {
     for (const kid of x.children ?? []) rename(kid)
   }
   for (const root of roots) rename(root)
-  const retarget = (x: Node): void => {
-    for (const c of x.components) {
-      for (const key of deps.refKeysOf(c.type)) {
-        const was = c.params[key]
-        if (typeof was !== 'string') continue
-        const to = map.get(was)
-        if (to !== undefined) c.params[key] = to
-      }
+  /** One component's references, repointed in place: its `nodeRef` parameters, and a sequence's step targets. */
+  const repoint = (c: ComponentData): void => {
+    for (const key of deps.refKeysOf(c.type)) {
+      const was = c.params[key]
+      if (typeof was !== 'string') continue
+      const to = map.get(was)
+      if (to !== undefined) c.params[key] = to
     }
+    retargetSequenceParams(c, (id) => map.get(id))
+  }
+  const retarget = (x: Node): void => {
+    for (const c of x.components) repoint(c)
     for (const kid of x.children ?? []) retarget(kid)
   }
   for (const root of roots) retarget(root)
+  return repoint
 }
 
 /**

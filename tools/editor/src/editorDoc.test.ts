@@ -1360,10 +1360,10 @@ describe('reparenting is one edit', () => {
 /**
  * Revert and Apply from the placement **root** (ADR 0122).
  *
- * The root holds no override of its own and never will \u2014 its transform is its own, and an override is a
- * difference from the prefab, which only the inherited pieces have. So the root's answer to "has anything
- * changed here" has to be asked of its pieces. Before this, right-clicking the prefab object offered Revert
- * and Apply permanently greyed out, whatever you had edited inside it.
+ * The root's transform is its own and never an override, so the root's answer to "has anything changed here"
+ * is asked of its pieces \u2014 and of its inherited root components, whose changes the placement records under the
+ * prefab root's id (ADR 0098, read back since ADR 0139; `sequenceDoc.test.ts`). Before this, right-clicking
+ * the prefab object offered Revert and Apply permanently greyed out, whatever you had edited inside it.
  */
 describe('overrides across a whole placement', () => {
   it('finds nothing when the placement matches its prefab', () => {

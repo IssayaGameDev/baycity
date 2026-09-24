@@ -187,5 +187,6 @@ why matters.
 | [0136](adr/0136-an-angle-is-rounded-in-degrees.md) | An angle is rounded in degrees |
 | [0137](adr/0137-motion-is-a-sequence-of-stages.md) | Motion is a sequence of stages |
 | [0138](adr/0138-only-easing-is-borrowed.md) | Only easing is borrowed |
+| [0139](adr/0139-a-placement-records-every-difference-in-a-sequence.md) | A placement records every difference in a sequence |
 
 `Design archive/` holds superseded design material and is not maintained.

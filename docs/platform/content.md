@@ -14,7 +14,8 @@ interface Node {
 }
 interface ComponentData { id: string; type: string; params: Record<string, unknown>; enabled?: boolean }
 interface NodeOverride { transform?; name?; params?: Record<compId, Record<string, unknown>>; added?: ComponentData[]; removed?: compId[]; enabled?: Record<compId, boolean>
-                         nodeEnabled?: boolean; removedNodes?: string[]; addedChildren?: Node[]; childOrder?: string[] }
+                         nodeEnabled?: boolean; removedNodes?: string[]; addedChildren?: Node[]; childOrder?: string[]
+                         sequences?: Record<compId, SequenceOverride> /* sequences.md, ADR 0139 */ }
 interface Transform { position: Vec3; rotation?: Vec3 /* euler rad XYZ */; scale?: Vec3 /* baked into shapes at load */ }
 type ColliderDesc = box{halfExtents} | cylinder{halfHeight,radius} | capsule{halfHeight,radius} | ball{radius} | convex{points}
 interface Keyframe { t: number /* ms */; position?: Vec3; rotation?: Vec3; easing?: 'linear'|'in'|'out'|'inOut'|'step' }
@@ -25,14 +26,14 @@ interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: Su
 - No prefab-in-prefab (ADR 0023). Override keys are not checked against the tree; dangling = inert (ADR 0033), and so is a `prefab` no file resolves (ADR 0091).
 - Keys are **offsets** from `Transform`, per channel; rotation lerps per component (ADR 0050).
 - `environment` absent/partial → renderer defaults; sun is config, not a `Light` (ADR 0048).
-- `unlinkPrefab(level, assetId, deps)` / `unlinkedNode(level, node, assetId, deps)` (`prefabs.ts`, ADR 0097; one placement at a time through `Doc.unlinkNode`, ADR 0111): turn placements of one prefab into plain nodes that keep what they were drawing. `deps` carries `types`, `freshId` and `refKeysOf` — a registry is needed for singleton layering and for `nodeRef`s that must follow the re-id, which is why only the editor can do this. The inherited subtree is cloned and re-idded as one forest.
+- `unlinkPrefab(level, assetId, deps)` / `unlinkedNode(level, node, assetId, deps)` (`prefabs.ts`, ADR 0097; one placement at a time through `Doc.unlinkNode`, ADR 0111): turn placements of one prefab into plain nodes that keep what they were drawing. `deps` carries `types`, `freshId` and `refKeysOf` — a registry is needed for singleton layering and for `nodeRef`s that must follow the re-id, which is why only the editor can do this. The inherited subtree is cloned and re-idded as one forest; `nodeRef`s and sequence step targets follow the map, in that forest **and** on the placement's own components (a root sequence targets the root's children, ADR 0139).
 - `netBounds`: half-extent in metres that peer positions are quantized over on the wire (ADR 0093). Absent → `QUANT_BOUND` (1000 m). Step is `2 × netBounds / 65535`. The editor draws it as a box (ADR 0093); a peer outside it stops being relayed (ADR 0092).
 
 ## Resolution — `packages/content/src/nodes.ts`
 
 | Export | Role |
 |---|---|
-| `COLLIDER, MESH, RENDERER, MATERIAL_OVERRIDE, SPAWN, LIGHT, MOVER, SPINNER` | The eight type constants the loader reads. First six = `ENGINE_COMPONENTS`; `Mover`/`Spinner` are gameplay-owned but loader-evaluated (ADR 0103). |
+| `COLLIDER, MESH, RENDERER, MATERIAL_OVERRIDE, SPAWN, LIGHT, MOVER, SPINNER, SEQUENCE` | The type constants the loader reads. First six = `ENGINE_COMPONENTS`; `Mover`/`Spinner` are gameplay-owned but loader-evaluated (ADR 0103). `SEQUENCE` is declared in `sequenceData.ts` and re-exported here; `patchComponents` applies a placement's `sequences` record to its `stages` (ADR 0139). |
 | `TypeInfo { get(type) → { singleton?, moves? } \| undefined }` | What resolution needs from a registry. |
 | `effectiveNode(level, node, types): Resolved` | `{ id, name, transform, components, children, inheritedCount }`. Placement keeps own `id`/`transform`; `name` falls back to prefab root's. `bakeOverrides` patches the prefab tree (returns the prefab's own object when unchanged); `layerOwn`: own **singleton** replaces inherited same type, repeatable appends. Children = inherited then own. Unknown prefab key → own layer only. |
 | `walkNodes`, `componentsOfType`, `firstOfType`, `numberParam`/`vec3Param`/`stringParam`/`boolParam`, `freeTableKey` | Depth-first walk; untyped readers with fallbacks; table-key dedupe for interning prefabs. |
@@ -86,6 +87,7 @@ type Op = { table?: string } & (
   | internPrefab{key, root} | dropPrefab{key}
   | setOverrideTransform | setOverrideName | setOverrideParams | setOverrideEnabled{enabled|null} | addOverrideComponent | removeOverrideComponent | setOverrideRemoved | setNodeOverride{override|null}
   | setOverrideNodeEnabled | setOverrideNodeRemoved | insertOverrideChild | setOverrideChildOrder
+  | setOverrideSequence{componentId, override|null}
   | setEnvironment{environment|null} | setMode{mode|null} | setNetBounds{netBounds|null}
   | setNodeEnabled{id,enabled} | setOverrideNodeEnabled{owner,node,enabled|null} )
 invertOp(level, op): Op | null    // before apply; null = changes nothing; throws OpError for what apply would refuse
@@ -104,7 +106,8 @@ Tidying (`children: []`, emptied override records) happens here so every copy wr
 **A placement can differ from its prefab in any way a node can** (ADR 0135), and each difference is recorded
 on the **piece** it applies to, which is what makes it work at any depth: values and components (ADR 0098),
 the node switched off (ADR 0099), the piece **removed** (`removedNodes`, ADR 0133), children **added**
-(`addedChildren`, ADR 0130 generalised), and the child **order** (`childOrder`).
+(`addedChildren`, ADR 0130 generalised), the child **order** (`childOrder`), and a sequence's stages and steps
+(`sequences`, keyed by component id — `sequences.md`, ADR 0139).
 
 An added child is an ordinary authored node that lives in an override record. `find`, `idsIn`, `subtreeIds`
 and `contains` all walk `childListsOf`, so every existing op edits one and it takes part in id uniqueness —

@@ -799,6 +799,13 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         mark(section.pane().addBinding(pick, 'ref', { label, options }).on('change', () => write({ [key]: pick.ref === '' ? null : pick.ref })))
         return
       }
+      case 'stages': {
+        // A summary until the stage editor exists (ADR 0137): stages are drawn as boxes, not as a row.
+        const stages = Array.isArray(state[key]) ? (state[key] as readonly { steps?: readonly unknown[] }[]) : []
+        const steps = stages.reduce((n, s) => n + (s.steps?.length ?? 0), 0)
+        section.row(label, `${stages.length} stage${stages.length === 1 ? '' : 's'} · ${steps} step${steps === 1 ? '' : 's'}`)
+        return
+      }
       default: {
         /**
          * Exhaustiveness guard. A parameter kind with no case here renders **nothing** — the field simply is

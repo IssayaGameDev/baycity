@@ -1,4 +1,5 @@
 import type { Vec3 } from '@mp/core'
+import { readStages, SEQUENCE, stagesFor } from './sequenceData'
 import type { ComponentData, Node, Level, NodeOverride, Transform } from './types'
 
 /**
@@ -24,6 +25,8 @@ export const MATERIAL_OVERRIDE = 'MaterialOverride'
 export const MOVER = 'Mover'
 /** Turns about a cardinal axis at a speed (ADR 0103). Singleton — euler angles do not compose by adding. */
 export const SPINNER = 'Spinner'
+/** Stages of steps (ADR 0137); declared in `sequenceData.ts`, which this module imports. */
+export { SEQUENCE }
 /** Where players enter. */
 export const SPAWN = 'Spawn'
 /** A light. Realized by the renderer, but the loader has to surface it, so the engine knows the name. */
@@ -130,8 +133,15 @@ const patchComponents = (components: readonly ComponentData[], o: NodeOverride |
     if (removed.has(c.id)) continue
     const patch = o.params?.[c.id]
     const enabled = o.enabled?.[c.id]
-    if (patch === undefined && enabled === undefined) out.push(c)
-    else out.push({ ...c, ...(patch !== undefined ? { params: { ...c.params, ...patch } } : {}), ...(enabled !== undefined ? { enabled } : {}) })
+    const sequence = c.type === SEQUENCE ? o.sequences?.[c.id] : undefined
+    if (patch === undefined && enabled === undefined && sequence === undefined) {
+      out.push(c)
+      continue
+    }
+    const params = patch === undefined ? c.params : { ...c.params, ...patch }
+    // After the params patch, so the prefab's stages are what the placement's differences apply to (ADR 0139).
+    const withStages = sequence === undefined ? params : { ...params, stages: stagesFor(readStages(params.stages), sequence) }
+    out.push({ ...c, ...(withStages !== c.params ? { params: withStages } : {}), ...(enabled !== undefined ? { enabled } : {}) })
   }
   return [...out, ...(o.added ?? [])]
 }

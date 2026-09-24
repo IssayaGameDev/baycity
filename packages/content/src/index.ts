@@ -16,6 +16,7 @@ export {
   MESH,
   MOVER,
   RENDERER,
+  SEQUENCE,
   SPINNER,
   SPAWN,
   bakeOverrides,
@@ -37,6 +38,19 @@ export { applyOp, applyBatch, invertOp, touchedRefs, refKey, isInherited, OpErro
 export type { Op, OpBody, OpKind, NodeRef, OwnRef, InheritedRef } from './ops'
 export { instantiateLevel } from './loader'
 export { EASES, SELF, TOP_FRAME, UNMOVED, combineSequences, compileSequence, easeAt, sampleSequence, sequenceTime } from './sequence'
+export {
+  diffStages,
+  readStages,
+  retargetSequenceOverride,
+  retargetSequenceParams,
+  retargetStages,
+  sequenceOf,
+  sequenceOverrideProblem,
+  stagesFor,
+  stagesProblem,
+  stepProblem,
+} from './sequenceData'
+export type { SequenceOverride, StepPatch } from './sequenceData'
 export type {
   CompiledSequence,
   Ease,

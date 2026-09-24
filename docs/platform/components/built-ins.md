@@ -16,10 +16,11 @@ The definitions this package ships. Declaring and running one: [api.md](api.md).
 | | `Bumper` | `power: number` (26, 1–60) | `onContact → character.launch(power)` (ADR 0032) |
 | | `Mover` (ADR 0103) | `move: vec3` **world** metres from rest, `speed: number` m/s averaged over a leg, `smooth: bool`, `offset: number` cycles, `space: enum(world\|local)` (ADR 0106) | no hook; loader-evaluated. **Repeatable** — offsets add, so two make a circle |
 | | `Spinner` (ADR 0103) | `axis: enum` (±X ±Y ±Z), `speed: number` °/s, `offset: number` turns | no hook; loader-evaluated. Singleton, and cardinal axes only: the offset is euler radians |
+| | `Sequence` (ADR 0137) | `name`, `clock: enum(shared\|local)`, `axes: enum(object\|level)`, `loop: enum(restart\|yoyo)`, `times: number` (0 = forever), `offset: number` cycles, `stages: stages` | no hook; **repeatable**. Exported from `gameplay.ts` but **not in `GAMEPLAY_COMPONENTS`** — nothing offers or registers it until the Inspector can edit its stages. Nothing evaluates it yet (`sequences.md`) |
 | | `Boss` (ADR 0095) | `zone: nodeRef`, `speed: number` (8, 0.5–60 m/s), `turn: number` (180, 15–720 °/s) | `moves`; chases the living player furthest through its zone. Assembling one has rules — [boss.md](boss.md) |
 | `PLAYER_COMPONENTS` | `Death` | `ragdoll: bool`, `assembleStagger`, `assembleFall`, `assembleHeight` | `attachesTo: 'player'`; data read by the client (ADR 0059) |
 
-All gameplay/player built-ins are `singleton` except `Mover`.
+All gameplay/player built-ins are `singleton` except `Mover` and `Sequence`.
 
 ## Motion (ADR 0103)
 

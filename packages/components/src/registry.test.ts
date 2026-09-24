@@ -3,7 +3,7 @@ import { createRegistry } from './registry'
 import { defineComponent } from './define'
 import { ComponentError } from './params'
 import { DEFAULT_REGISTRY } from './defaults'
-import { Bumper } from './gameplay'
+import { Bumper, Sequence } from './gameplay'
 import { Collider, Mesh, Renderer } from './engine'
 
 const Fake = defineComponent({ type: 'Fake', params: { n: { kind: 'number', default: 1 } } })
@@ -131,5 +131,25 @@ describe('assetParamIds (ADR 0082)', async () => {
   it('filters by kind', () => {
     expect(assetParamIds(nodes, reg, 'material').sort()).toEqual(['m1', 'm2'])
     expect(assetParamIds(nodes, reg, 'model')).toEqual(['mod1'])
+  })
+})
+
+/** A sequence's stages are checked whole at load (ADR 0137), where a broken one would otherwise reach the frame tree. */
+describe('the Sequence component', () => {
+  const reg = createRegistry([Sequence])
+  const move = { id: 'm', kind: 'move', to: { x: 0, y: 1, z: 0 }, timing: { by: 'speed', speed: 2 }, ease: 'in-out-sine' }
+
+  it('starts with no stages and the shared clock', () => {
+    expect(reg.defaults('Sequence')).toEqual({ name: '', clock: 'shared', axes: 'object', loop: 'restart', times: 0, offset: 0, stages: [] })
+  })
+
+  it('accepts stages that check out', () => {
+    expect(() => reg.checkParams('Sequence', { stages: [{ id: 's', steps: [move] }] }, 'nodes[0].components[1]')).not.toThrow()
+  })
+
+  it('refuses a broken step, saying where', () => {
+    expect(() => reg.checkParams('Sequence', { stages: [{ id: 's', steps: [{ ...move, ease: 'wobble' }] }] }, 'nodes[0].components[1]')).toThrow(
+      /nodes\[0\]\.components\[1\]\.stages\[0\]\.steps\[0\]\.ease/,
+    )
   })
 })

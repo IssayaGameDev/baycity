@@ -1,3 +1,4 @@
+import { sequenceOverrideProblem, type SequenceOverride } from './sequenceData'
 import type { ComponentData, EnvironmentConfig, Level, ModeRef, Node, NodeOverride, Transform } from './types'
 import { checkComponents, checkOverrides, checkTransform, LevelError, validateConfig, validateNodeTree } from './validate'
 
@@ -79,6 +80,12 @@ export type OpBody =
   | { kind: 'insertOverrideChild'; owner: string; node: string; index: number; child: Node }
   /** The order of a piece's children in this placement (ADR 0135). `order` null goes back to the prefab's. */
   | { kind: 'setOverrideChildOrder'; owner: string; node: string; order: string[] | null }
+  /**
+   * How this placement's copy of an inherited `Sequence` differs from the prefab's (ADR 0139), whole: the
+   * editor diffs what a person is looking at against the prefab (`diffStages`), so every edit to it — a value,
+   * a step added, a stage moved — is this one op. `null` goes back to the prefab's sequence.
+   */
+  | { kind: 'setOverrideSequence'; owner: string; node: string; componentId: string; override: SequenceOverride | null }
   | { kind: 'addOverrideComponent'; owner: string; node: string; component: ComponentData }
   | { kind: 'removeOverrideComponent'; owner: string; node: string; componentId: string }
   | { kind: 'setOverrideRemoved'; owner: string; node: string; componentId: string; removed: boolean }
@@ -211,7 +218,7 @@ const tidyOverride = (owner: Node, node: string): void => {
   if (map === undefined) return
   const over = map[node]
   if (over !== undefined) {
-    for (const k of ['params', 'enabled'] as const) {
+    for (const k of ['params', 'enabled', 'sequences'] as const) {
       const sub = over[k]
       if (sub !== undefined && Object.keys(sub).length === 0) delete over[k]
     }
@@ -432,6 +439,22 @@ const invert = (level: Level, op: Op): Op | null => {
       const prior = overrideRecord(owner, op.node, false)?.childOrder
       const same_ = prior === undefined ? op.order === null : op.order !== null && prior.join() === op.order.join()
       return same_ ? null : { kind: 'setOverrideChildOrder', owner: op.owner, node: op.node, order: prior === undefined ? null : [...prior] }
+    }
+    case 'setOverrideSequence': {
+      const owner = ownerOf(level, op.owner)
+      if (op.override !== null) {
+        const bad = sequenceOverrideProblem(op.override, 'override')
+        if (bad !== null) throw new OpError(bad)
+      }
+      // An added component is this placement's own and is edited as one (`setOverrideParams`); a record here
+      // would never be read, since only inherited components are patched.
+      if (overrideRecord(owner, op.node, false)?.added?.some((c) => c.id === op.componentId) === true) {
+        throw new OpError(`component '${op.componentId}' was added on '${op.owner}/${op.node}': edit its params instead`)
+      }
+      const prior = overrideRecord(owner, op.node, false)?.sequences?.[op.componentId] ?? null
+      return same(prior, op.override)
+        ? null
+        : { kind: 'setOverrideSequence', owner: op.owner, node: op.node, componentId: op.componentId, override: prior === null ? null : clone(prior) }
     }
     case 'addOverrideComponent': {
       const owner = ownerOf(level, op.owner)
@@ -672,6 +695,15 @@ export const applyOp = (level: Level, op: Op): void => {
         if (op.enabled === null) delete enabled[op.componentId]
         else enabled[op.componentId] = op.enabled
       }
+      tidyOverride(owner, op.node)
+      return
+    }
+    case 'setOverrideSequence': {
+      const owner = ownerOf(level, op.owner)
+      const over = overrideRecord(owner, op.node, true)!
+      const map = (over.sequences ??= {})
+      if (op.override === null) delete map[op.componentId]
+      else map[op.componentId] = clone(op.override)
       tidyOverride(owner, op.node)
       return
     }

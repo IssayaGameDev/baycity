@@ -4,8 +4,10 @@ An object's motion as **stages of steps**, a pure function of time (ADR 0137). T
 formulas are `d3-ease` (ADR 0138). Headless, in `@mp/content`, because the loader and the editor's preview are
 two readers of one rule.
 
-**Status: the engine only.** Nothing reads it yet: no component stores a sequence, and the loader and the
-editor still move things with `Mover`/`Spinner` (`content.md`).
+**Status: the engine and the data.** The `Sequence` component exists, is checked on load and records a
+prefab placement's differences; nothing evaluates it yet, and nothing offers it — it is not in
+`GAMEPLAY_COMPONENTS`, so no registry has it. The loader and the editor still move things with
+`Mover`/`Spinner` (`content.md`).
 
 ## Data
 
@@ -22,6 +24,40 @@ Step     = { id; target? /* a child's id; absent = the object */ } & (
 Timing   = { by: 'seconds'; seconds } | { by: 'speed'; speed } | { by: 'stage'; speed? /* turn: spin at this rate */ }
 EASES    // 31: 'linear', then in-/out-/in-out- × sine quad cubic quart quint expo circ back elastic bounce
 ```
+
+## Stored — `sequenceData.ts`
+
+A `Sequence` component (`SEQUENCE`, repeatable) carries the settings as ordinary parameters and `stages` as the
+`stages` parameter kind (`components/api.md`).
+
+```ts
+stagesProblem(v, at?): string | null     // whole, with a JSON path; ids unique across stages and steps
+stepProblem(v, at): string | null
+readStages(v): readonly Stage[]           // [] if they do not check out
+sequenceOf(c: ComponentData): Sequence    // defensive, like every loader reader
+```
+
+**A placement's differences** (ADR 0139), `NodeOverride.sequences[componentId]`:
+
+```ts
+SequenceOverride { steps?: Record<stepId, StepPatch>; removedSteps?; removedStages?; addedSteps?: Step[];
+                   addedStages?: string[]; layout?: { stage; steps: string[] }[] }
+stagesFor(prefab, record): readonly Stage[]      // what the placement shows
+diffStages(prefab, shown): SequenceOverride | undefined   // its inverse; undefined when they agree
+```
+
+| | |
+| --- | --- |
+| a patch | the fields that differ; `target: ''` = the object itself; a different `kind` = the whole step; one that would make the step invalid is ignored |
+| `layout` | only when the rest would order things differently. A preference: gone ids skipped, unmentioned ones at the end of their own stage (inherited) or of the last stage (added) |
+| a removed stage | takes its steps, unless the layout moved them elsewhere |
+| baking | `patchComponents` (`nodes.ts`), after the params patch, on `Sequence` components only |
+| op | `setOverrideSequence{owner, node, componentId, override \| null}` — the whole record; refused for a component the placement added, which is edited as one |
+
+`stagesFor(p, diffStages(p, s))` is `s`, asserted over a thousand random edits in `sequenceData.test.ts`.
+
+**Step targets are node references.** `retargetStages`, `retargetSequenceParams`, `retargetSequenceOverride`
+repoint them when a subtree's ids are re-minted; `unlinkedNode` and the editor's `reidSubtree` both do.
 
 ## API
 
