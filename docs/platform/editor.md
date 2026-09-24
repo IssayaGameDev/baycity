@@ -460,7 +460,7 @@ ADR 0106 was about.
 ## Play — `src/play.ts`
 
 `createPlay(host)` → `Play { active, start, stop, frame }` (ADR 0121). It owns `char`, `controller`, `playLoop`,
-`playView`, `playLights`, `playComponents`, `gameFrame`, `ownPos`, `lastSimTickAt` and the `active` flag; the
+`playView`, `playLights`, `playComponents`, `gameFrame`, `ownPos` and the `active` flag; the
 twenty-three things it needs from the editor arrive as `PlayHost`, all getters. `main.ts` holds only that host
 literal and calls `play.frame(dt)` from the render loop — `true` when a session took the frame, so the edit
 clock runs only when it did not.
@@ -483,7 +483,7 @@ The game's own code, not a copy (ADR 0052):
 | Components | `createComponentRuntime(loaded, host.registry(), { character, effects: rules.effects, … })` incl. `player` components and `playerDefs(host)` (ADR 0059/0061) |
 | Movement | `playComponents.locomote(...)` — no game / no locomotion component → no movement |
 | Actions | `heldActions()` from the game's `actions` |
-| Loop | `createLocalController` + `startFixedLoop`; tick: `fixedUpdate` → `loaded.update` → `world.step` → `locomote` → `world.step` (ADR 0058) |
+| Loop | `createLocalController` + `startFixedLoop`; tick: `fixedUpdate` → `loaded.update` → `world.step` → `locomote` → `world.step` (ADR 0058). Each `frame` pumps the loop and draws at `playLoop.alpha()` (ADR 0140) |
 | Contacts | `contact([...collisions, ...overlaps])` (ADR 0054) |
 | Death | `rules.takeDeath()` → `setPosition(rules.respawnAt())`, velocities zeroed; no ragdoll, no persistence |
 | Teleport | `rules.takeTeleport?.()` non-null → same reposition (ADR 0073) |

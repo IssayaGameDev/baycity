@@ -1,6 +1,5 @@
 import { createLocalController, type LocalController, type LocalWorld } from '@mp/client'
 import {
-  clamp,
   createSimClock,
   startFixedLoop,
   TICK_DT,
@@ -463,7 +462,6 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
    * the tick, the base-frame maths, the components, the rules.
    */
   let loaded: LoadedLevel | null = null
-  let lastSimTickAt = 0 // wall-clock of the last fixed tick, for render-interpolating clock-driven pieces
   let requestRespawn: (() => void) | null = null // set once the local sim exists; used by the pause menu's Restart
   let requestDeath: (() => void) | null = null // set once the local sim exists; the death path, for the ragdoll
   /**
@@ -739,7 +737,6 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
           world.step(half) // (B) character resolves against the moved platforms
         }
         prevTickMs = nowMs
-        lastSimTickAt = performance.now()
       },
       readState: () => new Map<EntityId, Vec3>([[id, char.body.translation()]]),
     }
@@ -889,9 +886,11 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
     const nowMs = performance.now()
     const frameDt = Math.min(0.1, (nowMs - lastFrameAt) / 1000)
     lastFrameAt = nowMs
-    // Clock-driven pieces advance in the fixed sim loop; here we only render-interpolate
-    // their meshes between the last two ticks (same timeline as the player), then sync.
-    const tickAlpha = clamp((performance.now() - lastSimTickAt) / (1000 / TICK_RATE_HZ), 0, 1)
+    // Any tick that is due runs first, then everything is drawn at one fraction of the way into the next,
+    // read off the loop's own schedule (ADR 0140). Interpolating by the time since a tick *ran* put each frame
+    // off by however late the timer fired, times the speed of what was drawn: a rider saw the whole view shake.
+    simLoop?.pump()
+    const tickAlpha = simLoop === null ? 1 : simLoop.alpha()
     level?.render(tickAlpha)
 
     // Own character: our authoritative local sim, render-smoothed. Peers: interpolated.
@@ -900,7 +899,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
     const myId = net.id()
     if (myId !== null && controller) {
       seen.add(myId)
-      ownPos = controller.renderPositions().get(myId) ?? ownPos
+      ownPos = controller.renderPositions(tickAlpha).get(myId) ?? ownPos
       // Our own inputs are exact — we own the sim — so nothing is derived for us. Dead or assembling is
       // `@mp/tps`'s to picture; we only say which.
       avatars.drawSelf(

@@ -188,5 +188,6 @@ why matters.
 | [0137](adr/0137-motion-is-a-sequence-of-stages.md) | Motion is a sequence of stages |
 | [0138](adr/0138-only-easing-is-borrowed.md) | Only easing is borrowed |
 | [0139](adr/0139-a-placement-records-every-difference-in-a-sequence.md) | A placement records every difference in a sequence |
+| [0140](adr/0140-a-frame-is-drawn-on-the-loops-own-schedule.md) | A frame is drawn on the loop's own schedule |
 
 `Design archive/` holds superseded design material and is not maintained.

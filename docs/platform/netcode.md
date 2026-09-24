@@ -112,7 +112,7 @@ Synchronous, join in flight; `id()` is `null` until `WELCOME`. `PING_INTERVAL_MS
 
 ### Local body and sim clock
 
-- `createLocalController({ world: LocalWorld, tickRateHz })` — `step(cmd)`, `state()`, `renderPositions()` (lerp of the last two ticks). Run by `@mp/tps` inside `startFixedLoop({ tickRateHz: TICK_RATE_HZ })`; each tick `net.send` with `flags`, base-relative `position`/`yaw`, `speed = hypot(vx, vz)`.
+- `createLocalController({ world: LocalWorld, tickRateHz })` — `step(cmd)`, `state()`, `renderPositions(alpha?)` (lerp of the last two ticks, by the loop's `alpha()` when given — ADR 0140). Run by `@mp/tps` inside `startFixedLoop({ tickRateHz: TICK_RATE_HZ })`; each tick `net.send` with `flags`, base-relative `position`/`yaw`, `speed = hypot(vx, vz)`.
 - `createSimClock({ tickMs: TICK_DT * 1000, reference: net.serverNow })`: `tick()` advances exactly `tickMs`, slews ≤ `maxSlewMsPerTick` (default 5 % of `tickMs`), snaps when drift > `resyncThresholdMs` (500). Clock-driven pieces are posed from `simClock.tick()`, never `serverNow()` directly.
 
 ## Uniform vs universal (ADR 0065)

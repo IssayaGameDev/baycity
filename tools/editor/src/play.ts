@@ -92,8 +92,6 @@ export const createPlay = (host: PlayHost): Play => {
   /** The frame showing the game while a level is being play-tested; `null` when playing in place. */
   let gameFrame: HTMLIFrameElement | null = null
   let ownPos: Vec3 = { x: 0, y: 1, z: 0 }
-  /** When the last fixed tick landed, so the render frame can interpolate between the last two. */
-  let lastSimTickAt = 0
 
   const keys = new Set<string>()
   window.addEventListener('keydown', (e) => {
@@ -285,7 +283,6 @@ export const createPlay = (host: PlayHost): Play => {
          */
         playComponents?.locomote(playTick, nowMs, TICK_DT, cmd)
         world.step(TICK_DT) // (B) character resolves against the moved platforms
-        lastSimTickAt = performance.now()
       },
       readState: () => new Map<EntityId, Vec3>([[PLAYER_ID, char!.body.translation()]]),
     }
@@ -407,13 +404,14 @@ export const createPlay = (host: PlayHost): Play => {
     frame: (dt) => {
       const loaded = host.loaded()
       if (!active || controller === null || loaded === null) return false
-      // Interpolate clock-driven pieces + the character between the last two sim ticks (same
-      // timeline as the game), then place the player camera (mouselook orbit) around the character.
-      const alpha = Math.min(1, Math.max(0, (performance.now() - lastSimTickAt) / (1000 / TICK_RATE_HZ)))
+      // Due ticks first, then clock-driven pieces and the character drawn at one fraction of the way into the
+      // next tick, off the loop's own schedule (ADR 0140) — the game's timeline. Then the camera.
+      playLoop?.pump()
+      const alpha = playLoop === null ? 1 : playLoop.alpha()
       loaded.render(alpha)
       playView?.sync()
       playLights?.sync()
-      ownPos = controller.renderPositions().get(PLAYER_ID) ?? ownPos
+      ownPos = controller.renderPositions(alpha).get(PLAYER_ID) ?? ownPos
       charMesh.position.set(ownPos.x, ownPos.y, ownPos.z)
       // The camera places itself around the capsule's centre and reports whether we are inside our own rig;
       // `setOccluders` is what puts the hole in whatever is in the way.

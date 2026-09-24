@@ -40,4 +40,12 @@ describe('createLocalController', () => {
     t = tick * 2 // past the next tick — clamps to curr, no extrapolation
     expect(c.renderPositions().get(ID)!.x).toBe(1)
   })
+
+  /** ADR 0140: the frame's fraction comes from the loop's schedule, so every drawn thing shares one timeline. */
+  it('interpolates by the fraction it is given, whatever the clock says', () => {
+    const t = 0
+    const c = createLocalController({ world: makeWorld(), tickRateHz: 30, now: () => t })
+    c.step(EAST)
+    expect(c.renderPositions(0.25).get(ID)!.x).toBeCloseTo(0.25, 9)
+  })
 })

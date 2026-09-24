@@ -32,8 +32,13 @@ export interface LocalController {
   step: (cmd: InputCommand) => void
   /** Authoritative (latest-tick) positions — what to send to the server. */
   state: () => Map<EntityId, Vec3>
-  /** Positions interpolated between the last two ticks, smooth at display rate. */
-  renderPositions: () => Map<EntityId, Vec3>
+  /**
+   * Positions interpolated between the last two ticks, smooth at display rate.
+   *
+   * Pass the loop's own `alpha()` (ADR 0140), so these are drawn on the same timeline as everything else the
+   * frame draws. Without it the fraction is the time since the last tick *ran*, which a late timer skews.
+   */
+  renderPositions: (alpha?: number) => Map<EntityId, Vec3>
 }
 
 // Per entity: the last two tick positions, lerped by the fraction of the way to
@@ -70,8 +75,8 @@ export const createLocalController = (opts: LocalControllerOptions): LocalContro
       sync()
     },
     state: () => opts.world.readState(),
-    renderPositions: () => {
-      const frac = clamp((now() - lastTickAt) / tickIntervalMs, 0, 1)
+    renderPositions: (alpha) => {
+      const frac = alpha ?? clamp((now() - lastTickAt) / tickIntervalMs, 0, 1)
       const out = new Map<EntityId, Vec3>()
       for (const [id, track] of tracks) out.set(id, lerpVec3(track.prev, track.curr, frac))
       return out

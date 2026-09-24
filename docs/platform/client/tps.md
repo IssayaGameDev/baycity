@@ -54,9 +54,10 @@ interface Peer { id: EntityId; position: Vec3; yaw: number; states: ReadonlySet<
 
 ### Frame order (`stage.start` callback)
 
-1. `frameDt = min(0.1, elapsed)`; `tickAlpha` from `lastSimTickAt`.
+1. `frameDt = min(0.1, elapsed)`; `simLoop.pump()` runs any due tick, then `tickAlpha = simLoop.alpha()` — the
+   loop's own schedule, not the time since a tick ran (ADR 0140).
 2. `level.render(tickAlpha)` — level meshes + lights interpolated.
-3. Self: `avatars.drawSelf(...)` from `controller.renderPositions()`.
+3. Self: `avatars.drawSelf(...)` from `controller.renderPositions(tickAlpha)`, the same instant.
 4. Peers: for each `net.sample()` → `worldFromBase(loaded, e, true)` → `peerFrame.push` → `avatars.drawPeer(...)`.
 5. `avatars.prune(seen)`.
 6. Touch (if `touch.active()`): `setEnabled(!paused)`, `drainLook()` → `orbit.lookTouch`/`zoomPinch`; tap while
