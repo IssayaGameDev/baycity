@@ -4,6 +4,8 @@ import * as THREE from 'three'
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 
+import type { RoundedBoxInfo } from './shapeEdges'
+
 /**
  * Marker colours and the no-material surface. Both are renderer chrome, not content.
  *
@@ -90,7 +92,12 @@ const shapeGeometry = (c: ColliderDesc, bevel: boolean): THREE.BufferGeometry =>
       const h = c.halfExtents.y * 2
       const d = c.halfExtents.z * 2
       const r = bevel ? bevelFor(w, h, d) : 0
-      return r > 0 ? new RoundedBoxGeometry(w, h, d, BEVEL_SEGMENTS, r) : new THREE.BoxGeometry(w, h, d)
+      if (r <= 0) return new THREE.BoxGeometry(w, h, d)
+      const rounded = new RoundedBoxGeometry(w, h, d, BEVEL_SEGMENTS, r)
+      // Three keeps neither the size nor the radius on it, and its edges are drawn from them (`shapeEdges.ts`).
+      const info: RoundedBoxInfo = { width: w, height: h, depth: d, radius: Math.min(r, w / 2, h / 2, d / 2) }
+      rounded.userData.roundedBox = info
+      return rounded
     }
     case 'capsule':
       return new THREE.CapsuleGeometry(c.radius, c.halfHeight * 2, 8, 20)

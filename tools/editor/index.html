@@ -902,191 +902,623 @@
       }
 
       /*
-        A sequence's stages (ADR 0143): a box per stage, a line per step, and nothing else visible until it is
-        wanted — the + and × show while the pointer is over their box or row, so a long sequence stays compact.
+        A sequence (ADR 0143, ADR 0147): cards on a rail, one line per step with its icon tinted by kind, the
+        fields under a step while it is open. The + and × show while the pointer is over their card or row, so
+        a long sequence stays calm. One look, ours, for every control in it.
       */
+      .ic {
+        flex: 0 0 auto;
+        width: 14px;
+        height: 14px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .ic-s {
+        width: 12px;
+        height: 12px;
+      }
+      .tint-move {
+        --tint: #5b9dff;
+      }
+      .tint-turn {
+        --tint: #a78bfa;
+      }
+      .tint-scale {
+        --tint: #4ade80;
+      }
+      .tint-fade {
+        --tint: #aab2bf;
+      }
+      .tint-collider {
+        --tint: #f5b454;
+      }
+      .tint-enabled {
+        --tint: #2dd4bf;
+      }
+      .tint-wait {
+        --tint: #8b929d;
+      }
+      .seq-chip {
+        flex: 0 0 auto;
+        display: inline-grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 5px;
+        color: var(--tint);
+        background: color-mix(in srgb, var(--tint) 16%, transparent);
+      }
+      .seq-chip .ic {
+        width: 13px;
+        height: 13px;
+      }
       .seq {
         display: flex;
         flex-direction: column;
-        margin-top: 2px;
+        padding: 2px 0;
       }
-      .seq-gap {
+      .seq-bar {
+        display: flex;
+        gap: 2px;
         height: 5px;
-        margin: 0 2px;
-        border-radius: 2px;
+        margin: 3px 2px 6px;
       }
-      .seq-gap.drop-gap {
-        height: 9px;
+      .seq-bar-s {
+        flex: 1 1 0;
+        min-width: 3px;
+        border-radius: 3px;
+        background: #3b4350;
+        cursor: pointer;
+        transition: background 0.12s;
+      }
+      .seq-bar-s.instant {
+        flex: 0 0 3px;
+        background: #5a6472;
+      }
+      .seq-bar-s:hover {
         background: var(--accent);
       }
-      .seq-stage {
-        border: 1px solid var(--line);
-        border-radius: 4px;
-        background: #191c21;
-        padding: 1px 2px 2px;
+      .seq-card {
+        position: relative;
+        border: 1px solid #2d3139;
+        border-radius: 7px;
+        background: #1a1d22;
       }
-      .seq-stage.drop-into {
-        outline: 2px solid var(--accent);
-        outline-offset: -1px;
+      .seq-card.over {
+        box-shadow: inset 2px 0 0 var(--link);
       }
-      .seq-stage.dragging,
-      .seq-step-w.dragging {
-        opacity: 0.4;
-      }
-      .seq-stage-h {
+      .seq-card-h {
         display: flex;
         align-items: center;
-        gap: 4px;
-        height: 14px;
-        font-size: 10px;
-        color: var(--dim);
-      }
-      .seq-len {
-        margin-left: auto;
-        padding-right: 2px;
-      }
-      .seq-grip {
-        flex: 0 0 auto;
-        width: 10px;
-        color: #5b626d;
-        font-size: 10px;
-        letter-spacing: -2px;
+        gap: 6px;
+        height: 24px;
+        padding: 0 5px 0 7px;
         cursor: grab;
         user-select: none;
       }
-      .seq-grip:hover {
-        color: var(--text);
+      .seq-num {
+        display: inline-grid;
+        place-items: center;
+        min-width: 16px;
+        height: 16px;
+        padding: 0 4px;
+        border-radius: 8px;
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--dim);
+        background: #262a31;
       }
-      .seq-step {
+      .seq-card-len {
+        margin-left: auto;
+        font-size: 11px;
+        color: var(--dim);
+        font-variant-numeric: tabular-nums;
+      }
+      .seq-card-add,
+      .seq-x,
+      .seq-link-add {
+        display: inline-grid;
+        place-items: center;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--dim);
+        cursor: pointer;
+        border-radius: 4px;
+      }
+      .seq-card-add {
+        width: 20px;
+        height: 20px;
+        opacity: 0;
+        transition: opacity 0.12s;
+      }
+      .seq-card:hover .seq-card-add,
+      .seq-card-add:focus-visible {
+        opacity: 1;
+      }
+      .seq-card-add:hover {
+        color: var(--text);
+        background: #2c313a;
+      }
+      .seq-steps {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        padding: 0 4px 4px;
+      }
+      .seq-row {
         display: flex;
         align-items: center;
-        gap: 4px;
+        gap: 8px;
+        min-height: 28px;
+        padding: 3px 4px;
+        border-radius: 5px;
+        cursor: pointer;
+        user-select: none;
+      }
+      .seq-row:hover,
+      .seq-row.open {
+        background: #22262d;
+      }
+      .seq-row.open {
+        border-radius: 5px 5px 0 0;
+      }
+      .seq-row.over {
+        box-shadow: inset 2px 0 0 var(--link);
+      }
+      .seq-name {
+        flex: 0 0 auto;
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .seq-to {
+        flex: 0 1 auto;
         min-width: 0;
-        padding: 1px 2px;
-        border-radius: 2px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 11px;
+        color: var(--link);
       }
-      .seq-step:hover {
-        background: var(--hover);
-      }
-      .seq-step.open {
-        background: #262b33;
-      }
-      .seq-step.drop-before {
-        box-shadow: inset 0 2px 0 0 var(--accent);
-      }
-      .seq-step.drop-after {
-        box-shadow: inset 0 -2px 0 0 var(--accent);
-      }
-      .seq-line {
+      .seq-detail {
         flex: 1 1 auto;
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
-        white-space: pre;
-        font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+        white-space: nowrap;
+        font-size: 11.5px;
+        color: var(--dim);
+        font-variant-numeric: tabular-nums;
+      }
+      .seq-fill {
+        flex: 1 1 auto;
+      }
+      .seq-dur {
+        flex: 0 0 auto;
+        min-width: 34px;
+        text-align: right;
         font-size: 11px;
-        cursor: pointer;
+        color: #a3aab5;
+        font-variant-numeric: tabular-nums;
+      }
+      .seq-ec-row {
+        flex: 0 0 16px;
+        display: inline-grid;
+        place-items: center;
+        height: 12px;
+        color: #7d8693;
+      }
+      .ease-c {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.4;
+        stroke-linecap: round;
+        stroke-linejoin: round;
       }
       .seq-x {
-        flex: 0 0 auto;
-        visibility: hidden;
-        width: 14px;
-        height: 14px;
-        padding: 0;
-        line-height: 12px;
-        color: var(--dim);
-        background: none;
-        border: 0;
-        border-radius: 2px;
-        cursor: pointer;
+        width: 18px;
+        height: 18px;
+        opacity: 0;
       }
-      .seq-step:hover .seq-x {
-        visibility: visible;
+      .seq-row:hover .seq-x {
+        opacity: 1;
       }
       .seq-x:hover {
-        color: var(--text);
-        background: #5a2a2a;
+        color: #ff8a8a;
+        background: #3a2226;
       }
-      .seq-add {
-        display: block;
-        visibility: hidden;
-        width: 100%;
+      .seq-warn {
+        display: inline-grid;
+        color: #e8b04a;
+        cursor: help;
+      }
+      .seq-warn .ic {
+        width: 13px;
+        height: 13px;
+      }
+      .seq-link {
+        position: relative;
         height: 14px;
-        margin-top: 1px;
-        padding: 0;
-        line-height: 12px;
-        color: var(--dim);
-        background: none;
-        border: 1px dashed var(--line);
-        border-radius: 3px;
-        cursor: pointer;
       }
-      .seq-stage:hover .seq-add {
-        visibility: visible;
+      .seq-link::before {
+        content: '';
+        position: absolute;
+        left: 16px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        border-radius: 1px;
+        background: #2d3139;
       }
-      .seq-add:hover,
-      .seq-add-stage:hover {
+      .seq-bar + .seq-link::before,
+      .seq-link[data-end]::before {
+        display: none;
+      }
+      .seq-link-add {
+        position: absolute;
+        left: 9px;
+        top: -1px;
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        border: 1px solid #2d3139;
+        background: #1a1d22;
+        opacity: 0;
+        transition: opacity 0.12s;
+      }
+      .seq-link-add .ic {
+        width: 10px;
+        height: 10px;
+      }
+      .seq-link:hover .seq-link-add,
+      .seq-link-add:focus-visible {
+        opacity: 1;
+      }
+      .seq-link-add:hover {
         color: var(--text);
         border-color: var(--accent);
       }
       .seq-add-stage {
-        margin-top: 1px;
-        padding: 2px 0;
-        color: var(--dim);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        height: 28px;
+        border: 1px dashed #353a43;
+        border-radius: 7px;
         background: none;
-        border: 1px dashed var(--line);
-        border-radius: 4px;
+        color: var(--dim);
+        font: inherit;
         cursor: pointer;
       }
+      .seq-add-stage:hover {
+        color: var(--text);
+        border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 8%, transparent);
+      }
       .seq-empty {
-        padding: 4px 2px;
+        padding: 10px 4px;
+        text-align: center;
         color: var(--dim);
-        font-style: italic;
       }
       .seq-fields {
         display: flex;
         flex-direction: column;
-        gap: 2px;
-        margin: 1px 0 3px 14px;
-        padding: 3px 4px;
-        border-left: 1px solid var(--line);
+        gap: 6px;
+        margin-bottom: 2px;
+        padding: 6px 8px 8px 32px;
+        border-radius: 0 0 5px 5px;
+        background: #1f2228;
       }
       .seq-f {
         display: flex;
         align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .seq-f.over {
+        padding-left: 4px;
+        box-shadow: inset 2px 0 0 var(--link);
+      }
+      .seq-fl {
+        flex: 0 0 48px;
+        font-size: 11px;
+        color: var(--dim);
+      }
+      .seq-fc {
+        flex: 1 1 auto;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
         gap: 4px;
         min-width: 0;
       }
-      .seq-f-l {
-        flex: 0 0 52px;
-        color: var(--dim);
-        font-size: 11px;
-      }
-      .seq-n,
-      .seq-s {
+      /* A number you drag sideways to change, or click to type. */
+      .sf {
         flex: 1 1 0;
+        min-width: 44px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 24px;
+        padding: 0 6px;
+        border: 1px solid #2f343c;
+        border-radius: 5px;
+        background: #15171b;
+        cursor: ew-resize;
+        user-select: none;
+      }
+      .sf:hover {
+        border-color: #3d434d;
+      }
+      .sf.editing,
+      .sf.scrubbing {
+        border-color: var(--accent);
+      }
+      .sf.editing {
+        cursor: text;
+      }
+      .sf-l {
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--dim);
+      }
+      .sf-x .sf-l {
+        color: #f16b6b;
+      }
+      .sf-y .sf-l {
+        color: #6fcf7a;
+      }
+      .sf-z .sf-l {
+        color: #6aa8ff;
+      }
+      .sf-v {
+        flex: 1 1 auto;
         width: 0;
         min-width: 0;
-        padding: 2px 4px;
-        border: 1px solid var(--line);
-        border-radius: 3px;
-        background: var(--bg);
+        padding: 0;
+        border: 0;
+        outline: 0;
+        background: none;
         color: var(--text);
         font: inherit;
+        font-size: 11.5px;
+        font-variant-numeric: tabular-nums;
+        pointer-events: none;
+      }
+      .sf.editing .sf-v {
+        pointer-events: auto;
+      }
+      .sf-u {
+        font-size: 10.5px;
+        color: var(--dim);
+      }
+      body.scrubbing,
+      body.scrubbing * {
+        cursor: ew-resize !important;
+      }
+      .seg {
+        display: inline-flex;
+        gap: 2px;
+        padding: 2px;
+        border: 1px solid #2a2e35;
+        border-radius: 6px;
+        background: #15171b;
+      }
+      .seg-b {
+        height: 20px;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 4px;
+        background: none;
+        color: var(--dim);
+        font: inherit;
         font-size: 11px;
+        white-space: nowrap;
+        cursor: pointer;
       }
-      .seq-n[type='number'] {
-        appearance: textfield;
-        -moz-appearance: textfield;
+      .seg-b:hover {
+        color: var(--text);
       }
-      .seq-n[type='number']::-webkit-inner-spin-button,
-      .seq-n[type='number']::-webkit-outer-spin-button {
+      .seg-b.on {
+        color: #fff;
+        background: #2e3440;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+      }
+      .seq-sel,
+      .seq-text {
+        flex: 1 1 auto;
+        min-width: 0;
+        height: 24px;
+        padding: 0 8px;
+        border: 1px solid #2f343c;
+        border-radius: 5px;
+        background: #15171b;
+        color: var(--text);
+        font: inherit;
+        font-size: 11.5px;
+      }
+      .seq-sel {
         appearance: none;
-        margin: 0;
+        padding-right: 24px;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b929d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 10l5 5 5-5'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 6px center;
+        background-size: 12px;
       }
-      .seq-n:focus,
-      .seq-s:focus {
-        outline: 1px solid var(--accent);
+      .seq-sel:focus,
+      .seq-text:focus {
+        outline: 0;
+        border-color: var(--accent);
+      }
+      .seq-ease {
+        flex: 1 1 auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 24px;
+        padding: 0 8px;
+        border: 1px solid #2f343c;
+        border-radius: 5px;
+        background: #15171b;
+        color: var(--text);
+        font: inherit;
+        font-size: 11.5px;
+        cursor: pointer;
+      }
+      .seq-ease:hover {
+        border-color: #3d434d;
+      }
+      .seq-ease .ease-c {
+        color: var(--accent);
+      }
+      .seq-ease-l {
+        flex: 1 1 auto;
+        text-align: left;
+      }
+      /* One popover at a time (`controls.ts`): the palette, the eases, a sequence's settings. */
+      .pop {
+        position: fixed;
+        z-index: 60;
+        padding: 8px;
+        border: 1px solid #363b44;
+        border-radius: 9px;
+        background: #20242a;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+      }
+      .seq-palette {
+        display: grid;
+        grid-template-columns: repeat(3, 76px);
+        gap: 4px;
+      }
+      .seq-tile {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+        padding: 8px 4px 6px;
+        border: 0;
+        border-radius: 6px;
+        background: none;
+        color: var(--text);
+        font: inherit;
+        font-size: 10.5px;
+        cursor: pointer;
+      }
+      .seq-tile:hover {
+        background: #2a2f37;
+      }
+      .seq-tile .seq-chip {
+        width: 26px;
+        height: 26px;
+        border-radius: 7px;
+      }
+      .seq-tile .seq-chip .ic {
+        width: 15px;
+        height: 15px;
+      }
+      .seq-eases {
+        display: grid;
+        grid-template-columns: 50px repeat(3, 44px);
+        gap: 3px;
+        align-items: center;
+      }
+      .seq-ec {
+        display: grid;
+        place-items: center;
+        height: 30px;
+        padding: 0;
+        border: 1px solid transparent;
+        border-radius: 5px;
+        background: #191c21;
+        color: #9aa3b0;
+        cursor: pointer;
+      }
+      .seq-ec:hover {
+        border-color: #3d434d;
+        color: var(--text);
+      }
+      .seq-ec.on {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .seq-ec-linear {
+        grid-column: 1 / -1;
+        display: flex;
+        justify-content: flex-start;
+        gap: 8px;
+        padding: 0 8px;
+      }
+      .seq-ec-l {
+        font-size: 11px;
+        color: var(--text);
+      }
+      .seq-eh {
+        font-size: 10px;
+        color: var(--dim);
+        text-align: center;
+      }
+      .seq-ef {
+        font-size: 10.5px;
+        color: var(--dim);
+      }
+      .seq-settings {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 236px;
+      }
+      /* A sequence's header: clock, loop and axes as icons, lit when not the default, and ⚙. */
+      .seq-tog,
+      .seq-gear {
+        display: inline-grid;
+        place-items: center;
+      }
+      .seq-tog .ic,
+      .seq-gear .ic {
+        width: 13px;
+        height: 13px;
+      }
+      .isec-g + .isec-g {
+        margin-left: 0;
+      }
+      .seq-tog.lit {
+        color: var(--accent);
+      }
+      .seq-tog.over,
+      .seq-gear.over {
+        box-shadow: inset 0 -2px 0 var(--link);
+      }
+      .seq-tog.mixed {
+        opacity: 0.55;
+      }
+      /* Dragging (`sequenceDrag.ts`): the copy under the pointer, and where it would land. */
+      .seq-ghost {
+        position: fixed;
+        left: 0;
+        top: 0;
+        z-index: 70;
+        pointer-events: none;
+        opacity: 0.94;
+        border-radius: 7px;
+        background: #23272e;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+      }
+      .seq-ph {
+        border: 1.5px dashed color-mix(in srgb, var(--accent) 70%, transparent);
+        border-radius: 5px;
+        background: color-mix(in srgb, var(--accent) 8%, transparent);
+      }
+      .seq-ph-stage {
+        border-radius: 7px;
+      }
+      body.seq-dragging,
+      body.seq-dragging * {
+        cursor: grabbing !important;
+        user-select: none !important;
       }
 
       /* A section with overrides gets the same left bar its rows do, so it reads at a glance while scrolling. */
