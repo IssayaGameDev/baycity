@@ -18,6 +18,17 @@ export type SelectMode = 'replace' | 'toggle' | 'range'
 export const modeFor = (e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }): SelectMode =>
   e.shiftKey ? 'range' : e.ctrlKey || e.metaKey ? 'toggle' : 'replace'
 
+/**
+ * Whether a press should leave the selection alone until it turns out to be a click (ADR 0134).
+ *
+ * A plain press on a row already in a multi-selection. Collapsing on the press is what made a drag carry one
+ * row: the selection was down to the grabbed one before `dragstart` read it. The click that follows a press
+ * with no drag collapses it instead, as Unity's does. Primary button only, so a right-click keeps today's
+ * behaviour.
+ */
+export const defersToClick = (selection: readonly number[], index: number, mode: SelectMode, button: number): boolean =>
+  button === 0 && mode === 'replace' && selection.length > 1 && selection.includes(index)
+
 /** The primary — the last clicked — or `null` when nothing is selected. */
 export const primaryOf = (selection: readonly number[]): number | null => selection[selection.length - 1] ?? null
 

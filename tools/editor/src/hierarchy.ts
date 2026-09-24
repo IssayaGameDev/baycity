@@ -1,5 +1,5 @@
 import type { Doc } from './editorDoc'
-import { modeFor, type SelectMode } from './selection'
+import { defersToClick, modeFor, type SelectMode } from './selection'
 
 /**
  * The Hierarchy panel: the document as a tree of selectable, renameable, reorderable, re-parentable rows.
@@ -242,6 +242,8 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
   let dragFrom: number | null = null
   /** Every row the drag carries, ascending (ADR 0134). The whole selection, or just the grabbed row. */
   let dragRows: number[] = []
+  /** The row whose press left a multi-selection alone, to collapse it on the click if no drag came of it. */
+  let pressKept: number | null = null
   let editing: number | null = null
 
   const clearDropMarks = (): void => {
@@ -410,7 +412,18 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
 
       // Selecting and renaming work on every row, pieces included: a piece is an object now (ADR 0033), so it
       // is what the Inspector shows and what the gizmo moves.
-      el.addEventListener('pointerdown', (e) => host.onSelect(row.index, modeFor(e), order))
+      // A plain press on a row of a multi-selection waits for the click, so a drag can still carry the whole
+      // selection (ADR 0134). A drag never produces the click, so the selection survives it.
+      el.addEventListener('pointerdown', (e) => {
+        const mode = modeFor(e)
+        pressKept = defersToClick(host.selection(), row.index, mode, e.button) ? row.index : null
+        if (pressKept === null) host.onSelect(row.index, mode, order)
+      })
+      el.addEventListener('click', () => {
+        if (pressKept !== row.index) return
+        pressKept = null
+        host.onSelect(row.index, 'replace', order)
+      })
       el.addEventListener('dblclick', () => {
         editing = row.index
         render()
@@ -430,6 +443,7 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
           const selected = host.selection()
           dragRows = selected.includes(row.index) ? [...selected].sort((a, b) => a - b) : [row.index]
           dragFrom = row.index
+          pressKept = null
           el.classList.add('dragging')
           // Firefox will not start a drag without payload; the index itself travels in a closure variable
           // because dataTransfer is unreadable during dragover, which is when the target must be known.
