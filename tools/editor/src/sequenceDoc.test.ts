@@ -178,3 +178,35 @@ describe('what the Inspector reads about a placement', () => {
     expect(kinds).toEqual({ rc: true, seq: true, [own]: false })
   })
 })
+
+/** What the viewport draws (ADR 0144): the same aiming the loader follows (ADR 0141). */
+describe('what the viewport reads about a route', () => {
+  const routes = (doc: Doc, i: number): [number, string, string[]][] => doc.routesAt(i).map((r) => [r.holder, r.componentId, r.steps.map((s) => s.id)])
+
+  it('moves a node by its own sequences and by its parent’s aimed at it, and nothing else', () => {
+    const { doc } = placedDoor()
+    const [root, left, right] = [0, named(doc, 'left'), named(doc, 'right')]
+    expect(routes(doc, root), 'the door’s sequence only moves its halves').toEqual([])
+    expect(routes(doc, left)).toEqual([[root, 'seq', ['a']]])
+    expect(routes(doc, right)).toEqual([
+      [right, 'kidseq', ['k']],
+      [root, 'seq', ['b']],
+    ])
+  })
+
+  it('leaves out a sequence that is switched off', () => {
+    const { doc } = placedDoor()
+    const right = named(doc, 'right')
+    doc.setComponentEnabled(right, 'kidseq', false)
+    expect(routes(doc, right).map(([, id]) => id)).toEqual(['seq'])
+  })
+
+  it('finds the node a step aims at: the object itself, a child, or nothing', () => {
+    const { doc } = placedDoor()
+    const root = 0
+    expect(doc.stepTargetOf(root, '')).toBe(root)
+    expect(doc.stepTargetOf(root, 'left')).toBe(named(doc, 'left'))
+    expect(doc.stepTargetOf(root, 'ghost')).toBeNull()
+    expect(doc.stepTargetOf(named(doc, 'left'), 'right'), 'a sibling is not a child').toBeNull()
+  })
+})

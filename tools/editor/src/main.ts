@@ -68,6 +68,7 @@ import { createNodeActions } from './nodeActions'
 import { createGizmoTool } from './gizmoTool'
 import { createHiddenView, keysUnder } from './hiddenView'
 import { createPickTool } from './pickTool'
+import { createPointTool } from './pointTool'
 import { createPrefabActions } from './prefabActions'
 import { createPlay } from './play'
 import { applySelect, clampTo, primaryOf, rootsOf, type SelectMode } from './selection'
@@ -284,7 +285,7 @@ const room = createLiveSession({
   groupAt: (i) => meshes.groupAt(i),
   holderOf: (g) => meshes.holderOf(g),
   groupPose: (g) => tool.groupPose(g),
-  gizmoDragging: () => tool.dragging(),
+  gizmoDragging: () => tool.dragging() || points.dragging(),
   playing: () => play.active(),
   applyPreviewPoses: () => motion.applyPoses(),
   onHidden: (keys) => {
@@ -374,6 +375,7 @@ const tool = createGizmoTool({
   previewMs: () => motion.timeMs(),
   motionOffsetAt: (index, timeMs) => motion.offsetAt(index, timeMs),
   clearFaceHover: () => pick.clearFaceHover(),
+  editingPoint: () => points.editing(),
   edits: () => edits,
   room,
   inspectorSync: () => inspectorSync(),
@@ -382,6 +384,35 @@ const tool = createGizmoTool({
 })
 const edit = tool.edit
 const STEP_LIMITS = tool.stepLimits
+/**
+ * A sequence's move points in the viewport (`pointTool.ts`, ADR 0144): the see-through copy of an open move
+ * step's target, dragged to set its point, and the selected object's route.
+ */
+const points = createPointTool({
+  camera: stage.camera,
+  canvas,
+  controls,
+  scene: stage.scene,
+  doc: () => doc,
+  selection: () => selection,
+  groupAt: (i) => meshes.groupAt(i),
+  holderOf: (g) => meshes.holderOf(g),
+  openPoint: () => inspector.openPoint(),
+  activeCamera: () => view.activeCamera(),
+  playing: () => play.active(),
+  motionPlaying: () => motion.playing(),
+  space: () => edit.space,
+  snapping: () => edit.snap,
+  snapStep: () => edit.steps.translate,
+  edits: () => edits,
+  setDragged: (value) => tool.setDragged(value),
+  reattachGizmo: () => tool.reattach(),
+  inspectorRebuild: () => inspectorRebuild(),
+  afterDrag: () => {
+    rebuildLoaded()
+    room.drainDeferred()
+  },
+})
 
 /** Asset id of the prefab open in prefab mode, or `null` for a level or an unsaved prefab. */
 
@@ -407,6 +438,7 @@ const meshes = createItemMeshes({
     tool.reattach()
     room.rebuildHolds()
     view.refreshBoundsBox()
+    points.refresh()
   },
 })
 const instanceRoot = meshes.root
@@ -633,6 +665,7 @@ const view = createCameraView({
     postfx.setCamera(camera)
     controls.object = camera
     tool.control.camera = camera
+    points.control.camera = camera
   },
   applyEnvironment: (from) => {
     env.applyEnvironment(from)
@@ -1664,6 +1697,7 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
 // --- inspector ---
 const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<HTMLDivElement>('#inspector'), {
   menu: contextMenu,
+  pointsChanged: () => points.refresh(),
   doc: () => doc,
   adoptable,
   adopt: (type) => adopt([type]),
@@ -1971,6 +2005,7 @@ stage.start((dt) => {
     view.update(dt)
     controls.update()
   }
+  points.frame()
 })
 
 /**

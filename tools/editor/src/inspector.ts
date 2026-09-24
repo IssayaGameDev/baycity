@@ -133,6 +133,19 @@ export interface InspectorHost {
    * at once, and so dismissal — Escape, a press elsewhere, a scroll, a resize — is written once.
    */
   menu: ContextMenu
+  /**
+   * The panel was rebuilt, so what the viewport draws for sequences may have changed: which move step is open,
+   * or a point's numbers (ADR 0144).
+   */
+  pointsChanged: () => void
+}
+
+/** A move step open in the panel, whose point the viewport lets you drag (ADR 0144). */
+export interface OpenPoint {
+  /** The node the sequence is on. */
+  readonly node: number
+  readonly componentId: string
+  readonly stepId: string
 }
 
 export interface Inspector {
@@ -142,6 +155,8 @@ export interface Inspector {
   sync: () => void
   /** Redraw just the name + prefab link (e.g. after Save as prefab changed the link). */
   renderHead: () => void
+  /** The move step drawn open that was opened last, or `null` (ADR 0144). */
+  openPoint: () => OpenPoint | null
 }
 
 const r4 = (n: number): number => Math.round(n * 1e4) / 1e4
@@ -855,6 +870,16 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   const sequenceSettingsOpen = new Set<string>()
   /** Which of a sequence's steps are open, by step id — kept across the rebuild every edit causes. */
   const openSteps = new Set<string>()
+  /**
+   * The move steps this build drew open, in a section that is itself open. The viewport edits the one opened
+   * last (ADR 0144): `openSteps` keeps the order they were opened in.
+   */
+  let shownMoves: OpenPoint[] = []
+  const openPoint = (): OpenPoint | null => {
+    let last: OpenPoint | null = null
+    for (const id of openSteps) last = shownMoves.find((m) => m.stepId === id) ?? last
+    return last
+  }
   /** The settings a sequence's ⚙ shows, in the component's own declaration order. */
   const SEQUENCE_SETTINGS = ['name', 'clock', 'axes', 'loop', 'times', 'offset'] as const
 
@@ -914,6 +939,9 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       return
     }
     const data = sequenceOf({ id: view.id, type: view.type, params: view.params })
+    if (!shut.has(view.id))
+      for (const stage of data.stages)
+        for (const step of stage.steps) if (step.kind === 'move' && openSteps.has(step.id)) shownMoves.push({ node: at, componentId: view.id, stepId: step.id })
     const diff = doc.sequenceOverrideOf(at, view.id)
     const marked = new Set([...Object.keys(diff?.steps ?? {}), ...(diff?.addedSteps ?? []).map((s) => s.id), ...(diff?.addedStages ?? [])])
     const afterEdit = (): void => {
@@ -1429,7 +1457,14 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     fxSection.row('', 'bloom only fires on emissive materials')
   }
 
+  /** Every rebuild re-learns which move steps are open, and tells the viewport (ADR 0144). */
   const rebuild = (): void => {
+    shownMoves = []
+    build()
+    host.pointsChanged()
+  }
+
+  const build = (): void => {
     for (const pane of panes) pane.dispose()
     panes = []
     transformPane = null
@@ -1468,5 +1503,5 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     sync()
   }
 
-  return { rebuild, sync, renderHead }
+  return { rebuild, sync, renderHead, openPoint }
 }

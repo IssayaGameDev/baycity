@@ -33,6 +33,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | `menus.ts` | nothing — the right-click menus, declarative; had to follow the action clusters, not precede them | `MenuHost` |
 | `pickTool.ts` | the raycaster, the ground plane, where a press landed, the face highlight, the pull in progress | `PickHost` |
 | `gizmoTool.ts` | `edit` (tool, frame, snapping, one increment per tool), the drag-start poses, the two drag flags | `GizmoHost` |
+| `pointTool.ts` | the open move step, its copy and the copy's own `TransformControls`, the drawn routes, its drag flag (ADR 0144) | `PointToolHost` |
 
 
 | Area | Element | Module |
@@ -648,6 +649,23 @@ A multi-selection shows the shared settings and says to select one object for th
 and the header's badge adds changed, added and removed steps to the parameter count. `ComponentView.inherited`
 is per component — a placement root's components from its prefab are inherited — so the ⋯ offers Revert rather
 than Reset for them.
+
+## Viewport — a sequence's points (ADR 0144)
+
+`Inspector.openPoint()`: the open move step opened last (`openSteps` keeps opening order), in an open section
+of the one selected object; every rebuild calls `InspectorHost.pointsChanged`, which is `points.refresh()`.
+`afterBuild` refreshes too, and `points.frame()` runs every frame.
+
+| | |
+| --- | --- |
+| the copy | `copyOf(target group)`: its meshes and its children's, geometry shared, one see-through material. Rebuilt on refresh, and when the target's holder was rebuilt under it; never mid-drag |
+| its handles | a second `TransformControls`, translate only, in the toolbar's space. The object's gizmo detaches while a point is open (`GizmoHost.editingPoint`) |
+| a drag | `beginDrag` … `endDrag('move point')`; each `objectChange` snaps the copy's corner (`cornerSnapOf`) and writes `to`, rounded to 4 places, when it changed, then rebuilds the Inspector. A remote repaint waits (`gizmoDragging` covers it), `afterDrag` = `rebuildLoaded` + `drainDeferred` |
+| the route | one selected object: `Doc.routesAt(i)` — its own sequences' steps aimed at itself, then its parent's aimed at it, switched-off ones left out; a `Line` from its place through the points, a numbered `Sprite` per point, `DOT` of the viewport's height in either projection |
+| where | `pointToWorld(to, axes, frame)` (`sequencePoints.ts`); `frame.rest` = the parent group's world matrix × the target's local pose — the group's own when Motion is stopped, `transformOf` while it runs |
+| picking | the overlay group `sequence-points` sits outside `instanceRoot`, which is all a click raycasts |
+
+`Doc.stepTargetOf(i, target)` is the node a step aims at: `i` for `SELF`, a direct child by id, else `null`.
 
 ## Inspector — several objects at once (ADR 0112)
 

@@ -49,6 +49,25 @@ export const unpreviewed = (
   }
 }
 
+/**
+ * The world move that puts an object's **minimum corner** on the grid (ADR 0117): what a move snaps to, for an
+ * item and for a sequence point's copy (ADR 0144) alike. The corner is of the world axis-aligned box, and a
+ * built-in shape is a unit box at scale 1 (ADR 0090), so the world scale *is* the size in metres.
+ */
+export const cornerSnapOf = (g: THREE.Object3D, step: number): Vec3 => {
+  g.updateWorldMatrix(true, false)
+  const world = new THREE.Vector3()
+  const quat = new THREE.Quaternion()
+  const scale = new THREE.Vector3()
+  g.matrixWorld.decompose(world, quat, scale)
+  const half = worldHalfExtents(new THREE.Matrix4().makeRotationFromQuaternion(quat).elements, {
+    x: Math.abs(scale.x) / 2,
+    y: Math.abs(scale.y) / 2,
+    z: Math.abs(scale.z) / 2,
+  })
+  return cornerSnapDelta({ x: world.x - half.x, y: world.y - half.y, z: world.z - half.z }, step)
+}
+
 /** What the gizmo needs from the editor around it. */
 export interface GizmoHost {
   stage: ReturnType<typeof createThreeStage>
@@ -69,6 +88,8 @@ export interface GizmoHost {
   motionOffsetAt: (index: number, timeMs: number) => PreviewOffset
   /** Clear the face highlight when the tool changes away from Face (ADR 0119). */
   clearFaceHover: () => void
+  /** A sequence's move point is open for dragging, and its copy has the handles instead (ADR 0144). */
+  editingPoint: () => boolean
   edits: () => { beginDrag: () => void; endDrag: (label: string) => void }
   room: { startPresence: () => void; stopPresence: () => void; drainDeferred: () => void }
   inspectorSync: () => void
@@ -140,21 +161,10 @@ export const createGizmoTool = (host: GizmoHost) => {
     const g = host.groupAt(at)
     const step = edit.steps.translate
     if (g === undefined || step <= 0) return
-    g.updateWorldMatrix(true, false)
-    const world = new THREE.Vector3()
-    const quat = new THREE.Quaternion()
-    const scale = new THREE.Vector3()
-    g.matrixWorld.decompose(world, quat, scale)
-    // A built-in shape is a unit box at scale 1 (ADR 0090), so the world scale *is* the size in metres.
-    const half = worldHalfExtents(new THREE.Matrix4().makeRotationFromQuaternion(quat).elements, {
-      x: Math.abs(scale.x) / 2,
-      y: Math.abs(scale.y) / 2,
-      z: Math.abs(scale.z) / 2,
-    })
-    const min = { x: world.x - half.x, y: world.y - half.y, z: world.z - half.z }
-    const d = cornerSnapDelta(min, step)
+    const d = cornerSnapOf(g, step)
     if (d.x === 0 && d.y === 0 && d.z === 0) return
     // The delta is a world translation; the group's position is in its parent's frame.
+    const world = g.getWorldPosition(new THREE.Vector3())
     const parent = g.parent ?? host.instanceRoot()
     parent.updateWorldMatrix(true, false)
     const before = parent.worldToLocal(world.clone())
@@ -195,9 +205,10 @@ export const createGizmoTool = (host: GizmoHost) => {
    */
   const reattachGizmo = (): void => {
     // Face is not a `TransformControls` mode (ADR 0119): the handles are the faces themselves, so the gizmo
-    // would only be three arrows in the way.
+    // would only be three arrows in the way. An open move point is the same (ADR 0144): the handles are on its
+    // copy, and two sets a metre apart would be a tangle.
     const at = host.selected()
-    const g = at === null || host.playing() || edit.mode === 'face' ? undefined : host.groupAt(at)
+    const g = at === null || host.playing() || edit.mode === 'face' || host.editingPoint() ? undefined : host.groupAt(at)
     if (g === undefined) gizmo.detach()
     else gizmo.attach(g)
     // Every selection change comes through here, and a face chosen on a box that is no longer selected

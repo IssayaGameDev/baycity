@@ -29,6 +29,7 @@ import {
   retargetSequenceOverride,
   retargetSequenceParams,
   type Stage,
+  type SequenceAxes,
   type SequenceOverride,
   type ColliderDesc,
   type ComponentData,
@@ -53,6 +54,7 @@ import { DEFAULT_REGISTRY, type Registry } from '@mp/components'
 import type { LightDesc } from '@mp/render-three'
 import { eulerToQuat, mulQuat, quat, vec3, type Quat, type Vec3 } from '@mp/core'
 
+import { routeSteps, type MoveStep } from './sequencePoints'
 
 /**
  * Editor document abstraction, over a **node tree** (PLAN-component-system, stage C1).
@@ -299,6 +301,14 @@ export interface Doc {
    */
   sequenceOverrideOf: (i: number, componentId: string) => SequenceOverride | undefined
   /**
+   * Every sequence that moves node `i`, with its move steps in play order (ADR 0144): its own sequences' steps
+   * aimed at itself, and its parent's aimed at it by id — the loader's rule (ADR 0141). A switched-off sequence
+   * moves nothing and is left out, as is one with no move for it.
+   */
+  routesAt: (i: number) => readonly SequenceRoute[]
+  /** The node a step on node `i` aims at: `i` itself for `SELF`, else its direct child of that id; `null` when there is none. */
+  stepTargetOf: (i: number, target: string) => number | null
+  /**
    * The same patch on several nodes at once, as **one** commit — so it is one undo entry and one message to
    * the room (ADR 0112). `targets` pairs each node with its own component id, since ids are per component.
    */
@@ -517,6 +527,15 @@ export interface PreviewPose extends LocalPose {
   readonly scale: Vec3
   readonly opacity: number
   readonly shown: boolean
+}
+
+/** One sequence's moves of one node, as the viewport draws its route (ADR 0144). */
+export interface SequenceRoute {
+  /** The node the sequence is on: the one it moves, or that one's parent. */
+  readonly holder: number
+  readonly componentId: string
+  readonly axes: SequenceAxes
+  readonly steps: readonly MoveStep[]
 }
 
 /**
@@ -1432,6 +1451,34 @@ const docOver = (
     sequenceOverrideOf: (i, componentId) => {
       const n = node(i)
       return n === undefined ? undefined : overrideFor(n)?.sequences?.[componentId]
+    },
+    routesAt: (i) => {
+      const all = nodes()
+      const n = all[i]
+      if (n === undefined) return []
+      const out: SequenceRoute[] = []
+      const collect = (holder: number, key: string): void => {
+        for (const c of all[holder]?.view.components ?? []) {
+          if (c.type !== SEQUENCE || c.enabled === false) continue
+          const data = sequenceOf(c)
+          const steps = routeSteps(data.stages, key)
+          if (steps.length > 0) out.push({ holder, componentId: c.id, axes: data.axes, steps })
+        }
+      }
+      collect(i, SELF)
+      if (n.parent >= 0) collect(n.parent, n.authored.id)
+      return out
+    },
+    stepTargetOf: (i, target) => {
+      const all = nodes()
+      if (all[i] === undefined) return null
+      if (target === SELF) return i
+      for (let j = i + 1; j < all.length; j++) {
+        const kid = all[j]!
+        if (kid.depth <= all[i]!.depth) break
+        if (kid.parent === i && kid.authored.id === target) return j
+      }
+      return null
     },
     childTargets: (i) => {
       const all = nodes()
