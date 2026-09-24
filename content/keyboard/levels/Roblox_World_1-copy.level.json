@@ -5666,7 +5666,7 @@
         "position": {
           "x": -283.5,
           "y": 3.5,
-          "z": 439
+          "z": 438.5
         },
         "rotation": {
           "x": 0,
@@ -5717,7 +5717,7 @@
             "position": {
               "x": 32.6535,
               "y": 30.2759,
-              "z": -3.1143
+              "z": -3.6143
             },
             "scale": {
               "x": 8.7,
@@ -6189,9 +6189,9 @@
       "name": "Obstacle 9",
       "transform": {
         "position": {
-          "x": -282.67,
-          "y": 5.4822,
-          "z": 361.5026
+          "x": -332,
+          "y": 76.5,
+          "z": 439
         }
       },
       "components": []
@@ -6201,12 +6201,73 @@
       "name": "Obstacle 9",
       "transform": {
         "position": {
-          "x": -282.67,
-          "y": 5.4822,
-          "z": 361.5026
+          "x": -332,
+          "y": 76.5,
+          "z": 439
         }
       },
-      "components": []
+      "components": [],
+      "children": [
+        {
+          "id": "f8ebd7e9",
+          "name": "platform",
+          "transform": {
+            "position": {
+              "x": -7.5,
+              "y": 0.15,
+              "z": 0.5
+            },
+            "scale": {
+              "x": 15,
+              "y": 0.3,
+              "z": 24
+            }
+          },
+          "components": [
+            {
+              "id": "b88e6b91",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "1c7dd737",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "64debbe3",
+              "type": "Renderer",
+              "params": {
+                "material": ""
+              }
+            },
+            {
+              "id": "503c2284",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "prefabs": {
