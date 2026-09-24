@@ -69,6 +69,7 @@ import { createGizmoTool } from './gizmoTool'
 import { createHiddenView, keysUnder } from './hiddenView'
 import { createPickTool } from './pickTool'
 import { createPointTool } from './pointTool'
+import { createSelectionEdges } from './selectionEdges'
 import { createPrefabActions } from './prefabActions'
 import { createPlay } from './play'
 import { applySelect, clampTo, primaryOf, rootsOf, type SelectMode } from './selection'
@@ -420,6 +421,13 @@ const points = createPointTool({
     rebuildLoaded()
     room.drainDeferred()
   },
+})
+/** My selection's edges, on top of its outline (`selectionEdges.ts`, ADR 0146). */
+const edges = createSelectionEdges({
+  scene: stage.scene,
+  selection: () => selection,
+  groupAt: (i) => meshes.groupAt(i),
+  playing: () => play.active(),
 })
 
 /** Asset id of the prefab open in prefab mode, or `null` for a level or an unsaved prefab. */
@@ -2013,6 +2021,7 @@ stage.start((dt) => {
     controls.update()
   }
   points.frame()
+  edges.frame()
 })
 
 /**

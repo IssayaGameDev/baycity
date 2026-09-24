@@ -322,6 +322,13 @@ node, and the reverse: they are different edits — the shared definition, and t
 its children in, as Unity's does. Drawn whether or not something is in front — the whole silhouette, as
 bright behind a wall as before it. `rendering.md` has the pass.
 
+**Edges** (ADR 0146, `selectionEdges.ts`): on my selection only, a `LineSegments` of `shapeEdges(mesh.geometry)`
+per mesh of the selected subtrees — not an `InstancedMesh` (a board's cells) nor a wireframe material (a light's
+gizmo) — white at 0.7, depth-tested and pushed a thousandth of the distance toward the eye (2 cm along the view
+in orthographic) by an `onBeforeCompile` on `project_vertex`. Each copies its mesh's `matrixWorld` every frame
+after `updateWorldMatrix`, so it follows drags and the preview; the set is rebuilt only when the meshes under the
+selection change. In the `selection-edges` group outside `instanceRoot`, so never picked. None while playing.
+
 ## Project panel — games at the top (ADR 0108)
 
 `src/projectPanel.ts`. The tree is games first, then the shared asset library:

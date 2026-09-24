@@ -28,6 +28,9 @@ export { DEFAULT_POSTFX, createPostFX } from './postfx'
 // The editor's selection outline: every colour in one pass, drawn whatever is in front.
 export type { OutlineGroup } from './selectionOutline'
 export { SelectionOutlinePass } from './selectionOutline'
+// A shape's edges, not its triangles, for the editor's selection.
+export type { RoundedBoxInfo } from './shapeEdges'
+export { EDGE_ANGLE_DEG, shapeEdges } from './shapeEdges'
 export type { LevelView, LevelViewOptions, MarkersView } from './levelView'
 // The see-through hole (ADR 0055): level surfaces dither away between the eye and the character.
 export type { CutoutMask, CutoutState } from './cutout'

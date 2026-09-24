@@ -76,6 +76,14 @@ Every group in one pass, drawn whatever is in front, so no depth:
 
 `radius` = 2 CSS px × the pixel ratio. At most 32 groups. Mask and across targets follow the composer's size.
 
+## Shape edges — `shapeEdges.ts` (ADR 0146)
+
+`shapeEdges(geometry): BufferGeometry | null` — where faces meet, in the geometry's own space; `null` for a
+shape with none (sphere, capsule). `EdgesGeometry` at `EDGE_ANGLE_DEG` (20°), except a geometry carrying
+`userData.roundedBox: RoundedBoxInfo { width; height; depth; radius }` — which `shapeGeometry` in
+`materials.ts` records on every rounded box it builds — gets one segment along the 45° line of each rounded
+edge, over its straight length.
+
 ## Environment & sky — `environment.ts`, `sky.ts`
 
 ```ts
