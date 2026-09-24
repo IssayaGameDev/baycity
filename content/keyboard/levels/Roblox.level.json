@@ -15792,7 +15792,12 @@
             }
           },
           "components": [],
-          "prefab": "8a569d7a7c66c3c7"
+          "prefab": "8a569d7a7c66c3c7",
+          "overrides": {
+            "9dface46": {
+              "addedChildren": []
+            }
+          }
         },
         {
           "id": "5d78d201",
@@ -15859,7 +15864,7 @@
                 },
                 "space": "world",
                 "speed": 35,
-                "smooth": true,
+                "smooth": false,
                 "offset": 0
               }
             }
@@ -15930,7 +15935,7 @@
                 },
                 "space": "world",
                 "speed": 35,
-                "smooth": true,
+                "smooth": false,
                 "offset": 0
               }
             }
@@ -16001,7 +16006,7 @@
                 },
                 "space": "world",
                 "speed": 35,
-                "smooth": true,
+                "smooth": false,
                 "offset": 0
               }
             }
@@ -16072,7 +16077,151 @@
                 },
                 "space": "world",
                 "speed": 35,
-                "smooth": true,
+                "smooth": false,
+                "offset": 0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "d206d652",
+      "name": "Stage 15",
+      "transform": {
+        "position": {
+          "x": -343,
+          "y": 0,
+          "z": -14
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "ef8dd3bf",
+          "name": "wall",
+          "transform": {
+            "position": {
+              "x": -10.25,
+              "y": 37.25,
+              "z": -60.75
+            },
+            "rotation": {
+              "x": 0,
+              "y": 1.5707963267948966,
+              "z": 0
+            },
+            "scale": {
+              "x": 14.5,
+              "y": 1.5,
+              "z": 1.5
+            }
+          },
+          "components": [
+            {
+              "id": "28fb2764",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "d5eab307",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "ce927038",
+              "type": "Renderer",
+              "params": {
+                "material": ""
+              }
+            },
+            {
+              "id": "7d865119",
+              "type": "Spinner",
+              "params": {
+                "axis": "+X",
+                "speed": 90,
+                "offset": 0
+              }
+            }
+          ]
+        },
+        {
+          "id": "09fe3096",
+          "name": "wall",
+          "transform": {
+            "position": {
+              "x": -10.25,
+              "y": 37.25,
+              "z": -60.75
+            },
+            "rotation": {
+              "x": 0,
+              "y": 1.5707963267948966,
+              "z": 0
+            },
+            "scale": {
+              "x": 1.5,
+              "y": 14.5,
+              "z": 1.5
+            }
+          },
+          "components": [
+            {
+              "id": "28fb2764",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "d5eab307",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "ce927038",
+              "type": "Renderer",
+              "params": {
+                "material": ""
+              }
+            },
+            {
+              "id": "73e43d21",
+              "type": "Spinner",
+              "params": {
+                "axis": "+X",
+                "speed": 90,
                 "offset": 0
               }
             }
