@@ -5754,24 +5754,7 @@
                   "y": 71,
                   "z": 3.4
                 }
-              },
-              "added": [
-                {
-                  "id": "18723df9",
-                  "type": "Mover",
-                  "params": {
-                    "move": {
-                      "x": 0,
-                      "y": 100,
-                      "z": 0
-                    },
-                    "space": "world",
-                    "speed": 24.826248585744302,
-                    "smooth": true,
-                    "offset": 0
-                  }
-                }
-              ]
+              }
             },
             "511f5c04": {
               "transform": {

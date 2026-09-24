@@ -515,22 +515,7 @@
           "z": 37
         }
       },
-      "components": [
-        {
-          "id": "o0",
-          "type": "Mover",
-          "params": {
-            "move": {
-              "x": 0,
-              "y": 3,
-              "z": 0
-            },
-            "speed": 1.5,
-            "smooth": true,
-            "offset": 0
-          }
-        }
-      ],
+      "components": [],
       "children": [
         {
           "id": "n7-p0",
@@ -717,17 +702,7 @@
           "z": 14.5
         }
       },
-      "components": [
-        {
-          "id": "o0",
-          "type": "Spinner",
-          "params": {
-            "axis": "+Y",
-            "speed": 60,
-            "offset": 0
-          }
-        }
-      ],
+      "components": [],
       "children": [
         {
           "id": "n11-p0",
@@ -1353,20 +1328,6 @@
               "params": {
                 "material": "55205761e38bc929"
               }
-            },
-            {
-              "id": "893c75f8",
-              "type": "Mover",
-              "params": {
-                "move": {
-                  "x": 0,
-                  "y": 10,
-                  "z": 0
-                },
-                "speed": 10,
-                "smooth": true,
-                "offset": 0
-              }
             }
           ]
         }
@@ -1427,17 +1388,7 @@
                   "z": 0
                 }
               },
-              "components": [
-                {
-                  "id": "o0",
-                  "type": "Spinner",
-                  "params": {
-                    "axis": "+Y",
-                    "speed": 60,
-                    "offset": 0
-                  }
-                }
-              ],
+              "components": [],
               "children": [
                 {
                   "id": "866a0a2c",

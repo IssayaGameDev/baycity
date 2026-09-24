@@ -277,20 +277,6 @@
               "params": {
                 "material": "19079ddb3fbfb27e"
               }
-            },
-            {
-              "id": "c2",
-              "type": "Mover",
-              "params": {
-                "move": {
-                  "x": 0,
-                  "y": 3,
-                  "z": 0
-                },
-                "speed": 1.5,
-                "smooth": true,
-                "offset": 0
-              }
             }
           ]
         }
