@@ -6287,12 +6287,12 @@
           "name": "platform",
           "transform": {
             "position": {
-              "x": -120.75,
+              "x": -121,
               "y": -5.5,
               "z": 0
             },
             "scale": {
-              "x": 12.5,
+              "x": 13,
               "y": 6,
               "z": 24
             }
@@ -6410,8 +6410,8 @@
           "name": "platform",
           "transform": {
             "position": {
-              "x": -141.8194,
-              "y": -0.2769,
+              "x": -141.2993,
+              "y": -0.4766,
               "z": 0
             },
             "rotation": {
@@ -6420,7 +6420,7 @@
               "z": -0.5235987755982988
             },
             "scale": {
-              "x": 8.5,
+              "x": 9.7012,
               "y": 6,
               "z": 24
             }
@@ -6527,6 +6527,134 @@
               }
             }
           ]
+        },
+        {
+          "id": "01719fdc",
+          "name": "platform",
+          "transform": {
+            "position": {
+              "x": -195.75,
+              "y": 6,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": -0.5235987755982988
+            },
+            "scale": {
+              "x": 16.5,
+              "y": 6,
+              "z": 24
+            }
+          },
+          "components": [
+            {
+              "id": "b88e6b91",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "1c7dd737",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "64debbe3",
+              "type": "Renderer",
+              "params": {
+                "material": ""
+              }
+            },
+            {
+              "id": "503c2284",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1
+              }
+            }
+          ]
+        },
+        {
+          "id": "65bdbc27",
+          "name": "platform",
+          "transform": {
+            "position": {
+              "x": -235.8553,
+              "y": 6.2231,
+              "z": 0
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": -0.5235987755982988
+            },
+            "scale": {
+              "x": 16.5,
+              "y": 6,
+              "z": 24
+            }
+          },
+          "components": [
+            {
+              "id": "b88e6b91",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "1c7dd737",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "64debbe3",
+              "type": "Renderer",
+              "params": {
+                "material": ""
+              }
+            },
+            {
+              "id": "503c2284",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1
+              }
+            }
+          ]
         }
       ],
       "overrides": {
@@ -6547,8 +6675,8 @@
         "927260c0": {
           "transform": {
             "position": {
-              "x": -17.7524,
-              "y": -1.0269,
+              "x": -16.8092,
+              "y": -1.2744,
               "z": 0
             },
             "rotation": {
@@ -6557,8 +6685,8 @@
               "z": -0.5235987755982988
             },
             "scale": {
-              "x": 7.5,
-              "y": 6,
+              "x": 9.381,
+              "y": 5.4854,
               "z": 24
             }
           },
