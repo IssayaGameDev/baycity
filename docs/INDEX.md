@@ -190,6 +190,7 @@ why matters.
 | [0139](adr/0139-a-placement-records-every-difference-in-a-sequence.md) | A placement records every difference in a sequence |
 | [0140](adr/0140-a-frame-is-drawn-on-the-loops-own-schedule.md) | A frame is drawn on the loop's own schedule |
 | [0141](adr/0141-the-game-runs-sequences.md) | The game runs sequences |
+| [0142](adr/0142-the-editor-previews-sequences-while-motion-runs.md) | The editor previews sequences while Motion runs |
 | [0142](adr/0142-a-board-has-a-key-budget.md) | A board has a key budget |
 
 `Design archive/` holds superseded design material and is not maintained.

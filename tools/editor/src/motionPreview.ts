@@ -1,8 +1,7 @@
-import { vec3 } from '@mp/core'
-import { eulerToQuat } from '@mp/core'
+import { eulerToQuat, mulQuat, quat, vec3, type Quat, type Vec3 } from '@mp/core'
 import type { THREE } from '@mp/render-three'
 
-import type { Doc, LocalPose } from './editorDoc'
+import type { Doc } from './editorDoc'
 
 /**
  * The preview clock: the level's movers and spinners running in the viewport, without entering play
@@ -18,6 +17,24 @@ import type { Doc, LocalPose } from './editorDoc'
  * still item sits**. Anything with a mover belongs at its pose for the current clock, which at zero is where
  * the game starts it, so the two agree.
  */
+
+/**
+ * What the preview adds to one item's authored transform, each in the way it goes in (ADR 0141): `position` and
+ * `rotation` added (a mover's travel and a spinner's euler), `turn` multiplied on the right of the rotation and
+ * `scale` multiplied in (a sequence's). What a write-back takes out, the same way.
+ */
+export interface PreviewOffset {
+  readonly position: Vec3
+  readonly rotation: Vec3
+  readonly turn: Quat
+  readonly scale: Vec3
+}
+
+/** The material copies a fadeable item was given (`itemMeshes.ts`), and the opacity each started at. */
+export interface FadeCopy {
+  readonly mat: { opacity: number }
+  readonly base: number
+}
 
 /** What posing the level needs from the editor around it. */
 export interface MotionPreviewHost {
@@ -57,16 +74,39 @@ export interface MotionPreview {
    * computing is in the new one.
    */
   withAuthoredPoses: <T>(read: () => T) => T
-  /** One item's offset from its authored transform at a given time — what an offset track is (ADR 0050). */
-  offsetAt: (index: number, timeMs: number) => LocalPose
+  /** One item's offset from its authored transform at a given time, as the preview draws it (ADR 0141). */
+  offsetAt: (index: number, timeMs: number) => PreviewOffset
   /** Advance by wall-clock time. `false` when the clock is not running, so the caller does nothing. */
   frame: () => boolean
+}
+
+const ratio = (a: number, b: number): number => (Math.abs(b) < 1e-9 ? 1 : a / b)
+
+/** An item's fade copies, if it has any: they hang off its mesh holder. */
+const fadeCopiesOf = (g: THREE.Group): { holder: THREE.Object3D; copies: readonly FadeCopy[] } | null => {
+  const holder = g.userData.meshes as THREE.Object3D | undefined
+  const copies = holder?.userData.fading as readonly FadeCopy[] | undefined
+  return holder === undefined || copies === undefined || copies.length === 0 ? null : { holder, copies }
+}
+
+const setOpacity = (g: THREE.Group, opacity: number): void => {
+  const fading = fadeCopiesOf(g)
+  if (fading === null) return
+  for (const c of fading.copies) c.mat.opacity = c.base * opacity
+  // Faded all the way out it draws nothing, as in the game (ADR 0141).
+  fading.holder.visible = opacity > 0
 }
 
 export const createMotionPreview = (host: MotionPreviewHost): MotionPreview => {
   let previewMs = 0
   let playing = false
   let lastFrame = 0
+
+  /**
+   * Sequences show only while the clock runs. Stopped, an object is as it was set up (ADR 0137): a platform
+   * whose sequence starts it invisible stays visible and solid in the viewport, where it has to be clicked.
+   */
+  const sequencesShown = (): boolean => playing
 
   const applyPoses = (): void => {
     const open = host.doc()
@@ -80,15 +120,20 @@ export const createMotionPreview = (host: MotionPreviewHost): MotionPreview => {
      * of hundreds of platforms, which is why Motion dropped the frame rate while play mode did not: play
      * poses the instantiated frame tree, which is flat arrays.
      */
-    const poses = open.posesAt(previewMs)
+    const poses = open.posesAt(previewMs, { sequences: sequencesShown() })
     for (let i = 0; i < poses.length; i += 1) {
       const g = host.groupAt(i)
       const pose = poses[i]
       if (g === undefined || pose === undefined) continue
       g.position.set(pose.position.x, pose.position.y, pose.position.z)
-      const q = eulerToQuat(pose.rotation)
+      const q = mulQuat(eulerToQuat(pose.rotation), pose.turn)
       g.quaternion.set(q.x, q.y, q.z, q.w)
-      // Scale is not animated: a track that resized a collider would rebuild physics every tick.
+      // A group's meshes are built at their world size inside a holder that undoes the scale they were built at,
+      // so scaling the group stretches them — and everything under it — exactly as the game's `drawScale` does.
+      g.scale.set(pose.scale.x, pose.scale.y, pose.scale.z)
+      // Disabling takes the whole branch, which a hidden group does.
+      g.visible = pose.shown
+      setOpacity(g, pose.opacity)
     }
   }
 
@@ -109,6 +154,10 @@ export const createMotionPreview = (host: MotionPreviewHost): MotionPreview => {
       g.position.set(t.position.x, t.position.y, t.position.z)
       const q = eulerToQuat(t.rotation ?? vec3(0, 0, 0))
       g.quaternion.set(q.x, q.y, q.z, q.w)
+      const s = t.scale ?? vec3(1, 1, 1)
+      g.scale.set(s.x, s.y, s.z)
+      g.visible = true
+      setOpacity(g, 1)
     }
   }
 
@@ -148,13 +197,16 @@ export const createMotionPreview = (host: MotionPreviewHost): MotionPreview => {
     },
     offsetAt: (index, timeMs) => {
       const open = host.doc()
-      if (open === null) return { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) }
+      if (open === null) return { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0), turn: quat(), scale: vec3(1, 1, 1) }
       const authored = open.transformOf(index)
       const rest = authored.rotation ?? vec3(0, 0, 0)
-      const at = open.poseOf(index, timeMs)
+      const size = authored.scale ?? vec3(1, 1, 1)
+      const at = open.poseOf(index, timeMs, { sequences: sequencesShown() })
       return {
         position: vec3(at.position.x - authored.position.x, at.position.y - authored.position.y, at.position.z - authored.position.z),
         rotation: vec3(at.rotation.x - rest.x, at.rotation.y - rest.y, at.rotation.z - rest.z),
+        turn: at.turn,
+        scale: vec3(ratio(at.scale.x, size.x), ratio(at.scale.y, size.y), ratio(at.scale.z, size.z)),
       }
     },
     frame: () => {

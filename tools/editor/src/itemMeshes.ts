@@ -213,6 +213,20 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
     const inv = (v: number): number => (Math.abs(v) < 1e-6 ? 1 : 1 / v)
     holder.scale.set(inv(ws.x), inv(ws.y), inv(ws.z))
     const worldScale = vec3(ws.x, ws.y, ws.z)
+    /**
+     * A node a sequence can fade gets its **own** material copies, transparent from the start, as the game's
+     * level view does (ADR 0141): the originals are shared by every piece using them, so fading one would fade
+     * them all. The preview sets their opacity; the holder keeps the list.
+     */
+    const fades = open.fadesAt(i)
+    const fading: { mat: THREE.Material; base: number }[] = []
+    const ownCopy = (m: THREE.Material): THREE.Material => {
+      const copy = m.clone()
+      copy.transparent = true
+      fading.push({ mat: copy, base: m.opacity })
+      return copy
+    }
+    holder.userData.fading = fading
     for (const spec of open.meshSpecs(i)) {
       // The same precedence the game's level view uses, so the editor is never showing a different scene:
       // a model replaces the greybox shape, a material replaces the greybox style, and either falling
@@ -233,6 +247,7 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
       if (model !== null) object.scale.multiply(ws)
       object.traverse((o) => {
         if (o instanceof THREE.Mesh) {
+          if (fades) o.material = Array.isArray(o.material) ? o.material.map(ownCopy) : ownCopy(o.material)
           o.castShadow = true
           o.receiveShadow = true
         }

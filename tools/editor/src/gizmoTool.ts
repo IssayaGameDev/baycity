@@ -3,6 +3,7 @@ import { eulerToQuat, vec3, type Vec3 } from '@mp/core'
 import { createThreeStage, OrbitControls, THREE, TransformControls } from '@mp/render-three'
 
 import type { Doc, LocalPose } from './editorDoc'
+import type { PreviewOffset } from './motionPreview'
 import { cornerSnapDelta, roundAngle, snapAnglesDeg, worldHalfExtents } from './snap'
 import type { GizmoMode, GizmoSpace } from './toolbar'
 
@@ -25,6 +26,29 @@ const r4 = (n: number): number => Math.round(n * 1e4) / 1e4
 const isOne = (v: THREE.Vector3): boolean => Math.abs(v.x - 1) < 1e-4 && Math.abs(v.y - 1) < 1e-4 && Math.abs(v.z - 1) < 1e-4
 const isZeroRot = (e: THREE.Euler): boolean => Math.abs(e.x) < 1e-5 && Math.abs(e.y) < 1e-5 && Math.abs(e.z) < 1e-5
 
+/**
+ * A group's pose with the preview taken back out (ADR 0141): the transform the document should hold, given what
+ * the group shows and what the preview added to it. Each part comes out the way it went in — travel and a
+ * spinner's euler subtracted, a sequence's turn divided off the right of the rotation, its scale divided out.
+ *
+ * Pure, and exported, because it is the whole of what keeps a drag mid-preview from baking the animation into
+ * the file (ADR 0050, ADR 0126).
+ */
+export const unpreviewed = (
+  g: { readonly position: Vec3; readonly quaternion: { readonly x: number; readonly y: number; readonly z: number; readonly w: number }; readonly scale: Vec3 },
+  off: PreviewOffset,
+): { position: Vec3; rotation: Vec3; scale: Vec3 } => {
+  const turned = new THREE.Quaternion(g.quaternion.x, g.quaternion.y, g.quaternion.z, g.quaternion.w)
+  const unturned = turned.multiply(new THREE.Quaternion(off.turn.x, off.turn.y, off.turn.z, off.turn.w).invert())
+  const e = new THREE.Euler().setFromQuaternion(unturned, 'XYZ')
+  const div = (a: number, b: number): number => (Math.abs(b) < 1e-9 ? a : a / b)
+  return {
+    position: vec3(g.position.x - off.position.x, g.position.y - off.position.y, g.position.z - off.position.z),
+    rotation: vec3(e.x - off.rotation.x, e.y - off.rotation.y, e.z - off.rotation.z),
+    scale: vec3(div(g.scale.x, off.scale.x), div(g.scale.y, off.scale.y), div(g.scale.z, off.scale.z)),
+  }
+}
+
 /** What the gizmo needs from the editor around it. */
 export interface GizmoHost {
   stage: ReturnType<typeof createThreeStage>
@@ -42,7 +66,7 @@ export interface GizmoHost {
   playing: () => boolean
   /** The preview clock, which a write-back subtracts so a mover's offset is not baked in (ADR 0050). */
   previewMs: () => number
-  motionOffsetAt: (index: number, timeMs: number) => LocalPose
+  motionOffsetAt: (index: number, timeMs: number) => PreviewOffset
   /** Clear the face highlight when the tool changes away from Face (ADR 0119). */
   clearFaceHover: () => void
   edits: () => { beginDrag: () => void; endDrag: (label: string) => void }
@@ -352,15 +376,14 @@ export const createGizmoTool = (host: GizmoHost) => {
     if (open === null) return
     const g = host.groupAt(index)
     if (g === undefined) return
-    const off = host.motionOffsetAt(index, host.previewMs())
-    const t = transformOfGroup(g)
-    const rot = t.rotation ?? vec3(0, 0, 0)
+    const t = unpreviewed(g, host.motionOffsetAt(index, host.previewMs()))
+    const scale = new THREE.Vector3(t.scale.x, t.scale.y, t.scale.z)
     open.setTransform(index, {
-      position: vec3(r4(t.position.x - off.position.x), r4(t.position.y - off.position.y), r4(t.position.z - off.position.z)),
-      ...(isZeroRot(new THREE.Euler(rot.x - off.rotation.x, rot.y - off.rotation.y, rot.z - off.rotation.z))
+      position: vec3(r4(t.position.x), r4(t.position.y), r4(t.position.z)),
+      ...(isZeroRot(new THREE.Euler(t.rotation.x, t.rotation.y, t.rotation.z))
         ? {}
-        : { rotation: vec3(roundAngle(rot.x - off.rotation.x), roundAngle(rot.y - off.rotation.y), roundAngle(rot.z - off.rotation.z)) }),
-      ...(t.scale !== undefined ? { scale: t.scale } : {}),
+        : { rotation: vec3(roundAngle(t.rotation.x), roundAngle(t.rotation.y), roundAngle(t.rotation.z)) }),
+      ...(isOne(scale) ? {} : { scale: vec3(r4(scale.x), r4(scale.y), r4(scale.z)) }),
     })
   }
 

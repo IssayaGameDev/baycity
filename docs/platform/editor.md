@@ -25,7 +25,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | `play.ts` | the character, controller, loop, play view and lights, component runtime, game frame | `PlayHost` (23 getters) |
 | `historyStore.ts` | the history, pending batches, `coalescing`, the held-back drag batches, `dirty`, the clipboard | `HistoryHost` |
 | `liveSession.ts` | `collab`, the peer list, the last snapshot, `joining`, the deferred ops, the hold map and its key, the hold boxes, the presence timer | `LiveHost` |
-| `motionPreview.ts` | the preview clock, whether it runs, the last frame. Poses via `Doc.posesAt(timeMs)` — one walk, not `poseOf` per node (ADR 0125) | `MotionPreviewHost` |
+| `motionPreview.ts` | the preview clock, whether it runs, the last frame. Poses via `Doc.posesAt(timeMs, { sequences: playing })` — one walk, not `poseOf` per node (ADR 0125, ADR 0142) | `MotionPreviewHost` |
 | `cameraView.ts` | the orthographic camera, `isometric`, the nav gizmo and its drag flag, the stand-in background, the bounds box | `CameraViewHost` |
 | `fileActions.ts` | nothing — it is behaviour: arm, rename, delete an asset or a level (ADR 0097, ADR 0110) | `FileActionsHost` |
 | `prefabActions.ts` | nothing — enter, close, unlink, save as, revert, apply (ADR 0091, ADR 0111) | `PrefabActionsHost` |
@@ -451,11 +451,31 @@ four full walks per node, each resolving every placement and baking every overri
 climb in `motionFrameOf`. Measured at 400 nodes: 17.17 ms a frame, against 0.20 ms for `posesAt`. At 1000
 nodes, 96.32 ms against 0.21 ms.
 
-`posesAt(timeMs)` carries each parent's accumulated rotation and scale **down**, which is the product
-`motionFrameOf` rebuilds by climbing up — a depth-first list puts a parent before its children. No cache: the
-index-per-call rule is unchanged, `nodes()` is just called once instead of `4n` times. `poseOf` remains for a
-single node on demand (the Inspector's `offsetAt`), and a test pins the two to the same answer on the shapes
-ADR 0106 was about.
+`posesAt(timeMs, { sequences? })` carries each parent's accumulated rotation and scale **down** — a
+depth-first list puts a parent before its children. No cache: the index-per-call rule is unchanged, `nodes()`
+is just called once instead of `4n` times. `poseOf(i, t, opts)` is `posesAt(t, opts)[i]`: the ancestor climb
+it used to do separately (`motionFrameOf`) is gone, so there is one composition to keep agreeing with the
+loader, not two.
+
+**Sequences** (ADR 0142). `PreviewPose` = `LocalPose` + `turn: Quat` (multiplied on the right of the euler) +
+`scale` (the local scale now) + `opacity` + `shown`. The loader's rule, read from the document: a node's own
+sequences aimed at it and its parent's aimed at it by id, a parent's turn and scale carried to its children,
+`shown` false below a disabled node. Compiled per distinct sequence (`sequencesOn`, keyed by content, since the
+Inspector patches params in place).
+
+| | |
+| --- | --- |
+| when | **only while Motion runs** — stopped, every object is as it was set up, so a platform that starts invisible can be seen and clicked (ADR 0137) |
+| move, turn | the group's position and quaternion |
+| scale | `group.scale`: meshes are built at world size inside a holder counter-scaled at build, so this stretches them and the branch below, like the game's `drawScale` |
+| disable | `group.visible = false`, which hides the branch |
+| fade | a node `fadesAt` gets its own transparent material copies in `buildItemMeshes` (`holder.userData.fading`); the preview sets their opacity and hides the holder at 0 |
+| collider on / off | nothing to draw — the editor has no physics |
+
+A drag mid-preview writes `unpreviewed(group, offsetAt(i, t))` (`gizmoTool.ts`, pure, tested): travel and a
+spinner's euler subtracted, a sequence's turn divided off the right, its scale divided out — so the file gets
+the authored transform, never the animation (ADR 0050, ADR 0126). `offsetAt` is a `PreviewOffset`
+`{ position, rotation, turn, scale }`, with sequences exactly when the preview shows them.
 
 ## Play — `src/play.ts`
 
