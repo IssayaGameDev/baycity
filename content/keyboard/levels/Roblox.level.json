@@ -15772,6 +15772,29 @@
       "components": []
     },
     {
+      "id": "83ee27ee",
+      "name": "Stage End",
+      "transform": {
+        "position": {
+          "x": -384.9999,
+          "y": 36.5,
+          "z": -62.9999
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1.5707963267948966,
+          "z": 0
+        },
+        "scale": {
+          "x": 1.0002,
+          "y": 0.9999,
+          "z": 1.0002
+        }
+      },
+      "components": [],
+      "prefab": "8a569d7a7c66c3c7"
+    },
+    {
       "id": "5d78d201",
       "name": "platform",
       "transform": {
@@ -15826,17 +15849,6 @@
           }
         },
         {
-          "id": "aa1b93e0",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 1
-          }
-        },
-        {
           "id": "d9b48c2b",
           "type": "Mover",
           "params": {
@@ -15846,7 +15858,7 @@
               "z": 50
             },
             "space": "world",
-            "speed": 50,
+            "speed": 35,
             "smooth": true,
             "offset": 0
           }
@@ -15908,17 +15920,6 @@
           }
         },
         {
-          "id": "aa1b93e0",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 1
-          }
-        },
-        {
           "id": "9879e86c",
           "type": "Mover",
           "params": {
@@ -15928,7 +15929,7 @@
               "z": -50
             },
             "space": "world",
-            "speed": 50,
+            "speed": 35,
             "smooth": true,
             "offset": 0
           }
@@ -15990,18 +15991,7 @@
           }
         },
         {
-          "id": "aa1b93e0",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 1
-          }
-        },
-        {
-          "id": "ed74e246",
+          "id": "1eab4194",
           "type": "Mover",
           "params": {
             "move": {
@@ -16010,7 +16000,7 @@
               "z": 50
             },
             "space": "world",
-            "speed": 50,
+            "speed": 35,
             "smooth": true,
             "offset": 0
           }
@@ -16072,17 +16062,6 @@
           }
         },
         {
-          "id": "aa1b93e0",
-          "type": "Keyboard",
-          "params": {
-            "pitch": 0.9,
-            "fill": 0.88,
-            "height": 0.45,
-            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "seed": 1
-          }
-        },
-        {
           "id": "0e0ec2f1",
           "type": "Mover",
           "params": {
@@ -16092,7 +16071,7 @@
               "z": -50
             },
             "space": "world",
-            "speed": 50,
+            "speed": 35,
             "smooth": true,
             "offset": 0
           }
