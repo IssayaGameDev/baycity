@@ -2467,20 +2467,6 @@
             "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
             "seed": 63
           }
-        },
-        {
-          "id": "eba84c76",
-          "type": "Mover",
-          "params": {
-            "move": {
-              "x": 0,
-              "y": 50.00000000000001,
-              "z": 0
-            },
-            "speed": 26.5,
-            "smooth": false,
-            "offset": 0
-          }
         }
       ]
     },
@@ -2611,20 +2597,6 @@
               }
             },
             {
-              "id": "9a9a6e8c",
-              "type": "Mover",
-              "params": {
-                "move": {
-                  "x": -1.6653345369377348e-16,
-                  "y": 9.499999999999996,
-                  "z": 33.300000000000004
-                },
-                "speed": 13.5,
-                "smooth": true,
-                "offset": 0
-              }
-            },
-            {
               "id": "6364e278",
               "type": "Hazard",
               "params": {}
@@ -2683,21 +2655,6 @@
           "type": "Renderer",
           "params": {
             "material": ""
-          }
-        },
-        {
-          "id": "9a9a6e8c",
-          "type": "Mover",
-          "params": {
-            "move": {
-              "x": -1.6653345369377348e-16,
-              "y": -4.107825191113079e-15,
-              "z": 33
-            },
-            "speed": 13.5,
-            "smooth": true,
-            "offset": 0,
-            "space": "local"
           }
         },
         {

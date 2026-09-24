@@ -3,9 +3,7 @@
     "Boss",
     "Bumper",
     "Checkpoint",
-    "Hazard",
-    "Mover",
-    "Spinner"
+    "Hazard"
   ],
   "settings": {
     "speed": [
