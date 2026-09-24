@@ -6411,6 +6411,18 @@
           }
         }
       }
+    },
+    {
+      "id": "f18232ef",
+      "name": "Obstacle 8",
+      "transform": {
+        "position": {
+          "x": -287.459,
+          "y": 1.2553,
+          "z": 435.0299
+        }
+      },
+      "components": []
     }
   ]
 }
