@@ -4,28 +4,27 @@ import type { THREE } from '@mp/render-three'
 import type { Doc } from './editorDoc'
 
 /**
- * The preview clock: the level's movers and spinners running in the viewport, without entering play
- * (ADR 0103, ADR 0121).
+ * The preview clock: the level's sequences running in the viewport, without entering play (ADR 0142,
+ * ADR 0121).
  *
  * Deliberately not the game clock. It poses the level's motion and nothing else — no physics, no character,
- * no rules — and it runs freely rather than wrapping, because every mover derives its own cycle from its
- * speed, so there is no single length to wrap to (and level time in the game does not wrap either).
+ * no rules — and it runs freely rather than wrapping, because every sequence has its own cycle, so there is
+ * no single length to wrap to (and level time in the game does not wrap either).
  *
  * Its own module for the three variables it owns: the clock, whether it is running, and the frame it last
  * advanced on. `applyPreviewPoses` is the load-bearing call and it is used well beyond the preview — a
  * structural rebuild, a remote transform batch, a face pull — because **an authored transform is only where a
- * still item sits**. Anything with a mover belongs at its pose for the current clock, which at zero is where
- * the game starts it, so the two agree.
+ * still item sits** while the clock runs. Anything a sequence moves belongs at its pose for the current clock,
+ * which at zero is where the game starts it, so the two agree.
  */
 
 /**
- * What the preview adds to one item's authored transform, each in the way it goes in (ADR 0141): `position` and
- * `rotation` added (a mover's travel and a spinner's euler), `turn` multiplied on the right of the rotation and
- * `scale` multiplied in (a sequence's). What a write-back takes out, the same way.
+ * What the preview adds to one item's authored transform, each in the way it goes in (ADR 0141): `position`
+ * added, `turn` multiplied on the right of the rotation and `scale` multiplied in. What a write-back takes
+ * out, the same way.
  */
 export interface PreviewOffset {
   readonly position: Vec3
-  readonly rotation: Vec3
   readonly turn: Quat
   readonly scale: Vec3
 }
@@ -68,7 +67,7 @@ export interface MotionPreview {
    * Run `read` with every group at its **authored** transform, then put the preview poses back (ADR 0126).
    *
    * For anything that derives a stored value from the scene graph. The groups normally hold authored *plus*
-   * whatever the movers contribute, so reading a world matrix and writing it back bakes the animation in —
+   * whatever the sequences contribute, so reading a world matrix and writing it back bakes the animation in —
    * permanently, in the file. Every other write path subtracts the offset (`motionOffsetAt`); a caller that
    * reads a composed matrix cannot, because the offset is in the old parent's frame and the value it is
    * computing is in the new one.
@@ -140,7 +139,7 @@ export const createMotionPreview = (host: MotionPreviewHost): MotionPreview => {
   /**
    * Pose every group at the document's authored transform — no motion, whatever the clock says.
    *
-   * Not the same as posing at time zero: a mover with a phase `offset` is partway along its travel at zero,
+   * Not the same as posing at time zero: a sequence with an `offset` is partway through its cycle at zero,
    * which is where the game starts it and therefore what the preview should draw. Authored is where the
    * document says the object *is*.
    */
@@ -197,14 +196,12 @@ export const createMotionPreview = (host: MotionPreviewHost): MotionPreview => {
     },
     offsetAt: (index, timeMs) => {
       const open = host.doc()
-      if (open === null) return { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0), turn: quat(), scale: vec3(1, 1, 1) }
+      if (open === null) return { position: vec3(0, 0, 0), turn: quat(), scale: vec3(1, 1, 1) }
       const authored = open.transformOf(index)
-      const rest = authored.rotation ?? vec3(0, 0, 0)
       const size = authored.scale ?? vec3(1, 1, 1)
       const at = open.poseOf(index, timeMs, { sequences: sequencesShown() })
       return {
         position: vec3(at.position.x - authored.position.x, at.position.y - authored.position.y, at.position.z - authored.position.z),
-        rotation: vec3(at.rotation.x - rest.x, at.rotation.y - rest.y, at.rotation.z - rest.z),
         turn: at.turn,
         scale: vec3(ratio(at.scale.x, size.x), ratio(at.scale.y, size.y), ratio(at.scale.z, size.z)),
       }

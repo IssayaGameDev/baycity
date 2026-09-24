@@ -1,7 +1,7 @@
 # ADR 0137 — Motion is a sequence of stages
 
-Status: accepted, landing in stages; the engine first. Will supersede
-[ADR 0103](0103-motion-is-a-speed-not-a-keyframe.md) once `Mover` and `Spinner` are deleted. Keeps ADR 0103's
+Status: accepted. Supersedes [ADR 0103](0103-motion-is-a-speed-not-a-keyframe.md): `Mover` and `Spinner` are
+deleted. Keeps ADR 0103's
 clock-driven invariant, its speed-is-the-average rule and its fraction offset, ADR 0104's tick slicing and
 ADR 0106's frames. The library behind it is [ADR 0138](0138-only-easing-is-borrowed.md).
 

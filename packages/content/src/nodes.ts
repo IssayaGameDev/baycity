@@ -18,13 +18,6 @@ export const MESH = 'Mesh'
 export const RENDERER = 'Renderer'
 /** Resurfaces this node and everything below it. */
 export const MATERIAL_OVERRIDE = 'MaterialOverride'
-/**
- * Travels a distance from rest and back, at a speed (ADR 0103). **Repeatable**: offsets from one transform
- * add, so two of them make a circle without a keyframe in sight.
- */
-export const MOVER = 'Mover'
-/** Turns about a cardinal axis at a speed (ADR 0103). Singleton — euler angles do not compose by adding. */
-export const SPINNER = 'Spinner'
 /** Stages of steps (ADR 0137); declared in `sequenceData.ts`, which this module imports. */
 export { SEQUENCE }
 /** Where players enter. */

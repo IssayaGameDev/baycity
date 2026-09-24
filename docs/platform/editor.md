@@ -82,7 +82,7 @@ Every `Doc` mutator builds `Op`s (`@mp/content` `ops.ts`, `content.md`) and comm
 | --- | --- |
 | `setTransform` / `setName` / `setParams` / `setComponentEnabled` / `addComponent` / `removeComponent` / `moveComponent` | the own op on an own node; the `setOverride*` / `addOverrideComponent` / `removeOverrideComponent` flavour on an inherited one (an inherited component's removal = `setOverrideParams unset` + `setOverrideEnabled null` + `setOverrideRemoved`). **Three cases, not two** (ADR 0098): `writeTarget` also catches a component a *placement* shows but does not have — inherited from its prefab **root** — and writes an override on the placement keyed by the root's id. `setParams` resolves it per component id, since the built-in-shape branch writes several at once. `moveComponent` stays refused: order belongs to the prefab's list. `setSequenceStages(i, id, stages)` takes the stages as shown: `setParams` on an own node, `setOverrideParams` on a component the placement added, otherwise `setOverrideSequence` with `diffStages(prefab's, shown)` (ADR 0139) |
 | `placePrefab` / `placeNamed` / `placeEmpty` / `placePrimitive` / `placeModel` / `duplicate` / `paste` | `insertNode` (ids minted client-side; `reidSubtree` for copies, which repoints `nodeRef` parameters and sequence step targets, and the targets in a placement's `sequences` records). `placePrefab` writes the prefab's **asset id** and resolves the definition into `level.prefabs` without an op (ADR 0091) |
-| `remove` / `move` / `reparent` | `removeNode` / `moveNode`. **`reparent` takes the re-expressed local transform and commits `moveNode` + `setTransform` in one batch** (ADR 0113): preserving the world pose changes the stored local numbers, and as a second commit that op landed in the *next* history entry — one Ctrl+Z then restored a transform belonging to an earlier reparent and a child jumped by its parent's whole transform. The transform is `localInside` over the **authored** poses (`motion.withAuthoredPoses`, ADR 0126): the groups hold authored *plus* the motion offset — while the clock runs, and at rest for any mover with a phase `offset`, drawn partway along its travel — so reading them wrote the animation's position into the file for good. It is the one write path that cannot subtract the offset afterwards, because the offset is in the old parent's frame and the value is in the new one |
+| `remove` / `move` / `reparent` | `removeNode` / `moveNode`. **`reparent` takes the re-expressed local transform and commits `moveNode` + `setTransform` in one batch** (ADR 0113): preserving the world pose changes the stored local numbers, and as a second commit that op landed in the *next* history entry — one Ctrl+Z then restored a transform belonging to an earlier reparent and a child jumped by its parent's whole transform. The transform is `localInside` over the **authored** poses (`motion.withAuthoredPoses`, ADR 0126): the groups hold authored *plus* the motion offset while the clock runs, so reading them wrote the animation's position into the file for good. It is the one write path that cannot subtract the offset afterwards, because the offset is in the old parent's frame and the value is in the new one |
 | `linkToPrefab` | `replaceNode` (the node keeps its transform and name, loses its own components, gains the reference). `definitionOf` is pure: the definition becomes a **file**, which is the host's to write |
 | `revert` | `setNodeOverride` (the record with the field gone, or `null`) |
 | `overrideOpsFor` | pure — the ops the **prefab's own room** would take. The host sends them there, then calls `revert` here (ADR 0091) |
@@ -378,7 +378,7 @@ the name is still in the listing — a deleted or renamed level must not make ev
 | `gameData` | per game, `content/<game>/game.json` via `loadGame` at boot (`reloadAssets`) and after each `adopt` |
 | `registryFor(mode)` | `mode.registry` + `sharedComponents(gameData[mode.name] − present)` — live data merged over the bundled code |
 | `registry()` | `registryFor(activeMode)`, or `DEFAULT_REGISTRY` with no game |
-| `adoptable()` | `SHARED_COMPONENT_TYPES` the game lacks (`Boss`, `Bumper`, `Checkpoint`, `Goal`, `Hazard`, `Mover`, `Spinner`) |
+| `adoptable()` | `SHARED_COMPONENT_TYPES` the game lacks (`Boss`, `Bumper`, `Checkpoint`, `Goal`, `Hazard`, `Sequence`) |
 | `adopt(types)` | shared ∧ new → `saveGame` → `gameData` → `reopenWithRegistry()` |
 
 Adoption points (ADR 0077):
@@ -440,23 +440,23 @@ row edit to the key pitch re-lays every preview.
 | toggle | its own button, not `Markers`: fitting platforms together is when spawn discs and rule pillars are clutter. `meshes.setCells` + a rebuild rather than setting `visible`, since three raycasts invisible objects. Hidden when the game declares no `surfaceGrid` |
 | culling | `computeBoundingSphere()` per mesh, against the instances rather than the unit quad at the origin |
 
-## The preview clock (ADR 0103, ADR 0125)
+## The preview clock (ADR 0142, ADR 0125)
 
-**Motion** runs the level's movers and spinners in the viewport with no physics, no character and no rules. It
+**Motion** runs the level's sequences in the viewport with no physics, no character and no rules. It
 poses the editor's item groups, so it goes through the **document**, where play goes through the instantiated
 frame tree.
 
 That is why it has to pose the whole tree in **one** walk. `Doc` addresses nodes by depth-first index and
 recomputes the list per call on purpose (the note at the top of `editorDoc.ts`); asking `poseOf` per index cost
 four full walks per node, each resolving every placement and baking every override, plus a separate ancestor
-climb in `motionFrameOf`. Measured at 400 nodes: 17.17 ms a frame, against 0.20 ms for `posesAt`. At 1000
+climb. Measured at 400 nodes: 17.17 ms a frame, against 0.20 ms for `posesAt`. At 1000
 nodes, 96.32 ms against 0.21 ms.
 
 `posesAt(timeMs, { sequences? })` carries each parent's accumulated rotation and scale **down** — a
 depth-first list puts a parent before its children. No cache: the index-per-call rule is unchanged, `nodes()`
-is just called once instead of `4n` times. `poseOf(i, t, opts)` is `posesAt(t, opts)[i]`: the ancestor climb
-it used to do separately (`motionFrameOf`) is gone, so there is one composition to keep agreeing with the
-loader, not two.
+is just called once instead of `4n` times. `poseOf(i, t, opts)` is `posesAt(t, opts)[i]`, so there is one
+composition to keep agreeing with the loader, not two — `editorDoc.test.ts` compares it with the loader's on a
+turned node, a scaled parent, a turned parent and a turning one.
 
 **Sequences** (ADR 0142). `PreviewPose` = `LocalPose` + `turn: Quat` (multiplied on the right of the euler) +
 `scale` (the local scale now) + `opacity` + `shown`. The loader's rule, read from the document: a node's own
@@ -473,10 +473,10 @@ Inspector patches params in place).
 | fade | a node `fadesAt` gets its own transparent material copies in `buildItemMeshes` (`holder.userData.fading`); the preview sets their opacity and hides the holder at 0 |
 | collider on / off | nothing to draw — the editor has no physics |
 
-A drag mid-preview writes `unpreviewed(group, offsetAt(i, t))` (`gizmoTool.ts`, pure, tested): travel and a
-spinner's euler subtracted, a sequence's turn divided off the right, its scale divided out — so the file gets
-the authored transform, never the animation (ADR 0050, ADR 0126). `offsetAt` is a `PreviewOffset`
-`{ position, rotation, turn, scale }`, with sequences exactly when the preview shows them.
+A drag mid-preview writes `unpreviewed(group, offsetAt(i, t))` (`gizmoTool.ts`, pure, tested): a sequence's
+move subtracted, its turn divided off the right, its scale divided out — so the file gets the authored
+transform, never the animation (ADR 0050, ADR 0126). `offsetAt` is a `PreviewOffset`
+`{ position, turn, scale }`, with sequences exactly when the preview shows them.
 
 ## Play — `src/play.ts`
 

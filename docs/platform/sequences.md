@@ -4,9 +4,10 @@ An object's motion as **stages of steps**, a pure function of time (ADR 0137). T
 formulas are `d3-ease` (ADR 0138). Headless, in `@mp/content`, because the loader and the editor's preview are
 two readers of one rule.
 
-**Status: built; `Mover`/`Spinner` not yet removed, and still work.** The loader runs sequences (`content.md`,
-ADR 0141), the editor's Motion button previews them (ADR 0142), the Inspector edits them (`editor.md`,
-ADR 0143), and the viewport drags a move's point and draws the route (`editor.md`, ADR 0144).
+**The only motion there is**: `Mover` and `Spinner` are deleted (ADR 0137), and `strip-motion.sh` took them
+out of the content (`editor-server.md`). The loader runs sequences (`content.md`, ADR 0141), the editor's
+Motion button previews them (ADR 0142), the Inspector edits them (`editor.md`, ADR 0143), and the viewport
+drags a move's point and draws the route (`editor.md`, ADR 0144).
 
 ## Data
 
@@ -107,14 +108,14 @@ takes no time.
 | scale, opacity | multiply |
 | collider, enabled | off wins; on only when nobody says off |
 
-`NodeFrame { parentRot; parentScale; ownRotation }` has `motion.ts`'s `MotionFrame` shape, so a loader frame
-satisfies both.
+`NodeFrame { parentRot; parentScale; ownRotation }` — the loader builds one per frame (`frameOf`), with the
+parent's **live** world rotation and scale.
 
 ## In the game — `loader.ts` (ADR 0141)
 
 | channel | reaches |
 | --- | --- |
-| move, turn | the frame's local pose, like a mover's travel; a turn is multiplied onto the authored rotation on the right |
+| move, turn | the frame's local pose, added to the authored position; a turn is multiplied onto the authored rotation on the right |
 | scale | the frame's world scale, and every frame under it; collider shapes re-set with `setShape` when it changed; `VisualItem.drawScale` stretches what is drawn |
 | fade | `VisualItem.opacity`, on the target only — not its children; the renderer fades an own copy of the material |
 | collider on / off | the target's own bodies, `setEnabled` — not its children's |

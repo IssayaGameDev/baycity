@@ -162,7 +162,7 @@ describe('what the editor asks the game', () => {
   })
 
   it('gives nothing for a node without one', () => {
-    expect(keyboardGridOf([{ id: 'm0', type: 'Mover', params: {} }], vec3(4.5, 0.5, 4.5), {})).toBeNull()
+    expect(keyboardGridOf([{ id: 'm0', type: 'Sequence', params: {} }], vec3(4.5, 0.5, 4.5), {})).toBeNull()
   })
 
   /** A switched-off component generates no caps, so it must preview none either. */

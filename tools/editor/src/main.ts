@@ -679,9 +679,9 @@ const view = createCameraView({
 stage.scene.add(view.boundsBox)
 
 /**
- * The preview clock (`motionPreview.ts`, ADR 0103, ADR 0121). It owns the clock, whether it is running and
- * the frame it last advanced on; `motion.applyPoses()` is what puts every item at its motion's pose, which
- * is where anything with a mover belongs after any rebuild.
+ * The preview clock (`motionPreview.ts`, ADR 0142, ADR 0121). It owns the clock, whether it is running and
+ * the frame it last advanced on; `motion.applyPoses()` is what puts every item at its sequences' pose, which
+ * is where anything a sequence moves belongs after any rebuild while the clock runs.
  */
 const motion = createMotionPreview({
   doc: () => doc,
@@ -1227,7 +1227,7 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
      *
      * The world pose is re-expressed in the new parent's frame so nothing jumps, and it is read off the
      * scene graph — which the first move invalidates for everyone after it. The groups otherwise hold
-     * authored plus whatever the movers contribute, and reading those wrote the animation's position into
+     * authored plus whatever the sequences contribute, and reading those wrote the animation's position into
      * the file for good.
      */
     const parentGroup = parent === null ? null : (meshes.groupAt(parent) ?? null)
@@ -1995,11 +1995,11 @@ stage.start((dt) => {
   // A session takes the frame, or it does not and the edit clock does — the same either/or as before.
   if (!play.frame(dt)) {
     /**
-     * The preview clock: real time, and only while asked for (ADR 0103).
+     * The preview clock: real time, and only while asked for (ADR 0142).
      *
-     * Deliberately not the game clock — it poses the level's movers and nothing else, with no physics, no
-     * character and no rules. It runs freely rather than wrapping: every mover derives its own cycle from
-     * its speed, so there is no single length to wrap to, and level time in the game does not wrap either.
+     * Deliberately not the game clock — it poses the level's sequences and nothing else, with no physics, no
+     * character and no rules. It runs freely rather than wrapping: every sequence has its own cycle, so there
+     * is no single length to wrap to, and level time in the game does not wrap either.
      */
     motion.frame()
     view.update(dt)

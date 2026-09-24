@@ -4,9 +4,6 @@ import {
   boolParam,
   effectiveNode,
   numberParam,
-  motionOffset,
-  motionsOf,
-  travelOffset,
   vec3Param,
   stringParam,
   COLLIDER,
@@ -406,8 +403,8 @@ export interface Doc {
 
   // ---- motion -------------------------------------------------------------------------------------
   /**
-   * The node's local pose at a level time, with every `Mover` and `Spinner` on it applied (ADR 0103), and with
-   * its sequences when `sequences` is set (ADR 0141) — its own aimed at it and its parent's aimed at it.
+   * The node's local pose at a level time, with its sequences when `sequences` is set (ADR 0141) — its own
+   * aimed at it and its parent's aimed at it — and its authored transform otherwise.
    *
    * What the viewport draws while previewing. The same composition the loader does, because anything shown
    * here has to be what the game builds. `posesAt(t)[i]`, so the two cannot disagree.
@@ -419,16 +416,14 @@ export interface Doc {
    *
    * What the preview clock needs sixty times a second. Asking `poseOf` per index instead costs four full
    * document walks per node: `nodes()` is recomputed per call on purpose (see the note at the top of this
-   * file), and `poseOf` reaches it twice itself and twice more through `motionFrameOf`, which also climbs
-   * every node's ancestors separately. Quadratic, on a level with hundreds of platforms, per frame.
+   * file). Quadratic, on a level with hundreds of platforms, per frame.
    *
-   * Here the list is walked once and each parent's accumulated rotation and scale are carried **down**, which
-   * is the same product `motionFrameOf` rebuilds by climbing up — a depth-first list puts a parent before its
-   * children, so its accumulation is always ready. No cache, so the note at the top still holds: `nodes()` is
-   * called once rather than made to persist.
+   * Here the list is walked once and each parent's accumulated rotation and scale are carried **down** — a
+   * depth-first list puts a parent before its children, so its accumulation is always ready. No cache, so the
+   * note at the top still holds: `nodes()` is called once rather than made to persist.
    */
   posesAt: (timeMs: number, opts?: { readonly sequences?: boolean }) => PreviewPose[]
-  /** Whether any `Mover` or `Spinner` sits on this node, or a sequence moves it — whether previewing shows it move. */
+  /** Whether a sequence moves this node — its own, or its parent's aimed at it: whether previewing shows it move. */
   movesAt: (i: number) => boolean
   /**
    * Whether a sequence can fade this node — its own aimed at it, or its parent's (ADR 0141). The viewport gives
@@ -518,8 +513,8 @@ export interface LocalPose {
 }
 
 /**
- * A node as the preview draws it (ADR 0141). `rotation` is the authored euler plus a spinner's; a sequence's
- * turn goes on top of it, inside the node, as `turn`. `scale` is the local scale now — authored, times a
+ * A node as the preview draws it (ADR 0141). `rotation` is the authored euler; a sequence's turn goes on top
+ * of it, inside the node, as `turn`. `scale` is the local scale now — authored, times a
  * sequence's. `shown` is `false` while a sequence has it disabled, or one above it.
  */
 export interface PreviewPose extends LocalPose {
@@ -1724,7 +1719,7 @@ const docOver = (
       const withSequences = opts?.sequences === true
       // The preview starts at 0 on both clocks, as a screen does that has just loaded the level.
       const clocks = { shared: timeMs, local: timeMs }
-      /** Each node's own rotation including its spinner and its sequences' turn, and its own scale: what its children accumulate. */
+      /** Each node's own rotation including its sequences' turn, and its own scale: what its children accumulate. */
       const ownRot: Quat[] = []
       const ownScale: Vec3[] = []
       /** The product of every ancestor's rotation and scale, built downward. */
@@ -1738,8 +1733,6 @@ const docOver = (
         const n = all[i]!
         const t = n.view.transform
         const rest = t.rotation ?? vec3(0, 0, 0)
-        const motions = motionsOf(n.view.components)
-        const motion = motionOffset(motions, timeMs)
 
         const p = n.parent
         // A parent precedes its children in a depth-first list, so its own contribution is already computed.
@@ -1771,19 +1764,15 @@ const docOver = (
                 aimed.map(({ c, key }) => ({ pose: sampleSequence(c, clocks).get(key) ?? AT_REST_POSE, axes: c.sequence.axes })),
                 { parentRot, parentScale, ownRotation: rest },
               )
-        const spun = eulerToQuat(vec3(rest.x + motion.rotation.x, rest.y + motion.rotation.y, rest.z + motion.rotation.z))
-        ownRot[i] = aimed.length === 0 ? spun : mulQuat(spun, seq.rotation)
+        const placed = eulerToQuat(rest)
+        ownRot[i] = aimed.length === 0 ? placed : mulQuat(placed, seq.rotation)
         const authoredScale = t.scale ?? vec3(1, 1, 1)
         ownScale[i] = vec3(authoredScale.x * seq.scale.x, authoredScale.y * seq.scale.y, authoredScale.z * seq.scale.z)
         shownAt[i] = seq.enabled !== false && (p >= 0 ? (shownAt[p] ?? true) : true)
 
-        // A node with no motion travels nowhere, and re-framing is only asked for when there is travel to
-        // re-frame (ADR 0106).
-        const travel =
-          motions.length === 0 ? motion.position : travelOffset(motions, timeMs, { parentRot, parentScale, ownRotation: rest })
         out.push({
-          position: { x: t.position.x + travel.x + seq.position.x, y: t.position.y + travel.y + seq.position.y, z: t.position.z + travel.z + seq.position.z },
-          rotation: { x: rest.x + motion.rotation.x, y: rest.y + motion.rotation.y, z: rest.z + motion.rotation.z },
+          position: { x: t.position.x + seq.position.x, y: t.position.y + seq.position.y, z: t.position.z + seq.position.z },
+          rotation: rest,
           turn: seq.rotation,
           scale: ownScale[i]!,
           opacity: seq.opacity,
@@ -1803,7 +1792,7 @@ const docOver = (
     movesAt: (i) => {
       const n = node(i)
       if (n === undefined) return false
-      if (motionsOf(n.view.components).length > 0 || sequencesOn(n.view.components).some((c) => c.tracks.has(SELF))) return true
+      if (sequencesOn(n.view.components).some((c) => c.tracks.has(SELF))) return true
       const parent = n.parent >= 0 ? node(n.parent) : undefined
       return parent !== undefined && sequencesOn(parent.view.components).some((c) => c.tracks.has(n.authored.id))
     },

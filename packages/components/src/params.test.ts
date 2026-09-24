@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ComponentError, defaultsOf, readParams, visibleParams, type ParamDecls } from './params'
-import { Bumper, Spinner } from './gameplay'
+import { Bumper, Sequence } from './gameplay'
 import { Collider, Renderer } from './engine'
 
 const at = 'node[0].components[0]'
@@ -101,9 +101,9 @@ describe('the declaration drives the value type', () => {
    */
   it('keeps a number a number and an enum its own literal union', () => {
     const power: number = readParams(Bumper.params, { power: 30 }, at).power
-    const axis: '+X' | '-X' | '+Y' | '-Y' | '+Z' | '-Z' = readParams(Spinner.params, {}, at).axis
+    const clock: 'shared' | 'local' = readParams(Sequence.params, {}, at).clock
     const material: string = readParams(Renderer.params, {}, at).material
-    expect([power, axis, material]).toEqual([30, '+Y', ''])
+    expect([power, clock, material]).toEqual([30, 'shared', ''])
   })
 })
 

@@ -3,7 +3,9 @@ import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { instantiateLevel } from './loader'
-import { effectiveNode, COLLIDER, LIGHT, MATERIAL_OVERRIDE, MESH, MOVER, RENDERER, SPAWN, SPINNER, type TypeInfo } from './nodes'
+import { effectiveNode, COLLIDER, LIGHT, MATERIAL_OVERRIDE, MESH, RENDERER, SPAWN, type TypeInfo } from './nodes'
+import type { Stage } from './sequence'
+import { SEQUENCE } from './sequenceData'
 import type { ComponentData, Node, Level } from './types'
 
 /**
@@ -16,12 +18,21 @@ import type { ComponentData, Node, Level } from './types'
 
 /** Only `singleton` matters to resolution, so the real registry is not needed here. */
 const TYPES: TypeInfo = {
-  get: (type) => (type === COLLIDER || type === MOVER ? {} : { singleton: true }),
+  get: (type) => (type === COLLIDER || type === SEQUENCE ? {} : { singleton: true }),
 }
 
 const comp = (id: string, type: string, params: Record<string, unknown> = {}): ComponentData => ({ id, type, params })
 
 const box = (half = 0.5): ComponentData['params'] => ({ shape: { kind: 'box', halfExtents: vec3(half, half, half) } })
+
+/** A sequence that goes to `to` in `seconds` and rests there a second, so its end is not the end of a pass. */
+const outAndRest = (to: Vec3, seconds: number): ComponentData['params'] => {
+  const stages: Stage[] = [
+    { id: 'out', steps: [{ id: 'm', kind: 'move', to, timing: { by: 'seconds', seconds }, ease: 'linear' }] },
+    { id: 'rest', steps: [{ id: 'w', kind: 'wait', seconds: 1 }] },
+  ]
+  return { stages }
+}
 
 const levelOf = (nodes: Node[], prefabs?: Record<string, Node>): Level => ({
   id: 'fx',
@@ -208,7 +219,7 @@ describe('resolving a placement against its prefab', () => {
     name: 'pad',
     transform: { position: vec3(0, 0, 0) },
     // A repeatable one and a singleton one, so the layering rules below have both to work on.
-    components: [comp('rc0', MOVER, { move: vec3(0, 2, 0), speed: 4, smooth: false, offset: 0 }), comp('rc1', SPINNER, { axis: '+Y', speed: 90, offset: 0 })],
+    components: [comp('rc0', SEQUENCE, outAndRest(vec3(0, 2, 0), 0.5)), comp('rc1', SPAWN)],
     children: [
       {
         id: 'p0',
@@ -225,7 +236,7 @@ describe('resolving a placement against its prefab', () => {
     const level = placed({ transform: { position: vec3(7, 0, 0) } })
     const r = effectiveNode(level, level.nodes[0]!, TYPES)
     expect(r.transform.position).toEqual(vec3(7, 0, 0))
-    expect(r.components.map((c) => c.type)).toEqual([MOVER, SPINNER])
+    expect(r.components.map((c) => c.type)).toEqual([SEQUENCE, SPAWN])
     expect(r.children.map((c) => c.id)).toEqual(['p0'])
   })
 
@@ -252,11 +263,11 @@ describe('resolving a placement against its prefab', () => {
   })
 
   it('lets the placement’s own singleton beat the prefab’s', () => {
-    const level = placed({ components: [comp('o0', SPINNER, { axis: '+X', speed: 45, offset: 0 })] })
+    const level = placed({ components: [comp('o0', SPAWN)] })
     const r = effectiveNode(level, level.nodes[0]!, TYPES)
-    const spinner = r.components.filter((c) => c.type === SPINNER)
-    expect(spinner, 'one Spinner, not two').toHaveLength(1)
-    expect(spinner[0]?.id, 'the placement’s, not the prefab’s').toBe('o0')
+    const spawns = r.components.filter((c) => c.type === SPAWN)
+    expect(spawns, 'one Spawn, not two').toHaveLength(1)
+    expect(spawns[0]?.id, 'the placement’s, not the prefab’s').toBe('o0')
     expect(r.components.some((c) => c.id === 'rc0'), 'the repeatable one is untouched').toBe(true)
   })
 
@@ -301,10 +312,10 @@ describe('resolving a placement against its prefab', () => {
       ],
     })
     const loaded = load(level)
-    // 2 m at 4 m/s is a half-second leg, so it is fully out at 500 ms.
+    // 2 m in half a second, so it is fully out at 500 ms.
     loaded.update(500)
     // Two visuals: the prefab's own piece at the root's pose, then the placement's child one metre above it.
-    expect(loaded.visuals[0]!.position.y, 'the mover lifted the prefab piece by 2').toBeCloseTo(2, 6)
+    expect(loaded.visuals[0]!.position.y, 'the sequence lifted the prefab piece by 2').toBeCloseTo(2, 6)
     expect(loaded.visuals[1]!.position.y, 'and the rider went with it, keeping its own 1').toBeCloseTo(3, 6)
   })
 })
@@ -385,7 +396,7 @@ describe('a Light component', () => {
         {
           id: 'lamp',
           transform: { position: vec3(0, 0, 0) },
-          components: [comp('c0', LIGHT), comp('c1', MOVER, { move: vec3(0, 4, 0), speed: 8, smooth: true, offset: 0 })],
+          components: [comp('c0', LIGHT), comp('c1', SEQUENCE, outAndRest(vec3(0, 4, 0), 0.5))],
         },
       ]),
     )
@@ -432,250 +443,5 @@ describe('a trigger collider', () => {
   it('is solid when the flag is absent, so every collider authored before this is unchanged', () => {
     const loaded = load(levelOf([{ ...wall(false), components: [comp('c0', COLLIDER, box(2))] }]))
     expect(loaded.nodes[0]!.colliderHandles).toHaveLength(1)
-  })
-})
-
-/**
- * `Mover` and `Spinner` through the frame tree (ADR 0103).
- *
- * The maths is proved in `motion.test.ts`, including pose-for-pose equivalence with the keyframe presets
- * these replace. What is tested here is the loader's part: that a motion earns the node a kinematic body and
- * a place in the per-tick pass, that the subtree comes with it, and that a node with no motion still costs
- * what it always did.
- */
-describe('a node that moves itself', () => {
-  beforeAll(async () => {
-    await initPhysics()
-  })
-
-  /** The drawn position after posing the world at `nowMs`. `render(1)` lands exactly on the tick. */
-  const drawnAt = (loaded: ReturnType<typeof load>, nowMs: number, which = 0): Vec3 => {
-    loaded.update(nowMs)
-    loaded.render(1)
-    return loaded.visuals[which]!.position
-  }
-
-  const platform = (components: ComponentData[], children?: Node[]): Level =>
-    levelOf([
-      {
-        id: 'n0',
-        transform: { position: vec3(0, 0, 0) },
-        components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: '' }), ...components],
-        ...(children === undefined ? {} : { children }),
-      },
-    ])
-
-  it('carries the node, and settles back where it started', () => {
-    // 3 m up at 1.5 m/s: a 2 s leg, so fully out at 2 s and home again at 4 s.
-    const loaded = load(platform([comp('m0', MOVER, { move: vec3(0, 3, 0), speed: 1.5, smooth: true, offset: 0 })]))
-    expect(drawnAt(loaded, 0).y).toBeCloseTo(0, 6)
-    expect(drawnAt(loaded, 2000).y).toBeCloseTo(3, 6)
-    expect(drawnAt(loaded, 4000).y).toBeCloseTo(0, 6)
-  })
-
-  it('carries its children, so a subtree rides its parent', () => {
-    const loaded = load(
-      platform([comp('m0', MOVER, { move: vec3(0, 3, 0), speed: 1.5 })], [
-        { id: 'n1', transform: { position: vec3(0, 1, 0) }, components: [comp('c2', COLLIDER, box()), comp('c3', RENDERER, { material: '' })] },
-      ]),
-    )
-    expect(drawnAt(loaded, 2000, 0).y).toBeCloseTo(3, 6)
-    expect(drawnAt(loaded, 2000, 1).y, 'the child sits 1 m up, on a deck 3 m up').toBeCloseTo(4, 6)
-  })
-
-  it('spins, without touching its position', () => {
-    // 90 deg/s, so a quarter turn per second. Read off a collider offset, which a rotation moves.
-    const loaded = load(
-      levelOf([
-        {
-          id: 'n0',
-          transform: { position: vec3(0, 0, 0) },
-          components: [comp('c0', COLLIDER, { ...box(), center: vec3(2, 0, 0) }), comp('c1', RENDERER, { material: '' }), comp('s0', SPINNER, { axis: '+Y', speed: 90 })],
-        },
-      ]),
-    )
-    const at = drawnAt(loaded, 1000)
-    expect(at.x).toBeCloseTo(0, 6)
-    expect(at.z, 'a quarter turn about +Y swings +X round to -Z').toBeCloseTo(-2, 6)
-  })
-
-  it('adds two Movers, which is how a circle is authored without a keyframe', () => {
-    const loaded = load(
-      platform([
-        comp('m0', MOVER, { move: vec3(0, 4, 0), speed: 2, smooth: false, offset: 0 }),
-        comp('m1', MOVER, { move: vec3(4, 0, 0), speed: 2, smooth: false, offset: 0.25 }),
-      ]),
-    )
-    // 4 m at 2 m/s is a 2 s leg, so a 4 s cycle. At 1 s the first is halfway out and the second is at its far
-    // end; a quarter cycle later they have swapped. Read past zero, which `makeFrame` evaluates for free.
-    const one = drawnAt(loaded, 1000)
-    expect(one.y).toBeCloseTo(2, 6)
-    expect(one.x).toBeCloseTo(4, 6)
-    const two = drawnAt(loaded, 2000)
-    expect(two.y).toBeCloseTo(4, 6)
-    expect(two.x).toBeCloseTo(2, 6)
-  })
-
-  it('adds a Mover and a Spinner on the same node', () => {
-    const loaded = load(platform([comp('m0', MOVER, { move: vec3(0, 3, 0), speed: 1.5 }), comp('s0', SPINNER, { axis: '+Y', speed: 90 })]))
-    // 3 m up at the top of its leg, and a half turn in at 2 s of 90 deg/s.
-    expect(drawnAt(loaded, 2000).y).toBeCloseTo(3, 6)
-  })
-
-  /**
-   * **A metre is a metre, whatever a parent is scaled to** (ADR 0106).
-   *
-   * The frame tree puts a node's local position through its parent's scale, and the travel used to go through
-   * the same line — so 3 m under a parent scaled 2x became 6 m, and a diagonal under a non-uniform scale came
-   * out at an angle nobody typed. Unity has the same rule for an animated `localPosition`; this undoes it, so
-   * the number in the field is the number travelled.
-   */
-  it('travels the authored metres under a scaled parent', () => {
-    for (const scale of [vec3(2, 2, 2), vec3(2, 1, 1), vec3(0.5, 3, 0.25)]) {
-      const loaded = load(
-        levelOf([
-          {
-            id: 'holder',
-            transform: { position: vec3(0, 0, 0), scale },
-            components: [],
-            children: [
-              {
-                id: 'lift',
-                transform: { position: vec3(0, 0, 0) },
-                components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: '' }), comp('m0', MOVER, { move: vec3(0, 3, 0), speed: 6, smooth: false })],
-              },
-            ],
-          },
-        ]),
-      )
-      // 3 m at 6 m/s is a half-second leg, so fully out at 500 ms.
-      loaded.update(500)
-      loaded.render(1)
-      expect(loaded.visuals[0]!.position.y, `scale ${scale.x},${scale.y},${scale.z}`).toBeCloseTo(3, 6)
-    }
-  })
-
-  it('keeps a diagonal pointing where it was authored under a non-uniform parent', () => {
-    const loaded = load(
-      levelOf([
-        {
-          id: 'holder',
-          transform: { position: vec3(0, 0, 0), scale: vec3(4, 1, 1) },
-          components: [],
-          children: [
-            {
-              id: 'lift',
-              transform: { position: vec3(0, 0, 0) },
-              components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: '' }), comp('m0', MOVER, { move: vec3(3, 3, 0), speed: 100, smooth: false })],
-            },
-          ],
-        },
-      ]),
-    )
-    const travel = Math.hypot(3, 3)
-    loaded.update((travel / 100) * 1000)
-    loaded.render(1)
-    const at = loaded.visuals[0]!.position
-    expect(at.x, 'x is not stretched by the parent').toBeCloseTo(3, 5)
-    expect(at.y).toBeCloseTo(3, 5)
-  })
-
-  /**
-   * `space` picks the frame the travel is written in (ADR 0106): world axes, or the node's own orientation.
-   */
-  it('travels along the node’s own orientation in local space', () => {
-    const quarter = Math.PI / 2
-    const build = (space: string): { x: number; y: number; z: number } => {
-      const loaded = load(
-        levelOf([
-          {
-            id: 'lift',
-            // Turned a quarter turn about +Z: the node's own +Y now points along world -X.
-            transform: { position: vec3(0, 0, 0), rotation: vec3(0, 0, quarter) },
-            components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: '' }), comp('m0', MOVER, { move: vec3(0, 3, 0), speed: 6, smooth: false, space })],
-          },
-        ]),
-      )
-      loaded.update(500)
-      loaded.render(1)
-      return loaded.visuals[0]!.position
-    }
-    const world = build('world')
-    expect(world.y, 'world space ignores the node’s own turn').toBeCloseTo(3, 5)
-    expect(world.x).toBeCloseTo(0, 5)
-
-    const local = build('local')
-    expect(local.x, 'local space follows it: the node’s own up is world -X').toBeCloseTo(-3, 5)
-    expect(local.y).toBeCloseTo(0, 5)
-  })
-
-  it('travels along world axes under a rotated parent, in world space', () => {
-    const loaded = load(
-      levelOf([
-        {
-          id: 'holder',
-          transform: { position: vec3(0, 0, 0), rotation: vec3(0, 0, Math.PI / 2) },
-          components: [],
-          children: [
-            {
-              id: 'lift',
-              transform: { position: vec3(0, 0, 0) },
-              components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: '' }), comp('m0', MOVER, { move: vec3(0, 3, 0), speed: 6, smooth: false })],
-            },
-          ],
-        },
-      ]),
-    )
-    loaded.update(500)
-    loaded.render(1)
-    const at = loaded.visuals[0]!.position
-    expect(at.y, 'still straight up, whatever the parent is turned to').toBeCloseTo(3, 5)
-    expect(at.x).toBeCloseTo(0, 5)
-  })
-
-  it('stays fixed with no speed or no distance, so a still level costs what it always did', () => {
-    for (const params of [{ move: vec3(0, 3, 0), speed: 0 }, { move: vec3(0, 0, 0), speed: 2 }]) {
-      const loaded = load(platform([comp('m0', MOVER, params)]))
-      expect(drawnAt(loaded, 2000).y, 'never entered the per-tick pose pass').toBeCloseTo(0, 9)
-    }
-  })
-
-  /**
-   * How finely a tick has to be posed so a rider can stay on (ADR 0104). The number the client slices by.
-   */
-  it('asks for more slices the further a mover travels in a tick', () => {
-    // 10 m at 30 m/s: a 0.333 s leg, and cosine easing peaks at pi/2 times the average, so ~47 m/s at
-    // mid-travel. Sampled across the middle of the leg, where it is fastest.
-    const loaded = load(platform([comp('m0', MOVER, { move: vec3(0, 10, 0), speed: 30, smooth: true })]))
-    const midLeg = 167
-    const step = 1000 / 30
-    expect(loaded.motionSlices(midLeg, midLeg + step, 1), 'about 1.5 m in a tick, so two halves').toBe(2)
-    expect(loaded.motionSlices(midLeg, midLeg + step, 10), 'a generous allowance needs no slicing').toBe(1)
-  })
-
-  it('leaves a still or gentle level at one slice, so nothing else pays for this', () => {
-    const still = load(platform([]))
-    expect(still.motionSlices(0, 1000, 1)).toBe(1)
-    const gentle = load(platform([comp('m0', MOVER, { move: vec3(0, 3, 0), speed: 1.5, smooth: true })]))
-    expect(gentle.motionSlices(0, 1000 / 30, 1)).toBe(1)
-  })
-
-  it('caps the slice count, because past a point no tick rate makes a deck rideable', () => {
-    const silly = load(platform([comp('m0', MOVER, { move: vec3(0, 400, 0), speed: 800, smooth: false })]))
-    expect(silly.motionSlices(0, 1000 / 30, 1)).toBe(8)
-    expect(silly.motionSlices(0, 1000 / 30, 0), 'a nonsense allowance asks for nothing').toBe(1)
-  })
-
-  it('stops when the component is switched off', () => {
-    const loaded = load(
-      levelOf([
-        {
-          id: 'n0',
-          transform: { position: vec3(0, 0, 0) },
-          components: [comp('c0', COLLIDER, box()), comp('c1', RENDERER, { material: '' }), { id: 'm0', type: MOVER, params: { move: vec3(0, 3, 0), speed: 1.5 }, enabled: false }],
-        },
-      ]),
-    )
-    expect(drawnAt(loaded, 2000).y).toBeCloseTo(0, 9)
   })
 })
