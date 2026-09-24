@@ -329,6 +329,33 @@ const sseReader = (r: Response): { take: (count: number) => Promise<{ event: str
 }
 
 describe('live editing over the wire', () => {
+  /**
+   * Hiding travels the room (ADR 0132), and the route is a **fixed alternation** of actions at the end of
+   * the path, which is how a level name carrying a slash is told from the action after it. Adding the
+   * handler without adding the word to that alternation shipped a 404 to the box: the switch was right and
+   * the URL never reached it. This walks the whole way, which is the only level that would have caught it.
+   */
+  it('hides nodes for everyone, and says so on the stream', async () => {
+    const ctrl = new AbortController()
+    const stream = await fetch(`${base}/api/live/level/${LV}/events`, { headers: { 'x-user': 'ada' }, signal: ctrl.signal })
+    const sse = sseReader(stream)
+    const [hello, snapshot] = await sse.take(2)
+    const connId = (hello!.data as { connId: string }).connId
+    expect((snapshot!.data as { hidden?: string[] }).hidden, 'the snapshot carries it, so the first paint is right').toEqual([])
+
+    const hide = await call('ada', 'POST', `/api/live/level/${LV}/hidden`, { connId, keys: ['n:n1', 'i:p1:n2'], hidden: true })
+    expect(hide.status, 'a 404 here is the route alternation, not the handler').toBe(200)
+    const [event] = await sse.take(1)
+    expect(event!.event).toBe('hidden')
+    expect((event!.data as { hidden: string[] }).hidden).toEqual(['n:n1', 'i:p1:n2'])
+    expect(event!.id, 'a view of the level takes no sequence number').toBeUndefined()
+
+    const show = await call('ada', 'POST', `/api/live/level/${LV}/hidden`, { connId, keys: ['n:n1'], hidden: false })
+    expect(show.status).toBe(200)
+    const [back] = await sse.take(1)
+    expect((back!.data as { hidden: string[] }).hidden, 'the whole set every time, never a delta').toEqual(['i:p1:n2'])
+    ctrl.abort()
+  })
   it('streams hello + snapshot, applies a batch and echoes it with the seq, serves the live copy, refuses a PUT', async () => {
     const ctrl = new AbortController()
     const stream = await fetch(`${base}/api/live/level/${LV}/events`, { headers: { 'x-user': 'ada' }, signal: ctrl.signal })

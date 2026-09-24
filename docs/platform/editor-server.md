@@ -41,6 +41,12 @@ dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` c
 | `POST /api/live/:kind/:name/ping` | `{ connId }` — still here | |
 | `POST /api/live/:kind/:name/presence` | `{ connId, data }` — relayed to the others, unnumbered | |
 | `POST /api/live/:kind/:name/hidden` | `{ connId, keys, hidden }` — `refKey`s hidden in the **editor's viewport** (ADR 0132). Not an op: no sequence, no holds, never written to the level. Broadcast as the whole set on the `hidden` event, and persisted to `stateDir/hidden.json` | |
+
+**A new live action goes in two places.** The route is `^/api/live/(level|prefab)/([\w\-/]+)/(events|ops|hold|
+release|presence|hidden|flush|leave|ping)$` — the action is a **fixed alternation anchored at the end**, which
+is how a level name carrying a slash (ADR 0108) is told from the action after it. Adding a handler to the
+switch without adding the word to that alternation is a 404 with a correct handler behind it, which is what
+shipped when `hidden` was added (ADR 0132). `api.test.ts` walks one over the wire for exactly this reason.
 | `POST /api/live/:kind/:name/flush` | write the file now (the editor's Play) | |
 | `POST /api/live/:kind/:name/leave` | `{ connId }` — a closing tab's beacon | |
 | `POST /api/levels/move` | `{ from, to }`, both qualified — rename, or move into another game's folder; the `id` inside follows the file name. **409** while either is open live, 400 on a clash or a bad name, 404 when `from` is not there (ADR 0110) | lock |

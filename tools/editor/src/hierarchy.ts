@@ -200,7 +200,11 @@ export interface HierarchyHost {
   onSelectEnv: () => void
   onRename: (index: number, name: string) => void
   /** Re-parent `from` under `parent` (`null` = top level) at sibling position `at`. */
-  onReparent: (from: number, parent: number | null, at: number) => void
+  /**
+   * A drop happened. `from` is **every** row the drag carried, top to bottom (ADR 0134): the whole selection
+   * when the grabbed row was part of it, else just that row.
+   */
+  onReparent: (from: readonly number[], parent: number | null, at: number) => void
   /** Who else holds this node, or `null` (ADR 0089). Absent when nothing is ever held (prefabs). */
   heldBy?: (index: number) => string | null
 }
@@ -236,6 +240,8 @@ export interface Hierarchy {
 export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hierarchy => {
   const expanded = new Set<string>()
   let dragFrom: number | null = null
+  /** Every row the drag carries, ascending (ADR 0134). The whole selection, or just the grabbed row. */
+  let dragRows: number[] = []
   let editing: number | null = null
 
   const clearDropMarks = (): void => {
@@ -410,11 +416,19 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
         render()
       })
 
-      // Dragging stays instance-only: where a piece sits is the prefab's decision, not this placement's, so a
-      // drag would have to mean moving it in every instance of that prefab.
-      if (row.kind === 'item') {
+      /**
+       * **A piece can be dragged too, but only out** (ADR 0133). It is resolved into a node of this level at
+       * the destination and the placement records it is gone, so nothing about the prefab moves. What is
+       * still refused is a piece as a *destination* — `zoneOf` below offers no `onto` for one — because
+       * where a piece sits is the prefab's, for every placement at once.
+       */
+      {
         el.draggable = true
         el.addEventListener('dragstart', (e) => {
+          // Grabbing a row that is already selected drags the whole selection; grabbing one that is not
+          // drags it alone, and Unity does the same. Ascending, so the drop keeps the order they were in.
+          const selected = host.selection()
+          dragRows = selected.includes(row.index) ? [...selected].sort((a, b) => a - b) : [row.index]
           dragFrom = row.index
           el.classList.add('dragging')
           // Firefox will not start a drag without payload; the index itself travels in a closure variable
@@ -424,12 +438,12 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
         })
         el.addEventListener('dragend', () => {
           dragFrom = null
+          dragRows = []
           el.classList.remove('dragging')
           clearDropMarks()
         })
-      } else {
-        el.title = 'piece of the shared prefab: editing it changes every instance of that prefab'
       }
+      if (row.kind === 'inherited') el.title = 'piece of the shared prefab: editing it changes every instance of that prefab'
 
       // Any row is a drop *neighbour* (insert above/below among its siblings); only an item row can be
       // dropped *onto*, since a piece cannot be a parent.
@@ -441,7 +455,9 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
         if (dragFrom === null) return
         const zone = zoneOf(e)
         clearDropMarks()
-        if (!doc.canReparent(dragFrom, dropTarget(row, zone).parent)) {
+        // Legal if *any* of the dragged rows can go there; the ones that cannot are skipped on the drop.
+        const want = dropTarget(row, zone).parent
+        if (!(dragRows.length > 0 ? dragRows : [dragFrom]).some((i) => doc.canReparent(i, want))) {
           if (e.dataTransfer !== null) e.dataTransfer.dropEffect = 'none'
           return // no marker: an illegal drop should look impossible, not merely fail
         }
@@ -453,10 +469,11 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
         if (dragFrom === null) return
         e.preventDefault()
         const { parent, at } = dropTarget(row, zoneOf(e))
-        const from = dragFrom
+        const rows = dragRows.length > 0 ? dragRows : [dragFrom]
         dragFrom = null
+        dragRows = []
         clearDropMarks()
-        if (doc.canReparent(from, parent)) host.onReparent(from, parent, at)
+        host.onReparent(rows, parent, at)
       })
 
       container.append(el)

@@ -13,7 +13,8 @@ interface Node {
   overrides?: Record<string, NodeOverride>   // keyed by the referenced tree's node ids, any depth
 }
 interface ComponentData { id: string; type: string; params: Record<string, unknown>; enabled?: boolean }
-interface NodeOverride { transform?; name?; params?: Record<compId, Record<string, unknown>>; added?: ComponentData[]; removed?: compId[]; enabled?: Record<compId, boolean> }
+interface NodeOverride { transform?; name?; params?: Record<compId, Record<string, unknown>>; added?: ComponentData[]; removed?: compId[]; enabled?: Record<compId, boolean>
+                         nodeEnabled?: boolean; removedNodes?: string[]; addedChildren?: Node[]; childOrder?: string[] }
 interface Transform { position: Vec3; rotation?: Vec3 /* euler rad XYZ */; scale?: Vec3 /* baked into shapes at load */ }
 type ColliderDesc = box{halfExtents} | cylinder{halfHeight,radius} | capsule{halfHeight,radius} | ball{radius} | convex{points}
 interface Keyframe { t: number /* ms */; position?: Vec3; rotation?: Vec3; easing?: 'linear'|'in'|'out'|'inOut'|'step' }
@@ -84,6 +85,7 @@ type Op = { table?: string } & (
   | insertNode{parent|null, index, node} | removeNode | moveNode{parent|null, index} | replaceNode{node}
   | internPrefab{key, root} | dropPrefab{key}
   | setOverrideTransform | setOverrideName | setOverrideParams | setOverrideEnabled{enabled|null} | addOverrideComponent | removeOverrideComponent | setOverrideRemoved | setNodeOverride{override|null}
+  | setOverrideNodeEnabled | setOverrideNodeRemoved | insertOverrideChild | setOverrideChildOrder
   | setEnvironment{environment|null} | setMode{mode|null} | setNetBounds{netBounds|null}
   | setNodeEnabled{id,enabled} | setOverrideNodeEnabled{owner,node,enabled|null} )
 invertOp(level, op): Op | null    // before apply; null = changes nothing; throws OpError for what apply would refuse
@@ -98,6 +100,18 @@ insert a second root, remove the root, or touch environment/mode/netBounds; `mov
 `replaceNode` refuse an id already in the tree. Validation reuses `validate.ts` (exported `validateNodeTree`,
 `checkTransform`, `checkComponents`, `checkOverrides`, `validateConfig`); `LevelError` becomes `OpError`.
 Tidying (`children: []`, emptied override records) happens here so every copy writes identical JSON.
+
+**A placement can differ from its prefab in any way a node can** (ADR 0135), and each difference is recorded
+on the **piece** it applies to, which is what makes it work at any depth: values and components (ADR 0098),
+the node switched off (ADR 0099), the piece **removed** (`removedNodes`, ADR 0133), children **added**
+(`addedChildren`, ADR 0130 generalised), and the child **order** (`childOrder`).
+
+An added child is an ordinary authored node that lives in an override record. `find`, `idsIn`, `subtreeIds`
+and `contains` all walk `childListsOf`, so every existing op edits one and it takes part in id uniqueness —
+nothing else had to learn about it. `childrenFor(node, over, overrides)` is the one place a placement's
+children are resolved (prefab's, minus removed, plus added, in `childOrder`), exported so `bakeOverrides`
+and the editor's tree walk cannot disagree. `childOrder` is a preference: missing ids are skipped and
+unnamed children keep their place at the end, so a prefab gaining a piece does not invalidate it.
 
 ## Tracks — `packages/content/src/track.ts` (ADR 0029)
 

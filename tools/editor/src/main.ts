@@ -70,7 +70,7 @@ import { createHiddenView, keysUnder } from './hiddenView'
 import { createPickTool } from './pickTool'
 import { createPrefabActions } from './prefabActions'
 import { createPlay } from './play'
-import { applySelect, clampTo, primaryOf, type SelectMode } from './selection'
+import { applySelect, clampTo, primaryOf, rootsOf, type SelectMode } from './selection'
 import { createShortcuts } from './shortcuts'
 import { createSplitter, readPx, writePx } from './splitter'
 import { MODES, MODE_LIST, modeOf, soleMode } from './modes'
@@ -1171,57 +1171,78 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
     inspectorRebuild() // the inspector's own name field mirrors this one
     uiChanged()
   },
-  onReparent: (from, parent, at) => {
-    if (doc === null || !doc.canReparent(from, parent)) return
+  onReparent: (rows, parent, at) => {
+    const open = doc
+    if (open === null) return
     if (parent !== null && refuseHeld(parent)) return
     /**
-     * Preserve the world pose, as dragging in Unity's hierarchy does: the stored numbers are re-expressed in
-     * the new parent's frame so the object does not jump. Read off the scene graph, which is where the
-     * composed matrices already live — the document only ever holds local transforms.
+     * **The whole drag, in one edit** (ADR 0134).
      *
-     * **From the authored poses** (ADR 0126). The groups normally hold authored plus whatever the movers
-     * contribute — while the preview clock runs, and also at rest for any mover with a phase `offset`, which
-     * is drawn partway along its travel. Reading those matrices wrote the animation's current position into
-     * the file, for good. Every other write path subtracts the offset; this one cannot, because the offset is
-     * in the old parent's frame and the value being computed is in the new one.
+     * Roots only: with a parent and its child both selected, moving the child too would take it out of the
+     * parent it is travelling inside. `rootsOf` is the same filter copy and duplicate use.
      */
-    const local = motion.withAuthoredPoses(() =>
-      localInside(meshes.groupAt(from), parent === null ? null : (meshes.groupAt(parent) ?? null)),
-    )
-    const wasSelected = selected === from
-
+    const moving = rootsOf([...rows], (i) => open.depthOf(i))
+      .filter((i) => open.canReparent(i, parent))
+      .sort((a, b) => a - b)
+    if (moving.length === 0) {
+      setStatus('nothing there can go in that')
+      return
+    }
     /**
-     * The move and the re-expressed transform go in **one** batch (ADR 0113).
+     * Every pose is read **before anything moves**, and from the authored poses (ADR 0126).
      *
-     * They used to be two commits with `recordEdit` between them, which put the transform in the *next*
-     * history entry: undoing a later edit restored a transform belonging to this reparent, so a child jumped
-     * by its parent's whole transform while its sibling stayed put.
+     * The world pose is re-expressed in the new parent's frame so nothing jumps, and it is read off the
+     * scene graph — which the first move invalidates for everyone after it. The groups otherwise hold
+     * authored plus whatever the movers contribute, and reading those wrote the animation's position into
+     * the file for good.
      */
-    const reframed =
-      local === null
-        ? undefined
-        : {
-            position: local.position,
-            ...(isZeroRot(new THREE.Euler(local.rotation.x, local.rotation.y, local.rotation.z, 'XYZ'))
-              ? {}
-              : { rotation: vec3(r4(local.rotation.x), r4(local.rotation.y), r4(local.rotation.z)) }),
-            ...(isOne(new THREE.Vector3(local.scale.x, local.scale.y, local.scale.z))
-              ? {}
-              : { scale: vec3(r4(local.scale.x), r4(local.scale.y), r4(local.scale.z)) }),
-          }
-    const landed = doc.reparent(from, parent, at, reframed)
-    edits.recordEdit(parent === doc.parentOf(landed) ? 'reorder' : 'reparent')
+    const parentGroup = parent === null ? null : (meshes.groupAt(parent) ?? null)
+    const planned = motion.withAuthoredPoses(() =>
+      moving.map((i) => ({ ref: open.refAt(i), local: localInside(meshes.groupAt(i), parentGroup) })),
+    )
+    // Refs, not indices: each move renumbers the tree depth-first, so every index after the first is stale.
+    const parentRef = parent === null ? null : open.refAt(parent)
+
+    const landedRefs: (NodeRef | null)[] = []
+    let slot = at
+    for (const step of planned) {
+      if (step.ref === null) continue
+      const here = open.indexOfRef(step.ref)
+      const into = parentRef === null ? null : open.indexOfRef(parentRef)
+      if (here === null || (parentRef !== null && into === null)) continue
+      const local = step.local
+      const reframed =
+        local === null
+          ? undefined
+          : {
+              position: local.position,
+              ...(isZeroRot(new THREE.Euler(local.rotation.x, local.rotation.y, local.rotation.z, 'XYZ'))
+                ? {}
+                : { rotation: vec3(r4(local.rotation.x), r4(local.rotation.y), r4(local.rotation.z)) }),
+              ...(isOne(new THREE.Vector3(local.scale.x, local.scale.y, local.scale.z))
+                ? {}
+                : { scale: vec3(r4(local.scale.x), r4(local.scale.y), r4(local.scale.z)) }),
+            }
+      const landed = open.reparent(here, into, slot, reframed)
+      landedRefs.push(open.refAt(landed))
+      slot++
+    }
+    // One entry for the drag however many it carried (ADR 0113), so it is one Ctrl+Z and one message.
+    edits.recordEdit(moving.length > 1 ? `reparent ${moving.length} objects` : 'reparent')
 
     // Depth-first indices *are* the identity here (meshes, selection, the gizmo's target) and a reparent
     // renumbers everything after it, so the scene graph and the physics world are rebuilt rather than
-    // patched. `reparent` hands back where the item went, which is the one index worth keeping.
+    // patched.
     meshes.buildAll()
     rebuildLoaded()
-    if (wasSelected) select(landed)
+    const again = landedRefs.filter((r): r is NodeRef => r !== null).map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
+    if (again.length > 0) applySelection(again)
     else {
       deselect()
       uiChanged()
     }
+    const skipped = rows.length - moving.length
+    if (skipped > 0) setStatus(`moved ${moving.length}, skipped ${skipped} that cannot go in that`)
   },
 })
 

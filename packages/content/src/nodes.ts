@@ -147,11 +147,48 @@ const patchComponents = (components: readonly ComponentData[], o: NodeOverride |
  * piece-shaped resolver made under ADR 0033: the editor writes through the objects it is handed when editing
  * the shared definition, so copying unconditionally would turn a prefab edit into a silent no-op.
  */
+/** Does this placement do without the prefab's `id`, subtree and all (ADR 0133)? */
+const isRemoved = (overrides: Record<string, NodeOverride> | undefined, id: string): boolean =>
+  overrides?.[id]?.removedNodes?.includes(id) === true
+
+/**
+ * The children a placement shows under `node`: the prefab's, minus the removed, plus the added, in this
+ * placement's order (ADR 0135).
+ *
+ * `childOrder` is a preference, not a contract: ids it names that are gone are skipped, and children it does
+ * not mention keep their place at the end. So a prefab that gains a piece does not invalidate an order a
+ * placement recorded before it existed.
+ */
+export const childrenFor = (
+  node: Node,
+  o: NodeOverride | undefined,
+  overrides: Record<string, NodeOverride> | undefined,
+): Node[] | undefined => {
+  const inherited = (node.children ?? []).filter((k) => !isRemoved(overrides, k.id))
+  const added = o?.addedChildren ?? []
+  if (node.children === undefined && added.length === 0) return undefined
+  const all = [...inherited, ...added]
+  const order = o?.childOrder
+  if (order === undefined) return all
+  const byId = new Map(all.map((k) => [k.id, k]))
+  const first = order.map((id) => byId.get(id)).filter((k): k is Node => k !== undefined)
+  const named = new Set(first.map((k) => k.id))
+  return [...first, ...all.filter((k) => !named.has(k.id))]
+}
+
 export const bakeOverrides = (node: Node, overrides: Record<string, NodeOverride> | undefined): Node => {
   const o = overrides?.[node.id]
   const kids = node.children
-  const patchedKids = kids === undefined ? undefined : kids.map((k) => bakeOverrides(k, overrides))
-  const kidsChanged = kids !== undefined && patchedKids !== undefined && patchedKids.some((k, i) => k !== kids[i])
+  /**
+   * A removed child is **dropped, not patched** (ADR 0133) — Unity's removed GameObject. Its own subtree
+   * goes with it, the way removing any node takes its children, and nothing below it is visited: an
+   * override on a piece that is not there has nothing to apply to.
+   */
+  const shown = childrenFor(node, o, overrides)
+  const patchedKids = shown === undefined ? undefined : shown.map((k) => bakeOverrides(k, overrides))
+  const kidsChanged =
+    patchedKids !== undefined &&
+    (kids === undefined || patchedKids.length !== kids.length || patchedKids.some((k, i) => k !== kids[i]))
   if (o === undefined && !kidsChanged) return node
   return {
     ...node,

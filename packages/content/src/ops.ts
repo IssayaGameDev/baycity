@@ -69,6 +69,16 @@ export type OpBody =
   | { kind: 'setOverrideEnabled'; owner: string; node: string; componentId: string; enabled: boolean | null }
   /** The same for an **inherited** node, recorded on the placement. `null` clears back to the prefab's answer. */
   | { kind: 'setOverrideNodeEnabled'; owner: string; node: string; enabled: boolean | null }
+  /** This placement does, or does not, have the prefab's `node` (ADR 0133). `removed` false puts it back. */
+  | { kind: 'setOverrideNodeRemoved'; owner: string; node: string; removed: boolean }
+  /**
+   * A child **this placement** hangs under one of its pieces (ADR 0135). `node` is the piece; the child is
+   * an ordinary authored node, stored in that piece's override record because a piece is not a node of this
+   * level and has nowhere else to put one. Undone by `removeNode`, which finds it like any other.
+   */
+  | { kind: 'insertOverrideChild'; owner: string; node: string; index: number; child: Node }
+  /** The order of a piece's children in this placement (ADR 0135). `order` null goes back to the prefab's. */
+  | { kind: 'setOverrideChildOrder'; owner: string; node: string; order: string[] | null }
   | { kind: 'addOverrideComponent'; owner: string; node: string; component: ComponentData }
   | { kind: 'removeOverrideComponent'; owner: string; node: string; componentId: string }
   | { kind: 'setOverrideRemoved'; owner: string; node: string; componentId: string; removed: boolean }
@@ -109,13 +119,29 @@ const scopeOf = (level: Level, table: string | undefined): Scope => {
   return { roots: [root], table: {}, insidePrefab: true, at: `level.prefabs['${table}']` }
 }
 
+/**
+ * Every list of authored nodes hanging off `n`: its own children, and the children any placement adds under
+ * one of its pieces (ADR 0135).
+ *
+ * An added child is an ordinary node that happens to live in an override record, so the walk has to reach it
+ * or no op could edit one. Reached from the placement that owns the record, which is where it is stored.
+ */
+const childListsOf = (n: Node): Node[][] => {
+  const out: Node[][] = []
+  if (n.children !== undefined) out.push(n.children)
+  for (const over of Object.values(n.overrides ?? {})) if (over.addedChildren !== undefined) out.push(over.addedChildren)
+  return out
+}
+
 const find = (scope: Scope, id: string): Found | null => {
   const walk = (list: Node[], parent: Node | null): Found | null => {
     for (let i = 0; i < list.length; i++) {
       const n = list[i]!
       if (n.id === id) return { node: n, parent, siblings: scope.insidePrefab && parent === null ? null : list, index: i }
-      const inner = n.children === undefined ? null : walk(n.children, n)
-      if (inner !== null) return inner
+      for (const kids of childListsOf(n)) {
+        const inner = walk(kids, n)
+        if (inner !== null) return inner
+      }
     }
     return null
   }
@@ -128,11 +154,13 @@ const must = (scope: Scope, id: string): Found => {
   return f
 }
 
+// All three walk `childListsOf`, not `children`: an added child is a node of this document like any other
+// (ADR 0135), so it takes part in id uniqueness, in what a subtree covers, and in the ancestor test.
 const idsIn = (roots: readonly Node[]): Set<string> => {
   const out = new Set<string>()
   const walk = (n: Node): void => {
     out.add(n.id)
-    for (const kid of n.children ?? []) walk(kid)
+    for (const kids of childListsOf(n)) for (const kid of kids) walk(kid)
   }
   for (const r of roots) walk(r)
   return out
@@ -142,13 +170,14 @@ const subtreeIds = (n: Node): string[] => {
   const out: string[] = []
   const walk = (x: Node): void => {
     out.push(x.id)
-    for (const kid of x.children ?? []) walk(kid)
+    for (const kids of childListsOf(x)) for (const kid of kids) walk(kid)
   }
   walk(n)
   return out
 }
 
-const contains = (root: Node, id: string): boolean => root.id === id || (root.children ?? []).some((k) => contains(k, id))
+const contains = (root: Node, id: string): boolean =>
+  root.id === id || childListsOf(root).some((kids) => kids.some((k) => contains(k, id)))
 
 const clone = <T>(v: T): T => structuredClone(v)
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
@@ -385,6 +414,25 @@ const invert = (level: Level, op: Op): Op | null => {
       const prior = overrideRecord(owner, op.node, false)?.nodeEnabled ?? null
       return prior === op.enabled ? null : { kind: 'setOverrideNodeEnabled', owner: op.owner, node: op.node, enabled: prior }
     }
+    case 'setOverrideNodeRemoved': {
+      const owner = ownerOf(level, op.owner)
+      const prior = overrideRecord(owner, op.node, false)?.removedNodes?.includes(op.node) === true
+      return prior === op.removed ? null : { kind: 'setOverrideNodeRemoved', owner: op.owner, node: op.node, removed: prior }
+    }
+    case 'insertOverrideChild': {
+      const scope = scopeOf(level, t)
+      const ids = idsIn(scope.roots)
+      validateNodeTree(op.child, 'child', { ids: new Set(), insidePrefab: scope.insidePrefab })
+      for (const id of subtreeIds(op.child)) if (ids.has(id)) throw new OpError(`node id '${id}' is already in ${scope.at}`)
+      ownerOf(level, op.owner)
+      return stamp({ kind: 'removeNode', id: op.child.id })
+    }
+    case 'setOverrideChildOrder': {
+      const owner = ownerOf(level, op.owner)
+      const prior = overrideRecord(owner, op.node, false)?.childOrder
+      const same_ = prior === undefined ? op.order === null : op.order !== null && prior.join() === op.order.join()
+      return same_ ? null : { kind: 'setOverrideChildOrder', owner: op.owner, node: op.node, order: prior === undefined ? null : [...prior] }
+    }
     case 'addOverrideComponent': {
       const owner = ownerOf(level, op.owner)
       checkComponent(op.component, 'component')
@@ -579,6 +627,36 @@ export const applyOp = (level: Level, op: Op): void => {
       const over = overrideRecord(owner, op.node, true)!
       if (op.enabled === null) delete over.nodeEnabled
       else over.nodeEnabled = op.enabled
+      tidyOverride(owner, op.node)
+      return
+    }
+    case 'insertOverrideChild': {
+      const owner = ownerOf(level, op.owner)
+      const over = overrideRecord(owner, op.node, true)!
+      const host = (over.addedChildren ??= [])
+      host.splice(Math.max(0, Math.min(host.length, op.index)), 0, clone(op.child))
+      return
+    }
+    case 'setOverrideChildOrder': {
+      const owner = ownerOf(level, op.owner)
+      const over = overrideRecord(owner, op.node, true)!
+      if (op.order === null) delete over.childOrder
+      else over.childOrder = [...op.order]
+      tidyOverride(owner, op.node)
+      return
+    }
+    case 'setOverrideNodeRemoved': {
+      const owner = ownerOf(level, op.owner)
+      const over = overrideRecord(owner, op.node, true)!
+      // Kept on the removed node's **own** record, keyed by its own id, so every other kind of override on
+      // it travels and is cleared with it: putting the piece back is one `setNodeOverride null`.
+      const had = over.removedNodes ?? []
+      if (op.removed) over.removedNodes = had.includes(op.node) ? had : [...had, op.node]
+      else {
+        const left = had.filter((id) => id !== op.node)
+        if (left.length === 0) delete over.removedNodes
+        else over.removedNodes = left
+      }
       tidyOverride(owner, op.node)
       return
     }

@@ -257,6 +257,38 @@ export interface NodeOverride {
    * can drop its spikes while every other placement keeps them.
    */
   nodeEnabled?: boolean
+  /**
+   * Pieces of the referenced tree this placement **does not have** (ADR 0133) — Unity's *removed
+   * GameObject*, and the last of its four override kinds to arrive here.
+   *
+   * Different from `nodeEnabled: false`, which keeps the piece and switches it off: that still shows a row,
+   * dimmed, and still says "there is a thing here you have turned off". A removal takes it away. Deleting a
+   * piece, cutting one, and dragging one out of a placement all need to say that, and none of them could.
+   *
+   * By the **prefab's** node id, which is what the placement resolves against; the subtree goes with it, the
+   * way removing any node takes its children.
+   */
+  removedNodes?: string[]
+  /**
+   * Nodes **this placement** hangs under the piece this record belongs to (ADR 0135).
+   *
+   * Kept here rather than as children of the placement's own node, which is what ADR 0130 did: that works
+   * at the root and nowhere else, because a piece is not a node of this level and has nowhere to put one.
+   * Keyed by piece, it works at any depth, and the root becomes the root's case of the same thing.
+   *
+   * These are ordinary authored nodes — the op layer's `find` walks into them, so every existing op edits
+   * one without knowing where it lives.
+   */
+  addedChildren?: Node[]
+  /**
+   * The order of this piece's children **in this placement** (ADR 0135): every child id, inherited and
+   * added alike, in the order they appear here.
+   *
+   * Absent means the prefab's order, with anything added after it. Present, it is the whole list — ids that
+   * are no longer there are ignored, and children it does not mention keep their place at the end, so a
+   * prefab that gains a piece does not invalidate a placement's ordering.
+   */
+  childOrder?: string[]
 }
 
 /** A level: a node forest, plus a prefab table mapping a key to the **root node** of a shared definition. */
