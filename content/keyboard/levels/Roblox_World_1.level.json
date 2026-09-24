@@ -4581,6 +4581,90 @@
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                 "seed": 1
               }
+            },
+            {
+              "id": "811611fb",
+              "type": "Sequence",
+              "params": {
+                "name": "",
+                "clock": "shared",
+                "axes": "object",
+                "loop": "restart",
+                "times": 0,
+                "offset": 0,
+                "stages": [
+                  {
+                    "id": "7321025a",
+                    "steps": [
+                      {
+                        "id": "8e165f88",
+                        "kind": "fade",
+                        "to": 0,
+                        "timing": {
+                          "by": "seconds",
+                          "seconds": 1
+                        },
+                        "ease": "linear"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "992944c4",
+                    "steps": [
+                      {
+                        "id": "e4cbb2a0",
+                        "kind": "enabled",
+                        "on": false
+                      }
+                    ]
+                  },
+                  {
+                    "id": "b3aa7b15",
+                    "steps": [
+                      {
+                        "id": "0731ca73",
+                        "kind": "wait",
+                        "seconds": 5
+                      }
+                    ]
+                  },
+                  {
+                    "id": "4860f876",
+                    "steps": [
+                      {
+                        "id": "1cbcc252",
+                        "kind": "fade",
+                        "to": 1,
+                        "timing": {
+                          "by": "seconds",
+                          "seconds": 1
+                        },
+                        "ease": "linear"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "e31d51ca",
+                    "steps": [
+                      {
+                        "id": "534736aa",
+                        "kind": "enabled",
+                        "on": true
+                      }
+                    ]
+                  },
+                  {
+                    "id": "6508ed22",
+                    "steps": [
+                      {
+                        "id": "08176a1d",
+                        "kind": "wait",
+                        "seconds": 5
+                      }
+                    ]
+                  }
+                ]
+              }
             }
           ]
         },
