@@ -13353,6 +13353,24 @@
               }
             }
           ]
+        },
+        {
+          "id": "5c7c7e3d",
+          "name": "Stage End",
+          "transform": {
+            "position": {
+              "x": -6.2691,
+              "y": -85.1373,
+              "z": -110.7342
+            },
+            "rotation": {
+              "x": -3.141585672272785,
+              "y": 0,
+              "z": -3.141585672272785
+            }
+          },
+          "components": [],
+          "prefab": "8a569d7a7c66c3c7"
         }
       ]
     },
@@ -13481,6 +13499,143 @@
                 "material": ""
               },
               "enabled": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "7fc807e5",
+      "name": "Stage 12",
+      "transform": {
+        "position": {
+          "x": -736.5,
+          "y": 59,
+          "z": 124
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "826a4802",
+          "name": "platform",
+          "transform": {
+            "position": {
+              "x": 82.5002,
+              "y": -22.3495,
+              "z": -66.35
+            },
+            "rotation": {
+              "x": -3.141585672272785,
+              "y": 0,
+              "z": -3.141585672272785
+            },
+            "scale": {
+              "x": 30.9999,
+              "y": 0.3,
+              "z": 127.2995
+            }
+          },
+          "components": [
+            {
+              "id": "df9919a3",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "3884a96a",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "1bdef26e",
+              "type": "Renderer",
+              "params": {
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "aa1b93e0",
+              "type": "Keyboard",
+              "params": {
+                "pitch": 0.9,
+                "fill": 0.88,
+                "height": 0.45,
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1
+              }
+            }
+          ]
+        },
+        {
+          "id": "477429f7",
+          "name": "wall",
+          "transform": {
+            "position": {
+              "x": 82.5002,
+              "y": -22.3495,
+              "z": -66.35
+            },
+            "rotation": {
+              "x": -1.5707963267948966,
+              "y": 0,
+              "z": -3.141592653589793
+            },
+            "scale": {
+              "x": 92.9997,
+              "y": 0.6,
+              "z": 38.1898
+            }
+          },
+          "components": [
+            {
+              "id": "f56e7f74",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "bc0c7f09",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:rounded-box"
+              }
+            },
+            {
+              "id": "a531bfcd",
+              "type": "Renderer",
+              "params": {
+                "material": ""
+              }
             }
           ]
         }
