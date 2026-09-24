@@ -24,7 +24,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | `itemMeshes.ts` | `instanceRoot`, `markerGroup`, the groups, the shadow budget, the cell toggle | `doc`, `loaded`, `runtime`, `mode`, `gameSettings`, `selected`, `afterBuild` |
 | `play.ts` | the character, controller, loop, play view and lights, component runtime, game frame | `PlayHost` (23 getters) |
 | `historyStore.ts` | the history, pending batches, `coalescing`, the held-back drag batches, `dirty`, the clipboard | `HistoryHost` |
-| `liveSession.ts` | `collab`, the peer list, the last snapshot, `joining`, the deferred ops, the hold map and its key, the hold boxes, the presence timer | `LiveHost` |
+| `liveSession.ts` | `collab`, the peer list, the last snapshot, `joining`, the deferred ops, the hold map and its key, the hold outlines, the presence timer | `LiveHost` |
 | `motionPreview.ts` | the preview clock, whether it runs, the last frame. Poses via `Doc.posesAt(timeMs, { sequences: playing })` — one walk, not `poseOf` per node (ADR 0125, ADR 0142) | `MotionPreviewHost` |
 | `cameraView.ts` | the orthographic camera, `isometric`, the nav gizmo and its drag flag, the stand-in background, the bounds box | `CameraViewHost` |
 | `fileActions.ts` | nothing — it is behaviour: arm, rename, delete an asset or a level (ADR 0097, ADR 0110) | `FileActionsHost` |
@@ -148,7 +148,7 @@ Two things hold those groups, and both are re-pointed **inside** `buildItems`, a
 | Holder | Function | Was stale as |
 |---|---|---|
 | the transform gizmo | `reattachGizmo()` | `TransformControls: The attached 3D object must be a part of the scene graph`, every frame, then a null `updateMatrixWorld` on the next click |
-| collaborators' hold boxes | `rebuildHoldHelpers()` | a frozen or collapsed outline on somebody else's selection — silent, which is how it outlived the gizmo's version |
+| collaborators' hold outlines | `rebuildHoldOutlines()` (`room.rebuildHolds`) | no outline at all on somebody else's selection: a group no longer in the scene draws nothing — silent, which is how the boxes before them outlived the gizmo's version |
 
 Putting them at the call sites is what failed before: both sites ran them *before* `loadNewReferences`, so the
 async rebuild landed afterwards and undid the work. `refreshBoundsBox()` is there for the same reason.
@@ -294,10 +294,10 @@ parsePresence(data: unknown): PosePresence | null   // collab.ts — peers' data
 | --- | --- |
 | send | gizmo `dragging-changed` true → `startPresence()`: every 100 ms `collab.presence({ kind: 'pose', poses: dragPoses() })` — the selection's groups' local poses (`groupPose` + scale), not the document's. Drag end → `stopPresence()`: `{ poses: [], end: true }` |
 | ops | `onDocOps` while `coalescing` pushes to `heldBack` instead of submitting; drag end folds them (`foldBatches`) and submits **one** batch, the same ops the history entry holds. Nothing else changes: without a drag every batch still goes at once |
-| receive | `onPresence(data)`: `parsePresence` → for each pose `indexOfRef` → set the group's position/quaternion/scale; skipped for a node in my own selection while my gizmo drags. `end` → `applyPreviewPoses()` unless my gizmo is dragging (my drag end repaints). The hold box follows, since it updates each frame |
+| receive | `onPresence(data)`: `parsePresence` → for each pose `indexOfRef` → set the group's position/quaternion/scale; skipped for a node in my own selection while my gizmo drags. `end` → `applyPreviewPoses()` unless my gizmo is dragging (my drag end repaints). The hold outline follows, since it is drawn from the group each frame |
 | nothing kept | presence is unnumbered and never written; the op at drag end is what lands, and a drag that came back to its start lands nothing |
 
-Others' selection is what the hold boxes and badges show: a selection *is* a hold.
+Others' selection is what the hold outlines and badges show: a selection *is* a hold.
 
 ### Holds — a node is yours while selected
 
@@ -307,12 +307,20 @@ Others' selection is what the hold boxes and badges show: a selection *is* a hol
 | heartbeat | the lock heartbeat also `collab.ping()`s while live: the server sweeps a connection it has not heard from in two minutes, holds with it |
 | `heldBy(index)` | the name of another connection holding this node **or any ancestor** (`holdMap` by `refKey`), else `null` |
 | `applySelection` | filters `heldBy(i) !== null` out, so the gizmo never attaches to a held node; `select`/`selectWith` say `X has that selected` (`refuseHeld`) |
-| `onHoldsChanged` | on every `holds` event: `holdMap` rebuilt, my selection loses what someone else now holds, `rebuildHoldHelpers`, `hierarchy.render()` |
+| `onHoldsChanged` | on every `holds` event: `holdMap` rebuilt, my selection loses what someone else now holds, `rebuildHoldOutlines`, `hierarchy.render()` |
 | Hierarchy | `rowsOf(doc, open, heldBy)` → `Row.held` (name or `''`); a held row has class `held` (dimmed), a `.badge.held` with the name, and only `onSelect` wired (no rename, no drag); `onReparent` onto a held parent is refused |
-| viewport | one `THREE.BoxHelper` per node of the held subtree (the held node and everything under it, skipping nodes with no meshes of their own) over its mesh holder, in `holdRoot` (world space, `depthTest: false`), colour from a hash of the holder's `connId`; `helper.update()` every frame so a remote drag keeps up; rebuilt on holds events and after structural repaints |
+| viewport | an outline of the held node's group — its subtree — in a colour from a hash of the holder's `connId` (`HSL(h, 0.75, 0.6)`): `room.holdOutlines()`, one `OutlineGroup` per connection, cached and rebuilt on holds events and after structural repaints; drawn by the same pass as my own (below) |
 
 Holds work the same inside a prefab's room. A hold there does **not** block a level's override on the same
 node, and the reverse: they are different edits — the shared definition, and this one placement.
+
+### The selection outline (ADR 0145)
+
+`createPostFX(..., { outlines })` in `main.ts` asks each frame for my selection's groups in **white**
+(`MY_OUTLINE` — collaborators' colours are all strong hues, so white is never one of theirs) followed by
+`room.holdOutlines()`; nothing while playing. A group is a node's whole subtree, so a parent's outline takes
+its children in, as Unity's does. Drawn whether or not something is in front — the whole silhouette, as
+bright behind a wall as before it. `rendering.md` has the pass.
 
 ## Project panel — games at the top (ADR 0108)
 

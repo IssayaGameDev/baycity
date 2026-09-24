@@ -1,7 +1,7 @@
 import { applyBatch, OpError, refKey, type Level, type NodeRef, type Op } from '@mp/content'
 import { vec3, type Vec3 } from '@mp/core'
 import { eulerToQuat } from '@mp/core'
-import { createThreeStage, THREE } from '@mp/render-three'
+import { createThreeStage, THREE, type OutlineGroup } from '@mp/render-three'
 
 import { createCollab, httpTransport, parsePresence, type Hold, type Peer } from './collab'
 import type { Doc, LocalPose } from './editorDoc'
@@ -11,9 +11,10 @@ import type { Doc, LocalPose } from './editorDoc'
  * (ADR 0089, ADR 0091, ADR 0121).
  *
  * One module because these are one mechanism. Every remote change arrives through `collab`'s hooks and leaves
- * through one repaint, and the hold badges, the tinted boxes and the presence poses are all keyed to the same
- * connection. It owns nine variables that were loose in the shell — `collab` itself, the peer list, the last
- * snapshot, `joining`, the deferred ops, the hold map and its last key, the hold boxes and the presence timer.
+ * through one repaint, and the hold badges, the tinted outlines and the presence poses are all keyed to the
+ * same connection. It owns nine variables that were loose in the shell — `collab` itself, the peer list, the
+ * last snapshot, `joining`, the deferred ops, the hold map and its last key, the hold outlines and the presence
+ * timer.
  *
  * `joining` is the one worth naming: it exists so the **first** snapshot builds the document the caller is
  * about to build while a later one reinstalls it here, and two callers each raising and lowering it around
@@ -44,8 +45,6 @@ export interface LiveHost {
   applySelection: (indices: readonly number[]) => void
   deselect: () => void
   groupAt: (i: number) => THREE.Group | undefined
-  /** A group's mesh holder — what a hold box wraps, since a group also holds its child items. */
-  holderOf: (g: THREE.Group) => THREE.Group
   groupPose: (g: THREE.Group) => LocalPose
   /** A gizmo drag owns the groups; a remote repaint waits for the pointer to come up. */
   gizmoDragging: () => boolean
@@ -129,61 +128,43 @@ export const createLiveSession = (host: LiveHost) => {
     })
   }
 
-  /** Tinted boxes over nodes others hold, in world space and refreshed each frame so a drag keeps up. */
-  const holdRoot = new THREE.Group()
-    host.stage.scene.add(holdRoot)
-  const holdHelpers = new Map<number, THREE.BoxHelper>()
   const holdColour = (connId: string): number => {
     let h = 0
     for (let i = 0; i < connId.length; i++) h = (h * 31 + connId.charCodeAt(i)) >>> 0
     return new THREE.Color().setHSL((h % 360) / 360, 0.75, 0.6).getHex()
   }
   /**
-   * Rebuild every collaborator's hold box.
+   * What others hold, as outlines in their colours (ADR 0145): a group per connection, each hold's node group —
+   * which carries its subtree, as a hold does. Outlined every frame from the groups as they are posed, so a
+   * collaborator's drag keeps up with no per-frame work here.
    *
-   * Called from `meshes.buildAll` as well as on a holds event, and that is the load-bearing part: a `BoxHelper` wraps
-   * the object it was built around, so a rebuild leaves every one of them wrapping a group that is no longer in
-   * the scene and whose meshes have been disposed. It draws a stale box rather than throwing, which is why this
-   * outlived the same bug in the gizmo (see `reattachGizmo`).
+   * Recomputed from `meshes.buildAll` as well as on a holds event, and that is the load-bearing part: a rebuild
+   * replaces every group, and an outline of a group no longer in the scene draws nothing at all. Cached rather
+   * than asked each frame, because finding a node by its ref walks the document.
    */
-  const rebuildHoldHelpers = (): void => {
-    for (const helper of holdHelpers.values()) {
-      holdRoot.remove(helper)
-      helper.dispose()
-    }
-    holdHelpers.clear()
+  let holdOutlines: OutlineGroup[] = []
+  const rebuildHoldOutlines = (): void => {
+    holdOutlines = []
     const open = host.doc()
     if (open === null || !live()) return
     const mine = collab.connId()
+    const byConn = new Map<string, THREE.Object3D[]>()
     for (const h of holdMap.values()) {
       if (h.connId === mine) continue
       const i = open.indexOfRef(h.ref)
-      if (i === null) continue
-      // A hold covers the node and everything under it, so every node of the subtree gets its own box: a group
-      // with no meshes of its own would otherwise show nothing at all. Depth-first order makes the subtree the
-      // run of deeper indices right after the node.
-      const depth = open.depthOf(i)
-      for (let j = i; j < open.count() && (j === i || open.depthOf(j) > depth); j++) {
-        const g = host.groupAt(j)
-        if (g === undefined || holdHelpers.has(j) || host.holderOf(g).children.length === 0) continue
-        const helper = new THREE.BoxHelper(host.holderOf(g), holdColour(h.connId))
-        ;(helper.material as THREE.LineBasicMaterial).depthTest = false
-        helper.renderOrder = 1
-        holdRoot.add(helper)
-        holdHelpers.set(j, helper)
-      }
+      const g = i === null ? undefined : host.groupAt(i)
+      if (g === undefined) continue
+      byConn.set(h.connId, [...(byConn.get(h.connId) ?? []), g])
     }
-  }
-  const updateHoldHelpers = (): void => {
-    for (const helper of holdHelpers.values()) helper.update()
+    holdOutlines = [...byConn].map(([connId, roots]) => ({ roots, color: holdColour(connId) }))
   }
 
-  /** The room's holds changed: drop what I can no longer have, redraw the badges and the boxes. */
+  /** The room's holds changed: drop what I can no longer have, redraw the badges and the outlines. */
   const onHoldsChanged = (holds: Hold[]): void => {
     holdMap = new Map(holds.map((h) => [refKey(h.ref), h]))
     const mine = host.selection()
     if (mine.some((i) => heldBy(i) !== null)) host.applySelection(mine.filter((i) => heldBy(i) === null))
-    rebuildHoldHelpers()
+    rebuildHoldOutlines()
     host.hierarchyRender()
   }
 
@@ -399,9 +380,9 @@ export const createLiveSession = (host: LiveHost) => {
     syncHolds,
     /** A reconnect is a new connection: the server holds nothing for it yet. */
     forgetHolds: () => void (lastHoldKey = null),
-    rebuildHolds: rebuildHoldHelpers,
-    /** Once per frame, so a collaborator's drag keeps up. */
-    updateHolds: updateHoldHelpers,
+    rebuildHolds: rebuildHoldOutlines,
+    /** What others hold, one outline group per connection (ADR 0145). */
+    holdOutlines: (): readonly OutlineGroup[] => holdOutlines,
     startPresence,
     stopPresence,
     /** Hide or show nodes for everyone in the room (ADR 0132). The server's echo is the ack. */

@@ -87,7 +87,16 @@ const stage = createThreeStage({ canvas, cameraPosition: [12, 10, 16], lookAt: [
 // Same defaults as the game, on purpose: this pinned `shadowRadius: 40` and `bloomStrength: 0.3` against the
 // game's 30 and 0.1, so the editor did not show what you would play. Post-FX now follows the open document.
 const env = applyGreyboxEnvironment(stage.renderer, stage.scene, { sunIntensity: 2.4 })
-const postfx = createPostFX(stage.renderer, stage.scene, stage.camera)
+/** My selection's outline colour (ADR 0145): collaborators get strong hues, so white can never be one of theirs. */
+const MY_OUTLINE = 0xffffff
+const postfx = createPostFX(stage.renderer, stage.scene, stage.camera, {
+  // Every selection in the room, mine and theirs, outlined in one pass; none while playing, where the viewport
+  // is the game's. A node's group carries its subtree, so a parent's outline takes its children in, as Unity's.
+  outlines: () =>
+    play.active()
+      ? []
+      : [{ roots: selection.flatMap((i) => meshes.groupAt(i) ?? []), color: MY_OUTLINE }, ...room.holdOutlines()],
+})
 
 const controls = new OrbitControls(stage.camera, canvas)
 controls.enableDamping = true
@@ -283,7 +292,6 @@ const room = createLiveSession({
   applySelection: (indices) => applySelection(indices),
   deselect: () => deselect(),
   groupAt: (i) => meshes.groupAt(i),
-  holderOf: (g) => meshes.holderOf(g),
   groupPose: (g) => tool.groupPose(g),
   gizmoDragging: () => tool.dragging() || points.dragging(),
   playing: () => play.active(),
@@ -1991,7 +1999,6 @@ createSplitter({
 
 // --- render loop ---
 stage.start((dt) => {
-  room.updateHolds()
   // A session takes the frame, or it does not and the edit clock does — the same either/or as before.
   if (!play.frame(dt)) {
     /**

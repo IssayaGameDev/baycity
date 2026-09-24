@@ -41,6 +41,7 @@ interface PostFXOptions {
   ao?: boolean                                  // default true; GTAOPass built unless false
   aoIgnores?: () => Iterable<THREE.Object3D>    // hidden for the AO prepass only (ADR 0055)
   bloom?: boolean; bloomStrength?: number; bloomRadius?: number = 0.4; bloomThreshold?: number = 0.85
+  outlines?: () => readonly OutlineGroup[]      // asked each frame; absent = no outline pass (the game)
 }
 interface PostFX {
   composer: EffectComposer; bloom: UnrealBloomPass; ao: GTAOPass | null
@@ -48,15 +49,32 @@ interface PostFX {
   refresh: () => void         // push params onto passes
   apply: (from: Partial<PostFXConfig> | undefined) => void   // Object.assign(params, DEFAULT_POSTFX, from)
   render: () => void; setSize: (w, h) => void; dispose: () => void
-  setCamera: (camera: THREE.Camera) => void   // re-point RenderPass + GTAOPass (ADR 0094)
+  setCamera: (camera: THREE.Camera) => void   // re-point RenderPass + GTAOPass + the outline (ADR 0094)
 }
 DEFAULT_POSTFX: PostFXConfig = { ao: true, bloom: true, bloomStrength: 0.1 }
 ```
 
 Pass order: `RenderPass` → [`hide` toggle] → `GTAOPass` → [`show` toggle] → `UnrealBloomPass` → `OutputPass`
-(ACES from renderer) → `SMAAPass`. The passes take their camera at construction and hold it, so `setCamera` is
+(ACES from renderer) → [`SelectionOutlinePass`] → `SMAAPass`. The passes take their camera at construction and hold it, so `setCamera` is
 the only way to swap cameras without rebuilding the composer and losing the level's AO and bloom (ADR 0094). The toggle bracket hides `aoIgnores()` objects only for the AO prepass. Own
 `ResizeObserver` on `renderer.domElement`.
+
+## Selection outline — `selectionOutline.ts` (ADR 0145)
+
+```ts
+interface OutlineGroup { roots: readonly THREE.Object3D[]; color: number /* 0xRRGGBB as displayed */ }
+class SelectionOutlinePass extends Pass { camera; setGroups(groups) /* none ⇒ disabled */ }
+```
+
+Every group in one pass, drawn whatever is in front, so no depth:
+
+| step | what |
+| --- | --- |
+| mask | only the groups' subtrees, each mesh wearing its group's id material (red = id/255, depth off, double-sided) for one `renderer.render(root)` each, then given its own back; lines, points and sprites hidden for it; shadows off, `autoClear` off, the clear colour borrowed and returned. A root under a hidden ancestor is skipped |
+| across | the largest id within `radius` px left and right, into a second target |
+| composite | the same up and down over that; a pixel outside every silhouette with an id in its square takes that id's colour (a constant-index lookup), anything else is the image |
+
+`radius` = 2 CSS px × the pixel ratio. At most 32 groups. Mask and across targets follow the composer's size.
 
 ## Environment & sky — `environment.ts`, `sky.ts`
 

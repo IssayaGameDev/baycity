@@ -194,5 +194,6 @@ why matters.
 | [0143](adr/0143-a-sequence-is-edited-as-boxes-in-the-inspector.md) | A sequence is edited as boxes in the Inspector |
 | [0142](adr/0142-a-board-has-a-key-budget.md) | A board has a key budget |
 | [0144](adr/0144-a-move-point-is-dragged-on-a-copy-in-the-viewport.md) | A move point is dragged on a copy in the viewport |
+| [0145](adr/0145-a-selection-is-outlined-in-one-pass.md) | A selection is outlined, everyone's in one pass |
 
 `Design archive/` holds superseded design material and is not maintained.
