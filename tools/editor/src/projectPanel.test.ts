@@ -68,7 +68,7 @@ const rig = (over: Partial<ProjectHost> = {}) => {
     onDelete: (paths) => calls.push(`delete ${paths.join(' ')}`),
     onRename: (path) => calls.push(`rename ${path}`),
     fileOf: (path) => (path.endsWith('red.mat.json') ? { bytes: 1, modified: 2000 } : path.endsWith('brick.mat.json') ? { bytes: 1, modified: 1000 } : undefined),
-    onUpload: () => {},
+    onUpload: (files, to) => calls.push(`upload ${files.map((f) => f.name).join(' ')} to ${to}`),
     requestPreview: () => {},
     ...over,
   }
@@ -214,8 +214,8 @@ describe('the Project window', () => {
   it('drags all of what is selected into a folder, and one not selected alone', () => {
     const { tile, calls } = rig()
     const carrier = () => {
-      let data = ''
-      return { setData: (_t: string, v: string) => void (data = v), getData: () => data, files: [], effectAllowed: '', dropEffect: '' }
+      const data = new Map<string, string>()
+      return { setData: (t: string, v: string) => void data.set(t, v), getData: (t: string) => data.get(t) ?? '', files: [], effectAllowed: '', dropEffect: '' }
     }
     const drag = (from: HTMLElement, onto: HTMLElement): void => {
       const dt = carrier()
@@ -227,6 +227,20 @@ describe('the Project window', () => {
     drag(tile('sounds'), tile('textures'))
     drag(tile('materials'), tile('textures'))
     expect(calls.filter((c) => c.startsWith('move'))).toEqual(['move assets/prefabs assets/sounds to assets/textures', 'move assets/materials to assets/textures'])
+  })
+
+  it('uploads files dragged in from outside, and never a picture dragged within the page', () => {
+    const { tile, calls } = rig()
+    const png = new File(['x'], 'download.png', { type: 'image/png' })
+    const drop = (onto: HTMLElement): void =>
+      void onto.dispatchEvent(Object.assign(new Event('drop', { bubbles: true, cancelable: true }), { dataTransfer: { files: [png], getData: () => '' } }))
+    // A tile's thumbnail, dragged on its own: the browser hands it over as a file.
+    tile('textures').dispatchEvent(new Event('dragstart', { bubbles: true }))
+    drop(tile('materials'))
+    expect(calls, 'nothing uploaded, nothing moved').toEqual([])
+    document.dispatchEvent(new Event('dragend'))
+    drop(tile('materials'))
+    expect(calls).toEqual(['upload download.png to assets/materials'])
   })
 
   it('takes Unity’s keys while it has the focus, and keeps them from the level behind', () => {
