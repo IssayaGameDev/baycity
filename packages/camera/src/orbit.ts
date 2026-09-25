@@ -55,6 +55,12 @@ export interface CameraParams {
   /** Half-life (s) of the camera easing back out once an obstruction clears. */
   camReturnSmooth: number
   /**
+   * Whether an obstruction is holed while the camera keeps its distance (ADR 0055), or stops the camera as
+   * ADR 0020 always did. Off by default: the level turns it on (`config.cameraSeeThrough`, ADR 0148), and the
+   * host copies it here when it loads one. Off, the `camMask*` numbers do nothing.
+   */
+  camSeeThrough: boolean
+  /**
    * Camera dip on landing (m at an impact of 1, i.e. landing your own jump). The one piece of jump feel
    * that lives in the view rather than the controller: the character stops dead on contact and the camera
    * carrying on down for a moment is what sells the weight. 0 turns it off.
@@ -109,6 +115,7 @@ export const DEFAULT_CAMERA_PARAMS: CameraParams = {
   camLookahead: 0.15,
   camPushInSmooth: 0.06,
   camReturnSmooth: 0.18,
+  camSeeThrough: false,
   landKick: 0.12,
   landKickMax: 2.5,
   landKickRecovery: 0.12,
@@ -128,8 +135,11 @@ export const DEFAULT_CAMERA_PARAMS: CameraParams = {
  * package never learns what a Tweakpane is — and the list cannot drift from the parameters, because a test
  * checks every key against `DEFAULT_CAMERA_PARAMS`.
  */
+/** The parameters a slider can drive. `camSeeThrough` is a switch, and is the level's (ADR 0148). */
+type NumberParam = { [K in keyof CameraParams]: CameraParams[K] extends number ? K : never }[keyof CameraParams]
+
 export interface Tunable {
-  key: keyof CameraParams
+  key: NumberParam
   label: string
   min: number
   max: number
@@ -199,7 +209,8 @@ export interface OrbitCamera {
    * **The occlusion pull-in does not apply.** Somebody placed this eye; moving it because a wall is near
    * would be second-guessing them, and a shot inside a wall is a mistake that is obvious the moment you see
    * it. The see-through hole still runs, along the shot's own sightline rather than the boom's, which is the
-   * same split ADR 0055 settled: hole the obstruction, do not move the camera.
+   * same split ADR 0055 settled: hole the obstruction, do not move the camera. On a level that does not see
+   * through (ADR 0148) there is no hole, and a wall between a shot and the character stays in the shot.
    *
    * Blends in and out on `shotSmooth`, and hands back continuously — the orbit's yaw and pitch track the
    * blended direction throughout, so releasing a shot does not snap.
@@ -317,6 +328,7 @@ export const createOrbitCamera = (camera: THREE.PerspectiveCamera, opts: OrbitCa
       : occlusionFor(queries, target, boom, len, {
           ...(probes === undefined ? {} : { probes }),
           ...(feetY === undefined ? {} : { feetY }),
+          seeThrough: params.camSeeThrough,
         })
 
   return {

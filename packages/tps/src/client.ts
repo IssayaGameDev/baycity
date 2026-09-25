@@ -388,7 +388,8 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
    * What stays in this file is what a *host* owes it: the DOM events it has no business knowing about, the
    * physics queries once a world exists, and the character position to orbit.
    */
-  const orbit = createOrbitCamera(stage.camera)
+  // The level says whether the camera sees through or collides (ADR 0148); the rest is the camera's own.
+  const orbit = createOrbitCamera(stage.camera, { params: { camSeeThrough: levelData.config.cameraSeeThrough === true } })
   /**
    * The sun-shadow switch, kept because a hole in a surface leaves its *shading* behind (ADR 0055).
    *

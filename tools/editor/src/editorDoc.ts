@@ -496,6 +496,12 @@ export interface Doc {
   /** Set the level's own bound, or clear it back to the default. */
   setNetBounds: (metres: number | null) => void
   /**
+   * Whether the game camera sees through what is in its way on this level, or is stopped by it (ADR 0148).
+   * `false` for a prefab, which has no camera of its own; setting it there is a no-op.
+   */
+  cameraSeeThrough: () => boolean
+  setCameraSeeThrough: (on: boolean) => void
+  /**
    * Which game this level is for (ADR 0052). `undefined` for an unassigned level, and always for a prefab —
    * a prefab belongs to no game.
    */
@@ -1981,6 +1987,11 @@ const docOver = (
     setNetBounds: (metres) => {
       if (mode === 'prefab') return
       commit([{ kind: 'setNetBounds', netBounds: metres }])
+    },
+    cameraSeeThrough: () => mode !== 'prefab' && level.config.cameraSeeThrough === true,
+    setCameraSeeThrough: (on) => {
+      if (mode === 'prefab') return
+      commit([{ kind: 'setCameraSeeThrough', seeThrough: on }])
     },
     modeRef: () => (mode === 'prefab' ? undefined : level.config.mode),
     setMode: (name) => {

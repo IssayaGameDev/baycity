@@ -86,7 +86,7 @@ Every `Doc` mutator builds `Op`s (`@mp/content` `ops.ts`, `content.md`) and comm
 | `linkToPrefab` | `replaceNode` (the node keeps its transform and name, loses its own components, gains the reference). `definitionOf` is pure: the definition becomes a **file**, which is the host's to write |
 | `revert` | `setNodeOverride` (the record with the field gone, or `null`) |
 | `overrideOpsFor` | pure — the ops the **prefab's own room** would take. The host sends them there, then calls `revert` here (ADR 0091) |
-| `setEnvironment` / `setMode` / `setNetBounds` | the same-named op; all three are level-only and a no-op in a prefab |
+| `setEnvironment` / `setMode` / `setNetBounds` / `setCameraSeeThrough` | the same-named op; all four are level-only and a no-op in a prefab. `setCameraSeeThrough` is the Environment row's **Camera** section, `see through` (ADR 0148) |
 | `setId` | not an op (the file name; live, the server sets it) |
 
 `prefabDoc(root, registry, clips)` — a prefab is edited as a document of one root node, in its own live room
@@ -654,7 +654,6 @@ causes.
 | | |
 | --- | --- |
 | header | `Sequence  <name>`, `sequenceSummary` (repeat and offset when not the defaults, then the pass length), ⚠ with a count, then **clock, loop and axes as icon toggles** (`SEQUENCE_TOGGLES`: a click flips it, lit when not the default, `.over` when overridden, dim when mixed across a selection) and **⚙**: a popover of name, repeat (Forever / Count + passes) and offset (%) |
-| bar | each stage's length in proportion, a click scrolls to its card |
 | card | a stage: number, ⚠, length, `+` on hover (the step palette, into this stage); dragged by its header; right-click duplicate / delete |
 | rail | a `.seq-link` above each card and one at the end: a `+` on hover inserts a stage there; a step dropped on it becomes a stage of its own there |
 | row | `stepFace`: the kind's icon on a tinted chip, name, `→ child`, values rounded to a tenth, the duration from `compiled.steps` in a right-hand column (none for an instant), the ease's curve; `×` on hover; click opens; right-click duplicate / delete. Open, it is only icon, name and × — the fields say the rest |

@@ -139,6 +139,41 @@ describe('camera occlusion', () => {
 })
 
 /**
+ * A level that does not see through (ADR 0148) gets ADR 0020's camera back: the boom's hit is where it goes.
+ */
+describe('colliding', () => {
+  const COLLIDE = { seeThrough: false }
+
+  it('stops at an obstruction instead of holing it', () => {
+    expect(occlusionFor(world([4, 4.2]), TARGET, BOOM, LEN, COLLIDE)).toEqual({ limit: 4, seeThrough: false, ...CLEAR })
+  })
+
+  it('keeps the full boom with nothing in the way', () => {
+    expect(occlusionFor(world(), TARGET, BOOM, LEN, COLLIDE)).toEqual({ limit: 10, seeThrough: false, ...CLEAR })
+  })
+
+  it('stops at the first thing in the way, not the one the camera would be inside', () => {
+    expect(occlusionFor(world([3, 3.5], [9.5, 11]), TARGET, BOOM, LEN, COLLIDE).limit).toBe(3)
+  })
+
+  it('asks one cast and nothing else, whatever is down the body', () => {
+    let casts = 0
+    const counted: OcclusionQueries = {
+      cast: () => {
+        casts++
+        return { distance: 4, colliderHandle: 0 }
+      },
+      occupied: () => {
+        throw new Error('should not be asked')
+      },
+    }
+    const probes = [{ x: 0, y: -1, z: 0 }]
+    expect(occlusionFor(counted, TARGET, BOOM, LEN, { ...COLLIDE, probes, feetY: -2 })).toEqual({ limit: 4, seeThrough: false, ...CLEAR })
+    expect(casts).toBe(1)
+  })
+})
+
+/**
  * Below the feet, nothing is see-through. Removing ADR 0020's pull-in removed what kept the camera out of
  * the ground, and a hole in the ground is a view of the level's underside.
  *

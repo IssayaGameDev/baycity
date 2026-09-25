@@ -173,6 +173,12 @@ export interface LevelConfig {
    * a file (ADR 0093).
    */
   netBounds?: number
+  /**
+   * Whether the game camera sees through what is between it and the character (ADR 0148): `true` holes the
+   * obstruction and keeps the distance (ADR 0055); absent or `false`, the obstruction stops the camera
+   * (ADR 0020). A level's call, because it depends on how the level is built. Only `true` is written.
+   */
+  cameraSeeThrough?: boolean
 }
 
 /**

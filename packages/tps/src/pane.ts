@@ -116,6 +116,8 @@ export const installDebugPane = (opts: DebugPaneOptions): DebugPane => {
        */
       for (const t of CAMERA_TUNABLES)
         cam.addBinding(orbit.params, t.key, { min: t.min, max: t.max, step: t.step, label: t.label })
+      // The level's answer, flippable live to compare the two (ADR 0148). Reloading takes the level's again.
+      cam.addBinding(orbit.params, 'camSeeThrough', { label: 'see through' })
       /**
        * Two switches for telling shading apart from geometry. A hole in a surface leaves the *shading* it was
        * responsible for behind — the sun shadow it casts on whatever it covered, and the ambient occlusion the

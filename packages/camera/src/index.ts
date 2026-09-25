@@ -1,5 +1,5 @@
 /**
- * @mp/camera — the third-person orbit camera (ADR 0020, amended by ADR 0055).
+ * @mp/camera — the third-person orbit camera (ADR 0020, amended by ADR 0055 and ADR 0148).
  *
  * Boom, zoom, occlusion, the see-through hole, the landing dip, and whether the player's own rig is inside
  * the lens. Browser-side view code: it takes a Three camera and drives it. No DOM (the host owns pointer

@@ -196,6 +196,23 @@ describe('level ops', () => {
     }
     expect(() => invertOp(fixture(), { kind: 'setNetBounds', table: 'pad', netBounds: 250 })).toThrow(/no bounds/)
   })
+
+  it('setCameraSeeThrough writes only true, round-trips, and refuses a prefab or a non-boolean', () => {
+    roundTrip({ kind: 'setCameraSeeThrough', seeThrough: true })
+
+    const level = fixture()
+    expect(invertOp(level, { kind: 'setCameraSeeThrough', seeThrough: false }), 'absent already means false').toBeNull()
+    applyOp(level, { kind: 'setCameraSeeThrough', seeThrough: true })
+    expect(level.config.cameraSeeThrough).toBe(true)
+    const undo = invertOp(level, { kind: 'setCameraSeeThrough', seeThrough: false })
+    expect(undo).toEqual({ kind: 'setCameraSeeThrough', seeThrough: true })
+    applyOp(level, { kind: 'setCameraSeeThrough', seeThrough: false })
+    expect('cameraSeeThrough' in level.config, 'false removes the key rather than writing it').toBe(false)
+
+    expect(() => invertOp(fixture(), { kind: 'setCameraSeeThrough', seeThrough: 'yes' as never })).toThrow(OpError)
+    expect(() => invertOp(fixture(), { kind: 'setCameraSeeThrough', table: 'pad', seeThrough: true })).toThrow(/no camera/)
+    expect(touchedRefs(fixture(), { kind: 'setCameraSeeThrough', seeThrough: true })).toEqual([])
+  })
 })
 
 describe('table scope', () => {

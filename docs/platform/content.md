@@ -19,7 +19,7 @@ interface NodeOverride { transform?; name?; params?: Record<compId, Record<strin
 interface Transform { position: Vec3; rotation?: Vec3 /* euler rad XYZ */; scale?: Vec3 /* baked into shapes at load */ }
 type ColliderDesc = box{halfExtents} | cylinder{halfHeight,radius} | capsule{halfHeight,radius} | ball{radius} | convex{points}
 interface Keyframe { t: number /* ms */; position?: Vec3; rotation?: Vec3; easing?: 'linear'|'in'|'out'|'inOut'|'step' }
-interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: SunConfig; ambient: AmbientConfig; sky: SkyConfig; postfx: PostFXConfig }>; netBounds?: number }
+interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: SunConfig; ambient: AmbientConfig; sky: SkyConfig; postfx: PostFXConfig }>; netBounds?: number; cameraSeeThrough?: boolean }
 ```
 
 - `enabled === false` → loader and runtime skip it.
@@ -28,6 +28,7 @@ interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: Su
 - `environment` absent/partial → renderer defaults; sun is config, not a `Light` (ADR 0048).
 - `unlinkPrefab(level, assetId, deps)` / `unlinkedNode(level, node, assetId, deps)` (`prefabs.ts`, ADR 0097; one placement at a time through `Doc.unlinkNode`, ADR 0111): turn placements of one prefab into plain nodes that keep what they were drawing. `deps` carries `types`, `freshId` and `refKeysOf` — a registry is needed for singleton layering and for `nodeRef`s that must follow the re-id, which is why only the editor can do this. The inherited subtree is cloned and re-idded as one forest; `nodeRef`s and sequence step targets follow the map, in that forest **and** on the placement's own components (a root sequence targets the root's children, ADR 0139).
 - `netBounds`: half-extent in metres that peer positions are quantized over on the wire (ADR 0093). Absent → `QUANT_BOUND` (1000 m). Step is `2 × netBounds / 65535`. The editor draws it as a box (ADR 0093); a peer outside it stops being relayed (ADR 0092).
+- `cameraSeeThrough`: `true` = the game camera holes what is in its way and keeps its distance (ADR 0055); absent = it is stopped by it (ADR 0020). Only `true` is written (ADR 0148).
 
 ## Resolution — `packages/content/src/nodes.ts`
 
@@ -40,7 +41,7 @@ interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: Su
 
 ## Validation — `packages/content/src/validate.ts`
 
-`validateLevel(data: unknown, checker?: ParamChecker): Level` — throws `LevelError` with a JSON-path message. Per-tree helper `validateNodeTree(node, at, { ids, table, insidePrefab, checker? })` and `checkTransform`/`checkComponents`/`checkOverrides`/`validateConfig` are exported for `ops.ts`. Always: ids non-empty, unique per tree; transforms; component ids unique per node; `prefab` key in table and not inside a prefab; override shapes; `config.mode.name` non-empty; `environment` sub-blocks (`#rrggbb`, finite numbers, booleans); `config.netBounds` a positive finite number. Params **only** with `checker` (`Registry.checkParams`). `nodeRef` targets unchecked.
+`validateLevel(data: unknown, checker?: ParamChecker): Level` — throws `LevelError` with a JSON-path message. Per-tree helper `validateNodeTree(node, at, { ids, table, insidePrefab, checker? })` and `checkTransform`/`checkComponents`/`checkOverrides`/`validateConfig` are exported for `ops.ts`. Always: ids non-empty, unique per tree; transforms; component ids unique per node; `prefab` key in table and not inside a prefab; override shapes; `config.mode.name` non-empty; `environment` sub-blocks (`#rrggbb`, finite numbers, booleans); `config.netBounds` a positive finite number; `config.cameraSeeThrough` a boolean. Params **only** with `checker` (`Registry.checkParams`). `nodeRef` targets unchecked.
 
 ## Loader — `packages/content/src/loader.ts`
 
@@ -90,7 +91,7 @@ type Op = { table?: string } & (
   | setOverrideTransform | setOverrideName | setOverrideParams | setOverrideEnabled{enabled|null} | addOverrideComponent | removeOverrideComponent | setOverrideRemoved | setNodeOverride{override|null}
   | setOverrideNodeEnabled | setOverrideNodeRemoved | insertOverrideChild | setOverrideChildOrder
   | setOverrideSequence{componentId, override|null}
-  | setEnvironment{environment|null} | setMode{mode|null} | setNetBounds{netBounds|null}
+  | setEnvironment{environment|null} | setMode{mode|null} | setNetBounds{netBounds|null} | setCameraSeeThrough{seeThrough /* false removes the key */}
   | setNodeEnabled{id,enabled} | setOverrideNodeEnabled{owner,node,enabled|null} )
 invertOp(level, op): Op | null    // before apply; null = changes nothing; throws OpError for what apply would refuse
 applyOp(level, op): void          // in place; validates first (structure only), throws OpError having touched nothing
@@ -100,7 +101,7 @@ touchedRefs(level, op): NodeRef[] // the node, or the subtree (+ inherited refs 
 
 Rules: ids and table keys are minted by the client and travel in the op; `internPrefab` on an identical entry is
 a no-op and on a different one an `OpError`; `dropPrefab` of a referenced key is a no-op; a `table` op may not
-insert a second root, remove the root, or touch environment/mode/netBounds; `moveNode` refuses a cycle; `insertNode` /
+insert a second root, remove the root, or touch environment/mode/netBounds/cameraSeeThrough; `moveNode` refuses a cycle; `insertNode` /
 `replaceNode` refuse an id already in the tree. Validation reuses `validate.ts` (exported `validateNodeTree`,
 `checkTransform`, `checkComponents`, `checkOverrides`, `validateConfig`); `LevelError` becomes `OpError`.
 Tidying (`children: []`, emptied override records) happens here so every copy writes identical JSON.

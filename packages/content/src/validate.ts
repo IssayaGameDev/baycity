@@ -19,7 +19,8 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const isVec3 = (v: unknown): boolean => isObj(v) && typeof v.x === 'number' && typeof v.y === 'number' && typeof v.z === 'number'
 
 /**
- * The config block: which game the level is for (ADR 0052), and the environment.
+ * The config block: which game the level is for (ADR 0052), the environment, how far it reaches on the wire
+ * (ADR 0093), and whether the camera sees through (ADR 0148).
  *
  * Nothing else. A game's rules are components on nodes, so there is no settings bag to check — see `ModeRef`.
  */
@@ -36,6 +37,9 @@ export const validateConfig = (c: unknown): LevelConfig => {
     if (typeof c.netBounds !== 'number' || !Number.isFinite(c.netBounds) || c.netBounds <= 0) {
       throw new LevelError('level.config.netBounds: expected a positive finite number of metres')
     }
+  }
+  if (c.cameraSeeThrough !== undefined && typeof c.cameraSeeThrough !== 'boolean') {
+    throw new LevelError('level.config.cameraSeeThrough: expected true or false')
   }
   return c as unknown as LevelConfig
 }
