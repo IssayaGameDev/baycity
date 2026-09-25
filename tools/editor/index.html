@@ -27,6 +27,8 @@
         /* Every other Hierarchy row, so a long list reads as rows and not as one block. Well below --hover,
            so hovering still says which row the pointer is on. */
         --row-alt: #21252c;
+        /* The Hierarchy's lines down each level of nesting (ADR 0150). */
+        --guide: #353a43;
         --link: #6ab0ff;
       }
       * {
@@ -52,6 +54,42 @@
           'sb   sb   sb   sb   sb'
           'bot  bot  bot  bot  bot'
           'stat stat stat stat stat';
+      }
+
+      /*
+        Every scrollbar (ADR 0150): dark, no arrows, and 12 px to grab although the thumb draws 6 — the rest of
+        its width is a transparent border, which still takes the pointer. Chromium stops reading these the
+        moment `scrollbar-color` or `scrollbar-width` is set, so those are for Firefox only.
+      */
+      ::-webkit-scrollbar {
+        width: 12px;
+        height: 12px;
+      }
+      ::-webkit-scrollbar-track,
+      ::-webkit-scrollbar-corner {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-button {
+        display: none;
+      }
+      ::-webkit-scrollbar-thumb {
+        min-height: 32px;
+        border: 3px solid transparent;
+        border-radius: 6px;
+        background: #434954 padding-box;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        border-width: 2px;
+        background-color: #5d6573;
+      }
+      ::-webkit-scrollbar-thumb:active {
+        border-width: 2px;
+        background-color: #6f7887;
+      }
+      @supports not selector(::-webkit-scrollbar) {
+        * {
+          scrollbar-color: #434954 transparent;
+        }
       }
 
       /* ---- panels ---- */
@@ -553,13 +591,21 @@
         cursor: default;
       }
 
-      /* ---- hierarchy ---- */
+      /*
+        ---- hierarchy (ADR 0150) ----
+        Unity's way: a cube per row (blue and filled for a prefab, light blue for its pieces, grey for the
+        level's own), a guide line down each level of nesting, the eye at the right end on hover.
+      */
+      #hierarchy {
+        padding-bottom: 8px;
+      }
       .row {
         display: flex;
-        position: relative; /* the eye is placed against this, outside the indentation (ADR 0132) */
+        position: relative; /* the guides are placed against this */
         align-items: center;
         gap: 4px;
-        padding: 2px 6px;
+        height: 24px;
+        padding: 0 4px 0 6px;
         cursor: default;
         white-space: nowrap;
         user-select: none;
@@ -585,95 +631,127 @@
       .row.sel {
         background: var(--sel);
       }
-      /* The Environment row is a level setting, not an object, so it sits above the tree with a rule under it
-         rather than being indented into it (ADR 0048). */
+      /* The Game and Environment rows are level settings, not objects, so they sit above the tree with a rule
+         under them rather than being indented into it (ADR 0048). */
       .row.env {
-        border-bottom: 1px solid var(--line, #2a3344);
-        opacity: 0.9;
+        gap: 7px;
+        padding-left: 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      .row.env .ico {
+        color: var(--dim);
       }
       /* One of a multi-selection is the primary: the one the Inspector shows and the one a Shift-range anchors
          on. Marked with an edge rather than a different fill, so the row still reads as selected. */
       .row.primary {
         box-shadow: inset 2px 0 0 var(--accent);
       }
-      /* Switched off, or off because a parent is: it is not in the level, so it reads like the Environment
-         row's dimming rather than like a selection. The checkbox that changes it is in the Inspector's
-         header, where Unity puts it (ADR 0102). */
-      .row.off .name {
-        color: var(--dim);
-        font-style: italic;
-      }
-      /* The eye (ADR 0132): hidden in the viewport, which is NOT the same as switched off above. It sits in
-         a fixed gutter at the left of the panel, outside the row's indentation, so the column lines up
-         however deep the tree goes — indented, the eyes would zigzag down the list. */
-      .row .eye {
+      /* A line down each level of nesting above the row, under the twist of the row it hangs from. */
+      .row .guides {
         position: absolute;
-        left: 4px;
-        width: 14px;
-        text-align: center;
-        cursor: pointer;
-        color: var(--dim);
-        /* Empty until the row is hovered. A column of controls on every row is what ADR 0102 removed from
-           here; costing nothing when unused is what lets this one back in. */
-        opacity: 0;
-        flex: 0 0 auto;
-      }
-      .row:hover .eye {
-        opacity: 1;
-      }
-      /* Hidden stays visible without hovering, or you could not find what you hid. The name is left alone:
-         a dimmed name already means switched off, and the two mean entirely different things. */
-      .row.eyeshut .eye {
-        opacity: 1;
-        color: var(--accent);
+        top: 0;
+        bottom: 0;
+        left: 6px;
+        pointer-events: none;
+        background: repeating-linear-gradient(to right, transparent 0 7px, var(--guide) 7px 8px, transparent 8px 16px);
       }
       .row .twist {
-        width: 12px;
+        flex: 0 0 16px;
+        height: 16px;
+        display: grid;
+        place-items: center;
         color: var(--dim);
         cursor: pointer;
-        text-align: center;
-        flex: 0 0 auto;
+      }
+      .row .twist:hover {
+        color: var(--text);
+      }
+      .row .twist .ic {
+        width: 12px;
+        height: 12px;
+        stroke-width: 2.2;
+        transition: transform 0.12s ease;
+      }
+      .row .twist.shut .ic {
+        transform: rotate(-90deg);
+      }
+      .row .ico {
+        width: 14px;
+        height: 14px;
+      }
+      .ico.is-object {
+        color: #8b929d;
+      }
+      .ico.is-prefab {
+        color: var(--link);
+      }
+      .ico.is-piece {
+        color: #a3c0e4;
       }
       .row .name {
+        flex: 1 1 auto;
+        min-width: 0;
+        margin-left: 2px;
         overflow: hidden;
         text-overflow: ellipsis;
       }
       .row.linked .name {
         color: var(--link);
       }
-      /* Indentation comes from the row's depth, set inline — a fixed inset here would fight it. */
-      .row.piece {
+      /* Switched off, or off because a parent is: it is not in the level, so it dims. The checkbox that changes
+         it is in the Inspector's header, where Unity puts it (ADR 0102). */
+      .row.off .name {
         color: var(--dim);
+        font-style: italic;
       }
-      .row.dragging {
-        opacity: 0.4;
+      .row.off .ico {
+        opacity: 0.45;
       }
-      /* Insertion line, drawn inside the row so no layout shifts while dragging. */
-      .row.drop-above {
-        box-shadow: inset 0 2px 0 0 var(--accent);
+      /* The eye (ADR 0132, ADR 0150): hidden in the viewport, which is NOT the same as switched off above.
+         At the right end, drawn on hover and always once hidden; its place is kept either way, so the count
+         beside it never moves. */
+      .row .eye {
+        flex: 0 0 20px;
+        height: 20px;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        border: 0;
+        border-radius: 4px;
+        background: none;
+        color: var(--dim);
+        cursor: pointer;
+        visibility: hidden;
       }
-      .row.drop-below {
-        box-shadow: inset 0 -2px 0 0 var(--accent);
+      .row:hover .eye,
+      .row.eyeshut .eye {
+        visibility: visible;
       }
-      /* Dropped *onto* — this row becomes the parent, so the whole row is the target, not an edge. */
-      .row.drop-onto,
-      .tile.drop-onto,
-      .tiles.drop-onto {
-        box-shadow: inset 0 0 0 2px var(--accent);
+      .row .eye:hover {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .row.eyeshut .eye {
+        color: var(--accent);
+      }
+      .row .eye .ic {
+        width: 14px;
+        height: 14px;
       }
       .row input.rename {
         flex: 1 1 auto;
         min-width: 0;
+        height: 20px;
         padding: 0 4px;
       }
       .row .badge {
-        margin-left: auto;
+        flex: 0 0 auto;
         font-size: 10px;
+        line-height: 14px;
         color: var(--dim);
         border: 1px solid var(--line);
         border-radius: 8px;
         padding: 0 5px;
-        flex: 0 0 auto;
       }
       .row .badge.trig {
         color: #7ddc9a;
@@ -686,6 +764,72 @@
       .row .badge.held {
         color: #f0b860;
         border-color: #6b5324;
+      }
+      /* A drag (ADR 0150): what it carries dims, the row it would go into lights, and a line shows a place
+         between rows, indented to the depth it would land at. */
+      .row.carried {
+        opacity: 0.4;
+      }
+      .row.drop-onto {
+        background: rgba(74, 140, 247, 0.18);
+      }
+      .row.drop-onto,
+      .tile.drop-onto,
+      .tiles.drop-onto {
+        box-shadow: inset 0 0 0 2px var(--accent);
+      }
+      .hier-line {
+        position: fixed;
+        z-index: 60;
+        height: 2px;
+        border-radius: 1px;
+        background: var(--accent);
+        pointer-events: none;
+      }
+      .hier-line::before {
+        content: '';
+        position: absolute;
+        left: -6px;
+        top: -3px;
+        width: 4px;
+        height: 4px;
+        border: 2px solid var(--accent);
+        border-radius: 50%;
+        background: var(--panel);
+      }
+      .hier-line[hidden] {
+        display: none;
+      }
+      .hier-ghost {
+        position: fixed;
+        left: 0;
+        top: 0;
+        z-index: 61;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 9px;
+        border: 1px solid var(--accent);
+        border-radius: 6px;
+        background: #262c38;
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+        white-space: nowrap;
+        pointer-events: none;
+      }
+      .hier-ghost .ic {
+        width: 14px;
+        height: 14px;
+      }
+      .hier-ghost.is-prefab .ic,
+      .hier-ghost.is-prefab span:first-of-type {
+        color: var(--link);
+      }
+      .hier-ghost .more {
+        color: var(--dim);
+      }
+      body.hier-dragging,
+      body.hier-dragging * {
+        cursor: grabbing !important;
       }
       .empty {
         padding: 8px;

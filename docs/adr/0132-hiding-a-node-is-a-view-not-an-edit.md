@@ -3,6 +3,8 @@
 Status: accepted. Unity's eye column. Sits beside [ADR 0099](0099-a-node-can-be-switched-off.md)'s `active`
 flag without touching it, and puts a control back in the Hierarchy that
 [ADR 0102](0102-the-active-checkbox-lives-in-the-inspector.md) took out — under the condition 0102 set.
+Amended by ADR 0150: the eye moved from a gutter on the left, which pushed every row right, to the row's right
+end.
 
 ## Context
 
