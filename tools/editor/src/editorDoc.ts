@@ -322,8 +322,12 @@ export interface Doc {
   /**
    * The same patch on several nodes at once, as **one** commit — so it is one undo entry and one message to
    * the room (ADR 0112). `targets` pairs each node with its own component id, since ids are per component.
+   *
+   * A function gives each target its own patch. A patch replaces a parameter whole, so one axis of a vec3
+   * written to nodes that disagree about the others is that axis over **each node's own** value; one `{ y }`
+   * for all of them would drop their x and z.
    */
-  setParamsAcross: (targets: readonly { at: number; componentId: string }[], patch: Record<string, unknown>) => void
+  setParamsAcross: <T extends { at: number; componentId: string }>(targets: readonly T[], patch: Record<string, unknown> | ((target: T) => Record<string, unknown>)) => void
   setComponentEnabled: (i: number, componentId: string, on: boolean) => void
   /**
    * Is this node built at all (ADR 0099)? `false` means it and everything under it is absent from the level,
@@ -1146,9 +1150,9 @@ const docOver = (
    * component (`freshId`): two cubes' colliders are the same type and never the same id. The Inspector pairs
    * them up by type and ordinal and hands the result here.
    */
-  const patchParamsAcross = (targets: readonly { at: number; componentId: string }[], patch: Record<string, unknown>): void => {
+  const patchParamsAcross = <T extends { at: number; componentId: string }>(targets: readonly T[], patch: Record<string, unknown> | ((target: T) => Record<string, unknown>)): void => {
     const ops: Op[] = []
-    for (const t of targets) ops.push(...paramOpsFor(t.at, t.componentId, patch))
+    for (const t of targets) ops.push(...paramOpsFor(t.at, t.componentId, typeof patch === 'function' ? patch(t) : patch))
     if (ops.length > 0) commit(ops)
   }
 

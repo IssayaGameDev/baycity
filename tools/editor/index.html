@@ -544,11 +544,9 @@
         font-size: 11px;
       }
       /*
-        Our own controls carry `.ctl`. Styling bare `button`/`select`/`input` instead reached inside
-        Tweakpane, which renders numeric fields as `type="text"` — so `input[type='text'] {width:120px}`
-        out-specificity'd its `.tp-pndtxtv_a {width:100%}` and forced every axis field to 120px, three of
-        them to a row, in a 300px panel. A class keeps the boundary explicit: these are ours, Tweakpane
-        styles its own.
+        Our own buttons carry `.ctl`, and the fields their own classes (`.sf`, `.sel`, `.txt`, `.ck`,
+        `.clr`). Styling bare `button`/`select`/`input` would reach into everything else that draws one —
+        it once forced every Tweakpane axis field to 120px, three to a row, in a 300px panel.
       */
       .ctl {
         font: inherit;
@@ -1025,113 +1023,290 @@
         margin: 4px 0;
       }
 
-      /* ---- inspector header: name + prefab link (ours, above the tweakpane grid) ---- */
+      /*
+        ---- the Inspector (ADR 0152) ----
+        A card per component, shaped like a sequence's stage cards, and every field ours in the sequence's
+        look (`controls.ts`). The label column grows with the panel, so a wide one does not stretch three
+        numbers across the screen.
+      */
       #insp-head {
-        padding: 6px;
-        border-bottom: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 8px 8px 2px;
       }
-      /* Tick then name, which is a component section's header one level up (ADR 0102). */
+      #insp-head[hidden],
+      #insp-head [hidden] {
+        display: none;
+      }
+      /* Tick then name, which is a component card's header one level up (ADR 0102). */
       #insp-head .namerow {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
         min-width: 0;
       }
-      #insp-head input.name {
+      #insp-head .txt.name {
         flex: 1 1 auto;
-        min-width: 0;
+        height: 28px;
+        font-size: 13px;
         font-weight: 600;
       }
-      #insp-head .link {
+      /* On a placement or a piece of one: which prefab, Open, and the overrides behind one button. */
+      .ipre {
         display: flex;
         align-items: center;
         gap: 6px;
-        margin-top: 6px;
-        font-size: 11px;
-        color: var(--dim);
         min-width: 0;
+        height: 30px;
+        padding: 0 4px 0 8px;
+        border: 1px solid color-mix(in srgb, var(--link) 26%, transparent);
+        border-radius: 7px;
+        background: color-mix(in srgb, var(--link) 9%, transparent);
+        color: var(--link);
       }
-      #insp-head .link .who {
+      .ipre.piece {
+        color: #a3c0e4;
+        border-color: #2d3139;
+        background: #1e2126;
+      }
+      .ipre-i {
+        display: inline-grid;
+      }
+      .ipre-t {
+        flex: 1 1 auto;
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        font-size: 12px;
       }
-      /* Unity tints a prefab instance; the link line borrows the same cue as the hierarchy row. */
-      #insp-head .link.linked .who {
-        color: var(--link);
-      }
-      #insp-head .link .ctl {
-        margin-left: auto;
+      .ipre-c {
         flex: 0 0 auto;
-        padding: 2px 6px;
-      }
-
-      #insp-head .multi {
-        margin-top: 5px;
-        padding: 2px 5px;
         font-size: 11px;
-        border-radius: 3px;
-        background: #2b3038;
+        color: var(--dim);
+        font-variant-numeric: tabular-nums;
+      }
+      .ipre-b {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 22px;
+        padding: 0 8px;
+        border: 1px solid #2f343c;
+        border-radius: 5px;
+        background: #15171b;
+        color: var(--text);
+        font: inherit;
+        font-size: 11.5px;
+        cursor: pointer;
+      }
+      .ipre-b:hover {
+        border-color: #3d434d;
+      }
+      .ipre-b.on {
+        border-color: color-mix(in srgb, var(--link) 45%, transparent);
+      }
+      .ipre-b .ic-s {
+        color: var(--dim);
+      }
+      .ipre-n {
+        min-width: 16px;
+        padding: 0 4px;
+        border-radius: 8px;
+        font-size: 10px;
+        line-height: 15px;
+        text-align: center;
+        color: #0d1014;
+        background: var(--link);
+      }
+      #insp-head .multi {
+        padding: 4px 8px;
+        font-size: 11px;
+        border-radius: 6px;
+        background: #22262d;
         color: var(--dim);
       }
 
-      /*
-        ---- inspector: our chrome around tweakpane's widgets (ADR 0038) ----
+      /* A tick box and a colour, beside the sequence's number, dropdown and text: the fields of every card. */
+      .ck {
+        appearance: none;
+        flex: 0 0 auto;
+        display: inline-grid;
+        place-content: center;
+        width: 16px;
+        height: 16px;
+        margin: 0;
+        border: 1px solid #3a404a;
+        border-radius: 4px;
+        background: #15171b;
+        cursor: pointer;
+      }
+      .ck::before {
+        content: '';
+        width: 9px;
+        height: 9px;
+        clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+        background: #fff;
+        transform: scale(0);
+        transition: transform 0.08s;
+      }
+      .ck:checked,
+      .ck:indeterminate {
+        border-color: var(--accent);
+        background: var(--accent);
+      }
+      .ck:checked::before {
+        transform: scale(1);
+      }
+      .ck:indeterminate::before {
+        height: 2px;
+        clip-path: none;
+        transform: scale(1);
+      }
+      .ck:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+      .ck:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .ck:focus-visible {
+        outline: 1px solid var(--accent);
+        outline-offset: 1px;
+      }
+      .clr {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+        padding: 0 6px 0 3px;
+        border: 1px solid #2f343c;
+        border-radius: 5px;
+        background: #15171b;
+      }
+      .clr:hover {
+        border-color: #3d434d;
+      }
+      .clr:focus-within {
+        border-color: var(--accent);
+      }
+      .clr-s {
+        flex: 0 0 auto;
+        width: 18px;
+        height: 18px;
+        padding: 0;
+        border: 0;
+        background: none;
+        cursor: pointer;
+      }
+      .clr-s::-webkit-color-swatch-wrapper {
+        padding: 0;
+      }
+      .clr-s::-webkit-color-swatch {
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 4px;
+      }
+      .clr-s::-moz-color-swatch {
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 4px;
+      }
+      .clr-v {
+        flex: 1 1 auto;
+        width: 0;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        outline: 0;
+        background: none;
+        color: var(--text);
+        font: inherit;
+        font-size: 11.5px;
+        font-variant-numeric: tabular-nums;
+      }
+      .sf-v::placeholder,
+      .txt::placeholder,
+      .clr-v::placeholder {
+        color: var(--dim);
+      }
 
-        A section is a header row we draw plus a body that holds one small tweakpane. The header carries what
-        tweakpane's folder title could only spell into a string: the enable checkbox, a badge, and a menu.
-      */
+      /* A card (ADR 0152): a header, then a body of lines. */
+      #inspector {
+        padding: 6px 8px 12px;
+        /* The label column: about two fifths of a line, never under 72 px. */
+        --lw: clamp(72px, 40% - 24px, 280px);
+      }
       .isec {
-        border: 1px solid var(--line);
-        border-radius: 3px;
-        margin-bottom: 5px;
-        background: #1f2329;
+        margin-bottom: 6px;
+        border: 1px solid #2d3139;
+        border-radius: 8px;
+        background: #1e2126;
+      }
+      /* A card with overrides gets the bar its lines do, so it reads at a glance while scrolling. */
+      .isec.over-sec {
+        box-shadow: inset 2px 0 0 var(--link);
       }
       .isec-h {
         display: flex;
         align-items: center;
         gap: 5px;
-        padding: 3px 4px;
-        background: var(--panel-head);
-        border-radius: 2px 2px 0 0;
         min-width: 0;
+        height: 32px;
+        padding: 0 6px 0 5px;
+        cursor: pointer;
+        user-select: none;
       }
-      /* An off component is still readable — it is a state, not an error. */
-      .isec.off .isec-h,
+      .isec.isec-bare .isec-h {
+        cursor: default;
+      }
+      /* An off component is still readable — it is a state, not an error — and its tick stays clear to click. */
+      .isec.off .isec-i,
+      .isec.off .isec-t,
+      .isec.off .isec-sum,
       .isec.off .isec-body {
         opacity: 0.5;
       }
       .isec-tw,
       .isec-m {
         flex: 0 0 auto;
-        width: 16px;
-        height: 16px;
+        display: inline-grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
         padding: 0;
-        line-height: 14px;
-        text-align: center;
-        font-size: 10px;
-        color: var(--dim);
-        background: none;
         border: 0;
-        border-radius: 2px;
+        border-radius: 4px;
+        background: none;
+        color: var(--dim);
         cursor: pointer;
+      }
+      .isec-tw .ic {
+        width: 12px;
+        height: 12px;
+        transition: transform 0.12s;
+      }
+      .isec.shut .isec-tw .ic {
+        transform: rotate(-90deg);
+      }
+      .isec.isec-bare .isec-tw {
+        visibility: hidden;
       }
       .isec-m {
         margin-left: auto;
-        font-size: 13px;
       }
       .isec-tw:hover,
       .isec-m:hover {
         color: var(--text);
-        background: #3a414c;
+        background: #2c313a;
       }
-      .isec-en {
-        flex: 0 0 auto;
-        margin: 0;
-        accent-color: var(--accent);
+      .isec-i {
+        color: #a3aab5;
       }
       .isec-t {
         flex: 0 1 auto;
+        min-width: 0;
+        font-size: 12px;
         font-weight: 600;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -1139,19 +1314,26 @@
       }
       .isec-badge {
         flex: 0 0 auto;
-        padding: 0 4px;
+        padding: 0 5px;
         font-size: 10px;
         line-height: 15px;
-        border-radius: 7px;
+        border-radius: 8px;
         color: #0d1014;
         background: var(--link);
       }
       .isec-body {
-        padding: 3px 5px 5px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 0 8px 8px;
       }
-      /* A section header's own extras: a dim summary, a warning, and a tool button (a sequence's ⚙). */
+      .isec-body[hidden] {
+        display: none;
+      }
+      /* A card header's own extras: a dim summary, a warning, and tool buttons (a sequence's toggles and ⚙). */
+      /* The summary gives way first, so a narrow panel keeps the name. */
       .isec-sum {
-        flex: 0 1 auto;
+        flex: 0 100 auto;
         min-width: 0;
         color: var(--dim);
         font-size: 11px;
@@ -1165,18 +1347,24 @@
         color: #e8b04a;
         cursor: help;
       }
+      .isec-warn {
+        display: inline-grid;
+      }
+      .isec-warn .ic {
+        width: 13px;
+        height: 13px;
+      }
       .isec-g {
         flex: 0 0 auto;
         margin-left: auto;
         width: 18px;
-        height: 16px;
+        height: 20px;
         padding: 0;
-        line-height: 14px;
         font-size: 11px;
         color: var(--dim);
         background: none;
         border: 0;
-        border-radius: 2px;
+        border-radius: 4px;
         cursor: pointer;
       }
       .isec-g + .isec-m {
@@ -1185,7 +1373,7 @@
       .isec-g:hover,
       .isec-g.on {
         color: var(--text);
-        background: #3a414c;
+        background: #2c313a;
       }
 
       /*
@@ -1595,7 +1783,9 @@
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
       }
       .seq-sel,
-      .seq-text {
+      .seq-text,
+      .sel,
+      .txt {
         flex: 1 1 auto;
         min-width: 0;
         height: 24px;
@@ -1607,7 +1797,8 @@
         font: inherit;
         font-size: 11.5px;
       }
-      .seq-sel {
+      .seq-sel,
+      .sel {
         appearance: none;
         padding-right: 24px;
         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b929d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 10l5 5 5-5'/%3E%3C/svg%3E");
@@ -1615,8 +1806,14 @@
         background-position: right 6px center;
         background-size: 12px;
       }
+      .sel:hover,
+      .txt:hover {
+        border-color: #3d434d;
+      }
       .seq-sel:focus,
-      .seq-text:focus {
+      .seq-text:focus,
+      .sel:focus,
+      .txt:focus {
         outline: 0;
         border-color: var(--accent);
       }
@@ -1787,200 +1984,102 @@
         user-select: none !important;
       }
 
-      /* A section with overrides gets the same left bar its rows do, so it reads at a glance while scrolling. */
-      .isec.over-sec {
-        border-left: 2px solid var(--link);
-      }
-
-      /* A read-only line: a label and a value, and never a bordered box pretending to be a field. */
+      /* A line: its label in the column `--lw` sets, then its controls. */
       .irow {
-        display: flex;
+        position: relative;
+        display: grid;
+        grid-template-columns: var(--lw) minmax(0, 1fr);
         align-items: center;
-        gap: 6px;
-        padding: 2px 0;
-        min-width: 0;
+        column-gap: 8px;
+        min-height: 26px;
       }
       .irow-l {
-        flex: 0 0 92px;
+        font-size: 11.5px;
         color: var(--dim);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .irow-v {
-        flex: 1 1 auto;
-        color: var(--text);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+      .irow-l::first-letter {
+        text-transform: uppercase;
       }
-
-      /*
-        A multi-selection's own number boxes (ADR 0112). Tweakpane binds a vec3 as one object and its number
-        input cannot be empty, so an axis whose value differs across the selection is drawn here instead —
-        blank, with a placeholder dash. Sized to sit in the same row as a Tweakpane point input's three boxes.
-      */
-      /*
-        The slot is an `.irow-v`, which is `flex: 1 1 auto` — so it sizes to its content unless told not to.
-        Three `<input>`s have a large intrinsic width (a text input is ~20 characters by default), which pushed
-        the row past the panel and gave the whole Inspector a horizontal scrollbar. `min-width: 0` lets the
-        slot shrink below its content, and `width: 0` on each input defeats the intrinsic size so `flex-grow`
-        is what decides how wide they are.
-      */
-      .imulti {
-        display: flex;
-        gap: 4px;
-        min-width: 0;
-        overflow: hidden;
-      }
-      .imulti-n {
-        flex: 1 1 0;
-        width: 0;
-        min-width: 0;
-        padding: 3px 5px;
-        border: 1px solid var(--line);
-        border-radius: 3px;
-        background: var(--bg);
-        color: var(--text);
-        font: inherit;
-      }
-      .imulti-c {
-        margin: 0;
-        accent-color: var(--accent);
-      }
-      /* A row the selection disagrees about, so the blank reads as "differs" rather than as empty. */
-      .isec-body .irow.mixed .irow-l {
+      /* A line the selection disagrees about, so a blank reads as "differs" rather than as empty. */
+      .irow.mixed .irow-l {
         font-style: italic;
       }
-      .imulti-n::placeholder {
-        color: var(--dim);
-      }
-      /* The spinner arrows cost width the three boxes cannot spare, and the gizmo is how you nudge a value. */
-      .imulti-n[type='number'] {
-        appearance: textfield;
-        -moz-appearance: textfield;
-      }
-      .imulti-n[type='number']::-webkit-inner-spin-button,
-      .imulti-n[type='number']::-webkit-outer-spin-button {
-        appearance: none;
-        margin: 0;
-      }
-      .imulti-n:focus {
-        outline: 1px solid var(--accent);
-      }
-
-      /* Unity's cue for an overridden value: a bar down the left edge of the row. */
-      #inspector .over,
-      .isec-body .irow.over {
-        position: relative;
-      }
-      #inspector .over::before,
-      .isec-body .irow.over::before {
-        content: '';
-        position: absolute;
-        left: -5px;
-        top: 1px;
-        bottom: 1px;
-        width: 2px;
-        background: var(--link);
-      }
-
-      .iover {
+      .irow-c {
         display: flex;
         align-items: center;
-        gap: 5px;
-        margin-bottom: 5px;
-        padding: 3px 5px;
-        font-size: 11px;
-        border-radius: 3px;
-        color: var(--dim);
-        background: #23272e;
+        gap: 4px;
+        min-width: 0;
       }
-      .iover.on {
-        color: var(--link);
-        background: #1e2937;
+      .irow-c > .sf,
+      .irow-c > .sel,
+      .irow-c > .txt,
+      .irow-c > .clr {
+        flex: 1 1 0;
+        min-width: 0;
       }
-      .iover-t {
-        flex: 1 1 auto;
+      /* Three numbers to a line in a narrow panel: every pixel of padding is a digit. */
+      .irow-c > .sf-x,
+      .irow-c > .sf-y,
+      .irow-c > .sf-z {
+        gap: 3px;
+        padding: 0 5px;
+      }
+      /* A read-only value: never a bordered box pretending to be a field. */
+      .irow-v {
+        min-width: 0;
+        font-size: 11.5px;
+        color: var(--text);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .ctl.tiny {
-        flex: 0 0 auto;
-        padding: 1px 5px;
+      /* A line of explanation across the card. */
+      .inote {
         font-size: 11px;
+        line-height: 1.4;
+        color: var(--dim);
       }
-      .ctl.wide {
-        width: 100%;
-        padding: 4px;
+      /* Unity's cue for an overridden value: a bar down the left edge of the line. */
+      .irow.over::before {
+        content: '';
+        position: absolute;
+        left: -6px;
+        top: 4px;
+        bottom: 4px;
+        width: 2px;
+        border-radius: 1px;
+        background: var(--link);
       }
-      .ctl.danger:hover:not(:disabled) {
-        border-color: #a2413a;
-        background: #3a2523;
+      .isec-body > .ctl {
+        align-self: flex-start;
       }
+      /* Add Component: the sequence's Add stage, for the object. */
       .iadd {
-        margin: 6px 0 5px;
-      }
-      .ifoot {
         display: flex;
-        gap: 5px;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        width: 100%;
+        height: 30px;
+        margin-top: 2px;
+        border: 1px dashed #353a43;
+        border-radius: 8px;
+        background: none;
+        color: var(--dim);
+        font: inherit;
+        cursor: pointer;
       }
-      .ifoot .ctl {
-        flex: 1 1 0;
-        padding: 3px;
+      .iadd:hover:not(:disabled) {
+        color: var(--text);
+        border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 8%, transparent);
       }
-
-      /* ---- inspector (tweakpane mounts here) ---- */
-      /*
-        Tweakpane lays a row out as a *growing label* beside a *fixed* value column
-        (`.tp-lblv_l {flex:1}`, `.tp-lblv_v {width: var(--bld-vw, 160px); flex-shrink:0}`), sized for the
-        256px pane it normally creates for itself. Mounted in a 300px panel that reads as a wide empty gap
-        before the values, and the fixed column cannot shrink, so anything inside it overflows sideways.
-        Inverted here to the Unity arrangement: fixed label column, values take the rest — and `min-width:0`
-        at every level, because an <input>'s min-content width is ~20 characters and a flex item will not
-        go below that on its own.
-      */
-      #inspector .tp-lblv_l {
-        flex: 0 0 92px;
-        padding-left: 0;
-        padding-right: 6px;
-      }
-      #inspector .tp-lblv_v {
-        flex: 1 1 auto;
-        width: auto;
-        min-width: 0;
-      }
-      #inspector .tp-pndtxtv_a,
-      #inspector .tp-txtv,
-      #inspector input {
-        min-width: 0;
-      }
-      #inspector {
-        padding: 6px;
-        --tp-base-border-radius: 0;
-        --tp-container-horizontal-padding: 0;
-        --tp-base-background-color: transparent;
-        --tp-base-shadow-color: transparent;
-        --tp-container-background-color: #2b3038;
-        --tp-container-background-color-active: #3a414c;
-        --tp-container-background-color-focus: #343b45;
-        --tp-container-background-color-hover: #333a44;
-        --tp-container-foreground-color: #d5d9e0;
-        --tp-input-background-color: #23272e;
-        --tp-input-background-color-active: #2e343d;
-        --tp-input-background-color-focus: #2a3038;
-        --tp-input-background-color-hover: #292f37;
-        --tp-input-foreground-color: #e6eaf0;
-        --tp-label-foreground-color: #8b929d;
-        --tp-button-background-color: #333a44;
-        --tp-button-background-color-active: #4a8cf7;
-        --tp-button-background-color-focus: #3d4550;
-        --tp-button-background-color-hover: #3a424d;
-        --tp-button-foreground-color: #d5d9e0;
-        --tp-monitor-background-color: #23272e;
-        --tp-monitor-foreground-color: #8b929d;
-        --tp-groove-foreground-color: #34383f;
+      .iadd:disabled {
+        opacity: 0.45;
+        cursor: default;
       }
 
       /* ---- status bar + viewport hint ---- */

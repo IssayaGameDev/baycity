@@ -463,13 +463,7 @@ importers:
       '@mp/render-three':
         specifier: workspace:*
         version: link:../../packages/render-three
-      tweakpane:
-        specifier: ^4.0.5
-        version: 4.0.5
     devDependencies:
-      '@tweakpane/core':
-        specifier: ^2.0.0
-        version: 2.0.5
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.1

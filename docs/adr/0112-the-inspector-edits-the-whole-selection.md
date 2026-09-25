@@ -1,6 +1,6 @@
 # ADR 0112 — The Inspector edits the whole selection
 
-Status: accepted. Settles the asymmetry [ADR 0031](0031-multi-selection-with-a-primary.md) shipped knowingly,
+Status: accepted, amended: one axis of a vec3 the selection disagrees about is written over each node's own other axes — the blank row wrote that axis alone, which replaced the whole value ([ADR 0152](0152-the-inspector-is-cards-of-our-own-fields.md)). Settles the asymmetry [ADR 0031](0031-multi-selection-with-a-primary.md) shipped knowingly,
 and takes back its "the Inspector edits the primary only" consequence.
 
 ## Context

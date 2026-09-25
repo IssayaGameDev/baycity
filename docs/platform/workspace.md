@@ -41,7 +41,7 @@ Every game `vite.config.ts`: `allowedHosts: ['.trycloudflare.com', '.playgorbo.c
 
 | Dir | Run | → |
 | --- | --- | --- |
-| `editor` | `pnpm dev:editor`, 5176 | @mode/parkour, camera, humanoid, client, components, content, core, mode, physics, render-three, tweakpane; all games via glob; mounts `editor-server`'s API by relative import |
+| `editor` | `pnpm dev:editor`, 5176 | @mode/parkour, camera, humanoid, client, components, content, core, mode, physics, render-three; all games via glob; mounts `editor-server`'s API by relative import |
 | `editor-server` | `pnpm --filter @mp/editor-server run start <config>`, 8080 on the box | content (relative path); `git`, `tsx` |
 | `content-sync` | `pnpm sync:content` | none; a service token in `.env` (`content-sync.md`) |
 | `viewer` | `pnpm dev:viewer`, 5175 | @mode/parkour, humanoid, components, content, core, mode, physics, render-three, tweakpane |

@@ -15,7 +15,7 @@ Both levels and prefabs are live rooms, so there is no Save and no file lock for
 
 ## Panel layout (`tools/editor/index.html`)
 
-One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (`src/splitter.ts`). No UI framework; Tweakpane only inside the Inspector (ADR 0024).
+One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (`src/splitter.ts`). No UI framework and no widget library: every control is ours (`src/controls.ts`, ADR 0152).
 
 `main.ts` is a **shell** (ADR 0121): the state it owns, construction, host literals, boot. A subsystem is its own module holding its own mutable state, reached through a getter-bag host — the convention the panels already use. Pure arithmetic is its own module again (`selection.ts`, `snap.ts`, `facePull.ts`, `surfaceGrid.ts`). Host entries are always arrows: a subsystem is constructed at module init and half of what it wants is declared further down.
 
@@ -233,8 +233,8 @@ uses it. It does, because a prefab is a live document of its own.
 | removing a piece | A piece is **deleted from one placement** (ADR 0133) — `NodeOverride.removedNodes`, kept on the removed piece's own record so clearing that record brings it back. The prefab keeps it and every other placement keeps it. Dropped in the **tree walk** as well as in `bakeOverrides`. Reported by `Doc.placementRemoved(i)`, read off the records, since a removed piece has no index. Revert puts it back; **Apply deletes it from the prefab**, first, so every placement everywhere loses it. Delete and Cut (copy, then delete) work on a piece like on anything else |
 | copying a piece | A piece copies as what it looks like (ADR 0131) — `Doc.copy` takes its resolved `view`, the whole subtree with this placement's overrides baked in, a plain object and not an edit of the prefab. `paste` re-mints the ids and puts it wherever you paste; `duplicate` puts it **beside** the piece, in the placement's record, placed there by a recorded order. `reidSubtree` re-mints what a copied placement added under its pieces too, and follows those ids in its `childOrder` |
 | a child added to a placement | Created, pasted or dropped on a placement, it goes in the record of the prefab's **root** (ADR 0151), not the placement's `children` (ADR 0130's storage, still read); a component added on the placement likewise goes in that record's `added`. `Doc.placementAdded(i)` finds the roots of what was added, anywhere under the placement, for the counts. **Apply** inserts each into the prefab under the piece it hangs from, re-minted (a prefab's ids are its own), transform unconverted (same frame); **Revert all** clears every record — which takes added children, orders and removals with it — and strips ADR 0130's children and components off the placement, one batch (it used to remove added children one by one after clearing the records that held them, and threw). **A placement added under a placement is not applied**: the inner definition would have to resolve in the prefab's room, which ADR 0124 has not been worked through for |
-| Revert/Apply have two scopes | an override is stored per inherited **piece** — and for the placement's own inherited **root** components, on the placement keyed by the prefab root's id (ADR 0098). `recordKey(n)` says where either lives, so the root is `placementOverrides`' first entry when it has changes; before ADR 0139 nothing read that record back. On a root the pair acts over every piece the placement owns: `Doc.placementOverrides(i)`, `Doc.revertPlacement(i)` (**one batch** — one Ctrl+Z, one message to the room), `Doc.placementOverrideOps(i)` (one submission, so a partial failure cannot half-apply). Owned by *this* placement only, so a nested one's pieces stay its own. Labels carry the scope: `Revert all to prefab` / `Apply all to prefab` with the count as the menu hint, and the Inspector strip reads `N overrides on M objects`. Before this the pair was permanently greyed on the prefab object and the Inspector said nothing there |
-| unlink a placement | `Doc.unlinkNode(i)` — one `replaceNode` op (ADR 0111). The node keeps its id, transform and place in the tree and takes the resolved name, components and children, so an override becomes the value; the prefab's pieces are cloned with fresh ids, since a prefab's are scoped to itself — and what the placement **added** keeps its ids, since the level's references name them (ADR 0151). Refuses a non-placement and an inherited node. From the Hierarchy menu's *Unlink from prefab* and the Inspector's **Unlink**, left of **Open**. No confirm: one op, so Ctrl+Z puts the link back |
+| Revert/Apply have two scopes | an override is stored per inherited **piece** — and for the placement's own inherited **root** components, on the placement keyed by the prefab root's id (ADR 0098). `recordKey(n)` says where either lives, so the root is `placementOverrides`' first entry when it has changes; before ADR 0139 nothing read that record back. On a root the pair acts over every piece the placement owns: `Doc.placementOverrides(i)`, `Doc.revertPlacement(i)` (**one batch** — one Ctrl+Z, one message to the room), `Doc.placementOverrideOps(i)` (one submission, so a partial failure cannot half-apply). Owned by *this* placement only, so a nested one's pieces stay its own. Labels carry the scope: `Revert all to prefab` / `Apply all to prefab` with the count as the menu hint, and the Inspector's **Overrides ▾** says `N overrides on M objects` (ADR 0152). Before this the pair was permanently greyed on the prefab object and the Inspector said nothing there |
+| unlink a placement | `Doc.unlinkNode(i)` — one `replaceNode` op (ADR 0111). The node keeps its id, transform and place in the tree and takes the resolved name, components and children, so an override becomes the value; the prefab's pieces are cloned with fresh ids, since a prefab's are scoped to itself — and what the placement **added** keeps its ids, since the level's references name them (ADR 0151). Refuses a non-placement and an inherited node. From the Hierarchy menu's *Unlink from prefab* and the last item of the Inspector's **Overrides ▾**. No confirm: one op, so Ctrl+Z puts the link back |
 | no Save, no lock | both kinds of room write themselves. The top bar has no mode select and no Save; it reads `level › prefab`, and the level is the way back (ADR 0149). A prefab is renamed in the Project panel |
 
 **The prefab grid** (`src/prefabGrid.test.ts`, ADR 0151): every gesture — rename, switch off, delete, duplicate,
@@ -283,7 +283,7 @@ components are singletons and which parameters are node references. The editor-s
 ### Save as prefab… (ADR 0091)
 
 One action makes a prefab, replacing both `Extract to prefab` (which wrote no file) and prefab mode's Save
-(which made no reference). On the Inspector link row and in the Hierarchy and viewport menus, all calling
+(which made no reference). In the Hierarchy and viewport menus, both calling
 `saveAsPrefab(index)`.
 
 `askName` → `prefabTarget(project.folder(), name, taken)` (`src/prefabPath.ts`, pure and tested) →
@@ -466,7 +466,7 @@ File list filtered by game: `visibleLevels()` keeps entries whose `mode` — the
 
 ## Game settings (ADR 0087)
 
-Under the Game row: one Tweakpane field per number setting in `activeMode.settings`, and **one section with a
+Under the Game row: one number field per number setting, saved as it settles, in `activeMode.settings`, and **one section with a
 graph per curve setting** (`src/curveEditor.ts`, ADR 0088: drag, click to add, double-click/Delete to remove,
 fields for the selected point, `default`, its own undo/redo — Ctrl+Z/Ctrl+Y with the graph focused, or ↶ ↷ — since every edit saves at once; wheel zooms around the cursor (X over the bottom axis, Y over the left, both over the plot), right-/Shift-drag pans, `fit`/F reframes, `⤢` opens the same graph large over the viewport; log axis when `logY`; readout of the value under the pointer and the
 last segment's ratio). `host.settings()` → `{ decls, values }`, values = `readSettings(decls, gameData[game].settings)`;
@@ -674,34 +674,43 @@ and before `mirrorDragToSelection`, so the others get the snapped delta and a gr
 a degree and stores the radians unrounded, so a typed 90 reads back 90 (ADR 0136). Positions and scales keep
 `r4`.
 
+## Inspector — the panel (ADR 0152, `src/inspector.ts`)
+
+Every field is ours (`src/controls.ts`); nothing of Tweakpane's is left in the editor.
+
+| | |
+| --- | --- |
+| head | active tick (ADR 0102) and the name; the **prefab bar** on a placement or a piece — icon, the prefab's name (`host.prefabName(id)`) or `part of <prefab>`, `×N` (`Doc.refCount`), **Open** (a ref only), **Overrides ▾** with the count: on a placement `Revert all` / `Apply all` / `Unlink from prefab` over everything inside it (`placementOverrides` + `placementAdded` + `placementRemoved`), on a piece `Revert all` / `Apply` over its own (`overridesOf`); greyed with `matches the prefab` when there is nothing. A plain object has no bar. `N selected · editing what they share` under it |
+| cards | `.isec`, one per component, Transform first: twist, `componentIcon(type)` (a game's own components share `component`), enable, name, badge (`added` or the override count), a sequence's tools, ⋯. A press on the header's empty part opens or shuts it; shut state per component id survives rebuilds. A component with no visible parameter is `.isec-bare`: its header alone. Then **Add Component** (`.iadd`). No footer |
+| lines | `.irow`: a label in `--lw` = `clamp(72px, 40% - 24px, 280px)` of the line, then the controls; `.over` bars an overridden one, `.mixed` italicises one the selection disagrees about; `.inote` for a line of explanation |
+| fields | `scrubFieldOf` (numbers; `numberScrub(decl)` says how they drag), `checkField`, `selectField`, `textField`, `colorField` (the browser's picker and the `#rrggbb`). `null` is mixed: blank, and a number is then typed only. Environment, Game, network bounds and game settings use the same fields |
+| a drag | `Live` on the field: `liveWrite` opens `host.beginDrag()` when the press becomes a drag, writes on every move, and `host.endDrag(label)` when it lets go — one history entry, one message to the room, the viewport following the pointer. `main.ts` counts it in `gizmoDragging`, so a remote repaint waits, and drains it at the end. Written as they settle instead: game settings and the network bound (each write saves a file), and a multi-selection's transform (`writeAxis` is its own entry). A rebuild mid-drag closes the entry |
+| sync | the gizmo moved the selection: `sync` sets the transform's nine fields (`ScrubHandle.set`), skipping one being dragged or typed in; nothing is rebuilt |
+
 ## Numbers in the Inspector (ADR 0113)
 
-Every numeric field in the object-editing path passes `dragSpeed(n)` — `{ pointerScale: n }` — and **never
-`step`**. Tweakpane's `step` is both a drag increment and a constraint anchored to the value the field was
-built with (`new StepConstraint(step, initialValue)`), so a scale field built at 32.98 with `step: 0.05` can
-only reach `32.98 ± n × 0.05` and 33 is unreachable, silently. A transform or a size has a continuous domain,
-so nothing may be unreachable; `pointerScale` is independent, so the drag feel is unchanged. Covered by a
-tripwire test that reproduces the constraint arithmetic. The Environment and Network **sliders** keep `step`
-deliberately — they are bounded and snapping suits a slider.
+A field's `step` is the **drag's**: a pixel is one step, landing on its multiples (`numberScrub`; a bounded
+number with no step crosses its range in 200 px). What is typed is clamped to `min`–`max` and **never snapped**
+(`scrubField`'s `typed`), so every value in range is reachable — Tweakpane's step snapped typing too, anchored to
+the value the field was built with, which made 33 unreachable from 32.98 in steps of 0.05. Covered in
+`inspectorPanel.test.ts`.
 
-## Inspector — what the widgets bind to (ADR 0101)
+## Inspector — what the fields are built from (ADR 0101)
 
 `boundState(defaults, params)` = `structuredClone({ ...defaults, ...params })`. Exported and pure so the
 invariant has a test.
 
-The deep copy is load-bearing. A spread aliases every nested value, and on an **inherited** component those
-values are the **prefab's own** objects (`bakeOverrides` returns them untouched where no override changed them,
-ADR 0033). Tweakpane writes *into* a bound object rather than replacing it — `writePoint3d` → `writeProperty`
-→ `valueObj[name] = value` — so a shallow copy let a drag on one placement edit the prefab definition in
-memory, every frame, before any op existed: other placements of that prefab redrew, and the next one's slider
-started from the mutated number.
+On an **inherited** component the params are the **prefab's own** objects (`bakeOverrides` returns them
+untouched where no override changed them, ADR 0033). Tweakpane wrote *into* a bound object, so a shallow copy
+let a drag on one placement edit the prefab in memory. The fields now write new values, and the panel updates
+the copy as they do — a vec3's second axis dragged after its first starts from the first's new number — so it
+still must not be the document's.
 
 A `stages` parameter shows as one summary row, `N stages · M steps`, where it is not a `Sequence`'s.
 
 ## Inspector — a sequence (ADR 0143, ADR 0147)
 
-A `Sequence`'s section is drawn by `sequenceEditor.ts` from its stages, in our own DOM and one look (no
-Tweakpane); every edit is a pure function in `sequenceEdit.ts` and one `Doc.setSequenceStages` (or
+A `Sequence`'s section is drawn by `sequenceEditor.ts` from its stages, in our own DOM and one look; every edit is a pure function in `sequenceEdit.ts` and one `Doc.setSequenceStages` (or
 `setSequencesStages` for a drag between two sequences on the node — one commit). The Inspector keeps which
 steps are open (several at once) and which sequence's ⚙ popover is open, so both survive the rebuild each edit
 causes.
@@ -762,8 +771,8 @@ With more than one selected the panel edits **what they have in common**.
 | Piece | Behaviour |
 | --- | --- |
 | which components | the intersection, paired by **type and ordinal** (`peersOf`, pure and tested): the nth `Collider` with the nth `Collider`. Ids cannot pair them (minted per component) and type alone cannot (a node may carry two). A component only some of them have is **hidden** |
-| a value they agree about | the normal Tweakpane widget, showing it |
-| a value they differ about | a plain input, **blank**, `—` placeholder, in a `.irow` (`addMixedParam`). Tweakpane's number box cannot be empty, and a pre-filled one would be a claim about values it has not got. Untouched writes nothing. Per **axis** for vec3 and the transform |
+| a value they agree about | the field, showing it |
+| a value they differ about | the same field **blank** (`value: null`), `—` placeholder, the line `.mixed`: a pre-filled one would be a claim about values it has not got. Untouched writes nothing; a mixed number is typed only. Per **axis** for vec3 and the transform — a vec3 axis is written over **each node's own** other axes (`setParamsAcross` with a patch per target), since a patch replaces the whole value. A collider shape, a node reference and stages say `differs across the selection` |
 | a compound value | a collider shape is reported as differing, not offered blank |
 | writing | `Doc.setParamsAcross(targets, patch)` — each node's ops concatenated into **one** commit, so one undo entry and one message to the room |
 | transform | `host.selectionTransforms()` + `host.writeAxis(field, axis, value)`; three inputs per row, each writing its axis to every selected node. Also what fixed typing moving only the primary while a drag moved all |

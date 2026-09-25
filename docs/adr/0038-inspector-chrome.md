@@ -1,6 +1,6 @@
 # ADR 0038 — The Inspector's chrome is ours; Tweakpane keeps the value widgets
 
-Status: accepted. Narrows ADR 0024 (which put Tweakpane in the Inspector) now that the panel lists components
+Status: accepted, amended: the value widgets are ours too, and Tweakpane has left the editor ([ADR 0152](0152-the-inspector-is-cards-of-our-own-fields.md)); the header, the menu and the kept state stand. Narrows ADR 0024 (which put Tweakpane in the Inspector) now that the panel lists components
 rather than a fixed set of fields.
 
 ## Context

@@ -1,6 +1,6 @@
 # ADR 0024 — The editor's UI is a fixed-panel DOM shell; Tweakpane is one panel, not the editor
 
-Status: accepted. Applies to `tools/editor` only. Does not touch ADR 0015 (PixiJS for all *game* UI),
+Status: accepted, amended: Tweakpane is no longer in the editor at all ([ADR 0152](0152-the-inspector-is-cards-of-our-own-fields.md)). Applies to `tools/editor` only. Does not touch ADR 0015 (PixiJS for all *game* UI),
 which already excludes dev tools.
 
 ## Context
