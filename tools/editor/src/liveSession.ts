@@ -76,6 +76,8 @@ export interface LiveHost {
   refreshUi: () => void
   inspectorRebuild: () => void
   inspectorSync: () => void
+  /** The object shown changed: its values in place, or the panel again when its shape changed (ADR 0168). */
+  inspectorRefresh: () => void
   notify: Notify
   setProblem: (message: string) => void
   /** Who is in the room, or how this tab is connected to it, changed: the icons redraw (ADR 0155). */
@@ -288,10 +290,11 @@ export const createLiveSession = (host: LiveHost) => {
     host.scheduleRebuild()
     rebuildHoldOutlines()
     host.hierarchyRender()
-    // Another object's edit leaves the Inspector — and a field being typed in — alone.
+    // Another object's edit leaves the Inspector alone; one to the object shown updates its values in place, a
+    // field being dragged or typed in keeping its own (ADR 0168).
     const shown = new Set(host.selectionRefs().map(refKey))
     const showsOne = (refs: readonly NodeRef[]): boolean => refs.some((r) => shown.has(refKey(r)))
-    if (plan.environment || showsOne(plan.nodes)) host.inspectorRebuild()
+    if (plan.environment || showsOne(plan.nodes)) host.inspectorRefresh()
     // A material or model named for the first time draws once it has loaded.
     host.loadNewReferencesThen(() => {
       for (const i of touched()) host.rebuildSubtree(i)

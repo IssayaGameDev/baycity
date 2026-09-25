@@ -11,6 +11,7 @@ import {
   checkField,
   closePopover,
   colorField,
+  colorFieldOf,
   fieldRow,
   numberScrub,
   openPopover,
@@ -162,6 +163,11 @@ export interface Inspector {
   rebuild: () => void
   /** The gizmo moved the selection — refresh the numbers without rebuilding. */
   sync: () => void
+  /**
+   * The object shown changed elsewhere — a collaborator's edit (ADR 0168): its values follow in place, a field
+   * being dragged or typed in keeping its own; the panel draws again only when what it is made of changed.
+   */
+  refresh: () => void
   /** Redraw just the name and the prefab bar (e.g. after Save as prefab changed the link). */
   renderHead: () => void
   /** The move step drawn open that was opened last, or `null` (ADR 0144). */
@@ -454,6 +460,38 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     }
   }
 
+  /**
+   * What the panel is made of, as the document has it now (ADR 0168): the object, its cards and their lines, and
+   * every value that decides them — an enum gating other lines, a picked asset, a collider's kind, a node picked, a
+   * sequence, each card's switch and overrides; with several selected, all of their values. What a line only shows —
+   * a number, a tick, a text, a colour, a vector, a collider's sizes — is left out: a change to one is followed in
+   * place. `null` for no object, or the level's or the environment's panel, which draw again every time.
+   */
+  const shapeNow = (): string | null => {
+    const doc = host.doc()
+    const at = host.selected()
+    if (doc === null || at === null || host.levelSelected() || host.envSelected()) return null
+    const followed = new Set<string>(['number', 'bool', 'string', 'color', 'vec3'])
+    return doc.reading(() => {
+      const indices = host.selectionIndices()
+      const cards = doc.components(at).map((view) => {
+        const def = doc.registry.get(view.type)
+        const state = boundState(doc.registry.defaults(view.type), view.params)
+        const shown = def === undefined || view.type === SEQUENCE ? null : visibleParams(def.params, state)
+        const deciding = (shown ?? [])
+          .filter((k) => !followed.has(def?.params[k]?.kind ?? ''))
+          .map((k) => [k, def?.params[k]?.kind === 'collider' ? (state[k] as { kind?: unknown } | undefined)?.kind : state[k]])
+        const sequence = view.type === SEQUENCE ? [view.params, doc.sequenceOverrideOf(at, view.id) ?? null] : null
+        const peers = indices.length > 1 ? (peersOf(doc, indices, at, view)?.map((p) => p.params) ?? null) : null
+        return [view.id, view.type, view.enabled, view.added, view.inherited, view.overridden, shown, deciding, sequence, peers]
+      })
+      return JSON.stringify([at, indices, doc.kindOf(at), doc.refOf(at), doc.builtinOf(at), doc.overridesOf(at), cards])
+    })
+  }
+  /** The shape the panel was drawn with, and each line's way of showing its value as it is now. */
+  let drawnShape: string | null = null
+  let followers: (() => void)[] = []
+
   let sel: TransformValues = { position: vec3(0, 0, 0), rotationDeg: vec3(0, 0, 0), scale: vec3(1, 1, 1) }
   /** The transform's nine fields when one object is selected — what `sync` refreshes as the gizmo moves it. */
   let transformFields: { key: keyof TransformValues; axis: Axis; field: ScrubHandle }[] = []
@@ -744,30 +782,48 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     const differs = (): void => {
       section.row(label, 'differs across the selection').classList.add('mixed')
     }
+    /**
+     * Show the value as it is now when it changes elsewhere (`refresh`, ADR 0168) — one object selected; with
+     * several, any change draws the panel again. The controls' own `set` leaves one being dragged or typed in.
+     */
+    const now = (): unknown => doc.components(at).find((c) => c.id === view.id)?.params[key] ?? fallback
+    const follow = (show: (v: unknown) => void): void => {
+      if (peers === null) followers.push(() => show(now()))
+    }
+    const idle = (control: HTMLElement): boolean => !control.contains(document.activeElement)
 
     switch (spec.kind) {
       case 'number': {
         const v = state[key]
-        line(
-          numberField({
-            value: mixed ? null : typeof v === 'number' ? v : spec.default,
-            spec: numberScrub(spec),
-            title: label,
-            history: label,
-            write: (n) => write({ [key]: n }),
-          }).root,
-        )
+        const field = numberField({
+          value: mixed ? null : typeof v === 'number' ? v : spec.default,
+          spec: numberScrub(spec),
+          title: label,
+          history: label,
+          write: (n) => write({ [key]: n }),
+        })
+        line(field.root)
+        follow((n) => field.set(typeof n === 'number' ? n : spec.default))
         return
       }
-      case 'bool':
-        line(checkField(mixed ? null : state[key] === true, (on) => write({ [key]: on }), label))
+      case 'bool': {
+        const box = checkField(mixed ? null : state[key] === true, (on) => write({ [key]: on }), label)
+        line(box)
+        // A tick has nothing half-typed to keep, and keeps the focus after a click: always shown.
+        follow((on) => void (box.checked = on === true))
         return
-      case 'string':
-        line(textField(mixed ? null : String(state[key] ?? ''), (s) => write({ [key]: s }), { title: label }))
+      }
+      case 'string': {
+        const input = textField(mixed ? null : String(state[key] ?? ''), (s) => write({ [key]: s }), { title: label })
+        line(input)
+        follow((s) => void (idle(input) && (input.value = String(s ?? ''))))
         return
+      }
       case 'color': {
         const w = liveWrite<string>(label, (c) => write({ [key]: c }))
-        line(colorField(mixed ? null : String(state[key] ?? spec.default), w.commit, mixed ? undefined : w.live))
+        const field = colorFieldOf(mixed ? null : String(state[key] ?? spec.default), w.commit, mixed ? undefined : w.live)
+        line(field.root)
+        follow((c) => field.set(String(c ?? spec.default)))
         return
       }
       case 'enum':
@@ -803,19 +859,25 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
           theirs.forEach((t) => (t[axis] = v))
           edited(() => doc.setParamsAcross(peers, (p) => ({ [key]: { ...theirs[peers.indexOf(p)]! } })))
         }
-        line(
-          ...AXES.map(
-            (axis) =>
-              numberField({
-                value: peers === null ? own[axis] : agreed(axis),
-                spec: numberScrub({ step: 0.1 }),
-                title: `${label} ${axis}`,
-                history: label,
-                axis,
-                write: (v) => writeAxis(axis, v),
-              }).root,
-          ),
+        const axes = AXES.map((axis) =>
+          numberField({
+            value: peers === null ? own[axis] : agreed(axis),
+            spec: numberScrub({ step: 0.1 }),
+            title: `${label} ${axis}`,
+            history: label,
+            axis,
+            write: (v) => writeAxis(axis, v),
+          }),
         )
+        line(...axes.map((a) => a.root))
+        // Its own copy follows too, so the next axis written starts from the others' values as they are now.
+        follow((v) => {
+          const next = vecOf(v)
+          AXES.forEach((axis, n) => {
+            own[axis] = next[axis]
+            axes[n]!.set(next[axis])
+          })
+        })
         return
       }
       case 'asset': {
@@ -849,41 +911,55 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
             rebuildKeepingScroll()
           }),
         )
-        const size = (name: string, value: number, put: (v: number) => void): HTMLElement =>
-          section.field(
-            name,
-            numberField({ value, spec: numberScrub({ step: 0.05, min: 0.01 }), title: name, history: name, write: put }).root,
-          )
+        const size = (name: string, value: number, put: (v: number) => void): ScrubHandle => {
+          const field = numberField({ value, spec: numberScrub({ step: 0.05, min: 0.01 }), title: name, history: name, write: put })
+          section.field(name, field.root)
+          return field
+        }
+        // The shape's kind is in the panel's shape: a change of kind draws again, so these follow sizes only.
         if (shape.kind === 'box') {
           const half = vecOf(shape.halfExtents)
-          section.field(
-            'half extents',
-            ...AXES.map(
-              (axis) =>
-                numberField({
-                  value: half[axis],
-                  spec: numberScrub({ step: 0.05 }),
-                  title: `half extents ${axis}`,
-                  history: 'half extents',
-                  axis,
-                  write: (v) => {
-                    half[axis] = v
-                    write({ [key]: { kind: 'box', halfExtents: { ...half } } })
-                  },
-                }).root,
-            ),
+          const axes = AXES.map((axis) =>
+            numberField({
+              value: half[axis],
+              spec: numberScrub({ step: 0.05 }),
+              title: `half extents ${axis}`,
+              history: 'half extents',
+              axis,
+              write: (v) => {
+                half[axis] = v
+                write({ [key]: { kind: 'box', halfExtents: { ...half } } })
+              },
+            }),
           )
+          section.field('half extents', ...axes.map((a) => a.root))
+          follow((v) => {
+            const next = vecOf((v as { halfExtents?: unknown } | undefined)?.halfExtents)
+            AXES.forEach((axis, n) => {
+              half[axis] = next[axis]
+              axes[n]!.set(next[axis])
+            })
+          })
         } else if (shape.kind === 'ball') {
-          size('radius', shape.radius, (v) => write({ [key]: { kind: 'ball', radius: v } }))
+          const radius = size('radius', shape.radius, (v) => write({ [key]: { kind: 'ball', radius: v } }))
+          follow((v) => {
+            const r = (v as { radius?: unknown } | undefined)?.radius
+            if (typeof r === 'number') radius.set(r)
+          })
         } else if (shape.kind === 'capsule' || shape.kind === 'cylinder') {
           const dims = { kind: shape.kind, halfHeight: shape.halfHeight, radius: shape.radius }
-          size('half height', dims.halfHeight, (v) => {
+          const height = size('half height', dims.halfHeight, (v) => {
             dims.halfHeight = v
             write({ [key]: { ...dims } })
           })
-          size('radius', dims.radius, (v) => {
+          const radius = size('radius', dims.radius, (v) => {
             dims.radius = v
             write({ [key]: { ...dims } })
+          })
+          follow((v) => {
+            const s = (v ?? {}) as { halfHeight?: unknown; radius?: unknown }
+            if (typeof s.halfHeight === 'number') height.set((dims.halfHeight = s.halfHeight))
+            if (typeof s.radius === 'number') radius.set((dims.radius = s.radius))
           })
         } else {
           // A hull is authored by whatever generated it (ADR 0017); there is no useful field for a point cloud,
@@ -1533,8 +1609,10 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     // A popover belongs to the panel it came from; the new one opens its own again if it should.
     closePopover()
     transformFields = []
+    followers = []
     container.replaceChildren()
     renderHead()
+    drawnShape = shapeNow()
 
     const doc = host.doc()
     if (doc !== null && host.levelSelected()) {
@@ -1565,5 +1643,17 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     addAddButton(doc, at)
   }
 
-  return { rebuild, sync, renderHead, openPoint }
+  const refresh = (): void => {
+    const shape = shapeNow()
+    if (shape === null || shape !== drawnShape) {
+      rebuildKeepingScroll()
+      return
+    }
+    renderHead()
+    sync()
+    const doc = host.doc()
+    if (doc !== null) doc.reading(() => followers.forEach((show) => show()))
+  }
+
+  return { rebuild, sync, refresh, renderHead, openPoint }
 }

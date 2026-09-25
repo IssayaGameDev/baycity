@@ -29,6 +29,7 @@ interface Rig {
   readonly head: HTMLElement
   readonly panel: HTMLElement
   readonly sync: () => void
+  readonly refresh: () => void
   readonly t: { current: TransformValues }
   readonly calls: { begins: number; drags: string[]; transforms: TransformValues[]; menus: { items: readonly MenuItem[]; title: string }[] }
 }
@@ -75,7 +76,7 @@ const rig = (doc: Doc, selection: readonly number[], transform: Partial<Transfor
   }
   const inspector = createInspector(head, panel, host)
   inspector.rebuild()
-  return { head, panel, sync: inspector.sync, t, calls }
+  return { head, panel, sync: inspector.sync, refresh: inspector.refresh, t, calls }
 }
 
 const card = (panel: HTMLElement, title: string): HTMLElement =>
@@ -289,5 +290,47 @@ describe('reordering components by dragging a card’s header', () => {
     const piece = [...Array(doc.count()).keys()].find((i) => doc.kindOf(i) === 'inherited')!
     const { panel } = rig(doc, [piece])
     expect(panel.querySelectorAll('.isec.movable')).toHaveLength(0)
+  })
+})
+
+describe('someone else’s edit to the object shown (ADR 0168)', () => {
+  const shown = () => {
+    const doc = levelDoc({ id: 'l', config: {}, nodes: [box('a', vec3(0, 0, 0))] })
+    return { doc, ...rig(doc, [0]) }
+  }
+
+  it('shows the new values in the same fields, drawing nothing again', () => {
+    const { doc, panel, refresh } = shown()
+    const centre = fields(line(card(panel, 'Collider'), 'center'))
+    const half = fields(line(card(panel, 'Collider'), 'half extents'))
+    doc.setParams(0, 'a-col', { center: vec3(1, 2, 3), shape: { kind: 'box', halfExtents: vec3(2, 0.5, 2) } })
+    refresh()
+    expect(fields(line(card(panel, 'Collider'), 'center')), 'the same fields').toEqual(centre)
+    expect(centre.map(shownIn)).toEqual(['1', '2', '3'])
+    expect(half.map(shownIn)).toEqual(['2', '0.5', '2'])
+  })
+
+  it('keeps what you are typing, and writes it when you are done — the other axes as they are now', () => {
+    const { doc, panel, refresh } = shown()
+    const [x, y] = fields(line(card(panel, 'Collider'), 'center'))
+    press(x!, 'pointerdown', 0)
+    press(x!, 'pointerup', 0)
+    x!.querySelector('input')!.value = '5'
+    doc.setParams(0, 'a-col', { center: vec3(9, 9, 9) })
+    refresh()
+    expect([shownIn(x!), shownIn(y!)], 'the one being typed in keeps it').toEqual(['5', '9'])
+    x!.querySelector('input')!.dispatchEvent(new Event('blur'))
+    expect(paramOf(doc, 0, COLLIDER, 'center')).toEqual({ x: 5, y: 9, z: 9 })
+  })
+
+  it('draws the panel again when what it is made of changed', () => {
+    const { doc, panel, refresh } = shown()
+    const before = card(panel, 'Collider')
+    doc.setParams(0, 'a-col', { shape: { kind: 'ball', radius: 2 } })
+    refresh()
+    const after = card(panel, 'Collider')
+    expect(after).not.toBe(before)
+    expect(line(after, 'radius')).toBeDefined()
+    expect(line(after, 'half extents')).toBeUndefined()
   })
 })

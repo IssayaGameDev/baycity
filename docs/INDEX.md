@@ -217,5 +217,6 @@ why matters.
 | [0165](adr/0165-the-asset-inspector-shows-a-picture-facts-and-users.md) | The asset Inspector shows a picture, the facts, and who uses it |
 | [0166](adr/0166-several-assets-at-once-keys-and-sorting.md) | Several assets at once, Unity's keys, and a sort in the Project window |
 | [0167](adr/0167-a-redraw-walks-once-frees-its-own-and-touches-what-changed.md) | A redraw walks the tree once, frees only its own, and touches only what changed |
+| [0168](adr/0168-the-inspector-follows-an-edit-made-elsewhere-in-place.md) | The Inspector follows an edit made elsewhere in place |
 
 `Design archive/` holds superseded design material and is not maintained.

@@ -145,6 +145,7 @@ const docStack: { doc: Doc; label: string }[] = []
 let uiChanged: () => void = () => {}
 let inspectorRebuild: () => void = () => {}
 let inspectorSync: () => void = () => {}
+let inspectorRefresh: () => void = () => {}
 /**
  * What undo and redo would do, for the top bar (ADR 0155). The bar draws itself as it is built, which is before
  * the history exists — reading `edits` there was a `ReferenceError` that stopped the editor loading — so it
@@ -375,6 +376,7 @@ const room = createLiveSession({
   refreshUi: () => refreshUi(),
   inspectorRebuild: () => inspectorRebuild(),
   inspectorSync: () => inspectorSync(),
+  inspectorRefresh: () => inspectorRefresh(),
   notify,
   setProblem: (message) => setProblem(message),
   presenceChanged: () => {
@@ -2311,6 +2313,7 @@ const refreshUi = (): void => {
 uiChanged = refreshUi
 inspectorRebuild = () => inspector.rebuild()
 inspectorSync = () => inspector.sync()
+inspectorRefresh = () => inspector.refresh()
 
 // --- splitters: the canvas is no longer window-sized, so it has to be told when its cell changes ---
 let relayoutQueued = false
