@@ -65,7 +65,7 @@ object that uses it. Two people changing the same value: the last change wins.
 ## Textures and models
 
 Drag a file from your desktop onto a folder in the **Project** panel (bottom), or onto the tiles of the folder
-you are looking at.
+you are looking at, or use **+ → Upload files…** there.
 
 - Allowed: `.png`, `.jpg`, `.webp`, `.ktx2`, `.glb`. Not `.gltf` — export a `.glb` instead.
 - Max size is 10 MB per file.

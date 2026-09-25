@@ -114,24 +114,21 @@ export const flattenTree = (root: TreeNode, collapsed: ReadonlySet<string>): Tre
 }
 
 export interface Filter {
-  /** The library to look in, by its folder (`SHARED`, or a game's). */
-  library: string
-  /** Folder to show. `null` means every folder of the library. */
+  /** The libraries to look in, by their folders (`SHARED`, a game's). */
+  libraries: readonly string[]
+  /** The one folder to show, not its subfolders. `null` means every folder of the libraries: a search (ADR 0163). */
   folder: string | null
   /** Kind to show. `null` means every kind. */
   kind: AssetKind | null
   /** Case-insensitive substring of the name. */
   search: string
-  /** Include assets in subfolders of `folder`. */
-  recursive: boolean
 }
 
 /**
  * Entries a filter leaves visible, name-sorted.
  *
- * A folder and a kind are independent axes on purpose: "textures in this folder" and "every material
- * anywhere" are both things an author asks for, and making the kind a tab (as this panel first did) can only
- * answer the second.
+ * The Project window asks two things of it (ADR 0163): what is in the folder you are in, and — searching, by name
+ * or kind — what matches in every folder of both roots.
  */
 export const filterEntries = (db: AssetDatabase, filter: Filter): AssetEntry[] => {
   const needle = filter.search.trim().toLowerCase()
@@ -140,9 +137,8 @@ export const filterEntries = (db: AssetDatabase, filter: Filter): AssetEntry[] =
       if (filter.kind !== null && e.kind !== filter.kind) return false
       if (needle !== '' && !e.name.toLowerCase().includes(needle)) return false
       const folder = folderOf(e.path)
-      if (!within(folder, filter.library)) return false
-      if (filter.folder === null) return true
-      return filter.recursive ? folder === filter.folder || folder.startsWith(`${filter.folder}/`) : folder === filter.folder
+      if (!filter.libraries.some((l) => within(folder, l))) return false
+      return filter.folder === null || folder === filter.folder
     })
     .sort((a, b) => a.name.localeCompare(b.name))
 }

@@ -41,7 +41,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 
 | Area | Element | Module |
 | --- | --- | --- |
-| Top | `#toolbar` (ADR 0149), a 3-column grid: the level's name, or `level › prefab` inside a prefab — the level is a button and the way back, and a **lock badge** while someone else holds it; **Motion** (with its clock while it runs, `setClock`) and **Play** in the middle; **undo / redo**, the **bell** and **who is in the room** at the right end (ADR 0155). No New or Duplicate (the Project panel's), **no game picker and no level list** (ADR 0108), no mode select and no Save: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts`, `src/people.ts` |
+| Top | `#toolbar` (ADR 0149), a 3-column grid: the game button (`tb-game`, `game › level ▾`, which opens the games window, ADR 0162), or `game ▾ › level › prefab` inside a prefab — the level is a button and the way back, and a **lock badge** while someone else holds it; **Motion** (with its clock while it runs, `setClock`) and **Play** in the middle; **undo / redo**, the **bell** and **who is in the room** at the right end (ADR 0155). No New or Duplicate (the games window's), no level list (ADR 0108), no mode select and no Save: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts`, `src/people.ts` |
 | Over the viewport | `#overlays` in `#centre` (ADR 0149): a layer that passes the pointer through, its panels (`.ov`) taking it back; **hidden while playing**. Left edge, vertical: Move / Rotate / Scale / **Face** (ADR 0119). Top left: Global / Local (globe / cube), the magnet, the active tool's increment with its unit (ADR 0114). Top right, left of the navigation gizmo: Grid, Markers, **Keys** (ADR 0120; hidden unless the game declares `surfaceGrid`), **Reveal** (ADR 0132; hidden while nothing is). Under the gizmo: the Persp / Iso button (ADR 0094). Icons only (`icons.ts`), each named with its key in its tooltip | `src/toolbar.ts`, `src/cameraView.ts` |
 | Left | `#hierarchy` — node tree + context menu; how a row reads and drags is **The Hierarchy** below (ADR 0150). Rows alternate `--row-alt` by **rendered** position (`.row:where(:not(.env)):nth-child(even)`), declared before `:hover` and `.sel` so both win on source order | `src/hierarchy.ts`, `src/hierarchyDrag.ts`, `src/menu.ts` |
 | Centre | `#centre`: `#banner` above `#stage`, which holds `#view` — Three stage, orbit, transform gizmo, placement clicks — and the layers over it: `#overlays`, `#toasts`, `#vhint`, `#readout`, `#hint` | `src/main.ts`, `src/itemMeshes.ts`, `src/play.ts`, `src/notices.ts` |
@@ -67,7 +67,7 @@ The routes are `tools/editor-server/src/api.ts`, mounted by `vite.config.ts` (`f
 | materials | no lock: live documents (ADR 0159, *Live assets* below) |
 | heartbeat | `setInterval(heartbeatMs)`: `heartbeatLocks(held)`; a lost file lock is re-taken or turns the file read-only; `serverStatus().pushError` → `pushProblem`, a banner line `not on GitHub yet: …` |
 | `pagehide` | `releaseLockBeacon` per held lock; `collab.beaconLeave()` |
-| upload | `ProjectHost.onUpload(files, folder)` from a desktop drop on a folder row, folder tile or the grid (`dropTargetFor`, `folder` getter; not for *All folders* or the level's own); files over `maxUploadBytes` are named and skipped; `afterFileOp` uploads the rest |
+| upload | `ProjectHost.onUpload(files, folder)` from a desktop drop on a folder row, folder tile or the grid (`dropTargetFor`, `folder` getter; not while searching), or the **+** menu's *Upload files…*; files over `maxUploadBytes` are named and skipped; `afterFileOp` uploads the rest |
 
 `content/<game>/game.json` is written by `adopt` without a lock (gated only by others' locks).
 
@@ -144,7 +144,7 @@ httpTransport(): LiveTransport   // EventSource in, fetch POST out, sendBeacon f
 | repaint | `repaintAfterOps(ops)`: transforms only (`setTransform` / `setOverrideTransform`) → `applyPreviewPoses` + `scheduleRebuild` + `inspectorSync` + track helper; anything else → environment/postfx re-applied, `host.rebuildViewport()`, selection put back by `indexOfRef`, `refreshUi` + `inspectorRebuild`. During a gizmo drag **or a play-test** ops queue in `deferredRemote` (the data is already changed) and repaint when it ends (`room.drainDeferred()`, from the drag's `mouseUp` and from both `play.stop` exits) — `rebuildLoaded` frees the physics world a play session's character lives in |
 | Save | there is none; `dirty` stays `false` live (`recordEdit`, `applyHistory`), so `guardUnsaved` never asks. `saveNow` returns `true` |
 | Play | `startFramePlay`: live → `collab.flush()` first (the game reads the file), else the prefab path `saveNow()` |
-| New / Duplicate | `createLevel(from)`: `askName` (`confirm.ts`) → `^[\w-]+$` → refused if `listFiles('levels')` has it → `PUT /api/levels/<name>` a `blankLevel` with the active mode, or the open level (`loadLevelRaw`, the server's live copy) with `id` set → `refreshFileList` → `openFile`. From the Project panel: a game's new-level action (`onNewLevel`) and a level's *Duplicate…* |
+| New / Duplicate | `createLevel(from)`: `askName` (`confirm.ts`) → `^[\w-]+$` → refused if `listFiles('levels')` has it → `PUT /api/levels/<name>` a `blankLevel` with the active mode, or the open level (`loadLevelRaw`, the server's live copy) with `id` set → `refreshFileList` → `openFile`. From the games window: *New level* (`onNewLevel`, `createLevel(null, game)`) and a level's *Duplicate…* |
 | peers | `room.peers()`: `{ connId, name }` per connection in the room, this tab's included, from its `peers` events; `[]` with no room open. `peerChanges(before, after, mineEver)` (pure) → a toast `X joined` / `X left` per `peers` event — not for the room as it was on joining (`joining`), and never for a `connId` that was ever this tab's (a reconnect's old one is listed a moment under your name) |
 | connection | `Connection` = `connecting` (join, a reopened stream, `onRetry` from the `EventSource` retrying) → `live` (a snapshot) → `lost` (`onDrop`); `null` after `leave`. `hooks.onConnection` → `host.presenceChanged()` |
 | leave | `dropAllLocks` → `collab.leave()`; `pagehide` → `beaconLeave()` |
@@ -402,21 +402,37 @@ opens it; the list scrolls within 28 px of its edge; Escape cancels; the click a
 inside a transparent border that still takes the pointer; Firefox gets `scrollbar-color` only, because Chromium
 ignores the pseudo-elements wherever that is set.
 
-## Project panel — the asset libraries (ADR 0161, ADR 0162)
+## Project window — the asset libraries (ADR 0161, ADR 0163)
 
-`src/projectPanel.ts`. The tree is the shared library, then the open game's own; levels are the games window's.
+`src/projectPanel.ts`, `createProjectPanel(container, host)` → `{ render, folder(), openersChanged() }`. Levels are
+the games window's (ADR 0162).
 
 ```
-assets           <- the shared library
-  materials
-  prefabs
-keyboard assets  <- the open game's own (ProjectHost.game), drawn even before it has a file
+[+]  Shared › materials                     [🔍 search…     ×  All ▾]
+┌ tree ───────────┐┌ tiles ──────────────────────────────────────┐
+│ ▾ 🗀 Keyboard    ││ 🗀 sub   ◼ brick   ◼ red (AL)   …          │   <- the open game's own library (ProjectHost.game)
+│   🗀 materials   ││                                             │
+│ ▾ 🗀 Shared      ││                                             │   <- SHARED, `content/assets`
+│   🗀 materials   │└─────────────────────────────────────────────┘
+└─────────────────┘ Shared/materials/red.mat.json         ──●── size
 ```
 
-- The panel's place is `{ folder }`, from `content/` (`SHARED` = `assets` at the top, `null` all folders). A tree
-  is one library's (`buildTree(db, folders, root)`, `Filter.library`), and folders are named without their library
-  (`shownFolder`). Dragging between the two is a move between libraries, which the server may refuse with why
-  (ADR 0161). An asset's URL is `/content/<path>` (`assetUrl`), as on disk.
+| Part | Now |
+| --- | --- |
+| roots | `roots()`: `libraryDir(game)` labelled with the game's label, then `SHARED` labelled *Shared*; each drawn even with no file. A folder gone (deleted, moved, another game's now) falls back to the nearest one still there, else `SHARED` |
+| tree | `buildTree(db, folders, root)` per root, `flattenTree(tree, collapsed)`; `.row`s, `4 + depth × 14` px; a `chevron` twist only over children; a `folder` icon on each; no counts; the folder you are in `.sel`. A click goes there (and ends a search); going anywhere opens its ancestors |
+| tiles | `.ex-grid`, `--tile` px square: the folder's subfolders (`subfoldersOf`), then its files (`filterEntries({ libraries: [root], folder })`). `.pt` = `.pt-pic` (a kind icon, `KIND_ICON`; the preview `img.thumb` over it once the observer has it) + `.pt-name`. A folder tile: a click lights it in place (not redrawn, so a double-click survives), a double-click goes in. A file tile: a click arms a placeable (prefab, model) or opens it in the Inspector, and a sound, font or texture in `.asset-preview`. Greyed with why (`unplaceableWhy`). All draggable onto folders; a right-click is `host.onContext` |
+| list | the slider at `SIZE.list` (its minimum): `.ex-grid.list`, a line each, an 18 px picture |
+| faces | `.pt-people .pp` per `host.openers(id)` (ADR 0159), repainted in place by `openersChanged()` (`openAssetsChanged` in main) |
+| + | `host.menu`: *New folder…* (`askName` → `onMkdir(folder, name)`), *New material* (`onCreateAsset('material', folder)`), *Upload files…* (a hidden `input[type=file]`, accept = the server's `UPLOAD_EXTENSIONS`, → `onUpload`) |
+| path | `.ex-crumb` per part, root label first; a click goes there. While searching: *Every folder* |
+| search | `.ex-search`: text (Escape clears it), `×` (clears text and kind), the kind button (`host.menu`: All kinds, then `ASSET_KINDS`, ✓ on the current). Text or a kind → `filterEntries({ libraries: every root, folder: null, kind, search })`, files only, names only |
+| bottom | `.ex-foot`: the tile last clicked, else the selected or armed asset, as `named(path)` (`<root label>/<path inside>`); the slider `SIZE` 40–144 step 4, start 64, per viewer (`localStorage` `mp.project.tileSize`, try/caught) |
+| drops | onto a tree row, a folder tile, or the grid (the folder on screen; not while searching): files from the desktop upload, a tile moves (`onMove`), between libraries a move the server may refuse with why (ADR 0161) |
+
+`folder()` is where *Save as prefab…* writes (ADR 0091). An asset's URL is `/content/<path>` (`assetUrl`), as on disk.
+`Filter` (`assetTree.ts`) is `{ libraries, folder: string | null, kind, search }`: one folder's own files, or — `null`
+— every folder of the libraries.
 
 ## The games window (ADR 0162, `src/gamesWindow.ts`)
 

@@ -212,5 +212,6 @@ why matters.
 | [0160](adr/0160-a-field-someone-is-in-is-ringed-in-their-colour.md) | A field someone is in is ringed in their colour |
 | [0161](adr/0161-each-game-has-its-own-asset-library.md) | Each game has its own asset library, beside the shared one |
 | [0162](adr/0162-the-games-window-holds-the-levels.md) | The games window holds the levels |
+| [0163](adr/0163-the-project-window-is-folders-of-square-tiles.md) | The Project window is folders of square tiles, under two roots |
 
 `Design archive/` holds superseded design material and is not maintained.

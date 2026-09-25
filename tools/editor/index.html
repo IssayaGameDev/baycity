@@ -1099,7 +1099,7 @@
          stripe's colour. `:where()` contributes nothing, so this is two, ties with both, and source order
          (stripe first) lets hover and selection win.
 
-         The Environment and Game rows are skipped: they are level settings above the tree, already set apart
+         The Level and Environment rows are skipped: they are level settings above the tree, already set apart
          by their own rule, and striping them would make the first object's shade depend on whether they are
          there. They still count for `nth-child`, so the tree's alternation is stable. */
       .row:where(:not(.env)):nth-child(even) {
@@ -1111,7 +1111,7 @@
       .row.sel {
         background: var(--sel);
       }
-      /* The Game and Environment rows are level settings, not objects, so they sit above the tree with a rule
+      /* The Level and Environment rows are level settings, not objects, so they sit above the tree with a rule
          under them rather than being indented into it (ADR 0048). */
       .row.env {
         gap: 7px;
@@ -1253,8 +1253,8 @@
         background: rgba(74, 140, 247, 0.18);
       }
       .row.drop-onto,
-      .tile.drop-onto,
-      .tiles.drop-onto {
+      .pt.drop-onto,
+      .ex-grid.drop-onto {
         box-shadow: inset 0 0 0 2px var(--accent);
       }
       .hier-line {
@@ -1315,7 +1315,7 @@
         color: var(--dim);
       }
 
-      /* ---- project explorer: header, folder tree, tiles ---- */
+      /* ---- the Project window (ADR 0163): top bar, folder tree, tiles, bottom bar ---- */
       #palette {
         display: flex;
         flex-direction: column;
@@ -1325,38 +1325,161 @@
       .ex-head {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
         padding: 4px 6px;
         border-bottom: 1px solid var(--line);
         flex: 0 0 auto;
-        overflow-x: auto;
       }
+      .ex-plus {
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        width: 26px;
+        height: 24px;
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+      }
+      .ex-plus:hover {
+        background: var(--hover);
+      }
+      .ex-plus .ic {
+        width: 15px;
+        height: 15px;
+      }
+      /* The path: each part goes there. */
       .ex-crumbs {
         display: flex;
         align-items: center;
         gap: 2px;
-        flex: 0 0 auto;
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
       }
-      .crumb {
-        padding: 1px 6px;
+      .ex-crumb {
+        padding: 2px 5px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--dim);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .ex-crumb:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .ex-crumb.here {
+        color: var(--text);
+      }
+      .ex-sep {
+        color: var(--dim);
         font-size: 11px;
       }
-      .ex-crumbs .crumb + .crumb::before {
-        content: '/';
+      .ex-crumb-note {
         color: var(--dim);
-        margin-right: 4px;
+        font-size: 12px;
+        font-style: italic;
+      }
+      /* Search, with the kind button inside it. */
+      .ex-search {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex: 0 1 280px;
+        min-width: 150px;
+        height: 24px;
+        padding: 0 3px 0 7px;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        background: var(--bg);
+      }
+      .ex-search:focus-within {
+        border-color: var(--accent);
+      }
+      .ex-search-i {
+        flex: 0 0 auto;
+        width: 13px;
+        height: 13px;
+        color: var(--dim);
+      }
+      .ex-search-in {
+        flex: 1 1 auto;
+        min-width: 0;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        font-size: 12px;
+      }
+      .ex-search-x {
+        display: grid;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--dim);
+        cursor: pointer;
+      }
+      .ex-search-x[hidden] {
+        display: none;
+      }
+      .ex-search-x:hover {
+        color: var(--text);
+      }
+      .ex-search-x .ic {
+        width: 12px;
+        height: 12px;
+      }
+      .ex-kind {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        flex: 0 0 auto;
+        height: 18px;
+        padding: 0 3px 0 6px;
+        border: 0;
+        border-radius: 3px;
+        background: var(--panel);
+        color: var(--dim);
+        font: inherit;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .ex-kind:hover {
+        color: var(--text);
+      }
+      .ex-kind.on {
+        background: var(--accent);
+        color: #fff;
+      }
+      .ex-kind .ic {
+        width: 11px;
+        height: 11px;
       }
       .ex-body {
         display: flex;
         flex: 1 1 auto;
         min-height: 0;
       }
+      /* The tree: folders only, one indent a depth, scrolling on its own. */
       .ex-tree {
-        flex: 0 0 168px;
+        flex: 0 0 190px;
         overflow: auto;
         border-right: 1px solid var(--line);
         min-height: 0;
         padding: 2px 0;
+      }
+      .ex-tree .row .ico {
+        color: var(--dim);
       }
       .ex-right {
         display: flex;
@@ -1365,62 +1488,160 @@
         min-width: 0;
         min-height: 0;
       }
-      .tile.folder {
-        font-weight: 600;
-      }
-      .tiles {
-        display: flex;
-        flex-wrap: wrap;
-        align-content: flex-start;
-        gap: 4px;
-        overflow: auto;
-        min-height: 0;
+      /* Every item one square tile, its picture and its name, at the slider's size (`--tile`). */
+      .ex-grid {
+        --tile: 64px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, calc(var(--tile) + 12px));
+        gap: 6px;
+        align-content: start;
         flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
         padding: 6px;
       }
-      .tile {
-        padding: 4px 9px;
+      .ex-grid .empty {
+        grid-column: 1 / -1;
       }
-      .tile.foreign {
-        opacity: 0.4;
-        cursor: not-allowed;
-      }
-      .tile.armed {
-        background: var(--accent);
-        border-color: var(--accent);
-        color: #fff;
-      }
-      .tile.new {
-        border-style: dashed;
-      }
-      /* A tile with a preview: picture over name. Prefabs, models and materials are rendered once
-         offscreen and cached; a texture is its own file; sounds and fonts stay text. */
-      .tile.has-thumb {
+      .pt {
+        position: relative;
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 3px;
-        padding: 4px;
-        width: 92px;
-        font-size: 11px;
+        gap: 4px;
+        min-width: 0;
+        padding: 5px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        font-size: 11.5px;
+        cursor: default;
+      }
+      .pt:hover {
+        background: var(--hover);
+      }
+      .pt.on {
+        border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 26%, transparent);
+      }
+      .pt.foreign {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .pt-pic {
+        position: relative;
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        width: var(--tile);
+        height: var(--tile);
+        border-radius: 4px;
+        background: #111317;
         overflow: hidden;
       }
-      .tile .thumb {
-        width: 64px;
-        height: 64px;
-        /* Empty until the observer fills it in, so an unfilled tile must not look broken. */
-        color: transparent;
-        font-size: 0;
+      .pt-ic {
+        width: 46%;
+        height: 46%;
+        color: var(--dim);
+        stroke-width: 1.5;
+      }
+      .pt-folder .pt-pic {
+        background: transparent;
+      }
+      .pt-folder .pt-ic {
+        width: 78%;
+        height: 78%;
+        color: #b99a5b;
+        stroke-width: 1.1;
+      }
+      .pt-pic .thumb {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
         object-fit: contain;
         background: #0e1013 repeating-conic-gradient(#1b1e23 0% 25%, transparent 0% 50%) 50% / 12px 12px;
-        border-radius: 2px;
-        flex: 0 0 auto;
       }
-      .tile .tile-name {
+      .pt-pic .thumb[hidden] {
+        display: none;
+      }
+      .pt-name {
         max-width: 100%;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+      /* Who else has it open (ADR 0159): their faces in the corner of the picture. */
+      .pt-people {
+        position: absolute;
+        top: calc(var(--tile) - 14px);
+        right: 9px;
+        display: flex;
+        gap: 2px;
+      }
+      .pt-people .pp {
+        width: 16px;
+        height: 16px;
+        font-size: 7.5px;
+        cursor: default;
+      }
+      /* All the way left on the slider: a one-line list, a small picture and the name. */
+      .ex-grid.list {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        padding: 2px 0;
+      }
+      .ex-grid.list .pt {
+        flex-direction: row;
+        gap: 6px;
+        height: 22px;
+        padding: 0 8px;
+        border-radius: 0;
+      }
+      .ex-grid.list .pt-pic {
+        width: 18px;
+        height: 18px;
+        border-radius: 2px;
+        background: transparent;
+      }
+      .ex-grid.list .pt-ic,
+      .ex-grid.list .pt-folder .pt-ic {
+        width: 16px;
+        height: 16px;
+        stroke-width: 1.8;
+      }
+      .ex-grid.list .pt-name {
+        flex: 1 1 auto;
+        text-align: left;
+      }
+      .ex-grid.list .pt-people {
+        position: static;
+      }
+      .ex-foot {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex: 0 0 auto;
+        height: 24px;
+        padding: 0 8px;
+        border-top: 1px solid var(--line);
+        font-size: 11.5px;
+      }
+      .ex-foot-path {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--dim);
+      }
+      .ex-size {
+        flex: 0 0 auto;
+        width: 110px;
+        accent-color: var(--accent);
       }
       .asset-preview {
         display: flex;
@@ -1430,15 +1651,14 @@
         min-height: 0;
         padding: 0 6px 6px;
       }
+      .asset-preview:empty {
+        display: none;
+      }
       .asset-preview img {
         max-height: 96px;
         max-width: 40%;
         object-fit: contain;
         border: 1px solid var(--line);
-      }
-      .asset-preview .caption {
-        color: var(--dim);
-        font-size: 11px;
       }
       .font-sample {
         font-size: 20px;

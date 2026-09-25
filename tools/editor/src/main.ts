@@ -397,7 +397,10 @@ const room = createLiveSession({
   // A material's edit, or a game data file's (ADR 0162): each to the copies that follow it.
   onAsset: (data) => (gameOfDocId(parseAssetEvent(data)?.assetId ?? '') === null ? assetSync : gameSync).onEvent(data),
   openAssetIds: () => (selectedAsset === null ? [] : [selectedAsset]),
-  openAssetsChanged: () => assetInspector.openersChanged(),
+  openAssetsChanged: () => {
+    assetInspector.openersChanged()
+    project.openersChanged()
+  },
   fieldsChanged: () => {
     objectFields.repaint()
     assetFields.repaint()
@@ -1559,8 +1562,10 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   folders: () => assets?.folders ?? [],
   urlOf: (path) => assets?.urlOf(path) ?? path,
   armed: () => placing?.assetId ?? null,
-  game: () => activeMode?.name ?? null,
+  game: () => (activeMode === undefined ? null : { name: activeMode.name, label: activeMode.label }),
+  menu: contextMenu,
   selectedAsset: () => selectedAsset,
+  openers: (id) => room.openersOf(id).map((p) => ({ name: p.name, colour: peerCss(p.connId) })),
   onPickAsset: fileOps.armAsset,
   unplaceableWhy: (id) => fileOps.unplaceableWhy(id),
   onUpload: (files, folder) => {
@@ -1666,8 +1671,6 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     )
   },
   onMkdir: (parent, name) => fileOps.afterFileOp(`created ${name}`, async () => assets?.mkdir(parent, name) ?? Promise.resolve()),
-  onRename: fileOps.renameAsset,
-  onDelete: fileOps.deleteAsset,
   onMove: (from, toFolder) => {
     // Refuse a folder into its own subtree here as well as on the server: a rejected drop should not need a
     // round trip to say so.

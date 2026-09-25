@@ -17,7 +17,7 @@ const db = buildDatabase([
   entry('keyboard/assets/textures/key.png', 'texture'),
 ])
 
-const filter = (over: Partial<Filter> = {}): Filter => ({ library: 'assets', folder: null, kind: null, search: '', recursive: false, ...over })
+const filter = (over: Partial<Filter> = {}): Filter => ({ libraries: ['assets'], folder: null, kind: null, search: '', ...over })
 
 describe('folderOf', () => {
   it('is the directory part, the library’s own folder at the top', () => {
@@ -98,21 +98,21 @@ describe('flattenTree', () => {
 })
 
 describe('filterEntries', () => {
-  it('shows one folder, not its subfolders, by default', () => {
+  it('shows one folder, not its subfolders', () => {
     expect(filterEntries(db, filter({ folder: 'assets/textures' })).map((e) => e.name)).toEqual(['loose'])
   })
 
-  it('includes subfolders when asked', () => {
-    expect(filterEntries(db, filter({ folder: 'assets/textures', recursive: true })).map((e) => e.name)).toEqual([
+  it('looks in every folder of every library it is given when no folder is chosen: a search', () => {
+    expect(filterEntries(db, filter({ libraries: ['keyboard/assets', 'assets'], kind: 'texture' })).map((e) => e.name)).toEqual([
       'brick',
+      'key',
       'loose',
       'plank',
+      'root',
       'slab',
     ])
   })
 
-  // The two axes are independent: "textures in this folder" and "every material anywhere" are both real
-  // questions, and a kind-as-tab panel can only answer the second.
   it('filters by kind across the whole library when no folder is chosen, and no further', () => {
     expect(filterEntries(db, filter({ kind: 'texture' })).map((e) => e.path)).toEqual([
       'assets/textures/stone/brick.png',
@@ -121,7 +121,7 @@ describe('filterEntries', () => {
       'assets/root.png',
       'assets/textures/stone/slab.png',
     ])
-    expect(filterEntries(db, filter({ library: 'keyboard/assets', kind: 'texture' })).map((e) => e.name)).toEqual(['key'])
+    expect(filterEntries(db, filter({ libraries: ['keyboard/assets'], kind: 'texture' })).map((e) => e.name)).toEqual(['key'])
   })
 
   it('combines folder and kind', () => {
