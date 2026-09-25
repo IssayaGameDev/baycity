@@ -47,13 +47,12 @@
         display: grid;
         height: 100%;
         grid-template-columns: var(--left) 5px 1fr 5px var(--right);
-        grid-template-rows: 34px 1fr 5px var(--bottom) 22px;
+        grid-template-rows: 34px 1fr 5px var(--bottom);
         grid-template-areas:
           'tool tool tool tool tool'
           'left sl   view sr   right'
           'sb   sb   sb   sb   sb'
-          'bot  bot  bot  bot  bot'
-          'stat stat stat stat stat';
+          'bot  bot  bot  bot  bot';
       }
 
       /*
@@ -259,8 +258,19 @@
       #centre {
         grid-area: view;
         position: relative;
+        display: flex;
+        flex-direction: column;
         overflow: hidden;
         min-width: 0;
+        min-height: 0;
+      }
+      /*
+        The viewport proper: the canvas and every layer over it. Below the banner rather than under it, so a
+        banner never covers the navigation gizmo, which is drawn into the canvas's own corner.
+      */
+      #stage {
+        position: relative;
+        flex: 1 1 auto;
         min-height: 0;
       }
       #view {
@@ -445,6 +455,71 @@
       .tb-b .ic {
         width: 15px;
         height: 15px;
+      }
+      /* Read-only: somebody else holds the level's lock (ADR 0089). */
+      .tb-lock {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin-left: 8px;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 11px;
+        color: #f5b454;
+        background: color-mix(in srgb, #f5b454 14%, transparent);
+        white-space: nowrap;
+      }
+      .tb-lock[hidden] {
+        display: none;
+      }
+      .tb-lock .ic {
+        width: 12px;
+        height: 12px;
+      }
+      /* The Motion preview's clock, between its button and Play. */
+      .tb-clock {
+        align-self: center;
+        min-width: 42px;
+        padding: 0 4px;
+        font-size: 11px;
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+        text-align: center;
+      }
+      .tb-clock[hidden] {
+        display: none;
+      }
+      /* The right end: undo and redo, then the bell (ADR 0155). */
+      .tb-end {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 2px;
+        min-width: 0;
+      }
+      .tb-sep {
+        width: 1px;
+        height: 16px;
+        margin: 0 4px;
+        background: var(--line);
+      }
+      .tb-bell {
+        position: relative;
+      }
+      .tb-badge {
+        position: absolute;
+        top: 0;
+        right: 3px;
+        min-width: 14px;
+        height: 14px;
+        padding: 0 3px;
+        border-radius: 7px;
+        font-size: 9px;
+        font-weight: 700;
+        line-height: 14px;
+        text-align: center;
+        color: #fff;
+        background: #e5484d;
       }
       #overlays {
         position: absolute;
@@ -2100,26 +2175,247 @@
         cursor: default;
       }
 
-      /* ---- status bar + viewport hint ---- */
-      #status {
-        grid-area: stat;
+      /*
+        ---- what the editor says (ADR 0155) ----
+        Toasts in the viewport's bottom-right corner, newest at the bottom; the log under the bell; the banner
+        above the viewport for what stays broken; the mode hint and the gesture readout over the viewport.
+      */
+      #toasts {
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        z-index: 20;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
+        max-width: min(420px, calc(100% - 24px));
+        pointer-events: none;
+      }
+      .toast {
         display: flex;
         align-items: center;
         gap: 8px;
-        padding: 0 8px;
-        background: var(--panel-head);
-        border-top: 1px solid var(--line);
+        min-width: 0;
+        padding: 7px 10px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+        background: rgba(28, 31, 37, 0.96);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+        font-size: 12px;
+        color: var(--text);
+        pointer-events: auto;
+        cursor: default;
+        animation: toast-in 0.16s ease-out;
+        transition: opacity 0.18s, transform 0.18s;
+      }
+      .toast.gone {
+        opacity: 0;
+        transform: translateY(6px);
+      }
+      @keyframes toast-in {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+      }
+      .toast-i {
+        flex: 0 0 auto;
+        width: 15px;
+        height: 15px;
+      }
+      .toast-ok .toast-i,
+      .nlog-ok .nlog-i {
+        color: #4ade80;
+      }
+      .toast-warn .toast-i,
+      .nlog-warn .nlog-i {
+        color: #f5b454;
+      }
+      .toast-error {
+        border-color: rgba(229, 72, 77, 0.45);
+      }
+      .toast-error .toast-i,
+      .nlog-error .nlog-i {
+        color: #ff6b6b;
+      }
+      .toast-t {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      .toast-n {
+        flex: 0 0 auto;
+        padding: 0 5px;
+        border-radius: 7px;
+        font-size: 10px;
+        line-height: 15px;
         color: var(--dim);
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .toast-x {
+        flex: 0 0 auto;
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        margin-right: -4px;
+        padding: 0;
+        border: 0;
+        border-radius: 4px;
+        background: none;
+        color: var(--dim);
+        cursor: pointer;
+      }
+      .toast-x:hover {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.08);
+      }
+      .toast-x .ic {
+        width: 12px;
+        height: 12px;
+      }
+      /* The log: every message, newest first, with the time it was said. */
+      .pop-log {
+        padding: 0;
+      }
+      .nlog {
+        display: flex;
+        flex-direction: column;
+        width: min(460px, calc(100vw - 24px));
+      }
+      .nlog-h {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      .nlog-title {
         font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--dim);
+      }
+      .nlog-clear {
+        padding: 2px 8px;
+        border: 0;
+        border-radius: 4px;
+        background: none;
+        color: var(--dim);
+        font: inherit;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .nlog-clear:hover {
+        color: var(--text);
+        background: var(--hover);
+      }
+      .nlog-list {
+        max-height: 50vh;
+        overflow: auto;
+        padding: 4px 0;
+      }
+      .nlog-r {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 4px 10px;
+        font-size: 12px;
+      }
+      .nlog-at {
+        flex: 0 0 auto;
+        font-size: 11px;
+        color: var(--dim);
+        font-variant-numeric: tabular-nums;
+      }
+      .nlog-i {
+        flex: 0 0 auto;
+        width: 13px;
+        height: 13px;
+        margin-top: 2px;
+      }
+      .nlog-t {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      .nlog-empty {
+        padding: 14px 10px;
+        text-align: center;
+        color: var(--dim);
+      }
+      /* What stays broken until it is fixed, above the viewport. */
+      #banner {
+        flex: 0 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 5px 10px;
+        font-size: 12px;
+        color: #ffd1d1;
+        background: #5a1f22;
+        border-bottom: 1px solid #7d2a2f;
+      }
+      #banner[hidden] {
+        display: none;
+      }
+      .banner-l {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .banner-l .ic {
+        flex: 0 0 auto;
+        width: 14px;
+        height: 14px;
+        color: #ff8a8a;
+      }
+      /* What the viewport is doing: placing, playing. Top centre, under the tool rows and clear of the toasts. */
+      #vhint {
+        position: absolute;
+        left: 50%;
+        top: 56px;
+        z-index: 15;
+        transform: translateX(-50%);
+        max-width: calc(100% - 40px);
+        padding: 6px 14px;
+        border-radius: 16px;
+        font-size: 12px;
+        color: #fff;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(20, 22, 26, 0.88);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
         white-space: nowrap;
         overflow: hidden;
+        text-overflow: ellipsis;
+        pointer-events: none;
       }
-      #status b {
-        color: var(--text);
-        font-weight: 600;
+      #vhint[hidden] {
+        display: none;
       }
-      #status .problem {
-        color: #ff6b6b;
+      /* A figure beside the pointer during a gesture: the size while pulling a face. */
+      #readout {
+        position: absolute;
+        z-index: 16;
+        padding: 3px 7px;
+        border-radius: 5px;
+        font-size: 11px;
+        color: #fff;
+        background: rgba(20, 22, 26, 0.9);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        pointer-events: none;
+      }
+      #readout[hidden] {
+        display: none;
+      }
+      /* The Hierarchy's object count, in its header. */
+      #hier-count {
+        margin-left: 6px;
+        font-weight: 400;
+        color: var(--dim);
+        opacity: 0.8;
       }
       #hint {
         position: absolute;
@@ -2137,16 +2433,22 @@
       <div id="toolbar"></div>
 
       <div id="left" class="panel">
-        <h2>Hierarchy</h2>
+        <h2>Hierarchy<span id="hier-count"></span></h2>
         <div id="hierarchy" class="panel-body"></div>
       </div>
       <div id="split-left" class="splitter"></div>
 
       <div id="centre">
-        <canvas id="view"></canvas>
-        <div id="overlays"></div>
-        <div id="hint">
-          Orbit: drag · Select: click · T/R/S transform · Ctrl+D duplicate · Del delete · Esc deselect
+        <div id="banner" role="alert" hidden></div>
+        <div id="stage">
+          <canvas id="view"></canvas>
+          <div id="overlays"></div>
+          <div id="toasts" aria-live="polite"></div>
+          <div id="vhint" hidden></div>
+          <div id="readout" hidden></div>
+          <div id="hint">
+            Orbit: drag · Select: click · T/R/S transform · Ctrl+D duplicate · Del delete · Esc deselect
+          </div>
         </div>
       </div>
 
@@ -2169,7 +2471,6 @@
         <div id="palette" class="panel-body"></div>
       </div>
 
-      <div id="status"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

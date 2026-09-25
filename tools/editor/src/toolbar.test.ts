@@ -33,11 +33,17 @@ const rig = (over: Partial<ToolbarState> = {}) => {
     markers: false,
     surfaceCells: null,
     showingAll: null,
+    lockedBy: null,
+    history: { undo: null, redo: null, depth: { undo: 0, redo: 0 } },
+    unseen: 0,
     ...over,
   }
   const calls: string[] = []
   const actions: ToolbarActions = {
     back: () => calls.push('back'),
+    undo: () => calls.push('undo'),
+    redo: () => calls.push('redo'),
+    toggleLog: () => calls.push('log'),
     setGizmo: (g) => {
       calls.push(`gizmo:${g}`)
       s.gizmo = g
@@ -64,13 +70,16 @@ const rig = (over: Partial<ToolbarState> = {}) => {
 }
 
 describe('the top bar', () => {
-  it('names the level and runs it, and nothing else', () => {
+  it('names the level, runs it, and holds the history and the messages', () => {
     const r = rig()
     expect(r.bar.querySelector('.tb-name')!.textContent).toBe('World_1')
     expect(r.bar.querySelector<HTMLElement>('.tb-crumb')!.hidden, 'no way back from a level').toBe(true)
     expect([...r.bar.querySelectorAll('button')].map((b) => b.title).filter((t) => t !== 'back to the level')).toEqual([
       'Motion: run the level’s sequences in the viewport, without entering play',
       'Play',
+      'Nothing to undo (Ctrl+Z)',
+      'Nothing to redo (Ctrl+Y)',
+      'Messages',
     ])
     r.titled(r.bar, 'Play').click()
     r.titled(r.bar, 'Motion').click()
@@ -91,6 +100,50 @@ describe('the top bar', () => {
     const r = rig({ playing: true })
     expect(r.titled(r.bar, 'Stop').classList.contains('on')).toBe(true)
     expect(r.titled(r.bar, 'Motion').disabled).toBe(true)
+  })
+})
+
+/** What moved up from the status bar (ADR 0155): the history, the lock, the bell, the Motion clock. */
+describe('what the status bar used to say', () => {
+  it('says what undo and redo would do, and greys out what there is none of', () => {
+    const r = rig({ history: { undo: 'move', redo: null, depth: { undo: 3, redo: 0 } } })
+    const undo = r.titled(r.bar, 'Undo move')
+    expect(undo.title).toBe('Undo move (2 more) (Ctrl+Z)')
+    expect(undo.disabled).toBe(false)
+    expect(r.titled(r.bar, 'Nothing to redo').disabled).toBe(true)
+    undo.click()
+    expect(r.calls).toEqual(['undo'])
+  })
+
+  it('says who holds the level when it is read-only here', () => {
+    const r = rig()
+    const lock = r.bar.querySelector<HTMLElement>('.tb-lock')!
+    expect(lock.hidden).toBe(true)
+    r.s.lockedBy = 'Ana'
+    r.toolbar.render()
+    expect(lock.hidden).toBe(false)
+    expect(lock.textContent).toBe('Read-only · Ana has it')
+  })
+
+  it('counts the errors not yet seen on the bell, and opens the log', () => {
+    const r = rig({ unseen: 2 })
+    const bell = r.titled(r.bar, 'Messages')
+    expect(bell.querySelector('.tb-badge')!.textContent).toBe('2')
+    bell.click()
+    expect(r.calls).toEqual(['log'])
+    r.s.unseen = 0
+    r.toolbar.render()
+    expect(bell.querySelector('.tb-badge')).toBeNull()
+  })
+
+  it('shows the Motion clock beside its button while it runs', () => {
+    const r = rig()
+    const clock = r.bar.querySelector<HTMLElement>('.tb-clock')!
+    expect(clock.hidden).toBe(true)
+    r.toolbar.setClock(1.26)
+    expect([clock.hidden, clock.textContent]).toEqual([false, '1.3 s'])
+    r.toolbar.setClock(null)
+    expect(clock.hidden).toBe(true)
   })
 })
 

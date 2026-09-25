@@ -23,7 +23,7 @@ export class ApiError extends Error {
   }
 }
 
-/** Throw the server's reason rather than a bare status, so the status bar can show "locked by Ada". */
+/** Throw the server's reason rather than a bare status, so a warning can say "locked by Ada". */
 export const failed = async (r: Response, what: string): Promise<never> => {
   const detail = (await r.json().catch(() => ({}))) as { error?: string; owner?: { name?: string } }
   throw new ApiError(r.status, detail.error ?? `${what} → ${r.status}`, detail.owner?.name ?? null)

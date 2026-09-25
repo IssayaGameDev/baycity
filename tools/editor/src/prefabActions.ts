@@ -5,6 +5,7 @@ import type { AssetLibrary } from './assetsApi'
 import { askName } from './confirm'
 import { prefabDoc, type Doc, type Mode } from './editorDoc'
 import { prefabFolder, prefabTarget, sanitisePrefabName } from './prefabPath'
+import type { Notify } from './notices'
 
 /**
  * The prefab gestures: opening one in its own room, coming back out, unlinking a placement, saving a
@@ -62,7 +63,7 @@ export interface PrefabActionsHost {
   loadNewReferencesThen: (redraw: () => void) => void
   invalidatePreviews: () => void
   inspectorRebuild: () => void
-  setStatus: (message: string) => void
+  notify: Notify
   refreshUi: () => void
   uiChanged: () => void
 }
@@ -81,7 +82,7 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
   const enterPrefab = async (assetId: string): Promise<void> => {
     const entry = host.assets()?.db.byId[assetId]
     if (entry === undefined) {
-      host.setStatus('that prefab is not in the project')
+      host.notify.warn('that prefab is not in the project')
       return
     }
     const from = host.fileName()
@@ -90,13 +91,13 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     try {
       greeting = await host.room.joinRoom(assetId, 'prefab')
     } catch (e) {
-      host.setStatus(`could not open ${entry.name}: ${e instanceof Error ? e.message : String(e)}`)
+      host.notify.error(`could not open ${entry.name}: ${e instanceof Error ? e.message : String(e)}`)
       void rejoinLevel(from)
       return
     }
     const root = greeting?.nodes[0]
     if (root === undefined) {
-      host.setStatus('that prefab did not load')
+      host.notify.error('that prefab did not load')
       void rejoinLevel(from)
       return
     }
@@ -119,13 +120,13 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     const open = host.doc()
     if (open === null) return
     const label = open.label(index)
-    if (!open.unlinkNode(index)) return host.setStatus(`${label} is not a prefab placement`)
+    if (!open.unlinkNode(index)) return host.notify.warn(`${label} is not a prefab placement`)
     host.edits().recordEdit(`unlinked ${label}`)
     // A `replaceNode` changes the tree and what is drawn, so the same refresh a revert does.
     host.rebuildMeshes()
     host.rebuildLoaded()
     host.applySelection(host.selection())
-    host.setStatus(`${label} is its own object now — the prefab is unchanged`)
+    host.notify.ok(`${label} is its own object now — the prefab is unchanged`)
   }
 
   const openPrefabOf = (index: number): void => {
@@ -180,7 +181,7 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     if (asked === null) return
     const target = prefabTarget(folder, asked, library.db.entries.map((e: { path: string }) => e.path))
     if ('error' in target) {
-      host.setStatus(target.error)
+      host.notify.warn(target.error)
       return
     }
 
@@ -188,7 +189,7 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     try {
       created = await library.createPrefab(target.path, definition)
     } catch (e) {
-      host.setStatus(`could not save ${target.path}: ${String(e)}`)
+      host.notify.error(`could not save ${target.path}: ${String(e)}`)
       return
     }
     if (created === undefined) {
@@ -201,7 +202,7 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     // The document may have moved under the dialog and the two requests.
     const at = host.doc() === open ? open.indexOfRef(ref) : null
     if (at === null || !open.linkToPrefab(at, created.id, definition)) {
-      host.setStatus(`saved ${created.name} to ${target.path}, but that object is gone — place it from the Project panel`)
+      host.notify.warn(`saved ${created.name} to ${target.path}, but that object is gone — place it from the Project panel`)
       host.refreshUi()
       return
     }
@@ -212,7 +213,7 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     host.inspectorRebuild()
     host.uiChanged()
     host.loadNewReferencesThen(host.rebuildMeshes)
-    host.setStatus(`saved ${created.name} to ${target.path} — every level can place it now`)
+    host.notify.ok(`saved ${created.name} to ${target.path} — every level can place it now`)
   }
 
   /**
@@ -230,7 +231,7 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     host.rebuildMeshes()
     host.rebuildLoaded()
     host.applySelection(host.selection())
-    host.setStatus('reverted to the prefab')
+    host.notify.ok('reverted to the prefab')
   }
 
   /** Push this placement's overrides into the shared prefab. Named for the same reason as `revertOverride`. */
@@ -252,7 +253,7 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     const name = host.assets()?.db.byId[plan.assetId]?.name ?? 'the prefab'
     const refused = await host.room.submitToPrefab(plan.assetId, plan.ops)
     if (refused !== null) {
-      host.setStatus(`${name} did not take it: ${refused} — this placement is unchanged`)
+      host.notify.error(`${name} did not take it: ${refused} — this placement is unchanged`)
       return
     }
     if (host.doc() !== open) return // the document moved under the round trip
@@ -261,7 +262,7 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     host.rebuildMeshes()
     host.rebuildLoaded()
     host.applySelection(host.selection())
-    host.setStatus(`applied to ${name} — every level using it follows; undo puts this placement's override back`)
+    host.notify.ok(`applied to ${name} — every level using it follows; undo puts this placement's override back`)
   }
   /**
    * Revert every override in the placement at `index` — the whole instance, not one piece (ADR 0122).
@@ -284,7 +285,7 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     // Deleting is said out loud: it is the one part of a revert that loses work, and Ctrl+Z is the way back.
     const removed = added === 0 ? '' : `, removed ${added} added object${added === 1 ? '' : 's'}`
     const back = gone === 0 ? '' : `, put ${gone} piece${gone === 1 ? '' : 's'} back`
-    host.setStatus(`reverted ${count} object${count === 1 ? '' : 's'} to the prefab${removed}${back}`)
+    host.notify.ok(`reverted ${count} object${count === 1 ? '' : 's'} to the prefab${removed}${back}`)
   }
 
   /**
@@ -303,7 +304,7 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     const name = host.assets()?.db.byId[plan.assetId]?.name ?? 'the prefab'
     const refused = await host.room.submitToPrefab(plan.assetId, plan.ops)
     if (refused !== null) {
-      host.setStatus(`${name} did not take it: ${refused} — this placement is unchanged`)
+      host.notify.error(`${name} did not take it: ${refused} — this placement is unchanged`)
       return
     }
     if (host.doc() !== open) return // the document moved under the round trip
@@ -312,7 +313,7 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     host.rebuildMeshes()
     host.rebuildLoaded()
     host.applySelection(host.selection())
-    host.setStatus(`applied ${count} object${count === 1 ? '' : 's'} to ${name} — every level using it follows`)
+    host.notify.ok(`applied ${count} object${count === 1 ? '' : 's'} to ${name} — every level using it follows`)
   }
 
   return {

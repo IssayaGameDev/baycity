@@ -10,6 +10,7 @@ import { distanceAlongAxis, faceFromNormal, faceTowards, pulled, snappedPull, ty
 import { modeFor } from './selection'
 import { snapToGrid } from './snap'
 import type { GizmoMode } from './toolbar'
+import type { Notify } from './notices'
 
 /**
  * The pointer in the viewport: what is under it, what it places, and pulling a box by its face
@@ -88,7 +89,12 @@ export interface PickHost {
   loadNewReferencesThen: (redraw: () => void) => void
   applyPreviewPoses: () => void
   inspectorSync: () => void
-  setStatus: (message: string) => void
+  notify: Notify
+  /**
+   * A figure beside the pointer during a gesture, at its client position, or `null` to take it away — the size
+   * while pulling a face (ADR 0155). Not a message: it changes every frame and means nothing once you let go.
+   */
+  readout: (text: string | null, at?: { x: number; y: number }) => void
 }
 
 export const createPickTool = (host: PickHost) => {
@@ -479,16 +485,16 @@ export const createPickTool = (host: PickHost) => {
     showFaceHovers(pull.targets)
     host.inspectorSync()
     // The grabbed box's size, and how many others came along. The rest have their own sizes, which the
-    // Inspector shows; one status line cannot carry five.
+    // Inspector shows; one readout cannot carry five.
     const extra = pull.targets.length - 1
-    if (shown !== null)
-      host.setStatus(`${r4(shown.x)} × ${r4(shown.y)} × ${r4(shown.z)}${extra > 0 ? ` +${extra}` : ''}`)
+    if (shown !== null) host.readout(`${r4(shown.x)} × ${r4(shown.y)} × ${r4(shown.z)}${extra > 0 ? ` +${extra}` : ''}`, { x: clientX, y: clientY })
   }
 
   /** Finish a pull: one history entry and one message to the room, like a gizmo drag. */
   const endFacePull = (): void => {
     const pull = facePull
     facePull = null
+    host.readout(null)
     if (pull === null) {
       host.edits().abortDrag()
       return
@@ -565,7 +571,8 @@ export const createPickTool = (host: PickHost) => {
             : -1
       if (idx < 0) {
         const unknown = prefabAsset === undefined ? [] : unknownComponentTypes(prefabAsset, open.registry)
-        host.setStatus(unknown.length > 0 ? `uses ${unknown.join(', ')}, which this game does not have` : 'that prefab did not load')
+        if (unknown.length > 0) host.notify.warn(`uses ${unknown.join(', ')}, which this game does not have`)
+        else host.notify.error('that prefab did not load')
         host.disarm()
         return
       }

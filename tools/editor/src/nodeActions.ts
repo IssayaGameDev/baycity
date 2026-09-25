@@ -4,6 +4,7 @@ import { createThreeStage, OrbitControls, THREE } from '@mp/render-three'
 
 import type { ClipItem, Doc } from './editorDoc'
 import { rootsOf } from './selection'
+import type { Notify } from './notices'
 
 /**
  * What you do to the nodes you have: delete, duplicate, create, frame, and paste at a point (ADR 0121).
@@ -41,7 +42,7 @@ export interface NodeActionsHost {
   scheduleRebuild: () => void
   loadNewReferencesThen: (redraw: () => void) => void
   inspectorSync: () => void
-  setStatus: (message: string) => void
+  notify: Notify
   refreshUi: () => void
   uiChanged: () => void
 }
@@ -102,7 +103,7 @@ export const createNodeActions = (host: NodeActionsHost) => {
     const where = at ?? (parent === null ? vec3(r4(host.controls.target.x), r4(host.controls.target.y), r4(host.controls.target.z)) : vec3(0, 0, 0))
     const landed = open.placeEmpty(where, parent)
     if (landed < 0) {
-      host.setStatus('nowhere to put that')
+      host.notify.warn('nowhere to put that')
       return
     }
     host.edits().recordEdit('create empty')
@@ -119,7 +120,7 @@ export const createNodeActions = (host: NodeActionsHost) => {
     const where = at ?? (parent === null ? vec3(r4(host.controls.target.x), r4(host.controls.target.y), r4(host.controls.target.z)) : vec3(0, 0, 0))
     const landed = open.placePrimitive(kind, where, parent)
     if (landed < 0) {
-      host.setStatus('nowhere to put that')
+      host.notify.warn('nowhere to put that')
       return
     }
     host.edits().recordEdit(`create ${PRIMITIVE_LABELS[kind].toLowerCase()}`)
@@ -181,7 +182,7 @@ export const createNodeActions = (host: NodeActionsHost) => {
     }
     const first = landed[0]
     if (first === undefined) {
-      host.setStatus(open.mode === 'level' ? 'the clipboard holds prefab nodes, not placements' : 'the clipboard holds placements, not nodes')
+      host.notify.warn(open.mode === 'level' ? 'the clipboard holds prefab nodes, not placements' : 'the clipboard holds placements, not nodes')
       return
     }
     const from = open.transformOf(first).position

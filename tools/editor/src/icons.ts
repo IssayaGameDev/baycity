@@ -1,8 +1,8 @@
 /**
  * The editor's icons: the sequence editor's (ADR 0147) — one per step kind, and the few its controls need —
- * the viewport's tools and toggles (ADR 0149), the Hierarchy's rows (ADR 0150), and one per component in the
- * Inspector (ADR 0152). Drawn here as SVG paths on a 24-unit grid, stroked in the text colour, so they tint
- * with CSS and cost no dependency.
+ * the viewport's tools and toggles (ADR 0149), the Hierarchy's rows (ADR 0150), one per component in the
+ * Inspector (ADR 0152), and the notices and the top bar's history (ADR 0155). Drawn here as SVG paths on a
+ * 24-unit grid, stroked in the text colour, so they tint with CSS and cost no dependency.
  *
  * Static markup only — nothing a person typed ever reaches `innerHTML` here.
  */
@@ -54,6 +54,11 @@ export type IconName =
   | 'death'
   | 'boss'
   | 'component'
+  | 'check'
+  | 'bell'
+  | 'undo'
+  | 'redo'
+  | 'lock'
 
 const DOT = (x: number, y: number): string => `<circle cx="${x}" cy="${y}" r="1.6" fill="currentColor" stroke="none"/>`
 
@@ -105,6 +110,11 @@ const PATHS: Record<IconName, string> = {
   bumper: '<path d="M4 20.5h16"/><path d="M6.5 17.5h11"/><path d="M12 14V3.5M8 7.5l4-4 4 4"/>',
   death: '<path d="M12 3.5a7.5 7.5 0 0 0-4.5 13.5v3.5h9V17A7.5 7.5 0 0 0 12 3.5z"/><circle cx="9.3" cy="11.5" r="1.5"/><circle cx="14.7" cy="11.5" r="1.5"/><path d="M11 20.5v-2M13 20.5v-2"/>',
   boss: '<path d="M3.5 18.5h17l-1.3-11-4.7 4.5L12 5.5 9.5 12 4.8 7.5z"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  bell: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+  undo: '<path d="M9 7.5 4.5 12 9 16.5"/><path d="M4.5 12H15a4.5 4.5 0 0 1 0 9h-2"/>',
+  redo: '<path d="M15 7.5 19.5 12 15 16.5"/><path d="M19.5 12H9a4.5 4.5 0 0 0 0 9h2"/>',
+  lock: '<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>',
   component: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
 }
 

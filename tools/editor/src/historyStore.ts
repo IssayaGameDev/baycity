@@ -4,6 +4,7 @@ import { askUnsaved } from './confirm'
 import type { ClipItem, Doc, OpBatch } from './editorDoc'
 import { saveFile } from './filesApi'
 import { createOpHistory, foldBatches } from './opHistory'
+import type { Notify } from './notices'
 
 /**
  * Undo, redo, the clipboard, and whether the open document is on disk (ADR 0121).
@@ -54,7 +55,7 @@ export interface HistoryHost {
   repaint: (ops: readonly Op[]) => void
   /** Fetch what the document references but the runtime has not loaded, then run this. */
   loadNewReferencesThen: (redraw: () => void) => void
-  setStatus: (message: string) => void
+  notify: Notify
   renderStatus: () => void
   refreshUi: () => void
 }
@@ -93,6 +94,8 @@ export interface HistoryStore {
   /** Forget the entries holding these ops — a batch the server refused. */
   dropWhere: (predicate: (entry: { ops: readonly Op[]; inverses: readonly Op[] }) => boolean) => void
   depth: () => { undo: number; redo: number }
+  /** What an undo and a redo would take back or put back, by their labels; `null` for nothing (ADR 0155). */
+  labels: () => { undo: string | null; redo: string | null }
 }
 
 export const createHistoryStore = (host: HistoryHost): HistoryStore => {
@@ -139,14 +142,14 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
     if (host.live()) return true // every edit already reached the server; the file follows within a second
     const blocked = host.readOnlyBy()
     if (blocked !== null) {
-      host.setStatus(`not saved: ${host.fileName()} is locked by ${blocked}`)
+      host.notify.warn(`not saved: ${host.fileName()} is locked by ${blocked}`)
       return false
     }
     // The name may have changed since the file was opened (Save-as), or this may be a new file: the lock follows
     // what is about to be written. Refused means someone else has a file by that name open.
     const owner = await host.claimFileLock()
     if (owner !== null) {
-      host.setStatus(`not saved: ${host.fileName()} is locked by ${owner}`)
+      host.notify.warn(`not saved: ${host.fileName()} is locked by ${owner}`)
       return false
     }
     // Saving writes the *file*, not whatever prefab is open on top of it, and the id follows the name. Letting
@@ -155,11 +158,11 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
     try {
       await saveFile('levels', host.fileName(), stripHydrated(root.toJSON() as Level, host.hydratedPrefabs()))
     } catch (e: unknown) {
-      host.setStatus(`save failed: ${String(e)}`)
+      host.notify.error(`save failed: ${String(e)}`)
       return false
     }
     dirty = false
-    host.setStatus(`saved ${host.fileName()}`)
+    host.notify.ok(`saved ${host.fileName()}`)
     await host.afterSave()
     host.refreshUi()
     return true
@@ -208,7 +211,7 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
   /**
    * Apply a history entry's ops straight to the level — not through a document, so nothing is re-reported — then
    * redraw the way a remote batch is, and put the selection back by identity. Resolves `false` when the ops no
-   * longer apply (the node is gone); the entry is dropped and the status bar says why.
+   * longer apply (the node is gone); the entry is dropped and a warning says why.
    *
    * The redraw is `host.repaint`, not a rebuild of everything: undoing a move puts the groups back where the
    * data says, as a teammate's move does. It used to re-bake the sky and build every mesh and the physics world
@@ -221,7 +224,7 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
     try {
       applied = applyBatch(level, ops)
     } catch (e) {
-      host.setStatus(`cannot ${what}: ${e instanceof OpError ? e.message : String(e)}`)
+      host.notify.warn(`cannot ${what}: ${e instanceof OpError ? e.message : String(e)}`)
       return false
     }
     // An undo is an edit like any other to the room.
@@ -239,27 +242,27 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
   const undo = (): void => {
     const entry = history.undo()
     if (entry === null) {
-      host.setStatus('nothing to undo')
+      host.notify.warn('nothing to undo')
       return
     }
     if (!applyHistory(entry.inverses, entry.selection, `undo ${entry.label}`)) {
       history.drop(entry)
       return
     }
-    host.setStatus(`undid: ${entry.label}`)
+    host.notify.ok(`undid: ${entry.label}`)
   }
 
   const redo = (): void => {
     const entry = history.redo()
     if (entry === null) {
-      host.setStatus('nothing to redo')
+      host.notify.warn('nothing to redo')
       return
     }
     if (!applyHistory(entry.ops, entry.selection, `redo ${entry.label}`)) {
       history.drop(entry)
       return
     }
-    host.setStatus(`redid: ${entry.label}`)
+    host.notify.ok(`redid: ${entry.label}`)
   }
 
   /**
@@ -279,7 +282,7 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
     const items = roots.map((i) => open.copy(i)).filter((item): item is ClipItem => item !== null)
     if (items.length === 0) return
     clipboard = items
-    host.setStatus(items.length > 1 ? `copied ${items.length} items` : `copied ${open.label(roots[0]!)}`)
+    host.notify.ok(items.length > 1 ? `copied ${items.length} items` : `copied ${open.label(roots[0]!)}`)
     host.refreshUi()
   }
 
@@ -296,7 +299,7 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
       if (at >= 0) landed.push(at)
     }
     if (landed.length === 0) {
-      host.setStatus(open.mode === 'level' ? 'the clipboard holds prefab pieces, not instances' : 'the clipboard holds instances, not pieces')
+      host.notify.warn(open.mode === 'level' ? 'the clipboard holds prefab pieces, not instances' : 'the clipboard holds instances, not pieces')
       return
     }
     recordEdit(landed.length > 1 ? `paste ${landed.length}` : 'paste')
@@ -356,5 +359,6 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
     canRedo: () => history.canRedo(),
     dropWhere: (predicate) => history.dropWhere(predicate),
     depth: () => history.depth(),
+    labels: () => ({ undo: history.undoLabel(), redo: history.redoLabel() }),
   }
 }

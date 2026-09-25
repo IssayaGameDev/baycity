@@ -5,6 +5,7 @@ import { createThreeStage, THREE, type OutlineGroup } from '@mp/render-three'
 
 import { createCollab, httpTransport, parsePresence, type Hold, type Peer } from './collab'
 import type { Doc, LocalPose } from './editorDoc'
+import type { Notify } from './notices'
 
 /**
  * The live room: the document stream, who else is in it, what they hold, and where their pointers are
@@ -62,7 +63,7 @@ export interface LiveHost {
   refreshUi: () => void
   inspectorRebuild: () => void
   inspectorSync: () => void
-  setStatus: (message: string) => void
+  notify: Notify
   setProblem: (message: string) => void
   renderStatus: () => void
   /** Forget the history entries holding a batch the server refused. */
@@ -71,7 +72,7 @@ export interface LiveHost {
 
 export const createLiveSession = (host: LiveHost) => {
   // ============================== live levels (ADR 0089) ==============================
-  /** Who else has this level open, for the status bar. */
+  /** Who else has this level open. */
   let livePeers: Peer[] = []
   /** The level the last snapshot carried, for `openFile` to build its document over. */
   let latestSnapshot: Level | null = null
@@ -117,7 +118,7 @@ export const createLiveSession = (host: LiveHost) => {
     lastHoldKey = key
     void collab.setHolds(refs).then((r) => {
       if (r.ok) return
-      host.setStatus(`${r.holder} has that selected`)
+      host.notify.warn(`${r.holder} has that selected`)
       const refused = new Set(r.refused.map(refKey))
       const open = host.doc()
       if (open === null) return
@@ -293,7 +294,7 @@ export const createLiveSession = (host: LiveHost) => {
       applyBatch({ id: assetId, config: {}, nodes: [root] }, ops)
     } catch (e) {
       // The definition here is behind the server's; the next open will take a fresh copy.
-      host.setStatus(`a prefab changed in a way this level could not follow: ${e instanceof OpError ? e.message : String(e)}`)
+      host.notify.error(`a prefab changed in a way this level could not follow: ${e instanceof OpError ? e.message : String(e)}`)
       return
     }
     // Every placement of it changed shape, so this is the structural repaint, not the cheap one.
@@ -321,7 +322,7 @@ export const createLiveSession = (host: LiveHost) => {
     onRejected: (batch, reason) => {
       // The batch is already rolled back in the data; forget the history entry that holds it, then redraw.
       host.dropHistoryWhere((entry) => entry.ops.some((o) => batch.ops.includes(o)) || entry.inverses.some((o) => batch.ops.includes(o)))
-      host.setStatus(`edit refused: ${reason}`)
+      host.notify.error(`edit refused: ${reason}`)
       repaintAfterOps(batch.inverses)
     },
     onPeers: (peers) => {
@@ -331,7 +332,7 @@ export const createLiveSession = (host: LiveHost) => {
     onHolds: (holds) => onHoldsChanged(holds),
     onPresence: (_from, _name, data) => onPresence(data),
     onPrefabOps: (assetId, ops) => onPrefabOps(assetId, ops),
-    onError: (message) => host.setStatus(`live: ${message}`),
+    onError: (message) => host.notify.error(`live: ${message}`),
   })
 
   /**

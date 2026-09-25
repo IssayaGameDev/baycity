@@ -6,6 +6,7 @@ import type { Doc, LocalPose } from './editorDoc'
 import type { PreviewOffset } from './motionPreview'
 import { cornerSnapDelta, roundAngle, snapAnglesDeg, worldHalfExtents } from './snap'
 import type { GizmoMode, GizmoSpace } from './toolbar'
+import type { Notify } from './notices'
 
 /**
  * The transform gizmo: the handles, what they snap to, and how a drag reaches the document (ADR 0031,
@@ -94,7 +95,7 @@ export interface GizmoHost {
   room: { startPresence: () => void; stopPresence: () => void; drainDeferred: () => void }
   inspectorSync: () => void
   uiChanged: () => void
-  setStatus: (message: string) => void
+  notify: Notify
 }
 
 export const createGizmoTool = (host: GizmoHost) => {

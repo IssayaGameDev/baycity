@@ -4,6 +4,7 @@ import { createThreeStage, OrbitControls, THREE } from '@mp/render-three'
 
 import type { Doc } from './editorDoc'
 import { createViewGizmo } from './viewGizmo'
+import type { Notify } from './notices'
 
 /**
  * How the level is looked at: the projection, the navigation gizmo, the background the projection needs, and
@@ -44,7 +45,7 @@ export interface CameraViewHost {
   applyEnvironment: (from: Partial<EnvironmentConfig> | undefined) => void
   skyParams: () => { topColor: number | string; bottomColor: number | string }
   renderPostFX: () => void
-  setStatus: (message: string) => void
+  notify: Notify
   uiChanged: () => void
 }
 
@@ -124,7 +125,7 @@ export const createCameraView = (host: CameraViewHost) => {
     host.useCamera(camera)
     host.controls.update()
     labelProjection()
-    host.setStatus(ortho ? 'isometric' : 'perspective')
+    host.notify.ok(ortho ? 'isometric' : 'perspective')
     host.uiChanged()
   }
 

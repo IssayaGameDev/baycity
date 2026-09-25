@@ -77,10 +77,20 @@ import { createShortcuts } from './shortcuts'
 import { roundAngle } from './snap'
 import { createSplitter, readPx, writePx } from './splitter'
 import { MODES, MODE_LIST, modeOf, soleMode } from './modes'
+import { createNotices, type Notify } from './notices'
 import { createToolbar, type Toolbar } from './toolbar'
 
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector<T>(sel)!
 const canvas = $<HTMLCanvasElement>('#view')
+
+/**
+ * What the editor says (ADR 0155): toasts over the viewport, the log behind the top bar's bell, and the banner
+ * for what stays broken. Made first, because every host below speaks through it; the bell's count is redrawn
+ * through `chromeChanged`, which is a no-op until the top bar exists.
+ */
+let chromeChanged: () => void = () => {}
+const notices = createNotices($<HTMLDivElement>('#toasts'), $<HTMLDivElement>('#banner'), () => chromeChanged())
+const notify: Notify = notices
 
 // --- scene + polished pipeline (same renderer the game/viewer use) ---
 const stage = createThreeStage({ canvas, cameraPosition: [12, 10, 16], lookAt: [0, 1, 0] })
@@ -220,7 +230,7 @@ const adopt = async (types: readonly string[]): Promise<void> => {
   const next: GameData = { ...have, components: [...have.components, ...fresh].sort() }
   await saveGame(mode.name, next)
   gameData[mode.name] = next
-  setStatus(`added ${fresh.join(', ')} to ${mode.label}`)
+  notify.ok(`added ${fresh.join(', ')} to ${mode.label}`)
   if (doc !== null) reopenWithRegistry()
 }
 
@@ -323,7 +333,7 @@ const room = createLiveSession({
   refreshUi: () => refreshUi(),
   inspectorRebuild: () => inspectorRebuild(),
   inspectorSync: () => inspectorSync(),
-  setStatus: (message) => setStatus(message),
+  notify,
   setProblem: (message) => setProblem(message),
   renderStatus: () => renderStatus(),
   dropHistoryWhere: (predicate) => edits.dropWhere(predicate),
@@ -354,7 +364,7 @@ const lockAsset = async (assetId: string): Promise<boolean> => {
     return true
   }
   lockedAssets.set(assetId, owner)
-  setStatus(`${entry.name} is read-only: locked by ${owner}`)
+  notify.warn(`${entry.name} is read-only: locked by ${owner}`)
   return false
 }
 
@@ -394,7 +404,7 @@ const tool = createGizmoTool({
   room,
   inspectorSync: () => inspectorSync(),
   uiChanged: () => uiChanged(),
-  setStatus: (message) => setStatus(message),
+  notify,
 })
 const edit = tool.edit
 const STEP_LIMITS = tool.stepLimits
@@ -534,7 +544,7 @@ const rebuildLoaded = (): void => {
   } catch (e) {
     loaded = null
     meshes.clearMarkers()
-    setStatus(`invalid: ${String(e)}`)
+    notify.error(`invalid: ${String(e)}`)
   }
 }
 
@@ -545,12 +555,6 @@ const scheduleRebuild = (): void => {
     rebuildTimer = null
     rebuildLoaded()
   }, 150)
-}
-
-const breadcrumb = (): string => {
-  const path = docStack.map((e) => e.label).join(' › ')
-  if (doc === null) return path
-  return `${path} — ${doc.count()} ${doc.mode === 'level' ? 'instances' : 'pieces'}`
 }
 
 /** Point the viewport at the top of the stack. Everything is rebuilt from data, so returning from a
@@ -565,7 +569,6 @@ const showDoc = (): void => {
   view.installEnvironment(doc?.environment())
   meshes.buildAll()
   rebuildLoaded()
-  statusMsg = '' // a message about the old document would be a lie about this one
   uiChanged()
   // The document's own preload, and the only one there is. `reloadAssets` also loads `doc.assetIds()`, but
   // at boot it runs *before* the first document exists, so that call has always been over an empty list —
@@ -636,7 +639,7 @@ const prefabs = createPrefabActions({
   loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
   invalidatePreviews: () => previews.invalidate(),
   inspectorRebuild: () => inspectorRebuild(),
-  setStatus: (message) => setStatus(message),
+  notify,
   refreshUi: () => refreshUi(),
   uiChanged: () => uiChanged(),
 })
@@ -697,7 +700,7 @@ const view = createCameraView({
   },
   skyParams: () => env.skyParams,
   renderPostFX: () => postfx.render(),
-  setStatus: (message) => setStatus(message),
+  notify,
   uiChanged: () => uiChanged(),
 })
 stage.scene.add(view.boundsBox)
@@ -764,7 +767,7 @@ const selectWith = (index: number, mode: SelectMode, order: readonly number[]): 
 const refuseHeld = (index: number): boolean => {
   const holder = room.heldBy(index)
   if (holder === null) return false
-  setStatus(`${holder} has that selected`)
+  notify.warn(`${holder} has that selected`)
   return true
 }
 
@@ -815,7 +818,8 @@ const pick = createPickTool({
   loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
   applyPreviewPoses: () => motion.applyPoses(),
   inspectorSync: () => inspectorSync(),
-  setStatus: (message) => setStatus(message),
+  notify,
+  readout: (text, at) => showReadout(text, at),
 })
 
 /**
@@ -838,7 +842,7 @@ const nodes = createNodeActions({
   scheduleRebuild: () => scheduleRebuild(),
   loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
   inspectorSync: () => inspectorSync(),
-  setStatus: (message) => setStatus(message),
+  notify,
   refreshUi: () => refreshUi(),
   uiChanged: () => uiChanged(),
 })
@@ -899,7 +903,7 @@ const editorShortcuts = createShortcuts([
       }
       if (placing !== null) {
         placing = null
-        setStatus('placement cancelled')
+        notify.ok('placement cancelled')
         refreshUi()
       } else deselect()
     },
@@ -942,8 +946,10 @@ const play = createPlay({
   setPreviewing: (on) => setPreviewing(on),
   rebuildLoaded: () => rebuildLoaded(),
   deselect: () => deselect(),
-  setStatus: (message) => setStatus(message),
-  clearStatus: () => void (statusMsg = ''),
+  hint: (text) => {
+    playHint = text
+    renderStatus()
+  },
   uiChanged: () => uiChanged(),
   drainDeferred: () => room.drainDeferred(),
   setProjection: (ortho) => view.setProjection(ortho),
@@ -955,7 +961,6 @@ const play = createPlay({
 // single "something changed, redraw the chrome" call, and no panel can hold a stale copy.
 
 const app = $<HTMLDivElement>('#app')
-const statusBar = $<HTMLDivElement>('#status')
 
 const fileState: { mode: Mode; name: string } = { mode: 'level', name: 'untitled' }
 
@@ -1000,12 +1005,12 @@ const openFile = async (name: string): Promise<void> => {
       if (ref !== null) project?.showGame(ref.game)
       // Only now, past every throw above: a level that would not load must not be the one we come back to.
       rememberLevel(name)
-      if (missingPrefabs.length > 0) setStatus(`no prefab file for ${missingPrefabs.join(', ')} — those objects are empty`)
+      if (missingPrefabs.length > 0) notify.warn(`no prefab file for ${missingPrefabs.join(', ')} — those objects are empty`)
     }
   } catch (e) {
-    setStatus(`load failed: ${String(e)}`)
+    notify.error(`load failed: ${String(e)}`)
   }
-  if (readOnlyBy !== null) setStatus(`${name} is open read-only: ${readOnlyBy} has it`)
+  if (readOnlyBy !== null) notify.warn(`${name} is open read-only: ${readOnlyBy} has it`)
 }
 
 /** Every level on disk with the game it declares, so the list can be narrowed to one game (ADR 0052). */
@@ -1034,7 +1039,7 @@ const createLevel = async (from: string | null): Promise<void> => {
    */
   const game = (from === null ? activeMode?.name : parseQualified(from)?.game) ?? activeMode?.name
   if (game === undefined) {
-    setStatus('pick a game first — a level lives in its game\u2019s folder')
+    notify.warn('pick a game first — a level lives in its game\u2019s folder')
     return
   }
   const short = from === null ? 'untitled' : `${parseQualified(from)?.name ?? from}-copy`
@@ -1042,13 +1047,13 @@ const createLevel = async (from: string | null): Promise<void> => {
   const name = await askName(title, short, `File name in content/${game}/levels/. Letters, digits, - and _.`)
   if (name === null) return
   if (!isSegment(name)) {
-    setStatus(`"${name}" is not a file name: letters, digits, - and _ only`)
+    notify.warn(`"${name}" is not a file name: letters, digits, - and _ only`)
     return
   }
   const qual = qualify({ game, name })
   const existing = await listFiles('levels').catch(() => [] as FileEntry[])
   if (existing.some((e) => e.name === qual)) {
-    setStatus(`${game} already has a level called ${name}`)
+    notify.warn(`${game} already has a level called ${name}`)
     return
   }
   let data: unknown
@@ -1066,7 +1071,7 @@ const createLevel = async (from: string | null): Promise<void> => {
   try {
     await saveFile('levels', qual, data)
   } catch (e) {
-    setStatus(`could not create ${qual}: ${String(e)}`)
+    notify.error(`could not create ${qual}: ${String(e)}`)
     return
   }
   await refreshFileList()
@@ -1108,9 +1113,15 @@ const toolbar: Toolbar = createToolbar(
     surfaceCells: meshes.cells(),
     // `null` while nothing is hidden, so the button stays out of the way until it means something.
     showingAll: hiddenView.any() || hiddenView.showingAll() ? hiddenView.showingAll() : null,
+    lockedBy: readOnlyBy,
+    history: { ...edits.labels(), depth: edits.depth() },
+    unseen: notices.unseen(),
   }),
   {
     back: prefabs.closePrefab,
+    undo: () => edits.undo(),
+    redo: () => edits.redo(),
+    toggleLog: (anchor) => notices.toggleLog(anchor),
     setGizmo: (mode) => tool.setMode(mode),
     setSpace: (space) => tool.setSpace(space),
     setSnap: (on) => {
@@ -1235,7 +1246,7 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
       .filter((i) => open.canReparent(i, parent))
       .sort((a, b) => a - b)
     if (moving.length === 0) {
-      setStatus('nothing there can go in that')
+      notify.warn('nothing there can go in that')
       return
     }
     /**
@@ -1292,7 +1303,7 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
       uiChanged()
     }
     const skipped = rows.length - moving.length
-    if (skipped > 0) setStatus(`moved ${moving.length}, skipped ${skipped} that cannot go in that`)
+    if (skipped > 0) notify.warn(`moved ${moving.length}, skipped ${skipped} that cannot go in that`)
   },
 })
 
@@ -1400,7 +1411,7 @@ const fileOps = createFileActions({
   refreshFileList: () => refreshFileList(),
   reloadAssets: () => reloadAssets(),
   invalidatePreviews: () => previews.invalidate(),
-  setStatus: (message) => setStatus(message),
+  notify,
   refreshUi: () => refreshUi(),
 })
 
@@ -1436,7 +1447,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   onUpload: (files, folder) => {
     const cap = me?.maxUploadBytes ?? Infinity
     const tooBig = files.filter((f) => f.size > cap).map((f) => f.name)
-    if (tooBig.length > 0) setStatus(`too big (cap ${Math.round(cap / 1024 / 1024)} MB): ${tooBig.join(', ')}`)
+    if (tooBig.length > 0) notify.warn(`too big (cap ${Math.round(cap / 1024 / 1024)} MB): ${tooBig.join(', ')}`)
     const fits = files.filter((f) => f.size <= cap)
     if (fits.length === 0) return
     fileOps.afterFileOp(`uploaded ${fits.map((f) => f.name).join(', ')}`, async () => {
@@ -1464,7 +1475,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
       const make =
         assets.createMaterial(name, { shader: 'standard', params: {} }, folder)
       const created = await make.catch((e: unknown) => {
-        setStatus(`new ${kind} failed: ${String(e)}`)
+        notify.error(`new ${kind} failed: ${String(e)}`)
         return undefined
       })
       await reloadAssets()
@@ -1517,7 +1528,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
           label: 'Copy path',
           divider: true,
           // The only way to see what a `.meta` sidecar is about when a reference has gone stale.
-          run: () => void navigator.clipboard?.writeText(path).then(() => setStatus(`copied ${path}`)),
+          run: () => void navigator.clipboard?.writeText(path).then(() => notify.ok(`copied ${path}`)),
         },
         {
           label: 'Rename…',
@@ -1567,7 +1578,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
         {
           label: 'Copy name',
           // What `?level=` takes, and what a teammate needs in order to open the same one.
-          run: () => void navigator.clipboard?.writeText(short).then(() => setStatus(`copied ${short}`)),
+          run: () => void navigator.clipboard?.writeText(short).then(() => notify.ok(`copied ${short}`)),
         },
         { label: 'Delete\u2026', divider: true, run: () => fileOps.deleteLevelFile(qualified) },
       ],
@@ -1581,7 +1592,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     // Refuse a folder into its own subtree here as well as on the server: a rejected drop should not need a
     // round trip to say so.
     if (!from.includes('.') && !canMoveFolder(from, toFolder)) {
-      setStatus('a folder cannot move inside itself')
+      notify.warn('a folder cannot move inside itself')
       return
     }
     fileOps.afterFileOp(`moved into ${toFolder === '' ? 'assets' : toFolder}`, async () => assets?.move(from, movedInto(from, toFolder)) ?? Promise.resolve())
@@ -1645,7 +1656,7 @@ const edits = createHistoryStore({
   },
   repaint: (ops) => room.repaint(ops),
   loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
-  setStatus: (message) => setStatus(message),
+  notify,
   renderStatus: () => renderStatus(),
   refreshUi: () => refreshUi(),
 })
@@ -1688,11 +1699,11 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
       if (assets === null) return
       const owner = lockedAssets.get(id)
       if (owner !== undefined) {
-        setStatus(`not saved: ${assets.db.byId[id]?.name ?? 'material'} is locked by ${owner}`)
+        notify.warn(`not saved: ${assets.db.byId[id]?.name ?? 'material'} is locked by ${owner}`)
         assetInspector.show(id)
         return
       }
-      await assets.saveMaterial(id, material).catch((e: unknown) => setStatus(`save failed: ${String(e)}`))
+      await assets.saveMaterial(id, material).catch((e: unknown) => notify.error(`save failed: ${String(e)}`))
       // Recompile and redraw: a material edit has to show on every piece using it, immediately. Its
       // thumbnail is stale too, and so is any prefab preview that used it.
       previews.invalidate()
@@ -1734,8 +1745,8 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     // the field instead of the last reload. Cheap: only nodes the game claims build any.
     if (mode.surfaceGrid !== undefined) meshes.buildAll()
     void saveGame(mode.name, next).then(
-      () => setStatus(`${mode.label}: ${key} = ${Array.isArray(value) ? `${value.length} points` : value}`),
-      (e: unknown) => setStatus(`settings save failed: ${String(e)}`),
+      () => notify.ok(`${mode.label}: ${key} = ${Array.isArray(value) ? `${value.length} points` : value}`),
+      (e: unknown) => notify.error(`settings save failed: ${String(e)}`),
     )
   },
   onModeChanged: () => {
@@ -1902,50 +1913,45 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   },
 })
 
-// --- status bar ---
-/** Transient: what just happened. Cleared whenever the document changes, since it would then be a lie. */
-let statusMsg = ''
+// --- what the editor shows of its own state (ADR 0155) ---
 /**
- * Persistent: something is broken and stays broken until it is fixed. Kept apart from `statusMsg`
- * because it was not: a failed asset load set a message, and the level load immediately after it wiped
- * it — leaving an empty Project panel and no reason anywhere on screen.
+ * Persistent: something is broken and stays broken until it is fixed — a line of the banner over the viewport.
+ * Kept apart from the notices because it once was not: a failed asset load said so, and the level load right
+ * after it wiped the message, leaving an empty Project panel and no reason anywhere on screen.
  */
-let problemMsg = ''
-const setStatus = (msg: string): void => {
-  statusMsg = msg
-  renderStatus()
+const setProblem = (msg: string): void => notices.setProblem('main', msg)
+
+/** A play session's hint while it runs (`play.ts`); it wins over placing's. */
+let playHint: string | null = null
+const hintPill = $<HTMLDivElement>('#vhint')
+const hierarchyCount = $<HTMLSpanElement>('#hier-count')
+
+/** The figure by the pointer during a gesture — the size while pulling a face — or none. */
+const readoutTag = $<HTMLDivElement>('#readout')
+const showReadout = (text: string | null, at?: { x: number; y: number }): void => {
+  readoutTag.hidden = text === null
+  if (text === null) return
+  readoutTag.textContent = text
+  if (at === undefined) return
+  const frame = readoutTag.parentElement!.getBoundingClientRect()
+  readoutTag.style.left = `${Math.round(at.x - frame.left + 16)}px`
+  readoutTag.style.top = `${Math.round(at.y - frame.top + 16)}px`
 }
-const setProblem = (msg: string): void => {
-  problemMsg = msg
-  renderStatus()
-}
+
+/**
+ * Redraw what shows the editor's state, now that the status bar is gone: the top bar (undo and redo, the lock,
+ * the bell), the hint over the viewport — playing, or placing — and the Hierarchy's count. Cheap: the top bar
+ * only updates values.
+ */
 const renderStatus = (): void => {
-  const parts: string[] = []
-  if (me !== null) parts.push(`<b>${me.user.name}</b>`)
-  parts.push(breadcrumb())
-  if (readOnlyBy !== null) parts.push(`<span class="problem">read-only · locked by ${readOnlyBy}</span>`)
-  if (live()) {
-    const others = room.peers().filter((p) => p.connId !== room.connId()).map((p) => p.name)
-    parts.push(others.length === 0 ? 'live' : `live · with ${[...new Set(others)].join(', ')}`)
-  }
-  if (selected !== null && doc !== null) {
-    parts.push(selection.length > 1 ? `${selection.length} selected · editing what they share` : `selected #${selected} (${doc.label(selected)})`)
-  }
-  if (motion.playing()) parts.push(`preview t=${(motion.timeMs() / 1000).toFixed(2)}s`)
-  if (placing !== null) {
-    const what = assets?.db.byId[placing.assetId]?.name ?? 'asset'
-    parts.push(`click in the viewport to place <b>${what}</b>`)
-  }
-  // Undo depth in the status bar because nothing else says whether Ctrl+Z will do anything, and the answer
-  // changes with every edit. The clipboard likewise: a paste that silently does nothing reads as broken.
-  const depth = edits.depth()
-  if (depth.undo > 0 || depth.redo > 0) parts.push(`undo ${depth.undo}${depth.redo > 0 ? ` · redo ${depth.redo}` : ''}`)
-  if (edits.clipboardSize() > 0) parts.push(`clipboard: ${edits.clipboardSize()} object${edits.clipboardSize() > 1 ? 's' : ''}`)
-  if (statusMsg !== '') parts.push(statusMsg)
-  if (problemMsg !== '') parts.push(`<span class="problem">${problemMsg}</span>`)
-  if (pushProblem !== '') parts.push(`<span class="problem">not on GitHub yet: ${pushProblem}</span>`)
-  statusBar.innerHTML = parts.filter((p) => p !== '').join(' · ')
+  toolbar.render()
+  const placingWhat = placing === null ? null : (assets?.db.byId[placing.assetId]?.name ?? 'asset')
+  const hint = playHint ?? (placingWhat === null ? null : `Click in the viewport to place ${placingWhat} · Esc to cancel`)
+  hintPill.hidden = hint === null
+  hintPill.textContent = hint ?? ''
+  hierarchyCount.textContent = doc === null ? '' : String(doc.count())
 }
+chromeChanged = renderStatus
 
 /** Redraw all the chrome from current state. Cheap: tens of rows, and the toolbar only updates values. */
 const refreshUi = (): void => {
@@ -1974,6 +1980,12 @@ const relayout = (): void => {
     postfx.setSize(size.x, size.y)
   })
 }
+
+/**
+ * The canvas also changes size when the banner above the viewport comes and goes (ADR 0155), which no splitter
+ * reports: the stage resizes itself, and the post-FX targets and the orthographic frustum follow through this.
+ */
+new ResizeObserver(() => relayout()).observe(canvas)
 
 const MIN_PANEL = 140
 const MIN_VIEWPORT = 320
@@ -2020,6 +2032,7 @@ stage.start((dt) => {
      * is no single length to wrap to, and level time in the game does not wrap either.
      */
     motion.frame()
+    toolbar.setClock(motion.playing() ? motion.timeMs() / 1000 : null)
     view.update(dt)
     controls.update()
   }
@@ -2079,7 +2092,7 @@ window.setInterval(() => {
       const key = docLockKey()
       if (lost.includes(key) && readOnlyBy === null) {
         readOnlyBy = await takeLock(key)
-        if (readOnlyBy !== null) setStatus(`${fileState.name} is now read-only: ${readOnlyBy} took it while this tab was away`)
+        if (readOnlyBy !== null) notify.warn(`${fileState.name} is now read-only: ${readOnlyBy} took it while this tab was away`)
         refreshUi()
       }
     }
@@ -2088,7 +2101,7 @@ window.setInterval(() => {
     const next = status?.pushError ?? ''
     if (next !== pushProblem) {
       pushProblem = next
-      renderStatus()
+      notices.setProblem('push', next === '' ? '' : `not on GitHub yet: ${next}`)
     }
   })()
 }, me?.heartbeatMs ?? 30_000)

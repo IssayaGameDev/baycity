@@ -7,6 +7,7 @@ import { renamedTo } from './assetTree'
 import { askDestructive, askName } from './confirm'
 import { unknownComponentTypes, type Doc } from './editorDoc'
 import { deleteLevel as apiDeleteLevel, listFiles, loadLevelRaw, renameLevel as apiRenameLevel, saveFile, type FileEntry } from './filesApi'
+import type { Notify } from './notices'
 
 /**
  * Operations on the project tree's files: arming an asset to place, renaming, deleting, and the two deletes
@@ -48,7 +49,7 @@ export interface FileActionsHost {
   refreshFileList: () => Promise<void>
   reloadAssets: () => Promise<void>
   invalidatePreviews: () => void
-  setStatus: (message: string) => void
+  notify: Notify
   refreshUi: () => void
 }
 
@@ -59,12 +60,12 @@ export const createFileActions = (host: FileActionsHost) => {
       try {
         await run()
       } catch (e) {
-        host.setStatus(`${label} failed: ${String(e)}`)
+        host.notify.error(`${label} failed: ${String(e)}`)
         return
       }
       host.invalidatePreviews()
       await host.reloadAssets()
-      host.setStatus(label)
+      host.notify.ok(label)
       host.refreshUi()
     })()
   }
@@ -94,7 +95,7 @@ export const createFileActions = (host: FileActionsHost) => {
     if (entry === undefined) return
     const why = unplaceableWhy(assetId)
     if (why !== null) {
-      host.setStatus(`${entry.name} ${why}`)
+      host.notify.warn(`${entry.name} ${why}`)
       return
     }
     // A shared component the game lacks is adopted on the way to arming, so the click that places it never sees
@@ -171,7 +172,7 @@ export const createFileActions = (host: FileActionsHost) => {
         counts.length === 0
           ? 'Nothing places it. The file and its id go for good — a prefab created again later gets a new id.'
           : `Used by ${counts.join(' and ')}. Those objects stay where they are and keep what they are drawing; they just stop being copies of this prefab. The file and its id go for good.`
-      if (!(await askDestructive(`Delete ${entry.name}?`, body, 'Delete'))) return host.setStatus('kept')
+      if (!(await askDestructive(`Delete ${entry.name}?`, body, 'Delete'))) return host.notify.ok('kept')
 
       // Other levels first: they are the ones that can refuse, and a refusal must stop the whole thing.
       for (const name of others) {
@@ -181,7 +182,7 @@ export const createFileActions = (host: FileActionsHost) => {
           const n = unlinkPrefab(level, id, { types: host.registry(), freshId: freshNodeId, refKeysOf: nodeRefKeysOf })
           if (n > 0) await saveFile('levels', name, stripHydrated(level, [id]))
         } catch (e) {
-          host.setStatus(`${name} could not be unlinked (${String(e)}) — nothing deleted`)
+          host.notify.error(`${name} could not be unlinked (${String(e)}) — nothing deleted`)
           return
         }
       }
@@ -213,7 +214,7 @@ export const createFileActions = (host: FileActionsHost) => {
         `File name in content/${ref.game}/levels/. Letters, digits, - and _. Any ?level=${ref.name} link, and the multiplayer room name, change with it.`,
       )
       if (asked === null || asked === ref.name) return
-      if (!isSegment(asked)) return host.setStatus(`"${asked}" is not a file name: letters, digits, - and _ only`)
+      if (!isSegment(asked)) return host.notify.warn(`"${asked}" is not a file name: letters, digits, - and _ only`)
       const to = qualify({ game: ref.game, name: asked })
       const wasOpen = host.fileName() === qualified
       if (wasOpen) {
@@ -223,13 +224,13 @@ export const createFileActions = (host: FileActionsHost) => {
       try {
         await apiRenameLevel(qualified, to)
       } catch (e) {
-        host.setStatus(`could not rename: ${String(e)}`)
+        host.notify.error(`could not rename: ${String(e)}`)
         if (wasOpen) await host.openFile(qualified) // put back what we left
         return
       }
       await host.refreshFileList()
       if (wasOpen) await host.openFile(to)
-      host.setStatus(`renamed to ${asked}`)
+      host.notify.ok(`renamed to ${asked}`)
     })()
   }
 
@@ -253,20 +254,20 @@ export const createFileActions = (host: FileActionsHost) => {
         siblings.length === 0 ? `it is the only level ${ref.game} has` : null,
       ].filter((n) => n !== null)
       const body = `The file goes for good — there is no undo and no copy anywhere else.${notes.length > 0 ? ` ${notes.join(', and ')}.` : ''}`
-      if (!(await askDestructive(`Delete ${ref.name}?`, body, 'Delete for good'))) return host.setStatus('kept')
+      if (!(await askDestructive(`Delete ${ref.name}?`, body, 'Delete for good'))) return host.notify.ok('kept')
 
       if (isOpen) await host.room.leave()
       try {
         await apiDeleteLevel(qualified)
       } catch (e) {
-        host.setStatus(`could not delete: ${String(e)}`)
+        host.notify.error(`could not delete: ${String(e)}`)
         if (isOpen) await host.openFile(qualified)
         return
       }
       await host.refreshFileList()
       // Nothing is open now, so boot into whatever is left rather than leaving a document with no file.
       if (isOpen) await host.openFirstLevel()
-      host.setStatus(`deleted ${ref.name}`)
+      host.notify.ok(`deleted ${ref.name}`)
     })()
   }
   return {

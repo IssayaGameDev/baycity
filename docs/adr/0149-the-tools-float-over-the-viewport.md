@@ -1,6 +1,6 @@
 # ADR 0149 — The tools float over the viewport; the top bar is the document and running it
 
-Status: accepted. Amends [ADR 0094](0094-the-viewport-has-a-navigation-gizmo.md)'s gizmo. Every choice below
+Status: accepted, amended: the top bar also holds the lock, the Motion clock, undo / redo and the bell ([ADR 0155](0155-the-status-bar-becomes-notices.md)). Amends [ADR 0094](0094-the-viewport-has-a-navigation-gizmo.md)'s gizmo. Every choice below
 that a person sees is Kodjo's, asked with the question tool and two options each.
 
 ## Context

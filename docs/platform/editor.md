@@ -38,13 +38,12 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 
 | Area | Element | Module |
 | --- | --- | --- |
-| Top | `#toolbar` (ADR 0149), a 3-column grid: the level's name, or `level › prefab` inside a prefab — the level is a button and the way back; **Motion** and **Play** in the middle. No New or Duplicate (the Project panel's), **no game picker and no level list** (ADR 0108), no mode select and no Save: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
+| Top | `#toolbar` (ADR 0149), a 3-column grid: the level's name, or `level › prefab` inside a prefab — the level is a button and the way back, and a **lock badge** while someone else holds it; **Motion** (with its clock while it runs, `setClock`) and **Play** in the middle; **undo / redo** and the **bell** at the right end (ADR 0155). No New or Duplicate (the Project panel's), **no game picker and no level list** (ADR 0108), no mode select and no Save: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
 | Over the viewport | `#overlays` in `#centre` (ADR 0149): a layer that passes the pointer through, its panels (`.ov`) taking it back; **hidden while playing**. Left edge, vertical: Move / Rotate / Scale / **Face** (ADR 0119). Top left: Global / Local (globe / cube), the magnet, the active tool's increment with its unit (ADR 0114). Top right, left of the navigation gizmo: Grid, Markers, **Keys** (ADR 0120; hidden unless the game declares `surfaceGrid`), **Reveal** (ADR 0132; hidden while nothing is). Under the gizmo: the Persp / Iso button (ADR 0094). Icons only (`icons.ts`), each named with its key in its tooltip | `src/toolbar.ts`, `src/cameraView.ts` |
 | Left | `#hierarchy` — node tree + context menu; how a row reads and drags is **The Hierarchy** below (ADR 0150). Rows alternate `--row-alt` by **rendered** position (`.row:where(:not(.env)):nth-child(even)`), declared before `:hover` and `.sel` so both win on source order | `src/hierarchy.ts`, `src/hierarchyDrag.ts`, `src/menu.ts` |
-| Centre | `#view` — Three stage, orbit, transform gizmo, placement clicks | `src/main.ts`, `src/itemMeshes.ts`, `src/play.ts` |
+| Centre | `#centre`: `#banner` above `#stage`, which holds `#view` — Three stage, orbit, transform gizmo, placement clicks — and the layers over it: `#overlays`, `#toasts`, `#vhint`, `#readout`, `#hint` | `src/main.ts`, `src/itemMeshes.ts`, `src/play.ts`, `src/notices.ts` |
 | Right | `#insp-head`, `#inspector`, `#asset-inspector` | `src/inspector.ts`, `src/assetInspector.ts` |
 | Bottom panel | `#palette` **Project** (asset tree, previews) | `src/projectPanel.ts`, `src/assetTree.ts`, `src/previews.ts` |
-| Status | `#status` | `setStatus` |
 
 Document model: `src/editorDoc.ts` (`Doc`, `levelDoc`, `prefabDoc`; a `Doc` captures its `registry`; every mutation is an op batch, below). Undo: `src/opHistory.ts` (inverse ops, ADR 0089). Shortcuts: `src/shortcuts.ts` (ADR 0030).
 
@@ -56,14 +55,14 @@ The routes are `tools/editor-server/src/api.ts`, mounted by `vite.config.ts` (`f
 
 | Piece | Behaviour |
 | --- | --- |
-| `me` | `GET /api/me` at boot; name shown first in the status bar; `heartbeatMs`/`maxUploadBytes` read from it |
+| `me` | `GET /api/me` at boot; `heartbeatMs`/`maxUploadBytes` read from it |
 | `heldLocks` | every key this tab holds; `takeLock(path)` → holder's name or `null`; `dropAllLocks()` releases all (→ the server commits the session) |
 | `openFile` | `dropAllLocks()`, then **joins the level's live room** (`room.joinRoom(name)`, below). Levels only: a prefab is entered with `enterPrefab`, not opened as a file |
-| `readOnlyBy` | a material or clip this tab could not lock; status bar shows `read-only · locked by X` |
+| `readOnlyBy` | a file this tab could not lock; the top bar's lock badge reads `Read-only · X has it` |
 | `saveNow` | returns `true` at once for a live room: every edit is already on the server |
 | `newBlank` | `createLevel(null)` — a level exists the moment it is named (below) |
 | materials | `lockAsset(id)` on select (`onSelectAsset`, kind `material`); refused ids in `lockedAssets` → `onMaterialChanged` refuses |
-| heartbeat | `setInterval(heartbeatMs)`: `heartbeatLocks(held)`; a lost file lock is re-taken or turns the file read-only; `serverStatus().pushError` → `pushProblem` in the status bar |
+| heartbeat | `setInterval(heartbeatMs)`: `heartbeatLocks(held)`; a lost file lock is re-taken or turns the file read-only; `serverStatus().pushError` → `pushProblem`, a banner line `not on GitHub yet: …` |
 | `pagehide` | `releaseLockBeacon` per held lock; `collab.beaconLeave()` |
 | upload | `ProjectHost.onUpload(files, folder)` from a desktop drop on a folder row, folder tile or the grid (`dropTargetFor`, `folder` getter; not for *All folders* or the level's own); files over `maxUploadBytes` are named and skipped; `afterFileOp` uploads the rest |
 
@@ -99,7 +98,7 @@ folds them (`foldBatches`: one transform op per target, last value, first invers
 into `{ ops, inverses, label, selection: NodeRef[] }`. `undo` applies `inverses` with `applyBatch` straight on the
 root level (nothing re-reported), redraws through `host.repaint(ops)` — `room.repaint`, the remote batch's
 `repaintAfterOps`, so undoing a move only poses groups from data — and restores the selection by ref (which
-redraws the panels); an entry whose ops no longer apply is dropped with a status line. It used to re-bake the sky
+redraws the panels); an entry whose ops no longer apply is dropped with a warning. It used to re-bake the sky
 and build every mesh and the physics world twice, about a second on a level of a few hundred objects. Undo inside a prefab
 opened on top no longer pops back to the level. Live, the applied inverses go to the server as an ordinary batch
 (`host.submit`): an undo is an edit the room sees.
@@ -128,12 +127,12 @@ httpTransport(): LiveTransport   // EventSource in, fetch POST out, sendBeacon f
 | join | `openFile` (level) → `room.joinRoom(name)`, which resolves the snapshot it was greeted with — that level is what adoption, validation and `levelDoc` run on. `joining` is `joinRoom`'s own, so the first snapshot builds the caller's document while a later one (a reconnect) reinstalls it (ADR 0121). A join the server refuses is the load error |
 | outbound | `onDocOps` → `pending` (history) **and** `collab.submit(batch)`; the batch is *unacked* until its echo. `applyHistory` submits the inverses it applied |
 | inbound | a remote batch: unacked batches rolled back (inverses, newest first), remote applied, unacked re-applied (inverses recomputed; one that no longer applies is dropped and reported); `hooks.onApplied(ops)` → `repaintAfterOps` (`liveSession.ts`). A seq gap or a failing apply reopens the stream: the server greets with a fresh snapshot, `reinstallLevel` rebuilds the document over it (history kept), unacked batches are re-applied and re-sent |
-| rejected | a 4xx on the POST: that batch and everything after it rolled back, the later ones re-applied, `onRejected` → `history.dropWhere` (the entry holding it) + status line + repaint |
+| rejected | a 4xx on the POST: that batch and everything after it rolled back, the later ones re-applied, `onRejected` → `history.dropWhere` (the entry holding it) + an error toast + repaint |
 | repaint | `repaintAfterOps(ops)`: transforms only (`setTransform` / `setOverrideTransform`) → `applyPreviewPoses` + `scheduleRebuild` + `inspectorSync` + track helper; anything else → environment/postfx re-applied, `host.rebuildViewport()`, selection put back by `indexOfRef`, `refreshUi` + `inspectorRebuild`. During a gizmo drag **or a play-test** ops queue in `deferredRemote` (the data is already changed) and repaint when it ends (`room.drainDeferred()`, from the drag's `mouseUp` and from both `play.stop` exits) — `rebuildLoaded` frees the physics world a play session's character lives in |
 | Save | there is none; `dirty` stays `false` live (`recordEdit`, `applyHistory`), so `guardUnsaved` never asks. `saveNow` returns `true` |
 | Play | `startFramePlay`: live → `collab.flush()` first (the game reads the file), else the prefab path `saveNow()` |
 | New / Duplicate | `createLevel(from)`: `askName` (`confirm.ts`) → `^[\w-]+$` → refused if `listFiles('levels')` has it → `PUT /api/levels/<name>` a `blankLevel` with the active mode, or the open level (`loadLevelRaw`, the server's live copy) with `id` set → `refreshFileList` → `openFile`. From the Project panel: a game's new-level action (`onNewLevel`) and a level's *Duplicate…* |
-| status bar | `live` or `live · with Adrien, Titouan` (peers other than this `connId`) |
+| peers | `room.peers()`: `{ connId, name }` per connection in the room, from its `peers` events |
 | leave | `dropAllLocks` → `collab.leave()`; `pagehide` → `beaconLeave()` |
 
 Two tabs of one person are two `connId`s: separate acks, separate holds.
@@ -225,14 +224,14 @@ uses it. It does, because a prefab is a live document of its own.
 
 | Piece | Behaviour |
 | --- | --- |
-| resolve on open | `openFile` runs `hydratePrefabs(level, editorPrefabs)` — `assets.prefabOf`, already in memory from boot — and keeps `hydratedPrefabs` (what it filled) and `missingPrefabs` (what it could not), naming the missing in the status line |
+| resolve on open | `openFile` runs `hydratePrefabs(level, editorPrefabs)` — `assets.prefabOf`, already in memory from boot — and keeps `hydratedPrefabs` (what it filled) and `missingPrefabs` (what it could not), naming the missing in a warning |
 | resolve mid-session | three doors add a definition after the open — `placePrefab`, `paste` of a clip that carries one, and `linkToPrefab` (Save as prefab). Each records it in `Doc.resolvedPrefabs()`, and a save strips the open-time set **union** that (ADR 0124). None of them used to, so the definition reached disk — where `hydratePrefabs` skips an id the level already carries, so the frozen copy is read *instead of* the asset from then on, by the editor and the server, permanently. A placement that looks linked and silently stops following its prefab |
 | enter a prefab | `enterPrefab(assetId)`: leave the level's room, `room.joinRoom(assetId, 'prefab')`, build `prefabDoc` over the snapshot's one root, `prefabOpen = { assetId, name, from }`. From a placement (`openPrefabOf`, the Inspector's **Open**, the Hierarchy and viewport menus) or from a prefab's Project tile — which is the only way to reach one that is placed nowhere |
 | one at a time | The viewport, the physics world, the selection and the holds are singletons keyed to the open document, so a tab is in one room. **Back** (`closePrefab`) rejoins the level, which the server answers with a fresh snapshot, so anything that changed meanwhile is there |
 | follow a prefab | a `prefab { assetId, ops }` event on the **level's** stream → `onPrefabOps`: `applyBatch` over `{ id, config: {}, nodes: [root] }`, whose root *is* the resolved definition, then a structural repaint and `previews.invalidate()`. No sequence and nothing sent back: the level's own file did not change |
-| Apply to prefab | two rooms, one gesture. `Doc.overrideOpsFor(i)` — the record's fields (transform, name, params, component enables and removals, added components, sequences, `nodeEnabled`), then `childrenToPrefab`: the children it added, inserted with fresh ids, and every child `moveNode`d into the order shown (ADR 0151) → `collab.submitToPrefab(assetId, ops)` → only if the server took them, `Doc.revert(i)` here. Undo puts **this placement's** override back and does not take the change out of the prefab; the status line says so |
+| Apply to prefab | two rooms, one gesture. `Doc.overrideOpsFor(i)` — the record's fields (transform, name, params, component enables and removals, added components, sequences, `nodeEnabled`), then `childrenToPrefab`: the children it added, inserted with fresh ids, and every child `moveNode`d into the order shown (ADR 0151) → `collab.submitToPrefab(assetId, ops)` → only if the server took them, `Doc.revert(i)` here. Undo puts **this placement's** override back and does not take the change out of the prefab; the confirmation says so |
 | **children: one door** (ADR 0151) | Every edit of what a node shows under it goes through its **host**: `hostOf(parent)` is a `list` (an object of the level: its `children`; the level: its forest; in a prefab, `null` is the root's children) or a `record` (a placement — keyed by the prefab root's id — or one of its pieces: `childrenFor`'s children, plus ADR 0130's `children` on the placement, shown last). `insertOps` / `removeOps` / `reorderOps` turn "show this here" into ops: on a record, `insertOverrideChild`, a removal (`setOverrideNodeRemoved`) for a piece or `removeNode` for an added child, and `setOverrideChildOrder` **only** when the order shown is not the natural one (inherited, then added) — `null` when it becomes natural again. The first edit that orders a placement's children moves ADR 0130's into the record, same ids. `DocNode.slot` is where a node is **shown** among its siblings (`siblingIndexOf`), `index` where it is stored; `childCount` counts the tree |
-| a drag, a reparent | `Doc.reparent(from, parent, at, transform?)`, `at` a shown slot before the move. Same host: a **reorder**, the transform left alone — a piece stays a piece. A **piece** anywhere else: a copy of its view with fresh ids inserted there, then its removal recorded (ADR 0133). An own node between two lists: `moveNode` + `setTransform` (ADR 0113). Into or out of a record: `removeNode` then an insert, same node, same ids. `canReparent`: not into its own subtree, not beside a prefab's root, and anything with a host takes a child — a piece included. The Hierarchy's drop (`dropAt`) offers every row. Grabbing a **selected** row drags the whole selection, an unselected one drags it alone (ADR 0134); roots only (`rootsOf`); every pose read before anything moves, from the authored poses (ADR 0126); addressed by **ref**; one history entry; what cannot go there is skipped and counted in the status line |
+| a drag, a reparent | `Doc.reparent(from, parent, at, transform?)`, `at` a shown slot before the move. Same host: a **reorder**, the transform left alone — a piece stays a piece. A **piece** anywhere else: a copy of its view with fresh ids inserted there, then its removal recorded (ADR 0133). An own node between two lists: `moveNode` + `setTransform` (ADR 0113). Into or out of a record: `removeNode` then an insert, same node, same ids. `canReparent`: not into its own subtree, not beside a prefab's root, and anything with a host takes a child — a piece included. The Hierarchy's drop (`dropAt`) offers every row. Grabbing a **selected** row drags the whole selection, an unselected one drags it alone (ADR 0134); roots only (`rootsOf`); every pose read before anything moves, from the authored poses (ADR 0126); addressed by **ref**; one history entry; what cannot go there is skipped and counted in a warning |
 | removing a piece | A piece is **deleted from one placement** (ADR 0133) — `NodeOverride.removedNodes`, kept on the removed piece's own record so clearing that record brings it back. The prefab keeps it and every other placement keeps it. Dropped in the **tree walk** as well as in `bakeOverrides`. Reported by `Doc.placementRemoved(i)`, read off the records, since a removed piece has no index. Revert puts it back; **Apply deletes it from the prefab**, first, so every placement everywhere loses it. Delete and Cut (copy, then delete) work on a piece like on anything else |
 | copying a piece | A piece copies as what it looks like (ADR 0131) — `Doc.copy` takes its resolved `view`, the whole subtree with this placement's overrides baked in, a plain object and not an edit of the prefab. `paste` re-mints the ids and puts it wherever you paste; `duplicate` puts it **beside** the piece, in the placement's record, placed there by a recorded order. `reidSubtree` re-mints what a copied placement added under its pieces too, and follows those ids in its `childOrder` |
 | a child added to a placement | Created, pasted or dropped on a placement, it goes in the record of the prefab's **root** (ADR 0151), not the placement's `children` (ADR 0130's storage, still read); a component added on the placement likewise goes in that record's `added`. `Doc.placementAdded(i)` finds the roots of what was added, anywhere under the placement, for the counts. **Apply** inserts each into the prefab under the piece it hangs from, re-minted (a prefab's ids are its own), transform unconverted (same frame); **Revert all** clears every record — which takes added children, orders and removals with it — and strips ADR 0130's children and components off the placement, one batch (it used to remove added children one by one after clearing the records that held them, and threw). **A placement added under a placement is not applied**: the inner definition would have to resolve in the prefab's room, which ADR 0124 has not been worked through for |
@@ -293,7 +292,7 @@ One action makes a prefab, replacing both `Extract to prefab` (which wrote no fi
 `assets.createPrefab(path, doc.definitionOf(index))` → `reloadAssets()` → `doc.linkToPrefab(at, id, definition)`
 → `recordEdit('save as prefab')`.
 
-- **The file goes first.** A failed write costs a status line; the reverse order would leave a placement
+- **The file goes first.** A failed write costs an error toast; the reverse order would leave a placement
   pointing at nothing. If the write lands and the level edit does not, the file is an unreferenced prefab —
   visible in the Project panel and placeable by hand.
 - **A name already in that folder is refused, never overwritten.** Writing over a prefab file keeps its `.meta`
@@ -323,7 +322,7 @@ Others' selection is what the hold outlines and badges show: a selection *is* a 
 
 | Piece | Behaviour |
 | --- | --- |
-| `syncHolds` | after every `applySelection`/`deselect`: `room.syncHolds()` → `collab.setHolds(host.selectionRefs())` — the **whole** selection, skipped when unchanged (`lastHoldKey`). Hold messages queue one behind another in `collab.ts`, so a release can never overtake the hold before it. A refusal (`{ ok: false, holder, refused }`, a lost race) drops the refused nodes from the selection with a status line. `reinstallLevel` (new `connId`) re-sends; a `hello` with a new `connId` posts `leave` for the old one |
+| `syncHolds` | after every `applySelection`/`deselect`: `room.syncHolds()` → `collab.setHolds(host.selectionRefs())` — the **whole** selection, skipped when unchanged (`lastHoldKey`). Hold messages queue one behind another in `collab.ts`, so a release can never overtake the hold before it. A refusal (`{ ok: false, holder, refused }`, a lost race) drops the refused nodes from the selection with a warning. `reinstallLevel` (new `connId`) re-sends; a `hello` with a new `connId` posts `leave` for the old one |
 | heartbeat | the lock heartbeat also `collab.ping()`s while live: the server sweeps a connection it has not heard from in two minutes, holds with it |
 | `heldBy(index)` | the name of another connection holding this node **or any ancestor** (`holdMap` by `refKey`), else `null` |
 | `applySelection` | filters `heldBy(i) !== null` out, so the gizmo never attaches to a held node; `select`/`selectWith` say `X has that selected` (`refuseHeld`) |
@@ -443,7 +442,24 @@ the name is still in the listing — a deleted or renamed level must not make ev
 - `MODE_LIST` sorted by `label`; `modeOf(level)`; `soleMode()` = the only installed game, else `undefined`.
 - `package.json` lists only `@mode/parkour`; other games enter via the glob's relative path. `tsconfig.json` includes `content/<game>/levels/*.level.json`, `content/*/game.json`.
 
-## Registry a level is edited against (`src/main.ts`)
+## Messages and the editor's state (ADR 0155, `src/notices.ts`)
+
+The status bar is gone. `createNotices(toasts, banner, onChange)` → `Notices`; every host speaks through `notify: Notify`
+(`ok` / `warn` / `error`), the kind chosen where the message is written.
+
+| | |
+| --- | --- |
+| toasts | `#toasts`, the viewport's bottom right, newest at the bottom, at most `MAX_TOASTS` 4 (the oldest non-error goes first). `TOAST_MS`: `ok` 2.5 s, `warn` 5 s, `error` until closed (×). A click dismisses one. The same message again, while it is up, counts (`×2`) and keeps it up |
+| the log | `toggleLog(bell)`: a popover of every message, newest first, with its time and its count (`logNotice`, pure; `LOG_SIZE` 200); Clear. Opening it zeroes `unseen` — errors said since, the bell's red count |
+| the banner | `setProblem(slot, text)`, `''` to clear: `main` (`main.ts`'s `setProblem`: assets, identity, a lock, the server's copy) and `push` (`not on GitHub yet: …`). `#banner` sits **above** `#stage` rather than over it, so it never covers the gizmo drawn in the canvas's corner; a `ResizeObserver` on the canvas runs `relayout` as it comes and goes |
+| the hint | `#vhint`, top centre: a play session's (`PlayHost.hint`) or placing's (`Click in the viewport to place X · Esc to cancel`) |
+| the readout | `#readout`, beside the pointer during a gesture |
+| `renderStatus` | redraws the top bar (undo / redo from `edits.labels()` + `depth()`, the lock, the bell), the hint, and the Hierarchy's count (`#hier-count`) |
+
+Where the status bar's items went: the level's name was already the top bar's; the selection is the Inspector's and the
+Hierarchy's; the undo depth is the buttons' tooltips (`Undo move (2 more)`); the clipboard count and your own name are
+not shown.
+
 
 | Symbol | Role |
 | --- | --- |
@@ -455,7 +471,7 @@ the name is still in the listing — a deleted or renamed level must not make ev
 | `adopt(types)` | shared ∧ new → `saveGame` → `gameData` → `reopenWithRegistry()` |
 
 Adoption points (ADR 0077):
-1. **Open** (`openFile`): `componentTypesInRaw(raw)` unknown-but-shared → adopted before `validateLevel`; any other unknown type is a load error in the status bar.
+1. **Open** (`openFile`): `componentTypesInRaw(raw)` unknown-but-shared → adopted before `validateLevel`; any other unknown type is a load error.
 2. **Place** (`armAsset`): `missingIn(assetId)` splits a prefab's unknown types into `shared`/`foreign`; shared adopted before arming — not while a prefab is open on top (a prefab belongs to no game).
 3. **Add Component** (Inspector button, Hierarchy submenu): `adoptable()` listed beside addable types; pick → `adopt` → `doc.addComponent`.
 
@@ -623,7 +639,7 @@ the one toggle. Non-box nodes in the selection drop out silently.
 **One highlight per selected box**, kept until the choice is released, so which face each one will move is
 visible for as long as you want to look at it — the question the world-direction rule raises. The hover
 preview runs only while nothing is chosen, so one set of plates is lit at a time. A pool of plates over one
-shared geometry and material. The status line carries the grabbed box's size plus `+N`.
+shared geometry and material. A readout beside the pointer (`host.readout`, `#readout`) carries the grabbed box's size plus `+N`; it goes when the pull ends.
 `MATCH_FACE_BY_WORLD_DIRECTION` in `pickTool.ts` is the switch between world direction and the same lettered
 axis on every box.
 

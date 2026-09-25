@@ -8,7 +8,8 @@ import { icon, type IconName } from './icons'
  *
  * | where | what |
  * | --- | --- |
- * | top bar | the level's name, or `level › prefab` inside a prefab (the level is the way back); Motion, Play |
+ * | top bar | the level's name, or `level › prefab` inside a prefab (the level is the way back), and its lock; Motion, with its
+ *   clock, and Play; undo, redo and the bell (ADR 0155) |
  * | viewport, left edge | Move, Rotate, Scale, Face |
  * | viewport, top left | Global / Local; snap and the active tool's increment |
  * | viewport, top right | Grid, Markers, Keys, Reveal — beside the navigation gizmo |
@@ -77,11 +78,21 @@ export interface ToolbarState {
    * reload. It is also the way out of somebody else's hiding, which is reachable now the set is shared.
    */
   showingAll: boolean | null
+  /** Who holds the level's lock when it is not you (ADR 0089): it is read-only here, and the bar says so. */
+  lockedBy: string | null
+  /** What undo and redo would do, and how many steps each side holds — the buttons' state and tooltips. */
+  history: { undo: string | null; redo: string | null; depth: { undo: number; redo: number } }
+  /** Errors said since the log was last opened: the bell's count (ADR 0155). */
+  unseen: number
 }
 
 export interface ToolbarActions {
   /** Leave the prefab for the level it was opened from. */
   back: () => void
+  undo: () => void
+  redo: () => void
+  /** Open or close the log of messages under the bell. */
+  toggleLog: (anchor: HTMLElement) => void
   setGizmo: (g: GizmoMode) => void
   setSpace: (s: GizmoSpace) => void
   setSnap: (on: boolean) => void
@@ -96,6 +107,11 @@ export interface ToolbarActions {
 
 export interface Toolbar {
   render: () => void
+  /**
+   * The Motion clock beside its button, in seconds, or `null` to hide it. Every frame the preview runs, so it
+   * only writes the text when the tenth it shows has changed.
+   */
+  setClock: (seconds: number | null) => void
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] => {
@@ -146,18 +162,30 @@ export const createToolbar = (bar: HTMLElement, overlays: HTMLElement, state: ()
   crumb.addEventListener('click', () => actions.back())
   const crumbSep = el('span', 'tb-crumb-sep', '›')
   const nameText = el('span', 'tb-name')
-  doc.append(crumb, crumbSep, nameText)
+  /** Someone else holds the level's lock: read-only here until they let go. */
+  const lock = el('span', 'tb-lock')
+  doc.append(crumb, crumbSep, nameText, lock)
 
   /**
    * One toggle for the whole level, not one per object: motion is timed against other motion, so a staggered
    * row of platforms is the thing you need to look at, and the panel this replaces could only ever show one.
    */
   const motionButton = iconButton('tb-b', 'motion', () => actions.setPreviewing(!state().previewing))
+  const clockText = el('span', 'tb-clock')
+  clockText.hidden = true
   const playButton = iconButton('tb-b tb-play', 'play', () => actions.setPlaying(!state().playing))
   const run = el('div', 'tb-run')
-  run.append(motionButton, playButton)
+  run.append(motionButton, clockText, playButton)
 
-  bar.append(doc, run, el('div', 'tb-end'))
+  // The history, and what the editor has said (ADR 0155): the status bar's undo depth and its messages, moved.
+  const undoButton = iconButton('tb-b', 'undo', () => actions.undo())
+  const redoButton = iconButton('tb-b', 'redo', () => actions.redo())
+  const bell = iconButton('tb-b tb-bell', 'bell', () => actions.toggleLog(bell))
+  const badge = el('span', 'tb-badge')
+  const end = el('div', 'tb-end')
+  end.append(undoButton, redoButton, el('span', 'tb-sep'), bell)
+
+  bar.append(doc, run, end)
 
   // --- over the viewport: the tools, down the left edge ---
   const toolStrip = el('div', 'ov ov-tools')
@@ -222,6 +250,20 @@ export const createToolbar = (bar: HTMLElement, overlays: HTMLElement, state: ()
     crumb.disabled = s.playing
     nameText.textContent = s.prefab?.name ?? s.name
     nameText.title = s.prefab === null ? 'the level this room has open' : 'the prefab open on top of the level'
+    lock.hidden = s.lockedBy === null
+    lock.replaceChildren(icon('lock'), el('span', undefined, s.lockedBy === null ? '' : `Read-only · ${s.lockedBy} has it`))
+    lock.title = s.lockedBy === null ? '' : `${s.lockedBy} holds this level's lock: you can look, and edit when they let go`
+
+    const h = s.history
+    undoButton.disabled = s.playing || h.undo === null
+    redoButton.disabled = s.playing || h.redo === null
+    const more = (n: number): string => (n > 1 ? ` (${n - 1} more)` : '')
+    setTitle(undoButton, h.undo === null ? 'Nothing to undo (Ctrl+Z)' : `Undo ${h.undo}${more(h.depth.undo)} (Ctrl+Z)`)
+    setTitle(redoButton, h.redo === null ? 'Nothing to redo (Ctrl+Y)' : `Redo ${h.redo}${more(h.depth.redo)} (Ctrl+Y)`)
+    setTitle(bell, s.unseen > 0 ? `Messages: ${s.unseen} error${s.unseen === 1 ? '' : 's'} you have not seen` : 'Messages')
+    badge.textContent = s.unseen > 99 ? '99+' : String(s.unseen)
+    if (s.unseen > 0) bell.append(badge)
+    else badge.remove()
 
     setIcon(playButton, s.playing ? 'stop' : 'play')
     setTitle(playButton, s.playing ? 'Stop' : 'Play')
@@ -254,6 +296,16 @@ export const createToolbar = (bar: HTMLElement, overlays: HTMLElement, state: ()
     revealButton.classList.toggle('on', s.showingAll === true)
   }
 
+  /** What the clock shows now, so a frame that would not change it writes nothing. */
+  let shownClock: string | null = null
+  const setClock = (seconds: number | null): void => {
+    const text = seconds === null ? null : `${seconds.toFixed(1)} s`
+    if (text === shownClock) return
+    shownClock = text
+    clockText.hidden = text === null
+    clockText.textContent = text ?? ''
+  }
+
   render()
-  return { render }
+  return { render, setClock }
 }

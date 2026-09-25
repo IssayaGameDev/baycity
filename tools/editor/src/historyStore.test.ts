@@ -51,7 +51,7 @@ const rig = () => {
     rebuildViewport: () => void calls.rebuilds++,
     repaint: (ops) => void calls.repaints.push(ops),
     loadNewReferencesThen: () => {},
-    setStatus: () => {},
+    notify: { ok: () => {}, warn: () => {}, error: () => {} },
     renderStatus: () => {},
     refreshUi: () => {},
   }

@@ -118,7 +118,7 @@ export interface InspectorHost {
   endDrag: (label: string) => void
   /** Anything other than the transform changed — meshes and the physics world need rebuilding. */
   onPropsChanged: () => void
-  /** The name changed — the hierarchy row and status bar show it. */
+  /** The name changed — the hierarchy row shows it. */
   onRenamed: () => void
   /** A prefab's file name, by asset id, for the prefab bar; `null` when the asset list does not have it. */
   prefabName: (assetId: string) => string | null

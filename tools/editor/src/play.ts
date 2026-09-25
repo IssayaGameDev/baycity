@@ -55,9 +55,11 @@ export interface PlayHost {
   setPreviewing: (on: boolean) => void
   rebuildLoaded: () => void
   deselect: () => void
-  setStatus: (message: string) => void
-  /** Blank the status line, which stopping does rather than leaving a message about a session that ended. */
-  clearStatus: () => void
+  /**
+   * The hint over the viewport while a session runs (ADR 0155), or `null` when it ends — stopping takes it away
+   * rather than leaving a line about a session that is over.
+   */
+  hint: (text: string | null) => void
   uiChanged: () => void
   /** Repaint remote ops held back while the world was the play session's (ADR 0120's sibling fix). */
   drainDeferred: () => void
@@ -187,7 +189,7 @@ export const createPlay = (host: PlayHost): Play => {
     gameFrame = frame
     active = true
     controls.enabled = false
-    host.setStatus(`playing ${host.fileName()} in the game — Stop to come back`)
+    host.hint(`Playing ${host.fileName()} in the game · Stop to come back`)
     host.uiChanged()
   }
 
@@ -324,7 +326,7 @@ export const createPlay = (host: PlayHost): Play => {
     active = true
     controls.enabled = false // editor orbit off; the player camera takes over
     void canvas.requestPointerLock()
-    host.setStatus('playing — WASD + Space · mouse to look · Esc to stop')
+    host.hint('WASD + Space · mouse to look · Esc to stop')
     host.uiChanged()
 
     playLoop = startFixedLoop({
@@ -366,7 +368,7 @@ export const createPlay = (host: PlayHost): Play => {
       gameFrame = null
       active = false
       controls.enabled = true
-      host.clearStatus()
+      host.hint(null)
       host.uiChanged()
       host.drainDeferred() // what the room did while the frame was up
       return
@@ -388,7 +390,7 @@ export const createPlay = (host: PlayHost): Play => {
     if (document.pointerLockElement === canvas) document.exitPointerLock()
     controls.target.set(ownPos.x, ownPos.y + 1, ownPos.z) // resume orbit around where you stopped
     controls.enabled = true
-    host.clearStatus()
+    host.hint(null)
     host.uiChanged()
     host.rebuildLoaded() // restore the edit world + markers
     host.drainDeferred() // what the room did while the play-test held the world
