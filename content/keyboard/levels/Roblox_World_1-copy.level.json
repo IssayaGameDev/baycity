@@ -6190,7 +6190,7 @@
                   "name": "platform",
                   "transform": {
                     "position": {
-                      "x": -285.3553,
+                      "x": -285,
                       "y": 4.7231,
                       "z": 0
                     },
@@ -7476,7 +7476,7 @@
                 },
                 "scale": {
                   "x": 200,
-                  "y": 0.5,
+                  "y": 1,
                   "z": 150
                 }
               },
@@ -7517,10 +7517,280 @@
                   }
                 }
               ]
+            },
+            {
+              "id": "b2489b21",
+              "name": "floor",
+              "transform": {
+                "position": {
+                  "x": -120.8247,
+                  "y": 101.1482,
+                  "z": 15.9034
+                },
+                "scale": {
+                  "x": 200,
+                  "y": 1,
+                  "z": 150
+                }
+              },
+              "components": [
+                {
+                  "id": "4c1a690c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "c9b1bc29",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": ""
+                  }
+                },
+                {
+                  "id": "eec994bf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1
+                  },
+                  "enabled": false
+                }
+              ]
+            },
+            {
+              "id": "45a854de",
+              "name": "floor",
+              "transform": {
+                "position": {
+                  "x": -120.8247,
+                  "y": 69.1482,
+                  "z": -58.5966
+                },
+                "rotation": {
+                  "x": -1.5707963267948966,
+                  "y": 0,
+                  "z": 0
+                },
+                "scale": {
+                  "x": 200,
+                  "y": 1,
+                  "z": 65
+                }
+              },
+              "components": [
+                {
+                  "id": "4c1a690c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "c9b1bc29",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": ""
+                  }
+                },
+                {
+                  "id": "eec994bf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1
+                  },
+                  "enabled": false
+                }
+              ]
+            },
+            {
+              "id": "55e72194",
+              "name": "floor",
+              "transform": {
+                "position": {
+                  "x": -120.8247,
+                  "y": 69.6482,
+                  "z": 90.4034
+                },
+                "rotation": {
+                  "x": -1.5707963267948966,
+                  "y": 0,
+                  "z": 0
+                },
+                "scale": {
+                  "x": 200,
+                  "y": 1,
+                  "z": 65
+                }
+              },
+              "components": [
+                {
+                  "id": "4c1a690c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "c9b1bc29",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": ""
+                  }
+                },
+                {
+                  "id": "eec994bf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1
+                  },
+                  "enabled": false
+                }
+              ]
+            },
+            {
+              "id": "d3421a58",
+              "name": "floor",
+              "transform": {
+                "position": {
+                  "x": -120.8247,
+                  "y": 69.6482,
+                  "z": 25.1534
+                },
+                "rotation": {
+                  "x": -1.5707963267948966,
+                  "y": 0,
+                  "z": 1.5707963267948966
+                },
+                "scale": {
+                  "x": 166.5,
+                  "y": 1,
+                  "z": 65
+                }
+              },
+              "components": [
+                {
+                  "id": "4c1a690c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "c9b1bc29",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": ""
+                  }
+                },
+                {
+                  "id": "eec994bf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1
+                  },
+                  "enabled": false
+                }
+              ]
             }
           ]
         }
       ]
+    },
+    {
+      "id": "96c97f6e",
+      "name": "InterLevel",
+      "transform": {
+        "position": {
+          "x": -1049,
+          "y": 90,
+          "z": 439
+        },
+        "rotation": {
+          "x": 0,
+          "y": -1.5707928361363925,
+          "z": 0
+        }
+      },
+      "components": [],
+      "prefab": "7b146287b66c6a52",
+      "overrides": {
+        "d1d3088a": {
+          "transform": {
+            "position": {
+              "x": 7.5001,
+              "y": 4,
+              "z": 0
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 1.5708
+            },
+            "scale": {
+              "x": 15,
+              "y": 1,
+              "z": 9
+            }
+          }
+        }
+      }
     }
   ],
   "prefabs": {
