@@ -72,7 +72,7 @@ interface WorldLight { …; position; rotation; visible: boolean /* off while it
 Build rules:
 - Frame `animated` if a sequence moves it (below), an enabled `moves` component, or an animated ancestor → kinematic bodies; else fixed.
 - `Collider.trigger` → sensor (ADR 0054), still in `colliderHandles`. Shape and `center` scaled by frame scale (box/convex exact, ball/capsule averaged). `cylinder` throws.
-- Draw (ADR 0039): `Renderer`+`Mesh.model` → one visual listing all handles; `Renderer` alone → one per collider; else nothing. `MaterialOverride` cascades down over `Renderer.material`; `''` = unsurfaced. `Mesh.model` is an asset id or a **built-in shape** (below).
+- Draw (ADR 0153): an enabled `Renderer` with a model → one visual listing all handles; with none → one per collider; no `Renderer` → nothing. The model is `modelOf(components)` (`nodes.ts`): `Renderer.model`, else a retired `Mesh`'s, for a file not yet folded. `MaterialOverride` cascades down over `Renderer.material`; `''` = unsurfaced. A model is an asset id or a **built-in shape** (below).
 - Placement with inherited children opens a new `scope` (own id + prefab root id; first writer wins).
 - **Sequences** (ADR 0141, `sequences.md`): each enabled `Sequence` compiled once. A frame is moved by its own aimed at `SELF` and its parent's aimed at its id. Any ⇒ `animated`. Posed at level time 0 while building, so what starts off is built off. Flags fixed at load: `scaling` (a scale track here or above ⇒ colliders re-shaped), `fading` (a fade here ⇒ `VisualItem.fades`), `localOnly` (a `local` sequence moving it or above ⇒ no `baseIndex`). Per tick: `shown` (not disabled here **or above**), `solid` (collider not switched off **here**), `drawScale` = world scale ÷ load scale, `opacity` = the fade here.
 
@@ -149,7 +149,7 @@ sequences add.
 
 ## Built-in shapes — `packages/content/src/primitives.ts` (ADR 0090)
 
-A `Mesh` whose `model` is a `builtin:` id draws a unit shape **sized by the node's world scale**, in the same
+A `Renderer` whose `model` is a `builtin:` id draws a unit shape **sized by the node's world scale**, in the same
 slot as an uploaded model. Scale is then the only size: the editor holds such a node's colliders at the unit
 shape (`editor.md`), and the loader bakes scale into colliders anyway, so collision follows what is drawn.
 

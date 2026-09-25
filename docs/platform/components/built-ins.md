@@ -5,8 +5,8 @@ The definitions this package ships. Declaring and running one: [api.md](api.md).
 | set | type | params | notes |
 |---|---|---|---|
 | `ENGINE_COMPONENTS` (`engine.ts`) | `Collider` | `shape: collider`, `center: vec3`, `trigger: bool` (ADR 0054) | repeatable |
-| | `Mesh` | `model: asset(model)` — an asset id, or a **built-in shape** `builtin:box` / `rounded-box` / `sphere` / `capsule` sized by the node's scale (ADR 0090, `content.md`) | singleton |
-| | `Renderer` | `material: asset(material)` | singleton |
+| | `Renderer`, shown as **Mesh Renderer** (ADR 0153) | `model: asset(model)` — an asset id, or a **built-in shape** `builtin:box` / `rounded-box` / `sphere` / `capsule` sized by the node's scale (ADR 0090, `content.md`); `''` draws the colliders. `material: asset(material)` | singleton |
+| | `Mesh` | `model: asset(model)` | singleton; **`retired`**: read (`modelOf`), never offered, until the fold has run (ADR 0153) |
 | | `MaterialOverride` | `material: asset(material)` | singleton; cascades down |
 | | `Spawn` | — | singleton |
 | | `Light` (ADR 0047) | `kind: enum(point\|spot\|directional\|ambient\|hemisphere)`, `color`, `groundColor`, `intensity`, `range`, `decay`, `angle`, `penumbra`, `castShadow` | singleton; in `ENGINE_COMPONENTS` but **not re-exported by name** from `index.ts` |

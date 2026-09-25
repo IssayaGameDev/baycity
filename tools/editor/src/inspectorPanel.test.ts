@@ -117,10 +117,21 @@ describe('the Inspector’s cards', () => {
     const doc = levelDoc({ id: 'l', config: {}, nodes: [node('a', [comp('h', 'Hazard'), comp('b', 'Bumper', { power: 26 })])] })
     const { panel } = rig(doc, [0])
     expect([...panel.querySelectorAll('.isec')].every((c) => c.querySelector('svg.isec-i') !== null)).toBe(true)
+    const header = [...card(panel, 'Bumper').querySelector('.isec-h')!.children].map((e) => e.classList[e.classList.length - 1])
+    expect(header.slice(0, 4), 'twist, enable, icon, name').toEqual(['isec-tw', 'isec-en', 'isec-i', 'isec-t'])
     const hazard = card(panel, 'Hazard')
     expect(hazard.classList.contains('isec-bare')).toBe(true)
     expect(hazard.querySelector<HTMLElement>('.isec-body')!.hidden).toBe(true)
     expect(panel.textContent).not.toContain('no parameters')
+  })
+
+  it('draws the Renderer as one Mesh Renderer card: its model, then its material (ADR 0153)', () => {
+    const doc = levelDoc({ id: 'l', config: {}, nodes: [box('a', vec3(0, 0, 0))] })
+    doc.setParams(0, 'a-vis', { model: 'builtin:sphere' })
+    const { panel } = rig(doc, [0])
+    const renderer = card(panel, 'Mesh Renderer')
+    expect([...renderer.querySelectorAll('.irow-l')].map((l) => l.textContent)).toEqual(['model', 'material'])
+    expect(line(card(panel, 'Collider'), 'shape').textContent, 'the built-in holds the collider').toContain('unit ball')
   })
 
   it('ends with Add Component, and no Duplicate or Delete', () => {

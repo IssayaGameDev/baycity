@@ -1,4 +1,4 @@
-import { COLLIDER, isBuiltinModel, MESH, RENDERER, scaleCollider, stringParam, vec3Param, type AssetDatabase, type ColliderDesc, type MaterialAsset, type Node } from '@mp/content'
+import { COLLIDER, isBuiltinModel, modelOf, RENDERER, scaleCollider, stringParam, vec3Param, type AssetDatabase, type ColliderDesc, type MaterialAsset, type Node } from '@mp/content'
 import type { Vec3 } from '@mp/core'
 import { createGreyboxMaterial, createThumbnailer, geometryForBuiltin, geometryForCollider, THREE, type AssetRuntime, type Thumbnailer } from '@mp/render-three'
 
@@ -88,8 +88,7 @@ export const createPreviews = (host: PreviewHost): Previews => {
       if (renderer !== undefined) {
         const materialId = stringParam(renderer, 'material', '')
         const material = materialId === '' ? undefined : runtime?.material(materialId)
-        const mesh = enabled.find((c) => c.type === MESH)
-        const modelId = mesh === undefined ? '' : stringParam(mesh, 'model', '')
+        const modelId = modelOf(enabled)
         const builtin = isBuiltinModel(modelId) ? modelId : null
         const model = modelId === '' || builtin !== null ? undefined : runtime?.model(modelId)
         if (model != null) {

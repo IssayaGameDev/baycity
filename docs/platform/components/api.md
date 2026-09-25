@@ -32,6 +32,7 @@ interface ComponentSpec<D, S> {
   singleton?: boolean              // one per node; placement's copy replaces prefab's (effectiveNode)
   moves?: boolean                  // kinematic body + live self.offset (ADR 0058); must be declared
   attachesTo?: 'node' | 'player'   // default 'node'; 'player' hidden from the add menu (ADR 0059); not enforced at load
+  retired?: boolean                // still read, never offered: its job moved into another (Mesh, ADR 0153)
   init?(params, ctx): S
   onAttach?(self, ctx); onFixedUpdate?(self, ctx); onLocomote?(self, ctx, cmd: InputCommand); onContact?(self, ctx, hit: Hit); onDetach?(self, ctx)
 }

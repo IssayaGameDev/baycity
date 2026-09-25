@@ -189,12 +189,12 @@ describe('placing', () => {
     expect(Object.keys(level.prefabs ?? {}), 'one definition, not two copies').toEqual([PAD_ID])
   })
 
-  it('places a model as a node with the mesh and an authored box', () => {
+  it('places a model as a node with an authored box and a Mesh Renderer drawing the model', () => {
     const doc = levelDoc(blank())
     const i = doc.placeModel('modelasset', vec3(0, 0, 0))
-    // What it collides as, what it looks like, that it draws (ADR 0039). Visual is not collision (ADR 0014).
-    expect(typesOn(doc, i)).toEqual([COLLIDER, MESH, RENDERER])
-    expect(paramOn(doc, i, MESH, 'model')).toBe('modelasset')
+    // What it collides as, then what it draws (ADR 0153). Visual is not collision (ADR 0014).
+    expect(typesOn(doc, i)).toEqual([COLLIDER, RENDERER])
+    expect(paramOn(doc, i, RENDERER, 'model')).toBe('modelasset')
   })
 
 })
@@ -315,18 +315,36 @@ describe('components', () => {
     const i = doc.placeModel('m', vec3(0, 0, 0))
     doc.setParams(i, idOf(doc, i, RENDERER), { material: MAT_A })
     expect(paramOn(doc, i, RENDERER, 'material')).toBe(MAT_A)
-    expect(paramOn(doc, i, MESH, 'model'), 'a different component, untouched').toBe('m')
+    expect(paramOn(doc, i, RENDERER, 'model'), 'the other parameter, untouched').toBe('m')
   })
 
   it('removes one', () => {
     const doc = levelDoc(blank())
     const i = doc.placeModel('m', vec3(0, 0, 0))
     doc.removeComponent(i, idOf(doc, i, RENDERER))
-    expect(typesOn(doc, i)).toEqual([COLLIDER, MESH])
+    expect(typesOn(doc, i)).toEqual([COLLIDER])
   })
 
-  // Unity's rule: geometry with nothing to render it shows nothing (ADR 0039).
-  it('draws nothing once the Renderer is gone, even with a Mesh still there', () => {
+  it('draws a retired Mesh’s model until the migration folds it in, and never offers one (ADR 0153)', () => {
+    const level = blank()
+    level.nodes.push({
+      id: 'old',
+      transform: { position: ZERO },
+      components: [
+        { id: 'c', type: COLLIDER, params: { shape: { kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) }, center: ZERO } },
+        { id: 'm', type: MESH, params: { model: 'builtin:sphere' } },
+        { id: 'r', type: RENDERER, params: { material: '' } },
+      ],
+    })
+    const doc = levelDoc(level)
+    expect(doc.meshSpecs(0)[0]?.model).toBe('builtin:sphere')
+    expect(doc.builtinOf(0)).toBe('builtin:sphere')
+    expect(doc.canAdd(0, MESH), 'retired: still read, never added').toBe(false)
+    doc.setParams(0, 'r', { model: 'builtin:box' })
+    expect(doc.meshSpecs(0)[0]?.model, 'the Mesh Renderer’s own model wins').toBe('builtin:box')
+  })
+
+  it('draws nothing once the Mesh Renderer is gone', () => {
     const doc = levelDoc(blank())
     const i = doc.placeModel('m', vec3(0, 0, 0))
     expect(doc.meshSpecs(i)).toHaveLength(1)
@@ -334,10 +352,10 @@ describe('components', () => {
     expect(doc.meshSpecs(i)).toEqual([])
   })
 
-  it('draws the colliders once the Mesh is gone, since the Renderer still says to draw', () => {
+  it('draws the colliders once the model is cleared, since the Mesh Renderer still says to draw', () => {
     const doc = levelDoc(blank())
     const i = doc.placeModel('m', vec3(0, 0, 0))
-    doc.removeComponent(i, idOf(doc, i, MESH))
+    doc.setParams(i, idOf(doc, i, RENDERER), { model: '' })
     expect(doc.meshSpecs(i)).toHaveLength(1)
     expect(doc.meshSpecs(i)[0]?.model, 'the collider shape, not a model').toBeUndefined()
   })
@@ -345,7 +363,7 @@ describe('components', () => {
   it('switches one off without deleting it', () => {
     const doc = levelDoc(blank())
     const i = doc.placeModel('m', vec3(0, 0, 0))
-    doc.removeComponent(i, idOf(doc, i, MESH))
+    doc.setParams(i, idOf(doc, i, RENDERER), { model: '' })
     const collider = idOf(doc, i, COLLIDER)
     doc.setComponentEnabled(i, collider, false)
     expect(doc.components(i).find((c) => c.id === collider)?.enabled).toBe(false)
@@ -357,7 +375,7 @@ describe('components', () => {
   it('draws one mesh per collider, each at its own centre', () => {
     const doc = levelDoc(blank())
     const i = doc.placeModel('m', vec3(0, 0, 0))
-    doc.removeComponent(i, idOf(doc, i, MESH))
+    doc.setParams(i, idOf(doc, i, RENDERER), { model: '' })
     const second = doc.addComponent(i, COLLIDER)!
     doc.setParams(i, second, { center: vec3(3, 0, 0) })
     expect(doc.meshSpecs(i).map((m) => m.transform.position)).toEqual([ZERO, vec3(3, 0, 0)])
@@ -370,8 +388,7 @@ describe('components', () => {
     doc.setParams(parent, idOf(doc, parent, MATERIAL_OVERRIDE), { material: MAT_B })
     const child = doc.placeModel('m', vec3(1, 0, 0))
     const moved = doc.reparent(child, parent, 0)
-    doc.removeComponent(moved, idOf(doc, moved, MESH))
-    doc.setParams(moved, idOf(doc, moved, RENDERER), { material: MAT_A })
+    doc.setParams(moved, idOf(doc, moved, RENDERER), { model: '', material: MAT_A })
     expect(doc.meshSpecs(moved)[0]?.material).toBe(MAT_B)
   })
 
@@ -552,7 +569,7 @@ describe('references', () => {
     expect(doc.linkToPrefab(i, PAD_ID, definition)).toBe(true)
     expect(doc.refOf(i)).toBe(PAD_ID)
     expect(doc.transformOf(i).position, 'the placement keeps its transform').toEqual(vec3(5, 0, 0))
-    expect(typesOn(doc, i), 'and reads its contents through the reference').toEqual([COLLIDER, MESH, RENDERER])
+    expect(typesOn(doc, i), 'and reads its contents through the reference').toEqual([COLLIDER, RENDERER])
   })
 
   it('refuses a node that is already a reference, and one inside a prefab', () => {
@@ -574,10 +591,10 @@ describe('prefab mode', () => {
     const doc = prefabDoc(padPrefab())
     const i = doc.placeNamed('platform', vec3(0, 1, 0))
     expect(doc.parentOf(i)).toBe(0)
-    expect(typesOn(doc, i)).toEqual([COLLIDER, MESH, RENDERER])
+    expect(typesOn(doc, i)).toEqual([COLLIDER, RENDERER])
     // Unit collider, the size in the scale (ADR 0090).
     expect(paramOn(doc, i, COLLIDER, 'shape')).toEqual({ kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) })
-    expect(paramOn(doc, i, MESH, 'model')).toBe('builtin:rounded-box')
+    expect(paramOn(doc, i, RENDERER, 'model')).toBe('builtin:rounded-box')
     expect(doc.transformOf(i).scale).toEqual(vec3(3, 0.3, 3))
     expect(doc.builtinOf(i)).toBe('builtin:rounded-box')
   })
@@ -586,10 +603,10 @@ describe('prefab mode', () => {
     const doc = prefabDoc(padPrefab())
     const i = doc.placeNamed('box', vec3(0, 0, 0))
     doc.setParams(i, idOf(doc, i, COLLIDER), { shape: { kind: 'box', halfExtents: vec3(4, 2, 1) } })
-    doc.setParams(i, idOf(doc, i, MESH), { model: 'builtin:sphere' })
+    doc.setParams(i, idOf(doc, i, RENDERER), { model: 'builtin:sphere' })
     expect(paramOn(doc, i, COLLIDER, 'shape'), 'the collider followed the shape').toEqual({ kind: 'ball', radius: 0.5 })
     expect(doc.builtinOf(i)).toBe('builtin:sphere')
-    doc.setParams(i, idOf(doc, i, MESH), { model: '' })
+    doc.setParams(i, idOf(doc, i, RENDERER), { model: '' })
     expect(doc.builtinOf(i), 'a file or nothing: the collider is a free shape again').toBeNull()
   })
 
@@ -724,13 +741,13 @@ describe('component order', () => {
     const doc = levelDoc(blank())
     const i = doc.placeModel('m', vec3(0, 0, 0))
     doc.addComponent(i, Bumper.type)
-    expect(typesOn(doc, i)).toEqual([COLLIDER, MESH, RENDERER, Bumper.type])
+    expect(typesOn(doc, i)).toEqual([COLLIDER, RENDERER, Bumper.type])
 
     doc.moveComponent(i, idOf(doc, i, Bumper.type), -1)
-    expect(typesOn(doc, i)).toEqual([COLLIDER, MESH, Bumper.type, RENDERER])
+    expect(typesOn(doc, i)).toEqual([COLLIDER, Bumper.type, RENDERER])
 
     doc.moveComponent(i, idOf(doc, i, Bumper.type), 1)
-    expect(typesOn(doc, i)).toEqual([COLLIDER, MESH, RENDERER, Bumper.type])
+    expect(typesOn(doc, i)).toEqual([COLLIDER, RENDERER, Bumper.type])
   })
 
   it('does nothing at either end', () => {
@@ -738,7 +755,7 @@ describe('component order', () => {
     const i = doc.placeModel('m', vec3(0, 0, 0))
     doc.moveComponent(i, idOf(doc, i, COLLIDER), -1)
     doc.moveComponent(i, idOf(doc, i, RENDERER), 1)
-    expect(typesOn(doc, i)).toEqual([COLLIDER, MESH, RENDERER])
+    expect(typesOn(doc, i)).toEqual([COLLIDER, RENDERER])
   })
 
   // The list belongs to the prefab, and a reordering is not something a per-placement override can express.

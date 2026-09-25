@@ -107,7 +107,7 @@ describe('a node draws only what it says it draws', () => {
   it('draws a model without colliding, which no Piece could do', () => {
     const loaded = load(
       levelOf([
-        { id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', MESH, { model: 'mesh1' }), comp('c1', RENDERER, { material: '' })] },
+        { id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c1', RENDERER, { model: 'mesh1', material: '' })] },
       ]),
     )
     expect(loaded.visuals).toHaveLength(1)
@@ -117,32 +117,37 @@ describe('a node draws only what it says it draws', () => {
 
   // A Renderer with nothing to render has nothing to draw. Inventing a box for it would put geometry in the
   // world that no data asked for.
-  it('draws nothing for a Renderer with no mesh and no collider', () => {
+  it('draws nothing for a Mesh Renderer with no model and no collider', () => {
     const loaded = load(levelOf([{ id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', RENDERER, { material: 'mat' })] }]))
     expect(loaded.visuals).toEqual([])
   })
 
-  /** Unity's rule, and the reason the two are separate components (ADR 0039). */
-  it('draws nothing for a Mesh with no Renderer, the way a MeshFilter alone shows nothing', () => {
+  it('draws the colliders when the Mesh Renderer names no model', () => {
     const loaded = load(
-      levelOf([{ id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', COLLIDER, box()), comp('c1', MESH, { model: 'mesh1' })] }]),
-    )
-    expect(loaded.visuals).toEqual([])
-    expect(loaded.nodes, 'still solid').toHaveLength(1)
-  })
-
-  it('falls back to the colliders when a Mesh names no model', () => {
-    const loaded = load(
-      levelOf([
-        {
-          id: 'n0',
-          transform: { position: vec3(0, 0, 0) },
-          components: [comp('c0', COLLIDER, box()), comp('c1', MESH, { model: '' }), comp('c2', RENDERER, { material: 'mat' })],
-        },
-      ]),
+      levelOf([{ id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', COLLIDER, box()), comp('c2', RENDERER, { model: '', material: 'mat' })] }]),
     )
     expect(loaded.visuals).toHaveLength(1)
-    expect(loaded.visuals[0]?.model, 'no mesh asset, so the collider shape').toBeUndefined()
+    expect(loaded.visuals[0]?.model, 'no model, so the collider shape').toBeUndefined()
+  })
+
+  /** A level the migration has not reached yet draws as it did (ADR 0153). */
+  describe('a retired Mesh', () => {
+    const withMesh = (...more: ReturnType<typeof comp>[]) =>
+      levelOf([{ id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', COLLIDER, box()), ...more] }])
+
+    it('still gives the Renderer beside it its model', () => {
+      expect(load(withMesh(comp('c1', MESH, { model: 'mesh1' }), comp('c2', RENDERER, { material: '' }))).visuals[0]?.model).toBe('mesh1')
+    })
+
+    it('draws nothing without a Renderer', () => {
+      const loaded = load(withMesh(comp('c1', MESH, { model: 'mesh1' })))
+      expect(loaded.visuals).toEqual([])
+      expect(loaded.nodes, 'still solid').toHaveLength(1)
+    })
+
+    it('gives way to the Renderer’s own model', () => {
+      expect(load(withMesh(comp('c1', MESH, { model: 'mesh1' }), comp('c2', RENDERER, { model: 'mesh2', material: '' }))).visuals[0]?.model).toBe('mesh2')
+    })
   })
 
   it('ignores a component that is switched off', () => {

@@ -25,7 +25,7 @@ react to being touched, it only drives.
 ```
 <root>            empty, no components — the thing you place
 ├── Zone          Collider: box, trigger on
-└── Boss          Boss (zone → Zone), Hazard, Collider (trigger on), Mesh, Renderer
+└── Boss          Boss (zone → Zone), Hazard, Collider (trigger on), Renderer (Mesh Renderer)
 ```
 
 Siblings under an empty root, **not** parent and child. A component moves the node it sits on and everything

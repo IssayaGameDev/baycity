@@ -202,5 +202,6 @@ why matters.
 | [0150](adr/0150-the-hierarchy-reads-like-unitys.md) | The Hierarchy reads like Unity's, and its drag is rebuilt |
 | [0151](adr/0151-prefab-editing-is-one-tree-and-one-translator.md) | Prefab editing is rebuilt on one tree and one translator |
 | [0152](adr/0152-the-inspector-is-cards-of-our-own-fields.md) | The Inspector is cards of our own fields |
+| [0153](adr/0153-one-mesh-renderer.md) | `Mesh` folds into `Renderer`: one Mesh Renderer |
 
 `Design archive/` holds superseded design material and is not maintained.

@@ -1,6 +1,6 @@
 # ADR 0039 — `Visual` splits into `Mesh` and `Renderer`
 
-Status: accepted. Corrects the visual half of ADR 0035's component set.
+Status: accepted, superseded in part by [ADR 0153](0153-one-mesh-renderer.md): once every shape was a built-in mesh nothing used the split, and `Mesh` folds into `Renderer`, shown as Mesh Renderer. `MaterialOverride` and the name `Renderer` stand. Corrects the visual half of ADR 0035's component set.
 
 ## Context
 

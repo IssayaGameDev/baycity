@@ -45,6 +45,11 @@ export interface ComponentDef<D extends ParamDecls = ParamDecls> {
    * load — it decides what a tool offers.
    */
   readonly attachesTo?: 'node' | 'player'
+  /**
+   * Still read, never added: a component whose job moved into another, kept only until a migration has folded
+   * every one in (`Mesh` into `Renderer`, ADR 0153). The editor's Add Component menus leave it out.
+   */
+  readonly retired?: boolean
   /** What the runner calls. Absent means this component is data only, and the runner skips it entirely. */
   readonly hooks?: ErasedHooks
 }
@@ -64,6 +69,8 @@ export interface ComponentSpec<D extends ParamDecls, S> {
   readonly moves?: boolean
   /** See `ComponentDef.attachesTo`. */
   readonly attachesTo?: 'node' | 'player'
+  /** See `ComponentDef.retired`. */
+  readonly retired?: boolean
   readonly init?: (params: Params<D>, ctx: Ctx) => S
   /** Once, when the level is instantiated. Unity's Awake and Start, merged. */
   readonly onAttach?: (self: Self<D, S>, ctx: Ctx) => void
@@ -106,6 +113,7 @@ export const defineComponent = <const D extends ParamDecls, S = undefined>(spec:
     ...(spec.singleton !== undefined ? { singleton: spec.singleton } : {}),
     ...(spec.moves !== undefined ? { moves: spec.moves } : {}),
     ...(spec.attachesTo !== undefined ? { attachesTo: spec.attachesTo } : {}),
+    ...(spec.retired !== undefined ? { retired: spec.retired } : {}),
     ...(hooks !== undefined ? { hooks } : {}),
   }
 }

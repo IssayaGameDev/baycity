@@ -22,12 +22,12 @@ import {
   LIGHT,
   MATERIAL_OVERRIDE,
   SPAWN,
-  MESH,
   RENDERER,
   boolParam,
   componentsOfType,
   effectiveNode,
   firstOfType,
+  modelOf,
   numberParam,
   stringParam,
   vec3Param,
@@ -37,7 +37,7 @@ import type { ColliderDesc, ComponentData, LevelConfig, Node, Level, Transform }
 
 /**
  * Turns a **node tree** into a live world (PLAN-component-system, stage C1): Rapier colliders from every
- * `Collider`, a renderer-agnostic draw list from `Renderer`/`Mesh`, a light list from every `Light`, and the
+ * `Collider`, a renderer-agnostic draw list from every `Renderer`, a light list from every `Light`, and the
  * clock-driven `update`/`render` that carries all of them.
  *
  * It reads seven component types, all of them the engine's own, and **no gameplay names at all**. What a
@@ -598,18 +598,12 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
 
     const colliders = componentsOfType(r.components, COLLIDER)
     /**
-     * `Renderer` says *that* this node draws; `Mesh` says *what* (ADR 0039). Unity's split, and its rule:
-     *
-     * - a `Renderer` with no `Mesh` draws the node's colliders — the greybox case, and most content
-     * - a `Renderer` with a `Mesh` draws the mesh
-     * - a `Mesh` with no `Renderer` draws nothing, exactly as a `MeshFilter` without a `MeshRenderer`
-     *
-     * A `Mesh` whose `model` is empty falls back to the colliders, which is the same fallback the old
-     * `source: 'model'` with no asset had.
+     * The Mesh Renderer (ADR 0153): no `Renderer`, nothing drawn; one with a `model`, the model; one without,
+     * the node's colliders — the greybox case. `modelOf` still reads a retired `Mesh` for a level not yet
+     * migrated.
      */
     const renderer = firstOfType(r.components, RENDERER)
-    const mesh = firstOfType(r.components, MESH)
-    const model = mesh === undefined ? '' : stringParam(mesh, 'model', '')
+    const model = modelOf(r.components)
     const drawsModel = renderer !== undefined && model !== ''
     const surfaced = material ?? (renderer === undefined ? '' : stringParam(renderer, 'material', ''))
 
@@ -674,7 +668,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
       /**
        * Drawn but not solid — impossible for a `Piece`, whose collider was mandatory.
        *
-       * Only a mesh reaches here. A `Renderer` with no `Mesh` and no collider has **nothing to draw**, and
+       * Only a model reaches here. A `Renderer` with no `model` and no collider has **nothing to draw**, and
        * inventing a unit box for it would put a shape in the world that no data asked for. That case is
        * reachable two ways, and both should be invisible: a Renderer added before a Collider, and a Collider
        * switched off.

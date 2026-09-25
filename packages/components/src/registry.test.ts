@@ -77,16 +77,21 @@ describe('the built-in registry', () => {
     expect(DEFAULT_REGISTRY.defaults('Bumper').power).toBeGreaterThan(Math.sqrt(2 * 55 * 3))
   })
 
-  // Unsurfaced and with no mesh: a fresh Renderer draws the node's colliders in grey, which is what greybox
-  // means and what almost every authored object is.
-  it('starts a renderer unsurfaced, and a mesh naming nothing', () => {
-    expect(DEFAULT_REGISTRY.defaults('Renderer')).toEqual({ material: '' })
-    expect(DEFAULT_REGISTRY.defaults('Mesh')).toEqual({ model: '' })
+  // No model and unsurfaced: a fresh Mesh Renderer draws the node's colliders in grey, which is what greybox
+  // means (ADR 0153).
+  it('starts a Mesh Renderer drawing its colliders, unsurfaced', () => {
+    expect(DEFAULT_REGISTRY.defaults('Renderer')).toEqual({ model: '', material: '' })
+    expect(Renderer.label).toBe('Mesh Renderer')
   })
 
-  it('offers only material assets where a material belongs', () => {
+  it('offers only model assets where a model belongs, and material assets where a material does', () => {
+    expect(Renderer.params.model.of).toBe('model')
     expect(Renderer.params.material.of).toBe('material')
-    expect(Mesh.params.model.of).toBe('model')
+  })
+
+  it('still reads a retired Mesh, and marks it so nothing offers one', () => {
+    expect(DEFAULT_REGISTRY.defaults('Mesh')).toEqual({ model: '' })
+    expect(Mesh.retired).toBe(true)
   })
 
   it('carries the bumper default in the schema, not in the editor', () => {
