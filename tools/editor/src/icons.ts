@@ -1,3 +1,5 @@
+import type { AssetKind } from '@mp/content'
+
 /**
  * The editor's icons: the sequence editor's (ADR 0147) — one per step kind, and the few its controls need —
  * the viewport's tools and toggles (ADR 0149), the Hierarchy's rows (ADR 0150), one per component in the
@@ -65,6 +67,17 @@ export type IconName =
   | 'sound'
   | 'font'
   | 'search'
+
+/** An asset kind's picture where it has none of its own: a tile before its preview, a row in *Used by*. */
+export const ASSET_ICON: Record<AssetKind, IconName> = {
+  prefab: 'prefab',
+  model: 'mesh',
+  material: 'material',
+  shader: 'material',
+  texture: 'image',
+  sound: 'sound',
+  font: 'font',
+}
 
 const DOT = (x: number, y: number): string => `<circle cx="${x}" cy="${y}" r="1.6" fill="currentColor" stroke="none"/>`
 

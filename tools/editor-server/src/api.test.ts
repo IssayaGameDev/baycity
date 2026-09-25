@@ -272,6 +272,26 @@ describe('assets', () => {
   })
 })
 
+describe('what the asset Inspector asks (ADR 0165)', () => {
+  it('lists each file with its size and date, and says who uses an asset, directly or through another', async () => {
+    await call('ada', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: {} })
+    const listed = await json<{ entries: { id: string; path: string }[]; files: Record<string, { bytes: number; modified: number }> }>(await call('ada', 'GET', '/api/assets'))
+    const material = listed.entries.find((e) => e.path === 'assets/materials/m.mat.json')!
+    expect(listed.files['assets/materials/m.mat.json']!.bytes).toBe(readFileSync(join(root, 'content/assets/materials/m.mat.json')).length)
+    expect(listed.files['assets/materials/m.mat.json']!.modified).toBeGreaterThan(0)
+
+    const prefab = { id: 'p', transform: { position: { x: 0, y: 0, z: 0 } }, components: [{ id: 'r', type: 'Renderer', params: { material: material.id } }] }
+    await call('ada', 'PUT', '/content/assets/prefabs/p.prefab.json', prefab)
+    const pad = (await json<{ entries: { id: string; path: string }[] }>(await call('ada', 'GET', '/api/assets'))).entries.find((e) => e.path === 'assets/prefabs/p.prefab.json')!
+    writeFileSync(join(root, LEVEL_FILE), `${JSON.stringify({ ...LEVEL, nodes: [{ id: 'n', prefab: pad.id, transform: { position: { x: 0, y: 0, z: 0 } }, components: [] }] })}
+`)
+
+    expect(await json(await call('ada', 'GET', `/api/assets/users?id=${material.id}`))).toEqual({ levels: [LV], assets: [pad.id] })
+    expect(await json(await call('ada', 'GET', `/api/assets/users?id=${pad.id}`))).toEqual({ levels: [LV], assets: [] })
+    expect((await call('ada', 'GET', '/api/assets/users?id=0000000000000000')).status).toBe(404)
+  })
+})
+
 describe('a material edited live (ADR 0159)', () => {
   it('takes an edit on a room connection, sends it to everyone, serves the live copy and refuses a PUT over it', async () => {
     await call('ada', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: { color: { kind: 'color', value: '#ff0000' } } })

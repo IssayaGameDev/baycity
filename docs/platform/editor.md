@@ -422,7 +422,7 @@ the games window's (ADR 0162).
 | --- | --- |
 | roots | `roots()`: `libraryDir(game)` labelled with the game's label, then `SHARED` labelled *Shared*; each drawn even with no file. A folder gone (deleted, moved, another game's now) falls back to the nearest one still there, else `SHARED` |
 | tree | `buildTree(db, folders, root)` per root, `flattenTree(tree, collapsed)`; `.row`s, `4 + depth × 14` px; a `chevron` twist only over children; a `folder` icon on each; no counts; the folder you are in `.sel`. A click goes there (and ends a search); going anywhere opens its ancestors |
-| tiles | `.ex-grid`, `--tile` px square: the folder's subfolders (`subfoldersOf`), then its files (`filterEntries({ libraries: [root], folder })`). `.pt` = `.pt-pic` (a kind icon, `KIND_ICON`; the preview `img.thumb` over it once the observer has it) + `.pt-name`. A folder tile: a click lights it in place (not redrawn, so a double-click survives), a double-click goes in. A file tile (ADR 0164): a click selects it (`onSelectAsset` → `selectAsset`, the asset Inspector), a sound, font or texture also in `.asset-preview`; a double-click on a prefab opens it (`onOpenPrefab`); a prefab or model drag says what it carries (`onDragAsset(id)`, `null` on `dragend`; `effectAllowed` `copyMove`) — *Placing* below. Greyed with why (`unplaceableWhy`), still selectable. All draggable onto folders; a right-click is `host.onContext` |
+| tiles | `.ex-grid`, `--tile` px square: the folder's subfolders (`subfoldersOf`), then its files (`filterEntries({ libraries: [root], folder })`). `.pt` = `.pt-pic` (a kind icon, `ASSET_ICON` in `icons.ts`; the preview `img.thumb` over it once the observer has it) + `.pt-name`. A folder tile: a click lights it in place (not redrawn, so a double-click survives), a double-click goes in. A file tile (ADR 0164): a click selects it (`onSelectAsset` → `selectAsset`, the asset Inspector); a double-click on a prefab opens it (`onOpenPrefab`); a prefab or model drag says what it carries (`onDragAsset(id)`, `null` on `dragend`; `effectAllowed` `copyMove`) — *Placing* below. Greyed with why (`unplaceableWhy`), still selectable. All draggable onto folders; a right-click is `host.onContext` |
 | list | the slider at `SIZE.list` (its minimum): `.ex-grid.list`, a line each, an 18 px picture |
 | faces | `.pt-people .pp` per `host.openers(id)` (ADR 0159), repainted in place by `openersChanged()` (`openAssetsChanged` in main) |
 | + | `host.menu`: *New folder…* (`askName` → `onMkdir(folder, name)`), *New material* (`onCreateAsset('material', folder)`), *Upload files…* (a hidden `input[type=file]`, accept = the server's `UPLOAD_EXTENSIONS`, → `onUpload`) |
@@ -588,6 +588,18 @@ Levels on the feed are not the watch's: one open here is live already, and one t
 `reloadAssets({ named?, fresh? })` reads the list, then `libraryChanges(before, after, named)` says what to refresh;
 `named` is an upload's paths (same id, new bytes), `fresh` starts the runtime over (boot, the feed's 410). The
 runtime is built over `libraryView`, so a new, renamed or moved asset needs none of this.
+
+## The asset Inspector (ADR 0165, `src/assetInspector.ts`)
+
+`show(id)` draws, top to bottom:
+
+| Part | |
+| --- | --- |
+| `.a-pic` | a texture: its file (`load` → the *Size* fact); a sound: `<audio controls autoplay>` (`loadedmetadata` → *Length*); a font: a sample (`FontFace`); else `ASSET_ICON` under `host.picture(kind, id)` = `previews.request(kind, id, done, 'big')`, 256 px, one cache with the tiles' (`PictureSize`), drawn again by `pictureChanged(id)` after `thumbnailsSoon` |
+| `.a-head` | name, `.a-openers`, meta `kind · named(path) · id` |
+| `.a-facts` | `fieldRow`s, wrapping: *Size* / *Length* (from the picture, placed first), prefab *Parts* and *Components* (`prefabFacts(root)`: every node, each type with its count, most first; `componentLabel` = the registry's label), model *Triangles* and *Meshes* (`modelFacts`: `runtime.load` if not loaded, then the clone's geometry), then *File* (`shownBytes`) and *Changed* (`AssetLibrary.fileOf(path)`, the server's `files`) |
+| material | the fields below |
+| `.a-users` | *Used by*: `fetchUsers(id)` (`GET /api/assets/users`) each time it is shown — `…`, then a `.a-use` per level (`level` icon, `levelLabel` `Game › name`, a click `guardUnsaved` → `openFile`) and per asset (`ASSET_ICON`, name, a click `selectAsset` + `project.reveal(path)`); *Nothing uses it.*; *The server could not say.* |
 
 **The asset Inspector's fields** are the object Inspector's (`controls.ts`, on `fieldRow` lines, `--lw` on
 `#asset-inspector`): shader and texture `selectField` (a texture with an `.a-thumb` beside it), colour

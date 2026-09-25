@@ -1643,23 +1643,6 @@
         width: 110px;
         accent-color: var(--accent);
       }
-      .asset-preview {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex: 0 0 auto;
-        min-height: 0;
-        padding: 0 6px 6px;
-      }
-      .asset-preview:empty {
-        display: none;
-      }
-      .asset-preview img {
-        max-height: 96px;
-        max-width: 40%;
-        object-fit: contain;
-        border: 1px solid var(--line);
-      }
       .font-sample {
         font-size: 20px;
       }
@@ -1718,6 +1701,88 @@
         color: #f0b849;
         font-size: 11px;
         margin: 4px 0;
+      }
+      /* The big picture on top (ADR 0165): a render, the texture, a sound's player, a font's sample. */
+      .a-pic {
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        max-height: 240px;
+        margin-bottom: 8px;
+        border-radius: 6px;
+        background: #0e1013 repeating-conic-gradient(#1b1e23 0% 25%, transparent 0% 50%) 50% / 16px 16px;
+        overflow: hidden;
+      }
+      .a-pic > img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+      .a-pic > img[hidden] {
+        display: none;
+      }
+      .a-pic-ic {
+        width: 34%;
+        height: 34%;
+        color: var(--dim);
+        stroke-width: 1.3;
+      }
+      .a-pic audio {
+        width: 90%;
+      }
+      .a-facts {
+        margin-bottom: 6px;
+      }
+      /* A fact says all of itself: a prefab's components run onto a second line rather than off the edge. */
+      .a-facts .irow-v {
+        padding: 5px 0;
+        white-space: normal;
+      }
+      /* Who uses it (ADR 0165): a level or an asset per line, a click to it. */
+      .a-sec {
+        margin: 12px 0 4px;
+        padding-top: 8px;
+        border-top: 1px solid var(--line);
+        color: var(--dim);
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .a-use {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        padding: 3px 6px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .a-use:hover {
+        background: var(--hover);
+      }
+      .a-use .ic {
+        flex: 0 0 auto;
+        width: 14px;
+        height: 14px;
+        color: var(--dim);
+      }
+      .a-use span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .a-none {
+        padding: 2px 6px;
+        color: var(--dim);
+        font-size: 11.5px;
       }
 
       /*

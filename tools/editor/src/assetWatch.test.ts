@@ -14,6 +14,7 @@ const lib = (entries: AssetEntry[], materials: Record<string, MaterialAsset> = {
   libraries: ['assets'],
   folders,
   seq: 0,
+  fileOf: () => undefined,
   urlOf: (p) => p,
   urlOfId: () => null,
   materialOf: (id) => materials[id],

@@ -25,6 +25,8 @@ export interface AssetLibrary {
   folders: string[]
   /** Where the server's change feed stood when this list was read: what a watch starts from (ADR 0156). */
   seq: number
+  /** A file's size and when it last changed (ADR 0165), by path; `undefined` when the server did not say. */
+  fileOf: (path: string) => FileFacts | undefined
   /** URL the bytes of an asset are served from. */
   urlOf: (path: string) => string
   urlOfId: (assetId: string) => string | null
@@ -80,6 +82,21 @@ const fetchWithOrigin = async (url: string): Promise<{ json: unknown; origin: Or
   return { json: (await r.json()) as unknown, origin }
 }
 
+/** A file's size in bytes, and when it last changed, in ms since the epoch (ADR 0165). */
+export interface FileFacts {
+  bytes: number
+  modified: number
+}
+
+/** Who uses an asset (ADR 0165): the levels, qualified, and the assets, by id — directly or through others. */
+export const fetchUsers = async (assetId: string): Promise<{ levels: string[]; assets: string[] } | null> => {
+  const r = await fetch(`/api/assets/users?id=${encodeURIComponent(assetId)}`).catch(() => null)
+  if (r === null || !r.ok) return null
+  const body = (await r.json().catch(() => null)) as { levels?: unknown; assets?: unknown } | null
+  const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [])
+  return body === null ? null : { levels: strings(body.levels), assets: strings(body.assets) }
+}
+
 const isMaterial = (v: unknown): v is MaterialAsset =>
   typeof v === 'object' && v !== null && typeof (v as { shader?: unknown }).shader === 'string'
 
@@ -104,7 +121,13 @@ const post = async (route: string, body: unknown): Promise<void> => {
  * made costs its own file, not the whole library.
  */
 export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refetch?: ReadonlySet<string> } = {}): Promise<AssetLibrary> => {
-  const { entries, libraries, folders, seq } = await fetchJson<{ entries: AssetEntry[]; libraries?: string[]; folders: string[]; seq?: number }>('/api/assets')
+  const { entries, libraries, folders, seq, files } = await fetchJson<{
+    entries: AssetEntry[]
+    libraries?: string[]
+    folders: string[]
+    seq?: number
+    files?: Record<string, FileFacts>
+  }>('/api/assets')
   const db = buildDatabase(entries)
   const materials = new Map<string, MaterialAsset>()
   const origins = new Map<string, Origin>()
@@ -164,6 +187,7 @@ export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refe
     libraries: libraries ?? [libraryDir(null)],
     folders,
     seq: seq ?? 0,
+    fileOf: (path) => files?.[path],
     urlOf: assetUrl,
     urlOfId: (id) => {
       const entry = db.byId[id]

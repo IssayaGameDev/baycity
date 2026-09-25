@@ -30,14 +30,18 @@ export interface PreviewHost {
 
 export type PreviewKind = 'prefab' | 'model' | 'material' | 'shader' | 'texture'
 
+/** A Project tile's picture, or the asset Inspector's big one (ADR 0165). */
+export type PictureSize = 'tile' | 'big'
+const PIXELS: Record<PictureSize, number> = { tile: 96, big: 256 }
+
 export interface Previews {
   /** A data URL for this tile, or `null` when the kind has no rendered preview. Cached. */
-  of: (kind: PreviewKind, key: string) => string | null
+  of: (kind: PreviewKind, key: string, size?: PictureSize) => string | null
   /**
    * Ask for a preview and be called back once, whether it was cached, had to be rendered, or had to be
    * fetched first. One tile's answer fills one tile — a newly loaded asset does not redraw the panel.
    */
-  request: (kind: PreviewKind, key: string, done: (url: string | null) => void) => void
+  request: (kind: PreviewKind, key: string, done: (url: string | null) => void, size?: PictureSize) => void
   /** Forget one entry (an edited material) or everything (a reimport). */
   invalidate: (key?: string) => void
   dispose: () => void
@@ -120,8 +124,15 @@ export const createPreviews = (host: PreviewHost): Previews => {
   const pending = new Set<string>()
   /** Fetched and still not there: a dangling id. Remembered, or the panel would ask on every redraw. */
   const failed = new Set<string>()
-  let thumbnailer: Thumbnailer | null = null
-  const lazy = (): Thumbnailer => (thumbnailer ??= createThumbnailer({ size: 96, fill: 0.8 }))
+  const thumbnailers = new Map<PictureSize, Thumbnailer>()
+  const lazy = (size: PictureSize): Thumbnailer => {
+    let t = thumbnailers.get(size)
+    if (t === undefined) {
+      t = createThumbnailer({ size: PIXELS[size], fill: 0.8 })
+      thumbnailers.set(size, t)
+    }
+    return t
+  }
 
   /** Whether the runtime can now answer for this id — the test for "did the fetch actually help". */
   const isLoaded = (kind: PreviewKind, key: string): boolean =>
@@ -134,12 +145,12 @@ export const createPreviews = (host: PreviewHost): Previews => {
    * Fetch a missing asset once, then answer everyone who asked. Nothing retries: an id that is fetched and
    * still absent is dangling, and asking again on every redraw would be a loop.
    */
-  const fetchThen = (kind: PreviewKind, key: string, done: (url: string | null) => void): void => {
+  const fetchThen = (kind: PreviewKind, key: string, done: (url: string | null) => void, size: PictureSize): void => {
     if (failed.has(key)) {
       done(null)
       return
     }
-    const id = `${kind}:${key}`
+    const id = `${size}:${kind}:${key}`
     const queue = waiting.get(id)
     if (queue !== undefined) {
       queue.push(done)
@@ -160,12 +171,12 @@ export const createPreviews = (host: PreviewHost): Previews => {
           return
         }
         cache.delete(id)
-        const url = of(kind, key)
+        const url = of(kind, key, size)
         for (const cb of callbacks) cb(url)
       })
   }
 
-  const generate = (kind: string, key: string): string | null => {
+  const generate = (kind: string, key: string, size: PictureSize): string | null => {
     if (kind === 'texture') {
       const entry = host.db()?.byId[key]
       return entry === undefined ? null : host.urlOf(entry.path)
@@ -174,31 +185,31 @@ export const createPreviews = (host: PreviewHost): Previews => {
     if (kind === 'material' || kind === 'shader') {
       // Only a material compiles to something previewable; a shader asset has no values of its own yet.
       const compiled = host.runtime()?.material(key)
-      return compiled == null ? null : lazy().renderMaterial(compiled)
+      return compiled == null ? null : lazy(size).renderMaterial(compiled)
     }
 
     if (kind === 'model') {
       const model = host.runtime()?.model(key)
-      return model == null ? null : lazy().render(model)
+      return model == null ? null : lazy(size).render(model)
     }
 
     const prefab = host.prefabFor(key)
     if (prefab === undefined) return null
     const subject = prefabObject(prefab, host.runtime())
     if (subject === null) return null
-    const url = lazy().render(subject)
+    const url = lazy(size).render(subject)
     ;(subject.userData.dispose as (() => void) | undefined)?.()
     return url
   }
 
-  const of = (kind: PreviewKind, key: string): string | null => {
+  const of = (kind: PreviewKind, key: string, size: PictureSize = 'tile'): string | null => {
     {
-      const id = `${kind}:${key}`
+      const id = `${size}:${kind}:${key}`
       const hit = cache.get(id)
       if (hit !== undefined) return hit
       let made: string | null = null
       try {
-        made = generate(kind, key)
+        made = generate(kind, key, size)
       } catch (e) {
         // A preview is decoration. A model that will not frame must not take the panel down with it.
         console.warn(`preview ${id}: ${String(e)}`)
@@ -210,15 +221,15 @@ export const createPreviews = (host: PreviewHost): Previews => {
 
   return {
     of,
-    request: (kind, key, done) => {
-      const made = of(kind, key)
+    request: (kind, key, done, size = 'tile') => {
+      const made = of(kind, key, size)
       // Null with nothing loaded yet means "not fetched", which is worth one fetch. Null after a fetch is
       // a dangling id, and `fetchThen` remembers that so a redraw cannot loop on it.
       if (made !== null || kind === 'prefab' || kind === 'texture' || isLoaded(kind, key)) {
         done(made)
         return
       }
-      fetchThen(kind, key, done)
+      fetchThen(kind, key, done, size)
     },
     invalidate: (key) => {
       // A reimport can turn a dangling id into a real one, so forget the failures too.
@@ -227,8 +238,8 @@ export const createPreviews = (host: PreviewHost): Previews => {
       else for (const id of [...cache.keys()]) if (id.endsWith(`:${key}`)) cache.delete(id)
     },
     dispose: () => {
-      thumbnailer?.dispose()
-      thumbnailer = null
+      for (const t of thumbnailers.values()) t.dispose()
+      thumbnailers.clear()
       cache.clear()
     },
   }

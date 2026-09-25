@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
-import { buildDatabase, type MaterialAsset } from '@mp/content'
+import { buildDatabase, type AssetEntry, type MaterialAsset, type Node } from '@mp/content'
 import { describe, expect, it } from 'vitest'
 
-import { createAssetInspector } from './assetInspector'
+import { createAssetInspector, prefabFacts, shownBytes, type AssetInspectorHost } from './assetInspector'
 
 /**
  * A material stays up across edits (ADR 0157): the panel is not redrawn after each one, so every edit is made
@@ -10,14 +10,29 @@ import { createAssetInspector } from './assetInspector'
  */
 
 const M = 'mmmmmmmmmmmmmmmm'
-const rig = () => {
+const P = 'pppppppppppppppp'
+const ENTRIES: AssetEntry[] = [
+  { id: M, kind: 'material', path: 'assets/materials/m.mat.json', name: 'm' },
+  { id: P, kind: 'prefab', path: 'assets/prefabs/pad.prefab.json', name: 'pad' },
+]
+const PAD: Node = {
+  id: 'root',
+  transform: { position: { x: 0, y: 0, z: 0 } },
+  components: [{ id: 'a', type: 'Renderer', params: {} }],
+  children: [
+    { id: 'b', transform: { position: { x: 0, y: 0, z: 0 } }, components: [{ id: 'c', type: 'Renderer', params: {} }, { id: 'd', type: 'Hazard', params: {} }] },
+  ],
+}
+
+const rig = (over: Partial<AssetInspectorHost> = {}, show: string = M) => {
   const edits: { label: string; ongoing: boolean }[] = []
+  const calls: string[] = []
   const openers: { name: string; colour: string }[] = []
   const store = new Map<string, MaterialAsset>([[M, { shader: 'standard', params: { color: { kind: 'color', value: '#ff0000' }, tiling: { kind: 'vec2', value: { x: 1, y: 1 } } } }]])
   const container = document.createElement('div')
   document.body.replaceChildren(container)
   const inspector = createAssetInspector(container, {
-    db: () => buildDatabase([{ id: M, kind: 'material', path: 'materials/m.mat.json', name: 'm' }]),
+    db: () => buildDatabase(ENTRIES),
     urlOf: (p) => p,
     materialOf: (id) => store.get(id),
     // What the library does: take the edit at once.
@@ -26,10 +41,21 @@ const rig = () => {
       edits.push({ label, ongoing })
     },
     openers: () => openers,
+    fileOf: (path) => (path.endsWith('pad.prefab.json') ? { bytes: 2560, modified: Date.UTC(2026, 8, 25, 12) } : undefined),
+    picture: (_kind, _id, done) => done('data:image/png;base64,'),
+    prefabOf: (id) => (id === P ? PAD : undefined),
+    componentLabel: (type) => (type === 'Renderer' ? 'Mesh Renderer' : type),
+    modelFacts: async () => null,
+    users: async () => ({ levels: ['keyboard/Roblox'], assets: [M] }),
+    levelLabel: (q) => `Keyboard › ${q.slice(q.indexOf('/') + 1)}`,
+    named: (path) => `Shared/${path.slice('assets/'.length)}`,
+    onOpenLevel: (q) => calls.push(`open ${q}`),
+    onSelectAsset: (id) => calls.push(`select ${id}`),
+    ...over,
   })
-  inspector.show(M)
+  inspector.show(show)
   const row = (label: string): HTMLElement => [...container.querySelectorAll<HTMLElement>('.irow')].find((r) => r.querySelector('.irow-l')?.textContent === label)!
-  return { store, container, row, inspector, edits, openers }
+  return { store, container, row, inspector, edits, openers, calls }
 }
 
 /** Type into a number field (\`controls.ts\`): it is written when the field lets go of the keyboard. */
@@ -127,5 +153,51 @@ describe('who else has it open (ADR 0159)', () => {
     openers.length = 0
     inspector.openersChanged()
     expect(icons()).toEqual([])
+  })
+})
+
+describe('what the Inspector shows of each kind (ADR 0165)', () => {
+  const flush = async (): Promise<void> => {
+    for (let i = 0; i < 4; i++) await Promise.resolve()
+  }
+
+  it('shows a prefab’s picture, its parts and components, its file, and who uses it — each a click away', async () => {
+    const { container, row, calls } = rig({}, P)
+    await flush()
+    const img = container.querySelector<HTMLImageElement>('.a-pic img')!
+    expect(img.hidden, 'its render, once it is on the page').toBe(false)
+    expect(row('Parts').querySelector('.irow-v')!.textContent).toBe('2 objects')
+    expect(row('Components').querySelector('.irow-v')!.textContent).toBe('Mesh Renderer ×2, Hazard')
+    expect(row('File').querySelector('.irow-v')!.textContent).toBe('2.5 KB')
+    expect(container.querySelector('.a-meta')!.textContent).toBe(`prefab · Shared/prefabs/pad.prefab.json · ${P}`)
+    const uses = [...container.querySelectorAll<HTMLButtonElement>('.a-use')]
+    expect(uses.map((u) => u.textContent)).toEqual(['Keyboard › Roblox', 'm'])
+    uses[0]!.click()
+    uses[1]!.click()
+    expect(calls).toEqual(['open keyboard/Roblox', `select ${M}`])
+  })
+
+  it('says so when nothing uses it, and when the server cannot say', async () => {
+    const none = rig({ users: async () => ({ levels: [], assets: [] }) }, P)
+    await flush()
+    expect(none.container.querySelector('.a-users .a-none')!.textContent).toBe('Nothing uses it.')
+    const down = rig({ users: async () => null }, P)
+    await flush()
+    expect(down.container.querySelector('.a-users .a-none')!.textContent).toBe('The server could not say.')
+  })
+
+  it('keeps a material’s fields between its facts and who uses it', async () => {
+    const { container } = rig()
+    await flush()
+    const order = [...container.children].map((c) => c.className.split(' ')[0])
+    expect(order[0]).toBe('a-pic')
+    expect(order.slice(1, 3)).toEqual(['a-head', 'a-facts'])
+    expect(order.at(-1)).toBe('a-users')
+    expect(order).toContain('irow')
+  })
+
+  it('counts a prefab’s parts and components, and shows a size a person reads', () => {
+    expect(prefabFacts(PAD)).toEqual({ parts: 2, components: [{ type: 'Renderer', count: 2 }, { type: 'Hazard', count: 1 }] })
+    expect([shownBytes(900), shownBytes(2560), shownBytes(250_000), shownBytes(3_400_000)]).toEqual(['900 B', '2.5 KB', '244 KB', '3.2 MB'])
   })
 })

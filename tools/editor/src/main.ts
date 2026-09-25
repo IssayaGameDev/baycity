@@ -54,7 +54,7 @@ import {
 import { createHierarchy, type Hierarchy } from './hierarchy'
 import { createInspector, type Inspector } from './inspector'
 import { createAssetInspector, type AssetInspector } from './assetInspector'
-import { loadAssetLibrary, type AssetLibrary } from './assetsApi'
+import { fetchUsers, loadAssetLibrary, type AssetLibrary } from './assetsApi'
 import { libraryChanges, watchAssets } from './assetWatch'
 import { createAssetSync, parseAssetEvent, type Origin } from './assetSync'
 import { canMoveFolder, movedInto } from './assetTree'
@@ -1564,7 +1564,6 @@ const dragPlace = createDragPlace(canvas, {
 const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   db: () => assets?.db ?? null,
   folders: () => assets?.folders ?? [],
-  urlOf: (path) => assets?.urlOf(path) ?? path,
   game: () => (activeMode === undefined ? null : { name: activeMode.name, label: activeMode.label }),
   menu: contextMenu,
   selectedAsset: () => selectedAsset,
@@ -1908,6 +1907,42 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
   urlOf: (path) => assets?.urlOf(path) ?? path,
   materialOf: (id) => assets?.materialOf(id),
   openers: (id) => room.openersOf(id).map((p) => ({ name: p.name, colour: peerCss(p.connId) })),
+  fileOf: (path) => assets?.fileOf(path),
+  picture: (kind, id, done) => previews.request(kind, id, done, 'big'),
+  prefabOf: (id) => assets?.prefabOf(id),
+  componentLabel: (type) => registry().get(type)?.label ?? type,
+  /** Loaded on the way if nothing placed it yet: the runtime only preloads what the open document uses. */
+  modelFacts: async (id) => {
+    if (runtime === null) return null
+    if (runtime.model(id) === null) await runtime.load([id]).catch(() => undefined)
+    const model = runtime.model(id)
+    if (model === null) return null
+    let triangles = 0
+    let meshes = 0
+    model.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return
+      meshes++
+      const g = o.geometry as THREE.BufferGeometry
+      triangles += (g.index?.count ?? g.getAttribute('position')?.count ?? 0) / 3
+    })
+    return { triangles: Math.round(triangles), meshes }
+  },
+  users: (id) => fetchUsers(id),
+  levelLabel: (qualified) => {
+    const ref = parseQualified(qualified)
+    return ref === null ? qualified : `${MODES[ref.game]?.label ?? ref.game} › ${ref.name}`
+  },
+  named: (path) => project.named(path),
+  onOpenLevel: (qualified) =>
+    void edits.guardUnsaved().then(async (go) => {
+      if (go) await openFile(qualified)
+    }),
+  // As a tile clicked in the Project window: selected there too, its folder open.
+  onSelectAsset: (id) => {
+    const path = assets?.db.byId[id]?.path
+    selectAsset(id)
+    if (path !== undefined) project.reveal(path)
+  },
   /**
    * A material edit is ops on its live document (ADR 0159): the difference between it as shown and as edited,
    * shown at once and sent behind (`assetSync.ts`), and an entry in the one undo history. No lock: anyone edits
@@ -1998,6 +2033,7 @@ const thumbnailsSoon = (): void => {
     thumbnailTimer = null
     previews.invalidate()
     project.render()
+    if (selectedAsset !== null) assetInspector.pictureChanged(selectedAsset)
   }, 400)
 }
 

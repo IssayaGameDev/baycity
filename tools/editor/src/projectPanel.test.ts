@@ -50,7 +50,6 @@ const rig = (over: Partial<ProjectHost> = {}) => {
     db: () => DB,
     game: () => ({ name: 'keyboard', label: 'Keyboard' }),
     folders: () => ['assets/empty'],
-    urlOf: (p) => `/content/${p}`,
     menu: {
       open: (_at, items) => void (menu = items),
       close: () => {},
@@ -183,6 +182,14 @@ describe('the Project window', () => {
     expect($$('.ex-grid')[0]!.classList.contains('list')).toBe(true)
     const again = rig()
     expect((again.$$('.ex-size')[0] as HTMLInputElement).value).toBe(String(SIZE.min))
+  })
+
+  it('goes to a file the Inspector names, and names it in the bottom bar', () => {
+    const { project, crumbs, $$ } = rig()
+    project.reveal('assets/textures/stone/brick.png')
+    expect(crumbs()).toEqual(['Shared', '›', 'textures', '›', 'stone'])
+    expect($$('.ex-foot-path')[0]!.textContent).toBe('Shared/textures/stone/brick.png')
+    expect(project.named('keyboard/assets/materials/key.mat.json')).toBe('Keyboard/materials/key.mat.json')
   })
 
   it('leaves a folder that is gone for the nearest one still there', () => {

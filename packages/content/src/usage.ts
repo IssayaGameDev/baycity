@@ -50,6 +50,26 @@ export const assetsUsedBy = (json: unknown, isAssetId: (s: string) => boolean, c
   return used
 }
 
+/**
+ * Who uses asset `id` (ADR 0165), directly or through what they use: the levels, by name, and the other assets — a
+ * prefab, a material — by id; each sorted. What the asset Inspector's *Used by* lists.
+ */
+export const usersOf = (
+  id: string,
+  levels: Iterable<readonly [name: string, json: unknown]>,
+  assets: Iterable<readonly [assetId: string, json: unknown]>,
+  isAssetId: (s: string) => boolean,
+  contentsOf: (id: string) => unknown,
+): { levels: string[]; assets: string[] } => {
+  const inLevels: string[] = []
+  for (const [name, json] of levels) if (assetsUsedBy(json, isAssetId, contentsOf).has(id)) inLevels.push(name)
+  const inAssets: string[] = []
+  for (const [other, json] of assets) {
+    if (other !== id && json !== undefined && assetsUsedBy(json, isAssetId, contentsOf).has(id)) inAssets.push(other)
+  }
+  return { levels: inLevels.sort(), assets: inAssets.sort() }
+}
+
 /** For each asset some level uses, the names of the levels using it, sorted. Assets no level uses are absent. */
 export const levelsUsing = (
   levels: Iterable<readonly [name: string, json: unknown]>,

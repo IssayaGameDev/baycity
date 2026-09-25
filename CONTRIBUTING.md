@@ -34,7 +34,8 @@ every level using it changes, including levels you have not opened.
 saves into whichever folder you have open in the **Project** panel, so double-click into `prefabs` first.
 
 **To place one:** drag its tile from the Project panel into the viewport. A see-through copy shows where it will
-land; let go to place it, Esc to cancel. A click on a tile only selects it.
+land; let go to place it, Esc to cancel. A click on a tile selects it: the Inspector shows what it is and which
+levels and prefabs use it — look there before you move or delete something.
 
 **To change one:** click the object and press **Open** in the Inspector, or right-click it and pick *Open
 prefab*. One that is placed nowhere is opened by double-clicking its tile in the Project panel. You are now editing the

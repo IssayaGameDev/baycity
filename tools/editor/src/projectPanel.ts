@@ -2,7 +2,7 @@ import { ASSET_KINDS, buildDatabase, libraryDir, type AssetDatabase, type AssetE
 
 import { ancestorsOf, buildTree, filterEntries, flattenTree, folderOf, libraryRootOf, SHARED, shownFolder, subfoldersOf, type TreeNode } from './assetTree'
 import { askName } from './confirm'
-import { icon, type IconName } from './icons'
+import { ASSET_ICON, icon, type IconName } from './icons'
 import type { ContextMenu } from './menu'
 import { initials } from './people'
 
@@ -30,7 +30,6 @@ export interface ProjectHost {
   game: () => { name: string; label: string } | null
   /** Folders on disk, including the empty ones no asset path can imply. */
   folders: () => readonly string[]
-  urlOf: (path: string) => string
   /** The editor's menu: the **+** menu and the kind filter open in it. */
   menu: ContextMenu
   selectedAsset: () => string | null
@@ -79,6 +78,10 @@ export interface Project {
   folder: () => string
   /** Who has which asset open changed: the faces on the tiles, redrawn in place. */
   openersChanged: () => void
+  /** Go to where this file is and light it — one picked in the Inspector's *Used by* (ADR 0165). */
+  reveal: (path: string) => void
+  /** A path as this window names it: its root's label, then the path inside. */
+  named: (path: string) => string
 }
 
 const KIND_LABEL: Record<AssetKind, string> = {
@@ -89,17 +92,6 @@ const KIND_LABEL: Record<AssetKind, string> = {
   shader: 'Shaders',
   sound: 'Sounds',
   font: 'Fonts',
-}
-
-/** A tile's picture until its preview arrives, and for good where there is none. */
-const KIND_ICON: Record<AssetKind, IconName> = {
-  prefab: 'prefab',
-  model: 'mesh',
-  material: 'material',
-  shader: 'material',
-  texture: 'image',
-  sound: 'sound',
-  font: 'font',
 }
 
 /** Kinds a drag into the viewport places. */
@@ -172,9 +164,8 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
   const body = el('div', 'ex-body')
   const treePane = el('div', 'ex-tree')
   const grid = el('div', 'ex-grid')
-  const preview = el('div', 'asset-preview')
   const right = el('div', 'ex-right')
-  right.append(grid, preview)
+  right.append(grid)
   body.append(treePane, right)
   const foot = el('div', 'ex-foot')
   container.append(head, body, foot)
@@ -309,7 +300,6 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     focused = null
     // The tree shows where you went: every folder above it opens.
     for (const a of ancestorsOf(target, libraryRootOf(target))) collapsed.delete(a)
-    preview.replaceChildren()
     render()
   }
 
@@ -484,7 +474,7 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     const placeable = PLACEABLE.has(entry.kind)
     const previewKind = UNPREVIEWABLE.has(entry.kind) ? null : (entry.kind as PreviewKind)
     const why = placeable ? host.unplaceableWhy(entry.id) : null
-    const t = tile(entry.path, entry.name, host.selectedAsset() === entry.id, KIND_ICON[entry.kind], previewKind, entry.id)
+    const t = tile(entry.path, entry.name, host.selectedAsset() === entry.id, ASSET_ICON[entry.kind], previewKind, entry.id)
     t.dataset['id'] = entry.id
     t.title = why === null ? named(entry.path) : `${named(entry.path)} — ${why}`
     // Greyed rather than hidden: the file exists and is worth seeing; it is this game it cannot go into.
@@ -492,7 +482,6 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     t.addEventListener('click', () => {
       focused = entry.path
       host.onSelectAsset(entry.id)
-      showPreview(entry)
       paintFoot()
     })
     if (entry.kind === 'prefab') t.addEventListener('dblclick', () => host.onOpenPrefab(entry.id))
@@ -509,34 +498,6 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     contextMenu(t, entry.path, false)
     paintPeople(t)
     return t
-  }
-
-  /** Audition a sound, sample a font, enlarge a texture; nothing for the other kinds. */
-  const showPreview = (entry: AssetEntry): void => {
-    preview.replaceChildren()
-    const url = host.urlOf(entry.path)
-    if (entry.kind === 'texture') {
-      const img = el('img')
-      img.src = url
-      img.alt = entry.name
-      preview.append(img)
-    } else if (entry.kind === 'sound') {
-      const audio = el('audio')
-      audio.src = url
-      audio.controls = true
-      audio.autoplay = true
-      preview.append(audio)
-    } else if (entry.kind === 'font') {
-      const family = `preview-${entry.id}`
-      const sample = el('div', 'font-sample', 'The quick brown fox 0123456789')
-      sample.style.fontFamily = `"${family}", system-ui, sans-serif`
-      preview.append(sample)
-      // Loaded rather than declared, so a font that fails says so instead of silently using the UI font.
-      void new FontFace(family, `url(${url})`)
-        .load()
-        .then((face) => void document.fonts.add(face))
-        .catch(() => (sample.textContent = `${entry.name}: could not be loaded`))
-    }
   }
 
   const render = (): void => {
@@ -584,5 +545,15 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     openersChanged: () => {
       for (const t of grid.querySelectorAll<HTMLElement>('.pt[data-id]')) paintPeople(t)
     },
+    reveal: (path) => {
+      search = ''
+      kind = null
+      goTo(folderOf(path))
+      focused = path
+      paintFoot()
+      const shown = [...grid.querySelectorAll<HTMLElement>('.pt')].find((t) => t.dataset['path'] === path)
+      shown?.scrollIntoView({ block: 'nearest' })
+    },
+    named,
   }
 }

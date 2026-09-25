@@ -15,6 +15,7 @@ import type { LiveAssets } from './liveAssets'
 import { gameDocId, isAssetOp, isLiveAssetPath } from '../../../packages/content/src/liveAssets'
 import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './assetOps'
 import { componentTypesIn, levelMoveRefusal, libraryName, moveRefusal } from './libraryMoves'
+import { usersOf } from '../../../packages/content/src/usage'
 import type { ChangeFeed } from './changes'
 import type { User } from './config'
 import { docKey, LiveError, type FieldSpot, type Live } from './live'
@@ -41,7 +42,9 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *   GET/PUT /api/games/:name          → { components, settings? } (ADR 0077, 0087). GET says what it served
  *                                       (`x-asset-epoch`, `x-asset-seq`) and serves the live copy; PUT is 409 while
  *                                       the file is open live (ADR 0162)
- *   GET  /api/assets                  → { entries, libraries, folders, seq } (runs the importer; seq: the change feed's position)
+ *   GET  /api/assets                  → { entries, libraries, folders, seq, files } (runs the importer; seq: the change feed's
+ *                                       position; files: each entry's { bytes, modified } by path, ADR 0165)
+ *   GET  /api/assets/users?id=        → { levels, assets } — who uses it, directly or through others (ADR 0165)
  *   POST /api/assets/mkdir|move|delete → { path } · { from, to } · { path } — a move into another library is 409 while
  *                                       something would be left using what it may not (ADR 0161)
  *   POST /api/assets/upload?path=     → raw bytes → { entry }   (textures and .glb, capped, replace keeps the id)
@@ -356,7 +359,29 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       rescanFor(user)
       // `seq`: where the change feed stood when this list was read, in the same tick, so an editor watching the
       // feed from here misses nothing and replays nothing (ADR 0156).
-      sendJson(res, 200, { entries: assets.entries(), libraries: libraryFolders(CONTENT), folders: assetFolders(), seq: opts.changes?.seq() ?? 0 })
+      // Each file's size and when it last changed (ADR 0165): the Inspector's facts, the Project window's date order.
+      const files: Record<string, { bytes: number; modified: number }> = {}
+      for (const e of assets.entries()) {
+        const file = safeJoin(CONTENT, e.path)
+        if (file === null || !existsSync(file)) continue
+        const st = statSync(file)
+        files[e.path] = { bytes: st.size, modified: Math.round(st.mtimeMs) }
+      }
+      sendJson(res, 200, { entries: assets.entries(), libraries: libraryFolders(CONTENT), folders: assetFolders(), seq: opts.changes?.seq() ?? 0, files })
+      return true
+    }
+
+    if (url === '/api/assets/users' && req.method === 'GET') {
+      // Every level and every asset as it is now — an open document ahead of its file — so a placement made a
+      // moment ago counts.
+      const id = query.get('id') ?? ''
+      if (assets.byId(id) === undefined) return sendJson(res, 404, { error: `no asset ${id}` }), true
+      const levels = levelFiles().map(({ ref, file }) => {
+        const name = qualify(ref)
+        return [name, levelNow(name, file)] as const
+      })
+      const others = assets.entries().map((e) => [e.id, assetJsonNow(e.id)] as const)
+      sendJson(res, 200, usersOf(id, levels, others, (s) => assets.byId(s) !== undefined, assetJsonNow))
       return true
     }
 

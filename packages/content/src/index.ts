@@ -114,4 +114,4 @@ export {
 export type { AssetDatabase, AssetEntry, AssetKind, AssetMeta, MaterialAsset, MaterialValue } from './assets'
 export { LiveAssetError, applyAssetOps, diffAssetOps, gameDocId, gameOfDocId, isAssetOp, isLiveAssetPath, LIVE_ASSET_KINDS, mergeAssetOps, validateLiveAsset } from './liveAssets'
 export type { AssetOp, LiveKind } from './liveAssets'
-export { assetsUsedBy, levelsUsing } from './usage'
+export { assetsUsedBy, levelsUsing, usersOf } from './usage'
