@@ -10,10 +10,12 @@ import { prefabRefsIn } from '../../../packages/content/src/prefabs'
 import type { Level } from '../../../packages/content/src/types'
 import { LevelError, validateLevel } from '../../../packages/content/src/validate'
 import { createAssetIndex, type AssetIndex } from './assetIndex'
+import type { LiveAssets } from './liveAssets'
+import { isAssetOp, isLiveAssetPath } from '../../../packages/content/src/liveAssets'
 import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './assetOps'
 import type { ChangeFeed } from './changes'
 import type { User } from './config'
-import { docKey, LiveError, type Live } from './live'
+import { docKey, LiveError, type FieldSpot, type Live } from './live'
 import { acquire, blocker, heartbeat, holder, release, type LockRules, type LockTable } from './locks'
 import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
 
@@ -41,7 +43,7 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *
  * Live level editing (ADR 0089), when `live` is given:
  *   GET  /api/live                    → open documents, peers, holds
- *   GET  /api/live/:kind/:name/events → SSE: hello, snapshot, ops (id = seq), holds, peers, presence, error
+ *   GET  /api/live/:kind/:name/events → SSE: hello, snapshot, ops (id = seq), holds, peers, presence, open-assets, fields, error
  *                                       plus `prefab` on a level's stream: a prefab the level uses was edited
  *                                       :kind is `level` or `prefab` — a prefab is its own document (ADR 0091)
  *   POST /api/live/:kind/:name/ops          → { connId, batchId, ops } → { ok, seq } · 400 bad op
@@ -49,6 +51,8 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *   POST /api/live/:kind/:name/release      → { connId, refs } → { ok }
  *   POST /api/live/:kind/:name/ping         → { connId } — still here (the editor, every heartbeat)
  *   POST /api/live/:kind/:name/presence     → { connId, data } — relayed, unnumbered
+ *   POST /api/live/:kind/:name/assets       → { connId, assetIds } — what I have open in the asset Inspector is exactly these → { ok }; to everyone (ADR 0159)
+ *   POST /api/live/:kind/:name/field        → { connId, spot: { targets, card, field } | null } — the Inspector field I am in → { ok }; to everyone (ADR 0160)
  *   POST /api/live/:kind/:name/flush        → write the file now
  *   POST /api/live/:kind/:name/leave        → { connId } (a closing tab's beacon)
  *   PUT  /api/levels/:name            → 409 while the level is open live; GET serves the live copy
@@ -86,6 +90,8 @@ export interface ApiOptions {
   live?: Live
   /** The asset list in memory, shared with the prefab store so both see every write (ADR 0156). Made here when absent. */
   assets?: AssetIndex
+  /** Data-file assets edited live (ADR 0159). Absent: they are files with locks, as before. */
+  liveAssets?: LiveAssets
   /** SSE keepalive period; short in tests. */
   keepaliveMs?: number
 }
@@ -178,6 +184,15 @@ const readBody = (req: IncomingMessage, limit: number): Promise<Buffer> =>
 const readJson = async (req: IncomingMessage): Promise<unknown> => JSON.parse((await readBody(req, MAX_JSON_BYTES)).toString('utf8'))
 
 const asRecord = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : {})
+
+/** A field spot off the wire (ADR 0160): `null` is out of every field, `undefined` not a spot at all. */
+const parseFieldSpot = (v: unknown): FieldSpot | null | undefined => {
+  if (v === null) return null
+  const o = asRecord(v)
+  if (!Array.isArray(o.targets) || !o.targets.every((t) => typeof t === 'string')) return undefined
+  if (typeof o.card !== 'string' || typeof o.field !== 'string') return undefined
+  return { targets: o.targets as string[], card: o.card, field: o.field }
+}
 const strField = (o: Record<string, unknown>, name: string): string => {
   const v = o[name]
   if (typeof v !== 'string') throw new AssetOpError(`${name}: expected a string`)
@@ -335,6 +350,8 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
           const path = strField(args, 'path')
           if (refuseIfLocked(res, user, [keyFor.asset(path)])) return true
           const gone = filesOf(path)
+          // A live asset deleted goes with its document, unwritten edits and all (ADR 0159).
+          for (const e of assets.entries()) if (e.path === path || e.path.startsWith(`${path}/`)) opts.liveAssets?.forget(e.id)
           removePath(ASSETS, path)
           rescanFor(user)
           changed(user, gone.map(keyFor.asset))
@@ -366,10 +383,26 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       return doc === null ? null : { id: entry.id, root: doc.nodes[0] }
     }
 
+    /**
+     * A data-file asset edited live (ADR 0159): its id, and its live copy when open. Every such GET says what it
+     * served (`x-asset-epoch`, `x-asset-seq`, `0` for the file) so an editor knows which edits it already has.
+     */
+    const liveAsset = (): { id: string; current: ReturnType<LiveAssets['current']> } | null => {
+      if (opts.liveAssets === undefined || !isLiveAssetPath(rel)) return null
+      const entry = assets.byPath(rel)
+      return entry === undefined ? null : { id: entry.id, current: opts.liveAssets.current(entry.id) }
+    }
+
     if (req.method === 'GET') {
       // The live copy wins, as it does for a level: it is up to five seconds ahead of the file.
       const live = openPrefab()
       if (live !== null) return sendJson(res, 200, live.root), true
+      const asset = liveAsset()
+      if (asset !== null && opts.liveAssets !== undefined) {
+        res.setHeader('x-asset-epoch', String(asset.current?.epoch ?? opts.liveAssets.epoch))
+        res.setHeader('x-asset-seq', String(asset.current?.seq ?? 0))
+        if (asset.current !== null) return sendJson(res, 200, asset.current.json), true
+      }
       if (!existsSync(file) || statSync(file).isDirectory()) return sendJson(res, 404, { error: 'not found' }), true
       res.statusCode = 200
       res.setHeader('content-type', contentTypeFor(file))
@@ -380,6 +413,8 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       // Refused while it is open, as a level's PUT is: the document would write its own copy back over this.
       const live = openPrefab()
       if (live !== null) return sendJson(res, 409, { error: `that prefab is open live; edit it in the editor` }), true
+      const asset = liveAsset()
+      if (asset !== null && asset.current !== null) return sendJson(res, 409, { error: 'that asset is being edited live; edit it in the editor' }), true
       if (refuseIfLocked(res, user, [keyFor.asset(rel)])) return true
       try {
         // JSON only: materials, prefabs and clips. Binaries go through upload, which has the cap.
@@ -526,7 +561,10 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
   const handleMirror = async (req: IncomingMessage, res: ServerResponse, url: string, query: URLSearchParams): Promise<boolean> => {
     if (req.method !== 'GET') return false
     // What is on disk must be current before anyone reads it from outside.
-    if (url === '/api/tree' || url === '/api/file') opts.live?.flushAll()
+    if (url === '/api/tree' || url === '/api/file') {
+      opts.live?.flushAll()
+      opts.liveAssets?.flushAll()
+    }
     if (url === '/api/tree') {
       const files = filesUnder(CONTENT).map((rel) => {
         const bytes = readFileSync(join(CONTENT, rel))
@@ -562,6 +600,33 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     const live = opts.live
     if (live === undefined || !url.startsWith('/api/live')) return false
     if (url === '/api/live' && req.method === 'GET') return sendJson(res, 200, { docs: live.status() }), true
+
+    /**
+     * An edit to a data-file asset (ADR 0159), sent on whatever room connection the editor has: the asset is not
+     * a room anyone joins, since everyone sees it drawn. The echo on every stream is the acknowledgement.
+     */
+    const am = /^\/api\/live\/asset\/([0-9a-f]{16})\/ops$/.exec(url)
+    if (am !== null) {
+      if (opts.liveAssets === undefined) return false
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST expected' }), true
+      let args: Record<string, unknown>
+      try {
+        args = asRecord(await readJson(req))
+      } catch {
+        return sendJson(res, 400, { error: 'expected a JSON body' }), true
+      }
+      const ops = Array.isArray(args.ops) ? (args.ops as unknown[]) : null
+      if (ops === null || !ops.every(isAssetOp)) return sendJson(res, 400, { error: 'ops: expected asset ops' }), true
+      try {
+        const r = opts.liveAssets.apply(am[1]!, typeof args.connId === 'string' ? args.connId : '', user, {
+          batchId: typeof args.batchId === 'string' ? args.batchId : '',
+          ops,
+        })
+        return sendJson(res, 200, r), true
+      } catch (e) {
+        return sendJson(res, e instanceof LiveError ? e.status : 500, { error: e instanceof Error ? e.message : String(e) }), true
+      }
+    }
     /**
      * `/api/live/level/<game>/<name>/…` and `/api/live/prefab/<assetId>/…` (ADR 0091). The kind is its own
      * segment rather than a prefix in the name, because a `:` in a name would not match.
@@ -570,7 +635,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
      * one. The action is a fixed alternation anchored at the end, so the greedy group backtracks off it. A
      * level whose name is not a legal qualified one is not a document here, so the route does not match.
      */
-    const m = /^\/api\/live\/(level|prefab)\/([\w\-/]+)\/(events|ops|hold|release|presence|hidden|flush|leave|ping)$/.exec(url)
+    const m = /^\/api\/live\/(level|prefab)\/([\w\-/]+)\/(events|ops|hold|release|presence|assets|field|hidden|flush|leave|ping)$/.exec(url)
     if (m === null) return false
     const kind = m[1] as 'level' | 'prefab'
     if (kind === 'level' && parseQualified(m[2]!) === null) return false
@@ -639,6 +704,19 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
         }
         case 'presence': {
           live.presence(name, connId, user, args.data)
+          sendJson(res, 200, { ok: true })
+          return true
+        }
+        case 'assets': {
+          const ids = Array.isArray(args.assetIds) ? (args.assetIds as unknown[]).filter((a): a is string => typeof a === 'string' && /^[0-9a-f]{16}$/.test(a)) : []
+          live.setOpenAssets(name, connId, user, ids)
+          sendJson(res, 200, { ok: true })
+          return true
+        }
+        case 'field': {
+          const spot = parseFieldSpot(args.spot)
+          if (spot === undefined) return sendJson(res, 400, { error: 'spot: expected { targets, card, field } or null' }), true
+          live.setField(name, connId, user, spot)
           sendJson(res, 200, { ok: true })
           return true
         }

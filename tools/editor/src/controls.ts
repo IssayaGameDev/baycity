@@ -36,6 +36,24 @@ export const scrubbed = (start: number, dx: number, spec: ScrubSpec, fine = fals
   return Number(clamped.toFixed(decimalsOf(grain))) + 0
 }
 
+/**
+ * How a number field drags, from what a declaration says (ADR 0113): a pixel is one `step`, landing on its
+ * multiples; a bounded number without one crosses its range in 200 px, landing on the decade under that.
+ *
+ * The step shapes **the drag only**. Typed, any value in range is taken as it is — Tweakpane's `step` also
+ * snapped what was typed, anchored to the value the field was built with, which made 33 unreachable from
+ * 32.98 in steps of 0.05.
+ */
+export const numberScrub = (d: { readonly step?: number; readonly min?: number; readonly max?: number }): ScrubSpec => {
+  const perPixel = d.step ?? (d.min !== undefined && d.max !== undefined ? (d.max - d.min) / 200 : 0.1)
+  return {
+    perPixel,
+    grain: d.step ?? 10 ** Math.floor(Math.log10(perPixel)),
+    ...(d.min === undefined ? {} : { min: d.min }),
+    ...(d.max === undefined ? {} : { max: d.max }),
+  }
+}
+
 /** What was typed, as a number: a real minus sign and a comma both accepted. `null` when it is not one. */
 export const parseTyped = (text: string): number | null => {
   const t = text.trim().replace(/−/g, '-').replace(',', '.')
@@ -227,6 +245,22 @@ export const scrubFieldOf = (o: ScrubFieldOptions): ScrubHandle => {
   return { root, set }
 }
 
+// --- a labelled line --------------------------------------------------------------------------------------
+
+/**
+ * A line of the Inspector (ADR 0152): its label in the column `--lw` sets on the panel, then its controls — the
+ * object Inspector's component cards and the asset Inspector alike. The label names the line (`data-field`) for
+ * who is in which field (`fieldPresence.ts`, ADR 0160).
+ */
+export const fieldRow = (label: string, ...controls: HTMLElement[]): HTMLElement => {
+  const line = el('div', 'irow')
+  line.dataset.field = label
+  const slot = el('div', 'irow-c')
+  slot.append(...controls)
+  line.append(el('span', 'irow-l', label), slot)
+  return line
+}
+
 // --- a tick box, a dropdown, a text, a colour --------------------------------------------------------------
 
 /** A tick box. `null` is a selection that disagrees (ADR 0112): drawn half-set, and a click sets every one. */
@@ -294,7 +328,17 @@ const HEX = /^#?([0-9a-f]{6})$/i
  * A colour, `#rrggbb`: a swatch that opens the browser's own picker, and the code to type. The picker reports
  * as it is dragged, through `live`, and settles on `change`. `null` disagrees: the code is blank.
  */
-export const colorField = (value: string | null, commit: (v: string) => void, live?: Live<string>): HTMLElement => {
+export const colorField = (value: string | null, commit: (v: string) => void, live?: Live<string>): HTMLElement =>
+  colorFieldOf(value, commit, live).root
+
+/** A colour field that can be handed a new value from outside — someone else's edit, on a panel that stays up. */
+export interface ColorHandle {
+  readonly root: HTMLElement
+  /** Show `v`, unless the picker is open or the code is being typed, which wins. */
+  readonly set: (v: string) => void
+}
+
+export const colorFieldOf = (value: string | null, commit: (v: string) => void, live?: Live<string>): ColorHandle => {
   const root = el('div', 'clr')
   const swatch = el('input', 'clr-s')
   swatch.type = 'color'
@@ -321,6 +365,8 @@ export const colorField = (value: string | null, commit: (v: string) => void, li
       picking = false
       live?.end()
     }
+    // The picker closed: the keyboard goes back to the editor, so Ctrl+Z reaches it (a field owns its keys).
+    swatch.blur()
   })
   code.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') code.blur()
@@ -337,7 +383,13 @@ export const colorField = (value: string | null, commit: (v: string) => void, li
     commit(v)
   })
   root.append(swatch, code)
-  return root
+  const set = (v: string): void => {
+    if (picking || root.contains(document.activeElement)) return
+    swatch.value = v
+    code.value = v
+    code.placeholder = ''
+  }
+  return { root, set }
 }
 
 // --- a segmented switch --------------------------------------------------------------------------------

@@ -28,6 +28,9 @@ import type { User } from './config'
  *   what stays. `hold` is the whole set a connection wants — "my holds are exactly these" — so a late or
  *   reordered message cannot leave a ghost; released on the client leaving and when the node is removed.
  *   Identity is the **connection**, so two tabs of one person are two holders.
+ * - What each connection has open in its asset Inspector (ADR 0159), and which Inspector field it is in (ADR 0160):
+ *   shown to **every** connection in any document — a material is drawn in every level. The whole set each time,
+ *   like holds; sent to a joiner after its snapshot; dropped on leaving (`everyoneSees`).
  * - Liveness: a connection is `seen` on every message; `sweep` leaves one silent for `staleMs` (a tab whose
  *   stream died without the server hearing it), which releases its holds. The editor pings while idle.
  *
@@ -78,6 +81,34 @@ export interface Peer {
   connId: string
   name: string
 }
+
+/** A connection with an asset open in its Inspector (ADR 0159). */
+export interface OpenAsset {
+  assetId: string
+  connId: string
+  name: string
+}
+
+/** How many assets one connection may say it has open: an Inspector shows one; this is a bound, not a design. */
+const MAX_OPEN_ASSETS = 16
+
+/**
+ * The Inspector field a connection is in (ADR 0160): typing in it, dragging it, its picker open. `targets` are what
+ * the field writes to — `<kind>:<doc>|<refKey>` for the nodes selected, `<kind>:<doc>|@game` / `@env` for the
+ * document's own settings, `asset:<id>` for an asset — and `card` / `field` the line, as every tab draws it.
+ * Opaque here: the editors agree on the names.
+ */
+export interface FieldFocus {
+  connId: string
+  name: string
+  targets: string[]
+  card: string
+  field: string
+}
+export type FieldSpot = Omit<FieldFocus, 'connId' | 'name'>
+/** Bounds on what a connection may say, not a design: a selection this large is not being typed into. */
+const MAX_FIELD_TARGETS = 256
+const MAX_FIELD_TEXT = 200
 
 export interface LiveOptions {
   /** The file as JSON, or `null` when there is none. */
@@ -182,6 +213,13 @@ export interface Live {
   /** Leave every connection silent for `staleMs`. Called on a timer by the host. */
   sweep: () => void
   release: (name: string, connId: string, user: User, refs: NodeRef[]) => void
+  /**
+   * The assets this connection has open are exactly `assetIds` (ADR 0159). Everyone, in every document, is sent
+   * the whole set when it changes; a joiner gets it after its snapshot.
+   */
+  setOpenAssets: (name: string, connId: string, user: User, assetIds: string[]) => void
+  /** The field this connection is in, or `null` (ADR 0160). Everyone is told, as with open assets. */
+  setField: (name: string, connId: string, user: User, spot: FieldSpot | null) => void
   /** Relay presence (a pose mid-drag, a selection) to the others. No seq, nothing kept. */
   presence: (name: string, connId: string, user: User, data: unknown) => void
   /** Write the file now if there is anything unwritten. */
@@ -191,6 +229,10 @@ export interface Live {
   /** The current level of an open document, or `null`. */
   levelOf: (name: string) => Level | null
   status: () => { name: string; seq: number; peers: Peer[]; holds: number }[]
+  /** A connection in any open document, marked as heard from — an edit to a live asset arrives on one (ADR 0159). */
+  connection: (connId: string) => LiveClient | null
+  /** Send to every connection in every open document, once each. */
+  broadcastAll: (event: string, data: unknown) => void
 }
 
 /**
@@ -218,6 +260,35 @@ export const createLive = (opts: LiveOptions): Live => {
     return () => clearTimeout(t)
   })
   const docs = new Map<string, LiveDoc>()
+  /**
+   * State each connection keeps and **everyone** sees, in every document: sent whole when it changes, to a joiner
+   * after its snapshot, and dropped when the connection leaves. One connection is in one document, so leaving it
+   * is leaving.
+   */
+  const everyoneSees = <T>(event: string, key: string) => {
+    const byConn = new Map<string, T[]>()
+    const payload = (): Record<string, T[]> => ({ [key]: [...byConn.values()].flat() })
+    const announce = (): void => api.broadcastAll(event, payload())
+    return {
+      /** This connection's entries become exactly these; everyone hears when that changed anything. */
+      set: (connId: string, entries: T[]): void => {
+        if (JSON.stringify(entries) === JSON.stringify(byConn.get(connId) ?? [])) return
+        if (entries.length === 0) byConn.delete(connId)
+        else byConn.set(connId, entries)
+        announce()
+      },
+      drop: (connId: string): void => {
+        if (byConn.delete(connId)) announce()
+      },
+      greet: (client: LiveClient): void => {
+        if (byConn.size > 0) client.send(event, payload())
+      },
+    }
+  }
+  /** What each connection has open in its asset Inspector (ADR 0159). */
+  const openAssets = everyoneSees<OpenAsset>('open-assets', 'open')
+  /** The Inspector field each connection is in (ADR 0160). */
+  const fields = everyoneSees<FieldFocus>('fields', 'fields')
 
   const peersOf = (d: LiveDoc): Peer[] => [...d.clients.values()].map((c) => ({ connId: c.connId, name: c.user.name }))
   /** One hold per connection per node: several people may have the same node selected (ADR 0158). */
@@ -439,6 +510,8 @@ export const createLive = (opts: LiveOptions): Live => {
       // `hidden` rides the snapshot rather than a route of its own: a joiner needs it at the same moment it
       // needs the level, and one less round trip is one less frame drawing things that should not be there.
       client.send('snapshot', { level: d.level, seq: d.seq, holds: holdsOf(d), peers: peersOf(d), hidden: [...d.hidden] }, d.seq)
+      openAssets.greet(client)
+      fields.greet(client)
       for (const c of d.clients.values()) if (c !== client) c.send('peers', { peers: peersOf(d) })
     },
 
@@ -450,12 +523,14 @@ export const createLive = (opts: LiveOptions): Live => {
       d.clients.delete(connId)
       d.seen.delete(connId)
       const dropped = releaseHolds(d, connId)
-      if (d.clients.size === 0) {
-        close(d)
-        return
+      if (d.clients.size === 0) close(d)
+      else {
+        if (dropped) broadcast(d, 'holds', { holds: holdsOf(d) })
+        broadcast(d, 'peers', { peers: peersOf(d) })
       }
-      if (dropped) broadcast(d, 'holds', { holds: holdsOf(d) })
-      broadcast(d, 'peers', { peers: peersOf(d) })
+      // What it had open, and the field it was in, are shown nowhere now.
+      openAssets.drop(connId)
+      fields.drop(connId)
     },
 
     apply: (name, connId, user, batch) => {
@@ -562,6 +637,20 @@ export const createLive = (opts: LiveOptions): Live => {
       if (releaseHolds(d, connId, new Set(refs.map(refKey)))) broadcast(d, 'holds', { holds: holdsOf(d) })
     },
 
+    setOpenAssets: (name, connId, user, assetIds) => {
+      clientOf(must(name), connId, user)
+      const want = [...new Set(assetIds)].slice(0, MAX_OPEN_ASSETS)
+      openAssets.set(connId, want.map((assetId) => ({ assetId, connId, name: user.name })))
+    },
+
+    setField: (name, connId, user, spot) => {
+      clientOf(must(name), connId, user)
+      if (spot === null) return fields.set(connId, [])
+      const text = (s: string): string => s.slice(0, MAX_FIELD_TEXT)
+      const targets = [...new Set(spot.targets.map(text))].slice(0, MAX_FIELD_TARGETS)
+      fields.set(connId, [{ connId, name: user.name, targets, card: text(spot.card), field: text(spot.field) }])
+    },
+
     presence: (name, connId, user, data) => {
       const d = must(name)
       clientOf(d, connId, user)
@@ -578,6 +667,25 @@ export const createLive = (opts: LiveOptions): Live => {
     isOpen: (name) => docs.has(canonKey(name)),
     levelOf: (name) => docs.get(canonKey(name))?.level ?? null,
     status: () => [...docs.values()].map((d) => ({ name: d.name, seq: d.seq, peers: peersOf(d), holds: d.holds.size })),
+    connection: (connId) => {
+      for (const d of docs.values()) {
+        const c = d.clients.get(connId)
+        if (c === undefined) continue
+        d.seen.set(connId, now())
+        return c
+      }
+      return null
+    },
+    broadcastAll: (event, data) => {
+      const sent = new Set<string>()
+      for (const d of docs.values()) {
+        for (const c of d.clients.values()) {
+          if (sent.has(c.connId)) continue
+          sent.add(c.connId)
+          c.send(event, data)
+        }
+      }
+    },
   }
   return api
 }

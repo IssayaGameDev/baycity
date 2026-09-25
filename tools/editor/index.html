@@ -1180,51 +1180,47 @@
 
       /* ---- asset inspector (materials) ---- */
       #asset-inspector {
-        padding: 6px;
+        padding: 6px 8px 12px;
+        /* Its lines are the object Inspector's (\`fieldRow\`), with the same label column. */
+        --lw: clamp(72px, 40% - 24px, 280px);
       }
       .a-head {
         margin-bottom: 6px;
         padding-bottom: 6px;
         border-bottom: 1px solid var(--line);
       }
+      .a-top {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
       .a-name {
+        flex: 1 1 auto;
+        min-width: 0;
         font-weight: 600;
+      }
+      /* Who else has this asset open (ADR 0159): their icons, in their colours, as in the top bar (ADR 0155). */
+      .a-openers {
+        display: flex;
+        flex: 0 0 auto;
+        gap: 3px;
+      }
+      .a-openers .pp {
+        width: 20px;
+        height: 20px;
+        font-size: 9px;
+        cursor: default;
+      }
+      .a-openers .pp:hover {
+        box-shadow: none;
       }
       .a-meta {
         color: var(--dim);
         font-size: 10px;
         word-break: break-all;
       }
-      .a-row {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        margin-bottom: 4px;
-      }
-      .a-label {
-        flex: 0 0 92px;
-        color: var(--dim);
-      }
-      .a-row > :not(.a-label) {
-        flex: 1 1 auto;
-        min-width: 0;
-      }
-      .a-vec,
-      .a-texture {
-        display: flex;
-        gap: 4px;
-        align-items: center;
-        min-width: 0;
-      }
-      .a-vec input {
-        flex: 1 1 0;
-        min-width: 0;
-      }
-      .a-texture select {
-        flex: 1 1 auto;
-        min-width: 0;
-      }
-      .a-texture .thumb {
+      /* A texture slot's picture, beside its dropdown. */
+      .a-thumb {
         width: 24px;
         height: 24px;
         object-fit: cover;
@@ -2274,6 +2270,12 @@
         font-size: 11px;
         line-height: 1.4;
         color: var(--dim);
+      }
+      /* Someone else is in this field (ADR 0160): a ring in their colour round its controls, their name on hover. */
+      .irow.peer-in .irow-c {
+        border-radius: 6px;
+        outline: 1.5px solid var(--peer);
+        outline-offset: 1px;
       }
       /* Unity's cue for an overridden value: a bar down the left edge of the line. */
       .irow.over::before {

@@ -9,9 +9,9 @@ Level/prefab editor. `pnpm dev:editor` → `http://localhost:5176` (the dev host
 | Level (node tree + `config`) | `content/<game>/levels/<name>.level.json` | `PUT /api/levels/<game>/<name>` (`saveFile`, `src/filesApi.ts`); locked while open (ADR 0083). Renamed and deleted through `POST /api/levels/move\|delete` (ADR 0110) |
 | Prefab (a root `Node`) | `content/assets/prefabs/<name>.prefab.json` — an **asset** with a `.meta` id (ADR 0026) | created once by `Save as prefab…` (`createPrefab`, `src/assetsApi.ts`), then **edited live** in its own room (ADR 0091) |
 | Game shared-component list | `content/<game>/game.json` | `PUT /api/games/<game>` (`saveGame`) — appended by adoption (ADR 0077) |
-| Materials, clips | `content/assets/**` JSON | `PUT /assets/<path>` |
+| Materials | `content/assets/**/*.mat.json` | a live document: `POST /api/live/asset/<id>/ops` (`assetSync.ts`, ADR 0159); a new one is created with `PUT /assets/<path>` |
 
-Both levels and prefabs are live rooms, so there is no Save and no file lock for either (ADR 0089, ADR 0091); only materials and clips are still locked files.
+Levels and prefabs are live rooms and materials live documents, so there is no Save and no lock for any of them (ADR 0089, ADR 0091, ADR 0159).
 
 ## Panel layout (`tools/editor/index.html`)
 
@@ -64,7 +64,7 @@ The routes are `tools/editor-server/src/api.ts`, mounted by `vite.config.ts` (`f
 | `readOnlyBy` | a file this tab could not lock; the top bar's lock badge reads `Read-only · X has it` |
 | `saveNow` | returns `true` at once for a live room: every edit is already on the server |
 | `newBlank` | `createLevel(null)` — a level exists the moment it is named (below) |
-| materials | `lockAsset(id)` on select (`onSelectAsset`, kind `material`); refused ids in `lockedAssets` → `onMaterialChanged` refuses |
+| materials | no lock: live documents (ADR 0159, *Live assets* below) |
 | heartbeat | `setInterval(heartbeatMs)`: `heartbeatLocks(held)`; a lost file lock is re-taken or turns the file read-only; `serverStatus().pushError` → `pushProblem`, a banner line `not on GitHub yet: …` |
 | `pagehide` | `releaseLockBeacon` per held lock; `collab.beaconLeave()` |
 | upload | `ProjectHost.onUpload(files, folder)` from a desktop drop on a folder row, folder tile or the grid (`dropTargetFor`, `folder` getter; not for *All folders* or the level's own); files over `maxUploadBytes` are named and skipped; `afterFileOp` uploads the rest |
@@ -110,6 +110,16 @@ opened on top no longer pops back to the level. Live, the applied inverses go to
 `edits.endDrag(label)` folds them, sends the room one message and records one entry. `abortDrag` clears without
 folding. The gizmo, the face tool and the Inspector's `writeAxis` each held a verbatim copy of that sequence;
 they call these now, and `coalescing` and `heldBack` are private to the module.
+
+**One history for the level and its materials** (ADR 0159): an entry is `{ kind: 'level', …HistoryEntry }` or
+`{ kind: 'asset', assetId, ops, inverses, label }` (`AssetEdit`, asset ops, inverses in undo order), in one
+`createOpHistory<Entry>()` stack, so Ctrl+Z takes back whichever came last. `edits.recordAsset(edit, ongoing)`
+pushes one; while `ongoing`, a record of the same asset and label merges into it (`mergeAssetOps`: newest value
+per path, the value before the first) as long as it is still the last entry — a colour drag is one entry, ended by
+the picker's `change` or by any other entry, undo or redo. Undoing or redoing one is `host.applyAsset(id, ops, what)`:
+`assetSync.edit` as this tab's edit, then `selectAsset(id)` shows it; `false` (the material is gone, or the ops no
+longer apply) drops it with a warning. `dropWhere` (a refused level batch) passes only level entries. `reset`
+clears both kinds with the file. Labels are `<material> <param label>` or `<material> shader`.
 
 ## Live levels (`src/collab.ts`, ADR 0089)
 
@@ -538,12 +548,65 @@ Levels on the feed are not the watch's: one open here is live already, and one t
 `named` is an upload's paths (same id, new bytes), `fresh` starts the runtime over (boot, the feed's 410). The
 runtime is built over `libraryView`, so a new, renamed or moved asset needs none of this.
 
-**Editing a material** (`onMaterialChanged`): refused with a warning while someone else holds its lock; else
-`saveMaterial` puts it in the library at once and writes it behind (`latestWriter`: one write in flight per material,
-the newest waiting — in order, collapsed to what the round trip allows), `refreshCompiled([id])` shows it on the
-next frame, the asset Inspector is redrawn only for a new shader (its fields read `materialOf` at each edit; a vec2
-keeps its own latest), a texture pick updates its thumbnail itself, and `thumbnailsSoon()` refreshes the Project
-panel's pictures 400 ms after the edits stop.
+**The asset Inspector's fields** are the object Inspector's (`controls.ts`, on `fieldRow` lines, `--lw` on
+`#asset-inspector`): shader and texture `selectField` (a texture with an `.a-thumb` beside it), colour
+`colorFieldOf`, number `scrubFieldOf` (`numberScrub(param)`), vec2 two of them (`X` / `Y`, step 0.1), boolean
+`checkField`. Each field's `update` shows someone else's value through the handle's `set`, which skips a field being
+dragged, picked or typed in. A drag is `dragged(change, settle)`: each `move` is an `ongoing` edit, the commit the
+value it let go on, and `live.end` → `settle` = `onMaterialChanged(id, now(), label, false)` — no ops, it only ends
+the undo entry, so letting go where it started puts back nothing someone else has changed since.
+
+**Editing a material** (`onMaterialChanged(id, material, label, ongoing)`): `assetSync.edit(id, diffAssetOps(shown,
+edited))` (*Live assets* below) and `edits.recordAsset` (*Undo* above); `show` puts the result in the library,
+`refreshCompiled([id])` shows it on the next frame, the asset Inspector is redrawn only for a new shader (its fields
+read `materialOf` at each edit; a vec2 keeps its own latest), a texture pick updates its thumbnail itself, and
+`thumbnailsSoon()` refreshes the Project panel's pictures 400 ms after the edits stop.
+
+## Live assets (ADR 0159, `src/assetSync.ts`)
+
+A JSON asset of a live kind (`LIVE_ASSET_KINDS`, `content.md`: `material`) is a document on the server, edited by
+path ops, with no lock. `createAssetSync(host)` keeps, per asset it has seen an edit to:
+
+| | |
+| --- | --- |
+| `base` at `origin` | what the server has confirmed: its `epoch` (the server process) and `seq` (edits in it; 0 = the file). The library's copy says where it came from (`AssetLibrary.originOf`, off the GET's `x-asset-epoch` / `x-asset-seq`) |
+| `inflight` | this tab's one batch on its way (`POST /api/live/asset/<id>/ops` with `room.connId()`); batch ids carry a per-tab prefix, so its echo is known on any connection |
+| `pending` | edits made meanwhile, merged by path (`mergeAssetOps`, newest value; a path replaced drops the narrower ones under it) — the next batch when the echo comes |
+
+What shows is `base` + `inflight` + `pending` (`host.show`, into the library, the renderer, and `assetInspector.refresh`
+for someone else's). An `asset` event (every room's stream, `collab.ts` → `liveSession` → `onEvent`, checked by
+`parseAssetEvent`): `seq` ≤ `origin.seq` — in the copy; the next one — onto `base` (mine: `inflight` confirmed, the
+next goes); another epoch or a gap — `fetchLive` and start from the live copy. A refused batch comes off the screen
+with an error toast. `reloaded()` after any library load: a newer copy becomes `base`, and this tab's unconfirmed
+edits go back on top.
+
+`assetInspector.refresh(id)`: every field's `update` shows the new value, skipping the control in use (`busy`); a new
+shader redraws the panel.
+
+**Who has it open** (ADR 0159), any asset kind: `room.syncHolds()` also sends `host.openAssetIds()` (`selectedAsset`,
+or nothing) through `collab.setOpenAssets` — `POST …/assets`, queued one behind another like holds, skipped when
+unchanged (`lastOpenKey`, reset on every connection going `live`, which re-sends it). The `open-assets` event carries
+everyone's, in every document; `[]` on each snapshot and on leaving. `room.openersOf(id)`: the others, one per
+connection, never this tab's (`mineEver`). The asset Inspector's header draws them as `.a-openers .pp` icons
+(initials, `--pc` = `peerCss`, title `<name> has this open`); `assetInspector.openersChanged()` redraws only them.
+The sites that set `selectedAsset` without `deselect` call `room.syncHolds()` themselves.
+
+**Who is in which field** (ADR 0160, `src/fieldPresence.ts`), both Inspectors:
+
+```ts
+spotOf(target, within): Spot | null   // the line: nearest [data-field] (fieldRow's label), its nearest [data-card]
+createFieldPresence(container, { report(spot | null), rings(): Ring[] }): { repaint }
+```
+
+In a line: focus in it, or a pointer pressed on it; `report` at once going in, 150 ms late going out. `repaint`
+rings each `Ring`'s line (`.irow.peer-in`, `--peer`, title *X is in this field*) and runs on its own after any
+rebuild (a `MutationObserver`), dropping a focus the rebuild took away. Cards: `addSection(key, { card })` sets
+`data-card` — `<type>#<ordinal>` for a component, the key otherwise (`@transform`, `@game-…`, `@env-…`);
+`#asset-inspector` is `asset`. main: `objectFields` over `#inspector` (targets: `@game` / `@env` or the selection's
+refs, each `room.docTarget(suffix)` = `<kind>:<doc>|<suffix>`; rings for the primary) and `assetFields` over
+`#asset-inspector` (`asset:<id>`); one spot for the tab, the asset one first (`tellField`). `room.setField(spot)` →
+`collab.setField` (`POST …/field`, in order, re-sent on each new connection); `fields` event → `room.fieldsOn(target)`
+(the others, never this tab's) → `fieldsChanged` repaints both. `collab.ts`'s ordered messages share `inOrder()`.
 
 ## Refusing another game's private components (ADR 0076)
 
@@ -763,7 +826,8 @@ a degree and stores the radians unrounded, so a typed 90 reads back 90 (ADR 0136
 
 ## Inspector — the panel (ADR 0152, `src/inspector.ts`)
 
-Every field is ours (`src/controls.ts`); nothing of Tweakpane's is left in the editor.
+Every field is ours (`src/controls.ts`), the asset Inspector's too; nothing of Tweakpane's is left in the editor.
+A line is `fieldRow(label, ...controls)` (`controls.ts`), which a card's `field` appends.
 
 | | |
 | --- | --- |
@@ -812,7 +876,9 @@ causes.
 | fields | target (`Doc.childTargets`), then per kind: point / axis + angle / factor / opacity %, as `scrubField`s with red/green/blue X Y Z; time as a segmented switch (Seconds / Speed / Stage, and Spin for a turn) and its number; ease as a button with its curve, opening a grid of every curve (linear, then ten families × in / out / in-out); collider and enable as a switch |
 | drag | `sequenceDrag.ts` (below) |
 
-**Controls** (`controls.ts`): `scrubField` — drag sideways to change (`scrubbed`: `perPixel`, landing on `grain`,
+**Controls** (`controls.ts`): `numberScrub({ step?, min?, max? })` → the `ScrubSpec` a declaration implies.
+`colorFieldOf` → `{ root, set }`; the swatch lets go of the focus when its picker closes, so Ctrl+Z reaches the
+editor. `scrubField` — drag sideways to change (`scrubbed`: `perPixel`, landing on `grain`,
 Shift ten times finer), click to type (Enter / blur commits, Escape reverts), **one commit when the drag or the
 typing ends**; its `key` (`<component>:<step>:<field>`) lets the field clicked next take the focus back after the
 first one's edit rebuilt the panel. `segmented`. One popover at a time (`openPopover` / `closePopover`), gone on a

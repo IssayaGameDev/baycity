@@ -280,6 +280,39 @@ describe('presence', () => {
   })
 })
 
+describe('open assets (ADR 0159)', () => {
+  const M = 'mmmmmmmmmmmmmmmm'
+  const openEvents = (f: Fake): unknown[] => f.events.filter((e) => e.event === 'open-assets').map((e) => e.data)
+
+  it('tells everyone, in every level, the whole set; a joiner after its snapshot; and drops it on leaving', () => {
+    const { live, disk } = world()
+    disk.set('parkour/lv2', fixture())
+    const a = fake('c1')
+    const b = fake('c2', BOB)
+    live.join(LV, a.client)
+    live.join('parkour/lv2', b.client)
+    live.setOpenAssets(LV, 'c1', ADA, [M])
+    expect(openEvents(b), 'a material is drawn in every level').toEqual([{ open: [{ assetId: M, connId: 'c1', name: 'Ada' }] }])
+    expect(openEvents(a), 'the sender too: the echo is the ack').toHaveLength(1)
+    live.setOpenAssets(LV, 'c1', ADA, [M])
+    expect(openEvents(b), 'nothing changed, nothing sent').toHaveLength(1)
+
+    const c = fake('c3', BOB)
+    live.join(LV, c.client)
+    expect(c.events.map((e) => e.event).slice(0, 3)).toEqual(['hello', 'snapshot', 'open-assets'])
+
+    live.leave(LV, 'c1')
+    expect(openEvents(b).at(-1)).toEqual({ open: [] })
+  })
+
+  it('refuses a connection that is not in the document, or not yours', () => {
+    const { live } = world()
+    live.join(LV, fake('c1').client)
+    expect(() => live.setOpenAssets(LV, 'nope', ADA, [M])).toThrow(LiveError)
+    expect(() => live.setOpenAssets(LV, 'c1', BOB, [M])).toThrow(LiveError)
+  })
+})
+
 
 describe('prefab references (ADR 0091)', () => {
   /** A level naming a prefab it does not carry: the definition comes from the store, and the file keeps neither twice. */
@@ -471,5 +504,33 @@ describe('a refused prefab batch', () => {
     // Still editable afterwards, and the level sees it.
     expect(w.live.apply(key, 'c2', BOB, { batchId: 'c', ops: [setName('p0', 'fine')] }).ok).toBe(true)
     expect(shared.children![0]!.name).toBe('fine')
+  })
+})
+
+describe('which field each connection is in (ADR 0160)', () => {
+  const spot = { targets: ['level:parkour/lv|a'], card: 'transform', field: 'position' }
+  const fieldEvents = (f: Fake): unknown[] => f.events.filter((e) => e.event === 'fields').map((e) => e.data)
+
+  it('tells everyone, a joiner after its snapshot, and nobody once it leaves the field or the document', () => {
+    const { live, disk } = world()
+    disk.set('parkour/lv2', fixture())
+    const a = fake('c1')
+    const b = fake('c2', BOB)
+    live.join(LV, a.client)
+    live.join('parkour/lv2', b.client)
+    live.setField(LV, 'c1', ADA, spot)
+    expect(fieldEvents(b)).toEqual([{ fields: [{ connId: 'c1', name: 'Ada', ...spot }] }])
+    live.setField(LV, 'c1', ADA, spot)
+    expect(fieldEvents(b), 'nothing changed, nothing sent').toHaveLength(1)
+
+    const c = fake('c3', BOB)
+    live.join(LV, c.client)
+    expect(c.events.map((e) => e.event).slice(0, 3)).toEqual(['hello', 'snapshot', 'fields'])
+
+    live.setField(LV, 'c1', ADA, null)
+    expect(fieldEvents(b).at(-1)).toEqual({ fields: [] })
+    live.setField(LV, 'c1', ADA, spot)
+    live.leave(LV, 'c1')
+    expect(fieldEvents(b).at(-1), 'gone with the connection').toEqual({ fields: [] })
   })
 })

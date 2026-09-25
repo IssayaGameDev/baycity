@@ -41,13 +41,14 @@ prefab itself, and everyone sees your edits as you make them. **Back** returns y
   still plays.
 - One tab shows one thing. To watch a prefab edit land in a level, open a second tab.
 
-## Materials: one person per file
+## Materials: everyone at once
 
-Materials are still files with a lock. Clicking one takes it until you click away or close the tab; someone
-else editing it at the same time is refused.
+Anyone can edit any material, at the same time. You see other people's changes as they make them, on every
+object that uses it. Two people changing the same value: the last change wins.
 
-- If something says *locked by X*, ask X, or work on something else. There is no force-unlock.
-- A tab that died (crash, laptop shut) lets go after two minutes.
+- Ctrl+Z undoes material edits too, in the same order as your level edits. One colour drag is one undo.
+- The icons next to an asset's name in the Inspector are the other people who have it open, in any level.
+- A field with a coloured ring round it is one someone else is in right now. Hover its name to see who.
 
 ## Saving
 

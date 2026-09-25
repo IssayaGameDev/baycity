@@ -8,7 +8,8 @@ or leaves, and a card per person with **Focus** (frame what they hold, open the 
 of your own ends it — rotating while following, around their point or in place, and a camera locked against input
 were both rejected — and a frame round the viewport in their colour plus the hint pill show it. **Parked after step
 2**, Kodjo's call: step 3 (who is in which level, on the Project panel's tiles) was too narrow — who is on which
-asset, of every kind, belongs to the asset panel's rework, not to tiles that rework will replace. Every choice a
+asset, of every kind, belongs to the asset panel's rework, not to tiles that rework will replace. Who has an asset
+open is now known everywhere and shown in the Inspector (ADR 0159). Every choice a
 person sees is Kodjo's, asked with the question tool.
 
 ## Context

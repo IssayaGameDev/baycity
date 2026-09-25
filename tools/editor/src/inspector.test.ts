@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { boundState, numberScrub, peersOf, sameValue } from './inspector'
+import { numberScrub } from './controls'
+import { boundState, peersOf, sameValue } from './inspector'
 
 /**
  * What the Inspector's fields are built from must share nothing with the document (ADR 0101).

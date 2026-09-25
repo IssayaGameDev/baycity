@@ -231,6 +231,20 @@ completes override transforms from the node they now override — then **throws 
 - `MaterialAsset { shader: 'standard' | 'unlit' | assetId; params: Record<string, MaterialValue> }`; `MaterialValue` kinds color/number/vec2/vec3/boolean/texture(`string|null`). `materialDependencies` = texture ids.
 - `*.prefab.json` = a `Node` root. Placing writes its **asset id** into the level; the definition stays in the file (ADR 0091, below).
 
+## Live assets — `packages/content/src/liveAssets.ts` (ADR 0159)
+
+A data-file asset edited live, by ops that know nothing about what the file means:
+
+```ts
+type AssetOp = { kind: 'set'; path: readonly string[]; value: unknown } | { kind: 'unset'; path: readonly string[] }
+applyAssetOps(json, ops): { json, inverses }   // on a copy; inverses undo it applied in reverse; LiveAssetError for a path through a non-object
+diffAssetOps(before, after): AssetOp[]          // down through objects; arrays and changed types set whole
+mergeAssetOps(first, then): AssetOp[]          // one op per path, the newest; does what applying both in order does
+isAssetOp(v) · isLiveAssetPath(path) · validateLiveAsset(kind, json): string | null · LIVE_ASSET_KINDS
+```
+
+A kind is live when it has a validator: `material` (a non-empty `shader`, `params` of tagged values).
+
 ## Layout — `packages/content/src/layout.ts` (ADR 0108)
 
 **A game is a folder at the content root**, holding its own `game.json` and its `levels/`. Assets stay one
