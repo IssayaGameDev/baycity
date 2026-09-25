@@ -139,12 +139,115 @@ export interface Board {
   startZ: number
   cols: number
   rows: number
+  /** Set for a board a sequence carries (ADR 0154): where it is now, relative to where its caps were built. */
+  moving?: Moving
+}
+
+/** A carried board's pose now, as the footfall lookup needs it (ADR 0154). */
+export interface Moving {
+  /** From where the board is now back to where its caps were built: what a foot is taken through. */
+  toRest: THREE.Matrix4
+  /** Switched off, or faded to nothing: nothing to stand on, and nothing to press. */
+  hidden: boolean
+}
+
+/**
+ * A board a sequence carries, or one under something a sequence carries (ADR 0154).
+ *
+ * Its caps are built where the board was at load, into the **riding** meshes, which tag every cap with the board
+ * it rides. Each frame the board's row of one small texture says how far it has gone since — a transform and an
+ * opacity — and the vertex shader carries every cap of it there. A moving board is one row a frame, however
+ * many caps it has; a still board pays nothing for any of this.
+ */
+interface Riding {
+  readonly item: VisualItem
+  readonly board: Board & { moving: Moving }
+  /** Where the board was built, inverted. */
+  readonly restInverse: THREE.Matrix4
+  /** How far it has gone: now × `restInverse`. What its row of the texture holds. */
+  readonly delta: THREE.Matrix4
+}
+
+/** Texels per board in the state texture: four for the transform's columns, one for the opacity. */
+const STATE_TEXELS = 5
+
+/**
+ * Where a carried board is now, from its visual: `delta` takes a cap from where it was built to where it is,
+ * `toRest` back. `false` while the board is not drawn — switched off, or a fade at nothing, as the level view
+ * decides for the platform itself — and then `delta` folds every cap to a point, so nothing is drawn or shaded.
+ *
+ * The pose is the level view's: `position`, `rotation`, and `drawScale` in the board's own frame.
+ */
+// Every carried board, every frame: reused rather than allocated.
+const carryAt = new THREE.Vector3()
+const carryTurn = new THREE.Quaternion()
+const carryScale = new THREE.Vector3()
+
+export const carry = (
+  v: Pick<VisualItem, 'position' | 'rotation' | 'drawScale' | 'visible' | 'fades' | 'opacity'>,
+  restInverse: THREE.Matrix4,
+  delta: THREE.Matrix4,
+  toRest: THREE.Matrix4,
+): boolean => {
+  const shown = v.visible && !(v.fades && v.opacity <= 0)
+  if (!shown) {
+    delta.makeScale(0, 0, 0)
+    return false
+  }
+  delta
+    .compose(
+      carryAt.set(v.position.x, v.position.y, v.position.z),
+      carryTurn.set(v.rotation.x, v.rotation.y, v.rotation.z, v.rotation.w),
+      carryScale.set(v.drawScale.x, v.drawScale.y, v.drawScale.z),
+    )
+    .multiply(restInverse)
+  toRest.copy(delta).invert()
+  return true
+}
+
+/**
+ * The riding meshes' shader: `MeshStandardMaterial`'s, with every cap carried by its board's row (ADR 0154).
+ *
+ * One substitution does the moving. `instanceMatrix` is what every chunk places a cap by — its position, its
+ * normal, its world position for the shadows it receives — so defining it as the board's transform times the
+ * cap's own, at the top of `main`, carries all of them at once without touching a chunk. The opacity rides a
+ * varying into the colour. `texelFetch`, so WebGL 2, which three has required since r163.
+ */
+export const RIDING_VERTEX_HEAD = /* glsl */ `attribute float boardSlot;
+uniform highp sampler2D boardState;
+varying float vBoardOpacity;
+mat4 boardInstance;
+`
+export const RIDING_VERTEX_MAIN = /* glsl */ `
+  {
+    int slot = int(boardSlot + 0.5);
+    mat4 carried = mat4(
+      texelFetch(boardState, ivec2(0, slot), 0),
+      texelFetch(boardState, ivec2(1, slot), 0),
+      texelFetch(boardState, ivec2(2, slot), 0),
+      texelFetch(boardState, ivec2(3, slot), 0)
+    );
+    boardInstance = carried * instanceMatrix;
+    vBoardOpacity = texelFetch(boardState, ivec2(4, slot), 0).r;
+  }
+#define instanceMatrix boardInstance
+`
+
+/** Patch a material's shader sources in place for riding caps. Throws if three's sources stop having the hooks. */
+export const rideShader = (shader: { vertexShader: string; fragmentShader: string }): void => {
+  if (!shader.vertexShader.includes('void main() {') || !shader.fragmentShader.includes('#include <color_fragment>')) {
+    throw new Error('keycaps: the standard material shader changed; the riding patch no longer applies')
+  }
+  shader.vertexShader = RIDING_VERTEX_HEAD + shader.vertexShader.replace('void main() {', `void main() {${RIDING_VERTEX_MAIN}`)
+  shader.fragmentShader = `varying float vBoardOpacity;\n${shader.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n\tdiffuseColor.a *= vBoardOpacity;')}`
 }
 
 /** One placed cap: where it rests, which instance draws it, and how far down it currently is. */
 interface Cap {
   mesh: THREE.InstancedMesh
   index: number
+  /** The board carrying it, when a sequence does: `rest` is where it was built, and this says where it is. */
+  riding: Riding | null
   rest: THREE.Vector3
   quat: THREE.Quaternion
   scale: THREE.Vector3
@@ -214,8 +317,8 @@ export const advancePress = (cap: PressState, feel: PressFeel, dt: number): bool
 /**
  * Build every board in the level as one instanced mesh per glyph, and animate the presses (ADR 0069).
  *
- * **Per glyph, not per board**, and pooled across the whole level: 26 draw calls for every keyboard in the
- * level put together, rather than one per cap. The alternative — one mesh with a per-instance UV offset into a
+ * **Per glyph, not per board**, and pooled across the whole level: 26 draw calls for every still keyboard in the
+ * level put together, rather than one per cap, and up to 26 more for every board a sequence carries (ADR 0154). The alternative — one mesh with a per-instance UV offset into a
  * glyph atlas — needs a shader patch to buy nothing at this scale.
  *
  * Returns the call that takes it all down again. Nothing tracks what a game adds to the scene (ADR 0066), so
@@ -255,9 +358,55 @@ export const drawKeycaps = (
   const scratch = new THREE.Matrix4()
   const scratchVec = new THREE.Vector3()
 
+  /** The boards a sequence carries, by their row in `state` (ADR 0154). */
+  const riding: Riding[] = []
+  /** One row per carried board: its transform's columns, then its opacity. `null` when nothing is carried. */
+  let state: THREE.DataTexture | null = null
+  /** What `state` uploads: kept typed here, since three types a texture's data loosely. */
+  let stateData = new Float32Array(0)
+  /** The riding meshes' geometries: the cap's own attributes, shared, plus which board each cap rides. */
+  const ridingGeometries: THREE.BufferGeometry[] = []
+
+  /** Write each carried board's row, and upload only when one of them moved. One row per board, per frame. */
+  const follow = (): void => {
+    if (state === null) return
+    const data = stateData
+    let changed = false
+    riding.forEach((r, slot) => {
+      const shown = carry(r.item, r.restInverse, r.delta, r.board.moving.toRest)
+      r.board.moving.hidden = !shown
+      const at = slot * STATE_TEXELS * 4
+      const e = r.delta.elements
+      for (let i = 0; i < 16; i += 1) {
+        if (data[at + i] !== e[i]) {
+          data[at + i] = e[i]!
+          changed = true
+        }
+      }
+      const opacity = shown ? r.item.opacity : 0
+      if (data[at + 16] !== opacity) {
+        data[at + 16] = opacity
+        changed = true
+      }
+    })
+    if (changed) state.needsUpdate = true
+  }
+
+  /** One cap to place: where it rests, which way its board faces down, and the board's row when it is carried. */
+  interface Placed {
+    key: string
+    matrix: THREE.Matrix4
+    down: THREE.Vector3
+    slot: number
+  }
+
   const build = (loaded: LoadedLevel): void => {
-    /** Every cap, grouped by the letter on it, with the board and cell it came from. */
-    const byGlyph = new Map<string, { key: string; matrix: THREE.Matrix4; down: THREE.Vector3 }[]>()
+    /**
+     * Every cap, grouped by the letter on it — the still boards' apart from the carried ones', which go in
+     * meshes of their own so that a still board pays nothing for boards that move.
+     */
+    const still = new Map<string, Placed[]>()
+    const carried = new Map<string, Placed[]>()
 
     for (const item of loaded.visuals) {
       const params = keyboardOn(loaded, item, keyGeometry())
@@ -267,19 +416,63 @@ export const drawKeycaps = (
       const boardIndex = boards.length
       boards.push(board)
       const down = new THREE.Vector3(0, -1, 0).applyQuaternion(board.quat)
-
+      let slot = -1
+      if (item.animated) {
+        slot = riding.length
+        const moving: Moving = { toRest: new THREE.Matrix4(), hidden: false }
+        board.moving = moving
+        const built = new THREE.Matrix4().compose(board.origin, board.quat, new THREE.Vector3(1, 1, 1))
+        riding.push({ item, board: board as Board & { moving: Moving }, restInverse: built.invert(), delta: new THREE.Matrix4() })
+      }
+      const into = slot < 0 ? still : carried
       for (const cap of capsFor(board, item.collider.halfExtents, params)) {
-        const list = byGlyph.get(cap.glyph) ?? []
-        list.push({ key: `${boardIndex}:${cap.col}:${cap.row}`, matrix: cap.matrix, down })
-        byGlyph.set(cap.glyph, list)
+        const list = into.get(cap.glyph) ?? []
+        list.push({ key: `${boardIndex}:${cap.col}:${cap.row}`, matrix: cap.matrix, down, slot })
+        into.set(cap.glyph, list)
       }
     }
 
-    for (const [glyph, placed] of byGlyph) {
-      const texture = glyphTexture(glyph, look)
-      textures.push(texture)
-      const material = new THREE.MeshStandardMaterial({ map: texture, roughness: 0.5, metalness: 0 })
-      const mesh = new THREE.InstancedMesh(geometry, material, placed.length)
+    if (riding.length > 0) {
+      stateData = new Float32Array(riding.length * STATE_TEXELS * 4)
+      state = new THREE.DataTexture(stateData, STATE_TEXELS, riding.length, THREE.RGBAFormat, THREE.FloatType)
+      follow()
+      state.needsUpdate = true
+    }
+
+    /** A letter's texture, shared by its still mesh and its riding one. */
+    const glyphs = new Map<string, THREE.Texture>()
+    const textureOf = (glyph: string): THREE.Texture => {
+      let texture = glyphs.get(glyph)
+      if (texture === undefined) {
+        texture = glyphTexture(glyph, look)
+        glyphs.set(glyph, texture)
+        textures.push(texture)
+      }
+      return texture
+    }
+
+    const addMesh = (glyph: string, placed: readonly Placed[], rides: boolean): void => {
+      const material = new THREE.MeshStandardMaterial({ map: textureOf(glyph), roughness: 0.5, metalness: 0 })
+      let shape: THREE.BufferGeometry = geometry
+      if (rides) {
+        /**
+         * Transparent from the start, as a fadeable platform's own material is (ADR 0137), so a fade never
+         * recompiles anything. At full opacity it draws as it would opaque.
+         */
+        material.transparent = true
+        const texture = state!
+        material.onBeforeCompile = (shader) => {
+          shader.uniforms.boardState = { value: texture }
+          rideShader(shader)
+        }
+        // The cap's own attributes, shared rather than copied, plus the board each cap rides: four bytes a cap.
+        shape = new THREE.BufferGeometry()
+        shape.setIndex(geometry.index)
+        for (const [name, attribute] of Object.entries(geometry.attributes)) shape.setAttribute(name, attribute)
+        shape.setAttribute('boardSlot', new THREE.InstancedBufferAttribute(Float32Array.from(placed, (p) => p.slot), 1))
+        ridingGeometries.push(shape)
+      }
+      const mesh = new THREE.InstancedMesh(shape, material, placed.length)
       // Dynamic, because pressing rewrites a cap's matrix. Static uploads once and would never show a press.
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
       /**
@@ -300,20 +493,28 @@ export const drawKeycaps = (
         const scale = new THREE.Vector3()
         // Decomposed once and kept: a press re-composes from these rather than reading the matrix back out.
         p.matrix.decompose(rest, quat, scale)
-        caps.set(p.key, { mesh, index: i, rest, quat, scale, down: p.down, held: false, committed: false, at: 0 })
+        caps.set(p.key, { mesh, index: i, riding: p.slot < 0 ? null : riding[p.slot]!, rest, quat, scale, down: p.down, held: false, committed: false, at: 0 })
       })
       mesh.instanceMatrix.needsUpdate = true
-      /**
-       * Frustum culling needs the instances' bounds, not the geometry's.
-       *
-       * Without this Three culls against the **unit cap's** sphere sitting at the mesh's origin, which for a
-       * board 40 m down the level is both wrong and useless: boards behind the camera were never skipped. The
-       * instances do not move — a press travels 0.25 m — so this is computed once.
-       */
-      mesh.computeBoundingSphere()
+      if (rides) {
+        // Its caps are wherever their boards have gone, which bounds taken at load do not know.
+        mesh.frustumCulled = false
+      } else {
+        /**
+         * Frustum culling needs the instances' bounds, not the geometry's.
+         *
+         * Without this Three culls against the **unit cap's** sphere sitting at the mesh's origin, which for a
+         * board 40 m down the level is both wrong and useless: boards behind the camera were never skipped.
+         * These instances do not move — a press travels 0.25 m — so this is computed once.
+         */
+        mesh.computeBoundingSphere()
+      }
       client.scene.add(mesh)
       meshes.push(mesh)
     }
+
+    for (const [glyph, placed] of still) addMesh(glyph, placed, false)
+    for (const [glyph, placed] of carried) addMesh(glyph, placed, true)
   }
 
   const self: Keycaps = {
@@ -326,11 +527,10 @@ export const drawKeycaps = (
         // so a cap under two players at once is struck once and by whoever is asked first.
         if (cap.at === 0 && !cap.held) {
           cap.committed = true
-          struck.push({
-            x: cap.rest.x - cap.down.x * cap.scale.y,
-            y: cap.rest.y - cap.down.y * cap.scale.y,
-            z: cap.rest.z - cap.down.z * cap.scale.y,
-          })
+          const top = new THREE.Vector3(cap.rest.x - cap.down.x * cap.scale.y, cap.rest.y - cap.down.y * cap.scale.y, cap.rest.z - cap.down.z * cap.scale.y)
+          // Where a carried board's cap is now, not where it was built (ADR 0154).
+          if (cap.riding !== null) top.applyMatrix4(cap.riding.delta)
+          struck.push({ x: top.x, y: top.y, z: top.z })
         }
         cap.held = true
         active.add(cap)
@@ -353,7 +553,7 @@ export const drawKeycaps = (
        * Built on the frame the level first exists.
        *
        * The level arrives with the first snapshot rather than at startup (ADR 0055), so there is nothing to
-       * read until then — and once read, none of it changes.
+       * read until then. The caps are laid out once; a board a sequence carries is followed every frame after.
        */
       if (boards.length === 0) {
         const loaded = client.level()
@@ -361,6 +561,8 @@ export const drawKeycaps = (
         return
       }
 
+      // Carried boards first, so a footfall this frame is looked up where the board is now.
+      follow()
       if (active.size === 0) return
       const dirty = new Set<THREE.InstancedMesh>()
 
@@ -385,10 +587,16 @@ export const drawKeycaps = (
       }
       // Shared by every mesh, so disposed once rather than per glyph.
       geometry.dispose()
+      for (const g of ridingGeometries) g.dispose()
+      state?.dispose()
       for (const texture of textures) texture.dispose()
       meshes.length = 0
       textures.length = 0
       boards.length = 0
+      ridingGeometries.length = 0
+      riding.length = 0
+      state = null
+      stateData = new Float32Array(0)
       caps.clear()
       active.clear()
     },
@@ -417,9 +625,12 @@ export const capsUnder = <T>(
   const found: T[] = []
   for (let b = 0; b < boards.length; b += 1) {
     const board = boards[b]!
-    local
-      .set(centre.x - board.origin.x, centre.y - board.origin.y, centre.z - board.origin.z)
-      .applyQuaternion(board.inverse)
+    // A carried board (ADR 0154): nothing to press while it is not drawn, and the foot is taken back to where
+    // the caps were built, so the arithmetic below is the one the placement used whatever the board has done.
+    if (board.moving?.hidden === true) continue
+    local.set(centre.x, centre.y, centre.z)
+    if (board.moving !== undefined) local.applyMatrix4(board.moving.toRest)
+    local.sub(board.origin).applyQuaternion(board.inverse)
     if (Math.abs(local.x) > board.half.x + radius || Math.abs(local.z) > board.half.z + radius) continue
     /**
      * A **thin** band around the face, and thin is the whole point.

@@ -1,6 +1,6 @@
 # ADR 0069 — A keyboard is one node, and its keys are generated
 
-Status: accepted. `modes/keyboard` exists: platforms carrying a `Keyboard` component get their top face tiled
+Status: accepted, amended: a board a sequence carries has its caps carry with it, drawn in the shader ([ADR 0154](0154-a-keyboard-rides-its-board.md)). `modes/keyboard` exists: platforms carrying a `Keyboard` component get their top face tiled
 with keycaps, held down by whoever is standing over them.
 
 ## Context

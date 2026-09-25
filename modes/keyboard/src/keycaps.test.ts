@@ -2,7 +2,7 @@ import { vec3 } from '@mp/core'
 import { THREE } from '@mp/render-three'
 import { describe, expect, it } from 'vitest'
 
-import { advancePress, boardGrid, boardOf, capsFor, capsUnder, DEFAULT_KEY_GEOMETRY, DEFAULT_PRESS, glyphAt, keyGeometryFrom, keyboardGridOf, MAX_SWEEP, sweepPoints, type KeyboardParams, type PressState } from './keycaps'
+import { advancePress, boardGrid, boardOf, capsFor, capsUnder, carry, DEFAULT_KEY_GEOMETRY, DEFAULT_PRESS, glyphAt, keyGeometryFrom, keyboardGridOf, MAX_SWEEP, rideShader, sweepPoints, type KeyboardParams, type Moving, type PressState } from './keycaps'
 
 /**
  * Turning a standing character back into the caps under them (ADR 0069).
@@ -378,5 +378,86 @@ describe('sweeping a frame of travel', () => {
     // A respawn from the last board to spawn is ~56 m; a frame at 15 fps and 32 m/s is 2.1 m.
     expect(MAX_SWEEP).toBeGreaterThan(2.1)
     expect(MAX_SWEEP).toBeLessThan(56)
+  })
+})
+
+/**
+ * A board a sequence carries (ADR 0154): its caps are built where it was at load, and follow it by one transform
+ * a frame — on the GPU for the drawing, back through the inverse for the footfalls.
+ */
+describe('a board a sequence carries', () => {
+  const shownAt = (position: ReturnType<typeof vec3>, extra: Partial<Parameters<typeof carry>[0]> = {}): Parameters<typeof carry>[0] => ({
+    position,
+    rotation: { x: 0, y: 0, z: 0, w: 1 },
+    drawScale: vec3(1, 1, 1),
+    visible: true,
+    fades: false,
+    opacity: 1,
+    ...extra,
+  })
+  /** A board built at (0, 1, 0), carried by the visual `now`. */
+  const carried = (now: Parameters<typeof carry>[0]) => {
+    const item = platform(vec3(0, 1, 0))
+    const { board, caps, points } = placed(item)
+    const restInverse = new THREE.Matrix4().compose(board.origin, board.quat, new THREE.Vector3(1, 1, 1)).invert()
+    const delta = new THREE.Matrix4()
+    const moving: Moving = { toRest: new THREE.Matrix4(), hidden: false }
+    moving.hidden = !carry(now, restInverse, delta, moving.toRest)
+    board.moving = moving
+    return { board, caps, points, delta }
+  }
+
+  it('carries a cap from where it was built to where the board is: moved, turned and stretched', () => {
+    const turn = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0))
+    const { delta } = carried(shownAt(vec3(10, 3, 0), { rotation: { x: turn.x, y: turn.y, z: turn.z, w: turn.w }, drawScale: vec3(2, 1, 1) }))
+    // One metre along the board's x from its centre, stretched to two, turned a quarter to −z, moved to (10, 3, 0).
+    const cap = new THREE.Vector3(1, 1, 0).applyMatrix4(delta)
+    expect([cap.x, cap.y, cap.z].map((n) => Math.round(n * 1e6) / 1e6)).toEqual([10, 3, -2])
+  })
+
+  it('presses the caps where the board is now, and none where it was', () => {
+    const { board, caps, points } = carried(shownAt(vec3(10, 1, 0)))
+    for (const [key, at] of points) {
+      expect(capsUnder([board], caps, vec3(at.x + 10, at.y + 0.3, at.z), FOOT)).toContain(key)
+      expect(capsUnder([board], caps, vec3(at.x, at.y + 0.3, at.z), FOOT)).toEqual([])
+    }
+  })
+
+  it('draws and presses nothing while switched off or faded to nothing, as the platform itself', () => {
+    for (const now of [shownAt(vec3(0, 1, 0), { visible: false }), shownAt(vec3(0, 1, 0), { fades: true, opacity: 0 })]) {
+      const { board, caps, points, delta } = carried(now)
+      expect(board.moving!.hidden).toBe(true)
+      expect(new THREE.Vector3(3, 4, 5).applyMatrix4(delta).length(), 'every cap folded to a point').toBe(0)
+      const [, at] = [...points][0]!
+      expect(capsUnder([board], caps, vec3(at.x, at.y + 0.3, at.z), FOOT)).toEqual([])
+    }
+  })
+})
+
+/** The riding meshes' shader: three's own standard material, with `instanceMatrix` carried by the board's row. */
+describe('the riding shader', () => {
+  const standard = (): { vertexShader: string; fragmentShader: string } => ({ vertexShader: THREE.ShaderLib.standard.vertexShader, fragmentShader: THREE.ShaderLib.standard.fragmentShader })
+
+  it('carries instanceMatrix before every chunk that places a cap by it', () => {
+    const shader = standard()
+    rideShader(shader)
+    const define = shader.vertexShader.indexOf('#define instanceMatrix boardInstance')
+    expect(define).toBeGreaterThan(shader.vertexShader.indexOf('void main() {'))
+    // Position, normal and the world position the shadows it receives are taken from.
+    for (const chunk of ['defaultnormal_vertex', 'project_vertex', 'worldpos_vertex']) {
+      expect(THREE.ShaderChunk[chunk as keyof typeof THREE.ShaderChunk], `${chunk} places by instanceMatrix`).toContain('instanceMatrix')
+      expect(shader.vertexShader.indexOf(`#include <${chunk}>`), `${chunk} after the substitution`).toBeGreaterThan(define)
+    }
+  })
+
+  it('fades the colour by the board’s opacity', () => {
+    const shader = standard()
+    rideShader(shader)
+    expect(shader.fragmentShader).toContain('#include <color_fragment>\n\tdiffuseColor.a *= vBoardOpacity;')
+    expect(shader.fragmentShader.startsWith('varying float vBoardOpacity;')).toBe(true)
+  })
+
+  it('refuses a shader without the hooks rather than drawing caps that do not follow', () => {
+    expect(() => rideShader({ vertexShader: 'void main(){}', fragmentShader: '' })).toThrow(/riding patch/)
   })
 })

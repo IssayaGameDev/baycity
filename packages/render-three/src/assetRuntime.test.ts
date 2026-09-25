@@ -15,6 +15,7 @@ const visual = (over: Partial<VisualItem>): VisualItem => ({
   visible: true,
   opacity: 1,
   fades: false,
+  animated: false,
   drawScale: { x: 1, y: 1, z: 1 },
   colliderHandles: [],
   ...over,

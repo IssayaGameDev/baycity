@@ -52,7 +52,7 @@ interface WorldNode { id; name; components /* resolved */; position, rotation /*
                      colliders: readonly ColliderDesc[] /* world-scaled, same order as handles (ADR 0095) */
                      scope: number }
 interface VisualItem { collider: ColliderDesc /* scale baked in */; position; rotation: Quat; scale: Vec3 /* world, sizes a built-in */; model?: string; material?: string; colliderHandles: number[]
-                      visible: boolean; opacity: number; drawScale: Vec3 /* mutated per tick by sequences */; fades: boolean /* at load */ }   // ADR 0141
+                      visible: boolean; opacity: number; drawScale: Vec3 /* mutated per tick by sequences */; fades: boolean; animated: boolean /* at load; animated = a sequence drives it or above, ADR 0154 */ }   // ADR 0141
 interface WorldLight { …; position; rotation; visible: boolean /* off while its node is disabled */ }
 ```
 

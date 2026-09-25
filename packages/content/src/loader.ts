@@ -88,6 +88,12 @@ export interface VisualItem {
    */
   fades: boolean
   /**
+   * `true` when a sequence drives this node or one above it, decided at load: its `position`, `rotation`,
+   * `drawScale`, `opacity` and `visible` are then rewritten every tick. What something drawn **with** it and
+   * built only once — a keyboard's caps (ADR 0154) — needs to know to follow it.
+   */
+  animated: boolean
+  /**
    * The node's world scale now, over `scale` — how far the geometry built at load is stretched while a
    * sequence scales the node. `(1,1,1)` otherwise. Mutated by `update`/`render`.
    */
@@ -618,6 +624,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         visible: f.shown,
         opacity: f.seq.opacity,
         fades: f.fading,
+        animated: f.animated,
         drawScale: vec3(1, 1, 1),
       }
       visuals.push(v)

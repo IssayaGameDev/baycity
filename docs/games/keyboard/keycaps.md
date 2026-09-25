@@ -47,7 +47,8 @@ setting, and corner snapping in the editor (ADR 0117), which is what makes a box
 all.
 
 Caps are drawn as **one `InstancedMesh` per glyph** across the whole level, `castShadow: false`,
-`receiveShadow: true`, `DynamicDrawUsage`. Geometry: `keycapGeometry(shape)` — superellipse outline, taper 0.82,
+`receiveShadow: true`, `DynamicDrawUsage` — the **still** boards'. A board whose visual is `animated` (a sequence
+drives it or anything above it) is carried instead (below). Geometry: `keycapGeometry(shape)` — superellipse outline, taper 0.82,
 dish 0.28, 12 segments, 2 dish rings (~84 tris); top face UVs into the legend tile, walls sample one flat point
 (so the letter is only on top, reads correctly from behind).
 
@@ -72,7 +73,25 @@ DEFAULT_KEYCAP_LOOK = { cap: 0xe8e6e1, ink: 0x2b2b31 }
 ```
 
 `update(dt)` builds the boards on the first frame the level exists (it arrives with the first snapshot), then
-animates only active caps and uploads only dirty instance matrices.
+follows the carried boards and animates only active caps, uploading only dirty instance matrices.
+
+## Carried boards (ADR 0154)
+
+A board a sequence carries has its caps built where it was at load into **riding** meshes, one per glyph, each
+cap tagged with its board's slot (`boardSlot`). `state`, a float `DataTexture` of `STATE_TEXELS = 5` texels per
+board (the transform since load, by column, then the opacity), is written by `follow()` each frame and uploaded
+only when a row changed.
+
+| | |
+| --- | --- |
+| `carry(visual, restInverse, delta, toRest)` | pure: `delta` = the visual's pose now (position, rotation, `drawScale` — the level view's) × the pose at load inverted; `toRest` its inverse. `false` when not drawn (`!visible`, or `fades` at opacity 0), and `delta` folds every cap to a point |
+| `rideShader(shader)` | `MeshStandardMaterial`'s sources, patched: `boardSlot` → a row → `#define instanceMatrix boardInstance` at the top of `main`, so every chunk that places by it (`defaultnormal_vertex`, `project_vertex`, `worldpos_vertex`) is carried; `diffuseColor.a *= vBoardOpacity` after `color_fragment`. Throws if three's sources lose either hook |
+| riding material | `transparent` from the start; shares the glyph's texture with the still mesh |
+| riding mesh | not frustum-culled; the cap geometry's attributes shared, not copied |
+| footfalls | `Board.moving = { toRest, hidden }`: `capsUnder` skips a hidden board and takes the foot through `toRest` first; a struck cap's top goes back out through `delta` |
+
+The cost is a few texel fetches per vertex of a carried cap and up to 26 draw calls; none of it per cap on the
+CPU, and nothing for a still board.
 
 ## Peers
 
