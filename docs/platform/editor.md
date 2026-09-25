@@ -237,6 +237,13 @@ uses it. It does, because a prefab is a live document of its own.
 | unlink a placement | `Doc.unlinkNode(i)` — one `replaceNode` op (ADR 0111). The node keeps its id, transform and place in the tree and takes the resolved name, components and children, so an override becomes the value; the inherited subtree is cloned with fresh **node** ids, since a prefab's are scoped to itself. Refuses a non-placement and an inherited node. From the Hierarchy menu's *Unlink from prefab* and the Inspector's **Unlink**, left of **Open**. No confirm: one op, so Ctrl+Z puts the link back |
 | no Save, no lock | both kinds of room write themselves. The top bar has no mode select and no Save; it reads `level › prefab`, and the level is the way back (ADR 0149). A prefab is renamed in the Project panel |
 
+**The prefab grid** (`src/prefabGrid.test.ts`, ADR 0151): every gesture — rename, switch off, delete, duplicate,
+create a child, reorder, move into, paste into, Revert, Apply — on every kind of node (an object of the level,
+a placement, a piece, a child added under a piece), each checked in the editor's tree, after the level is
+written and reopened with its prefabs resolved from their files, in what `effectiveNode` builds, and through
+undo back to the exact starting JSON. `it.fails` marks the seventeen that do not hold yet, each with its cause;
+the rebuild (ADR 0151) turns them into `it`. Several rows above describe behaviour the grid shows is incomplete.
+
 ### Switching a node off (ADR 0099)
 
 A checkbox in the **Inspector's header, immediately left of the name** and nothing else — the same shape a
