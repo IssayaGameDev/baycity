@@ -40,7 +40,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | --- | --- | --- |
 | Top | `#toolbar` (ADR 0149), a 3-column grid: the level's name, or `level › prefab` inside a prefab — the level is a button and the way back; **Motion** and **Play** in the middle. No New or Duplicate (the Project panel's), **no game picker and no level list** (ADR 0108), no mode select and no Save: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
 | Over the viewport | `#overlays` in `#centre` (ADR 0149): a layer that passes the pointer through, its panels (`.ov`) taking it back; **hidden while playing**. Left edge, vertical: Move / Rotate / Scale / **Face** (ADR 0119). Top left: Global / Local (globe / cube), the magnet, the active tool's increment with its unit (ADR 0114). Top right, left of the navigation gizmo: Grid, Markers, **Keys** (ADR 0120; hidden unless the game declares `surfaceGrid`), **Reveal** (ADR 0132; hidden while nothing is). Under the gizmo: the Persp / Iso button (ADR 0094). Icons only (`icons.ts`), each named with its key in its tooltip | `src/toolbar.ts`, `src/cameraView.ts` |
-| Left | `#hierarchy` — node tree + context menu. Rows alternate `--row-alt` by **rendered** position (`.row:not(.env):nth-child(even)`), declared before `:hover` and `.sel` so both win on source order | `src/hierarchy.ts`, `src/menu.ts` |
+| Left | `#hierarchy` — node tree + context menu; how a row reads and drags is **The Hierarchy** below (ADR 0150). Rows alternate `--row-alt` by **rendered** position (`.row:where(:not(.env)):nth-child(even)`), declared before `:hover` and `.sel` so both win on source order | `src/hierarchy.ts`, `src/hierarchyDrag.ts`, `src/menu.ts` |
 | Centre | `#view` — Three stage, orbit, transform gizmo, placement clicks | `src/main.ts`, `src/itemMeshes.ts`, `src/play.ts` |
 | Right | `#insp-head`, `#inspector`, `#asset-inspector` | `src/inspector.ts`, `src/assetInspector.ts` |
 | Bottom panel | `#palette` **Project** (asset tree, previews) | `src/projectPanel.ts`, `src/assetTree.ts`, `src/previews.ts` |
@@ -338,6 +338,44 @@ in orthographic) by an `onBeforeCompile` on `project_vertex`. Each copies its me
 after `updateWorldMatrix`, so it follows drags and the preview; the set is rebuilt only when the meshes under the
 selection change. In the `selection-edges` group outside `instanceRoot`, so never picked. None while playing.
 
+## The Hierarchy (ADR 0150)
+
+`src/hierarchy.ts` draws `rowsOf` (pure); `src/hierarchyDrag.ts` moves rows. Rows are 24 px, indented
+`ROW_BASE + depth × INDENT` (6 + 16 px a level).
+
+| Part | |
+| --- | --- |
+| Game, Environment | above the tree, a rule under them: `gamepad` / `sun` icons (`icons.ts`), not emoji |
+| guides | `.guides`: a 1 px `--guide` line per level above the row, under the twist of the row it hangs from — a repeating gradient `depth × 16` px wide |
+| twist | the `chevron` icon, turned −90° while shut |
+| cube | `rowIcon(row)`: `prefab` (filled) in `--link` for a placement, `object` in light blue (`is-piece`) for a prefab's piece, `object` in grey for the level's own. A placement's name stays `--link` |
+| name | italic and dim when switched off, here or above (ADR 0099); a switched-off row's cube at 0.45 |
+| eye | right end, before the count (ADR 0132, `Hiding a node` below): on hover, and always once hidden |
+| badge | `×N` for a prefab placed more than once, nothing else (`inline` went); or who holds it (ADR 0089) |
+
+**Drag** — pointer events, not HTML5. A press becomes a drag after 4 px, so a click still selects; it carries the
+whole selection when the grabbed row is in it (ADR 0134), a piece only out (ADR 0133). A copy with the grabbed
+row's cube and name (`+N` for more) follows the pointer; the carried rows dim. Where it lands is
+`dropAt(rows, y, wantDepth, canOnto)`, pure, over the rows measured each frame:
+
+| Pointer over | Lands |
+| --- | --- |
+| a row's middle 40 %, when some carried row can go under it | **into** it, last (`drop-onto` lights it) |
+| its top or bottom 30 % — or its halves, for a piece or a row nothing carried can go into | the gap beside it |
+| past either end | the gap at that end |
+
+A gap offers the depths that keep the tree what it shows: before the row below at its depth; or after the row
+above at any depth from the row below's up to its own, closing the groups it ends. The pointer's x picks
+(`(x − left − ROW_BASE − INDENT / 2) / INDENT`, rounded, clamped), so at the end of a group, left leaves it. A
+fixed `.hier-line` marks the gap, indented to that depth. A place no carried row can go shows nothing
+(`Doc.canReparent`); on the drop, the rows that cannot are skipped (`onReparent`). Holding 600 ms over a shut row
+opens it; the list scrolls within 28 px of its edge; Escape cancels; the click after a drag is swallowed
+(`rowJustDragged`).
+
+**Scrollbars**, every panel: `::-webkit-scrollbar` 12 px wide with no buttons, the thumb drawn 6 px (8 on hover)
+inside a transparent border that still takes the pointer; Firefox gets `scrollbar-color` only, because Chromium
+ignores the pseudo-elements wherever that is set.
+
 ## Project panel — games at the top (ADR 0108)
 
 `src/projectPanel.ts`. The tree is games first, then the shared asset library:
@@ -595,7 +633,7 @@ the `active` checkbox (ADR 0099), which switches a node off *in the level* and i
 |---|---|
 | the set, and what a toggle covers | `src/hiddenView.ts` — `createHiddenView`, `keysUnder(doc, i, onlyThis)`. Pure and tested. Keyed by `refKey`, so a prefab's piece is keyed by its placement and hiding one wall does not hide it in every tower. Every descendant is named rather than hidden by implication, which keeps alt-click and a branch toggle two different sets |
 | not drawn, not clickable | `itemMeshes` builds no meshes for a hidden node (`PickHost.hidden`). Picking raycasts the meshes, so both halves fall out of the one rule; the group survives, so indices and child frames are untouched |
-| the control | a fixed 18 px gutter at the left of a Hierarchy row, **outside** the indentation so the column lines up at any depth. Empty until the row is hovered, always drawn once hidden — which is the condition ADR 0102 set for a control living here. A hidden row does **not** dim: dimming already means switched off |
+| the control | the eye at the **right end** of a Hierarchy row, before the count (ADR 0150; it was an 18 px gutter on the left that pushed every row right). Drawn on hover, always once hidden — the condition ADR 0102 set for a control living here — and its place kept either way, so the count never moves. A hidden row does **not** dim: dimming already means switched off |
 | alt-click | that node alone; a plain click takes the subtree |
 | **Reveal** | the viewport's eye toggle, top right (ADR 0149), showing everything without forgetting it; hidden while nothing is hidden. Local and momentary, never sent |
 | shared and durable | `POST .../hidden` → the server's `stateDir/hidden.json`, relayed live as the `hidden` event and carried on the `snapshot` (`editor-server.md`). The whole set every time, never a delta |

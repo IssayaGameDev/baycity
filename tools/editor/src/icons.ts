@@ -1,6 +1,6 @@
 /**
  * The editor's icons: the sequence editor's (ADR 0147) — one per step kind, and the few its controls need —
- * and the viewport's tools and toggles (ADR 0149). Drawn here as SVG paths on a 24-unit grid, stroked in the
+ * the viewport's tools and toggles (ADR 0149), and the Hierarchy's rows (ADR 0150). Drawn here as SVG paths on a 24-unit grid, stroked in the
  * text colour, so they tint with CSS and cost no dependency.
  *
  * Static markup only — nothing a person typed ever reaches `innerHTML` here.
@@ -39,6 +39,9 @@ export type IconName =
   | 'motion'
   | 'play'
   | 'stop'
+  | 'prefab'
+  | 'gamepad'
+  | 'sun'
 
 const DOT = (x: number, y: number): string => `<circle cx="${x}" cy="${y}" r="1.6" fill="currentColor" stroke="none"/>`
 
@@ -76,6 +79,10 @@ const PATHS: Record<IconName, string> = {
   motion: '<rect x="10.5" y="6.5" width="10" height="11" rx="2"/><path d="M3 9h4.5M2 12h5.5M3 15h4.5"/>',
   play: '<path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/>',
   stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor"/>',
+  // `object`'s cube, filled: a prefab, as Unity draws one.
+  prefab: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" fill="currentColor" fill-opacity="0.3"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>',
+  gamepad: '<rect x="2.5" y="7" width="19" height="11" rx="5.5"/><path d="M7.5 10.5v4M5.5 12.5h4"/><path d="M15.5 11.5h.01M18 13.5h.01"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg'

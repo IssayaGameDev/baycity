@@ -1,7 +1,8 @@
 # ADR 0025 — Instances nest to arbitrary depth; the loader composes a frame tree
 
 Status: accepted. Rewrites the core of `instantiateLevel` (ADR 0014's loader). Closes the open item ADR
-0023 recorded. Does not change the wire (ADR 0021).
+0023 recorded. Does not change the wire (ADR 0021). The Hierarchy's three-zone drop is amended by ADR 0150:
+pointer events, 30 / 40 / 30, and the pointer's x picks the depth where a group ends.
 
 ## Context
 

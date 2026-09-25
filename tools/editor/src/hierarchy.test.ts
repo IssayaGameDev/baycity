@@ -3,7 +3,7 @@ import { vec3, type Vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
 import { levelDoc, prefabDoc, type Doc } from './editorDoc'
-import { ancestorPaths, dropTarget, rowsOf, zoneFor, type Openness, type Row } from './hierarchy'
+import { ancestorPaths, rowIcon, rowsOf, type Openness } from './hierarchy'
 
 const blank = (): Level => ({ id: 'l', config: {}, nodes: [] })
 
@@ -214,15 +214,26 @@ describe('rowsOf: prefab pieces', () => {
 })
 
 describe('rowsOf: annotations', () => {
-  it('badges a shared prefab with its count, and marks an inline one-off', () => {
+  it('badges a shared prefab with its count, and nothing else', () => {
     const doc = four()
     const badged = rowsOf(doc, allOpen(doc)).filter((r) => r.kind === 'item')
     expect(badged).toHaveLength(4)
     expect(badged.every((r) => r.badge === '×4')).toBe(true)
 
+    // A one-off is the commonest row there is, and "inline" on every one of them said nothing (ADR 0150).
     const level = blank()
     level.nodes.push(inline('oneoff'))
-    expect(rowsOf(levelDoc(level), { expanded: new Set(['0']) })[0]!.badge).toBe('inline')
+    expect(rowsOf(levelDoc(level), { expanded: new Set(['0']) })[0]!.badge).toBe('')
+  })
+
+  it('draws a prefab, its pieces and the level’s own objects each their own way', () => {
+    const doc = four()
+    const level = blank()
+    level.nodes.push(inline('oneoff'))
+    const [placement, piece] = rowsOf(doc, allOpen(doc))
+    expect(rowIcon(placement!)).toEqual({ icon: 'prefab', className: 'is-prefab' })
+    expect(rowIcon(piece!)).toEqual({ icon: 'object', className: 'is-piece' })
+    expect(rowIcon(rowsOf(levelDoc(level), SHUT)[0]!)).toEqual({ icon: 'object', className: 'is-object' })
   })
 
   it('reports the parent and sibling index a drop needs', () => {
@@ -235,61 +246,6 @@ describe('rowsOf: annotations', () => {
     expect(rows[1]!.siblingIndex).toBe(0)
     expect(rows[2]!.parent, 'b is top level').toBeNull()
     expect(rows[2]!.siblingIndex, 'and second among the top-level instances').toBe(1)
-  })
-})
-
-describe('zoneFor', () => {
-  it('splits an item row into above / onto / below', () => {
-    expect(zoneFor(2, 20, true)).toBe('above')
-    expect(zoneFor(10, 20, true)).toBe('onto')
-    expect(zoneFor(18, 20, true)).toBe('below')
-  })
-
-  it('has no middle where nothing can be parented — a piece row', () => {
-    expect(zoneFor(9, 20, false)).toBe('above')
-    expect(zoneFor(11, 20, false)).toBe('below')
-  })
-
-  // A row measured before layout has zero height. The guard matters (no divide by zero); which band a
-  // degenerate row reports does not, so long as it is a real one.
-  it('survives a zero-height row rather than dividing by it', () => {
-    expect(zoneFor(0, 0, true)).toBe('above')
-  })
-})
-
-describe('dropTarget', () => {
-  const row = (over: Partial<Row> = {}): Row => ({
-    kind: 'item',
-    index: 5,
-    pieceIndex: -1,
-    hidden: false,
-    depth: 1,
-    path: '0/2',
-    parent: 0,
-    siblingIndex: 2,
-    label: 'x',
-    badge: '',
-    disabled: false,
-    disabledAbove: false,
-    held: '',
-    linked: true,
-    hasChildren: false,
-    expandable: false,
-    expanded: false,
-    ...over,
-  })
-
-  it('makes a dropped item a child when dropped onto a row', () => {
-    expect(dropTarget(row(), 'onto').parent, 'the row itself becomes the parent').toBe(5)
-  })
-
-  it('inserts among the row\'s siblings when dropped above or below', () => {
-    expect(dropTarget(row(), 'above')).toEqual({ parent: 0, at: 2 })
-    expect(dropTarget(row(), 'below')).toEqual({ parent: 0, at: 3 })
-  })
-
-  it('inserts at the top level for a row that has no parent', () => {
-    expect(dropTarget(row({ parent: null, siblingIndex: 0 }), 'above')).toEqual({ parent: null, at: 0 })
   })
 })
 

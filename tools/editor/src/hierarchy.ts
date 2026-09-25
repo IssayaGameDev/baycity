@@ -1,4 +1,6 @@
 import type { Doc } from './editorDoc'
+import { pressRowToDrag, rowJustDragged, INDENT, ROW_BASE, type DrawnRow } from './hierarchyDrag'
+import { icon, type IconName } from './icons'
 import { defersToClick, modeFor, type SelectMode } from './selection'
 
 /**
@@ -13,6 +15,10 @@ import { defersToClick, modeFor, type SelectMode } from './selection'
  * it is what the Inspector shows and what the gizmo moves. What it is *not* is independently placeable: its
  * position belongs to the shared prefab, so it cannot be dragged, re-ordered or deleted through a placement,
  * and what you change about it becomes an override on that placement.
+ *
+ * How a row reads (ADR 0150), Unity's way: a cube per row — blue and filled for a prefab, light blue for one
+ * of its pieces, grey for an object of the level's own — guide lines down each level of nesting, the eye at
+ * the right end on hover, and a count only where a prefab is placed more than once.
  *
  * Everything starts **shut**, so opening a level shows its top-level objects rather than every node at once.
  * Openness is keyed by `Doc.pathOf` rather than by row index, so editing one part of the tree does not shuffle
@@ -36,7 +42,10 @@ export interface Row {
   /** Position within its own sibling list — what a drop above/below this row inserts at. */
   siblingIndex: number
   label: string
-  /** Right-aligned annotation: shared-instance count, or `inline` for a one-off. */
+  /**
+   * Right-aligned annotation: how many times the prefab is placed, when it is more than once. Nothing else —
+   * `inline` was on every object that is not a prefab, so the commonest row said the least (ADR 0150).
+   */
   badge: string
   /** Who else has this node selected (ADR 0089) — the row is not selectable, renamable or draggable. `''` when free. */
   held: string
@@ -81,9 +90,6 @@ export interface Openness {
  * Rows for a document. Pure, so the parts worth getting right — which descendants a collapsed row hides,
  * what a drop above a row would insert at, how a piece row is addressed — are testable without a DOM.
  */
-/** Width of the fixed gutter the eyes live in, left of everything and outside the indentation. */
-const EYE_GUTTER = 18
-
 export const rowsOf = (
   doc: Doc,
   open: Openness,
@@ -118,7 +124,7 @@ export const rowsOf = (
       parent: doc.parentOf(i),
       siblingIndex: doc.siblingIndexOf(i),
       label: doc.label(i),
-      badge: shared > 1 ? `×${shared}` : ref === null && kind !== 'inherited' ? 'inline' : '',
+      badge: shared > 1 ? `×${shared}` : '',
       held: heldBy(i) ?? '',
       linked: ref !== null,
       disabled: !doc.nodeEnabled(i),
@@ -134,26 +140,9 @@ export const rowsOf = (
   return rows
 }
 
-/** Which of the three bands of a row the pointer is in — Unity's above / onto / below. */
-export type DropZone = 'above' | 'onto' | 'below'
-
-/**
- * Band from a pointer's position within a row. The middle half is "make it a child"; the outer quarters
- * insert among the row's own siblings. Piece rows have no middle: nothing can be parented to a piece.
- */
-export const zoneFor = (offsetY: number, height: number, allowOnto: boolean): DropZone => {
-  const t = height > 0 ? offsetY / height : 0
-  if (!allowOnto) return t < 0.5 ? 'above' : 'below'
-  if (t < 0.25) return 'above'
-  if (t > 0.75) return 'below'
-  return 'onto'
-}
-
-/** The reparent arguments a drop in `zone` on `row` means: the new parent, and where among its children. */
-export const dropTarget = (row: Row, zone: DropZone): { parent: number | null; at: number } => {
-  if (zone === 'onto') return { parent: row.index, at: Number.MAX_SAFE_INTEGER } // appended; clamped by the doc
-  return { parent: row.parent, at: zone === 'above' ? row.siblingIndex : row.siblingIndex + 1 }
-}
+/** A row's cube and the class that colours it: a prefab, one of a prefab's pieces, or the level's own. */
+export const rowIcon = (row: Pick<Row, 'kind' | 'linked'>): { icon: IconName; className: string } =>
+  row.linked ? { icon: 'prefab', className: 'is-prefab' } : row.kind === 'inherited' ? { icon: 'object', className: 'is-piece' } : { icon: 'object', className: 'is-object' }
 
 /**
  * The paths of every ancestor of `index`, nearest first — what has to be open for its row to be on screen.
@@ -181,7 +170,7 @@ export interface HierarchyHost {
    * panel knows which rows are on screen.
    */
   onSelect: (index: number, mode: SelectMode, order: readonly number[]) => void
-  /** Is this node hidden in the viewport (ADR 0132)? What the eye in the left gutter draws. */
+  /** Is this node hidden in the viewport (ADR 0132)? What the eye draws. */
   isHidden: (index: number) => boolean
   /**
    * The eye was clicked. `onlyThis` is an alt-click: the node alone, leaving its children where they are;
@@ -199,10 +188,10 @@ export interface HierarchyHost {
   /** The Environment row was clicked. */
   onSelectEnv: () => void
   onRename: (index: number, name: string) => void
-  /** Re-parent `from` under `parent` (`null` = top level) at sibling position `at`. */
   /**
    * A drop happened. `from` is **every** row the drag carried, top to bottom (ADR 0134): the whole selection
-   * when the grabbed row was part of it, else just that row.
+   * when the grabbed row was part of it, else just that row. Re-parented under `parent` (`null` = top level)
+   * at sibling position `at`.
    */
   onReparent: (from: readonly number[], parent: number | null, at: number) => void
   /** Who else holds this node, or `null` (ADR 0089). Absent when nothing is ever held (prefabs). */
@@ -237,22 +226,35 @@ export interface Hierarchy {
   setAllOpen: (open: boolean) => void
 }
 
+const span = (className: string, text?: string): HTMLSpanElement => {
+  const s = document.createElement('span')
+  s.className = className
+  if (text !== undefined) s.textContent = text
+  return s
+}
+
 export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hierarchy => {
   const expanded = new Set<string>()
-  let dragFrom: number | null = null
-  /** Every row the drag carries, ascending (ADR 0134). The whole selection, or just the grabbed row. */
-  let dragRows: number[] = []
   /** The row whose press left a multi-selection alone, to collapse it on the click if no drag came of it. */
   let pressKept: number | null = null
   let editing: number | null = null
+  /** What the last render drew, for a drag to measure. */
+  let drawn: DrawnRow[] = []
 
-  const clearDropMarks = (): void => {
-    for (const r of container.children) r.classList.remove('drop-above', 'drop-below', 'drop-onto')
+  /** A level setting above the tree: the Game and Environment rows (ADR 0048, ADR 0052). */
+  const settingRow = (name: IconName, text: string, title: string, selected: boolean, onPick: () => void): HTMLElement => {
+    const row = document.createElement('div')
+    row.className = `row env${selected ? ' sel' : ''}`
+    row.title = title
+    row.append(icon(name, 'ic ico'), span('name', text))
+    row.addEventListener('pointerdown', () => onPick())
+    return row
   }
 
   const render = (): void => {
     const doc = host.doc()
     container.replaceChildren()
+    drawn = []
 
     /**
      * The level's environment: not a node, so it sits above the tree rather than in it (ADR 0048). A row rather
@@ -267,25 +269,14 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
        * than a section inside it: they are two subjects, and the game decides what the level *is* where the
        * sun decides what it looks like.
        */
-      const game = document.createElement('div')
-      game.className = `row env${host.gameSelected() ? ' sel' : ''}`
-      game.textContent = `🎮 ${host.gameLabel()}`
-      game.title = 'which game this level is for, and its settings'
-      game.addEventListener('pointerdown', () => host.onSelectGame())
-      container.append(game)
-
-      const env = document.createElement('div')
-      env.className = `row env${host.envSelected() ? ' sel' : ''}`
-      env.textContent = '☀ Environment'
-      env.title = 'sun and sky for this level'
-      env.addEventListener('pointerdown', () => host.onSelectEnv())
-      container.append(env)
+      container.append(settingRow('gamepad', host.gameLabel(), 'which game this level is for, and its settings', host.gameSelected(), host.onSelectGame))
+      container.append(settingRow('sun', 'Environment', 'sun, sky and camera for this level', host.envSelected(), host.onSelectEnv))
     }
 
     if (doc === null || doc.count() === 0) {
       const empty = document.createElement('div')
       empty.className = 'empty'
-      empty.textContent = doc === null ? 'nothing open' : 'empty — place something from the Prefabs panel'
+      empty.textContent = doc === null ? 'nothing open' : 'empty — place something from the Project panel'
       container.append(empty)
       return
     }
@@ -299,6 +290,7 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
 
     for (const row of rows) {
       const el = document.createElement('div')
+      const look = rowIcon(row)
       el.className = [
         'row',
         row.kind === 'inherited' ? 'inherited' : '',
@@ -317,35 +309,19 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
         .filter((c) => c !== '')
         .join(' ')
       // Indentation is the only thing that says "inside", so it comes from the data, not from a class.
-      // The eye sits in a fixed gutter at the left of the panel, **outside** the indentation, so the column
-      // lines up however deep the tree goes. Indented, the eyes would zigzag down the list (ADR 0132).
-      el.style.paddingLeft = `${EYE_GUTTER + 6 + row.depth * 14}px`
+      el.style.paddingLeft = `${ROW_BASE + row.depth * INDENT}px`
       el.dataset.index = String(row.index) // what `reveal` scrolls to after a render
 
-      /**
-       * The eye. Empty until the row is hovered, and always drawn once the node is hidden — so the column
-       * costs nothing when unused, which is what ADR 0102 objected to about a column of controls here.
-       * Alt-click takes the node alone and leaves its children visible, as Unity's does.
-       */
-      const eye = document.createElement('span')
-      eye.className = 'eye'
-      eye.textContent = row.hidden ? '◉' : '○'
-      eye.title = row.hidden ? 'hidden in the viewport (alt-click: this object only)' : 'hide in the viewport (alt-click: this object only)'
-      eye.addEventListener('pointerdown', (ev) => {
-        // Before the row's own handler, so hiding something never also selects it.
-        ev.stopPropagation()
-        ev.preventDefault()
-      })
-      eye.addEventListener('click', (ev) => {
-        ev.stopPropagation()
-        host.onToggleHidden(row.index, ev.altKey)
-      })
-      el.append(eye)
+      // A line down each level of nesting above this row, so a long open group reads as one.
+      if (row.depth > 0) {
+        const guides = span('guides')
+        guides.style.width = `${row.depth * INDENT}px`
+        el.append(guides)
+      }
 
-      const twist = document.createElement('span')
-      twist.className = 'twist'
-      twist.textContent = row.expandable ? (row.expanded ? '▾' : '▸') : ''
+      const twist = span(row.expandable ? `twist${row.expanded ? '' : ' shut'}` : 'twist')
       if (row.expandable) {
+        twist.append(icon('chevron'))
         twist.addEventListener('pointerdown', (e) => {
           e.stopPropagation() // opening is not selecting
           if (expanded.has(row.path)) expanded.delete(row.path)
@@ -353,7 +329,7 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
           render()
         })
       }
-      el.append(twist)
+      el.append(twist, icon(look.icon, `ic ico ${look.className}`))
 
       if (editing === row.index) {
         // Inline rename. Blank commits as "no name", which reverts the label to the fallback.
@@ -379,6 +355,7 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
         input.addEventListener('blur', () => finish(true))
         el.append(input)
         container.append(el)
+        drawn.push({ row, el }) // still a row on screen, which a drop measures around
         // Focus once the row is in the document, or the caret has nowhere to go.
         requestAnimationFrame(() => {
           input.focus()
@@ -387,26 +364,37 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
         continue
       }
 
-      const name = document.createElement('span')
-      name.className = 'name'
-      name.textContent = row.label
-      el.append(name)
+      el.append(span('name', row.label))
 
-      if (row.badge !== '') {
-        const badge = document.createElement('span')
-        badge.className = 'badge'
-        badge.textContent = row.badge
-        el.append(badge)
-      }
+      /**
+       * The eye, at the right end (ADR 0150): drawn on hover, and always once the node is hidden, so the
+       * column costs nothing when unused (ADR 0102) and pushes nothing to the right. Alt-click takes the node
+       * alone and leaves its children visible, as Unity's does.
+       */
+      const eye = document.createElement('button')
+      eye.type = 'button'
+      eye.className = 'eye'
+      eye.append(icon(row.hidden ? 'disable' : 'enable'))
+      eye.title = row.hidden ? 'hidden in the viewport: click to show (alt-click: this object only)' : 'hide in the viewport (alt-click: this object only)'
+      eye.addEventListener('pointerdown', (ev) => {
+        // Before the row's own handler, so hiding something never also selects it or starts a drag.
+        ev.stopPropagation()
+        ev.preventDefault()
+      })
+      eye.addEventListener('click', (ev) => {
+        ev.stopPropagation()
+        host.onToggleHidden(row.index, ev.altKey)
+      })
+      el.append(eye)
+
+      if (row.badge !== '') el.append(span('badge', row.badge))
       // Someone else has it: their name is the badge, and the row does nothing but say so.
       if (row.held !== '') {
-        const badge = document.createElement('span')
-        badge.className = 'badge held'
-        badge.textContent = row.held
-        el.append(badge)
+        el.append(span('badge held', row.held))
         el.title = `${row.held} has this selected`
         el.addEventListener('pointerdown', (e) => host.onSelect(row.index, modeFor(e), order))
         container.append(el)
+        drawn.push({ row, el }) // not draggable, but on screen: a drop beside it is measured around it
         continue
       }
 
@@ -418,8 +406,43 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
         const mode = modeFor(e)
         pressKept = defersToClick(host.selection(), row.index, mode, e.button) ? row.index : null
         if (pressKept === null) host.onSelect(row.index, mode, order)
+        // Read after the press has had its say, so a Ctrl-press that took this row out carries it alone.
+        const selected = host.selection()
+        /**
+         * **A piece can be dragged too, but only out** (ADR 0133). It is resolved into a node of this level at
+         * the destination and the placement records it is gone, so nothing about the prefab moves. What is
+         * still refused is a piece as a *destination* — `dropAt` offers no `onto` for one — because where a
+         * piece sits is the prefab's, for every placement at once.
+         *
+         * Grabbing a row that is already selected drags the whole selection; grabbing one that is not drags it
+         * alone, as Unity does. Ascending, so the drop keeps the order they were in.
+         */
+        const carried = selected.includes(row.index) ? [...selected].sort((a, b) => a - b) : [row.index]
+        pressRowToDrag(e, {
+          list: container,
+          drawn: () => drawn,
+          carried,
+          label: { icon: look.icon, text: row.label, className: look.className },
+          // Not under something somebody else holds (ADR 0089): the drop would be refused, so it must not light up.
+          canReparent: (parent) =>
+            (parent === null || (host.heldBy?.(parent) ?? null) === null) && carried.some((i) => host.doc()?.canReparent(i, parent) === true),
+          expand: (index) => {
+            const d = host.doc()
+            if (d === null) return
+            expanded.add(d.pathOf(index))
+            render()
+          },
+          drop: (parent, at) => {
+            pressKept = null
+            host.onReparent(carried, parent, at)
+          },
+        })
       })
       el.addEventListener('click', () => {
+        if (rowJustDragged()) {
+          pressKept = null
+          return
+        }
         if (pressKept !== row.index) return
         pressKept = null
         host.onSelect(row.index, 'replace', order)
@@ -428,69 +451,10 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
         editing = row.index
         render()
       })
-
-      /**
-       * **A piece can be dragged too, but only out** (ADR 0133). It is resolved into a node of this level at
-       * the destination and the placement records it is gone, so nothing about the prefab moves. What is
-       * still refused is a piece as a *destination* — `zoneOf` below offers no `onto` for one — because
-       * where a piece sits is the prefab's, for every placement at once.
-       */
-      {
-        el.draggable = true
-        el.addEventListener('dragstart', (e) => {
-          // Grabbing a row that is already selected drags the whole selection; grabbing one that is not
-          // drags it alone, and Unity does the same. Ascending, so the drop keeps the order they were in.
-          const selected = host.selection()
-          dragRows = selected.includes(row.index) ? [...selected].sort((a, b) => a - b) : [row.index]
-          dragFrom = row.index
-          pressKept = null
-          el.classList.add('dragging')
-          // Firefox will not start a drag without payload; the index itself travels in a closure variable
-          // because dataTransfer is unreadable during dragover, which is when the target must be known.
-          e.dataTransfer?.setData('text/plain', String(row.index))
-          if (e.dataTransfer !== null) e.dataTransfer.effectAllowed = 'move'
-        })
-        el.addEventListener('dragend', () => {
-          dragFrom = null
-          dragRows = []
-          el.classList.remove('dragging')
-          clearDropMarks()
-        })
-      }
       if (row.kind === 'inherited') el.title = 'piece of the shared prefab: editing it changes every instance of that prefab'
 
-      // Any row is a drop *neighbour* (insert above/below among its siblings); only an item row can be
-      // dropped *onto*, since a piece cannot be a parent.
-      const zoneOf = (e: DragEvent): DropZone => {
-        const box = el.getBoundingClientRect()
-        return zoneFor(e.clientY - box.top, box.height, row.kind === 'item')
-      }
-      el.addEventListener('dragover', (e) => {
-        if (dragFrom === null) return
-        const zone = zoneOf(e)
-        clearDropMarks()
-        // Legal if *any* of the dragged rows can go there; the ones that cannot are skipped on the drop.
-        const want = dropTarget(row, zone).parent
-        if (!(dragRows.length > 0 ? dragRows : [dragFrom]).some((i) => doc.canReparent(i, want))) {
-          if (e.dataTransfer !== null) e.dataTransfer.dropEffect = 'none'
-          return // no marker: an illegal drop should look impossible, not merely fail
-        }
-        e.preventDefault()
-        if (e.dataTransfer !== null) e.dataTransfer.dropEffect = 'move'
-        el.classList.add(zone === 'onto' ? 'drop-onto' : zone === 'above' ? 'drop-above' : 'drop-below')
-      })
-      el.addEventListener('drop', (e) => {
-        if (dragFrom === null) return
-        e.preventDefault()
-        const { parent, at } = dropTarget(row, zoneOf(e))
-        const rows = dragRows.length > 0 ? dragRows : [dragFrom]
-        dragFrom = null
-        dragRows = []
-        clearDropMarks()
-        host.onReparent(rows, parent, at)
-      })
-
       container.append(el)
+      drawn.push({ row, el })
     }
   }
 
