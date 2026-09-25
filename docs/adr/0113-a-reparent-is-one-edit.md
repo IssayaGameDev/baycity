@@ -1,6 +1,6 @@
 # ADR 0113 — A reparent is one edit, and a step is not a constraint
 
-Status: accepted. Two bugs found together, with one cause in common: an edit that reaches the document by two
+Status: accepted, amended: Tweakpane is gone ([ADR 0152](0152-the-inspector-is-cards-of-our-own-fields.md)) and the rule holds in the fields that replaced it — a step is the drag's, a typed value is clamped and never snapped. Two bugs found together, with one cause in common: an edit that reaches the document by two
 routes when the user made one gesture. Amends [ADR 0031](0031-multi-selection-with-a-primary.md)'s reparent and
 [ADR 0024](0024-editor-ui-shell.md)'s use of Tweakpane.
 

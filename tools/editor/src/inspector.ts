@@ -1,38 +1,47 @@
 import { vec3, type Vec3 } from '@mp/core'
-import { SEQUENCE, compileSequence, readStages, sequenceOf, unitColliderFor, type ColliderDesc } from '@mp/content'
+import { COLLIDER, LIGHT, MATERIAL_OVERRIDE, MESH, RENDERER, SEQUENCE, SPAWN, compileSequence, readStages, sequenceOf, unitColliderFor, type ColliderDesc } from '@mp/content'
 import { visibleParams, type AssetSpec, type ParamSpec } from '@mp/components'
 import { QUANT_BOUND } from '@mp/net'
 import { DEFAULT_POSTFX, DEFAULT_SKY_PARAMS } from '@mp/render-three'
-import { Pane } from 'tweakpane'
 
 import type { ComponentView, Doc } from './editorDoc'
 import type { ContextMenu, MenuItem } from './menu'
 import { isCurveSetting, type CurvePoint, type SettingDecls } from '@mp/mode'
 
-import { closePopover, openPopover, popoverOpenFor, scrubField, segmented } from './controls'
+import {
+  checkField,
+  closePopover,
+  colorField,
+  openPopover,
+  popoverOpenFor,
+  scrubField,
+  scrubFieldOf,
+  segmented,
+  selectField,
+  textField,
+  type Choice,
+  type Live,
+  type ScrubHandle,
+  type ScrubSpec,
+} from './controls'
 import { createCurveEditor } from './curveEditor'
 import { icon, type IconName } from './icons'
 import { sequenceSummary } from './sequenceEdit'
 import { sequenceEditor } from './sequenceEditor'
 
 /**
- * The Inspector panel: a stack of **sections**, one per component, with the fields inside each generated from
- * that component's declared parameters.
+ * The Inspector panel: a card per component, with the fields inside each generated from that component's
+ * declared parameters.
  *
- * The chrome is ours; the value widgets are Tweakpane's (ADR 0038). Tweakpane is genuinely good at one thing —
- * a labelled number you can drag to scrub — and bad at the rest of what a component list needs. Its folder
- * title is a plain string, so component state had to be spelled into it (`Track (added here) — off`); every
- * control is a full-width row, so an `enabled` checkbox and a `Remove` button cost two of them per component,
- * which on a four-component node was 8 of 30 rows; and a folder cannot remember whether it was open across a
- * rebuild, which every enum change forces.
+ * Everything in it is ours (ADR 0152): the cards, the header's controls (ADR 0038), and every field — the
+ * sequence editor's controls (`controls.ts`), so a number is dragged sideways or typed in the same way in every
+ * card. Tweakpane drew the fields until then, a second visual language beside the sequence's; it is no longer in
+ * the editor.
  *
- * So: a header row we draw (twist, enable checkbox, name, badge, ⋯ menu), a Tweakpane pane per section for the
- * fields, and the state that has to survive a rebuild — which sections are shut, where the panel was scrolled —
- * kept here rather than inside a widget library.
+ * What has to survive a rebuild — which cards are shut, where the panel was scrolled — is kept here.
  *
  * Holds no Three.js: the host reads and writes the selection's transform, so this file knows only about
- * documents and numbers. Holds no *animation* either (ADR 0029/0037): a `keys` parameter shows its count and a
- * button to the timeline, because a property grid can only show one instant of a track.
+ * documents and numbers.
  */
 export interface TransformValues {
   position: Vec3
@@ -93,29 +102,33 @@ export interface InspectorHost {
   /**
    * Every selected node's transform, primary last. Empty when nothing is selected (ADR 0112).
    *
-   * With more than one the panel draws its own rows instead of Tweakpane's: an axis whose value differs is
-   * **blank**, and a Tweakpane number cannot be empty.
+   * With more than one, an axis whose value differs is drawn **blank**, and each field writes its own axis to
+   * every selected node.
    */
   selectionTransforms: () => readonly TransformValues[]
   /** Set one axis of one transform field on **every** selected node, as one undo entry (ADR 0112). */
   writeAxis: (field: 'position' | 'rotationDeg' | 'scale', axis: 'x' | 'y' | 'z', value: number) => void
+  /**
+   * A field is being dragged (ADR 0152): its writes go as it moves, so the viewport follows the pointer, and
+   * are one history entry and one message to the room when `endDrag` comes — what a gizmo drag is. A remote
+   * edit waits until then, as it does for the gizmo, since repainting would rebuild the panel under the pointer.
+   */
+  beginDrag: () => void
+  endDrag: (label: string) => void
   /** Anything other than the transform changed — meshes and the physics world need rebuilding. */
   onPropsChanged: () => void
   /** The name changed — the hierarchy row and status bar show it. */
   onRenamed: () => void
-  duplicate: () => void
-  remove: () => void
-  /** Write the selection into a prefab file and point it at that file (ADR 0091). */
-  saveAsPrefab: () => void
+  /** A prefab's file name, by asset id, for the prefab bar; `null` when the asset list does not have it. */
+  prefabName: (assetId: string) => string | null
   openPrefab: () => void
   /**
-   * Assets of one kind to offer, as Tweakpane options (label → asset id; `''` for none).
+   * Assets of one kind to offer, as label → asset id; `''` for none.
    *
    * One accessor keyed by the kind the parameter declares, rather than one per kind: `AssetSpec['of']` is
    * the same list, so a new asset-valued parameter needs nothing here.
    */
   assetOptions: (of: AssetSpec['of']) => Record<string, string>
-  /** Open the timeline on this component's keyframe parameter (ADR 0037). */
   /** Revert one override — `'transform'`, `'name'`, or a component id — or all of them. */
   revertOverride: (field?: string) => void
   /**
@@ -155,7 +168,7 @@ export interface Inspector {
   rebuild: () => void
   /** The gizmo moved the selection — refresh the numbers without rebuilding. */
   sync: () => void
-  /** Redraw just the name + prefab link (e.g. after Save as prefab changed the link). */
+  /** Redraw just the name and the prefab bar (e.g. after Save as prefab changed the link). */
   renderHead: () => void
   /** The move step drawn open that was opened last, or `null` (ADR 0144). */
   openPoint: () => OpenPoint | null
@@ -166,11 +179,14 @@ const r4 = (n: number): number => Math.round(n * 1e4) / 1e4
 /** The transform section's key in the collapse set. Not a component id, so it cannot collide with one. */
 const TRANSFORM = '@transform'
 
+const AXES = ['x', 'y', 'z'] as const
+type Axis = (typeof AXES)[number]
+
 /**
  * Shapes offered for a `Collider`. **No cylinder**: the physics wrapper has no cylinder shape and the loader
  * throws on one, so offering it here would let the editor author a level that cannot load.
  */
-const SHAPE_OPTIONS: Record<string, string> = { box: 'box', ball: 'ball', capsule: 'capsule', convex: 'convex' }
+const SHAPE_CHOICES: readonly Choice[] = ['box', 'ball', 'capsule', 'convex'].map((k) => ({ value: k, label: k }))
 
 /** A fresh shape of a kind, for when the picker changes. Convex keeps whatever points it had, if any. */
 const defaultShape = (kind: string, was: ColliderDesc): ColliderDesc => {
@@ -186,23 +202,51 @@ const defaultShape = (kind: string, was: ColliderDesc): ColliderDesc => {
   }
 }
 
+/** The icon in a component's header. A game's own components, which the editor does not name, share one. */
+const COMPONENT_ICONS: Readonly<Record<string, IconName>> = {
+  [COLLIDER]: 'colliderOn',
+  [MESH]: 'mesh',
+  [RENDERER]: 'material',
+  [MATERIAL_OVERRIDE]: 'material',
+  [SPAWN]: 'spawn',
+  [LIGHT]: 'light',
+  [SEQUENCE]: 'motion',
+  Checkpoint: 'flag',
+  Goal: 'goal',
+  Hazard: 'hazard',
+  Bumper: 'bumper',
+  Death: 'death',
+  Boss: 'boss',
+}
+export const componentIcon = (type: string): IconName => COMPONENT_ICONS[type] ?? 'component'
+
 /**
- * The values a component's widgets are bound to: declared defaults, the authored params over them, and
+ * How a number field drags, from what a declaration says (ADR 0113): a pixel is one `step`, landing on its
+ * multiples; a bounded number without one crosses its range in 200 px, landing on the decade under that.
+ *
+ * The step shapes **the drag only**. Typed, any value in range is taken as it is — Tweakpane's `step` also
+ * snapped what was typed, anchored to the value the field was built with, which made 33 unreachable from
+ * 32.98 in steps of 0.05.
+ */
+export const numberScrub = (d: { readonly step?: number; readonly min?: number; readonly max?: number }): ScrubSpec => {
+  const perPixel = d.step ?? (d.min !== undefined && d.max !== undefined ? (d.max - d.min) / 200 : 0.1)
+  return {
+    perPixel,
+    grain: d.step ?? 10 ** Math.floor(Math.log10(perPixel)),
+    ...(d.min === undefined ? {} : { min: d.min }),
+    ...(d.max === undefined ? {} : { max: d.max }),
+  }
+}
+
+/**
+ * The values a component's fields are built from: declared defaults, the authored params over them, and
  * **nothing shared with the document** (ADR 0101).
  *
- * The deep copy is load-bearing. A spread is shallow, so `state.shape` would be the very same object as
- * `params.shape` — and on an *inherited* component that object is the **prefab's own**, because
- * `bakeOverrides` hands back the prefab's objects untouched where no override changed them (deliberately, so
- * that editing a shared definition is not a silent no-op, ADR 0033).
- *
- * Tweakpane then writes *into* a bound object rather than replacing it: `writePoint3d` calls `writeProperty`,
- * which does `valueObj[name] = value`. So dragging `half extents` on one placement wrote straight into the
- * prefab definition, every frame, before any op existed. Every other placement of that prefab in the open
- * level redrew at the new size while only the one touched got an override, and the next placement's slider
- * started from the mutated number instead of the prefab's real one.
- *
- * Local and transient — a prefab file is only written through the prefab's own live room, whose copy comes
- * from the server — but the viewport was showing sizes the level did not have.
+ * The deep copy was load-bearing when Tweakpane drew the fields: it wrote *into* a bound object, and on an
+ * inherited component that object is the **prefab's own** (`bakeOverrides` hands back the prefab's objects
+ * untouched where no override changed them, ADR 0033), so dragging a size on one placement edited the prefab
+ * in memory. The fields now write new values, and the panel updates this copy as they do, so a second axis
+ * dragged after a first starts from the first's new number — which still must not be the document's object.
  */
 export const boundState = (defaults: Record<string, unknown>, params: Record<string, unknown>): Record<string, unknown> =>
   structuredClone({ ...defaults, ...params })
@@ -214,19 +258,11 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
   return node
 }
 
-/**
- * A Tweakpane number field's drag speed, **without quantising what can be typed** (ADR 0113).
- *
- * `step` does two jobs in Tweakpane and they cannot be separated: it sets the pointer-drag increment *and*
- * it constrains the value. Worse, the constraint is anchored to whatever the field showed when it was built
- * (`createStepConstraint(params, initialValue)` → `new StepConstraint(step, initialValue)`), so the reachable
- * values are `origin + n × step`. A field built showing 32.98 with `step: 0.05` can never be set to 33 — it
- * lands on 32.98 or 33.03, silently, with nothing in the console.
- *
- * A transform or a size has a continuous domain: no value is invalid, so nothing may be unreachable.
- * `pointerScale` is the drag increment on its own, which is the half of `step` actually wanted here.
- */
-export const dragSpeed = (increment: number): { pointerScale: number } => ({ pointerScale: increment })
+const vecOf = (v: unknown): Vec3 => {
+  const o = (typeof v === 'object' && v !== null ? v : {}) as Partial<Record<Axis, unknown>>
+  const n = (x: unknown): number => (typeof x === 'number' ? x : 0)
+  return vec3(n(o.x), n(o.y), n(o.z))
+}
 
 /* --- editing several nodes at once (ADR 0112) --- */
 
@@ -284,24 +320,22 @@ export const peersOf = (doc: Doc, indices: readonly number[], at: number, view: 
 }
 
 export const createInspector = (head: HTMLElement, container: HTMLElement, host: InspectorHost): Inspector => {
-  /**
-   * The header is ours, not Tweakpane's: Unity's name field is full-width and prominent, and a Tweakpane
-   * binding would put it in the label column like any other property.
-   */
-  /**
-   * The active checkbox, immediately left of the name (ADR 0102).
-   *
-   * Exactly a component section's header — `isec-en` then the name — because it is exactly the same control
-   * one level up: a tick, then the thing it switches off. No label. Kodjo's call, and the Hierarchy is for
-   * finding and arranging things, so a column of checkboxes down it competed with the names.
-   *
-   * The Hierarchy still **dims** a switched-off row. That is the feedback; this is where you change it.
-   */
-  const activeBox = el('input', 'isec-en')
-  activeBox.type = 'checkbox'
-  activeBox.addEventListener('change', () => host.onSetEnabled(activeBox.checked))
+  /** Open under a header button, which is where the pointer already is. */
+  const openMenu = (at: HTMLElement, items: readonly MenuItem[], title?: string): void => {
+    const rect = at.getBoundingClientRect()
+    host.menu.open({ x: Math.round(rect.right), y: Math.round(rect.bottom + 2) }, items, title)
+  }
 
-  const nameInput = el('input', 'ctl name')
+  /**
+   * The header is ours: Unity's name field is full-width and prominent, above everything it names.
+   *
+   * The active checkbox sits immediately left of the name (ADR 0102) — exactly a component card's header one
+   * level up: a tick, then the thing it switches off. The Hierarchy still **dims** a switched-off row. That is
+   * the feedback; this is where you change it.
+   */
+  const activeBox = checkField(true, (on) => host.onSetEnabled(on))
+
+  const nameInput = el('input', 'txt name')
   nameInput.type = 'text'
   nameInput.spellcheck = false
   nameInput.title = 'name — blank falls back to what the object is'
@@ -318,24 +352,80 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     if (e.key === 'Enter') nameInput.blur() // blur fires `change`
   })
 
-  const linkRow = el('div', 'link')
-  const linkWho = el('span', 'who')
   /**
-   * Unlink sits **left of** Open, so the two read in the order of how far they reach: this object, then the
-   * shared definition behind it. It is only ever shown on a placement, where the row says which prefab.
+   * The prefab bar (ADR 0152): on a placement or a piece of one, which prefab, how many placements this level
+   * has of it, **Open**, and **Overrides ▾** — Revert, Apply and Unlink behind one button with the count on it.
+   * A plain object has none: Save as prefab is the Hierarchy menu's, as are Duplicate and Delete.
    */
-  const unlinkButton = el('button', 'ctl')
-  unlinkButton.textContent = 'Unlink'
-  unlinkButton.title = 'make this a plain object keeping what it draws \u2014 the prefab and its other placements are untouched'
-  const linkButton = el('button', 'ctl')
-  linkRow.append(linkWho, unlinkButton, linkButton)
+  const bar = el('div', 'ipre')
+  const barIcon = el('span', 'ipre-i')
+  const barWho = el('span', 'ipre-t')
+  /** How many placements this level has, as the Hierarchy counts them: `×2`. Spelled out would not fit a thin panel. */
+  const barCount = el('span', 'ipre-c')
+  const openButton = el('button', 'ipre-b', 'Open')
+  openButton.type = 'button'
+  openButton.title = 'edit the shared definition — every placement follows'
+  openButton.addEventListener('click', () => host.openPrefab())
+  const oversButton = el('button', 'ipre-b')
+  oversButton.type = 'button'
+  bar.append(barIcon, barWho, barCount, openButton, oversButton)
+
   const multiNote = el('div', 'multi')
-  /** Tick and name on one line, the way a component section's header reads. */
+  /** Tick and name on one line, the way a component card's header reads. */
   const nameRow = el('div', 'namerow')
   nameRow.append(activeBox, nameInput)
-  head.append(nameRow, linkRow, multiNote)
+  head.append(nameRow, bar, multiNote)
 
-  /** Name, prefab link, and the multi-selection note. Separate from `rebuild` so renaming is cheap. */
+  /** The prefab a piece belongs to: the placement above it, named by its prefab's file. */
+  const ownerName = (doc: Doc, at: number): string => {
+    for (let j = doc.parentOf(at); j !== null; j = doc.parentOf(j)) {
+      const ref = doc.refOf(j)
+      if (doc.kindOf(j) === 'own' && ref !== null) return host.prefabName(ref) ?? doc.label(j)
+    }
+    return 'a prefab'
+  }
+
+  /**
+   * What the Overrides button counts and offers. **Two scopes** (ADR 0122): on a placement it is every change
+   * inside it — overrides on its pieces, objects it added (ADR 0130), pieces it does without (ADR 0133) — and
+   * the actions reach all of them; on a piece it is that piece's own.
+   */
+  const overridesOf = (doc: Doc, at: number, placement: boolean): { count: number; summary: string; items: MenuItem[] } => {
+    const why = 'matches the prefab'
+    const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? '' : 's'}`
+    if (placement) {
+      const changed = doc.placementOverrides(at)
+      const added = doc.placementAdded(at)
+      const gone = doc.placementRemoved(at)
+      const fields = changed.reduce((n, o) => n + o.fields.length, 0)
+      const count = fields + added.length + gone.length
+      const parts = [
+        fields === 0 ? '' : `${plural(fields, 'override')} on ${plural(changed.length, 'object')}`,
+        added.length === 0 ? '' : plural(added.length, 'added object'),
+        gone.length === 0 ? '' : plural(gone.length, 'removed piece'),
+      ].filter((p) => p !== '')
+      return {
+        count,
+        summary: count === 0 ? why : parts.join(', '),
+        items: [
+          { label: 'Revert all', enabled: count > 0, why, run: () => host.revertPlacement(at) },
+          { label: 'Apply all', enabled: count > 0, why, run: () => void host.applyPlacementOverrides(at) },
+          { label: 'Unlink from prefab', divider: true, run: () => host.unlinkPrefab() },
+        ],
+      }
+    }
+    const fields = doc.overridesOf(at)
+    return {
+      count: fields.length,
+      summary: fields.length === 0 ? why : `${plural(fields.length, 'override')}: ${fields.join(', ')}`,
+      items: [
+        { label: 'Revert all', enabled: fields.length > 0, why, run: () => host.revertOverride() },
+        { label: 'Apply', enabled: fields.length > 0, why, run: () => host.applyOverrides() },
+      ],
+    }
+  }
+
+  /** Name, prefab bar, and the multi-selection note. Separate from `rebuild` so renaming is cheap. */
   const renderHead = (): void => {
     const doc = host.doc()
     const at = host.selected()
@@ -357,87 +447,60 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     if (document.activeElement !== nameInput) nameInput.value = doc.nameOf(at)
     nameInput.placeholder = doc.label(at)
 
-    // Selecting several and editing one was visible only in the status bar, which is the wrong place to learn
-    // that the panel is not showing you everything you picked.
     const count = host.selectionCount()
     multiNote.hidden = count < 2
-    // It used to read "editing <the primary>", which stopped being true: an edit reaches all of them
-    // (ADR 0112), and what the panel shows is what they have in common.
+    // What the panel shows is what they have in common, and an edit reaches all of them (ADR 0112).
     multiNote.textContent = count < 2 ? '' : `${count} selected · editing what they share`
 
+    const kind = doc.kindOf(at)
     const ref = doc.refOf(at)
-    linkRow.classList.toggle('linked', ref !== null)
+    const placement = kind === 'own' && ref !== null
+    bar.hidden = !placement && kind !== 'inherited'
+    if (bar.hidden) return
+    // A piece drawn as the Hierarchy draws it; a nested placement inside a prefab is a prefab like any other.
+    bar.classList.toggle('piece', ref === null)
+    barIcon.replaceChildren(icon(ref === null ? 'object' : 'prefab'))
+    barCount.hidden = ref === null
     if (ref !== null) {
       const n = doc.refCount(ref)
-      linkWho.textContent = `prefab: ${ref} · ${n} placement${n === 1 ? '' : 's'}`
-      linkButton.textContent = 'Open'
-      linkButton.title = 'edit the shared definition — every placement follows'
-      linkButton.onclick = host.openPrefab
-      linkButton.hidden = false
-      // Only on a placement this document owns. An *inherited* node also has a `prefab` ref — it is part of
-      // some prefab's definition — and there is nothing in this level to unlink for it.
-      unlinkButton.hidden = doc.kindOf(at) !== 'own'
-      unlinkButton.onclick = host.unlinkPrefab
-    } else if (doc.mode === 'level' && doc.kindOf(at) === 'own') {
-      linkWho.textContent = 'not saved as a prefab'
-      unlinkButton.hidden = true
-      linkButton.textContent = 'Save as prefab…'
-      linkButton.title = 'write this into a prefab file — every level can then place it, and your edits reach all of them'
-      linkButton.onclick = host.saveAsPrefab
-      linkButton.hidden = false
-    } else {
-      linkWho.textContent = doc.kindOf(at) === 'inherited' ? 'part of a prefab — edits become overrides' : 'part of this prefab'
-      unlinkButton.hidden = true
-      linkButton.hidden = true
+      barWho.textContent = host.prefabName(ref) ?? 'prefab'
+      barCount.textContent = `×${n}`
+      barCount.title = `${n} placement${n === 1 ? '' : 's'} in this level`
+    } else barWho.textContent = `part of ${ownerName(doc, at)}`
+    barWho.title = barWho.textContent
+    openButton.hidden = ref === null
+    const o = overridesOf(doc, at, placement)
+    oversButton.replaceChildren(el('span', undefined, 'Overrides'), ...(o.count > 0 ? [el('span', 'ipre-n', String(o.count))] : []), icon('chevron', 'ic ic-s'))
+    oversButton.classList.toggle('on', o.count > 0)
+    oversButton.title = o.summary
+    oversButton.onclick = (e) => {
+      e.stopPropagation()
+      openMenu(oversButton, o.items, o.summary)
     }
   }
 
-  const sel: TransformValues = { position: vec3(0, 0, 0), rotationDeg: vec3(0, 0, 0), scale: vec3(1, 1, 1) }
+  let sel: TransformValues = { position: vec3(0, 0, 0), rotationDeg: vec3(0, 0, 0), scale: vec3(1, 1, 1) }
+  /** The transform's nine fields when one object is selected — what `sync` refreshes as the gizmo moves it. */
+  let transformFields: { key: keyof TransformValues; axis: Axis; field: ScrubHandle }[] = []
 
-  /**
-   * Which sections are shut, and it survives rebuilds *and* selections: somebody who collapses `Collider`
-   * because they are working on one component means it for the session, not until the next dropdown change.
-   *
-   * Keyed by component id rather than by type, so two colliders on one node collapse independently.
-   */
-  const shut = new Set<string>()
-
-  /** Every pane this build created, torn down on the next one. */
-  let panes: Pane[] = []
-  /** The transform pane, which is the only one `sync` has to refresh. */
-  let transformPane: Pane | null = null
-
-  /**
-   * True while a build or `sync` is pushing values *into* a pane, so a refresh is not mistaken for a person
-   * typing.
-   *
-   * Tweakpane's `refresh()` calls `fetch()`, which assigns `rawValue` — and that emits `change` exactly as a
-   * keystroke does. During a gizmo drag that meant each frame's refresh re-entered `writeTransform`, which
-   * re-posed the item from the document and threw away the drag's starting snapshot; a multi-selection then
-   * stopped following the primary after the first frame. There is no option to suppress it, so the guard is
-   * here, where the code knows it is the one writing.
-   */
-  let syncDepth = 0
-  const syncing = (): boolean => syncDepth > 0
-
-  const sync = (): void => {
+  const readSel = (): boolean => {
     const t = host.readTransform()
-    if (t === null || transformPane === null) return
-    sel.position = vec3(r4(t.position.x), r4(t.position.y), r4(t.position.z))
-    sel.rotationDeg = vec3(r4(t.rotationDeg.x), r4(t.rotationDeg.y), r4(t.rotationDeg.z))
-    sel.scale = vec3(r4(t.scale.x), r4(t.scale.y), r4(t.scale.z))
-    syncDepth++
-    try {
-      // Only the transform pane. The component panes are bound to their own snapshots and nothing a gizmo does
-      // touches them, so refreshing them was work that also risked firing their handlers.
-      transformPane.refresh()
-    } finally {
-      syncDepth--
+    if (t === null) return false
+    sel = {
+      position: vec3(r4(t.position.x), r4(t.position.y), r4(t.position.z)),
+      rotationDeg: vec3(r4(t.rotationDeg.x), r4(t.rotationDeg.y), r4(t.rotationDeg.z)),
+      scale: vec3(r4(t.scale.x), r4(t.scale.y), r4(t.scale.z)),
     }
+    return true
+  }
+
+  /** Only the transform: nothing a gizmo does touches a component's values. A field being dragged or typed in keeps its own. */
+  const sync = (): void => {
+    if (!readSel()) return
+    for (const f of transformFields) f.field.set(sel[f.key][f.axis])
   }
 
   const applyTransform = (): void => {
-    if (syncing()) return
     host.writeTransform({
       position: sel.position,
       rotationDeg: sel.rotationDeg,
@@ -446,11 +509,69 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     })
   }
 
-  /** A change a person made, as opposed to one a refresh pushed in. */
+  /**
+   * The history label of the field being dragged, while one is (ADR 0152). A drag writes as it goes and is one
+   * entry when it lets go; a rebuild in between closes it, since the field it belonged to is gone.
+   */
+  let dragLabel: string | null = null
+  const endFieldDrag = (): void => {
+    if (dragLabel === null) return
+    const label = dragLabel
+    dragLabel = null
+    host.endDrag(label)
+  }
+
+  /**
+   * A field's writes, live: each move of a drag writes, so the level follows the pointer, inside one history
+   * entry; the commit that follows the drag is then nothing, the value being written already. A typed value is
+   * the commit alone.
+   */
+  const liveWrite = <T>(history: string, write: (v: T) => void): { live: Live<T>; commit: (v: T) => void } => ({
+    live: {
+      start: () => {
+        endFieldDrag()
+        dragLabel = history
+        host.beginDrag()
+      },
+      move: write,
+      end: () => {
+        endFieldDrag()
+        renderHead()
+      },
+    },
+    commit: (v) => {
+      if (dragLabel === null) write(v)
+    },
+  })
+
+  /** A number field. It writes as it is dragged unless `live` is `false` — a value saved to a file on each write. */
+  const numberField = (o: {
+    readonly value: number | null
+    readonly spec: ScrubSpec
+    readonly title: string
+    readonly history: string
+    readonly write: (v: number) => void
+    readonly axis?: Axis
+    readonly unit?: string
+    readonly live?: boolean
+  }): ScrubHandle => {
+    const w = liveWrite(o.history, o.write)
+    return scrubFieldOf({
+      value: o.value,
+      spec: o.spec,
+      title: o.title,
+      commit: w.commit,
+      ...(o.axis === undefined ? {} : { axis: o.axis, label: o.axis.toUpperCase() }),
+      ...(o.unit === undefined ? {} : { unit: o.unit }),
+      ...(o.live === false ? {} : { live: w.live }),
+    })
+  }
+
+  /** A change a person made to a component. The prefab bar's count follows, once a drag has let go. */
   const edited = (write: () => void): void => {
-    if (syncing()) return
     write()
     host.onPropsChanged()
+    if (dragLabel === null) renderHead()
   }
 
   /**
@@ -468,41 +589,35 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     at.scrollTop = top
   }
 
-  /** Open under a header button, which is where the pointer already is. */
-  const openMenu = (at: HTMLElement, items: readonly MenuItem[], title?: string): void => {
-    const rect = at.getBoundingClientRect()
-    host.menu.open({ x: Math.round(rect.right), y: Math.round(rect.bottom + 2) }, items, title)
-  }
-
   /**
-   * A section's body, and how rows get into it in **declaration order**.
+   * Which cards are shut, and it survives rebuilds *and* selections: somebody who collapses `Collider`
+   * because they are working on one component means it for the session, not until the next dropdown change.
    *
-   * Tweakpane owns one element per pane and appends inside it, so a row of ours emitted after a pane would
-   * land after everything that pane ever holds. `pane()` therefore hands out the *current* pane and `row()`
-   * retires it, so the next binding starts a fresh one further down. A `Track` comes out as `keys` (ours) then
-   * `loop`/`phase` (Tweakpane's), which is the order they are declared in.
+   * Keyed by component id rather than by type, so two colliders on one node collapse independently.
    */
+  const shut = new Set<string>()
+
+  /** A card's body, and how lines get into it. */
   interface Section {
     readonly root: HTMLElement
-    /** The pane to bind into, created on demand. */
-    readonly pane: () => Pane
-    /** Append one of our own rows, and end the current pane's run. */
+    /** A labelled line holding controls. */
+    readonly field: (label: string, ...controls: HTMLElement[]) => HTMLElement
+    /** A read-only line: a label and a value, or — with no label — a note across the card. */
     readonly row: (label: string, value: string) => HTMLElement
-    /** Append something of our own that is not a row — the sequence editor — and end the pane's run too. */
+    /** Something of our own that is not a line: the sequence editor, a curve. */
     readonly append: (node: HTMLElement) => void
   }
 
   /**
-   * One collapsible section, ours.
-   *
-   * The header is a row of small controls rather than a title string, which is the whole reason this is not a
-   * Tweakpane folder: an enable checkbox and a ⋯ menu belong beside the name, not as two more full-width rows
-   * inside it.
+   * One card (ADR 0152), shaped like a sequence's stage cards. Its header is a row of small controls rather
+   * than a title string (ADR 0038): twist, icon, enable, name, badge, the component's own tools, ⋯. A press on
+   * the header's empty part opens or shuts it too. A component with nothing to edit is its header alone.
    */
   const addSection = (
     key: string,
     opts: {
       title: string
+      icon?: IconName
       badge?: string
       off?: boolean
       enable?: (on: boolean) => void
@@ -513,27 +628,36 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       warn?: string
       /** Buttons of the component's own, between the header's text and its ⋯. */
       tools?: readonly HTMLElement[]
+      /** Nothing to edit: no body and nothing to open. */
+      empty?: boolean
     },
   ): Section => {
     const root = el('div', 'isec')
     const header = el('div', 'isec-h')
-    const collapsed = shut.has(key)
+    const collapsed = shut.has(key) && opts.empty !== true
+    root.classList.toggle('shut', collapsed)
+    root.classList.toggle('isec-bare', opts.empty === true)
 
-    const twist = el('button', 'isec-tw', collapsed ? '▸' : '▾')
-    twist.title = collapsed ? 'expand' : 'collapse'
-    twist.addEventListener('click', () => {
+    const toggle = (): void => {
+      if (opts.empty === true) return
       if (shut.has(key)) shut.delete(key)
       else shut.add(key)
       rebuildKeepingScroll()
-    })
+    }
+    const twist = el('button', 'isec-tw')
+    twist.type = 'button'
+    twist.append(icon('chevron'))
+    twist.title = collapsed ? 'expand' : 'collapse'
     header.append(twist)
+    header.addEventListener('click', (e) => {
+      const control = (e.target as Element).closest('button, input, select')
+      if (control === null || control === twist) toggle()
+    })
 
+    if (opts.icon !== undefined) header.append(icon(opts.icon, 'ic isec-i'))
     if (opts.enable !== undefined) {
-      const box = el('input', 'isec-en')
-      box.type = 'checkbox'
-      box.checked = opts.off !== true
-      box.title = 'enabled — an off component is skipped by the loader and by the runtime'
-      box.addEventListener('change', () => opts.enable?.(box.checked))
+      const box = checkField(opts.off !== true, (on) => opts.enable?.(on), 'enabled — an off component is skipped by the loader and by the runtime')
+      box.classList.add('isec-en')
       header.append(box)
     }
 
@@ -541,14 +665,17 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     if (opts.summary !== undefined && opts.summary !== '') header.append(el('span', 'isec-sum', opts.summary))
     if (opts.badge !== undefined && opts.badge !== '') header.append(el('span', 'isec-badge', opts.badge))
     if (opts.warn !== undefined) {
-      const w = el('span', 'isec-warn', '⚠')
+      const w = el('span', 'isec-warn')
+      w.append(icon('warn'))
       w.title = opts.warn
       header.append(w)
     }
     for (const tool of opts.tools ?? []) header.append(tool)
 
     if (opts.menu !== undefined && opts.menu.length > 0) {
-      const dots = el('button', 'isec-m', '⋯')
+      const dots = el('button', 'isec-m')
+      dots.type = 'button'
+      dots.append(icon('more'))
       dots.title = 'more'
       const items = opts.menu
       dots.addEventListener('click', (e) => {
@@ -561,146 +688,42 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     root.append(header)
     root.classList.toggle('off', opts.off === true)
     const body = el('div', 'isec-body')
-    body.hidden = collapsed
+    body.hidden = collapsed || opts.empty === true
     root.append(body)
     container.append(root)
 
-    let current: Pane | null = null
-    const pane = (): Pane => {
-      if (current === null) {
-        current = new Pane({ container: body })
-        panes.push(current)
-      }
-      return current
+    const field = (label: string, ...controls: HTMLElement[]): HTMLElement => {
+      const line = el('div', 'irow')
+      const slot = el('div', 'irow-c')
+      slot.append(...controls)
+      line.append(el('span', 'irow-l', label), slot)
+      body.append(line)
+      return line
     }
     const row = (label: string, value: string): HTMLElement => {
-      current = null
+      if (label === '') {
+        const note = el('div', 'inote', value)
+        body.append(note)
+        return note
+      }
       const line = el('div', 'irow')
       line.append(el('span', 'irow-l', label), el('span', 'irow-v', value))
       body.append(line)
       return line
     }
-    const append = (node: HTMLElement): void => {
-      current = null
-      body.append(node)
-    }
-    return { root, pane, row, append }
-  }
-
-  /**
-   * A parameter the selection disagrees about (ADR 0112): blank, and writing sets it on all of them.
-   *
-   * Drawn with plain inputs rather than Tweakpane, because Tweakpane's number box cannot be empty and a
-   * pre-filled one would be a claim about values it has not got. An untouched control writes nothing.
-   *
-   * A compound value — a collider shape — is reported rather than offered: picking one shape for several
-   * objects is a real intention, but it belongs to the shape picker, which is a row of its own and not
-   * something to reconstruct blank.
-   */
-  const addMixedParam = (section: Section, label: string, key: string, spec: ParamSpec, write: (patch: Record<string, unknown>) => void): void => {
-    const line = section.row(label, '')
-    const slot = line.querySelector('.irow-v')
-    if (slot === null) return
-    slot.textContent = ''
-    slot.classList.add('imulti')
-    line.classList.add('mixed')
-
-    const numberBox = (title: string, onSet: (v: number) => void, step?: number): HTMLInputElement => {
-      const input = el('input', 'imulti-n') as HTMLInputElement
-      input.type = 'number'
-      if (step !== undefined) input.step = String(step)
-      input.placeholder = '\u2014'
-      input.title = `${title} \u2014 differs across the selection`
-      const commit = (): void => {
-        const v = Number(input.value)
-        if (input.value.trim() === '' || !Number.isFinite(v)) return
-        onSet(v)
-      }
-      input.addEventListener('change', commit)
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') commit()
-      })
-      return input
-    }
-
-    switch (spec.kind) {
-      case 'number':
-        slot.append(numberBox(label, (v) => write({ [key]: v }), spec.step))
-        return
-      case 'vec3': {
-        // Per axis, like the transform's rows: one axis may agree while the others do not.
-        const draft: Record<'x' | 'y' | 'z', number | null> = { x: null, y: null, z: null }
-        for (const axis of ['x', 'y', 'z'] as const) {
-          slot.append(
-            numberBox(`${label} ${axis}`, (v) => {
-              draft[axis] = v
-              // Only the axes actually typed; an untouched one must stay each node's own.
-              const patch: Record<string, number> = {}
-              for (const a of ['x', 'y', 'z'] as const) if (draft[a] !== null) patch[a] = draft[a]!
-              write({ [key]: patch })
-            }, 0.1),
-          )
-        }
-        return
-      }
-      case 'bool': {
-        const box = el('input', 'imulti-c') as HTMLInputElement
-        box.type = 'checkbox'
-        box.indeterminate = true
-        box.title = `${label} \u2014 differs across the selection`
-        box.addEventListener('change', () => write({ [key]: box.checked }))
-        slot.append(box)
-        return
-      }
-      case 'string':
-      case 'color': {
-        const input = el('input', 'imulti-n') as HTMLInputElement
-        input.type = 'text'
-        input.placeholder = '\u2014'
-        input.title = `${label} \u2014 differs across the selection`
-        input.addEventListener('change', () => {
-          if (input.value.trim() === '') return
-          write({ [key]: input.value })
-        })
-        slot.append(input)
-        return
-      }
-      case 'enum':
-      case 'asset': {
-        const select = el('select', 'imulti-n') as HTMLSelectElement
-        select.title = `${label} \u2014 differs across the selection`
-        const blank = el('option')
-        blank.value = ''
-        blank.textContent = '\u2014'
-        select.append(blank)
-        const options = spec.kind === 'enum' ? Object.fromEntries(spec.options.map((o) => [o, o])) : host.assetOptions(spec.of)
-        for (const [text, value] of Object.entries(options)) {
-          const opt = el('option')
-          opt.value = value
-          opt.textContent = text
-          select.append(opt)
-        }
-        select.value = ''
-        select.addEventListener('change', () => {
-          // The blank entry is "leave them as they are", not a value to write.
-          if (select.value === '' && spec.kind === 'enum') return
-          write({ [key]: spec.kind === 'asset' && select.value === '' ? null : select.value })
-        })
-        slot.append(select)
-        return
-      }
-      default:
-        slot.classList.remove('imulti')
-        slot.textContent = 'differs across the selection'
-        return
-    }
+    return { root, field, row, append: (node) => body.append(node) }
   }
 
   /**
    * One control per declared parameter.
    *
    * `state` is the component's values, completed with the declaration's defaults so a parameter added to a
-   * component still has something to bind to in a level authored before it existed.
+   * component still has something to show in a level authored before it existed.
+   *
+   * With several selected (ADR 0112), a value they disagree about is drawn **blank** rather than showing the
+   * primary's as if it spoke for all of them, and writing it sets it on all of them. A compound value — a
+   * collider shape, a node reference — is reported rather than offered: picking one for several objects
+   * belongs to a field of its own.
    */
   const addParam = (
     section: Section,
@@ -720,78 +743,108 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     const write = (patch: Record<string, unknown>): void =>
       edited(() => (peers === null ? doc.setParams(at, view.id, patch) : doc.setParamsAcross(peers, patch)))
 
-    /**
-     * Does every selected node agree about this parameter? A differing value is drawn **blank** rather than
-     * showing the primary's as if it spoke for all of them.
-     *
-     * The declaration's default stands in for a node that has no value written, which is what the bound state
-     * does for the single case too.
-     */
+    // The declaration's default stands in for a node that has no value written, as the state does for one.
     const fallback = doc.registry.defaults(view.type)[key]
-    const mixed =
-      peers !== null && peers.length > 1 && !peers.every((pp) => sameValue(pp.params[key] ?? fallback, peers[0]!.params[key] ?? fallback))
-    if (mixed) {
-      addMixedParam(section, label, key, spec, write)
-      return
+    const valueOf = (p: Peer): unknown => p.params[key] ?? fallback
+    const mixed = peers !== null && peers.length > 1 && !peers.every((pp) => sameValue(valueOf(pp), valueOf(peers[0]!)))
+    /** A line for this parameter; an overridden one gets a bar down its left edge — Unity's cue. */
+    const line = (...controls: HTMLElement[]): HTMLElement => {
+      const l = section.field(label, ...controls)
+      if (view.overridden.includes(key)) l.classList.add('over')
+      if (mixed) l.classList.add('mixed')
+      return l
     }
-    /**
-     * Mark an overridden row with a class, which CSS turns into a bar down its left edge — Unity's cue.
-     *
-     * `element` is Tweakpane's own public accessor for the row it built, so this is its API rather than a reach
-     * into its internals. It replaced a `•` prefixed onto the label, which ate label width and was easy to
-     * miss.
-     */
-    const mark = (blade: { element: HTMLElement }): void => {
-      if (view.overridden.includes(key)) blade.element.classList.add('over')
+    const differs = (): void => {
+      section.row(label, 'differs across the selection').classList.add('mixed')
     }
 
     switch (spec.kind) {
       case 'number': {
-        const opts: Record<string, unknown> = { label }
-        // The declared step is a drag increment, never a constraint on what may be typed (ADR 0113).
-        if (spec.step !== undefined) Object.assign(opts, dragSpeed(spec.step))
-        if (spec.min !== undefined) opts.min = spec.min
-        if (spec.max !== undefined) opts.max = spec.max
-        mark(section.pane().addBinding(state, key, opts).on('change', () => write({ [key]: state[key] })))
-        return
-      }
-      case 'bool':
-      case 'string':
-        mark(section.pane().addBinding(state, key, { label }).on('change', () => write({ [key]: state[key] })))
-        return
-      case 'color':
-        /**
-         * No `view` option: Tweakpane's string-colour plugin picks the picker up from the **value's format**
-         * (`detectStringColorFormat`), and only declines when told `view: 'text'`. Passing `view: 'color'` reads
-         * as forcing it but is a no-op — `BaseInputParams` extends `Record<string, unknown>`, so any key,
-         * including a typo, typechecks and is then ignored.
-         *
-         * What keeps this working is the declaration layer rejecting anything that is not `#rrggbb`, which is
-         * exactly the format the plugin detects.
-         */
-        mark(section.pane().addBinding(state, key, { label }).on('change', () => write({ [key]: state[key] })))
-        return
-      case 'enum': {
-        const options: Record<string, string> = {}
-        for (const o of spec.options) options[o] = o
-        mark(
-          section.pane().addBinding(state, key, { label, options }).on('change', () => {
-            write({ [key]: state[key] })
-            // An enum can gate other parameters (`Visual.source` decides whether `model` is relevant), so the
-            // set of rows may have changed. Scroll survives it now.
-            rebuildKeepingScroll()
-          }),
+        const v = state[key]
+        line(
+          numberField({
+            value: mixed ? null : typeof v === 'number' ? v : spec.default,
+            spec: numberScrub(spec),
+            title: label,
+            history: label,
+            write: (n) => write({ [key]: n }),
+          }).root,
         )
         return
       }
+      case 'bool':
+        line(checkField(mixed ? null : state[key] === true, (on) => write({ [key]: on }), label))
+        return
+      case 'string':
+        line(textField(mixed ? null : String(state[key] ?? ''), (s) => write({ [key]: s }), { title: label }))
+        return
+      case 'color': {
+        const w = liveWrite<string>(label, (c) => write({ [key]: c }))
+        line(colorField(mixed ? null : String(state[key] ?? spec.default), w.commit, mixed ? undefined : w.live))
+        return
+      }
+      case 'enum':
+        line(
+          selectField(
+            spec.options.map((o) => ({ value: o, label: o })),
+            mixed ? null : String(state[key]),
+            (v) => {
+              write({ [key]: v })
+              // An enum can gate other parameters (`when`), so the set of lines may have changed.
+              rebuildKeepingScroll()
+            },
+            label,
+          ),
+        )
+        return
       case 'vec3': {
-        const step = dragSpeed(0.1)
-        mark(section.pane().addBinding(state, key, { label, x: step, y: step, z: step }).on('change', () => write({ [key]: state[key] })))
+        /**
+         * Per axis: one may agree while the others do not. Each node keeps its own value on the axes not
+         * written — a patch replaces a parameter whole, so each gets its own (`setParamsAcross` with a
+         * function), and the local copies follow each write so the next axis starts from it.
+         */
+        const own = vecOf(state[key])
+        const theirs = (peers ?? []).map((p) => vecOf(valueOf(p)))
+        const agreed = (axis: Axis): number | null => (theirs.every((t) => t[axis] === theirs[0]![axis]) ? (theirs[0]?.[axis] ?? own[axis]) : null)
+        const writeAxis = (axis: Axis, v: number): void => {
+          if (peers === null) {
+            own[axis] = v
+            state[key] = { ...own }
+            write({ [key]: { ...own } })
+            return
+          }
+          theirs.forEach((t) => (t[axis] = v))
+          edited(() => doc.setParamsAcross(peers, (p) => ({ [key]: { ...theirs[peers.indexOf(p)]! } })))
+        }
+        line(
+          ...AXES.map(
+            (axis) =>
+              numberField({
+                value: peers === null ? own[axis] : agreed(axis),
+                spec: numberScrub({ step: 0.1 }),
+                title: `${label} ${axis}`,
+                history: label,
+                axis,
+                write: (v) => writeAxis(axis, v),
+              }).root,
+          ),
+        )
         return
       }
       case 'asset': {
-        const options = host.assetOptions(spec.of)
-        mark(section.pane().addBinding(state, key, { label, options }).on('change', () => write({ [key]: state[key] })))
+        const choices = Object.entries(host.assetOptions(spec.of)).map(([text, id]) => ({ value: id, label: text }))
+        line(
+          selectField(
+            choices,
+            mixed ? null : String(state[key] ?? ''),
+            (v) => {
+              write({ [key]: v })
+              // A model picked or dropped changes what the Collider card shows (ADR 0090).
+              rebuildKeepingScroll()
+            },
+            label,
+          ),
+        )
         return
       }
       case 'collider': {
@@ -801,30 +854,53 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
           section.row(label, `unit ${unitColliderFor(builtin).kind} · size is the object's scale`)
           return
         }
+        if (mixed) return differs()
         const shape = (state[key] ?? spec.default) as ColliderDesc
-        const picker = { kind: shape.kind as string }
-        mark(
-          section.pane().addBinding(picker, 'kind', { label, options: SHAPE_OPTIONS }).on('change', () => {
-            write({ [key]: defaultShape(picker.kind, shape) })
+        line(
+          selectField(SHAPE_CHOICES, shape.kind, (kind) => {
+            write({ [key]: defaultShape(kind, shape) })
             rebuildKeepingScroll()
           }),
         )
-        const dims: Record<string, unknown> = { ...shape }
-        const step = dragSpeed(0.05)
+        const size = (name: string, value: number, put: (v: number) => void): HTMLElement =>
+          section.field(
+            name,
+            numberField({ value, spec: numberScrub({ step: 0.05, min: 0.01 }), title: name, history: name, write: put }).root,
+          )
         if (shape.kind === 'box') {
-          section.pane().addBinding(dims, 'halfExtents', { label: 'half extents', x: step, y: step, z: step }).on('change', () =>
-            write({ [key]: { kind: 'box', halfExtents: dims.halfExtents } }),
+          const half = vecOf(shape.halfExtents)
+          section.field(
+            'half extents',
+            ...AXES.map(
+              (axis) =>
+                numberField({
+                  value: half[axis],
+                  spec: numberScrub({ step: 0.05 }),
+                  title: `half extents ${axis}`,
+                  history: 'half extents',
+                  axis,
+                  write: (v) => {
+                    half[axis] = v
+                    write({ [key]: { kind: 'box', halfExtents: { ...half } } })
+                  },
+                }).root,
+            ),
           )
         } else if (shape.kind === 'ball') {
-          section.pane().addBinding(dims, 'radius', { label: 'radius', ...dragSpeed(0.05), min: 0.01 }).on('change', () => write({ [key]: { kind: 'ball', radius: dims.radius } }))
+          size('radius', shape.radius, (v) => write({ [key]: { kind: 'ball', radius: v } }))
         } else if (shape.kind === 'capsule' || shape.kind === 'cylinder') {
-          const kind = shape.kind
-          const push = (): void => write({ [key]: { kind, halfHeight: dims.halfHeight, radius: dims.radius } })
-          section.pane().addBinding(dims, 'halfHeight', { label: 'half height', ...dragSpeed(0.05), min: 0.01 }).on('change', push)
-          section.pane().addBinding(dims, 'radius', { label: 'radius', ...dragSpeed(0.05), min: 0.01 }).on('change', push)
+          const dims = { kind: shape.kind, halfHeight: shape.halfHeight, radius: shape.radius }
+          size('half height', dims.halfHeight, (v) => {
+            dims.halfHeight = v
+            write({ [key]: { ...dims } })
+          })
+          size('radius', dims.radius, (v) => {
+            dims.radius = v
+            write({ [key]: { ...dims } })
+          })
         } else {
-          // A hull is authored by whatever generated it (ADR 0017); there is no useful grid control for a
-          // point cloud, so this states what is there and leaves it alone.
+          // A hull is authored by whatever generated it (ADR 0017); there is no useful field for a point cloud,
+          // so this states what is there and leaves it alone.
           section.row('hull', `${shape.points.length} points`)
         }
         return
@@ -833,18 +909,18 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         /**
          * A dropdown of the nodes this one may name, rather than Unity's drag-an-object-into-the-field: the
          * scope is already narrow (`nodeChoices` refuses anything that would author a dangling reference), and a
-         * picker cannot express a target the document does not have.
-         *
-         * `''` is the value for "none" so the binding has something to select; the schema's is `null`.
+         * picker cannot express a target the document does not have. `''` is "none"; the schema's is `null`.
          */
-        const options: Record<string, string> = { '(none)': '' }
-        for (const choice of doc.nodeChoices(at)) options[`${choice.label} · ${choice.id.slice(0, 6)}`] = choice.id
-        const pick = { ref: typeof state[key] === 'string' ? (state[key] as string) : '' }
-        mark(section.pane().addBinding(pick, 'ref', { label, options }).on('change', () => write({ [key]: pick.ref === '' ? null : pick.ref })))
+        if (mixed) return differs()
+        const choices: Choice[] = [{ value: '', label: '(none)' }]
+        for (const choice of doc.nodeChoices(at)) choices.push({ value: choice.id, label: `${choice.label} · ${choice.id.slice(0, 6)}` })
+        const named = state[key]
+        line(selectField(choices, typeof named === 'string' ? named : '', (v) => write({ [key]: v === '' ? null : v }), label))
         return
       }
       case 'stages': {
-        // A summary until the stage editor exists (ADR 0137): stages are drawn as boxes, not as a row.
+        // Stages are drawn as cards where they are a `Sequence`'s (ADR 0147); anywhere else, a summary.
+        if (mixed) return differs()
         const stages = Array.isArray(state[key]) ? (state[key] as readonly { steps?: readonly unknown[] }[]) : []
         const steps = stages.reduce((n, s) => n + (s.steps?.length ?? 0), 0)
         section.row(label, `${stages.length} stage${stages.length === 1 ? '' : 's'} · ${steps} step${steps === 1 ? '' : 's'}`)
@@ -857,7 +933,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
          * to `ParamSpec` fails typecheck until this switch handles it.
          */
         const unhandled: never = spec
-        throw new Error(`inspector: no widget for parameter kind ${JSON.stringify(unhandled)}`)
+        throw new Error(`inspector: no field for parameter kind ${JSON.stringify(unhandled)}`)
       }
     }
   }
@@ -894,13 +970,13 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   }
 
   /** One of a setting's two values: what it is called, and how the header draws it. */
-  interface Choice {
+  interface Toggle {
     readonly value: string
     readonly icon: IconName
     readonly label: string
   }
   /** The three settings the header shows as icons, each first choice its default. */
-  const SEQUENCE_TOGGLES: readonly { readonly key: 'clock' | 'loop' | 'axes'; readonly choices: readonly [Choice, Choice] }[] = [
+  const SEQUENCE_TOGGLES: readonly { readonly key: 'clock' | 'loop' | 'axes'; readonly choices: readonly [Toggle, Toggle] }[] = [
     {
       key: 'clock',
       choices: [
@@ -1075,7 +1151,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     )
   }
 
-  /** One section per component: header controls, then its visible parameters. */
+  /** One card per component: header controls, then its visible parameters. */
   const addComponentSection = (doc: Doc, at: number, view: ComponentView, peers: readonly Peer[] | null): void => {
     const def = doc.registry.get(view.type)
     // Per component, not per node: a placement's root shows its prefab root's components beside its own.
@@ -1121,9 +1197,12 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       },
     })
 
+    const state = boundState(doc.registry.defaults(view.type), view.params)
+    const shown = def === undefined || view.type === SEQUENCE ? null : visibleParams(def.params, state)
     const seqHead = view.type === SEQUENCE && def !== undefined ? sequenceHead(doc, at, view, peers) : null
     const section = addSection(view.id, {
       title: seqHead?.title ?? def?.label ?? view.type,
+      icon: componentIcon(view.type),
       ...(seqHead === null ? {} : { summary: seqHead.summary, tools: seqHead.tools, ...(seqHead.warn === undefined ? {} : { warn: seqHead.warn }) }),
       // What used to be spelled into the folder's title string, as a badge that cannot push the name out.
       badge: view.added ? 'added' : overridden ? String(view.overridden.length + sequenceChanges) : '',
@@ -1135,6 +1214,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         rebuildKeepingScroll()
       },
       menu: items,
+      empty: shown !== null && shown.length === 0,
     })
     if (overridden) section.root.classList.add('over-sec')
 
@@ -1157,88 +1237,70 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       addSequenceBody(section, doc, at, view, peers)
       return
     }
-    const state = boundState(doc.registry.defaults(view.type), view.params)
-    const shown = visibleParams(def.params, state)
-    syncDepth++
-    try {
-      for (const key of shown) {
-        const spec = def.params[key]
-        if (spec !== undefined) addParam(section, doc, at, view, state, key, spec, peers)
-      }
-    } finally {
-      syncDepth--
+    for (const key of shown ?? []) {
+      const spec = def.params[key]
+      if (spec !== undefined) addParam(section, doc, at, view, state, key, spec, peers)
     }
-    if (shown.length === 0) section.row('', 'no parameters')
   }
 
-  /** The transform, as a section like any other — it used to be three rows floating with no owner. */
+  /** How the transform's three lines drag: a tenth of a metre, a degree, a twentieth, a pixel. */
+  const TRANSFORM_LINES = [
+    ['position', 'position', 0.1],
+    ['rotationDeg', 'rotation °', 1],
+    ['scale', 'scale', 0.05],
+  ] as const
+
+  /** The transform, as a card like any other — it used to be three rows floating with no owner. */
   const addTransformSection = (doc: Doc, at: number): void => {
     const overridden = doc.overridesOf(at).includes('transform')
     const items: MenuItem[] = overridden ? [{ label: 'Revert to prefab', run: () => host.revertOverride('transform') }] : []
-    const section = addSection(TRANSFORM, { title: 'Transform', badge: overridden ? '1' : '', menu: items })
-    const pane = section.pane()
-    transformPane = pane
+    const section = addSection(TRANSFORM, { title: 'Transform', icon: 'toolMove', badge: overridden ? '1' : '', menu: items })
     if (overridden) section.root.classList.add('over-sec')
 
-    const pos = dragSpeed(0.1)
-    const rot = dragSpeed(1)
-    const scl = dragSpeed(0.05)
-
     /**
-     * Several selected: the panel draws the three rows itself (ADR 0112).
-     *
-     * Tweakpane binds a vec3 as one object and a number input cannot be empty, so there is no way to blank
-     * the X of a position while Y and Z show numbers — which is exactly what an honest multi-selection has
-     * to do. Three inputs per row, blank where the selection disagrees, and each writes its own axis to
-     * every selected node.
+     * Several selected (ADR 0112): an axis whose value differs is blank, and each field writes its own axis to
+     * every selected node — as it settles, since `writeAxis` is itself one history entry.
      */
     const many = host.selectionTransforms()
     if (many.length > 1) {
-      transformPane = null
-      for (const [key, label, step] of [
-        ['position', 'position', pos.pointerScale],
-        ['rotationDeg', 'rotation °', rot.pointerScale],
-        ['scale', 'scale', scl.pointerScale],
-      ] as const) {
-        const line = section.row(label, '')
-        const slot = line.querySelector('.irow-v')
-        if (slot === null) continue
-        slot.textContent = ''
-        slot.classList.add('imulti')
-        for (const axis of ['x', 'y', 'z'] as const) {
+      for (const [key, label, step] of TRANSFORM_LINES) {
+        const fields = AXES.map((axis) => {
           const values = many.map((t) => t[key][axis])
           const first = values[0] ?? 0
-          const shared: number | null = values.every((v) => v === first) ? first : null
-          const input = el('input', 'imulti-n') as HTMLInputElement
-          input.type = 'number'
-          input.step = String(step)
-          input.title = `${label} ${axis}${shared === null ? ' — differs across the selection' : ''}`
-          if (shared === null) input.placeholder = '—'
-          else input.value = String(r4(shared))
-          const commitAxis = (): void => {
-            const v = Number(input.value)
-            // An empty box means "leave it alone", which is the whole point of blanking a mixed value.
-            if (input.value.trim() === '' || !Number.isFinite(v)) return
-            host.writeAxis(key, axis, v)
-          }
-          input.addEventListener('change', commitAxis)
-          input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') commitAxis()
-          })
-          slot.append(input)
-        }
+          return numberField({
+            value: values.every((v) => v === first) ? r4(first) : null,
+            spec: numberScrub({ step }),
+            title: `${label} ${axis}`,
+            history: key,
+            axis,
+            live: false,
+            write: (v) => host.writeAxis(key, axis, v),
+          }).root
+        })
+        section.field(label, ...fields)
       }
       return
     }
 
-    syncDepth++
-    try {
-      const p = pane.addBinding(sel, 'position', { label: 'position', x: pos, y: pos, z: pos }).on('change', applyTransform)
-      if (overridden) p.element.classList.add('over')
-      pane.addBinding(sel, 'rotationDeg', { label: 'rotation °', x: rot, y: rot, z: rot }).on('change', applyTransform)
-      pane.addBinding(sel, 'scale', { label: 'scale', x: scl, y: scl, z: scl }).on('change', applyTransform)
-    } finally {
-      syncDepth--
+    readSel()
+    for (const [key, label, step] of TRANSFORM_LINES) {
+      const fields = AXES.map((axis) => {
+        const field = numberField({
+          value: sel[key][axis],
+          spec: numberScrub({ step }),
+          title: `${label} ${axis}`,
+          history: 'transform',
+          axis,
+          write: (v) => {
+            sel = { ...sel, [key]: { ...sel[key], [axis]: v } }
+            applyTransform()
+          },
+        })
+        transformFields.push({ key, axis, field })
+        return field.root
+      })
+      const line = section.field(label, ...fields)
+      if (overridden) line.classList.add('over')
     }
   }
 
@@ -1256,8 +1318,9 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       .filter((type) => targets.some((i) => doc.canAdd(i, type)))
     // Shared components this game has not opted into yet. Picking one adds it to the game first (ADR 0077).
     const adoptable = host.adoptable()
-    const row = el('div', 'iadd')
-    const button = el('button', 'ctl wide', 'Add Component')
+    const button = el('button', 'iadd')
+    button.type = 'button'
+    button.append(icon('plus'), el('span', undefined, 'Add Component'))
     button.disabled = addable.length === 0 && adoptable.length === 0
     button.title = button.disabled
       ? 'these objects already have one of everything'
@@ -1291,110 +1354,15 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         })),
       ])
     })
-    row.append(button)
-    container.append(row)
+    container.append(button)
   }
 
-  /**
-   * The override strip, right under the header where it describes what follows.
-   *
-   * **Two scopes** (ADR 0122). Overrides are stored per inherited **piece**, so selecting the prefab object
-   * itself — the placement root, which holds no override of its own and never will — used to show nothing at
-   * all, which is the first place an author looks after editing inside a prefab. The root now reports its
-   * pieces and acts on all of them.
-   *
-   * The wording carries the scope, because the two buttons do very different amounts: on a piece they mean
-   * this object, on the root they mean the whole instance.
-   */
-  const addOverrideStrip = (doc: Doc, at: number): void => {
-    const kind = doc.kindOf(at)
-    const isPlacement = kind === 'own' && doc.refOf(at) !== null
-    if (kind !== 'inherited' && !isPlacement) return
-
-    const strip = el('div', 'iover')
-    if (isPlacement) {
-      const changed = doc.placementOverrides(at)
-      // Children dropped onto the placement are the level's, not the prefab's, until they are applied
-      // (ADR 0130). They belong in this count or the strip would read "matches the prefab" beside one.
-      const added = doc.placementAdded(at)
-      // Pieces this placement does without (ADR 0133). No index, so `placementOverrides` cannot see them.
-      const gone = doc.placementRemoved(at)
-      if (changed.length === 0 && added.length === 0 && gone.length === 0) {
-        strip.append(el('span', 'iover-t', 'matches the prefab'))
-        container.append(strip)
-        return
-      }
-      const total = changed.reduce((n, o) => n + o.fields.length, 0)
-      strip.classList.add('on')
-      const overridePart = total === 0 ? '' : `${total} override${total === 1 ? '' : 's'} on ${changed.length} object${changed.length === 1 ? '' : 's'}`
-      const addedPart = added.length === 0 ? '' : `${added.length} added object${added.length === 1 ? '' : 's'}`
-      const gonePart = gone.length === 0 ? '' : `${gone.length} removed piece${gone.length === 1 ? '' : 's'}`
-      strip.append(el('span', 'iover-t', [overridePart, addedPart, gonePart].filter((x) => x !== '').join(', ')))
-      const revert = el('button', 'ctl tiny', 'Revert all')
-      const revertWhat = changed.map((o) => `${doc.label(o.index)}: ${o.fields.join(', ')}`)
-      // Named one by one, because reverting deletes them and the button should say which.
-      for (const i of added) revertWhat.push(`${doc.label(i)}: added, would be deleted`)
-      for (const id of gone) revertWhat.push(`${id}: removed, would come back`)
-      revert.title = `drop every change made inside this prefab (${revertWhat.join(' · ')})`
-      revert.addEventListener('click', () => host.revertPlacement(at))
-      const apply = el('button', 'ctl tiny', 'Apply all')
-      apply.title = 'push every change inside this prefab into the shared definition — every placement of it follows'
-      apply.addEventListener('click', () => void host.applyPlacementOverrides(at))
-      strip.append(revert, apply)
-      container.append(strip)
-      return
-    }
-
-    const overridden = doc.overridesOf(at)
-    if (overridden.length === 0) {
-      strip.append(el('span', 'iover-t', 'matches the prefab'))
-      container.append(strip)
-      return
-    }
-    strip.classList.add('on')
-    strip.append(el('span', 'iover-t', `${overridden.length} override${overridden.length === 1 ? '' : 's'}`))
-    const revert = el('button', 'ctl tiny', 'Revert all')
-    revert.title = `drop every override on this object (${overridden.join(', ')})`
-    revert.addEventListener('click', () => host.revertOverride())
-    const apply = el('button', 'ctl tiny', 'Apply')
-    apply.title = 'push these into the shared prefab — every placement of it follows'
-    apply.addEventListener('click', host.applyOverrides)
-    strip.append(revert, apply)
-    container.append(strip)
-  }
-
-  /** Object-level actions, compact and last: they are about the object, not about any component. */
-  const addFooter = (doc: Doc, at: number): void => {
-    if (doc.kindOf(at) !== 'own') return
-    const row = el('div', 'ifoot')
-    const dup = el('button', 'ctl', 'Duplicate')
-    dup.title = 'Ctrl+D'
-    dup.addEventListener('click', host.duplicate)
-    const del = el('button', 'ctl danger', 'Delete')
-    del.title = 'Del'
-    del.addEventListener('click', host.remove)
-    row.append(dup, del)
-    container.append(row)
-  }
-
-  /**
-   * The level's sun (ADR 0048), shown when the Environment row is selected.
-   *
-   * Hand-built rather than generated from declarations, because the sun is not a component: it is
-   * `LevelConfig.sun`, sitting with the sky because the two are one input (ADR 0046). Every edit calls
-   * `onSunChanged`, which rebakes the sky — moving the sun without rebaking is exactly how the light and the
-   * sky would come to disagree again.
-   */
   /**
    * Which game this level is for (ADR 0052). One field, because that is all a game contributes to a level.
    *
-   * There were generated setting fields here too, from a `config: ParamDecls` on the descriptor — parkour's
-   * `fallBehavior` and `fallY`. Both went when the kill plane became a `Hazard` on a collider (ADR 0053): a
-   * rule belongs in a component, not in a settings panel, and no game has a level-wide *value* yet.
-   *
-   * Reassigning lives here rather than on the toolbar picker, deliberately: the picker is the authoring
-   * context, and retagging a level is an edit with consequences — its components are validated against the new
-   * game's registry — so it belongs where those consequences are in front of you.
+   * Reassigning lives here rather than on the toolbar, deliberately: retagging a level is an edit with
+   * consequences — its components are validated against the new game's registry — so it belongs where those
+   * consequences are in front of you.
    */
   const addGameSection = (doc: Doc): void => {
     if (doc.mode === 'prefab') {
@@ -1405,53 +1373,50 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     const ref = doc.modeRef()
     const installed = host.games()
 
-    const options: Record<string, string> = { '(none)': '' }
-    for (const g of installed) options[g.label] = g.name
+    const choices: Choice[] = [{ value: '', label: '(none)' }, ...installed.map((g) => ({ value: g.name, label: g.label }))]
     // A game the level names but this build does not have is offered as itself, so selecting something else is
     // a deliberate change rather than the only thing the dropdown will let you do.
-    if (ref !== undefined && !installed.some((g) => g.name === ref.name)) options[`${ref.name} (not installed)`] = ref.name
-
-    const pick = { game: ref?.name ?? '' }
-    section
-      .pane()
-      .addBinding(pick, 'game', { label: 'game', options })
-      .on('change', () => {
-        edited(() => doc.setMode(pick.game === '' ? null : pick.game))
+    if (ref !== undefined && !installed.some((g) => g.name === ref.name)) choices.push({ value: ref.name, label: `${ref.name} (not installed)` })
+    section.field(
+      'game',
+      selectField(choices, ref?.name ?? '', (game) => {
+        edited(() => doc.setMode(game === '' ? null : game))
         host.onModeChanged()
-      })
+      }),
+    )
 
     if (ref === undefined) section.row('', 'unassigned — its components are checked against everything this build knows')
     else if (!installed.some((g) => g.name === ref.name)) section.row('', `'${ref.name}' is not installed: no rules, no rule gizmos`)
 
     addBoundsSection(doc)
 
-    // The game's numbers (ADR 0087): one field per declaration, saved to the game's data file on change.
+    // The game's numbers (ADR 0087): one field per declaration, saved to the game's data file as each settles.
     const settings = host.settings()
     if (settings === null) return
-    const numbers: Record<string, number> = {}
-    for (const [k, v] of Object.entries(settings.values)) if (typeof v === 'number') numbers[k] = v
     const tuning = addSection('@game-settings', { title: 'Game settings' })
     for (const [key, decl] of Object.entries(settings.decls)) {
       if (isCurveSetting(decl)) {
-        // A curve gets its own section: a graph is not a row (ADR 0088).
+        // A curve gets its own card: a graph is not a line (ADR 0088).
         const sec = addSection(`@game-curve-${key}`, { title: decl.label })
         const pts = settings.values[key]
-        const holder = sec.row('', '')
-        holder.replaceChildren()
+        const holder = el('div', 'icurve')
+        sec.append(holder)
         createCurveEditor(holder, { decl, points: Array.isArray(pts) ? pts : decl.default, onChange: (points) => host.onSettingChanged(key, points) })
         if (decl.hint !== undefined) sec.row('', decl.hint)
         continue
       }
-      const opts: { label: string; min?: number; max?: number; step?: number } = { label: decl.label }
-      if (decl.min !== undefined) opts.min = decl.min
-      if (decl.max !== undefined) opts.max = decl.max
-      if (decl.step !== undefined) opts.step = decl.step
-      tuning
-        .pane()
-        .addBinding(numbers, key, opts)
-        .on('change', (ev) => {
-          if (ev.last) host.onSettingChanged(key, numbers[key] ?? decl.default)
-        })
+      const v = settings.values[key]
+      tuning.field(
+        decl.label,
+        numberField({
+          value: typeof v === 'number' ? v : decl.default,
+          spec: numberScrub(decl),
+          title: decl.label,
+          history: decl.label,
+          live: false,
+          write: (n) => host.onSettingChanged(key, n),
+        }).root,
+      )
       if (decl.hint !== undefined) tuning.row('', decl.hint)
     }
   }
@@ -1466,31 +1431,35 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
    */
   const addBoundsSection = (doc: Doc): void => {
     const own = doc.netBounds()
-    const state = { metres: own ?? QUANT_BOUND, box: host.boundsBoxShown() }
+    const metres = own ?? QUANT_BOUND
     const sec = addSection('@net-bounds', { title: 'Network bounds' })
 
-    sec
-      .pane()
-      .addBinding(state, 'metres', { min: 10, max: 20000, step: 10, label: 'reach ±m' })
-      .on('change', (ev) => {
-        if (!ev.last) return
-        doc.setNetBounds(state.metres)
-        host.onNetBoundsChanged()
-      })
+    sec.field(
+      'reach ±m',
+      numberField({
+        value: metres,
+        spec: numberScrub({ min: 10, max: 20000, step: 10 }),
+        title: 'reach ±m',
+        history: 'network bounds',
+        live: false,
+        write: (v) => {
+          doc.setNetBounds(v)
+          host.onNetBoundsChanged()
+          // The lines below are worked out from it.
+          rebuildKeepingScroll()
+        },
+      }).root,
+    )
     // The whole trade in one line: a u16 an axis, so the step is the range over 65535.
-    sec.row('step', `${(((2 * state.metres) / 65535) * 100).toFixed(1)} cm between positions a peer can be at`)
-
-    sec
-      .pane()
-      .addBinding(state, 'box', { label: 'show box' })
-      .on('change', () => host.showBoundsBox(state.box))
+    sec.row('step', `${(((2 * metres) / 65535) * 100).toFixed(1)} cm between positions a peer can be at`)
+    sec.field('show box', checkField(host.boundsBoxShown(), (on) => host.showBoundsBox(on)))
 
     const reach = host.boundsReach()
     if (reach === null) sec.row('', 'nothing loaded')
     else if (reach.outside > 0) {
       sec.row('outside', `${reach.outside} object${reach.outside === 1 ? '' : 's'} past the bound — peers out there stop moving for everyone else`)
       sec.row('', `the level reaches ${Math.ceil(reach.reach)} m`)
-    } else sec.row('fits', `the level reaches ${Math.ceil(reach.reach)} m of ${state.metres}`)
+    } else sec.row('fits', `the level reaches ${Math.ceil(reach.reach)} m of ${metres}`)
 
     if (own === undefined) sec.row('', `unset — using the platform default of ${QUANT_BOUND} m`)
     else {
@@ -1498,8 +1467,9 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       back.addEventListener('click', () => {
         doc.setNetBounds(null)
         host.onNetBoundsChanged()
+        rebuildKeepingScroll()
       })
-      sec.row('', '').replaceChildren(back)
+      sec.append(back)
     }
   }
 
@@ -1510,8 +1480,8 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     }
 
     /**
-     * The three blocks are written back **together**, because they are one field on the level and because they
-     * are coupled: the sun's angles move the sky's glow, and `ambient` is the strength of the map the sky bakes
+     * The blocks are written back **together**, because they are one field on the level and because they are
+     * coupled: the sun's angles move the sky's glow, and `ambient` is the strength of the map the sky bakes
      * (ADR 0048). Writing one at a time would drop the others on a fresh level, which has none of them.
      */
     const current = doc.environment() ?? {}
@@ -1523,13 +1493,45 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       doc.setEnvironment({ sun: { ...sun }, ambient: { ...ambient }, sky: { ...sky }, postfx: { ...postfx } })
       host.onEnvironmentChanged()
     }
+    /** A number of the environment, which the sky and the light follow as it is dragged. */
+    const number = (sec: Section, label: string, value: number, d: { min: number; max: number; step: number }, put: (v: number) => void): void => {
+      sec.field(
+        label,
+        numberField({
+          value,
+          spec: numberScrub(d),
+          title: label,
+          history: 'environment',
+          write: (v) => {
+            put(v)
+            write()
+          },
+        }).root,
+      )
+    }
+    const colour = (sec: Section, label: string, value: string, put: (v: string) => void): void => {
+      const w = liveWrite<string>('environment', (c) => {
+        put(c)
+        write()
+      })
+      sec.field(label, colorField(value, w.commit, w.live))
+    }
+    const tick = (sec: Section, label: string, value: boolean, put: (on: boolean) => void): void => {
+      sec.field(
+        label,
+        checkField(value, (on) => {
+          put(on)
+          write()
+        }),
+      )
+    }
 
     const sunSection = addSection('@env-sun', { title: 'Sun' })
-    sunSection.pane().addBinding(sun, 'elevation', { min: 1, max: 89, step: 1, label: 'elevation °' }).on('change', write)
-    sunSection.pane().addBinding(sun, 'azimuth', { min: -180, max: 180, step: 1, label: 'azimuth °' }).on('change', write)
-    sunSection.pane().addBinding(sun, 'intensity', { min: 0, max: 10, step: 0.05, label: 'intensity' }).on('change', write)
-    sunSection.pane().addBinding(sun, 'color', { label: 'colour' }).on('change', write)
-    sunSection.pane().addBinding(sun, 'shadows', { label: 'shadows' }).on('change', write)
+    number(sunSection, 'elevation °', sun.elevation, { min: 1, max: 89, step: 1 }, (v) => (sun.elevation = v))
+    number(sunSection, 'azimuth °', sun.azimuth, { min: -180, max: 180, step: 1 }, (v) => (sun.azimuth = v))
+    number(sunSection, 'intensity', sun.intensity, { min: 0, max: 10, step: 0.05 }, (v) => (sun.intensity = v))
+    colour(sunSection, 'colour', sun.color, (v) => (sun.color = v))
+    tick(sunSection, 'shadows', sun.shadows, (on) => (sun.shadows = on))
     sunSection.row('', 'elevation and azimuth also move the sky')
 
     /**
@@ -1537,42 +1539,35 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
      * every light off leaves it lighting the scene. At 1 this sky's irradiance is blue twenty-one times red.
      */
     const ambientSection = addSection('@env-ambient', { title: 'Ambient' })
-    ambientSection.pane().addBinding(ambient, 'intensity', { min: 0, max: 1.5, step: 0.01, label: 'from the sky' }).on('change', write)
+    number(ambientSection, 'from the sky', ambient.intensity, { min: 0, max: 1.5, step: 0.01 }, (v) => (ambient.intensity = v))
     ambientSection.row('', 'the sky lighting the level, not a light')
 
     const skySection = addSection('@env-sky', { title: 'Sky' })
-    skySection.pane().addBinding(sky, 'topColor', { label: 'top' }).on('change', write)
-    skySection.pane().addBinding(sky, 'bottomColor', { label: 'bottom' }).on('change', write)
-    skySection.pane().addBinding(sky, 'gradientBias', { min: 0.3, max: 3, step: 0.05, label: 'ramp bias' }).on('change', write)
-    skySection.pane().addBinding(sky, 'gain', { min: 0.1, max: 6, step: 0.05, label: 'gain' }).on('change', write)
-    skySection.pane().addBinding(sky, 'glowColor', { label: 'sun tint' }).on('change', write)
-    skySection.pane().addBinding(sky, 'glowStrength', { min: 0, max: 2, step: 0.01, label: 'glow' }).on('change', write)
-    skySection.pane().addBinding(sky, 'glowSharpness', { min: 4, max: 600, step: 4, label: 'glow tight' }).on('change', write)
-    skySection.pane().addBinding(sky, 'sunDiskIntensity', { min: 0, max: 2000, step: 10, label: 'sun disc' }).on('change', write)
+    colour(skySection, 'top', sky.topColor, (v) => (sky.topColor = v))
+    colour(skySection, 'bottom', sky.bottomColor, (v) => (sky.bottomColor = v))
+    number(skySection, 'ramp bias', sky.gradientBias, { min: 0.3, max: 3, step: 0.05 }, (v) => (sky.gradientBias = v))
+    number(skySection, 'gain', sky.gain, { min: 0.1, max: 6, step: 0.05 }, (v) => (sky.gain = v))
+    colour(skySection, 'sun tint', sky.glowColor, (v) => (sky.glowColor = v))
+    number(skySection, 'glow', sky.glowStrength, { min: 0, max: 2, step: 0.01 }, (v) => (sky.glowStrength = v))
+    number(skySection, 'glow tight', sky.glowSharpness, { min: 4, max: 600, step: 4 }, (v) => (sky.glowSharpness = v))
+    number(skySection, 'sun disc', sky.sunDiskIntensity, { min: 0, max: 2000, step: 10 }, (v) => (sky.sunDiskIntensity = v))
 
     /**
      * The passes over the finished image. Here rather than in a preferences dialogue because they are the
      * level's: occlusion is most of what gives greybox its form, and both are tuned against the light above.
-     *
-     * These were hardcoded per app and had drifted — the editor asked for a stronger bloom than the game — so
-     * the viewport was not showing what you would play.
      */
     const fxSection = addSection('@env-postfx', { title: 'Post-FX' })
-    fxSection.pane().addBinding(postfx, 'ao', { label: 'ambient occl.' }).on('change', write)
-    fxSection.pane().addBinding(postfx, 'bloom', { label: 'bloom' }).on('change', write)
-    fxSection.pane().addBinding(postfx, 'bloomStrength', { min: 0, max: 1.5, step: 0.05, label: 'bloom str' }).on('change', write)
+    tick(fxSection, 'ambient occl.', postfx.ao, (on) => (postfx.ao = on))
+    tick(fxSection, 'bloom', postfx.bloom, (on) => (postfx.bloom = on))
+    number(fxSection, 'bloom str', postfx.bloomStrength, { min: 0, max: 1.5, step: 0.05 }, (v) => (postfx.bloomStrength = v))
     fxSection.row('', 'bloom only fires on emissive materials')
 
     /**
      * The game camera (ADR 0148). Its own field on the level rather than part of `environment`, which is what
      * the renderer lights and draws with; this is what the camera does about a wall.
      */
-    const camera = { seeThrough: doc.cameraSeeThrough() }
     const camSection = addSection('@env-camera', { title: 'Camera' })
-    camSection
-      .pane()
-      .addBinding(camera, 'seeThrough', { label: 'see through' })
-      .on('change', () => doc.setCameraSeeThrough(camera.seeThrough))
+    camSection.field('see through', checkField(doc.cameraSeeThrough(), (on) => doc.setCameraSeeThrough(on)))
     camSection.row('', 'on: a wall in the way gets a hole · off: it stops the camera')
   }
 
@@ -1584,11 +1579,12 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   }
 
   const build = (): void => {
+    // A drag whose field this rebuild takes away is over.
+    endFieldDrag()
+    document.body.classList.remove('scrubbing')
     // A popover belongs to the panel it came from; the new one opens its own again if it should.
     closePopover()
-    for (const pane of panes) pane.dispose()
-    panes = []
-    transformPane = null
+    transformFields = []
     container.replaceChildren()
     renderHead()
 
@@ -1604,7 +1600,6 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     const at = host.selected()
     if (doc === null || at === null) return
 
-    addOverrideStrip(doc, at)
     addTransformSection(doc, at)
     /**
      * With several selected, a component is shown only when **every** one of them has it (ADR 0112): the
@@ -1620,8 +1615,6 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       addComponentSection(doc, at, view, peers)
     }
     addAddButton(doc, at)
-    addFooter(doc, at)
-    sync()
   }
 
   return { rebuild, sync, renderHead, openPoint }

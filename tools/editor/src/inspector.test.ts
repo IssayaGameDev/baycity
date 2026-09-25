@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { boundState, dragSpeed, peersOf, sameValue } from './inspector'
+import { boundState, numberScrub, peersOf, sameValue } from './inspector'
 
 /**
- * What the Inspector's widgets are bound to must share nothing with the document (ADR 0101).
+ * What the Inspector's fields are built from must share nothing with the document (ADR 0101).
  *
  * The bug: a spread is shallow, so the bound `shape` was the very same object as the component's — and on an
- * inherited component that object is the **prefab's own**. Tweakpane writes into a bound object rather than
- * replacing it (`writePoint3d` → `writeProperty` → `valueObj[name] = value`), so dragging half extents on one
- * placement edited the prefab definition in memory, every frame, before any op existed.
+ * inherited component that object is the **prefab's own**. Tweakpane wrote into a bound object rather than
+ * replacing it, so dragging half extents on one placement edited the prefab definition in memory. The fields
+ * now update this copy as they write, which must still not be the document's object.
  */
 describe('boundState', () => {
   it('layers the authored params over the declared defaults', () => {
@@ -128,33 +128,20 @@ describe('sameValue', () => {
 })
 
 /**
- * A number field's drag speed must not constrain what can be typed (ADR 0113).
- *
- * Tweakpane's `step` does both jobs, and its constraint is anchored to the value the field was built with:
- * `createStepConstraint(params, initialValue)` → `new StepConstraint(step, initialValue)`, whose `constrain`
- * is `o + round((v - o) / step) * step` with `o = initialValue % step`. A scale field built showing 32.98
- * with `step: 0.05` therefore cannot be set to 33 at all.
- *
- * The arithmetic is reproduced here rather than imported so this test says *why* `step` is banned, and keeps
- * saying it if the library changes.
+ * How a declared number drags (ADR 0113, ADR 0152). The step is the drag's: a pixel, landing on its multiples.
+ * What is typed is never snapped to it — `inspectorPanel.test.ts` types 33 into a field built at 32.98.
  */
-describe('dragSpeed', () => {
-  it('asks for a pointer increment and no step at all', () => {
-    expect(dragSpeed(0.05)).toEqual({ pointerScale: 0.05 })
-    expect(Object.keys(dragSpeed(0.05))).not.toContain('step')
+describe('numberScrub', () => {
+  it('drags a step a pixel, landing on the step, inside the bounds', () => {
+    expect(numberScrub({ step: 0.05, min: 0.01 })).toEqual({ perPixel: 0.05, grain: 0.05, min: 0.01 })
+    expect(numberScrub({ step: 1, min: 1, max: 89 })).toEqual({ perPixel: 1, grain: 1, min: 1, max: 89 })
   })
 
-  it('documents the trap it exists to avoid', () => {
-    // Tweakpane's StepConstraint, verbatim.
-    const constrain = (value: number, step: number, origin: number): number => {
-      const o = origin % step
-      return o + Math.round((value - o) / step) * step
-    }
-    // A field built showing 32.98, step 0.05: Kodjo's exact three attempts.
-    const at = (v: number): number => Number(constrain(v, 0.05, 32.98).toFixed(4))
-    expect(at(32.99), 'typing 32.99 gives back 32.98').toBe(32.98)
-    expect(at(33), 'typing 33 gives back 32.98 — the value is unreachable').toBe(32.98)
-    expect(at(33.01), 'typing 33.01 jumps to 33.03').toBe(33.03)
-    // And with no step there is nothing to snap to, which is what `dragSpeed` guarantees.
+  it('crosses a bounded range in 200 px when there is no step, landing on the decade under a pixel', () => {
+    expect(numberScrub({ min: 0, max: 0.4 })).toEqual({ perPixel: 0.002, grain: 0.001, min: 0, max: 0.4 })
+  })
+
+  it('drags a tenth a pixel with neither', () => {
+    expect(numberScrub({})).toEqual({ perPixel: 0.1, grain: 0.1 })
   })
 })

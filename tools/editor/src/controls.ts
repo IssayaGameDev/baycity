@@ -1,7 +1,8 @@
 /**
- * The sequence editor's controls (ADR 0147): a number you drag sideways to change, a segmented switch, and a
- * popover. Our own DOM, in the editor's own look — Tweakpane's widgets are a second visual language, and a
- * narrow panel of mixed ones read as a developer's tool.
+ * The editor's controls: a number you drag sideways to change, a tick box, a dropdown, a text and a colour
+ * field, a segmented switch, and a popover. Our own DOM, in the editor's own look — the sequence editor's first
+ * (ADR 0147), then every field in the Inspector (ADR 0152), which is what took Tweakpane out of the editor: its
+ * widgets were a second visual language, and a narrow panel of mixed ones read as a developer's tool.
  */
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] => {
@@ -46,8 +47,23 @@ export const parseTyped = (text: string): number | null => {
 /** A number as a field shows it: at most three decimals, no trailing zeros. */
 export const shownNumber = (v: number): string => String(Math.round(v * 1000) / 1000 + 0)
 
+/**
+ * What a field reports while it is being dragged (a number) or picked (a colour), before it lets go: `start`
+ * once, `move` with each new value, `end` always — changed or not, so a caller that opened something (one
+ * history entry for the whole drag) closes it. The field's `commit` still runs after a drag that changed it.
+ */
+export interface Live<T> {
+  readonly start: () => void
+  readonly move: (v: T) => void
+  readonly end: () => void
+}
+
 export interface ScrubFieldOptions {
-  readonly value: number
+  /**
+   * `null` when a selection disagrees (ADR 0112): blank with a `—`, and typed only — a drag would need a
+   * number to start from, and any one of theirs would be a claim about the others.
+   */
+  readonly value: number | null
   /** A short label inside the field, the handle you drag by: `X`, `Y`, `Z`. */
   readonly label?: string
   /** Colours the label as the axis does in the viewport. */
@@ -65,6 +81,15 @@ export interface ScrubFieldOptions {
    * commits the first, which rebuilds the panel; the key is how the new copy of the second takes the focus.
    */
   readonly key?: string
+  /** Report the drag as it goes, for a value the viewport should follow before the pointer lets go. */
+  readonly live?: Live<number>
+}
+
+/** A number field that can be handed a new value from outside — the transform, which the gizmo moves. */
+export interface ScrubHandle {
+  readonly root: HTMLElement
+  /** Show `v` (stored units), unless it is being dragged or typed in, which wins. */
+  readonly set: (v: number) => void
 }
 
 /** The field clicked for typing while another's edit rebuilt the panel under it. */
@@ -75,20 +100,27 @@ const DRAG_THRESHOLD = 3
 
 /**
  * A number field: **drag it sideways** to change the number, **click it** to type. One edit when the drag ends
- * or the typing is done — not one per pixel, which would rebuild the panel under the pointer.
+ * or the typing is done — not one per pixel, which would rebuild the panel under the pointer. What the viewport
+ * should show while dragging is `live`'s, which the caller keeps to one history entry.
  */
-export const scrubField = (o: ScrubFieldOptions): HTMLElement => {
+export const scrubField = (o: ScrubFieldOptions): HTMLElement => scrubFieldOf(o).root
+
+export const scrubFieldOf = (o: ScrubFieldOptions): ScrubHandle => {
   const toShown = o.toShown ?? ((v: number) => v)
   const fromShown = o.fromShown ?? ((v: number) => v)
-  const shown = toShown(o.value)
-  const root = el('div', `sf${o.axis === undefined ? '' : ` sf-${o.axis}`}`)
+  let shown: number | null = o.value === null ? null : toShown(o.value)
+  const root = el('div', `sf${o.axis === undefined ? '' : ` sf-${o.axis}`}${shown === null ? ' mixed' : ''}`)
   if (o.title !== undefined) root.title = o.title
   if (o.label !== undefined) root.append(el('span', 'sf-l', o.label))
   const input = el('input', 'sf-v')
   input.type = 'text'
   input.inputMode = 'decimal'
   input.spellcheck = false
-  input.value = shownNumber(shown)
+  const reset = (): void => {
+    input.value = shown === null ? '' : shownNumber(shown)
+    input.placeholder = shown === null ? '—' : ''
+  }
+  reset()
   root.append(input)
   if (o.unit !== undefined) root.append(el('span', 'sf-u', o.unit))
 
@@ -102,29 +134,44 @@ export const scrubField = (o: ScrubFieldOptions): HTMLElement => {
     })
   }
 
+  /**
+   * What the field now holds is the new number: a field whose edit does not rebuild the panel (a live one)
+   * stays on screen, and must not revert to where it started on the next Escape.
+   */
   const finish = (v: number): void => {
-    if (Math.abs(v - shown) > 1e-12) o.commit(fromShown(v))
-    else input.value = shownNumber(shown)
+    if (shown !== null && Math.abs(v - shown) <= 1e-12) {
+      reset()
+      return
+    }
+    shown = v
+    root.classList.remove('mixed')
+    reset()
+    o.commit(fromShown(v))
   }
 
   let press: { x: number; start: number; dragging: boolean; value: number } | null = null
   root.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || root.classList.contains('editing')) return
     e.preventDefault()
-    press = { x: e.clientX, start: parseTyped(input.value) ?? shown, dragging: false, value: shown }
+    press = { x: e.clientX, start: shown === null ? 0 : (parseTyped(input.value) ?? shown), dragging: false, value: shown ?? 0 }
     root.setPointerCapture?.(e.pointerId)
   })
   root.addEventListener('pointermove', (e) => {
-    if (press === null) return
+    // A mixed value has nothing to drag from: a press on it only opens it for typing.
+    if (press === null || shown === null) return
     const dx = e.clientX - press.x
     if (!press.dragging && Math.abs(dx) < DRAG_THRESHOLD) return
     if (!press.dragging) {
       press.dragging = true
       root.classList.add('scrubbing')
       document.body.classList.add('scrubbing')
+      o.live?.start()
     }
-    press.value = scrubbed(press.start, dx, o.spec, e.shiftKey)
-    input.value = shownNumber(press.value)
+    const next = scrubbed(press.start, dx, o.spec, e.shiftKey)
+    if (next === press.value) return
+    press.value = next
+    input.value = shownNumber(next)
+    o.live?.move(fromShown(next))
   })
   const release = (e: PointerEvent): void => {
     if (press === null) return
@@ -135,6 +182,7 @@ export const scrubField = (o: ScrubFieldOptions): HTMLElement => {
     document.body.classList.remove('scrubbing')
     if (p.dragging) {
       finish(p.value)
+      o.live?.end()
       return
     }
     // A click: the text is yours.
@@ -146,12 +194,13 @@ export const scrubField = (o: ScrubFieldOptions): HTMLElement => {
   root.addEventListener('pointerup', release)
   root.addEventListener('pointercancel', release)
 
+  /** Typed, it is clamped and **never snapped** to the drag's grain: every value in range can be reached (ADR 0113). */
   const typed = (): void => {
     root.classList.remove('editing')
     if (refocus === o.key) refocus = null
     const v = parseTyped(input.value)
     if (v === null) {
-      input.value = shownNumber(shown)
+      reset()
       return
     }
     const clamped = Math.min(o.spec.max ?? Infinity, Math.max(o.spec.min ?? -Infinity, v))
@@ -163,11 +212,131 @@ export const scrubField = (o: ScrubFieldOptions): HTMLElement => {
       input.blur()
     } else if (e.key === 'Escape') {
       e.preventDefault()
-      input.value = shownNumber(shown)
+      reset()
       input.blur()
     }
   })
   input.addEventListener('blur', typed)
+
+  const set = (v: number): void => {
+    if (press?.dragging === true || root.classList.contains('editing')) return
+    shown = toShown(v)
+    root.classList.remove('mixed')
+    reset()
+  }
+  return { root, set }
+}
+
+// --- a tick box, a dropdown, a text, a colour --------------------------------------------------------------
+
+/** A tick box. `null` is a selection that disagrees (ADR 0112): drawn half-set, and a click sets every one. */
+export const checkField = (value: boolean | null, pick: (on: boolean) => void, title?: string): HTMLInputElement => {
+  const box = el('input', 'ck')
+  box.type = 'checkbox'
+  box.checked = value === true
+  box.indeterminate = value === null
+  if (title !== undefined) box.title = title
+  box.addEventListener('change', () => pick(box.checked))
+  return box
+}
+
+export interface Choice {
+  readonly value: string
+  readonly label: string
+}
+
+/**
+ * A dropdown. `null` is a selection that disagrees: a `—` shows, and is not itself a choice, so every pick is
+ * something to write.
+ */
+export const selectField = (choices: readonly Choice[], value: string | null, pick: (v: string) => void, title?: string): HTMLSelectElement => {
+  const select = el('select', 'sel')
+  if (title !== undefined) select.title = title
+  if (value === null) {
+    const blank = el('option', undefined, '—')
+    blank.value = ''
+    blank.disabled = true
+    blank.hidden = true
+    select.append(blank)
+  }
+  for (const c of choices) {
+    const opt = el('option', undefined, c.label)
+    opt.value = c.value
+    select.append(opt)
+  }
+  if (value === null) select.selectedIndex = 0
+  else select.value = value
+  select.addEventListener('change', () => pick(select.value))
+  return select
+}
+
+/** A line of text, written when it loses the focus or on Enter. `null` disagrees: blank, and blank writes nothing. */
+export const textField = (value: string | null, commit: (v: string) => void, opts: { readonly placeholder?: string; readonly title?: string } = {}): HTMLInputElement => {
+  const input = el('input', 'txt')
+  input.type = 'text'
+  input.spellcheck = false
+  input.value = value ?? ''
+  input.placeholder = value === null ? '—' : (opts.placeholder ?? '')
+  if (opts.title !== undefined) input.title = opts.title
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') input.blur()
+  })
+  input.addEventListener('change', () => {
+    if (value === null && input.value.trim() === '') return
+    commit(input.value)
+  })
+  return input
+}
+
+const HEX = /^#?([0-9a-f]{6})$/i
+
+/**
+ * A colour, `#rrggbb`: a swatch that opens the browser's own picker, and the code to type. The picker reports
+ * as it is dragged, through `live`, and settles on `change`. `null` disagrees: the code is blank.
+ */
+export const colorField = (value: string | null, commit: (v: string) => void, live?: Live<string>): HTMLElement => {
+  const root = el('div', 'clr')
+  const swatch = el('input', 'clr-s')
+  swatch.type = 'color'
+  swatch.value = value ?? '#000000'
+  const code = el('input', 'clr-v')
+  code.type = 'text'
+  code.spellcheck = false
+  code.value = value ?? ''
+  code.placeholder = value === null ? '—' : ''
+  let picking = false
+  swatch.addEventListener('input', () => {
+    code.value = swatch.value
+    if (live === undefined) return
+    if (!picking) {
+      picking = true
+      live.start()
+    }
+    live.move(swatch.value)
+  })
+  swatch.addEventListener('change', () => {
+    code.value = swatch.value
+    commit(swatch.value)
+    if (picking) {
+      picking = false
+      live?.end()
+    }
+  })
+  code.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') code.blur()
+  })
+  code.addEventListener('change', () => {
+    const m = HEX.exec(code.value.trim())
+    if (m === null) {
+      code.value = value ?? ''
+      return
+    }
+    const v = `#${m[1]!.toLowerCase()}`
+    code.value = v
+    swatch.value = v
+    commit(v)
+  })
+  root.append(swatch, code)
   return root
 }
 

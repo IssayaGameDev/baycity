@@ -1,6 +1,6 @@
 # ADR 0101 — The Inspector binds to a deep copy, never to the document
 
-Status: accepted. A consequence of ADR 0033's deliberate object sharing meeting Tweakpane's write model.
+Status: accepted, amended: the fields are ours and write new values ([ADR 0152](0152-the-inspector-is-cards-of-our-own-fields.md)); the copy stays, and the panel updates it as they write. A consequence of ADR 0033's deliberate object sharing meeting Tweakpane's write model.
 
 ## Context
 

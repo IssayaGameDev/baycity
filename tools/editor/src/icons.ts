@@ -1,7 +1,8 @@
 /**
  * The editor's icons: the sequence editor's (ADR 0147) — one per step kind, and the few its controls need —
- * the viewport's tools and toggles (ADR 0149), and the Hierarchy's rows (ADR 0150). Drawn here as SVG paths on a 24-unit grid, stroked in the
- * text colour, so they tint with CSS and cost no dependency.
+ * the viewport's tools and toggles (ADR 0149), the Hierarchy's rows (ADR 0150), and one per component in the
+ * Inspector (ADR 0152). Drawn here as SVG paths on a 24-unit grid, stroked in the text colour, so they tint
+ * with CSS and cost no dependency.
  *
  * Static markup only — nothing a person typed ever reaches `innerHTML` here.
  */
@@ -42,6 +43,17 @@ export type IconName =
   | 'prefab'
   | 'gamepad'
   | 'sun'
+  | 'more'
+  | 'mesh'
+  | 'material'
+  | 'light'
+  | 'spawn'
+  | 'goal'
+  | 'hazard'
+  | 'bumper'
+  | 'death'
+  | 'boss'
+  | 'component'
 
 const DOT = (x: number, y: number): string => `<circle cx="${x}" cy="${y}" r="1.6" fill="currentColor" stroke="none"/>`
 
@@ -83,6 +95,17 @@ const PATHS: Record<IconName, string> = {
   prefab: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" fill="currentColor" fill-opacity="0.3"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>',
   gamepad: '<rect x="2.5" y="7" width="19" height="11" rx="5.5"/><path d="M7.5 10.5v4M5.5 12.5h4"/><path d="M15.5 11.5h.01M18 13.5h.01"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
+  more: DOT(6, 12) + DOT(12, 12) + DOT(18, 12),
+  mesh: '<path d="M12 3.5l8.5 15h-17z"/><path d="M7.75 11h8.5M12 18.5 7.75 11M12 18.5l4.25-7.5"/>',
+  material: '<circle cx="12" cy="12" r="8.5"/><path d="M7.5 10a5 5 0 0 1 4-3.5"/><path d="M3.5 12.5c3 2 14 2 17 0"/>',
+  light: '<path d="M9.5 17.5h5M10.5 21h3"/><path d="M8.3 14.3a6 6 0 1 1 7.4 0c-.7.6-1.2 1.6-1.2 3.2h-5c0-1.6-.5-2.6-1.2-3.2z"/>',
+  spawn: '<circle cx="12" cy="7" r="3.2"/><path d="M5.5 20.5v-1.5a6.5 6.5 0 0 1 13 0v1.5"/>',
+  goal: '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 5.5H5.5a2.5 2.5 0 0 0 2.5 4M16 5.5h2.5a2.5 2.5 0 0 1-2.5 4"/><path d="M12 13v4M8.5 20.5h7M10 17h4v3.5h-4z"/>',
+  hazard: '<path d="M12 21a6.5 6.5 0 0 0 6.5-6.5c0-4.5-3.5-6-4.5-11-2.2 1.6-3.5 4-3.5 6.5-1.1-.9-1.7-2.1-1.8-3.3-1.4 1.6-3.2 4.3-3.2 7.8A6.5 6.5 0 0 0 12 21z"/>',
+  bumper: '<path d="M4 20.5h16"/><path d="M6.5 17.5h11"/><path d="M12 14V3.5M8 7.5l4-4 4 4"/>',
+  death: '<path d="M12 3.5a7.5 7.5 0 0 0-4.5 13.5v3.5h9V17A7.5 7.5 0 0 0 12 3.5z"/><circle cx="9.3" cy="11.5" r="1.5"/><circle cx="14.7" cy="11.5" r="1.5"/><path d="M11 20.5v-2M13 20.5v-2"/>',
+  boss: '<path d="M3.5 18.5h17l-1.3-11-4.7 4.5L12 5.5 9.5 12 4.8 7.5z"/>',
+  component: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg'

@@ -201,5 +201,6 @@ why matters.
 | [0149](adr/0149-the-tools-float-over-the-viewport.md) | The tools float over the viewport; the top bar is the document and running it |
 | [0150](adr/0150-the-hierarchy-reads-like-unitys.md) | The Hierarchy reads like Unity's, and its drag is rebuilt |
 | [0151](adr/0151-prefab-editing-is-one-tree-and-one-translator.md) | Prefab editing is rebuilt on one tree and one translator |
+| [0152](adr/0152-the-inspector-is-cards-of-our-own-fields.md) | The Inspector is cards of our own fields |
 
 `Design archive/` holds superseded design material and is not maintained.

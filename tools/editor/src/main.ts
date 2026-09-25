@@ -125,6 +125,11 @@ const docStack: { doc: Doc; label: string }[] = []
 let uiChanged: () => void = () => {}
 let inspectorRebuild: () => void = () => {}
 let inspectorSync: () => void = () => {}
+/**
+ * An Inspector field is being dragged (ADR 0152). A remote edit waits for it as it waits for the gizmo:
+ * repainting rebuilds the panel, and would take the field from under the pointer.
+ */
+let fieldDragging = false
 
 /**
  * Every selected item, primary last (ADR 0031).
@@ -294,7 +299,7 @@ const room = createLiveSession({
   deselect: () => deselect(),
   groupAt: (i) => meshes.groupAt(i),
   groupPose: (g) => tool.groupPose(g),
-  gizmoDragging: () => tool.dragging() || points.dragging(),
+  gizmoDragging: () => tool.dragging() || points.dragging() || fieldDragging,
   playing: () => play.active(),
   applyPreviewPoses: () => motion.applyPoses(),
   onHidden: (keys) => {
@@ -1856,6 +1861,17 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     motion.applyPoses() // the rest pose moved, so the item's drawn pose at the playhead moved with it
     scheduleRebuild()
   },
+  /** One history entry and one message to the room per drag, as the gizmo's (`edits.beginDrag`). */
+  beginDrag: () => {
+    fieldDragging = true
+    edits.beginDrag()
+  },
+  endDrag: (label) => {
+    fieldDragging = false
+    edits.endDrag(label)
+    rebuildLoaded()
+    room.drainDeferred()
+  },
   onPropsChanged: () => {
     const item = selected
     edits.recordEdit('properties')
@@ -1871,9 +1887,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     edits.recordEdit('rename')
     uiChanged()
   },
-  duplicate: nodes.duplicateSelected,
-  remove: nodes.deleteSelected,
-  saveAsPrefab: () => void (selected !== null && prefabs.saveAsPrefab(selected)),
+  prefabName: (id) => assets?.db.byId[id]?.name ?? null,
   unlinkPrefab: () => void (selected !== null && prefabs.unlinkPlacement(selected)),
   openPrefab: () => {
     if (selected !== null) prefabs.openPrefabOf(selected)
