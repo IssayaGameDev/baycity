@@ -1,6 +1,7 @@
 /**
- * The sequence editor's icons (ADR 0147): one per step kind, and the few its controls need. Drawn here as SVG
- * paths on a 24-unit grid, stroked in the text colour, so they tint with CSS and cost no dependency.
+ * The editor's icons: the sequence editor's (ADR 0147) — one per step kind, and the few its controls need —
+ * and the viewport's tools and toggles (ADR 0149). Drawn here as SVG paths on a 24-unit grid, stroked in the
+ * text colour, so they tint with CSS and cost no dependency.
  *
  * Static markup only — nothing a person typed ever reaches `innerHTML` here.
  */
@@ -27,6 +28,17 @@ export type IconName =
   | 'level'
   | 'warn'
   | 'chevron'
+  | 'toolMove'
+  | 'toolRotate'
+  | 'toolScale'
+  | 'toolFace'
+  | 'magnet'
+  | 'grid'
+  | 'flag'
+  | 'keycap'
+  | 'motion'
+  | 'play'
+  | 'stop'
 
 const DOT = (x: number, y: number): string => `<circle cx="${x}" cy="${y}" r="1.6" fill="currentColor" stroke="none"/>`
 
@@ -52,6 +64,18 @@ const PATHS: Record<IconName, string> = {
   level: '<path d="M3 16.5l9 4 9-4-9-4z"/><path d="M12 12.5V3.5M9 6.5l3-3 3 3"/>',
   warn: '<path d="M12 3.5l9.5 16.5h-19z"/><path d="M12 10v4M12 17h.01"/>',
   chevron: '<path d="M7 10l5 5 5-5"/>',
+  toolMove: '<path d="M12 3v18M3 12h18"/><path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/>',
+  toolRotate: '<path d="M4.5 9.5A8 8 0 0 1 19 7.5"/><path d="M19.5 14.5A8 8 0 0 1 5 16.5"/><path d="M19 3.5v4h-4"/><path d="M5 20.5v-4h4"/>',
+  toolScale: '<rect x="3.5" y="10.5" width="10" height="10" rx="1.5"/><path d="M11 13l9-9"/><path d="M14 4h6v6"/>',
+  toolFace:
+    '<rect x="3.5" y="8.5" width="11" height="11" rx="1" fill="currentColor" fill-opacity="0.35"/><path d="M3.5 8.5l4-4h12v11l-5 4"/><path d="M14.5 8.5l5-4"/>',
+  magnet: '<path d="M5 3.5h4.5V11a2.5 2.5 0 0 0 5 0V3.5H19V11a7 7 0 0 1-14 0z"/><path d="M5 7.5h4.5M14.5 7.5H19"/>',
+  grid: '<rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M9.2 3.5v17M14.8 3.5v17M3.5 9.2h17M3.5 14.8h17"/>',
+  flag: '<path d="M5.5 21V3.5"/><path d="M5.5 4h12l-2.5 4.5 2.5 4.5h-12"/>',
+  keycap: '<rect x="3" y="5.5" width="18" height="13" rx="2.5"/><path d="M7 9.5h.01M10.3 9.5h.01M13.7 9.5h.01M17 9.5h.01M8 14.5h8"/>',
+  motion: '<rect x="10.5" y="6.5" width="10" height="11" rx="2"/><path d="M3 9h4.5M2 12h5.5M3 15h4.5"/>',
+  play: '<path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/>',
+  stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor"/>',
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg'

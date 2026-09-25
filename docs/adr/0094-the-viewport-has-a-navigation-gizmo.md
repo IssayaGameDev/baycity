@@ -1,6 +1,7 @@
 # ADR 0094 — The viewport has a navigation gizmo, and an isometric camera behind it
 
-Status: accepted.
+Status: accepted, amended by ADR 0149: the balls became Unity's cones round a cube, the parts light up under
+the pointer and answer past their drawn shapes, and the Persp / Iso label is a button of its own.
 
 ## Context
 

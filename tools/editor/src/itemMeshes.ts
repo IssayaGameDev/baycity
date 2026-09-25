@@ -285,7 +285,7 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
 
   /**
    * Whether the key/cell preview is on (ADR 0120). `null` when the open level's game describes no grid, which
-   * is what hides the toolbar button rather than leaving a dead one.
+   * is what hides the viewport's Keys toggle rather than leaving a dead one.
    */
   let showCells = true
   const cellsToggle = (): boolean | null => (host.mode()?.surfaceGrid === undefined ? null : showCells)

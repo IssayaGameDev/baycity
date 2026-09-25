@@ -48,7 +48,7 @@ export interface HiddenView {
   set: (keys: readonly string[]) => void
   /** Is this node being left out of the viewport right now? `false` for all of them while showing all. */
   hiddenAt: (doc: HiddenDoc, index: number) => boolean
-  /** Is anything hidden at all — what decides whether the toolbar's reveal is worth offering. */
+  /** Is anything hidden at all — what decides whether the viewport's Reveal is worth offering. */
   any: () => boolean
   /**
    * Reveal everything without forgetting it (ADR 0132).
