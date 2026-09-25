@@ -31,10 +31,13 @@ A prefab is a thing you build once and place in as many levels as you like. **It
 every level using it changes, including levels you have not opened.
 
 **To make one:** select what you built, right-click, **Save as prefab…**. Give it a name with no spaces. It
-saves into whichever folder you have open in the **Project** panel, so click into `prefabs` first.
+saves into whichever folder you have open in the **Project** panel, so double-click into `prefabs` first.
+
+**To place one:** drag its tile from the Project panel into the viewport. A see-through copy shows where it will
+land; let go to place it, Esc to cancel. A click on a tile only selects it.
 
 **To change one:** click the object and press **Open** in the Inspector, or right-click it and pick *Open
-prefab*. One that is placed nowhere is opened from its tile in the Project panel. You are now editing the
+prefab*. One that is placed nowhere is opened by double-clicking its tile in the Project panel. You are now editing the
 prefab itself, and everyone sees your edits as you make them. **Back** returns you to the level.
 
 - There is **no Save** for prefabs or levels. Everything is saved as you do it.

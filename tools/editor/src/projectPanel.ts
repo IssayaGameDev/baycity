@@ -16,6 +16,9 @@ import { initials } from './people'
  * folder by double-clicking its tile or clicking it in the tree, and back up by the path above. Searching, by name
  * or by kind, looks in every folder of both roots; not searching, you see the folder you are in.
  *
+ * The Unity way with a tile (ADR 0164): a click selects it and shows it in the Inspector, a prefab or a model is
+ * dragged into the viewport to place it, and a double-click opens a folder or a prefab.
+ *
  * **A preview is generated only for a tile that comes into view.** A folder of a thousand models cannot render
  * a thousand thumbnails and does not have to: an `IntersectionObserver` with a margin asks for one just before
  * its tile scrolls in, once, and the cache keeps it. That bounds the *loading* too — a model is fetched only
@@ -30,20 +33,20 @@ export interface ProjectHost {
   urlOf: (path: string) => string
   /** The editor's menu: the **+** menu and the kind filter open in it. */
   menu: ContextMenu
-  /** The armed prefab or model, shown pressed while it waits for a viewport click. */
-  armed: () => string | null
   selectedAsset: () => string | null
   /** The others who have an asset open (ADR 0159), each in their colour: faces on its tile. */
   openers: (assetId: string) => readonly { name: string; colour: string }[]
-  /** Arm a placeable asset (a prefab file or a model) for the next viewport click. */
-  onPickAsset: (assetId: string) => void
   /**
    * Why a placeable asset cannot go into the open document, or `null` (ADR 0076). A prefab using a component
-   * the open level's game lacks is shown greyed, with the reason, rather than armed and refused later.
+   * the open level's game lacks is shown greyed, with the reason, rather than dragged in and refused.
    */
   unplaceableWhy: (assetId: string) => string | null
-  /** Open a non-placeable asset in the Inspector. */
+  /** A tile was clicked: select that asset, and show it in the Inspector (ADR 0164). */
   onSelectAsset: (assetId: string) => void
+  /** A prefab's tile was double-clicked: open it (ADR 0164). */
+  onOpenPrefab: (assetId: string) => void
+  /** A prefab or model's tile began to be dragged — into the viewport, it places (ADR 0164) — or, `null`, stopped. */
+  onDragAsset: (assetId: string | null) => void
   /** Make a new asset of a kind this panel can author, in `folder`: a material, from the **+** menu. */
   onCreateAsset: (kind: AssetKind, folder: string) => void
   onMkdir: (parent: string, name: string) => void
@@ -99,7 +102,7 @@ const KIND_ICON: Record<AssetKind, IconName> = {
   font: 'font',
 }
 
-/** Kinds a viewport click can place; everything else opens in the Inspector. */
+/** Kinds a drag into the viewport places. */
 const PLACEABLE = new Set<AssetKind>(['prefab', 'model'])
 /** Kinds with no picture worth inventing. */
 const UNPREVIEWABLE = new Set<AssetKind>(['sound', 'font'])
@@ -319,6 +322,9 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     target.addEventListener('dragover', (e) => {
       if (dest() === null) return
       e.preventDefault()
+      // A tile that can also be placed allows copy and move: into a folder, it moves.
+      const dt = e.dataTransfer
+      if (dt) dt.dropEffect = dt.effectAllowed === 'copyMove' ? 'move' : dt.dropEffect
       target.classList.add('drop-onto')
     })
     target.addEventListener('dragleave', () => target.classList.remove('drop-onto'))
@@ -449,9 +455,9 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     t.append(row)
   }
 
-  /** The bottom bar: the item last clicked, else what is selected or armed elsewhere — the Inspector's, the viewport's. */
+  /** The bottom bar: the item last clicked, else the asset selected elsewhere (an undo shows one). */
   const paintFoot = (): void => {
-    const chosen = host.selectedAsset() ?? host.armed()
+    const chosen = host.selectedAsset()
     const shown = focused ?? (chosen === null ? null : (host.db()?.byId[chosen]?.path ?? null))
     footPath.textContent = shown === null ? '' : named(shown)
     footPath.title = shown ?? ''
@@ -476,31 +482,36 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
 
   const fileTile = (entry: AssetEntry): HTMLButtonElement => {
     const placeable = PLACEABLE.has(entry.kind)
-    const lit = placeable ? host.armed() === entry.id : host.selectedAsset() === entry.id
     const previewKind = UNPREVIEWABLE.has(entry.kind) ? null : (entry.kind as PreviewKind)
     const why = placeable ? host.unplaceableWhy(entry.id) : null
-    const t = tile(entry.path, entry.name, lit, KIND_ICON[entry.kind], previewKind, entry.id)
+    const t = tile(entry.path, entry.name, host.selectedAsset() === entry.id, KIND_ICON[entry.kind], previewKind, entry.id)
     t.dataset['id'] = entry.id
     t.title = why === null ? named(entry.path) : `${named(entry.path)} — ${why}`
     // Greyed rather than hidden: the file exists and is worth seeing; it is this game it cannot go into.
     if (why !== null) t.classList.add('foreign')
     t.addEventListener('click', () => {
-      if (why !== null) return
       focused = entry.path
-      if (placeable) host.onPickAsset(entry.id)
-      else {
-        host.onSelectAsset(entry.id)
-        showPreview(entry)
-      }
+      host.onSelectAsset(entry.id)
+      showPreview(entry)
       paintFoot()
     })
+    if (entry.kind === 'prefab') t.addEventListener('dblclick', () => host.onOpenPrefab(entry.id))
     draggable(t, entry.path)
+    if (placeable) {
+      // Into a folder it moves; into the viewport it places, which the host follows from here.
+      t.addEventListener('dragstart', (e) => {
+        const dt = e.dataTransfer
+        if (dt) dt.effectAllowed = 'copyMove'
+        host.onDragAsset(entry.id)
+      })
+      t.addEventListener('dragend', () => host.onDragAsset(null))
+    }
     contextMenu(t, entry.path, false)
     paintPeople(t)
     return t
   }
 
-  /** Audition a sound, sample a font, enlarge a texture. */
+  /** Audition a sound, sample a font, enlarge a texture; nothing for the other kinds. */
   const showPreview = (entry: AssetEntry): void => {
     preview.replaceChildren()
     const url = host.urlOf(entry.path)

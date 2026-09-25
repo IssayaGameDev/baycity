@@ -56,12 +56,12 @@ const rig = (over: Partial<ProjectHost> = {}) => {
       close: () => {},
       isOpen: () => false,
     },
-    armed: () => null,
     selectedAsset: () => null,
     openers: (id) => (id === 'id-assets/materials/red.mat.json' ? [{ name: 'Ana Lima', colour: '#f00' }] : []),
-    onPickAsset: (id) => calls.push(`arm ${id}`),
     unplaceableWhy: () => null,
     onSelectAsset: (id) => calls.push(`select ${id}`),
+    onOpenPrefab: (id) => calls.push(`open ${id}`),
+    onDragAsset: (id) => calls.push(`drag ${id ?? 'over'}`),
     onCreateAsset: (kind, folder) => calls.push(`new ${kind} in ${folder}`),
     onMkdir: (parent, name) => calls.push(`mkdir ${name} in ${parent}`),
     onContext: () => {},
@@ -153,6 +153,25 @@ describe('the Project window', () => {
     const face = tile('red').querySelector('.pt-people .pp')!
     expect(face.textContent).toBe('AL')
     expect(face.getAttribute('title')).toBe('Ana Lima has this open')
+  })
+
+  it('selects a prefab on a click, opens it on a double-click, and says when it is dragged — the Unity way', () => {
+    const { calls, tile } = rig()
+    tile('prefabs').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    tile('pad').click()
+    tile('pad').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    tile('pad').dispatchEvent(new Event('dragstart', { bubbles: true }))
+    tile('pad').dispatchEvent(new Event('dragend', { bubbles: true }))
+    expect(calls).toEqual(['select id-assets/prefabs/pad.prefab.json', 'open id-assets/prefabs/pad.prefab.json', 'drag id-assets/prefabs/pad.prefab.json', 'drag over'])
+  })
+
+  it('selects one that cannot go into this game too, greyed with why, and still lets it be dragged', () => {
+    const { calls, tile } = rig({ unplaceableWhy: () => 'uses Treadmill, which this game does not have' })
+    tile('prefabs').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    expect(tile('pad').classList.contains('foreign')).toBe(true)
+    expect(tile('pad').title).toBe('Shared/prefabs/pad.prefab.json — uses Treadmill, which this game does not have')
+    tile('pad').click()
+    expect(calls).toEqual(['select id-assets/prefabs/pad.prefab.json'])
   })
 
   it('turns into a one-line list at the slider’s smallest, and remembers the size', () => {

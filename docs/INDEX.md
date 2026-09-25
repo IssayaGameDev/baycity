@@ -213,5 +213,6 @@ why matters.
 | [0161](adr/0161-each-game-has-its-own-asset-library.md) | Each game has its own asset library, beside the shared one |
 | [0162](adr/0162-the-games-window-holds-the-levels.md) | The games window holds the levels |
 | [0163](adr/0163-the-project-window-is-folders-of-square-tiles.md) | The Project window is folders of square tiles, under two roots |
+| [0164](adr/0164-a-click-selects-an-asset-a-drag-places-it.md) | A click selects an asset, a drag places it |
 
 `Design archive/` holds superseded design material and is not maintained.

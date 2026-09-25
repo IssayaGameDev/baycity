@@ -43,6 +43,77 @@ export interface Previews {
   dispose: () => void
 }
 
+/**
+ * A prefab's node tree as one group, drawn the way the editor draws it: a tile's picture, and the see-through copy
+ * a drag into the viewport holds (`dragPlace.ts`). `userData.dispose` frees what it made; the runtime's models and
+ * materials are shared.
+ *
+ * Walks the tree rather than a flat piece list, and reads the `Collider` and `Visual` components: a node
+ * with several colliders draws several meshes, each at its own centre. Transforms compose through
+ * `THREE.Group` nesting, so the arithmetic stays where Three already does it.
+ */
+export const prefabObject = (root: Node, runtime: AssetRuntime | null): THREE.Object3D | null => {
+  const group = new THREE.Group()
+  const disposables: THREE.BufferGeometry[] = []
+  const owned: THREE.Material[] = []
+
+  /**
+   * `scale` is the node's **world** scale, accumulated down the walk: every shape is built at its final
+   * dimensions (as the game builds them from the baked collider, ADR 0090) and then counter-scaled, so a
+   * rounded edge is right at any scale and a built-in shape is its unit shape times the scale.
+   */
+  const walk = (node: Node, parent: THREE.Object3D, parentScale: Vec3): void => {
+    const holder = new THREE.Group()
+    const t = node.transform
+    holder.position.set(t.position.x, t.position.y, t.position.z)
+    if (t.rotation !== undefined) holder.rotation.set(t.rotation.x, t.rotation.y, t.rotation.z)
+    if (t.scale !== undefined) holder.scale.set(t.scale.x, t.scale.y, t.scale.z)
+    parent.add(holder)
+    const own = t.scale ?? { x: 1, y: 1, z: 1 }
+    const scale = { x: parentScale.x * own.x, y: parentScale.y * own.y, z: parentScale.z * own.z }
+    const undo = (o: THREE.Object3D): void => {
+      o.scale.set(scale.x === 0 ? 1 : 1 / scale.x, scale.y === 0 ? 1 : 1 / scale.y, scale.z === 0 ? 1 : 1 / scale.z)
+    }
+
+    const enabled = node.components.filter((c) => c.enabled !== false)
+    const renderer = enabled.find((c) => c.type === RENDERER)
+    if (renderer !== undefined) {
+      const materialId = stringParam(renderer, 'material', '')
+      const material = materialId === '' ? undefined : runtime?.material(materialId)
+      const modelId = modelOf(enabled)
+      const builtin = isBuiltinModel(modelId) ? modelId : null
+      const model = modelId === '' || builtin !== null ? undefined : runtime?.model(modelId)
+      if (model != null) {
+        holder.add(model)
+      } else {
+        for (const c of enabled.filter((x) => x.type === COLLIDER)) {
+          const shape = c.params.shape as ColliderDesc
+          const geometry = builtin !== null ? geometryForBuiltin(builtin, scale) : geometryForCollider(scaleCollider(shape, scale))
+          disposables.push(geometry)
+          const mat = material ?? createGreyboxMaterial()
+          if (material == null) owned.push(mat)
+          const mesh = new THREE.Mesh(geometry, mat)
+          const centre = vec3Param(c, 'center', { x: 0, y: 0, z: 0 })
+          mesh.position.set(centre.x, centre.y, centre.z)
+          undo(mesh)
+          holder.add(mesh)
+          if (builtin !== null) break // a built-in draws the node once, whatever its colliders
+        }
+      }
+    }
+    for (const kid of node.children ?? []) walk(kid, holder, scale)
+  }
+  walk(root, group, { x: 1, y: 1, z: 1 })
+  if (group.getObjectByProperty('type', 'Mesh') === undefined) return null
+  // Everything this built is thrown away after the shot; the runtime's cached models and materials are
+  // not ours to free, which is why only what we created is tracked.
+  group.userData.dispose = (): void => {
+    for (const g of disposables) g.dispose()
+    for (const m of owned) m.dispose()
+  }
+  return group
+}
+
 export const createPreviews = (host: PreviewHost): Previews => {
   const cache = new Map<string, string | null>()
   /** In flight, so a redraw does not queue the same fetch again. */
@@ -51,76 +122,6 @@ export const createPreviews = (host: PreviewHost): Previews => {
   const failed = new Set<string>()
   let thumbnailer: Thumbnailer | null = null
   const lazy = (): Thumbnailer => (thumbnailer ??= createThumbnailer({ size: 96, fill: 0.8 }))
-
-  /**
-   * A prefab's node tree as one group, drawn the way the editor draws it.
-   *
-   * Walks the tree rather than a flat piece list, and reads the `Collider` and `Visual` components: a node
-   * with several colliders draws several meshes, each at its own centre. Transforms compose through
-   * `THREE.Group` nesting, so the arithmetic stays where Three already does it.
-   */
-  const prefabSubject = (root: Node): THREE.Object3D | null => {
-    const runtime = host.runtime()
-    const group = new THREE.Group()
-    const disposables: THREE.BufferGeometry[] = []
-    const owned: THREE.Material[] = []
-
-    /**
-     * `scale` is the node's **world** scale, accumulated down the walk: every shape is built at its final
-     * dimensions (as the game builds them from the baked collider, ADR 0090) and then counter-scaled, so a
-     * rounded edge is right at any scale and a built-in shape is its unit shape times the scale.
-     */
-    const walk = (node: Node, parent: THREE.Object3D, parentScale: Vec3): void => {
-      const holder = new THREE.Group()
-      const t = node.transform
-      holder.position.set(t.position.x, t.position.y, t.position.z)
-      if (t.rotation !== undefined) holder.rotation.set(t.rotation.x, t.rotation.y, t.rotation.z)
-      if (t.scale !== undefined) holder.scale.set(t.scale.x, t.scale.y, t.scale.z)
-      parent.add(holder)
-      const own = t.scale ?? { x: 1, y: 1, z: 1 }
-      const scale = { x: parentScale.x * own.x, y: parentScale.y * own.y, z: parentScale.z * own.z }
-      const undo = (o: THREE.Object3D): void => {
-        o.scale.set(scale.x === 0 ? 1 : 1 / scale.x, scale.y === 0 ? 1 : 1 / scale.y, scale.z === 0 ? 1 : 1 / scale.z)
-      }
-
-      const enabled = node.components.filter((c) => c.enabled !== false)
-      const renderer = enabled.find((c) => c.type === RENDERER)
-      if (renderer !== undefined) {
-        const materialId = stringParam(renderer, 'material', '')
-        const material = materialId === '' ? undefined : runtime?.material(materialId)
-        const modelId = modelOf(enabled)
-        const builtin = isBuiltinModel(modelId) ? modelId : null
-        const model = modelId === '' || builtin !== null ? undefined : runtime?.model(modelId)
-        if (model != null) {
-          holder.add(model)
-        } else {
-          for (const c of enabled.filter((x) => x.type === COLLIDER)) {
-            const shape = c.params.shape as ColliderDesc
-            const geometry = builtin !== null ? geometryForBuiltin(builtin, scale) : geometryForCollider(scaleCollider(shape, scale))
-            disposables.push(geometry)
-            const mat = material ?? createGreyboxMaterial()
-            if (material == null) owned.push(mat)
-            const mesh = new THREE.Mesh(geometry, mat)
-            const centre = vec3Param(c, 'center', { x: 0, y: 0, z: 0 })
-            mesh.position.set(centre.x, centre.y, centre.z)
-            undo(mesh)
-            holder.add(mesh)
-            if (builtin !== null) break // a built-in draws the node once, whatever its colliders
-          }
-        }
-      }
-      for (const kid of node.children ?? []) walk(kid, holder, scale)
-    }
-    walk(root, group, { x: 1, y: 1, z: 1 })
-    if (group.getObjectByProperty('type', 'Mesh') === undefined) return null
-    // Everything this built is thrown away after the shot; the runtime's cached models and materials are
-    // not ours to free, which is why only what we created is tracked.
-    group.userData.dispose = (): void => {
-      for (const g of disposables) g.dispose()
-      for (const m of owned) m.dispose()
-    }
-    return group
-  }
 
   /** Whether the runtime can now answer for this id — the test for "did the fetch actually help". */
   const isLoaded = (kind: PreviewKind, key: string): boolean =>
@@ -183,7 +184,7 @@ export const createPreviews = (host: PreviewHost): Previews => {
 
     const prefab = host.prefabFor(key)
     if (prefab === undefined) return null
-    const subject = prefabSubject(prefab)
+    const subject = prefabObject(prefab, host.runtime())
     if (subject === null) return null
     const url = lazy().render(subject)
     ;(subject.userData.dispose as (() => void) | undefined)?.()

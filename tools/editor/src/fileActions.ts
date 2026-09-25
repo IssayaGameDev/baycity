@@ -106,8 +106,6 @@ export interface FileActionsHost {
   editingFor: () => string | null
   adoptable: () => readonly string[]
   adopt: (types: string[]) => Promise<void>
-  /** Arm this asset for the next viewport click, or disarm the one already waiting. */
-  arm: (kind: 'prefabAsset' | 'model', assetId: string) => void
   recordEdit: (label: string) => void
   room: { live: () => boolean; flush: () => Promise<void>; leave: () => Promise<void> | void }
   openFile: (qualified: string) => Promise<void>
@@ -141,7 +139,6 @@ export const createFileActions = (host: FileActionsHost) => {
     })()
   }
 
-  /** Arm a placeable asset for the next viewport click, or disarm the one already waiting. */
   /**
    * The component types a prefab file uses that the open document's registry lacks, split into the shared ones
    * the game can adopt (ADR 0077) and another game's private ones, which it cannot (ADR 0076).
@@ -170,19 +167,23 @@ export const createFileActions = (host: FileActionsHost) => {
   }
 
   /**
+   * Make a dropped asset ready to place, then `place` it (ADR 0164): refused with why when it cannot go here, and a
+   * shared component the game lacks adopted first, so the placement never meets a registry without it (ADR 0077) —
+   * not while a prefab is open on top, which belongs to no game.
+   *
    * `fresh` once the prefab has been fetched again. The copy the library loaded at boot is behind any edit a
    * collaborator has made to it since, and a level that has no copy of its own places from this one — so a prefab
-   * is armed with the server's current copy, or with the one it had when the server cannot be asked.
+   * is placed from the server's current copy, or from the one it had when the server cannot be asked.
    */
-  const armAsset = (assetId: string, fresh = false): void => {
+  const whenPlaceable = (assetId: string, place: (kind: 'prefabAsset' | 'model') => void, fresh = false): void => {
     const library = host.assets()
     const entry = library?.db.byId[assetId]
-    if (library === null || entry === undefined) return
+    if (library === null || entry === undefined || (entry.kind !== 'prefab' && entry.kind !== 'model')) return
     if (entry.kind === 'prefab' && !fresh) {
       void library
         .refreshPrefab(assetId)
         .catch(() => undefined)
-        .then(() => armAsset(assetId, true))
+        .then(() => whenPlaceable(assetId, place, true))
       return
     }
     const why = unplaceableWhy(assetId)
@@ -190,16 +191,12 @@ export const createFileActions = (host: FileActionsHost) => {
       host.notify.warn(`${entry.name} ${why}`)
       return
     }
-    // A shared component the game lacks is adopted on the way to arming, so the click that places it never sees
-    // a registry without it (ADR 0077). Not while a prefab is open on top: a prefab belongs to no game.
     const { shared } = missingIn(assetId)
     if (shared.length > 0 && host.hasGame() && !host.inPrefab()) {
-      void host.adopt(shared).then(() => armAsset(assetId, true))
+      void host.adopt(shared).then(() => whenPlaceable(assetId, place, true))
       return
     }
-    const kind = entry.kind === 'prefab' ? ('prefabAsset' as const) : ('model' as const)
-    host.arm(kind, assetId)
-    host.refreshUi()
+    place(entry.kind === 'prefab' ? 'prefabAsset' : 'model')
   }
 
   const renameAsset = (path: string, name: string): void =>
@@ -389,7 +386,7 @@ export const createFileActions = (host: FileActionsHost) => {
     /** Ask, run, then invalidate previews, re-read the asset database and refresh the tree. */
     afterFileOp,
     /** Arm a placeable asset for the next viewport click, adopting any shared component it needs first. */
-    armAsset,
+    whenPlaceable,
     renameAsset,
     /** Delete an asset — and for a prefab, unlink every placement of it first (ADR 0097). */
     deleteAsset,

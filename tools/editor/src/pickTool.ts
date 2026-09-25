@@ -13,8 +13,8 @@ import type { GizmoMode } from './toolbar'
 import type { Notify } from './notices'
 
 /**
- * The pointer in the viewport: what is under it, what it places, and pulling a box by its face
- * (ADR 0025, ADR 0119, ADR 0121).
+ * The pointer in the viewport: what is under it, where a dropped asset lands, and pulling a box by its face
+ * (ADR 0025, ADR 0119, ADR 0121, ADR 0164).
  *
  * One module because a click has to be told apart from a drag before anything can act on it, and three
  * gestures share the same button. A left press may begin a face pull, continue an orbit, or end as a
@@ -73,9 +73,6 @@ export interface PickHost {
   /** A gizmo drag happened, so the release that follows is not a click. */
   dragged: () => boolean
   setDragged: (value: boolean) => void
-  /** The asset armed for the next click, or `null`. */
-  placing: () => { kind: 'prefabAsset' | 'model'; assetId: string } | null
-  disarm: () => void
   edits: () => {
     recordEdit: (label: string) => void
     beginDrag: () => void
@@ -547,48 +544,6 @@ export const createPickTool = (host: PickHost) => {
     if (Math.hypot(e.clientX - downX, e.clientY - downY) > CLICK_SLOP) return // was an orbit drag
     castFrom(e.clientX, e.clientY)
 
-    // Placement mode: drop the chosen palette entry on the surface (or ground plane).
-    const armed = host.placing()
-    const open = host.doc()
-    if (armed !== null && open !== null) {
-      const surf = raycaster.intersectObjects(host.instanceRoot.children, true)[0]
-      const point = new THREE.Vector3()
-      if (surf !== undefined) point.copy(surf.point)
-      else if (raycaster.ray.intersectPlane(groundPlane, point) === null) {
-        host.disarm()
-        return
-      }
-      const snap = host.snapping() ? host.snapStep() : 0
-      const sx = snap !== 0 ? snapToGrid(point.x, snap) : r4(point.x)
-      const sz = snap !== 0 ? snapToGrid(point.z, snap) : r4(point.z)
-      const at = vec3(sx, r4(point.y), sz)
-      const prefabAsset = armed.kind === 'prefabAsset' ? host.assets()?.prefabOf(armed.assetId) : undefined
-      const idx =
-        armed.kind === 'model'
-          ? open.placeModel(armed.assetId, at)
-          : prefabAsset !== undefined
-            ? open.placePrefab(armed.assetId, prefabAsset, at)
-            : -1
-      if (idx < 0) {
-        const unknown = prefabAsset === undefined ? [] : unknownComponentTypes(prefabAsset, open.registry)
-        if (unknown.length > 0) host.notify.warn(`uses ${unknown.join(', ')}, which this game does not have`)
-        else host.notify.error('that prefab did not load')
-        host.disarm()
-        return
-      }
-      host.disarm()
-      host.edits().recordEdit('place')
-      host.rebuildMeshes()
-      host.rebuildLoaded()
-      host.select(idx)
-      // A placed prefab file can reference a material this document had never named before.
-      host.loadNewReferencesThen(() => {
-        host.rebuildMeshes() // resets the item groups, so the gizmo has to be re-attached
-        host.select(idx)
-      })
-      return
-    }
-
     const hit = raycaster.intersectObjects(host.instanceRoot.children, true)[0]?.object
     if (hit === undefined) {
       // Ctrl-clicking empty space is a miss, not "clear everything": losing a five-item selection to a stray
@@ -605,9 +560,36 @@ export const createPickTool = (host: PickHost) => {
       host.selectWith(o.userData.index, mode === 'range' ? 'toggle' : mode, [])
     }
   })
+  /**
+   * Place a prefab file or a model at `at` — where a drag from the Project window was let go (ADR 0164) — as one
+   * edit, and select it. Refused, with why, for a prefab this game cannot load.
+   */
+  const placeAsset = (kind: 'prefabAsset' | 'model', assetId: string, at: Vec3): void => {
+    const open = host.doc()
+    if (open === null) return
+    const prefabAsset = kind === 'prefabAsset' ? host.assets()?.prefabOf(assetId) : undefined
+    const idx = kind === 'model' ? open.placeModel(assetId, at) : prefabAsset !== undefined ? open.placePrefab(assetId, prefabAsset, at) : -1
+    if (idx < 0) {
+      const unknown = prefabAsset === undefined ? [] : unknownComponentTypes(prefabAsset, open.registry)
+      if (unknown.length > 0) host.notify.warn(`uses ${unknown.join(', ')}, which this game does not have`)
+      else host.notify.error('that prefab did not load')
+      return
+    }
+    host.edits().recordEdit('place')
+    host.rebuildMeshes()
+    host.rebuildLoaded()
+    host.select(idx)
+    // A placed prefab file can reference a material this document had never named before.
+    host.loadNewReferencesThen(() => {
+      host.rebuildMeshes() // resets the item groups, so the gizmo has to be re-attached
+      host.select(idx)
+    })
+  }
+
   return {
     /** Point the raycaster at a client position. Shared by picking, placement and the right-click menu. */
     castFrom,
+    placeAsset,
     /** The document index of the item under a client position, or `null`. */
     indexUnder,
     /** The world point on the surface under a client position, or on the ground plane. */

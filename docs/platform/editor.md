@@ -29,12 +29,13 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | `people.ts` | the icons it drew and whose card is open (ADR 0155) | `PeopleState` getter + `PeopleActions` |
 | `motionPreview.ts` | the preview clock, whether it runs, the last frame. Poses via `Doc.posesAt(timeMs, { sequences: playing })` — one walk, not `poseOf` per node (ADR 0125, ADR 0142) | `MotionPreviewHost` |
 | `cameraView.ts` | the orthographic camera, `isometric`, the nav gizmo and its drag flag, the stand-in background, the bounds box | `CameraViewHost` |
-| `fileActions.ts` | nothing — it is behaviour: arm, rename, delete an asset or a level (ADR 0097, ADR 0110) | `FileActionsHost` |
+| `fileActions.ts` | nothing — it is behaviour: ready a dropped asset (`whenPlaceable`), rename, delete an asset or a level (ADR 0097, ADR 0110) | `FileActionsHost` |
 | `assetWatch.ts` | the long poll's position and its back-off; `main.ts` keeps the paths waiting to be applied (ADR 0156) | `AssetWatchHost` |
 | `prefabActions.ts` | nothing — enter, close, unlink, save as, revert, apply (ADR 0091, ADR 0111) | `PrefabActionsHost` |
 | `nodeActions.ts` | nothing — delete, duplicate, create, frame, paste at a point; all on selection **roots** | `NodeActionsHost` |
 | `menus.ts` | nothing — the right-click menus, declarative; had to follow the action clusters, not precede them | `MenuHost` |
-| `pickTool.ts` | the raycaster, the ground plane, where a press landed, the face highlight, the pull in progress | `PickHost` |
+| `pickTool.ts` | the raycaster, the ground plane, where a press landed, the face highlight, the pull in progress; `placeAsset(kind, id, at)` | `PickHost` |
+| `dragPlace.ts` | the asset a tile drag carries and its see-through copy (ADR 0164) | `DragPlaceHost` |
 | `gizmoTool.ts` | `edit` (tool, frame, snapping, one increment per tool), the drag-start poses, the two drag flags | `GizmoHost` |
 | `pointTool.ts` | the open move step, its copy and the copy's own `TransformControls`, the drawn routes, its drag flag (ADR 0144) | `PointToolHost` |
 
@@ -84,7 +85,7 @@ Every `Doc` mutator builds `Op`s (`@mp/content` `ops.ts`, `content.md`) and comm
 | Mutator | Ops |
 | --- | --- |
 | `setTransform` / `setName` / `setParams` / `setComponentEnabled` / `addComponent` / `removeComponent` / `moveComponent` | the own op on an own node; the `setOverride*` / `addOverrideComponent` / `removeOverrideComponent` flavour on an inherited one (an inherited component's removal = `setOverrideParams unset` + `setOverrideEnabled null` + `setOverrideRemoved`). **Three cases, not two** (ADR 0098): `writeTarget` also catches a component a *placement* shows but does not have — inherited from its prefab **root** — and writes an override on the placement keyed by the root's id. `setParams` resolves it per component id, since the built-in-shape branch writes several at once. `moveComponent` stays refused: order belongs to the prefab's list. `setSequenceStages(i, id, stages)` takes the stages as shown: `setParams` on an own node, `setOverrideParams` on a component the placement added, otherwise `setOverrideSequence` with `diffStages(prefab's, shown)` (ADR 0139) |
-| `placePrefab` / `placeNamed` / `placeEmpty` / `placePrimitive` / `placeModel` / `duplicate` / `paste` | `insertNode` (ids minted client-side; `reidSubtree` for copies, which repoints `nodeRef` parameters and sequence step targets, and the targets in a placement's `sequences` records). `placePrefab` writes the prefab's **asset id** and resolves the definition into `level.prefabs` without an op (ADR 0091) — a copy, and **only when the document has none**, as `paste` does: one it has is what the room keeps current. `armAsset` fetches a prefab again before arming it (`AssetLibrary.refreshPrefab`, the server's live copy when open), since the library's is the one loaded at boot |
+| `placePrefab` / `placeNamed` / `placeEmpty` / `placePrimitive` / `placeModel` / `duplicate` / `paste` | `insertNode` (ids minted client-side; `reidSubtree` for copies, which repoints `nodeRef` parameters and sequence step targets, and the targets in a placement's `sequences` records). `placePrefab` writes the prefab's **asset id** and resolves the definition into `level.prefabs` without an op (ADR 0091) — a copy, and **only when the document has none**, as `paste` does: one it has is what the room keeps current. `whenPlaceable` fetches a prefab again before placing it (`AssetLibrary.refreshPrefab`, the server's live copy when open), since the library's is the one loaded at boot |
 | `remove` / `move` / `reparent` | `removeNode` / `moveNode`. **`reparent` takes the re-expressed local transform and commits `moveNode` + `setTransform` in one batch** (ADR 0113): preserving the world pose changes the stored local numbers, and as a second commit that op landed in the *next* history entry — one Ctrl+Z then restored a transform belonging to an earlier reparent and a child jumped by its parent's whole transform. The transform is `localInside` over the **authored** poses (`motion.withAuthoredPoses`, ADR 0126): the groups hold authored *plus* the motion offset while the clock runs, so reading them wrote the animation's position into the file for good. It is the one write path that cannot subtract the offset afterwards, because the offset is in the old parent's frame and the value is in the new one |
 | `linkToPrefab` | `replaceNode` (the node keeps its transform and name, loses its own components, gains the reference). `definitionOf` is pure: the definition becomes a **file**, which is the host's to write |
 | `revert` | `setNodeOverride` (the record with the field gone, or `null`) |
@@ -421,18 +422,34 @@ the games window's (ADR 0162).
 | --- | --- |
 | roots | `roots()`: `libraryDir(game)` labelled with the game's label, then `SHARED` labelled *Shared*; each drawn even with no file. A folder gone (deleted, moved, another game's now) falls back to the nearest one still there, else `SHARED` |
 | tree | `buildTree(db, folders, root)` per root, `flattenTree(tree, collapsed)`; `.row`s, `4 + depth × 14` px; a `chevron` twist only over children; a `folder` icon on each; no counts; the folder you are in `.sel`. A click goes there (and ends a search); going anywhere opens its ancestors |
-| tiles | `.ex-grid`, `--tile` px square: the folder's subfolders (`subfoldersOf`), then its files (`filterEntries({ libraries: [root], folder })`). `.pt` = `.pt-pic` (a kind icon, `KIND_ICON`; the preview `img.thumb` over it once the observer has it) + `.pt-name`. A folder tile: a click lights it in place (not redrawn, so a double-click survives), a double-click goes in. A file tile: a click arms a placeable (prefab, model) or opens it in the Inspector, and a sound, font or texture in `.asset-preview`. Greyed with why (`unplaceableWhy`). All draggable onto folders; a right-click is `host.onContext` |
+| tiles | `.ex-grid`, `--tile` px square: the folder's subfolders (`subfoldersOf`), then its files (`filterEntries({ libraries: [root], folder })`). `.pt` = `.pt-pic` (a kind icon, `KIND_ICON`; the preview `img.thumb` over it once the observer has it) + `.pt-name`. A folder tile: a click lights it in place (not redrawn, so a double-click survives), a double-click goes in. A file tile (ADR 0164): a click selects it (`onSelectAsset` → `selectAsset`, the asset Inspector), a sound, font or texture also in `.asset-preview`; a double-click on a prefab opens it (`onOpenPrefab`); a prefab or model drag says what it carries (`onDragAsset(id)`, `null` on `dragend`; `effectAllowed` `copyMove`) — *Placing* below. Greyed with why (`unplaceableWhy`), still selectable. All draggable onto folders; a right-click is `host.onContext` |
 | list | the slider at `SIZE.list` (its minimum): `.ex-grid.list`, a line each, an 18 px picture |
 | faces | `.pt-people .pp` per `host.openers(id)` (ADR 0159), repainted in place by `openersChanged()` (`openAssetsChanged` in main) |
 | + | `host.menu`: *New folder…* (`askName` → `onMkdir(folder, name)`), *New material* (`onCreateAsset('material', folder)`), *Upload files…* (a hidden `input[type=file]`, accept = the server's `UPLOAD_EXTENSIONS`, → `onUpload`) |
 | path | `.ex-crumb` per part, root label first; a click goes there. While searching: *Every folder* |
 | search | `.ex-search`: text (Escape clears it), `×` (clears text and kind), the kind button (`host.menu`: All kinds, then `ASSET_KINDS`, ✓ on the current). Text or a kind → `filterEntries({ libraries: every root, folder: null, kind, search })`, files only, names only |
-| bottom | `.ex-foot`: the tile last clicked, else the selected or armed asset, as `named(path)` (`<root label>/<path inside>`); the slider `SIZE` 40–144 step 4, start 64, per viewer (`localStorage` `mp.project.tileSize`, try/caught) |
+| bottom | `.ex-foot`: the tile last clicked, else the selected asset, as `named(path)` (`<root label>/<path inside>`); the slider `SIZE` 40–144 step 4, start 64, per viewer (`localStorage` `mp.project.tileSize`, try/caught) |
 | drops | onto a tree row, a folder tile, or the grid (the folder on screen; not while searching): files from the desktop upload, a tile moves (`onMove`), between libraries a move the server may refuse with why (ADR 0161) |
 
 `folder()` is where *Save as prefab…* writes (ADR 0091). An asset's URL is `/content/<path>` (`assetUrl`), as on disk.
 `Filter` (`assetTree.ts`) is `{ libraries, folder: string | null, kind, search }`: one folder's own files, or — `null`
 — every folder of the libraries.
+
+## Placing: a drag into the viewport (ADR 0164, `src/dragPlace.ts`)
+
+`createDragPlace(canvas, host)` → `{ dragging(id | null) }`, fed by the Project window's `onDragAsset`: what a
+drag carries cannot be read before the drop.
+
+| | |
+| --- | --- |
+| the copy | at `dragging(id)`: `host.subject(id)` — a model `runtime.model(id)` (a clone), a prefab `prefabObject({ ...root, transform: { position: 0 } }, runtime)` (`previews.ts`, the tiles' builder; a placement keeps only its own position) — every material swapped for a clone at opacity 0.45, no depth write, no shadows; in `stage.scene`, never in `instanceRoot`, so no raycast meets it. Not buildable yet (a model not loaded): `host.load(id)` (`runtime.load`), then built if the drag is still on |
+| `dragover` on the canvas | `refusal(id)` (playing, nothing open, `unplaceableWhy`) → hidden, `showReadout(why)` beside the pointer, the drop not taken; else `pick.surfaceUnder(x, y)` (the surface or the ground, snapped as a placement) → the copy there, `dropEffect` `copy`; off the world, hidden |
+| `dragleave` | hidden, readout off |
+| `drop` | `fileOps.whenPlaceable(id, kind => pick.placeAsset(kind, id, at))`: refused with why, shared components adopted, a prefab fetched fresh, then `placePrefab` / `placeModel` at `at`, one `place` edit, selected |
+| the end | `dragging(null)` on the tile's `dragend` — dropped, Escape (the browser cancels the drag), anywhere: the copy removed and its clones freed |
+
+Only this tab sees the copy.
+
 
 ## The games window (ADR 0162, `src/gamesWindow.ts`)
 
@@ -491,7 +508,7 @@ The status bar is gone. `createNotices(toasts, banner, onChange)` → `Notices`;
 | toasts | `#toasts`, the viewport's bottom right, newest at the bottom, at most `MAX_TOASTS` 4 (the oldest non-error goes first). `TOAST_MS`: `ok` 2.5 s, `warn` 5 s, `error` until closed (×). A click dismisses one. The same message again, while it is up, counts (`×2`) and keeps it up |
 | the log | `toggleLog(bell)`: a popover of every message, newest first, with its time and its count (`logNotice`, pure; `LOG_SIZE` 200); Clear. Opening it zeroes `unseen` — errors said since, the bell's red count |
 | the banner | `setProblem(slot, text)`, `''` to clear: `main` (`main.ts`'s `setProblem`: assets, identity, a lock, the server's copy) and `push` (`not on GitHub yet: …`). `#banner` sits **above** `#stage` rather than over it, so it never covers the gizmo drawn in the canvas's corner; a `ResizeObserver` on the canvas runs `relayout` as it comes and goes |
-| the hint | `#vhint`, top centre, the first that applies: a play session's (`PlayHost.hint`), following's (`Following X · move the camera to stop`), placing's (`Click in the viewport to place X · Esc to cancel`) |
+| the hint | `#vhint`, top centre, the first that applies: a play session's (`PlayHost.hint`), following's (`Following X · move the camera to stop`) |
 | the readout | `#readout`, beside the pointer during a gesture |
 | `renderStatus` | redraws the top bar (undo / redo from `edits.labels()` + `depth()`, the lock, the bell), the people, the follow frame, the hint, and the Hierarchy's count (`#hier-count`) |
 
@@ -537,7 +554,7 @@ server-side changed. Nobody following, nothing is sent.
 
 Adoption points (ADR 0077):
 1. **Open** (`openFile`): `componentTypesInRaw(raw)` unknown-but-shared → adopted before `validateLevel`; any other unknown type is a load error.
-2. **Place** (`armAsset`): `missingIn(assetId)` splits a prefab's unknown types into `shared`/`foreign`; shared adopted before arming — not while a prefab is open on top (a prefab belongs to no game).
+2. **Place** (`whenPlaceable`, on a drop): `missingIn(assetId)` splits a prefab's unknown types into `shared`/`foreign`; shared adopted before placing — not while a prefab is open on top (a prefab belongs to no game).
 3. **Add Component** (Inspector button, Hierarchy submenu): `adoptable()` listed beside addable types; pick → `adopt` → `doc.addComponent`.
 
 There is no unassigned level: a `.level.json` outside a game's `levels/` is not listed at all (ADR 0108).
@@ -638,7 +655,7 @@ refs, each `room.docTarget(suffix)` = `<kind>:<doc>|<suffix>`; rings for the pri
 ## Refusing another game's private components (ADR 0076)
 
 - `unknownComponentTypes(root, registry)` (`src/editorDoc.ts`), pure.
-- `unplaceableWhy(assetId)` non-null for `foreign` types, **or an asset the document may not use** (ADR 0161: `mayUse(editingFor(), path)` — `editingFor` is the open prefab's library, `null` for Shared's, else the level's game) → Project tile greyed, reason in tooltip (`unplaceableWhy` host option, `src/projectPanel.ts`); context-menu "Place in the level" disabled with the same reason.
+- `unplaceableWhy(assetId)` non-null for `foreign` types, **or an asset the document may not use** (ADR 0161: `mayUse(editingFor(), path)` — `editingFor` is the open prefab's library, `null` for Shared's, else the level's game) → Project tile greyed, reason in tooltip (`unplaceableWhy` host option, `src/projectPanel.ts`); dragged over the viewport, the reason beside the pointer and no drop (`dragPlace.ts`).
 - `Doc.placePrefab` returns `-1` on any remaining unknown type — second gate.
 
 ## Game settings (ADR 0087, ADR 0162)

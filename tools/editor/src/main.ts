@@ -58,7 +58,8 @@ import { loadAssetLibrary, type AssetLibrary } from './assetsApi'
 import { libraryChanges, watchAssets } from './assetWatch'
 import { createAssetSync, parseAssetEvent, type Origin } from './assetSync'
 import { canMoveFolder, movedInto } from './assetTree'
-import { createPreviews, type Previews } from './previews'
+import { createPreviews, prefabObject, type Previews } from './previews'
+import { createDragPlace } from './dragPlace'
 import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
 import { createProjectPanel, type Project } from './projectPanel'
 import { createHistoryStore } from './historyStore'
@@ -185,14 +186,6 @@ let envSelected = false
  * reason: a sentinel index in `selection` would eventually reach a structural operation that reads that list.
  */
 let levelSelected = false
-/**
- * What a viewport click will place. `own` is a prefab this level defines in its own table, named; a model or a
- * prefab file is an asset id, and
- * placing one wraps it in a one-piece inline prefab whose collider is authored — visual is not collision,
- * so a detailed prop still collides as a box somebody can resize.
- */
-type Placing = { kind: 'model' | 'prefabAsset'; assetId: string }
-let placing: Placing | null = null
 /**
  * The game being authored for (ADR 0052).
  *
@@ -906,10 +899,6 @@ const pick = createPickTool({
   faceStep: () => edit.steps.face,
   dragged: () => tool.dragged(),
   setDragged: (value) => tool.setDragged(value),
-  placing: () => placing,
-  disarm: () => {
-    placing = null
-  },
   edits: () => edits,
   writeBackItem: (index) => tool.writeBackItem(index),
   rebuildMeshes: () => meshes.buildAll(),
@@ -1002,11 +991,7 @@ const editorShortcuts = createShortcuts([
         play.stop()
         return
       }
-      if (placing !== null) {
-        placing = null
-        notify.ok('placement cancelled')
-        refreshUi()
-      } else deselect()
+      deselect()
     },
     // The only binding that stays live during play, because it is the way out of it.
     enabled: () => true,
@@ -1543,9 +1528,6 @@ const fileOps = createFileActions({
   editingFor: () => editingFor(),
   adoptable: () => adoptable(),
   adopt: (types) => adopt(types),
-  arm: (kind, assetId) => {
-    placing = placing?.assetId === assetId ? null : { kind, assetId }
-  },
   recordEdit: (label) => edits.recordEdit(label),
   room: { live: () => live(), flush: () => room.flush(), leave: () => room.leave() },
   openFile: (qualified) => openFile(qualified),
@@ -1557,17 +1539,42 @@ const fileOps = createFileActions({
   refreshUi: () => refreshUi(),
 })
 
+/**
+ * A prefab or a model dragged from the Project window into the viewport (`dragPlace.ts`, ADR 0164): a see-through
+ * copy under the pointer, placed where it is let go.
+ */
+const dragPlace = createDragPlace(canvas, {
+  scene: stage.scene,
+  subject: (id) => {
+    const entry = assets?.db.byId[id]
+    if (entry?.kind === 'model') return runtime?.model(id) ?? null
+    const root = entry?.kind === 'prefab' ? assets?.prefabOf(id) : undefined
+    // Placed, it has only its own position: a placement's transform is its own, not the prefab root's (`prefabs.ts`).
+    return root === undefined ? null : prefabObject({ ...root, transform: { position: vec3(0, 0, 0) } }, runtime)
+  },
+  load: async (id) => {
+    await runtime?.load([id])
+  },
+  refusal: (id) => (play.active() ? 'not while playing' : doc === null ? 'nothing is open' : fileOps.unplaceableWhy(id)),
+  surfaceUnder: (x, y) => pick.surfaceUnder(x, y),
+  place: (id, at) => fileOps.whenPlaceable(id, (kind) => pick.placeAsset(kind, id, at)),
+  readout: (text, at) => showReadout(text, at),
+})
+
 const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   db: () => assets?.db ?? null,
   folders: () => assets?.folders ?? [],
   urlOf: (path) => assets?.urlOf(path) ?? path,
-  armed: () => placing?.assetId ?? null,
   game: () => (activeMode === undefined ? null : { name: activeMode.name, label: activeMode.label }),
   menu: contextMenu,
   selectedAsset: () => selectedAsset,
   openers: (id) => room.openersOf(id).map((p) => ({ name: p.name, colour: peerCss(p.connId) })),
-  onPickAsset: fileOps.armAsset,
   unplaceableWhy: (id) => fileOps.unplaceableWhy(id),
+  onOpenPrefab: (id) => {
+    if (prefabOpen !== null) notify.warn('leave the prefab you are in first')
+    else void prefabs.enterPrefab(id)
+  },
+  onDragAsset: (id) => dragPlace.dragging(id),
   onUpload: (files, folder) => {
     const cap = me?.maxUploadBytes ?? Infinity
     const tooBig = files.filter((f) => f.size > cap).map((f) => f.name)
@@ -1618,29 +1625,12 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     const current = path.slice(path.lastIndexOf('/') + 1)
     const inFolder = isFolder ? (assets?.db.entries.filter((e) => e.path.startsWith(`${path}/`)).length ?? 0) : 0
     const entry = isFolder ? undefined : assets?.db.entries.find((e) => e.path === path)
-    const placeable = entry?.kind === 'prefab' || entry?.kind === 'model'
-    const foreign = entry === undefined ? null : fileOps.unplaceableWhy(entry.id)
     const prefabHere = entry?.kind === 'prefab' ? entry.id : null
+    // Placing is a drag into the viewport, and showing one in the Inspector a click (ADR 0164).
     contextMenu.open(
       at,
       [
         {
-          label: placeable ? 'Place in the level' : 'Open in the Inspector',
-          enabled: entry !== undefined && foreign === null && (placeable || entry.kind === 'material'),
-          why: isFolder ? 'a folder is not an asset' : foreign ?? 'nothing to open for this kind',
-          run: () => {
-            if (entry === undefined) return
-            if (placeable) fileOps.armAsset(entry.id)
-            else {
-              selectedAsset = entry.id
-              assetInspector.show(entry.id)
-              room.syncHolds()
-              refreshUi()
-            }
-          },
-        },
-        {
-          // A prefab placed in no level is reachable only from here, now that the toolbar has no prefab mode.
           label: 'Open prefab',
           enabled: prefabHere !== null && prefabOpen === null,
           why: prefabHere === null ? 'not a prefab' : 'leave the prefab you are in first',
@@ -2258,8 +2248,7 @@ const renderStatus = (): void => {
   stageEl.classList.toggle('following', leader !== null)
   if (leader !== null) stageEl.style.setProperty('--follow', peerCss(leader))
   const followHint = leaderName === null ? null : `Following ${leaderName} · move the camera to stop`
-  const placingWhat = placing === null ? null : (assets?.db.byId[placing.assetId]?.name ?? 'asset')
-  const hint = playHint ?? followHint ?? (placingWhat === null ? null : `Click in the viewport to place ${placingWhat} · Esc to cancel`)
+  const hint = playHint ?? followHint
   hintPill.hidden = hint === null
   hintPill.textContent = hint ?? ''
   hierarchyCount.textContent = doc === null ? '' : String(doc.count())
