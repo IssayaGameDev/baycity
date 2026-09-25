@@ -80,7 +80,7 @@ interface Scene { stage: ThreeStage; env: GreyboxEnvironment; postfx: PostFX; ph
 
 - `createThreeStage({ canvas, cameraPosition: [0, 6, 10], lookAt: [0, 1, 0] })`.
 - `applyGreyboxEnvironment(renderer, scene, { sunIntensity: 2.4 })`; `shadowRadius` deliberately not passed.
-- `loadSky(scene, assetUrlOf('textures/sky_110_2k.webp'))` — kept as the control backdrop (ADR 0046); background
+- `loadSky(scene, assetUrlOf('assets/textures/sky_110_2k.webp'))` — kept as the control backdrop (ADR 0046); background
   reset to `env.sky.background` when both exist.
 - `createPostFX(renderer, scene, camera, { aoIgnores: occluding })`.
 - Sets the two-pass render step: `postfx.render()` then `OVERLAY_LAYER` drawn on top (details in
@@ -156,7 +156,7 @@ assetUrlOf(path: string): string        // bundled URL, or the path itself
 materialOf(assetId: string): MaterialAsset | undefined
 ```
 
-Bundled via `import.meta.glob` over `@content/assets/**` (alias, `content-sync.md`) (`*.meta` as `?raw`, `*` as `?url`, `*.mat.json`,
+Bundled via `import.meta.glob` over `@content/assets/**` — the shared library only; a game's own comes with ADR 0161's step 5 — (alias, `content-sync.md`) (`*.meta` as `?raw`, `*` as `?url`, `*.mat.json`,
 `*.prefab.json`). Kind from extension (`kindForPath`); a corrupt or missing sidecar = unknown asset, not a build error.
 Prefabs are parsed and eager for the same reason clips are: resolution has to finish before `instantiateLevel`,
 which stays synchronous (`baseIndex` goes on the wire, ADR 0021). A reference no file resolves draws nothing and

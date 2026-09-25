@@ -1,4 +1,4 @@
-import { assetFile, levelFile, parseQualified, validateLevel, type Level } from '@mp/content'
+import { levelFile, parseQualified, validateLevel, type Level } from '@mp/content'
 import { DEFAULT_REGISTRY, type Registry } from '@mp/components'
 import { normalizePoints, type CurvePoint } from '@mp/mode'
 
@@ -169,7 +169,8 @@ export const lockKey = {
     const ref = parseQualified(name)
     return ref === null ? `content/${name}` : `content/${levelFile(ref)}`
   },
-  asset: (path: string): string => `content/${assetFile(path)}`,
+  /** `path` is from `content/`, starting with its library (ADR 0161). */
+  asset: (path: string): string => `content/${path}`,
 }
 
 /** Take a lock. Resolves the holder's name when someone else has it live, `null` when it is yours. */

@@ -22,7 +22,7 @@ import type { Node } from '../../../packages/content/src/types'
 export interface PrefabStore {
   /** The prefab file's root node for this id, or `undefined` when there is no such file. */
   root: (assetId: string) => Node | undefined
-  /** Path of a prefab asset relative to the assets folder, for a lock key or a change report. */
+  /** Path of a prefab asset relative to `content/` (ADR 0161), for a lock key or a change report. */
   pathOf: (assetId: string) => string | undefined
   /** Write a prefab back to its own file. Returns the path written, or `null` when the id is unknown. */
   write: (assetId: string, root: Node) => string | null
@@ -31,7 +31,7 @@ export interface PrefabStore {
 const isNode = (v: unknown): v is Node => typeof v === 'object' && v !== null && Array.isArray((v as { components?: unknown }).components)
 
 /** `index` is the one the content API writes through, so a prefab it just saved or moved is already in it. */
-export const createPrefabStore = (assetsDir: string, index: AssetIndex = createAssetIndex(assetsDir)): PrefabStore => {
+export const createPrefabStore = (contentDir: string, index: AssetIndex = createAssetIndex(contentDir)): PrefabStore => {
   const prefabPath = (assetId: string): string | undefined => {
     const e = index.byId(assetId)
     return e?.kind === 'prefab' ? e.path : undefined
@@ -43,8 +43,8 @@ export const createPrefabStore = (assetsDir: string, index: AssetIndex = createA
    */
   const stillAt = (assetId: string, rel: string): boolean => {
     try {
-      const meta: unknown = JSON.parse(readFileSync(join(assetsDir, `${rel}${META_SUFFIX}`), 'utf8'))
-      return typeof meta === 'object' && meta !== null && (meta as { id?: unknown }).id === assetId && existsSync(join(assetsDir, rel))
+      const meta: unknown = JSON.parse(readFileSync(join(contentDir, `${rel}${META_SUFFIX}`), 'utf8'))
+      return typeof meta === 'object' && meta !== null && (meta as { id?: unknown }).id === assetId && existsSync(join(contentDir, rel))
     } catch {
       return false
     }
@@ -68,13 +68,13 @@ export const createPrefabStore = (assetsDir: string, index: AssetIndex = createA
     write: (assetId, root) => {
       const rel = pathOf(assetId)
       if (rel === undefined) return null
-      writeFileSync(join(assetsDir, rel), `${JSON.stringify(root, null, 2)}\n`)
+      writeFileSync(join(contentDir, rel), `${JSON.stringify(root, null, 2)}\n`)
       return rel
     },
     root: (assetId) => {
       const rel = pathOf(assetId)
       if (rel === undefined) return undefined
-      const file = join(assetsDir, rel)
+      const file = join(contentDir, rel)
       if (!existsSync(file)) return undefined
       try {
         const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'))

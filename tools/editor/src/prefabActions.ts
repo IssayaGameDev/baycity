@@ -175,7 +175,7 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     if (ref === null) return
 
     const folder = host.projectFolder()
-    const asked = await askName('Save as prefab', sanitisePrefabName(open.nameOf(index) || open.label(index)), `Saved in content/assets/${prefabFolder(folder)}/ — the folder open in the Project panel. Letters, digits, - and _.`)
+    const asked = await askName('Save as prefab', sanitisePrefabName(open.nameOf(index) || open.label(index)), `Saved in content/${prefabFolder(folder)}/ — the folder open in the Project panel. Letters, digits, - and _.`)
     if (asked === null) return
     const target = prefabTarget(folder, asked, library.db.entries.map((e: { path: string }) => e.path))
     if ('error' in target) {

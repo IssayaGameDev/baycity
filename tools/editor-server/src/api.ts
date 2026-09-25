@@ -4,12 +4,13 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname, join, normalize, relative, sep } from 'node:path'
 
 import { kindForPath, META_SUFFIX } from '../../../packages/content/src/assets'
-import { ASSETS_DIR, gameFile, isGameName, levelFile, levelRefForFile, parseQualified, qualify, LEVELS_DIR } from '../../../packages/content/src/layout'
+import { gameFile, inLibrary, isGameName, levelFile, levelRefForFile, libraryOf, parseQualified, qualify, LEVELS_DIR } from '../../../packages/content/src/layout'
 import type { NodeRef, Op } from '../../../packages/content/src/ops'
 import { prefabRefsIn } from '../../../packages/content/src/prefabs'
 import type { Level } from '../../../packages/content/src/types'
 import { LevelError, validateLevel } from '../../../packages/content/src/validate'
 import { createAssetIndex, type AssetIndex } from './assetIndex'
+import { libraryFolders } from './assetImporter'
 import type { LiveAssets } from './liveAssets'
 import { isAssetOp, isLiveAssetPath } from '../../../packages/content/src/liveAssets'
 import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './assetOps'
@@ -34,11 +35,14 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *   POST /api/levels/move             → { from, to } — rename, both qualified (ADR 0110)
  *   POST /api/levels/delete           → { path } — qualified; the file goes for good (ADR 0110)
  *   GET/PUT /api/games/:name          → { components } (ADR 0077)
- *   GET  /api/assets                  → { entries, folders, seq } (runs the importer; seq: the change feed's position)
+ *   GET  /api/assets                  → { entries, libraries, folders, seq } (runs the importer; seq: the change feed's position)
  *   POST /api/assets/mkdir|move|delete → { path } · { from, to } · { path }
  *   POST /api/assets/upload?path=     → raw bytes → { entry }   (textures and .glb, capped, replace keeps the id)
- *   GET  /assets/<path>               → the bytes
- *   PUT  /assets/<path>               → a JSON asset
+ *   GET  /content/<path>              → the bytes
+ *   PUT  /content/<path>              → a JSON asset
+ *
+ * An asset path is relative to `content/` and inside a library (ADR 0161): `assets/…`, or `<game>/assets/…` for a
+ * game that exists. Nothing else under `content/` is reachable through these routes.
  *   POST /api/admin/commit-all        → Bearer token, not a user: deploy flushes every session
  *
  * Live level editing (ADR 0089), when `live` is given:
@@ -207,7 +211,8 @@ export const keyFor = {
     return ref === null ? `content/${name}` : `content/${levelFile(ref)}`
   },
   game: (name: string): string => `content/${gameFile(name)}`,
-  asset: (path: string): string => `content/${ASSETS_DIR}/${path}`,
+  /** `path` is content-relative and starts with its library (ADR 0161). */
+  asset: (path: string): string => `content/${path}`,
 }
 
 /** Every file under `dir`, as forward-slashed paths relative to `dir`. */
@@ -228,9 +233,8 @@ const filesUnder = (dir: string): string[] => {
 export const createContentApi = (opts: ApiOptions): ApiHandler => {
   const now = opts.now ?? (() => Date.now())
   const CONTENT = join(opts.repoRoot, 'content')
-  const ASSETS = join(CONTENT, ASSETS_DIR)
-  if (!existsSync(ASSETS)) mkdirSync(ASSETS, { recursive: true })
-  const assets = opts.assets ?? createAssetIndex(ASSETS)
+  if (!existsSync(CONTENT)) mkdirSync(CONTENT, { recursive: true })
+  const assets = opts.assets ?? createAssetIndex(CONTENT)
 
   /** The game folders: a directory at the content root holding a `game.json` (ADR 0108). */
   const gameNames = (): string[] =>
@@ -254,6 +258,18 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     return out
   }
 
+  /**
+   * A path the asset routes may touch (ADR 0161): inside a library — the shared one, or the own one of a game that
+   * exists — and never a level, a `game.json`, or a library's own folder.
+   */
+  const assetPathOk = (path: string): boolean => {
+    if (!inLibrary(path) || safeJoin(CONTENT, path) === null) return false
+    const game = libraryOf(path)
+    return game === null || (game !== undefined && existsSync(join(CONTENT, gameFile(game))))
+  }
+  /** Every folder in every library, content-relative, the empty ones included. */
+  const assetFolders = (): string[] => libraryFolders(CONTENT).flatMap((l) => listFolders(join(CONTENT, l)).map((f) => `${l}/${f}`))
+
   const changed = (user: User, paths: string[]): void => {
     opts.onChanged?.(user, paths)
     opts.changes?.record(paths)
@@ -261,10 +277,10 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
   const locksChanged = (): void => opts.onLocksChanged?.()
 
   /** A file's own path plus its sidecar; a folder's every file. For reporting what a move or delete touched. */
-  const filesOf = (rel: string): string[] => {
-    const full = safeJoin(ASSETS, rel)
-    if (full !== null && existsSync(full) && statSync(full).isDirectory()) return filesUnder(full).map((f) => `${rel}/${f}`)
-    return [rel, `${rel}${META_SUFFIX}`]
+  const filesOf = (path: string): string[] => {
+    const full = safeJoin(CONTENT, path)
+    if (full !== null && existsSync(full) && statSync(full).isDirectory()) return filesUnder(full).map((f) => `${path}/${f}`)
+    return [path, `${path}${META_SUFFIX}`]
   }
 
   /** Refuse with 423 when someone else holds `key` (or, for a folder, anything under it). Returns `true` when refused. */
@@ -294,7 +310,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       rescanFor(user)
       // `seq`: where the change feed stood when this list was read, in the same tick, so an editor watching the
       // feed from here misses nothing and replays nothing (ADR 0156).
-      sendJson(res, 200, { entries: assets.entries(), folders: listFolders(ASSETS), seq: opts.changes?.seq() ?? 0 })
+      sendJson(res, 200, { entries: assets.entries(), libraries: libraryFolders(CONTENT), folders: assetFolders(), seq: opts.changes?.seq() ?? 0 })
       return true
     }
 
@@ -302,7 +318,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST expected' }), true
       const rel = (query.get('path') ?? '').replace(/\\/g, '/').replace(/^\/+/, '')
       const ext = rel.slice(rel.lastIndexOf('.') + 1).toLowerCase()
-      if (rel === '' || safeJoin(ASSETS, rel) === null) return sendJson(res, 400, { error: 'path escapes the assets root' }), true
+      if (!assetPathOk(rel)) return sendJson(res, 400, { error: 'not a path in an asset library' }), true
       if (!UPLOAD_EXTENSIONS.has(ext) || kindForPath(rel) === undefined) return sendJson(res, 400, { error: `.${ext} is not an uploadable asset (${[...UPLOAD_EXTENSIONS].join(', ')})` }), true
       if (refuseIfLocked(res, user, [keyFor.asset(rel)])) return true
       let bytes: Buffer
@@ -312,7 +328,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
         sendJson(res, e instanceof TooLarge ? 413 : 400, { error: String(e instanceof Error ? e.message : e) })
         return true
       }
-      const file = safeJoin(ASSETS, rel)!
+      const file = safeJoin(CONTENT, rel)!
       mkdirSync(join(file, '..'), { recursive: true })
       // Same name, same folder: replaced, and the sidecar beside it is untouched, so the id — and every
       // reference — survives. That is how art gets updated.
@@ -333,26 +349,34 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST expected' }), true
       try {
         const args = asRecord(await readJson(req))
+        /** Both ends of every op are in a library: these routes delete things, and `content/` holds the levels. */
+        const libraryPath = (name: string): string => {
+          const path = strField(args, name)
+          if (!assetPathOk(path)) throw new AssetOpError(`${name}: not a path in an asset library: ${path}`)
+          return path
+        }
         if (op[1] === 'mkdir') {
-          const path = strField(args, 'path')
-          makeFolder(ASSETS, path)
+          const path = libraryPath('path')
+          makeFolder(CONTENT, path)
           // An empty folder is nothing to git; it is committed with its first file.
         } else if (op[1] === 'move') {
-          const from = strField(args, 'from')
-          const to = strField(args, 'to')
+          const from = libraryPath('from')
+          const to = libraryPath('to')
+          // Across libraries needs to know which levels use what first (ADR 0161, step 3): not yet.
+          if (libraryOf(from) !== libraryOf(to)) throw new AssetOpError('moving between libraries is not open yet')
           if (refuseIfLocked(res, user, [keyFor.asset(from), keyFor.asset(to)])) return true
           const before = filesOf(from)
-          movePath(ASSETS, from, to)
+          movePath(CONTENT, from, to)
           const after = before.map((p) => `${to}${p.slice(from.length)}`)
           rescanFor(user)
           changed(user, [...before, ...after].map(keyFor.asset))
         } else {
-          const path = strField(args, 'path')
+          const path = libraryPath('path')
           if (refuseIfLocked(res, user, [keyFor.asset(path)])) return true
           const gone = filesOf(path)
           // A live asset deleted goes with its document, unwritten edits and all (ADR 0159).
           for (const e of assets.entries()) if (e.path === path || e.path.startsWith(`${path}/`)) opts.liveAssets?.forget(e.id)
-          removePath(ASSETS, path)
+          removePath(CONTENT, path)
           rescanFor(user)
           changed(user, gone.map(keyFor.asset))
         }
@@ -363,10 +387,10 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       return true
     }
 
-    if (!url.startsWith('/assets/')) return false
-    const rel = url.slice('/assets/'.length)
-    const file = safeJoin(ASSETS, rel)
-    if (file === null) return sendJson(res, 400, { error: 'path escapes the assets root' }), true
+    if (!url.startsWith('/content/')) return false
+    const rel = url.slice('/content/'.length)
+    const file = assetPathOk(rel) ? safeJoin(CONTENT, rel) : null
+    if (file === null) return sendJson(res, 404, { error: 'not a path in an asset library' }), true
 
     /** The prefab document open on this path, if any: a prefab is a live document now (ADR 0091). */
     const openPrefab = (): { id: string; root: unknown } | null => {
@@ -793,7 +817,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     const q = raw.indexOf('?')
     const url = decodeURIComponent(q >= 0 ? raw.slice(0, q) : raw)
     const query = new URLSearchParams(q >= 0 ? raw.slice(q + 1) : '')
-    if (!url.startsWith('/api/') && !url.startsWith('/assets/')) return false
+    if (!url.startsWith('/api/') && !url.startsWith('/content/')) return false
 
     if (url === '/api/admin/commit-all') {
       if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST expected' }), true

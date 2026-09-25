@@ -1547,7 +1547,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     if (tooBig.length > 0) notify.warn(`too big (cap ${Math.round(cap / 1024 / 1024)} MB): ${tooBig.join(', ')}`)
     const fits = files.filter((f) => f.size <= cap)
     if (fits.length === 0) return
-    const paths = fits.map((f) => (folder === '' ? f.name : `${folder}/${f.name}`))
+    const paths = fits.map((f) => `${folder}/${f.name}`)
     // Named, because a file uploaded over another keeps its id: only its bytes say it changed (ADR 0157).
     fileOps.afterFileOp(
       `uploaded ${fits.map((f) => f.name).join(', ')}`,
@@ -1686,7 +1686,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
       notify.warn('a folder cannot move inside itself')
       return
     }
-    fileOps.afterFileOp(`moved into ${toFolder === '' ? 'assets' : toFolder}`, async () => assets?.move(from, movedInto(from, toFolder)) ?? Promise.resolve())
+    fileOps.afterFileOp(`moved into ${toFolder}`, async () => assets?.move(from, movedInto(from, toFolder)) ?? Promise.resolve())
   },
 })
 

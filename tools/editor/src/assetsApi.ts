@@ -2,6 +2,7 @@ import type { Origin } from './assetSync'
 import { failed } from './filesApi'
 import {
   buildDatabase,
+  libraryDir,
   type AssetDatabase,
   type AssetEntry,
   type MaterialAsset,
@@ -18,7 +19,9 @@ import {
  */
 export interface AssetLibrary {
   db: AssetDatabase
-  /** Folders on disk, including empty ones — the tree needs those and no path implies them. */
+  /** The asset libraries on disk, by folder from `content/` (ADR 0161): the shared one first, then each game's own. */
+  libraries: string[]
+  /** Folders on disk, including empty ones — the tree needs those and no path implies them. From `content/`. */
   folders: string[]
   /** Where the server's change feed stood when this list was read: what a watch starts from (ADR 0156). */
   seq: number
@@ -48,17 +51,18 @@ export interface AssetLibrary {
   refreshPrefab: (assetId: string) => Promise<void>
   /** Overwrite a prefab asset on disk and in memory. */
   savePrefab: (assetId: string, prefab: Node) => Promise<void>
-  /** Write a prefab to a path under the assets root, creating it. Returns its entry after a rescan. */
+  /** Write a prefab to a path in a library (from `content/`), creating it. Returns its entry after a rescan. */
   createPrefab: (path: string, prefab: Node) => Promise<AssetEntry | undefined>
   mkdir: (parent: string, name: string) => Promise<void>
   /** Rename or move. The sidecar goes with it, so ids survive. */
   move: (from: string, to: string) => Promise<void>
   remove: (path: string) => Promise<void>
-  /** Create `<name>.mat.json` in `folder`. Resolves once the importer has given it an id. */
+  /** Create `<name>.mat.json` in `folder` (from `content/`; the shared library's `materials` by default). Resolves once the importer has given it an id. */
   createMaterial: (name: string, material: MaterialAsset, folder?: string) => Promise<AssetEntry | undefined>
 }
 
-export const assetUrl = (path: string): string => `/assets/${path}`
+/** Where an asset's bytes are served: its path from `content/`, as on disk (ADR 0161). */
+export const assetUrl = (path: string): string => `/content/${path}`
 
 const fetchJson = async <T>(url: string): Promise<T> => {
   const r = await fetch(url)
@@ -100,7 +104,7 @@ const post = async (route: string, body: unknown): Promise<void> => {
  * made costs its own file, not the whole library.
  */
 export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refetch?: ReadonlySet<string> } = {}): Promise<AssetLibrary> => {
-  const { entries, folders, seq } = await fetchJson<{ entries: AssetEntry[]; folders: string[]; seq?: number }>('/api/assets')
+  const { entries, libraries, folders, seq } = await fetchJson<{ entries: AssetEntry[]; libraries?: string[]; folders: string[]; seq?: number }>('/api/assets')
   const db = buildDatabase(entries)
   const materials = new Map<string, MaterialAsset>()
   const origins = new Map<string, Origin>()
@@ -157,6 +161,7 @@ export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refe
 
   return {
     db,
+    libraries: libraries ?? [libraryDir(null)],
     folders,
     seq: seq ?? 0,
     urlOf: assetUrl,
@@ -174,9 +179,9 @@ export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refe
       const { json, origin } = await fetchWithOrigin(assetUrl(entry.path))
       return origin === undefined ? null : { json, origin }
     },
-    createMaterial: async (name, material, folder = 'materials') => {
+    createMaterial: async (name, material, folder = `${libraryDir(null)}/materials`) => {
       const safe = name.replace(/[^\w-]+/g, '-') || 'material'
-      const path = `${folder === '' ? '' : `${folder}/`}${safe}.mat.json`
+      const path = `${folder}/${safe}.mat.json`
       await put(path, material)
       return rescan(path)
     },
@@ -196,7 +201,7 @@ export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refe
       await put(path, prefab)
       return rescan(path)
     },
-    mkdir: async (parent, name) => post('mkdir', { path: parent === '' ? name : `${parent}/${name}` }),
+    mkdir: async (parent, name) => post('mkdir', { path: `${parent}/${name}` }),
     move: async (from, to) => post('move', { from, to }),
     remove: async (path) => post('delete', { path }),
   }

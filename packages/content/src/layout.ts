@@ -1,13 +1,13 @@
 /**
  * Where content lives on disk (ADR 0108).
  *
- * **A game is a folder at the content root.** It holds that game's `game.json` and its `levels/`. Assets stay
- * one shared library at `content/assets/`, because they are shared in fact: of twenty assets, nine are used by
- * more than one game and four by exactly one, so a per-game split would duplicate nearly half of them.
+ * **A game is a folder at the content root.** It holds that game's `game.json`, its `levels/`, and its own asset
+ * library, `assets/`, beside the **shared** one at `content/assets/` that every game uses (ADR 0161, amending
+ * ADR 0108's single library).
  *
  * ```
  * content/
- *   keyboard/  game.json  levels/default.level.json
+ *   keyboard/  game.json  levels/default.level.json  assets/…
  *   parkour/   game.json  levels/default.level.json
  *   assets/    materials/ prefabs/ textures/
  * ```
@@ -24,7 +24,7 @@
 export const GAME_FILE = 'game.json'
 /** What makes a file a level. A compound suffix, like `.mat.json` and `.prefab.json` (ADR 0026). */
 export const LEVEL_SUFFIX = '.level.json'
-/** The shared asset library's folder, and therefore a name no game may take. */
+/** An asset library's folder: the shared one at the content root, and each game's own inside its folder. So no game may take the name. */
 export const ASSETS_DIR = 'assets'
 /** The levels folder inside a game's. */
 export const LEVELS_DIR = 'levels'
@@ -73,8 +73,33 @@ export const levelFile = (ref: LevelRef): string => `${ref.game}/${LEVELS_DIR}/$
 /** A game's own file, relative to `content/`. */
 export const gameFile = (game: string): string => `${game}/${GAME_FILE}`
 
-/** An asset's file, relative to `content/`, from its path inside the shared library. */
-export const assetFile = (rel: string): string => `${ASSETS_DIR}/${rel}`
+/**
+ * An asset library's folder, relative to `content/` (ADR 0161): the shared one (`null`), or a game's own.
+ *
+ * **An asset's path starts with its library** — `assets/materials/red.mat.json`, `keyboard/assets/prefabs/pad.prefab.json`
+ * — so the path says which library a file is in, and the same name in two libraries is two assets, not one.
+ */
+export const libraryDir = (game: string | null): string => (game === null ? ASSETS_DIR : `${game}/${ASSETS_DIR}`)
+
+/**
+ * The library a content-relative path is in, its own folder included: `null` for the shared one, the game's name
+ * for a game's own, `undefined` for a path in no library (a level, a `game.json`, anything else).
+ */
+export const libraryOf = (path: string): string | null | undefined => {
+  const parts = path.split('/')
+  if (parts[0] === ASSETS_DIR) return null
+  const game = parts[0]
+  return parts[1] === ASSETS_DIR && game !== undefined && isGameName(game) ? game : undefined
+}
+
+/** Whether a content-relative path is **inside** a library — a file or folder in it, not the library's own folder. */
+export const inLibrary = (path: string): boolean => {
+  const library = libraryOf(path)
+  if (library === undefined) return false
+  const depth = library === null ? 1 : 2
+  const parts = path.split('/')
+  return parts.length > depth && parts.every((p) => p !== '' && p !== '.' && p !== '..')
+}
 
 /**
  * The `LevelRef` a content-relative path names, or `null` when the path is not a level.

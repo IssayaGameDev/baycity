@@ -7,17 +7,21 @@ import { entriesFrom, type AssetMeta } from '@mp/content'
 
 import { importAssets } from './assetImporter'
 
+/** The content folder: the shared library is `assets/` in it, a game's own `<game>/assets/` (ADR 0161). */
 let root = ''
 
-const write = (rel: string, body = 'x'): string => {
-  const full = join(root, rel)
+/** Write a file into the shared library, by its path inside it. */
+const write = (rel: string, body = 'x'): string => writeAt(`assets/${rel}`, body)
+/** Write a file anywhere under `content/`, by its content-relative path. */
+const writeAt = (path: string, body = 'x'): string => {
+  const full = join(root, path)
   mkdirSync(join(full, '..'), { recursive: true })
   writeFileSync(full, body)
   return full
 }
 
 const metaOf = (rel: string): { id: string; kind: string } =>
-  JSON.parse(readFileSync(join(root, `${rel}.meta`), 'utf8')) as { id: string; kind: string }
+  JSON.parse(readFileSync(join(root, 'assets', `${rel}.meta`), 'utf8')) as { id: string; kind: string }
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'mp-assets-'))
@@ -34,7 +38,7 @@ describe('importAssets', () => {
     const { entries, created } = importAssets(root)
 
     expect(entries.map((e) => e.kind).sort()).toEqual(['model', 'texture'])
-    expect(created.sort()).toEqual(['props/crate.glb.meta', 'textures/brick.png.meta'])
+    expect(created.sort(), 'paths from content/, starting with the library').toEqual(['assets/props/crate.glb.meta', 'assets/textures/brick.png.meta'])
     expect(metaOf('textures/brick.png').kind).toBe('texture')
     expect(metaOf('textures/brick.png').id).toMatch(/^[0-9a-f]{16}$/)
   })
@@ -48,11 +52,11 @@ describe('importAssets', () => {
     expect(importAssets(root).entries[0]!.id).toBe(first)
 
     // Rename the asset and its sidecar, as any file manager would.
-    const meta = readFileSync(join(root, 'textures/brick.png.meta'), 'utf8')
-    rmSync(join(root, 'textures/brick.png'))
-    rmSync(join(root, 'textures/brick.png.meta'))
+    const meta = readFileSync(join(root, 'assets/textures/brick.png.meta'), 'utf8')
+    rmSync(join(root, 'assets/textures/brick.png'))
+    rmSync(join(root, 'assets/textures/brick.png.meta'))
     write('textures/stone.png')
-    writeFileSync(join(root, 'textures/stone.png.meta'), meta)
+    writeFileSync(join(root, 'assets/textures/stone.png.meta'), meta)
 
     expect(importAssets(root).entries[0]!.id, 'same asset, new name').toBe(first)
   })
@@ -64,7 +68,7 @@ describe('importAssets', () => {
 
     // Copy-pasting an asset usually copies its sidecar too.
     write('textures/brick_copy.png')
-    writeFileSync(join(root, 'textures/brick_copy.png.meta'), JSON.stringify(original))
+    writeFileSync(join(root, 'assets/textures/brick_copy.png.meta'), JSON.stringify(original))
 
     const { entries } = importAssets(root)
     const ids = entries.map((e) => e.id)
@@ -74,7 +78,7 @@ describe('importAssets', () => {
 
   it('lets the extension decide the kind, and repairs a sidecar that disagrees', () => {
     write('props/crate.glb')
-    writeFileSync(join(root, 'props/crate.glb.meta'), JSON.stringify({ id: 'abc123', kind: 'texture' }))
+    writeFileSync(join(root, 'assets/props/crate.glb.meta'), JSON.stringify({ id: 'abc123', kind: 'texture' }))
 
     const { entries } = importAssets(root)
     expect(entries[0]!.kind).toBe('model')
@@ -83,7 +87,7 @@ describe('importAssets', () => {
 
   it('rewrites a corrupt sidecar rather than failing the scan', () => {
     write('textures/brick.png')
-    writeFileSync(join(root, 'textures/brick.png.meta'), '{ not json')
+    writeFileSync(join(root, 'assets/textures/brick.png.meta'), '{ not json')
 
     const { entries } = importAssets(root)
     expect(entries).toHaveLength(1)
@@ -96,7 +100,7 @@ describe('importAssets', () => {
     write('textures/brick.png')
 
     const { entries } = importAssets(root)
-    expect(entries.map((e) => e.path)).toEqual(['textures/brick.png'])
+    expect(entries.map((e) => e.path)).toEqual(['assets/textures/brick.png'])
     expect(importAssets(root).created, 'the .meta itself is not an asset').toEqual([])
   })
 
@@ -106,6 +110,23 @@ describe('importAssets', () => {
 
     const kinds = importAssets(root).entries.map((e) => `${e.name}:${e.kind}`)
     expect(kinds.sort()).toEqual(['brick:material', 'water:shader'])
+  })
+
+  it('scans every game’s own library with the shared one, one id each across all of them (ADR 0161)', () => {
+    write('textures/brick.png')
+    writeAt('keyboard/game.json', '{}')
+    writeAt('keyboard/assets/textures/key.png')
+    writeAt('keyboard/levels/default.level.json', '{}') // a level is not an asset
+    writeAt('parkour/materials/loose.mat.json', '{}') // not in a library: a game's assets are in its assets/
+    importAssets(root)
+    // Copied from Shared into Keyboard's library with its sidecar: two files, so two ids.
+    writeAt('keyboard/assets/textures/brick.png')
+    writeFileSync(join(root, 'keyboard/assets/textures/brick.png.meta'), JSON.stringify(metaOf('textures/brick.png')))
+
+    const { entries } = importAssets(root)
+    expect(entries.map((e) => e.path)).toEqual(['assets/textures/brick.png', 'keyboard/assets/textures/brick.png', 'keyboard/assets/textures/key.png'])
+    expect(new Set(entries.map((e) => e.id)).size, 'the same name in two libraries is two assets').toBe(3)
+    expect(entries.find((e) => e.path === 'assets/textures/brick.png')!.id, 'the one scanned first keeps its id').toBe(metaOf('textures/brick.png').id)
   })
 
   it('creates the root if it is not there yet, rather than throwing', () => {
@@ -167,6 +188,6 @@ describe('importAssets', () => {
     write('a/three.png')
     const first = importAssets(root).entries.map((e) => e.path)
     expect(importAssets(root).entries.map((e) => e.path)).toEqual(first)
-    expect(first[0]).toBe('a/one.png')
+    expect(first[0]).toBe('assets/a/one.png')
   })
 })

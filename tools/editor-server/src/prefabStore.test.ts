@@ -14,6 +14,7 @@ import type { Node } from '../../../packages/content/src/types'
  * ever, so a prefab moved while the server ran resolved to nothing and was written back to its old place.
  */
 
+/** The content folder; prefabs go in the shared library (ADR 0161). */
 let root = ''
 const pad = (name: string): Node => ({ id: 'root', name, transform: { position: { x: 0, y: 0, z: 0 } }, components: [] })
 const write = (rel: string, node: Node): void => {
@@ -31,50 +32,50 @@ afterEach(() => {
 
 describe('the prefab store', () => {
   it('follows a prefab moved into another folder, reading and writing it there', () => {
-    write('prefabs/pad.prefab.json', pad('pad'))
-    const id = idOf('prefabs/pad.prefab.json')
+    write('assets/prefabs/pad.prefab.json', pad('pad'))
+    const id = idOf('assets/prefabs/pad.prefab.json')
     const store = createPrefabStore(root)
     expect(store.root(id)?.name).toBe('pad')
 
-    movePath(root, 'prefabs/pad.prefab.json', 'prefabs/Basic/pad.prefab.json')
-    expect(store.pathOf(id)).toBe('prefabs/Basic/pad.prefab.json')
+    movePath(root, 'assets/prefabs/pad.prefab.json', 'assets/prefabs/Basic/pad.prefab.json')
+    expect(store.pathOf(id)).toBe('assets/prefabs/Basic/pad.prefab.json')
     expect(store.root(id)?.name, 'a level opened now still resolves it').toBe('pad')
 
-    expect(store.write(id, pad('edited'))).toBe('prefabs/Basic/pad.prefab.json')
-    expect((JSON.parse(readFileSync(join(root, 'prefabs/Basic/pad.prefab.json'), 'utf8')) as Node).name).toBe('edited')
-    expect(existsSync(join(root, 'prefabs/pad.prefab.json')), 'nothing written back to where it was').toBe(false)
+    expect(store.write(id, pad('edited'))).toBe('assets/prefabs/Basic/pad.prefab.json')
+    expect((JSON.parse(readFileSync(join(root, 'assets/prefabs/Basic/pad.prefab.json'), 'utf8')) as Node).name).toBe('edited')
+    expect(existsSync(join(root, 'assets/prefabs/pad.prefab.json')), 'nothing written back to where it was').toBe(false)
   })
 
   it('follows a renamed folder', () => {
-    write('prefabs/Test/pad.prefab.json', pad('pad'))
-    const id = idOf('prefabs/Test/pad.prefab.json')
+    write('assets/prefabs/Test/pad.prefab.json', pad('pad'))
+    const id = idOf('assets/prefabs/Test/pad.prefab.json')
     const store = createPrefabStore(root)
-    expect(store.pathOf(id)).toBe('prefabs/Test/pad.prefab.json')
-    movePath(root, 'prefabs/Test', 'prefabs/Trials')
+    expect(store.pathOf(id)).toBe('assets/prefabs/Test/pad.prefab.json')
+    movePath(root, 'assets/prefabs/Test', 'assets/prefabs/Trials')
     expect(store.root(id)?.name).toBe('pad')
-    expect(store.write(id, pad('edited'))).toBe('prefabs/Trials/pad.prefab.json')
+    expect(store.write(id, pad('edited'))).toBe('assets/prefabs/Trials/pad.prefab.json')
   })
 
   it('does not bring a deleted prefab back', () => {
-    write('prefabs/pad.prefab.json', pad('pad'))
-    const id = idOf('prefabs/pad.prefab.json')
+    write('assets/prefabs/pad.prefab.json', pad('pad'))
+    const id = idOf('assets/prefabs/pad.prefab.json')
     const store = createPrefabStore(root)
-    expect(store.pathOf(id)).toBe('prefabs/pad.prefab.json')
-    removePath(root, 'prefabs/pad.prefab.json')
+    expect(store.pathOf(id)).toBe('assets/prefabs/pad.prefab.json')
+    removePath(root, 'assets/prefabs/pad.prefab.json')
     expect(store.root(id)).toBeUndefined()
     expect(store.write(id, pad('edited'))).toBeNull()
-    expect(existsSync(join(root, 'prefabs/pad.prefab.json'))).toBe(false)
+    expect(existsSync(join(root, 'assets/prefabs/pad.prefab.json'))).toBe(false)
   })
 
   it('does not take another prefab that took the old place for this one', () => {
-    write('prefabs/pad.prefab.json', pad('pad'))
-    const id = idOf('prefabs/pad.prefab.json')
+    write('assets/prefabs/pad.prefab.json', pad('pad'))
+    const id = idOf('assets/prefabs/pad.prefab.json')
     const store = createPrefabStore(root)
-    expect(store.pathOf(id)).toBe('prefabs/pad.prefab.json')
-    movePath(root, 'prefabs/pad.prefab.json', 'prefabs/old-pad.prefab.json')
-    write('prefabs/pad.prefab.json', pad('newcomer'))
+    expect(store.pathOf(id)).toBe('assets/prefabs/pad.prefab.json')
+    movePath(root, 'assets/prefabs/pad.prefab.json', 'assets/prefabs/old-pad.prefab.json')
+    write('assets/prefabs/pad.prefab.json', pad('newcomer'))
     importAssets(root) // the newcomer gets its own sidecar, with its own id
     expect(store.root(id)?.name).toBe('pad')
-    expect(store.pathOf(id)).toBe('prefabs/old-pad.prefab.json')
+    expect(store.pathOf(id)).toBe('assets/prefabs/old-pad.prefab.json')
   })
 })

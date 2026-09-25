@@ -11,6 +11,7 @@ import { assetPathsOf, libraryChanges, watchAssets } from './assetWatch'
 
 const lib = (entries: AssetEntry[], materials: Record<string, MaterialAsset> = {}, prefabs: Record<string, Node> = {}, folders: string[] = []): AssetLibrary => ({
   db: buildDatabase(entries),
+  libraries: ['assets'],
   folders,
   seq: 0,
   urlOf: (p) => p,
@@ -33,8 +34,10 @@ const red: MaterialAsset = { shader: 'standard', params: { color: { kind: 'color
 const blue: MaterialAsset = { shader: 'standard', params: { color: { kind: 'color', value: '#0000ff' } } }
 
 describe('what the feed names', () => {
-  it('keeps the assets, as paths inside the assets folder, a sidecar as its asset', () => {
-    expect(assetPathsOf(['content/keyboard/levels/a.level.json', 'content/assets/t.png', 'content/assets/t.png.meta', 'content/keyboard/game.json'])).toEqual(['t.png'])
+  it('keeps the assets of every library, as paths from content/, a sidecar as its asset (ADR 0161)', () => {
+    expect(
+      assetPathsOf(['content/keyboard/levels/a.level.json', 'content/assets/t.png', 'content/assets/t.png.meta', 'content/keyboard/game.json', 'content/keyboard/assets/k.png']),
+    ).toEqual(['assets/t.png', 'keyboard/assets/k.png'])
   })
 })
 
@@ -103,7 +106,7 @@ describe('following the feed', () => {
     ])
     await r.done
     expect(r.asked).toEqual(['/api/changes?since=5', '/api/changes?since=6', '/api/changes?since=8'])
-    expect(r.changed).toEqual([['m.mat.json']])
+    expect(r.changed).toEqual([['assets/m.mat.json']])
   })
 
   it('reloads everything when the feed lost track, and follows on from the fresh list', async () => {

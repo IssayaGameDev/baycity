@@ -1,3 +1,5 @@
+import { inLibrary, libraryDir, libraryOf } from '@mp/content'
+
 /**
  * Where `Save as prefab…` writes, and whether it may (ADR 0091).
  *
@@ -8,8 +10,14 @@
  * only safe answer, and it matches how a new level is refused rather than auto-numbered.
  */
 
-/** The folder the save goes to: the one open in the Project panel, or `prefabs/` at the root or across folders. */
-export const prefabFolder = (open: string | null): string => (open === null || open === '' ? 'prefabs' : open)
+/**
+ * The folder the save goes to, from `content/`: the one open in the Project panel, or `prefabs/` in the library
+ * when a library's top is open, or the shared library's across folders (ADR 0161).
+ */
+export const prefabFolder = (open: string | null): string => {
+  if (open === null || libraryOf(open) === undefined) return `${libraryDir(null)}/prefabs`
+  return inLibrary(open) ? open : `${open}/prefabs`
+}
 
 /** A name offered to the dialog: the object's, with everything a file name cannot carry turned into `-`. */
 export const sanitisePrefabName = (raw: string): string => {

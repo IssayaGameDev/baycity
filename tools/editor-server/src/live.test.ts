@@ -34,14 +34,14 @@ const fake = (connId: string, user = ADA): Fake => {
 
 /** A world with a fake disk and fake timers the test advances by hand. */
 const PAD = 'aaaaaaaaaaaaaaaa'
-/** A prefab store over a map of files, as the server's is over the assets folder. */
+/** A prefab store over a map of files, as the server's is over the shared library (paths from content/, ADR 0161). */
 const store = (files: Record<string, Node>): LiveOptions['prefabs'] => ({
   root: (id) => files[id],
-  pathOf: (id) => (files[id] === undefined ? undefined : `prefabs/${id}.prefab.json`),
+  pathOf: (id) => (files[id] === undefined ? undefined : `assets/prefabs/${id}.prefab.json`),
   write: (id, root) => {
     if (files[id] === undefined) return null
     files[id] = root
-    return `prefabs/${id}.prefab.json`
+    return `assets/prefabs/${id}.prefab.json`
   },
 })
 /** A prefab file, as the store would hand it over. */

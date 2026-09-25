@@ -61,9 +61,9 @@ beforeEach(async () => {
     idleMs: 20,
     maxMs: 200,
   })
-  const assetIndex = createAssetIndex(join(root, 'content/assets'))
+  const assetIndex = createAssetIndex(join(root, 'content'))
   liveAssets = createLiveAssets({
-    ...liveAssetFiles(join(root, 'content/assets'), assetIndex),
+    ...liveAssetFiles(join(root, 'content'), assetIndex),
     changed: () => {},
     connection: (connId) => live.connection(connId),
     broadcast: (event, data) => live.broadcastAll(event, data),
@@ -231,65 +231,65 @@ describe('locks', () => {
 describe('assets', () => {
   it('uploads a texture under the cap, replaces it keeping the id, refuses the rest', async () => {
     const png = Buffer.from('fake png bytes')
-    const r = await call('ada', 'POST', '/api/assets/upload?path=textures/warn.png', undefined, png)
+    const r = await call('ada', 'POST', '/api/assets/upload?path=assets/textures/warn.png', undefined, png)
     expect(r.status).toBe(200)
     const { entry } = await json<{ entry: { id: string; kind: string; path: string } }>(r)
     expect(entry.kind).toBe('texture')
-    expect(entry.path).toBe('textures/warn.png')
-    expect(changed.flatMap((c) => c.paths)).toEqual([keyFor.asset('textures/warn.png'), keyFor.asset('textures/warn.png.meta')])
+    expect(entry.path).toBe('assets/textures/warn.png')
+    expect(changed.flatMap((c) => c.paths)).toEqual([keyFor.asset('assets/textures/warn.png'), keyFor.asset('assets/textures/warn.png.meta')])
 
-    const again = await json<{ entry: { id: string } }>(await call('ada', 'POST', '/api/assets/upload?path=textures/warn.png', undefined, Buffer.from('v2')))
+    const again = await json<{ entry: { id: string } }>(await call('ada', 'POST', '/api/assets/upload?path=assets/textures/warn.png', undefined, Buffer.from('v2')))
     expect(again.entry.id).toBe(entry.id)
     expect(readFileSync(join(root, 'content/assets/textures/warn.png'), 'utf8')).toBe('v2')
 
-    expect((await call('ada', 'POST', '/api/assets/upload?path=textures/x.gltf', undefined, png)).status).toBe(400)
+    expect((await call('ada', 'POST', '/api/assets/upload?path=assets/textures/x.gltf', undefined, png)).status).toBe(400)
     expect((await call('ada', 'POST', '/api/assets/upload?path=../x.png', undefined, png)).status).toBe(400)
-    expect((await call('ada', 'POST', '/api/assets/upload?path=big.png', undefined, Buffer.alloc(65))).status).toBe(413)
+    expect((await call('ada', 'POST', '/api/assets/upload?path=assets/big.png', undefined, Buffer.alloc(65))).status).toBe(413)
   })
 
   it('a JSON asset write is gated and gets its sidecar attributed', async () => {
-    await call('bob', 'POST', '/api/locks/acquire', { path: keyFor.asset('materials/m.mat.json') })
-    expect((await call('ada', 'PUT', '/assets/materials/m.mat.json', { shader: 'standard', params: {} })).status).toBe(423)
-    expect((await call('bob', 'PUT', '/assets/materials/m.mat.json', { shader: 'standard', params: {} })).status).toBe(200)
+    await call('bob', 'POST', '/api/locks/acquire', { path: keyFor.asset('assets/materials/m.mat.json') })
+    expect((await call('ada', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: {} })).status).toBe(423)
+    expect((await call('bob', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: {} })).status).toBe(200)
     expect(changed.filter((c) => c.user === 'Bob').flatMap((c) => c.paths)).toEqual([
-      keyFor.asset('materials/m.mat.json'),
-      keyFor.asset('materials/m.mat.json.meta'),
+      keyFor.asset('assets/materials/m.mat.json'),
+      keyFor.asset('assets/materials/m.mat.json.meta'),
     ])
   })
 
   it('move and delete are refused while the file — or anything in the folder — is held', async () => {
-    await call('ada', 'PUT', '/assets/prefabs/p.prefab.json', { id: 'p', transform: { position: { x: 0, y: 0, z: 0 } }, components: [] })
-    await call('ada', 'POST', '/api/locks/acquire', { path: keyFor.asset('prefabs/p.prefab.json') })
-    expect((await call('bob', 'POST', '/api/assets/move', { from: 'prefabs/p.prefab.json', to: 'prefabs/q.prefab.json' })).status).toBe(423)
-    expect((await call('bob', 'POST', '/api/assets/delete', { path: 'prefabs' })).status).toBe(423)
-    expect((await call('ada', 'POST', '/api/assets/move', { from: 'prefabs/p.prefab.json', to: 'prefabs/q.prefab.json' })).status).toBe(200)
+    await call('ada', 'PUT', '/content/assets/prefabs/p.prefab.json', { id: 'p', transform: { position: { x: 0, y: 0, z: 0 } }, components: [] })
+    await call('ada', 'POST', '/api/locks/acquire', { path: keyFor.asset('assets/prefabs/p.prefab.json') })
+    expect((await call('bob', 'POST', '/api/assets/move', { from: 'assets/prefabs/p.prefab.json', to: 'assets/prefabs/q.prefab.json' })).status).toBe(423)
+    expect((await call('bob', 'POST', '/api/assets/delete', { path: 'assets/prefabs' })).status).toBe(423)
+    expect((await call('ada', 'POST', '/api/assets/move', { from: 'assets/prefabs/p.prefab.json', to: 'assets/prefabs/q.prefab.json' })).status).toBe(200)
     expect(changed.at(-1)?.paths).toEqual([
-      keyFor.asset('prefabs/p.prefab.json'),
-      keyFor.asset('prefabs/p.prefab.json.meta'),
-      keyFor.asset('prefabs/q.prefab.json'),
-      keyFor.asset('prefabs/q.prefab.json.meta'),
+      keyFor.asset('assets/prefabs/p.prefab.json'),
+      keyFor.asset('assets/prefabs/p.prefab.json.meta'),
+      keyFor.asset('assets/prefabs/q.prefab.json'),
+      keyFor.asset('assets/prefabs/q.prefab.json.meta'),
     ])
   })
 })
 
 describe('a material edited live (ADR 0159)', () => {
   it('takes an edit on a room connection, sends it to everyone, serves the live copy and refuses a PUT over it', async () => {
-    await call('ada', 'PUT', '/assets/materials/m.mat.json', { shader: 'standard', params: { color: { kind: 'color', value: '#ff0000' } } })
-    const id = (await json<{ entries: { id: string; path: string }[] }>(await call('ada', 'GET', '/api/assets'))).entries.find((e) => e.path === 'materials/m.mat.json')!.id
+    await call('ada', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: { color: { kind: 'color', value: '#ff0000' } } })
+    const id = (await json<{ entries: { id: string; path: string }[] }>(await call('ada', 'GET', '/api/assets'))).entries.find((e) => e.path === 'assets/materials/m.mat.json')!.id
     const events: { event: string; data: unknown }[] = []
     live.join(LV, { connId: 'c-ada', user: USERS.ada!, send: (event, data) => void events.push({ event, data }) })
 
-    const before = await call('bob', 'GET', '/assets/materials/m.mat.json')
+    const before = await call('bob', 'GET', '/content/assets/materials/m.mat.json')
     expect(before.headers.get('x-asset-seq'), 'the file, before any live edit').toBe('0')
 
     const r = await call('ada', 'POST', `/api/live/asset/${id}/ops`, { connId: 'c-ada', batchId: 'b1', ops: [{ kind: 'set', path: ['params', 'color', 'value'], value: '#00ff00' }] })
     expect(await json(r)).toEqual({ ok: true, seq: 1 })
     expect(events.at(-1)).toMatchObject({ event: 'asset', data: { assetId: id, seq: 1, from: 'c-ada', batchId: 'b1' } })
 
-    const after = await call('bob', 'GET', '/assets/materials/m.mat.json')
+    const after = await call('bob', 'GET', '/content/assets/materials/m.mat.json')
     expect(after.headers.get('x-asset-seq')).toBe('1')
     expect((await json<{ params: { color: { value: string } } }>(after)).params.color.value, 'the live copy, ahead of the file').toBe('#00ff00')
-    expect((await call('bob', 'PUT', '/assets/materials/m.mat.json', { shader: 'standard', params: {} })).status).toBe(409)
+    expect((await call('bob', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: {} })).status).toBe(409)
 
     expect((await call('ada', 'POST', `/api/live/asset/${id}/ops`, { connId: 'c-ada', batchId: 'b2', ops: [{ kind: 'nope' }] })).status, 'not asset ops').toBe(400)
     expect((await call('bob', 'POST', `/api/live/asset/${id}/ops`, { connId: 'c-ada', batchId: 'b3', ops: [] })).status, 'not Bob’s connection').toBe(400)
@@ -298,20 +298,20 @@ describe('a material edited live (ADR 0159)', () => {
 
 describe('the asset list and the feed (ADR 0156)', () => {
   it('says where the feed stood, so a watch from there sees the next write and nothing before it', async () => {
-    await call('ada', 'POST', '/api/assets/upload?path=textures/t.png', undefined, Buffer.from('png'))
+    await call('ada', 'POST', '/api/assets/upload?path=assets/textures/t.png', undefined, Buffer.from('png'))
     const list = await json<{ entries: { path: string }[]; seq: number }>(await call('bob', 'GET', '/api/assets'))
     expect(list.seq).toBe(feed.seq())
-    expect(list.entries.map((e) => e.path)).toEqual(['textures/t.png'])
-    await call('ada', 'PUT', '/assets/materials/m.mat.json', { shader: 'standard', params: {} })
+    expect(list.entries.map((e) => e.path)).toEqual(['assets/textures/t.png'])
+    await call('ada', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: {} })
     const ch = await json<{ seq: number; paths: string[] }>(await call('bob', 'GET', `/api/changes?since=${list.seq}&timeout=10`))
-    expect(ch.paths.sort()).toEqual([keyFor.asset('materials/m.mat.json'), keyFor.asset('materials/m.mat.json.meta')])
+    expect(ch.paths.sort()).toEqual([keyFor.asset('assets/materials/m.mat.json'), keyFor.asset('assets/materials/m.mat.json.meta')])
   })
 
   it('lists a file moved through the API where it went', async () => {
-    await call('ada', 'POST', '/api/assets/upload?path=textures/t.png', undefined, Buffer.from('png'))
-    await call('ada', 'POST', '/api/assets/move', { from: 'textures/t.png', to: 'textures/old/t.png' })
+    await call('ada', 'POST', '/api/assets/upload?path=assets/textures/t.png', undefined, Buffer.from('png'))
+    await call('ada', 'POST', '/api/assets/move', { from: 'assets/textures/t.png', to: 'assets/textures/old/t.png' })
     const list = await json<{ entries: { path: string }[] }>(await call('bob', 'GET', '/api/assets'))
-    expect(list.entries.map((e) => e.path)).toEqual(['textures/old/t.png'])
+    expect(list.entries.map((e) => e.path)).toEqual(['assets/textures/old/t.png'])
   })
 })
 
@@ -323,13 +323,13 @@ describe('mirror feed', () => {
     expect(t0.files[0]!.sha1).toHaveLength(40)
 
     await call('ada', 'PUT', `/api/levels/${LV}`, LEVEL)
-    await call('ada', 'POST', '/api/assets/upload?path=textures/t.png', undefined, Buffer.from('png'))
+    await call('ada', 'POST', '/api/assets/upload?path=assets/textures/t.png', undefined, Buffer.from('png'))
     const ch = await json<{ seq: number; paths: string[] }>(await call('bob', 'GET', '/api/changes?since=0&timeout=10'))
     expect(ch.seq).toBe(3)
-    expect(ch.paths.sort()).toEqual([keyFor.asset('textures/t.png'), keyFor.asset('textures/t.png.meta'), keyFor.level(LV)])
+    expect(ch.paths.sort()).toEqual([keyFor.asset('assets/textures/t.png'), keyFor.asset('assets/textures/t.png.meta'), keyFor.level(LV)])
     expect(await json(await call('bob', 'GET', `/api/changes?since=${ch.seq}&timeout=10`))).toEqual({ seq: 3, paths: [] })
 
-    const f = await call('bob', 'GET', `/api/file?path=${encodeURIComponent(keyFor.asset('textures/t.png'))}`)
+    const f = await call('bob', 'GET', `/api/file?path=${encodeURIComponent(keyFor.asset('assets/textures/t.png'))}`)
     expect(f.status).toBe(200)
     expect(Buffer.from(await f.arrayBuffer()).toString()).toBe('png')
     expect((await call('bob', 'GET', '/api/file?path=content/parkour/levels/nope.level.json')).status).toBe(404)
@@ -338,20 +338,20 @@ describe('mirror feed', () => {
   })
 
   it('a folder move or delete is reported as the files it touched', async () => {
-    await call('ada', 'POST', '/api/assets/upload?path=tex/a.png', undefined, Buffer.from('a'))
-    await call('ada', 'POST', '/api/assets/upload?path=tex/deep/b.png', undefined, Buffer.from('b'))
+    await call('ada', 'POST', '/api/assets/upload?path=assets/tex/a.png', undefined, Buffer.from('a'))
+    await call('ada', 'POST', '/api/assets/upload?path=assets/tex/deep/b.png', undefined, Buffer.from('b'))
     const before = feed.seq()
-    await call('ada', 'POST', '/api/assets/move', { from: 'tex', to: 'art' })
+    await call('ada', 'POST', '/api/assets/move', { from: 'assets/tex', to: 'assets/art' })
     const moved = feed.since(before)!
     expect(moved.paths.sort()).toEqual(
-      ['tex/a.png', 'tex/a.png.meta', 'tex/deep/b.png', 'tex/deep/b.png.meta', 'art/a.png', 'art/a.png.meta', 'art/deep/b.png', 'art/deep/b.png.meta'].map(keyFor.asset).sort(),
+      ['tex/a.png', 'tex/a.png.meta', 'tex/deep/b.png', 'tex/deep/b.png.meta', 'art/a.png', 'art/a.png.meta', 'art/deep/b.png', 'art/deep/b.png.meta'].map((p) => keyFor.asset(`assets/${p}`)).sort(),
     )
     const mid = feed.seq()
-    await call('ada', 'POST', '/api/assets/delete', { path: 'art/deep' })
-    expect(feed.since(mid)!.paths.sort()).toEqual([keyFor.asset('art/deep/b.png'), keyFor.asset('art/deep/b.png.meta')])
+    await call('ada', 'POST', '/api/assets/delete', { path: 'assets/art/deep' })
+    expect(feed.since(mid)!.paths.sort()).toEqual([keyFor.asset('assets/art/deep/b.png'), keyFor.asset('assets/art/deep/b.png.meta')])
     // The tree agrees with what the feed said.
     const tree = await json<{ files: { path: string }[] }>(await call('ada', 'GET', '/api/tree'))
-    expect(tree.files.map((f) => f.path).filter((p) => p.includes('art/'))).toEqual([keyFor.asset('art/a.png'), keyFor.asset('art/a.png.meta')])
+    expect(tree.files.map((f) => f.path).filter((p) => p.includes('art/'))).toEqual([keyFor.asset('assets/art/a.png'), keyFor.asset('assets/art/a.png.meta')])
   })
 })
 
@@ -471,5 +471,34 @@ describe('admin', () => {
     const r = await fetch(`${base}/api/admin/commit-all`, { method: 'POST', headers: { authorization: 'Bearer secret' } })
     expect(r.status).toBe(200)
     expect(committedAll).toBe(1)
+  })
+})
+
+describe('asset libraries (ADR 0161)', () => {
+  it('reaches only paths inside a library: never a level, a game.json, or a library’s own folder', async () => {
+    const png = Buffer.from('png')
+    expect((await call('ada', 'POST', '/api/assets/upload?path=parkour/levels/x.png', undefined, png)).status).toBe(400)
+    expect((await call('ada', 'POST', '/api/assets/upload?path=textures/x.png', undefined, png)).status, 'no library at all').toBe(400)
+    expect((await call('ada', 'GET', '/content/parkour/game.json')).status).toBe(404)
+    expect((await call('ada', 'GET', `/content/${LEVEL_FILE_REL}`)).status).toBe(404)
+    expect((await call('ada', 'POST', '/api/assets/delete', { path: 'parkour' })).status).toBe(400)
+    expect((await call('ada', 'POST', '/api/assets/delete', { path: 'assets' })).status, 'a library itself').toBe(400)
+    expect((await call('ada', 'POST', '/api/assets/mkdir', { path: 'nope/assets/x' })).status, 'a game that does not exist').toBe(400)
+    expect(existsSync(join(root, LEVEL_FILE)), 'the level is untouched').toBe(true)
+  })
+
+  it('gives a game its own library beside the shared one, and keeps moves inside one library for now', async () => {
+    expect((await call('ada', 'POST', '/api/assets/mkdir', { path: 'parkour/assets/textures' })).status).toBe(200)
+    const up = await json<{ entry: { path: string } }>(await call('ada', 'POST', '/api/assets/upload?path=parkour/assets/textures/p.png', undefined, Buffer.from('png')))
+    expect(up.entry.path).toBe('parkour/assets/textures/p.png')
+    expect(await (await call('bob', 'GET', '/content/parkour/assets/textures/p.png')).text()).toBe('png')
+    const list = await json<{ libraries: string[]; folders: string[] }>(await call('ada', 'GET', '/api/assets'))
+    expect(list.libraries).toEqual(['assets', 'parkour/assets'])
+    expect(list.folders).toContain('parkour/assets/textures')
+    expect(changed.flatMap((c) => c.paths)).toContain('content/parkour/assets/textures/p.png')
+
+    const across = await call('ada', 'POST', '/api/assets/move', { from: 'parkour/assets/textures/p.png', to: 'assets/textures/p.png' })
+    expect(across.status, 'between libraries waits for the usage check').toBe(400)
+    expect((await call('ada', 'POST', '/api/assets/move', { from: 'parkour/assets/textures/p.png', to: 'parkour/assets/p.png' })).status).toBe(200)
   })
 })

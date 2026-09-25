@@ -27,7 +27,8 @@ Loads the root `.env` (`process.loadEnvFile`) on import. Imported by **relative 
 
 Every content import is `@content/...`: `packages/game-client/src/{levels,assets}.ts` globs,
 `modes/*/src/rules.ts` (`@content/<game>/game.json`), `tools/viewer/src/registry.ts`. `assets.ts` derives an
-asset's path from the glob key by the first `/assets/` (the key's spelling of the root is Vite's business).
+asset's path from the glob key from the first `/assets/` on, `assets/…` from `content/` (ADR 0161; the key's
+spelling of the root is Vite's business).
 
 ## `pnpm sync:content` — `tools/content-sync/src/main.ts`
 

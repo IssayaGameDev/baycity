@@ -1,6 +1,6 @@
 import { ASSET_KINDS, buildDatabase, type AssetDatabase, type AssetEntry, type AssetKind } from '@mp/content'
 
-import { buildTree, filterEntries, flattenTree, folderOf, gameRows, subfoldersOf, type Filter, type Place, type TreeNode } from './assetTree'
+import { buildTree, filterEntries, flattenTree, folderOf, gameRows, SHARED, subfoldersOf, type Filter, type Place, type TreeNode } from './assetTree'
 
 /**
  * The Project panel: every game and its levels, and a file explorer over the shared `content/assets/`.
@@ -98,8 +98,8 @@ export interface ProjectHost {
 export interface Project {
   render: () => void
   /**
-   * The asset folder on screen: `''` at the assets root, `null` across all folders — and `null` while a
-   * game's levels are on screen. `Save as prefab…` writes here, so navigating the panel is how the
+   * The asset folder on screen, from `content/` (`SHARED` at the shared library's top, ADR 0161), `null` across all
+   * folders — and `null` while a game's levels are on screen. `Save as prefab…` writes here, so navigating the panel is how the
    * destination is chosen (ADR 0091).
    */
   folder: () => string | null
@@ -143,7 +143,9 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
    * Where the panel is looking: inside a game, or in the asset library (ADR 0108). It starts in the library,
    * which is where it has always started, and the editor moves it to a game when a level opens.
    */
-  let place: Place = { at: 'assets', folder: '' }
+  let place: Place = { at: 'assets', folder: SHARED }
+  /** A folder as the panel names it: inside the shared library, without the library (`materials`, not `assets/materials`). */
+  const shown = (folder: string): string => (folder === SHARED ? '' : folder.startsWith(`${SHARED}/`) ? folder.slice(SHARED.length + 1) : folder)
   /** The asset folder on screen, or `null` for every folder — and `null` while a game is on screen. */
   const folderNow = (): string | null => (place.at === 'assets' ? place.folder : null)
   let kind: AssetKind | null = null
@@ -223,7 +225,7 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
   newFolderButton.textContent = '+ folder'
   newFolderButton.addEventListener('click', () => {
     const name = prompt('New folder name')
-    if (name !== null && name.trim() !== '') host.onMkdir(folderNow() ?? '', name.trim())
+    if (name !== null && name.trim() !== '') host.onMkdir(folderNow() ?? SHARED, name.trim())
   })
 
   head.append(crumbs, kindSelect, searchInput, recurseBox, recurseLabel, newFolderButton)
@@ -252,17 +254,17 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
       const b = el('button', 'ctl crumb sel')
       b.textContent = game
       b.disabled = true
-      crumbs.append(crumb('content', ''), b)
+      crumbs.append(crumb('content', SHARED), b)
       return
     }
-    crumbs.append(crumb('assets', ''))
+    crumbs.append(crumb('assets', SHARED))
     if (place.folder === null) {
       crumbs.append(crumb('(all folders)', null))
       return
     }
-    let acc = ''
-    for (const part of place.folder === '' ? [] : place.folder.split('/')) {
-      acc = acc === '' ? part : `${acc}/${part}`
+    let acc = SHARED
+    for (const part of shown(place.folder) === '' ? [] : shown(place.folder).split('/')) {
+      acc = `${acc}/${part}`
       crumbs.append(crumb(part, acc))
     }
   }
@@ -527,10 +529,10 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
       grid.append(b)
     }
 
-    const filter: Filter = { folder, kind, search, recursive }
+    const filter: Filter = { library: SHARED, folder, kind, search, recursive }
     const entries = filterEntries(db, filter)
     if (entries.length === 0 && grid.children.length === 0) {
-      grid.append(empty(folder === null ? 'nothing matches' : `nothing in ${folder === '' ? 'assets' : folder}`))
+      grid.append(empty(folder === null ? 'nothing matches' : `nothing in ${folder === SHARED ? 'assets' : shown(folder)}`))
       return
     }
 
@@ -539,7 +541,7 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
       const on = placeable ? host.armed() === entry.id : host.selectedAsset() === entry.id
       const previewKind = UNPREVIEWABLE.has(entry.kind) ? null : (entry.kind as PreviewKind)
       // Showing more than one folder's worth means the name alone is ambiguous.
-      const label = folder === null || recursive ? `${folderOf(entry.path)}/${entry.name}`.replace(/^\//, '') : entry.name
+      const label = folder === null || recursive ? `${shown(folderOf(entry.path))}/${entry.name}`.replace(/^\//, '') : entry.name
       const why = placeable ? host.unplaceableWhy(entry.id) : null
       const t = tile(label, why === null ? entry.path : `${entry.path} — ${why}`, on, previewKind, entry.id)
       // Greyed rather than hidden: the file exists and is worth seeing; it is this game it cannot go into.

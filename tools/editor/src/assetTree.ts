@@ -1,4 +1,4 @@
-import type { AssetDatabase, AssetEntry, AssetKind } from '@mp/content'
+import { inLibrary, libraryDir, type AssetDatabase, type AssetEntry, type AssetKind } from '@mp/content'
 
 /**
  * The folder structure behind the asset database, derived from paths.
@@ -10,11 +10,17 @@ import type { AssetDatabase, AssetEntry, AssetKind } from '@mp/content'
  *
  * Everything here is pure, which is the point: what a folder contains, what a filter leaves visible, and
  * whether a move is legal are the parts worth being sure about.
+ *
+ * Paths are relative to `content/` and start with their library (ADR 0161), so a tree is one **library's**:
+ * `root` is that library's folder — `assets` for the shared one — and nothing outside it is drawn.
  */
+
+/** The shared library's folder: the one tree the Project panel draws today. */
+export const SHARED = libraryDir(null)
 export interface TreeNode {
-  /** Folder path, forward-slashed, `''` for the root. */
+  /** Folder path from `content/`, forward-slashed; the library's own folder at the root. */
   path: string
-  /** Last segment, or `'assets'` at the root. */
+  /** Last segment; the library's name (`assets`, or the game's) at the root. */
   name: string
   depth: number
   children: TreeNode[]
@@ -22,45 +28,50 @@ export interface TreeNode {
   fileCount: number
 }
 
-/** Directory part of an asset path, `''` when it sits at the root. */
+/** Directory part of a path: for an asset, the folder it is in — its library's own at the top. */
 export const folderOf = (path: string): string => {
   const slash = path.lastIndexOf('/')
   return slash < 0 ? '' : path.slice(0, slash)
 }
 
-/** Every ancestor of a folder, root first, excluding the folder itself. */
-export const ancestorsOf = (folder: string): string[] => {
-  if (folder === '') return []
-  const parts = folder.split('/')
-  const out: string[] = ['']
-  for (let i = 1; i < parts.length; i++) out.push(parts.slice(0, i).join('/'))
+/** Whether `path` is `root` or inside it. */
+const within = (path: string, root: string): boolean => path === root || path.startsWith(`${root}/`)
+
+/** Every ancestor of a folder down from `root`, root first, excluding the folder itself; none outside `root`. */
+export const ancestorsOf = (folder: string, root: string = SHARED): string[] => {
+  if (folder === root || !within(folder, root)) return []
+  const rest = folder.slice(root.length + 1).split('/')
+  const out: string[] = [root]
+  for (let i = 1; i < rest.length; i++) out.push(`${root}/${rest.slice(0, i).join('/')}`)
   return out
 }
 
 /**
- * Build the folder tree. `extraFolders` are directories that exist on disk with nothing in them — created
- * but not yet filled — which no path could imply.
+ * Build one library's folder tree, `root` its folder. `extraFolders` are directories that exist on disk with
+ * nothing in them — created but not yet filled — which no path could imply; any outside `root` are left out.
  */
-export const buildTree = (db: AssetDatabase, extraFolders: readonly string[] = []): TreeNode => {
+export const buildTree = (db: AssetDatabase, extraFolders: readonly string[] = [], root: string = SHARED): TreeNode => {
   const fileCounts = new Map<string, number>()
-  const known = new Set<string>([''])
+  const known = new Set<string>([root])
 
   const noteFolder = (folder: string): void => {
     known.add(folder)
-    for (const a of ancestorsOf(folder)) known.add(a)
+    for (const a of ancestorsOf(folder, root)) known.add(a)
   }
 
   for (const entry of db.entries) {
     const folder = folderOf(entry.path)
+    if (!within(folder, root)) continue
     noteFolder(folder)
     fileCounts.set(folder, (fileCounts.get(folder) ?? 0) + 1)
   }
-  for (const folder of extraFolders) if (folder !== '') noteFolder(folder)
+  for (const folder of extraFolders) if (folder !== root && within(folder, root)) noteFolder(folder)
 
+  const rootDepth = root.split('/').length
   const nodeFor = (path: string): TreeNode => ({
     path,
-    name: path === '' ? 'assets' : path.slice(path.lastIndexOf('/') + 1),
-    depth: path === '' ? 0 : path.split('/').length,
+    name: path === root ? (root.split('/')[0] ?? root) : path.slice(path.lastIndexOf('/') + 1),
+    depth: path.split('/').length - rootDepth,
     children: [],
     fileCount: fileCounts.get(path) ?? 0,
   })
@@ -68,11 +79,11 @@ export const buildTree = (db: AssetDatabase, extraFolders: readonly string[] = [
   const nodes = new Map<string, TreeNode>()
   for (const path of known) nodes.set(path, nodeFor(path))
   for (const [path, node] of nodes) {
-    if (path === '') continue
+    if (path === root) continue
     nodes.get(folderOf(path))?.children.push(node)
   }
   for (const node of nodes.values()) node.children.sort((a, b) => a.name.localeCompare(b.name))
-  return nodes.get('')!
+  return nodes.get(root)!
 }
 
 /** Depth-first, parents before children — the order a tree panel draws rows in. */
@@ -88,7 +99,9 @@ export const flattenTree = (root: TreeNode, collapsed: ReadonlySet<string>): Tre
 }
 
 export interface Filter {
-  /** Folder to show. `null` means every folder. */
+  /** The library to look in, by its folder (`SHARED`, or a game's). */
+  library: string
+  /** Folder to show. `null` means every folder of the library. */
   folder: string | null
   /** Kind to show. `null` means every kind. */
   kind: AssetKind | null
@@ -111,8 +124,9 @@ export const filterEntries = (db: AssetDatabase, filter: Filter): AssetEntry[] =
     .filter((e) => {
       if (filter.kind !== null && e.kind !== filter.kind) return false
       if (needle !== '' && !e.name.toLowerCase().includes(needle)) return false
-      if (filter.folder === null) return true
       const folder = folderOf(e.path)
+      if (!within(folder, filter.library)) return false
+      if (filter.folder === null) return true
       return filter.recursive ? folder === filter.folder || folder.startsWith(`${filter.folder}/`) : folder === filter.folder
     })
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -136,7 +150,7 @@ export const subfoldersOf = (root: TreeNode, folder: string): TreeNode[] => {
  * path would be unresolvable and the move would delete the subtree on the way.
  */
 export const canMoveFolder = (folder: string, into: string): boolean => {
-  if (folder === '') return false // the root is not a thing you can move
+  if (!inLibrary(folder)) return false // a library's own folder is not a thing you can move
   if (into === folder) return false
   if (into.startsWith(`${folder}/`)) return false
   return folderOf(folder) !== into // already there
@@ -158,7 +172,7 @@ export const renamedTo = (path: string, name: string): string => {
  * Where the Project panel is looking (ADR 0108).
  *
  * Two kinds of place, because the panel now shows two kinds of thing: a game's levels, and the shared asset
- * library. They are not one tree of folders — a game is not a folder of assets and its levels are not asset
+ * library — its folders by their paths from `content/`, `SHARED` at the top (ADR 0161). They are not one tree of folders — a game is not a folder of assets and its levels are not asset
  * entries — so the location is a union rather than a path with a special prefix, which is the version that
  * would need an `if` at every use of `folder`.
  */

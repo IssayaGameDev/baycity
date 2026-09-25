@@ -43,11 +43,14 @@ const PREFABS = import.meta.glob('@content/assets/**/*.prefab.json', { eager: tr
   unknown
 >
 
-/** The glob key however Vite spells the aliased root — `@content/assets/x` or an absolute path — to `x`. */
+/**
+ * The glob key however Vite spells the aliased root — `@content/assets/x` or an absolute path — to the path from
+ * `content/` every asset path is (ADR 0161): `assets/x`. The globs above are the shared library's alone.
+ */
 const MARK = '/assets/'
 const relativeOf = (globKey: string): string => {
   const i = globKey.indexOf(MARK)
-  return i >= 0 ? globKey.slice(i + MARK.length) : globKey
+  return i >= 0 ? globKey.slice(i + 1) : globKey
 }
 
 const asMeta = (raw: string): AssetMeta | undefined => {

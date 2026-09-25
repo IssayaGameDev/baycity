@@ -5,7 +5,7 @@ import type { Level, Node } from '../../../packages/content/src/types'
 import { hydratePrefabs, prefabRefsIn, stripHydrated } from '../../../packages/content/src/prefabs'
 import { validateLevel, validateNodeTree } from '../../../packages/content/src/validate'
 import { forEachNode } from '../../../packages/content/src/tree'
-import { assetFile, levelFile, parseQualified } from '../../../packages/content/src/layout'
+import { levelFile, parseQualified } from '../../../packages/content/src/layout'
 import type { User } from './config'
 
 /**
@@ -246,8 +246,8 @@ export const levelPath = (qual: string): string => {
   const ref = parseQualified(qual)
   return `content/${levelFile(ref ?? { game: '_unfiled', name: qual.replace(/[^\w-]/g, '_') })}`
 }
-/** Repo-relative path of an asset, from its path inside the assets folder. */
-export const assetPath = (rel: string): string => `content/${assetFile(rel)}`
+/** Repo-relative path of an asset, from its content-relative path (ADR 0161). */
+export const assetPath = (path: string): string => `content/${path}`
 
 export const createLive = (opts: LiveOptions): Live => {
   const now = opts.now ?? (() => Date.now())
