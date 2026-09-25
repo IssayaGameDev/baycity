@@ -53,6 +53,8 @@ export interface FileEntry {
    * this" cheap enough to put in front of a delete.
    */
   prefabs?: string[]
+  /** Every component type it and its prefabs use (ADR 0162): what another game would need to open it. */
+  components?: string[]
 }
 
 export const listFiles = async (kind: FileKind): Promise<FileEntry[]> => (await req(kind)).json() as Promise<FileEntry[]>

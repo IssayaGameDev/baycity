@@ -294,6 +294,28 @@ export const createFileActions = (host: FileActionsHost) => {
    *
    * A `to` in another game moves the level there, since the folder is the game.
    */
+  /**
+   * Move a level's file to `to` — a new name, or another game's folder (ADR 0162). The server refuses while the level
+   * is open, so the one this tab has open is left first and opened again where it went, or where it was.
+   */
+  const relocateLevel = async (from: string, to: string, what: { done: string; failed: string }): Promise<void> => {
+    const wasOpen = host.fileName() === from
+    if (wasOpen) {
+      if (host.room.live()) await host.room.flush().catch(() => undefined)
+      await host.room.leave()
+    }
+    try {
+      await apiRenameLevel(from, to)
+    } catch (e) {
+      host.notify.error(`${what.failed}: ${e instanceof Error ? e.message : String(e)}`)
+      if (wasOpen) await host.openFile(from) // put back what we left
+      return
+    }
+    await host.refreshFileList()
+    if (wasOpen) await host.openFile(to)
+    host.notify.ok(what.done)
+  }
+
   const renameLevel = (qualified: string): void => {
     const ref = parseQualified(qualified)
     if (ref === null) return
@@ -305,22 +327,25 @@ export const createFileActions = (host: FileActionsHost) => {
       )
       if (asked === null || asked === ref.name) return
       if (!isSegment(asked)) return host.notify.warn(`"${asked}" is not a file name: letters, digits, - and _ only`)
-      const to = qualify({ game: ref.game, name: asked })
-      const wasOpen = host.fileName() === qualified
-      if (wasOpen) {
-        if (host.room.live()) await host.room.flush().catch(() => undefined)
-        await host.room.leave()
-      }
-      try {
-        await apiRenameLevel(qualified, to)
-      } catch (e) {
-        host.notify.error(`could not rename: ${String(e)}`)
-        if (wasOpen) await host.openFile(qualified) // put back what we left
-        return
-      }
-      await host.refreshFileList()
-      if (wasOpen) await host.openFile(to)
-      host.notify.ok(`renamed to ${asked}`)
+      await relocateLevel(qualified, qualify({ game: ref.game, name: asked }), { done: `renamed to ${asked}`, failed: 'could not rename' })
+    })()
+  }
+
+  /**
+   * Move a level to another game (ADR 0162), after a short confirmation, Kodjo's call. The file goes to that game's
+   * folder and its tag with it; the server refuses while it uses its old game's own assets.
+   */
+  const moveLevelToGame = (qualified: string, game: string, label: string): void => {
+    const ref = parseQualified(qualified)
+    if (ref === null || ref.game === game) return
+    void (async () => {
+      const go = await askDestructive(
+        `Move ${ref.name} to ${label}?`,
+        `It becomes a ${label} level: it opens with ${label}'s components, and its ?level= link and its multiplayer room go with it.`,
+        'Move',
+      )
+      if (!go) return
+      await relocateLevel(qualified, qualify({ game, name: ref.name }), { done: `moved ${ref.name} to ${label}`, failed: `could not move ${ref.name}` })
     })()
   }
 
@@ -369,6 +394,7 @@ export const createFileActions = (host: FileActionsHost) => {
     /** Delete an asset — and for a prefab, unlink every placement of it first (ADR 0097). */
     deleteAsset,
     renameLevel,
+    moveLevelToGame,
     /** Delete a level (ADR 0110), behind a confirm with the consequences named. */
     deleteLevelFile,
     /** Why this asset cannot be placed into the open document, or `null`. */

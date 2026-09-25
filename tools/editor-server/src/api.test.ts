@@ -128,7 +128,7 @@ describe('identity', () => {
 describe('levels', () => {
   it('lists, reads, writes, and refuses a broken level', async () => {
     // `mode` comes from the folder now, not from a tag inside the file (ADR 0108).
-    expect(await json(await call('ada', 'GET', '/api/levels'))).toEqual([{ name: LV, mode: 'parkour' }])
+    expect(await json(await call('ada', 'GET', '/api/levels'))).toEqual([{ name: LV, mode: 'parkour', components: [] }])
     const ok = await call('ada', 'PUT', `/api/levels/${LV}`, { ...LEVEL, nodes: [{ id: 'n', transform: { position: { x: 0, y: 0, z: 0 } }, components: [] }] })
     expect(ok.status).toBe(200)
     expect(changed).toEqual([{ user: 'Ada', paths: [keyFor.level(LV)] }])
@@ -527,5 +527,33 @@ describe('asset libraries (ADR 0161)', () => {
     // Back to Shared alone, it would need Parkour's texture: refused.
     expect((await call('ada', 'POST', '/api/assets/move', { from: 'parkour/assets/materials/m.mat.json', to: 'assets/materials/m.mat.json' })).status, "uses Parkour's texture").toBe(409)
     expect((await call('ada', 'POST', '/api/assets/move', { from: 'parkour/assets', to: 'assets/from-parkour' })).status, 'a library itself does not move').toBe(400)
+  })
+})
+
+describe('moving a level to another game (ADR 0162)', () => {
+  it('moves the file, keeps the tag in step, and refuses while it uses its old game’s own assets', async () => {
+    mkdirSync(join(root, 'content/keyboard'), { recursive: true })
+    writeFileSync(join(root, 'content/keyboard/game.json'), '{"components":[]}')
+    // A texture in Parkour's own library, and the level using it by id.
+    await call('ada', 'POST', '/api/assets/upload?path=parkour/assets/textures/own.png', undefined, Buffer.from('png'))
+    const own = (await json<{ entries: { id: string; path: string }[] }>(await call('ada', 'GET', '/api/assets'))).entries.find((e) => e.path === 'parkour/assets/textures/own.png')!.id
+    const using = { ...LEVEL, config: { mode: { name: 'parkour' }, sky: own } }
+    writeFileSync(join(root, LEVEL_FILE), JSON.stringify(using))
+
+    const refused = await call('ada', 'POST', '/api/levels/move', { from: LV, to: 'keyboard/a' })
+    expect(refused.status).toBe(409)
+    expect((await json<{ error: string }>(refused)).error).toBe("parkour/a not moved to keyboard: it uses parkour's own texture own: move it into Shared first")
+
+    writeFileSync(join(root, LEVEL_FILE), JSON.stringify(LEVEL))
+    expect((await call('ada', 'POST', '/api/levels/move', { from: LV, to: 'keyboard/a' })).status).toBe(200)
+    const moved = JSON.parse(readFileSync(join(root, 'content/keyboard/levels/a.level.json'), 'utf8')) as { config: { mode: { name: string } } }
+    expect(moved.config.mode.name, 'the tag says what the folder says').toBe('keyboard')
+    expect(existsSync(join(root, LEVEL_FILE))).toBe(false)
+  })
+
+  it('lists the component types a level uses, through its prefabs too', async () => {
+    const withTypes = { ...LEVEL, nodes: [{ id: 'n', transform: { position: { x: 0, y: 0, z: 0 } }, components: [{ id: 'c', type: 'Hazard', params: {} }] }] }
+    writeFileSync(join(root, LEVEL_FILE), JSON.stringify(withTypes))
+    expect(await json(await call('ada', 'GET', '/api/levels'))).toEqual([{ name: LV, mode: 'parkour', components: ['Hazard'] }])
   })
 })

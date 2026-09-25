@@ -28,6 +28,8 @@ const rig = (over: Partial<GamesWindowHost> = {}) => {
     onOpenLevel: (q) => calls.push(`open ${q}`),
     onNewLevel: (g) => calls.push(`new ${g}`),
     onLevelContext: (_at, q) => calls.push(`menu ${q}`),
+    moveRefusal: (q, g) => (q === 'keyboard/Roblox' && g === 'parkour' ? 'it uses Keyboard surface, which Parkour does not have' : null),
+    onMoveLevel: (q, g) => calls.push(`move ${q} to ${g}`),
     ...over,
   }
   const w = createGamesWindow(host)
@@ -65,6 +67,24 @@ describe('the games window', () => {
     $$('.gw-tab').find((t) => t.textContent === 'Components')!.click()
     expect($$('.gw-section').map((s) => s.textContent)).toEqual(['Its own', 'Shared', 'Built in'])
     expect($$('.gw-component-l').map((l) => l.textContent)).toEqual(['Keyboard surface', 'Hazard', 'Mesh Renderer'])
+  })
+
+  it('moves a level dropped on another game, and shows why one cannot go while it is held over it', () => {
+    const { $$, calls } = rig()
+    const tile = (name: string): HTMLElement => $$('.gw-tile').find((t) => t.querySelector('.gw-name')?.textContent === name)!
+    const game = (label: string): HTMLElement => $$('.gw-game').find((g) => g.textContent === label)!
+    const drag = (from: HTMLElement, to: HTMLElement, type: 'dragover' | 'drop'): void => {
+      from.dispatchEvent(new Event('dragstart', { bubbles: true }))
+      to.dispatchEvent(new Event(type, { bubbles: true, cancelable: true }))
+    }
+    drag(tile('Roblox'), game('Parkour'), 'dragover')
+    expect(game('Parkour').classList.contains('refused')).toBe(true)
+    expect(game('Parkour').title).toBe('it uses Keyboard surface, which Parkour does not have')
+    drag(tile('default'), game('Parkour'), 'dragover')
+    expect(game('Parkour').classList.contains('drop-onto')).toBe(true)
+    drag(tile('default'), game('Parkour'), 'drop')
+    drag(tile('default'), game('Keyboard'), 'drop')
+    expect(calls, 'onto its own game, nothing').toEqual(['move keyboard/default to parkour'])
   })
 
   it('keeps the keys from the level behind it, and closes on Escape', () => {

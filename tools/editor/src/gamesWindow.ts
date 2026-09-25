@@ -35,6 +35,10 @@ export interface GamesWindowHost {
   onNewLevel: (game: string) => void
   /** Right-click on a level: the host's menu, with Duplicate, Rename, Delete. */
   onLevelContext: (at: { x: number; y: number }, qualified: string) => void
+  /** Why this level cannot go to that game, or `null` (ADR 0162): shown on the game while the level is dragged over it. */
+  moveRefusal: (qualified: string, game: string) => string | null
+  /** Move a level to another game: the host confirms, and refuses what `moveRefusal` does. */
+  onMoveLevel: (qualified: string, game: string) => void
 }
 
 export interface GamesWindow {
@@ -58,6 +62,8 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
   let root: HTMLElement | null = null
   let picked: string | null = null
   let tab: Tab = 'levels'
+  /** The level being dragged onto a game, if one is (ADR 0162). */
+  let dragging: string | null = null
 
   const scrim = el('div', 'gw-scrim')
   const box = el('div', 'gw')
@@ -100,6 +106,20 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
       pic.append(row)
     }
     t.append(pic, el('span', 'gw-name', name))
+    // Dragged onto a game on the left, it moves there (ADR 0162).
+    t.draggable = true
+    t.addEventListener('dragstart', (e) => {
+      dragging = qualified
+      const dt = e.dataTransfer
+      if (dt) {
+        dt.setData('text/plain', qualified)
+        dt.effectAllowed = 'move'
+      }
+    })
+    t.addEventListener('dragend', () => {
+      dragging = null
+      render()
+    })
     t.addEventListener('dblclick', () => host.onOpenLevel(qualified))
     t.addEventListener('contextmenu', (e) => {
       e.preventDefault()
@@ -172,6 +192,31 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
       b.addEventListener('click', () => {
         picked = g.name
         render()
+      })
+      // A level dropped on a game moves there; one that cannot shows why, greyed, as it is held over it.
+      const game = g
+      const ownGame = (): boolean => dragging !== null && dragging.startsWith(`${game.name}/`)
+      b.addEventListener('dragover', (e) => {
+        if (dragging === null || ownGame()) return
+        e.preventDefault()
+        const why = host.moveRefusal(dragging, game.name)
+        b.classList.toggle('refused', why !== null)
+        b.classList.toggle('drop-onto', why === null)
+        b.title = why ?? `Move to ${game.label}`
+        const dt = e.dataTransfer
+        if (dt) dt.dropEffect = why === null ? 'move' : 'none'
+      })
+      b.addEventListener('dragleave', () => {
+        b.classList.remove('refused', 'drop-onto')
+        b.removeAttribute('title')
+      })
+      b.addEventListener('drop', (e) => {
+        e.preventDefault()
+        const level = dragging
+        dragging = null
+        b.classList.remove('refused', 'drop-onto')
+        if (level === null || level.startsWith(`${game.name}/`)) return
+        host.onMoveLevel(level, game.name)
       })
       list.append(b)
     }

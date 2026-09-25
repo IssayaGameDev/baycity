@@ -1727,7 +1727,40 @@ const gamesWindow: GamesWindow = createGamesWindow({
     void createLevel(null, game)
   },
   onLevelContext: (at, qualified) => levelMenu(at, qualified),
+  moveRefusal: (qualified, game) => levelMoveRefusal(qualified, game),
+  onMoveLevel: (qualified, game) => {
+    const why = levelMoveRefusal(qualified, game)
+    if (why !== null) {
+      notify.warn(`${shortName(qualified)} not moved: ${why}`)
+      return
+    }
+    fileOps.moveLevelToGame(qualified, game, MODES[game]?.label ?? game)
+  },
 })
+
+/**
+ * Why a level cannot move to `game` (ADR 0162), or `null`, from what the editor knows before asking the server: a
+ * level of that name there already, someone in it, a component of another game's own that `game` cannot have. The
+ * server refuses the rest — its old game's own assets — with why.
+ */
+function levelMoveRefusal(qualified: string, game: string): string | null {
+  const ref = parseQualified(qualified)
+  const mode = MODES[game]
+  if (ref === null) return 'not a level'
+  if (mode === undefined) return 'this build has no code for that game'
+  if (levelEntries.some((e) => e.name === qualify({ game, name: ref.name }))) return `${mode.label} already has a level called ${ref.name}`
+  const inside = room.peopleIn(qualified)
+  if (inside.length > 0) return `${inside.map((p) => p.name).join(' and ')} ${inside.length === 1 ? 'is' : 'are'} in it`
+  const target = registryFor(mode)
+  const source = MODES[ref.game]
+  const types = levelEntries.find((e) => e.name === qualified)?.components ?? []
+  const foreign = types.filter((t) => !target.has(t) && !isSharedComponent(t))
+  if (foreign.length > 0) {
+    const labels = foreign.map((t) => (source === undefined ? undefined : registryFor(source).get(t)?.label) ?? t)
+    return `it uses ${labels.join(', ')}, which ${mode.label} does not have`
+  }
+  return null
+}
 
 // ============================== undo/redo by inverse ops (ADR 0089) ==============================
 /**

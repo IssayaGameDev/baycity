@@ -541,6 +541,17 @@
       .gw-game.on {
         background: color-mix(in srgb, var(--accent) 22%, transparent);
       }
+      /* A level held over a game: it can go there, or it cannot and the title says why (ADR 0162). */
+      .gw-game.drop-onto {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+      }
+      .gw-game.refused {
+        opacity: 0.45;
+        outline: 1px dashed var(--line);
+        outline-offset: -1px;
+        cursor: not-allowed;
+      }
       /* The game you are in. */
       .gw-here {
         width: 7px;

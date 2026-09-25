@@ -1,7 +1,7 @@
 # ADR 0162 — The games window holds the levels
 
-Status: accepted, in progress. Step 1 of 3 has landed: the window, its Levels and Components, who is in each level,
-and the level list kept live. Next: moving a level to another game; then the game's settings, made live. Amends
+Status: accepted, in progress. Steps 1 and 2 of 3 have landed: the window, its Levels and Components, who is in each
+level, the level list kept live; moving a level to another game. Next: the game's settings, made live. Amends
 ADR 0108, which put the games at the top of the Project panel's tree.
 
 ## Context
@@ -25,6 +25,10 @@ Kodjo's calls:
 | 6 | A level moves to another game by dragging it onto that game, with a short confirmation; refused, with why, while it uses another game's own components or its old game's assets, or someone is in it (step 2) |
 | 7 | The Hierarchy's Game row becomes **Level** (network bounds); Environment keeps its row. The Inspector's game dropdown goes: the folder is the game, and it only changed a tag inside the file (step 3) |
 | 8 | No "New game": a game still starts as code |
+
+A level moved to another game keeps its tag in step with its new folder. The editor greys a game that cannot take
+it before the drop, from what it knows — a level of that name there, someone in it, another game's own component
+(the level listing names the types each level uses) — and the server refuses the rest: its old game's own assets.
 
 Who is in which level comes from the server: every document anyone is in, sent to every connection on each join
 and leave (`rooms`). A level made, renamed or deleted elsewhere tells every editor to read the list again

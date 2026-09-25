@@ -14,7 +14,7 @@ import { libraryFolders } from './assetImporter'
 import type { LiveAssets } from './liveAssets'
 import { isAssetOp, isLiveAssetPath } from '../../../packages/content/src/liveAssets'
 import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './assetOps'
-import { libraryName, moveRefusal } from './libraryMoves'
+import { componentTypesIn, levelMoveRefusal, libraryName, moveRefusal } from './libraryMoves'
 import type { ChangeFeed } from './changes'
 import type { User } from './config'
 import { docKey, LiveError, type FieldSpot, type Live } from './live'
@@ -31,9 +31,11 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *   POST /api/locks/acquire           → { path } → { ok, owner? }
  *   POST /api/locks/release           → { path } → { ok }         (a sendBeacon on tab close lands here too)
  *   POST /api/locks/heartbeat         → { paths } → { lost }
- *   GET  /api/levels                  → [{ name, mode?, prefabs? }] — prefabs: asset ids it references (ADR 0097)
+ *   GET  /api/levels                  → [{ name, mode?, prefabs?, components? }] — prefabs: asset ids it references (ADR 0097);
+ *                                       components: every type it and its prefabs use (ADR 0162)
  *   GET/PUT /api/levels/:name         → the JSON (PUT validated structurally)
- *   POST /api/levels/move             → { from, to } — rename, both qualified (ADR 0110)
+ *   POST /api/levels/move             → { from, to } — rename, both qualified (ADR 0110); into another game it keeps the
+ *                                       tag in step, and is 409 while it uses its old game's own assets (ADR 0162)
  *   POST /api/levels/delete           → { path } — qualified; the file goes for good (ADR 0110)
  *                                       A level made, renamed or deleted tells every editor: a `levels` event (ADR 0162)
  *   GET/PUT /api/games/:name          → { components } (ADR 0077)
@@ -532,6 +534,14 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
         // The `id` inside follows the file name, as every writer of a level keeps it (see `live.ts`).
         const level = JSON.parse(readFileSync(src, 'utf8')) as Record<string, unknown>
         level['id'] = to.name
+        if (from.game !== to.game) {
+          // Into another game (ADR 0162): not while it uses its old game's own assets, which the new one's may not.
+          const why = levelMoveRefusal(level, from.game, { entries: assets.entries(), contentsOf: assetJsonNow })
+          if (why !== null) return sendJson(res, 409, { error: `${qualify(from)} not moved to ${to.game}: ${why}` }), true
+          // The folder is the game, and the tag inside says the same (ADR 0108): a level read over HTTP has no folder.
+          const config = typeof level['config'] === 'object' && level['config'] !== null ? (level['config'] as Record<string, unknown>) : {}
+          level['config'] = { ...config, mode: { name: to.game } }
+        }
         mkdirSync(dirname(dst), { recursive: true })
         writeFileSync(dst, `${JSON.stringify(level, null, 2)}\n`)
         rmSync(src)
@@ -581,7 +591,8 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
           const parsed = levelNow(name, file) as Level | undefined
           if (parsed === undefined) return { name, mode: ref.game }
           const prefabs = prefabRefsIn(parsed)
-          return { name, mode: ref.game, ...(prefabs.length > 0 ? { prefabs } : {}) }
+          const components = componentTypesIn([parsed, ...prefabs.map(assetJsonNow)])
+          return { name, mode: ref.game, ...(prefabs.length > 0 ? { prefabs } : {}), components }
         } catch {
           return { name, mode: ref.game }
         }
