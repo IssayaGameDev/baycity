@@ -1,7 +1,9 @@
 # ADR 0130 — A child added to a placement can be applied
 
 Status: accepted. Extends [ADR 0122](0122-revert-and-apply-have-two-scopes.md)'s placement-scope Revert and
-Apply to a fourth kind of difference. Nothing about overrides on existing pieces changes.
+Apply to a fourth kind of difference. Nothing about overrides on existing pieces changes. Its storage is
+superseded by ADR 0151: an added child is kept in the record of the prefab's root, and the placement's own
+`children` are read until the migration moves them.
 
 ## Context
 

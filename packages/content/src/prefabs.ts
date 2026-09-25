@@ -1,5 +1,6 @@
 import { effectiveNode, type TypeInfo } from './nodes'
 import { retargetSequenceParams } from './sequenceData'
+import { addedIdsOf, childListsOf, forEachNode } from './tree'
 
 import type { ComponentData, Level, Node } from './types'
 
@@ -28,19 +29,20 @@ export interface PrefabSource {
   root: (assetId: string) => Node | undefined
 }
 
-/** Every prefab reference a level's placements make, in first-seen order. */
+/**
+ * Every prefab reference a level's placements make, in first-seen order — added children included (ADR 0151):
+ * a placement moved under another placement's piece lives in that record, and missing it here meant its
+ * prefab was never resolved when the level was opened again.
+ */
 export const prefabRefsIn = (level: Level): string[] => {
   const ids = new Set<string>()
-  const walk = (nodes: readonly Node[]): void => {
-    for (const n of nodes) {
-      if (n.prefab !== undefined) ids.add(n.prefab)
-      if (n.children !== undefined) walk(n.children)
-    }
+  const add = (n: Node): void => {
+    if (n.prefab !== undefined) ids.add(n.prefab)
   }
-  walk(level.nodes)
+  forEachNode(level.nodes, add)
   // A prefab may not contain a placement (`validate.ts`), so the table itself never adds references. Walked
   // anyway, so a hand-edited file that broke the rule resolves rather than silently drawing nothing.
-  for (const root of Object.values(level.prefabs ?? {})) walk([root])
+  forEachNode(Object.values(level.prefabs ?? {}), add)
   return [...ids]
 }
 
@@ -122,9 +124,11 @@ export const unlinkedNode = (level: Level, node: Node, assetId: string, deps: Un
   if (node.prefab !== assetId) return node
   const resolved = effectiveNode(level, node, deps.types)
   const { prefab: _dropped, overrides: _also, ...own } = node
-  // The placement's own children were already its own; only the inherited ones are new to this id space.
+  // The placement's own children were already its own; only the inherited ones are new to this id space —
+  // and among those, what the placement added under its pieces was the level's all along, and keeps its ids
+  // so whatever in the level names it still does (ADR 0151).
   const inherited = resolved.children.slice(0, resolved.inheritedCount).map((k) => structuredClone(k))
-  const repoint = reidForest(inherited, deps)
+  const repoint = reidForest(inherited, deps, addedIdsOf(node))
   // The placement's own components can name the children just re-minted too — a sequence on a prefab's root
   // always does, since its steps target the root's children — so they follow the same map.
   const components = structuredClone(resolved.components) as ComponentData[]
@@ -148,9 +152,11 @@ export const unlinkedNode = (level: Level, node: Node, assetId: string, deps: Un
  * reference is left naming an id that no longer exists anywhere. One map over all of them, then one pass to
  * re-point.
  */
-const reidForest = (roots: readonly Node[], deps: UnlinkDeps): ((c: ComponentData) => void) => {
+const reidForest = (roots: readonly Node[], deps: UnlinkDeps, keep: ReadonlySet<string> = new Set()): ((c: ComponentData) => void) => {
   const map = new Map<string, string>()
   const rename = (x: Node): void => {
+    // A subtree the level authored is already in its id space: left as it is, everything under it included.
+    if (keep.has(x.id)) return
     const fresh = deps.freshId()
     map.set(x.id, fresh)
     x.id = fresh
@@ -196,8 +202,8 @@ export const unlinkPrefab = (level: Level, assetId: string, deps: UnlinkDeps): n
         nodes[i] = next
         count += 1
       }
-      const kids = nodes[i]!.children
-      if (kids !== undefined) walk(kids)
+      // Every list under it, what a placement added under its pieces included (ADR 0151).
+      for (const kids of childListsOf(nodes[i]!)) walk(kids)
     }
   }
   walk(level.nodes)

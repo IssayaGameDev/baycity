@@ -4,6 +4,7 @@ import { applyBatch, OpError, refKey, touchedRefs, type NodeRef, type Op } from 
 import type { Level, Node } from '../../../packages/content/src/types'
 import { hydratePrefabs, prefabRefsIn, stripHydrated } from '../../../packages/content/src/prefabs'
 import { validateLevel, validateNodeTree } from '../../../packages/content/src/validate'
+import { forEachNode } from '../../../packages/content/src/tree'
 import { assetFile, levelFile, parseQualified } from '../../../packages/content/src/layout'
 import type { User } from './config'
 
@@ -602,49 +603,73 @@ export const createLive = (opts: LiveOptions): Live => {
   return api
 }
 
-/** The refs of every ancestor of `ref` in its tree — a hold on any of them covers `ref`. */
+/** The ids from the top of a prefab's tree down to `id`, inclusive, or `null` when it is not there. */
+const pathIn = (roots: readonly Node[], id: string): string[] | null => {
+  for (const n of roots) {
+    if (n.id === id) return [id]
+    const deeper = pathIn(n.children ?? [], id)
+    if (deeper !== null) return [n.id, ...deeper]
+  }
+  return null
+}
+
+/**
+ * The refs of every ancestor of `ref` in its tree — a hold on any of them covers `ref`.
+ *
+ * Down every list (ADR 0151): a child a placement added under a piece has the placement, and the piece seen
+ * through it, above it — so a hold on that piece covers it, as a hold on any parent covers its children.
+ */
 const ancestorKeys = (level: Level, ref: NodeRef): string[] => {
-  type N = { id: string; children?: N[] }
-  const chain = (roots: readonly N[], id: string, trail: string[]): string[] | null => {
+  /** The piece a record belongs to and its prefab-side ancestors, as refs through `placement`. The root's record adds none. */
+  const through = (placement: Node, key: string): string[] => {
+    const root = placement.prefab === undefined ? undefined : level.prefabs?.[placement.prefab]
+    if (root === undefined || key === root.id) return []
+    return (pathIn(root.children ?? [], key) ?? []).map((node) => refKey({ owner: placement.id, node }))
+  }
+  const chain = (roots: readonly Node[], id: string, trail: string[]): string[] | null => {
     for (const n of roots) {
       if (n.id === id) return trail
-      const deeper = chain(n.children ?? [], id, [...trail, n.id])
+      const here = [...trail, refKey({ id: n.id })]
+      const deeper = chain(n.children ?? [], id, here)
       if (deeper !== null) return deeper
+      for (const [key, over] of Object.entries(n.overrides ?? {})) {
+        const added = over.addedChildren === undefined ? null : chain(over.addedChildren, id, [...here, ...through(n, key)])
+        if (added !== null) return added
+      }
     }
     return null
   }
   if ('owner' in ref) {
     // The placement and its ancestors, then the prefab-side ancestors seen through the same placement.
-    const above = chain(level.nodes as N[], ref.owner, []) ?? []
-    const root = level.prefabs?.[level.nodes.length > 0 ? (findNode(level.nodes as N[], ref.owner) as { prefab?: string } | null)?.prefab ?? '' : ''] as N | undefined
-    const inside = root === undefined ? [] : (chain(root.children ?? [], ref.node, []) ?? [])
-    return [...above.map((id) => refKey({ id })), refKey({ id: ref.owner }), ...inside.map((node) => refKey({ owner: ref.owner, node }))]
+    const above = chain(level.nodes, ref.owner, []) ?? []
+    const placement = findNode(level.nodes, ref.owner)
+    const root = placement?.prefab === undefined ? undefined : level.prefabs?.[placement.prefab]
+    const inside = root === undefined ? [] : (pathIn(root.children ?? [], ref.node) ?? []).slice(0, -1)
+    return [...above, refKey({ id: ref.owner }), ...inside.map((node) => refKey({ owner: ref.owner, node }))]
   }
   if (ref.table !== undefined) {
-    const root = level.prefabs?.[ref.table] as N | undefined
+    const root = level.prefabs?.[ref.table]
     const table = ref.table
-    return root === undefined ? [] : (chain([root], ref.id, []) ?? []).map((id) => refKey({ table, id }))
+    return root === undefined ? [] : (pathIn([root], ref.id) ?? []).slice(0, -1).map((id) => refKey({ table, id }))
   }
-  return (chain(level.nodes as N[], ref.id, []) ?? []).map((id) => refKey({ id }))
+  return chain(level.nodes, ref.id, []) ?? []
 }
 
-const findNode = (roots: readonly { id: string; children?: unknown[] }[], id: string): unknown => {
-  for (const n of roots) {
-    if (n.id === id) return n
-    const deeper = findNode((n.children ?? []) as { id: string; children?: unknown[] }[], id)
-    if (deeper !== null && deeper !== undefined) return deeper
-  }
-  return null
+/** A node of the level by id, what placements added under their pieces included. */
+const findNode = (roots: readonly Node[], id: string): Node | null => {
+  let found: Node | null = null
+  forEachNode(roots, (n) => {
+    if (found === null && n.id === id) found = n
+  })
+  return found
 }
 
 /** Does the node a hold names still exist? Cheap enough: holds are few and structural ops are rare. */
 const stillThere = (level: Level, ref: NodeRef): boolean => {
-  const find = (roots: readonly { id: string; children?: readonly unknown[] }[], id: string): boolean =>
-    roots.some((n) => n.id === id || find((n.children ?? []) as { id: string; children?: readonly unknown[] }[], id))
-  if ('owner' in ref) return find(level.nodes, ref.owner)
+  if ('owner' in ref) return findNode(level.nodes, ref.owner) !== null
   if (ref.table !== undefined) {
     const root = level.prefabs?.[ref.table]
-    return root !== undefined && find([root], ref.id)
+    return root !== undefined && findNode([root], ref.id) !== null
   }
-  return find(level.nodes, ref.id)
+  return findNode(level.nodes, ref.id) !== null
 }

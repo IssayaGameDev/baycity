@@ -130,9 +130,11 @@ describe('rowsOf: the tree', () => {
     const doc = four()
     doc.reparent(idx(doc, 'b'), idx(doc, 'a'), 0)
     expect(doc.pathOf(idx(doc, 'c')), 'second top-level instance').toBe('1')
-    expect(doc.pathOf(idx(doc, 'b')), "a's first child").toBe('0/0')
-    // A piece hangs off its owner's path, so UI state keyed by path tells them apart.
-    expect(doc.pathOf(idx(doc, 'a') + 1), "a's own piece").toBe('0#0')
+    // Dropped first under the placement `a`, it is kept in `a`'s record (ADR 0151) and shown before the piece.
+    expect(doc.pathOf(idx(doc, 'b')), "a's first child, which a added").toBe('0+0')
+    // A piece hangs off its owner's path too, marked as the prefab's, so UI state keyed by path tells them apart.
+    const piece = Array.from({ length: doc.count() }, (_, i) => i).find((i) => doc.parentOf(i) === idx(doc, 'a') && doc.kindOf(i) === 'inherited')!
+    expect(doc.pathOf(piece), "a's own piece, after it").toBe('0#1')
   })
 })
 

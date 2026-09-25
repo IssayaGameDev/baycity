@@ -215,6 +215,40 @@ describe('level ops', () => {
   })
 })
 
+/** A child a placement added under a piece, which lives in that piece's record (ADR 0135, ADR 0151). */
+describe('a child added under a piece', () => {
+  const withFlag = (): Level => {
+    const level = fixture()
+    applyOp(level, { kind: 'insertOverrideChild', owner: 'p1', node: 'top', index: 0, child: node('flag') })
+    return level
+  }
+
+  it('is undone back into its record, not under the placement', () => {
+    const level = withFlag()
+    const before = json(level)
+    const undo = invertOp(level, { kind: 'removeNode', id: 'flag' })
+    expect(undo).toMatchObject({ kind: 'insertOverrideChild', owner: 'p1', node: 'top', index: 0 })
+    applyOp(level, { kind: 'removeNode', id: 'flag' })
+    applyOp(level, undo!)
+    expect(json(level)).toBe(before)
+  })
+
+  it('leaves no empty list behind when the last one goes', () => {
+    const level = withFlag()
+    applyOp(level, { kind: 'removeNode', id: 'flag' })
+    expect(level.nodes[1]!.overrides!.top, 'the record keeps what it had, and nothing else').toEqual({ transform: { position: v3(0, 1, 0) }, params: { 'top-c': { friction: 2 } } })
+  })
+
+  it('refuses a moveNode, whose undo could not put it back in the record', () => {
+    expect(() => invertOp(withFlag(), { kind: 'moveNode', id: 'flag', parent: 'b', index: 0 })).toThrow(OpError)
+  })
+
+  it('is under the placement for a hold', () => {
+    const level = withFlag()
+    expect(touchedRefs(level, { kind: 'removeNode', id: 'p1' }).map(refKey)).toContain('n:flag')
+  })
+})
+
 describe('table scope', () => {
   it('edits the prefab definition in place — the object the placements resolve against', () => {
     const level = fixture()

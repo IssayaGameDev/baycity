@@ -217,6 +217,26 @@ describe('holds', () => {
     expect(live.apply(LV, 'c2', BOB, { batchId: 'w', ops: [setName('a', 'now mine')] }).ok).toBe(true)
   })
 
+  // A child a placement added under a piece lives in that piece's record, and the piece is above it (ADR 0151).
+  it('covers what a placement added under a held piece, and under a held placement', () => {
+    const w = world({ prefabs: store({ [PAD]: padFile() }) })
+    w.disk.set(LV, {
+      id: 'lv',
+      config: { mode: { name: 'parkour' } },
+      nodes: [{ id: 'pl', prefab: PAD, transform: { position: v3(0, 0, 0) }, components: [], overrides: { p0: { addedChildren: [{ id: 'flag', transform: { position: v3(0, 0, 0) }, components: [] }] } } }],
+    })
+    const a = fake('c1')
+    const b = fake('c2', BOB)
+    w.live.join(LV, a.client)
+    w.live.join(LV, b.client)
+    expect(w.live.hold(LV, 'c1', ADA, [{ owner: 'pl', node: 'p0' }])).toEqual({ ok: true })
+    expect(() => w.live.apply(LV, 'c2', BOB, { batchId: 'x', ops: [setName('flag', 'X')] }), 'under the held piece').toThrow(/held by Ada/)
+    expect(w.live.hold(LV, 'c1', ADA, [{ id: 'pl' }])).toEqual({ ok: true })
+    expect(() => w.live.apply(LV, 'c2', BOB, { batchId: 'y', ops: [setName('flag', 'X')] }), 'under the held placement').toThrow(/held by Ada/)
+    w.live.leave(LV, 'c1')
+    expect(w.live.apply(LV, 'c2', BOB, { batchId: 'z', ops: [setName('flag', 'free')] }).ok).toBe(true)
+  })
+
   it('a hold is the whole set: what is left out is released, what another has is refused and left out', () => {
     const { live } = world()
     const a = fake('c1')

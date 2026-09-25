@@ -12,9 +12,8 @@ import { defersToClick, modeFor, type SelectMode } from './selection'
  *
  * A row's **contents** are what it inherits from its prefab followed by its own children, and one twist hides
  * both (ADR 0033, ADR 0035). An inherited row is an object like any other here — it carries the components, so
- * it is what the Inspector shows and what the gizmo moves. What it is *not* is independently placeable: its
- * position belongs to the shared prefab, so it cannot be dragged, re-ordered or deleted through a placement,
- * and what you change about it becomes an override on that placement.
+ * it is what the Inspector shows and what the gizmo moves, and every gesture here works on it (ADR 0151): what
+ * you do to it — reorder, delete, drop into, drag out — is recorded on that placement alone.
  *
  * How a row reads (ADR 0150), Unity's way: a cube per row — blue and filled for a prefab, light blue for one
  * of its pieces, grey for an object of the level's own — guide lines down each level of nesting, the eye at
@@ -409,10 +408,9 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
         // Read after the press has had its say, so a Ctrl-press that took this row out carries it alone.
         const selected = host.selection()
         /**
-         * **A piece can be dragged too, but only out** (ADR 0133). It is resolved into a node of this level at
-         * the destination and the placement records it is gone, so nothing about the prefab moves. What is
-         * still refused is a piece as a *destination* — `dropAt` offers no `onto` for one — because where a
-         * piece sits is the prefab's, for every placement at once.
+         * Every row drags, a piece included (ADR 0151): among its siblings it is reordered and stays a piece;
+         * anywhere else it lands as a copy and the placement records it gone (ADR 0133). A piece takes a drop
+         * as well, into its placement's record. What each means is the document's (`Doc.reparent`).
          *
          * Grabbing a row that is already selected drags the whole selection; grabbing one that is not drags it
          * alone, as Unity does. Ascending, so the drop keeps the order they were in.
