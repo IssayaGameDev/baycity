@@ -198,5 +198,6 @@ why matters.
 | [0146](adr/0146-my-selection-shows-its-edges.md) | My selection shows its edges |
 | [0147](adr/0147-a-sequence-is-edited-as-cards-on-a-rail.md) | A sequence is edited as cards on a rail, with its own controls |
 | [0148](adr/0148-a-level-says-whether-the-camera-sees-through.md) | A level says whether the camera sees through; by default it collides |
+| [0149](adr/0149-the-tools-float-over-the-viewport.md) | The tools float over the viewport; the top bar is the document and running it |
 
 `Design archive/` holds superseded design material and is not maintained.

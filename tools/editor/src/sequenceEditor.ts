@@ -4,7 +4,7 @@ import type { Vec3 } from '@mp/core'
 import { closePopover, installPopoverDismissal, openPopover, popoverOpenFor, scrubField, segmented, type ScrubSpec, type Segment } from './controls'
 import { EASE_FAMILIES, EASE_MODES, easeCurve, easeName, easeOf } from './easeCurve'
 import type { MenuItem } from './menu'
-import { icon } from './seqIcons'
+import { icon } from './icons'
 import { justDragged, pressToDrag, registerDropTarget, type DragSource, type DropPlace } from './sequenceDrag'
 import {
   STEP_CHOICES,

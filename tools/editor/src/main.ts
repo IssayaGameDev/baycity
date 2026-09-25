@@ -334,7 +334,7 @@ const docLockKey = (): string => lockKey.level(fileState.name)
  * A level's own name, without its game (ADR 0108).
  *
  * `fileState.name` is the qualified `<game>/<name>` — what the route, the lock key and the live document key
- * all use. Two places want the bare half: the toolbar's name field, and the game's `?level=`, which a page
+ * all use. Two places want the bare half: the name in the top bar, and the game's `?level=`, which a page
  * qualifies with its own game. A prefab's name is already bare and passes straight through.
  */
 const shortName = (qualified: string): string => parseQualified(qualified)?.name ?? qualified
@@ -671,6 +671,7 @@ const blankLevel = (id: string): Level => ({
 const view = createCameraView({
   stage,
   canvas,
+  overlays: $<HTMLDivElement>('#overlays'),
   controls,
   instanceRoot,
   groups: () => meshes.all(),
@@ -1083,8 +1084,10 @@ const openFirstLevel = async (): Promise<void> => {
 // --- toolbar ---
 const toolbar: Toolbar = createToolbar(
   $<HTMLDivElement>('#toolbar'),
+  $<HTMLDivElement>('#overlays'),
   () => ({
     name: shortName(fileState.name),
+    prefab: prefabOpen === null ? null : { level: shortName(prefabOpen.from), name: prefabOpen.name },
     gizmo: edit.mode,
     space: edit.space,
     snap: edit.snap,
@@ -1093,9 +1096,6 @@ const toolbar: Toolbar = createToolbar(
     stepLimits: STEP_LIMITS[edit.mode],
     playing: play.active(),
     previewing: motion.playing(),
-    inPrefab: prefabOpen !== null,
-    readOnly: readOnlyBy,
-    live: live(),
     grid: grid.visible,
     markers: markerGroup.visible,
     surfaceCells: meshes.cells(),
@@ -1103,13 +1103,6 @@ const toolbar: Toolbar = createToolbar(
     showingAll: hiddenView.any() || hiddenView.showingAll() ? hiddenView.showingAll() : null,
   }),
   {
-    setName: (name) => {
-      fileState.name = name === '' ? 'untitled' : name
-      refreshUi()
-    },
-    // A live level exists the moment it is named: the file is created on the server, then joined.
-    newBlank: () => void createLevel(null),
-    duplicate: () => void createLevel(fileState.name),
     back: prefabs.closePrefab,
     setGizmo: (mode) => tool.setMode(mode),
     setSpace: (space) => tool.setSpace(space),
@@ -1414,7 +1407,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
       if (go) await openFile(qualified)
     }),
   /**
-   * Author for this game without opening anything: it is what `New` makes a level in, and what composes the
+   * Author for this game without opening anything: it is what a new level is made in, and what composes the
    * registry while nothing is open. It replaced the toolbar's game picker (ADR 0108) and is deliberately
    * *not* an open: clicking a game in the tree to see its levels must not throw away the document you have.
    */
@@ -1559,8 +1552,8 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
         {
           label: 'Duplicate\u2026',
           divider: true,
-          // The same operation the toolbar's button runs, which takes the copy from the server's current
-          // copy rather than the file, so a level open live is duplicated as it is now.
+          // Takes the copy from the server's current copy rather than the file, so a level open live is
+          // duplicated as it is now.
           run: () => void createLevel(qualified),
         },
         { label: 'Rename\u2026', run: () => fileOps.renameLevel(qualified) },

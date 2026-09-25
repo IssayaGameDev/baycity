@@ -15,14 +15,16 @@ import { createViewGizmo } from './viewGizmo'
  * colour stands in. Every path that installs a sky has to re-apply that, and a path that forgets is a black
  * viewport nobody sees until they press the isometric button.
  *
- * It owns the orthographic camera, `isometric`, the view gizmo and its drag flag, the stand-in background and
- * what it replaced, and the bounds box with its toggle.
+ * It owns the orthographic camera, `isometric`, the view gizmo with its drag flag, hover and the projection's
+ * button under it, the stand-in background and what it replaced, and the bounds box with its toggle.
  */
 
 /** What looking at the level needs from the editor around it. */
 export interface CameraViewHost {
   stage: ReturnType<typeof createThreeStage>
   canvas: HTMLCanvasElement
+  /** The layer over the viewport (ADR 0149), where the projection's button goes, under the gizmo. */
+  overlays: HTMLElement
   controls: OrbitControls
   /** The authored item groups, measured to say how far the level reaches. */
   instanceRoot: THREE.Group
@@ -121,20 +123,38 @@ export const createCameraView = (host: CameraViewHost) => {
     const camera = activeCamera()
     host.useCamera(camera)
     host.controls.update()
-    viewGizmo.setLabel(ortho ? 'Iso' : 'Persp')
+    labelProjection()
     host.setStatus(ortho ? 'isometric' : 'perspective')
     host.uiChanged()
   }
 
   /**
-   * The navigation gizmo, top right (ADR 0094). Blender's ball-and-stick, Unity's click-the-middle to toggle
-   * isometric, and no auto-switch: looking down an axis and dropping perspective are two decisions.
+   * The navigation gizmo, top right (ADR 0094, ADR 0149): Unity's cones and cube, click the cube to toggle
+   * isometric, and no auto-switch — looking down an axis and dropping perspective are two decisions.
    */
   const viewGizmo = createViewGizmo({
     camera: activeCamera,
     target: () => host.controls.target,
     dom: canvas,
   })
+
+  /**
+   * The projection's name under the gizmo, and a button: Unity's label, which toggles like the cube does. HTML
+   * rather than drawn in the gizmo, so it can be pressed whichever way the gizmo is turned — looking straight
+   * down an axis puts a cone over the cube.
+   */
+  const projection = document.createElement('button')
+  projection.type = 'button'
+  projection.className = 'ov-proj'
+  // Centred under the gizmo's square; the toggles to its left keep clear of the square by the same number.
+  host.overlays.style.setProperty('--gizmo', `${viewGizmo.size}px`)
+  projection.addEventListener('click', () => setProjection(!isometric))
+  host.overlays.append(projection)
+  const labelProjection = (): void => {
+    projection.textContent = isometric ? 'Iso' : 'Persp'
+    projection.title = isometric ? 'Isometric: click for Perspective' : 'Perspective: click for Isometric'
+  }
+  labelProjection()
 
   /**
    * Drawn after post-processing, because it clears depth and paints over the finished image — composite
@@ -184,6 +204,21 @@ export const createCameraView = (host: CameraViewHost) => {
     },
     true,
   )
+
+  /**
+   * What the pointer is over, lit, with a pointer cursor while it is over a part — the gizmo's parts are the
+   * only clickable things on the canvas that are not the level. Not while a press is held: a drag orbits and
+   * the part it started on is not what it is doing.
+   */
+  let pointing = false
+  document.addEventListener('pointermove', (e) => {
+    if (viewGizmoHolding) return
+    // A held button is somebody orbiting or dragging the level, passing over the corner on the way.
+    const over = viewGizmo.hover(e.target === canvas && e.buttons === 0 && !host.playing() ? e : null)
+    if (over === pointing) return
+    pointing = over
+    canvas.style.cursor = over ? 'pointer' : ''
+  })
 
   /**
    * A flat stand-in for the sky while the camera is orthographic.

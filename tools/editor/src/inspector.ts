@@ -11,7 +11,7 @@ import { isCurveSetting, type CurvePoint, type SettingDecls } from '@mp/mode'
 
 import { closePopover, openPopover, popoverOpenFor, scrubField, segmented } from './controls'
 import { createCurveEditor } from './curveEditor'
-import { icon, type IconName } from './seqIcons'
+import { icon, type IconName } from './icons'
 import { sequenceSummary } from './sequenceEdit'
 import { sequenceEditor } from './sequenceEditor'
 

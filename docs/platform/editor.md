@@ -38,7 +38,8 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 
 | Area | Element | Module |
 | --- | --- | --- |
-| Top | `#toolbar` — name (read-only), New, Duplicate, Back, gizmo Move/Rotate/Scale/**Face** (ADR 0119), space, snap + the active tool's increment with its unit (ADR 0114), Motion, Play, grid, markers, **Keys** (ADR 0120; hidden unless the game declares `surfaceGrid`). **No game picker and no level list** (ADR 0108): a game is a folder of levels, so opening is the Project panel's tree. No mode select and no Save either: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
+| Top | `#toolbar` (ADR 0149), a 3-column grid: the level's name, or `level › prefab` inside a prefab — the level is a button and the way back; **Motion** and **Play** in the middle. No New or Duplicate (the Project panel's), **no game picker and no level list** (ADR 0108), no mode select and no Save: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
+| Over the viewport | `#overlays` in `#centre` (ADR 0149): a layer that passes the pointer through, its panels (`.ov`) taking it back; **hidden while playing**. Left edge, vertical: Move / Rotate / Scale / **Face** (ADR 0119). Top left: Global / Local (globe / cube), the magnet, the active tool's increment with its unit (ADR 0114). Top right, left of the navigation gizmo: Grid, Markers, **Keys** (ADR 0120; hidden unless the game declares `surfaceGrid`), **Reveal** (ADR 0132; hidden while nothing is). Under the gizmo: the Persp / Iso button (ADR 0094). Icons only (`icons.ts`), each named with its key in its tooltip | `src/toolbar.ts`, `src/cameraView.ts` |
 | Left | `#hierarchy` — node tree + context menu. Rows alternate `--row-alt` by **rendered** position (`.row:not(.env):nth-child(even)`), declared before `:hover` and `.sel` so both win on source order | `src/hierarchy.ts`, `src/menu.ts` |
 | Centre | `#view` — Three stage, orbit, transform gizmo, placement clicks | `src/main.ts`, `src/itemMeshes.ts`, `src/play.ts` |
 | Right | `#insp-head`, `#inspector`, `#asset-inspector` | `src/inspector.ts`, `src/assetInspector.ts` |
@@ -127,9 +128,9 @@ httpTransport(): LiveTransport   // EventSource in, fetch POST out, sendBeacon f
 | inbound | a remote batch: unacked batches rolled back (inverses, newest first), remote applied, unacked re-applied (inverses recomputed; one that no longer applies is dropped and reported); `hooks.onApplied(ops)` → `repaintAfterOps` (`liveSession.ts`). A seq gap or a failing apply reopens the stream: the server greets with a fresh snapshot, `reinstallLevel` rebuilds the document over it (history kept), unacked batches are re-applied and re-sent |
 | rejected | a 4xx on the POST: that batch and everything after it rolled back, the later ones re-applied, `onRejected` → `history.dropWhere` (the entry holding it) + status line + repaint |
 | repaint | `repaintAfterOps(ops)`: transforms only (`setTransform` / `setOverrideTransform`) → `applyPreviewPoses` + `scheduleRebuild` + `inspectorSync` + track helper; anything else → environment/postfx re-applied, `host.rebuildViewport()`, selection put back by `indexOfRef`, `refreshUi` + `inspectorRebuild`. During a gizmo drag **or a play-test** ops queue in `deferredRemote` (the data is already changed) and repaint when it ends (`room.drainDeferred()`, from the drag's `mouseUp` and from both `play.stop` exits) — `rebuildLoaded` frees the physics world a play session's character lives in |
-| Save | toolbar `live` hides Save and disables the name field; `dirty` stays `false` live (`recordEdit`, `applyHistory`), so `guardUnsaved` never asks. `saveNow` returns `true` |
+| Save | there is none; `dirty` stays `false` live (`recordEdit`, `applyHistory`), so `guardUnsaved` never asks. `saveNow` returns `true` |
 | Play | `startFramePlay`: live → `collab.flush()` first (the game reads the file), else the prefab path `saveNow()` |
-| New / Duplicate | `createLevel(from)`: `askName` (`confirm.ts`) → `^[\w-]+$` → refused if `listFiles('levels')` has it → `PUT /api/levels/<name>` a `blankLevel` with the active mode, or the open level (`loadLevelRaw`, the server's live copy) with `id` set → `refreshFileList` → `openFile`. Toolbar `Duplicate` in level mode |
+| New / Duplicate | `createLevel(from)`: `askName` (`confirm.ts`) → `^[\w-]+$` → refused if `listFiles('levels')` has it → `PUT /api/levels/<name>` a `blankLevel` with the active mode, or the open level (`loadLevelRaw`, the server's live copy) with `id` set → `refreshFileList` → `openFile`. From the Project panel: a game's new-level action (`onNewLevel`) and a level's *Duplicate…* |
 | status bar | `live` or `live · with Adrien, Titouan` (peers other than this `connId`) |
 | leave | `dropAllLocks` → `collab.leave()`; `pagehide` → `beaconLeave()` |
 
@@ -155,15 +156,21 @@ async rebuild landed afterwards and undid the work. `refreshBoundsBox()` is ther
 
 `rebuildHoldHelpers()` is also called on a holds event, since holds change with no rebuild at all.
 
-### The navigation gizmo (ADR 0094)
+### The navigation gizmo (ADR 0094, ADR 0149)
 
-`src/viewGizmo.ts`, top-right of the viewport, 128 px. Blender's shape, Unity's centre, no auto-switch.
+`src/viewGizmo.ts`, top-right of the viewport, 128 px (`ViewGizmo.size`). Unity's shape and centre, no
+auto-switch. Six cones pointing in at a cube: `+X`/`+Y`/`+Z` in the axis colours (`0xff4466`, `0x88ff44`,
+`0x4488ff`) with a letter beyond each, the negative three grey (`0x8a93a0`). Picked by raycast against
+invisible **reach** spheres (0.3 per cone, 0.26 round the cube, in a ±1.45 frame), not the drawn shapes;
+the **nearest** wins, so what is in front is what is clicked.
 
 | Gesture | Effect |
 | --- | --- |
-| click a ball | snap to that axis over 0.35 s, smoothstepped, keeping the orbit distance. Positive balls are filled and lettered `X`/`Y`/`Z`; negative are the same ball at 0.35 opacity |
-| drag anywhere on it | orbit, past 4 px of slop — so a drag that starts on a ball orbits, and a click on it still snaps |
-| click the centre | toggle perspective / isometric. The label under it reads `Persp` or `Iso` |
+| hover | the part under the pointer turns `0xffd54a`, with a pointer cursor (`hover(event \| null)`, from a document `pointermove` in `cameraView.ts`; off while a button is held or playing) |
+| click a cone | snap to that axis over 0.35 s, smoothstepped, keeping the orbit distance |
+| drag anywhere on it | orbit, past 4 px of slop — so a drag that starts on a cone orbits, and a click on it still snaps |
+| click the cube | toggle perspective / isometric |
+| click **Persp** / **Iso** under it | the same toggle: an HTML button (`.ov-proj`) in the overlay layer, so it works when a cone pointing out of the screen covers the cube |
 
 Snapping never changes the projection: two decisions, deliberately not fused (ADR 0094 on Blender's *Auto
 Perspective*).
@@ -185,7 +192,9 @@ and the picking raycast both go through `activeCamera()`.
 getting in front of them from there.
 
 Drawn in the render step **after** `postfx.render()` — it clears depth and paints over the finished image —
-and not at all while playing. `gizmoPointer` and `orbitAround` are pure and tested; the rest is WebGL.
+and not at all while playing. `gizmoPointer` and `orbitAround` are pure and tested; the picking, the hover and
+the snap are tested through `createViewGizmo` with no renderer (its own camera's matrix is set at
+construction for that reason — picking reads it, and before the first render it was the identity).
 
 ### Network bounds, drawn (ADR 0093)
 
@@ -226,7 +235,7 @@ uses it. It does, because a prefab is a live document of its own.
 | a child added to a placement | Dropping a node onto a placement makes it the **level's** child beside the prefab's resolved ones, and `Doc.placementAdded(i)` is what finds them (ADR 0130). Carried by the placement-scope pair: **Apply** sends `insertNode` on the prefab's root in the same submission as the overrides, with re-minted ids (a prefab's are its own) and the transform unconverted (same frame), then the local copy goes and the prefab's echo brings it back inherited; **Revert** deletes it, because the prefab has no such child — Unity's *Added GameObject*, and one Ctrl+Z puts it back. Direct children only; a grandchild rides inside its parent's one `insertNode`. **A placement dropped onto a placement is skipped**: applying it would need the inner definition to resolve in the prefab's room, which ADR 0124 has not been worked through for |
 | Revert/Apply have two scopes | an override is stored per inherited **piece** — and for the placement's own inherited **root** components, on the placement keyed by the prefab root's id (ADR 0098). `recordKey(n)` says where either lives, so the root is `placementOverrides`' first entry when it has changes; before ADR 0139 nothing read that record back. On a root the pair acts over every piece the placement owns: `Doc.placementOverrides(i)`, `Doc.revertPlacement(i)` (**one batch** — one Ctrl+Z, one message to the room), `Doc.placementOverrideOps(i)` (one submission, so a partial failure cannot half-apply). Owned by *this* placement only, so a nested one's pieces stay its own. Labels carry the scope: `Revert all to prefab` / `Apply all to prefab` with the count as the menu hint, and the Inspector strip reads `N overrides on M objects`. Before this the pair was permanently greyed on the prefab object and the Inspector said nothing there |
 | unlink a placement | `Doc.unlinkNode(i)` — one `replaceNode` op (ADR 0111). The node keeps its id, transform and place in the tree and takes the resolved name, components and children, so an override becomes the value; the inherited subtree is cloned with fresh **node** ids, since a prefab's are scoped to itself. Refuses a non-placement and an inherited node. From the Hierarchy menu's *Unlink from prefab* and the Inspector's **Unlink**, left of **Open**. No confirm: one op, so Ctrl+Z puts the link back |
-| no Save, no lock | both kinds of room write themselves. The toolbar has no mode select and no Save; the name field is read-only and says where a prefab is renamed. `New`, `Duplicate`, the file list and the game picker are disabled while in a prefab, titled *leave the prefab first* |
+| no Save, no lock | both kinds of room write themselves. The top bar has no mode select and no Save; it reads `level › prefab`, and the level is the way back (ADR 0149). A prefab is renamed in the Project panel |
 
 ### Switching a node off (ADR 0099)
 
@@ -353,7 +362,7 @@ assets           <- the existing folder tree, unchanged
 - Host hooks: `games`, `levels`, `openLevel`, `onOpenLevel`, `onPickGame`, `onNewLevel`. `Project.showGame`
   lets the editor point the tree at the open document's game, so what is open is always visible.
 - `onPickGame` selects without opening: clicking a game to look at its levels must not discard the document
-  you have. It is what `New` makes a level in, and what composes the registry while nothing is open.
+  you have. It is what a new level is made in, and what composes the registry while nothing is open.
 
 ## Right-clicking a level (ADR 0110)
 
@@ -363,7 +372,7 @@ builds the menu. Open, Duplicate…, Rename…, Copy name, Delete…
 | Item | Notes |
 | --- | --- |
 | Open | disabled for the one already open, and inside a prefab |
-| Duplicate… | `createLevel(from)`, the toolbar button's operation; copies the server's current copy, so a level open live duplicates as it is now |
+| Duplicate… | `createLevel(from)`; copies the server's current copy, so a level open live duplicates as it is now |
 | Rename… | `askName`, then `renameLevel`. The **open** level works: flush, `collab.leave()`, rename, reopen — the server refuses a rename on an open document. A name in another game's folder moves it there |
 | Copy name | the bare name, which is what `?level=` takes |
 | Delete… | `askDestructive`, body naming what goes: no undo, whether it is the open one, whether it is the game's `default` and what boots instead, whether it is that game's only level. Deleting the open one boots into whatever is left |
@@ -588,13 +597,13 @@ the `active` checkbox (ADR 0099), which switches a node off *in the level* and i
 | not drawn, not clickable | `itemMeshes` builds no meshes for a hidden node (`PickHost.hidden`). Picking raycasts the meshes, so both halves fall out of the one rule; the group survives, so indices and child frames are untouched |
 | the control | a fixed 18 px gutter at the left of a Hierarchy row, **outside** the indentation so the column lines up at any depth. Empty until the row is hovered, always drawn once hidden — which is the condition ADR 0102 set for a control living here. A hidden row does **not** dim: dimming already means switched off |
 | alt-click | that node alone; a plain click takes the subtree |
-| **Reveal** | a toolbar toggle showing everything without forgetting it; hidden while nothing is hidden. Local and momentary, never sent |
+| **Reveal** | the viewport's eye toggle, top right (ADR 0149), showing everything without forgetting it; hidden while nothing is hidden. Local and momentary, never sent |
 | shared and durable | `POST .../hidden` → the server's `stateDir/hidden.json`, relayed live as the `hidden` event and carried on the `snapshot` (`editor-server.md`). The whole set every time, never a delta |
 
 ## Snapping (ADR 0114)
 
-One increment **per tool**, in `edit.steps`; the toolbar shows the active tool's with its unit and its own
-bounds, so it stays one field.
+One increment **per tool**, in `edit.steps`; the viewport's snap field (a `scrubField`, beside the magnet) shows
+the active tool's with its unit and its own bounds, so it stays one field.
 
 | Tool | Default | Range | Unit | Snapped by |
 | --- | --- | --- | --- | --- |
@@ -666,7 +675,7 @@ Shift ten times finer), click to type (Enter / blur commits, Escape reverts), **
 typing ends**; its `key` (`<component>:<step>:<field>`) lets the field clicked next take the focus back after the
 first one's edit rebuilt the panel. `segmented`. One popover at a time (`openPopover` / `closePopover`), gone on a
 press elsewhere, Escape, a resize or a scroll outside it; `onDismiss` only for the person's dismissal.
-Icons: `seqIcons.ts`, SVG paths on a 24-unit grid, stroked in `currentColor`; curves: `easeCurve.ts`, drawn from
+Icons: `icons.ts` (the editor's, shared with the viewport's overlays), SVG paths on a 24-unit grid, stroked in `currentColor`; curves: `easeCurve.ts`, drawn from
 `easeAt`, the box grown to hold an overshoot.
 
 **Drag** (`sequenceDrag.ts`): pointer events, not HTML5. A press on a row or a card header becomes a drag after

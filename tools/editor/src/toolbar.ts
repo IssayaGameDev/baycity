@@ -1,10 +1,23 @@
+import { scrubField } from './controls'
+import { icon, type IconName } from './icons'
 
 /**
- * The toolbar: file, transform tool, snap, play.
+ * The top bar and the viewport's overlays (ADR 0149), Unity's split: the bar holds what the document is and
+ * running it — its name, Motion, Play — and the tools and what the viewport shows float over the viewport,
+ * where the work is.
  *
- * Built once, then `render()` only *updates* values. That is the difference from the Tweakpane version,
- * which disposed and re-added its controls whenever anything changed — losing focus mid-edit and
- * flickering. Nothing here is recreated after construction except the two option lists.
+ * | where | what |
+ * | --- | --- |
+ * | top bar | the level's name, or `level › prefab` inside a prefab (the level is the way back); Motion, Play |
+ * | viewport, left edge | Move, Rotate, Scale, Face |
+ * | viewport, top left | Global / Local; snap and the active tool's increment |
+ * | viewport, top right | Grid, Markers, Keys, Reveal — beside the navigation gizmo |
+ *
+ * Icons only, each named with its key in its tooltip. New and Duplicate went: the Project panel makes and
+ * copies levels (ADR 0108, ADR 0110).
+ *
+ * Built once, then `render()` only *updates* values — except the snap increment's field, which is rebuilt
+ * when the tool or the number changes, and never while it is being typed into.
  */
 /**
  * The transform tools. `face` is the push/pull of ADR 0119 — grab one face of a box and drag it, the opposite
@@ -19,11 +32,11 @@ export interface ToolbarState {
    * The name of the open document, without its game: a level's file name, or a prefab's.
    *
    * The **game picker and the level list are gone** (ADR 0108). A game is a folder holding its levels, so
-   * both are the Project panel's tree: choosing a game in one dropdown and a level in another put the game in
-   * a control nowhere near the file it governed, and made it possible to be authoring for one game while
-   * looking at another's level.
+   * both are the Project panel's tree.
    */
   name: string
+  /** A prefab open on top of a level: which level it goes back to, and its own name. `null` on a level. */
+  prefab: { level: string; name: string } | null
   gizmo: GizmoMode
   space: GizmoSpace
   snap: boolean
@@ -46,12 +59,6 @@ export interface ToolbarState {
    * does this platform actually do", which used to need entering Play.
    */
   previewing: boolean
-  /** Depth > 1 in the doc stack: a prefab is open on top of the file. */
-  inPrefab: boolean
-  /** Who holds this file's lock when it is not you — Save is off and says so (ADR 0083). `null` when yours. */
-  readOnly: string | null
-  /** The open level is edited live (ADR 0089): every edit is saved as it happens, so there is no Save. */
-  live: boolean
   grid: boolean
   markers: boolean
   /**
@@ -73,10 +80,7 @@ export interface ToolbarState {
 }
 
 export interface ToolbarActions {
-  setName: (name: string) => void
-  newBlank: () => void
-  /** Copy the open level under a new name and open it. */
-  duplicate: () => void
+  /** Leave the prefab for the level it was opened from. */
   back: () => void
   setGizmo: (g: GizmoMode) => void
   setSpace: (s: GizmoSpace) => void
@@ -94,186 +98,160 @@ export interface Toolbar {
   render: () => void
 }
 
-/**
- * `ctl` marks a control as *ours*, so the stylesheet can style these without reaching inside the
- * Tweakpane pane mounted in the Inspector — see the note in index.html.
- */
-const OURS = new Set(['button', 'select', 'input'])
-
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string): HTMLElementTagNameMap[K] => {
+const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] => {
   const node = document.createElement(tag)
-  const base = OURS.has(tag) ? 'ctl' : ''
-  node.className = className !== undefined ? `${base} ${className}`.trim() : base
+  if (className !== undefined) node.className = className
+  if (text !== undefined) node.textContent = text
   return node
 }
 
-const group = (...children: HTMLElement[]): HTMLDivElement => {
-  const g = el('div', 'tb-group')
-  g.append(...children)
-  return g
+/** A button that is only its icon. The tooltip is its name, and the key when it has one. */
+const iconButton = (className: string, name: IconName, onClick: () => void): HTMLButtonElement => {
+  const b = el('button', className)
+  b.type = 'button'
+  b.append(icon(name))
+  b.addEventListener('click', onClick)
+  return b
 }
 
-const label = (text: string): HTMLSpanElement => {
-  const s = el('span', 'tb-label')
-  s.textContent = text
-  return s
+const setIcon = (b: HTMLButtonElement, name: IconName): void => {
+  if (b.dataset.icon === name) return
+  b.dataset.icon = name
+  b.replaceChildren(icon(name))
 }
 
+const setTitle = (b: HTMLElement, title: string): void => {
+  b.title = title
+  b.setAttribute('aria-label', title)
+}
 
-export const createToolbar = (container: HTMLElement, state: () => ToolbarState, actions: ToolbarActions): Toolbar => {
-  // --- file ---
-  // Opening is the Project panel's tree (ADR 0108): a game is a folder of levels, so there is nothing here to
-  // pick a game or a file with.
-  const nameInput = el('input')
-  nameInput.type = 'text'
-  nameInput.title = 'file name — the document id follows it on save'
-  nameInput.addEventListener('change', () => actions.setName(nameInput.value.trim()))
+const TOOLS: readonly { mode: GizmoMode; icon: IconName; title: string }[] = [
+  { mode: 'translate', icon: 'toolMove', title: 'Move (T)' },
+  { mode: 'rotate', icon: 'toolRotate', title: 'Rotate (R)' },
+  { mode: 'scale', icon: 'toolScale', title: 'Scale (S)' },
+  // No shortcut, Kodjo's call: the letters worth having are taken and this is a button you reach for.
+  { mode: 'face', icon: 'toolFace', title: 'Face: pull one face of a box, the opposite face stays put' },
+]
 
-  const newButton = el('button')
-  newButton.textContent = 'New'
-  newButton.addEventListener('click', actions.newBlank)
+/**
+ * `bar` is the top bar; `overlays` is the layer over the viewport, which this fills and hides while playing —
+ * the viewport is the game's then, and the navigation gizmo is not drawn either.
+ */
+export const createToolbar = (bar: HTMLElement, overlays: HTMLElement, state: () => ToolbarState, actions: ToolbarActions): Toolbar => {
+  // --- the top bar: the document, and running it ---
+  const doc = el('div', 'tb-doc')
+  const crumb = el('button', 'tb-crumb')
+  crumb.type = 'button'
+  crumb.title = 'back to the level'
+  crumb.addEventListener('click', () => actions.back())
+  const crumbSep = el('span', 'tb-crumb-sep', '›')
+  const nameText = el('span', 'tb-name')
+  doc.append(crumb, crumbSep, nameText)
 
-  const duplicateButton = el('button')
-  duplicateButton.textContent = 'Duplicate'
-  duplicateButton.title = 'copy this level under a new name'
-  duplicateButton.addEventListener('click', actions.duplicate)
-
-  const backButton = el('button')
-  backButton.textContent = '← Back'
-  backButton.title = 'leave this prefab and return to the level'
-  backButton.addEventListener('click', actions.back)
-
-  // --- transform tool ---
-  const seg = el('div', 'seg')
-  const gizmoButtons = new Map<GizmoMode, HTMLButtonElement>()
-  for (const [mode, text, key] of [
-    ['translate', 'Move', 'T'],
-    ['rotate', 'Rotate', 'R'],
-    ['scale', 'Scale', 'S'],
-    // No shortcut, Kodjo's call: the letters worth having are taken and this is a button you reach for.
-    ['face', 'Face', ''],
-  ] as const) {
-    const b = el('button')
-    b.textContent = text
-    b.title = key === '' ? 'pull one face of a box; the opposite face stays put' : `${text} (${key})`
-    b.addEventListener('click', () => actions.setGizmo(mode))
-    gizmoButtons.set(mode, b)
-    seg.append(b)
-  }
-
-  // Local/Global, like Unity's. Three overrides it where it cannot apply (scale is always local, the
-  // free-rotate ring always world), so the button only ever claims what it delivers.
-  const spaceButton = el('button')
-  spaceButton.addEventListener('click', () => actions.setSpace(state().space === 'world' ? 'local' : 'world'))
-
-  const snapBox = el('input')
-  snapBox.type = 'checkbox'
-  snapBox.id = 'tb-snap'
-  snapBox.addEventListener('change', () => actions.setSnap(snapBox.checked))
-  const snapLabel = el('label', 'tb-label')
-  snapLabel.htmlFor = 'tb-snap'
-  snapLabel.textContent = 'snap'
-
-  const stepInput = el('input')
-  stepInput.type = 'number'
-  // min/max/grain follow the active tool: see `render`.
-  const stepUnitLabel = el('span', 'tb-label')
-  stepInput.title = 'grid step (m)'
-  stepInput.addEventListener('change', () => {
-    const v = Number.parseFloat(stepInput.value)
-    if (Number.isFinite(v) && v > 0) actions.setStep(v)
-  })
-
-  // --- overlays ---
-  const gridButton = el('button')
-  gridButton.textContent = 'Grid'
-  gridButton.addEventListener('click', () => actions.setGrid(!state().grid))
-
-  const markerButton = el('button')
-  markerButton.textContent = 'Markers'
-  markerButton.title = 'spawn and gameplay-rule gizmos'
-  markerButton.addEventListener('click', () => actions.setMarkers(!state().markers))
-
-  const cellsButton = el('button')
-  cellsButton.textContent = 'Keys'
-  cellsButton.title = 'where this game would generate cells on a surface — the keyboard’s caps (ADR 0120)'
-  cellsButton.addEventListener('click', () => actions.setSurfaceCells(state().surfaceCells !== true))
-
-  const revealButton = el('button')
-  revealButton.textContent = 'Reveal'
-  revealButton.title = 'show everything hidden in the viewport, without un-hiding it (ADR 0132)'
-  revealButton.addEventListener('click', () => actions.setShowingAll(state().showingAll !== true))
-
-  // --- preview and play ---
   /**
    * One toggle for the whole level, not one per object: motion is timed against other motion, so a staggered
    * row of platforms is the thing you need to look at, and the panel this replaces could only ever show one.
    */
-  const previewButton = el('button')
-  previewButton.title = 'run the level’s sequences in the viewport, without entering play'
-  previewButton.addEventListener('click', () => actions.setPreviewing(!state().previewing))
+  const motionButton = iconButton('tb-b', 'motion', () => actions.setPreviewing(!state().previewing))
+  const playButton = iconButton('tb-b tb-play', 'play', () => actions.setPlaying(!state().playing))
+  const run = el('div', 'tb-run')
+  run.append(motionButton, playButton)
 
-  const playButton = el('button')
-  playButton.addEventListener('click', () => actions.setPlaying(!state().playing))
+  bar.append(doc, run, el('div', 'tb-end'))
 
-  container.append(
-    el('div', 'tb-sep'),
-    group(label('file'), nameInput, newButton, duplicateButton, backButton),
-    el('div', 'tb-sep'),
-    group(seg, spaceButton, snapBox, snapLabel, stepInput, stepUnitLabel),
-    el('div', 'tb-sep'),
-    group(gridButton, markerButton, cellsButton, revealButton),
-    el('div', 'tb-sep'),
-    group(previewButton, playButton),
-  )
+  // --- over the viewport: the tools, down the left edge ---
+  const toolStrip = el('div', 'ov ov-tools')
+  const toolButtons = new Map<GizmoMode, HTMLButtonElement>()
+  for (const t of TOOLS) {
+    const b = iconButton('ov-b', t.icon, () => actions.setGizmo(t.mode))
+    setTitle(b, t.title)
+    toolButtons.set(t.mode, b)
+    toolStrip.append(b)
+  }
+
+  // --- top left: the frame the handles point along, and snapping ---
+  const settings = el('div', 'ov ov-settings')
+  // Local/Global, like Unity's. Three overrides it where it cannot apply (scale is always local, the
+  // free-rotate ring always world), so the button only ever claims what it delivers.
+  const spaceButton = iconButton('ov-b', 'shared', () => actions.setSpace(state().space === 'world' ? 'local' : 'world'))
+  const snapButton = iconButton('ov-b', 'magnet', () => actions.setSnap(!state().snap))
+  const stepHolder = el('div', 'ov-step')
+  settings.append(spaceButton, el('div', 'ov-sep'), snapButton, stepHolder)
+
+  // --- top right, beside the navigation gizmo: what the viewport shows ---
+  const view = el('div', 'ov ov-view')
+  const gridButton = iconButton('ov-b', 'grid', () => actions.setGrid(!state().grid))
+  setTitle(gridButton, 'Grid')
+  const markerButton = iconButton('ov-b', 'flag', () => actions.setMarkers(!state().markers))
+  setTitle(markerButton, 'Markers: spawn and gameplay-rule gizmos')
+  const cellsButton = iconButton('ov-b', 'keycap', () => actions.setSurfaceCells(state().surfaceCells !== true))
+  setTitle(cellsButton, 'Keys: where this game would generate cells on a surface, the keyboard’s caps (ADR 0120)')
+  const revealButton = iconButton('ov-b', 'enable', () => actions.setShowingAll(state().showingAll !== true))
+  setTitle(revealButton, 'Reveal: show everything hidden in the viewport, without un-hiding it (ADR 0132)')
+  view.append(gridButton, markerButton, cellsButton, revealButton)
+
+  overlays.append(toolStrip, settings, view)
+
+  /** What the snap field was built for, so it is rebuilt only when that changes. */
+  let stepBuilt: { gizmo: GizmoMode; step: number } | null = null
+  const renderStep = (s: ToolbarState): void => {
+    if (stepBuilt !== null && stepBuilt.gizmo === s.gizmo && stepBuilt.step === s.step) return
+    // Never fight the cursor: a field being typed into keeps its text until the typing is done.
+    if (stepHolder.contains(document.activeElement)) return
+    stepBuilt = { gizmo: s.gizmo, step: s.step }
+    // The bounds belong to the tool, not to the field: 0.05–10 m, 1–90°, 0.05–5× (ADR 0114).
+    const field = scrubField({
+      value: s.step,
+      unit: s.stepUnit,
+      spec: { perPixel: s.stepLimits.grain, grain: s.stepLimits.grain, min: s.stepLimits.min, max: s.stepLimits.max },
+      title: `snap increment for the ${s.gizmo} tool, in ${s.stepUnit === '×' ? 'multiples' : s.stepUnit}: drag, or click to type`,
+      key: 'toolbar:step',
+      commit: (v) => {
+        if (Number.isFinite(v) && v > 0) actions.setStep(v)
+      },
+    })
+    stepHolder.replaceChildren(field)
+  }
 
   const render = (): void => {
     const s = state()
-    // Never fight the user's cursor: leave the field alone while it has focus.
-    if (document.activeElement !== nameInput) nameInput.value = s.name
-    backButton.hidden = !s.inPrefab
 
-    for (const [mode, button] of gizmoButtons) button.classList.toggle('on', s.gizmo === mode)
-    spaceButton.textContent = s.space === 'local' ? 'Local' : 'Global'
-    spaceButton.title = 'the frame the handles point along (Unity: Local/Global)'
-    snapBox.checked = s.snap
-    if (document.activeElement !== stepInput) stepInput.value = String(s.step)
-    // The bounds belong to the tool, not to the field: 0.05–10 m, 1–90°, 0.05–5× (ADR 0114).
-    stepInput.min = String(s.stepLimits.min)
-    stepInput.max = String(s.stepLimits.max)
-    stepInput.step = String(s.stepLimits.grain)
-    stepUnitLabel.textContent = s.stepUnit
-    stepInput.title = `snap increment for the ${s.gizmo} tool, in ${s.stepUnit === '×' ? 'multiples' : s.stepUnit}`
+    crumb.hidden = s.prefab === null
+    crumbSep.hidden = s.prefab === null
+    crumb.textContent = s.prefab?.level ?? ''
+    crumb.disabled = s.playing
+    nameText.textContent = s.prefab?.name ?? s.name
+    nameText.title = s.prefab === null ? 'the level this room has open' : 'the prefab open on top of the level'
+
+    setIcon(playButton, s.playing ? 'stop' : 'play')
+    setTitle(playButton, s.playing ? 'Stop' : 'Play')
+    playButton.classList.toggle('on', s.playing)
+    setTitle(motionButton, s.previewing ? 'Stop the motion preview' : 'Motion: run the level’s sequences in the viewport, without entering play')
+    motionButton.classList.toggle('on', s.previewing)
+    motionButton.disabled = s.playing // the game clock is already running everything
+
+    // Editing is suspended during play, and the viewport is the game's: none of this belongs over it.
+    overlays.hidden = s.playing
+
+    for (const [mode, button] of toolButtons) button.classList.toggle('on', s.gizmo === mode)
+    setIcon(spaceButton, s.space === 'local' ? 'object' : 'shared')
+    setTitle(
+      spaceButton,
+      s.space === 'local'
+        ? 'Local: the handles point along the object’s own axes. Click for Global'
+        : 'Global: the handles point along the level’s axes. Click for Local',
+    )
+    snapButton.classList.toggle('on', s.snap)
+    setTitle(snapButton, s.snap ? 'Snap is on' : 'Snap is off')
+    renderStep(s)
 
     gridButton.classList.toggle('on', s.grid)
     markerButton.classList.toggle('on', s.markers)
-    // Hidden, not disabled: a game with nothing to preview has no use for the word.
+    // Hidden, not disabled: a game with nothing to preview has no use for the button.
     cellsButton.hidden = s.surfaceCells === null
     cellsButton.classList.toggle('on', s.surfaceCells === true)
     revealButton.hidden = s.showingAll === null
     revealButton.classList.toggle('on', s.showingAll === true)
-
-    playButton.textContent = s.playing ? '■ Stop' : '▶ Play'
-    playButton.classList.toggle('on', s.playing)
-    previewButton.textContent = s.previewing ? '❙❙ Motion' : '▶ Motion'
-    previewButton.classList.toggle('on', s.previewing)
-    previewButton.disabled = s.playing // the game clock is already running everything
-    // Editing is suspended during play; the controls would lie about what they do.
-    for (const control of [nameInput, newButton, stepInput, snapBox]) {
-      control.disabled = s.playing
-    }
-    for (const button of gizmoButtons.values()) button.disabled = s.playing
-    spaceButton.disabled = s.playing
-    /**
-     * There is no Save. Levels and prefabs are both live rooms (ADR 0089, ADR 0091), so every edit is already
-     * on the server, and the name is the document the whole room has open rather than something to type.
-     */
-    nameInput.disabled = true
-    nameInput.title = s.inPrefab ? 'a prefab is renamed in the Project panel, where its id follows it' : 'the level this room has open'
-    duplicateButton.hidden = s.inPrefab
-    duplicateButton.disabled = s.playing
-    newButton.disabled = s.playing || s.inPrefab
-    newButton.title = s.inPrefab ? 'leave the prefab first' : 'a new level in the open game, named now'
   }
 
   render()

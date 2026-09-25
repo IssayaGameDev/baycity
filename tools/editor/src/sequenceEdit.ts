@@ -1,7 +1,7 @@
 import type { Ease, Sequence, Stage, Step, Timing } from '@mp/content'
 import { vec3, type Vec3 } from '@mp/core'
 
-import type { IconName } from './seqIcons'
+import type { IconName } from './icons'
 
 /**
  * Every edit the Inspector's sequence editor makes, as plain functions from stages to stages (ADR 0143).

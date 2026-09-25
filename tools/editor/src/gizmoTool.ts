@@ -102,8 +102,8 @@ export const createGizmoTool = (host: GizmoHost) => {
    * Snap increments, **one per tool** (ADR 0114).
    *
    * One number cannot serve three: 0.5 is a sensible grid in metres, a useless one in degrees, and a coarse one
-   * for scale. Unity and Blender both keep three, and the toolbar shows only the active tool's so it does not
-   * grow three fields wide.
+   * for scale. Unity and Blender both keep three, and the viewport's snap field shows only the active tool's so
+   * it does not grow three fields wide.
    *
    * `rotate` is in **degrees** — what the field shows and what a person thinks in; the radians are the gizmo's
    * business.
@@ -217,7 +217,7 @@ export const createGizmoTool = (host: GizmoHost) => {
     if (edit.mode === 'face') host.clearFaceHover()
   }
 
-  /** Switch transform tool (toolbar buttons and the T/R/S keys are the same path). */
+  /** Switch transform tool (the viewport's tool strip and the T/R/S keys are the same path). */
   const setMode = (mode: GizmoMode): void => {
     edit.mode = mode
     // `setMode` only knows the three it draws; Face detaches it instead (ADR 0119).

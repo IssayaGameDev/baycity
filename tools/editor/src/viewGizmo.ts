@@ -1,17 +1,21 @@
 import { THREE } from '@mp/render-three'
 
 /**
- * The navigation gizmo in the viewport's top-right corner (ADR 0094).
+ * The navigation gizmo in the viewport's top-right corner (ADR 0094, reshaped by ADR 0149).
  *
- * Blender's shape, Unity's centre: three sticks with six balls, positive axes filled and lettered and negative
- * ones hollow; click a ball to look down that axis, drag anywhere on it to orbit, click the middle to swap
- * perspective for isometric. The label under it says which projection is on, because a projection you cannot
- * name is a projection you forget you are in.
+ * Unity's: six cones pointing in at a cube, the positive three in their axis colours and lettered, the
+ * negative three grey. Click a cone to look along it, drag anywhere on the gizmo to orbit, click the cube to
+ * swap perspective for isometric. Whatever is under the pointer lights up, and each part answers over more
+ * than its drawn shape — a sphere per cone, one round the cube — because the shapes are small and the corner
+ * is where the pointer arrives fastest.
+ *
+ * The projection's name is **not** drawn here: it is a button under the gizmo (`cameraView.ts`), so it can be
+ * clicked whichever way the gizmo is turned, even when a cone pointing straight out of the screen covers the
+ * cube.
  *
  * Deliberately not `three/examples/jsm/helpers/ViewHelper`, which is the same idea: it draws bottom-right from
- * a hard-coded viewport, it has no drag-to-orbit, and it has no centre. Two of its three methods would have
- * been replaced, so this borrows its proven parts — the inverted-camera quaternion, the sprite balls, the
- * scratch ortho camera — and owns the rest.
+ * a hard-coded viewport, it has no drag-to-orbit, and it has no centre. This borrows its proven parts — the
+ * inverted-camera quaternion, the scratch ortho camera — and owns the rest.
  *
  * Snapping does **not** change the projection (Kodjo's call): looking from the side and drawing without
  * perspective are two decisions, and Blender's "Auto Perspective", which fuses them, is the setting people
@@ -34,10 +38,15 @@ export interface ViewGizmo {
   pointerDown: (event: PointerEvent) => boolean
   /** A `pointermove` while the gizmo holds the pointer. */
   pointerMove: (event: PointerEvent) => void
-  /** A `pointerup`. Returns `'centre'` when the press was a click on the middle, so the caller can toggle. */
+  /** A `pointerup`. Returns `'centre'` when the press was a click on the cube, so the caller can toggle. */
   pointerUp: (event: PointerEvent) => 'centre' | 'axis' | null
-  /** Re-letter the projection label. */
-  setLabel: (text: string) => void
+  /**
+   * The pointer moved over the canvas without a press, or left it (`null`). Lights up the part under it and
+   * says whether there is one, so the caller can show a pointer cursor.
+   */
+  hover: (event: PointerEvent | null) => boolean
+  /** Side of the square the gizmo occupies, in CSS pixels — what the overlays beside and under it keep clear of. */
+  readonly size: number
   dispose: () => void
 }
 
@@ -55,15 +64,40 @@ export interface ViewGizmoOptions {
 }
 
 type AxisName = 'posX' | 'posY' | 'posZ' | 'negX' | 'negY' | 'negZ'
+type Part = AxisName | 'centre'
+
+/** The colours the transform gizmo uses for the same axes, so the two corners of the screen agree. */
+const X = 0xff4466
+const Y = 0x88ff44
+const Z = 0x4488ff
+/** The negative cones: Unity draws them grey, so the lettered three are the ones the eye finds. */
+const NEGATIVE = 0x8a93a0
+const CUBE = 0xc9d1dc
+/** The cube's faces in `BoxGeometry`'s order (+X, −X, +Y, −Y, +Z, −Z): the top brightest, the bottom darkest. */
+const FACE_SHADES = [0.82, 0.82, 1, 0.62, 0.92, 0.92] as const
+/** The part under the pointer. */
+const HOVER = 0xffd54a
 
 const AXES: readonly { name: AxisName; dir: THREE.Vector3; colour: number; letter: string | null }[] = [
-  { name: 'posX', dir: new THREE.Vector3(1, 0, 0), colour: 0xff4466, letter: 'X' },
-  { name: 'posY', dir: new THREE.Vector3(0, 1, 0), colour: 0x88ff44, letter: 'Y' },
-  { name: 'posZ', dir: new THREE.Vector3(0, 0, 1), colour: 0x4488ff, letter: 'Z' },
-  { name: 'negX', dir: new THREE.Vector3(-1, 0, 0), colour: 0xff4466, letter: null },
-  { name: 'negY', dir: new THREE.Vector3(0, -1, 0), colour: 0x88ff44, letter: null },
-  { name: 'negZ', dir: new THREE.Vector3(0, 0, -1), colour: 0x4488ff, letter: null },
+  { name: 'posX', dir: new THREE.Vector3(1, 0, 0), colour: X, letter: 'X' },
+  { name: 'posY', dir: new THREE.Vector3(0, 1, 0), colour: Y, letter: 'Y' },
+  { name: 'posZ', dir: new THREE.Vector3(0, 0, 1), colour: Z, letter: 'Z' },
+  { name: 'negX', dir: new THREE.Vector3(-1, 0, 0), colour: NEGATIVE, letter: null },
+  { name: 'negY', dir: new THREE.Vector3(0, -1, 0), colour: NEGATIVE, letter: null },
+  { name: 'negZ', dir: new THREE.Vector3(0, 0, -1), colour: NEGATIVE, letter: null },
 ]
+
+/** Half the width the gizmo's camera shows, in gizmo units. The cones reach 0.93 and the letters 1.37. */
+const FRAME = 1.45
+/** A cone: its tip toward the cube, its base out. */
+const CONE_RADIUS = 0.19
+const CONE_LENGTH = 0.6
+const CONE_CENTRE = 0.63
+const CUBE_SIDE = 0.36
+const LETTER_AT = 1.2
+/** How far each part answers the pointer: past its drawn shape, so a quick move lands on it. */
+const CONE_REACH = 0.3
+const CUBE_REACH = 0.26
 
 /** Past this many pixels a press stops being a click and becomes an orbit drag. */
 const DRAG_SLOP = 4
@@ -112,46 +146,25 @@ export const orbitAround = (
   return offset.setFromSpherical(spherical).add(target)
 }
 
-/** A ball: a filled disc in the axis colour, lettered for the positive three, translucent for the negative. */
-const ballTexture = (colour: number, letter: string | null): THREE.CanvasTexture => {
+/** A letter beside a positive cone, in the cone's colour. */
+const letterTexture = (letter: string, colour: number): THREE.CanvasTexture => {
   const canvas = document.createElement('canvas')
   canvas.width = 64
   canvas.height = 64
   const ctx = canvas.getContext('2d')
   if (ctx !== null) {
-    ctx.beginPath()
-    ctx.arc(32, 32, 16, 0, 2 * Math.PI)
-    ctx.closePath()
+    ctx.font = 'bold 44px system-ui, sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
     ctx.fillStyle = `#${colour.toString(16).padStart(6, '0')}`
-    ctx.fill()
-    if (letter !== null) {
-      ctx.font = 'bold 26px system-ui, sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillStyle = '#0b1020'
-      ctx.fillText(letter, 32, 41)
-    }
+    ctx.fillText(letter, 32, 35)
   }
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
   return texture
 }
 
-const labelTexture = (text: string): THREE.CanvasTexture => {
-  const canvas = document.createElement('canvas')
-  canvas.width = 128
-  canvas.height = 48
-  const ctx = canvas.getContext('2d')
-  if (ctx !== null) {
-    ctx.font = 'bold 26px system-ui, sans-serif'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillStyle = '#cbd5e1'
-    ctx.fillText(text, 64, 26)
-  }
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
-  return texture
-}
+const UP = new THREE.Vector3(0, 1, 0)
 
 export const createViewGizmo = (opts: ViewGizmoOptions): ViewGizmo => {
   const dim = opts.size ?? 128
@@ -160,52 +173,61 @@ export const createViewGizmo = (opts: ViewGizmoOptions): ViewGizmo => {
   const scene = new THREE.Scene()
   const root = new THREE.Object3D()
   scene.add(root)
-  // Framed so a unit axis sits well inside, leaving room for the balls and the label below.
-  const view = new THREE.OrthographicCamera(-2, 2, 2, -2, 0, 4)
+  const view = new THREE.OrthographicCamera(-FRAME, FRAME, FRAME, -FRAME, 0, 4)
   view.position.z = 2
+  // It never moves, and picking reads its matrix: set once here, not left to the first render to do.
+  view.updateMatrixWorld()
 
-  // --- the three sticks, drawn from the centre outward ---
-  const stick = new THREE.CylinderGeometry(0.045, 0.045, 0.8, 6).rotateZ(-Math.PI / 2).translate(0.4, 0, 0)
-  const stickMaterials: THREE.MeshBasicMaterial[] = []
-  for (const [i, colour] of [0xff4466, 0x88ff44, 0x4488ff].entries()) {
-    const material = new THREE.MeshBasicMaterial({ color: colour, toneMapped: false })
-    stickMaterials.push(material)
-    const mesh = new THREE.Mesh(stick, material)
-    if (i === 1) mesh.rotation.z = Math.PI / 2
-    if (i === 2) mesh.rotation.y = -Math.PI / 2
-    root.add(mesh)
-  }
+  /** Each part's materials and what colour each is at rest, so lighting one part up leaves the rest alone. */
+  const materials = new Map<Part, { material: THREE.MeshBasicMaterial; colour: THREE.Color }[]>()
+  /** The shapes the pointer is tested against, each naming its part. Never drawn. */
+  const reach: THREE.Mesh[] = []
+  const reachMaterial = new THREE.MeshBasicMaterial()
 
-  // --- the six balls ---
-  const balls: THREE.Sprite[] = []
-  const ballTextures: THREE.CanvasTexture[] = []
+  // --- the six cones, tip toward the cube ---
+  const cone = new THREE.ConeGeometry(CONE_RADIUS, CONE_LENGTH, 24)
+  const coneReach = new THREE.SphereGeometry(CONE_REACH, 12, 8)
+  const letters: THREE.Sprite[] = []
   for (const axis of AXES) {
-    const texture = ballTexture(axis.colour, axis.letter)
-    ballTextures.push(texture)
-    const material = new THREE.SpriteMaterial({ map: texture, toneMapped: false, transparent: true })
-    // Hollow-looking negatives, as Blender draws them: the same ball, faded back.
-    if (axis.letter === null) material.opacity = 0.35
-    const sprite = new THREE.Sprite(material)
-    sprite.position.copy(axis.dir)
-    sprite.scale.setScalar(0.5)
-    sprite.userData.axis = axis.name
-    root.add(sprite)
-    balls.push(sprite)
+    const material = new THREE.MeshBasicMaterial({ color: axis.colour, toneMapped: false })
+    materials.set(axis.name, [{ material, colour: new THREE.Color(axis.colour) }])
+    const mesh = new THREE.Mesh(cone, material)
+    // A cone's tip is its +Y end; turned so it points back at the centre.
+    mesh.quaternion.setFromUnitVectors(UP, axis.dir.clone().negate())
+    mesh.position.copy(axis.dir).multiplyScalar(CONE_CENTRE)
+    root.add(mesh)
+
+    const hit = new THREE.Mesh(coneReach, reachMaterial)
+    hit.position.copy(mesh.position)
+    hit.visible = false // a raycast does not look at `visible`; the renderer does
+    hit.userData.part = axis.name
+    root.add(hit)
+    reach.push(hit)
+
+    if (axis.letter !== null) {
+      const letter = new THREE.Sprite(new THREE.SpriteMaterial({ map: letterTexture(axis.letter, axis.colour), toneMapped: false, transparent: true }))
+      letter.position.copy(axis.dir).multiplyScalar(LETTER_AT)
+      letter.scale.setScalar(0.34)
+      root.add(letter)
+      letters.push(letter)
+    }
   }
 
-  // --- the centre: Unity's projection toggle ---
-  const centreGeometry = new THREE.SphereGeometry(0.19, 16, 12)
-  const centreMaterial = new THREE.MeshBasicMaterial({ color: 0x94a3b8, toneMapped: false })
-  const centre = new THREE.Mesh(centreGeometry, centreMaterial)
-  root.add(centre)
-
-  // --- the projection label, under the gizmo and not rotating with it ---
-  let labelMap = labelTexture('Persp')
-  const labelMaterial = new THREE.SpriteMaterial({ map: labelMap, toneMapped: false, transparent: true })
-  const label = new THREE.Sprite(labelMaterial)
-  label.position.set(0, -1.62, 0)
-  label.scale.set(1.5, 0.56, 1)
-  scene.add(label) // on the scene, not the root: it reads as text, so it must not tumble
+  // --- the cube: the projection toggle ---
+  // A shade per face — lit from above, as the level is — or unlit it reads as a flat grey blob, not a cube.
+  const cubeGeometry = new THREE.BoxGeometry(CUBE_SIDE, CUBE_SIDE, CUBE_SIDE)
+  const cubeFaces = FACE_SHADES.map((shade) => {
+    const colour = new THREE.Color(CUBE).multiplyScalar(shade)
+    return { material: new THREE.MeshBasicMaterial({ color: colour, toneMapped: false }), colour }
+  })
+  materials.set('centre', cubeFaces)
+  root.add(new THREE.Mesh(cubeGeometry, cubeFaces.map((f) => f.material)))
+  const cubeReachGeometry = new THREE.SphereGeometry(CUBE_REACH, 12, 8)
+  const cubeHit = new THREE.Mesh(cubeReachGeometry, reachMaterial)
+  cubeHit.visible = false
+  cubeHit.userData.part = 'centre'
+  root.add(cubeHit)
+  reach.push(cubeHit)
 
   const raycaster = new THREE.Raycaster()
   const pointer = new THREE.Vector2()
@@ -216,6 +238,35 @@ export const createViewGizmo = (opts: ViewGizmoOptions): ViewGizmo => {
     const rect = opts.dom.getBoundingClientRect()
     const at = gizmoPointer(rect, event.clientX, event.clientY, opts.dom.clientWidth, dim)
     return at === null ? null : pointer.set(at.x, at.y)
+  }
+
+  const face = (): void => {
+    root.quaternion.copy(opts.camera().quaternion).invert()
+    root.updateMatrixWorld()
+  }
+
+  /**
+   * The part under the pointer: the **nearest** one it is over, so what is drawn in front is what is clicked.
+   * `undefined` when the pointer is in the square but over none of them — which still orbits on a drag.
+   */
+  const partAt = (local: THREE.Vector2): Part | undefined => {
+    face()
+    raycaster.setFromCamera(local, view)
+    return raycaster.intersectObjects(reach, false)[0]?.object.userData.part as Part | undefined
+  }
+
+  let hovered: Part | null = null
+  const hoverColour = new THREE.Color(HOVER)
+  const light = (part: Part | null): void => {
+    if (part === hovered) return
+    hovered = part
+    for (const [name, faces] of materials) {
+      for (const [i, f] of faces.entries()) {
+        // A lit cube keeps its shading, so it still reads as a cube.
+        if (name === part) f.material.color.copy(hoverColour).multiplyScalar(faces.length > 1 ? (FACE_SHADES[i] ?? 1) : 1)
+        else f.material.color.copy(f.colour)
+      }
+    }
   }
 
   // --- snap animation ---
@@ -256,8 +307,7 @@ export const createViewGizmo = (opts: ViewGizmoOptions): ViewGizmo => {
   }
 
   // --- pointer ---
-  let pressed: 'centre' | 'axis' | 'empty' | null = null
-  let pressedAxis: THREE.Vector3 | null = null
+  let pressed: Part | 'empty' | null = null
   let dragged = false
   let lastX = 0
   let lastY = 0
@@ -273,11 +323,10 @@ export const createViewGizmo = (opts: ViewGizmoOptions): ViewGizmo => {
     get animating() {
       return animating
     },
+    size: dim,
 
     render: (renderer) => {
-      root.quaternion.copy(opts.camera().quaternion).invert()
-      root.updateMatrixWorld()
-
+      face()
       const previousAutoClear = renderer.autoClear
       renderer.getViewport(viewport)
       // Viewport coordinates count from the bottom, so the top-right corner is (width - dim, height - dim).
@@ -296,18 +345,7 @@ export const createViewGizmo = (opts: ViewGizmoOptions): ViewGizmo => {
       if (animating) return false
       const local = localPointer(event)
       if (local === null) return false
-
-      raycaster.setFromCamera(local, view)
-      const onBall = raycaster.intersectObjects(balls, false)[0]
-      const onCentre = raycaster.intersectObject(centre, false)[0]
-
-      pressedAxis = null
-      if (onBall !== undefined && (onCentre === undefined || onBall.distance <= onCentre.distance)) {
-        pressed = 'axis'
-        pressedAxis = AXES.find((a) => a.name === onBall.object.userData.axis)?.dir.clone() ?? null
-      } else if (onCentre !== undefined) pressed = 'centre'
-      else pressed = 'empty'
-
+      pressed = partAt(local) ?? 'empty'
       dragged = false
       lastX = event.clientX
       lastY = event.clientY
@@ -318,7 +356,7 @@ export const createViewGizmo = (opts: ViewGizmoOptions): ViewGizmo => {
       if (pressed === null) return
       const dx = event.clientX - lastX
       const dy = event.clientY - lastY
-      if (!dragged && Math.hypot(event.clientX - lastX, event.clientY - lastY) < DRAG_SLOP) return
+      if (!dragged && Math.hypot(dx, dy) < DRAG_SLOP) return
       // Past the slop the press is a drag, wherever it started — Blender orbits from the balls too.
       dragged = true
       lastX = event.clientX
@@ -328,32 +366,31 @@ export const createViewGizmo = (opts: ViewGizmoOptions): ViewGizmo => {
 
     pointerUp: () => {
       const was = pressed
-      const axis = pressedAxis
       pressed = null
-      pressedAxis = null
       if (dragged || was === null || was === 'empty') return null
       if (was === 'centre') return 'centre'
-      if (axis !== null) startSnap(axis)
+      const axis = AXES.find((a) => a.name === was)
+      if (axis !== undefined) startSnap(axis.dir)
       return 'axis'
     },
 
-    setLabel: (text) => {
-      const next = labelTexture(text)
-      labelMaterial.map = next
-      labelMaterial.needsUpdate = true
-      labelMap.dispose()
-      labelMap = next
+    hover: (event) => {
+      const local = event === null ? null : localPointer(event)
+      light(local === null ? null : (partAt(local) ?? null))
+      return hovered !== null
     },
 
     dispose: () => {
-      stick.dispose()
-      for (const m of stickMaterials) m.dispose()
-      for (const s of balls) s.material.dispose()
-      for (const t of ballTextures) t.dispose()
-      centreGeometry.dispose()
-      centreMaterial.dispose()
-      labelMaterial.dispose()
-      labelMap.dispose()
+      cone.dispose()
+      coneReach.dispose()
+      cubeGeometry.dispose()
+      cubeReachGeometry.dispose()
+      reachMaterial.dispose()
+      for (const faces of materials.values()) for (const f of faces) f.material.dispose()
+      for (const s of letters) {
+        s.material.map?.dispose()
+        s.material.dispose()
+      }
     },
   }
 }
