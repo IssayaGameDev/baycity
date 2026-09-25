@@ -2596,6 +2596,20 @@
           },
           "components": [
             {
+              "id": "f0392856",
+              "type": "Mesh",
+              "params": {
+                "model": "builtin:box"
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "material": "4a11d049f9f8e5ac"
+              }
+            },
+            {
               "id": "e94eb0e6",
               "type": "Collider",
               "params": {
@@ -2613,20 +2627,6 @@
                   "z": 0
                 },
                 "trigger": true
-              }
-            },
-            {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
-              "id": "efa7dd05",
-              "type": "Renderer",
-              "params": {
-                "material": "4a11d049f9f8e5ac"
               }
             },
             {
