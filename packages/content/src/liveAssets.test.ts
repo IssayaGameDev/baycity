@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { applyAssetOps, diffAssetOps, isAssetOp, isLiveAssetPath, LiveAssetError, mergeAssetOps, validateLiveAsset, type AssetOp } from './liveAssets'
+import { applyAssetOps, diffAssetOps, gameDocId, gameOfDocId, isAssetOp, isLiveAssetPath, LiveAssetError, mergeAssetOps, validateLiveAsset, type AssetOp } from './liveAssets'
 
 /**
  * A data-file asset's ops (ADR 0159): set a value at a path, or remove it — nothing about what the file means —
@@ -80,6 +80,15 @@ describe('what is live, and what a material must be', () => {
     expect(validateLiveAsset('material', { params: {} })).toMatch(/shader/)
     expect(validateLiveAsset('material', { shader: 'standard', params: { color: '#fff' } })).toMatch(/color/)
     expect(validateLiveAsset('texture', {})).toMatch(/not a live asset/)
+  })
+
+  it('accepts a game’s data file (ADR 0162): its components by name, its settings numbers or curve points', () => {
+    expect(validateLiveAsset('game', { components: ['Hazard'] })).toBeNull()
+    expect(validateLiveAsset('game', { components: [], settings: { keyPitch: 1, speed: [{ x: 0, y: 10 }] } })).toBeNull()
+    expect(validateLiveAsset('game', { settings: {} })).toMatch(/components/)
+    expect(validateLiveAsset('game', { components: [], settings: { keyPitch: '1' } })).toMatch(/keyPitch/)
+    expect(validateLiveAsset('game', { components: [], settings: { speed: [{ x: 0 }] } })).toMatch(/speed/)
+    expect([gameDocId('keyboard'), gameOfDocId('game:keyboard'), gameOfDocId('0123456789abcdef')]).toEqual(['game:keyboard', 'keyboard', null])
   })
 
   it('checks ops off the wire', () => {

@@ -8,10 +8,10 @@ Level/prefab editor. `pnpm dev:editor` → `http://localhost:5176` (the dev host
 | --- | --- | --- |
 | Level (node tree + `config`) | `content/<game>/levels/<name>.level.json` | `PUT /api/levels/<game>/<name>` (`saveFile`, `src/filesApi.ts`); locked while open (ADR 0083). Renamed and deleted through `POST /api/levels/move\|delete` (ADR 0110) |
 | Prefab (a root `Node`) | `content/assets/prefabs/<name>.prefab.json` — an **asset** with a `.meta` id (ADR 0026) | created once by `Save as prefab…` (`createPrefab`, `src/assetsApi.ts`), then **edited live** in its own room (ADR 0091) |
-| Game shared-component list | `content/<game>/game.json` | `PUT /api/games/<game>` (`saveGame`) — appended by adoption (ADR 0077) |
+| Game data file (shared components, settings) | `content/<game>/game.json` | a live document: `POST /api/live/game/<game>/ops` (`gameSync`, ADR 0162) — its list appended by adoption (ADR 0077), its settings from the games window |
 | Materials | `content/assets/**/*.mat.json` | a live document: `POST /api/live/asset/<id>/ops` (`assetSync.ts`, ADR 0159); a new one is created with `PUT /content/<path>` |
 
-Levels and prefabs are live rooms and materials live documents, so there is no Save and no lock for any of them (ADR 0089, ADR 0091, ADR 0159).
+Levels and prefabs are live rooms and materials and game files live documents, so there is no Save and no lock for any of them (ADR 0089, ADR 0091, ADR 0159, ADR 0162).
 
 ## Panel layout (`tools/editor/index.html`)
 
@@ -371,7 +371,7 @@ selection change. In the `selection-edges` group outside `instanceRoot`, so neve
 
 | Part | |
 | --- | --- |
-| Game, Environment | above the tree, a rule under them: `gamepad` / `sun` icons (`icons.ts`), not emoji |
+| Level, Environment | above the tree, a rule under them: `level` / `sun` icons (`icons.ts`), not emoji. **Level** is the level's network bounds (ADR 0162, `levelSelected`, Inspector card `@level`); which game it is for is its folder |
 | guides | `.guides`: a 1 px `--guide` line per level above the row, under the twist of the row it hangs from — a repeating gradient `depth × 16` px wide |
 | twist | the `chevron` icon, turned −90° while shut |
 | cube | `rowIcon(row)`: `prefab` (filled) in `--link` for a placement, `object` in light blue (`is-piece`) for a prefab's piece, `object` in grey for the level's own. A placement's name stays `--link` |
@@ -420,17 +420,19 @@ keyboard assets  <- the open game's own (ProjectHost.game), drawn even before it
 
 ## The games window (ADR 0162, `src/gamesWindow.ts`)
 
-`createGamesWindow(host)` → `{ open, close, isOpen, render }`, opened by the top bar's game button (`tb-game`,
-`game › level ▾`; inside a prefab `game ▾ › level › prefab`, the level the way back). A window over the editor
-(`.gw-scrim`, z 40, under menus and dialogs): games on the left — the one you are in dotted, the picked one lit —
-and the picked game's page with **Levels** and **Components**. Picking a game only browses.
+`createGamesWindow(host)` → `{ open, close, isOpen, render, settingsChanged(game) }`, opened by the top bar's game
+button (`tb-game`, `game › level ▾`; inside a prefab `game ▾ › level › prefab`, the level the way back). A window
+over the editor (`.gw-scrim`, z 40, under menus and dialogs): games on the left — the one you are in dotted, the
+picked one lit — and the picked game's page with **Levels**, **Settings** and **Components**. Picking a game only
+browses.
 
 | Part | Now |
 | --- | --- |
 | Levels | `gameRows(games, levels)` (`assetTree.ts`, default first): a **New level** tile (`createLevel(null, game)`) and a tile per level, the open one lit, faces of who is in it (`room.peopleIn`, colours `peerCss`). Double-click opens (`guardUnsaved` → `openFile`, which is how the editor moves between games); right-click is `levelMenu` |
 | Moving | a tile dragged onto another game on the left: held over it, the game lights or greys with why (`moveRefusal` → `levelMoveRefusal` in `main.ts`: a level of that name there, someone in it, a component of another game's own it cannot have, from `FileEntry.components`); dropped, `fileOps.moveLevelToGame` asks (`askDestructive`, *Move*) and relocates it as a rename does (`relocateLevel`: leave if open, move, reopen); the server refuses while it uses its old game's own assets |
+| Settings | *Game settings* below: any game's, not only the one you are in |
 | Components | `registryFor(MODES[game]).all()` as its own (not engine, not shared), Shared (`isSharedComponent`), Built in (`ENGINE_COMPONENTS` + `PLAYER_COMPONENTS`); read-only |
-| keys | captured while open, so the level behind gets none; Escape and a press outside close it; left alone while a menu or a dialog (`[data-dialog]`, `confirm.ts`) is up |
+| keys | the level behind gets none: a key pressed outside the window is stopped at `window` (capture), one pressed in it (or in a graph opened large, which goes inside `.gw-scrim`) reaches its field first and stops at `.gw-scrim` on the way out. Escape and a press outside close it; Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z are `host.undo` / `redo`, the one history — not while typing in a field. Left alone while a menu or a dialog (`[data-dialog]`, `confirm.ts`) is up |
 | live | `rooms` (who is in which document) and `levels` (the list changed) from the server (`collab.ts` → `liveSession` → `roomsChanged` → `render`, `levelsChanged` → `refreshFileList`) |
 
 ## Right-clicking a level (ADR 0110)
@@ -509,19 +511,20 @@ server-side changed. Nobody following, nothing is sent.
 
 | Symbol | Role |
 | --- | --- |
-| `activeMode` | the opened level's **folder** — its name is qualified `<game>/<name>` (ADR 0108), so the game is known before the file is read (fallback `soleMode()`) — or a game clicked in the Project tree (`onPickGame`, which selects without opening anything) |
-| `gameData` | per game, `content/<game>/game.json` via `loadGame` at boot (`reloadAssets`) and after each `adopt` |
+| `activeMode` | the opened level's **folder** — its name is qualified `<game>/<name>` (ADR 0108), so the game is known before the file is read (fallback `soleMode()`) |
+| `gameData` | per game, `content/<game>/game.json` (`parseGameData`), read by `loadGame` in `reloadAssets` with where the copy stands (`gameOrigins`), then kept live by `gameSync` (*Live assets* below) |
 | `registryFor(mode)` | `mode.registry` + `sharedComponents(gameData[mode.name] − present)` — live data merged over the bundled code |
 | `registry()` | `registryFor(activeMode)`, or `DEFAULT_REGISTRY` with no game |
 | `adoptable()` | `SHARED_COMPONENT_TYPES` the game lacks (`Boss`, `Bumper`, `Checkpoint`, `Goal`, `Hazard`, `Sequence`) |
-| `adopt(types)` | shared ∧ new → `saveGame` → `gameData` → `reopenWithRegistry()` |
+| `adopt(types)` | shared ∧ new → `gameSync.edit(gameDocId(game), [set components])` → `gameShown` → `reopenWithRegistry()` |
+| `gameShown(game, before)` | after any change to a game's copy — this tab's, anyone's, an undo: the list changed → `reopenWithRegistry()` (the game you are in) and the games window redrawn; the settings → `meshes.buildAll()` for a `surfaceGrid` game (the key pitch, ADR 0120) and `gamesWindow.settingsChanged(game)` |
 
 Adoption points (ADR 0077):
 1. **Open** (`openFile`): `componentTypesInRaw(raw)` unknown-but-shared → adopted before `validateLevel`; any other unknown type is a load error.
 2. **Place** (`armAsset`): `missingIn(assetId)` splits a prefab's unknown types into `shared`/`foreign`; shared adopted before arming — not while a prefab is open on top (a prefab belongs to no game).
 3. **Add Component** (Inspector button, Hierarchy submenu): `adoptable()` listed beside addable types; pick → `adopt` → `doc.addComponent`.
 
-File list filtered by game: `visibleLevels()` keeps entries whose `mode` — the folder they are in — equals `activeMode.name`. There is no unassigned case left: a `.level.json` outside a game's `levels/` is not listed at all (ADR 0108).
+There is no unassigned level: a `.level.json` outside a game's `levels/` is not listed at all (ADR 0108).
 
 ## Other people's asset changes (ADR 0156, `src/assetWatch.ts`)
 
@@ -570,7 +573,10 @@ read `materialOf` at each edit; a vec2 keeps its own latest), a texture pick upd
 ## Live assets (ADR 0159, `src/assetSync.ts`)
 
 A JSON asset of a live kind (`LIVE_ASSET_KINDS`, `content.md`: `material`) is a document on the server, edited by
-path ops, with no lock. `createAssetSync(host)` keeps, per asset it has seen an edit to:
+path ops, with no lock; so is a game's data file (ADR 0162), by id `gameDocId(game)` = `game:<game>`. Two
+`createAssetSync(host)`: `assetSync` over the library's materials, `gameSync` over `gameData` (fetch `loadGame`,
+post `/api/live/game/<game>/ops`); an `asset` event goes to the one its id belongs to (`gameOfDocId`). Each keeps,
+per document it has seen an edit to:
 
 | | |
 | --- | --- |
@@ -606,8 +612,8 @@ createFieldPresence(container, { report(spot | null), rings(): Ring[] }): { repa
 In a line: focus in it, or a pointer pressed on it; `report` at once going in, 150 ms late going out. `repaint`
 rings each `Ring`'s line (`.irow.peer-in`, `--peer`, title *X is in this field*) and runs on its own after any
 rebuild (a `MutationObserver`), dropping a focus the rebuild took away. Cards: `addSection(key, { card })` sets
-`data-card` — `<type>#<ordinal>` for a component, the key otherwise (`@transform`, `@game-…`, `@env-…`);
-`#asset-inspector` is `asset`. main: `objectFields` over `#inspector` (targets: `@game` / `@env` or the selection's
+`data-card` — `<type>#<ordinal>` for a component, the key otherwise (`@transform`, `@net-bounds`, `@env-…`);
+`#asset-inspector` is `asset`. main: `objectFields` over `#inspector` (targets: `@level` / `@env` or the selection's
 refs, each `room.docTarget(suffix)` = `<kind>:<doc>|<suffix>`; rings for the primary) and `assetFields` over
 `#asset-inspector` (`asset:<id>`); one spot for the tab, the asset one first (`tellField`). `room.setField(spot)` →
 `collab.setField` (`POST …/field`, in order, re-sent on each new connection); `fields` event → `room.fieldsOn(target)`
@@ -619,15 +625,22 @@ refs, each `room.docTarget(suffix)` = `<kind>:<doc>|<suffix>`; rings for the pri
 - `unplaceableWhy(assetId)` non-null for `foreign` types, **or an asset the document may not use** (ADR 0161: `mayUse(editingFor(), path)` — `editingFor` is the open prefab's library, `null` for Shared's, else the level's game) → Project tile greyed, reason in tooltip (`unplaceableWhy` host option, `src/projectPanel.ts`); context-menu "Place in the level" disabled with the same reason.
 - `Doc.placePrefab` returns `-1` on any remaining unknown type — second gate.
 
-## Game settings (ADR 0087)
+## Game settings (ADR 0087, ADR 0162)
 
-Under the Game row: one number field per number setting, saved as it settles, in `activeMode.settings`, and **one section with a
-graph per curve setting** (`src/curveEditor.ts`, ADR 0088: drag, click to add, double-click/Delete to remove,
-fields for the selected point, `default`, its own undo/redo — Ctrl+Z/Ctrl+Y with the graph focused, or ↶ ↷ — since every edit saves at once; wheel zooms around the cursor (X over the bottom axis, Y over the left, both over the plot), right-/Shift-drag pans, `fit`/F reframes, `⤢` opens the same graph large over the viewport; log axis when `logY`; readout of the value under the pointer and the
-last segment's ratio). `host.settings()` → `{ decls, values }`, values = `readSettings(decls, gameData[game].settings)`;
-a change → `host.onSettingChanged(key, number | CurvePoint[])` → `gameData[game].settings[key] = value` and
-`saveGame` writes the **whole** file (`components` + `settings`). `adopt` spreads the file too, so a component
-adoption keeps the settings. `loadGame` accepts numbers and point lists (`normalizePoints`).
+The games window's **Settings** tab, for the picked game: a `fieldRow` with a `scrubFieldOf` per number setting
+(`numberScrub(decl)`, `.gw-settings`, its own `--lw`), and a graph per curve setting (`src/curveEditor.ts`, ADR 0088,
+600 × 220: drag, click to add, double-click/Delete to remove, fields for the selected point, `default`; wheel zooms
+around the cursor (X over the bottom axis, Y over the left, both over the plot), right-/Shift-drag pans, `fit`/F
+reframes, `⤢` opens it large over the window — `overlayParent: .gw-scrim`, Escape shuts only it; log axis when
+`logY`; readout of the value under the pointer and the last segment's ratio). The graph keeps **no history of its
+own**: each change is one `onChange`, and Ctrl+Z in it goes on to the one history. Hints are `.gw-note` lines.
+
+`host.settings(game)` → `{ decls, values }`, values = `readSettings(decls, gameData[game].settings)`. A change →
+`host.onSettingChanged(game, key, number | CurvePoint[], ongoing)` → `changeGameSetting`: `diffAssetOps(old, new,
+['settings', key])` → `gameSync.edit` (shown at once, `gameShown`) and `edits.recordAsset` (label `<Game> <setting>`).
+A number drags live: each step `ongoing`, `live.end` the value it let go on, not ongoing — no ops, the entry ends.
+Anyone's change, and an undo, reach the fields through `settingsChanged(game)` → each field's `set` (skips one
+being dragged or typed in) or the graph's `set`.
 
 ## Shapes are built-in meshes (ADR 0090)
 
@@ -839,8 +852,8 @@ A line is `fieldRow(label, ...controls)` (`controls.ts`), which a card's `field`
 | head | active tick (ADR 0102) and the name; the **prefab bar** on a placement or a piece — icon, the prefab's name (`host.prefabName(id)`) or `part of <prefab>`, `×N` (`Doc.refCount`), **Open** (a ref only), **Overrides ▾** with the count: on a placement `Revert all` / `Apply all` / `Unlink from prefab` over everything inside it (`placementOverrides` + `placementAdded` + `placementRemoved`), on a piece `Revert all` / `Apply` over its own (`overridesOf`); greyed with `matches the prefab` when there is nothing. A plain object has no bar. `N selected · editing what they share` under it |
 | cards | `.isec`, one per component, Transform first: twist, enable, `componentIcon(type)` (a game's own components share `component`), name, badge (`added` or the override count), a sequence's tools, ⋯. A click on the header's empty part opens or shuts it; shut state per component id survives rebuilds. A component with no visible parameter is `.isec-bare`: its header alone. The Transform is `.isec-fixed`: always open, no twist, never moved. **Reorder** (`cardDrag.ts`): a `.movable` card — an own component, one object selected, where Move up / Move down are offered — is dragged by its header; after 4 px a copy follows the pointer, a placeholder opens at `slotFor(y, middles)` (pure: before the first other card whose middle is below), the cards slide, the panel scrolls at its edge, Escape cancels; the drop is `Doc.moveComponent(i, id, to − from)`, one op. `cardJustDragged()` keeps the drop from toggling the card. Then **Add Component** (`.iadd`). No footer |
 | lines | `.irow`: a label in `--lw` = `clamp(72px, 40% - 24px, 280px)` of the line, then the controls; `.over` bars an overridden one, `.mixed` italicises one the selection disagrees about; `.inote` for a line of explanation |
-| fields | `scrubFieldOf` (numbers; `numberScrub(decl)` says how they drag), `checkField`, `selectField`, `textField`, `colorField` (the browser's picker and the `#rrggbb`). `null` is mixed: blank, and a number is then typed only. Environment, Game, network bounds and game settings use the same fields |
-| a drag | `Live` on the field: `liveWrite` opens `host.beginDrag()` when the press becomes a drag, writes on every move, and `host.endDrag(label)` when it lets go — one history entry, one message to the room, the viewport following the pointer. `main.ts` counts it in `gizmoDragging`, so a remote repaint waits, and drains it at the end. Written as they settle instead: game settings and the network bound (each write saves a file), and a multi-selection's transform (`writeAxis` is its own entry). A rebuild mid-drag closes the entry |
+| fields | `scrubFieldOf` (numbers; `numberScrub(decl)` says how they drag), `checkField`, `selectField`, `textField`, `colorField` (the browser's picker and the `#rrggbb`). `null` is mixed: blank, and a number is then typed only. Environment and network bounds use the same fields, as do the games window's settings |
+| a drag | `Live` on the field: `liveWrite` opens `host.beginDrag()` when the press becomes a drag, writes on every move, and `host.endDrag(label)` when it lets go — one history entry, one message to the room, the viewport following the pointer. `main.ts` counts it in `gizmoDragging`, so a remote repaint waits, and drains it at the end. Written as they settle instead: the network bound, and a multi-selection's transform (`writeAxis` is its own entry). A rebuild mid-drag closes the entry |
 | sync | the gizmo moved the selection: `sync` sets the transform's nine fields (`ScrubHandle.set`), skipping one being dragged or typed in; nothing is rebuilt |
 
 ## Numbers in the Inspector (ADR 0113)

@@ -6,7 +6,6 @@ import { DEFAULT_POSTFX, DEFAULT_SKY_PARAMS } from '@mp/render-three'
 
 import type { ComponentView, Doc } from './editorDoc'
 import type { ContextMenu, MenuItem } from './menu'
-import { isCurveSetting, type CurvePoint, type SettingDecls } from '@mp/mode'
 
 import {
   checkField,
@@ -27,7 +26,6 @@ import {
   type ScrubSpec,
 } from './controls'
 import { cardJustDragged, pressCardToDrag } from './cardDrag'
-import { createCurveEditor } from './curveEditor'
 import { icon, type IconName } from './icons'
 import { sequenceSummary } from './sequenceEdit'
 import { sequenceEditor } from './sequenceEditor'
@@ -65,15 +63,8 @@ export interface InspectorHost {
    * is a level setting rather than a component because the sun and the sky are one input (ADR 0046).
    */
   envSelected: () => boolean
-  /** The Game row is picked (ADR 0052): the panel then edits which game the level is for. */
-  gameSelected: () => boolean
-  /** The installed games, for the Game section's picker. */
-  games: () => readonly { name: string; label: string }[]
-  /** The active game's declared settings and current values (ADR 0087/0088), or `null` when it declares none. */
-  settings: () => { decls: SettingDecls; values: Record<string, number | CurvePoint[]> } | null
-  onSettingChanged: (key: string, value: number | CurvePoint[]) => void
-  /** The level was reassigned to another game: its registry changed, so panels and the world rebuild. */
-  onModeChanged: () => void
+  /** The Level row is picked (ADR 0162): the panel then edits the level's network bounds. */
+  levelSelected: () => boolean
   /** The environment changed: rebake the sky and relight, since sun, ambient and sky move together. */
   onEnvironmentChanged: () => void
   /**
@@ -1367,67 +1358,15 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   }
 
   /**
-   * Which game this level is for (ADR 0052). One field, because that is all a game contributes to a level.
-   *
-   * Reassigning lives here rather than on the toolbar, deliberately: retagging a level is an edit with
-   * consequences — its components are validated against the new game's registry — so it belongs where those
-   * consequences are in front of you.
+   * The level's own settings (ADR 0162): its network bounds. Which game it is for is its folder, and that game's
+   * settings are the games window's.
    */
-  const addGameSection = (doc: Doc): void => {
+  const addLevelSection = (doc: Doc): void => {
     if (doc.mode === 'prefab') {
-      addSection('@game', { title: 'Game' }).row('', 'a prefab belongs to no game')
+      addSection('@level', { title: 'Level' }).row('', 'a prefab has no network bounds of its own')
       return
     }
-    const section = addSection('@game', { title: 'Game' })
-    const ref = doc.modeRef()
-    const installed = host.games()
-
-    const choices: Choice[] = [{ value: '', label: '(none)' }, ...installed.map((g) => ({ value: g.name, label: g.label }))]
-    // A game the level names but this build does not have is offered as itself, so selecting something else is
-    // a deliberate change rather than the only thing the dropdown will let you do.
-    if (ref !== undefined && !installed.some((g) => g.name === ref.name)) choices.push({ value: ref.name, label: `${ref.name} (not installed)` })
-    section.field(
-      'game',
-      selectField(choices, ref?.name ?? '', (game) => {
-        edited(() => doc.setMode(game === '' ? null : game))
-        host.onModeChanged()
-      }),
-    )
-
-    if (ref === undefined) section.row('', 'unassigned — its components are checked against everything this build knows')
-    else if (!installed.some((g) => g.name === ref.name)) section.row('', `'${ref.name}' is not installed: no rules, no rule gizmos`)
-
     addBoundsSection(doc)
-
-    // The game's numbers (ADR 0087): one field per declaration, saved to the game's data file as each settles.
-    const settings = host.settings()
-    if (settings === null) return
-    const tuning = addSection('@game-settings', { title: 'Game settings' })
-    for (const [key, decl] of Object.entries(settings.decls)) {
-      if (isCurveSetting(decl)) {
-        // A curve gets its own card: a graph is not a line (ADR 0088).
-        const sec = addSection(`@game-curve-${key}`, { title: decl.label })
-        const pts = settings.values[key]
-        const holder = el('div', 'icurve')
-        sec.append(holder)
-        createCurveEditor(holder, { decl, points: Array.isArray(pts) ? pts : decl.default, onChange: (points) => host.onSettingChanged(key, points) })
-        if (decl.hint !== undefined) sec.row('', decl.hint)
-        continue
-      }
-      const v = settings.values[key]
-      tuning.field(
-        decl.label,
-        numberField({
-          value: typeof v === 'number' ? v : decl.default,
-          spec: numberScrub(decl),
-          title: decl.label,
-          history: decl.label,
-          live: false,
-          write: (n) => host.onSettingChanged(key, n),
-        }).root,
-      )
-      if (decl.hint !== undefined) tuning.row('', decl.hint)
-    }
   }
 
   /**
@@ -1598,8 +1537,8 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     renderHead()
 
     const doc = host.doc()
-    if (doc !== null && host.gameSelected()) {
-      addGameSection(doc)
+    if (doc !== null && host.levelSelected()) {
+      addLevelSection(doc)
       return
     }
     if (doc !== null && host.envSelected()) {

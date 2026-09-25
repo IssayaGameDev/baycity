@@ -12,7 +12,7 @@ import { LevelError, validateLevel } from '../../../packages/content/src/validat
 import { createAssetIndex, type AssetIndex } from './assetIndex'
 import { libraryFolders } from './assetImporter'
 import type { LiveAssets } from './liveAssets'
-import { isAssetOp, isLiveAssetPath } from '../../../packages/content/src/liveAssets'
+import { gameDocId, isAssetOp, isLiveAssetPath } from '../../../packages/content/src/liveAssets'
 import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './assetOps'
 import { componentTypesIn, levelMoveRefusal, libraryName, moveRefusal } from './libraryMoves'
 import type { ChangeFeed } from './changes'
@@ -38,7 +38,9 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *                                       tag in step, and is 409 while it uses its old game's own assets (ADR 0162)
  *   POST /api/levels/delete           → { path } — qualified; the file goes for good (ADR 0110)
  *                                       A level made, renamed or deleted tells every editor: a `levels` event (ADR 0162)
- *   GET/PUT /api/games/:name          → { components } (ADR 0077)
+ *   GET/PUT /api/games/:name          → { components, settings? } (ADR 0077, 0087). GET says what it served
+ *                                       (`x-asset-epoch`, `x-asset-seq`) and serves the live copy; PUT is 409 while
+ *                                       the file is open live (ADR 0162)
  *   GET  /api/assets                  → { entries, libraries, folders, seq } (runs the importer; seq: the change feed's position)
  *   POST /api/assets/mkdir|move|delete → { path } · { from, to } · { path } — a move into another library is 409 while
  *                                       something would be left using what it may not (ADR 0161)
@@ -56,6 +58,8 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *                                       plus `prefab` on a level's stream: a prefab the level uses was edited
  *                                       :kind is `level` or `prefab` — a prefab is its own document (ADR 0091)
  *   POST /api/live/:kind/:name/ops          → { connId, batchId, ops } → { ok, seq } · 400 bad op
+ *   POST /api/live/asset/:id/ops · /api/live/game/:game/ops → { connId, batchId, ops } — a material, a game's data
+ *                                       file (ADR 0159, 0162): echoed to every stream as an `asset` event
  *   POST /api/live/:kind/:name/hold         → { connId, refs } — what I have selected is exactly these → { ok }; shown, never refused (ADR 0158)
  *   POST /api/live/:kind/:name/release      → { connId, refs } → { ok }
  *   POST /api/live/:kind/:name/ping         → { connId } — still here (the editor, every heartbeat)
@@ -607,10 +611,18 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     if (kind === 'games' && !isGameName(rest)) return sendJson(res, 404, { error: `${rest} is not a game name` }), true
     const name = ref === null ? rest : qualify(ref)
     const file = join(CONTENT, ref === null ? gameFile(rest) : levelFile(ref))
+    // A game's data file is a live document (ADR 0162): its copy, when open, is ahead of the file.
+    const liveGame = kind === 'games' && opts.liveAssets !== undefined ? opts.liveAssets.current(gameDocId(name)) : null
     if (req.method === 'GET') {
       // An open live document is newer than its file until the next flush; serve it.
       const open = kind === 'levels' ? opts.live?.levelOf(name) : null
       if (open !== null && open !== undefined) return sendJson(res, 200, open), true
+      if (kind === 'games' && opts.liveAssets !== undefined) {
+        // What it served, so the editor knows which edits it already has — `0` for the file.
+        res.setHeader('x-asset-epoch', String(liveGame?.epoch ?? opts.liveAssets.epoch))
+        res.setHeader('x-asset-seq', String(liveGame?.seq ?? 0))
+        if (liveGame !== null) return sendJson(res, 200, liveGame.json), true
+      }
       if (!existsSync(file)) return sendJson(res, 404, { error: 'not found' }), true
       sendJson(res, 200, JSON.parse(readFileSync(file, 'utf8')))
       return true
@@ -618,6 +630,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     if (req.method === 'PUT') {
       const key = kind === 'levels' ? keyFor.level(name) : keyFor.game(name)
       if (kind === 'levels' && opts.live?.isOpen(name) === true) return sendJson(res, 409, { error: `${name} is open live; edit it in the editor` }), true
+      if (liveGame !== null) return sendJson(res, 409, { error: `${name}'s game file is open live; edit it in the editor` }), true
       if (refuseIfLocked(res, user, [key])) return true
       try {
         const parsed: unknown = await readJson(req)
@@ -684,12 +697,15 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     if (url === '/api/live' && req.method === 'GET') return sendJson(res, 200, { docs: live.status() }), true
 
     /**
-     * An edit to a data-file asset (ADR 0159), sent on whatever room connection the editor has: the asset is not
-     * a room anyone joins, since everyone sees it drawn. The echo on every stream is the acknowledgement.
+     * An edit to a data-file asset (ADR 0159) or a game's data file (ADR 0162), sent on whatever room connection
+     * the editor has: neither is a room anyone joins, since everyone sees them drawn. The echo on every stream is
+     * the acknowledgement.
      */
-    const am = /^\/api\/live\/asset\/([0-9a-f]{16})\/ops$/.exec(url)
+    const am = /^\/api\/live\/(?:asset\/([0-9a-f]{16})|game\/([\w-]+))\/ops$/.exec(url)
     if (am !== null) {
       if (opts.liveAssets === undefined) return false
+      const id = am[1] ?? gameDocId(am[2]!)
+      if (am[2] !== undefined && !gameNames().includes(am[2])) return sendJson(res, 404, { error: `no game ${am[2]}` }), true
       if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST expected' }), true
       let args: Record<string, unknown>
       try {
@@ -700,7 +716,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       const ops = Array.isArray(args.ops) ? (args.ops as unknown[]) : null
       if (ops === null || !ops.every(isAssetOp)) return sendJson(res, 400, { error: 'ops: expected asset ops' }), true
       try {
-        const r = opts.liveAssets.apply(am[1]!, typeof args.connId === 'string' ? args.connId : '', user, {
+        const r = opts.liveAssets.apply(id, typeof args.connId === 'string' ? args.connId : '', user, {
           batchId: typeof args.batchId === 'string' ? args.batchId : '',
           ops,
         })

@@ -42,9 +42,8 @@ const rig = (
     onSelect: (i) => void picked.push(i),
     isHidden: (i) => hidden.has(i),
     onToggleHidden: (i, only) => toggles.push([i, only]),
-    gameSelected: () => false,
-    gameLabel: () => 'Keyboard',
-    onSelectGame: () => {},
+    levelSelected: () => false,
+    onSelectLevel: () => {},
     envSelected: () => false,
     onSelectEnv: () => {},
     onRename: () => {},
@@ -61,7 +60,7 @@ describe('the Hierarchy’s rows', () => {
   it('puts the level’s settings above the tree, with icons', () => {
     const { list } = rig()
     const settings = [...list.querySelectorAll<HTMLElement>('.row.env')]
-    expect(settings.map((r) => r.querySelector('.name')!.textContent)).toEqual(['Keyboard', 'Environment'])
+    expect(settings.map((r) => r.querySelector('.name')!.textContent)).toEqual(['Level', 'Environment'])
     expect(settings.every((r) => r.querySelector('svg.ico') !== null)).toBe(true)
   })
 

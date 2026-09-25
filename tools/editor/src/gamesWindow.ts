@@ -1,14 +1,21 @@
+import { isCurveSetting, type CurvePoint, type SettingDecls } from '@mp/mode'
+
 import { gameRows } from './assetTree'
+import { fieldRow, numberScrub, scrubFieldOf } from './controls'
+import { createCurveEditor, type CurveEditor } from './curveEditor'
 import { icon } from './icons'
 import { initials } from './people'
 
 /**
- * The games window (Track B, ADR 0162): every game, and the one picked's levels and components, in a window over the
- * editor that the top bar's game button opens — PlayCanvas's project dashboard, Kodjo's reference.
+ * The games window (Track B, ADR 0162): every game, and the one picked's levels, settings and components, in a window
+ * over the editor that the top bar's game button opens — PlayCanvas's project dashboard, Kodjo's reference.
  *
  * Levels left the Project window for it: a game is not an asset folder, it is where levels live, and the Project
  * window is the asset library now. Picking a game here only **browses**; opening one of its levels (a double-click)
  * is how the editor moves to that game. Its tiles say who is in each level.
+ *
+ * A game's settings are its data file's, a live document (ADR 0162): a change shows at once, is everyone's, and is
+ * an entry in the editor's one history, so Ctrl+Z here is the editor's.
  */
 
 /** One of a game's components, as the Components tab lists it. */
@@ -39,6 +46,13 @@ export interface GamesWindowHost {
   moveRefusal: (qualified: string, game: string) => string | null
   /** Move a level to another game: the host confirms, and refuses what `moveRefusal` does. */
   onMoveLevel: (qualified: string, game: string) => void
+  /** A game's declared settings (ADR 0087/0088) and their values now, or `null` when this build has no code for it. */
+  settings: (game: string) => { decls: SettingDecls; values: Readonly<Record<string, number | CurvePoint[]>> } | null
+  /** A setting was changed; `ongoing` while a number is still being dragged, so the drag is one undo entry. */
+  onSettingChanged: (game: string, key: string, value: number | CurvePoint[], ongoing: boolean) => void
+  /** The editor's one history (ADR 0159). */
+  undo: () => void
+  redo: () => void
 }
 
 export interface GamesWindow {
@@ -47,9 +61,11 @@ export interface GamesWindow {
   isOpen: () => boolean
   /** Draw again: a level made or gone, someone in or out of one. Nothing when closed. */
   render: () => void
+  /** A game's settings changed — anyone's edit, an undo: its fields show the values now, in place. */
+  settingsChanged: (game: string) => void
 }
 
-type Tab = 'levels' | 'components'
+type Tab = 'levels' | 'settings' | 'components'
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] => {
   const node = document.createElement(tag)
@@ -64,6 +80,9 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
   let tab: Tab = 'levels'
   /** The level being dragged onto a game, if one is (ADR 0162). */
   let dragging: string | null = null
+  /** The Settings tab's fields by key, to show a value from elsewhere in place, and its graphs, to let go of. */
+  let settingFields = new Map<string, (v: number | CurvePoint[]) => void>()
+  let curves: CurveEditor[] = []
 
   const scrim = el('div', 'gw-scrim')
   const box = el('div', 'gw')
@@ -77,16 +96,29 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
 
   /**
    * Keys go to the window while it is up, not to the level behind it: a Delete here must not delete a node there.
-   * Escape closes it. A context menu open over it keeps its own keys.
+   * One pressed in the window — or in a curve's graph opened large over it — reaches what it was pressed in first,
+   * a field being typed in, the graph, and stops at the window on its way out. Escape closes it; Ctrl+Z and Ctrl+Y are the editor's one history. A context
+   * menu or a dialog over it keeps its own keys.
    */
   const onKey = (e: KeyboardEvent): void => {
     if (document.querySelector('.menu, [data-dialog]') !== null) return
-    e.stopPropagation()
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      close()
-    }
+    if (e.target instanceof Node && scrim.contains(e.target)) return // `afterKey` has it on the way out
+    afterKey(e)
   }
+  const afterKey = (e: KeyboardEvent): void => {
+    if (document.querySelector('.menu, [data-dialog]') !== null) return
+    e.stopPropagation()
+    const t = e.target
+    if (e.defaultPrevented || t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return
+    const mod = e.ctrlKey || e.metaKey
+    const k = e.key.toLowerCase()
+    if (e.key === 'Escape') close()
+    else if (mod && k === 'z' && !e.shiftKey) host.undo()
+    else if (mod && (k === 'y' || (k === 'z' && e.shiftKey))) host.redo()
+    else return
+    e.preventDefault()
+  }
+  scrim.addEventListener('keydown', afterKey)
 
   const levelTile = (qualified: string, name: string): HTMLElement => {
     const t = el('button', `gw-tile${host.openLevel() === qualified ? ' on' : ''}`)
@@ -143,6 +175,68 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
     return grid
   }
 
+  /**
+   * The game's settings (ADR 0087/0088): a number is a field, dragged or typed; a curve is a graph. Each change is
+   * the host's to send, and shows at once.
+   */
+  const settingsPage = (game: string): HTMLElement => {
+    const page = el('div', 'gw-settings')
+    const settings = host.settings(game)
+    if (settings === null) {
+      page.append(el('div', 'gw-note', 'This build has no code for this game.'))
+      return page
+    }
+    const decls = Object.entries(settings.decls)
+    if (decls.length === 0) page.append(el('div', 'gw-none', 'This game has no settings.'))
+    for (const [key, decl] of decls) {
+      const v = settings.values[key]
+      if (isCurveSetting(decl)) {
+        page.append(el('div', 'gw-section', decl.label))
+        const holder = el('div', 'icurve')
+        page.append(holder)
+        // Opened large, the graph goes over the window, inside it, so its keys are the window's too.
+        const graph = createCurveEditor(holder, {
+          decl,
+          points: Array.isArray(v) ? v : decl.default,
+          size: { w: 600, h: 220 },
+          overlayParent: scrim,
+          onChange: (points) => host.onSettingChanged(game, key, points, false),
+        })
+        curves.push(graph)
+        settingFields.set(key, (next) => {
+          if (Array.isArray(next)) graph.set(next)
+        })
+        if (decl.hint !== undefined) page.append(el('div', 'gw-note', decl.hint))
+        continue
+      }
+      // A drag is one undo entry: each step is `ongoing`, and letting go ends it with the value it let go at.
+      let last: number | null = null
+      const field = scrubFieldOf({
+        value: typeof v === 'number' ? v : decl.default,
+        spec: numberScrub(decl),
+        title: decl.label,
+        commit: (n) => host.onSettingChanged(game, key, n, false),
+        live: {
+          start: () => undefined,
+          move: (n) => {
+            last = n
+            host.onSettingChanged(game, key, n, true)
+          },
+          end: () => {
+            if (last !== null) host.onSettingChanged(game, key, last, false)
+            last = null
+          },
+        },
+      })
+      settingFields.set(key, (next) => {
+        if (typeof next === 'number') field.set(next)
+      })
+      page.append(fieldRow(decl.label, field.root))
+      if (decl.hint !== undefined) page.append(el('div', 'gw-note', decl.hint))
+    }
+    return page
+  }
+
   const componentsPage = (game: string): HTMLElement => {
     const page = el('div', 'gw-components')
     const list = host.components(game)
@@ -165,8 +259,16 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
     return page
   }
 
+  /** The Settings tab's graphs go with the page they were on. */
+  const letGoOfSettings = (): void => {
+    for (const c of curves) c.dispose()
+    curves = []
+    settingFields = new Map()
+  }
+
   const render = (): void => {
     if (root === null) return
+    letGoOfSettings()
     const games = host.games()
     if (picked === null || !games.some((g) => g.name === picked)) picked = host.game() ?? games[0]?.name ?? null
 
@@ -225,7 +327,7 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
     const label = games.find((g) => g.name === picked)?.label ?? ''
     const tabs = el('div', 'gw-tabs')
     tabs.append(el('span', 'gw-page-title', label))
-    for (const [id, text] of [['levels', 'Levels'], ['components', 'Components']] as const) {
+    for (const [id, text] of [['levels', 'Levels'], ['settings', 'Settings'], ['components', 'Components']] as const) {
       const b = el('button', `gw-tab${tab === id ? ' on' : ''}`, text)
       b.type = 'button'
       b.addEventListener('click', () => {
@@ -235,7 +337,7 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
       tabs.append(b)
     }
     const body = el('div', 'gw-tab-body')
-    if (picked !== null) body.append(tab === 'levels' ? levelsPage(picked) : componentsPage(picked))
+    if (picked !== null) body.append(tab === 'levels' ? levelsPage(picked) : tab === 'settings' ? settingsPage(picked) : componentsPage(picked))
     else body.append(el('div', 'gw-note', 'No game is installed in this build.'))
     page.append(tabs, body)
 
@@ -256,9 +358,20 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
   const close = (): void => {
     if (root === null) return
     root = null
+    letGoOfSettings()
     scrim.remove()
     window.removeEventListener('keydown', onKey, true)
   }
 
-  return { open, close, isOpen: () => root !== null, render }
+  const settingsChanged = (game: string): void => {
+    if (root === null || tab !== 'settings' || picked !== game) return
+    const values = host.settings(game)?.values
+    if (values === undefined) return
+    for (const [key, show] of settingFields) {
+      const v = values[key]
+      if (v !== undefined) show(v)
+    }
+  }
+
+  return { open, close, isOpen: () => root !== null, render, settingsChanged }
 }

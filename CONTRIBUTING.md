@@ -21,7 +21,8 @@ within a second. There is **no Save for levels**: each change is saved as you ma
 - The button at the top left (*Keyboard › Roblox*) opens the **games window**: every game, its levels, and who is in
   each. Double-click a level to open it. **New level** asks for a name and creates it at once; right-click a level
   for Duplicate, Rename and Delete. Drag a level onto another game to move it there; a game it cannot go to greys
-  out, and says why when you hold the level over it.
+  out, and says why when you hold the level over it. Its **Settings** tab holds the game's numbers and curves: a
+  change is saved as you make it, for everyone, and Ctrl+Z takes it back.
 - If a change is refused (bottom bar says why), it is undone on your screen. Nothing is lost on the server.
 
 ## Prefabs: build it once, use it everywhere

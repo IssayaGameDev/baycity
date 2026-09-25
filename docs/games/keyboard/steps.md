@@ -14,7 +14,7 @@ Steps per minute follow **Level**, from Kodjo's table of the real game:
 
 `stepsPerMinute(level)` samples the **cadence curve** (`curve.cadence`, linear between points, held past the
 last; ADR 0088, [balance.md](balance.md)), whose default points are that table: `{0: 240}, {20: 240}, {30: 270},
-{50: 420}, {85: 540}, {170: 600}`. Kodjo edits it in the editor's Game row. Speed plays no part.
+{50: 420}, {85: 540}, {170: 600}`. Kodjo edits it in the editor's games window (Settings). Speed plays no part.
 `stepsPerSecond(level, curve)` is that over 60.
 
 ## The component

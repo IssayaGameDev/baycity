@@ -13,7 +13,7 @@
 | `seed` | 1 | deterministic lettering (`glyphAt`); same seed, same board everywhere |
 
 **The geometry is the game's, not the platform's** (ADR 0115). `pitch`, `fill` and `height` are settings in
-`content/keyboard/game.json`, one field each in the editor's Game row, read by `keyGeometryFrom(settings)`
+`content/keyboard/game.json`, one field each in the editor's games window (Settings), read by `keyGeometryFrom(settings)`
 (`keycaps.ts`; `GAME_KEYS` in `rules.ts` is that applied to the bundled file) and handed to `drawKeycaps`. A level is thousands of platforms: a pitch per platform is a pitch to change per
 platform, and two that disagree cannot align however the grid is anchored. Old components still carrying a
 `pitch` are unaffected — `readParams` walks the declarations, not the file's keys, so nothing needed rewriting.

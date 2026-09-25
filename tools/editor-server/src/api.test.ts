@@ -296,6 +296,32 @@ describe('a material edited live (ADR 0159)', () => {
   })
 })
 
+describe('a game’s data file edited live (ADR 0162)', () => {
+  it('takes an edit on a room connection, sends it to everyone, serves the live copy, writes it behind and refuses a PUT over it', async () => {
+    const events: { event: string; data: unknown }[] = []
+    live.join(LV, { connId: 'c-ada', user: USERS.ada!, send: (event, data) => void events.push({ event, data }) })
+
+    const before = await call('bob', 'GET', '/api/games/parkour')
+    expect(before.headers.get('x-asset-seq'), 'the file, before any live edit').toBe('0')
+
+    const r = await call('ada', 'POST', '/api/live/game/parkour/ops', { connId: 'c-ada', batchId: 'b1', ops: [{ kind: 'set', path: ['settings', 'speed'], value: 3 }] })
+    expect(await json(r)).toEqual({ ok: true, seq: 1 })
+    expect(events.at(-1)).toMatchObject({ event: 'asset', data: { assetId: 'game:parkour', seq: 1, from: 'c-ada', batchId: 'b1' } })
+
+    const after = await call('bob', 'GET', '/api/games/parkour')
+    expect(after.headers.get('x-asset-seq')).toBe('1')
+    expect(await json(after), 'the live copy, ahead of the file').toEqual({ components: [], settings: { speed: 3 } })
+    expect((await call('bob', 'PUT', '/api/games/parkour', { components: [] })).status).toBe(409)
+
+    const bad = await call('ada', 'POST', '/api/live/game/parkour/ops', { connId: 'c-ada', batchId: 'b2', ops: [{ kind: 'set', path: ['settings', 'speed'], value: 'fast' }] })
+    expect(bad.status, 'a file no game could read').toBe(400)
+    expect((await call('ada', 'POST', '/api/live/game/nope/ops', { connId: 'c-ada', batchId: 'b3', ops: [] })).status, 'no such game').toBe(404)
+
+    liveAssets.flushAll()
+    expect(JSON.parse(readFileSync(join(root, 'content/parkour/game.json'), 'utf8'))).toEqual({ components: [], settings: { speed: 3 } })
+  })
+})
+
 describe('the asset list and the feed (ADR 0156)', () => {
   it('says where the feed stood, so a watch from there sees the next write and nothing before it', async () => {
     await call('ada', 'POST', '/api/assets/upload?path=assets/textures/t.png', undefined, Buffer.from('png'))

@@ -1,8 +1,7 @@
 # ADR 0162 — The games window holds the levels
 
-Status: accepted, in progress. Steps 1 and 2 of 3 have landed: the window, its Levels and Components, who is in each
-level, the level list kept live; moving a level to another game. Next: the game's settings, made live. Amends
-ADR 0108, which put the games at the top of the Project panel's tree.
+Status: accepted. Amends ADR 0108, which put the games at the top of the Project panel's tree, and ADR 0052, whose
+Game row and game dropdown this replaces.
 
 ## Context
 
@@ -30,6 +29,12 @@ A level moved to another game keeps its tag in step with its new folder. The edi
 it before the drop, from what it knows — a level of that name there, someone in it, another game's own component
 (the level listing names the types each level uses) — and the server refuses the rest: its old game's own assets.
 
+A game's settings are its `game.json`'s, and that file becomes a live document of the kind materials are
+(ADR 0159): an id no asset can have (`game:<game>`), a validator, a route; the same ops, events, numbering and
+write-behind. So a change shows at once, is everyone's, overwrites nothing silently, and is an entry in the one
+undo history — which is why the curve graph's own history goes. Adopting a shared component is an op on the same
+document.
+
 Who is in which level comes from the server: every document anyone is in, sent to every connection on each join
 and leave (`rooms`). A level made, renamed or deleted elsewhere tells every editor to read the list again
 (`levels`).
@@ -39,3 +44,6 @@ and leave (`rooms`). A level made, renamed or deleted elsewhere tells every edit
 - **Keeping levels in the Project panel, grouped by game.** Levels are not assets, and Unity has one game.
 - **Asking the server for who is where on a timer.** Every tab polling for what the server already knows the
   moment it changes.
+- **Keeping the whole-file PUT for settings.** Two people editing two settings: the second write drops the first.
+- **A protocol of its own for game files.** The material one already has everything; a file that is not an asset
+  only needs an id of its own.

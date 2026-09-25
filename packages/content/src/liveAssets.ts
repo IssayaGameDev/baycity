@@ -6,7 +6,8 @@ import { kindForPath, type AssetKind } from './assets'
  * Any JSON asset the editor edits is a live document on the server, the way a level is: an edit is a small op,
  * applied in the order it arrives, echoed to every editor, written to the file behind. The ops know nothing about
  * what the file means — **set a value at a path, or remove it** — so a new editable kind is a validator here and
- * a panel in the editor, not a new protocol. Materials are the first kind. Prefabs are live documents too, but of
+ * a panel in the editor, not a new protocol. Materials are the first kind; a game's data file (`game.json`: its
+ * components and settings) is the second, though not an asset (ADR 0162). Prefabs are live documents too, but of
  * their own: a node tree with ops of its own (ADR 0091).
  *
  * Pure, and shared: the server applies these, and the editor applies the same ones to its own copy.
@@ -15,8 +16,20 @@ import { kindForPath, type AssetKind } from './assets'
 /** An asset op: set the value at `path`, or remove the key there. A path is object keys, from the file's root. */
 export type AssetOp = { kind: 'set'; path: readonly string[]; value: unknown } | { kind: 'unset'; path: readonly string[] }
 
+/** What a live document is: an asset of a kind with a validator, or a game's data file (ADR 0162). */
+export type LiveKind = AssetKind | 'game'
+
+/** A game's data file as a live document (ADR 0162). No asset id (16 hex digits) has a colon. */
+export const gameDocId = (game: string): string => `game:${game}`
+
+/** The game a live document's id names, or `null` for an asset's. */
+export const gameOfDocId = (id: string): string | null => (id.startsWith('game:') ? id.slice('game:'.length) : null)
+
+const isPoint = (p: unknown): boolean =>
+  typeof p === 'object' && p !== null && typeof (p as { x?: unknown }).x === 'number' && typeof (p as { y?: unknown }).y === 'number'
+
 /** The kinds edited live, each with what a file of it must look like. */
-const VALIDATORS: Partial<Record<AssetKind, (json: unknown) => string | null>> = {
+const VALIDATORS: Partial<Record<LiveKind, (json: unknown) => string | null>> = {
   material: (json) => {
     if (typeof json !== 'object' || json === null || Array.isArray(json)) return 'a material is an object'
     const m = json as Record<string, unknown>
@@ -27,10 +40,23 @@ const VALIDATORS: Partial<Record<AssetKind, (json: unknown) => string | null>> =
     }
     return null
   },
+  /** Its shared components (ADR 0077), and its settings: a number or curve points each (ADR 0087/0088). */
+  game: (json) => {
+    if (typeof json !== 'object' || json === null || Array.isArray(json)) return 'a game file is an object'
+    const g = json as Record<string, unknown>
+    if (!Array.isArray(g.components) || !g.components.every((c) => typeof c === 'string')) return 'a game file lists its components by name'
+    if (g.settings === undefined) return null
+    if (typeof g.settings !== 'object' || g.settings === null || Array.isArray(g.settings)) return 'a game file has its settings as an object'
+    for (const [key, v] of Object.entries(g.settings as Record<string, unknown>)) {
+      const number = typeof v === 'number' && Number.isFinite(v)
+      if (!number && !(Array.isArray(v) && v.every(isPoint))) return `setting ${key} is not a number or curve points`
+    }
+    return null
+  },
 }
 
-/** Kinds that are live documents. */
-export const LIVE_ASSET_KINDS: ReadonlySet<AssetKind> = new Set(Object.keys(VALIDATORS) as AssetKind[])
+/** Asset kinds that are live documents. */
+export const LIVE_ASSET_KINDS: ReadonlySet<AssetKind> = new Set((Object.keys(VALIDATORS) as LiveKind[]).filter((k): k is AssetKind => k !== 'game'))
 
 /** Whether a file at this path is one. */
 export const isLiveAssetPath = (path: string): boolean => {
@@ -38,8 +64,8 @@ export const isLiveAssetPath = (path: string): boolean => {
   return kind !== undefined && LIVE_ASSET_KINDS.has(kind)
 }
 
-/** Why this content is not a valid asset of this kind, or `null` when it is. */
-export const validateLiveAsset = (kind: AssetKind, json: unknown): string | null => {
+/** Why this content is not a valid live document of this kind, or `null` when it is. */
+export const validateLiveAsset = (kind: LiveKind, json: unknown): string | null => {
   const check = VALIDATORS[kind]
   return check === undefined ? 'not a live asset kind' : check(json)
 }

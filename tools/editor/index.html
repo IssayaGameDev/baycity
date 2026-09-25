@@ -664,6 +664,14 @@
         margin: 12px 0 2px;
         font-weight: 600;
       }
+      /* The game's settings (ADR 0162): the Inspector's lines, a label column and a field. */
+      .gw-settings {
+        max-width: 620px;
+        --lw: clamp(72px, 40% - 24px, 240px);
+      }
+      .gw-settings .irow + .gw-note {
+        margin: 0 0 6px var(--lw);
+      }
       .gw-section:first-child {
         margin-top: 0;
       }
