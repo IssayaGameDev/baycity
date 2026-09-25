@@ -5326,9 +5326,9 @@
               "name": "Platform",
               "transform": {
                 "position": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 16.65
+                  "x": -5.011,
+                  "y": -0.15,
+                  "z": 16.7269
                 },
                 "scale": {
                   "x": 33.3,
@@ -10661,14 +10661,14 @@
           "name": "Stage End",
           "transform": {
             "position": {
-              "x": 38.653,
-              "y": 190.3287,
-              "z": -83.6104
+              "x": 294.3,
+              "y": 26.8,
+              "z": -457.6
             },
             "rotation": {
-              "x": 3.1416,
-              "y": 0,
-              "z": 3.1416
+              "x": 0,
+              "y": -1.5707963267948966,
+              "z": 0
             }
           },
           "components": [],
@@ -14587,6 +14587,309 @@
           },
           "components": [],
           "prefab": "8a569d7a7c66c3c7"
+        }
+      ]
+    },
+    {
+      "id": "c3c33261",
+      "name": "stage 16",
+      "transform": {
+        "position": {
+          "x": -279.4345,
+          "y": -59.7066,
+          "z": -110.8572
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "14827681",
+          "name": "platform",
+          "transform": {
+            "position": {
+              "x": 17.9673,
+              "y": 0,
+              "z": -2.3214
+            },
+            "scale": {
+              "x": 250,
+              "y": 0.3,
+              "z": 30
+            }
+          },
+          "components": [
+            {
+              "id": "e08b6d52",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "4186a342",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:rounded-box",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "9a17bc48",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": -65.5655,
+              "y": 0.2066,
+              "z": 6.3572
+            }
+          },
+          "components": [],
+          "prefab": "36f14153a8e4c7a8"
+        },
+        {
+          "id": "29197aed",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": -40.0655,
+              "y": 0.2066,
+              "z": -0.1428
+            }
+          },
+          "components": [],
+          "prefab": "36f14153a8e4c7a8",
+          "overrides": {
+            "9b5b7151": {
+              "transform": {
+                "position": {
+                  "x": 0,
+                  "y": 0.5,
+                  "z": -2
+                },
+                "scale": {
+                  "x": 4,
+                  "y": 1,
+                  "z": 8
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "0a606e81",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": -8.0655,
+              "y": 0.2066,
+              "z": 6.8572
+            }
+          },
+          "components": [],
+          "prefab": "36f14153a8e4c7a8"
+        },
+        {
+          "id": "790d5514",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": -8.0655,
+              "y": 0.2066,
+              "z": -6.6428
+            }
+          },
+          "components": [],
+          "prefab": "36f14153a8e4c7a8",
+          "overrides": {
+            "ae118b37": {
+              "transform": {
+                "position": {
+                  "x": 0,
+                  "y": 5.75,
+                  "z": -5.5
+                },
+                "rotation": {
+                  "x": -1.5707963267948966,
+                  "y": 0,
+                  "z": 0
+                },
+                "scale": {
+                  "x": 4,
+                  "y": 1,
+                  "z": 10.5
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "3286ea1e",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": 13.9345,
+              "y": 0.2066,
+              "z": -3.6428
+            }
+          },
+          "components": [],
+          "prefab": "36f14153a8e4c7a8"
+        },
+        {
+          "id": "96e4cfaf",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": 36.4345,
+              "y": 0.2066,
+              "z": 3.3572
+            }
+          },
+          "components": [],
+          "prefab": "36f14153a8e4c7a8"
+        },
+        {
+          "id": "c7096cd4",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": 55.9345,
+              "y": 0.2066,
+              "z": 6.8572
+            }
+          },
+          "components": [],
+          "prefab": "36f14153a8e4c7a8"
+        },
+        {
+          "id": "8159b494",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": 55.9345,
+              "y": 0.2066,
+              "z": -6.6428
+            }
+          },
+          "components": [],
+          "prefab": "36f14153a8e4c7a8",
+          "overrides": {
+            "ae118b37": {
+              "transform": {
+                "position": {
+                  "x": 0,
+                  "y": 5.75,
+                  "z": -5.5
+                },
+                "rotation": {
+                  "x": -1.5707963267948966,
+                  "y": 0,
+                  "z": 0
+                },
+                "scale": {
+                  "x": 4,
+                  "y": 1,
+                  "z": 10.5
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "f9c370cc",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": 79.9345,
+              "y": 0.2066,
+              "z": 3.3572
+            }
+          },
+          "components": [],
+          "prefab": "36f14153a8e4c7a8"
+        },
+        {
+          "id": "47366e20",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": 101.9345,
+              "y": 0.2066,
+              "z": -8.6428
+            }
+          },
+          "components": [],
+          "prefab": "36f14153a8e4c7a8"
+        },
+        {
+          "id": "18214f7d",
+          "name": "platform",
+          "transform": {
+            "position": {
+              "x": -5.9155,
+              "y": 5.3099,
+              "z": 4.7858
+            },
+            "rotation": {
+              "x": 0,
+              "y": 0,
+              "z": 1.5707963267948966
+            },
+            "scale": {
+              "x": 11.2066,
+              "y": 0.3,
+              "z": 6.8572
+            }
+          },
+          "components": [
+            {
+              "id": "61b9b4bf",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "cc89095c",
+              "type": "Renderer",
+              "params": {
+                "model": "",
+                "material": ""
+              },
+              "enabled": false
+            },
+            {
+              "id": "5b183bcf",
+              "type": "Hazard",
+              "params": {}
+            }
+          ]
         }
       ]
     }
