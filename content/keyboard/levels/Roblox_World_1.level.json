@@ -5456,6 +5456,14 @@
           },
           "components": [
             {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": "4a11d049f9f8e5ac"
+              }
+            },
+            {
               "id": "e94eb0e6",
               "type": "Collider",
               "params": {
@@ -5472,14 +5480,6 @@
                   "y": 0,
                   "z": 0
                 }
-              }
-            },
-            {
-              "id": "efa7dd05",
-              "type": "Renderer",
-              "params": {
-                "model": "builtin:box",
-                "material": "4a11d049f9f8e5ac"
               }
             },
             {
@@ -6074,7 +6074,7 @@
         },
         {
           "id": "4e365443",
-          "name": "empty",
+          "name": "Lava walls",
           "transform": {
             "position": {
               "x": 0,
