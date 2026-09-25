@@ -2029,3 +2029,32 @@ describe('a piece behaves like any other object', () => {
   })
 })
 
+
+describe('a pass that only reads (ADR 0167)', () => {
+  const blank = (): Doc => levelDoc({ id: 'lv', config: {}, nodes: [] } as unknown as Level)
+
+  it('reads the same as outside it, and sees a change made inside it at once', () => {
+    const doc = blank()
+    const a = doc.placeEmpty(vec3(0, 0, 0), null)
+    doc.setName(a, 'a')
+    const outside = { count: doc.count(), name: doc.nameOf(a) }
+    doc.reading(() => {
+      expect({ count: doc.count(), name: doc.nameOf(a) }).toEqual(outside)
+      const b = doc.placeEmpty(vec3(1, 0, 0), a)
+      doc.setName(b, 'b')
+      expect(doc.count()).toBe(2)
+      expect(doc.nameOf(b)).toBe('b')
+      expect(doc.parentOf(b)).toBe(a)
+    })
+    expect(doc.count()).toBe(2)
+  })
+
+  it('shares one read between passes inside each other, and holds nothing once the last ends', () => {
+    const doc = blank()
+    doc.placeEmpty(vec3(0, 0, 0), null)
+    const seen = doc.reading(() => doc.reading(() => doc.count()) + doc.count())
+    expect(seen).toBe(2)
+    doc.placeEmpty(vec3(0, 0, 0), null)
+    expect(doc.count(), 'nothing stale after the passes').toBe(2)
+  })
+})

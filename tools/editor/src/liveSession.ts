@@ -6,6 +6,7 @@ import { createThreeStage, THREE, type OutlineGroup } from '@mp/render-three'
 import { createCollab, httpTransport, parseCameraPresence, parseFollowPresence, parsePresence, peerChanges, type CameraPresence, type FieldFocus, type FieldSpot, type Hold, type OpenAsset, type Peer, type Room } from './collab'
 import type { Doc, LocalPose } from './editorDoc'
 import type { Notify } from './notices'
+import { repaintFor } from './remoteRepaint'
 
 /**
  * A connection's colour: its outline in the viewport (ADR 0145), its icon in the top bar and its badge in the
@@ -233,8 +234,10 @@ export const createLiveSession = (host: LiveHost) => {
 
   /**
    * Redraw after ops changed the level from outside the document — a remote batch, an undo. Transforms alone
-   * move groups; anything else rebuilds from data, as every structural edit does, and puts the selection back
-   * by identity. Mid-drag, the redraw waits: the gizmo owns the groups until the pointer comes up.
+   * move groups. Otherwise only what the ops touched is rebuilt, as this tab's own edit is (`remoteRepaint.ts`,
+   * ADR 0167): each touched node's subtree, the physics a moment later, the Inspector only when it shows one of
+   * them. What reshapes the tree, a prefab's definition, or an op not known rebuilds everything from data and puts
+   * the selection back by identity. Mid-drag, the redraw waits: the gizmo owns the groups until the pointer comes up.
    *
    * **And while playing.** `rebuildLoaded` frees the physics world and builds a new one, and a play session
    * lives in that world: its character is a body in it, its visuals came from that `loaded`. Repainting under
@@ -260,15 +263,39 @@ export const createLiveSession = (host: LiveHost) => {
       host.inspectorSync()
       return
     }
-    const keep = host.selectionRefs()
-    host.deselect()
-    host.installEnvironment(open.environment())
-    host.rebuildViewport()
-    const restored = keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
-    if (restored.length > 0) host.applySelection(restored)
-    host.refreshUi()
-    host.inspectorRebuild()
-    host.loadNewReferencesThen(host.rebuildViewport)
+    const plan = open.reading(() =>
+      repaintFor(ops, (ref, componentId) => {
+        const i = open.indexOfRef(ref)
+        return i === null ? undefined : open.components(i).find((c) => c.id === componentId)?.type
+      }),
+    )
+    // The sky and its light re-bake only when the environment changed.
+    if (plan.environment) host.installEnvironment(open.environment())
+    if (plan.all) {
+      const keep = host.selectionRefs()
+      host.deselect()
+      host.rebuildViewport()
+      const restored = keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
+      if (restored.length > 0) host.applySelection(restored)
+      host.refreshUi()
+      host.inspectorRebuild()
+      host.loadNewReferencesThen(host.rebuildViewport)
+      return
+    }
+    const touched = (): number[] => open.reading(() => [...new Set(plan.nodes.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null))])
+    for (const i of touched()) host.rebuildSubtree(i)
+    host.applyPreviewPoses()
+    host.scheduleRebuild()
+    rebuildHoldOutlines()
+    host.hierarchyRender()
+    // Another object's edit leaves the Inspector — and a field being typed in — alone.
+    const shown = new Set(host.selectionRefs().map(refKey))
+    const showsOne = (refs: readonly NodeRef[]): boolean => refs.some((r) => shown.has(refKey(r)))
+    if (plan.environment || showsOne(plan.nodes)) host.inspectorRebuild()
+    // A material or model named for the first time draws once it has loaded.
+    host.loadNewReferencesThen(() => {
+      for (const i of touched()) host.rebuildSubtree(i)
+    })
   }
 
   /** Repaint what arrived while the redraw was held off — the end of a gizmo drag, the end of a play-test. */
