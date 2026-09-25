@@ -12,6 +12,8 @@ import {
   checkField,
   closePopover,
   colorField,
+  fieldRow,
+  numberScrub,
   openPopover,
   popoverOpenFor,
   scrubField,
@@ -219,24 +221,6 @@ const COMPONENT_ICONS: Readonly<Record<string, IconName>> = {
   Boss: 'boss',
 }
 export const componentIcon = (type: string): IconName => COMPONENT_ICONS[type] ?? 'component'
-
-/**
- * How a number field drags, from what a declaration says (ADR 0113): a pixel is one `step`, landing on its
- * multiples; a bounded number without one crosses its range in 200 px, landing on the decade under that.
- *
- * The step shapes **the drag only**. Typed, any value in range is taken as it is — Tweakpane's `step` also
- * snapped what was typed, anchored to the value the field was built with, which made 33 unreachable from
- * 32.98 in steps of 0.05.
- */
-export const numberScrub = (d: { readonly step?: number; readonly min?: number; readonly max?: number }): ScrubSpec => {
-  const perPixel = d.step ?? (d.min !== undefined && d.max !== undefined ? (d.max - d.min) / 200 : 0.1)
-  return {
-    perPixel,
-    grain: d.step ?? 10 ** Math.floor(Math.log10(perPixel)),
-    ...(d.min === undefined ? {} : { min: d.min }),
-    ...(d.max === undefined ? {} : { max: d.max }),
-  }
-}
 
 /**
  * The values a component's fields are built from: declared defaults, the authored params over them, and
@@ -702,10 +686,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     container.append(root)
 
     const field = (label: string, ...controls: HTMLElement[]): HTMLElement => {
-      const line = el('div', 'irow')
-      const slot = el('div', 'irow-c')
-      slot.append(...controls)
-      line.append(el('span', 'irow-l', label), slot)
+      const line = fieldRow(label, ...controls)
       body.append(line)
       return line
     }

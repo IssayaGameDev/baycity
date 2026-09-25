@@ -28,64 +28,89 @@ const rig = () => {
     openers: () => openers,
   })
   inspector.show(M)
-  const row = (label: string): HTMLElement => [...container.querySelectorAll<HTMLElement>('.a-row')].find((r) => r.querySelector('.a-label')?.textContent === label)!
+  const row = (label: string): HTMLElement => [...container.querySelectorAll<HTMLElement>('.irow')].find((r) => r.querySelector('.irow-l')?.textContent === label)!
   return { store, container, row, inspector, edits, openers }
+}
+
+/** Type into a number field (\`controls.ts\`): it is written when the field lets go of the keyboard. */
+const typeInto = (input: HTMLInputElement, text: string): void => {
+  input.value = text
+  input.dispatchEvent(new Event('blur'))
+}
+/** Drag a number field sideways by \`dx\` pixels. */
+const drag = (field: HTMLElement, steps: readonly number[]): void => {
+  field.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: 0 }))
+  for (const x of steps) field.dispatchEvent(new PointerEvent('pointermove', { clientX: x }))
+  field.dispatchEvent(new PointerEvent('pointerup', { clientX: steps.at(-1) ?? 0 }))
 }
 
 describe('editing a material', () => {
   it('keeps an earlier field when a later one is edited', () => {
     const { store, row } = rig()
-    const colour = row('colour').querySelector<HTMLInputElement>('input')!
+    const colour = row('colour').querySelector<HTMLInputElement>('input.clr-s')!
     colour.value = '#00ff00'
     colour.dispatchEvent(new Event('input'))
-    const roughness = row('roughness').querySelector<HTMLInputElement>('input')!
-    roughness.value = '0.3'
-    roughness.dispatchEvent(new Event('change'))
+    typeInto(row('roughness').querySelector<HTMLInputElement>('.sf-v')!, '0.3')
     expect(store.get(M)!.params.color).toEqual({ kind: 'color', value: '#00ff00' })
     expect(store.get(M)!.params.roughness).toEqual({ kind: 'number', value: 0.3 })
-    expect(row('colour').querySelector('input'), 'the field being dragged is still the one on screen').toBe(colour)
+    expect(row('colour').querySelector('input.clr-s'), 'the field being dragged is still the one on screen').toBe(colour)
   })
 
   it('shows someone else’s edit in place, but not in the field being worked in (ADR 0159)', () => {
     const { store, row, inspector } = rig()
-    const colour = row('colour').querySelector<HTMLInputElement>('input')!
-    const roughness = row('roughness').querySelector<HTMLInputElement>('input')!
-    roughness.focus()
+    const colour = row('colour').querySelector<HTMLInputElement>('input.clr-s')!
+    const roughness = row('roughness').querySelector<HTMLElement>('.sf')!
+    // A click opens a number for typing: what is being typed is the person's.
+    drag(roughness, [])
+    const typing = roughness.querySelector<HTMLInputElement>('.sf-v')!
+    typing.value = '0.4'
     store.set(M, { shader: 'standard', params: { color: { kind: 'color', value: '#0000ff' }, roughness: { kind: 'number', value: 0.9 } } })
     inspector.refresh(M)
-    expect(row('colour').querySelector('input'), 'not redrawn').toBe(colour)
+    expect(row('colour').querySelector('input.clr-s'), 'not redrawn').toBe(colour)
     expect(colour.value).toBe('#0000ff')
-    expect(roughness.value, 'the field in use keeps what is being typed').not.toBe('0.9')
+    expect(row('colour').querySelector<HTMLInputElement>('.clr-v')!.value, 'its code too').toBe('#0000ff')
+    expect(typing.value, 'the field in use keeps what is being typed').toBe('0.4')
     store.set(M, { shader: 'unlit', params: {} })
     inspector.refresh(M)
-    expect(row('colour').querySelector('input'), 'a new shader redraws').not.toBe(colour)
+    expect(row('colour')?.querySelector('input.clr-s') ?? null, 'a new shader redraws').not.toBe(colour)
   })
 
   it('keeps the x of a tiling when its y is edited', () => {
     const { store, row } = rig()
-    const [x, y] = [...row('tiling').querySelectorAll<HTMLInputElement>('input')]
-    x!.value = '2'
-    x!.dispatchEvent(new Event('change'))
-    y!.value = '3'
-    y!.dispatchEvent(new Event('change'))
+    const [x, y] = [...row('tiling').querySelectorAll<HTMLInputElement>('.sf-v')]
+    typeInto(x!, '2')
+    typeInto(y!, '3')
     expect(store.get(M)!.params.tiling).toEqual({ kind: 'vec2', value: { x: 2, y: 3 } })
   })
 
   it('names each edit for the undo history, and a colour drag as one that ends when the picker closes', () => {
     const { row, edits } = rig()
-    const colour = row('colour').querySelector<HTMLInputElement>('input')!
+    const colour = row('colour').querySelector<HTMLInputElement>('input.clr-s')!
     colour.focus()
     for (const v of ['#110000', '#220000']) {
       colour.value = v
       colour.dispatchEvent(new Event('input'))
     }
     colour.dispatchEvent(new Event('change'))
-    expect(edits).toEqual([
+    expect(edits, 'each step, the value it settled on, then the end, which writes nothing').toEqual([
       { label: 'm colour', ongoing: true },
       { label: 'm colour', ongoing: true },
       { label: 'm colour', ongoing: false },
+      { label: 'm colour', ongoing: false },
     ])
     expect(document.activeElement, 'the keyboard goes back to the editor, for Ctrl+Z').not.toBe(colour)
+  })
+
+  it('makes a number drag one entry, and letting go writes nothing more', () => {
+    const { store, row, edits } = rig()
+    const before = (store.get(M)!.params.roughness as { value: number } | undefined)?.value ?? 0.5
+    drag(row('roughness').querySelector<HTMLElement>('.sf')!, [4, 5, 6])
+    const ongoing = edits.map((e) => e.ongoing)
+    expect(ongoing.slice(0, -2).every((o) => o), 'each step is ongoing').toBe(true)
+    expect(ongoing.slice(-2), 'then the value it let go on, and the end').toEqual([false, false])
+    expect(ongoing.length).toBeGreaterThan(2)
+    expect(new Set(edits.map((e) => e.label))).toEqual(new Set(['m roughness']))
+    expect((store.get(M)!.params.roughness as { value: number }).value).not.toBe(before)
   })
 })
 
@@ -94,11 +119,11 @@ describe('who else has it open (ADR 0159)', () => {
     const { container, row, inspector, openers } = rig()
     const icons = (): string[] => [...container.querySelectorAll<HTMLElement>('.a-openers .pp')].map((i) => `${i.textContent} ${i.style.getPropertyValue('--pc')} ${i.title}`)
     expect(icons()).toEqual([])
-    const colour = row('colour').querySelector('input')
+    const colour = row('colour').querySelector('input.clr-s')
     openers.push({ name: 'Ana Lima', colour: '#ff0000' })
     inspector.openersChanged()
     expect(icons()).toEqual(['AL #ff0000 Ana Lima has this open'])
-    expect(row('colour').querySelector('input'), 'the fields stay').toBe(colour)
+    expect(row('colour').querySelector('input.clr-s'), 'the fields stay').toBe(colour)
     openers.length = 0
     inspector.openersChanged()
     expect(icons()).toEqual([])

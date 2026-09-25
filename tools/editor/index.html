@@ -1180,7 +1180,9 @@
 
       /* ---- asset inspector (materials) ---- */
       #asset-inspector {
-        padding: 6px;
+        padding: 6px 8px 12px;
+        /* Its lines are the object Inspector's (\`fieldRow\`), with the same label column. */
+        --lw: clamp(72px, 40% - 24px, 280px);
       }
       .a-head {
         margin-bottom: 6px;
@@ -1217,36 +1219,8 @@
         font-size: 10px;
         word-break: break-all;
       }
-      .a-row {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        margin-bottom: 4px;
-      }
-      .a-label {
-        flex: 0 0 92px;
-        color: var(--dim);
-      }
-      .a-row > :not(.a-label) {
-        flex: 1 1 auto;
-        min-width: 0;
-      }
-      .a-vec,
-      .a-texture {
-        display: flex;
-        gap: 4px;
-        align-items: center;
-        min-width: 0;
-      }
-      .a-vec input {
-        flex: 1 1 0;
-        min-width: 0;
-      }
-      .a-texture select {
-        flex: 1 1 auto;
-        min-width: 0;
-      }
-      .a-texture .thumb {
+      /* A texture slot's picture, beside its dropdown. */
+      .a-thumb {
         width: 24px;
         height: 24px;
         object-fit: cover;

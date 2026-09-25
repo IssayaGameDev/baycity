@@ -548,12 +548,19 @@ Levels on the feed are not the watch's: one open here is live already, and one t
 `named` is an upload's paths (same id, new bytes), `fresh` starts the runtime over (boot, the feed's 410). The
 runtime is built over `libraryView`, so a new, renamed or moved asset needs none of this.
 
+**The asset Inspector's fields** are the object Inspector's (`controls.ts`, on `fieldRow` lines, `--lw` on
+`#asset-inspector`): shader and texture `selectField` (a texture with an `.a-thumb` beside it), colour
+`colorFieldOf`, number `scrubFieldOf` (`numberScrub(param)`), vec2 two of them (`X` / `Y`, step 0.1), boolean
+`checkField`. Each field's `update` shows someone else's value through the handle's `set`, which skips a field being
+dragged, picked or typed in. A drag is `dragged(change, settle)`: each `move` is an `ongoing` edit, the commit the
+value it let go on, and `live.end` → `settle` = `onMaterialChanged(id, now(), label, false)` — no ops, it only ends
+the undo entry, so letting go where it started puts back nothing someone else has changed since.
+
 **Editing a material** (`onMaterialChanged(id, material, label, ongoing)`): `assetSync.edit(id, diffAssetOps(shown,
-edited))` (*Live assets* below) and `edits.recordAsset` (*Undo* above; a colour's `input` is `ongoing`, its `change`
-ends the entry and blurs the field, so Ctrl+Z reaches the editor); `show` puts the result in the library, `refreshCompiled([id])` shows it on the next frame, the asset
-Inspector is redrawn only for a new shader (its fields read `materialOf` at each edit; a vec2 keeps its own
-latest), a texture pick updates its thumbnail itself, and `thumbnailsSoon()` refreshes the Project panel's pictures
-400 ms after the edits stop.
+edited))` (*Live assets* below) and `edits.recordAsset` (*Undo* above); `show` puts the result in the library,
+`refreshCompiled([id])` shows it on the next frame, the asset Inspector is redrawn only for a new shader (its fields
+read `materialOf` at each edit; a vec2 keeps its own latest), a texture pick updates its thumbnail itself, and
+`thumbnailsSoon()` refreshes the Project panel's pictures 400 ms after the edits stop.
 
 ## Live assets (ADR 0159, `src/assetSync.ts`)
 
@@ -802,7 +809,8 @@ a degree and stores the radians unrounded, so a typed 90 reads back 90 (ADR 0136
 
 ## Inspector — the panel (ADR 0152, `src/inspector.ts`)
 
-Every field is ours (`src/controls.ts`); nothing of Tweakpane's is left in the editor.
+Every field is ours (`src/controls.ts`), the asset Inspector's too; nothing of Tweakpane's is left in the editor.
+A line is `fieldRow(label, ...controls)` (`controls.ts`), which a card's `field` appends.
 
 | | |
 | --- | --- |
@@ -851,7 +859,9 @@ causes.
 | fields | target (`Doc.childTargets`), then per kind: point / axis + angle / factor / opacity %, as `scrubField`s with red/green/blue X Y Z; time as a segmented switch (Seconds / Speed / Stage, and Spin for a turn) and its number; ease as a button with its curve, opening a grid of every curve (linear, then ten families × in / out / in-out); collider and enable as a switch |
 | drag | `sequenceDrag.ts` (below) |
 
-**Controls** (`controls.ts`): `scrubField` — drag sideways to change (`scrubbed`: `perPixel`, landing on `grain`,
+**Controls** (`controls.ts`): `numberScrub({ step?, min?, max? })` → the `ScrubSpec` a declaration implies.
+`colorFieldOf` → `{ root, set }`; the swatch lets go of the focus when its picker closes, so Ctrl+Z reaches the
+editor. `scrubField` — drag sideways to change (`scrubbed`: `perPixel`, landing on `grain`,
 Shift ten times finer), click to type (Enter / blur commits, Escape reverts), **one commit when the drag or the
 typing ends**; its `key` (`<component>:<step>:<field>`) lets the field clicked next take the focus back after the
 first one's edit rebuilt the panel. `segmented`. One popover at a time (`openPopover` / `closePopover`), gone on a
