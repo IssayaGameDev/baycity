@@ -24,6 +24,8 @@ export type ServerEvent =
   | { event: 'prefab'; data: { assetId: string; ops: Op[] } }
   /** A data-file asset was edited (ADR 0159) — on every room's stream, since everyone draws it. Checked by `assetSync.ts`. */
   | { event: 'asset'; data: unknown }
+  /** Who has which asset open in their Inspector, everyone in every document (ADR 0159): the whole set. */
+  | { event: 'open-assets'; data: { open: OpenAsset[] } }
   | { event: 'error'; data: { message: string } }
 
 export interface Hold {
@@ -32,6 +34,12 @@ export interface Hold {
   name: string
 }
 export interface Peer {
+  connId: string
+  name: string
+}
+/** A connection with an asset open in its Inspector (ADR 0159). */
+export interface OpenAsset {
+  assetId: string
   connId: string
   name: string
 }
@@ -90,6 +98,8 @@ export interface CollabHooks {
   onError: (message: string) => void
   /** A data-file asset was edited, by anyone, this tab included (ADR 0159). */
   onAsset?: (data: unknown) => void
+  /** Who has which asset open, the whole set: from the server, and `[]` on a new connection or leaving. */
+  onOpenAssets?: (open: OpenAsset[]) => void
   /** The stream's state changed; `null` once no room is open. */
   onConnection?: (state: Connection | null) => void
 }
@@ -110,6 +120,8 @@ export interface Collab {
    * overtaking its release left a node shown as selected that nobody had selected.
    */
   setHolds: (refs: NodeRef[]) => Promise<void>
+  /** The assets I have open are exactly these (ADR 0159), shown to everyone. In order, as holds are. */
+  setOpenAssets: (assetIds: string[]) => Promise<void>
   /** Still here. The server drops a connection it has not heard from in a while, holds included. */
   ping: () => void
   /**
@@ -239,6 +251,7 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
   let joined: { resolve: () => void; reject: (e: Error) => void } | null = null
   /** Hold messages queue behind one another: order is the point of them. */
   let holdChain: Promise<unknown> = Promise.resolve()
+  let openChain: Promise<unknown> = Promise.resolve()
   let connection: Connection | null = null
   const setConnection = (next: Connection | null): void => {
     if (next === connection) return
@@ -297,6 +310,8 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
         hooks.onSnapshot(e.data.level, seq)
         hooks.onPeers(peers)
         hooks.onHolds(holds)
+        // A new connection: the server sends who has what open next, if anyone has.
+        hooks.onOpenAssets?.([])
         // Part of the snapshot, so the first paint already leaves out what is hidden.
         hooks.onHidden(e.data.hidden ?? [])
         // Local edits the server has not confirmed are put back on the fresh copy and sent again.
@@ -360,6 +375,9 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
         return
       case 'asset':
         hooks.onAsset?.(e.data)
+        return
+      case 'open-assets':
+        hooks.onOpenAssets?.(e.data.open)
         return
       case 'error':
         hooks.onError(e.data.message)
@@ -437,6 +455,7 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
       unacked = []
       peers = []
       holds = []
+      hooks.onOpenAssets?.([])
       return posted
     },
     submit: (batch) => submitBatch(batch, newBatchId()),
@@ -451,6 +470,15 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
       }
       const next = holdChain.then(send, send)
       holdChain = next.catch(() => undefined)
+      return next
+    },
+    setOpenAssets: (assetIds) => {
+      const send = async (): Promise<void> => {
+        if (name === null || connId === null) return
+        await transport.post(kind, name, 'assets', { connId, assetIds })
+      }
+      const next = openChain.then(send, send)
+      openChain = next.catch(() => undefined)
       return next
     },
     ping: () => {
@@ -489,7 +517,7 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
 export const httpTransport = (): LiveTransport => ({
   connect: (kind, name, onEvent, onDrop, onRetry) => {
     const source = new EventSource(`/api/live/${kind}/${encodeURIComponent(name)}/events`)
-    for (const event of ['hello', 'snapshot', 'ops', 'holds', 'peers', 'presence', 'hidden', 'prefab', 'asset', 'error'] as const) {
+    for (const event of ['hello', 'snapshot', 'ops', 'holds', 'peers', 'presence', 'hidden', 'prefab', 'asset', 'open-assets', 'error'] as const) {
       source.addEventListener(event, (m) => onEvent({ event, data: JSON.parse((m as MessageEvent<string>).data) } as ServerEvent))
     }
     // EventSource retries on its own after a network drop. A 4xx is a closed stream that never opened: the

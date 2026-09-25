@@ -28,6 +28,8 @@ import type { User } from './config'
  *   what stays. `hold` is the whole set a connection wants — "my holds are exactly these" — so a late or
  *   reordered message cannot leave a ghost; released on the client leaving and when the node is removed.
  *   Identity is the **connection**, so two tabs of one person are two holders.
+ * - Open assets: what each connection has open in its asset Inspector (ADR 0159), shown to **every** connection in
+ *   any document — a material is drawn in every level. The whole set each time, like holds; dropped on leaving.
  * - Liveness: a connection is `seen` on every message; `sweep` leaves one silent for `staleMs` (a tab whose
  *   stream died without the server hearing it), which releases its holds. The editor pings while idle.
  *
@@ -78,6 +80,16 @@ export interface Peer {
   connId: string
   name: string
 }
+
+/** A connection with an asset open in its Inspector (ADR 0159). */
+export interface OpenAsset {
+  assetId: string
+  connId: string
+  name: string
+}
+
+/** How many assets one connection may say it has open: an Inspector shows one; this is a bound, not a design. */
+const MAX_OPEN_ASSETS = 16
 
 export interface LiveOptions {
   /** The file as JSON, or `null` when there is none. */
@@ -182,6 +194,11 @@ export interface Live {
   /** Leave every connection silent for `staleMs`. Called on a timer by the host. */
   sweep: () => void
   release: (name: string, connId: string, user: User, refs: NodeRef[]) => void
+  /**
+   * The assets this connection has open are exactly `assetIds` (ADR 0159). Everyone, in every document, is sent
+   * the whole set when it changes; a joiner gets it after its snapshot.
+   */
+  setOpenAssets: (name: string, connId: string, user: User, assetIds: string[]) => void
   /** Relay presence (a pose mid-drag, a selection) to the others. No seq, nothing kept. */
   presence: (name: string, connId: string, user: User, data: unknown) => void
   /** Write the file now if there is anything unwritten. */
@@ -222,6 +239,9 @@ export const createLive = (opts: LiveOptions): Live => {
     return () => clearTimeout(t)
   })
   const docs = new Map<string, LiveDoc>()
+  /** What each connection has open in its asset Inspector, by connection id (ADR 0159). */
+  const openAssets = new Map<string, OpenAsset[]>()
+  const allOpen = (): OpenAsset[] => [...openAssets.values()].flat()
 
   const peersOf = (d: LiveDoc): Peer[] => [...d.clients.values()].map((c) => ({ connId: c.connId, name: c.user.name }))
   /** One hold per connection per node: several people may have the same node selected (ADR 0158). */
@@ -443,6 +463,7 @@ export const createLive = (opts: LiveOptions): Live => {
       // `hidden` rides the snapshot rather than a route of its own: a joiner needs it at the same moment it
       // needs the level, and one less round trip is one less frame drawing things that should not be there.
       client.send('snapshot', { level: d.level, seq: d.seq, holds: holdsOf(d), peers: peersOf(d), hidden: [...d.hidden] }, d.seq)
+      if (openAssets.size > 0) client.send('open-assets', { open: allOpen() })
       for (const c of d.clients.values()) if (c !== client) c.send('peers', { peers: peersOf(d) })
     },
 
@@ -454,12 +475,14 @@ export const createLive = (opts: LiveOptions): Live => {
       d.clients.delete(connId)
       d.seen.delete(connId)
       const dropped = releaseHolds(d, connId)
-      if (d.clients.size === 0) {
-        close(d)
-        return
+      // One connection is in one document, so leaving it is leaving: what it had open is shown nowhere now.
+      const closedAssets = openAssets.delete(connId)
+      if (d.clients.size === 0) close(d)
+      else {
+        if (dropped) broadcast(d, 'holds', { holds: holdsOf(d) })
+        broadcast(d, 'peers', { peers: peersOf(d) })
       }
-      if (dropped) broadcast(d, 'holds', { holds: holdsOf(d) })
-      broadcast(d, 'peers', { peers: peersOf(d) })
+      if (closedAssets) api.broadcastAll('open-assets', { open: allOpen() })
     },
 
     apply: (name, connId, user, batch) => {
@@ -564,6 +587,16 @@ export const createLive = (opts: LiveOptions): Live => {
       const d = must(name)
       clientOf(d, connId, user)
       if (releaseHolds(d, connId, new Set(refs.map(refKey)))) broadcast(d, 'holds', { holds: holdsOf(d) })
+    },
+
+    setOpenAssets: (name, connId, user, assetIds) => {
+      clientOf(must(name), connId, user)
+      const want = [...new Set(assetIds)].slice(0, MAX_OPEN_ASSETS)
+      const had = openAssets.get(connId)?.map((o) => o.assetId) ?? []
+      if (want.length === had.length && want.every((id, i) => id === had[i])) return
+      if (want.length === 0) openAssets.delete(connId)
+      else openAssets.set(connId, want.map((assetId) => ({ assetId, connId, name: user.name })))
+      api.broadcastAll('open-assets', { open: allOpen() })
     },
 
     presence: (name, connId, user, data) => {

@@ -359,6 +359,8 @@ const room = createLiveSession({
   onCamera: (from, pose) => follow.onCamera(from, pose),
   onFollow: (from, leader) => follow.onFollow(from, leader, room.connId()),
   onAsset: (data) => assetSync.onEvent(data),
+  openAssetIds: () => (selectedAsset === null ? [] : [selectedAsset]),
+  openAssetsChanged: () => assetInspector.openersChanged(),
   dropHistoryWhere: (predicate) => edits.dropWhere(predicate),
 })
 /** The connection the room last reported, so a reconnect is noticed. */
@@ -1567,6 +1569,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
       if (created !== undefined) {
         selectedAsset = created.id
         assetInspector.show(created.id)
+        room.syncHolds()
       }
       refreshUi()
     })()
@@ -1598,6 +1601,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
             else {
               selectedAsset = entry.id
               assetInspector.show(entry.id)
+              room.syncHolds()
               refreshUi()
             }
           },
@@ -1793,6 +1797,7 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
   db: () => assets?.db ?? null,
   urlOf: (path) => assets?.urlOf(path) ?? path,
   materialOf: (id) => assets?.materialOf(id),
+  openers: (id) => room.openersOf(id).map((p) => ({ name: p.name, colour: peerCss(p.connId) })),
   /**
    * A material edit is ops on its live document (ADR 0159): the difference between it as shown and as edited,
    * shown at once and sent behind (`assetSync.ts`), and an entry in the one undo history. No lock: anyone edits
@@ -2342,6 +2347,7 @@ const applyAssetChanges = async (paths: string[]): Promise<void> => {
   if (selectedAsset !== null && next.db.byId[selectedAsset] === undefined) {
     selectedAsset = null
     assetInspector.show(null)
+    room.syncHolds()
   } else if (selectedAsset !== null && ids.includes(selectedAsset)) assetInspector.show(selectedAsset)
   refreshUi()
 }

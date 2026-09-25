@@ -323,3 +323,44 @@ describe('the connection dot (ADR 0155)', () => {
     expect(s.collab.connection()).toBe('lost')
   })
 })
+
+describe('who has which asset open (ADR 0159)', () => {
+  it('hands on the whole set, starts empty on each new connection, and says what I have open in order', async () => {
+    const h = harness()
+    const seen: string[][] = []
+    const collab = createCollab(h.transport, {
+      level: () => null,
+      onSnapshot: () => undefined,
+      onApplied: () => undefined,
+      onRejected: () => undefined,
+      onPeers: () => undefined,
+      onHolds: () => undefined,
+      onHidden: () => undefined,
+      onPresence: () => undefined,
+      onPrefabOps: () => undefined,
+      onError: () => undefined,
+      onOpenAssets: (open) => seen.push(open.map((o) => `${o.name}:${o.assetId}`)),
+    })
+    const joined = collab.join('lv')
+    h.emit({ event: 'hello', data: { connId: 'me', name: 'Ada' } })
+    h.emit({ event: 'snapshot', data: { level: fixture(), seq: 0, holds: [], peers: [] } })
+    h.emit({ event: 'open-assets', data: { open: [{ assetId: 'm1', connId: 'other', name: 'Bob' }] } })
+    await joined
+    expect(seen).toEqual([[], ['Bob:m1']])
+
+    const p = collab.setOpenAssets(['m1'])
+    const q = collab.setOpenAssets([])
+    await tick()
+    expect(h.posts.map((x) => x.action), 'the second waits for the first').toEqual(['assets'])
+    expect(h.posts[0]!.body).toEqual({ connId: 'me', assetIds: ['m1'] })
+    h.posts[0]!.answer(true)
+    await p
+    await tick()
+    expect(h.posts[1]!.body.assetIds).toEqual([])
+    h.posts[1]!.answer(true)
+    await q
+
+    void collab.leave()
+    expect(seen.at(-1), 'nobody, once out of the room').toEqual([])
+  })
+})

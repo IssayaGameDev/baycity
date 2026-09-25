@@ -1187,8 +1187,30 @@
         padding-bottom: 6px;
         border-bottom: 1px solid var(--line);
       }
+      .a-top {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
       .a-name {
+        flex: 1 1 auto;
+        min-width: 0;
         font-weight: 600;
+      }
+      /* Who else has this asset open (ADR 0159): their icons, in their colours, as in the top bar (ADR 0155). */
+      .a-openers {
+        display: flex;
+        flex: 0 0 auto;
+        gap: 3px;
+      }
+      .a-openers .pp {
+        width: 20px;
+        height: 20px;
+        font-size: 9px;
+        cursor: default;
+      }
+      .a-openers .pp:hover {
+        box-shadow: none;
       }
       .a-meta {
         color: var(--dim);

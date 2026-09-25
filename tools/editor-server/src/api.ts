@@ -43,7 +43,7 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *
  * Live level editing (ADR 0089), when `live` is given:
  *   GET  /api/live                    → open documents, peers, holds
- *   GET  /api/live/:kind/:name/events → SSE: hello, snapshot, ops (id = seq), holds, peers, presence, error
+ *   GET  /api/live/:kind/:name/events → SSE: hello, snapshot, ops (id = seq), holds, peers, presence, open-assets, error
  *                                       plus `prefab` on a level's stream: a prefab the level uses was edited
  *                                       :kind is `level` or `prefab` — a prefab is its own document (ADR 0091)
  *   POST /api/live/:kind/:name/ops          → { connId, batchId, ops } → { ok, seq } · 400 bad op
@@ -51,6 +51,7 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *   POST /api/live/:kind/:name/release      → { connId, refs } → { ok }
  *   POST /api/live/:kind/:name/ping         → { connId } — still here (the editor, every heartbeat)
  *   POST /api/live/:kind/:name/presence     → { connId, data } — relayed, unnumbered
+ *   POST /api/live/:kind/:name/assets       → { connId, assetIds } — what I have open in the asset Inspector is exactly these → { ok }; to everyone (ADR 0159)
  *   POST /api/live/:kind/:name/flush        → write the file now
  *   POST /api/live/:kind/:name/leave        → { connId } (a closing tab's beacon)
  *   PUT  /api/levels/:name            → 409 while the level is open live; GET serves the live copy
@@ -624,7 +625,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
      * one. The action is a fixed alternation anchored at the end, so the greedy group backtracks off it. A
      * level whose name is not a legal qualified one is not a document here, so the route does not match.
      */
-    const m = /^\/api\/live\/(level|prefab)\/([\w\-/]+)\/(events|ops|hold|release|presence|hidden|flush|leave|ping)$/.exec(url)
+    const m = /^\/api\/live\/(level|prefab)\/([\w\-/]+)\/(events|ops|hold|release|presence|assets|hidden|flush|leave|ping)$/.exec(url)
     if (m === null) return false
     const kind = m[1] as 'level' | 'prefab'
     if (kind === 'level' && parseQualified(m[2]!) === null) return false
@@ -693,6 +694,12 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
         }
         case 'presence': {
           live.presence(name, connId, user, args.data)
+          sendJson(res, 200, { ok: true })
+          return true
+        }
+        case 'assets': {
+          const ids = Array.isArray(args.assetIds) ? (args.assetIds as unknown[]).filter((a): a is string => typeof a === 'string' && /^[0-9a-f]{16}$/.test(a)) : []
+          live.setOpenAssets(name, connId, user, ids)
           sendJson(res, 200, { ok: true })
           return true
         }

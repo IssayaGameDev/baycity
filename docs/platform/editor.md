@@ -576,6 +576,14 @@ edits go back on top.
 `assetInspector.refresh(id)`: every field's `update` shows the new value, skipping the control in use (`busy`); a new
 shader redraws the panel.
 
+**Who has it open** (ADR 0159), any asset kind: `room.syncHolds()` also sends `host.openAssetIds()` (`selectedAsset`,
+or nothing) through `collab.setOpenAssets` — `POST …/assets`, queued one behind another like holds, skipped when
+unchanged (`lastOpenKey`, reset on every connection going `live`, which re-sends it). The `open-assets` event carries
+everyone's, in every document; `[]` on each snapshot and on leaving. `room.openersOf(id)`: the others, one per
+connection, never this tab's (`mineEver`). The asset Inspector's header draws them as `.a-openers .pp` icons
+(initials, `--pc` = `peerCss`, title `<name> has this open`); `assetInspector.openersChanged()` redraws only them.
+The sites that set `selectedAsset` without `deselect` call `room.syncHolds()` themselves.
+
 ## Refusing another game's private components (ADR 0076)
 
 - `unknownComponentTypes(root, registry)` (`src/editorDoc.ts`), pure.

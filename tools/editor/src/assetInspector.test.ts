@@ -12,6 +12,7 @@ import { createAssetInspector } from './assetInspector'
 const M = 'mmmmmmmmmmmmmmmm'
 const rig = () => {
   const edits: { label: string; ongoing: boolean }[] = []
+  const openers: { name: string; colour: string }[] = []
   const store = new Map<string, MaterialAsset>([[M, { shader: 'standard', params: { color: { kind: 'color', value: '#ff0000' }, tiling: { kind: 'vec2', value: { x: 1, y: 1 } } } }]])
   const container = document.createElement('div')
   document.body.replaceChildren(container)
@@ -24,10 +25,11 @@ const rig = () => {
       store.set(id, material)
       edits.push({ label, ongoing })
     },
+    openers: () => openers,
   })
   inspector.show(M)
   const row = (label: string): HTMLElement => [...container.querySelectorAll<HTMLElement>('.a-row')].find((r) => r.querySelector('.a-label')?.textContent === label)!
-  return { store, container, row, inspector, edits }
+  return { store, container, row, inspector, edits, openers }
 }
 
 describe('editing a material', () => {
@@ -84,5 +86,21 @@ describe('editing a material', () => {
       { label: 'm colour', ongoing: false },
     ])
     expect(document.activeElement, 'the keyboard goes back to the editor, for Ctrl+Z').not.toBe(colour)
+  })
+})
+
+describe('who else has it open (ADR 0159)', () => {
+  it('shows their icons in their colours, and follows them without redrawing the fields', () => {
+    const { container, row, inspector, openers } = rig()
+    const icons = (): string[] => [...container.querySelectorAll<HTMLElement>('.a-openers .pp')].map((i) => `${i.textContent} ${i.style.getPropertyValue('--pc')} ${i.title}`)
+    expect(icons()).toEqual([])
+    const colour = row('colour').querySelector('input')
+    openers.push({ name: 'Ana Lima', colour: '#ff0000' })
+    inspector.openersChanged()
+    expect(icons()).toEqual(['AL #ff0000 Ana Lima has this open'])
+    expect(row('colour').querySelector('input'), 'the fields stay').toBe(colour)
+    openers.length = 0
+    inspector.openersChanged()
+    expect(icons()).toEqual([])
   })
 })

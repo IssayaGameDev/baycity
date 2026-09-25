@@ -47,6 +47,7 @@ Anyone can edit any material, at the same time. You see other people's changes a
 object that uses it. Two people changing the same value: the last change wins.
 
 - Ctrl+Z undoes material edits too, in the same order as your level edits. One colour drag is one undo.
+- The icons next to an asset's name in the Inspector are the other people who have it open, in any level.
 
 ## Saving
 

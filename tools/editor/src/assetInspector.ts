@@ -1,6 +1,8 @@
 import { assetsOfKind, type AssetDatabase, type AssetEntry, type MaterialAsset, type MaterialValue } from '@mp/content'
 import { BUILTIN_SHADERS, defaultParams, shaderDef, type ShaderParam } from '@mp/render-three'
 
+import { initials } from './people'
+
 /**
  * The Inspector, when what is selected is an **asset** rather than something in the scene.
  *
@@ -20,6 +22,11 @@ export interface AssetInspectorHost {
    * named `label` (ADR 0159); `ongoing` while a colour is still being dragged, so the drag is one entry.
    */
   onMaterialChanged: (assetId: string, material: MaterialAsset, label: string, ongoing?: boolean) => void
+  /**
+   * The others who have this asset open (ADR 0159), each in their colour — the colour of their icon in the top bar
+   * and their outline in the viewport (ADR 0155). Any kind of asset.
+   */
+  openers?: (assetId: string) => readonly { name: string; colour: string }[]
 }
 
 export interface AssetInspector {
@@ -31,6 +38,8 @@ export interface AssetInspector {
    * the shader's.
    */
   refresh: (assetId: string) => void
+  /** Who has which asset open changed: the icons on the one shown redraw, and nothing else does. */
+  openersChanged: () => void
 }
 
 /** A field, and how to show a value in it without redrawing it. */
@@ -168,6 +177,22 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
     return { el: unsupported, update: () => undefined }
   }
 
+  /** The asset in the header, and where its openers' icons go. */
+  let head: { assetId: string; slot: HTMLElement } | null = null
+  const drawOpeners = (): void => {
+    if (head === null) return
+    const openers = host.openers?.(head.assetId) ?? []
+    head.slot.replaceChildren(
+      ...openers.map((o) => {
+        const icon = el('span', 'pp')
+        icon.textContent = initials(o.name)
+        icon.style.setProperty('--pc', o.colour)
+        icon.title = `${o.name} has this open`
+        return icon
+      }),
+    )
+  }
+
   /** What the panel shows now, for `refresh`: which material, drawn with which shader, and its fields by key. */
   let drawn: { assetId: string; shader: string; fields: Map<string, { field: Field; fallback: MaterialValue }> } | null = null
 
@@ -223,18 +248,24 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
   const show = (assetId: string | null): void => {
     container.replaceChildren()
     drawn = null
+    head = null
     if (assetId === null) return
     const entry = host.db()?.byId[assetId]
     if (entry === undefined) return
 
-    const head = el('div', 'a-head')
+    const header = el('div', 'a-head')
+    const top = el('div', 'a-top')
     const name = el('div', 'a-name')
     name.textContent = entry.name
+    const openers = el('div', 'a-openers')
+    top.append(name, openers)
     const meta = el('div', 'a-meta')
     // The id is worth showing: it is what content stores, so it is what appears in a level file.
     meta.textContent = `${entry.kind} · ${entry.path} · ${entry.id}`
-    head.append(name, meta)
-    container.append(head)
+    header.append(top, meta)
+    container.append(header)
+    head = { assetId, slot: openers }
+    drawOpeners()
 
     if (entry.kind !== 'material') return
     const material = host.materialOf(assetId)
@@ -257,5 +288,5 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
     for (const [key, { field, fallback }] of drawn.fields) field.update(material.params[key] ?? fallback)
   }
 
-  return { show, refresh }
+  return { show, refresh, openersChanged: drawOpeners }
 }

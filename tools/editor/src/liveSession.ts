@@ -3,7 +3,7 @@ import { vec3, type Vec3 } from '@mp/core'
 import { eulerToQuat } from '@mp/core'
 import { createThreeStage, THREE, type OutlineGroup } from '@mp/render-three'
 
-import { createCollab, httpTransport, parseCameraPresence, parseFollowPresence, parsePresence, peerChanges, type CameraPresence, type Hold, type Peer } from './collab'
+import { createCollab, httpTransport, parseCameraPresence, parseFollowPresence, parsePresence, peerChanges, type CameraPresence, type Hold, type OpenAsset, type Peer } from './collab'
 import type { Doc, LocalPose } from './editorDoc'
 import type { Notify } from './notices'
 
@@ -85,6 +85,10 @@ export interface LiveHost {
   onFollow: (from: string, leader: string | null) => void
   /** A data-file asset was edited, by anyone, this tab included (ADR 0159): `assetSync.ts` checks and applies it. */
   onAsset: (data: unknown) => void
+  /** The assets this tab has open in its Inspector (ADR 0159): told to everyone with the selection. */
+  openAssetIds: () => string[]
+  /** Who has which asset open changed: the Inspector's icons redraw. */
+  openAssetsChanged: () => void
   /** Forget the history entries holding a batch the server refused. */
   dropHistoryWhere: (predicate: (entry: { ops: readonly Op[]; inverses: readonly Op[] }) => boolean) => void
 }
@@ -122,14 +126,37 @@ export const createLiveSession = (host: LiveHost) => {
     return (holdMap.get(refKey(ref)) ?? []).filter((h) => h.connId !== mine)
   }
 
-  /** Tell the room what I have selected: the selection, whole, every time it changes. */
+  /**
+   * Tell the room what I have selected, whole, every time it changes: the nodes, and the asset open in the
+   * Inspector — which everyone in every document hears (ADR 0159).
+   */
   const syncHolds = (): void => {
     if (!live()) return
+    syncOpenAssets()
     const refs = host.selectionRefs()
     const key = refs.map(refKey).sort().join('|')
     if (key === lastHoldKey) return
     lastHoldKey = key
     void collab.setHolds(refs).catch(() => undefined)
+  }
+
+  // ------------------------------ open assets (ADR 0159) ------------------------------
+  /** Who has which asset open, everyone's, from the server: the whole set. */
+  let openAssets: OpenAsset[] = []
+  /** What the server was last told this tab has open; `null` on a new connection, which has nothing open yet. */
+  let lastOpenKey: string | null = null
+  const syncOpenAssets = (): void => {
+    if (!live()) return
+    const ids = host.openAssetIds()
+    const key = ids.join('|')
+    if (key === lastOpenKey) return
+    lastOpenKey = key
+    void collab.setOpenAssets(ids).catch(() => undefined)
+  }
+  /** The others who have this asset open, one per connection, in the order they opened it. */
+  const openersOf = (assetId: string): readonly Peer[] => {
+    const me = collab.connId()
+    return openAssets.filter((o) => o.assetId === assetId && o.connId !== me && !mineEver.has(o.connId)).map((o) => ({ connId: o.connId, name: o.name }))
   }
 
   /**
@@ -341,8 +368,19 @@ export const createLiveSession = (host: LiveHost) => {
     onPresence: (from, _name, data) => onPresence(from, data),
     onPrefabOps: (assetId, ops) => onPrefabOps(assetId, ops),
     onAsset: (data) => host.onAsset(data),
+    onOpenAssets: (open) => {
+      openAssets = open
+      host.openAssetsChanged()
+    },
     onError: (message) => host.notify.error(`live: ${message}`),
-    onConnection: () => host.presenceChanged(),
+    onConnection: (state) => {
+      // Every stream that comes up is a new connection, with nothing open on the server yet.
+      if (state === 'live') {
+        lastOpenKey = null
+        syncOpenAssets()
+      }
+      host.presenceChanged()
+    },
   })
 
   /**
@@ -394,6 +432,7 @@ export const createLiveSession = (host: LiveHost) => {
       collab.leave()
       holdMap = new Map()
       lastHoldKey = null
+      lastOpenKey = null
       stopPresence()
     },
     ping: () => collab.ping(),
@@ -417,8 +456,10 @@ export const createLiveSession = (host: LiveHost) => {
     repaint: repaintAfterOps,
     /** The others who have this node selected — its badges in the Hierarchy (ADR 0158). */
     holdersOf,
-    /** Tell the room what I hold: the selection, whole, every time it changes. */
+    /** Tell the room what I hold: the selection and the asset open, whole, every time they change. */
     syncHolds,
+    /** The others who have this asset open (ADR 0159) — the icons on it in the Inspector. */
+    openersOf,
     /** A reconnect is a new connection: the server holds nothing for it yet. */
     forgetHolds: () => void (lastHoldKey = null),
     rebuildHolds: rebuildHoldOutlines,

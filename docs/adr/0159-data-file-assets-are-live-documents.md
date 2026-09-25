@@ -1,8 +1,8 @@
 # ADR 0159 — Assets that are data files are live documents
 
-Status: accepted, in progress. Step 3 of the asset rework (ADR 0156, 0157). Done: the layer, with materials on it
-and their lock gone; one undo for everything (below). Next: who has which asset open. Amends ADR 0083's "locks per
-file, taken on open" for materials.
+Status: accepted. Step 3 of the asset rework (ADR 0156, 0157), in three commits: the layer, with materials on it
+and their lock gone; one undo for everything; who has which asset open (below). Amends ADR 0083's "locks per file,
+taken on open" for materials.
 
 ## Context
 
@@ -26,6 +26,7 @@ file means.
 | the Inspector | an edit is `diffAssetOps(shown, edited)`; someone else's updates the fields in place, not the one being worked in |
 | the watch | never fetches a live asset's file over its live copy (ADR 0156): its contents come as its edits do |
 | undo | one history for the level and its assets, in the order made (Kodjo: one undo for all, as Unity). An asset entry is its ops and their inverses, undone by sending those as this tab's edit — so it overwrites whatever landed since, as a level undo does — and it shows that asset. A colour drag is one entry |
+| who has it open | each connection tells the server the asset in its Inspector, whole set each time, and the server tells **every** connection in every document — one icon per connection, in its colour, at the top of the Inspector (Kodjo: yes, now). Any asset kind; kept on the connection, so gone when it leaves. What the Project panel's tiles will show from it is the asset panel's rework |
 
 Prefabs stay their own kind of live document (ADR 0091): a node tree, with the tree's ops.
 
@@ -36,3 +37,5 @@ Prefabs stay their own kind of live document (ADR 0091): a node tree, with the t
 - **Ops that know materials** (`setParam`, `setShader`). Every new kind would be new ops, on both sides.
 - **Keeping the lock, released on selecting something else.** Still one person at a time, still no undo.
 - **A history per material, while it is open.** Two Ctrl+Z orders to keep in mind; Kodjo chose one.
+- **Who has it open as room presence.** Presence is relayed within one document, and a material is open in every
+  level at once: the others would only see who is in their own level.
