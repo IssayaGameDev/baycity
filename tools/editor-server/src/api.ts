@@ -9,7 +9,7 @@ import type { NodeRef, Op } from '../../../packages/content/src/ops'
 import { prefabRefsIn } from '../../../packages/content/src/prefabs'
 import type { Level } from '../../../packages/content/src/types'
 import { LevelError, validateLevel } from '../../../packages/content/src/validate'
-import { importAssets } from './assetImporter'
+import { createAssetIndex, type AssetIndex } from './assetIndex'
 import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './assetOps'
 import type { ChangeFeed } from './changes'
 import type { User } from './config'
@@ -32,7 +32,7 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *   POST /api/levels/move             → { from, to } — rename, both qualified (ADR 0110)
  *   POST /api/levels/delete           → { path } — qualified; the file goes for good (ADR 0110)
  *   GET/PUT /api/games/:name          → { components } (ADR 0077)
- *   GET  /api/assets                  → { entries, folders } (runs the importer)
+ *   GET  /api/assets                  → { entries, folders, seq } (runs the importer; seq: the change feed's position)
  *   POST /api/assets/mkdir|move|delete → { path } · { from, to } · { path }
  *   POST /api/assets/upload?path=     → raw bytes → { entry }   (textures and .glb, capped, replace keeps the id)
  *   GET  /assets/<path>               → the bytes
@@ -55,7 +55,8 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *
  * For the live mirror (ADR 0084):
  *   GET  /api/tree                    → { seq, files: [{ path, size, sha1 }] } — every file under content/
- *   GET  /api/changes?since=N&timeout=MS → { seq, paths } — long-poll; 410 when N is older than the feed remembers
+ *   GET  /api/changes?since=N&timeout=MS → { seq, paths } — long-poll; 410 when N is older than the feed remembers.
+ *                                       Every editor tab follows it too, for other people's asset changes (ADR 0156)
  *   GET  /api/file?path=content/...   → the bytes of any content file (404 when gone)
  *
  * Every write is gated by the lock table: a path someone else holds live is a 423 with their name. Every
@@ -83,6 +84,8 @@ export interface ApiOptions {
   games?: Record<string, string>
   /** Live level documents (ADR 0089). Absent: levels are files, as before. */
   live?: Live
+  /** The asset list in memory, shared with the prefab store so both see every write (ADR 0156). Made here when absent. */
+  assets?: AssetIndex
   /** SSE keepalive period; short in tests. */
   keepaliveMs?: number
 }
@@ -212,6 +215,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
   const CONTENT = join(opts.repoRoot, 'content')
   const ASSETS = join(CONTENT, ASSETS_DIR)
   if (!existsSync(ASSETS)) mkdirSync(ASSETS, { recursive: true })
+  const assets = opts.assets ?? createAssetIndex(ASSETS)
 
   /** The game folders: a directory at the content root holding a `game.json` (ADR 0108). */
   const gameNames = (): string[] =>
@@ -264,17 +268,18 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
 
   /** Rescan so a new file has its sidecar now, attributed to the user who made it. */
   const rescanFor = (user: User): void => {
-    const { created } = importAssets(ASSETS)
+    const created = assets.rescan()
     if (created.length > 0) changed(user, created.map((p) => keyFor.asset(p)))
   }
 
   const handleAssets = async (req: IncomingMessage, res: ServerResponse, url: string, query: URLSearchParams, user: User): Promise<boolean> => {
     if (url === '/api/assets' && req.method === 'GET') {
-      const { entries, created } = importAssets(ASSETS)
       // Sidecars the importer wrote for files that arrived outside the API (copied into the folder) belong to
       // whoever looked first — better than untracked files nobody commits.
-      if (created.length > 0) changed(user, created.map((p) => keyFor.asset(p)))
-      sendJson(res, 200, { entries, folders: listFolders(ASSETS) })
+      rescanFor(user)
+      // `seq`: where the change feed stood when this list was read, in the same tick, so an editor watching the
+      // feed from here misses nothing and replays nothing (ADR 0156).
+      sendJson(res, 200, { entries: assets.entries(), folders: listFolders(ASSETS), seq: opts.changes?.seq() ?? 0 })
       return true
     }
 
@@ -298,12 +303,12 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       // reference — survives. That is how art gets updated.
       writeFileSync(file, bytes)
       changed(user, [keyFor.asset(rel)])
-      const { entries } = importAssets(ASSETS)
+      assets.rescan()
       const meta = `${rel}${META_SUFFIX}`
       if (!existsSync(`${file}${META_SUFFIX}`)) sendJson(res, 500, { error: 'importer wrote no sidecar' })
       else {
         changed(user, [keyFor.asset(meta)])
-        sendJson(res, 200, { entry: entries.find((e) => e.path === rel) ?? null })
+        sendJson(res, 200, { entry: assets.byPath(rel) ?? null })
       }
       return true
     }
@@ -324,12 +329,14 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
           const before = filesOf(from)
           movePath(ASSETS, from, to)
           const after = before.map((p) => `${to}${p.slice(from.length)}`)
+          rescanFor(user)
           changed(user, [...before, ...after].map(keyFor.asset))
         } else {
           const path = strField(args, 'path')
           if (refuseIfLocked(res, user, [keyFor.asset(path)])) return true
           const gone = filesOf(path)
           removePath(ASSETS, path)
+          rescanFor(user)
           changed(user, gone.map(keyFor.asset))
         }
         sendJson(res, 200, { ok: true })
@@ -347,8 +354,14 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     /** The prefab document open on this path, if any: a prefab is a live document now (ADR 0091). */
     const openPrefab = (): { id: string; root: unknown } | null => {
       if (opts.live === undefined || !rel.endsWith('.prefab.json')) return null
-      const entry = importAssets(ASSETS).entries.find((e) => e.kind === 'prefab' && e.path === rel)
-      if (entry === undefined) return null
+      // The index, not a walk per request: an editor loading the library asks for every prefab in turn. A file
+      // the index has not seen yet (copied in from outside) gets one refresh.
+      let entry = assets.byPath(rel)
+      if (entry === undefined && existsSync(file)) {
+        assets.refresh()
+        entry = assets.byPath(rel)
+      }
+      if (entry === undefined || entry.kind !== 'prefab') return null
       const doc = opts.live.levelOf(docKey('prefab', entry.id))
       return doc === null ? null : { id: entry.id, root: doc.nodes[0] }
     }

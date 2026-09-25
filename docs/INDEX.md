@@ -205,5 +205,6 @@ why matters.
 | [0153](adr/0153-one-mesh-renderer.md) | `Mesh` folds into `Renderer`: one Mesh Renderer |
 | [0154](adr/0154-a-keyboard-rides-its-board.md) | A keyboard's caps ride the board a sequence carries |
 | [0155](adr/0155-the-status-bar-becomes-notices.md) | The status bar becomes notices, and its state moves to where it belongs |
+| [0156](adr/0156-asset-changes-reach-every-editor.md) | Asset changes reach every editor, and the server keeps its asset list in memory |
 
 `Design archive/` holds superseded design material and is not maintained.

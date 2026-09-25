@@ -11,6 +11,7 @@ import type { ServerConfig, User } from './config'
 import { commitPaths, push } from './git'
 import { createLive, levelPath } from './live'
 import { heldBy, sweep, type LockTable } from './locks'
+import { createAssetIndex } from './assetIndex'
 import { createPrefabStore } from './prefabStore'
 import { proxyHttp, proxyUpgrade, routeFor, stripPrefix } from './proxy'
 import { describeCommit, markDirty, take, takeAll, takeDue, type Session, type SessionTable } from './sessions'
@@ -106,10 +107,12 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
   const CONTENT = join(config.repoRoot, 'content')
   /** A level is named `<game>/<name>` and lives in its game's folder (ADR 0108); `levelPath` is the one rule. */
   const levelFileOf = (name: string): string => join(config.repoRoot, levelPath(name))
+  /** One asset list for the API and the prefab store, so a prefab the API just moved is where the store looks (ADR 0156). */
+  const assets = createAssetIndex(join(CONTENT, ASSETS_DIR))
   const live = createLive({
     staleMs: config.lockStaleMs,
     // A level references a prefab by asset id (ADR 0091); the definitions come off disk.
-    prefabs: createPrefabStore(join(CONTENT, ASSETS_DIR)),
+    prefabs: createPrefabStore(join(CONTENT, ASSETS_DIR), assets),
     readHidden: (key) => hidden[key] ?? [],
     writeHidden: (key, keys) => {
       if (keys.length === 0) delete hidden[key]
@@ -182,6 +185,7 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
     changes: feed,
     games: Object.fromEntries(Object.entries(config.games).map(([name, g]) => [name, g.path])),
     live,
+    assets,
   })
 
   // --- the staging games, under this origin (ADR 0086) ---

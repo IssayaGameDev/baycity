@@ -30,6 +30,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | `motionPreview.ts` | the preview clock, whether it runs, the last frame. Poses via `Doc.posesAt(timeMs, { sequences: playing })` — one walk, not `poseOf` per node (ADR 0125, ADR 0142) | `MotionPreviewHost` |
 | `cameraView.ts` | the orthographic camera, `isometric`, the nav gizmo and its drag flag, the stand-in background, the bounds box | `CameraViewHost` |
 | `fileActions.ts` | nothing — it is behaviour: arm, rename, delete an asset or a level (ADR 0097, ADR 0110) | `FileActionsHost` |
+| `assetWatch.ts` | the long poll's position and its back-off; `main.ts` keeps the paths waiting to be applied (ADR 0156) | `AssetWatchHost` |
 | `prefabActions.ts` | nothing — enter, close, unlink, save as, revert, apply (ADR 0091, ADR 0111) | `PrefabActionsHost` |
 | `nodeActions.ts` | nothing — delete, duplicate, create, frame, paste at a point; all on selection **roots** | `NodeActionsHost` |
 | `menus.ts` | nothing — the right-click menus, declarative; had to follow the action clusters, not precede them | `MenuHost` |
@@ -504,6 +505,21 @@ Adoption points (ADR 0077):
 3. **Add Component** (Inspector button, Hierarchy submenu): `adoptable()` listed beside addable types; pick → `adopt` → `doc.addComponent`.
 
 File list filtered by game: `visibleLevels()` keeps entries whose `mode` — the folder they are in — equals `activeMode.name`. There is no unassigned case left: a `.level.json` outside a game's `levels/` is not listed at all (ADR 0108).
+
+## Other people's asset changes (ADR 0156, `src/assetWatch.ts`)
+
+The editor follows the server's change feed (`GET /api/changes`, the mirror's) from the `seq` its asset list was
+read at, so another person's upload, rename, move, delete or material edit reaches this tab within a poll.
+
+| | |
+| --- | --- |
+| the watch | `watchAssets({ seq, changed, lost })`, started after boot: `since=seq&timeout=25000`; `assetPathsOf` keeps `content/assets/…` (a sidecar as its asset) and `changed` is awaited before the next poll. **410** → `lost`: wait out a drag or play, `reloadAssets`, redraw. Errors back off 2 s → 30 s |
+| gathering | `assetsChanged` adds to `waitingPaths` and drains them one batch at a time through `inAssetQueue` — the one queue `reloadAssets` runs in too, so two runtimes are never installed over each other |
+| its own writes | a path whose lock this tab holds (`heldLocks`, `lockKey.asset`) is skipped |
+| applying | `loadAssetLibrary({ reuse, refetch })`: the list, plus only the named material and prefab files — the rest kept from the library held. `libraryChanges(before, after, named)` (pure) → `{ list, ids }`; nothing → nothing. Waits while `busyEditing()` (a gizmo, point or field drag, or play). A changed material, texture or model → `freshRuntime()` + `meshes.buildAll()`; anything else only swaps `assets`. Then previews, the asset Inspector when its asset changed or went, `refreshUi` |
+| the runtime | built over `libraryView`, an `AssetDatabase` whose `entries` / `byId` read the installed library at each lookup — so an asset added, renamed or moved loads with no new runtime |
+
+Levels on the feed are not the watch's: one open here is live already, and one that is not is read fresh.
 
 ## Refusing another game's private components (ADR 0076)
 

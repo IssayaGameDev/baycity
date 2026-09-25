@@ -13,7 +13,8 @@ import {
   type Level,
   validateLevel, type NodeRef, refKey,
   BUILTIN_LABELS, BUILTIN_MODELS,
-  isSegment, parseQualified, qualify } from '@mp/content'
+  isSegment, parseQualified, qualify,
+  type AssetDatabase } from '@mp/content'
 
 import { DEFAULT_REGISTRY, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type Registry } from '@mp/components'
 import { type ModeDescriptor, readSettings } from '@mp/mode'
@@ -53,6 +54,7 @@ import { createHierarchy, type Hierarchy } from './hierarchy'
 import { createInspector, type Inspector } from './inspector'
 import { createAssetInspector, type AssetInspector } from './assetInspector'
 import { loadAssetLibrary, type AssetLibrary } from './assetsApi'
+import { libraryChanges, watchAssets } from './assetWatch'
 import { canMoveFolder, movedInto } from './assetTree'
 import { createPreviews, type Previews } from './previews'
 import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
@@ -2154,26 +2156,109 @@ stage.start((dt) => {
  * briefly a grey box that becomes a model a moment later. The cost is that every asset edit reloads the
  * runtime, which at this scale is cheaper than tracking which cache entries a change invalidated.
  */
-const reloadAssets = async (): Promise<void> => {
-  try {
-    assets = await loadAssetLibrary()
-    // Each game's shared-component list, live from disk (ADR 0077). Missing file = no extras.
-    for (const mode of MODE_LIST) gameData[mode.name] = await loadGame(mode.name)
-    setProblem('')
-  } catch (e) {
-    // The usual cause is a dev server started before these routes existed, which answers /api/assets with
-    // the index page — so say what to do rather than only what failed.
-    setProblem(`assets did not load (${String(e)}) — restart pnpm dev:editor`)
-    return
-  }
+const reloadAssets = (): Promise<void> =>
+  inAssetQueue(async () => {
+    try {
+      assets = await loadAssetLibrary()
+      // Each game's shared-component list, live from disk (ADR 0077). Missing file = no extras.
+      for (const mode of MODE_LIST) gameData[mode.name] = await loadGame(mode.name)
+      setProblem('')
+    } catch (e) {
+      // The usual cause is a dev server started before these routes existed, which answers /api/assets with
+      // the index page — so say what to do rather than only what failed.
+      setProblem(`assets did not load (${String(e)}) — restart pnpm dev:editor`)
+      return
+    }
+    await freshRuntime()
+  })
+
+/** Asset reloads, one at a time: a watch and a local edit must not install two runtimes over each other. */
+let assetQueue: Promise<void> = Promise.resolve()
+const inAssetQueue = (run: () => Promise<void>): Promise<void> => {
+  const next = assetQueue.then(run, run)
+  assetQueue = next.catch(() => undefined)
+  return next
+}
+
+/**
+ * The library as the runtime sees it: whichever one is installed now, read at each lookup. So an asset added,
+ * renamed or moved needs no new runtime to be loadable — only one whose contents changed does, since the
+ * runtime holds what it compiled (ADR 0156).
+ */
+const libraryView: AssetDatabase = {
+  get entries() {
+    return assets?.db.entries ?? []
+  },
+  get byId() {
+    return assets?.db.byId ?? {}
+  },
+}
+
+/** Throw away every loaded texture, material and model, and load again what the open document needs. */
+const freshRuntime = async (): Promise<void> => {
   runtime?.dispose()
-  const library = assets
   runtime = createAssetRuntime({
-    db: library.db,
-    urlOf: library.urlOf,
-    materialOf: library.materialOf,
+    db: libraryView,
+    urlOf: (path) => assets?.urlOf(path) ?? path,
+    materialOf: (id) => assets?.materialOf(id),
   })
   await runtime.load(doc?.assetIds() ?? [])
+}
+
+/**
+ * Other people's asset changes (`assetWatch.ts`, ADR 0156). Paths gather while one batch is being applied, so a
+ * collaborator's colour drag — a save per step — costs one reload per batch rather than one per step.
+ */
+const waitingPaths = new Set<string>()
+let applying = false
+const assetsChanged = async (paths: string[]): Promise<void> => {
+  for (const p of paths) waitingPaths.add(p)
+  if (applying) return
+  applying = true
+  try {
+    while (waitingPaths.size > 0) {
+      // A file this tab holds the lock on changes only through this tab, which has it already — and a drag's
+      // saves come back on the feed out of step with the ones still in flight.
+      const theirs = [...waitingPaths].filter((p) => !heldLocks.has(lockKey.asset(p)))
+      waitingPaths.clear()
+      if (theirs.length > 0) await inAssetQueue(() => applyAssetChanges(theirs))
+    }
+  } finally {
+    applying = false
+  }
+}
+
+/** A drag or a play-test owns what a rebuild would replace: the change waits for it. */
+const busyEditing = (): boolean => tool.dragging() || points.dragging() || fieldDragging || play.active()
+
+const applyAssetChanges = async (paths: string[]): Promise<void> => {
+  const before = assets
+  if (before === null) return
+  let next: AssetLibrary
+  try {
+    next = await loadAssetLibrary({ reuse: before, refetch: new Set(paths) })
+  } catch {
+    return // the next change, or the next local reload, brings it
+  }
+  const { list, ids } = libraryChanges(before, next, paths)
+  if (!list && ids.length === 0) return
+  while (busyEditing()) await new Promise((r) => setTimeout(r, 250))
+  assets = next
+  // Contents the runtime compiled are stale; what is only new, renamed or moved, the live view already sees.
+  const compiled = ids.filter((id) => {
+    const kind = next.db.byId[id]?.kind
+    return kind === 'material' || kind === 'texture' || kind === 'model'
+  })
+  if (compiled.length > 0) {
+    await freshRuntime()
+    meshes.buildAll()
+  }
+  previews.invalidate()
+  if (selectedAsset !== null && next.db.byId[selectedAsset] === undefined) {
+    selectedAsset = null
+    assetInspector.show(null)
+  } else if (selectedAsset !== null && ids.includes(selectedAsset)) assetInspector.show(selectedAsset)
+  refreshUi()
 }
 
 // --- boot ---
@@ -2186,6 +2271,18 @@ me = await fetchMe().catch((e: unknown) => {
 })
 await reloadAssets()
 await openFirstLevel()
+// Other people's asset changes, followed from where the list was read (ADR 0156).
+watchAssets({
+  seq: () => assets?.seq ?? 0,
+  changed: assetsChanged,
+  lost: async () => {
+    while (busyEditing()) await new Promise((r) => setTimeout(r, 250))
+    await reloadAssets()
+    previews.invalidate()
+    meshes.buildAll()
+    refreshUi()
+  },
+})
 
 /**
  * Keep every held lock alive, and re-take the file's if the server dropped it (a laptop asleep past the stale

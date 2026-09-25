@@ -8,12 +8,22 @@ import { defineConfig, type Plugin } from 'vite'
 import { REPO_CONTENT, contentAlias } from '../../content-root'
 import { ASSETS_DIR } from '../../packages/content/src/layout'
 import { createContentApi } from '../editor-server/src/api'
+import { createAssetIndex } from '../editor-server/src/assetIndex'
+import { createChangeFeed } from '../editor-server/src/changes'
 import { DEFAULTS } from '../editor-server/src/config'
 import { createLive, levelPath } from '../editor-server/src/live'
 import { createPrefabStore } from '../editor-server/src/prefabStore'
 import { SHARED_GAMES } from '../share/src/index'
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
+
+/** One asset list for the API and the prefab store, as on the box (ADR 0156). */
+const assets = createAssetIndex(join(ROOT, 'content', ASSETS_DIR))
+/**
+ * The change feed, as on the box: the editor watches it for other people's asset changes (ADR 0156). Without
+ * one the watch would be answered at once, every time, and spin.
+ */
+const feed = createChangeFeed()
 
 /** The live level sessions of this dev server (ADR 0089): the same code as the box, files on this disk. */
 const live = createLive({
@@ -27,9 +37,9 @@ const live = createLive({
     mkdirSync(dirname(file), { recursive: true })
     writeFileSync(file, `${JSON.stringify(level, null, 2)}\n`)
   },
-  changed: () => {},
+  changed: (_users, path) => feed.record([path]),
   // A level references a prefab by asset id (ADR 0091); the definitions come off this disk.
-  prefabs: createPrefabStore(join(ROOT, 'content', ASSETS_DIR)),
+  prefabs: createPrefabStore(join(ROOT, 'content', ASSETS_DIR), assets),
 })
 let sweeper: ReturnType<typeof setInterval> | null = null
 
@@ -55,6 +65,8 @@ const filesApi = (): Plugin => ({
       games: Object.fromEntries(SHARED_GAMES.map((g) => [g.name, `http://localhost:${g.port}/`])),
       // Levels are edited live here too (ADR 0089): the same session code, one person, files on this disk.
       live,
+      changes: feed,
+      assets,
     })
     server.middlewares.use((req, res, next) => {
       void api(req, res).then(

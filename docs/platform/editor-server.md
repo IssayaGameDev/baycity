@@ -17,7 +17,8 @@ is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walk
 | `src/git.ts` | `git`, `changedUnder`, `commitPaths`, `push`, `currentBranch` |
 | `src/changes.ts` | `createChangeFeed(keep)` — numbered, bounded log of written paths with long-poll `wait`; `null` = full sync needed (behind, or ahead after a restart) |
 | `src/live.ts` | `createLive(opts): Live` — the open documents (levels **and** prefabs, ADR 0091), their op log, holds, peers, debounced writes (ADR 0089); `docKey`, `LiveError(status)`, `levelPath`, `assetPath` |
-| `src/prefabStore.ts` | `createPrefabStore(assetsDir)` — prefab definitions by asset id, off disk: `root`, `pathOf`, `write`; rescans on an unknown id so a prefab saved seconds ago resolves, **and when the remembered path's sidecar no longer carries the id** — a prefab renamed, moved or deleted while the server ran used to resolve to nothing and be written back to its old place |
+| `src/assetIndex.ts` | `createAssetIndex(assetsDir): AssetIndex` — the asset list in memory (ADR 0156): `entries`, `byPath`, `byId` answer from the last walk; `rescan()` walks and returns every sidecar written since the last `rescan` (for attribution), `refresh()` walks for a lookup and keeps its sidecars for the next `rescan`. `server.ts` and the dev editor's `vite.config.ts` make one and hand it to both the API (`ApiOptions.assets`) and the prefab store |
+| `src/prefabStore.ts` | `createPrefabStore(assetsDir, index?)` — prefab definitions by asset id, off disk, found through the index: `root`, `pathOf`, `write`; rescans on an unknown id so a prefab saved seconds ago resolves, **and when the remembered path's sidecar no longer carries the id** — a prefab renamed, moved or deleted while the server ran used to resolve to nothing and be written back to its old place |
 | `src/sse.ts` | `encodeSse(event, data, id?)`, `SSE_HEADERS`, `SSE_KEEPALIVE` |
 | `src/proxy.ts` | `proxyHttp`, `proxyUpgrade`, `routeFor` — the staging games and `/relay` under this origin (ADR 0086) |
 | `src/server.ts` | `startEditorServer(config)` — identity, static editor, game proxy, timers, commit queue, state files |
@@ -55,14 +56,14 @@ shipped when `hidden` was added (ADR 0132). `api.test.ts` walks one over the wir
 | `POST /api/levels/delete` | `{ path }`, qualified — the file goes for good. **409** while it is open live (ADR 0110) | lock |
 | `GET /api/games` | `[{ name }]` — the folders at the content root that hold a `game.json` (ADR 0108) | |
 | `GET/PUT /api/games/:name` | `{ components: string[] }` — `content/<name>/game.json`; PUT makes the folder, which is how a new game starts | lock |
-| `GET /api/assets` | `{ entries, folders }` — runs the importer | |
+| `GET /api/assets` | `{ entries, folders, seq }` — rescans the index (the importer: a file copied in gets its sidecar, attributed to this user); `seq` is the change feed's position in the same tick, where an editor's watch starts (ADR 0156) | |
 | `POST /api/assets/mkdir` · `move` · `delete` | `{ path }` · `{ from, to }` · `{ path }` | lock (move/delete; a folder is refused if anything under it is held) |
 | `POST /api/assets/upload?path=` | raw bytes → `{ entry }` | lock; ext ∈ `png jpg jpeg webp ktx2 glb`; `≤ maxUploadBytes` else 413 |
 | `GET /assets/<path>` | bytes — a prefab open live is served from its document, as a level is | |
 | `PUT /assets/<path>` | JSON asset; **409** while that prefab is open live | lock |
 | `POST /api/admin/commit-all` | `Authorization: Bearer <stateDir/admin.token>` → commits every session | token, no user |
 | `GET /api/tree` | `{ seq, files: [{ path, size, sha1 }] }` — every file under `content/` (mirror, ADR 0084); flushes every live level first, as `GET /api/file` does | |
-| `GET /api/changes?since=N&timeout=MS` | `{ seq, paths }` long-poll (≤ 60 s); **410** when N is behind the feed or ahead of it | |
+| `GET /api/changes?since=N&timeout=MS` | `{ seq, paths }` long-poll (≤ 60 s); **410** when N is behind the feed or ahead of it. Followed by the mirror and by every editor tab (ADR 0156) | |
 | `GET /api/file?path=content/…` | the bytes; 404 when gone | |
 
 Identity first: `identify(req)` → `null` is 401, `AuthError` is its status (403 signed in but not in `users`, 503

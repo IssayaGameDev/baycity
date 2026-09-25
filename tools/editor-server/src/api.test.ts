@@ -259,6 +259,25 @@ describe('assets', () => {
   })
 })
 
+describe('the asset list and the feed (ADR 0156)', () => {
+  it('says where the feed stood, so a watch from there sees the next write and nothing before it', async () => {
+    await call('ada', 'POST', '/api/assets/upload?path=textures/t.png', undefined, Buffer.from('png'))
+    const list = await json<{ entries: { path: string }[]; seq: number }>(await call('bob', 'GET', '/api/assets'))
+    expect(list.seq).toBe(feed.seq())
+    expect(list.entries.map((e) => e.path)).toEqual(['textures/t.png'])
+    await call('ada', 'PUT', '/assets/materials/m.mat.json', { shader: 'standard', params: {} })
+    const ch = await json<{ seq: number; paths: string[] }>(await call('bob', 'GET', `/api/changes?since=${list.seq}&timeout=10`))
+    expect(ch.paths.sort()).toEqual([keyFor.asset('materials/m.mat.json'), keyFor.asset('materials/m.mat.json.meta')])
+  })
+
+  it('lists a file moved through the API where it went', async () => {
+    await call('ada', 'POST', '/api/assets/upload?path=textures/t.png', undefined, Buffer.from('png'))
+    await call('ada', 'POST', '/api/assets/move', { from: 'textures/t.png', to: 'textures/old/t.png' })
+    const list = await json<{ entries: { path: string }[] }>(await call('bob', 'GET', '/api/assets'))
+    expect(list.entries.map((e) => e.path)).toEqual(['textures/old/t.png'])
+  })
+})
+
 describe('mirror feed', () => {
   it('tree lists every content file with a hash; changes fold writes; file serves bytes and 404s the gone', async () => {
     const t0 = await json<{ seq: number; files: { path: string; sha1: string; size: number }[] }>(await call('ada', 'GET', '/api/tree'))

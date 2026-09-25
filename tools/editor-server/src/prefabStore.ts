@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { importAssets } from './assetImporter'
+import { createAssetIndex, type AssetIndex } from './assetIndex'
 
 import { META_SUFFIX } from '../../../packages/content/src/assets'
 import type { Node } from '../../../packages/content/src/types'
@@ -10,12 +10,13 @@ import type { Node } from '../../../packages/content/src/types'
  * The prefab definitions on disk, by asset id (ADR 0091).
  *
  * A level references a prefab by id, so anything that opens a level has to resolve those references — and on
- * this side that means reading the files. The importer already walks the asset tree and owns identity (the
- * `.meta` sidecar), so this is a thin index over it plus a parse, with one rescan when an id is not known yet:
- * a prefab saved seconds ago must resolve for the level that references it.
+ * this side that means reading the files. The asset index (`assetIndex.ts`) already knows every file and its
+ * identity (the `.meta` sidecar), so this is a lookup in it plus a parse, with a rescan when an id is not known
+ * yet — a prefab saved seconds ago must resolve for the level that references it — or has left the path the
+ * index gave.
  *
- * Nothing is cached across a miss on purpose. Prefabs are few and small, a level opens rarely, and a stale
- * index here would mean a level resolving a prefab that has since changed — the exact bug this whole change
+ * The file itself is read every time on purpose. Prefabs are few and small, a level opens rarely, and a cached
+ * definition would mean a level resolving a prefab that has since changed — the exact bug this whole change
  * exists to remove.
  */
 export interface PrefabStore {
@@ -29,12 +30,11 @@ export interface PrefabStore {
 
 const isNode = (v: unknown): v is Node => typeof v === 'object' && v !== null && Array.isArray((v as { components?: unknown }).components)
 
-export const createPrefabStore = (assetsDir: string): PrefabStore => {
-  let byId = new Map<string, string>() // asset id → path relative to the assets folder
-
-  const scan = (): void => {
-    const { entries } = importAssets(assetsDir)
-    byId = new Map(entries.filter((e) => e.kind === 'prefab').map((e) => [e.id, e.path]))
+/** `index` is the one the content API writes through, so a prefab it just saved or moved is already in it. */
+export const createPrefabStore = (assetsDir: string, index: AssetIndex = createAssetIndex(assetsDir)): PrefabStore => {
+  const prefabPath = (assetId: string): string | undefined => {
+    const e = index.byId(assetId)
+    return e?.kind === 'prefab' ? e.path : undefined
   }
 
   /**
@@ -57,10 +57,10 @@ export const createPrefabStore = (assetsDir: string): PrefabStore => {
    * file used to be (or refused, its folder gone) until the server restarted.
    */
   const pathOf = (assetId: string): string | undefined => {
-    const known = byId.get(assetId)
+    const known = prefabPath(assetId)
     if (known !== undefined && stillAt(assetId, known)) return known
-    scan()
-    return byId.get(assetId)
+    index.refresh()
+    return prefabPath(assetId)
   }
 
   return {

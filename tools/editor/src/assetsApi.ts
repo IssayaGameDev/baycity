@@ -19,6 +19,8 @@ export interface AssetLibrary {
   db: AssetDatabase
   /** Folders on disk, including empty ones — the tree needs those and no path implies them. */
   folders: string[]
+  /** Where the server's change feed stood when this list was read: what a watch starts from (ADR 0156). */
+  seq: number
   /** URL the bytes of an asset are served from. */
   urlOf: (path: string) => string
   urlOfId: (assetId: string) => string | null
@@ -69,12 +71,20 @@ const post = async (route: string, body: unknown): Promise<void> => {
   if (!r.ok) await failed(r, route)
 }
 
-/** Fetch the database and every JSON asset in it. */
-export const loadAssetLibrary = async (): Promise<AssetLibrary> => {
-  const { entries, folders } = await fetchJson<{ entries: AssetEntry[]; folders: string[] }>('/api/assets')
+/**
+ * Fetch the database and every JSON asset in it.
+ *
+ * With `reuse`, a material or prefab that library already holds, at the same path, is kept rather than fetched
+ * — unless its path is in `refetch`, the paths the server says changed (ADR 0156). So a change somebody else
+ * made costs its own file, not the whole library.
+ */
+export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refetch?: ReadonlySet<string> } = {}): Promise<AssetLibrary> => {
+  const { entries, folders, seq } = await fetchJson<{ entries: AssetEntry[]; folders: string[]; seq?: number }>('/api/assets')
   const db = buildDatabase(entries)
   const materials = new Map<string, MaterialAsset>()
   const prefabs = new Map<string, Node>()
+  const reuse = opts.reuse ?? null
+  const kept = (e: AssetEntry): boolean => reuse !== null && reuse.db.byId[e.id]?.path === e.path && opts.refetch?.has(e.path) !== true
 
   // Both are small JSON and both are needed synchronously — a material to compile, a prefab to preview or
   // place — so they are fetched up front rather than on demand.
@@ -82,6 +92,14 @@ export const loadAssetLibrary = async (): Promise<AssetLibrary> => {
     entries
       .filter((e) => e.kind === 'material' || e.kind === 'prefab')
       .map(async (e) => {
+        if (kept(e)) {
+          const held = e.kind === 'material' ? reuse?.materialOf(e.id) : reuse?.prefabOf(e.id)
+          if (held !== undefined) {
+            if (e.kind === 'material') materials.set(e.id, held as MaterialAsset)
+            else prefabs.set(e.id, held as Node)
+            return
+          }
+        }
         try {
           const parsed = await fetchJson<unknown>(assetUrl(e.path))
           if (e.kind === 'material') {
@@ -113,6 +131,7 @@ export const loadAssetLibrary = async (): Promise<AssetLibrary> => {
   return {
     db,
     folders,
+    seq: seq ?? 0,
     urlOf: assetUrl,
     urlOfId: (id) => {
       const entry = db.byId[id]
