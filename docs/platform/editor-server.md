@@ -39,68 +39,18 @@ is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walk
 | `GET /api/levels` | `[{ name, mode, prefabs? }]` — `name` qualified `<game>/<name>`, `mode` the **folder** it is in, so a file that will not parse still lists with its game (ADR 0108) | |
 | `GET/PUT /api/levels/:game/:name` | level JSON — two segments, because a game is a folder (ADR 0108). GET serves the **live copy** when the level is open; PUT runs `validateLevel(raw)` (structure only, no registry) and makes the game folder on demand, **409** while the level is open live. A name that is not a legal `<game>/<name>` is a 404 | lock |
 | `GET /api/live` | `{ docs: [{ name, seq, peers, holds }] }` | |
-| `GET /api/live/:kind/:name/events` | `:kind` is `level` or `prefab` (ADR 0091); a level's `:name` is the qualified `<game>/<name>` and so spans two segments (ADR 0108). SSE (`text/event-stream`, `:keepalive` every 25 s): `hello { connId, name }`, `snapshot { level, seq, holds, peers, hidden }`, then `ops { seq, from, batchId, ops }` with `id: seq`, `holds`, `peers`, `presence`, `open-assets { open: [{ assetId, connId, name }] }` (after the snapshot too, when anyone has one open), `asset`, `error`, and on a **level's** stream `prefab { assetId, ops }` when a prefab it uses was edited. 404 when there is no such document. The stream closing is the leave | |
+| `GET /api/live/:kind/:name/events` | `:kind` is `level` or `prefab` (ADR 0091); a level's `:name` is the qualified `<game>/<name>` and so spans two segments (ADR 0108). SSE (`text/event-stream`, `:keepalive` every 25 s): `hello { connId, name }`, `snapshot { level, seq, holds, peers, hidden }`, then `ops { seq, from, batchId, ops }` with `id: seq`, `holds`, `peers`, `presence`, `open-assets { open: [{ assetId, connId, name }] }` and `fields { fields: [{ connId, name, targets, card, field }] }` (each after the snapshot too, when not empty), `asset`, `error`, and on a **level's** stream `prefab { assetId, ops }` when a prefab it uses was edited. 404 when there is no such document. The stream closing is the leave | |
 | `POST /api/live/:kind/:name/ops` | `{ connId, batchId, ops }` → `{ ok, seq }` · 400 an op does not apply (`OpError`). Never refused for another's selection (ADR 0158). On a **prefab**, a connection in a level that uses it is accepted too — what *Apply to prefab* needs | |
 | `POST /api/live/:kind/:name/hold` | `{ connId, refs }` — **this connection's holds become exactly `refs`**, whoever else holds them → `{ ok }` (ADR 0158) | |
 | `POST /api/live/:kind/:name/release` | `{ connId, refs }` → `{ ok }` | |
 | `POST /api/live/:kind/:name/ping` | `{ connId }` — still here | |
 | `POST /api/live/:kind/:name/presence` | `{ connId, data }` — relayed to the others, unnumbered | |
+| `POST /api/live/:kind/:name/field` | `{ connId, spot: { targets, card, field } \| null }` — the Inspector field **this connection is in** (ADR 0160); texts cut at 200, 256 targets at most → `{ ok }` · 400 not a spot. The whole set to every connection in every document (`fields`), dropped on leaving | |
 | `POST /api/live/:kind/:name/assets` | `{ connId, assetIds }` — the assets **this connection has open** in its Inspector become exactly these (16 at most; ids that are not 16 hex dropped) → `{ ok }`. The whole set goes to every connection in every document (`open-assets`), and is dropped on leaving (ADR 0159) | |
 | `POST /api/live/:kind/:name/hidden` | `{ connId, keys, hidden }` — `refKey`s hidden in the **editor's viewport** (ADR 0132). Not an op: no sequence, no holds, never written to the level. Broadcast as the whole set on the `hidden` event, and persisted to `stateDir/hidden.json` | |
 
 **A new live action goes in two places.** The route is `^/api/live/(level|prefab)/([\w\-/]+)/(events|ops|hold|
-release|presence|assets|hidden|flush|leave|ping)# Editor server — `tools/editor-server`
-
-The content API the editor talks to, as one implementation with two hosts (ADR 0083): a Vite middleware in
-`pnpm dev:editor` (no login, no git) and a Node server on the box behind Cloudflare Access (`editor.playgorbo.com`,
-login, locks, commits on the `content` branch). `@mp/editor-server`, `tsx src/main.ts <config.json>`, no
-dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` can bundle it). What that reaches
-must not import a workspace package **as a value** — plain Node loads the bundle, and the editor's build, which
-is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walks the imports to hold.
-
-| File | Contents |
-| --- | --- |
-| `src/api.ts` | `createContentApi(opts): ApiHandler` — every route below; `keyFor`, `UPLOAD_EXTENSIONS`, `AuthError`, `safeJoin`, `sendJson` |
-| `src/config.ts` | `ServerConfig`, `AuthConfig`, `User`, `parseConfig`, `loadConfig`, `DEFAULTS` |
-| `src/access.ts` | `verifyToken` (pure RS256 over a key set), `createAccessVerifier` (fetches `/cdn-cgi/access/certs`, refetches on unknown `kid` at most once a minute) |
-| `src/locks.ts` | `LockTable`, `acquire`, `release`, `heartbeat`, `holder`, `blocker`, `heldBy`, `sweep` — pure |
-| `src/sessions.ts` | `SessionTable`, `markDirty`, `take`, `takeDue`, `takeAll`, `describeCommit` — pure |
-| `src/git.ts` | `git`, `changedUnder`, `commitPaths`, `push`, `currentBranch` |
-| `src/changes.ts` | `createChangeFeed(keep)` — numbered, bounded log of written paths with long-poll `wait`; `null` = full sync needed (behind, or ahead after a restart) |
-| `src/live.ts` | `createLive(opts): Live` — the open documents (levels **and** prefabs, ADR 0091), their op log, holds, peers, debounced writes (ADR 0089); `docKey`, `LiveError(status)`, `levelPath`, `assetPath` |
-| `src/assetIndex.ts` | `createAssetIndex(assetsDir): AssetIndex` — the asset list in memory (ADR 0156): `entries`, `byPath`, `byId` answer from the last walk; `rescan()` walks and returns every sidecar written since the last `rescan` (for attribution), `refresh()` walks for a lookup and keeps its sidecars for the next `rescan`. `server.ts` and the dev editor's `vite.config.ts` make one and hand it to both the API (`ApiOptions.assets`) and the prefab store |
-| `src/liveAssets.ts` | `createLiveAssets(opts): LiveAssets` — data-file assets as live documents (ADR 0159): `apply` (on a live connection, `opts.connection`; validated after applying; numbered; `asset { assetId, epoch, seq, from, batchId, ops }` to **every** connection, `opts.broadcast`), `current`, `forget`, `flushAll`, `epoch` (the process's start). Opened on the first edit, kept until the file is deleted, written behind (`idleMs` 500, `maxMs` 5000) through `opts.write` into the editors' sessions |
-| `src/liveAssetFiles.ts` | `liveAssetFiles(assetsDir, index)` → `read` / `write` by id through the asset index, wherever the file has moved |
-| `src/prefabStore.ts` | `createPrefabStore(assetsDir, index?)` — prefab definitions by asset id, off disk, found through the index: `root`, `pathOf`, `write`; rescans on an unknown id so a prefab saved seconds ago resolves, **and when the remembered path's sidecar no longer carries the id** — a prefab renamed, moved or deleted while the server ran used to resolve to nothing and be written back to its old place |
-| `src/sse.ts` | `encodeSse(event, data, id?)`, `SSE_HEADERS`, `SSE_KEEPALIVE` |
-| `src/proxy.ts` | `proxyHttp`, `proxyUpgrade`, `routeFor` — the staging games and `/relay` under this origin (ADR 0086) |
-| `src/server.ts` | `startEditorServer(config)` — identity, static editor, game proxy, timers, commit queue, state files |
-| `src/assetOps.ts`, `src/assetImporter.ts` | moved from the editor: folder ops, `.meta` importer |
-| `src/main.ts` | CLI; SIGTERM/SIGINT commit every session then exit |
-
-## Routes (`api.ts`)
-
-| Route | Body → reply | Gate |
-| --- | --- | --- |
-| `GET /api/me` | `{ user, heartbeatMs, lockStaleMs, maxUploadBytes, games }` — `games`: name → URL Play frames | |
-| `GET /api/status` | `{ pushError, locks: [{ path, owner, since }] }` (live locks only) | |
-| `POST /api/locks/acquire` | `{ path }` → `{ ok }` or `{ ok: false, owner: { name } }` | |
-| `POST /api/locks/release` | `{ path }` → `{ ok }`; then `onLockReleased(user)` | |
-| `POST /api/locks/heartbeat` | `{ paths }` → `{ lost }` | |
-| `GET /api/levels` | `[{ name, mode, prefabs? }]` — `name` qualified `<game>/<name>`, `mode` the **folder** it is in, so a file that will not parse still lists with its game (ADR 0108) | |
-| `GET/PUT /api/levels/:game/:name` | level JSON — two segments, because a game is a folder (ADR 0108). GET serves the **live copy** when the level is open; PUT runs `validateLevel(raw)` (structure only, no registry) and makes the game folder on demand, **409** while the level is open live. A name that is not a legal `<game>/<name>` is a 404 | lock |
-| `GET /api/live` | `{ docs: [{ name, seq, peers, holds }] }` | |
-| `GET /api/live/:kind/:name/events` | `:kind` is `level` or `prefab` (ADR 0091); a level's `:name` is the qualified `<game>/<name>` and so spans two segments (ADR 0108). SSE (`text/event-stream`, `:keepalive` every 25 s): `hello { connId, name }`, `snapshot { level, seq, holds, peers, hidden }`, then `ops { seq, from, batchId, ops }` with `id: seq`, `holds`, `peers`, `presence`, `open-assets { open: [{ assetId, connId, name }] }` (after the snapshot too, when anyone has one open), `asset`, `error`, and on a **level's** stream `prefab { assetId, ops }` when a prefab it uses was edited. 404 when there is no such document. The stream closing is the leave | |
-| `POST /api/live/:kind/:name/ops` | `{ connId, batchId, ops }` → `{ ok, seq }` · 400 an op does not apply (`OpError`). Never refused for another's selection (ADR 0158). On a **prefab**, a connection in a level that uses it is accepted too — what *Apply to prefab* needs | |
-| `POST /api/live/:kind/:name/hold` | `{ connId, refs }` — **this connection's holds become exactly `refs`**, whoever else holds them → `{ ok }` (ADR 0158) | |
-| `POST /api/live/:kind/:name/release` | `{ connId, refs }` → `{ ok }` | |
-| `POST /api/live/:kind/:name/ping` | `{ connId }` — still here | |
-| `POST /api/live/:kind/:name/presence` | `{ connId, data }` — relayed to the others, unnumbered | |
-| `POST /api/live/:kind/:name/assets` | `{ connId, assetIds }` — the assets **this connection has open** in its Inspector become exactly these (16 at most; ids that are not 16 hex dropped) → `{ ok }`. The whole set goes to every connection in every document (`open-assets`), and is dropped on leaving (ADR 0159) | |
-| `POST /api/live/:kind/:name/hidden` | `{ connId, keys, hidden }` — `refKey`s hidden in the **editor's viewport** (ADR 0132). Not an op: no sequence, no holds, never written to the level. Broadcast as the whole set on the `hidden` event, and persisted to `stateDir/hidden.json` | |
-
-**A new live action goes in two places.** The route is `^/api/live/(level|prefab)/([\w\-/]+)/(events|ops|hold|
- — the action is a **fixed alternation anchored at the end**, which
+release|presence|assets|field|hidden|flush|leave|ping)$` — the action is a **fixed alternation anchored at the end**, which
 is how a level name carrying a slash (ADR 0108) is told from the action after it. Adding a handler to the
 switch without adding the word to that alternation is a 404 with a correct handler behind it, which is what
 shipped when `hidden` was added (ADR 0132). `api.test.ts` walks one over the wire for exactly this reason.
@@ -141,7 +91,7 @@ minute — an owner whose last lock went stale has their session committed.
 ```ts
 createLive({ readLevel, writeLevel, changed(users, path), onDocClosed?, prefabs?, idleMs = 500, maxMs = 5000, logKeep = 500, schedule?, staleMs? }): Live
 // join(key, client) · leave(key, connId) · apply(key, connId, user, { batchId, ops }) → { seq } | throws LiveError
-// hold · release · presence · setOpenAssets(key, connId, user, assetIds) · ping · sweep · flush(key) · flushAll() · isOpen · levelOf · status()
+// hold · release · presence · setOpenAssets(key, connId, user, assetIds) · setField(key, connId, user, spot | null) · ping · sweep · flush(key) · flushAll() · isOpen · levelOf · status()
 docKey(kind, name)   // 'level:<name>' | 'prefab:<assetId>'; a bare name is a level
 ```
 

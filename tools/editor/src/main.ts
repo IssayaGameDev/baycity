@@ -64,9 +64,11 @@ import { createProjectPanel, type Project } from './projectPanel'
 import { createHistoryStore } from './historyStore'
 import { createItemMeshes } from './itemMeshes'
 import { createLiveSession, peerCss } from './liveSession'
+import type { FieldSpot } from './collab'
 import { createCameraView } from './cameraView'
 import { createFollow } from './follow'
 import { createPeople, type PeopleState } from './people'
+import { createFieldPresence, type Ring } from './fieldPresence'
 import { createFileActions } from './fileActions'
 import { createMotionPreview } from './motionPreview'
 import { createMenus } from './menus'
@@ -361,6 +363,10 @@ const room = createLiveSession({
   onAsset: (data) => assetSync.onEvent(data),
   openAssetIds: () => (selectedAsset === null ? [] : [selectedAsset]),
   openAssetsChanged: () => assetInspector.openersChanged(),
+  fieldsChanged: () => {
+    objectFields.repaint()
+    assetFields.repaint()
+  },
   dropHistoryWhere: (predicate) => edits.dropWhere(predicate),
 })
 /** The connection the room last reported, so a reconnect is noticed. */
@@ -2060,6 +2066,44 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     if (db !== undefined) for (const a of assetsOfKind(db, of)) options[a.name] = a.id
     return options
   },
+})
+
+/**
+ * Who is in which Inspector field (ADR 0160): this tab's, told to everyone, and the others' as rings. The object
+ * Inspector's lines write to the selected nodes — or the level's game or environment settings — and the asset
+ * Inspector's to the asset it shows. One spot for the tab: the asset Inspector's when it has one, so a late
+ * "left the object field" cannot clear the asset field just gone into.
+ */
+let objectSpot: FieldSpot | null = null
+let assetSpot: FieldSpot | null = null
+const tellField = (): void => room.setField(assetSpot ?? objectSpot)
+const objectTargets = (): string[] => {
+  if (gameSelected) return [room.docTarget('@game')]
+  if (envSelected) return [room.docTarget('@env')]
+  return selectionRefs().map((r) => room.docTarget(refKey(r)))
+}
+/** What the object Inspector shows, as a target: the primary node, or the level's settings. */
+const objectTarget = (): string | null => {
+  if (gameSelected) return room.docTarget('@game')
+  if (envSelected) return room.docTarget('@env')
+  const ref = selected === null ? null : (doc?.refAt(selected) ?? null)
+  return ref === null ? null : room.docTarget(refKey(ref))
+}
+const ringsOn = (target: string | null): Ring[] =>
+  target === null ? [] : room.fieldsOn(target).map((f) => ({ card: f.card, field: f.field, name: f.name, colour: peerCss(f.connId) }))
+const objectFields = createFieldPresence($<HTMLDivElement>('#inspector'), {
+  report: (spot) => {
+    objectSpot = spot === null ? null : { targets: objectTargets(), ...spot }
+    tellField()
+  },
+  rings: () => ringsOn(objectTarget()),
+})
+const assetFields = createFieldPresence($<HTMLDivElement>('#asset-inspector'), {
+  report: (spot) => {
+    assetSpot = spot === null || selectedAsset === null ? null : { targets: [`asset:${selectedAsset}`], ...spot }
+    tellField()
+  },
+  rings: () => ringsOn(selectedAsset === null ? null : `asset:${selectedAsset}`),
 })
 
 // --- what the editor shows of its own state (ADR 0155) ---

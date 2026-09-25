@@ -364,3 +364,42 @@ describe('who has which asset open (ADR 0159)', () => {
     expect(seen.at(-1), 'nobody, once out of the room').toEqual([])
   })
 })
+
+describe('which field I am in (ADR 0160)', () => {
+  it('hands on everyone’s, starts empty on each new connection, and says mine in order', async () => {
+    const h = harness()
+    const seen: string[][] = []
+    const collab = createCollab(h.transport, {
+      level: () => null,
+      onSnapshot: () => undefined,
+      onApplied: () => undefined,
+      onRejected: () => undefined,
+      onPeers: () => undefined,
+      onHolds: () => undefined,
+      onHidden: () => undefined,
+      onPresence: () => undefined,
+      onPrefabOps: () => undefined,
+      onError: () => undefined,
+      onFields: (fields) => seen.push(fields.map((f) => `${f.name}:${f.card}/${f.field}`)),
+    })
+    const joined = collab.join('lv')
+    h.emit({ event: 'hello', data: { connId: 'me', name: 'Ada' } })
+    h.emit({ event: 'snapshot', data: { level: fixture(), seq: 0, holds: [], peers: [] } })
+    h.emit({ event: 'fields', data: { fields: [{ connId: 'other', name: 'Bob', targets: ['level:lv|a'], card: '@transform', field: 'position' }] } })
+    await joined
+    expect(seen).toEqual([[], ['Bob:@transform/position']])
+
+    const spot = { targets: ['level:lv|b'], card: 'Collider#0', field: 'size' }
+    const p = collab.setField(spot)
+    const q = collab.setField(null)
+    await tick()
+    expect(h.posts.map((x) => x.action), 'the second waits for the first').toEqual(['field'])
+    expect(h.posts[0]!.body).toEqual({ connId: 'me', spot })
+    h.posts[0]!.answer(true)
+    await p
+    await tick()
+    expect(h.posts[1]!.body.spot).toBeNull()
+    h.posts[1]!.answer(true)
+    await q
+  })
+})

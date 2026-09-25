@@ -48,6 +48,7 @@ object that uses it. Two people changing the same value: the last change wins.
 
 - Ctrl+Z undoes material edits too, in the same order as your level edits. One colour drag is one undo.
 - The icons next to an asset's name in the Inspector are the other people who have it open, in any level.
+- A field with a coloured ring round it is one someone else is in right now. Hover its name to see who.
 
 ## Saving
 

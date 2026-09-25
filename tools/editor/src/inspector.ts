@@ -619,9 +619,15 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       empty?: boolean
       /** Always open: the Transform. */
       fixed?: boolean
+      /**
+       * What every tab calls this card, for who is in which field (ADR 0160); the key when it says nothing. A
+       * component's id is its own node's, so it is named by type and ordinal instead — as the selection matches it.
+       */
+      card?: string
     },
   ): Section => {
     const root = el('div', 'isec')
+    root.dataset.card = opts.card ?? key
     const header = el('div', 'isec-h')
     const shuts = opts.empty !== true && opts.fixed !== true
     const collapsed = shuts && shut.has(key)
@@ -1190,7 +1196,9 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     const state = boundState(doc.registry.defaults(view.type), view.params)
     const shown = def === undefined || view.type === SEQUENCE ? null : visibleParams(def.params, state)
     const seqHead = view.type === SEQUENCE && def !== undefined ? sequenceHead(doc, at, view, peers) : null
+    const ordinal = doc.components(at).filter((c) => c.type === view.type).findIndex((c) => c.id === view.id)
     const section = addSection(view.id, {
+      card: `${view.type}#${ordinal}`,
       title: seqHead?.title ?? def?.label ?? view.type,
       icon: componentIcon(view.type),
       ...(seqHead === null ? {} : { summary: seqHead.summary, tools: seqHead.tools, ...(seqHead.warn === undefined ? {} : { warn: seqHead.warn }) }),

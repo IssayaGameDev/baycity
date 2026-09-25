@@ -77,6 +77,8 @@ const dragged = <T>(change: (v: T, ongoing: boolean) => void, settle: () => void
 })
 
 export const createAssetInspector = (container: HTMLElement, host: AssetInspectorHost): AssetInspector => {
+  // Its lines' card, for who is in which field (ADR 0160): the asset is the field's target, so one name serves.
+  container.dataset.card = 'asset'
   /** A dropdown over textures, and a thumbnail of the current choice beside it. */
   const textureField = (current: string | null, onPick: (id: string | null) => void): Field => {
     const db = host.db()

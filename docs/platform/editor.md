@@ -591,6 +591,23 @@ connection, never this tab's (`mineEver`). The asset Inspector's header draws th
 (initials, `--pc` = `peerCss`, title `<name> has this open`); `assetInspector.openersChanged()` redraws only them.
 The sites that set `selectedAsset` without `deselect` call `room.syncHolds()` themselves.
 
+**Who is in which field** (ADR 0160, `src/fieldPresence.ts`), both Inspectors:
+
+```ts
+spotOf(target, within): Spot | null   // the line: nearest [data-field] (fieldRow's label), its nearest [data-card]
+createFieldPresence(container, { report(spot | null), rings(): Ring[] }): { repaint }
+```
+
+In a line: focus in it, or a pointer pressed on it; `report` at once going in, 150 ms late going out. `repaint`
+rings each `Ring`'s line (`.irow.peer-in`, `--peer`, title *X is in this field*) and runs on its own after any
+rebuild (a `MutationObserver`), dropping a focus the rebuild took away. Cards: `addSection(key, { card })` sets
+`data-card` — `<type>#<ordinal>` for a component, the key otherwise (`@transform`, `@game-…`, `@env-…`);
+`#asset-inspector` is `asset`. main: `objectFields` over `#inspector` (targets: `@game` / `@env` or the selection's
+refs, each `room.docTarget(suffix)` = `<kind>:<doc>|<suffix>`; rings for the primary) and `assetFields` over
+`#asset-inspector` (`asset:<id>`); one spot for the tab, the asset one first (`tellField`). `room.setField(spot)` →
+`collab.setField` (`POST …/field`, in order, re-sent on each new connection); `fields` event → `room.fieldsOn(target)`
+(the others, never this tab's) → `fieldsChanged` repaints both. `collab.ts`'s ordered messages share `inOrder()`.
+
 ## Refusing another game's private components (ADR 0076)
 
 - `unknownComponentTypes(root, registry)` (`src/editorDoc.ts`), pure.

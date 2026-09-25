@@ -26,6 +26,8 @@ export type ServerEvent =
   | { event: 'asset'; data: unknown }
   /** Who has which asset open in their Inspector, everyone in every document (ADR 0159): the whole set. */
   | { event: 'open-assets'; data: { open: OpenAsset[] } }
+  /** Who is in which Inspector field, everyone in every document (ADR 0160): the whole set. */
+  | { event: 'fields'; data: { fields: FieldFocus[] } }
   | { event: 'error'; data: { message: string } }
 
 export interface Hold {
@@ -40,6 +42,19 @@ export interface Peer {
 /** A connection with an asset open in its Inspector (ADR 0159). */
 export interface OpenAsset {
   assetId: string
+  connId: string
+  name: string
+}
+/**
+ * Where a connection is in an Inspector (ADR 0160): the line (`card`, `field`, as `fieldPresence.ts` names it) of
+ * what it writes to — `targets`, `<kind>:<doc>|<refKey>` per node, `<kind>:<doc>|@game` / `@env`, `asset:<id>`.
+ */
+export interface FieldSpot {
+  targets: string[]
+  card: string
+  field: string
+}
+export interface FieldFocus extends FieldSpot {
   connId: string
   name: string
 }
@@ -100,6 +115,8 @@ export interface CollabHooks {
   onAsset?: (data: unknown) => void
   /** Who has which asset open, the whole set: from the server, and `[]` on a new connection or leaving. */
   onOpenAssets?: (open: OpenAsset[]) => void
+  /** Who is in which Inspector field, the whole set, the same way (ADR 0160). */
+  onFields?: (fields: FieldFocus[]) => void
   /** The stream's state changed; `null` once no room is open. */
   onConnection?: (state: Connection | null) => void
 }
@@ -122,6 +139,8 @@ export interface Collab {
   setHolds: (refs: NodeRef[]) => Promise<void>
   /** The assets I have open are exactly these (ADR 0159), shown to everyone. In order, as holds are. */
   setOpenAssets: (assetIds: string[]) => Promise<void>
+  /** The Inspector field I am in, or none (ADR 0160), shown to everyone. In order, as holds are. */
+  setField: (spot: FieldSpot | null) => Promise<void>
   /** Still here. The server drops a connection it has not heard from in a while, holds included. */
   ping: () => void
   /**
@@ -236,6 +255,19 @@ export const parseFollowPresence = (data: unknown): FollowPresence | null => {
   return { kind: 'follow', leader: d.leader }
 }
 
+/**
+ * Messages that must land in the order they were asked — "my holds are these", then "these": sent one behind
+ * another, never two in flight, so a later one cannot overtake an earlier. A failed one does not stop the next.
+ */
+const inOrder = (): ((send: () => Promise<void>) => Promise<void>) => {
+  let chain: Promise<unknown> = Promise.resolve()
+  return (send) => {
+    const next = chain.then(send, send)
+    chain = next.catch(() => undefined)
+    return next
+  }
+}
+
 let nextBatch = 0
 const newBatchId = (): string => `${Date.now().toString(36)}-${(nextBatch++).toString(36)}`
 
@@ -249,9 +281,10 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
   let holds: Hold[] = []
   let unacked: { batchId: string; ops: Op[]; inverses: Op[] }[] = []
   let joined: { resolve: () => void; reject: (e: Error) => void } | null = null
-  /** Hold messages queue behind one another: order is the point of them. */
-  let holdChain: Promise<unknown> = Promise.resolve()
-  let openChain: Promise<unknown> = Promise.resolve()
+  /** Each of these queues behind its own kind: order is the point of them. */
+  const holdsInOrder = inOrder()
+  const openInOrder = inOrder()
+  const fieldsInOrder = inOrder()
   let connection: Connection | null = null
   const setConnection = (next: Connection | null): void => {
     if (next === connection) return
@@ -310,8 +343,9 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
         hooks.onSnapshot(e.data.level, seq)
         hooks.onPeers(peers)
         hooks.onHolds(holds)
-        // A new connection: the server sends who has what open next, if anyone has.
+        // A new connection: the server sends who has what open, and who is in which field, next, if anyone is.
         hooks.onOpenAssets?.([])
+        hooks.onFields?.([])
         // Part of the snapshot, so the first paint already leaves out what is hidden.
         hooks.onHidden(e.data.hidden ?? [])
         // Local edits the server has not confirmed are put back on the fresh copy and sent again.
@@ -378,6 +412,9 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
         return
       case 'open-assets':
         hooks.onOpenAssets?.(e.data.open)
+        return
+      case 'fields':
+        hooks.onFields?.(e.data.fields)
         return
       case 'error':
         hooks.onError(e.data.message)
@@ -456,6 +493,7 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
       peers = []
       holds = []
       hooks.onOpenAssets?.([])
+      hooks.onFields?.([])
       return posted
     },
     submit: (batch) => submitBatch(batch, newBatchId()),
@@ -463,24 +501,21 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
       if (name === null || connId === null) return
       await transport.post(kind, name, 'flush', { connId })
     },
-    setHolds: (refs) => {
-      const send = async (): Promise<void> => {
+    setHolds: (refs) =>
+      holdsInOrder(async () => {
         if (name === null || connId === null) return
         await transport.post(kind, name, 'hold', { connId, refs })
-      }
-      const next = holdChain.then(send, send)
-      holdChain = next.catch(() => undefined)
-      return next
-    },
-    setOpenAssets: (assetIds) => {
-      const send = async (): Promise<void> => {
+      }),
+    setOpenAssets: (assetIds) =>
+      openInOrder(async () => {
         if (name === null || connId === null) return
         await transport.post(kind, name, 'assets', { connId, assetIds })
-      }
-      const next = openChain.then(send, send)
-      openChain = next.catch(() => undefined)
-      return next
-    },
+      }),
+    setField: (spot) =>
+      fieldsInOrder(async () => {
+        if (name === null || connId === null) return
+        await transport.post(kind, name, 'field', { connId, spot })
+      }),
     ping: () => {
       if (name === null || connId === null) return
       void transport.post(kind, name, 'ping', { connId }).catch(() => undefined)
@@ -517,7 +552,7 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
 export const httpTransport = (): LiveTransport => ({
   connect: (kind, name, onEvent, onDrop, onRetry) => {
     const source = new EventSource(`/api/live/${kind}/${encodeURIComponent(name)}/events`)
-    for (const event of ['hello', 'snapshot', 'ops', 'holds', 'peers', 'presence', 'hidden', 'prefab', 'asset', 'open-assets', 'error'] as const) {
+    for (const event of ['hello', 'snapshot', 'ops', 'holds', 'peers', 'presence', 'hidden', 'prefab', 'asset', 'open-assets', 'fields', 'error'] as const) {
       source.addEventListener(event, (m) => onEvent({ event, data: JSON.parse((m as MessageEvent<string>).data) } as ServerEvent))
     }
     // EventSource retries on its own after a network drop. A 4xx is a closed stream that never opened: the

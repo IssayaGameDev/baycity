@@ -506,3 +506,31 @@ describe('a refused prefab batch', () => {
     expect(shared.children![0]!.name).toBe('fine')
   })
 })
+
+describe('which field each connection is in (ADR 0160)', () => {
+  const spot = { targets: ['level:parkour/lv|a'], card: 'transform', field: 'position' }
+  const fieldEvents = (f: Fake): unknown[] => f.events.filter((e) => e.event === 'fields').map((e) => e.data)
+
+  it('tells everyone, a joiner after its snapshot, and nobody once it leaves the field or the document', () => {
+    const { live, disk } = world()
+    disk.set('parkour/lv2', fixture())
+    const a = fake('c1')
+    const b = fake('c2', BOB)
+    live.join(LV, a.client)
+    live.join('parkour/lv2', b.client)
+    live.setField(LV, 'c1', ADA, spot)
+    expect(fieldEvents(b)).toEqual([{ fields: [{ connId: 'c1', name: 'Ada', ...spot }] }])
+    live.setField(LV, 'c1', ADA, spot)
+    expect(fieldEvents(b), 'nothing changed, nothing sent').toHaveLength(1)
+
+    const c = fake('c3', BOB)
+    live.join(LV, c.client)
+    expect(c.events.map((e) => e.event).slice(0, 3)).toEqual(['hello', 'snapshot', 'fields'])
+
+    live.setField(LV, 'c1', ADA, null)
+    expect(fieldEvents(b).at(-1)).toEqual({ fields: [] })
+    live.setField(LV, 'c1', ADA, spot)
+    live.leave(LV, 'c1')
+    expect(fieldEvents(b).at(-1), 'gone with the connection').toEqual({ fields: [] })
+  })
+})

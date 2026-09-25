@@ -209,5 +209,6 @@ why matters.
 | [0157](adr/0157-the-editor-recompiles-only-what-changed.md) | The editor recompiles only what changed, in place, and saves a material in order |
 | [0158](adr/0158-a-selection-is-shown-never-refused.md) | A selection is shown, never refused: anyone edits anything |
 | [0159](adr/0159-data-file-assets-are-live-documents.md) | Assets that are data files are live documents |
+| [0160](adr/0160-a-field-someone-is-in-is-ringed-in-their-colour.md) | A field someone is in is ringed in their colour |
 
 `Design archive/` holds superseded design material and is not maintained.

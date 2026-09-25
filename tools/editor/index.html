@@ -2271,6 +2271,12 @@
         line-height: 1.4;
         color: var(--dim);
       }
+      /* Someone else is in this field (ADR 0160): a ring in their colour round its controls, their name on hover. */
+      .irow.peer-in .irow-c {
+        border-radius: 6px;
+        outline: 1.5px solid var(--peer);
+        outline-offset: 1px;
+      }
       /* Unity's cue for an overridden value: a bar down the left edge of the line. */
       .irow.over::before {
         content: '';

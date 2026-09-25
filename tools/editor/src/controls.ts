@@ -249,10 +249,12 @@ export const scrubFieldOf = (o: ScrubFieldOptions): ScrubHandle => {
 
 /**
  * A line of the Inspector (ADR 0152): its label in the column `--lw` sets on the panel, then its controls — the
- * object Inspector's component cards and the asset Inspector alike.
+ * object Inspector's component cards and the asset Inspector alike. The label names the line (`data-field`) for
+ * who is in which field (`fieldPresence.ts`, ADR 0160).
  */
 export const fieldRow = (label: string, ...controls: HTMLElement[]): HTMLElement => {
   const line = el('div', 'irow')
+  line.dataset.field = label
   const slot = el('div', 'irow-c')
   slot.append(...controls)
   line.append(el('span', 'irow-l', label), slot)

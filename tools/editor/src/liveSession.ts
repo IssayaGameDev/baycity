@@ -3,7 +3,7 @@ import { vec3, type Vec3 } from '@mp/core'
 import { eulerToQuat } from '@mp/core'
 import { createThreeStage, THREE, type OutlineGroup } from '@mp/render-three'
 
-import { createCollab, httpTransport, parseCameraPresence, parseFollowPresence, parsePresence, peerChanges, type CameraPresence, type Hold, type OpenAsset, type Peer } from './collab'
+import { createCollab, httpTransport, parseCameraPresence, parseFollowPresence, parsePresence, peerChanges, type CameraPresence, type FieldFocus, type FieldSpot, type Hold, type OpenAsset, type Peer } from './collab'
 import type { Doc, LocalPose } from './editorDoc'
 import type { Notify } from './notices'
 
@@ -89,6 +89,8 @@ export interface LiveHost {
   openAssetIds: () => string[]
   /** Who has which asset open changed: the Inspector's icons redraw. */
   openAssetsChanged: () => void
+  /** Who is in which Inspector field changed (ADR 0160): the rings redraw. */
+  fieldsChanged: () => void
   /** Forget the history entries holding a batch the server refused. */
   dropHistoryWhere: (predicate: (entry: { ops: readonly Op[]; inverses: readonly Op[] }) => boolean) => void
 }
@@ -153,6 +155,27 @@ export const createLiveSession = (host: LiveHost) => {
     lastOpenKey = key
     void collab.setOpenAssets(ids).catch(() => undefined)
   }
+  // ------------------------------ fields (ADR 0160) ------------------------------
+  /** Who is in which Inspector field, everyone's, from the server: the whole set. */
+  let fieldsNow: FieldFocus[] = []
+  /** The field this tab is in, kept so a new connection can say it again. */
+  let mySpot: FieldSpot | null = null
+  let lastFieldKey: string | null = null
+  const sendField = (): void => {
+    if (!live()) return
+    const key = JSON.stringify(mySpot)
+    if (key === lastFieldKey) return
+    lastFieldKey = key
+    void collab.setField(mySpot).catch(() => undefined)
+  }
+  /** This tab's lines are named in this document: a node's ref means nothing in another level. */
+  const docTarget = (suffix: string): string => `${collab.kind() ?? 'level'}:${collab.name() ?? ''}|${suffix}`
+  /** The others in a line of `target`, one per connection. */
+  const fieldsOn = (target: string): readonly (FieldFocus & { connId: string })[] => {
+    const me = collab.connId()
+    return fieldsNow.filter((f) => f.connId !== me && !mineEver.has(f.connId) && f.targets.includes(target))
+  }
+
   /** The others who have this asset open, one per connection, in the order they opened it. */
   const openersOf = (assetId: string): readonly Peer[] => {
     const me = collab.connId()
@@ -372,12 +395,18 @@ export const createLiveSession = (host: LiveHost) => {
       openAssets = open
       host.openAssetsChanged()
     },
+    onFields: (fields) => {
+      fieldsNow = fields
+      host.fieldsChanged()
+    },
     onError: (message) => host.notify.error(`live: ${message}`),
     onConnection: (state) => {
       // Every stream that comes up is a new connection, with nothing open on the server yet.
       if (state === 'live') {
         lastOpenKey = null
         syncOpenAssets()
+        lastFieldKey = null
+        sendField()
       }
       host.presenceChanged()
     },
@@ -433,6 +462,7 @@ export const createLiveSession = (host: LiveHost) => {
       holdMap = new Map()
       lastHoldKey = null
       lastOpenKey = null
+      lastFieldKey = null
       stopPresence()
     },
     ping: () => collab.ping(),
@@ -460,6 +490,15 @@ export const createLiveSession = (host: LiveHost) => {
     syncHolds,
     /** The others who have this asset open (ADR 0159) — the icons on it in the Inspector. */
     openersOf,
+    /** The Inspector field this tab is in, or none (ADR 0160): everyone is told. */
+    setField: (spot: FieldSpot | null) => {
+      mySpot = spot
+      sendField()
+    },
+    /** `suffix` — a node's `refKey`, `@game`, `@env` — as a target in the open document. */
+    docTarget,
+    /** The others in a line of this target (ADR 0160) — the rings in the Inspector. */
+    fieldsOn,
     /** A reconnect is a new connection: the server holds nothing for it yet. */
     forgetHolds: () => void (lastHoldKey = null),
     rebuildHolds: rebuildHoldOutlines,
