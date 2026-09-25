@@ -1,7 +1,7 @@
 # ADR 0161 — Each game has its own asset library, beside the shared one
 
-Status: accepted, in progress. Step 1 of 5 has landed: an asset's path starts with its library. Amends ADR 0108's
-single shared library.
+Status: accepted, in progress. Steps 1 and 2 of 5 have landed: an asset's path starts with its library; which levels
+use which asset. Amends ADR 0108's single shared library.
 
 ## Context
 
@@ -31,8 +31,15 @@ Bytes are served at `/content/<path>`, as on disk. The file routes touch only pa
 one or of an existing game — never a level, a `game.json` or a library's own folder — and a move stays inside one
 library until step 3 can say who uses what. Level files store ids, so no content file changes.
 
+**Step 2: which levels use which asset** (`usage.ts` in `@mp/content`), found as Unity finds a dependency: an id
+appearing in the file. A string equal to a known id is a reference wherever it sits, so a game's own components,
+whose fields no shared code knows, are covered like the shared ones; a prefab or material used is followed to what it
+uses in turn. Counting a little too much is safe for a refusal and a build; counting too little is not.
+
 ## Rejected
 
 - **A `root` field on the entry beside a library-relative path.** Two strings to keep in step at every map, key and
   drag, where one path says both.
 - **Keeping `/assets/<path>`.** `/assets/assets/…` for Shared, or an ambiguity with a Shared folder named like a game.
+- **Reading references from each component's declared asset fields** (`assetParamIds`). It needs every game's
+  registry, which the server does not load, and misses anything outside a component.

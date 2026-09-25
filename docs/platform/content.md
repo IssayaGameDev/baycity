@@ -231,6 +231,19 @@ completes override transforms from the node they now override — then **throws 
 - `MaterialAsset { shader: 'standard' | 'unlit' | assetId; params: Record<string, MaterialValue> }`; `MaterialValue` kinds color/number/vec2/vec3/boolean/texture(`string|null`). `materialDependencies` = texture ids.
 - `*.prefab.json` = a `Node` root. Placing writes its **asset id** into the level; the definition stays in the file (ADR 0091, below).
 
+## Which levels use which asset — `packages/content/src/usage.ts` (ADR 0161)
+
+```ts
+assetsUsedBy(json, isAssetId, contentsOf): Set<string>      // a level's (or any asset's) ids, and through each prefab and material, theirs
+levelsUsing([[name, json]…], isAssetId, contentsOf): Map<id, string[]>   // asset → level names, sorted; unused assets absent
+```
+
+A reference is **a string value equal to a known id**, anywhere in the file (an id is 64 random bits): a game's own
+components' fields, the settings and a frozen copy's contents included; keys are not references. `contentsOf(id)` is
+a prefab's or material's JSON to follow (a material's textures and shader, a prefab's materials and models). A
+frozen copy is followed into the asset file too, so a level may count as using a little more than it draws, never
+less. An asset code loads by path (the game's sky, `client/services.md`) is in no level.
+
 ## Live assets — `packages/content/src/liveAssets.ts` (ADR 0159)
 
 A data-file asset edited live, by ops that know nothing about what the file means:
