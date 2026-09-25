@@ -211,5 +211,6 @@ why matters.
 | [0159](adr/0159-data-file-assets-are-live-documents.md) | Assets that are data files are live documents |
 | [0160](adr/0160-a-field-someone-is-in-is-ringed-in-their-colour.md) | A field someone is in is ringed in their colour |
 | [0161](adr/0161-each-game-has-its-own-asset-library.md) | Each game has its own asset library, beside the shared one |
+| [0162](adr/0162-the-games-window-holds-the-levels.md) | The games window holds the levels |
 
 `Design archive/` holds superseded design material and is not maintained.

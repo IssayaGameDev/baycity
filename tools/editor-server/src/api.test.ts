@@ -369,6 +369,8 @@ const sseReader = (r: Response): { take: (count: number) => Promise<{ event: str
       const frame = buf.slice(0, at)
       buf = buf.slice(at + 2)
       if (frame.startsWith(':')) continue
+      // Who is in which room goes to everyone on every join and leave (ADR 0162); tested on its own in live.test.ts.
+      if (frame.includes('event: rooms')) continue
       const fields = Object.fromEntries(frame.split(String.fromCharCode(10)).map((l) => [l.slice(0, l.indexOf(':')), l.slice(l.indexOf(':') + 2)]))
       const e: { event: string; data: unknown; id?: number } = { event: fields.event ?? '', data: JSON.parse(fields.data ?? 'null') }
       if (fields.id !== undefined) e.id = Number(fields.id)

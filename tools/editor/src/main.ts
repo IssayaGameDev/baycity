@@ -17,7 +17,7 @@ import {
   applyAssetOps, diffAssetOps, isLiveAssetPath, libraryOf, LiveAssetError, mayUse,
   type AssetDatabase, type MaterialAsset } from '@mp/content'
 
-import { DEFAULT_REGISTRY, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type Registry } from '@mp/components'
+import { DEFAULT_REGISTRY, createRegistry, ENGINE_COMPONENTS, isSharedComponent, PLAYER_COMPONENTS, SHARED_COMPONENT_TYPES, sharedComponents, type Registry } from '@mp/components'
 import { type ModeDescriptor, readSettings } from '@mp/mode'
 import { eulerToQuat, vec3, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
@@ -69,6 +69,7 @@ import { createCameraView } from './cameraView'
 import { createFollow } from './follow'
 import { createPeople, type PeopleState } from './people'
 import { createFieldPresence, type Ring } from './fieldPresence'
+import { createGamesWindow, type GamesWindow } from './gamesWindow'
 import { createFileActions } from './fileActions'
 import { createMotionPreview } from './motionPreview'
 import { createMenus } from './menus'
@@ -367,6 +368,8 @@ const room = createLiveSession({
     objectFields.repaint()
     assetFields.repaint()
   },
+  roomsChanged: () => gamesWindow.render(),
+  levelsChanged: () => void refreshFileList(),
   dropHistoryWhere: (predicate) => edits.dropWhere(predicate),
 })
 /** The connection the room last reported, so a reconnect is noticed. */
@@ -1062,8 +1065,6 @@ const openFile = async (name: string): Promise<void> => {
       hydratedPrefabs = resolved.filled
       missingPrefabs = resolved.missing
       setDoc(edits.withOps(levelDoc(level, registry())), name)
-      // The tree follows the document, so what is open is always visible in it (ADR 0108).
-      if (ref !== null) project?.showGame(ref.game)
       // Only now, past every throw above: a level that would not load must not be the one we come back to.
       rememberLevel(name)
       if (missingPrefabs.length > 0) notify.warn(`no prefab file for ${missingPrefabs.join(', ')} — those objects are empty`)
@@ -1087,18 +1088,20 @@ const refreshFileList = async (): Promise<void> => {
   levelEntries = await listFiles('levels').catch(() => [] as FileEntry[])
   toolbar?.render()
   project?.render()
+  gamesWindow?.render()
 }
 
 /**
  * Make a level file and open it live (ADR 0089): a blank one, or a copy of `from` — the server's current copy,
  * newer than the file while it is open. Names are files, so one that exists is refused.
  */
-const createLevel = async (from: string | null): Promise<void> => {
+const createLevel = async (from: string | null, inGame?: string): Promise<void> => {
   /**
    * A level is made **in a game's folder** (ADR 0108), so there has to be a game: without one there is
-   * nowhere for the file to go. Duplicating keeps the original's game; a blank one goes to the active game.
+   * nowhere for the file to go. Duplicating keeps the original's game; a blank one goes to the game asked for, or
+   * the active one.
    */
-  const game = (from === null ? activeMode?.name : parseQualified(from)?.game) ?? activeMode?.name
+  const game = (from === null ? (inGame ?? activeMode?.name) : parseQualified(from)?.game) ?? activeMode?.name
   if (game === undefined) {
     notify.warn('pick a game first — a level lives in its game\u2019s folder')
     return
@@ -1160,6 +1163,7 @@ const toolbar: Toolbar = createToolbar(
   $<HTMLDivElement>('#overlays'),
   () => ({
     name: shortName(fileState.name),
+    game: activeMode?.label ?? null,
     prefab: prefabOpen === null ? null : { level: shortName(prefabOpen.from), name: prefabOpen.name },
     gizmo: edit.mode,
     space: edit.space,
@@ -1180,6 +1184,7 @@ const toolbar: Toolbar = createToolbar(
   }),
   {
     back: prefabs.closePrefab,
+    openGames: () => gamesWindow.open(),
     undo: () => edits.undo(),
     redo: () => edits.redo(),
     toggleLog: (anchor) => notices.toggleLog(anchor),
@@ -1527,27 +1532,6 @@ const fileOps = createFileActions({
 
 const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   db: () => assets?.db ?? null,
-  games: () => MODE_LIST.map((m) => ({ name: m.name, label: m.label })),
-  levels: () => levelEntries,
-  openLevel: () => fileState.name,
-  onOpenLevel: (qualified) =>
-    void edits.guardUnsaved().then(async (go) => {
-      if (go) await openFile(qualified)
-    }),
-  /**
-   * Author for this game without opening anything: it is what a new level is made in, and what composes the
-   * registry while nothing is open. It replaced the toolbar's game picker (ADR 0108) and is deliberately
-   * *not* an open: clicking a game in the tree to see its levels must not throw away the document you have.
-   */
-  onPickGame: (game) => {
-    if (activeMode?.name === game) return
-    activeMode = MODES[game]
-    refreshUi()
-  },
-  onNewLevel: (game) => {
-    activeMode = MODES[game] ?? activeMode
-    void createLevel(null)
-  },
   folders: () => assets?.folders ?? [],
   urlOf: (path) => assets?.urlOf(path) ?? path,
   armed: () => placing?.assetId ?? null,
@@ -1657,39 +1641,6 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
       current,
     )
   },
-  onLevelContext: (at, qualified) => {
-    const ref = parseQualified(qualified)
-    const short = ref?.name ?? qualified
-    const isOpen = fileState.name === qualified
-    contextMenu.open(
-      at,
-      [
-        {
-          label: 'Open',
-          enabled: !isOpen && prefabOpen === null,
-          why: isOpen ? 'already open' : 'leave the prefab you are in first',
-          run: () => void edits.guardUnsaved().then(async (go) => {
-            if (go) await openFile(qualified)
-          }),
-        },
-        {
-          label: 'Duplicate\u2026',
-          divider: true,
-          // Takes the copy from the server's current copy rather than the file, so a level open live is
-          // duplicated as it is now.
-          run: () => void createLevel(qualified),
-        },
-        { label: 'Rename\u2026', run: () => fileOps.renameLevel(qualified) },
-        {
-          label: 'Copy name',
-          // What `?level=` takes, and what a teammate needs in order to open the same one.
-          run: () => void navigator.clipboard?.writeText(short).then(() => notify.ok(`copied ${short}`)),
-        },
-        { label: 'Delete\u2026', divider: true, run: () => fileOps.deleteLevelFile(qualified) },
-      ],
-      short,
-    )
-  },
   onMkdir: (parent, name) => fileOps.afterFileOp(`created ${name}`, async () => assets?.mkdir(parent, name) ?? Promise.resolve()),
   onRename: fileOps.renameAsset,
   onDelete: fileOps.deleteAsset,
@@ -1704,6 +1655,79 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   },
 })
 
+/**
+ * A level's menu (ADR 0110), from its tile in the games window (ADR 0162): Open, Duplicate, Rename, Copy name,
+ * Delete. The host's, because it needs the open document — is this the one you are in? — and the listing.
+ */
+const levelMenu = (at: { x: number; y: number }, qualified: string): void => {
+  const ref = parseQualified(qualified)
+  const short = ref?.name ?? qualified
+  const isOpen = fileState.name === qualified
+  contextMenu.open(
+    at,
+    [
+      {
+        label: 'Open',
+        enabled: !isOpen && prefabOpen === null,
+        why: isOpen ? 'already open' : 'leave the prefab you are in first',
+        run: () => void edits.guardUnsaved().then(async (go) => {
+          if (go) await openFile(qualified)
+        }),
+      },
+      {
+        label: 'Duplicate\u2026',
+        divider: true,
+        // Takes the copy from the server's current copy rather than the file, so a level open live is
+        // duplicated as it is now.
+        run: () => void createLevel(qualified),
+      },
+      { label: 'Rename\u2026', run: () => fileOps.renameLevel(qualified) },
+      {
+        label: 'Copy name',
+        // What `?level=` takes, and what a teammate needs in order to open the same one.
+        run: () => void navigator.clipboard?.writeText(short).then(() => notify.ok(`copied ${short}`)),
+      },
+      { label: 'Delete\u2026', divider: true, run: () => fileOps.deleteLevelFile(qualified) },
+    ],
+    short,
+  )
+}
+
+/**
+ * The games window (ADR 0162): every game, its levels with who is in each, and its components. Opening a level from
+ * it is how the editor moves between games; picking a game there only browses.
+ */
+const ENGINE_TYPES = new Set([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS].map((d) => d.type))
+const gamesWindow: GamesWindow = createGamesWindow({
+  games: () => MODE_LIST.map((m) => ({ name: m.name, label: m.label })),
+  levels: () => levelEntries,
+  game: () => activeMode?.name ?? null,
+  openLevel: () => fileState.name,
+  peopleIn: (qualified) => room.peopleIn(qualified).map((p) => ({ name: p.name, colour: peerCss(p.connId) })),
+  components: (game) => {
+    const mode = MODES[game]
+    if (mode === undefined) return null
+    const rows = registryFor(mode)
+      .all()
+      .map((d) => ({ type: d.type, label: d.label ?? d.type }))
+    return {
+      own: rows.filter((r) => !ENGINE_TYPES.has(r.type) && !isSharedComponent(r.type)),
+      shared: rows.filter((r) => !ENGINE_TYPES.has(r.type) && isSharedComponent(r.type)),
+      engine: rows.filter((r) => ENGINE_TYPES.has(r.type)),
+    }
+  },
+  onOpenLevel: (qualified) => {
+    gamesWindow.close()
+    void edits.guardUnsaved().then(async (go) => {
+      if (go) await openFile(qualified)
+    })
+  },
+  onNewLevel: (game) => {
+    gamesWindow.close()
+    void createLevel(null, game)
+  },
+  onLevelContext: (at, qualified) => levelMenu(at, qualified),
+})
 
 // ============================== undo/redo by inverse ops (ADR 0089) ==============================
 /**

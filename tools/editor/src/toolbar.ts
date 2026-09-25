@@ -8,7 +8,8 @@ import { icon, type IconName } from './icons'
  *
  * | where | what |
  * | --- | --- |
- * | top bar | the level's name, or `level › prefab` inside a prefab (the level is the way back), and its lock; Motion, with its
+ * | top bar | the game button, `game › level ▾`, which opens the games window (ADR 0162) — or `game ▾ › level › prefab` inside a
+ *   prefab, the level being the way back — and its lock; Motion, with its
  *   clock, and Play; undo, redo, the bell and who is in the room (ADR 0155) |
  * | viewport, left edge | Move, Rotate, Scale, Face |
  * | viewport, top left | Global / Local; snap and the active tool's increment |
@@ -36,6 +37,8 @@ export interface ToolbarState {
    * both are the Project panel's tree.
    */
   name: string
+  /** The game being edited, by its label; `null` for none. */
+  game: string | null
   /** A prefab open on top of a level: which level it goes back to, and its own name. `null` on a level. */
   prefab: { level: string; name: string } | null
   gizmo: GizmoMode
@@ -89,6 +92,8 @@ export interface ToolbarState {
 export interface ToolbarActions {
   /** Leave the prefab for the level it was opened from. */
   back: () => void
+  /** Open the games window (ADR 0162). */
+  openGames: () => void
   undo: () => void
   redo: () => void
   /** Open or close the log of messages under the bell. */
@@ -158,6 +163,13 @@ const TOOLS: readonly { mode: GizmoMode; icon: IconName; title: string }[] = [
 export const createToolbar = (bar: HTMLElement, overlays: HTMLElement, state: () => ToolbarState, actions: ToolbarActions): Toolbar => {
   // --- the top bar: the document, and running it ---
   const doc = el('div', 'tb-doc')
+  /** The games window's button: where you are, `game › level ▾`, and the way to every other level (ADR 0162). */
+  const gameButton = el('button', 'tb-game')
+  gameButton.type = 'button'
+  const gameText = el('span', 'tb-game-l')
+  gameButton.append(gameText, icon('chevron'))
+  gameButton.addEventListener('click', () => actions.openGames())
+  const gameSep = el('span', 'tb-crumb-sep', '›')
   const crumb = el('button', 'tb-crumb')
   crumb.type = 'button'
   crumb.title = 'back to the level'
@@ -166,7 +178,7 @@ export const createToolbar = (bar: HTMLElement, overlays: HTMLElement, state: ()
   const nameText = el('span', 'tb-name')
   /** Someone else holds the level's lock: read-only here until they let go. */
   const lock = el('span', 'tb-lock')
-  doc.append(crumb, crumbSep, nameText, lock)
+  doc.append(gameButton, gameSep, crumb, crumbSep, nameText, lock)
 
   /**
    * One toggle for the whole level, not one per object: motion is timed against other motion, so a staggered
@@ -248,12 +260,19 @@ export const createToolbar = (bar: HTMLElement, overlays: HTMLElement, state: ()
   const render = (): void => {
     const s = state()
 
-    crumb.hidden = s.prefab === null
-    crumbSep.hidden = s.prefab === null
+    // On a level the button says both; inside a prefab it says the game, and the level is the way back.
+    const inPrefab = s.prefab !== null
+    gameText.textContent = inPrefab ? (s.game ?? 'No game') : `${s.game ?? 'No game'} › ${s.name}`
+    gameButton.disabled = s.playing
+    setTitle(gameButton, 'Games: every game and its levels, and who is in each')
+    gameSep.hidden = !inPrefab
+    crumb.hidden = !inPrefab
+    crumbSep.hidden = !inPrefab
+    nameText.hidden = !inPrefab
     crumb.textContent = s.prefab?.level ?? ''
     crumb.disabled = s.playing
-    nameText.textContent = s.prefab?.name ?? s.name
-    nameText.title = s.prefab === null ? 'the level this room has open' : 'the prefab open on top of the level'
+    nameText.textContent = s.prefab?.name ?? ''
+    nameText.title = 'the prefab open on top of the level'
     lock.hidden = s.lockedBy === null
     lock.replaceChildren(icon('lock'), el('span', undefined, s.lockedBy === null ? '' : `Read-only · ${s.lockedBy} has it`))
     lock.title = s.lockedBy === null ? '' : `${s.lockedBy} holds this level's lock: you can look, and edit when they let go`

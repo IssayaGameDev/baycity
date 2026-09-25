@@ -18,7 +18,9 @@ within a second. There is **no Save for levels**: each change is saved as you ma
 - A piece you have selected is **yours** while it stays selected: the others see it dimmed with your name in
   the list and a coloured box around it, and cannot select or move it. Click elsewhere to let it go.
 - Undo puts back what **you** did, even if someone moved the piece since.
-- **New** asks for a name and creates the level at once. **Duplicate** copies the open level under a new name.
+- The button at the top left (*Keyboard › Roblox*) opens the **games window**: every game, its levels, and who is in
+  each. Double-click a level to open it. **New level** asks for a name and creates it at once; right-click a level
+  for Duplicate, Rename and Delete.
 - If a change is refused (bottom bar says why), it is undone on your screen. Nothing is lost on the server.
 
 ## Prefabs: build it once, use it everywhere

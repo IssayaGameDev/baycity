@@ -35,6 +35,7 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *   GET/PUT /api/levels/:name         → the JSON (PUT validated structurally)
  *   POST /api/levels/move             → { from, to } — rename, both qualified (ADR 0110)
  *   POST /api/levels/delete           → { path } — qualified; the file goes for good (ADR 0110)
+ *                                       A level made, renamed or deleted tells every editor: a `levels` event (ADR 0162)
  *   GET/PUT /api/games/:name          → { components } (ADR 0077)
  *   GET  /api/assets                  → { entries, libraries, folders, seq } (runs the importer; seq: the change feed's position)
  *   POST /api/assets/mkdir|move|delete → { path } · { from, to } · { path } — a move into another library is 409 while
@@ -311,6 +312,8 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     opts.onChanged?.(user, paths)
     opts.changes?.record(paths)
   }
+  /** The list of levels changed — made, renamed, deleted: every editor in any room reads it again (ADR 0162). */
+  const levelsChanged = (): void => opts.live?.broadcastAll('levels', {})
   const locksChanged = (): void => opts.onLocksChanged?.()
 
   /** A file's own path plus its sidecar; a folder's every file. For reporting what a move or delete touched. */
@@ -533,6 +536,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
         writeFileSync(dst, `${JSON.stringify(level, null, 2)}\n`)
         rmSync(src)
         changed(user, [keyFor.level(qualify(from)), keyFor.level(qualify(to))])
+        levelsChanged()
         sendJson(res, 200, { ok: true })
         return true
       }
@@ -546,6 +550,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       if (!existsSync(file)) return sendJson(res, 404, { error: `no level ${qual}` }), true
       rmSync(file)
       changed(user, [keyFor.level(qual)])
+      levelsChanged()
       sendJson(res, 200, { ok: true })
       return true
     } catch (e) {
@@ -610,9 +615,11 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
         if (kind === 'levels') validateLevel(parsed)
         else if (!Array.isArray(asRecord(parsed).components)) throw new LevelError('games: expected { components: string[] }')
         // A game folder, and its levels folder, is made on demand: a PUT is how a new game comes into being.
+        const made = !existsSync(file)
         mkdirSync(dirname(file), { recursive: true })
         writeFileSync(file, `${JSON.stringify(parsed, null, 2)}\n`)
         changed(user, [key])
+        if (kind === 'levels' && made) levelsChanged()
         sendJson(res, 200, { ok: true })
       } catch (e) {
         sendJson(res, 400, { error: String(e instanceof Error ? e.message : e) })

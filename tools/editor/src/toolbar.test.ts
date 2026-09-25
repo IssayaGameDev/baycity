@@ -20,6 +20,7 @@ const rig = (over: Partial<ToolbarState> = {}) => {
   document.body.replaceChildren(bar, overlays)
   const s: ToolbarState = {
     name: 'World_1',
+    game: 'Keyboard',
     prefab: null,
     gizmo: 'translate',
     space: 'world',
@@ -41,6 +42,7 @@ const rig = (over: Partial<ToolbarState> = {}) => {
   const calls: string[] = []
   const actions: ToolbarActions = {
     back: () => calls.push('back'),
+    openGames: () => calls.push('games'),
     undo: () => calls.push('undo'),
     redo: () => calls.push('redo'),
     toggleLog: () => calls.push('log'),
@@ -72,9 +74,10 @@ const rig = (over: Partial<ToolbarState> = {}) => {
 describe('the top bar', () => {
   it('names the level, runs it, and holds the history and the messages', () => {
     const r = rig()
-    expect(r.bar.querySelector('.tb-name')!.textContent).toBe('World_1')
+    expect(r.bar.querySelector('.tb-game-l')!.textContent, 'the game button says where you are (ADR 0162)').toBe('Keyboard › World_1')
     expect(r.bar.querySelector<HTMLElement>('.tb-crumb')!.hidden, 'no way back from a level').toBe(true)
     expect([...r.bar.querySelectorAll('button')].map((b) => b.title).filter((t) => t !== 'back to the level')).toEqual([
+      'Games: every game and its levels, and who is in each',
       'Motion: run the level’s sequences in the viewport, without entering play',
       'Play',
       'Nothing to undo (Ctrl+Z)',
@@ -83,7 +86,8 @@ describe('the top bar', () => {
     ])
     r.titled(r.bar, 'Play').click()
     r.titled(r.bar, 'Motion').click()
-    expect(r.calls).toEqual(['play:true', 'motion:true'])
+    r.titled(r.bar, 'Games').click()
+    expect(r.calls).toEqual(['play:true', 'motion:true', 'games'])
   })
 
   it('reads level › prefab inside a prefab, and the level is the way back', () => {
@@ -91,6 +95,7 @@ describe('the top bar', () => {
     const crumb = r.bar.querySelector<HTMLButtonElement>('.tb-crumb')!
     expect(crumb.hidden).toBe(false)
     expect(crumb.textContent).toBe('World_1')
+    expect(r.bar.querySelector('.tb-game-l')!.textContent, 'the game alone: the level is the way back').toBe('Keyboard')
     expect(r.bar.querySelector('.tb-name')!.textContent).toBe('Door')
     crumb.click()
     expect(r.calls).toEqual(['back'])

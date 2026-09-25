@@ -35,6 +35,8 @@ export const askName = (title: string, initial: string, hint: string): Promise<s
   new Promise<string | null>((resolve) => {
     const scrim = document.createElement('div')
     scrim.style.cssText = STYLE.scrim
+    // So what is under it (the games window) leaves the keys to it.
+    scrim.dataset.dialog = ''
     const box = document.createElement('div')
     box.style.cssText = STYLE.box
     const heading = document.createElement('div')
@@ -86,6 +88,8 @@ export const askUnsaved = (name: string): Promise<UnsavedChoice> =>
   new Promise<UnsavedChoice>((resolve) => {
     const scrim = document.createElement('div')
     scrim.style.cssText = STYLE.scrim
+    // So what is under it (the games window) leaves the keys to it.
+    scrim.dataset.dialog = ''
     const box = document.createElement('div')
     box.style.cssText = STYLE.box
     const title = document.createElement('div')
@@ -145,6 +149,8 @@ export const askDestructive = (title: string, body: string, confirmLabel: string
   new Promise<boolean>((resolve) => {
     const scrim = document.createElement('div')
     scrim.style.cssText = STYLE.scrim
+    // So what is under it (the games window) leaves the keys to it.
+    scrim.dataset.dialog = ''
     const box = document.createElement('div')
     box.style.cssText = STYLE.box
     const heading = document.createElement('div')

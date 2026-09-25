@@ -183,17 +183,7 @@ export const renamedTo = (path: string, name: string): string => {
   return folder === '' ? name : `${folder}/${name}`
 }
 
-/**
- * Where the Project panel is looking (ADR 0108).
- *
- * Two kinds of place, because the panel now shows two kinds of thing: a game's levels, and the shared asset
- * library — its folders by their paths from `content/`, `SHARED` at the top (ADR 0161). They are not one tree of folders — a game is not a folder of assets and its levels are not asset
- * entries — so the location is a union rather than a path with a special prefix, which is the version that
- * would need an `if` at every use of `folder`.
- */
-export type Place = { at: 'game'; game: string } | { at: 'assets'; folder: string | null }
-
-/** One game as the panel's tree draws it: its name, its label, and the levels in its folder. */
+/** One game as the games window lists it (ADR 0162): its name, its label, and the levels in its folder. */
 export interface GameRow {
   name: string
   label: string

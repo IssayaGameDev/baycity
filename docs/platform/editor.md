@@ -402,40 +402,40 @@ opens it; the list scrolls within 28 px of its edge; Escape cancels; the click a
 inside a transparent border that still takes the pointer; Firefox gets `scrollbar-color` only, because Chromium
 ignores the pseudo-elements wherever that is set.
 
-## Project panel — games at the top (ADR 0108)
+## Project panel — the asset libraries (ADR 0161, ADR 0162)
 
-`src/projectPanel.ts`. The tree is games first, then the shared asset library:
+`src/projectPanel.ts`. The tree is the shared library, then the open game's own; levels are the games window's.
 
 ```
-Keyboard  3      <- click: author for this game, its levels as tiles
-  default        <- click: open it
-  keyboard2
-Parkour   6
-assets           <- the existing folder tree, unchanged
+assets           <- the shared library
   materials
   prefabs
+keyboard assets  <- the open game's own (ProjectHost.game), drawn even before it has a file
 ```
 
-- `Place` (`src/assetTree.ts`) is where the panel is looking: `{ at: 'game', game }` or
-  `{ at: 'assets', folder }`, `folder` from `content/` (`SHARED` = `assets` at the top, `null` all folders). The tree
-  is one library's (`buildTree(db, folders, root)`, `Filter.library`); the panel draws the shared one (`assets`) and,
-  below it, the open game's own (`keyboard assets`, `ProjectHost.game`), even before it has a file, and names folders
-  without their library (`shownFolder`). Dragging between the two is a move between libraries, which the server may
-  refuse with why (ADR 0161). An asset's URL is `/content/<path>` (`assetUrl`), as on disk (ADR 0161). A union rather than a path with a magic prefix, because a game is not a folder of
-  assets and its levels are not asset entries — the prefix version needs an `if` at every use of `folder`.
-- `gameRows(games, levels)` (pure, tested) groups the level listing under its games, games by label and
-  `default` first. A game with no levels is still a row: it is where the first one is made.
-- **A level is not an asset entry.** Nothing references a level by id, so it has no `.meta` and is not in the
-  asset database; it is its own row type keyed by the qualified `<game>/<name>`.
-- Host hooks: `games`, `levels`, `openLevel`, `onOpenLevel`, `onPickGame`, `onNewLevel`. `Project.showGame`
-  lets the editor point the tree at the open document's game, so what is open is always visible.
-- `onPickGame` selects without opening: clicking a game to look at its levels must not discard the document
-  you have. It is what a new level is made in, and what composes the registry while nothing is open.
+- The panel's place is `{ folder }`, from `content/` (`SHARED` = `assets` at the top, `null` all folders). A tree
+  is one library's (`buildTree(db, folders, root)`, `Filter.library`), and folders are named without their library
+  (`shownFolder`). Dragging between the two is a move between libraries, which the server may refuse with why
+  (ADR 0161). An asset's URL is `/content/<path>` (`assetUrl`), as on disk.
+
+## The games window (ADR 0162, `src/gamesWindow.ts`)
+
+`createGamesWindow(host)` → `{ open, close, isOpen, render }`, opened by the top bar's game button (`tb-game`,
+`game › level ▾`; inside a prefab `game ▾ › level › prefab`, the level the way back). A window over the editor
+(`.gw-scrim`, z 40, under menus and dialogs): games on the left — the one you are in dotted, the picked one lit —
+and the picked game's page with **Levels** and **Components**. Picking a game only browses.
+
+| Part | Now |
+| --- | --- |
+| Levels | `gameRows(games, levels)` (`assetTree.ts`, default first): a **New level** tile (`createLevel(null, game)`) and a tile per level, the open one lit, faces of who is in it (`room.peopleIn`, colours `peerCss`). Double-click opens (`guardUnsaved` → `openFile`, which is how the editor moves between games); right-click is `levelMenu` |
+| Components | `registryFor(MODES[game]).all()` as its own (not engine, not shared), Shared (`isSharedComponent`), Built in (`ENGINE_COMPONENTS` + `PLAYER_COMPONENTS`); read-only |
+| keys | captured while open, so the level behind gets none; Escape and a press outside close it; left alone while a menu or a dialog (`[data-dialog]`, `confirm.ts`) is up |
+| live | `rooms` (who is in which document) and `levels` (the list changed) from the server (`collab.ts` → `liveSession` → `roomsChanged` → `render`, `levelsChanged` → `refreshFileList`) |
 
 ## Right-clicking a level (ADR 0110)
 
-`onLevelContext(at, qualified)` — the same split as `onContext`: the panel says what was clicked, `main.ts`
-builds the menu. Open, Duplicate…, Rename…, Copy name, Delete…
+`levelMenu(at, qualified)` in `main.ts`, from a tile in the games window. Open, Duplicate…, Rename…, Copy name,
+Delete…
 
 | Item | Notes |
 | --- | --- |

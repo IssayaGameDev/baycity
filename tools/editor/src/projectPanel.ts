@@ -2,22 +2,16 @@ import { ASSET_KINDS, buildDatabase, type AssetDatabase, type AssetEntry, type A
 
 import { libraryDir } from '@mp/content'
 
-import { buildTree, filterEntries, flattenTree, folderOf, gameRows, libraryLabel, libraryRootOf, SHARED, shownFolder, subfoldersOf, type Filter, type Place, type TreeNode } from './assetTree'
+import { buildTree, filterEntries, flattenTree, folderOf, libraryLabel, libraryRootOf, SHARED, shownFolder, subfoldersOf, type Filter, type TreeNode } from './assetTree'
 
 /**
- * The Project panel: every game and its levels, and a file explorer over the shared `content/assets/`.
+ * The Project panel: a file explorer over the asset libraries — the shared `content/assets/`, and the open game's
+ * own (ADR 0161). Levels are not here: they are the games window's (ADR 0162), since a game is where levels live,
+ * not a folder of assets.
  *
  * A tree on the left, tiles on the right, with a breadcrumb, a kind filter and a search box. The folder and
  * the kind are **independent axes**: "textures in this folder" and "every material anywhere" are both things
  * an author asks for, and the tabs this panel started with could only answer the second.
- *
- * **Games are the top of the tree** (ADR 0108). A game is a folder holding its levels, so opening a level is
- * picking it out of the tree rather than choosing a game in one dropdown and a level in another — the two
- * dropdowns this replaced, which made the game implicit in a control nowhere near the file it governed.
- *
- * A level is **not** an asset entry: nothing references a level by id, so it has no `.meta` and does not
- * belong in the asset database. It is its own row type, keyed by the qualified `<game>/<name>` that every
- * route, lock and live document already uses.
  *
  * **A preview is generated only for a tile that comes into view.** A folder of a thousand models cannot render
  * a thousand thumbnails and does not have to: an `IntersectionObserver` with a margin asks for one just before
@@ -30,28 +24,8 @@ import { buildTree, filterEntries, flattenTree, folderOf, gameRows, libraryLabel
  */
 export interface ProjectHost {
   db: () => AssetDatabase | null
-  /** The installed games, for the top of the tree (ADR 0108). */
-  games: () => readonly { name: string; label: string }[]
-  /** Every level on disk, qualified `<game>/<name>` with the game it is in. */
-  levels: () => readonly { name: string; mode?: string }[]
-  /** The level open right now, qualified — drawn as the selected tile. */
-  openLevel: () => string
   /** The game being edited, whose own asset library is drawn below the shared one (ADR 0161); `null` for none. */
   game: () => string | null
-  /** Open a level by its qualified name. The editor guards unsaved work and joins its live session. */
-  onOpenLevel: (qualified: string) => void
-  /**
-   * Author for this game from now on, without opening anything: it is what a new level is made in, and what
-   * the registry is composed from while no level is open.
-   */
-  onPickGame: (game: string) => void
-  /** Make a level in this game's folder. */
-  onNewLevel: (game: string) => void
-  /**
-   * Right-click on a level. Same split as `onContext`: the panel says what was clicked, the host decides what
-   * can be done to it, because that needs the open document (is this the one you are in?) and the listing.
-   */
-  onLevelContext: (at: { x: number; y: number }, qualified: string) => void
   /** Folders on disk, including the empty ones no asset path can imply. */
   folders: () => readonly string[]
   urlOf: (path: string) => string
@@ -103,12 +77,9 @@ export interface Project {
   render: () => void
   /**
    * The asset folder on screen, from `content/` (`SHARED` at the shared library's top, ADR 0161), `null` across all
-   * folders — and `null` while a game's levels are on screen. `Save as prefab…` writes here, so navigating the panel is how the
-   * destination is chosen (ADR 0091).
+   * folders. `Save as prefab…` writes here, so navigating the panel is how the destination is chosen (ADR 0091).
    */
   folder: () => string | null
-  /** Show this game's levels. The editor calls it when a level opens, so the tree follows the document. */
-  showGame: (game: string) => void
 }
 
 const KIND_LABEL: Record<AssetKind, string> = {
@@ -147,7 +118,8 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
    * Where the panel is looking: inside a game, or in the asset library (ADR 0108). It starts in the library,
    * which is where it has always started, and the editor moves it to a game when a level opens.
    */
-  let place: Place = { at: 'assets', folder: SHARED }
+  /** The folder on screen, from `content/`; `null` across all of the shared library's. */
+  let place: { folder: string | null } = { folder: SHARED }
   const shown = shownFolder
   /**
    * The libraries the tree draws: the shared one, then the open game's own (ADR 0161) — even before it has a file,
@@ -157,8 +129,7 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     const game = host.game()
     return game === null ? [SHARED] : [SHARED, libraryDir(game)]
   }
-  /** The asset folder on screen, or `null` for every folder — and `null` while a game is on screen. */
-  const folderNow = (): string | null => (place.at === 'assets' ? place.folder : null)
+  const folderNow = (): string | null => place.folder
   let kind: AssetKind | null = null
   let search = ''
   let recursive = false
@@ -242,13 +213,7 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
   head.append(crumbs, kindSelect, searchInput, recurseBox, recurseLabel, newFolderButton)
 
   const goTo = (target: string | null): void => {
-    place = { at: 'assets', folder: target }
-    render()
-  }
-
-  const goToGame = (game: string): void => {
-    place = { at: 'game', game }
-    host.onPickGame(game)
+    place = { folder: target }
     render()
   }
 
@@ -259,14 +224,6 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
       b.textContent = label
       b.addEventListener('click', () => goTo(target))
       return b
-    }
-    if (place.at === 'game') {
-      const game = place.game
-      const b = el('button', 'ctl crumb sel')
-      b.textContent = game
-      b.disabled = true
-      crumbs.append(crumb('content', SHARED), b)
-      return
     }
     const top = place.folder === null ? SHARED : libraryRootOf(place.folder)
     crumbs.append(crumb(libraryLabel(top), top))
@@ -311,55 +268,8 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
   // The grid itself takes desktop drops for the folder being looked at; not for "all folders" or the level's own.
   dropTargetFor(grid, () => folderNow())
 
-  /**
-   * The games, each with its levels under it (ADR 0108). Above the asset library, because this is what an
-   * author opens the panel to do; the library is where they go to fetch something to put in it.
-   */
-  const renderGames = (): void => {
-    for (const game of gameRows(host.games(), host.levels())) {
-      const key = `game:${game.name}`
-      const on = place.at === 'game' && place.game === game.name
-      const row = el('div', `row${on ? ' sel' : ''}`)
-      row.style.paddingLeft = '6px'
-      const twist = el('span', 'twist')
-      twist.textContent = game.levels.length === 0 ? '' : collapsed.has(key) ? '\u25b8' : '\u25be'
-      if (game.levels.length > 0) {
-        twist.addEventListener('click', (e) => {
-          e.stopPropagation()
-          if (collapsed.has(key)) collapsed.delete(key)
-          else collapsed.add(key)
-          render()
-        })
-      }
-      const name = el('span', 'name')
-      name.textContent = game.label
-      const count = el('span', 'badge')
-      count.textContent = String(game.levels.length)
-      row.append(twist, name, count)
-      row.title = `${game.name} \u2014 content/${game.name}/`
-      row.addEventListener('click', () => goToGame(game.name))
-      treePane.append(row)
-
-      if (collapsed.has(key)) continue
-      for (const level of game.levels) {
-        const lr = el('div', `row${host.openLevel() === level.qualified ? ' sel' : ''}`)
-        lr.style.paddingLeft = '30px'
-        const lname = el('span', 'name')
-        lname.textContent = level.name
-        lr.append(el('span', 'twist'), lname)
-        lr.title = level.qualified
-        // One click opens: a level is the thing this panel is for, and a second gesture to confirm was the
-        // dropdown's behaviour, not an improvement on it.
-        lr.addEventListener('click', () => host.onOpenLevel(level.qualified))
-        levelMenu(lr, level.qualified)
-        treePane.append(lr)
-      }
-    }
-  }
-
   const renderTree = (trees: readonly TreeNode[]): void => {
     treePane.replaceChildren()
-    renderGames()
 
     for (const node of trees.flatMap((t) => flattenTree(t, collapsed))) {
       const row = el('div', `row${folderNow() === node.path ? ' sel' : ''}`)
@@ -409,15 +319,6 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     text.textContent = label
     b.append(text)
     return b
-  }
-
-  /** The same, for a level row or tile (ADR 0110). */
-  const levelMenu = (target: HTMLElement, qualified: string): void => {
-    target.addEventListener('contextmenu', (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-      host.onLevelContext({ x: e.clientX, y: e.clientY }, qualified)
-    })
   }
 
   /** Right-click hands the point and the target to the host, which owns the menu. */
@@ -486,36 +387,12 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     if (document.activeElement !== searchInput) searchInput.value = search
     const folder = folderNow()
     newFolderButton.disabled = folder === null
-    kindSelect.disabled = place.at === 'game'
     renderCrumbs()
     renderTree(trees)
 
     // Every tile is about to be replaced, so the old observations are meaningless.
     observer.disconnect()
     grid.replaceChildren()
-
-    // A game's levels, as tiles, plus where a new one is made (ADR 0108).
-    if (place.at === 'game') {
-      const game = place.game
-      const rows = gameRows(host.games(), host.levels()).find((g) => g.name === game)
-      const b = el('button', 'ctl tile new')
-      b.textContent = '+ new level'
-      b.title = `a new level in content/${game}/levels/`
-      b.addEventListener('click', () => host.onNewLevel(game))
-      grid.append(b)
-      for (const level of rows?.levels ?? []) {
-        const t = el('button', `ctl tile${host.openLevel() === level.qualified ? ' armed' : ''}`)
-        t.title = level.qualified
-        const text = el('span', 'tile-name')
-        text.textContent = level.name
-        t.append(text)
-        t.addEventListener('click', () => host.onOpenLevel(level.qualified))
-        levelMenu(t, level.qualified)
-        grid.append(t)
-      }
-      if (rows === undefined || rows.levels.length === 0) grid.append(empty(`${game} has no levels yet`))
-      return
-    }
 
     // Subfolders as tiles, so going down a level does not mean crossing to the tree.
     if (folder !== null && search === '') {
@@ -575,5 +452,5 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
   }
 
   render()
-  return { render, folder: folderNow, showGame: (game) => goToGame(game) }
+  return { render, folder: folderNow }
 }

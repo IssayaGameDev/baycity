@@ -425,8 +425,255 @@
         color: var(--dim);
       }
       .tb-crumb[hidden],
-      .tb-crumb-sep[hidden] {
+      .tb-crumb-sep[hidden],
+      .tb-name[hidden] {
         display: none;
+      }
+      /* The games window's button (ADR 0162): where you are, and the way to every other level. */
+      .tb-game {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+        padding: 3px 6px 3px 8px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        background: none;
+        color: var(--text);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .tb-game:hover:not(:disabled) {
+        background: var(--hover);
+        border-color: var(--line);
+      }
+      .tb-game-l {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .tb-game svg {
+        width: 12px;
+        height: 12px;
+        flex: 0 0 auto;
+        color: var(--dim);
+      }
+
+      /* ---- the games window (ADR 0162) ---- */
+      .gw-scrim {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.55);
+      }
+      .gw {
+        display: flex;
+        flex-direction: column;
+        width: min(920px, calc(100vw - 48px));
+        height: min(600px, calc(100vh - 48px));
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--panel);
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+        overflow: hidden;
+      }
+      .gw-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px 10px 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel-head);
+      }
+      .gw-title {
+        font-weight: 600;
+      }
+      .gw-close {
+        display: grid;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        border: 0;
+        border-radius: 6px;
+        background: none;
+        color: var(--dim);
+        cursor: pointer;
+      }
+      .gw-close:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .gw-body {
+        display: flex;
+        flex: 1 1 auto;
+        min-height: 0;
+      }
+      .gw-games {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        flex: 0 0 200px;
+        padding: 8px;
+        border-right: 1px solid var(--line);
+        overflow-y: auto;
+      }
+      .gw-game {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 7px 10px;
+        border: 0;
+        border-radius: 6px;
+        background: none;
+        color: var(--text);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .gw-game:hover {
+        background: var(--hover);
+      }
+      .gw-game.on {
+        background: color-mix(in srgb, var(--accent) 22%, transparent);
+      }
+      /* The game you are in. */
+      .gw-here {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      .gw-page {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .gw-tabs {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 10px 14px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .gw-page-title {
+        margin-right: 12px;
+        font-weight: 600;
+      }
+      .gw-tab {
+        padding: 6px 10px;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: none;
+        color: var(--dim);
+        font: inherit;
+        cursor: pointer;
+      }
+      .gw-tab:hover {
+        color: var(--text);
+      }
+      .gw-tab.on {
+        border-bottom-color: var(--accent);
+        color: var(--text);
+      }
+      .gw-tab-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        padding: 14px;
+        overflow-y: auto;
+      }
+      .gw-tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+        gap: 10px;
+      }
+      .gw-tile {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 6px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: none;
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+      }
+      .gw-tile:hover {
+        background: var(--hover);
+      }
+      .gw-tile:focus-visible,
+      .gw-tile.on {
+        border-color: var(--accent);
+      }
+      .gw-pic {
+        position: relative;
+        display: grid;
+        place-items: center;
+        aspect-ratio: 1;
+        border-radius: 6px;
+        background: var(--bg);
+        color: var(--dim);
+      }
+      .gw-pic > svg {
+        width: 40%;
+        height: 40%;
+      }
+      .gw-new .gw-pic {
+        border: 1px dashed var(--line);
+        background: none;
+      }
+      /* Who is in the level: their faces, in their colours, at the picture's foot. */
+      .gw-people {
+        position: absolute;
+        right: 5px;
+        bottom: 5px;
+        display: flex;
+        gap: 2px;
+      }
+      .gw-people .pp {
+        width: 18px;
+        height: 18px;
+        font-size: 8px;
+        cursor: default;
+      }
+      .gw-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px;
+        text-align: center;
+      }
+      .gw-section {
+        margin: 12px 0 2px;
+        font-weight: 600;
+      }
+      .gw-section:first-child {
+        margin-top: 0;
+      }
+      .gw-note {
+        margin-bottom: 6px;
+        color: var(--dim);
+        font-size: 11.5px;
+      }
+      .gw-none {
+        color: var(--dim);
+        font-style: italic;
+      }
+      .gw-component {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        padding: 3px 0;
+      }
+      .gw-component-t {
+        color: var(--dim);
+        font-size: 11px;
       }
       .tb-run {
         display: flex;
