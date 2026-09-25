@@ -12,9 +12,9 @@ import type { ComponentData, Node, Level, NodeOverride, Transform } from './type
 
 /** A collision shape. Repeatable per node. */
 export const COLLIDER = 'Collider'
-/** Which mesh a node draws, when it draws one rather than its colliders. Unity's `MeshFilter`. */
+/** Retired (ADR 0153): the shape a node drew, now `Renderer.model`. Read until the migration has folded every one in. */
 export const MESH = 'Mesh'
-/** That a node draws at all, and with what surface. Unity's `MeshRenderer`. */
+/** That a node draws, what, and with what surface — the Mesh Renderer (ADR 0153). Unity's `MeshRenderer` and `MeshFilter` in one. */
 export const RENDERER = 'Renderer'
 /** Resurfaces this node and everything below it. */
 export const MATERIAL_OVERRIDE = 'MaterialOverride'
@@ -81,6 +81,16 @@ export const vec3Param = (c: ComponentData | undefined, key: string, fallback: V
 export const stringParam = (c: ComponentData | undefined, key: string, fallback: string): string => {
   const v = c?.params[key]
   return typeof v === 'string' ? v : fallback
+}
+
+/**
+ * The model a node draws (ADR 0153): its `Renderer`'s own `model`, else a retired `Mesh`'s — so a level the
+ * migration has not reached yet draws as it did. `''` draws the node's colliders. Enabled components only; whether
+ * anything is drawn at all is whether there is an enabled `Renderer`.
+ */
+export const modelOf = (components: readonly ComponentData[]): string => {
+  const own = stringParam(firstOfType(components, RENDERER), 'model', '')
+  return own !== '' ? own : stringParam(firstOfType(components, MESH), 'model', '')
 }
 
 /** A boolean parameter, or the fallback. */

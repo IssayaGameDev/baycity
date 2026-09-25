@@ -1,6 +1,6 @@
 import { vec3, type Vec3 } from '@mp/core'
 
-import { COLLIDER, MESH, RENDERER, walkNodes, type TypeInfo } from './nodes'
+import { COLLIDER, MESH, RENDERER, modelOf, walkNodes, type TypeInfo } from './nodes'
 import { builtinShape, isBuiltinModel, scaleCollider } from './primitives'
 import type { ColliderDesc, Level } from './types'
 
@@ -113,7 +113,6 @@ export const fingerprintGeometry = (level: Level, types: TypeInfo): string[] => 
 
     const colliders: string[] = []
     let drawn = 'nothing'
-    let model = ''
     let material = ''
     const others: string[] = []
     for (const c of resolved.components) {
@@ -124,10 +123,12 @@ export const fingerprintGeometry = (level: Level, types: TypeInfo): string[] => 
       if (c.type === COLLIDER) {
         const shape = c.params?.shape as ColliderDesc | undefined
         colliders.push(shape === undefined ? 'none' : JSON.stringify(canon(scaleCollider(shape, worldScale))))
-      } else if (c.type === MESH) model = String(c.params?.model ?? '')
+      } else if (c.type === MESH) continue
       else if (c.type === RENDERER) material = String(c.params?.material ?? '')
       else others.push(`${c.type}=${JSON.stringify(canon(c.params ?? {}))}`)
     }
+    // Wherever the model is written — a Renderer's own, or a retired Mesh's (ADR 0153) — it is the same drawing.
+    const model = modelOf(resolved.components)
     const draws = resolved.components.some((c) => c.type === RENDERER && c.enabled !== false)
     if (draws) drawn = isBuiltinModel(model) ? JSON.stringify(canon(builtinShape(model, worldScale).collider)) : model !== '' ? `model:${model}` : colliders.join('+')
 

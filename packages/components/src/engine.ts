@@ -41,18 +41,11 @@ export const Collider = defineComponent({
 })
 
 /**
- * **What** shape this node draws, when it is not its colliders. Unity's `MeshFilter`.
+ * **Retired** (ADR 0153): the shape a node drew, before it was folded into `Renderer`. Unity's `MeshFilter`.
  *
- * Geometry only: a mesh with no `Renderer` beside it shows nothing, exactly as in Unity. The collider stays
- * authored, so a detailed prop still collides as the box somebody chose (ADR 0014).
- *
- * Its absence is meaningful, which is why this replaced a `source` enum on the old combined `Visual`: having a
- * `Mesh` *is* the answer to "does this draw a model or its colliders", so the enum — and the conditional field
- * that hid `model` when the answer was "colliders" — both went away (ADR 0039).
- *
- * `model` is an uploaded model's asset id, or a **built-in shape** (`builtin:box`, `builtin:rounded-box`,
- * `builtin:sphere`, `builtin:capsule`, ADR 0090): a unit shape sized by the node's scale. The editor keeps the
- * colliders of a node drawing a built-in at the matching unit shape, so scale is the one size.
+ * Still read, never added: a `Renderer` with no `model` of its own draws an enabled `Mesh`'s, so a level not yet
+ * migrated draws as it did. `migrate-mesh-renderer.sh` folds every one into its node's `Renderer` on the box;
+ * then this goes.
  */
 export const Mesh = defineComponent({
   type: MESH,
@@ -60,27 +53,29 @@ export const Mesh = defineComponent({
     model: { kind: 'asset', of: 'model', default: '', label: 'model' },
   },
   singleton: true,
+  retired: true,
 })
 
 /**
- * **That** this node draws, and with what surface. Unity's `MeshRenderer`.
+ * **What** this node draws, and with what surface — shown as **Mesh Renderer** (ADR 0153): Unity's
+ * `MeshRenderer` with its `MeshFilter` folded in, since nothing drew one without the other.
  *
- * `Renderer` rather than `Material`, even though a material is its only parameter today: it is the *role* that
- * is being declared, and naming a component after one of its fields is the mistake `MaterialOverride` was
- * already making. Shadow-casting and a render layer are the realistic next fields, and neither belongs to
- * something called `Material`.
+ * - `model` — an uploaded model's asset id, or a **built-in shape** (`builtin:box`, `builtin:rounded-box`,
+ *   `builtin:sphere`, `builtin:capsule`, ADR 0090): a unit shape sized by the node's scale, and the editor keeps
+ *   the node's colliders at the matching unit shape, so scale is the one size. **Empty draws every `Collider`**
+ *   on the node, each at its own centre — the greybox case. A detailed prop still collides as the shape
+ *   somebody chose (ADR 0014).
+ * - `material` — `''` is unsurfaced, which the viewport greyboxes.
  *
- * - `Renderer`, no `Mesh` — draws **every** `Collider` on this node, each at its own centre. The greybox case,
- *   and most of the authored content.
- * - `Renderer` + `Mesh` — draws the mesh.
- * - `Mesh`, no `Renderer` — draws nothing. Unity's `MeshFilter` without a `MeshRenderer`.
- * - neither — draws nothing.
- *
- * `material: ''` means unsurfaced, which the viewport greyboxes.
+ * No `Renderer`, nothing drawn. Still `Renderer` in the file, so what a placement overrides on one keeps its
+ * id; and `Renderer` rather than `Material` (ADR 0039) — shadow-casting and a render layer are the realistic
+ * next fields.
  */
 export const Renderer = defineComponent({
   type: RENDERER,
+  label: 'Mesh Renderer',
   params: {
+    model: { kind: 'asset', of: 'model', default: '', label: 'model' },
     material: { kind: 'asset', of: 'material', default: '', label: 'material' },
   },
   singleton: true,

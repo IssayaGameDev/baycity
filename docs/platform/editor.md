@@ -476,15 +476,15 @@ adoption keeps the settings. `loadGame` accepts numbers and point lists (`normal
 
 ## Shapes are built-in meshes (ADR 0090)
 
-A `Mesh` naming a `builtin:` id draws a unit shape sized by the node's **scale** (`content.md`), and that node's
+A Mesh Renderer (`Renderer`, ADR 0153) whose `model` names a `builtin:` id draws a unit shape sized by the node's **scale** (`content.md`), and that node's
 colliders are held at the matching unit shape — so scale is the one size a person reads and edits.
 
 | Piece | Behaviour |
 | --- | --- |
 | picker | `assetOptions('model')` lists `BUILTIN_LABELS` first, then the uploaded models: a built-in is picked like a file |
-| locked collider | `Doc.setParams` on a `Mesh` with a built-in rewrites every `Collider` on the node to `unitColliderFor(model)` **in the same batch** (one undo); `addComponent(Collider)` on such a node is born unit; `Doc.builtinOf(i)` says which built-in, or `null` |
+| locked collider | `Doc.setParams` of a built-in `model` (on a `Renderer`, or a retired `Mesh`) rewrites every `Collider` on the node to `unitColliderFor(model)` **in the same batch** (one undo); `addComponent(Collider)` on such a node is born unit; `Doc.builtinOf(i)` says which built-in, or `null` |
 | Inspector | with `builtinOf` non-null the `collider` field is one row — `unit box · size is the object's scale` — instead of the kind picker and the dimensions |
-| Create | `createMenu` (blank space, Hierarchy *Create child*, viewport *Create here*) offers Box, Rounded box, Platform, Wall, Sphere, Capsule (`PRIMITIVE_ORDER`) then `Empty`; each is `Doc.placePrimitive(kind, position, parent)` = unit collider + `Mesh` + unsurfaced `Renderer` + the preset scale. In a prefab's room the same menu applies (`placeNamed` is the by-name variant its palette used) |
+| Create | `createMenu` (blank space, Hierarchy *Create child*, viewport *Create here*) offers Box, Rounded box, Platform, Wall, Sphere, Capsule (`PRIMITIVE_ORDER`) then `Empty`; each is `Doc.placePrimitive(kind, position, parent)` = unit collider + an unsurfaced `Renderer` whose `model` is the built-in + the preset scale. In a prefab's room the same menu applies (`placeNamed` is the by-name variant its palette used) |
 | drawn at final size | `buildAll` **parents each group before building its meshes**, because the next row asks for the group's *world* scale; asked first it reported the node's own, leaving the holder carrying the parent chain's scale (invisible for meshes built at `ws`, which the leftover cancelled; wrong for anything at an absolute size, ADR 0120). `buildItemMeshes` (`itemMeshes.ts`) counter-scales the mesh holder by the group's world scale and builds every shape from the **world** dimensions (`geometryForBuiltin(id, ws)`, or `geometryForCollider(scaleCollider(shape, ws))`), a model file keeping the scale. So a bevel is computed on the real size, as the game computes it from the baked collider — the editor used to stretch it |
 | redraw on scale | `meshes.rebuildSubtree(i)` after a scale gizmo drag, a typed transform, and a remote transform op: meshes are built from the world scale, so a node's change is its subtree's |
 | previews | `previews.ts` walks with the accumulated scale and does the same, so a Project tile shows the shape the viewport does |
@@ -781,7 +781,7 @@ With more than one selected the panel edits **what they have in common**.
 
 ## Inspector — Add Component (`src/inspector.ts`)
 
-`addComponentSection` per component. `Add Component` lists `doc.registry` types not on the node plus `host.adoptable()`; disabled when both empty. With several selected it lists what **any** of them can take and adds it to each that can (ADR 0112). Adopted types go through `host.adopt(type)` then are added to the rebuilt document. Params default from `registry.defaults(type)`. Prefab placements: "push into shared prefab" → `Doc.applyOverrides` (host `applyToPrefab`).
+`addComponentSection` per component. `Add Component` lists `doc.registry` types not on the node, by their label (`Mesh Renderer` for `Renderer`), plus `host.adoptable()`; disabled when both empty. `canAdd` refuses a `retired` type (`Mesh`, ADR 0153), as the Hierarchy's submenu does through it. With several selected it lists what **any** of them can take and adds it to each that can (ADR 0112). Adopted types go through `host.adopt(type)` then are added to the rebuilt document. Params default from `registry.defaults(type)`. Prefab placements: "push into shared prefab" → `Doc.applyOverrides` (host `applyToPrefab`).
 
 ## Level validation test (`src/levels.test.ts`)
 

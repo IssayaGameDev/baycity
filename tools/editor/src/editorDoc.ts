@@ -3,6 +3,7 @@ import {
   childrenFor,
   boolParam,
   effectiveNode,
+  modelOf,
   numberParam,
   vec3Param,
   stringParam,
@@ -565,7 +566,7 @@ const freshId = (): string => {
 const ZERO: Vec3 = { x: 0, y: 0, z: 0 }
 
 /** Primitive nodes for prefab mode. Only shapes the physics loader supports (no cylinder). */
-/** A built-in shape as a node (ADR 0090): unit collider, the `Mesh`, an unsurfaced `Renderer`, the preset scale. */
+/** A built-in shape as a node (ADR 0090): unit collider, an unsurfaced Mesh Renderer drawing it (ADR 0153), the preset scale. */
 const primitiveNode = (kind: PrimitiveKind, position: Vec3, name: string = kind): Node => {
   const preset = PRIMITIVE_PRESETS[kind]
   const one = preset.scale.x === 1 && preset.scale.y === 1 && preset.scale.z === 1
@@ -573,7 +574,7 @@ const primitiveNode = (kind: PrimitiveKind, position: Vec3, name: string = kind)
     id: freshId(),
     name,
     transform: { position, ...(one ? {} : { scale: { ...preset.scale } }) },
-    components: [component(COLLIDER, { shape: unitColliderFor(preset.model), center: ZERO }), component(MESH, { model: preset.model }), component(RENDERER, { material: '' })],
+    components: [component(COLLIDER, { shape: unitColliderFor(preset.model), center: ZERO }), component(RENDERER, { model: preset.model, material: '' })],
   }
 }
 const isPrimitiveKind = (name: string): name is PrimitiveKind => (PRIMITIVE_ORDER as readonly string[]).includes(name)
@@ -594,8 +595,8 @@ const typeOfComponent = (root: Node, componentId: string): string | undefined =>
 /**
  * A solid, visible node — what placing a primitive or a model produces.
  *
- * `model` given adds a `Mesh` between the collider and the renderer, in that reading order: what it collides
- * as, what it looks like, that it draws. Omitted, the `Renderer` alone draws the collider shape (ADR 0039).
+ * What it collides as, then what it draws: `model` given, the Mesh Renderer draws it; omitted, it draws the
+ * collider shape (ADR 0153).
  */
 const solidNode = (shape: ColliderDesc, transform: Transform, name?: string, model?: string): Node => ({
   id: freshId(),
@@ -603,8 +604,7 @@ const solidNode = (shape: ColliderDesc, transform: Transform, name?: string, mod
   transform,
   components: [
     component(COLLIDER, { shape, center: ZERO }),
-    ...(model !== undefined ? [component(MESH, { model })] : []),
-    component(RENDERER, { material: '' }),
+    component(RENDERER, { model: model ?? '', material: '' }),
   ],
 })
 
@@ -1106,7 +1106,7 @@ const docOver = (
     const ops: (Op | null)[] = [paramsOp(componentId, patch)]
     // A built-in shape picked (ADR 0090): scale is the size, so every collider on the node becomes the unit
     // shape of that built-in. Same batch, one undo.
-    if (target.type === MESH && isBuiltinModel(patch.model)) {
+    if ((target.type === RENDERER || target.type === MESH) && isBuiltinModel(patch.model)) {
       const unit = unitColliderFor(patch.model)
       for (const c of n.view.components) if (c.type === COLLIDER) ops.push(paramsOp(c.id, { shape: unit }))
     }
@@ -1159,8 +1159,7 @@ const docOver = (
   const builtinOf = (i: number): BuiltinModel | null => {
     const n = node(i)
     if (n === undefined) return null
-    const mesh = n.view.components.find((c) => c.type === MESH && enabledOf(c))
-    const model = mesh === undefined ? '' : stringParam(mesh, 'model', '')
+    const model = modelOf(n.view.components)
     return isBuiltinModel(model) ? model : null
   }
 
@@ -1171,6 +1170,8 @@ const docOver = (
     // A player component is the game's, declared in its `ModeDescriptor` and never authored in a level
     // (ADR 0059). Both Add Component menus read this, so neither offers a death reaction for a staircase.
     if (def?.attachesTo === 'player') return false
+    // Still read, never added: a retired component's job is another's now (`Mesh`, ADR 0153).
+    if (def?.retired === true) return false
     if (def?.singleton !== true) return true
     return !n.view.components.some((c) => c.type === type)
   }
@@ -1329,11 +1330,10 @@ const docOver = (
     },
     /**
      * One mesh per enabled `Collider`, at its own offset — which is what makes several colliders on one node
-     * worth having. A `Mesh` replaces them all with a single model, since the model is the whole object's
-     * appearance and the colliders are only how it collides.
+     * worth having. A model replaces them all, since it is the whole object's appearance and the colliders are
+     * only how it collides.
      *
-     * A `Renderer` is what makes any of it visible: without one this draws nothing, the way a `MeshFilter`
-     * with no `MeshRenderer` shows nothing (ADR 0039).
+     * The Mesh Renderer is what makes any of it visible: without one this draws nothing (ADR 0153).
      */
     meshSpecs: (i) => {
       const n = node(i)
@@ -1342,8 +1342,7 @@ const docOver = (
       if (renderer === undefined) return []
       const material = inheritedMaterial(i) ?? stringParam(renderer, 'material', '')
       const surfaced = material === '' ? undefined : material
-      const mesh = n.view.components.find((c) => c.type === MESH && enabledOf(c))
-      const model = mesh === undefined ? '' : stringParam(mesh, 'model', '')
+      const model = modelOf(n.view.components)
       if (model !== '') {
         return [{ collider: { kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) }, transform: { position: vec3(0, 0, 0) }, name: n.view.name, model, material: surfaced }]
       }
@@ -1554,11 +1553,12 @@ const docOver = (
       const ids = new Set<string>()
       const add = (components: readonly ComponentData[]): void => {
         for (const c of components) {
-          if (c.type === MESH) {
+          if (c.type === RENDERER || c.type === MESH) {
             const model = stringParam(c, 'model', '')
             // A built-in shape is geometry, not a file: nothing to fetch (ADR 0090).
             if (model !== '' && !isBuiltinModel(model)) ids.add(model)
-          } else if (c.type === RENDERER || c.type === MATERIAL_OVERRIDE) {
+          }
+          if (c.type === RENDERER || c.type === MATERIAL_OVERRIDE) {
             const material = stringParam(c, 'material', '')
             if (material !== '') ids.add(material)
           }

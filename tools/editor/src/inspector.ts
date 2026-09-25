@@ -207,7 +207,7 @@ const defaultShape = (kind: string, was: ColliderDesc): ColliderDesc => {
 const COMPONENT_ICONS: Readonly<Record<string, IconName>> = {
   [COLLIDER]: 'colliderOn',
   [MESH]: 'mesh',
-  [RENDERER]: 'material',
+  [RENDERER]: 'mesh',
   [MATERIAL_OVERRIDE]: 'material',
   [SPAWN]: 'spawn',
   [LIGHT]: 'light',
@@ -849,7 +849,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
             mixed ? null : String(state[key] ?? ''),
             (v) => {
               write({ [key]: v })
-              // A model picked or dropped changes what the Collider card shows (ADR 0090).
+              // A built-in shape picked or dropped changes what the Collider card shows (ADR 0090).
               rebuildKeepingScroll()
             },
             label,
@@ -1362,7 +1362,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     button.addEventListener('click', (e) => {
       e.stopPropagation()
       openMenu(button, [
-        ...addable.map((type) => ({ label: type, run: () => place(doc, type) })),
+        ...addable.map((type) => ({ label: doc.registry.get(type)?.label ?? type, run: () => place(doc, type) })),
         ...adoptable.map((type) => ({
           label: `${type} (adds to game)`,
           run: () => {

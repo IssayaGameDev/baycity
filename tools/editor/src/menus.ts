@@ -83,7 +83,7 @@ export const createMenus = (host: MenuHost) => {
             .map((d) => d.type)
             .filter((type) => open.canAdd(index, type))
             .map((type) => ({
-              label: type,
+              label: open.registry.get(type)?.label ?? type,
               run: () => {
                 host.doc()?.addComponent(index, type)
                 host.edits().recordEdit('add component')

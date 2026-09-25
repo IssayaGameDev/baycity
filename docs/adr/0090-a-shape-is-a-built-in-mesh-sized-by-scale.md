@@ -1,6 +1,6 @@
 # ADR 0090 — A shape is a built-in mesh, sized by the object's scale
 
-Status: accepted.
+Status: accepted, amended: a built-in is now a `Renderer`'s `model`, the `Mesh` having folded into it ([ADR 0153](0153-one-mesh-renderer.md)).
 
 ## Context
 

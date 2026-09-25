@@ -125,6 +125,15 @@ describe('the Inspector’s cards', () => {
     expect(panel.textContent).not.toContain('no parameters')
   })
 
+  it('draws the Renderer as one Mesh Renderer card: its model, then its material (ADR 0153)', () => {
+    const doc = levelDoc({ id: 'l', config: {}, nodes: [box('a', vec3(0, 0, 0))] })
+    doc.setParams(0, 'a-vis', { model: 'builtin:sphere' })
+    const { panel } = rig(doc, [0])
+    const renderer = card(panel, 'Mesh Renderer')
+    expect([...renderer.querySelectorAll('.irow-l')].map((l) => l.textContent)).toEqual(['model', 'material'])
+    expect(line(card(panel, 'Collider'), 'shape').textContent, 'the built-in holds the collider').toContain('unit ball')
+  })
+
   it('ends with Add Component, and no Duplicate or Delete', () => {
     const { panel } = rig(levelDoc({ id: 'l', config: {}, nodes: [box('a', vec3(0, 0, 0))] }), [0])
     expect(panel.lastElementChild!.classList.contains('iadd')).toBe(true)

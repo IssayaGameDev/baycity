@@ -24,6 +24,7 @@ export {
   effectiveNode,
   firstOfType,
   freeTableKey,
+  modelOf,
   numberParam,
   stringParam,
   vec3Param,
