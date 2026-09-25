@@ -143,6 +143,21 @@ export const filterEntries = (db: AssetDatabase, filter: Filter): AssetEntry[] =
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
+/** What the Project window orders its files by (ADR 0166). Folders are not files: they come first, by name. */
+export type SortBy = 'name' | 'kind' | 'date'
+
+/**
+ * Files in `by`'s order: by name; by kind, then name; or the newest first, by `modified(path)` — those it does not
+ * know last — then name. A copy; ties by path, so two of one name keep a steady order.
+ */
+export const sortEntries = (entries: readonly AssetEntry[], by: SortBy, modified: (path: string) => number | undefined): AssetEntry[] => {
+  const byName = (a: AssetEntry, b: AssetEntry): number => a.name.localeCompare(b.name) || a.path.localeCompare(b.path)
+  if (by === 'name') return [...entries].sort(byName)
+  if (by === 'kind') return [...entries].sort((a, b) => a.kind.localeCompare(b.kind) || byName(a, b))
+  const when = (e: AssetEntry): number => modified(e.path) ?? Number.NEGATIVE_INFINITY
+  return [...entries].sort((a, b) => (when(a) === when(b) ? byName(a, b) : when(b) > when(a) ? 1 : -1))
+}
+
 /** Immediate subfolders of `folder`, for showing them as tiles beside the files. */
 export const subfoldersOf = (root: TreeNode, folder: string): TreeNode[] => {
   const find = (node: TreeNode): TreeNode | undefined => {

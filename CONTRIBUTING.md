@@ -37,6 +37,10 @@ saves into whichever folder you have open in the **Project** panel, so double-cl
 land; let go to place it, Esc to cancel. A click on a tile selects it: the Inspector shows what it is and which
 levels and prefabs use it — look there before you move or delete something.
 
+In the Project panel, Ctrl+click and Shift+click select several; drag them onto a folder, or press Delete, and
+they go together. The arrow keys, Enter (open), Backspace (up), F2 (rename) and Ctrl+A work there too. The button
+left of the search box sorts by name, kind or date.
+
 **To change one:** click the object and press **Open** in the Inspector, or right-click it and pick *Open
 prefab*. One that is placed nowhere is opened by double-clicking its tile in the Project panel. You are now editing the
 prefab itself, and everyone sees your edits as you make them. **Back** returns you to the level.

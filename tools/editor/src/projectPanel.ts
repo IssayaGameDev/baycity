@@ -1,10 +1,11 @@
 import { ASSET_KINDS, buildDatabase, libraryDir, type AssetDatabase, type AssetEntry, type AssetKind } from '@mp/content'
 
-import { ancestorsOf, buildTree, filterEntries, flattenTree, folderOf, libraryRootOf, SHARED, shownFolder, subfoldersOf, type TreeNode } from './assetTree'
+import { ancestorsOf, buildTree, filterEntries, flattenTree, folderOf, libraryRootOf, SHARED, shownFolder, sortEntries, subfoldersOf, type SortBy, type TreeNode } from './assetTree'
 import { askName } from './confirm'
 import { ASSET_ICON, icon, type IconName } from './icons'
 import type { ContextMenu } from './menu'
 import { initials } from './people'
+import { modeFor, type SelectMode } from './selection'
 
 /**
  * The Project window (Track B, ADR 0163): the asset libraries as folders, Unity's Project window its reference —
@@ -17,7 +18,9 @@ import { initials } from './people'
  * or by kind, looks in every folder of both roots; not searching, you see the folder you are in.
  *
  * The Unity way with a tile (ADR 0164): a click selects it and shows it in the Inspector, a prefab or a model is
- * dragged into the viewport to place it, and a double-click opens a folder or a prefab.
+ * dragged into the viewport to place it, and a double-click opens a folder or a prefab. Ctrl and Shift select
+ * several, which drag into a folder and delete together; Unity's keys work while the window has the focus; and a
+ * sort button orders the tiles by name, kind or date (ADR 0166).
  *
  * **A preview is generated only for a tile that comes into view.** A folder of a thousand models cannot render
  * a thousand thumbnails and does not have to: an `IntersectionObserver` with a margin asks for one just before
@@ -57,8 +60,14 @@ export interface ProjectHost {
    * belongs here.
    */
   onContext: (at: { x: number; y: number }, path: string, isFolder: boolean) => void
-  /** Move a file or folder into `toFolder`. */
-  onMove: (from: string, toFolder: string) => void
+  /** Move files and folders into `toFolder`, all or none (ADR 0166). */
+  onMove: (froms: readonly string[], toFolder: string) => void
+  /** Delete these, asked once for all (ADR 0166): the Delete key. */
+  onDelete: (paths: readonly string[]) => void
+  /** Rename this one: F2. */
+  onRename: (path: string) => void
+  /** A file's size and date, when the server said: the date is what *Date changed* orders by. */
+  fileOf: (path: string) => { bytes: number; modified: number } | undefined
   /** Files to upload into `folder` (ADR 0083): dragged in from outside the browser, or picked from the **+** menu. */
   onUpload: (files: readonly File[], folder: string) => void
   /**
@@ -135,15 +144,44 @@ const saveSize = (v: number): void => {
   }
 }
 
+/** How the tiles are ordered (ADR 0166); folders come first whatever it is. The viewer's own, like the size. */
+const SORT_LABEL: Record<SortBy, string> = { name: 'Name', kind: 'Kind', date: 'Date changed' }
+const SORT_KEY = 'mp.project.sort'
+const savedSort = (): SortBy => {
+  try {
+    const v = localStorage.getItem(SORT_KEY)
+    return v === 'kind' || v === 'date' ? v : 'name'
+  } catch {
+    return 'name'
+  }
+}
+const saveSort = (v: SortBy): void => {
+  try {
+    localStorage.setItem(SORT_KEY, v)
+  } catch {
+    // not remembered, as the size
+  }
+}
+
 export const createProjectPanel = (container: HTMLElement, host: ProjectHost): Project => {
   /** The folder on screen, from `content/`: a library's own folder, or one inside it. */
   let folder: string = SHARED
   let kind: AssetKind | null = null
   let search = ''
-  /** The tile last clicked, by path — what the bottom bar names. Going to another folder clears it. */
-  let focused: string | null = null
   let size = savedSize()
+  let sortBy = savedSort()
   const collapsed = new Set<string>()
+  /** What is selected, by path, in the order it was picked: the last is the one the Inspector shows (ADR 0166). */
+  let picked: string[] = []
+  /** Where a Shift+click's range starts. */
+  let anchor: string | null = null
+  /** The asset the host had selected at the last draw: one selected elsewhere — *Used by*, an undo — is selected here. */
+  let hostSeen: string | null = null
+  /**
+   * What the tiles were drawn from. A redraw that changes none of it keeps them, lighting them in place: a redraw
+   * between the two clicks of a double-click would lose it, and the keyboard's focus with it.
+   */
+  let drawnFrom: readonly unknown[] = []
 
   /** The two roots: the open game's own library first, then Shared — even before either has a file. */
   const roots = (): { path: string; label: string }[] => {
@@ -159,11 +197,14 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     return inside === '' ? rootLabel(root) : `${rootLabel(root)}/${inside}`
   }
   const searching = (): boolean => search.trim() !== '' || kind !== null
+  const entryAt = (path: string): AssetEntry | undefined => host.db()?.entries.find((e) => e.path === path)
 
   const head = el('div', 'ex-head')
   const body = el('div', 'ex-body')
   const treePane = el('div', 'ex-tree')
   const grid = el('div', 'ex-grid')
+  // Focusable itself, so the keys stay the Project window's when the tile that had the focus is drawn away.
+  grid.tabIndex = -1
   const right = el('div', 'ex-right')
   right.append(grid)
   body.append(treePane, right)
@@ -197,7 +238,7 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     { root: grid, rootMargin: '200px' },
   )
 
-  // --- the top bar: +, the path, the search box with its kind button ---
+  // --- the top bar: +, the path, the sort, the search box with its kind button ---
   const plus = el('button', 'ex-plus')
   plus.type = 'button'
   plus.title = 'New folder, new material, upload files'
@@ -229,6 +270,25 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
   })
 
   const crumbs = el('div', 'ex-crumbs')
+
+  const sortButton = el('button', 'ex-sort')
+  sortButton.type = 'button'
+  sortButton.title = 'Sort'
+  sortButton.addEventListener('click', () => {
+    const at = sortButton.getBoundingClientRect()
+    host.menu.open(
+      { x: at.left, y: at.bottom + 2 },
+      (Object.keys(SORT_LABEL) as SortBy[]).map((by) => ({
+        label: SORT_LABEL[by],
+        ...(sortBy === by ? { hint: '✓' } : {}),
+        run: () => {
+          sortBy = by
+          saveSort(by)
+          render()
+        },
+      })),
+    )
+  })
 
   const searchBox = el('div', 'ex-search')
   const searchInput = el('input', 'ex-search-in')
@@ -272,7 +332,7 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     host.menu.open({ x: at.left, y: at.bottom + 2 }, [item('All kinds', null), ...ASSET_KINDS.map((k) => ({ ...item(KIND_LABEL[k], k), ...(k === ASSET_KINDS[0] ? { divider: true } : {}) }))])
   })
   searchBox.append(icon('search', 'ic ex-search-i'), searchInput, clear, kindButton)
-  head.append(plus, picker, crumbs, searchBox)
+  head.append(plus, picker, crumbs, sortButton, searchBox)
 
   // --- the bottom bar: the selected item's path, the size slider ---
   const footPath = el('span', 'ex-foot-path')
@@ -295,17 +355,131 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
   foot.append(footPath, slider)
   applySize()
 
-  const goTo = (target: string): void => {
-    folder = target
-    focused = null
-    // The tree shows where you went: every folder above it opens.
-    for (const a of ancestorsOf(target, libraryRootOf(target))) collapsed.delete(a)
-    render()
+  const tiles = (): HTMLElement[] => [...grid.querySelectorAll<HTMLElement>('.pt')]
+  /** The tiles' paths in the order they are drawn: what a Shift range and the arrow keys walk. */
+  const shownOrder = (): string[] => tiles().map((t) => t.dataset['path'] ?? '')
+  const tileAt = (path: string): HTMLElement | undefined => tiles().find((t) => t.dataset['path'] === path)
+
+  /** The bottom bar: one selected, its path; several, how many. */
+  const paintFoot = (): void => {
+    const one = picked.length === 1 ? picked[0]! : null
+    footPath.textContent = picked.length > 1 ? `${picked.length} items selected` : one === null ? '' : named(one)
+    footPath.title = one ?? ''
+  }
+  /** Light what is selected, in place. */
+  const paintPicked = (): void => {
+    const lit = new Set(picked)
+    for (const t of tiles()) t.classList.toggle('on', lit.has(t.dataset['path'] ?? ''))
+    paintFoot()
   }
 
   /**
-   * A drop is one of two things: a tile dragged from this panel (a move), or files dragged in from the desktop
-   * (an upload). `into` may be a getter, for the grid, whose folder changes.
+   * Select a tile: only it, it added or taken away (Ctrl), or everything from the anchor to it (Shift) — the
+   * Hierarchy's clicks (ADR 0166). The last picked, when it is a file, is shown in the Inspector.
+   */
+  const pickTile = (path: string, how: SelectMode): void => {
+    const order = shownOrder()
+    if (how === 'range' && anchor !== null && order.includes(anchor)) {
+      const [a, b] = [order.indexOf(anchor), order.indexOf(path)].sort((x, y) => x - y)
+      picked = [...order.slice(a!, b! + 1).filter((p) => p !== path), path]
+    } else if (how === 'toggle') {
+      picked = picked.includes(path) ? picked.filter((p) => p !== path) : [...picked, path]
+      anchor = path
+    } else {
+      picked = [path]
+      anchor = path
+    }
+    paintPicked()
+    const last = picked.at(-1)
+    const entry = last === undefined ? undefined : entryAt(last)
+    if (entry !== undefined && host.selectedAsset() !== entry.id) {
+      hostSeen = entry.id
+      host.onSelectAsset(entry.id)
+    }
+  }
+
+  const goTo = (target: string): void => {
+    // The keys stay here when what had the focus is drawn away.
+    const hadFocus = container.contains(document.activeElement)
+    folder = target
+    picked = []
+    anchor = null
+    // The tree shows where you went: every folder above it opens.
+    for (const a of ancestorsOf(target, libraryRootOf(target))) collapsed.delete(a)
+    render()
+    if (hadFocus) grid.focus()
+  }
+
+  /** Enter on a tile: into a folder, or open a prefab. */
+  const open = (path: string): void => {
+    const entry = entryAt(path)
+    if (entry === undefined) goTo(path)
+    else if (entry.kind === 'prefab') host.onOpenPrefab(entry.id)
+  }
+
+  /** Backspace: the folder above, with the one you left selected, as Unity does. */
+  const up = (): void => {
+    if (searching() || folder === libraryRootOf(folder)) return
+    const left = folder
+    goTo(folderOf(folder))
+    pickTile(left, 'replace')
+    tileAt(left)?.focus()
+  }
+
+  /** The tile an arrow goes to from index `i`: left and right along the order, up and down to the nearest in the next row. */
+  const neighbour = (i: number, key: string): number | null => {
+    const els = tiles()
+    if (els.length === 0) return null
+    if (i < 0) return 0
+    if (key === 'ArrowLeft') return Math.max(0, i - 1)
+    if (key === 'ArrowRight') return Math.min(els.length - 1, i + 1)
+    const here = els[i]!
+    const down = key === 'ArrowDown'
+    const rows = els.map((t, j) => ({ j, top: t.offsetTop, left: t.offsetLeft })).filter((c) => (down ? c.top > here.offsetTop : c.top < here.offsetTop))
+    if (rows.length === 0) return null
+    const top = down ? Math.min(...rows.map((c) => c.top)) : Math.max(...rows.map((c) => c.top))
+    const row = rows.filter((c) => c.top === top)
+    return row.reduce((best, c) => (Math.abs(c.left - here.offsetLeft) < Math.abs(best.left - here.offsetLeft) ? c : best)).j
+  }
+
+  /**
+   * Unity's keys, while the Project window has the focus (ADR 0166): arrows move the selection, Enter opens,
+   * Backspace goes up, Delete deletes, F2 renames, Ctrl+A selects all. Stopped here, so none of them reaches the
+   * level behind — a Delete here must not delete a node there. Typing in the search box keeps its own.
+   */
+  container.addEventListener('keydown', (e) => {
+    const t = e.target
+    if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement) return
+    const mod = e.ctrlKey || e.metaKey
+    const current = picked.at(-1) ?? null
+    const order = shownOrder()
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const next = neighbour(current === null ? -1 : order.indexOf(current), e.key)
+      if (next !== null) {
+        pickTile(order[next]!, 'replace')
+        const to = tiles()[next]
+        to?.focus()
+        to?.scrollIntoView({ block: 'nearest' })
+      }
+    } else if (e.key === 'Enter') {
+      if (current !== null) open(current)
+    } else if (e.key === 'Backspace') up()
+    else if (e.key === 'Delete') {
+      if (picked.length > 0) host.onDelete([...picked])
+    } else if (e.key === 'F2') {
+      if (picked.length === 1) host.onRename(picked[0]!)
+    } else if (mod && e.key.toLowerCase() === 'a') {
+      picked = order
+      anchor = order[0] ?? null
+      paintPicked()
+    } else return
+    e.preventDefault()
+    e.stopPropagation()
+  })
+
+  /**
+   * A drop is one of two things: tiles dragged from this panel (a move, of all of them), or files dragged in from
+   * the desktop (an upload). `into` may be a getter, for the grid, whose folder changes.
    */
   const dropTargetFor = (target: HTMLElement, into: string | (() => string | null)): void => {
     const dest = (): string | null => (typeof into === 'string' ? into : into())
@@ -329,8 +503,9 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
         host.onUpload(files, to)
         return
       }
-      const from = e.dataTransfer?.getData('text/plain')
-      if (from !== undefined && from !== '') host.onMove(from, to)
+      // Not what is there already, nor a folder onto itself.
+      const froms = (e.dataTransfer?.getData('text/plain') ?? '').split('\n').filter((p) => p !== '' && p !== to && folderOf(p) !== to)
+      if (froms.length > 0) host.onMove(froms, to)
     })
   }
   // The grid takes a drop into the folder on screen; search results are no one folder.
@@ -397,19 +572,21 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     })
   }
 
+  /** Dragging one of several selected carries them all; dragging another carries it alone, and selects it. */
   const draggable = (target: HTMLElement, path: string): void => {
     target.draggable = true
     target.addEventListener('dragstart', (e) => {
+      if (!picked.includes(path)) pickTile(path, 'replace')
       const dt = e.dataTransfer
       if (!dt) return
-      dt.setData('text/plain', path)
+      dt.setData('text/plain', picked.join('\n'))
       dt.effectAllowed = 'move'
     })
   }
 
   /** One square tile, whatever it is: its picture (a preview, or its kind's icon) and its name under it. */
-  const tile = (path: string, name: string, lit: boolean, picture: IconName, previewKind: PreviewKind | null, key: string): HTMLButtonElement => {
-    const t = el('button', `pt${lit ? ' on' : ''}`)
+  const tile = (path: string, name: string, picture: IconName, previewKind: PreviewKind | null, key: string): HTMLButtonElement => {
+    const t = el('button', 'pt')
     t.type = 'button'
     t.dataset['path'] = path
     const pic = el('span', 'pt-pic')
@@ -425,6 +602,7 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
       t.dataset['previewKey'] = key
     }
     t.append(pic, el('span', 'pt-name', name))
+    t.addEventListener('click', (e) => pickTile(path, modeFor(e)))
     return t
   }
 
@@ -445,24 +623,21 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     t.append(row)
   }
 
-  /** The bottom bar: the item last clicked, else the asset selected elsewhere (an undo shows one). */
-  const paintFoot = (): void => {
-    const chosen = host.selectedAsset()
-    const shown = focused ?? (chosen === null ? null : (host.db()?.byId[chosen]?.path ?? null))
-    footPath.textContent = shown === null ? '' : named(shown)
-    footPath.title = shown ?? ''
+  /** Whether a placeable tile can go into the open document, and why not — it changes with the document, not the tiles. */
+  const paintPlaceable = (t: HTMLElement): void => {
+    const id = t.dataset['id']
+    const entry = id === undefined ? undefined : host.db()?.byId[id]
+    if (entry === undefined || !PLACEABLE.has(entry.kind)) return
+    const why = host.unplaceableWhy(entry.id)
+    t.title = why === null ? named(entry.path) : `${named(entry.path)} — ${why}`
+    // Greyed rather than hidden: the file exists and is worth seeing; it is this game it cannot go into.
+    t.classList.toggle('foreign', why !== null)
   }
 
   const folderTile = (node: TreeNode): HTMLButtonElement => {
-    const t = tile(node.path, node.name, focused === node.path, 'folder', null, '')
+    const t = tile(node.path, node.name, 'folder', null, '')
     t.classList.add('pt-folder')
     t.title = `${named(node.path)} — double-click to open`
-    // Lit in place, not redrawn: a redraw between the two clicks of a double-click would lose it.
-    t.addEventListener('click', () => {
-      focused = node.path
-      for (const other of grid.querySelectorAll<HTMLElement>('.pt-folder')) other.classList.toggle('on', other === t)
-      paintFoot()
-    })
     t.addEventListener('dblclick', () => goTo(node.path))
     dropTargetFor(t, node.path)
     draggable(t, node.path)
@@ -471,32 +646,22 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
   }
 
   const fileTile = (entry: AssetEntry): HTMLButtonElement => {
-    const placeable = PLACEABLE.has(entry.kind)
     const previewKind = UNPREVIEWABLE.has(entry.kind) ? null : (entry.kind as PreviewKind)
-    const why = placeable ? host.unplaceableWhy(entry.id) : null
-    const t = tile(entry.path, entry.name, host.selectedAsset() === entry.id, ASSET_ICON[entry.kind], previewKind, entry.id)
+    const t = tile(entry.path, entry.name, ASSET_ICON[entry.kind], previewKind, entry.id)
     t.dataset['id'] = entry.id
-    t.title = why === null ? named(entry.path) : `${named(entry.path)} — ${why}`
-    // Greyed rather than hidden: the file exists and is worth seeing; it is this game it cannot go into.
-    if (why !== null) t.classList.add('foreign')
-    t.addEventListener('click', () => {
-      focused = entry.path
-      host.onSelectAsset(entry.id)
-      paintFoot()
-    })
+    t.title = named(entry.path)
     if (entry.kind === 'prefab') t.addEventListener('dblclick', () => host.onOpenPrefab(entry.id))
     draggable(t, entry.path)
-    if (placeable) {
-      // Into a folder it moves; into the viewport it places, which the host follows from here.
+    if (PLACEABLE.has(entry.kind)) {
+      // Into a folder it moves; into the viewport it places, which the host follows from here — one at a time.
       t.addEventListener('dragstart', (e) => {
         const dt = e.dataTransfer
         if (dt) dt.effectAllowed = 'copyMove'
-        host.onDragAsset(entry.id)
+        if (picked.length === 1) host.onDragAsset(entry.id)
       })
       t.addEventListener('dragend', () => host.onDragAsset(null))
     }
     contextMenu(t, entry.path, false)
-    paintPeople(t)
     return t
   }
 
@@ -509,33 +674,55 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     let here = folder
     while (!known.has(here) && here.includes('/')) here = folderOf(here)
     if (!known.has(here)) here = SHARED
-    if (here !== folder) {
-      folder = here
-      focused = null
+    if (here !== folder) folder = here
+
+    // What is selected stays selected while it is still there; an asset selected elsewhere is selected here.
+    const seen = host.selectedAsset()
+    if (seen !== hostSeen) {
+      hostSeen = seen
+      const path = seen === null ? undefined : db.byId[seen]?.path
+      if (seen === null) picked = picked.filter((p) => known.has(p))
+      else if (path !== undefined && !picked.includes(path)) {
+        picked = [path]
+        anchor = path
+      }
     }
+    const paths = new Set(db.entries.map((e) => e.path))
+    picked = picked.filter((p) => paths.has(p) || known.has(p))
 
     kindButton.replaceChildren(el('span', '', kind === null ? 'All' : KIND_LABEL[kind]), icon('chevron'))
     kindButton.classList.toggle('on', kind !== null)
+    sortButton.replaceChildren(el('span', '', SORT_LABEL[sortBy]), icon('chevron'))
     if (document.activeElement !== searchInput) searchInput.value = search
     clear.hidden = !searching()
     renderCrumbs()
     renderTree(trees)
 
-    // Every tile is about to be replaced, so the old observations are meaningless.
-    observer.disconnect()
-    grid.replaceChildren()
-    if (searching()) {
-      const found = filterEntries(db, { libraries: roots().map((r) => r.path), folder: null, kind, search })
-      for (const entry of found) grid.append(fileTile(entry))
-      if (found.length === 0) grid.append(el('div', 'empty', 'nothing matches'))
-    } else {
-      const tree = trees.find((t) => t.path === libraryRootOf(folder))
-      for (const node of tree === undefined ? [] : subfoldersOf(tree, folder)) grid.append(folderTile(node))
-      for (const entry of filterEntries(db, { libraries: [libraryRootOf(folder)], folder, kind: null, search: '' })) grid.append(fileTile(entry))
-      if (grid.children.length === 0) grid.append(el('div', 'empty', `${named(folder)} is empty`))
+    const from = [db, host.folders(), host.game()?.name, folder, search, kind, sortBy]
+    if (from.length !== drawnFrom.length || from.some((v, i) => v !== drawnFrom[i])) {
+      drawnFrom = from
+      // Every tile is about to be replaced, so the old observations are meaningless.
+      observer.disconnect()
+      grid.replaceChildren()
+      const modified = (path: string): number | undefined => host.fileOf(path)?.modified
+      if (searching()) {
+        const found = sortEntries(filterEntries(db, { libraries: roots().map((r) => r.path), folder: null, kind, search }), sortBy, modified)
+        for (const entry of found) grid.append(fileTile(entry))
+        if (found.length === 0) grid.append(el('div', 'empty', 'nothing matches'))
+      } else {
+        const tree = trees.find((t) => t.path === libraryRootOf(folder))
+        for (const node of tree === undefined ? [] : subfoldersOf(tree, folder)) grid.append(folderTile(node))
+        const files = sortEntries(filterEntries(db, { libraries: [libraryRootOf(folder)], folder, kind: null, search: '' }), sortBy, modified)
+        for (const entry of files) grid.append(fileTile(entry))
+        if (grid.children.length === 0) grid.append(el('div', 'empty', `${named(folder)} is empty`))
+      }
+      for (const t of grid.querySelectorAll<HTMLElement>('.pt[data-preview-kind]')) observer.observe(t)
     }
-    for (const t of grid.querySelectorAll<HTMLElement>('.pt[data-preview-kind]')) observer.observe(t)
-    paintFoot()
+    for (const t of grid.querySelectorAll<HTMLElement>('.pt[data-id]')) {
+      paintPlaceable(t)
+      paintPeople(t)
+    }
+    paintPicked()
   }
 
   render()
@@ -549,10 +736,10 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
       search = ''
       kind = null
       goTo(folderOf(path))
-      focused = path
-      paintFoot()
-      const shown = [...grid.querySelectorAll<HTMLElement>('.pt')].find((t) => t.dataset['path'] === path)
-      shown?.scrollIntoView({ block: 'nearest' })
+      picked = [path]
+      anchor = path
+      paintPicked()
+      tileAt(path)?.scrollIntoView({ block: 'nearest' })
     },
     named,
   }

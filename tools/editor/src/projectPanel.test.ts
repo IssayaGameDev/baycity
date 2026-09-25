@@ -64,7 +64,10 @@ const rig = (over: Partial<ProjectHost> = {}) => {
     onCreateAsset: (kind, folder) => calls.push(`new ${kind} in ${folder}`),
     onMkdir: (parent, name) => calls.push(`mkdir ${name} in ${parent}`),
     onContext: () => {},
-    onMove: (from, to) => calls.push(`move ${from} to ${to}`),
+    onMove: (froms, to) => calls.push(`move ${froms.join(' ')} to ${to}`),
+    onDelete: (paths) => calls.push(`delete ${paths.join(' ')}`),
+    onRename: (path) => calls.push(`rename ${path}`),
+    fileOf: (path) => (path.endsWith('red.mat.json') ? { bytes: 1, modified: 2000 } : path.endsWith('brick.mat.json') ? { bytes: 1, modified: 1000 } : undefined),
     onUpload: () => {},
     requestPreview: () => {},
     ...over,
@@ -190,6 +193,80 @@ describe('the Project window', () => {
     expect(crumbs()).toEqual(['Shared', '›', 'textures', '›', 'stone'])
     expect($$('.ex-foot-path')[0]!.textContent).toBe('Shared/textures/stone/brick.png')
     expect(project.named('keyboard/assets/materials/key.mat.json')).toBe('Keyboard/materials/key.mat.json')
+  })
+
+  it('selects several with Ctrl and Shift, the Inspector showing the last, and says how many', () => {
+    const { tile, calls, $$ } = rig()
+    tile('materials').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    tile('brick').click()
+    tile('red').dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+    expect($$('.pt.on .pt-name').map((n) => n.textContent)).toEqual(['brick', 'red'])
+    expect($$('.ex-foot-path')[0]!.textContent).toBe('2 items selected')
+    expect(calls).toEqual(['select id-assets/materials/brick.mat.json', 'select id-assets/materials/red.mat.json'])
+    tile('brick').dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+    expect($$('.pt.on .pt-name').map((n) => n.textContent)).toEqual(['red'])
+    const up = rig()
+    up.tile('empty').click()
+    up.tile('sounds').dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }))
+    expect(up.$$('.pt.on .pt-name').map((n) => n.textContent)).toEqual(['empty', 'materials', 'prefabs', 'sounds'])
+  })
+
+  it('drags all of what is selected into a folder, and one not selected alone', () => {
+    const { tile, calls } = rig()
+    const carrier = () => {
+      let data = ''
+      return { setData: (_t: string, v: string) => void (data = v), getData: () => data, files: [], effectAllowed: '', dropEffect: '' }
+    }
+    const drag = (from: HTMLElement, onto: HTMLElement): void => {
+      const dt = carrier()
+      from.dispatchEvent(Object.assign(new Event('dragstart', { bubbles: true }), { dataTransfer: dt }))
+      onto.dispatchEvent(Object.assign(new Event('drop', { bubbles: true, cancelable: true }), { dataTransfer: dt }))
+    }
+    tile('prefabs').click()
+    tile('sounds').dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }))
+    drag(tile('sounds'), tile('textures'))
+    drag(tile('materials'), tile('textures'))
+    expect(calls.filter((c) => c.startsWith('move'))).toEqual(['move assets/prefabs assets/sounds to assets/textures', 'move assets/materials to assets/textures'])
+  })
+
+  it('takes Unity’s keys while it has the focus, and keeps them from the level behind', () => {
+    const { tile, calls, $$, crumbs, project } = rig()
+    let reached = 0
+    const behind = (): void => void reached++
+    window.addEventListener('keydown', behind)
+    const press = (key: string, extra: KeyboardEventInit = {}): void => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...extra }))
+    tile('empty').click()
+    tile('empty').focus()
+    press('ArrowRight')
+    expect($$('.pt.on .pt-name').map((n) => n.textContent)).toEqual(['materials'])
+    press('Enter')
+    expect(crumbs()).toEqual(['Shared', '›', 'materials'])
+    press('ArrowRight')
+    press('F2')
+    press('Delete')
+    press('a', { ctrlKey: true })
+    expect($$('.pt.on .pt-name').map((n) => n.textContent)).toEqual(['brick', 'red'])
+    press('Backspace')
+    expect(project.folder()).toBe('assets')
+    expect($$('.pt.on .pt-name').map((n) => n.textContent), 'the folder it left, selected').toEqual(['materials'])
+    expect(calls.filter((c) => !c.startsWith('select'))).toEqual(['rename assets/materials/brick.mat.json', 'delete assets/materials/brick.mat.json'])
+    expect(reached, 'none of them reached the level').toBe(0)
+    const input = $$('.ex-search-in')[0] as HTMLInputElement
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }))
+    expect(reached, 'typing in the search box is the search box’s').toBe(1)
+    window.removeEventListener('keydown', behind)
+  })
+
+  it('sorts by name, kind or date, folders first, and remembers it', () => {
+    const { tile, tiles, $$, menu } = rig()
+    tile('materials').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    expect(tiles()).toEqual(['brick', 'red'])
+    $$('.ex-sort')[0]!.click()
+    expect(menu().map((i) => i.label)).toEqual(['Name', 'Kind', 'Date changed'])
+    menu().find((i) => i.label === 'Date changed')!.run!()
+    expect(tiles(), 'the newest first').toEqual(['red', 'brick'])
+    expect($$('.ex-sort')[0]!.textContent).toBe('Date changed')
+    expect(rig().$$('.ex-sort')[0]!.textContent, 'remembered').toBe('Date changed')
   })
 
   it('leaves a folder that is gone for the nearest one still there', () => {

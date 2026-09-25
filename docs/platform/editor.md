@@ -297,6 +297,10 @@ so indices, selection and the gizmo keep working — a disabled object can be mo
 The unlink itself is `@mp/content`'s (`content.md`), with the registry injected: only this side knows which
 components are singletons and which parameters are node references. The editor-server has no registry.
 
+**Several at once** (`fileOps.deleteAssets(paths)`, ADR 0166): a path inside another being deleted drops out; one left
+is `deleteAsset`; else one `askDestructive` (`severalWording`: how many, the files going, and — prefabs among them
+placed — that those objects are unlinked), `unlinkEverywhere` as for one, then `AssetLibrary.removeMany`.
+
 ### Save as prefab… (ADR 0091)
 
 One action makes a prefab, replacing both `Extract to prefab` (which wrote no file) and prefab mode's Save
@@ -405,7 +409,7 @@ ignores the pseudo-elements wherever that is set.
 
 ## Project window — the asset libraries (ADR 0161, ADR 0163)
 
-`src/projectPanel.ts`, `createProjectPanel(container, host)` → `{ render, folder(), openersChanged() }`. Levels are
+`src/projectPanel.ts`, `createProjectPanel(container, host)` → `{ render, folder(), openersChanged(), reveal(path), named(path) }`. Levels are
 the games window's (ADR 0162).
 
 ```
@@ -422,14 +426,17 @@ the games window's (ADR 0162).
 | --- | --- |
 | roots | `roots()`: `libraryDir(game)` labelled with the game's label, then `SHARED` labelled *Shared*; each drawn even with no file. A folder gone (deleted, moved, another game's now) falls back to the nearest one still there, else `SHARED` |
 | tree | `buildTree(db, folders, root)` per root, `flattenTree(tree, collapsed)`; `.row`s, `4 + depth × 14` px; a `chevron` twist only over children; a `folder` icon on each; no counts; the folder you are in `.sel`. A click goes there (and ends a search); going anywhere opens its ancestors |
-| tiles | `.ex-grid`, `--tile` px square: the folder's subfolders (`subfoldersOf`), then its files (`filterEntries({ libraries: [root], folder })`). `.pt` = `.pt-pic` (a kind icon, `ASSET_ICON` in `icons.ts`; the preview `img.thumb` over it once the observer has it) + `.pt-name`. A folder tile: a click lights it in place (not redrawn, so a double-click survives), a double-click goes in. A file tile (ADR 0164): a click selects it (`onSelectAsset` → `selectAsset`, the asset Inspector); a double-click on a prefab opens it (`onOpenPrefab`); a prefab or model drag says what it carries (`onDragAsset(id)`, `null` on `dragend`; `effectAllowed` `copyMove`) — *Placing* below. Greyed with why (`unplaceableWhy`), still selectable. All draggable onto folders; a right-click is `host.onContext` |
+| tiles | `.ex-grid`, `--tile` px square: the folder's subfolders (`subfoldersOf`), then its files (`filterEntries({ libraries: [root], folder })`). `.pt` = `.pt-pic` (a kind icon, `ASSET_ICON` in `icons.ts`; the preview `img.thumb` over it once the observer has it) + `.pt-name`. Drawn again only when what they come from changes (`drawnFrom`: the library, its folders, the game, the folder, the search, the kind, the sort) — else lit, greyed and faced in place, so a double-click and the keyboard's focus survive a redraw. A double-click on a folder goes in, on a prefab opens it (`onOpenPrefab`); a prefab or model drag says what it carries (`onDragAsset(id)` when it is the one selected, `null` on `dragend`; `effectAllowed` `copyMove`) — *Placing* below. Greyed with why (`unplaceableWhy`, `paintPlaceable`), still selectable. A right-click is `host.onContext` |
+| selection | `picked`, paths in the order picked (ADR 0166): a click only it, Ctrl+click adds or takes away, Shift+click from `anchor` to it in drawn order (`modeFor`, `selection.ts`); the last picked, a file, goes to the Inspector (`onSelectAsset`). An asset selected elsewhere (`host.selectedAsset()` changed — *Used by*, an undo) becomes it; none, and only folders stay; one gone drops out. Going to a folder empties it |
+| keys | on the container, not from an input (ADR 0166): arrows (left/right along the order, up/down to the nearest tile in the next row by `offsetTop`), Enter (`open`: a folder in, a prefab opened), Backspace (`up`: the parent, the folder left selected and focused), Delete (`onDelete(picked)`), F2 (`onRename`, one), Ctrl+A (all drawn) — each `preventDefault` + `stopPropagation`, so none reaches the editor's shortcuts. The grid is `tabIndex -1` and takes the focus when a redraw removes the tile that had it |
+| sort | `.ex-sort` (`host.menu`: Name, Kind, Date changed, ✓ on the current), per viewer (`localStorage` `mp.project.sort`); `sortEntries(entries, by, modified)` (`assetTree.ts`): name; kind then name; newest first by `host.fileOf(path).modified`, the undated last. Folders first, by name |
 | list | the slider at `SIZE.list` (its minimum): `.ex-grid.list`, a line each, an 18 px picture |
 | faces | `.pt-people .pp` per `host.openers(id)` (ADR 0159), repainted in place by `openersChanged()` (`openAssetsChanged` in main) |
 | + | `host.menu`: *New folder…* (`askName` → `onMkdir(folder, name)`), *New material* (`onCreateAsset('material', folder)`), *Upload files…* (a hidden `input[type=file]`, accept = the server's `UPLOAD_EXTENSIONS`, → `onUpload`) |
 | path | `.ex-crumb` per part, root label first; a click goes there. While searching: *Every folder* |
 | search | `.ex-search`: text (Escape clears it), `×` (clears text and kind), the kind button (`host.menu`: All kinds, then `ASSET_KINDS`, ✓ on the current). Text or a kind → `filterEntries({ libraries: every root, folder: null, kind, search })`, files only, names only |
-| bottom | `.ex-foot`: the tile last clicked, else the selected asset, as `named(path)` (`<root label>/<path inside>`); the slider `SIZE` 40–144 step 4, start 64, per viewer (`localStorage` `mp.project.tileSize`, try/caught) |
-| drops | onto a tree row, a folder tile, or the grid (the folder on screen; not while searching): files from the desktop upload, a tile moves (`onMove`), between libraries a move the server may refuse with why (ADR 0161) |
+| bottom | `.ex-foot`: one picked, `named(path)` (`<root label>/<path inside>`); several, *N items selected*; the slider `SIZE` 40–144 step 4, start 64, per viewer (`localStorage` `mp.project.tileSize`, try/caught) |
+| drops | onto a tree row, a folder tile, or the grid (the folder on screen; not while searching): files from the desktop upload; tiles move — a tile of the selection carries all of it (`text/plain`, paths by line), another carries itself and is selected — `onMove(froms, to)`, less any there already or the folder itself; main refuses a folder into itself, then `AssetLibrary.move` or `moveMany` (all or none, ADR 0166); between libraries the server may refuse with why (ADR 0161) |
 
 `folder()` is where *Save as prefab…* writes (ADR 0091). An asset's URL is `/content/<path>` (`assetUrl`), as on disk.
 `Filter` (`assetTree.ts`) is `{ libraries, folder: string | null, kind, search }`: one folder's own files, or — `null`

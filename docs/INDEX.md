@@ -215,5 +215,6 @@ why matters.
 | [0163](adr/0163-the-project-window-is-folders-of-square-tiles.md) | The Project window is folders of square tiles, under two roots |
 | [0164](adr/0164-a-click-selects-an-asset-a-drag-places-it.md) | A click selects an asset, a drag places it |
 | [0165](adr/0165-the-asset-inspector-shows-a-picture-facts-and-users.md) | The asset Inspector shows a picture, the facts, and who uses it |
+| [0166](adr/0166-several-assets-at-once-keys-and-sorting.md) | Several assets at once, Unity's keys, and a sort in the Project window |
 
 `Design archive/` holds superseded design material and is not maintained.

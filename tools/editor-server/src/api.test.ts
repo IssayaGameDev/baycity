@@ -272,6 +272,35 @@ describe('assets', () => {
   })
 })
 
+describe('several at once (ADR 0166)', () => {
+  it('moves several into a folder, or none of them when one cannot go', async () => {
+    for (const n of ['a', 'b', 'c']) await call('ada', 'PUT', `/content/assets/materials/${n}.mat.json`, { shader: 'standard', params: {} })
+    mkdirSync(join(root, 'content/assets/old'), { recursive: true })
+    writeFileSync(join(root, 'content/assets/old/c.mat.json'), '{"shader":"standard","params":{}}')
+    const into = (n: string, dir: string) => ({ from: `assets/materials/${n}.mat.json`, to: `assets/${dir}/${n}.mat.json` })
+    const clash = await call('ada', 'POST', '/api/assets/move', { moves: [into('a', 'old'), into('c', 'old')] })
+    expect(clash.status, 'c is there already').toBe(400)
+    expect(existsSync(join(root, 'content/assets/materials/a.mat.json')), 'so a stayed too').toBe(true)
+    await call('bob', 'POST', '/api/locks/acquire', { path: keyFor.asset('assets/materials/b.mat.json') })
+    expect((await call('ada', 'POST', '/api/assets/move', { moves: [into('a', 'old'), into('b', 'old')] })).status, 'b is held').toBe(423)
+    expect(existsSync(join(root, 'content/assets/materials/a.mat.json'))).toBe(true)
+    await call('bob', 'POST', '/api/locks/release', { path: keyFor.asset('assets/materials/b.mat.json') })
+    expect((await call('ada', 'POST', '/api/assets/move', { moves: [into('a', 'old'), into('b', 'old')] })).status).toBe(200)
+    expect(['a', 'b'].map((n) => existsSync(join(root, `content/assets/old/${n}.mat.json`)))).toEqual([true, true])
+  })
+
+  it('deletes several, or none of them while anyone holds one', async () => {
+    for (const n of ['a', 'b']) await call('ada', 'PUT', `/content/assets/materials/${n}.mat.json`, { shader: 'standard', params: {} })
+    const paths = ['assets/materials/a.mat.json', 'assets/materials/b.mat.json']
+    await call('bob', 'POST', '/api/locks/acquire', { path: keyFor.asset(paths[1]!) })
+    expect((await call('ada', 'POST', '/api/assets/delete', { paths })).status).toBe(423)
+    expect(existsSync(join(root, 'content', paths[0]!)), 'a stayed').toBe(true)
+    await call('bob', 'POST', '/api/locks/release', { path: keyFor.asset(paths[1]!) })
+    expect((await call('ada', 'POST', '/api/assets/delete', { paths })).status).toBe(200)
+    expect(paths.map((p) => existsSync(join(root, 'content', p)))).toEqual([false, false])
+  })
+})
+
 describe('what the asset Inspector asks (ADR 0165)', () => {
   it('lists each file with its size and date, and says who uses an asset, directly or through another', async () => {
     await call('ada', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: {} })

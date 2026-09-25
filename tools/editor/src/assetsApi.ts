@@ -58,7 +58,11 @@ export interface AssetLibrary {
   mkdir: (parent: string, name: string) => Promise<void>
   /** Rename or move. The sidecar goes with it, so ids survive. */
   move: (from: string, to: string) => Promise<void>
+  /** Several moves, all or none (ADR 0166). */
+  moveMany: (moves: readonly { from: string; to: string }[]) => Promise<void>
   remove: (path: string) => Promise<void>
+  /** Several deletes, all or none: refused while anyone holds any of them (ADR 0166). */
+  removeMany: (paths: readonly string[]) => Promise<void>
   /** Create `<name>.mat.json` in `folder` (from `content/`; the shared library's `materials` by default). Resolves once the importer has given it an id. */
   createMaterial: (name: string, material: MaterialAsset, folder?: string) => Promise<AssetEntry | undefined>
 }
@@ -227,6 +231,8 @@ export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refe
     },
     mkdir: async (parent, name) => post('mkdir', { path: `${parent}/${name}` }),
     move: async (from, to) => post('move', { from, to }),
+    moveMany: async (moves) => post('move', { moves }),
     remove: async (path) => post('delete', { path }),
+    removeMany: async (paths) => post('delete', { paths }),
   }
 }

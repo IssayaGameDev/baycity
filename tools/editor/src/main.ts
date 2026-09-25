@@ -1643,11 +1643,8 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
         },
         {
           label: 'Rename…',
-          run: () => {
-            const name = prompt('Rename', current)
-            if (name === null || name.trim() === '' || name.trim() === current) return
-            fileOps.renameAsset(path, name.trim())
-          },
+          hint: 'F2',
+          run: () => askRenameAsset(path),
         },
         {
           label: isFolder ? (inFolder > 0 ? `Delete folder and ${inFolder} asset${inFolder === 1 ? '' : 's'}` : 'Delete empty folder') : 'Delete',
@@ -1660,16 +1657,29 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     )
   },
   onMkdir: (parent, name) => fileOps.afterFileOp(`created ${name}`, async () => assets?.mkdir(parent, name) ?? Promise.resolve()),
-  onMove: (from, toFolder) => {
+  onMove: (froms, toFolder) => {
     // Refuse a folder into its own subtree here as well as on the server: a rejected drop should not need a
-    // round trip to say so.
-    if (!from.includes('.') && !canMoveFolder(from, toFolder)) {
+    // round trip to say so. Several go together or not at all (ADR 0166).
+    if (froms.some((from) => !from.includes('.') && !canMoveFolder(from, toFolder))) {
       notify.warn('a folder cannot move inside itself')
       return
     }
-    fileOps.afterFileOp(`moved into ${toFolder}`, async () => assets?.move(from, movedInto(from, toFolder)) ?? Promise.resolve())
+    const moves = froms.map((from) => ({ from, to: movedInto(from, toFolder) }))
+    const what = froms.length === 1 ? `moved into ${toFolder}` : `moved ${froms.length} items into ${toFolder}`
+    fileOps.afterFileOp(what, async () => (moves.length === 1 ? assets?.move(moves[0]!.from, moves[0]!.to) : assets?.moveMany(moves)) ?? Promise.resolve())
   },
+  onDelete: (paths) => fileOps.deleteAssets(paths),
+  onRename: (path) => askRenameAsset(path),
+  fileOf: (path) => assets?.fileOf(path),
 })
+
+/** Rename an asset or a folder, asked with its name now: the menu's *Rename…*, and F2 in the Project window. */
+function askRenameAsset(path: string): void {
+  const current = path.slice(path.lastIndexOf('/') + 1)
+  const name = prompt('Rename', current)
+  if (name === null || name.trim() === '' || name.trim() === current) return
+  fileOps.renameAsset(path, name.trim())
+}
 
 /**
  * A level's menu (ADR 0110), from its tile in the games window (ADR 0162): Open, Duplicate, Rename, Copy name,

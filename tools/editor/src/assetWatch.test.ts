@@ -28,6 +28,8 @@ const lib = (entries: AssetEntry[], materials: Record<string, MaterialAsset> = {
   mkdir: async () => undefined,
   move: async () => undefined,
   remove: async () => undefined,
+  moveMany: async () => undefined,
+  removeMany: async () => undefined,
   createMaterial: async () => undefined,
 })
 const e = (id: string, kind: AssetEntry['kind'], path: string): AssetEntry => ({ id, kind, path, name: id })

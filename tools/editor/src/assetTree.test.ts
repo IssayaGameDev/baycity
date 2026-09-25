@@ -1,7 +1,7 @@
 import { buildDatabase, nameForPath, type AssetEntry, type AssetKind } from '@mp/content'
 import { describe, expect, it } from 'vitest'
 
-import { ancestorsOf, buildTree, canMoveFolder, filterEntries, flattenTree, folderOf, gameRows, movedInto, renamedTo, subfoldersOf, type Filter } from './assetTree'
+import { ancestorsOf, buildTree, canMoveFolder, filterEntries, flattenTree, folderOf, gameRows, movedInto, renamedTo, sortEntries, subfoldersOf, type Filter } from './assetTree'
 
 /** Paths from `content/`, starting with their library (ADR 0161): the shared one, and one entry in a game's own. */
 const entry = (path: string, kind: AssetKind): AssetEntry => ({ id: path, kind, path, name: nameForPath(path) })
@@ -138,6 +138,18 @@ describe('filterEntries', () => {
 
   it('shows the library’s top folder only, not everything, when that is selected', () => {
     expect(filterEntries(db, filter({ folder: 'assets' })).map((e) => e.name)).toEqual(['root'])
+  })
+})
+
+describe('sortEntries (ADR 0166)', () => {
+  const files = [entry('assets/b.png', 'texture'), entry('assets/a.mat.json', 'material'), entry('assets/c.glb', 'model'), entry('assets/x/a.png', 'texture')]
+  const when: Record<string, number> = { 'assets/b.png': 30, 'assets/a.mat.json': 10, 'assets/x/a.png': 30 }
+  const order = (by: 'name' | 'kind' | 'date'): string[] => sortEntries(files, by, (p) => when[p]).map((e) => e.path)
+
+  it('orders by name, by kind then name, or the newest first — the undated last', () => {
+    expect(order('name')).toEqual(['assets/a.mat.json', 'assets/x/a.png', 'assets/b.png', 'assets/c.glb'])
+    expect(order('kind')).toEqual(['assets/a.mat.json', 'assets/c.glb', 'assets/x/a.png', 'assets/b.png'])
+    expect(order('date')).toEqual(['assets/x/a.png', 'assets/b.png', 'assets/a.mat.json', 'assets/c.glb'])
   })
 })
 

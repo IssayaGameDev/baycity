@@ -45,8 +45,9 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *   GET  /api/assets                  → { entries, libraries, folders, seq, files } (runs the importer; seq: the change feed's
  *                                       position; files: each entry's { bytes, modified } by path, ADR 0165)
  *   GET  /api/assets/users?id=        → { levels, assets } — who uses it, directly or through others (ADR 0165)
- *   POST /api/assets/mkdir|move|delete → { path } · { from, to } · { path } — a move into another library is 409 while
- *                                       something would be left using what it may not (ADR 0161)
+ *   POST /api/assets/mkdir|move|delete → { path } · { from, to } or { moves: [{ from, to }] } · { path } or { paths } — a move
+ *                                       into another library is 409 while something would be left using what it may not
+ *                                       (ADR 0161); several are checked together and done all or none (ADR 0166)
  *   POST /api/assets/upload?path=     → raw bytes → { entry }   (textures and .glb, capped, replace keeps the id)
  *   GET  /content/<path>              → the bytes
  *   PUT  /content/<path>              → a JSON asset
@@ -308,8 +309,8 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
    * Why moving `from` into `to`'s library is refused, or `null` (ADR 0161): the whole of a folder counts, and what
    * uses or is used by it, in every game's levels and every library, as they are now.
    */
-  const crossLibraryRefusal = (from: string, to: string): string | null => {
-    const moving = assets.entries().filter((e) => e.path === from || e.path.startsWith(`${from}/`))
+  const crossLibraryRefusal = (froms: readonly string[], to: string): string | null => {
+    const moving = assets.entries().filter((e) => froms.some((from) => e.path === from || e.path.startsWith(`${from}/`)))
     const levels = levelFiles().map(({ ref, file }) => [qualify(ref), levelNow(qualify(ref), file)] as const)
     return moveRefusal(moving, libraryOf(to) ?? null, { entries: assets.entries(), levels, contentsOf: assetJsonNow })
   }
@@ -431,26 +432,65 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
           makeFolder(CONTENT, path)
           // An empty folder is nothing to git; it is committed with its first file.
         } else if (op[1] === 'move') {
-          const from = libraryPath('from')
-          const to = libraryPath('to')
-          if (refuseIfLocked(res, user, [keyFor.asset(from), keyFor.asset(to)])) return true
-          // Into another library only when nothing is left using what it may not (ADR 0161).
-          if (libraryOf(from) !== libraryOf(to)) {
-            const why = crossLibraryRefusal(from, to)
-            if (why !== null) return sendJson(res, 409, { error: `not moved into ${libraryName(libraryOf(to) ?? null)}: ${why}` }), true
+          // One, or several at once (ADR 0166): every one is checked before any moves, so it is all or none.
+          const moves = Array.isArray(args.moves)
+            ? (args.moves as unknown[]).map((m, i) => {
+                const one = asRecord(m)
+                const at = (name: string): string => {
+                  const path = strField(one, name)
+                  if (!assetPathOk(path)) throw new AssetOpError(`moves[${i}].${name}: not a path in an asset library: ${path}`)
+                  return path
+                }
+                return { from: at('from'), to: at('to') }
+              })
+            : [{ from: libraryPath('from'), to: libraryPath('to') }]
+          if (moves.length === 0) throw new AssetOpError('moves: nothing to move')
+          if (refuseIfLocked(res, user, moves.flatMap((m) => [keyFor.asset(m.from), keyFor.asset(m.to)]))) return true
+          const targets = new Set<string>()
+          for (const { from, to } of moves) {
+            if (!existsSync(safeJoin(CONTENT, from)!)) throw new AssetOpError(`not found: ${from}`)
+            if (existsSync(safeJoin(CONTENT, to)!) || targets.has(to)) throw new AssetOpError(`already exists: ${to}`)
+            if (to === from || to.startsWith(`${from}/`)) throw new AssetOpError(`a folder cannot move inside itself: ${from}`)
+            targets.add(to)
           }
-          const before = filesOf(from)
-          movePath(CONTENT, from, to)
-          const after = before.map((p) => `${to}${p.slice(from.length)}`)
+          // Into another library only when nothing is left using what it may not (ADR 0161) — those going together
+          // judged together, so a prefab and the material it uses may cross as one.
+          const crossing = new Map<string | null, { froms: string[]; to: string }>()
+          for (const { from, to } of moves) {
+            if (libraryOf(from) === libraryOf(to)) continue
+            const lib = libraryOf(to) ?? null
+            crossing.set(lib, { froms: [...(crossing.get(lib)?.froms ?? []), from], to })
+          }
+          for (const [lib, { froms, to }] of crossing) {
+            const why = crossLibraryRefusal(froms, to)
+            if (why !== null) return sendJson(res, 409, { error: `not moved into ${libraryName(lib)}: ${why}` }), true
+          }
+          const touched: string[] = []
+          for (const { from, to } of moves) {
+            const before = filesOf(from)
+            movePath(CONTENT, from, to)
+            touched.push(...before, ...before.map((p) => `${to}${p.slice(from.length)}`))
+          }
           rescanFor(user)
-          changed(user, [...before, ...after].map(keyFor.asset))
+          changed(user, touched.map(keyFor.asset))
         } else {
-          const path = libraryPath('path')
-          if (refuseIfLocked(res, user, [keyFor.asset(path)])) return true
-          const gone = filesOf(path)
-          // A live asset deleted goes with its document, unwritten edits and all (ADR 0159).
-          for (const e of assets.entries()) if (e.path === path || e.path.startsWith(`${path}/`)) opts.liveAssets?.forget(e.id)
-          removePath(CONTENT, path)
+          const paths = Array.isArray(args.paths)
+            ? (args.paths as unknown[]).map((p, i) => {
+                if (typeof p !== 'string' || !assetPathOk(p)) throw new AssetOpError(`paths[${i}]: not a path in an asset library`)
+                return p
+              })
+            : [libraryPath('path')]
+          if (paths.length === 0) throw new AssetOpError('paths: nothing to delete')
+          // Several at once are refused together (ADR 0166): nothing goes while anyone holds any of them.
+          if (refuseIfLocked(res, user, paths.map(keyFor.asset))) return true
+          const gone: string[] = []
+          for (const path of paths) {
+            if (!existsSync(safeJoin(CONTENT, path)!)) continue // inside a folder already deleted with it
+            gone.push(...filesOf(path))
+            // A live asset deleted goes with its document, unwritten edits and all (ADR 0159).
+            for (const e of assets.entries()) if (e.path === path || e.path.startsWith(`${path}/`)) opts.liveAssets?.forget(e.id)
+            removePath(CONTENT, path)
+          }
           rescanFor(user)
           changed(user, gone.map(keyFor.asset))
         }
