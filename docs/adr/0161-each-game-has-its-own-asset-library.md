@@ -1,7 +1,8 @@
 # ADR 0161 — Each game has its own asset library, beside the shared one
 
-Status: accepted, in progress. Steps 1 to 3 of 5 have landed: an asset's path starts with its library; which levels
-use which asset; moving between libraries. Amends ADR 0108's single shared library.
+Status: accepted, in progress. Steps 1 to 4 of 5 have landed: an asset's path starts with its library; which levels
+use which asset; moving between libraries; the rule in the editor and a check per game. Amends ADR 0108's single
+shared library.
 
 ## Context
 
@@ -41,6 +42,11 @@ uses in turn. Counting a little too much is safe for a refusal and a build; coun
 it: a Shared asset is anyone's, so it uses only Shared's. Refused anywhere while what it uses is in neither Shared
 nor where it goes, unless that moves with it. The Project panel draws the open game's library below Shared until the
 panel is rebuilt (Track B).
+
+**Step 4: the rule, where a reference is made.** `mayUse(user, path)` in `@mp/content`: a game's levels and its
+library's assets use its own and Shared's; Shared's use only Shared's. The object Inspector's asset pickers and the
+material's texture slot offer only those, and placing refuses the rest, as it refuses another game's private
+component. `libraries.test.ts` reads every game's content and fails on anything outside.
 
 ## Rejected
 

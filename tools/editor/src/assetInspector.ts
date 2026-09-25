@@ -1,4 +1,4 @@
-import { assetsOfKind, type AssetDatabase, type AssetEntry, type MaterialAsset, type MaterialValue } from '@mp/content'
+import { assetsOfKind, libraryOf, mayUse, type AssetDatabase, type AssetEntry, type MaterialAsset, type MaterialValue } from '@mp/content'
 import { BUILTIN_SHADERS, defaultParams, shaderDef, type ShaderParam } from '@mp/render-three'
 
 import { checkField, colorFieldOf, fieldRow, numberScrub, scrubFieldOf, selectField, type Live } from './controls'
@@ -79,10 +79,14 @@ const dragged = <T>(change: (v: T, ongoing: boolean) => void, settle: () => void
 export const createAssetInspector = (container: HTMLElement, host: AssetInspectorHost): AssetInspector => {
   // Its lines' card, for who is in which field (ADR 0160): the asset is the field's target, so one name serves.
   container.dataset.card = 'asset'
-  /** A dropdown over textures, and a thumbnail of the current choice beside it. */
-  const textureField = (current: string | null, onPick: (id: string | null) => void): Field => {
+  /**
+   * A dropdown over the textures `user`'s material may use (ADR 0161) — its game's own and Shared's, or only
+   * Shared's for a Shared material — and a thumbnail of the current choice beside it.
+   */
+  const textureField = (current: string | null, onPick: (id: string | null) => void, user: string | null): Field => {
     const db = host.db()
-    const choices = [{ value: '', label: '(none)' }, ...(db === null ? [] : assetsOfKind(db, 'texture')).map((t) => ({ value: t.id, label: t.name }))]
+    const usable = (db === null ? [] : assetsOfKind(db, 'texture')).filter((t) => mayUse(user, t.path))
+    const choices = [{ value: '', label: '(none)' }, ...usable.map((t) => ({ value: t.id, label: t.name }))]
     // The thumbnail follows the pick itself: the panel is not redrawn after an edit (ADR 0157).
     const img = el('img', 'a-thumb')
     img.alt = ''
@@ -107,8 +111,8 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
     }
   }
 
-  /** `settle`: a drag let go — end its undo entry, writing nothing. */
-  const valueField = (param: ShaderParam, value: MaterialValue, onChange: Change, settle: () => void): Field => {
+  /** `settle`: a drag let go — end its undo entry, writing nothing. `user`: whose the material is (ADR 0161). */
+  const valueField = (param: ShaderParam, value: MaterialValue, onChange: Change, settle: () => void, user: string | null): Field => {
     if (param.kind === 'color') {
       const w = dragged<string>((v, ongoing) => onChange({ kind: 'color', value: v }, ongoing), settle)
       const field = colorFieldOf(value.kind === 'color' ? value.value : '#ffffff', w.commit, w.live)
@@ -150,7 +154,7 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
       return { controls: [box], update: (v) => void (v.kind === 'boolean' && !busy(box) && (box.checked = v.value)) }
     }
     if (param.kind === 'texture') {
-      return textureField(value.kind === 'texture' ? value.value : null, (id) => onChange({ kind: 'texture', value: id }))
+      return textureField(value.kind === 'texture' ? value.value : null, (id) => onChange({ kind: 'texture', value: id }), user)
     }
     const unsupported = el('span', 'irow-v')
     unsupported.textContent = `(${param.kind} not editable yet)`
@@ -219,6 +223,7 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
           host.onMaterialChanged(entry.id, { ...current, params: { ...current.params, [param.key]: next } }, label, ongoing)
         },
         () => host.onMaterialChanged(entry.id, now(), label, false),
+        libraryOf(entry.path) ?? null,
       )
       fields.set(param.key, { field, fallback: param.fallback })
       container.append(fieldRow(param.label, ...field.controls))

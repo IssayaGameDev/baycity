@@ -85,6 +85,7 @@ export {
   isGameName,
   libraryDir,
   libraryOf,
+  mayUse,
   isSegment,
   levelFile,
   levelRefForFile,

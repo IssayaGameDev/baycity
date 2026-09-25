@@ -615,7 +615,7 @@ refs, each `room.docTarget(suffix)` = `<kind>:<doc>|<suffix>`; rings for the pri
 ## Refusing another game's private components (ADR 0076)
 
 - `unknownComponentTypes(root, registry)` (`src/editorDoc.ts`), pure.
-- `unplaceableWhy(assetId)` non-null only for `foreign` types → Project tile greyed, reason in tooltip (`unplaceableWhy` host option, `src/projectPanel.ts`); context-menu "Place in the level" disabled with the same reason.
+- `unplaceableWhy(assetId)` non-null for `foreign` types, **or an asset the document may not use** (ADR 0161: `mayUse(editingFor(), path)` — `editingFor` is the open prefab's library, `null` for Shared's, else the level's game) → Project tile greyed, reason in tooltip (`unplaceableWhy` host option, `src/projectPanel.ts`); context-menu "Place in the level" disabled with the same reason.
 - `Doc.placePrefab` returns `-1` on any remaining unknown type — second gate.
 
 ## Game settings (ADR 0087)
@@ -635,7 +635,7 @@ colliders are held at the matching unit shape — so scale is the one size a per
 
 | Piece | Behaviour |
 | --- | --- |
-| picker | `assetOptions('model')` lists `BUILTIN_LABELS` first, then the uploaded models: a built-in is picked like a file |
+| picker | `assetOptions('model')` lists `BUILTIN_LABELS` first, then the uploaded models: a built-in is picked like a file. Every `assetOptions(of)` lists only what `mayUse(editingFor(), path)` allows (ADR 0161), and a material's texture slot only what its own library may use |
 | locked collider | `Doc.setParams` of a built-in `model` on a `Renderer` rewrites every `Collider` on the node to `unitColliderFor(model)` **in the same batch** (one undo); `addComponent(Collider)` on such a node is born unit; `Doc.builtinOf(i)` says which built-in, or `null` |
 | Inspector | with `builtinOf` non-null the `collider` field is one row — `unit box · size is the object's scale` — instead of the kind picker and the dimensions |
 | Create | `createMenu` (blank space, Hierarchy *Create child*, viewport *Create here*) offers Box, Rounded box, Platform, Wall, Sphere, Capsule (`PRIMITIVE_ORDER`) then `Empty`; each is `Doc.placePrimitive(kind, position, parent)` = unit collider + an unsurfaced `Renderer` whose `model` is the built-in + the preset scale. In a prefab's room the same menu applies (`placeNamed` is the by-name variant its palette used) |

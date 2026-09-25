@@ -92,6 +92,16 @@ export const libraryOf = (path: string): string | null | undefined => {
   return parts[1] === ASSETS_DIR && game !== undefined && isGameName(game) ? game : undefined
 }
 
+/**
+ * Whether something belonging to `user` may use the asset at `path` (ADR 0161). `user` is a game's name for its levels
+ * and its own library's assets, `null` for Shared's: a game's things use their own game's and Shared's; Shared's use
+ * only Shared's, since any game may use them.
+ */
+export const mayUse = (user: string | null, path: string): boolean => {
+  const library = libraryOf(path)
+  return library === null || (library !== undefined && library === user)
+}
+
 /** Whether a content-relative path is **inside** a library — a file or folder in it, not the library's own folder. */
 export const inLibrary = (path: string): boolean => {
   const library = libraryOf(path)

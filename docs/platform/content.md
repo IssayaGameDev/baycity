@@ -282,6 +282,7 @@ One module so the server, the editor and the game cannot disagree; every path it
 | `libraryDir(game \| null)` | `'assets'` (shared) or `` `${game}/assets` `` — what every asset path starts with |
 | `libraryOf(path)` | `null` shared · the game · `undefined` in no library (a level, a `game.json`) |
 | `inLibrary(path)` | strictly inside a library: not its own folder, no empty, `.` or `..` segment |
+| `mayUse(user, path)` | `user` (a game, `null` for Shared) may use the asset at `path`: Shared's always, its own game's, nothing else |
 | `levelRefForFile(rel)` | `LevelRef \| null` — the game a path names, or `null` for anything that is not a level |
 
 A level's identity outside its own folder is the **qualified** `<game>/<name>`: the API route, the lock key,

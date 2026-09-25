@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { gameFile, inLibrary, isGameName, levelFile, levelRefForFile, libraryDir, libraryOf, parseQualified, qualify } from './layout'
+import { gameFile, inLibrary, isGameName, levelFile, levelRefForFile, libraryDir, libraryOf, mayUse, parseQualified, qualify } from './layout'
 
 describe('content layout (ADR 0108)', () => {
   it('builds a level and a game path from the content root', () => {
@@ -25,6 +25,15 @@ describe('content layout (ADR 0108)', () => {
     for (const not of ['assets', 'keyboard/assets', 'keyboard/levels/x.level.json', 'assets/../keyboard/game.json', 'assets//x']) {
       expect(inLibrary(not), not).toBe(false)
     }
+  })
+
+  it('lets a game’s things use its own and Shared’s, and Shared’s only Shared’s (ADR 0161)', () => {
+    expect(mayUse('keyboard', 'assets/materials/red.mat.json')).toBe(true)
+    expect(mayUse('keyboard', 'keyboard/assets/materials/red.mat.json')).toBe(true)
+    expect(mayUse('parkour', 'keyboard/assets/materials/red.mat.json')).toBe(false)
+    expect(mayUse(null, 'keyboard/assets/materials/red.mat.json'), 'a Shared asset').toBe(false)
+    expect(mayUse(null, 'assets/materials/red.mat.json')).toBe(true)
+    expect(mayUse('keyboard', 'keyboard/levels/x.level.json'), 'not an asset at all').toBe(false)
   })
 
   it('round-trips a qualified name', () => {
