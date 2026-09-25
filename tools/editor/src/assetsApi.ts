@@ -25,6 +25,8 @@ export interface AssetLibrary {
   folders: string[]
   /** Where the server's change feed stood when this list was read: what a watch starts from (ADR 0156). */
   seq: number
+  /** A file's size and when it last changed (ADR 0165), by path; `undefined` when the server did not say. */
+  fileOf: (path: string) => FileFacts | undefined
   /** URL the bytes of an asset are served from. */
   urlOf: (path: string) => string
   urlOfId: (assetId: string) => string | null
@@ -56,7 +58,11 @@ export interface AssetLibrary {
   mkdir: (parent: string, name: string) => Promise<void>
   /** Rename or move. The sidecar goes with it, so ids survive. */
   move: (from: string, to: string) => Promise<void>
+  /** Several moves, all or none (ADR 0166). */
+  moveMany: (moves: readonly { from: string; to: string }[]) => Promise<void>
   remove: (path: string) => Promise<void>
+  /** Several deletes, all or none: refused while anyone holds any of them (ADR 0166). */
+  removeMany: (paths: readonly string[]) => Promise<void>
   /** Create `<name>.mat.json` in `folder` (from `content/`; the shared library's `materials` by default). Resolves once the importer has given it an id. */
   createMaterial: (name: string, material: MaterialAsset, folder?: string) => Promise<AssetEntry | undefined>
 }
@@ -78,6 +84,21 @@ const fetchWithOrigin = async (url: string): Promise<{ json: unknown; origin: Or
   const seq = r.headers.get('x-asset-seq')
   const origin = epoch === null || seq === null ? undefined : { epoch: Number(epoch), seq: Number(seq) }
   return { json: (await r.json()) as unknown, origin }
+}
+
+/** A file's size in bytes, and when it last changed, in ms since the epoch (ADR 0165). */
+export interface FileFacts {
+  bytes: number
+  modified: number
+}
+
+/** Who uses an asset (ADR 0165): the levels, qualified, and the assets, by id — directly or through others. */
+export const fetchUsers = async (assetId: string): Promise<{ levels: string[]; assets: string[] } | null> => {
+  const r = await fetch(`/api/assets/users?id=${encodeURIComponent(assetId)}`).catch(() => null)
+  if (r === null || !r.ok) return null
+  const body = (await r.json().catch(() => null)) as { levels?: unknown; assets?: unknown } | null
+  const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : [])
+  return body === null ? null : { levels: strings(body.levels), assets: strings(body.assets) }
 }
 
 const isMaterial = (v: unknown): v is MaterialAsset =>
@@ -104,7 +125,13 @@ const post = async (route: string, body: unknown): Promise<void> => {
  * made costs its own file, not the whole library.
  */
 export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refetch?: ReadonlySet<string> } = {}): Promise<AssetLibrary> => {
-  const { entries, libraries, folders, seq } = await fetchJson<{ entries: AssetEntry[]; libraries?: string[]; folders: string[]; seq?: number }>('/api/assets')
+  const { entries, libraries, folders, seq, files } = await fetchJson<{
+    entries: AssetEntry[]
+    libraries?: string[]
+    folders: string[]
+    seq?: number
+    files?: Record<string, FileFacts>
+  }>('/api/assets')
   const db = buildDatabase(entries)
   const materials = new Map<string, MaterialAsset>()
   const origins = new Map<string, Origin>()
@@ -164,6 +191,7 @@ export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refe
     libraries: libraries ?? [libraryDir(null)],
     folders,
     seq: seq ?? 0,
+    fileOf: (path) => files?.[path],
     urlOf: assetUrl,
     urlOfId: (id) => {
       const entry = db.byId[id]
@@ -203,6 +231,8 @@ export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refe
     },
     mkdir: async (parent, name) => post('mkdir', { path: `${parent}/${name}` }),
     move: async (from, to) => post('move', { from, to }),
+    moveMany: async (moves) => post('move', { moves }),
     remove: async (path) => post('delete', { path }),
+    removeMany: async (paths) => post('delete', { paths }),
   }
 }

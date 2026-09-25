@@ -61,7 +61,7 @@ Not CI-enforced beyond (2).
 
 ## `content/<game>/game.json` (ADR 0077)
 
-`{ "components": ["Bumper", "Hazard"], "settings"?: { … } }` — shared gameplay components the game opts into, and its settings (ADR 0087, edited in the editor's Game row; absent keys are the game's defaults). Imported by its `rules.ts` (`sharedComponents(game.components)`), appended by the editor over `/api/games`. Current: `_template` Hazard; `keyboard` Bumper, Hazard; `parkour`, `swing` Bumper, Checkpoint, Goal, Hazard, Track. A non-shared name throws at registry build.
+`{ "components": ["Bumper", "Hazard"], "settings"?: { … } }` — shared gameplay components the game opts into, and its settings (ADR 0087, edited in the editor's games window; absent keys are the game's defaults). Imported by its `rules.ts` (`sharedComponents(game.components)`); the editor edits it live (ADR 0162). Current: `_template` Hazard; `keyboard` Bumper, Hazard; `parkour`, `swing` Bumper, Checkpoint, Goal, Hazard, Track. A non-shared name throws at registry build.
 
 **Vite watcher:** the editor ignores `**/content/*/game.json` (its bundle imports those files via every `rules.ts`; a write would full-reload it). Game dev servers do watch them.
 

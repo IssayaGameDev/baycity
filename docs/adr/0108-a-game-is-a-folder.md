@@ -2,7 +2,8 @@
 
 Status: accepted. Finishes the job [ADR 0052](0052-a-game-is-a-descriptor.md) started; the shared asset
 library is unchanged, and so is [ADR 0026](0026-asset-pipeline.md)'s rule that a reference is an id. Amended by
-[ADR 0161](0161-each-game-has-its-own-asset-library.md): each game has its own library beside the shared one.
+[ADR 0161](0161-each-game-has-its-own-asset-library.md): each game has its own library beside the shared one. Levels
+left the Project panel's tree for the games window ([ADR 0162](0162-the-games-window-holds-the-levels.md)).
 
 ## Context
 

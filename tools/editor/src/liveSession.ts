@@ -3,7 +3,7 @@ import { vec3, type Vec3 } from '@mp/core'
 import { eulerToQuat } from '@mp/core'
 import { createThreeStage, THREE, type OutlineGroup } from '@mp/render-three'
 
-import { createCollab, httpTransport, parseCameraPresence, parseFollowPresence, parsePresence, peerChanges, type CameraPresence, type FieldFocus, type FieldSpot, type Hold, type OpenAsset, type Peer } from './collab'
+import { createCollab, httpTransport, parseCameraPresence, parseFollowPresence, parsePresence, peerChanges, type CameraPresence, type FieldFocus, type FieldSpot, type Hold, type OpenAsset, type Peer, type Room } from './collab'
 import type { Doc, LocalPose } from './editorDoc'
 import type { Notify } from './notices'
 
@@ -91,6 +91,10 @@ export interface LiveHost {
   openAssetsChanged: () => void
   /** Who is in which Inspector field changed (ADR 0160): the rings redraw. */
   fieldsChanged: () => void
+  /** Who is in which level changed (ADR 0162): the games window redraws. */
+  roomsChanged: () => void
+  /** A level was made, renamed or deleted somewhere (ADR 0162): the list is read again. */
+  levelsChanged: () => void
   /** Forget the history entries holding a batch the server refused. */
   dropHistoryWhere: (predicate: (entry: { ops: readonly Op[]; inverses: readonly Op[] }) => boolean) => void
 }
@@ -155,6 +159,16 @@ export const createLiveSession = (host: LiveHost) => {
     lastOpenKey = key
     void collab.setOpenAssets(ids).catch(() => undefined)
   }
+  // ------------------------------ rooms (ADR 0162) ------------------------------
+  /** Who is in which document, everyone's, from the server. */
+  let rooms: Room[] = []
+  /** The others in a level, by its qualified name: never this tab. */
+  const peopleIn = (level: string): readonly Peer[] => {
+    const me = collab.connId()
+    const room = rooms.find((r) => r.kind === 'level' && r.name === level)
+    return (room?.peers ?? []).filter((p) => p.connId !== me && !mineEver.has(p.connId))
+  }
+
   // ------------------------------ fields (ADR 0160) ------------------------------
   /** Who is in which Inspector field, everyone's, from the server: the whole set. */
   let fieldsNow: FieldFocus[] = []
@@ -399,6 +413,11 @@ export const createLiveSession = (host: LiveHost) => {
       fieldsNow = fields
       host.fieldsChanged()
     },
+    onRooms: (next) => {
+      rooms = next
+      host.roomsChanged()
+    },
+    onLevelsChanged: () => host.levelsChanged(),
     onError: (message) => host.notify.error(`live: ${message}`),
     onConnection: (state) => {
       // Every stream that comes up is a new connection, with nothing open on the server yet.
@@ -499,6 +518,8 @@ export const createLiveSession = (host: LiveHost) => {
     docTarget,
     /** The others in a line of this target (ADR 0160) — the rings in the Inspector. */
     fieldsOn,
+    /** The others in a level, by qualified name (ADR 0162) — the faces on the games window's tiles. */
+    peopleIn,
     /** A reconnect is a new connection: the server holds nothing for it yet. */
     forgetHolds: () => void (lastHoldKey = null),
     rebuildHolds: rebuildHoldOutlines,

@@ -2,6 +2,8 @@ import { levelFile, parseQualified, validateLevel, type Level } from '@mp/conten
 import { DEFAULT_REGISTRY, type Registry } from '@mp/components'
 import { normalizePoints, type CurvePoint } from '@mp/mode'
 
+import type { Origin } from './assetSync'
+
 /**
  * Client for the content API (`tools/editor-server/src/api.ts`, ADR 0083) — the same routes whether the
  * editor is the dev server on localhost or the hosted one behind Cloudflare Access.
@@ -53,6 +55,8 @@ export interface FileEntry {
    * this" cheap enough to put in front of a delete.
    */
   prefabs?: string[]
+  /** Every component type it and its prefabs use (ADR 0162): what another game would need to open it. */
+  components?: string[]
 }
 
 export const listFiles = async (kind: FileKind): Promise<FileEntry[]> => (await req(kind)).json() as Promise<FileEntry[]>
@@ -81,11 +85,9 @@ export interface GameData {
   settings: Record<string, number | CurvePoint[]>
 }
 
-export const loadGame = async (name: string): Promise<GameData> => {
-  const r = await fetch(`/api/games/${name}`)
-  if (r.status === 404) return { components: [], settings: {} }
-  if (!r.ok) await failed(r, `GET /api/games/${name}`)
-  const raw = (await r.json()) as { components?: unknown; settings?: unknown }
+/** A game's data file as the editor keeps it: what is not a component name or a setting of either shape is dropped. */
+export const parseGameData = (json: unknown): GameData => {
+  const raw = (typeof json === 'object' && json !== null ? json : {}) as { components?: unknown; settings?: unknown }
   const settings: Record<string, number | CurvePoint[]> = {}
   if (typeof raw.settings === 'object' && raw.settings !== null) {
     for (const [k, v] of Object.entries(raw.settings as Record<string, unknown>)) {
@@ -99,7 +101,19 @@ export const loadGame = async (name: string): Promise<GameData> => {
   return { components: Array.isArray(raw.components) ? raw.components.filter((c): c is string => typeof c === 'string') : [], settings }
 }
 
-export const saveGame = (name: string, data: GameData): Promise<void> => saveFile('games', name, data)
+/**
+ * A game's data file as it is now — its live copy when open (ADR 0162) — and where that copy stands, for the edits
+ * that follow it. No file: nothing in it, and no origin.
+ */
+export const loadGame = async (name: string): Promise<{ data: GameData; origin: Origin | undefined }> => {
+  const r = await fetch(`/api/games/${name}`)
+  if (r.status === 404) return { data: { components: [], settings: {} }, origin: undefined }
+  if (!r.ok) await failed(r, `GET /api/games/${name}`)
+  const epoch = r.headers.get('x-asset-epoch')
+  const seq = r.headers.get('x-asset-seq')
+  const origin = epoch === null || seq === null ? undefined : { epoch: Number(epoch), seq: Number(seq) }
+  return { data: parseGameData(await r.json()), origin }
+}
 
 /**
  * Rename a level, both names qualified `<game>/<name>` (ADR 0110). A `to` in another game moves it there,

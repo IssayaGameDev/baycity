@@ -18,7 +18,11 @@ within a second. There is **no Save for levels**: each change is saved as you ma
 - A piece you have selected is **yours** while it stays selected: the others see it dimmed with your name in
   the list and a coloured box around it, and cannot select or move it. Click elsewhere to let it go.
 - Undo puts back what **you** did, even if someone moved the piece since.
-- **New** asks for a name and creates the level at once. **Duplicate** copies the open level under a new name.
+- The button at the top left (*Keyboard › Roblox*) opens the **games window**: every game, its levels, and who is in
+  each. Double-click a level to open it. **New level** asks for a name and creates it at once; right-click a level
+  for Duplicate, Rename and Delete. Drag a level onto another game to move it there; a game it cannot go to greys
+  out, and says why when you hold the level over it. Its **Settings** tab holds the game's numbers and curves: a
+  change is saved as you make it, for everyone, and Ctrl+Z takes it back.
 - If a change is refused (bottom bar says why), it is undone on your screen. Nothing is lost on the server.
 
 ## Prefabs: build it once, use it everywhere
@@ -27,10 +31,18 @@ A prefab is a thing you build once and place in as many levels as you like. **It
 every level using it changes, including levels you have not opened.
 
 **To make one:** select what you built, right-click, **Save as prefab…**. Give it a name with no spaces. It
-saves into whichever folder you have open in the **Project** panel, so click into `prefabs` first.
+saves into whichever folder you have open in the **Project** panel, so double-click into `prefabs` first.
+
+**To place one:** drag its tile from the Project panel into the viewport. A see-through copy shows where it will
+land; let go to place it, Esc to cancel. A click on a tile selects it: the Inspector shows what it is and which
+levels and prefabs use it — look there before you move or delete something.
+
+In the Project panel, Ctrl+click and Shift+click select several; drag them onto a folder, or press Delete, and
+they go together. The arrow keys, Enter (open), Backspace (up), F2 (rename) and Ctrl+A work there too. The button
+left of the search box sorts by name, kind or date.
 
 **To change one:** click the object and press **Open** in the Inspector, or right-click it and pick *Open
-prefab*. One that is placed nowhere is opened from its tile in the Project panel. You are now editing the
+prefab*. One that is placed nowhere is opened by double-clicking its tile in the Project panel. You are now editing the
 prefab itself, and everyone sees your edits as you make them. **Back** returns you to the level.
 
 - There is **no Save** for prefabs or levels. Everything is saved as you do it.
@@ -61,7 +73,7 @@ object that uses it. Two people changing the same value: the last change wins.
 ## Textures and models
 
 Drag a file from your desktop onto a folder in the **Project** panel (bottom), or onto the tiles of the folder
-you are looking at.
+you are looking at, or use **+ → Upload files…** there.
 
 - Allowed: `.png`, `.jpg`, `.webp`, `.ktx2`, `.glb`. Not `.gltf` — export a `.glb` instead.
 - Max size is 10 MB per file.

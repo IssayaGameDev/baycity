@@ -12,9 +12,10 @@ import { LevelError, validateLevel } from '../../../packages/content/src/validat
 import { createAssetIndex, type AssetIndex } from './assetIndex'
 import { libraryFolders } from './assetImporter'
 import type { LiveAssets } from './liveAssets'
-import { isAssetOp, isLiveAssetPath } from '../../../packages/content/src/liveAssets'
+import { gameDocId, isAssetOp, isLiveAssetPath } from '../../../packages/content/src/liveAssets'
 import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './assetOps'
-import { libraryName, moveRefusal } from './libraryMoves'
+import { componentTypesIn, levelMoveRefusal, libraryName, moveRefusal } from './libraryMoves'
+import { usersOf } from '../../../packages/content/src/usage'
 import type { ChangeFeed } from './changes'
 import type { User } from './config'
 import { docKey, LiveError, type FieldSpot, type Live } from './live'
@@ -31,14 +32,22 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *   POST /api/locks/acquire           → { path } → { ok, owner? }
  *   POST /api/locks/release           → { path } → { ok }         (a sendBeacon on tab close lands here too)
  *   POST /api/locks/heartbeat         → { paths } → { lost }
- *   GET  /api/levels                  → [{ name, mode?, prefabs? }] — prefabs: asset ids it references (ADR 0097)
+ *   GET  /api/levels                  → [{ name, mode?, prefabs?, components? }] — prefabs: asset ids it references (ADR 0097);
+ *                                       components: every type it and its prefabs use (ADR 0162)
  *   GET/PUT /api/levels/:name         → the JSON (PUT validated structurally)
- *   POST /api/levels/move             → { from, to } — rename, both qualified (ADR 0110)
+ *   POST /api/levels/move             → { from, to } — rename, both qualified (ADR 0110); into another game it keeps the
+ *                                       tag in step, and is 409 while it uses its old game's own assets (ADR 0162)
  *   POST /api/levels/delete           → { path } — qualified; the file goes for good (ADR 0110)
- *   GET/PUT /api/games/:name          → { components } (ADR 0077)
- *   GET  /api/assets                  → { entries, libraries, folders, seq } (runs the importer; seq: the change feed's position)
- *   POST /api/assets/mkdir|move|delete → { path } · { from, to } · { path } — a move into another library is 409 while
- *                                       something would be left using what it may not (ADR 0161)
+ *                                       A level made, renamed or deleted tells every editor: a `levels` event (ADR 0162)
+ *   GET/PUT /api/games/:name          → { components, settings? } (ADR 0077, 0087). GET says what it served
+ *                                       (`x-asset-epoch`, `x-asset-seq`) and serves the live copy; PUT is 409 while
+ *                                       the file is open live (ADR 0162)
+ *   GET  /api/assets                  → { entries, libraries, folders, seq, files } (runs the importer; seq: the change feed's
+ *                                       position; files: each entry's { bytes, modified } by path, ADR 0165)
+ *   GET  /api/assets/users?id=        → { levels, assets } — who uses it, directly or through others (ADR 0165)
+ *   POST /api/assets/mkdir|move|delete → { path } · { from, to } or { moves: [{ from, to }] } · { path } or { paths } — a move
+ *                                       into another library is 409 while something would be left using what it may not
+ *                                       (ADR 0161); several are checked together and done all or none (ADR 0166)
  *   POST /api/assets/upload?path=     → raw bytes → { entry }   (textures and .glb, capped, replace keeps the id)
  *   GET  /content/<path>              → the bytes
  *   PUT  /content/<path>              → a JSON asset
@@ -53,6 +62,8 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *                                       plus `prefab` on a level's stream: a prefab the level uses was edited
  *                                       :kind is `level` or `prefab` — a prefab is its own document (ADR 0091)
  *   POST /api/live/:kind/:name/ops          → { connId, batchId, ops } → { ok, seq } · 400 bad op
+ *   POST /api/live/asset/:id/ops · /api/live/game/:game/ops → { connId, batchId, ops } — a material, a game's data
+ *                                       file (ADR 0159, 0162): echoed to every stream as an `asset` event
  *   POST /api/live/:kind/:name/hold         → { connId, refs } — what I have selected is exactly these → { ok }; shown, never refused (ADR 0158)
  *   POST /api/live/:kind/:name/release      → { connId, refs } → { ok }
  *   POST /api/live/:kind/:name/ping         → { connId } — still here (the editor, every heartbeat)
@@ -298,8 +309,8 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
    * Why moving `from` into `to`'s library is refused, or `null` (ADR 0161): the whole of a folder counts, and what
    * uses or is used by it, in every game's levels and every library, as they are now.
    */
-  const crossLibraryRefusal = (from: string, to: string): string | null => {
-    const moving = assets.entries().filter((e) => e.path === from || e.path.startsWith(`${from}/`))
+  const crossLibraryRefusal = (froms: readonly string[], to: string): string | null => {
+    const moving = assets.entries().filter((e) => froms.some((from) => e.path === from || e.path.startsWith(`${from}/`)))
     const levels = levelFiles().map(({ ref, file }) => [qualify(ref), levelNow(qualify(ref), file)] as const)
     return moveRefusal(moving, libraryOf(to) ?? null, { entries: assets.entries(), levels, contentsOf: assetJsonNow })
   }
@@ -311,6 +322,8 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     opts.onChanged?.(user, paths)
     opts.changes?.record(paths)
   }
+  /** The list of levels changed — made, renamed, deleted: every editor in any room reads it again (ADR 0162). */
+  const levelsChanged = (): void => opts.live?.broadcastAll('levels', {})
   const locksChanged = (): void => opts.onLocksChanged?.()
 
   /** A file's own path plus its sidecar; a folder's every file. For reporting what a move or delete touched. */
@@ -347,7 +360,29 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       rescanFor(user)
       // `seq`: where the change feed stood when this list was read, in the same tick, so an editor watching the
       // feed from here misses nothing and replays nothing (ADR 0156).
-      sendJson(res, 200, { entries: assets.entries(), libraries: libraryFolders(CONTENT), folders: assetFolders(), seq: opts.changes?.seq() ?? 0 })
+      // Each file's size and when it last changed (ADR 0165): the Inspector's facts, the Project window's date order.
+      const files: Record<string, { bytes: number; modified: number }> = {}
+      for (const e of assets.entries()) {
+        const file = safeJoin(CONTENT, e.path)
+        if (file === null || !existsSync(file)) continue
+        const st = statSync(file)
+        files[e.path] = { bytes: st.size, modified: Math.round(st.mtimeMs) }
+      }
+      sendJson(res, 200, { entries: assets.entries(), libraries: libraryFolders(CONTENT), folders: assetFolders(), seq: opts.changes?.seq() ?? 0, files })
+      return true
+    }
+
+    if (url === '/api/assets/users' && req.method === 'GET') {
+      // Every level and every asset as it is now — an open document ahead of its file — so a placement made a
+      // moment ago counts.
+      const id = query.get('id') ?? ''
+      if (assets.byId(id) === undefined) return sendJson(res, 404, { error: `no asset ${id}` }), true
+      const levels = levelFiles().map(({ ref, file }) => {
+        const name = qualify(ref)
+        return [name, levelNow(name, file)] as const
+      })
+      const others = assets.entries().map((e) => [e.id, assetJsonNow(e.id)] as const)
+      sendJson(res, 200, usersOf(id, levels, others, (s) => assets.byId(s) !== undefined, assetJsonNow))
       return true
     }
 
@@ -397,26 +432,65 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
           makeFolder(CONTENT, path)
           // An empty folder is nothing to git; it is committed with its first file.
         } else if (op[1] === 'move') {
-          const from = libraryPath('from')
-          const to = libraryPath('to')
-          if (refuseIfLocked(res, user, [keyFor.asset(from), keyFor.asset(to)])) return true
-          // Into another library only when nothing is left using what it may not (ADR 0161).
-          if (libraryOf(from) !== libraryOf(to)) {
-            const why = crossLibraryRefusal(from, to)
-            if (why !== null) return sendJson(res, 409, { error: `not moved into ${libraryName(libraryOf(to) ?? null)}: ${why}` }), true
+          // One, or several at once (ADR 0166): every one is checked before any moves, so it is all or none.
+          const moves = Array.isArray(args.moves)
+            ? (args.moves as unknown[]).map((m, i) => {
+                const one = asRecord(m)
+                const at = (name: string): string => {
+                  const path = strField(one, name)
+                  if (!assetPathOk(path)) throw new AssetOpError(`moves[${i}].${name}: not a path in an asset library: ${path}`)
+                  return path
+                }
+                return { from: at('from'), to: at('to') }
+              })
+            : [{ from: libraryPath('from'), to: libraryPath('to') }]
+          if (moves.length === 0) throw new AssetOpError('moves: nothing to move')
+          if (refuseIfLocked(res, user, moves.flatMap((m) => [keyFor.asset(m.from), keyFor.asset(m.to)]))) return true
+          const targets = new Set<string>()
+          for (const { from, to } of moves) {
+            if (!existsSync(safeJoin(CONTENT, from)!)) throw new AssetOpError(`not found: ${from}`)
+            if (existsSync(safeJoin(CONTENT, to)!) || targets.has(to)) throw new AssetOpError(`already exists: ${to}`)
+            if (to === from || to.startsWith(`${from}/`)) throw new AssetOpError(`a folder cannot move inside itself: ${from}`)
+            targets.add(to)
           }
-          const before = filesOf(from)
-          movePath(CONTENT, from, to)
-          const after = before.map((p) => `${to}${p.slice(from.length)}`)
+          // Into another library only when nothing is left using what it may not (ADR 0161) — those going together
+          // judged together, so a prefab and the material it uses may cross as one.
+          const crossing = new Map<string | null, { froms: string[]; to: string }>()
+          for (const { from, to } of moves) {
+            if (libraryOf(from) === libraryOf(to)) continue
+            const lib = libraryOf(to) ?? null
+            crossing.set(lib, { froms: [...(crossing.get(lib)?.froms ?? []), from], to })
+          }
+          for (const [lib, { froms, to }] of crossing) {
+            const why = crossLibraryRefusal(froms, to)
+            if (why !== null) return sendJson(res, 409, { error: `not moved into ${libraryName(lib)}: ${why}` }), true
+          }
+          const touched: string[] = []
+          for (const { from, to } of moves) {
+            const before = filesOf(from)
+            movePath(CONTENT, from, to)
+            touched.push(...before, ...before.map((p) => `${to}${p.slice(from.length)}`))
+          }
           rescanFor(user)
-          changed(user, [...before, ...after].map(keyFor.asset))
+          changed(user, touched.map(keyFor.asset))
         } else {
-          const path = libraryPath('path')
-          if (refuseIfLocked(res, user, [keyFor.asset(path)])) return true
-          const gone = filesOf(path)
-          // A live asset deleted goes with its document, unwritten edits and all (ADR 0159).
-          for (const e of assets.entries()) if (e.path === path || e.path.startsWith(`${path}/`)) opts.liveAssets?.forget(e.id)
-          removePath(CONTENT, path)
+          const paths = Array.isArray(args.paths)
+            ? (args.paths as unknown[]).map((p, i) => {
+                if (typeof p !== 'string' || !assetPathOk(p)) throw new AssetOpError(`paths[${i}]: not a path in an asset library`)
+                return p
+              })
+            : [libraryPath('path')]
+          if (paths.length === 0) throw new AssetOpError('paths: nothing to delete')
+          // Several at once are refused together (ADR 0166): nothing goes while anyone holds any of them.
+          if (refuseIfLocked(res, user, paths.map(keyFor.asset))) return true
+          const gone: string[] = []
+          for (const path of paths) {
+            if (!existsSync(safeJoin(CONTENT, path)!)) continue // inside a folder already deleted with it
+            gone.push(...filesOf(path))
+            // A live asset deleted goes with its document, unwritten edits and all (ADR 0159).
+            for (const e of assets.entries()) if (e.path === path || e.path.startsWith(`${path}/`)) opts.liveAssets?.forget(e.id)
+            removePath(CONTENT, path)
+          }
           rescanFor(user)
           changed(user, gone.map(keyFor.asset))
         }
@@ -529,10 +603,19 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
         // The `id` inside follows the file name, as every writer of a level keeps it (see `live.ts`).
         const level = JSON.parse(readFileSync(src, 'utf8')) as Record<string, unknown>
         level['id'] = to.name
+        if (from.game !== to.game) {
+          // Into another game (ADR 0162): not while it uses its old game's own assets, which the new one's may not.
+          const why = levelMoveRefusal(level, from.game, { entries: assets.entries(), contentsOf: assetJsonNow })
+          if (why !== null) return sendJson(res, 409, { error: `${qualify(from)} not moved to ${to.game}: ${why}` }), true
+          // The folder is the game, and the tag inside says the same (ADR 0108): a level read over HTTP has no folder.
+          const config = typeof level['config'] === 'object' && level['config'] !== null ? (level['config'] as Record<string, unknown>) : {}
+          level['config'] = { ...config, mode: { name: to.game } }
+        }
         mkdirSync(dirname(dst), { recursive: true })
         writeFileSync(dst, `${JSON.stringify(level, null, 2)}\n`)
         rmSync(src)
         changed(user, [keyFor.level(qualify(from)), keyFor.level(qualify(to))])
+        levelsChanged()
         sendJson(res, 200, { ok: true })
         return true
       }
@@ -546,6 +629,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       if (!existsSync(file)) return sendJson(res, 404, { error: `no level ${qual}` }), true
       rmSync(file)
       changed(user, [keyFor.level(qual)])
+      levelsChanged()
       sendJson(res, 200, { ok: true })
       return true
     } catch (e) {
@@ -576,7 +660,8 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
           const parsed = levelNow(name, file) as Level | undefined
           if (parsed === undefined) return { name, mode: ref.game }
           const prefabs = prefabRefsIn(parsed)
-          return { name, mode: ref.game, ...(prefabs.length > 0 ? { prefabs } : {}) }
+          const components = componentTypesIn([parsed, ...prefabs.map(assetJsonNow)])
+          return { name, mode: ref.game, ...(prefabs.length > 0 ? { prefabs } : {}), components }
         } catch {
           return { name, mode: ref.game }
         }
@@ -591,10 +676,18 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     if (kind === 'games' && !isGameName(rest)) return sendJson(res, 404, { error: `${rest} is not a game name` }), true
     const name = ref === null ? rest : qualify(ref)
     const file = join(CONTENT, ref === null ? gameFile(rest) : levelFile(ref))
+    // A game's data file is a live document (ADR 0162): its copy, when open, is ahead of the file.
+    const liveGame = kind === 'games' && opts.liveAssets !== undefined ? opts.liveAssets.current(gameDocId(name)) : null
     if (req.method === 'GET') {
       // An open live document is newer than its file until the next flush; serve it.
       const open = kind === 'levels' ? opts.live?.levelOf(name) : null
       if (open !== null && open !== undefined) return sendJson(res, 200, open), true
+      if (kind === 'games' && opts.liveAssets !== undefined) {
+        // What it served, so the editor knows which edits it already has — `0` for the file.
+        res.setHeader('x-asset-epoch', String(liveGame?.epoch ?? opts.liveAssets.epoch))
+        res.setHeader('x-asset-seq', String(liveGame?.seq ?? 0))
+        if (liveGame !== null) return sendJson(res, 200, liveGame.json), true
+      }
       if (!existsSync(file)) return sendJson(res, 404, { error: 'not found' }), true
       sendJson(res, 200, JSON.parse(readFileSync(file, 'utf8')))
       return true
@@ -602,6 +695,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     if (req.method === 'PUT') {
       const key = kind === 'levels' ? keyFor.level(name) : keyFor.game(name)
       if (kind === 'levels' && opts.live?.isOpen(name) === true) return sendJson(res, 409, { error: `${name} is open live; edit it in the editor` }), true
+      if (liveGame !== null) return sendJson(res, 409, { error: `${name}'s game file is open live; edit it in the editor` }), true
       if (refuseIfLocked(res, user, [key])) return true
       try {
         const parsed: unknown = await readJson(req)
@@ -610,9 +704,11 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
         if (kind === 'levels') validateLevel(parsed)
         else if (!Array.isArray(asRecord(parsed).components)) throw new LevelError('games: expected { components: string[] }')
         // A game folder, and its levels folder, is made on demand: a PUT is how a new game comes into being.
+        const made = !existsSync(file)
         mkdirSync(dirname(file), { recursive: true })
         writeFileSync(file, `${JSON.stringify(parsed, null, 2)}\n`)
         changed(user, [key])
+        if (kind === 'levels' && made) levelsChanged()
         sendJson(res, 200, { ok: true })
       } catch (e) {
         sendJson(res, 400, { error: String(e instanceof Error ? e.message : e) })
@@ -666,12 +762,15 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     if (url === '/api/live' && req.method === 'GET') return sendJson(res, 200, { docs: live.status() }), true
 
     /**
-     * An edit to a data-file asset (ADR 0159), sent on whatever room connection the editor has: the asset is not
-     * a room anyone joins, since everyone sees it drawn. The echo on every stream is the acknowledgement.
+     * An edit to a data-file asset (ADR 0159) or a game's data file (ADR 0162), sent on whatever room connection
+     * the editor has: neither is a room anyone joins, since everyone sees them drawn. The echo on every stream is
+     * the acknowledgement.
      */
-    const am = /^\/api\/live\/asset\/([0-9a-f]{16})\/ops$/.exec(url)
+    const am = /^\/api\/live\/(?:asset\/([0-9a-f]{16})|game\/([\w-]+))\/ops$/.exec(url)
     if (am !== null) {
       if (opts.liveAssets === undefined) return false
+      const id = am[1] ?? gameDocId(am[2]!)
+      if (am[2] !== undefined && !gameNames().includes(am[2])) return sendJson(res, 404, { error: `no game ${am[2]}` }), true
       if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST expected' }), true
       let args: Record<string, unknown>
       try {
@@ -682,7 +781,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       const ops = Array.isArray(args.ops) ? (args.ops as unknown[]) : null
       if (ops === null || !ops.every(isAssetOp)) return sendJson(res, 400, { error: 'ops: expected asset ops' }), true
       try {
-        const r = opts.liveAssets.apply(am[1]!, typeof args.connId === 'string' ? args.connId : '', user, {
+        const r = opts.liveAssets.apply(id, typeof args.connId === 'string' ? args.connId : '', user, {
           batchId: typeof args.batchId === 'string' ? args.batchId : '',
           ops,
         })

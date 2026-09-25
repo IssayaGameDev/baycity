@@ -1,7 +1,7 @@
 import { buildDatabase, nameForPath, type AssetEntry, type AssetKind } from '@mp/content'
 import { describe, expect, it } from 'vitest'
 
-import { ancestorsOf, buildTree, canMoveFolder, filterEntries, flattenTree, folderOf, gameRows, movedInto, renamedTo, subfoldersOf, type Filter } from './assetTree'
+import { ancestorsOf, buildTree, canMoveFolder, filterEntries, flattenTree, folderOf, gameRows, movedInto, renamedTo, sortEntries, subfoldersOf, type Filter } from './assetTree'
 
 /** Paths from `content/`, starting with their library (ADR 0161): the shared one, and one entry in a game's own. */
 const entry = (path: string, kind: AssetKind): AssetEntry => ({ id: path, kind, path, name: nameForPath(path) })
@@ -17,7 +17,7 @@ const db = buildDatabase([
   entry('keyboard/assets/textures/key.png', 'texture'),
 ])
 
-const filter = (over: Partial<Filter> = {}): Filter => ({ library: 'assets', folder: null, kind: null, search: '', recursive: false, ...over })
+const filter = (over: Partial<Filter> = {}): Filter => ({ libraries: ['assets'], folder: null, kind: null, search: '', ...over })
 
 describe('folderOf', () => {
   it('is the directory part, the library’s own folder at the top', () => {
@@ -98,21 +98,21 @@ describe('flattenTree', () => {
 })
 
 describe('filterEntries', () => {
-  it('shows one folder, not its subfolders, by default', () => {
+  it('shows one folder, not its subfolders', () => {
     expect(filterEntries(db, filter({ folder: 'assets/textures' })).map((e) => e.name)).toEqual(['loose'])
   })
 
-  it('includes subfolders when asked', () => {
-    expect(filterEntries(db, filter({ folder: 'assets/textures', recursive: true })).map((e) => e.name)).toEqual([
+  it('looks in every folder of every library it is given when no folder is chosen: a search', () => {
+    expect(filterEntries(db, filter({ libraries: ['keyboard/assets', 'assets'], kind: 'texture' })).map((e) => e.name)).toEqual([
       'brick',
+      'key',
       'loose',
       'plank',
+      'root',
       'slab',
     ])
   })
 
-  // The two axes are independent: "textures in this folder" and "every material anywhere" are both real
-  // questions, and a kind-as-tab panel can only answer the second.
   it('filters by kind across the whole library when no folder is chosen, and no further', () => {
     expect(filterEntries(db, filter({ kind: 'texture' })).map((e) => e.path)).toEqual([
       'assets/textures/stone/brick.png',
@@ -121,7 +121,7 @@ describe('filterEntries', () => {
       'assets/root.png',
       'assets/textures/stone/slab.png',
     ])
-    expect(filterEntries(db, filter({ library: 'keyboard/assets', kind: 'texture' })).map((e) => e.name)).toEqual(['key'])
+    expect(filterEntries(db, filter({ libraries: ['keyboard/assets'], kind: 'texture' })).map((e) => e.name)).toEqual(['key'])
   })
 
   it('combines folder and kind', () => {
@@ -138,6 +138,18 @@ describe('filterEntries', () => {
 
   it('shows the library’s top folder only, not everything, when that is selected', () => {
     expect(filterEntries(db, filter({ folder: 'assets' })).map((e) => e.name)).toEqual(['root'])
+  })
+})
+
+describe('sortEntries (ADR 0166)', () => {
+  const files = [entry('assets/b.png', 'texture'), entry('assets/a.mat.json', 'material'), entry('assets/c.glb', 'model'), entry('assets/x/a.png', 'texture')]
+  const when: Record<string, number> = { 'assets/b.png': 30, 'assets/a.mat.json': 10, 'assets/x/a.png': 30 }
+  const order = (by: 'name' | 'kind' | 'date'): string[] => sortEntries(files, by, (p) => when[p]).map((e) => e.path)
+
+  it('orders by name, by kind then name, or the newest first — the undated last', () => {
+    expect(order('name')).toEqual(['assets/a.mat.json', 'assets/x/a.png', 'assets/b.png', 'assets/c.glb'])
+    expect(order('kind')).toEqual(['assets/a.mat.json', 'assets/c.glb', 'assets/x/a.png', 'assets/b.png'])
+    expect(order('date')).toEqual(['assets/x/a.png', 'assets/b.png', 'assets/a.mat.json', 'assets/c.glb'])
   })
 })
 

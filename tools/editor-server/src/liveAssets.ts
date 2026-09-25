@@ -1,10 +1,10 @@
-import { applyAssetOps, LiveAssetError, validateLiveAsset, type AssetOp } from '../../../packages/content/src/liveAssets'
-import type { AssetKind } from '../../../packages/content/src/assets'
+import { applyAssetOps, LiveAssetError, validateLiveAsset, type AssetOp, type LiveKind } from '../../../packages/content/src/liveAssets'
 import type { User } from './config'
 import { LiveError } from './live'
 
 /**
- * Data-file assets as live documents (ADR 0159) — a material now, any JSON kind with a validator later.
+ * Data-file assets as live documents (ADR 0159) — a material, and a game's data file (ADR 0162), by
+ * `gameDocId`; any JSON kind with a validator later.
  *
  * The level's model, for a file with no tree in it: an edit is a batch of path ops (`@mp/content`'s
  * `liveAssets.ts`), applied in the order it arrives, numbered, and sent to **every** editor connected to any
@@ -20,8 +20,8 @@ import { LiveError } from './live'
  * Pure over injected reads, writes, clock and connections, so it is tested with fakes.
  */
 export interface LiveAssetsOptions {
-  /** An asset's kind and content, by id, or `null` when there is no such file. */
-  read: (assetId: string) => { kind: AssetKind; json: unknown } | null
+  /** An asset's kind and content, by id — or a game's data file, by `gameDocId` — or `null` when there is no such file. */
+  read: (assetId: string) => { kind: LiveKind; json: unknown } | null
   /** Write content back to the asset's file, wherever it now is. The repo-relative path, or `null` when gone. */
   write: (assetId: string, json: unknown) => string | null
   /** After a write: who edited since the last one, and the path — their sessions go dirty, the feed hears it. */
@@ -59,7 +59,7 @@ export interface LiveAssets {
 }
 
 interface Doc {
-  kind: AssetKind
+  kind: LiveKind
   json: unknown
   seq: number
   dirtyBy: Map<string, User>

@@ -30,17 +30,92 @@ export interface PreviewHost {
 
 export type PreviewKind = 'prefab' | 'model' | 'material' | 'shader' | 'texture'
 
+/** A Project tile's picture, or the asset Inspector's big one (ADR 0165). */
+export type PictureSize = 'tile' | 'big'
+const PIXELS: Record<PictureSize, number> = { tile: 96, big: 256 }
+
 export interface Previews {
   /** A data URL for this tile, or `null` when the kind has no rendered preview. Cached. */
-  of: (kind: PreviewKind, key: string) => string | null
+  of: (kind: PreviewKind, key: string, size?: PictureSize) => string | null
   /**
    * Ask for a preview and be called back once, whether it was cached, had to be rendered, or had to be
    * fetched first. One tile's answer fills one tile — a newly loaded asset does not redraw the panel.
    */
-  request: (kind: PreviewKind, key: string, done: (url: string | null) => void) => void
+  request: (kind: PreviewKind, key: string, done: (url: string | null) => void, size?: PictureSize) => void
   /** Forget one entry (an edited material) or everything (a reimport). */
   invalidate: (key?: string) => void
   dispose: () => void
+}
+
+/**
+ * A prefab's node tree as one group, drawn the way the editor draws it: a tile's picture, and the see-through copy
+ * a drag into the viewport holds (`dragPlace.ts`). `userData.dispose` frees what it made; the runtime's models and
+ * materials are shared.
+ *
+ * Walks the tree rather than a flat piece list, and reads the `Collider` and `Visual` components: a node
+ * with several colliders draws several meshes, each at its own centre. Transforms compose through
+ * `THREE.Group` nesting, so the arithmetic stays where Three already does it.
+ */
+export const prefabObject = (root: Node, runtime: AssetRuntime | null): THREE.Object3D | null => {
+  const group = new THREE.Group()
+  const disposables: THREE.BufferGeometry[] = []
+  const owned: THREE.Material[] = []
+
+  /**
+   * `scale` is the node's **world** scale, accumulated down the walk: every shape is built at its final
+   * dimensions (as the game builds them from the baked collider, ADR 0090) and then counter-scaled, so a
+   * rounded edge is right at any scale and a built-in shape is its unit shape times the scale.
+   */
+  const walk = (node: Node, parent: THREE.Object3D, parentScale: Vec3): void => {
+    const holder = new THREE.Group()
+    const t = node.transform
+    holder.position.set(t.position.x, t.position.y, t.position.z)
+    if (t.rotation !== undefined) holder.rotation.set(t.rotation.x, t.rotation.y, t.rotation.z)
+    if (t.scale !== undefined) holder.scale.set(t.scale.x, t.scale.y, t.scale.z)
+    parent.add(holder)
+    const own = t.scale ?? { x: 1, y: 1, z: 1 }
+    const scale = { x: parentScale.x * own.x, y: parentScale.y * own.y, z: parentScale.z * own.z }
+    const undo = (o: THREE.Object3D): void => {
+      o.scale.set(scale.x === 0 ? 1 : 1 / scale.x, scale.y === 0 ? 1 : 1 / scale.y, scale.z === 0 ? 1 : 1 / scale.z)
+    }
+
+    const enabled = node.components.filter((c) => c.enabled !== false)
+    const renderer = enabled.find((c) => c.type === RENDERER)
+    if (renderer !== undefined) {
+      const materialId = stringParam(renderer, 'material', '')
+      const material = materialId === '' ? undefined : runtime?.material(materialId)
+      const modelId = modelOf(enabled)
+      const builtin = isBuiltinModel(modelId) ? modelId : null
+      const model = modelId === '' || builtin !== null ? undefined : runtime?.model(modelId)
+      if (model != null) {
+        holder.add(model)
+      } else {
+        for (const c of enabled.filter((x) => x.type === COLLIDER)) {
+          const shape = c.params.shape as ColliderDesc
+          const geometry = builtin !== null ? geometryForBuiltin(builtin, scale) : geometryForCollider(scaleCollider(shape, scale))
+          disposables.push(geometry)
+          const mat = material ?? createGreyboxMaterial()
+          if (material == null) owned.push(mat)
+          const mesh = new THREE.Mesh(geometry, mat)
+          const centre = vec3Param(c, 'center', { x: 0, y: 0, z: 0 })
+          mesh.position.set(centre.x, centre.y, centre.z)
+          undo(mesh)
+          holder.add(mesh)
+          if (builtin !== null) break // a built-in draws the node once, whatever its colliders
+        }
+      }
+    }
+    for (const kid of node.children ?? []) walk(kid, holder, scale)
+  }
+  walk(root, group, { x: 1, y: 1, z: 1 })
+  if (group.getObjectByProperty('type', 'Mesh') === undefined) return null
+  // Everything this built is thrown away after the shot; the runtime's cached models and materials are
+  // not ours to free, which is why only what we created is tracked.
+  group.userData.dispose = (): void => {
+    for (const g of disposables) g.dispose()
+    for (const m of owned) m.dispose()
+  }
+  return group
 }
 
 export const createPreviews = (host: PreviewHost): Previews => {
@@ -49,77 +124,14 @@ export const createPreviews = (host: PreviewHost): Previews => {
   const pending = new Set<string>()
   /** Fetched and still not there: a dangling id. Remembered, or the panel would ask on every redraw. */
   const failed = new Set<string>()
-  let thumbnailer: Thumbnailer | null = null
-  const lazy = (): Thumbnailer => (thumbnailer ??= createThumbnailer({ size: 96, fill: 0.8 }))
-
-  /**
-   * A prefab's node tree as one group, drawn the way the editor draws it.
-   *
-   * Walks the tree rather than a flat piece list, and reads the `Collider` and `Visual` components: a node
-   * with several colliders draws several meshes, each at its own centre. Transforms compose through
-   * `THREE.Group` nesting, so the arithmetic stays where Three already does it.
-   */
-  const prefabSubject = (root: Node): THREE.Object3D | null => {
-    const runtime = host.runtime()
-    const group = new THREE.Group()
-    const disposables: THREE.BufferGeometry[] = []
-    const owned: THREE.Material[] = []
-
-    /**
-     * `scale` is the node's **world** scale, accumulated down the walk: every shape is built at its final
-     * dimensions (as the game builds them from the baked collider, ADR 0090) and then counter-scaled, so a
-     * rounded edge is right at any scale and a built-in shape is its unit shape times the scale.
-     */
-    const walk = (node: Node, parent: THREE.Object3D, parentScale: Vec3): void => {
-      const holder = new THREE.Group()
-      const t = node.transform
-      holder.position.set(t.position.x, t.position.y, t.position.z)
-      if (t.rotation !== undefined) holder.rotation.set(t.rotation.x, t.rotation.y, t.rotation.z)
-      if (t.scale !== undefined) holder.scale.set(t.scale.x, t.scale.y, t.scale.z)
-      parent.add(holder)
-      const own = t.scale ?? { x: 1, y: 1, z: 1 }
-      const scale = { x: parentScale.x * own.x, y: parentScale.y * own.y, z: parentScale.z * own.z }
-      const undo = (o: THREE.Object3D): void => {
-        o.scale.set(scale.x === 0 ? 1 : 1 / scale.x, scale.y === 0 ? 1 : 1 / scale.y, scale.z === 0 ? 1 : 1 / scale.z)
-      }
-
-      const enabled = node.components.filter((c) => c.enabled !== false)
-      const renderer = enabled.find((c) => c.type === RENDERER)
-      if (renderer !== undefined) {
-        const materialId = stringParam(renderer, 'material', '')
-        const material = materialId === '' ? undefined : runtime?.material(materialId)
-        const modelId = modelOf(enabled)
-        const builtin = isBuiltinModel(modelId) ? modelId : null
-        const model = modelId === '' || builtin !== null ? undefined : runtime?.model(modelId)
-        if (model != null) {
-          holder.add(model)
-        } else {
-          for (const c of enabled.filter((x) => x.type === COLLIDER)) {
-            const shape = c.params.shape as ColliderDesc
-            const geometry = builtin !== null ? geometryForBuiltin(builtin, scale) : geometryForCollider(scaleCollider(shape, scale))
-            disposables.push(geometry)
-            const mat = material ?? createGreyboxMaterial()
-            if (material == null) owned.push(mat)
-            const mesh = new THREE.Mesh(geometry, mat)
-            const centre = vec3Param(c, 'center', { x: 0, y: 0, z: 0 })
-            mesh.position.set(centre.x, centre.y, centre.z)
-            undo(mesh)
-            holder.add(mesh)
-            if (builtin !== null) break // a built-in draws the node once, whatever its colliders
-          }
-        }
-      }
-      for (const kid of node.children ?? []) walk(kid, holder, scale)
+  const thumbnailers = new Map<PictureSize, Thumbnailer>()
+  const lazy = (size: PictureSize): Thumbnailer => {
+    let t = thumbnailers.get(size)
+    if (t === undefined) {
+      t = createThumbnailer({ size: PIXELS[size], fill: 0.8 })
+      thumbnailers.set(size, t)
     }
-    walk(root, group, { x: 1, y: 1, z: 1 })
-    if (group.getObjectByProperty('type', 'Mesh') === undefined) return null
-    // Everything this built is thrown away after the shot; the runtime's cached models and materials are
-    // not ours to free, which is why only what we created is tracked.
-    group.userData.dispose = (): void => {
-      for (const g of disposables) g.dispose()
-      for (const m of owned) m.dispose()
-    }
-    return group
+    return t
   }
 
   /** Whether the runtime can now answer for this id — the test for "did the fetch actually help". */
@@ -133,12 +145,12 @@ export const createPreviews = (host: PreviewHost): Previews => {
    * Fetch a missing asset once, then answer everyone who asked. Nothing retries: an id that is fetched and
    * still absent is dangling, and asking again on every redraw would be a loop.
    */
-  const fetchThen = (kind: PreviewKind, key: string, done: (url: string | null) => void): void => {
+  const fetchThen = (kind: PreviewKind, key: string, done: (url: string | null) => void, size: PictureSize): void => {
     if (failed.has(key)) {
       done(null)
       return
     }
-    const id = `${kind}:${key}`
+    const id = `${size}:${kind}:${key}`
     const queue = waiting.get(id)
     if (queue !== undefined) {
       queue.push(done)
@@ -159,12 +171,12 @@ export const createPreviews = (host: PreviewHost): Previews => {
           return
         }
         cache.delete(id)
-        const url = of(kind, key)
+        const url = of(kind, key, size)
         for (const cb of callbacks) cb(url)
       })
   }
 
-  const generate = (kind: string, key: string): string | null => {
+  const generate = (kind: string, key: string, size: PictureSize): string | null => {
     if (kind === 'texture') {
       const entry = host.db()?.byId[key]
       return entry === undefined ? null : host.urlOf(entry.path)
@@ -173,31 +185,31 @@ export const createPreviews = (host: PreviewHost): Previews => {
     if (kind === 'material' || kind === 'shader') {
       // Only a material compiles to something previewable; a shader asset has no values of its own yet.
       const compiled = host.runtime()?.material(key)
-      return compiled == null ? null : lazy().renderMaterial(compiled)
+      return compiled == null ? null : lazy(size).renderMaterial(compiled)
     }
 
     if (kind === 'model') {
       const model = host.runtime()?.model(key)
-      return model == null ? null : lazy().render(model)
+      return model == null ? null : lazy(size).render(model)
     }
 
     const prefab = host.prefabFor(key)
     if (prefab === undefined) return null
-    const subject = prefabSubject(prefab)
+    const subject = prefabObject(prefab, host.runtime())
     if (subject === null) return null
-    const url = lazy().render(subject)
+    const url = lazy(size).render(subject)
     ;(subject.userData.dispose as (() => void) | undefined)?.()
     return url
   }
 
-  const of = (kind: PreviewKind, key: string): string | null => {
+  const of = (kind: PreviewKind, key: string, size: PictureSize = 'tile'): string | null => {
     {
-      const id = `${kind}:${key}`
+      const id = `${size}:${kind}:${key}`
       const hit = cache.get(id)
       if (hit !== undefined) return hit
       let made: string | null = null
       try {
-        made = generate(kind, key)
+        made = generate(kind, key, size)
       } catch (e) {
         // A preview is decoration. A model that will not frame must not take the panel down with it.
         console.warn(`preview ${id}: ${String(e)}`)
@@ -209,15 +221,15 @@ export const createPreviews = (host: PreviewHost): Previews => {
 
   return {
     of,
-    request: (kind, key, done) => {
-      const made = of(kind, key)
+    request: (kind, key, done, size = 'tile') => {
+      const made = of(kind, key, size)
       // Null with nothing loaded yet means "not fetched", which is worth one fetch. Null after a fetch is
       // a dangling id, and `fetchThen` remembers that so a redraw cannot loop on it.
       if (made !== null || kind === 'prefab' || kind === 'texture' || isLoaded(kind, key)) {
         done(made)
         return
       }
-      fetchThen(kind, key, done)
+      fetchThen(kind, key, done, size)
     },
     invalidate: (key) => {
       // A reimport can turn a dangling id into a real one, so forget the failures too.
@@ -226,8 +238,8 @@ export const createPreviews = (host: PreviewHost): Previews => {
       else for (const id of [...cache.keys()]) if (id.endsWith(`:${key}`)) cache.delete(id)
     },
     dispose: () => {
-      thumbnailer?.dispose()
-      thumbnailer = null
+      for (const t of thumbnailers.values()) t.dispose()
+      thumbnailers.clear()
       cache.clear()
     },
   }

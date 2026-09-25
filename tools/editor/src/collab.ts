@@ -28,6 +28,10 @@ export type ServerEvent =
   | { event: 'open-assets'; data: { open: OpenAsset[] } }
   /** Who is in which Inspector field, everyone in every document (ADR 0160): the whole set. */
   | { event: 'fields'; data: { fields: FieldFocus[] } }
+  /** Who is in which document, every document (ADR 0162): on each join and leave anywhere. */
+  | { event: 'rooms'; data: { rooms: Room[] } }
+  /** A level was made, renamed or deleted (ADR 0162): read the list again. */
+  | { event: 'levels'; data: unknown }
   | { event: 'error'; data: { message: string } }
 
 export interface Hold {
@@ -38,6 +42,12 @@ export interface Hold {
 export interface Peer {
   connId: string
   name: string
+}
+/** A document someone is in, and who (ADR 0162). */
+export interface Room {
+  kind: DocKind
+  name: string
+  peers: Peer[]
 }
 /** A connection with an asset open in its Inspector (ADR 0159). */
 export interface OpenAsset {
@@ -117,6 +127,10 @@ export interface CollabHooks {
   onOpenAssets?: (open: OpenAsset[]) => void
   /** Who is in which Inspector field, the whole set, the same way (ADR 0160). */
   onFields?: (fields: FieldFocus[]) => void
+  /** Who is in which document, the whole set (ADR 0162); `[]` on leaving, when there is nobody to say. */
+  onRooms?: (rooms: Room[]) => void
+  /** The list of levels changed somewhere (ADR 0162). */
+  onLevelsChanged?: () => void
   /** The stream's state changed; `null` once no room is open. */
   onConnection?: (state: Connection | null) => void
 }
@@ -416,6 +430,12 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
       case 'fields':
         hooks.onFields?.(e.data.fields)
         return
+      case 'rooms':
+        hooks.onRooms?.(e.data.rooms)
+        return
+      case 'levels':
+        hooks.onLevelsChanged?.()
+        return
       case 'error':
         hooks.onError(e.data.message)
         return
@@ -494,6 +514,7 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
       holds = []
       hooks.onOpenAssets?.([])
       hooks.onFields?.([])
+      hooks.onRooms?.([])
       return posted
     },
     submit: (batch) => submitBatch(batch, newBatchId()),
@@ -552,8 +573,12 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
 export const httpTransport = (): LiveTransport => ({
   connect: (kind, name, onEvent, onDrop, onRetry) => {
     const source = new EventSource(`/api/live/${kind}/${encodeURIComponent(name)}/events`)
-    for (const event of ['hello', 'snapshot', 'ops', 'holds', 'peers', 'presence', 'hidden', 'prefab', 'asset', 'open-assets', 'fields', 'error'] as const) {
-      source.addEventListener(event, (m) => onEvent({ event, data: JSON.parse((m as MessageEvent<string>).data) } as ServerEvent))
+    for (const event of ['hello', 'snapshot', 'ops', 'holds', 'peers', 'presence', 'hidden', 'prefab', 'asset', 'open-assets', 'fields', 'rooms', 'levels', 'error'] as const) {
+      source.addEventListener(event, (m) => {
+        // The stream's own `error` (a drop) shares the server's event name and carries no data: it is the listener below's.
+        const data = (m as MessageEvent<unknown>).data
+        if (typeof data === 'string') onEvent({ event, data: JSON.parse(data) } as ServerEvent)
+      })
     }
     // EventSource retries on its own after a network drop. A 4xx is a closed stream that never opened: the
     // level is not there or the login lapsed. `readyState` tells the two apart.

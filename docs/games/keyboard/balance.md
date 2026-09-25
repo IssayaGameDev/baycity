@@ -1,7 +1,7 @@
 # Balance: the three curves and the simulator
 
 The loop's shape is three **designed curves** (ADR 0088), not formula parameters: control points Kodjo places
-in the editor's Game row, stored in `content/keyboard/game.json` → `settings`, read at load
+in the editor's games window (Settings), stored in `content/keyboard/game.json` → `settings`, read at load
 (`GAME_CURVE = curveFrom(game.settings)`, `rules.ts`). A change is a save, not a deploy; the staging game and the
 mirror pick it up like a level edit. A curve the file lacks is its default, so the file may hold none.
 
@@ -21,10 +21,10 @@ Pad tiers and Wins payouts are node parameters, not settings: `StepPad` ([pads.m
 
 ## The curve editor (`tools/editor/src/curveEditor.ts`)
 
-One graph per curve under the Game row. Drag a point; click empty space to add one; double-click or Delete to
-remove (never the last). Fields for the selected point; **default** puts the declared curve back; ↶ ↷ or
-Ctrl+Z/Y undo within the graph. Wheel zooms around the cursor (an axis alone over that axis), right-drag pans,
-**fit** reframes, **⤢** opens the graph large over the viewport. Log axis for
+One graph per curve in the games window's Settings. Drag a point; click empty space to add one; double-click or
+Delete to remove (never the last). Fields for the selected point; **default** puts the declared curve back; each
+change is one step of the editor's undo (Ctrl+Z). Wheel zooms around the cursor (an axis alone over that axis), right-drag pans,
+**fit** reframes, **⤢** opens the graph large. Log axis for
 `levelCost`: an exponential is a straight line, and the readout gives the ratio per Level of the last segment.
 The right edge of the graph shows the extension, so what Level 300 costs is visible.
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { assetsUsedBy, levelsUsing } from './usage'
+import { assetsUsedBy, levelsUsing, usersOf } from './usage'
 
 /**
  * Which levels use which asset (ADR 0161): an id anywhere in a level is a reference, and so is every id in what it
@@ -68,5 +68,19 @@ describe('which levels use an asset', () => {
     expect(usage.get(BRICK)).toEqual(['keyboard/a', 'parkour/b'])
     expect(usage.get(CRATE)).toEqual(['parkour/b'])
     expect(usage.has(LOOSE)).toBe(false)
+  })
+})
+
+describe('who uses an asset (ADR 0165)', () => {
+  it('names the levels and the assets using it, directly or through what they use, sorted', () => {
+    const levels = [
+      ['kb/b', level([{ id: 'n', prefab: PAD, transform: { position: { x: 0, y: 0, z: 0 } }, components: [] }])],
+      ['kb/a', level([{ id: 'm', transform: { position: { x: 0, y: 0, z: 0 } }, components: [{ id: 'c', type: 'Renderer', params: { material: RED } }] }])],
+      ['kb/c', level([])],
+    ] as const
+    const assets = Object.entries(files)
+    expect(usersOf(BRICK, levels, assets, isAssetId, contentsOf)).toEqual({ levels: ['kb/a', 'kb/b'], assets: [PAD, RED] })
+    expect(usersOf(PAD, levels, assets, isAssetId, contentsOf)).toEqual({ levels: ['kb/b'], assets: [] })
+    expect(usersOf(LOOSE, levels, assets, isAssetId, contentsOf)).toEqual({ levels: [], assets: [] })
   })
 })

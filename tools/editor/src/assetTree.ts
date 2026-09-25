@@ -114,24 +114,21 @@ export const flattenTree = (root: TreeNode, collapsed: ReadonlySet<string>): Tre
 }
 
 export interface Filter {
-  /** The library to look in, by its folder (`SHARED`, or a game's). */
-  library: string
-  /** Folder to show. `null` means every folder of the library. */
+  /** The libraries to look in, by their folders (`SHARED`, a game's). */
+  libraries: readonly string[]
+  /** The one folder to show, not its subfolders. `null` means every folder of the libraries: a search (ADR 0163). */
   folder: string | null
   /** Kind to show. `null` means every kind. */
   kind: AssetKind | null
   /** Case-insensitive substring of the name. */
   search: string
-  /** Include assets in subfolders of `folder`. */
-  recursive: boolean
 }
 
 /**
  * Entries a filter leaves visible, name-sorted.
  *
- * A folder and a kind are independent axes on purpose: "textures in this folder" and "every material
- * anywhere" are both things an author asks for, and making the kind a tab (as this panel first did) can only
- * answer the second.
+ * The Project window asks two things of it (ADR 0163): what is in the folder you are in, and — searching, by name
+ * or kind — what matches in every folder of both roots.
  */
 export const filterEntries = (db: AssetDatabase, filter: Filter): AssetEntry[] => {
   const needle = filter.search.trim().toLowerCase()
@@ -140,11 +137,25 @@ export const filterEntries = (db: AssetDatabase, filter: Filter): AssetEntry[] =
       if (filter.kind !== null && e.kind !== filter.kind) return false
       if (needle !== '' && !e.name.toLowerCase().includes(needle)) return false
       const folder = folderOf(e.path)
-      if (!within(folder, filter.library)) return false
-      if (filter.folder === null) return true
-      return filter.recursive ? folder === filter.folder || folder.startsWith(`${filter.folder}/`) : folder === filter.folder
+      if (!filter.libraries.some((l) => within(folder, l))) return false
+      return filter.folder === null || folder === filter.folder
     })
     .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** What the Project window orders its files by (ADR 0166). Folders are not files: they come first, by name. */
+export type SortBy = 'name' | 'kind' | 'date'
+
+/**
+ * Files in `by`'s order: by name; by kind, then name; or the newest first, by `modified(path)` — those it does not
+ * know last — then name. A copy; ties by path, so two of one name keep a steady order.
+ */
+export const sortEntries = (entries: readonly AssetEntry[], by: SortBy, modified: (path: string) => number | undefined): AssetEntry[] => {
+  const byName = (a: AssetEntry, b: AssetEntry): number => a.name.localeCompare(b.name) || a.path.localeCompare(b.path)
+  if (by === 'name') return [...entries].sort(byName)
+  if (by === 'kind') return [...entries].sort((a, b) => a.kind.localeCompare(b.kind) || byName(a, b))
+  const when = (e: AssetEntry): number => modified(e.path) ?? Number.NEGATIVE_INFINITY
+  return [...entries].sort((a, b) => (when(a) === when(b) ? byName(a, b) : when(b) > when(a) ? 1 : -1))
 }
 
 /** Immediate subfolders of `folder`, for showing them as tiles beside the files. */
@@ -183,17 +194,7 @@ export const renamedTo = (path: string, name: string): string => {
   return folder === '' ? name : `${folder}/${name}`
 }
 
-/**
- * Where the Project panel is looking (ADR 0108).
- *
- * Two kinds of place, because the panel now shows two kinds of thing: a game's levels, and the shared asset
- * library — its folders by their paths from `content/`, `SHARED` at the top (ADR 0161). They are not one tree of folders — a game is not a folder of assets and its levels are not asset
- * entries — so the location is a union rather than a path with a special prefix, which is the version that
- * would need an `if` at every use of `folder`.
- */
-export type Place = { at: 'game'; game: string } | { at: 'assets'; folder: string | null }
-
-/** One game as the panel's tree draws it: its name, its label, and the levels in its folder. */
+/** One game as the games window lists it (ADR 0162): its name, its label, and the levels in its folder. */
 export interface GameRow {
   name: string
   label: string

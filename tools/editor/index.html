@@ -425,8 +425,274 @@
         color: var(--dim);
       }
       .tb-crumb[hidden],
-      .tb-crumb-sep[hidden] {
+      .tb-crumb-sep[hidden],
+      .tb-name[hidden] {
         display: none;
+      }
+      /* The games window's button (ADR 0162): where you are, and the way to every other level. */
+      .tb-game {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+        padding: 3px 6px 3px 8px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        background: none;
+        color: var(--text);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .tb-game:hover:not(:disabled) {
+        background: var(--hover);
+        border-color: var(--line);
+      }
+      .tb-game-l {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .tb-game svg {
+        width: 12px;
+        height: 12px;
+        flex: 0 0 auto;
+        color: var(--dim);
+      }
+
+      /* ---- the games window (ADR 0162) ---- */
+      .gw-scrim {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.55);
+      }
+      .gw {
+        display: flex;
+        flex-direction: column;
+        width: min(920px, calc(100vw - 48px));
+        height: min(600px, calc(100vh - 48px));
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--panel);
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+        overflow: hidden;
+      }
+      .gw-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px 10px 16px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel-head);
+      }
+      .gw-title {
+        font-weight: 600;
+      }
+      .gw-close {
+        display: grid;
+        place-items: center;
+        width: 26px;
+        height: 26px;
+        border: 0;
+        border-radius: 6px;
+        background: none;
+        color: var(--dim);
+        cursor: pointer;
+      }
+      .gw-close:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .gw-body {
+        display: flex;
+        flex: 1 1 auto;
+        min-height: 0;
+      }
+      .gw-games {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        flex: 0 0 200px;
+        padding: 8px;
+        border-right: 1px solid var(--line);
+        overflow-y: auto;
+      }
+      .gw-game {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 7px 10px;
+        border: 0;
+        border-radius: 6px;
+        background: none;
+        color: var(--text);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .gw-game:hover {
+        background: var(--hover);
+      }
+      .gw-game.on {
+        background: color-mix(in srgb, var(--accent) 22%, transparent);
+      }
+      /* A level held over a game: it can go there, or it cannot and the title says why (ADR 0162). */
+      .gw-game.drop-onto {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+      }
+      .gw-game.refused {
+        opacity: 0.45;
+        outline: 1px dashed var(--line);
+        outline-offset: -1px;
+        cursor: not-allowed;
+      }
+      /* The game you are in. */
+      .gw-here {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      .gw-page {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .gw-tabs {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 10px 14px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .gw-page-title {
+        margin-right: 12px;
+        font-weight: 600;
+      }
+      .gw-tab {
+        padding: 6px 10px;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: none;
+        color: var(--dim);
+        font: inherit;
+        cursor: pointer;
+      }
+      .gw-tab:hover {
+        color: var(--text);
+      }
+      .gw-tab.on {
+        border-bottom-color: var(--accent);
+        color: var(--text);
+      }
+      .gw-tab-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        padding: 14px;
+        overflow-y: auto;
+      }
+      .gw-tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+        gap: 10px;
+      }
+      .gw-tile {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 6px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: none;
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+      }
+      .gw-tile:hover {
+        background: var(--hover);
+      }
+      .gw-tile:focus-visible,
+      .gw-tile.on {
+        border-color: var(--accent);
+      }
+      .gw-pic {
+        position: relative;
+        display: grid;
+        place-items: center;
+        aspect-ratio: 1;
+        border-radius: 6px;
+        background: var(--bg);
+        color: var(--dim);
+      }
+      .gw-pic > svg {
+        width: 40%;
+        height: 40%;
+      }
+      .gw-new .gw-pic {
+        border: 1px dashed var(--line);
+        background: none;
+      }
+      /* Who is in the level: their faces, in their colours, at the picture's foot. */
+      .gw-people {
+        position: absolute;
+        right: 5px;
+        bottom: 5px;
+        display: flex;
+        gap: 2px;
+      }
+      .gw-people .pp {
+        width: 18px;
+        height: 18px;
+        font-size: 8px;
+        cursor: default;
+      }
+      .gw-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px;
+        text-align: center;
+      }
+      .gw-section {
+        margin: 12px 0 2px;
+        font-weight: 600;
+      }
+      /* The game's settings (ADR 0162): the Inspector's lines, a label column and a field. */
+      .gw-settings {
+        max-width: 620px;
+        --lw: clamp(72px, 40% - 24px, 240px);
+      }
+      .gw-settings .irow + .gw-note {
+        margin: 0 0 6px var(--lw);
+      }
+      .gw-section:first-child {
+        margin-top: 0;
+      }
+      .gw-note {
+        margin-bottom: 6px;
+        color: var(--dim);
+        font-size: 11.5px;
+      }
+      .gw-none {
+        color: var(--dim);
+        font-style: italic;
+      }
+      .gw-component {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        padding: 3px 0;
+      }
+      .gw-component-t {
+        color: var(--dim);
+        font-size: 11px;
       }
       .tb-run {
         display: flex;
@@ -833,7 +1099,7 @@
          stripe's colour. `:where()` contributes nothing, so this is two, ties with both, and source order
          (stripe first) lets hover and selection win.
 
-         The Environment and Game rows are skipped: they are level settings above the tree, already set apart
+         The Level and Environment rows are skipped: they are level settings above the tree, already set apart
          by their own rule, and striping them would make the first object's shade depend on whether they are
          there. They still count for `nth-child`, so the tree's alternation is stable. */
       .row:where(:not(.env)):nth-child(even) {
@@ -845,7 +1111,7 @@
       .row.sel {
         background: var(--sel);
       }
-      /* The Game and Environment rows are level settings, not objects, so they sit above the tree with a rule
+      /* The Level and Environment rows are level settings, not objects, so they sit above the tree with a rule
          under them rather than being indented into it (ADR 0048). */
       .row.env {
         gap: 7px;
@@ -987,8 +1253,8 @@
         background: rgba(74, 140, 247, 0.18);
       }
       .row.drop-onto,
-      .tile.drop-onto,
-      .tiles.drop-onto {
+      .pt.drop-onto,
+      .ex-grid.drop-onto {
         box-shadow: inset 0 0 0 2px var(--accent);
       }
       .hier-line {
@@ -1049,7 +1315,7 @@
         color: var(--dim);
       }
 
-      /* ---- project explorer: header, folder tree, tiles ---- */
+      /* ---- the Project window (ADR 0163): top bar, folder tree, tiles, bottom bar ---- */
       #palette {
         display: flex;
         flex-direction: column;
@@ -1059,38 +1325,193 @@
       .ex-head {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
         padding: 4px 6px;
         border-bottom: 1px solid var(--line);
         flex: 0 0 auto;
-        overflow-x: auto;
       }
+      .ex-plus {
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        width: 26px;
+        height: 24px;
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+      }
+      .ex-plus:hover {
+        background: var(--hover);
+      }
+      .ex-plus .ic {
+        width: 15px;
+        height: 15px;
+      }
+      /* The path: each part goes there. */
       .ex-crumbs {
         display: flex;
         align-items: center;
         gap: 2px;
-        flex: 0 0 auto;
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
       }
-      .crumb {
-        padding: 1px 6px;
+      .ex-crumb {
+        padding: 2px 5px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--dim);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .ex-crumb:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .ex-crumb.here {
+        color: var(--text);
+      }
+      .ex-sep {
+        color: var(--dim);
         font-size: 11px;
       }
-      .ex-crumbs .crumb + .crumb::before {
-        content: '/';
+      .ex-crumb-note {
         color: var(--dim);
-        margin-right: 4px;
+        font-size: 12px;
+        font-style: italic;
+      }
+      /* The sort (ADR 0166): what the tiles are ordered by, a menu of three. */
+      .ex-sort {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        flex: 0 0 auto;
+        height: 24px;
+        padding: 0 5px 0 8px;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        background: transparent;
+        color: var(--dim);
+        font: inherit;
+        font-size: 11.5px;
+        cursor: pointer;
+      }
+      .ex-sort:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .ex-sort .ic {
+        width: 11px;
+        height: 11px;
+      }
+      /* The grid takes the focus when a tile that had it is drawn away: no ring for that. */
+      .ex-grid:focus {
+        outline: none;
+      }
+      .pt:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: -2px;
+      }
+      /* Search, with the kind button inside it. */
+      .ex-search {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex: 0 1 280px;
+        min-width: 150px;
+        height: 24px;
+        padding: 0 3px 0 7px;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        background: var(--bg);
+      }
+      .ex-search:focus-within {
+        border-color: var(--accent);
+      }
+      .ex-search-i {
+        flex: 0 0 auto;
+        width: 13px;
+        height: 13px;
+        color: var(--dim);
+      }
+      .ex-search-in {
+        flex: 1 1 auto;
+        min-width: 0;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        font-size: 12px;
+      }
+      .ex-search-x {
+        display: grid;
+        place-items: center;
+        width: 18px;
+        height: 18px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--dim);
+        cursor: pointer;
+      }
+      .ex-search-x[hidden] {
+        display: none;
+      }
+      .ex-search-x:hover {
+        color: var(--text);
+      }
+      .ex-search-x .ic {
+        width: 12px;
+        height: 12px;
+      }
+      .ex-kind {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        flex: 0 0 auto;
+        height: 18px;
+        padding: 0 3px 0 6px;
+        border: 0;
+        border-radius: 3px;
+        background: var(--panel);
+        color: var(--dim);
+        font: inherit;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .ex-kind:hover {
+        color: var(--text);
+      }
+      .ex-kind.on {
+        background: var(--accent);
+        color: #fff;
+      }
+      .ex-kind .ic {
+        width: 11px;
+        height: 11px;
       }
       .ex-body {
         display: flex;
         flex: 1 1 auto;
         min-height: 0;
       }
+      /* The tree: folders only, one indent a depth, scrolling on its own. */
       .ex-tree {
-        flex: 0 0 168px;
+        flex: 0 0 190px;
         overflow: auto;
         border-right: 1px solid var(--line);
         min-height: 0;
         padding: 2px 0;
+      }
+      .ex-tree .row .ico {
+        color: var(--dim);
       }
       .ex-right {
         display: flex;
@@ -1099,80 +1520,160 @@
         min-width: 0;
         min-height: 0;
       }
-      .tile.folder {
-        font-weight: 600;
-      }
-      .tiles {
-        display: flex;
-        flex-wrap: wrap;
-        align-content: flex-start;
-        gap: 4px;
-        overflow: auto;
-        min-height: 0;
+      /* Every item one square tile, its picture and its name, at the slider's size (`--tile`). */
+      .ex-grid {
+        --tile: 64px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, calc(var(--tile) + 12px));
+        gap: 6px;
+        align-content: start;
         flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
         padding: 6px;
       }
-      .tile {
-        padding: 4px 9px;
+      .ex-grid .empty {
+        grid-column: 1 / -1;
       }
-      .tile.foreign {
-        opacity: 0.4;
-        cursor: not-allowed;
-      }
-      .tile.armed {
-        background: var(--accent);
-        border-color: var(--accent);
-        color: #fff;
-      }
-      .tile.new {
-        border-style: dashed;
-      }
-      /* A tile with a preview: picture over name. Prefabs, models and materials are rendered once
-         offscreen and cached; a texture is its own file; sounds and fonts stay text. */
-      .tile.has-thumb {
+      .pt {
+        position: relative;
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 3px;
-        padding: 4px;
-        width: 92px;
-        font-size: 11px;
+        gap: 4px;
+        min-width: 0;
+        padding: 5px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        font-size: 11.5px;
+        cursor: default;
+      }
+      .pt:hover {
+        background: var(--hover);
+      }
+      .pt.on {
+        border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 26%, transparent);
+      }
+      /* One this game cannot place (ADR 0076, 0161): greyed, still selectable, the tooltip says why. */
+      .pt.foreign {
+        opacity: 0.4;
+      }
+      .pt-pic {
+        position: relative;
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        width: var(--tile);
+        height: var(--tile);
+        border-radius: 4px;
+        background: #111317;
         overflow: hidden;
       }
-      .tile .thumb {
-        width: 64px;
-        height: 64px;
-        /* Empty until the observer fills it in, so an unfilled tile must not look broken. */
-        color: transparent;
-        font-size: 0;
+      .pt-ic {
+        width: 46%;
+        height: 46%;
+        color: var(--dim);
+        stroke-width: 1.5;
+      }
+      .pt-folder .pt-pic {
+        background: transparent;
+      }
+      .pt-folder .pt-ic {
+        width: 78%;
+        height: 78%;
+        color: #b99a5b;
+        stroke-width: 1.1;
+      }
+      .pt-pic .thumb {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
         object-fit: contain;
         background: #0e1013 repeating-conic-gradient(#1b1e23 0% 25%, transparent 0% 50%) 50% / 12px 12px;
-        border-radius: 2px;
-        flex: 0 0 auto;
       }
-      .tile .tile-name {
+      .pt-pic .thumb[hidden] {
+        display: none;
+      }
+      .pt-name {
         max-width: 100%;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .asset-preview {
+      /* Who else has it open (ADR 0159): their faces in the corner of the picture. */
+      .pt-people {
+        position: absolute;
+        top: calc(var(--tile) - 14px);
+        right: 9px;
+        display: flex;
+        gap: 2px;
+      }
+      .pt-people .pp {
+        width: 16px;
+        height: 16px;
+        font-size: 7.5px;
+        cursor: default;
+      }
+      /* All the way left on the slider: a one-line list, a small picture and the name. */
+      .ex-grid.list {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        padding: 2px 0;
+      }
+      .ex-grid.list .pt {
+        flex-direction: row;
+        gap: 6px;
+        height: 22px;
+        padding: 0 8px;
+        border-radius: 0;
+      }
+      .ex-grid.list .pt-pic {
+        width: 18px;
+        height: 18px;
+        border-radius: 2px;
+        background: transparent;
+      }
+      .ex-grid.list .pt-ic,
+      .ex-grid.list .pt-folder .pt-ic {
+        width: 16px;
+        height: 16px;
+        stroke-width: 1.8;
+      }
+      .ex-grid.list .pt-name {
+        flex: 1 1 auto;
+        text-align: left;
+      }
+      .ex-grid.list .pt-people {
+        position: static;
+      }
+      .ex-foot {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
         flex: 0 0 auto;
-        min-height: 0;
-        padding: 0 6px 6px;
+        height: 24px;
+        padding: 0 8px;
+        border-top: 1px solid var(--line);
+        font-size: 11.5px;
       }
-      .asset-preview img {
-        max-height: 96px;
-        max-width: 40%;
-        object-fit: contain;
-        border: 1px solid var(--line);
-      }
-      .asset-preview .caption {
+      .ex-foot-path {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
         color: var(--dim);
-        font-size: 11px;
+      }
+      .ex-size {
+        flex: 0 0 auto;
+        width: 110px;
+        accent-color: var(--accent);
       }
       .font-sample {
         font-size: 20px;
@@ -1232,6 +1733,88 @@
         color: #f0b849;
         font-size: 11px;
         margin: 4px 0;
+      }
+      /* The big picture on top (ADR 0165): a render, the texture, a sound's player, a font's sample. */
+      .a-pic {
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        max-height: 240px;
+        margin-bottom: 8px;
+        border-radius: 6px;
+        background: #0e1013 repeating-conic-gradient(#1b1e23 0% 25%, transparent 0% 50%) 50% / 16px 16px;
+        overflow: hidden;
+      }
+      .a-pic > img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+      .a-pic > img[hidden] {
+        display: none;
+      }
+      .a-pic-ic {
+        width: 34%;
+        height: 34%;
+        color: var(--dim);
+        stroke-width: 1.3;
+      }
+      .a-pic audio {
+        width: 90%;
+      }
+      .a-facts {
+        margin-bottom: 6px;
+      }
+      /* A fact says all of itself: a prefab's components run onto a second line rather than off the edge. */
+      .a-facts .irow-v {
+        padding: 5px 0;
+        white-space: normal;
+      }
+      /* Who uses it (ADR 0165): a level or an asset per line, a click to it. */
+      .a-sec {
+        margin: 12px 0 4px;
+        padding-top: 8px;
+        border-top: 1px solid var(--line);
+        color: var(--dim);
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .a-use {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        padding: 3px 6px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .a-use:hover {
+        background: var(--hover);
+      }
+      .a-use .ic {
+        flex: 0 0 auto;
+        width: 14px;
+        height: 14px;
+        color: var(--dim);
+      }
+      .a-use span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .a-none {
+        padding: 2px 6px;
+        color: var(--dim);
+        font-size: 11.5px;
       }
 
       /*

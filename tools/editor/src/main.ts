@@ -14,11 +14,11 @@ import {
   validateLevel, type NodeRef, refKey,
   BUILTIN_LABELS, BUILTIN_MODELS,
   isSegment, parseQualified, qualify,
-  applyAssetOps, diffAssetOps, isLiveAssetPath, libraryOf, LiveAssetError, mayUse,
-  type AssetDatabase, type MaterialAsset } from '@mp/content'
+  applyAssetOps, diffAssetOps, gameDocId, gameOfDocId, isLiveAssetPath, libraryOf, LiveAssetError, mayUse,
+  type AssetDatabase, type AssetOp, type MaterialAsset } from '@mp/content'
 
-import { DEFAULT_REGISTRY, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type Registry } from '@mp/components'
-import { type ModeDescriptor, readSettings } from '@mp/mode'
+import { DEFAULT_REGISTRY, createRegistry, ENGINE_COMPONENTS, isSharedComponent, PLAYER_COMPONENTS, SHARED_COMPONENT_TYPES, sharedComponents, type Registry } from '@mp/components'
+import { type CurvePoint, type ModeDescriptor, readSettings } from '@mp/mode'
 import { eulerToQuat, vec3, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import {
@@ -39,12 +39,12 @@ import {
   listFiles,
   loadGame,
   loadLevelRaw,
+  parseGameData,
   lockKey,
   me as fetchMe,
   releaseLock,
   releaseLockBeacon,
   saveFile,
-  saveGame,
   serverStatus,
   uploadAsset,
   type FileEntry,
@@ -54,11 +54,12 @@ import {
 import { createHierarchy, type Hierarchy } from './hierarchy'
 import { createInspector, type Inspector } from './inspector'
 import { createAssetInspector, type AssetInspector } from './assetInspector'
-import { loadAssetLibrary, type AssetLibrary } from './assetsApi'
+import { fetchUsers, loadAssetLibrary, type AssetLibrary } from './assetsApi'
 import { libraryChanges, watchAssets } from './assetWatch'
-import { createAssetSync } from './assetSync'
+import { createAssetSync, parseAssetEvent, type Origin } from './assetSync'
 import { canMoveFolder, movedInto } from './assetTree'
-import { createPreviews, type Previews } from './previews'
+import { createPreviews, prefabObject, type Previews } from './previews'
+import { createDragPlace } from './dragPlace'
 import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
 import { createProjectPanel, type Project } from './projectPanel'
 import { createHistoryStore } from './historyStore'
@@ -69,6 +70,7 @@ import { createCameraView } from './cameraView'
 import { createFollow } from './follow'
 import { createPeople, type PeopleState } from './people'
 import { createFieldPresence, type Ring } from './fieldPresence'
+import { createGamesWindow, type GamesWindow } from './gamesWindow'
 import { createFileActions } from './fileActions'
 import { createMotionPreview } from './motionPreview'
 import { createMenus } from './menus'
@@ -84,7 +86,7 @@ import { applySelect, clampTo, primaryOf, rootsOf, type SelectMode } from './sel
 import { createShortcuts } from './shortcuts'
 import { roundAngle } from './snap'
 import { createSplitter, readPx, writePx } from './splitter'
-import { MODES, MODE_LIST, modeOf, soleMode } from './modes'
+import { MODES, MODE_LIST, soleMode } from './modes'
 import { createNotices, type Notify } from './notices'
 import { createToolbar, type Toolbar, type ToolbarState } from './toolbar'
 
@@ -180,18 +182,10 @@ const hiddenView = createHiddenView()
  */
 let envSelected = false
 /**
- * The Game row is picked rather than a node (ADR 0052). Its own flag, beside `envSelected`, for the same
+ * The Level row is picked rather than a node (ADR 0162). Its own flag, beside `envSelected`, for the same
  * reason: a sentinel index in `selection` would eventually reach a structural operation that reads that list.
  */
-let gameSelected = false
-/**
- * What a viewport click will place. `own` is a prefab this level defines in its own table, named; a model or a
- * prefab file is an asset id, and
- * placing one wraps it in a one-piece inline prefab whose collider is authored — visual is not collision,
- * so a detailed prop still collides as a box somebody can resize.
- */
-type Placing = { kind: 'model' | 'prefabAsset'; assetId: string }
-let placing: Placing | null = null
+let levelSelected = false
 /**
  * The game being authored for (ADR 0052).
  *
@@ -206,12 +200,14 @@ let placing: Placing | null = null
 let activeMode: ModeDescriptor | undefined = soleMode()
 
 /**
- * Each game's shared-component list as it is on disk **right now** (ADR 0077), read over `/api/games` at boot
- * and kept current by `adopt`. The game's own `registry` already folds this file in at build time, but the
- * editor's bundle does not reload when the editor writes it (see `vite.config.ts`), so the live list is merged
- * here rather than trusted from the code.
+ * Each game's data file — its shared-component list (ADR 0077) and its settings (ADR 0087) — as it is **right
+ * now**: read over `/api/games` at boot, then kept current as it is edited live, by anyone (`gameSync`, ADR 0162).
+ * The game's own `registry` already folds the list in at build time, but the editor's bundle does not reload when
+ * it changes (see `vite.config.ts`), so the live list is merged here rather than trusted from the code.
  */
 const gameData: Record<string, GameData> = {}
+/** Where each game's copy in `gameData` came from, for the live edits that follow it. */
+const gameOrigins: Record<string, Origin | undefined> = {}
 
 /** A game's registry: its code, plus whatever the live data file adds that the code did not already have. */
 const registryFor = (mode: ModeDescriptor): Registry => {
@@ -231,8 +227,9 @@ const adoptable = (): string[] => {
 }
 
 /**
- * Add shared components to the active game (ADR 0077): the data file on disk, the live list here, and the open
- * document rebuilt against the grown registry. The game's dev server sees the file change and reloads.
+ * Add shared components to the active game (ADR 0077): an edit to its live data file (ADR 0162), shown at once —
+ * the registry grows and the open document is rebuilt against it (`gameShown`) — and written behind. The game's
+ * dev server sees the file change and reloads.
  */
 const adopt = async (types: readonly string[]): Promise<void> => {
   const mode = activeMode
@@ -240,12 +237,42 @@ const adopt = async (types: readonly string[]): Promise<void> => {
   const have = gameData[mode.name] ?? { components: [], settings: {} }
   const fresh = types.filter((type) => isSharedComponent(type) && !have.components.includes(type))
   if (fresh.length === 0) return
-  // The whole file goes back, settings included: writing only the list would drop them (ADR 0087).
-  const next: GameData = { ...have, components: [...have.components, ...fresh].sort() }
-  await saveGame(mode.name, next)
-  gameData[mode.name] = next
+  gameSync.edit(gameDocId(mode.name), [{ kind: 'set', path: ['components'], value: [...have.components, ...fresh].sort() }])
   notify.ok(`added ${fresh.join(', ')} to ${mode.label}`)
-  if (doc !== null) reopenWithRegistry()
+}
+
+/**
+ * A game setting changed (ADR 0162): an edit to the game's live data file, shown at once and sent behind, and an
+ * entry in the one undo history. `ongoing` while a number is dragged, so the drag is one entry.
+ */
+const changeGameSetting = (game: string, key: string, value: number | CurvePoint[], ongoing: boolean): void => {
+  const mode = MODES[game]
+  const have = gameData[game]
+  if (mode === undefined || have === undefined) return
+  const ops = diffAssetOps(have.settings[key], value, ['settings', key])
+  const id = gameDocId(game)
+  gameSync.edit(id, ops)
+  const label = `${mode.label} ${mode.settings?.[key]?.label ?? key}`
+  edits.recordAsset({ assetId: id, ops, inverses: applyAssetOps(have, ops).inverses.reverse(), label }, ongoing)
+}
+
+/**
+ * A game's data file changed on screen — this tab's edit, anyone's, an undo (ADR 0162) — and what follows it: the
+ * open level rebuilt against the registry when the list changed, the surface cells a setting lays out (the key
+ * pitch, ADR 0120), and the games window's fields.
+ */
+const gameShown = (game: string, before: GameData | undefined): void => {
+  const now = gameData[game]
+  if (now === undefined) return
+  const active = activeMode?.name === game
+  if (JSON.stringify(before?.components) !== JSON.stringify(now.components)) {
+    if (active && doc !== null) reopenWithRegistry()
+    gamesWindow.render()
+  }
+  if (JSON.stringify(before?.settings) !== JSON.stringify(now.settings)) {
+    if (active && activeMode?.surfaceGrid !== undefined) meshes.buildAll()
+    gamesWindow.settingsChanged(game)
+  }
 }
 
 /** Loaded assets. Both arrive at boot, before any document is opened. */
@@ -360,13 +387,19 @@ const room = createLiveSession({
   },
   onCamera: (from, pose) => follow.onCamera(from, pose),
   onFollow: (from, leader) => follow.onFollow(from, leader, room.connId()),
-  onAsset: (data) => assetSync.onEvent(data),
+  // A material's edit, or a game data file's (ADR 0162): each to the copies that follow it.
+  onAsset: (data) => (gameOfDocId(parseAssetEvent(data)?.assetId ?? '') === null ? assetSync : gameSync).onEvent(data),
   openAssetIds: () => (selectedAsset === null ? [] : [selectedAsset]),
-  openAssetsChanged: () => assetInspector.openersChanged(),
+  openAssetsChanged: () => {
+    assetInspector.openersChanged()
+    project.openersChanged()
+  },
   fieldsChanged: () => {
     objectFields.repaint()
     assetFields.repaint()
   },
+  roomsChanged: () => gamesWindow.render(),
+  levelsChanged: () => void refreshFileList(),
   dropHistoryWhere: (predicate) => edits.dropWhere(predicate),
 })
 /** The connection the room last reported, so a reconnect is noticed. */
@@ -582,7 +615,7 @@ const scheduleRebuild = (): void => {
 const showDoc = (): void => {
   deselect()
   envSelected = false
-  gameSelected = false
+  levelSelected = false
   doc = docStack[docStack.length - 1]?.doc ?? null
   // The level owns its sun (ADR 0048), so opening one relights the viewport and rebakes the sky. A prefab has
   // none, which `sun()` reports as `undefined`, and that falls back to the renderer's defaults.
@@ -866,10 +899,6 @@ const pick = createPickTool({
   faceStep: () => edit.steps.face,
   dragged: () => tool.dragged(),
   setDragged: (value) => tool.setDragged(value),
-  placing: () => placing,
-  disarm: () => {
-    placing = null
-  },
   edits: () => edits,
   writeBackItem: (index) => tool.writeBackItem(index),
   rebuildMeshes: () => meshes.buildAll(),
@@ -962,11 +991,7 @@ const editorShortcuts = createShortcuts([
         play.stop()
         return
       }
-      if (placing !== null) {
-        placing = null
-        notify.ok('placement cancelled')
-        refreshUi()
-      } else deselect()
+      deselect()
     },
     // The only binding that stays live during play, because it is the way out of it.
     enabled: () => true,
@@ -1062,8 +1087,6 @@ const openFile = async (name: string): Promise<void> => {
       hydratedPrefabs = resolved.filled
       missingPrefabs = resolved.missing
       setDoc(edits.withOps(levelDoc(level, registry())), name)
-      // The tree follows the document, so what is open is always visible in it (ADR 0108).
-      if (ref !== null) project?.showGame(ref.game)
       // Only now, past every throw above: a level that would not load must not be the one we come back to.
       rememberLevel(name)
       if (missingPrefabs.length > 0) notify.warn(`no prefab file for ${missingPrefabs.join(', ')} — those objects are empty`)
@@ -1087,18 +1110,20 @@ const refreshFileList = async (): Promise<void> => {
   levelEntries = await listFiles('levels').catch(() => [] as FileEntry[])
   toolbar?.render()
   project?.render()
+  gamesWindow?.render()
 }
 
 /**
  * Make a level file and open it live (ADR 0089): a blank one, or a copy of `from` — the server's current copy,
  * newer than the file while it is open. Names are files, so one that exists is refused.
  */
-const createLevel = async (from: string | null): Promise<void> => {
+const createLevel = async (from: string | null, inGame?: string): Promise<void> => {
   /**
    * A level is made **in a game's folder** (ADR 0108), so there has to be a game: without one there is
-   * nowhere for the file to go. Duplicating keeps the original's game; a blank one goes to the active game.
+   * nowhere for the file to go. Duplicating keeps the original's game; a blank one goes to the game asked for, or
+   * the active one.
    */
-  const game = (from === null ? activeMode?.name : parseQualified(from)?.game) ?? activeMode?.name
+  const game = (from === null ? (inGame ?? activeMode?.name) : parseQualified(from)?.game) ?? activeMode?.name
   if (game === undefined) {
     notify.warn('pick a game first — a level lives in its game\u2019s folder')
     return
@@ -1160,6 +1185,7 @@ const toolbar: Toolbar = createToolbar(
   $<HTMLDivElement>('#overlays'),
   () => ({
     name: shortName(fileState.name),
+    game: activeMode?.label ?? null,
     prefab: prefabOpen === null ? null : { level: shortName(prefabOpen.from), name: prefabOpen.name },
     gizmo: edit.mode,
     space: edit.space,
@@ -1180,6 +1206,7 @@ const toolbar: Toolbar = createToolbar(
   }),
   {
     back: prefabs.closePrefab,
+    openGames: () => gamesWindow.open(),
     undo: () => edits.undo(),
     redo: () => edits.redo(),
     toggleLog: (anchor) => notices.toggleLog(anchor),
@@ -1296,30 +1323,20 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
     // marked while editing the sun would say the gizmo still applies to it.
     // Set before deselecting: `deselect` rebuilds the Inspector, and by then it has to know to show the sun.
     envSelected = true
-    gameSelected = false
+    levelSelected = false
     deselect()
     hierarchy.render()
   },
-  gameSelected: () => gameSelected,
-  /**
-   * What the row reads. Three states worth telling apart: no game, a game that is installed, and a game the
-   * level names that this build does not have — the last one being the case a person needs to *see*, because
-   * it explains why the rules and the rule gizmos are missing.
-   */
-  gameLabel: () => {
-    const ref = doc?.modeRef()
-    if (ref === undefined) return 'No game'
-    return MODES[ref.name]?.label ?? `${ref.name} (not installed)`
-  },
-  onSelectGame: () => {
-    gameSelected = true
+  levelSelected: () => levelSelected,
+  onSelectLevel: () => {
+    levelSelected = true
     envSelected = false
     deselect()
     hierarchy.render()
   },
   onSelect: (index, mode, order) => {
     envSelected = false
-    gameSelected = false
+    levelSelected = false
     selectWith(index, mode, order)
   },
   // Who else has it selected, each in their colour (ADR 0158): shown, never in the way.
@@ -1511,9 +1528,6 @@ const fileOps = createFileActions({
   editingFor: () => editingFor(),
   adoptable: () => adoptable(),
   adopt: (types) => adopt(types),
-  arm: (kind, assetId) => {
-    placing = placing?.assetId === assetId ? null : { kind, assetId }
-  },
   recordEdit: (label) => edits.recordEdit(label),
   room: { live: () => live(), flush: () => room.flush(), leave: () => room.leave() },
   openFile: (qualified) => openFile(qualified),
@@ -1525,36 +1539,41 @@ const fileOps = createFileActions({
   refreshUi: () => refreshUi(),
 })
 
+/**
+ * A prefab or a model dragged from the Project window into the viewport (`dragPlace.ts`, ADR 0164): a see-through
+ * copy under the pointer, placed where it is let go.
+ */
+const dragPlace = createDragPlace(canvas, {
+  scene: stage.scene,
+  subject: (id) => {
+    const entry = assets?.db.byId[id]
+    if (entry?.kind === 'model') return runtime?.model(id) ?? null
+    const root = entry?.kind === 'prefab' ? assets?.prefabOf(id) : undefined
+    // Placed, it has only its own position: a placement's transform is its own, not the prefab root's (`prefabs.ts`).
+    return root === undefined ? null : prefabObject({ ...root, transform: { position: vec3(0, 0, 0) } }, runtime)
+  },
+  load: async (id) => {
+    await runtime?.load([id])
+  },
+  refusal: (id) => (play.active() ? 'not while playing' : doc === null ? 'nothing is open' : fileOps.unplaceableWhy(id)),
+  surfaceUnder: (x, y) => pick.surfaceUnder(x, y),
+  place: (id, at) => fileOps.whenPlaceable(id, (kind) => pick.placeAsset(kind, id, at)),
+  readout: (text, at) => showReadout(text, at),
+})
+
 const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   db: () => assets?.db ?? null,
-  games: () => MODE_LIST.map((m) => ({ name: m.name, label: m.label })),
-  levels: () => levelEntries,
-  openLevel: () => fileState.name,
-  onOpenLevel: (qualified) =>
-    void edits.guardUnsaved().then(async (go) => {
-      if (go) await openFile(qualified)
-    }),
-  /**
-   * Author for this game without opening anything: it is what a new level is made in, and what composes the
-   * registry while nothing is open. It replaced the toolbar's game picker (ADR 0108) and is deliberately
-   * *not* an open: clicking a game in the tree to see its levels must not throw away the document you have.
-   */
-  onPickGame: (game) => {
-    if (activeMode?.name === game) return
-    activeMode = MODES[game]
-    refreshUi()
-  },
-  onNewLevel: (game) => {
-    activeMode = MODES[game] ?? activeMode
-    void createLevel(null)
-  },
   folders: () => assets?.folders ?? [],
-  urlOf: (path) => assets?.urlOf(path) ?? path,
-  armed: () => placing?.assetId ?? null,
-  game: () => activeMode?.name ?? null,
+  game: () => (activeMode === undefined ? null : { name: activeMode.name, label: activeMode.label }),
+  menu: contextMenu,
   selectedAsset: () => selectedAsset,
-  onPickAsset: fileOps.armAsset,
+  openers: (id) => room.openersOf(id).map((p) => ({ name: p.name, colour: peerCss(p.connId) })),
   unplaceableWhy: (id) => fileOps.unplaceableWhy(id),
+  onOpenPrefab: (id) => {
+    if (prefabOpen !== null) notify.warn('leave the prefab you are in first')
+    else void prefabs.enterPrefab(id)
+  },
+  onDragAsset: (id) => dragPlace.dragging(id),
   onUpload: (files, folder) => {
     const cap = me?.maxUploadBytes ?? Infinity
     const tooBig = files.filter((f) => f.size > cap).map((f) => f.name)
@@ -1605,29 +1624,12 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     const current = path.slice(path.lastIndexOf('/') + 1)
     const inFolder = isFolder ? (assets?.db.entries.filter((e) => e.path.startsWith(`${path}/`)).length ?? 0) : 0
     const entry = isFolder ? undefined : assets?.db.entries.find((e) => e.path === path)
-    const placeable = entry?.kind === 'prefab' || entry?.kind === 'model'
-    const foreign = entry === undefined ? null : fileOps.unplaceableWhy(entry.id)
     const prefabHere = entry?.kind === 'prefab' ? entry.id : null
+    // Placing is a drag into the viewport, and showing one in the Inspector a click (ADR 0164).
     contextMenu.open(
       at,
       [
         {
-          label: placeable ? 'Place in the level' : 'Open in the Inspector',
-          enabled: entry !== undefined && foreign === null && (placeable || entry.kind === 'material'),
-          why: isFolder ? 'a folder is not an asset' : foreign ?? 'nothing to open for this kind',
-          run: () => {
-            if (entry === undefined) return
-            if (placeable) fileOps.armAsset(entry.id)
-            else {
-              selectedAsset = entry.id
-              assetInspector.show(entry.id)
-              room.syncHolds()
-              refreshUi()
-            }
-          },
-        },
-        {
-          // A prefab placed in no level is reachable only from here, now that the toolbar has no prefab mode.
           label: 'Open prefab',
           enabled: prefabHere !== null && prefabOpen === null,
           why: prefabHere === null ? 'not a prefab' : 'leave the prefab you are in first',
@@ -1641,11 +1643,8 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
         },
         {
           label: 'Rename…',
-          run: () => {
-            const name = prompt('Rename', current)
-            if (name === null || name.trim() === '' || name.trim() === current) return
-            fileOps.renameAsset(path, name.trim())
-          },
+          hint: 'F2',
+          run: () => askRenameAsset(path),
         },
         {
           label: isFolder ? (inFolder > 0 ? `Delete folder and ${inFolder} asset${inFolder === 1 ? '' : 's'}` : 'Delete empty folder') : 'Delete',
@@ -1657,53 +1656,147 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
       current,
     )
   },
-  onLevelContext: (at, qualified) => {
-    const ref = parseQualified(qualified)
-    const short = ref?.name ?? qualified
-    const isOpen = fileState.name === qualified
-    contextMenu.open(
-      at,
-      [
-        {
-          label: 'Open',
-          enabled: !isOpen && prefabOpen === null,
-          why: isOpen ? 'already open' : 'leave the prefab you are in first',
-          run: () => void edits.guardUnsaved().then(async (go) => {
-            if (go) await openFile(qualified)
-          }),
-        },
-        {
-          label: 'Duplicate\u2026',
-          divider: true,
-          // Takes the copy from the server's current copy rather than the file, so a level open live is
-          // duplicated as it is now.
-          run: () => void createLevel(qualified),
-        },
-        { label: 'Rename\u2026', run: () => fileOps.renameLevel(qualified) },
-        {
-          label: 'Copy name',
-          // What `?level=` takes, and what a teammate needs in order to open the same one.
-          run: () => void navigator.clipboard?.writeText(short).then(() => notify.ok(`copied ${short}`)),
-        },
-        { label: 'Delete\u2026', divider: true, run: () => fileOps.deleteLevelFile(qualified) },
-      ],
-      short,
-    )
-  },
   onMkdir: (parent, name) => fileOps.afterFileOp(`created ${name}`, async () => assets?.mkdir(parent, name) ?? Promise.resolve()),
-  onRename: fileOps.renameAsset,
-  onDelete: fileOps.deleteAsset,
-  onMove: (from, toFolder) => {
+  onMove: (froms, toFolder) => {
     // Refuse a folder into its own subtree here as well as on the server: a rejected drop should not need a
-    // round trip to say so.
-    if (!from.includes('.') && !canMoveFolder(from, toFolder)) {
+    // round trip to say so. Several go together or not at all (ADR 0166).
+    if (froms.some((from) => !from.includes('.') && !canMoveFolder(from, toFolder))) {
       notify.warn('a folder cannot move inside itself')
       return
     }
-    fileOps.afterFileOp(`moved into ${toFolder}`, async () => assets?.move(from, movedInto(from, toFolder)) ?? Promise.resolve())
+    const moves = froms.map((from) => ({ from, to: movedInto(from, toFolder) }))
+    const what = froms.length === 1 ? `moved into ${toFolder}` : `moved ${froms.length} items into ${toFolder}`
+    fileOps.afterFileOp(what, async () => (moves.length === 1 ? assets?.move(moves[0]!.from, moves[0]!.to) : assets?.moveMany(moves)) ?? Promise.resolve())
   },
+  onDelete: (paths) => fileOps.deleteAssets(paths),
+  onRename: (path) => askRenameAsset(path),
+  fileOf: (path) => assets?.fileOf(path),
 })
 
+/** Rename an asset or a folder, asked with its name now: the menu's *Rename…*, and F2 in the Project window. */
+function askRenameAsset(path: string): void {
+  const current = path.slice(path.lastIndexOf('/') + 1)
+  const name = prompt('Rename', current)
+  if (name === null || name.trim() === '' || name.trim() === current) return
+  fileOps.renameAsset(path, name.trim())
+}
+
+/**
+ * A level's menu (ADR 0110), from its tile in the games window (ADR 0162): Open, Duplicate, Rename, Copy name,
+ * Delete. The host's, because it needs the open document — is this the one you are in? — and the listing.
+ */
+const levelMenu = (at: { x: number; y: number }, qualified: string): void => {
+  const ref = parseQualified(qualified)
+  const short = ref?.name ?? qualified
+  const isOpen = fileState.name === qualified
+  contextMenu.open(
+    at,
+    [
+      {
+        label: 'Open',
+        enabled: !isOpen && prefabOpen === null,
+        why: isOpen ? 'already open' : 'leave the prefab you are in first',
+        run: () => void edits.guardUnsaved().then(async (go) => {
+          if (go) await openFile(qualified)
+        }),
+      },
+      {
+        label: 'Duplicate\u2026',
+        divider: true,
+        // Takes the copy from the server's current copy rather than the file, so a level open live is
+        // duplicated as it is now.
+        run: () => void createLevel(qualified),
+      },
+      { label: 'Rename\u2026', run: () => fileOps.renameLevel(qualified) },
+      {
+        label: 'Copy name',
+        // What `?level=` takes, and what a teammate needs in order to open the same one.
+        run: () => void navigator.clipboard?.writeText(short).then(() => notify.ok(`copied ${short}`)),
+      },
+      { label: 'Delete\u2026', divider: true, run: () => fileOps.deleteLevelFile(qualified) },
+    ],
+    short,
+  )
+}
+
+/**
+ * The games window (ADR 0162): every game, its levels with who is in each, and its components. Opening a level from
+ * it is how the editor moves between games; picking a game there only browses.
+ */
+const ENGINE_TYPES = new Set([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS].map((d) => d.type))
+const gamesWindow: GamesWindow = createGamesWindow({
+  games: () => MODE_LIST.map((m) => ({ name: m.name, label: m.label })),
+  levels: () => levelEntries,
+  game: () => activeMode?.name ?? null,
+  openLevel: () => fileState.name,
+  peopleIn: (qualified) => room.peopleIn(qualified).map((p) => ({ name: p.name, colour: peerCss(p.connId) })),
+  components: (game) => {
+    const mode = MODES[game]
+    if (mode === undefined) return null
+    const rows = registryFor(mode)
+      .all()
+      .map((d) => ({ type: d.type, label: d.label ?? d.type }))
+    return {
+      own: rows.filter((r) => !ENGINE_TYPES.has(r.type) && !isSharedComponent(r.type)),
+      shared: rows.filter((r) => !ENGINE_TYPES.has(r.type) && isSharedComponent(r.type)),
+      engine: rows.filter((r) => ENGINE_TYPES.has(r.type)),
+    }
+  },
+  onOpenLevel: (qualified) => {
+    gamesWindow.close()
+    void edits.guardUnsaved().then(async (go) => {
+      if (go) await openFile(qualified)
+    })
+  },
+  onNewLevel: (game) => {
+    gamesWindow.close()
+    void createLevel(null, game)
+  },
+  onLevelContext: (at, qualified) => levelMenu(at, qualified),
+  moveRefusal: (qualified, game) => levelMoveRefusal(qualified, game),
+  onMoveLevel: (qualified, game) => {
+    const why = levelMoveRefusal(qualified, game)
+    if (why !== null) {
+      notify.warn(`${shortName(qualified)} not moved: ${why}`)
+      return
+    }
+    fileOps.moveLevelToGame(qualified, game, MODES[game]?.label ?? game)
+  },
+  /** What the game declares (ADR 0087/0088), over what its data file holds now. */
+  settings: (game) => {
+    const mode = MODES[game]
+    if (mode === undefined) return null
+    const decls = mode.settings ?? {}
+    return { decls, values: readSettings(decls, gameData[game]?.settings) }
+  },
+  onSettingChanged: (game, key, value, ongoing) => changeGameSetting(game, key, value, ongoing),
+  undo: () => edits.undo(),
+  redo: () => edits.redo(),
+})
+
+/**
+ * Why a level cannot move to `game` (ADR 0162), or `null`, from what the editor knows before asking the server: a
+ * level of that name there already, someone in it, a component of another game's own that `game` cannot have. The
+ * server refuses the rest — its old game's own assets — with why.
+ */
+function levelMoveRefusal(qualified: string, game: string): string | null {
+  const ref = parseQualified(qualified)
+  const mode = MODES[game]
+  if (ref === null) return 'not a level'
+  if (mode === undefined) return 'this build has no code for that game'
+  if (levelEntries.some((e) => e.name === qualify({ game, name: ref.name }))) return `${mode.label} already has a level called ${ref.name}`
+  const inside = room.peopleIn(qualified)
+  if (inside.length > 0) return `${inside.map((p) => p.name).join(' and ')} ${inside.length === 1 ? 'is' : 'are'} in it`
+  const target = registryFor(mode)
+  const source = MODES[ref.game]
+  const types = levelEntries.find((e) => e.name === qualified)?.components ?? []
+  const foreign = types.filter((t) => !target.has(t) && !isSharedComponent(t))
+  if (foreign.length > 0) {
+    const labels = foreign.map((t) => (source === undefined ? undefined : registryFor(source).get(t)?.label) ?? t)
+    return `it uses ${labels.join(', ')}, which ${mode.label} does not have`
+  }
+  return null
+}
 
 // ============================== undo/redo by inverse ops (ADR 0089) ==============================
 /**
@@ -1761,11 +1854,13 @@ const edits = createHistoryStore({
   },
   repaint: (ops) => room.repaint(ops),
   loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
-  // Through `assetSync`, as this tab's edit; the material then shows, the way a level undo shows the selection.
+  // As this tab's edit: a material's through `assetSync`, and it then shows, the way a level undo shows the
+  // selection; a game's data file's through `gameSync`, the games window's fields following if it is open.
   applyAsset: (id, ops, what) => {
-    const shown = assets?.materialOf(id)
+    const game = gameOfDocId(id)
+    const shown = game === null ? assets?.materialOf(id) : gameData[game]
     if (shown === undefined) {
-      notify.warn(`cannot ${what}: the material is gone`)
+      notify.warn(`cannot ${what}: the ${game === null ? 'material' : 'game'} is gone`)
       return false
     }
     try {
@@ -1773,6 +1868,10 @@ const edits = createHistoryStore({
     } catch (e) {
       notify.warn(`cannot ${what}: ${e instanceof LiveAssetError ? e.message : String(e)}`)
       return false
+    }
+    if (game !== null) {
+      gameSync.edit(id, ops)
+      return true
     }
     assetSync.edit(id, ops)
     selectAsset(id)
@@ -1818,6 +1917,42 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
   urlOf: (path) => assets?.urlOf(path) ?? path,
   materialOf: (id) => assets?.materialOf(id),
   openers: (id) => room.openersOf(id).map((p) => ({ name: p.name, colour: peerCss(p.connId) })),
+  fileOf: (path) => assets?.fileOf(path),
+  picture: (kind, id, done) => previews.request(kind, id, done, 'big'),
+  prefabOf: (id) => assets?.prefabOf(id),
+  componentLabel: (type) => registry().get(type)?.label ?? type,
+  /** Loaded on the way if nothing placed it yet: the runtime only preloads what the open document uses. */
+  modelFacts: async (id) => {
+    if (runtime === null) return null
+    if (runtime.model(id) === null) await runtime.load([id]).catch(() => undefined)
+    const model = runtime.model(id)
+    if (model === null) return null
+    let triangles = 0
+    let meshes = 0
+    model.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return
+      meshes++
+      const g = o.geometry as THREE.BufferGeometry
+      triangles += (g.index?.count ?? g.getAttribute('position')?.count ?? 0) / 3
+    })
+    return { triangles: Math.round(triangles), meshes }
+  },
+  users: (id) => fetchUsers(id),
+  levelLabel: (qualified) => {
+    const ref = parseQualified(qualified)
+    return ref === null ? qualified : `${MODES[ref.game]?.label ?? ref.game} › ${ref.name}`
+  },
+  named: (path) => project.named(path),
+  onOpenLevel: (qualified) =>
+    void edits.guardUnsaved().then(async (go) => {
+      if (go) await openFile(qualified)
+    }),
+  // As a tile clicked in the Project window: selected there too, its folder open.
+  onSelectAsset: (id) => {
+    const path = assets?.db.byId[id]?.path
+    selectAsset(id)
+    if (path !== undefined) project.reveal(path)
+  },
   /**
    * A material edit is ops on its live document (ADR 0159): the difference between it as shown and as edited,
    * shown at once and sent behind (`assetSync.ts`), and an entry in the one undo history. No lock: anyone edits
@@ -1854,19 +1989,46 @@ const assetSync = createAssetSync({
     thumbnailsSoon()
   },
   fetch: (id) => assets?.fetchLive(id) ?? Promise.resolve(null),
-  post: async (id, batch) => {
-    const connId = room.connId()
-    if (connId === null) return 'not connected to the editor server'
-    const r = await fetch(`/api/live/asset/${id}/ops`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ connId, ...batch }) })
-    if (r.ok) return null
-    const body = (await r.json().catch(() => null)) as { error?: unknown } | null
-    return typeof body?.error === 'string' ? body.error : `refused (${r.status})`
-  },
+  post: (id, batch) => postLiveOps(`/api/live/asset/${id}/ops`, batch),
   refused: (id, why) => {
     notify.error(`${assets?.db.byId[id]?.name ?? 'material'}: edit not saved — ${why}`)
     if (selectedAsset === id) assetInspector.refresh(id)
   },
 })
+
+/**
+ * Each game's data file edited live (ADR 0162), the way a material is: this tab's edits and everyone's, in the
+ * server's order, onto `gameData`.
+ */
+const gameSync = createAssetSync({
+  shown: (id) => gameData[gameOfDocId(id) ?? ''],
+  origin: (id) => gameOrigins[gameOfDocId(id) ?? ''],
+  show: (id, json) => {
+    const game = gameOfDocId(id)
+    if (game === null) return
+    const before = gameData[game]
+    gameData[game] = parseGameData(json)
+    gameShown(game, before)
+  },
+  fetch: async (id) => {
+    const game = gameOfDocId(id)
+    if (game === null) return null
+    const { data, origin } = await loadGame(game)
+    return origin === undefined ? null : { json: data, origin }
+  },
+  post: (id, batch) => postLiveOps(`/api/live/game/${gameOfDocId(id) ?? ''}/ops`, batch),
+  refused: (id, why) => notify.error(`${MODES[gameOfDocId(id) ?? '']?.label ?? 'game'}: edit not saved — ${why}`),
+})
+
+/** A live document's batch, on this tab's room connection: `null` once the server took it, else why it did not. */
+async function postLiveOps(url: string, batch: { batchId: string; ops: AssetOp[] }): Promise<string | null> {
+  const connId = room.connId()
+  if (connId === null) return 'not connected to the editor server'
+  const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ connId, ...batch }) })
+  if (r.ok) return null
+  const body = (await r.json().catch(() => null)) as { error?: unknown } | null
+  return typeof body?.error === 'string' ? body.error : `refused (${r.status})`
+}
 const isMaterialJson = (v: unknown): v is MaterialAsset =>
   typeof v === 'object' && v !== null && typeof (v as { shader?: unknown }).shader === 'string'
 
@@ -1881,6 +2043,7 @@ const thumbnailsSoon = (): void => {
     thumbnailTimer = null
     previews.invalidate()
     project.render()
+    if (selectedAsset !== null) assetInspector.pictureChanged(selectedAsset)
   }, 400)
 }
 
@@ -1893,38 +2056,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   adopt: (type) => adopt([type]),
   selected: () => selected,
   envSelected: () => envSelected,
-  gameSelected: () => gameSelected,
-  games: () => MODE_LIST.map((m) => ({ name: m.name, label: m.label })),
-  /**
-   * The game's settings (ADR 0087): what it declares, over what its data file holds. Written whole, with the
-   * component list, on every change — the file is small and the alternative is two writers to one file.
-   */
-  settings: () => {
-    const mode = activeMode
-    if (mode === undefined || mode.settings === undefined) return null
-    return { decls: mode.settings, values: readSettings(mode.settings, gameData[mode.name]?.settings) }
-  },
-  onSettingChanged: (key, value) => {
-    const mode = activeMode
-    if (mode === undefined) return
-    const have = gameData[mode.name] ?? { components: [], settings: {} }
-    const next: GameData = { ...have, settings: { ...have.settings, [key]: value } }
-    gameData[mode.name] = next
-    // A setting the game lays its surface cells out from — the key pitch (ADR 0120) — so the preview follows
-    // the field instead of the last reload. Cheap: only nodes the game claims build any.
-    if (mode.surfaceGrid !== undefined) meshes.buildAll()
-    void saveGame(mode.name, next).then(
-      () => notify.ok(`${mode.label}: ${key} = ${Array.isArray(value) ? `${value.length} points` : value}`),
-      (e: unknown) => notify.error(`settings save failed: ${String(e)}`),
-    )
-  },
-  onModeChanged: () => {
-    // The registry changed with the game, so everything derived from it is stale: the document's own registry,
-    // the Add Component menu, the rule gizmos and the physics instance.
-    activeMode = doc === null ? activeMode : (modeOf(doc.asLevel()) ?? soleMode())
-    reopenWithRegistry()
-    void refreshFileList()
-  },
+  levelSelected: () => levelSelected,
   boundsBoxShown: () => view.showBounds(),
   showBoundsBox: (on) => view.setShowBounds(on),
   onNetBoundsChanged: () => {
@@ -2094,13 +2226,13 @@ let objectSpot: FieldSpot | null = null
 let assetSpot: FieldSpot | null = null
 const tellField = (): void => room.setField(assetSpot ?? objectSpot)
 const objectTargets = (): string[] => {
-  if (gameSelected) return [room.docTarget('@game')]
+  if (levelSelected) return [room.docTarget('@level')]
   if (envSelected) return [room.docTarget('@env')]
   return selectionRefs().map((r) => room.docTarget(refKey(r)))
 }
 /** What the object Inspector shows, as a target: the primary node, or the level's settings. */
 const objectTarget = (): string | null => {
-  if (gameSelected) return room.docTarget('@game')
+  if (levelSelected) return room.docTarget('@level')
   if (envSelected) return room.docTarget('@env')
   const ref = selected === null ? null : (doc?.refAt(selected) ?? null)
   return ref === null ? null : room.docTarget(refKey(ref))
@@ -2162,8 +2294,7 @@ const renderStatus = (): void => {
   stageEl.classList.toggle('following', leader !== null)
   if (leader !== null) stageEl.style.setProperty('--follow', peerCss(leader))
   const followHint = leaderName === null ? null : `Following ${leaderName} · move the camera to stop`
-  const placingWhat = placing === null ? null : (assets?.db.byId[placing.assetId]?.name ?? 'asset')
-  const hint = playHint ?? followHint ?? (placingWhat === null ? null : `Click in the viewport to place ${placingWhat} · Esc to cancel`)
+  const hint = playHint ?? followHint
   hintPill.hidden = hint === null
   hintPill.textContent = hint ?? ''
   hierarchyCount.textContent = doc === null ? '' : String(doc.count())
@@ -2276,7 +2407,11 @@ const reloadAssets = (opts: { named?: readonly string[]; fresh?: boolean } = {})
     try {
       assets = await loadAssetLibrary()
       // Each game's shared-component list, live from disk (ADR 0077). Missing file = no extras.
-      for (const mode of MODE_LIST) gameData[mode.name] = await loadGame(mode.name)
+      for (const mode of MODE_LIST) {
+        const { data, origin } = await loadGame(mode.name)
+        gameData[mode.name] = data
+        gameOrigins[mode.name] = origin
+      }
       setProblem('')
     } catch (e) {
       // The usual cause is a dev server started before these routes existed, which answers /api/assets with
@@ -2284,8 +2419,10 @@ const reloadAssets = (opts: { named?: readonly string[]; fresh?: boolean } = {})
       setProblem(`assets did not load (${String(e)}) — restart pnpm dev:editor`)
       return
     }
-    // This tab's live-asset edits the server has not confirmed yet go back on top of the fresh copies (ADR 0159).
+    // This tab's live-asset edits the server has not confirmed yet go back on top of the fresh copies (ADR 0159),
+    // and its edits to a game's data file (ADR 0162).
     assetSync.reloaded()
+    gameSync.reloaded()
     if (opts.fresh === true || before === null || runtime === null) {
       await freshRuntime()
       return

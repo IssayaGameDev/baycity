@@ -4,8 +4,8 @@ import { lastRatio, sampleCurve, type CurvePoint, type CurveSetting } from '@mp/
  * The curve editor (ADR 0088): a graph of control points for one `CurveSetting`.
  *
  * Drag a point to move it, click empty space to add one, double-click a point (or press Delete with it
- * selected) to remove it. Ctrl+Z / Ctrl+Y (or the buttons) walk this graph's own history: every edit saves to
- * the game's file at once, so the way back has to live here, not in the document's undo.
+ * selected) to remove it. Each is one `onChange`, and so one entry in the editor's one history (ADR 0162): the
+ * graph keeps none of its own, and Ctrl+Z pressed in it goes on to the editor's.
  *
  * **View**: the wheel zooms around the cursor — X over the bottom axis, Y over the left axis, both over the
  * plot; right-drag or Shift-drag pans; `fit` (or F) frames the points again. Grid and labels follow the view, so
@@ -34,6 +34,8 @@ export interface CurveEditorOptions {
   size?: { w: number; h: number }
   /** Hide the enlarge button (the enlarged copy hides it). */
   noEnlarge?: boolean
+  /** Where the enlarged copy goes: the page (default), or a window over it that keeps its own keys. */
+  overlayParent?: HTMLElement
 }
 
 const PAD = { l: 48, r: 10, t: 8, b: 22 }
@@ -111,12 +113,10 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
   xLab.textContent = decl.xLabel
   const yLab = document.createElement('span')
   yLab.textContent = decl.yLabel
-  const undoBtn = btn('↶', 'undo (Ctrl+Z with the graph focused)')
-  const redoBtn = btn('↷', 'redo (Ctrl+Y)')
   const fitBtn = btn('fit', 'frame the points (F)')
   const reset = btn('default', 'put the declared default curve back')
   const bigBtn = btn('⤢', 'open large')
-  fields.append(xLab, xIn, yLab, yIn, undoBtn, redoBtn, fitBtn, reset)
+  fields.append(xLab, xIn, yLab, yIn, fitBtn, reset)
   if (opts.noEnlarge !== true) fields.append(bigBtn)
   root.append(canvas, readout, fields)
   container.append(root)
@@ -263,37 +263,12 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
     return Math.min(hi, Math.max(lo, x))
   }
 
-  // --- history ---
-  const past: CurvePoint[][] = []
-  const future: CurvePoint[][] = []
+  // --- an edit ---
   const snapshot = (): CurvePoint[] => points.map((p) => ({ ...p }))
-  const remember = (): void => {
-    past.push(snapshot())
-    if (past.length > 100) past.shift()
-    future.length = 0
-  }
   const commit = (): void => {
     opts.onChange(snapshot())
     draw()
   }
-  const undo = (): void => {
-    const prev = past.pop()
-    if (prev === undefined) return
-    future.push(snapshot())
-    points = prev
-    selected = -1
-    commit()
-  }
-  const redo = (): void => {
-    const next = future.pop()
-    if (next === undefined) return
-    past.push(snapshot())
-    points = next
-    selected = -1
-    commit()
-  }
-  undoBtn.addEventListener('click', undo)
-  redoBtn.addEventListener('click', redo)
   fitBtn.addEventListener('click', () => {
     fit()
     draw()
@@ -323,12 +298,10 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
       selected = i
       dragging = true
       moved = false
-      remember()
       canvas.setPointerCapture(e.pointerId)
     } else {
       const p = fromPx(at.x, at.y)
       if (points.some((q) => q.x === p.x)) return
-      remember()
       points.push(p)
       points.sort((a, b) => a.x - b.x)
       selected = points.findIndex((q) => q.x === p.x)
@@ -358,8 +331,7 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
     panning = null
     if (!dragging) return
     dragging = false
-    if (moved) commit()
-    else past.pop() // a click that moved nothing is not an edit
+    if (moved) commit() // a click that moved nothing is not an edit
   }
   canvas.addEventListener('pointerup', endPointer)
   canvas.addEventListener('pointercancel', endPointer)
@@ -371,7 +343,6 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
     const at = local(e)
     const i = hit(at.x, at.y)
     if (i < 0 || points.length <= 1) return
-    remember()
     points.splice(i, 1)
     selected = -1
     commit()
@@ -407,13 +378,10 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
   canvas.addEventListener('keydown', (e) => {
     const mod = e.ctrlKey || e.metaKey
     const k = e.key.toLowerCase()
-    if (mod && k === 'z' && !e.shiftKey) undo()
-    else if ((mod && k === 'y') || (mod && e.shiftKey && k === 'z')) redo()
-    else if (k === 'f' && !mod) {
+    if (k === 'f' && !mod) {
       fit()
       draw()
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected >= 0 && points.length > 1) {
-      remember()
       points.splice(selected, 1)
       selected = -1
       commit()
@@ -426,7 +394,6 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
   const fieldChange = (): void => {
     const sel = points[selected]
     if (sel === undefined) return
-    remember()
     const x = Number(xIn.value)
     const y = Number(yIn.value)
     if (Number.isFinite(x)) sel.x = clampX(selected, Math.max(0, Math.round(x)))
@@ -436,7 +403,6 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
   xIn.addEventListener('change', fieldChange)
   yIn.addEventListener('change', fieldChange)
   reset.addEventListener('click', () => {
-    remember()
     points = decl.default.map((p) => ({ ...p }))
     selected = -1
     fit()
@@ -467,7 +433,7 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
     head.append(title, close)
     const body = document.createElement('div')
     overlay.append(head, body)
-    document.body.append(overlay)
+    ;(opts.overlayParent ?? document.body).append(overlay)
     const size = { w: Math.min(1100, window.innerWidth - 80), h: Math.min(560, window.innerHeight - 160) }
     const editor = createCurveEditor(body, {
       decl,
@@ -482,7 +448,10 @@ export const createCurveEditor = (container: HTMLElement, opts: CurveEditorOptio
       },
     })
     overlay.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeBig()
+      if (e.key !== 'Escape') return
+      // Its own: a window it opened over shuts only on the next.
+      e.stopPropagation()
+      closeBig()
     })
     big = { overlay, editor }
   })

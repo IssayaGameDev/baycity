@@ -30,6 +30,43 @@ const listed = (items: readonly string[]): string => {
   return `${items.slice(0, 2).join(', ')} and ${items.length - 2} more`
 }
 
+/**
+ * Why a level of game `from` may not move to another game (ADR 0162), or `null`: it uses assets in `from`'s own
+ * library, which another game's levels may not use. Kodjo's call: refused, naming them — they go to Shared first.
+ */
+export const levelMoveRefusal = (level: unknown, from: string, world: Omit<LibraryWorld, 'levels'>): string | null => {
+  const byId = new Map(world.entries.map((e) => [e.id, e]))
+  const own = [...assetsUsedBy(level, (s) => byId.has(s), world.contentsOf)]
+    .map((id) => byId.get(id)!)
+    .filter((e) => libraryOf(e.path) === from)
+  if (own.length === 0) return null
+  const names = own.map((e) => `${e.kind} ${e.name}`).sort()
+  return `it uses ${from}'s own ${listed(names)}: move ${own.length === 1 ? 'it' : 'them'} into Shared first`
+}
+
+/**
+ * Every component type a level JSON names, its placements' prefab files included when given: the `type` of each entry
+ * of any `components` or `added` list, anywhere in it. What another game would need to open it (ADR 0162).
+ */
+export const componentTypesIn = (jsons: readonly unknown[]): string[] => {
+  const types = new Set<string>()
+  const walk = (v: unknown): void => {
+    if (Array.isArray(v)) {
+      for (const x of v) walk(x)
+      return
+    }
+    if (typeof v !== 'object' || v === null) return
+    for (const [key, x] of Object.entries(v)) {
+      if ((key === 'components' || key === 'added') && Array.isArray(x)) {
+        for (const c of x) if (typeof c === 'object' && c !== null && typeof (c as { type?: unknown }).type === 'string') types.add((c as { type: string }).type)
+      }
+      walk(x)
+    }
+  }
+  for (const j of jsons) walk(j)
+  return [...types].sort()
+}
+
 /** A library as a sentence names it. */
 export const libraryName = (library: string | null): string => (library === null ? 'Shared' : library)
 

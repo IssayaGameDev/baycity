@@ -236,6 +236,7 @@ completes override transforms from the node they now override — then **throws 
 ```ts
 assetsUsedBy(json, isAssetId, contentsOf): Set<string>      // a level's (or any asset's) ids, and through each prefab and material, theirs
 levelsUsing([[name, json]…], isAssetId, contentsOf): Map<id, string[]>   // asset → level names, sorted; unused assets absent
+usersOf(id, levels, assets, isAssetId, contentsOf): { levels, assets }   // who uses one, level names and asset ids, sorted (ADR 0165)
 ```
 
 A reference is **a string value equal to a known id**, anywhere in the file (an id is 64 random bits): a game's own
@@ -253,10 +254,14 @@ type AssetOp = { kind: 'set'; path: readonly string[]; value: unknown } | { kind
 applyAssetOps(json, ops): { json, inverses }   // on a copy; inverses undo it applied in reverse; LiveAssetError for a path through a non-object
 diffAssetOps(before, after): AssetOp[]          // down through objects; arrays and changed types set whole
 mergeAssetOps(first, then): AssetOp[]          // one op per path, the newest; does what applying both in order does
-isAssetOp(v) · isLiveAssetPath(path) · validateLiveAsset(kind, json): string | null · LIVE_ASSET_KINDS
+isAssetOp(v) · isLiveAssetPath(path) · validateLiveAsset(kind: LiveKind, json): string | null · LIVE_ASSET_KINDS
+type LiveKind = AssetKind | 'game'
+gameDocId(game) = `game:${game}` · gameOfDocId(id): string | null   // no asset id has a colon
 ```
 
-A kind is live when it has a validator: `material` (a non-empty `shader`, `params` of tagged values).
+A kind is live when it has a validator: `material` (a non-empty `shader`, `params` of tagged values); and a game's
+`game.json`, not an asset (ADR 0162): `components` a list of names, `settings` absent or an object of numbers and
+curve-point lists. `LIVE_ASSET_KINDS` is the asset kinds only.
 
 ## Layout — `packages/content/src/layout.ts` (ADR 0108)
 

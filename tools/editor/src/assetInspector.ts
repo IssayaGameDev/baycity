@@ -1,7 +1,8 @@
-import { assetsOfKind, libraryOf, mayUse, type AssetDatabase, type AssetEntry, type MaterialAsset, type MaterialValue } from '@mp/content'
+import { assetsOfKind, libraryOf, mayUse, type AssetDatabase, type AssetEntry, type MaterialAsset, type MaterialValue, type Node } from '@mp/content'
 import { BUILTIN_SHADERS, defaultParams, shaderDef, type ShaderParam } from '@mp/render-three'
 
 import { checkField, colorFieldOf, fieldRow, numberScrub, scrubFieldOf, selectField, type Live } from './controls'
+import { ASSET_ICON, icon } from './icons'
 import { initials } from './people'
 
 /**
@@ -14,6 +15,11 @@ import { initials } from './people'
  * Its fields are the editor's own controls (`controls.ts`, ADR 0152), on the object Inspector's lines: a number
  * dragged sideways or typed, a colour swatch and its code, a dropdown, a tick box. A texture slot is a dropdown
  * with a thumbnail beside it.
+ *
+ * Every kind (ADR 0165): **a big picture on top** — a render, the texture itself, a sound's player, a font's sample
+ * — then its name, **the facts of its kind** (a texture's pixels, a prefab's parts and components, a model's
+ * triangles, a sound's length; every file's size and date), a material's fields, and **who uses it**: the levels
+ * and the other assets, each a click away.
  */
 export interface AssetInspectorHost {
   db: () => AssetDatabase | null
@@ -29,6 +35,26 @@ export interface AssetInspectorHost {
    * and their outline in the viewport (ADR 0155). Any kind of asset.
    */
   openers?: (assetId: string) => readonly { name: string; colour: string }[]
+  /** A file's size and when it last changed, when the server said (ADR 0165). */
+  fileOf: (path: string) => { bytes: number; modified: number } | undefined
+  /** The big picture of a prefab, model, material or shader, called back once; `null` when there is none. */
+  picture: (kind: 'prefab' | 'model' | 'material' | 'shader', assetId: string, done: (url: string | null) => void) => void
+  /** A prefab file's nodes, for what is inside it. */
+  prefabOf: (assetId: string) => Node | undefined
+  /** A component type as a person reads it: `Mesh Renderer`. */
+  componentLabel: (type: string) => string
+  /** A model's triangles and meshes, once it has loaded; `null` when it cannot be. */
+  modelFacts: (assetId: string) => Promise<{ triangles: number; meshes: number } | null>
+  /** Who uses an asset: levels qualified, assets by id. `null` when the server cannot say. */
+  users: (assetId: string) => Promise<{ levels: readonly string[]; assets: readonly string[] } | null>
+  /** How a level reads in *Used by*: `Keyboard › Roblox`. */
+  levelLabel: (qualified: string) => string
+  /** A path as the Project window names it: `Shared/materials/red.mat.json`. */
+  named: (path: string) => string
+  /** A level in *Used by* was clicked: open it. */
+  onOpenLevel: (qualified: string) => void
+  /** An asset in *Used by* was clicked: select it. */
+  onSelectAsset: (assetId: string) => void
 }
 
 export interface AssetInspector {
@@ -42,6 +68,8 @@ export interface AssetInspector {
   refresh: (assetId: string) => void
   /** Who has which asset open changed: the icons on the one shown redraw, and nothing else does. */
   openersChanged: () => void
+  /** Its picture is out of date — a material edited: the one shown is drawn again. */
+  pictureChanged: (assetId: string) => void
 }
 
 /** A line's controls, and how to show a value in them without redrawing them. */
@@ -52,6 +80,27 @@ interface Field {
 
 /** A parameter's edit: its new value, and whether a drag is still adding to it. */
 type Change = (v: MaterialValue, ongoing?: boolean) => void
+
+/** `245 KB`, `1.3 MB`. */
+export const shownBytes = (n: number): string => {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
+/** A prefab's parts and what is on them: every node in its tree, and each component type with how many. */
+export const prefabFacts = (root: Node): { parts: number; components: { type: string; count: number }[] } => {
+  let parts = 0
+  const counts = new Map<string, number>()
+  const walk = (n: Node): void => {
+    parts++
+    for (const c of n.components) counts.set(c.type, (counts.get(c.type) ?? 0) + 1)
+    for (const kid of n.children ?? []) walk(kid)
+  }
+  walk(root)
+  const components = [...counts].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count || a.type.localeCompare(b.type))
+  return { parts, components }
+}
 
 /** Whether the keyboard is in this control right now: its value is the person's, not ours. */
 const busy = (control: HTMLElement): boolean => control.contains(document.activeElement)
@@ -231,14 +280,157 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
     drawn = { assetId: entry.id, shader: material.shader, fields }
   }
 
+  /** The picture on show, to draw again when it goes out of date. */
+  let picture: { assetId: string; draw: () => void } | null = null
+
+  /** The big picture: a render, the texture, a sound's player, a font's sample — `fact` fills a fact it learns. */
+  const pictureOf = (entry: AssetEntry, fact: (label: string, value: string) => void): HTMLElement => {
+    const box = el('div', 'a-pic')
+    const url = host.urlOf(entry.path)
+    if (entry.kind === 'texture') {
+      const img = el('img')
+      img.alt = entry.name
+      img.addEventListener('load', () => fact('Size', `${img.naturalWidth} × ${img.naturalHeight} px`))
+      img.src = url
+      box.append(img)
+      return box
+    }
+    if (entry.kind === 'sound') {
+      const audio = el('audio')
+      audio.controls = true
+      audio.autoplay = true
+      audio.addEventListener('loadedmetadata', () => fact('Length', `${audio.duration.toFixed(1)} s`))
+      audio.src = url
+      box.append(audio)
+      return box
+    }
+    if (entry.kind === 'font') {
+      const family = `preview-${entry.id}`
+      const sample = el('div', 'font-sample')
+      sample.textContent = 'The quick brown fox 0123456789'
+      sample.style.fontFamily = `"${family}", system-ui, sans-serif`
+      box.append(sample)
+      // Loaded rather than declared, so a font that fails says so instead of silently using the UI font.
+      void new FontFace(family, `url(${url})`)
+        .load()
+        .then((face) => void document.fonts.add(face))
+        .catch(() => (sample.textContent = `${entry.name}: could not be loaded`))
+      return box
+    }
+    box.append(icon(ASSET_ICON[entry.kind], 'ic a-pic-ic'))
+    const img = el('img')
+    img.alt = ''
+    img.hidden = true
+    box.append(img)
+    const kind = entry.kind
+    const draw = (): void =>
+      host.picture(kind, entry.id, (made) => {
+        if (made === null || !img.isConnected) return
+        img.src = made
+        img.hidden = false
+      })
+    picture = { assetId: entry.id, draw }
+    // Drawn once it is on the page: the callback may come at once, from the cache.
+    queueMicrotask(draw)
+    return box
+  }
+
+  /** Who uses it, each a click away; asked of the server each time the asset is shown. */
+  const usedBy = (entry: AssetEntry): HTMLElement => {
+    const box = el('div', 'a-users')
+    const title = el('div', 'a-sec')
+    title.textContent = 'Used by'
+    const list = el('div', 'a-use-list')
+    const note = (text: string): HTMLElement => {
+      const n = el('div', 'a-none')
+      n.textContent = text
+      return n
+    }
+    list.append(note('…'))
+    box.append(title, list)
+    void host.users(entry.id).then((users) => {
+      if (!box.isConnected) return
+      if (users === null) return void list.replaceChildren(note('The server could not say.'))
+      const rows: HTMLElement[] = []
+      for (const level of users.levels) {
+        const b = el('button', 'a-use')
+        b.type = 'button'
+        b.title = 'Open this level'
+        const label = el('span')
+        label.textContent = host.levelLabel(level)
+        b.append(icon('level'), label)
+        b.addEventListener('click', () => host.onOpenLevel(level))
+        rows.push(b)
+      }
+      const db = host.db()
+      for (const id of users.assets) {
+        const user = db?.byId[id]
+        if (user === undefined) continue
+        const b = el('button', 'a-use')
+        b.type = 'button'
+        b.title = host.named(user.path)
+        const label = el('span')
+        label.textContent = user.name
+        b.append(icon(ASSET_ICON[user.kind]), label)
+        b.addEventListener('click', () => host.onSelectAsset(id))
+        rows.push(b)
+      }
+      list.replaceChildren(...(rows.length === 0 ? [note('Nothing uses it.')] : rows))
+    })
+    return box
+  }
+
+  /** The facts of its kind, and every file's size and date. `fact` adds one or fills one learnt later. */
+  const factsOf = (entry: AssetEntry): { box: HTMLElement; fact: (label: string, value: string) => void } => {
+    const box = el('div', 'a-facts')
+    const rows = new Map<string, HTMLElement>()
+    const fact = (label: string, value: string): void => {
+      let v = rows.get(label)
+      if (v === undefined) {
+        v = el('span', 'irow-v')
+        rows.set(label, v)
+        box.append(fieldRow(label, v))
+      }
+      v.textContent = value
+    }
+    // Learnt from the picture once it loads; placed first, so the order is the same however fast it comes.
+    if (entry.kind === 'texture') fact('Size', '…')
+    if (entry.kind === 'sound') fact('Length', '…')
+    if (entry.kind === 'prefab') {
+      const root = host.prefabOf(entry.id)
+      if (root !== undefined) {
+        const { parts, components } = prefabFacts(root)
+        fact('Parts', `${parts} object${parts === 1 ? '' : 's'}`)
+        fact('Components', components.length === 0 ? 'none' : components.map((c) => `${host.componentLabel(c.type)}${c.count > 1 ? ` ×${c.count}` : ''}`).join(', '))
+      }
+    }
+    if (entry.kind === 'model') {
+      fact('Triangles', '…')
+      fact('Meshes', '…')
+      void host.modelFacts(entry.id).then((m) => {
+        fact('Triangles', m === null ? 'not loaded' : m.triangles.toLocaleString())
+        fact('Meshes', m === null ? 'not loaded' : String(m.meshes))
+      })
+    }
+    const file = host.fileOf(entry.path)
+    if (file !== undefined) {
+      fact('File', shownBytes(file.bytes))
+      fact('Changed', new Date(file.modified).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }))
+    }
+    return { box, fact }
+  }
+
   const show = (assetId: string | null): void => {
     container.replaceChildren()
     drawn = null
     head = null
+    picture = null
     if (assetId === null) return
     const entry = host.db()?.byId[assetId]
     if (entry === undefined) return
 
+    const facts = factsOf(entry)
+    container.append(pictureOf(entry, facts.fact))
     const header = el('div', 'a-head')
     const top = el('div', 'a-top')
     const name = el('div', 'a-name')
@@ -247,21 +439,21 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
     top.append(name, openers)
     const meta = el('div', 'a-meta')
     // The id is worth showing: it is what content stores, so it is what appears in a level file.
-    meta.textContent = `${entry.kind} · ${entry.path} · ${entry.id}`
+    meta.textContent = `${entry.kind} · ${host.named(entry.path)} · ${entry.id}`
     header.append(top, meta)
-    container.append(header)
+    container.append(header, facts.box)
     head = { assetId, slot: openers }
     drawOpeners()
 
-    if (entry.kind !== 'material') return
-    const material = host.materialOf(assetId)
-    if (material === undefined) {
-      const warn = el('div', 'a-warn')
-      warn.textContent = 'This material did not parse.'
-      container.append(warn)
-      return
+    if (entry.kind === 'material') {
+      const material = host.materialOf(assetId)
+      if (material === undefined) {
+        const warn = el('div', 'a-warn')
+        warn.textContent = 'This material did not parse.'
+        container.append(warn)
+      } else showMaterial(entry, material)
     }
-    showMaterial(entry, material)
+    container.append(usedBy(entry))
   }
 
   const refresh = (assetId: string): void => {
@@ -274,5 +466,12 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
     for (const [key, { field, fallback }] of drawn.fields) field.update(material.params[key] ?? fallback)
   }
 
-  return { show, refresh, openersChanged: drawOpeners }
+  return {
+    show,
+    refresh,
+    openersChanged: drawOpeners,
+    pictureChanged: (assetId) => {
+      if (picture?.assetId === assetId) picture.draw()
+    },
+  }
 }

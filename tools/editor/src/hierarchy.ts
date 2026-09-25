@@ -176,12 +176,10 @@ export interface HierarchyHost {
    * plain, it is the node and everything under it.
    */
   onToggleHidden: (index: number, onlyThis: boolean) => void
-  /** Whether the Game row is the current selection (ADR 0052). */
-  gameSelected: () => boolean
-  /** What the Game row reads: the game's label, or that the level has none. */
-  gameLabel: () => string
-  /** The Game row was clicked. */
-  onSelectGame: () => void
+  /** Whether the Level row is the current selection (ADR 0162). */
+  levelSelected: () => boolean
+  /** The Level row was clicked. */
+  onSelectLevel: () => void
   /** Whether the Environment row is the current selection (ADR 0048). */
   envSelected: () => boolean
   /** The Environment row was clicked. */
@@ -250,7 +248,7 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
   /** What the last render drew, for a drag to measure. */
   let drawn: DrawnRow[] = []
 
-  /** A level setting above the tree: the Game and Environment rows (ADR 0048, ADR 0052). */
+  /** A level setting above the tree: the Level and Environment rows (ADR 0048, ADR 0162). */
   const settingRow = (name: IconName, text: string, title: string, selected: boolean, onPick: () => void): HTMLElement => {
     const row = document.createElement('div')
     row.className = `row env${selected ? ' sel' : ''}`
@@ -274,11 +272,10 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
      */
     if (doc !== null && doc.mode === 'level') {
       /**
-       * Which game this level is for, and that game's own settings (ADR 0052). A sibling of Environment rather
-       * than a section inside it: they are two subjects, and the game decides what the level *is* where the
-       * sun decides what it looks like.
+       * The level's own settings — its network bounds (ADR 0093) — beside its environment (ADR 0162). Which game it
+       * is for is its folder, on the top bar; that game's settings are the games window's.
        */
-      container.append(settingRow('gamepad', host.gameLabel(), 'which game this level is for, and its settings', host.gameSelected(), host.onSelectGame))
+      container.append(settingRow('level', 'Level', "this level's network bounds", host.levelSelected(), host.onSelectLevel))
       container.append(settingRow('sun', 'Environment', 'sun, sky and camera for this level', host.envSelected(), host.onSelectEnv))
     }
 

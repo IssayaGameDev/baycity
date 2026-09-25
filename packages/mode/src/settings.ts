@@ -1,9 +1,10 @@
 import { normalizePoints, type Beyond, type CurvePoint, type Interpolation } from './curve'
 
 /**
- * A game's tunable values, declared by the game and edited in the editor's Game section (ADR 0087, 0088).
+ * A game's tunable values, declared by the game and edited in the editor's games window, Settings (ADR 0087, 0088,
+ * 0162).
  *
- * The values live in `content/games/<game>.json` under `settings`, beside the shared-component list (ADR 0077):
+ * The values live in `content/<game>/game.json` under `settings`, beside the shared-component list (ADR 0077):
  * data, so a balance change is a save in the editor rather than a commit and a deploy, and so the staging game
  * and the live mirror pick it up like any other content. A game reads them through `readSettings`, which lays
  * whatever the file has over the declared defaults — a key the file lacks is its default, a key the game no

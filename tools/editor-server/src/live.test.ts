@@ -86,11 +86,11 @@ describe('join and leave', () => {
     const { live } = world()
     const a = fake('c1')
     live.join(LV, a.client)
-    expect(a.events.map((e) => e.event)).toEqual(['hello', 'snapshot'])
+    expect(a.events.map((e) => e.event)).toEqual(['hello', 'snapshot', 'rooms'])
     expect((a.events[1]!.data as { seq: number; peers: unknown[] }).seq).toBe(0)
     const b = fake('c2', BOB)
     live.join(LV, b.client)
-    expect(a.events.at(-1)?.event).toBe('peers')
+    expect(a.events.filter((e) => e.event !== 'rooms').at(-1)?.event).toBe('peers')
     expect(((b.events[1]!.data as { peers: { name: string }[] }).peers ?? []).map((p) => p.name)).toEqual(['Ada', 'Bob'])
   })
 
@@ -248,7 +248,7 @@ describe('holds', () => {
     live.sweep()
     expect(live.status()[0]!.peers.map((p) => p.connId), 'c1 gone, c2 pinged').toEqual(['c2'])
     expect(live.status()[0]!.holds).toBe(0)
-    expect(b.events.at(-1)?.event).toBe('peers')
+    expect(b.events.filter((e) => e.event !== 'rooms').at(-1)?.event).toBe('peers')
   })
 
   it('removing a node drops the holds on it, and two tabs of one person are two holders', () => {
@@ -532,5 +532,26 @@ describe('which field each connection is in (ADR 0160)', () => {
     live.setField(LV, 'c1', ADA, spot)
     live.leave(LV, 'c1')
     expect(fieldEvents(b).at(-1), 'gone with the connection').toEqual({ fields: [] })
+  })
+})
+
+describe('who is in which room (ADR 0162)', () => {
+  const roomsOf = (f: Fake): unknown => f.events.filter((e) => e.event === 'rooms').at(-1)?.data
+
+  it('tells every connection, in every document, who is in each on every join and leave', () => {
+    const { live, disk } = world()
+    disk.set('parkour/lv2', fixture())
+    const a = fake('c1')
+    const b = fake('c2', BOB)
+    live.join(LV, a.client)
+    live.join('parkour/lv2', b.client)
+    expect(roomsOf(a), 'someone joining another level').toEqual({
+      rooms: [
+        { kind: 'level', name: LV, peers: [{ connId: 'c1', name: 'Ada' }] },
+        { kind: 'level', name: 'parkour/lv2', peers: [{ connId: 'c2', name: 'Bob' }] },
+      ],
+    })
+    live.leave('parkour/lv2', 'c2')
+    expect(roomsOf(a), 'and leaving it').toEqual({ rooms: [{ kind: 'level', name: LV, peers: [{ connId: 'c1', name: 'Ada' }] }] })
   })
 })

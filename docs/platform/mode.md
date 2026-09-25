@@ -109,4 +109,4 @@ sampleCurve(points, x, { interpolation, beyond })   // before the first point: i
 normalizePoints(raw): CurvePoint[] | null  // sorted, deduped, finite
 ```
 
-Stored in `content/<game>/game.json` → `settings`; edited in the editor's Game row (a graph per curve, `editor.md`). Keyboard: `CURVE_SETTINGS`, three curves (`docs/games/keyboard/balance.md`, ADR 0087/0088).
+Stored in `content/<game>/game.json` → `settings`; edited in the editor's games window, Settings (a graph per curve, `editor.md`, ADR 0162). Keyboard: `CURVE_SETTINGS`, three curves (`docs/games/keyboard/balance.md`, ADR 0087/0088).

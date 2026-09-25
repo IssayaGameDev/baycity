@@ -28,6 +28,8 @@ import type { User } from './config'
  *   what stays. `hold` is the whole set a connection wants — "my holds are exactly these" — so a late or
  *   reordered message cannot leave a ghost; released on the client leaving and when the node is removed.
  *   Identity is the **connection**, so two tabs of one person are two holders.
+ * - Who is in which document, every document's peers, sent to **every** connection on each join and leave (`rooms`),
+ *   so the games window can say who is in each level (Track B, ADR 0162).
  * - What each connection has open in its asset Inspector (ADR 0159), and which Inspector field it is in (ADR 0160):
  *   shown to **every** connection in any document — a material is drawn in every level. The whole set each time,
  *   like holds; sent to a joiner after its snapshot; dropped on leaving (`everyoneSees`).
@@ -80,6 +82,13 @@ export interface Hold {
 export interface Peer {
   connId: string
   name: string
+}
+
+/** A document someone is in, and who: the `rooms` event (ADR 0162). */
+export interface Room {
+  kind: 'level' | 'prefab'
+  name: string
+  peers: Peer[]
 }
 
 /** A connection with an asset open in its Inspector (ADR 0159). */
@@ -291,6 +300,10 @@ export const createLive = (opts: LiveOptions): Live => {
   const fields = everyoneSees<FieldFocus>('fields', 'fields')
 
   const peersOf = (d: LiveDoc): Peer[] => [...d.clients.values()].map((c) => ({ connId: c.connId, name: c.user.name }))
+  /** Every open document with anyone in it, and who (ADR 0162). */
+  const roomsNow = (): Room[] =>
+    [...docs.values()].filter((d) => d.clients.size > 0).map((d) => ({ kind: d.kind, name: d.name, peers: peersOf(d) }))
+  const announceRooms = (): void => api.broadcastAll('rooms', { rooms: roomsNow() })
   /** One hold per connection per node: several people may have the same node selected (ADR 0158). */
   const holdKey = (connId: string, ref: NodeRef): string => `${connId}|${refKey(ref)}`
   const holdsOf = (d: LiveDoc): Hold[] => [...d.holds.values()]
@@ -513,6 +526,7 @@ export const createLive = (opts: LiveOptions): Live => {
       openAssets.greet(client)
       fields.greet(client)
       for (const c of d.clients.values()) if (c !== client) c.send('peers', { peers: peersOf(d) })
+      announceRooms()
     },
 
     leave: (name, connId) => {
@@ -531,6 +545,7 @@ export const createLive = (opts: LiveOptions): Live => {
       // What it had open, and the field it was in, are shown nowhere now.
       openAssets.drop(connId)
       fields.drop(connId)
+      announceRooms()
     },
 
     apply: (name, connId, user, batch) => {

@@ -2,7 +2,7 @@
 import type { AssetEntry, Level, Node, UnlinkDeps } from '@mp/content'
 import { describe, expect, it } from 'vitest'
 
-import { deletedBy, deleteWording, unlinkedLevel } from './fileActions'
+import { deletedBy, deleteWording, severalWording, unlinkedLevel } from './fileActions'
 
 /**
  * What deleting takes with it (ADR 0097): a prefab is unlinked from every placement first, and a folder is every
@@ -79,5 +79,15 @@ describe('what the delete asks', () => {
       body: 'It holds 2 prefabs: pad, ramp. Used by 2 other levels (keyboard/default, parkour/level1). Those objects stay where they are and keep what they are drawing; they just stop being copies of those prefabs. The files and their ids go for good.',
     })
     expect(deleteWording(deletedBy(LIBRARY, 'prefabs/Basic-old'), 0, []).body).toBe('It holds the prefab door. Nothing places it. The files and their ids go for good.')
+  })
+})
+
+describe('deleting several at once (ADR 0166)', () => {
+  it('asks once: how many, the files going, and what becomes of placed prefabs among them', () => {
+    expect(severalWording(3, 5, 0, 0, [])).toEqual({ title: 'Delete 3 items?', body: '5 assets and their ids go for good.' })
+    expect(severalWording(2, 2, 1, 2, ['kb/a'])).toEqual({
+      title: 'Delete 2 items?',
+      body: '2 assets and their ids go for good. A prefab among them is used by 2 in this level and 1 other level (kb/a): those objects stay where they are and keep what they are drawing; they just stop being copies.',
+    })
   })
 })

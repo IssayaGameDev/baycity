@@ -128,7 +128,7 @@ describe('identity', () => {
 describe('levels', () => {
   it('lists, reads, writes, and refuses a broken level', async () => {
     // `mode` comes from the folder now, not from a tag inside the file (ADR 0108).
-    expect(await json(await call('ada', 'GET', '/api/levels'))).toEqual([{ name: LV, mode: 'parkour' }])
+    expect(await json(await call('ada', 'GET', '/api/levels'))).toEqual([{ name: LV, mode: 'parkour', components: [] }])
     const ok = await call('ada', 'PUT', `/api/levels/${LV}`, { ...LEVEL, nodes: [{ id: 'n', transform: { position: { x: 0, y: 0, z: 0 } }, components: [] }] })
     expect(ok.status).toBe(200)
     expect(changed).toEqual([{ user: 'Ada', paths: [keyFor.level(LV)] }])
@@ -272,6 +272,55 @@ describe('assets', () => {
   })
 })
 
+describe('several at once (ADR 0166)', () => {
+  it('moves several into a folder, or none of them when one cannot go', async () => {
+    for (const n of ['a', 'b', 'c']) await call('ada', 'PUT', `/content/assets/materials/${n}.mat.json`, { shader: 'standard', params: {} })
+    mkdirSync(join(root, 'content/assets/old'), { recursive: true })
+    writeFileSync(join(root, 'content/assets/old/c.mat.json'), '{"shader":"standard","params":{}}')
+    const into = (n: string, dir: string) => ({ from: `assets/materials/${n}.mat.json`, to: `assets/${dir}/${n}.mat.json` })
+    const clash = await call('ada', 'POST', '/api/assets/move', { moves: [into('a', 'old'), into('c', 'old')] })
+    expect(clash.status, 'c is there already').toBe(400)
+    expect(existsSync(join(root, 'content/assets/materials/a.mat.json')), 'so a stayed too').toBe(true)
+    await call('bob', 'POST', '/api/locks/acquire', { path: keyFor.asset('assets/materials/b.mat.json') })
+    expect((await call('ada', 'POST', '/api/assets/move', { moves: [into('a', 'old'), into('b', 'old')] })).status, 'b is held').toBe(423)
+    expect(existsSync(join(root, 'content/assets/materials/a.mat.json'))).toBe(true)
+    await call('bob', 'POST', '/api/locks/release', { path: keyFor.asset('assets/materials/b.mat.json') })
+    expect((await call('ada', 'POST', '/api/assets/move', { moves: [into('a', 'old'), into('b', 'old')] })).status).toBe(200)
+    expect(['a', 'b'].map((n) => existsSync(join(root, `content/assets/old/${n}.mat.json`)))).toEqual([true, true])
+  })
+
+  it('deletes several, or none of them while anyone holds one', async () => {
+    for (const n of ['a', 'b']) await call('ada', 'PUT', `/content/assets/materials/${n}.mat.json`, { shader: 'standard', params: {} })
+    const paths = ['assets/materials/a.mat.json', 'assets/materials/b.mat.json']
+    await call('bob', 'POST', '/api/locks/acquire', { path: keyFor.asset(paths[1]!) })
+    expect((await call('ada', 'POST', '/api/assets/delete', { paths })).status).toBe(423)
+    expect(existsSync(join(root, 'content', paths[0]!)), 'a stayed').toBe(true)
+    await call('bob', 'POST', '/api/locks/release', { path: keyFor.asset(paths[1]!) })
+    expect((await call('ada', 'POST', '/api/assets/delete', { paths })).status).toBe(200)
+    expect(paths.map((p) => existsSync(join(root, 'content', p)))).toEqual([false, false])
+  })
+})
+
+describe('what the asset Inspector asks (ADR 0165)', () => {
+  it('lists each file with its size and date, and says who uses an asset, directly or through another', async () => {
+    await call('ada', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: {} })
+    const listed = await json<{ entries: { id: string; path: string }[]; files: Record<string, { bytes: number; modified: number }> }>(await call('ada', 'GET', '/api/assets'))
+    const material = listed.entries.find((e) => e.path === 'assets/materials/m.mat.json')!
+    expect(listed.files['assets/materials/m.mat.json']!.bytes).toBe(readFileSync(join(root, 'content/assets/materials/m.mat.json')).length)
+    expect(listed.files['assets/materials/m.mat.json']!.modified).toBeGreaterThan(0)
+
+    const prefab = { id: 'p', transform: { position: { x: 0, y: 0, z: 0 } }, components: [{ id: 'r', type: 'Renderer', params: { material: material.id } }] }
+    await call('ada', 'PUT', '/content/assets/prefabs/p.prefab.json', prefab)
+    const pad = (await json<{ entries: { id: string; path: string }[] }>(await call('ada', 'GET', '/api/assets'))).entries.find((e) => e.path === 'assets/prefabs/p.prefab.json')!
+    writeFileSync(join(root, LEVEL_FILE), `${JSON.stringify({ ...LEVEL, nodes: [{ id: 'n', prefab: pad.id, transform: { position: { x: 0, y: 0, z: 0 } }, components: [] }] })}
+`)
+
+    expect(await json(await call('ada', 'GET', `/api/assets/users?id=${material.id}`))).toEqual({ levels: [LV], assets: [pad.id] })
+    expect(await json(await call('ada', 'GET', `/api/assets/users?id=${pad.id}`))).toEqual({ levels: [LV], assets: [] })
+    expect((await call('ada', 'GET', '/api/assets/users?id=0000000000000000')).status).toBe(404)
+  })
+})
+
 describe('a material edited live (ADR 0159)', () => {
   it('takes an edit on a room connection, sends it to everyone, serves the live copy and refuses a PUT over it', async () => {
     await call('ada', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: { color: { kind: 'color', value: '#ff0000' } } })
@@ -293,6 +342,32 @@ describe('a material edited live (ADR 0159)', () => {
 
     expect((await call('ada', 'POST', `/api/live/asset/${id}/ops`, { connId: 'c-ada', batchId: 'b2', ops: [{ kind: 'nope' }] })).status, 'not asset ops').toBe(400)
     expect((await call('bob', 'POST', `/api/live/asset/${id}/ops`, { connId: 'c-ada', batchId: 'b3', ops: [] })).status, 'not Bob’s connection').toBe(400)
+  })
+})
+
+describe('a game’s data file edited live (ADR 0162)', () => {
+  it('takes an edit on a room connection, sends it to everyone, serves the live copy, writes it behind and refuses a PUT over it', async () => {
+    const events: { event: string; data: unknown }[] = []
+    live.join(LV, { connId: 'c-ada', user: USERS.ada!, send: (event, data) => void events.push({ event, data }) })
+
+    const before = await call('bob', 'GET', '/api/games/parkour')
+    expect(before.headers.get('x-asset-seq'), 'the file, before any live edit').toBe('0')
+
+    const r = await call('ada', 'POST', '/api/live/game/parkour/ops', { connId: 'c-ada', batchId: 'b1', ops: [{ kind: 'set', path: ['settings', 'speed'], value: 3 }] })
+    expect(await json(r)).toEqual({ ok: true, seq: 1 })
+    expect(events.at(-1)).toMatchObject({ event: 'asset', data: { assetId: 'game:parkour', seq: 1, from: 'c-ada', batchId: 'b1' } })
+
+    const after = await call('bob', 'GET', '/api/games/parkour')
+    expect(after.headers.get('x-asset-seq')).toBe('1')
+    expect(await json(after), 'the live copy, ahead of the file').toEqual({ components: [], settings: { speed: 3 } })
+    expect((await call('bob', 'PUT', '/api/games/parkour', { components: [] })).status).toBe(409)
+
+    const bad = await call('ada', 'POST', '/api/live/game/parkour/ops', { connId: 'c-ada', batchId: 'b2', ops: [{ kind: 'set', path: ['settings', 'speed'], value: 'fast' }] })
+    expect(bad.status, 'a file no game could read').toBe(400)
+    expect((await call('ada', 'POST', '/api/live/game/nope/ops', { connId: 'c-ada', batchId: 'b3', ops: [] })).status, 'no such game').toBe(404)
+
+    liveAssets.flushAll()
+    expect(JSON.parse(readFileSync(join(root, 'content/parkour/game.json'), 'utf8'))).toEqual({ components: [], settings: { speed: 3 } })
   })
 })
 
@@ -369,6 +444,8 @@ const sseReader = (r: Response): { take: (count: number) => Promise<{ event: str
       const frame = buf.slice(0, at)
       buf = buf.slice(at + 2)
       if (frame.startsWith(':')) continue
+      // Who is in which room goes to everyone on every join and leave (ADR 0162); tested on its own in live.test.ts.
+      if (frame.includes('event: rooms')) continue
       const fields = Object.fromEntries(frame.split(String.fromCharCode(10)).map((l) => [l.slice(0, l.indexOf(':')), l.slice(l.indexOf(':') + 2)]))
       const e: { event: string; data: unknown; id?: number } = { event: fields.event ?? '', data: JSON.parse(fields.data ?? 'null') }
       if (fields.id !== undefined) e.id = Number(fields.id)
@@ -525,5 +602,33 @@ describe('asset libraries (ADR 0161)', () => {
     // Back to Shared alone, it would need Parkour's texture: refused.
     expect((await call('ada', 'POST', '/api/assets/move', { from: 'parkour/assets/materials/m.mat.json', to: 'assets/materials/m.mat.json' })).status, "uses Parkour's texture").toBe(409)
     expect((await call('ada', 'POST', '/api/assets/move', { from: 'parkour/assets', to: 'assets/from-parkour' })).status, 'a library itself does not move').toBe(400)
+  })
+})
+
+describe('moving a level to another game (ADR 0162)', () => {
+  it('moves the file, keeps the tag in step, and refuses while it uses its old game’s own assets', async () => {
+    mkdirSync(join(root, 'content/keyboard'), { recursive: true })
+    writeFileSync(join(root, 'content/keyboard/game.json'), '{"components":[]}')
+    // A texture in Parkour's own library, and the level using it by id.
+    await call('ada', 'POST', '/api/assets/upload?path=parkour/assets/textures/own.png', undefined, Buffer.from('png'))
+    const own = (await json<{ entries: { id: string; path: string }[] }>(await call('ada', 'GET', '/api/assets'))).entries.find((e) => e.path === 'parkour/assets/textures/own.png')!.id
+    const using = { ...LEVEL, config: { mode: { name: 'parkour' }, sky: own } }
+    writeFileSync(join(root, LEVEL_FILE), JSON.stringify(using))
+
+    const refused = await call('ada', 'POST', '/api/levels/move', { from: LV, to: 'keyboard/a' })
+    expect(refused.status).toBe(409)
+    expect((await json<{ error: string }>(refused)).error).toBe("parkour/a not moved to keyboard: it uses parkour's own texture own: move it into Shared first")
+
+    writeFileSync(join(root, LEVEL_FILE), JSON.stringify(LEVEL))
+    expect((await call('ada', 'POST', '/api/levels/move', { from: LV, to: 'keyboard/a' })).status).toBe(200)
+    const moved = JSON.parse(readFileSync(join(root, 'content/keyboard/levels/a.level.json'), 'utf8')) as { config: { mode: { name: string } } }
+    expect(moved.config.mode.name, 'the tag says what the folder says').toBe('keyboard')
+    expect(existsSync(join(root, LEVEL_FILE))).toBe(false)
+  })
+
+  it('lists the component types a level uses, through its prefabs too', async () => {
+    const withTypes = { ...LEVEL, nodes: [{ id: 'n', transform: { position: { x: 0, y: 0, z: 0 } }, components: [{ id: 'c', type: 'Hazard', params: {} }] }] }
+    writeFileSync(join(root, LEVEL_FILE), JSON.stringify(withTypes))
+    expect(await json(await call('ada', 'GET', '/api/levels'))).toEqual([{ name: LV, mode: 'parkour', components: ['Hazard'] }])
   })
 })

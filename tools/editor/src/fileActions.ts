@@ -74,6 +74,23 @@ export const deleteWording = (what: Deleted, here: number, others: readonly stri
 }
 
 /**
+ * The question before deleting several at once (ADR 0166): how many, how many files go with them, and what happens
+ * to the objects placing any prefab among them. Pure.
+ */
+export const severalWording = (count: number, files: number, prefabs: number, here: number, others: readonly string[]): { title: string; body: string } => {
+  const counts = [
+    here > 0 ? `${here} in this level` : null,
+    others.length > 0 ? `${others.length} other level${others.length === 1 ? '' : 's'} (${others.join(', ')})` : null,
+  ].filter((s) => s !== null)
+  const goes = `${files} asset${files === 1 ? '' : 's'} and ${files === 1 ? 'its id go' : 'their ids go'} for good.`
+  const placed =
+    prefabs === 0 || counts.length === 0
+      ? ''
+      : ` ${prefabs === 1 ? 'A prefab among them is' : `${prefabs} prefabs among them are`} used by ${counts.join(' and ')}: those objects stay where they are and keep what they are drawing; they just stop being copies.`
+  return { title: `Delete ${count} items?`, body: `${goes}${placed}` }
+}
+
+/**
  * A level file with every placement of `ids` unlinked, as it goes back to disk, or `null` when it placed none of
  * them. Pure, over a level read from disk.
  *
@@ -106,8 +123,6 @@ export interface FileActionsHost {
   editingFor: () => string | null
   adoptable: () => readonly string[]
   adopt: (types: string[]) => Promise<void>
-  /** Arm this asset for the next viewport click, or disarm the one already waiting. */
-  arm: (kind: 'prefabAsset' | 'model', assetId: string) => void
   recordEdit: (label: string) => void
   room: { live: () => boolean; flush: () => Promise<void>; leave: () => Promise<void> | void }
   openFile: (qualified: string) => Promise<void>
@@ -141,7 +156,6 @@ export const createFileActions = (host: FileActionsHost) => {
     })()
   }
 
-  /** Arm a placeable asset for the next viewport click, or disarm the one already waiting. */
   /**
    * The component types a prefab file uses that the open document's registry lacks, split into the shared ones
    * the game can adopt (ADR 0077) and another game's private ones, which it cannot (ADR 0076).
@@ -170,19 +184,23 @@ export const createFileActions = (host: FileActionsHost) => {
   }
 
   /**
+   * Make a dropped asset ready to place, then `place` it (ADR 0164): refused with why when it cannot go here, and a
+   * shared component the game lacks adopted first, so the placement never meets a registry without it (ADR 0077) —
+   * not while a prefab is open on top, which belongs to no game.
+   *
    * `fresh` once the prefab has been fetched again. The copy the library loaded at boot is behind any edit a
    * collaborator has made to it since, and a level that has no copy of its own places from this one — so a prefab
-   * is armed with the server's current copy, or with the one it had when the server cannot be asked.
+   * is placed from the server's current copy, or from the one it had when the server cannot be asked.
    */
-  const armAsset = (assetId: string, fresh = false): void => {
+  const whenPlaceable = (assetId: string, place: (kind: 'prefabAsset' | 'model') => void, fresh = false): void => {
     const library = host.assets()
     const entry = library?.db.byId[assetId]
-    if (library === null || entry === undefined) return
+    if (library === null || entry === undefined || (entry.kind !== 'prefab' && entry.kind !== 'model')) return
     if (entry.kind === 'prefab' && !fresh) {
       void library
         .refreshPrefab(assetId)
         .catch(() => undefined)
-        .then(() => armAsset(assetId, true))
+        .then(() => whenPlaceable(assetId, place, true))
       return
     }
     const why = unplaceableWhy(assetId)
@@ -190,16 +208,12 @@ export const createFileActions = (host: FileActionsHost) => {
       host.notify.warn(`${entry.name} ${why}`)
       return
     }
-    // A shared component the game lacks is adopted on the way to arming, so the click that places it never sees
-    // a registry without it (ADR 0077). Not while a prefab is open on top: a prefab belongs to no game.
     const { shared } = missingIn(assetId)
     if (shared.length > 0 && host.hasGame() && !host.inPrefab()) {
-      void host.adopt(shared).then(() => armAsset(assetId, true))
+      void host.adopt(shared).then(() => whenPlaceable(assetId, place, true))
       return
     }
-    const kind = entry.kind === 'prefab' ? ('prefabAsset' as const) : ('model' as const)
-    host.arm(kind, assetId)
-    host.refreshUi()
+    place(entry.kind === 'prefab' ? 'prefabAsset' : 'model')
   }
 
   const renameAsset = (path: string, name: string): void =>
@@ -243,6 +257,42 @@ export const createFileActions = (host: FileActionsHost) => {
    * **A folder is every prefab in it.** Deleting one used to remove its prefabs as plain files, so their
    * placements lost their definitions and drew nothing — the very outcome ADR 0097 chose against.
    */
+  /**
+   * Where these prefabs are placed: the other levels (from the listing), and how many times in this one. The open
+   * document is ahead of the listing either way: it may have placed one since the last write, or removed the last.
+   */
+  const placementsOf = async (ids: readonly string[]): Promise<{ others: string[]; here: number }> => {
+    const all = await listFiles('levels').catch(() => [] as FileEntry[])
+    const openName = host.fileName()
+    const others = all.filter((f) => f.name !== openName && f.prefabs?.some((id) => ids.includes(id)) === true).map((f) => f.name)
+    const here = ids.reduce((n, id) => n + (host.doc()?.refCount(id) ?? 0), 0)
+    return { others, here }
+  }
+
+  /**
+   * Unlink every placement of these prefabs, so deleting them leaves the objects where they are: the other levels
+   * first — they are the ones that can refuse, and a refusal must stop the whole thing — then this one. `false`
+   * when one refused, and nothing is to be deleted.
+   */
+  const unlinkEverywhere = async (prefabs: readonly AssetEntry[], others: readonly string[], here: number): Promise<boolean> => {
+    const ids = prefabs.map((e) => e.id)
+    for (const name of others) {
+      try {
+        const unlinked = unlinkedLevel((await loadLevelRaw(name)) as Level, ids, host.prefabSource, { types: host.registry(), freshId: freshNodeId, refKeysOf: nodeRefKeysOf })
+        if (unlinked !== null) await saveFile('levels', name, unlinked)
+      } catch (e) {
+        host.notify.error(`${name} could not be unlinked (${String(e)}) — nothing deleted`)
+        return false
+      }
+    }
+    if (here > 0) {
+      for (const id of ids) if ((host.doc()?.refCount(id) ?? 0) > 0) host.doc()?.unlinkPrefab(id)
+      host.recordEdit(prefabs.length === 1 ? `unlinked ${prefabs[0]!.name}` : `unlinked ${prefabs.length} prefabs`)
+      await host.room.flush().catch(() => undefined)
+    }
+    return true
+  }
+
   const deleteAsset = (path: string): void => {
     const db = host.assets()?.db
     if (db === undefined) return
@@ -256,32 +306,33 @@ export const createFileActions = (host: FileActionsHost) => {
       return
     }
     void (async () => {
-      const ids = covered.prefabs.map((e) => e.id)
-      const all = await listFiles('levels').catch(() => [] as FileEntry[])
-      const openName = host.fileName()
-      // The open document is ahead of the listing either way: it may have placed one since the last write, or
-      // removed the last one.
-      const others = all.filter((f) => f.name !== openName && f.prefabs?.some((id) => ids.includes(id)) === true).map((f) => f.name)
-      const here = ids.reduce((n, id) => n + (host.doc()?.refCount(id) ?? 0), 0)
+      const { others, here } = await placementsOf(covered.prefabs.map((e) => e.id))
       const ask = deleteWording(covered, here, others)
       if (!(await askDestructive(ask.title, ask.body, 'Delete'))) return host.notify.ok('kept')
+      if (await unlinkEverywhere(covered.prefabs, others, here)) remove()
+    })()
+  }
 
-      // Other levels first: they are the ones that can refuse, and a refusal must stop the whole thing.
-      for (const name of others) {
-        try {
-          const unlinked = unlinkedLevel((await loadLevelRaw(name)) as Level, ids, host.prefabSource, { types: host.registry(), freshId: freshNodeId, refKeysOf: nodeRefKeysOf })
-          if (unlinked !== null) await saveFile('levels', name, unlinked)
-        } catch (e) {
-          host.notify.error(`${name} could not be unlinked (${String(e)}) — nothing deleted`)
-          return
-        }
-      }
-      if (here > 0) {
-        for (const id of ids) if ((host.doc()?.refCount(id) ?? 0) > 0) host.doc()?.unlinkPrefab(id)
-        host.recordEdit(covered.prefabs.length === 1 ? `unlinked ${covered.prefabs[0]!.name}` : `unlinked ${covered.prefabs.length} prefabs`)
-        await host.room.flush().catch(() => undefined)
-      }
-      remove()
+  /**
+   * Delete several at once (ADR 0166), asked once for all: what goes, and what becomes of the objects placing any
+   * prefab among them. Then all or none on the server, which refuses while anyone holds any of them. A path inside
+   * another one being deleted is that one's already.
+   */
+  const deleteAssets = (paths: readonly string[]): void => {
+    const own = paths.filter((p) => !paths.some((q) => q !== p && p.startsWith(`${q}/`)))
+    if (own.length === 0) return
+    if (own.length === 1) return deleteAsset(own[0]!)
+    const db = host.assets()?.db
+    if (db === undefined) return
+    const parts = own.map((p) => deletedBy(db.entries, p))
+    const files = parts.reduce((n, d) => n + (d.folder ? d.inside : 1), 0)
+    const prefabs = [...new Map(parts.flatMap((d) => d.prefabs).map((e) => [e.id, e])).values()]
+    void (async () => {
+      const { others, here } = await placementsOf(prefabs.map((e) => e.id))
+      const ask = severalWording(own.length, files, prefabs.length, here, others)
+      if (!(await askDestructive(ask.title, ask.body, 'Delete'))) return host.notify.ok('kept')
+      if (prefabs.length > 0 && !(await unlinkEverywhere(prefabs, others, here))) return
+      afterFileOp(`deleted ${own.length} items`, async () => host.assets()?.removeMany(own) ?? Promise.resolve())
     })()
   }
 
@@ -294,6 +345,28 @@ export const createFileActions = (host: FileActionsHost) => {
    *
    * A `to` in another game moves the level there, since the folder is the game.
    */
+  /**
+   * Move a level's file to `to` — a new name, or another game's folder (ADR 0162). The server refuses while the level
+   * is open, so the one this tab has open is left first and opened again where it went, or where it was.
+   */
+  const relocateLevel = async (from: string, to: string, what: { done: string; failed: string }): Promise<void> => {
+    const wasOpen = host.fileName() === from
+    if (wasOpen) {
+      if (host.room.live()) await host.room.flush().catch(() => undefined)
+      await host.room.leave()
+    }
+    try {
+      await apiRenameLevel(from, to)
+    } catch (e) {
+      host.notify.error(`${what.failed}: ${e instanceof Error ? e.message : String(e)}`)
+      if (wasOpen) await host.openFile(from) // put back what we left
+      return
+    }
+    await host.refreshFileList()
+    if (wasOpen) await host.openFile(to)
+    host.notify.ok(what.done)
+  }
+
   const renameLevel = (qualified: string): void => {
     const ref = parseQualified(qualified)
     if (ref === null) return
@@ -305,22 +378,25 @@ export const createFileActions = (host: FileActionsHost) => {
       )
       if (asked === null || asked === ref.name) return
       if (!isSegment(asked)) return host.notify.warn(`"${asked}" is not a file name: letters, digits, - and _ only`)
-      const to = qualify({ game: ref.game, name: asked })
-      const wasOpen = host.fileName() === qualified
-      if (wasOpen) {
-        if (host.room.live()) await host.room.flush().catch(() => undefined)
-        await host.room.leave()
-      }
-      try {
-        await apiRenameLevel(qualified, to)
-      } catch (e) {
-        host.notify.error(`could not rename: ${String(e)}`)
-        if (wasOpen) await host.openFile(qualified) // put back what we left
-        return
-      }
-      await host.refreshFileList()
-      if (wasOpen) await host.openFile(to)
-      host.notify.ok(`renamed to ${asked}`)
+      await relocateLevel(qualified, qualify({ game: ref.game, name: asked }), { done: `renamed to ${asked}`, failed: 'could not rename' })
+    })()
+  }
+
+  /**
+   * Move a level to another game (ADR 0162), after a short confirmation, Kodjo's call. The file goes to that game's
+   * folder and its tag with it; the server refuses while it uses its old game's own assets.
+   */
+  const moveLevelToGame = (qualified: string, game: string, label: string): void => {
+    const ref = parseQualified(qualified)
+    if (ref === null || ref.game === game) return
+    void (async () => {
+      const go = await askDestructive(
+        `Move ${ref.name} to ${label}?`,
+        `It becomes a ${label} level: it opens with ${label}'s components, and its ?level= link and its multiplayer room go with it.`,
+        'Move',
+      )
+      if (!go) return
+      await relocateLevel(qualified, qualify({ game, name: ref.name }), { done: `moved ${ref.name} to ${label}`, failed: `could not move ${ref.name}` })
     })()
   }
 
@@ -364,11 +440,13 @@ export const createFileActions = (host: FileActionsHost) => {
     /** Ask, run, then invalidate previews, re-read the asset database and refresh the tree. */
     afterFileOp,
     /** Arm a placeable asset for the next viewport click, adopting any shared component it needs first. */
-    armAsset,
+    whenPlaceable,
+    deleteAssets,
     renameAsset,
     /** Delete an asset — and for a prefab, unlink every placement of it first (ADR 0097). */
     deleteAsset,
     renameLevel,
+    moveLevelToGame,
     /** Delete a level (ADR 0110), behind a confirm with the consequences named. */
     deleteLevelFile,
     /** Why this asset cannot be placed into the open document, or `null`. */
