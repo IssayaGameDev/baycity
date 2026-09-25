@@ -59,8 +59,10 @@ import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
 import { createProjectPanel, type Project } from './projectPanel'
 import { createHistoryStore } from './historyStore'
 import { createItemMeshes } from './itemMeshes'
-import { createLiveSession } from './liveSession'
+import { createLiveSession, peerCss } from './liveSession'
 import { createCameraView } from './cameraView'
+import { createFollow } from './follow'
+import { createPeople, type PeopleState } from './people'
 import { createFileActions } from './fileActions'
 import { createMotionPreview } from './motionPreview'
 import { createMenus } from './menus'
@@ -272,6 +274,7 @@ const dropAllLocks = async (): Promise<void> => {
   lockedAssets.clear()
   readOnlyBy = null
   room.leaveAll()
+  follow.reset()
   edits.discardHeld()
   await Promise.all(paths.map((p) => releaseLock(p).catch(() => undefined)))
 }
@@ -335,9 +338,20 @@ const room = createLiveSession({
   inspectorSync: () => inspectorSync(),
   notify,
   setProblem: (message) => setProblem(message),
-  renderStatus: () => renderStatus(),
+  presenceChanged: () => {
+    // A reconnect is a new connection: whoever this tab follows only knew the old one.
+    const conn = room.connId()
+    if (conn !== null && conn !== presenceConn) follow.announce()
+    presenceConn = conn
+    follow.prune(new Set(room.peers().map((p) => p.connId)))
+    renderStatus()
+  },
+  onCamera: (from, pose) => follow.onCamera(from, pose),
+  onFollow: (from, leader) => follow.onFollow(from, leader, room.connId()),
   dropHistoryWhere: (predicate) => edits.dropWhere(predicate),
 })
+/** The connection the room last reported, so a reconnect is noticed. */
+let presenceConn: string | null = null
 
 /** Is the open document a live room? Prefabs are too (ADR 0091); a material is a file with a lock. */
 const live = (): boolean => room.live()
@@ -702,8 +716,36 @@ const view = createCameraView({
   renderPostFX: () => postfx.render(),
   notify,
   uiChanged: () => uiChanged(),
+  userMoved: () => follow.stop(),
 })
 stage.scene.add(view.boundsBox)
+
+/**
+ * Following a collaborator's view (`follow.ts`, ADR 0155): your camera copies theirs until you move it, and
+ * while anyone follows you, yours is sent.
+ */
+const follow = createFollow({
+  pose: () => view.pose(),
+  setPose: (pose) => view.setPose(pose),
+  send: (data) => room.presence(data),
+  playing: () => play.active(),
+  changed: () => renderStatus(),
+})
+/**
+ * Your own hand on the camera ends a follow, Kodjo's call: an orbit or pan dragged past a few pixels, or the
+ * wheel. A click to select is not one — it presses the controls too, and moves nothing.
+ */
+let orbitFrom: { x: number; y: number } | null = null
+let lastPress = { x: 0, y: 0 }
+// Captured, so it is known before the controls' own press handler says `start`.
+document.addEventListener('pointerdown', (e) => (lastPress = { x: e.clientX, y: e.clientY }), true)
+controls.addEventListener('start', () => (orbitFrom = lastPress))
+controls.addEventListener('end', () => (orbitFrom = null))
+window.addEventListener('pointermove', (e) => {
+  if (orbitFrom === null || follow.leader() === null) return
+  if (Math.hypot(e.clientX - orbitFrom.x, e.clientY - orbitFrom.y) > 4) follow.stop()
+})
+canvas.addEventListener('wheel', () => follow.stop(), { passive: true })
 
 /**
  * The preview clock (`motionPreview.ts`, ADR 0142, ADR 0121). It owns the clock, whether it is running and
@@ -845,6 +887,7 @@ const nodes = createNodeActions({
   notify,
   refreshUi: () => refreshUi(),
   uiChanged: () => uiChanged(),
+  cameraMoved: () => follow.stop(),
 })
 
 /** Give an inline one-off a shared identity, so it can be referenced and edited in one place. */
@@ -1168,6 +1211,54 @@ const toolbar: Toolbar = createToolbar(
   },
 )
 
+/** The labels of what a connection holds in the open document, for its card. */
+const heldLabels = (connId: string): string[] => {
+  const open = doc
+  if (open === null) return []
+  return room
+    .holdsOf(connId)
+    .map((h) => open.indexOfRef(h.ref))
+    .filter((i): i is number => i !== null)
+    .map((i) => open.label(i))
+}
+
+/**
+ * Focus on a collaborator (ADR 0155): frame what they hold and open the Hierarchy down to it, the first of it
+ * scrolled into view. Framing moves the camera, so a follow ends.
+ */
+const focusPeer = (connId: string): void => {
+  const open = doc
+  if (open === null) return
+  const indices = room
+    .holdsOf(connId)
+    .map((h) => open.indexOfRef(h.ref))
+    .filter((i): i is number => i !== null)
+  if (indices.length === 0) {
+    notify.warn('they have nothing selected')
+    return
+  }
+  nodes.frame(indices)
+  for (const i of [...indices].reverse()) hierarchy.reveal(i)
+}
+
+/** Who is in the room, at the top bar's right end (`people.ts`, ADR 0155). */
+const peopleState = (): PeopleState => {
+  const mine = room.connId()
+  return {
+    me: me === null ? null : { name: me.user.name, colour: mine === null ? null : peerCss(mine), connection: room.connection() },
+    others: room
+      .peers()
+      .filter((p) => p.connId !== mine)
+      .map((p) => ({ connId: p.connId, name: p.name, colour: peerCss(p.connId) })),
+    following: follow.leader(),
+    selected: heldLabels,
+  }
+}
+const people = createPeople(toolbar.people, peopleState, {
+  focus: focusPeer,
+  follow: (connId) => (connId === null ? follow.stop() : follow.start(connId)),
+})
+
 /**
  * The editor's one context menu (`menu.ts`).
  *
@@ -1214,6 +1305,10 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
     selectWith(index, mode, order)
   },
   heldBy: (index) => room.heldBy(index),
+  heldColour: (index) => {
+    const h = room.holderAt(index)
+    return h === null ? null : peerCss(h.connId)
+  },
   isHidden: (index) => doc !== null && hiddenView.hiddenAt(doc, index),
   /**
    * Hiding is sent to the room and comes back as the whole set (ADR 0132) — the echo is the ack, so
@@ -1925,6 +2020,7 @@ const setProblem = (msg: string): void => notices.setProblem('main', msg)
 let playHint: string | null = null
 const hintPill = $<HTMLDivElement>('#vhint')
 const hierarchyCount = $<HTMLSpanElement>('#hier-count')
+const stageEl = $<HTMLDivElement>('#stage')
 
 /** The figure by the pointer during a gesture — the size while pulling a face — or none. */
 const readoutTag = $<HTMLDivElement>('#readout')
@@ -1945,8 +2041,15 @@ const showReadout = (text: string | null, at?: { x: number; y: number }): void =
  */
 const renderStatus = (): void => {
   toolbar.render()
+  people.render()
+  // Following someone: a frame round the viewport in their colour, and the pill says whose view it is.
+  const leader = follow.leader()
+  const leaderName = leader === null ? null : (room.peers().find((p) => p.connId === leader)?.name ?? null)
+  stageEl.classList.toggle('following', leader !== null)
+  if (leader !== null) stageEl.style.setProperty('--follow', peerCss(leader))
+  const followHint = leaderName === null ? null : `Following ${leaderName} · move the camera to stop`
   const placingWhat = placing === null ? null : (assets?.db.byId[placing.assetId]?.name ?? 'asset')
-  const hint = playHint ?? (placingWhat === null ? null : `Click in the viewport to place ${placingWhat} · Esc to cancel`)
+  const hint = playHint ?? followHint ?? (placingWhat === null ? null : `Click in the viewport to place ${placingWhat} · Esc to cancel`)
   hintPill.hidden = hint === null
   hintPill.textContent = hint ?? ''
   hierarchyCount.textContent = doc === null ? '' : String(doc.count())
@@ -2034,8 +2137,9 @@ stage.start((dt) => {
     motion.frame()
     toolbar.setClock(motion.playing() ? motion.timeMs() / 1000 : null)
     view.update(dt)
+    follow.frame(dt)
     controls.update()
-  }
+  } else follow.frame(dt) // a session's frame: the follow ends, since play owns the camera
   points.frame()
   edges.frame()
 })

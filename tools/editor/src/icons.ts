@@ -1,7 +1,7 @@
 /**
  * The editor's icons: the sequence editor's (ADR 0147) — one per step kind, and the few its controls need —
  * the viewport's tools and toggles (ADR 0149), the Hierarchy's rows (ADR 0150), one per component in the
- * Inspector (ADR 0152), and the notices and the top bar's history (ADR 0155). Drawn here as SVG paths on a
+ * Inspector (ADR 0152), and the notices, the top bar's history and a collaborator's card (ADR 0155). Drawn here as SVG paths on a
  * 24-unit grid, stroked in the text colour, so they tint with CSS and cost no dependency.
  *
  * Static markup only — nothing a person typed ever reaches `innerHTML` here.
@@ -59,6 +59,7 @@ export type IconName =
   | 'undo'
   | 'redo'
   | 'lock'
+  | 'focus'
 
 const DOT = (x: number, y: number): string => `<circle cx="${x}" cy="${y}" r="1.6" fill="currentColor" stroke="none"/>`
 
@@ -115,6 +116,8 @@ const PATHS: Record<IconName, string> = {
   undo: '<path d="M9 7.5 4.5 12 9 16.5"/><path d="M4.5 12H15a4.5 4.5 0 0 1 0 9h-2"/>',
   redo: '<path d="M15 7.5 19.5 12 15 16.5"/><path d="M19.5 12H9a4.5 4.5 0 0 0 0 9h2"/>',
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>',
+  // Four corners closing on a point: frame what is there.
+  focus: '<path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/><circle cx="12" cy="12" r="2.5"/>',
   component: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
 }
 

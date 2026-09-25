@@ -2,7 +2,19 @@ import { describe, expect, it } from 'vitest'
 
 import type { Level, Op } from '@mp/content'
 
-import { createCollab, parsePresence, type Hold, type LiveTransport, type LocalBatch, type Peer, type ServerEvent } from './collab'
+import {
+  createCollab,
+  parseCameraPresence,
+  parseFollowPresence,
+  parsePresence,
+  peerChanges,
+  type Connection,
+  type Hold,
+  type LiveTransport,
+  type LocalBatch,
+  type Peer,
+  type ServerEvent,
+} from './collab'
 
 /**
  * The collaboration core against a fake server: a hand-driven event stream and a POST log. The level lives
@@ -35,6 +47,7 @@ const harness = (): {
   connections: number
   closed: number
   drop: (why: string) => void
+  retry: () => void
 } => {
   const h = {
     posts: [] as Posted[],
@@ -43,13 +56,15 @@ const harness = (): {
     closed: 0,
     emit: (_e: ServerEvent): void => undefined,
     drop: (_why: string): void => undefined,
+    retry: (): void => undefined,
     transport: undefined as unknown as LiveTransport,
   }
   h.transport = {
-    connect: (_kind, _name, onEvent, onDrop) => {
+    connect: (_kind, _name, onEvent, onDrop, onRetry) => {
       h.connections++
       h.emit = onEvent
       h.drop = onDrop
+      h.retry = onRetry ?? ((): void => undefined)
       return {
         close: () => {
           h.closed++
@@ -237,5 +252,74 @@ describe('parsePresence', () => {
     expect(parsePresence({ kind: 'select', refs: [] })).toBeNull()
     expect(parsePresence({ kind: 'pose', poses: [{ ...pose, position: { x: 'no' } }] })).toBeNull()
     expect(parsePresence({ kind: 'pose', poses: [{ ...pose, ref: { nope: 1 } }] })).toBeNull()
+  })
+})
+
+describe('following, over the wire (ADR 0155)', () => {
+  const camera = { kind: 'camera', position: { x: 1, y: 2, z: 3 }, target: { x: 0, y: 0, z: 0 }, ortho: null }
+  it('reads a camera, perspective or isometric, and keeps only what it knows', () => {
+    expect(parseCameraPresence({ ...camera, junk: 1 })).toEqual(camera)
+    expect(parseCameraPresence({ ...camera, ortho: 12 })!.ortho).toBe(12)
+  })
+  it('refuses a camera it cannot use', () => {
+    expect(parseCameraPresence({ ...camera, ortho: 0 }), 'no height to show').toBeNull()
+    expect(parseCameraPresence({ ...camera, ortho: undefined }), 'says neither').toBeNull()
+    expect(parseCameraPresence({ ...camera, target: { x: 1 } })).toBeNull()
+    expect(parseCameraPresence({ ...camera, kind: 'pose' })).toBeNull()
+  })
+  it('reads a follow and an unfollow', () => {
+    expect(parseFollowPresence({ kind: 'follow', leader: 'ana' })).toEqual({ kind: 'follow', leader: 'ana' })
+    expect(parseFollowPresence({ kind: 'follow', leader: null })).toEqual({ kind: 'follow', leader: null })
+    expect(parseFollowPresence({ kind: 'follow', leader: 3 })).toBeNull()
+    expect(parseFollowPresence({ kind: 'follow' })).toBeNull()
+  })
+})
+
+describe('who came and who went (ADR 0155)', () => {
+  const ada = { connId: 'a', name: 'Ada' }
+  const bob = { connId: 'b', name: 'Bob' }
+  const me = { connId: 'me', name: 'Kodjo' }
+  it('names arrivals and departures', () => {
+    expect(peerChanges([me, ada], [me, bob], new Set(['me']))).toEqual({ joined: [bob], left: [ada] })
+  })
+  it('never counts this tab, under any connection it has had', () => {
+    const old = { connId: 'me-old', name: 'Kodjo' }
+    expect(peerChanges([old, ada], [me, ada], new Set(['me-old', 'me']))).toEqual({ joined: [], left: [] })
+  })
+})
+
+describe('the connection dot (ADR 0155)', () => {
+  it('is connecting until the snapshot, live after it, connecting on a drop the browser retries, and gone on leaving', async () => {
+    const h = harness()
+    const seen: (Connection | null)[] = []
+    const collab = createCollab(h.transport, {
+      level: () => null,
+      onSnapshot: () => undefined,
+      onApplied: () => undefined,
+      onRejected: () => undefined,
+      onPeers: () => undefined,
+      onHolds: () => undefined,
+      onHidden: () => undefined,
+      onPresence: () => undefined,
+      onPrefabOps: () => undefined,
+      onError: () => undefined,
+      onConnection: (c) => seen.push(c),
+    })
+    const joined = collab.join('lv')
+    expect(collab.connection()).toBe('connecting')
+    h.emit({ event: 'hello', data: { connId: 'me', name: 'Ada' } })
+    h.emit({ event: 'snapshot', data: { level: fixture(), seq: 0, holds: [], peers: [] } })
+    await joined
+    expect(collab.connection()).toBe('live')
+    h.retry()
+    expect(collab.connection()).toBe('connecting')
+    h.emit({ event: 'snapshot', data: { level: fixture(), seq: 0, holds: [], peers: [] } })
+    void collab.leave()
+    expect(seen).toEqual(['connecting', 'live', 'connecting', 'live', null])
+  })
+  it('is lost when the stream closes for good', async () => {
+    const s = await setUp()
+    s.h.drop('the live session could not be opened')
+    expect(s.collab.connection()).toBe('lost')
   })
 })

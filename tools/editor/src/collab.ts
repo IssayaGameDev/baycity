@@ -41,9 +41,18 @@ export interface Stream {
 /** Which document: a level by name, or a prefab by asset id (ADR 0091). */
 export type DocKind = 'level' | 'prefab'
 
+/**
+ * How the open room's stream is (ADR 0155), the dot on your own icon: greeted with a snapshot (`live`), opening
+ * or reopening after a network drop (`connecting`), or closed for good (`lost`).
+ */
+export type Connection = 'connecting' | 'live' | 'lost'
+
 export interface LiveTransport {
-  /** Open the event stream for a document. `onDrop` fires when it closes for good (the server said 4xx). */
-  connect: (kind: DocKind, name: string, onEvent: (e: ServerEvent) => void, onDrop: (why: string) => void) => Stream
+  /**
+   * Open the event stream for a document. `onDrop` fires when it closes for good (the server said 4xx);
+   * `onRetry` when it dropped and the browser is opening it again on its own.
+   */
+  connect: (kind: DocKind, name: string, onEvent: (e: ServerEvent) => void, onDrop: (why: string) => void, onRetry?: () => void) => Stream
   post: (kind: DocKind, name: string, action: string, body: unknown) => Promise<{ ok: boolean; status: number; body: unknown }>
   /** A fire-and-forget POST that outlives the page (a closing tab). */
   beacon: (kind: DocKind, name: string, action: string, body: unknown) => void
@@ -77,6 +86,8 @@ export interface CollabHooks {
    */
   onPrefabOps: (assetId: string, ops: Op[]) => void
   onError: (message: string) => void
+  /** The stream's state changed; `null` once no room is open. */
+  onConnection?: (state: Connection | null) => void
 }
 
 export interface Collab {
@@ -113,7 +124,9 @@ export interface Collab {
   name: () => string | null
   peers: () => Peer[]
   holds: () => Hold[]
-  /** Unacked local batches, for tests and the status line. */
+  /** How the open room's stream is, or `null` with no room open. */
+  connection: () => Connection | null
+  /** Unacked local batches, for tests. */
   pending: () => number
 }
 
@@ -155,6 +168,57 @@ export const parsePresence = (data: unknown): PosePresence | null => {
   return { kind: 'pose', poses, ...(d.end === true ? { end: true } : {}) }
 }
 
+/**
+ * Where a client's camera is, sent only while somebody follows it (ADR 0155): ~5 Hz, and only when it moved.
+ * `target` is what it orbits; `ortho` the half-height an isometric camera shows, `null` in perspective.
+ */
+export interface CameraPresence {
+  kind: 'camera'
+  position: Vec3
+  target: Vec3
+  ortho: number | null
+}
+
+/**
+ * Start following `leader`'s camera, or stop (`null`). Relayed to everyone like any presence; the leader is
+ * the one who acts on it, by streaming its camera while it has followers.
+ */
+export interface FollowPresence {
+  kind: 'follow'
+  leader: string | null
+}
+
+/**
+ * Who came and who went between two peer lists (ADR 0155), leaving out every connection that was ever this
+ * tab's: a reconnect is a new connection, and the old one may still be listed for a moment under your name.
+ */
+export const peerChanges = (before: readonly Peer[], after: readonly Peer[], mine: ReadonlySet<string>): { joined: Peer[]; left: Peer[] } => {
+  const was = new Set(before.map((p) => p.connId))
+  const now = new Set(after.map((p) => p.connId))
+  return {
+    joined: after.filter((p) => !was.has(p.connId) && !mine.has(p.connId)),
+    left: before.filter((p) => !now.has(p.connId) && !mine.has(p.connId)),
+  }
+}
+
+/** A camera presence off the wire, or `null`. Peers' data, not trusted. */
+export const parseCameraPresence = (data: unknown): CameraPresence | null => {
+  if (typeof data !== 'object' || data === null) return null
+  const d = data as Record<string, unknown>
+  if (d.kind !== 'camera' || !isVec3(d.position) || !isVec3(d.target)) return null
+  const ortho = d.ortho === null ? null : typeof d.ortho === 'number' && d.ortho > 0 ? d.ortho : undefined
+  if (ortho === undefined) return null
+  return { kind: 'camera', position: d.position, target: d.target, ortho }
+}
+
+/** A follow presence off the wire, or `null`. */
+export const parseFollowPresence = (data: unknown): FollowPresence | null => {
+  if (typeof data !== 'object' || data === null) return null
+  const d = data as Record<string, unknown>
+  if (d.kind !== 'follow' || (d.leader !== null && typeof d.leader !== 'string')) return null
+  return { kind: 'follow', leader: d.leader }
+}
+
 let nextBatch = 0
 const newBatchId = (): string => `${Date.now().toString(36)}-${(nextBatch++).toString(36)}`
 
@@ -170,6 +234,16 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
   let joined: { resolve: () => void; reject: (e: Error) => void } | null = null
   /** Hold messages queue behind one another: order is the point of them. */
   let holdChain: Promise<unknown> = Promise.resolve()
+  let connection: Connection | null = null
+  const setConnection = (next: Connection | null): void => {
+    if (next === connection) return
+    connection = next
+    hooks.onConnection?.(next)
+  }
+  /** The stream dropped and the browser is reopening it: a reconnect's snapshot says when it is back. */
+  const onRetry = (): void => {
+    if (name !== null) setConnection('connecting')
+  }
 
   const rollbackUnacked = (level: Level): void => {
     for (let i = unacked.length - 1; i >= 0; i--) applyBatch(level, unacked[i]!.inverses)
@@ -196,7 +270,8 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
     // The stream is the only way to a fresh copy: reopen it. The server greets every connection with one.
     if (name === null) return
     stream?.close()
-    stream = transport.connect(kind, name, onEvent, onDrop)
+    setConnection('connecting')
+    stream = transport.connect(kind, name, onEvent, onDrop, onRetry)
   }
 
   const onEvent = (e: ServerEvent): void => {
@@ -213,6 +288,7 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
         seq = e.data.seq
         peers = e.data.peers
         holds = e.data.holds
+        setConnection('live')
         hooks.onSnapshot(e.data.level, seq)
         hooks.onPeers(peers)
         hooks.onHolds(holds)
@@ -284,6 +360,7 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
   }
 
   const onDrop = (why: string): void => {
+    setConnection('lost')
     if (joined !== null) {
       joined.reject(new Error(why))
       joined = null
@@ -334,11 +411,13 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
         seq = 0
         unacked = []
         joined = { resolve, reject }
-        stream = transport.connect(of, level, onEvent, onDrop)
+        setConnection('connecting')
+        stream = transport.connect(of, level, onEvent, onDrop, onRetry)
       }),
     leave: () => {
       stream?.close()
       stream = null
+      setConnection(null)
       /**
        * The promise is returned as well as fired: every existing caller is leaving on the way to something
        * else and does not care, but renaming or deleting the open level has to know the server has closed the
@@ -395,13 +474,14 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
     kind: () => (name === null ? null : kind),
     peers: () => peers,
     holds: () => holds,
+    connection: () => connection,
     pending: () => unacked.length,
   }
 }
 
 /** The real transport: `EventSource` in, `fetch` out, `sendBeacon` for the way out. */
 export const httpTransport = (): LiveTransport => ({
-  connect: (kind, name, onEvent, onDrop) => {
+  connect: (kind, name, onEvent, onDrop, onRetry) => {
     const source = new EventSource(`/api/live/${kind}/${encodeURIComponent(name)}/events`)
     for (const event of ['hello', 'snapshot', 'ops', 'holds', 'peers', 'presence', 'hidden', 'prefab', 'error'] as const) {
       source.addEventListener(event, (m) => onEvent({ event, data: JSON.parse((m as MessageEvent<string>).data) } as ServerEvent))
@@ -410,6 +490,7 @@ export const httpTransport = (): LiveTransport => ({
     // level is not there or the login lapsed. `readyState` tells the two apart.
     source.addEventListener('error', () => {
       if (source.readyState === EventSource.CLOSED) onDrop('the live session could not be opened')
+      else onRetry?.()
     })
     return { close: () => source.close() }
   },

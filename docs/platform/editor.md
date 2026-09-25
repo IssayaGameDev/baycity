@@ -24,7 +24,9 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | `itemMeshes.ts` | `instanceRoot`, `markerGroup`, the groups, the shadow budget, the cell toggle | `doc`, `loaded`, `runtime`, `mode`, `gameSettings`, `selected`, `afterBuild` |
 | `play.ts` | the character, controller, loop, play view and lights, component runtime, game frame | `PlayHost` (23 getters) |
 | `historyStore.ts` | the history, pending batches, `coalescing`, the held-back drag batches, `dirty`, the clipboard | `HistoryHost` |
-| `liveSession.ts` | `collab`, the peer list, the last snapshot, `joining`, the deferred ops, the hold map and its key, the hold outlines, the presence timer | `LiveHost` |
+| `liveSession.ts` | `collab`, the peer list, every `connId` this tab has had (`mineEver`), the last snapshot, `joining`, the deferred ops, the hold map and its key, the hold outlines, the presence timer | `LiveHost` |
+| `follow.ts` | whom this tab follows and the pose it glides to; who follows it, the send timer and the last pose sent (ADR 0155) | `FollowHost` |
+| `people.ts` | the icons it drew and whose card is open (ADR 0155) | `PeopleState` getter + `PeopleActions` |
 | `motionPreview.ts` | the preview clock, whether it runs, the last frame. Poses via `Doc.posesAt(timeMs, { sequences: playing })` — one walk, not `poseOf` per node (ADR 0125, ADR 0142) | `MotionPreviewHost` |
 | `cameraView.ts` | the orthographic camera, `isometric`, the nav gizmo and its drag flag, the stand-in background, the bounds box | `CameraViewHost` |
 | `fileActions.ts` | nothing — it is behaviour: arm, rename, delete an asset or a level (ADR 0097, ADR 0110) | `FileActionsHost` |
@@ -38,7 +40,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 
 | Area | Element | Module |
 | --- | --- | --- |
-| Top | `#toolbar` (ADR 0149), a 3-column grid: the level's name, or `level › prefab` inside a prefab — the level is a button and the way back, and a **lock badge** while someone else holds it; **Motion** (with its clock while it runs, `setClock`) and **Play** in the middle; **undo / redo** and the **bell** at the right end (ADR 0155). No New or Duplicate (the Project panel's), **no game picker and no level list** (ADR 0108), no mode select and no Save: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts` |
+| Top | `#toolbar` (ADR 0149), a 3-column grid: the level's name, or `level › prefab` inside a prefab — the level is a button and the way back, and a **lock badge** while someone else holds it; **Motion** (with its clock while it runs, `setClock`) and **Play** in the middle; **undo / redo**, the **bell** and **who is in the room** at the right end (ADR 0155). No New or Duplicate (the Project panel's), **no game picker and no level list** (ADR 0108), no mode select and no Save: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts`, `src/people.ts` |
 | Over the viewport | `#overlays` in `#centre` (ADR 0149): a layer that passes the pointer through, its panels (`.ov`) taking it back; **hidden while playing**. Left edge, vertical: Move / Rotate / Scale / **Face** (ADR 0119). Top left: Global / Local (globe / cube), the magnet, the active tool's increment with its unit (ADR 0114). Top right, left of the navigation gizmo: Grid, Markers, **Keys** (ADR 0120; hidden unless the game declares `surfaceGrid`), **Reveal** (ADR 0132; hidden while nothing is). Under the gizmo: the Persp / Iso button (ADR 0094). Icons only (`icons.ts`), each named with its key in its tooltip | `src/toolbar.ts`, `src/cameraView.ts` |
 | Left | `#hierarchy` — node tree + context menu; how a row reads and drags is **The Hierarchy** below (ADR 0150). Rows alternate `--row-alt` by **rendered** position (`.row:where(:not(.env)):nth-child(even)`), declared before `:hover` and `.sel` so both win on source order | `src/hierarchy.ts`, `src/hierarchyDrag.ts`, `src/menu.ts` |
 | Centre | `#centre`: `#banner` above `#stage`, which holds `#view` — Three stage, orbit, transform gizmo, placement clicks — and the layers over it: `#overlays`, `#toasts`, `#vhint`, `#readout`, `#hint` | `src/main.ts`, `src/itemMeshes.ts`, `src/play.ts`, `src/notices.ts` |
@@ -118,7 +120,7 @@ the file lock.
 ```ts
 createCollab(transport: LiveTransport, hooks: CollabHooks): Collab
 // join(name) resolves on the first snapshot · leave · submit(batch) · flush() · hold(refs) · release(refs) · presence(data)
-// beaconLeave() · connId() · name() · peers() · holds() · pending()
+// beaconLeave() · connId() · name() · peers() · holds() · connection() · pending()
 httpTransport(): LiveTransport   // EventSource in, fetch POST out, sendBeacon for the way out
 ```
 
@@ -132,7 +134,8 @@ httpTransport(): LiveTransport   // EventSource in, fetch POST out, sendBeacon f
 | Save | there is none; `dirty` stays `false` live (`recordEdit`, `applyHistory`), so `guardUnsaved` never asks. `saveNow` returns `true` |
 | Play | `startFramePlay`: live → `collab.flush()` first (the game reads the file), else the prefab path `saveNow()` |
 | New / Duplicate | `createLevel(from)`: `askName` (`confirm.ts`) → `^[\w-]+$` → refused if `listFiles('levels')` has it → `PUT /api/levels/<name>` a `blankLevel` with the active mode, or the open level (`loadLevelRaw`, the server's live copy) with `id` set → `refreshFileList` → `openFile`. From the Project panel: a game's new-level action (`onNewLevel`) and a level's *Duplicate…* |
-| peers | `room.peers()`: `{ connId, name }` per connection in the room, from its `peers` events |
+| peers | `room.peers()`: `{ connId, name }` per connection in the room, this tab's included, from its `peers` events; `[]` with no room open. `peerChanges(before, after, mineEver)` (pure) → a toast `X joined` / `X left` per `peers` event — not for the room as it was on joining (`joining`), and never for a `connId` that was ever this tab's (a reconnect's old one is listed a moment under your name) |
+| connection | `Connection` = `connecting` (join, a reopened stream, `onRetry` from the `EventSource` retrying) → `live` (a snapshot) → `lost` (`onDrop`); `null` after `leave`. `hooks.onConnection` → `host.presenceChanged()` |
 | leave | `dropAllLocks` → `collab.leave()`; `pagehide` → `beaconLeave()` |
 
 Two tabs of one person are two `connId`s: separate acks, separate holds.
@@ -313,7 +316,7 @@ parsePresence(data: unknown): PosePresence | null   // collab.ts — peers' data
 | --- | --- |
 | send | gizmo `dragging-changed` true → `startPresence()`: every 100 ms `collab.presence({ kind: 'pose', poses: dragPoses() })` — the selection's groups' local poses (`groupPose` + scale), not the document's. Drag end → `stopPresence()`: `{ poses: [], end: true }` |
 | ops | `onDocOps` while `coalescing` pushes to `heldBack` instead of submitting; drag end folds them (`foldBatches`) and submits **one** batch, the same ops the history entry holds. Nothing else changes: without a drag every batch still goes at once |
-| receive | `onPresence(data)`: `parsePresence` → for each pose `indexOfRef` → set the group's position/quaternion/scale; skipped for a node in my own selection while my gizmo drags. `end` → `applyPreviewPoses()` unless my gizmo is dragging (my drag end repaints). The hold outline follows, since it is drawn from the group each frame |
+| receive | `onPresence(from, data)`: a camera or a follow goes to `follow.ts` (*Who is in the room* below); else `parsePresence` → for each pose `indexOfRef` → set the group's position/quaternion/scale; skipped for a node in my own selection while my gizmo drags. `end` → `applyPreviewPoses()` unless my gizmo is dragging (my drag end repaints). The hold outline follows, since it is drawn from the group each frame |
 | nothing kept | presence is unnumbered and never written; the op at drag end is what lands, and a drag that came back to its start lands nothing |
 
 Others' selection is what the hold outlines and badges show: a selection *is* a hold.
@@ -327,8 +330,8 @@ Others' selection is what the hold outlines and badges show: a selection *is* a 
 | `heldBy(index)` | the name of another connection holding this node **or any ancestor** (`holdMap` by `refKey`), else `null` |
 | `applySelection` | filters `heldBy(i) !== null` out, so the gizmo never attaches to a held node; `select`/`selectWith` say `X has that selected` (`refuseHeld`) |
 | `onHoldsChanged` | on every `holds` event: `holdMap` rebuilt, my selection loses what someone else now holds, `rebuildHoldOutlines`, `hierarchy.render()` |
-| Hierarchy | `rowsOf(doc, open, heldBy)` → `Row.held` (name or `''`); a held row has class `held` (dimmed), a `.badge.held` with the name, and only `onSelect` wired (no rename, no drag); `onReparent` onto a held parent is refused |
-| viewport | an outline of the held node's group — its subtree — in a colour from a hash of the holder's `connId` (`HSL(h, 0.75, 0.6)`): `room.holdOutlines()`, one `OutlineGroup` per connection, cached and rebuilt on holds events and after structural repaints; drawn by the same pass as my own (below) |
+| Hierarchy | `rowsOf(doc, open, heldBy)` → `Row.held` (name or `''`); a held row has class `held` (dimmed), a `.badge.held` with the name in the holder's colour (`heldColour` → `--peer`, from `room.holderAt(i)`), and only `onSelect` wired (no rename, no drag); `onReparent` onto a held parent is refused |
+| viewport | an outline of the held node's group — its subtree — in the holder's `peerColour(connId)` (a hash to `HSL(h, 0.75, 0.6)`; `peerCss` for CSS — the icon and the badge take the same): `room.holdOutlines()`, one `OutlineGroup` per connection, cached and rebuilt on holds events and after structural repaints; drawn by the same pass as my own (below) |
 
 Holds work the same inside a prefab's room. A hold there does **not** block a level's override on the same
 node, and the reverse: they are different edits — the shared definition, and this one placement.
@@ -452,13 +455,38 @@ The status bar is gone. `createNotices(toasts, banner, onChange)` → `Notices`;
 | toasts | `#toasts`, the viewport's bottom right, newest at the bottom, at most `MAX_TOASTS` 4 (the oldest non-error goes first). `TOAST_MS`: `ok` 2.5 s, `warn` 5 s, `error` until closed (×). A click dismisses one. The same message again, while it is up, counts (`×2`) and keeps it up |
 | the log | `toggleLog(bell)`: a popover of every message, newest first, with its time and its count (`logNotice`, pure; `LOG_SIZE` 200); Clear. Opening it zeroes `unseen` — errors said since, the bell's red count |
 | the banner | `setProblem(slot, text)`, `''` to clear: `main` (`main.ts`'s `setProblem`: assets, identity, a lock, the server's copy) and `push` (`not on GitHub yet: …`). `#banner` sits **above** `#stage` rather than over it, so it never covers the gizmo drawn in the canvas's corner; a `ResizeObserver` on the canvas runs `relayout` as it comes and goes |
-| the hint | `#vhint`, top centre: a play session's (`PlayHost.hint`) or placing's (`Click in the viewport to place X · Esc to cancel`) |
+| the hint | `#vhint`, top centre, the first that applies: a play session's (`PlayHost.hint`), following's (`Following X · move the camera to stop`), placing's (`Click in the viewport to place X · Esc to cancel`) |
 | the readout | `#readout`, beside the pointer during a gesture |
-| `renderStatus` | redraws the top bar (undo / redo from `edits.labels()` + `depth()`, the lock, the bell), the hint, and the Hierarchy's count (`#hier-count`) |
+| `renderStatus` | redraws the top bar (undo / redo from `edits.labels()` + `depth()`, the lock, the bell), the people, the follow frame, the hint, and the Hierarchy's count (`#hier-count`) |
 
 Where the status bar's items went: the level's name was already the top bar's; the selection is the Inspector's and the
-Hierarchy's; the undo depth is the buttons' tooltips (`Undo move (2 more)`); the clipboard count and your own name are
-not shown.
+Hierarchy's; the undo depth is the buttons' tooltips (`Undo move (2 more)`); the room and your own name are the people's
+icons; the clipboard count is not shown.
+
+## Who is in the room, Focus and Follow (ADR 0155, `src/people.ts`, `src/follow.ts`)
+
+`createPeople(toolbar.people, state, { focus, follow })` fills `.tb-people`, the top bar's last slot.
+
+| | |
+| --- | --- |
+| icons | `.pp` per connection in the room, in the order they came (two tabs are two icons: two holders, two colours), filled with `peerCss(connId)`, `initials(name)` (two letters at most). Yours last, `.pp.me`, not a button: the colour the others see you in, and `.pp-dot` for `room.connection()` — green live, amber connecting, red lost. Rebuilt only when the people, the connection or the follow changed |
+| card | click an icon: a popover (`.pop-person`) with the name, `selectedText(heldLabels(connId))` (`Selected: A, B and 2 more`, asked only on opening), **Focus** (disabled when nothing is held) and **Follow** / **Stop following**. It closes when its person leaves |
+| Focus | `focusPeer`: their holds → `indexOfRef` → `nodes.frame(indices)` (the F key's framing, any nodes) → `hierarchy.reveal` each, the first scrolled into view |
+| Follow | `follow.start(connId)` → presence `{ kind: 'follow', leader }`; stop → `leader: null`. While following: `#stage.following` draws a 2 px frame in their colour (`--follow`), the hint names them, their icon rings (`.pp.on`) |
+| following | each frame, before `controls.update()`: `view.setPose(approach(view.pose(), goal, 1 − e^(−dt·FOLLOW_RATE 12)))` — 5 Hz arriving as a glide. `setPose` takes their projection quietly, their target, their position (orthographic: `zoom` 1, the frustum cut to their half-height) |
+| what ends it | **any move of your own**, Kodjo's call: an orbit or pan dragged past 4 px (`controls` `start`, pointer from a captured `pointerdown`; a click to select is not one), the wheel, the view gizmo, the Persp / Iso button, framing (F, the menus, Focus: `NodeActionsHost.cameraMoved`), play starting, the leader leaving the room (`prune`), leaving the room (`reset`) |
+| leading | a `follow` naming this tab adds its sender to `followers` and sends the camera at once; while any follow, every `FOLLOW_SEND_MS` 200 the pose is rounded to the millimetre and sent when it moved (`posesDiffer`), and not while playing. A follower leaving the room, or unfollowing, is dropped; none left, the timer stops |
+| reconnect | a new `connId` (`presenceChanged`) re-sends the follow (`announce`): the leader drops the old one when it leaves |
+
+```ts
+interface CameraPresence { kind: 'camera'; position: Vec3; target: Vec3; ortho: number | null }   // ortho: half-height shown
+interface FollowPresence { kind: 'follow'; leader: string | null }
+parseCameraPresence(data: unknown): CameraPresence | null   // collab.ts, peers' data, validated
+parseFollowPresence(data: unknown): FollowPresence | null
+```
+
+The server relays both as it does a drag's poses (`live.presence`: everyone but the sender, kept nowhere); nothing
+server-side changed. Nobody following, nothing is sent.
 
 
 | Symbol | Role |

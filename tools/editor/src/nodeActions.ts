@@ -45,6 +45,8 @@ export interface NodeActionsHost {
   notify: Notify
   refreshUi: () => void
   uiChanged: () => void
+  /** Framing moves the camera: a follow ends (ADR 0155). */
+  cameraMoved: () => void
 }
 
 export const createNodeActions = (host: NodeActionsHost) => {
@@ -132,20 +134,22 @@ export const createNodeActions = (host: NodeActionsHost) => {
   }
 
   /**
-   * Frame the host.selection(): put the orbit target on it and pull the camera back far enough to see all of it.
+   * Frame nodes: put the orbit target on them and pull the camera back far enough to see all of them. The
+   * selection's, or a collaborator's (ADR 0155).
    *
    * Along the camera's *current* direction, so framing something never also spins the view — the one thing
    * that makes a focus command disorienting rather than useful. A bounding sphere rather than the box's
    * diagonal, so a long thin platform is framed by its length and not by a corner-to-corner measurement that
    * would push the camera into the next county.
    */
-  const focusSelection = (): void => {
+  const frame = (indices: readonly number[]): void => {
     const box = new THREE.Box3()
-    for (const i of host.selection()) {
+    for (const i of indices) {
       const g = host.groupAt(i)
       if (g !== undefined) box.expandByObject(g)
     }
     if (box.isEmpty()) return
+    host.cameraMoved()
     const centre = box.getCenter(new THREE.Vector3())
     const radius = Math.max(0.5, box.getBoundingSphere(new THREE.Sphere()).radius)
     const camera = host.view.activeCamera()
@@ -165,6 +169,7 @@ export const createNodeActions = (host: NodeActionsHost) => {
     }
     host.controls.update()
   }
+  const focusSelection = (): void => frame(host.selection())
 
   /**
    * Paste at a world point rather than beside the host.selection().
@@ -209,6 +214,8 @@ export const createNodeActions = (host: NodeActionsHost) => {
     createPrimitive,
     /** Frame the selection without spinning the view. */
     focusSelection,
+    /** Frame these nodes, the same way. */
+    frame,
     /** Paste at a world point: the first item lands on it and the rest keep their offsets. */
     pasteAt,
   }

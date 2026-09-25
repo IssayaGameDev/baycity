@@ -3,9 +3,21 @@ import { vec3, type Vec3 } from '@mp/core'
 import { eulerToQuat } from '@mp/core'
 import { createThreeStage, THREE, type OutlineGroup } from '@mp/render-three'
 
-import { createCollab, httpTransport, parsePresence, type Hold, type Peer } from './collab'
+import { createCollab, httpTransport, parseCameraPresence, parseFollowPresence, parsePresence, peerChanges, type CameraPresence, type Hold, type Peer } from './collab'
 import type { Doc, LocalPose } from './editorDoc'
 import type { Notify } from './notices'
+
+/**
+ * A connection's colour: its outline in the viewport (ADR 0145), its icon in the top bar and its badge in the
+ * Hierarchy (ADR 0155). From the connection id, so every tab in the room works out the same one unasked.
+ */
+export const peerColour = (connId: string): number => {
+  let h = 0
+  for (let i = 0; i < connId.length; i++) h = (h * 31 + connId.charCodeAt(i)) >>> 0
+  return new THREE.Color().setHSL((h % 360) / 360, 0.75, 0.6).getHex()
+}
+/** The same colour for CSS. */
+export const peerCss = (connId: string): string => `#${peerColour(connId).toString(16).padStart(6, '0')}`
 
 /**
  * The live room: the document stream, who else is in it, what they hold, and where their pointers are
@@ -65,14 +77,19 @@ export interface LiveHost {
   inspectorSync: () => void
   notify: Notify
   setProblem: (message: string) => void
-  renderStatus: () => void
+  /** Who is in the room, or how this tab is connected to it, changed: the icons redraw (ADR 0155). */
+  presenceChanged: () => void
+  /** A peer's camera, while this tab follows someone (ADR 0155). */
+  onCamera: (from: string, pose: Omit<CameraPresence, 'kind'>) => void
+  /** A peer started following `leader`, or stopped (`null`). */
+  onFollow: (from: string, leader: string | null) => void
   /** Forget the history entries holding a batch the server refused. */
   dropHistoryWhere: (predicate: (entry: { ops: readonly Op[]; inverses: readonly Op[] }) => boolean) => void
 }
 
 export const createLiveSession = (host: LiveHost) => {
   // ============================== live levels (ADR 0089) ==============================
-  /** Who else has this level open. */
+  /** Every connection in the room, this tab's included: the server lists them all. */
   let livePeers: Peer[] = []
   /** The level the last snapshot carried, for `openFile` to build its document over. */
   let latestSnapshot: Level | null = null
@@ -92,8 +109,8 @@ export const createLiveSession = (host: LiveHost) => {
   /** The selection the server was last told to hold, as a key, so an unchanged selection sends nothing. */
   let lastHoldKey: string | null = null
 
-  /** The name of another connection holding node `index` or any node above it; `null` when it is free. */
-  const heldBy = (index: number): string | null => {
+  /** Another connection's hold on node `index` or on any node above it; `null` when it is free. */
+  const holderAt = (index: number): Hold | null => {
     const open = host.doc()
     if (open === null || holdMap.size === 0) return null
     const mine = collab.connId()
@@ -101,10 +118,12 @@ export const createLiveSession = (host: LiveHost) => {
       const ref = open.refAt(i)
       if (ref === null) continue
       const h = holdMap.get(refKey(ref))
-      if (h !== undefined && h.connId !== mine) return h.name
+      if (h !== undefined && h.connId !== mine) return h
     }
     return null
   }
+  /** The name of another connection holding node `index` or any node above it; `null` when it is free. */
+  const heldBy = (index: number): string | null => holderAt(index)?.name ?? null
 
   /**
    * Tell the room what I hold: the selection, whole, every time it changes. The server refuses a ref someone
@@ -129,11 +148,6 @@ export const createLiveSession = (host: LiveHost) => {
     })
   }
 
-  const holdColour = (connId: string): number => {
-    let h = 0
-    for (let i = 0; i < connId.length; i++) h = (h * 31 + connId.charCodeAt(i)) >>> 0
-    return new THREE.Color().setHSL((h % 360) / 360, 0.75, 0.6).getHex()
-  }
   /**
    * What others hold, as outlines in their colours (ADR 0145): a group per connection, each hold's node group —
    * which carries its subtree, as a hold does. Outlined every frame from the groups as they are posed, so a
@@ -157,7 +171,7 @@ export const createLiveSession = (host: LiveHost) => {
       if (g === undefined) continue
       byConn.set(h.connId, [...(byConn.get(h.connId) ?? []), g])
     }
-    holdOutlines = [...byConn].map(([connId, roots]) => ({ roots, color: holdColour(connId) }))
+    holdOutlines = [...byConn].map(([connId, roots]) => ({ roots, color: peerColour(connId) }))
   }
 
   /** The room's holds changed: drop what I can no longer have, redraw the badges and the outlines. */
@@ -260,8 +274,21 @@ export const createLiveSession = (host: LiveHost) => {
     collab.presence({ kind: 'pose', poses: [], end: true })
   }
 
-  /** A peer's drag: pose their groups where they are, write nothing. `end` puts every group back on its data. */
-  const onPresence = (data: unknown): void => {
+  /**
+   * What a peer streams: a drag's poses, or, for following (ADR 0155), a camera or who they follow. A drag poses
+   * their groups where they are and writes nothing; `end` puts every group back on its data.
+   */
+  const onPresence = (from: string, data: unknown): void => {
+    const camera = parseCameraPresence(data)
+    if (camera !== null) {
+      host.onCamera(from, { position: camera.position, target: camera.target, ortho: camera.ortho })
+      return
+    }
+    const follow = parseFollowPresence(data)
+    if (follow !== null) {
+      host.onFollow(from, follow.leader)
+      return
+    }
     const p = parsePresence(data)
     const open = host.doc()
     if (p === null || open === null) return
@@ -325,15 +352,34 @@ export const createLiveSession = (host: LiveHost) => {
       host.notify.error(`edit refused: ${reason}`)
       repaintAfterOps(batch.inverses)
     },
-    onPeers: (peers) => {
-      livePeers = peers
-      host.renderStatus()
-    },
+    onPeers: (peers) => onPeers(peers),
     onHolds: (holds) => onHoldsChanged(holds),
-    onPresence: (_from, _name, data) => onPresence(data),
+    onPresence: (from, _name, data) => onPresence(from, data),
     onPrefabOps: (assetId, ops) => onPrefabOps(assetId, ops),
     onError: (message) => host.notify.error(`live: ${message}`),
+    onConnection: () => host.presenceChanged(),
   })
+
+  /**
+   * Every connection id this tab has had. A reconnect is a new connection while the server may still list the
+   * old one for a moment, under your own name: that is not somebody joining or leaving.
+   */
+  const mineEver = new Set<string>()
+  /**
+   * Who is in the room now. Arrivals and departures are said (ADR 0155) — but not the room as it was when this
+   * tab joined, which is the icons' to show rather than a toast per person already there.
+   */
+  const onPeers = (peers: Peer[]): void => {
+    const me = collab.connId()
+    if (me !== null) mineEver.add(me)
+    if (!joining) {
+      const { joined, left } = peerChanges(livePeers, peers, mineEver)
+      for (const p of joined) host.notify.ok(`${p.name} joined`)
+      for (const p of left) host.notify.ok(`${p.name} left`)
+    }
+    livePeers = peers
+    host.presenceChanged()
+  }
 
   /**
    * Join a room and hand back the snapshot it greeted us with.
@@ -372,13 +418,22 @@ export const createLiveSession = (host: LiveHost) => {
     flush: () => collab.flush(),
     name: () => collab.name(),
     connId: () => collab.connId(),
-    peers: () => livePeers,
+    /** Everyone in the room, this tab included; nobody once no room is open. */
+    peers: (): readonly Peer[] => (live() ? livePeers : []),
+    /** How this tab's stream is, or `null` with no room open. */
+    connection: () => collab.connection(),
+    /** Send to everyone else in the room, kept nowhere (a camera, a follow). */
+    presence: (data: unknown) => collab.presence(data),
+    /** What a connection holds, for Focus and the card (ADR 0155). */
+    holdsOf: (connId: string): Hold[] => [...holdMap.values()].filter((h) => h.connId === connId),
     /** Report ops that arrived while the redraw was held off — a drag ending, a play-test ending. */
     drainDeferred: drainDeferredRemote,
     /** Redraw after ops changed the level from outside the document: a move puts groups back, anything else rebuilds. */
     repaint: repaintAfterOps,
     /** The name of another connection holding this node or any above it; `null` when it is free. */
     heldBy,
+    /** That hold itself, whose connection gives the badge its colour. */
+    holderAt,
     /** Tell the room what I hold: the selection, whole, every time it changes. */
     syncHolds,
     /** A reconnect is a new connection: the server holds nothing for it yet. */

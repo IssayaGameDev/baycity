@@ -3,6 +3,7 @@ import { QUANT_BOUND } from '@mp/net'
 import { createThreeStage, OrbitControls, THREE } from '@mp/render-three'
 
 import type { Doc } from './editorDoc'
+import type { CameraPose } from './follow'
 import { createViewGizmo } from './viewGizmo'
 import type { Notify } from './notices'
 
@@ -47,6 +48,8 @@ export interface CameraViewHost {
   renderPostFX: () => void
   notify: Notify
   uiChanged: () => void
+  /** You moved the camera yourself with the gizmo or the projection button: a follow ends (ADR 0155). */
+  userMoved: () => void
 }
 
 export const createCameraView = (host: CameraViewHost) => {
@@ -102,7 +105,7 @@ export const createCameraView = (host: CameraViewHost) => {
    * Everything holding a camera is re-pointed rather than rebuilt: the post-FX passes took theirs at
    * construction, and rebuilding the composer would throw away the AO and bloom the level asked for.
    */
-  const setProjection = (ortho: boolean): void => {
+  const setProjection = (ortho: boolean, quiet = false): void => {
     if (ortho === isometric) return
     if (ortho) {
       const half = orthoHalfHeight()
@@ -125,8 +128,34 @@ export const createCameraView = (host: CameraViewHost) => {
     host.useCamera(camera)
     host.controls.update()
     labelProjection()
-    host.notify.ok(ortho ? 'isometric' : 'perspective')
+    if (!quiet) host.notify.ok(ortho ? 'isometric' : 'perspective')
     host.uiChanged()
+  }
+
+  /** The view as the room sends it (ADR 0155), rounded by the sender. */
+  const pose = (): CameraPose => {
+    const p = activeCamera().position
+    const t = host.controls.target
+    return {
+      position: { x: p.x, y: p.y, z: p.z },
+      target: { x: t.x, y: t.y, z: t.z },
+      ortho: isometric ? (orthoCamera.top - orthoCamera.bottom) / 2 / orthoCamera.zoom : null,
+    }
+  }
+
+  /**
+   * Take a followed view: its projection (quietly — it is theirs, not a choice made here), its target and its
+   * position. Not aimed: the frame's `controls.update()` does that, and calling it here as well would run the
+   * damping twice a frame.
+   */
+  const setPose = (to: CameraPose): void => {
+    setProjection(to.ortho !== null, true)
+    host.controls.target.set(to.target.x, to.target.y, to.target.z)
+    activeCamera().position.set(to.position.x, to.position.y, to.position.z)
+    if (to.ortho !== null) {
+      orthoCamera.zoom = 1
+      syncOrthoFrustum(to.ortho)
+    }
   }
 
   /**
@@ -149,7 +178,10 @@ export const createCameraView = (host: CameraViewHost) => {
   projection.className = 'ov-proj'
   // Centred under the gizmo's square; the toggles to its left keep clear of the square by the same number.
   host.overlays.style.setProperty('--gizmo', `${viewGizmo.size}px`)
-  projection.addEventListener('click', () => setProjection(!isometric))
+  projection.addEventListener('click', () => {
+    host.userMoved()
+    setProjection(!isometric)
+  })
   host.overlays.append(projection)
   const labelProjection = (): void => {
     projection.textContent = isometric ? 'Iso' : 'Persp'
@@ -180,6 +212,7 @@ export const createCameraView = (host: CameraViewHost) => {
     (e) => {
       if (e.target !== canvas || host.playing() || e.button !== 0) return
       if (!viewGizmo.pointerDown(e)) return
+      host.userMoved()
       viewGizmoHolding = true
       e.stopPropagation()
       e.preventDefault()
@@ -312,6 +345,10 @@ export const createCameraView = (host: CameraViewHost) => {
     isometric: () => isometric,
     /** Swap projection, keeping the view. */
     setProjection,
+    /** The view as the room sends it, for someone following this tab. */
+    pose,
+    /** Take a followed view. */
+    setPose,
     /** Re-cut the orthographic frustum for the canvas's aspect, keeping the height it is already showing. */
     syncOrthoFrustum,
     /** Half the world height the orthographic camera currently shows. */

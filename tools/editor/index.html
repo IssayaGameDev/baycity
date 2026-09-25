@@ -273,6 +273,15 @@
         flex: 1 1 auto;
         min-height: 0;
       }
+      /* Following someone's view (ADR 0155): a frame round the viewport in their colour. */
+      #stage.following::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: 14;
+        border: 2px solid var(--follow, var(--accent));
+        pointer-events: none;
+      }
       #view {
         display: block;
         width: 100%;
@@ -520,6 +529,138 @@
         text-align: center;
         color: #fff;
         background: #e5484d;
+      }
+      /* Who is in the room (ADR 0155): everyone in their colour, you last, with how you are connected. */
+      .tb-people {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-left: 6px;
+        padding-left: 10px;
+        border-left: 1px solid var(--line);
+      }
+      .tb-people:empty {
+        display: none;
+      }
+      .pp {
+        position: relative;
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        font: inherit;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: #111317;
+        background: var(--pc, var(--dim));
+        cursor: pointer;
+        user-select: none;
+      }
+      .pp:hover {
+        box-shadow: 0 0 0 2px var(--panel-head), 0 0 0 3px var(--pc, var(--dim));
+      }
+      /* The one you follow. */
+      .pp.on {
+        box-shadow: 0 0 0 2px var(--panel-head), 0 0 0 4px var(--pc, var(--dim));
+      }
+      .pp.me {
+        cursor: default;
+      }
+      .pp.me:hover {
+        box-shadow: none;
+      }
+      .pp-dot {
+        position: absolute;
+        right: -2px;
+        bottom: -2px;
+        width: 9px;
+        height: 9px;
+        border: 2px solid var(--panel-head);
+        border-radius: 50%;
+        box-sizing: content-box;
+      }
+      .pp-live {
+        background: #4ade80;
+      }
+      .pp-connecting {
+        background: #f5b454;
+      }
+      .pp-lost {
+        background: #e5484d;
+      }
+      /* A collaborator's card: what they have selected, Focus and Follow. */
+      .pop-person {
+        padding: 0;
+      }
+      .pcard {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 260px;
+        padding: 10px;
+      }
+      .pcard-h {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+      }
+      .pcard-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--pc);
+      }
+      .pcard-name {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .pcard-sel {
+        font-size: 12px;
+        color: var(--dim);
+        overflow-wrap: anywhere;
+      }
+      .pcard-b {
+        display: flex;
+        gap: 6px;
+      }
+      .pcard-btn {
+        flex: 1 1 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 5px 8px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel-head);
+        color: var(--text);
+        font: inherit;
+        font-size: 12px;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .pcard-btn:hover:not(:disabled) {
+        background: var(--hover);
+      }
+      .pcard-btn:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .pcard-btn.on {
+        border-color: var(--pc);
+        color: var(--pc);
+      }
+      .pcard-btn .ic {
+        width: 14px;
+        height: 14px;
       }
       #overlays {
         position: absolute;
@@ -834,9 +975,11 @@
       .row.held {
         opacity: 0.6;
       }
+      /* In the holder's colour, the same as their outline and their icon (ADR 0155). */
       .row .badge.held {
-        color: #f0b860;
-        border-color: #6b5324;
+        color: var(--peer, #f0b860);
+        border-color: color-mix(in srgb, var(--peer, #f0b860) 45%, transparent);
+        background: color-mix(in srgb, var(--peer, #f0b860) 12%, transparent);
       }
       /* A drag (ADR 0150): what it carries dims, the row it would go into lights, and a line shows a place
          between rows, indented to the depth it would land at. */

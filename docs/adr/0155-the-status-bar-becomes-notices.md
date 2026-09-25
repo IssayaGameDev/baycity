@@ -1,8 +1,13 @@
 # ADR 0155 — The status bar becomes notices, and its state moves to where it belongs
 
-Status: accepted, in progress. Step 1 of 3 has landed: the notices, and every item the bar carried moved or
-dropped. Step 2 is presence in the top bar (everyone's icon, Focus and Follow); step 3 who is in which level. Every
-choice a person sees is Kodjo's, asked with the question tool.
+Status: accepted, in progress. Steps 1 and 2 of 3 have landed. Step 1: the notices, and every item the bar carried
+moved or dropped. Step 2: who is in the room at the top bar's right end — everyone's icon in their outline colour,
+yours last with a dot for the connection, the Hierarchy's hold badges in the same colours, a toast when someone joins
+or leaves, and a card per person with **Focus** (frame what they hold, open the Hierarchy down to it) and **Follow**
+(your camera copies theirs; theirs is sent ~5 Hz, and only while someone follows). Kodjo's calls on Follow: any move
+of your own ends it — rotating while following, around their point or in place, and a camera locked against input
+were both rejected — and a frame round the viewport in their colour plus the hint pill show it. Step 3 is who is in
+which level. Every choice a person sees is Kodjo's, asked with the question tool.
 
 ## Context
 

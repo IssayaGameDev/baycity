@@ -9,7 +9,7 @@ import { icon, type IconName } from './icons'
  * | where | what |
  * | --- | --- |
  * | top bar | the level's name, or `level › prefab` inside a prefab (the level is the way back), and its lock; Motion, with its
- *   clock, and Play; undo, redo and the bell (ADR 0155) |
+ *   clock, and Play; undo, redo, the bell and who is in the room (ADR 0155) |
  * | viewport, left edge | Move, Rotate, Scale, Face |
  * | viewport, top left | Global / Local; snap and the active tool's increment |
  * | viewport, top right | Grid, Markers, Keys, Reveal — beside the navigation gizmo |
@@ -112,6 +112,8 @@ export interface Toolbar {
    * only writes the text when the tenth it shows has changed.
    */
   setClock: (seconds: number | null) => void
+  /** The place at the right end for who is in the room (ADR 0155). */
+  people: HTMLElement
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] => {
@@ -182,8 +184,10 @@ export const createToolbar = (bar: HTMLElement, overlays: HTMLElement, state: ()
   const redoButton = iconButton('tb-b', 'redo', () => actions.redo())
   const bell = iconButton('tb-b tb-bell', 'bell', () => actions.toggleLog(bell))
   const badge = el('span', 'tb-badge')
+  /** Who is in the room, filled by `people.ts`: the bar only gives it its place, last. */
+  const people = el('div', 'tb-people')
   const end = el('div', 'tb-end')
-  end.append(undoButton, redoButton, el('span', 'tb-sep'), bell)
+  end.append(undoButton, redoButton, el('span', 'tb-sep'), bell, people)
 
   bar.append(doc, run, end)
 
@@ -307,5 +311,5 @@ export const createToolbar = (bar: HTMLElement, overlays: HTMLElement, state: ()
   }
 
   render()
-  return { render, setClock }
+  return { render, setClock, people }
 }

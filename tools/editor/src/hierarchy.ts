@@ -195,6 +195,8 @@ export interface HierarchyHost {
   onReparent: (from: readonly number[], parent: number | null, at: number) => void
   /** Who else holds this node, or `null` (ADR 0089). Absent when nothing is ever held (prefabs). */
   heldBy?: (index: number) => string | null
+  /** The holder's colour, the same as their outline and their icon (ADR 0155). */
+  heldColour?: (index: number) => string | null
 }
 
 export interface Hierarchy {
@@ -389,7 +391,10 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
       if (row.badge !== '') el.append(span('badge', row.badge))
       // Someone else has it: their name is the badge, and the row does nothing but say so.
       if (row.held !== '') {
-        el.append(span('badge held', row.held))
+        const holder = span('badge held', row.held)
+        const colour = host.heldColour?.(row.index) ?? null
+        if (colour !== null) holder.style.setProperty('--peer', colour)
+        el.append(holder)
         el.title = `${row.held} has this selected`
         el.addEventListener('pointerdown', (e) => host.onSelect(row.index, modeFor(e), order))
         container.append(el)
