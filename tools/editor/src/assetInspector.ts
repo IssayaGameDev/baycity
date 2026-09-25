@@ -15,8 +15,11 @@ export interface AssetInspectorHost {
   db: () => AssetDatabase | null
   urlOf: (path: string) => string
   materialOf: (assetId: string) => MaterialAsset | undefined
-  /** An edit: the material as it now should be. The caller turns it into ops on its live document (ADR 0159). */
-  onMaterialChanged: (assetId: string, material: MaterialAsset) => void
+  /**
+   * An edit: the material as it now should be. The caller turns it into ops on its live document and an undo entry
+   * named `label` (ADR 0159); `ongoing` while a colour is still being dragged, so the drag is one entry.
+   */
+  onMaterialChanged: (assetId: string, material: MaterialAsset, label: string, ongoing?: boolean) => void
 }
 
 export interface AssetInspector {
@@ -95,12 +98,17 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
     }
   }
 
-  const valueField = (param: ShaderParam, value: MaterialValue, onChange: (v: MaterialValue) => void): Field => {
+  const valueField = (param: ShaderParam, value: MaterialValue, onChange: (v: MaterialValue, ongoing?: boolean) => void): Field => {
     if (param.kind === 'color') {
       const input = el('input', 'ctl')
       input.type = 'color'
       input.value = value.kind === 'color' ? value.value : '#ffffff'
-      input.addEventListener('input', () => onChange({ kind: 'color', value: input.value }))
+      input.addEventListener('input', () => onChange({ kind: 'color', value: input.value }, true))
+      // The picker closed: the drag ends as one undo, and the keyboard goes back to the editor, so Ctrl+Z reaches it.
+      input.addEventListener('change', () => {
+        onChange({ kind: 'color', value: input.value }, false)
+        input.blur()
+      })
       return { el: input, update: (v) => void (v.kind === 'color' && !busy(input) && (input.value = v.value)) }
     }
     if (param.kind === 'number') {
@@ -188,7 +196,7 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
       // Keep any parameter the new shader also declares; fill the rest from its defaults.
       const kept: Record<string, MaterialValue> = nextDef === undefined ? {} : defaultParams(nextDef)
       for (const [key, v] of Object.entries(now().params)) if (key in kept) kept[key] = v
-      host.onMaterialChanged(entry.id, { shader: next, params: kept })
+      host.onMaterialChanged(entry.id, { shader: next, params: kept }, `${entry.name} shader`)
     })
     container.append(row('shader', shaderSelect))
 
@@ -202,9 +210,9 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
     const fields = new Map<string, { field: Field; fallback: MaterialValue }>()
     for (const param of def.params) {
       const value = material.params[param.key] ?? param.fallback
-      const field = valueField(param, value, (next) => {
+      const field = valueField(param, value, (next, ongoing) => {
         const current = now()
-        host.onMaterialChanged(entry.id, { ...current, params: { ...current.params, [param.key]: next } })
+        host.onMaterialChanged(entry.id, { ...current, params: { ...current.params, [param.key]: next } }, `${entry.name} ${param.label}`, ongoing)
       })
       fields.set(param.key, { field, fallback: param.fallback })
       container.append(row(param.label, field.el))

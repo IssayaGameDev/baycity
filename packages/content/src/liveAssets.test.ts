@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { applyAssetOps, diffAssetOps, isAssetOp, isLiveAssetPath, LiveAssetError, validateLiveAsset, type AssetOp } from './liveAssets'
+import { applyAssetOps, diffAssetOps, isAssetOp, isLiveAssetPath, LiveAssetError, mergeAssetOps, validateLiveAsset, type AssetOp } from './liveAssets'
 
 /**
  * A data-file asset's ops (ADR 0159): set a value at a path, or remove it — nothing about what the file means —
@@ -49,6 +49,22 @@ describe('the diff between two versions', () => {
   it('sets an array or a changed type whole', () => {
     expect(diffAssetOps({ a: [1, 2] }, { a: [1, 3] })).toEqual([{ kind: 'set', path: ['a'], value: [1, 3] }])
     expect(diffAssetOps({ a: 1 }, { a: { b: 2 } })).toEqual([{ kind: 'set', path: ['a'], value: { b: 2 } }])
+  })
+})
+
+describe('merging two lists of ops', () => {
+  it('keeps the newest per path and does what applying both in order does', () => {
+    const first: AssetOp[] = [
+      { kind: 'set', path: ['params', 'color', 'value'], value: '#111111' },
+      { kind: 'set', path: ['params', 'roughness', 'value'], value: 0.2 },
+    ]
+    const then: AssetOp[] = [
+      { kind: 'set', path: ['params', 'color'], value: { kind: 'color', value: '#222222' } },
+      { kind: 'set', path: ['params', 'roughness', 'value'], value: 0.4 },
+    ]
+    const merged = mergeAssetOps(first, then)
+    expect(merged, 'the colour value is under the colour replaced').toHaveLength(2)
+    expect(applyAssetOps(red, merged).json).toEqual(applyAssetOps(applyAssetOps(red, first).json, then).json)
   })
 })
 

@@ -22,20 +22,26 @@ export interface HistoryEntry {
   selection: NodeRef[]
 }
 
-export interface OpHistory {
-  push: (entry: HistoryEntry) => void
+/**
+ * The stack, over any entry with a label: a level edit (`HistoryEntry`), or anything else the editor undoes the
+ * same way — a data-file asset's edit (`historyStore.ts`, ADR 0159).
+ */
+export interface OpHistory<E extends { label: string } = HistoryEntry> {
+  push: (entry: E) => void
   /** The entry to undo — apply its `inverses` — or `null`. Moves it to the redo side. */
-  undo: () => HistoryEntry | null
+  undo: () => E | null
   /** The entry to redo — apply its `ops` — or `null`. Moves it back to the undo side. */
-  redo: () => HistoryEntry | null
+  redo: () => E | null
+  /** The entry an undo would take, left where it is. */
+  last: () => E | null
   canUndo: () => boolean
   canRedo: () => boolean
   undoLabel: () => string | null
   redoLabel: () => string | null
   /** Forget one entry wherever it sits — its ops no longer apply (the node is gone). */
-  drop: (entry: HistoryEntry) => void
+  drop: (entry: E) => void
   /** Forget every entry the predicate picks — the ones holding an edit the server refused. */
-  dropWhere: (pick: (entry: HistoryEntry) => boolean) => void
+  dropWhere: (pick: (entry: E) => boolean) => void
   /** Forget everything: a different file's edits are not this one's. */
   clear: () => void
   depth: () => { undo: number; redo: number }
@@ -43,9 +49,9 @@ export interface OpHistory {
 
 const DEFAULT_LIMIT = 100
 
-export const createOpHistory = (limit = DEFAULT_LIMIT): OpHistory => {
-  const past: HistoryEntry[] = []
-  const future: HistoryEntry[] = []
+export const createOpHistory = <E extends { label: string } = HistoryEntry>(limit = DEFAULT_LIMIT): OpHistory<E> => {
+  const past: E[] = []
+  const future: E[] = []
   return {
     push: (entry) => {
       past.push(entry)
@@ -64,6 +70,7 @@ export const createOpHistory = (limit = DEFAULT_LIMIT): OpHistory => {
       past.push(entry)
       return entry
     },
+    last: () => past[past.length - 1] ?? null,
     canUndo: () => past.length > 0,
     canRedo: () => future.length > 0,
     undoLabel: () => past[past.length - 1]?.label ?? null,

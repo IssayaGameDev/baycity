@@ -1,8 +1,8 @@
 # ADR 0159 — Assets that are data files are live documents
 
-Status: accepted, in progress. Step 3 of the asset rework (ADR 0156, 0157). This commit: the layer, with materials
-on it and their lock gone. Next: one undo for everything; then who has which asset open. Amends ADR 0083's
-"locks per file, taken on open" for materials.
+Status: accepted, in progress. Step 3 of the asset rework (ADR 0156, 0157). Done: the layer, with materials on it
+and their lock gone; one undo for everything (below). Next: who has which asset open. Amends ADR 0083's "locks per
+file, taken on open" for materials.
 
 ## Context
 
@@ -25,6 +25,7 @@ file means.
 | the editor | `assetSync.ts`: what the server confirmed, the one batch in flight, the edits waiting (merged by path, newest value) — shown in that order, so a collaborator's edit lands beneath this tab's. A number out of step (a gap; an epoch from before a restart) fetches the live copy |
 | the Inspector | an edit is `diffAssetOps(shown, edited)`; someone else's updates the fields in place, not the one being worked in |
 | the watch | never fetches a live asset's file over its live copy (ADR 0156): its contents come as its edits do |
+| undo | one history for the level and its assets, in the order made (Kodjo: one undo for all, as Unity). An asset entry is its ops and their inverses, undone by sending those as this tab's edit — so it overwrites whatever landed since, as a level undo does — and it shows that asset. A colour drag is one entry |
 
 Prefabs stay their own kind of live document (ADR 0091): a node tree, with the tree's ops.
 
@@ -34,3 +35,4 @@ Prefabs stay their own kind of live document (ADR 0091): a node tree, with the t
   so a second path for them, and a second stream per tab for the one editing.
 - **Ops that know materials** (`setParam`, `setShader`). Every new kind would be new ops, on both sides.
 - **Keeping the lock, released on selecting something else.** Still one person at a time, still no undo.
+- **A history per material, while it is open.** Two Ctrl+Z orders to keep in mind; Kodjo chose one.

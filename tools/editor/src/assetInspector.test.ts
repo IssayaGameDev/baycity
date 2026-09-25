@@ -11,6 +11,7 @@ import { createAssetInspector } from './assetInspector'
 
 const M = 'mmmmmmmmmmmmmmmm'
 const rig = () => {
+  const edits: { label: string; ongoing: boolean }[] = []
   const store = new Map<string, MaterialAsset>([[M, { shader: 'standard', params: { color: { kind: 'color', value: '#ff0000' }, tiling: { kind: 'vec2', value: { x: 1, y: 1 } } } }]])
   const container = document.createElement('div')
   document.body.replaceChildren(container)
@@ -19,11 +20,14 @@ const rig = () => {
     urlOf: (p) => p,
     materialOf: (id) => store.get(id),
     // What the library does: take the edit at once.
-    onMaterialChanged: (id, material) => void store.set(id, material),
+    onMaterialChanged: (id, material, label, ongoing = false) => {
+      store.set(id, material)
+      edits.push({ label, ongoing })
+    },
   })
   inspector.show(M)
   const row = (label: string): HTMLElement => [...container.querySelectorAll<HTMLElement>('.a-row')].find((r) => r.querySelector('.a-label')?.textContent === label)!
-  return { store, container, row, inspector }
+  return { store, container, row, inspector, edits }
 }
 
 describe('editing a material', () => {
@@ -63,5 +67,22 @@ describe('editing a material', () => {
     y!.value = '3'
     y!.dispatchEvent(new Event('change'))
     expect(store.get(M)!.params.tiling).toEqual({ kind: 'vec2', value: { x: 2, y: 3 } })
+  })
+
+  it('names each edit for the undo history, and a colour drag as one that ends when the picker closes', () => {
+    const { row, edits } = rig()
+    const colour = row('colour').querySelector<HTMLInputElement>('input')!
+    colour.focus()
+    for (const v of ['#110000', '#220000']) {
+      colour.value = v
+      colour.dispatchEvent(new Event('input'))
+    }
+    colour.dispatchEvent(new Event('change'))
+    expect(edits).toEqual([
+      { label: 'm colour', ongoing: true },
+      { label: 'm colour', ongoing: true },
+      { label: 'm colour', ongoing: false },
+    ])
+    expect(document.activeElement, 'the keyboard goes back to the editor, for Ctrl+Z').not.toBe(colour)
   })
 })

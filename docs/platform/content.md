@@ -239,6 +239,7 @@ A data-file asset edited live, by ops that know nothing about what the file mean
 type AssetOp = { kind: 'set'; path: readonly string[]; value: unknown } | { kind: 'unset'; path: readonly string[] }
 applyAssetOps(json, ops): { json, inverses }   // on a copy; inverses undo it applied in reverse; LiveAssetError for a path through a non-object
 diffAssetOps(before, after): AssetOp[]          // down through objects; arrays and changed types set whole
+mergeAssetOps(first, then): AssetOp[]          // one op per path, the newest; does what applying both in order does
 isAssetOp(v) · isLiveAssetPath(path) · validateLiveAsset(kind, json): string | null · LIVE_ASSET_KINDS
 ```
 

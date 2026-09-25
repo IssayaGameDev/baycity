@@ -14,7 +14,7 @@ import {
   validateLevel, type NodeRef, refKey,
   BUILTIN_LABELS, BUILTIN_MODELS,
   isSegment, parseQualified, qualify,
-  diffAssetOps, isLiveAssetPath,
+  applyAssetOps, diffAssetOps, isLiveAssetPath, LiveAssetError,
   type AssetDatabase, type MaterialAsset } from '@mp/content'
 
 import { DEFAULT_REGISTRY, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type Registry } from '@mp/components'
@@ -810,6 +810,17 @@ const deselect = (): void => {
 }
 
 /**
+ * Show an asset in the Inspector. Selecting an asset and selecting something in the scene are the same slot in
+ * the Inspector, so one clears the other rather than both claiming it.
+ */
+const selectAsset = (assetId: string): void => {
+  selectedAsset = assetId
+  deselect()
+  assetInspector.show(assetId)
+  refreshUi()
+}
+
+/**
  * The pointer in the viewport (`pickTool.ts`, ADR 0121): what is under it, what it places, and pulling a
  * box by its face. It owns the raycaster, the ground plane, where a press landed, and the pull in progress.
  */
@@ -1538,14 +1549,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
       paths,
     )
   },
-  onSelectAsset: (assetId) => {
-    // Selecting an asset and selecting something in the scene are the same slot in the Inspector, so one
-    // clears the other rather than both claiming it.
-    selectedAsset = assetId
-    deselect()
-    assetInspector.show(assetId)
-    refreshUi()
-  },
+  onSelectAsset: (assetId) => selectAsset(assetId),
   requestPreview: (kind, key, done) => previews.request(kind, key, done),
   onCreateAsset: (kind, folder) => {
     void (async () => {
@@ -1733,6 +1737,23 @@ const edits = createHistoryStore({
   },
   repaint: (ops) => room.repaint(ops),
   loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
+  // Through `assetSync`, as this tab's edit; the material then shows, the way a level undo shows the selection.
+  applyAsset: (id, ops, what) => {
+    const shown = assets?.materialOf(id)
+    if (shown === undefined) {
+      notify.warn(`cannot ${what}: the material is gone`)
+      return false
+    }
+    try {
+      applyAssetOps(shown, ops)
+    } catch (e) {
+      notify.warn(`cannot ${what}: ${e instanceof LiveAssetError ? e.message : String(e)}`)
+      return false
+    }
+    assetSync.edit(id, ops)
+    selectAsset(id)
+    return true
+  },
   notify,
   renderStatus: () => renderStatus(),
   refreshUi: () => refreshUi(),
@@ -1774,13 +1795,16 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
   materialOf: (id) => assets?.materialOf(id),
   /**
    * A material edit is ops on its live document (ADR 0159): the difference between it as shown and as edited,
-   * shown at once and sent behind (`assetSync.ts`). No lock: anyone edits it, the last change to land stays.
+   * shown at once and sent behind (`assetSync.ts`), and an entry in the one undo history. No lock: anyone edits
+   * it, the last change to land stays.
    */
-  onMaterialChanged: (id, material) => {
+  onMaterialChanged: (id, material, label, ongoing = false) => {
     const before = assets?.materialOf(id)
     if (before === undefined) return
     const shaderChanged = before.shader !== material.shader
-    assetSync.edit(id, diffAssetOps(before, material))
+    const ops = diffAssetOps(before, material)
+    assetSync.edit(id, ops)
+    edits.recordAsset({ assetId: id, ops, inverses: applyAssetOps(before, ops).inverses.reverse(), label }, ongoing)
     // Its fields are the new shader's; any other edit leaves the panel — and the field being dragged — alone.
     if (shaderChanged) assetInspector.show(id)
   },

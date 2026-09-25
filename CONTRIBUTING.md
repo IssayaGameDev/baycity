@@ -46,6 +46,8 @@ prefab itself, and everyone sees your edits as you make them. **Back** returns y
 Anyone can edit any material, at the same time. You see other people's changes as they make them, on every
 object that uses it. Two people changing the same value: the last change wins.
 
+- Ctrl+Z undoes material edits too, in the same order as your level edits. One colour drag is one undo.
+
 ## Saving
 
 - Nothing to press. Every change is on the server as you make it.

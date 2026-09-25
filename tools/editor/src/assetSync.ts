@@ -1,4 +1,4 @@
-import { applyAssetOps, isAssetOp, type AssetOp } from '@mp/content'
+import { applyAssetOps, isAssetOp, mergeAssetOps, type AssetOp } from '@mp/content'
 
 /**
  * The editor's side of data-file assets edited live (ADR 0159).
@@ -77,19 +77,6 @@ interface Tracked {
   pending: AssetOp[]
 }
 
-/** Newest value per path, the most recently touched last. */
-const mergeOps = (into: readonly AssetOp[], add: readonly AssetOp[]): AssetOp[] => {
-  const byPath = new Map<string, AssetOp>(into.map((op) => [op.path.join('\u0000'), op]))
-  for (const op of add) {
-    const key = op.path.join('\u0000')
-    // A path inside one being replaced is part of that replacement already; drop the older, narrower edits.
-    for (const k of [...byPath.keys()]) if (k.startsWith(`${key}\u0000`)) byPath.delete(k)
-    byPath.delete(key)
-    byPath.set(key, op)
-  }
-  return [...byPath.values()]
-}
-
 const newer = (a: Origin, than: Origin): boolean => a.epoch !== than.epoch || a.seq > than.seq
 
 export const createAssetSync = (host: AssetSyncHost): AssetSync => {
@@ -153,7 +140,7 @@ export const createAssetSync = (host: AssetSyncHost): AssetSync => {
     edit: (assetId, ops) => {
       if (ops.length === 0) return
       const t = track(assetId)
-      t.pending = mergeOps(t.pending, ops)
+      t.pending = mergeAssetOps(t.pending, ops)
       host.show(assetId, view(t), false)
       pump(assetId)
     },

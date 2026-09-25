@@ -1,9 +1,9 @@
-import { stripHydrated, applyBatch, OpError, type Level, type NodeRef, type Op } from '@mp/content'
+import { mergeAssetOps, stripHydrated, applyBatch, OpError, type AssetOp, type Level, type NodeRef, type Op } from '@mp/content'
 
 import { askUnsaved } from './confirm'
 import type { ClipItem, Doc, OpBatch } from './editorDoc'
 import { saveFile } from './filesApi'
-import { createOpHistory, foldBatches } from './opHistory'
+import { createOpHistory, foldBatches, type HistoryEntry } from './opHistory'
 import type { Notify } from './notices'
 
 /**
@@ -17,7 +17,23 @@ import type { Notify } from './notices'
  * It owns six variables that were loose in the shell: the history itself, the pending batches, the
  * coalescing flag, the held-back drag batches, `dirty`, and the clipboard. `coalescing` and `heldBack` in
  * particular were written from three places and read from one, with nothing saying they belonged together.
+ *
+ * **One history for everything this tab edits** (ADR 0159): a data-file asset's edit — a material's — sits in the
+ * same stack as the level's, in the order they were made, and Ctrl+Z takes back whichever came last.
  */
+
+/**
+ * An edit to a data-file asset (ADR 0159): its ops on the asset's live document, and what undoes them, in undo
+ * order. Undone by sending those the same way, as this tab's edit.
+ */
+export interface AssetEdit {
+  assetId: string
+  ops: AssetOp[]
+  inverses: AssetOp[]
+  label: string
+}
+
+type Entry = ({ kind: 'level' } & HistoryEntry) | ({ kind: 'asset' } & AssetEdit)
 
 /** What the history needs from the editor around it. Getters, so nothing here holds a stale document. */
 export interface HistoryHost {
@@ -55,6 +71,11 @@ export interface HistoryHost {
   repaint: (ops: readonly Op[]) => void
   /** Fetch what the document references but the runtime has not loaded, then run this. */
   loadNewReferencesThen: (redraw: () => void) => void
+  /**
+   * Apply a data-file asset's ops as this tab's edit — an undo is an edit like any other to everyone else — and
+   * show that asset, as a level undo shows what was selected. `false` when they no longer apply (it is gone).
+   */
+  applyAsset: (assetId: string, ops: readonly AssetOp[], what: string) => boolean
   notify: Notify
   renderStatus: () => void
   refreshUi: () => void
@@ -65,6 +86,11 @@ export interface HistoryStore {
   withOps: (d: Doc) => Doc
   /** Fold everything reported since the last record into one entry, labelled. */
   recordEdit: (label: string) => void
+  /**
+   * An edit to a data-file asset, already made (ADR 0159). `ongoing` while a gesture is still adding to it — a
+   * colour being dragged is one entry — until a record of that asset without it, or any other entry, ends it.
+   */
+  recordAsset: (edit: AssetEdit, ongoing: boolean) => void
   /** Start over: a different file's edits are not this one's. */
   reset: () => void
   undo: () => void
@@ -102,7 +128,7 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
   /** Batches held back during a drag: the room sees presence, not a hundred ops. */
   let heldBack: OpBatch[] = []
 
-  const history = createOpHistory()
+  const history = createOpHistory<Entry>()
   /** Batches the open documents reported since the last `recordEdit`. A gizmo drag piles up a hundred. */
   let pending: OpBatch[] = []
   const onDocOps = (batch: OpBatch): void => {
@@ -195,8 +221,27 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
     const entry = foldBatches(pending, label, host.selectionRefs())
     pending = []
     if (entry === null) return
-    history.push(entry)
+    history.push({ kind: 'level', ...entry })
     dirty = !host.live() // a live level is saved as it is edited
+    host.renderStatus()
+  }
+
+  /** The asset entry a gesture is still adding to, while it is the last thing done. */
+  let open: Entry | null = null
+
+  const recordAsset = (edit: AssetEdit, ongoing: boolean): void => {
+    const top = history.last()
+    if (edit.ops.length > 0) {
+      if (open !== null && open === top && open.kind === 'asset' && open.assetId === edit.assetId && open.label === edit.label) {
+        // One more step of the same gesture: the newest value per path, and the value before the first.
+        open.ops = mergeAssetOps(open.ops, edit.ops)
+        open.inverses = mergeAssetOps(edit.inverses, open.inverses)
+      } else {
+        open = { kind: 'asset', ...edit }
+        history.push(open)
+      }
+    }
+    if (!ongoing) open = null
     host.renderStatus()
   }
 
@@ -204,6 +249,7 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
   const resetHistory = (): void => {
     history.clear()
     pending = []
+    open = null
     dirty = false
   }
 
@@ -239,13 +285,20 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
     return true
   }
 
+  /** Apply one side of an entry: a level's ops, or an asset's, each the way it is edited. */
+  const applyEntry = (entry: Entry, side: 'ops' | 'inverses', what: string): boolean => {
+    open = null
+    if (entry.kind === 'asset') return host.applyAsset(entry.assetId, entry[side], what)
+    return applyHistory(entry[side], entry.selection, what)
+  }
+
   const undo = (): void => {
     const entry = history.undo()
     if (entry === null) {
       host.notify.warn('nothing to undo')
       return
     }
-    if (!applyHistory(entry.inverses, entry.selection, `undo ${entry.label}`)) {
+    if (!applyEntry(entry, 'inverses', `undo ${entry.label}`)) {
       history.drop(entry)
       return
     }
@@ -258,7 +311,7 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
       host.notify.warn('nothing to redo')
       return
     }
-    if (!applyHistory(entry.ops, entry.selection, `redo ${entry.label}`)) {
+    if (!applyEntry(entry, 'ops', `redo ${entry.label}`)) {
       history.drop(entry)
       return
     }
@@ -339,6 +392,7 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
   return {
     withOps,
     recordEdit,
+    recordAsset,
     reset: resetHistory,
     undo,
     redo,
@@ -357,7 +411,7 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
     abortDrag: () => void (coalescing = false),
     canUndo: () => history.canUndo(),
     canRedo: () => history.canRedo(),
-    dropWhere: (predicate) => history.dropWhere(predicate),
+    dropWhere: (predicate) => history.dropWhere((e) => e.kind === 'level' && predicate(e)),
     depth: () => history.depth(),
     labels: () => ({ undo: history.undoLabel(), redo: history.redoLabel() }),
   }

@@ -111,6 +111,16 @@ opened on top no longer pops back to the level. Live, the applied inverses go to
 folding. The gizmo, the face tool and the Inspector's `writeAxis` each held a verbatim copy of that sequence;
 they call these now, and `coalescing` and `heldBack` are private to the module.
 
+**One history for the level and its materials** (ADR 0159): an entry is `{ kind: 'level', …HistoryEntry }` or
+`{ kind: 'asset', assetId, ops, inverses, label }` (`AssetEdit`, asset ops, inverses in undo order), in one
+`createOpHistory<Entry>()` stack, so Ctrl+Z takes back whichever came last. `edits.recordAsset(edit, ongoing)`
+pushes one; while `ongoing`, a record of the same asset and label merges into it (`mergeAssetOps`: newest value
+per path, the value before the first) as long as it is still the last entry — a colour drag is one entry, ended by
+the picker's `change` or by any other entry, undo or redo. Undoing or redoing one is `host.applyAsset(id, ops, what)`:
+`assetSync.edit` as this tab's edit, then `selectAsset(id)` shows it; `false` (the material is gone, or the ops no
+longer apply) drops it with a warning. `dropWhere` (a refused level batch) passes only level entries. `reset`
+clears both kinds with the file. Labels are `<material> <param label>` or `<material> shader`.
+
 ## Live levels (`src/collab.ts`, ADR 0089)
 
 A level is not a file with a lock but a **live session** on the server (`editor-server.md`, *Live documents*):
@@ -538,8 +548,9 @@ Levels on the feed are not the watch's: one open here is live already, and one t
 `named` is an upload's paths (same id, new bytes), `fresh` starts the runtime over (boot, the feed's 410). The
 runtime is built over `libraryView`, so a new, renamed or moved asset needs none of this.
 
-**Editing a material** (`onMaterialChanged`): `assetSync.edit(id, diffAssetOps(shown, edited))` (*Live assets*
-below); `show` puts the result in the library, `refreshCompiled([id])` shows it on the next frame, the asset
+**Editing a material** (`onMaterialChanged(id, material, label, ongoing)`): `assetSync.edit(id, diffAssetOps(shown,
+edited))` (*Live assets* below) and `edits.recordAsset` (*Undo* above; a colour's `input` is `ongoing`, its `change`
+ends the entry and blurs the field, so Ctrl+Z reaches the editor); `show` puts the result in the library, `refreshCompiled([id])` shows it on the next frame, the asset
 Inspector is redrawn only for a new shader (its fields read `materialOf` at each edit; a vec2 keeps its own
 latest), a texture pick updates its thumbnail itself, and `thumbnailsSoon()` refreshes the Project panel's pictures
 400 ms after the edits stop.
@@ -553,7 +564,7 @@ path ops, with no lock. `createAssetSync(host)` keeps, per asset it has seen an 
 | --- | --- |
 | `base` at `origin` | what the server has confirmed: its `epoch` (the server process) and `seq` (edits in it; 0 = the file). The library's copy says where it came from (`AssetLibrary.originOf`, off the GET's `x-asset-epoch` / `x-asset-seq`) |
 | `inflight` | this tab's one batch on its way (`POST /api/live/asset/<id>/ops` with `room.connId()`); batch ids carry a per-tab prefix, so its echo is known on any connection |
-| `pending` | edits made meanwhile, merged by path (`mergeOps`, newest value; a path replaced drops the narrower ones under it) — the next batch when the echo comes |
+| `pending` | edits made meanwhile, merged by path (`mergeAssetOps`, newest value; a path replaced drops the narrower ones under it) — the next batch when the echo comes |
 
 What shows is `base` + `inflight` + `pending` (`host.show`, into the library, the renderer, and `assetInspector.refresh`
 for someone else's). An `asset` event (every room's stream, `collab.ts` → `liveSession` → `onEvent`, checked by

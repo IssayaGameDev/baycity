@@ -105,6 +105,21 @@ export const diffAssetOps = (before: unknown, after: unknown, path: readonly str
   return [{ kind: 'set', path, value: structuredClone(after) }]
 }
 
+/**
+ * `first` then `then`, as one list: the newest op per path, the most recently touched last. A path being replaced
+ * drops the narrower edits under it, which it already covers — so the result does what applying both in order does.
+ */
+export const mergeAssetOps = (first: readonly AssetOp[], then: readonly AssetOp[]): AssetOp[] => {
+  const byPath = new Map<string, AssetOp>(first.map((op) => [op.path.join('\u0000'), op]))
+  for (const op of then) {
+    const key = op.path.join('\u0000')
+    for (const k of [...byPath.keys()]) if (k.startsWith(`${key}\u0000`)) byPath.delete(k)
+    byPath.delete(key)
+    byPath.set(key, op)
+  }
+  return [...byPath.values()]
+}
+
 /** Whether a value read off the wire is an asset op. Peers' data, checked. */
 export const isAssetOp = (v: unknown): v is AssetOp => {
   if (!isObject(v) || !Array.isArray(v.path) || !v.path.every((k) => typeof k === 'string')) return false

@@ -109,5 +109,5 @@ export {
   nameForPath,
 } from './assets'
 export type { AssetDatabase, AssetEntry, AssetKind, AssetMeta, MaterialAsset, MaterialValue } from './assets'
-export { LiveAssetError, applyAssetOps, diffAssetOps, isAssetOp, isLiveAssetPath, LIVE_ASSET_KINDS, validateLiveAsset } from './liveAssets'
+export { LiveAssetError, applyAssetOps, diffAssetOps, isAssetOp, isLiveAssetPath, LIVE_ASSET_KINDS, mergeAssetOps, validateLiveAsset } from './liveAssets'
 export type { AssetOp } from './liveAssets'
