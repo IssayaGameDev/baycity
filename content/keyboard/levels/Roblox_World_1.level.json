@@ -4358,6 +4358,41 @@
                 "offset": 0,
                 "stages": [
                   {
+                    "id": "4860f876",
+                    "steps": [
+                      {
+                        "id": "1cbcc252",
+                        "kind": "fade",
+                        "to": 1,
+                        "timing": {
+                          "by": "seconds",
+                          "seconds": 10
+                        },
+                        "ease": "linear"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "e31d51ca",
+                    "steps": [
+                      {
+                        "id": "534736aa",
+                        "kind": "enabled",
+                        "on": true
+                      }
+                    ]
+                  },
+                  {
+                    "id": "b3aa7b15",
+                    "steps": [
+                      {
+                        "id": "0731ca73",
+                        "kind": "wait",
+                        "seconds": 5
+                      }
+                    ]
+                  },
+                  {
                     "id": "7321025a",
                     "steps": [
                       {
@@ -4379,41 +4414,6 @@
                         "id": "e4cbb2a0",
                         "kind": "enabled",
                         "on": false
-                      }
-                    ]
-                  },
-                  {
-                    "id": "b3aa7b15",
-                    "steps": [
-                      {
-                        "id": "0731ca73",
-                        "kind": "wait",
-                        "seconds": 5
-                      }
-                    ]
-                  },
-                  {
-                    "id": "4860f876",
-                    "steps": [
-                      {
-                        "id": "1cbcc252",
-                        "kind": "fade",
-                        "to": 1,
-                        "timing": {
-                          "by": "seconds",
-                          "seconds": 1
-                        },
-                        "ease": "linear"
-                      }
-                    ]
-                  },
-                  {
-                    "id": "e31d51ca",
-                    "steps": [
-                      {
-                        "id": "534736aa",
-                        "kind": "enabled",
-                        "on": true
                       }
                     ]
                   },
