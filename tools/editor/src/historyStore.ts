@@ -47,14 +47,16 @@ export interface HistoryHost {
   afterSave: () => Promise<void>
   /** Rebuild the viewport from the document: the item meshes and the physics world. */
   rebuildViewport: () => void
-  /** The whole repaint an undo needs: deselect, re-apply the environment, then `rebuildViewport`. */
-  rebuildFromData: () => void
+  /**
+   * Redraw after an undo's ops, as a remote batch is (`liveSession.ts`): a move puts the groups back where the
+   * data says, anything else rebuilds from data, and a gizmo drag or a play-test holds it off.
+   */
+  repaint: (ops: readonly Op[]) => void
   /** Fetch what the document references but the runtime has not loaded, then run this. */
   loadNewReferencesThen: (redraw: () => void) => void
   setStatus: (message: string) => void
   renderStatus: () => void
   refreshUi: () => void
-  inspectorRebuild: () => void
 }
 
 export interface HistoryStore {
@@ -205,9 +207,12 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
 
   /**
    * Apply a history entry's ops straight to the level — not through a document, so nothing is re-reported — then
-   * rebuild everything from the data, as any structural edit does, and put the selection back by identity.
-   * Resolves `false` when the ops no longer apply (the node is gone); the entry is dropped and the status bar
-   * says why.
+   * redraw the way a remote batch is, and put the selection back by identity. Resolves `false` when the ops no
+   * longer apply (the node is gone); the entry is dropped and the status bar says why.
+   *
+   * The redraw is `host.repaint`, not a rebuild of everything: undoing a move puts the groups back where the
+   * data says, as a teammate's move does. It used to re-bake the sky and build every mesh and the physics world
+   * twice, which on a level of a few hundred objects was the second an undo took.
    */
   const applyHistory = (ops: readonly Op[], keep: readonly NodeRef[], what: string): boolean => {
     const level = host.rootLevel()
@@ -222,14 +227,12 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
     // An undo is an edit like any other to the room.
     if (host.live() && applied.ops.length > 0) host.submit(applied)
     pending = []
-    host.rebuildFromData()
+    dirty = !host.live()
+    host.repaint(applied.ops)
     const open = host.doc()
     const restored = open === null ? [] : keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
-    if (restored.length > 0) host.applySelection(restored)
-    dirty = !host.live()
-    host.refreshUi()
-    host.inspectorRebuild()
-    host.loadNewReferencesThen(host.rebuildViewport)
+    // What was selected when the edit was made; putting it back also redraws the panels.
+    host.applySelection(restored)
     return true
   }
 

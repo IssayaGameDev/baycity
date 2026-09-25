@@ -97,8 +97,10 @@ Every `Doc` mutator builds `Op`s (`@mp/content` `ops.ts`, `content.md`) and comm
 `edits.withOps(d)` attaches `onDocOps` to every document; batches collect in `pending`; `edits.recordEdit(label)`
 folds them (`foldBatches`: one transform op per target, last value, first inverse)
 into `{ ops, inverses, label, selection: NodeRef[] }`. `undo` applies `inverses` with `applyBatch` straight on the
-root level (nothing re-reported), rebuilds, restores the selection by ref; an entry whose ops no longer apply is
-dropped with a status line. Undo inside a prefab
+root level (nothing re-reported), redraws through `host.repaint(ops)` — `room.repaint`, the remote batch's
+`repaintAfterOps`, so undoing a move only poses groups from data — and restores the selection by ref (which
+redraws the panels); an entry whose ops no longer apply is dropped with a status line. It used to re-bake the sky
+and build every mesh and the physics world twice, about a second on a level of a few hundred objects. Undo inside a prefab
 opened on top no longer pops back to the level. Live, the applied inverses go to the server as an ordinary batch
 (`host.submit`): an undo is an edit the room sees.
 
@@ -142,7 +144,8 @@ Two tabs of one person are two `connId`s: separate acks, separate holds.
 **`instanceGroups` is a different array of different objects after every call**. Called on open, on a
 structural repaint, on a remote batch, on entering and leaving a prefab — and, crucially, again from
 `loadNewReferences(buildItems)` once newly referenced assets have loaded, which is **asynchronous** and goes
-through no selection change.
+through no selection change. Only when something new arrived: `AssetRuntime.load` resolves `true` then, and every
+caller has drawn already.
 
 Two things hold those groups, and both are re-pointed **inside** `buildItems`, at both of its exits:
 

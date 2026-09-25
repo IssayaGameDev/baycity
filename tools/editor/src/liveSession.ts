@@ -374,6 +374,8 @@ export const createLiveSession = (host: LiveHost) => {
     peers: () => livePeers,
     /** Report ops that arrived while the redraw was held off — a drag ending, a play-test ending. */
     drainDeferred: drainDeferredRemote,
+    /** Redraw after ops changed the level from outside the document: a move puts groups back, anything else rebuilds. */
+    repaint: repaintAfterOps,
     /** The name of another connection holding this node or any above it; `null` when it is free. */
     heldBy,
     /** Tell the room what I hold: the selection, whole, every time it changes. */

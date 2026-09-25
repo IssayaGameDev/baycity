@@ -505,8 +505,10 @@ const localInside = (
  * name the renderer resolved by itself and always applied instantly, a material is an asset that has to
  * arrive first.
  *
- * Cheap to call on every edit: `load` skips ids it already holds and shares in-flight fetches. The redraw is
- * conditional on the document still being the one we loaded for — a fetch that lands after the user has
+ * Cheap to call on every edit: `load` skips ids it already holds and shares in-flight fetches. The redraw runs
+ * only when something new arrived — every caller has drawn already, so with nothing new it was the whole
+ * viewport and physics world built a second time for nothing, which was half of what made an undo take a
+ * second. And only while the document is still the one we loaded for: a fetch that lands after the user has
  * opened something else has nothing to draw into, and that document ran its own preload anyway.
  */
 const loadNewReferences = (redraw: () => void): void => {
@@ -515,8 +517,8 @@ const loadNewReferences = (redraw: () => void): void => {
   if (r === null || forDoc === null) return
   void r
     .load(forDoc.assetIds())
-    .then(() => {
-      if (doc === forDoc) redraw()
+    .then((fresh) => {
+      if (fresh && doc === forDoc) redraw()
     })
     .catch((e: unknown) => setProblem(`assets did not load (${String(e)}) — restart pnpm dev:editor`))
 }
@@ -1641,17 +1643,11 @@ const edits = createHistoryStore({
     meshes.buildAll()
     rebuildLoaded()
   },
-  rebuildFromData: () => {
-    deselect()
-    view.installEnvironment(doc?.environment())
-    meshes.buildAll()
-    rebuildLoaded()
-  },
+  repaint: (ops) => room.repaint(ops),
   loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
   setStatus: (message) => setStatus(message),
   renderStatus: () => renderStatus(),
   refreshUi: () => refreshUi(),
-  inspectorRebuild: () => inspectorRebuild(),
 })
 
 // --- motion.playing() motion in the viewport (ADR 0103) ---

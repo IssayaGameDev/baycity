@@ -27,8 +27,11 @@ export interface AssetRuntime {
   /**
    * Fetch every asset the given ids need, transitively — a material pulls in its textures. Safe to call
    * repeatedly: already-loaded ids are skipped, and concurrent calls for one id share a fetch.
+   *
+   * Resolves `true` when any of them was not held yet — fetched now, or already on its way for another call —
+   * so a caller that drew before they arrived knows whether drawing again shows anything new.
    */
-  load: (assetIds: readonly string[]) => Promise<void>
+  load: (assetIds: readonly string[]) => Promise<boolean>
   /** A compiled material, or `null` if the id is not a loaded material. */
   material: (assetId: string) => THREE.Material | null
   /** A fresh clone of a loaded model, or `null`. */
@@ -68,19 +71,20 @@ export const createAssetRuntime = (opts: AssetRuntimeOptions): AssetRuntime => {
     models.set(id, gltf.scene)
   }
 
-  const loadOne = (id: string): Promise<void> => {
+  /** Fetch one id; `true` when it was not held yet. */
+  const loadOne = (id: string): Promise<boolean> => {
     const existing = inFlight.get(id)
-    if (existing !== undefined) return existing
-    if (textures.has(id) || models.has(id) || materials.has(id)) return Promise.resolve()
+    if (existing !== undefined) return existing.then(() => true)
+    if (textures.has(id) || models.has(id) || materials.has(id)) return Promise.resolve(false)
 
     // Belt for a caller that collected one anyway: it is geometry, and there is nothing to load.
-    if (isBuiltinModel(id)) return Promise.resolve()
+    if (isBuiltinModel(id)) return Promise.resolve(false)
 
     const entry = opts.db.byId[id]
     if (entry === undefined) {
       // A dangling reference is a wrong-looking piece, not a dead level: greybox stands in.
       console.warn(`asset ${id}: not in the database`)
-      return Promise.resolve()
+      return Promise.resolve(false)
     }
 
     const run = (async (): Promise<void> => {
@@ -100,13 +104,11 @@ export const createAssetRuntime = (opts: AssetRuntimeOptions): AssetRuntime => {
     })().finally(() => inFlight.delete(id))
 
     inFlight.set(id, run)
-    return run
+    return run.then(() => true)
   }
 
   return {
-    load: async (assetIds) => {
-      await Promise.all(assetIds.map(loadOne))
-    },
+    load: async (assetIds) => (await Promise.all(assetIds.map(loadOne))).some(Boolean),
     material: (id) => materials.get(id) ?? null,
     model: (id) => {
       const original = models.get(id)

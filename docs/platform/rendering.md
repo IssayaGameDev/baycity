@@ -172,7 +172,7 @@ addMarkers(scene, markers: WorldMarker[]): MarkersView   // translucent pad + ri
 ```ts
 createAssetRuntime({ db: AssetDatabase, urlOf: (path) => string, materialOf: (id) => MaterialAsset | undefined }): AssetRuntime
 interface AssetRuntime {
-  load: (assetIds: readonly string[]) => Promise<void>   // transitive (material → textures); dedupes in-flight
+  load: (assetIds: readonly string[]) => Promise<boolean>   // transitive (material → textures); dedupes in-flight; true when any was not held yet
   material: (id) => THREE.Material | null                // compileMaterial(asset, textureLookup)
   model: (id) => THREE.Object3D | null                   // fresh clone(true) of cached GLTF scene
   texture: (id) => THREE.Texture | null                  // SRGBColorSpace
