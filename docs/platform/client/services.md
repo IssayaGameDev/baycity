@@ -80,7 +80,7 @@ interface Scene { stage: ThreeStage; env: GreyboxEnvironment; postfx: PostFX; ph
 
 - `createThreeStage({ canvas, cameraPosition: [0, 6, 10], lookAt: [0, 1, 0] })`.
 - `applyGreyboxEnvironment(renderer, scene, { sunIntensity: 2.4 })`; `shadowRadius` deliberately not passed.
-- `loadSky(scene, assetUrlOf('assets/textures/sky_110_2k.webp'))` — kept as the control backdrop (ADR 0046); background
+- `loadSky(scene, assetUrlOf(SKY_TEXTURE))` (`codeAssets.ts`: in no level, so `CODE_ASSETS` keeps it in a build) — kept as the control backdrop (ADR 0046); background
   reset to `env.sky.background` when both exist.
 - `createPostFX(renderer, scene, camera, { aoIgnores: occluding })`.
 - Sets the two-pass render step: `postfx.render()` then `OVERLAY_LAYER` drawn on top (details in
@@ -128,7 +128,7 @@ fetchLevel: LevelFetch                       // GET /api/levels/<name> on the pa
 pickLevel(source, requested: string | null, live: LevelFetch | null): Promise<{ name; level; from: 'live' | 'bundled' }>
 ```
 
-- `import.meta.glob('@content/*/levels/*.level.json')`, bundled at build; `@content` is the repo's `content/` or the live mirror (`content-sync.md`, ADR 0084).
+- `LEVELS` from `virtual:game-content` (`game-content.ts`, `content-sync.md`, ADR 0161): the game's own `content/<game>/levels/*.level.json`, keyed from `content/` — every game's in the tests; `@content` is the repo's `content/` or the live mirror (ADR 0084).
 - Filtered by `config.mode.name === mode` **or unassigned**. `names()` = default first, rest sorted.
 - `defaultName` = `'default'` if present else first level. `byName` validates with `validateLevel(data, registry)`;
   throws for an unknown name. `validate(raw)` = the same check plus the game filter, for a copy from elsewhere.
@@ -150,14 +150,15 @@ localProgress(mode: string): PersistenceAdapter<PlayerProgress>
 ## `ASSET_DB`, `CLIP_SOURCE`, `assetUrlOf`, `materialOf` — `assets.ts`
 
 ```ts
-ASSET_DB: AssetDatabase                 // buildDatabase over content/assets/**/*.meta sidecars
+ASSET_DB: AssetDatabase                 // buildDatabase over the .meta sidecars virtual:game-content carries
 PREFAB_SOURCE: PrefabSource             // { root: (assetId) => Node | undefined } — ADR 0091
 assetUrlOf(path: string): string        // bundled URL, or the path itself
 materialOf(assetId: string): MaterialAsset | undefined
 ```
 
-Bundled via `import.meta.glob` over `@content/assets/**` — the shared library only; a game's own comes with ADR 0161's step 5 — (alias, `content-sync.md`) (`*.meta` as `?raw`, `*` as `?url`, `*.mat.json`,
-`*.prefab.json`). Kind from extension (`kindForPath`); a corrupt or missing sidecar = unknown asset, not a build error.
+From `virtual:game-content` (`game-content.ts`, ADR 0161): `METAS` (sidecars as text), `MATERIALS`, `PREFABS`
+(parsed), `URLS` (every other kind, as a bundled URL), each keyed by its path from `content/`. The game's own library
+and Shared's; built, only what its levels and `game.json` use plus `CODE_ASSETS` (`codeAssets.ts`: `SKY_TEXTURE`). Kind from extension (`kindForPath`); a corrupt or missing sidecar = unknown asset, not a build error.
 Prefabs are parsed and eager for the same reason clips are: resolution has to finish before `instantiateLevel`,
 which stays synchronous (`baseIndex` goes on the wire, ADR 0021). A reference no file resolves draws nothing and
 warns once. Nothing hands a `builtin:` shape or a prefab id to `assets.load`: neither is a file (ADR 0090, 0091).

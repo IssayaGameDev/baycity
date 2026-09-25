@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 
 import { contentAlias, contentBanner } from '../../content-root'
+import { gameContent } from '../../game-content'
 
 /**
  * Copy this with the directory and **change the port** — every game needs its own, or the second one you run
@@ -12,7 +13,7 @@ import { contentAlias, contentBanner } from '../../content-root'
  */
 export default defineConfig({
   // `@content` is the repo's content/, or the live mirror when `.env` says so (ADR 0084).
-  plugins: [contentBanner()],
+  plugins: [contentBanner(), gameContent('keyboard')],
   resolve: { alias: contentAlias() },
   server: {
     port: 5177,

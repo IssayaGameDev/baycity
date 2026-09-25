@@ -1,8 +1,8 @@
 # ADR 0161 — Each game has its own asset library, beside the shared one
 
-Status: accepted, in progress. Steps 1 to 4 of 5 have landed: an asset's path starts with its library; which levels
-use which asset; moving between libraries; the rule in the editor and a check per game. Amends ADR 0108's single
-shared library.
+Status: accepted. All five steps have landed: an asset's path starts with its library; which levels use which asset;
+moving between libraries; the rule in the editor and a check per game; what a game build carries. Amends ADR 0108's
+single shared library.
 
 ## Context
 
@@ -47,6 +47,13 @@ panel is rebuilt (Track B).
 library's assets use its own and Shared's; Shared's use only Shared's. The object Inspector's asset pickers and the
 material's texture slot offer only those, and placing refuses the rest, as it refuses another game's private
 component. `libraries.test.ts` reads every game's content and fails on anything outside.
+
+**Step 5: what a game carries** (`game-content.ts`, a Vite plugin making `virtual:game-content`, which replaced the
+game client's globs over every game's levels and all of `content/assets`). Its own levels and its own library and
+Shared's, never another game's. A build takes only what its levels and `game.json` use, plus what the client's code
+loads by path (`CODE_ASSETS`: the sky, which no level names). The staging game on the box is a dev server whose page
+reads its level live, so served it keeps the whole of both libraries. Materials and prefabs are read as data and no
+longer also packed as files. Whether a build should warn above a size is Kodjo's to say, now that it is measured.
 
 ## Rejected
 

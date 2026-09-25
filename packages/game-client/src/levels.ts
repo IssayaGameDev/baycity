@@ -1,10 +1,12 @@
+/// <reference path="./virtual-game-content.d.ts" />
 import { LEVEL_SUFFIX, validateLevel, type Level, type ParamChecker } from '@mp/content'
+import { LEVELS } from 'virtual:game-content'
 
 /**
  * The level files a game can load, bundled at build time.
  *
- * **A game is a folder** (ADR 0108): its levels are `content/<game>/levels/*.level.json`, so the glob is over
- * every game's and `levelsFor` keeps the ones under its own. `default.level.json` is what loads with no
+ * **A game is a folder** (ADR 0108): its levels are `content/<game>/levels/*.level.json`. A game's build carries its
+ * own (`game-content.ts`, ADR 0161); the tests carry every game's, and `levelsFor` keeps the ones under its own. `default.level.json` is what loads with no
  * `?level=`, and each game gets to own one — which the flat `content/levels/` could not.
  *
  * A level file is like any other, so the editor opens, edits, renames and deletes it (ADR 0110) — which is
@@ -14,8 +16,8 @@ import { LEVEL_SUFFIX, validateLevel, type Level, type ParamChecker } from '@mp/
  * That is a deliberate reversal. The default started as a hardcoded module so the game could never boot into
  * nothing, which also made the one level a new player sees the one level nobody could edit.
  *
- * Bundled with `import.meta.glob` rather than fetched: the file list needs no server, and a level that fails
- * to parse is a build error instead of a blank screen.
+ * Bundled rather than fetched: the file list needs no server, and a level that fails to parse is a build error
+ * instead of a blank screen.
  *
  * **Live in front of the bundle** (ADR 0089): the staging game on the box is a dev server whose level files
  * the hosted editor rewrites every few seconds. Bundled, every write reloaded every player's page. So a page
@@ -23,10 +25,7 @@ import { LEVEL_SUFFIX, validateLevel, type Level, type ParamChecker } from '@mp/
  * watching level files: a page plays the level as it was when it loaded, and the editor's Play frame is fresh
  * on every Play. The bundle stays the fallback and the whole story locally and in a production build.
  */
-const ALL = import.meta.glob('@content/*/levels/*.level.json', { eager: true, import: 'default' }) as Record<
-  string,
-  unknown
->
+const ALL = LEVELS
 
 /**
  * The name of a game's starting level: what loads with no `?level=`.
@@ -36,7 +35,7 @@ const ALL = import.meta.glob('@content/*/levels/*.level.json', { eager: true, im
  */
 export const DEFAULT_NAME = 'default'
 
-/** `.../<game>/levels/<name>.level.json` → the game folder it is in. */
+/** `<game>/levels/<name>.level.json` → the game folder it is in. */
 const gameOf = (path: string): string => {
   const parts = path.split('/')
   return parts[parts.length - 3] ?? ''
