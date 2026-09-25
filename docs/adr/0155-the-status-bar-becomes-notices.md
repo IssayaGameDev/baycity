@@ -6,8 +6,10 @@ yours last with a dot for the connection, the Hierarchy's hold badges in the sam
 or leaves, and a card per person with **Focus** (frame what they hold, open the Hierarchy down to it) and **Follow**
 (your camera copies theirs; theirs is sent ~5 Hz, and only while someone follows). Kodjo's calls on Follow: any move
 of your own ends it — rotating while following, around their point or in place, and a camera locked against input
-were both rejected — and a frame round the viewport in their colour plus the hint pill show it. Step 3 is who is in
-which level. Every choice a person sees is Kodjo's, asked with the question tool.
+were both rejected — and a frame round the viewport in their colour plus the hint pill show it. **Parked after step
+2**, Kodjo's call: step 3 (who is in which level, on the Project panel's tiles) was too narrow — who is on which
+asset, of every kind, belongs to the asset panel's rework, not to tiles that rework will replace. Every choice a
+person sees is Kodjo's, asked with the question tool.
 
 ## Context
 

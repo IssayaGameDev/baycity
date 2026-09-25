@@ -80,7 +80,7 @@ import { roundAngle } from './snap'
 import { createSplitter, readPx, writePx } from './splitter'
 import { MODES, MODE_LIST, modeOf, soleMode } from './modes'
 import { createNotices, type Notify } from './notices'
-import { createToolbar, type Toolbar } from './toolbar'
+import { createToolbar, type Toolbar, type ToolbarState } from './toolbar'
 
 const $ = <T extends HTMLElement>(sel: string): T => document.querySelector<T>(sel)!
 const canvas = $<HTMLCanvasElement>('#view')
@@ -137,6 +137,12 @@ const docStack: { doc: Doc; label: string }[] = []
 let uiChanged: () => void = () => {}
 let inspectorRebuild: () => void = () => {}
 let inspectorSync: () => void = () => {}
+/**
+ * What undo and redo would do, for the top bar (ADR 0155). The bar draws itself as it is built, which is before
+ * the history exists — reading `edits` there was a `ReferenceError` that stopped the editor loading — so it
+ * reads nothing to undo until the history store replaces this.
+ */
+let historyView = (): ToolbarState['history'] => ({ undo: null, redo: null, depth: { undo: 0, redo: 0 } })
 /**
  * An Inspector field is being dragged (ADR 0152). A remote edit waits for it as it waits for the gizmo:
  * repainting rebuilds the panel, and would take the field from under the pointer.
@@ -1157,7 +1163,7 @@ const toolbar: Toolbar = createToolbar(
     // `null` while nothing is hidden, so the button stays out of the way until it means something.
     showingAll: hiddenView.any() || hiddenView.showingAll() ? hiddenView.showingAll() : null,
     lockedBy: readOnlyBy,
-    history: { ...edits.labels(), depth: edits.depth() },
+    history: historyView(),
     unseen: notices.unseen(),
   }),
   {
@@ -1755,6 +1761,7 @@ const edits = createHistoryStore({
   renderStatus: () => renderStatus(),
   refreshUi: () => refreshUi(),
 })
+historyView = () => ({ ...edits.labels(), depth: edits.depth() })
 
 // --- motion.playing() motion in the viewport (ADR 0103) ---
 /**
