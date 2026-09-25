@@ -2385,16 +2385,7 @@
           "z": 0
         }
       },
-      "components": [
-        {
-          "id": "9108f8a3",
-          "type": "Renderer",
-          "params": {
-            "material": "4a11d049f9f8e5ac"
-          },
-          "enabled": false
-        }
-      ],
+      "components": [],
       "prefab": "5a05991a9190c8d9",
       "overrides": {
         "root": {
@@ -2409,7 +2400,17 @@
                 }
               }
             }
-          }
+          },
+          "added": [
+            {
+              "id": "9108f8a3",
+              "type": "Renderer",
+              "params": {
+                "material": "4a11d049f9f8e5ac"
+              },
+              "enabled": false
+            }
+          ]
         }
       }
     },
