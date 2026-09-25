@@ -574,7 +574,11 @@ export const httpTransport = (): LiveTransport => ({
   connect: (kind, name, onEvent, onDrop, onRetry) => {
     const source = new EventSource(`/api/live/${kind}/${encodeURIComponent(name)}/events`)
     for (const event of ['hello', 'snapshot', 'ops', 'holds', 'peers', 'presence', 'hidden', 'prefab', 'asset', 'open-assets', 'fields', 'rooms', 'levels', 'error'] as const) {
-      source.addEventListener(event, (m) => onEvent({ event, data: JSON.parse((m as MessageEvent<string>).data) } as ServerEvent))
+      source.addEventListener(event, (m) => {
+        // The stream's own `error` (a drop) shares the server's event name and carries no data: it is the listener below's.
+        const data = (m as MessageEvent<unknown>).data
+        if (typeof data === 'string') onEvent({ event, data: JSON.parse(data) } as ServerEvent)
+      })
     }
     // EventSource retries on its own after a network drop. A 4xx is a closed stream that never opened: the
     // level is not there or the login lapsed. `readyState` tells the two apart.
