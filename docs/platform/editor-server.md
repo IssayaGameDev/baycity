@@ -38,8 +38,8 @@ is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walk
 | `GET/PUT /api/levels/:game/:name` | level JSON — two segments, because a game is a folder (ADR 0108). GET serves the **live copy** when the level is open; PUT runs `validateLevel(raw)` (structure only, no registry) and makes the game folder on demand, **409** while the level is open live. A name that is not a legal `<game>/<name>` is a 404 | lock |
 | `GET /api/live` | `{ docs: [{ name, seq, peers, holds }] }` | |
 | `GET /api/live/:kind/:name/events` | `:kind` is `level` or `prefab` (ADR 0091); a level's `:name` is the qualified `<game>/<name>` and so spans two segments (ADR 0108). SSE (`text/event-stream`, `:keepalive` every 25 s): `hello { connId, name }`, `snapshot { level, seq, holds, peers, hidden }`, then `ops { seq, from, batchId, ops }` with `id: seq`, `holds`, `peers`, `presence`, `error`, and on a **level's** stream `prefab { assetId, ops }` when a prefab it uses was edited. 404 when there is no such document. The stream closing is the leave | |
-| `POST /api/live/:kind/:name/ops` | `{ connId, batchId, ops }` → `{ ok, seq }` · 400 an op does not apply (`OpError`) · 423 `{ error, holder }` a node held by another connection. On a **prefab**, a connection in a level that uses it is accepted too — what *Apply to prefab* needs | |
-| `POST /api/live/:kind/:name/hold` | `{ connId, refs }` — **this connection's holds become exactly `refs`** → `{ ok }` / `{ ok: false, holder, refused }` (another's refs named and left out; the rest applies) | |
+| `POST /api/live/:kind/:name/ops` | `{ connId, batchId, ops }` → `{ ok, seq }` · 400 an op does not apply (`OpError`). Never refused for another's selection (ADR 0158). On a **prefab**, a connection in a level that uses it is accepted too — what *Apply to prefab* needs | |
+| `POST /api/live/:kind/:name/hold` | `{ connId, refs }` — **this connection's holds become exactly `refs`**, whoever else holds them → `{ ok }` (ADR 0158) | |
 | `POST /api/live/:kind/:name/release` | `{ connId, refs }` → `{ ok }` | |
 | `POST /api/live/:kind/:name/ping` | `{ connId }` — still here | |
 | `POST /api/live/:kind/:name/presence` | `{ connId, data }` — relayed to the others, unnumbered | |
@@ -113,13 +113,12 @@ no sequence, because the level's own file did not change. A tab is in one docume
 batch twice. `apply` also accepts a connection that is in a level **using** this prefab (`editorOf`), which is
 what "Apply to prefab" needs to push a placement's overrides without leaving the level.
 
-One `Doc` per open level: `{ level, seq, log ≤ logKeep, clients: Map<connId, LiveClient>, holds: Map<refKey, hold>,
+One `Doc` per open level: `{ level, seq, log ≤ logKeep, clients: Map<connId, LiveClient>, holds: Map<connId|refKey, hold> (one per connection per node, several may hold one: ADR 0158),
 dirtyBy: Set<email> }`. The first join reads the file (`readLevel` → `validateLevel`), sends `hello` + `snapshot`.
-`apply` runs `applyBatch` (in place; an `OpError` is a 400 and nothing changed), refuses an op whose touched ref or
-any ancestor is held by another `connId` (423), then `seq++`, logs, broadcasts `ops` to **every** client, the
-sender included. Ancestors are walked down every list (`forEachNode`, `content.md`, ADR 0151): a child a placement
-added under a piece has the placement, and that piece seen through it, above it. Holds go with their connection
-(leave, stream close) and with the node when it is removed.
+`apply` runs `applyBatch` (in place; an `OpError` is a 400 and nothing changed), then `seq++`, logs, broadcasts
+`ops` to **every** client, the sender included. A hold is a selection to show and never refuses a batch (ADR 0158):
+the last to land is what stays. Holds go with their connection (leave, stream close) and with the node when it is
+removed.
 
 **Liveness.** `seen[connId]` is set on join and on every message. `sweep()` leaves every connection silent for
 `staleMs` (default two minutes; the box passes `lockStaleMs`) — a tab whose stream died without the server

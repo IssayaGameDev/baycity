@@ -103,49 +103,31 @@ export const createLiveSession = (host: LiveHost) => {
 
   const TRANSFORM_KINDS = new Set<string>(['setTransform', 'setOverrideTransform'])
 
-  // ------------------------------ holds (phase 3) ------------------------------
-  /** Every hold in the room by `refKey`, theirs and mine. */
-  let holdMap = new Map<string, Hold>()
+  // ------------------------------ holds (phase 3, ADR 0158) ------------------------------
+  /**
+   * Every hold in the room by `refKey`, theirs and mine: what each connection has selected. **Shown, never
+   * refused** (ADR 0158) — several people may have one node, and anyone edits anything.
+   */
+  let holdMap = new Map<string, Hold[]>()
   /** The selection the server was last told to hold, as a key, so an unchanged selection sends nothing. */
   let lastHoldKey: string | null = null
 
-  /** Another connection's hold on node `index` or on any node above it; `null` when it is free. */
-  const holderAt = (index: number): Hold | null => {
-    const open = host.doc()
-    if (open === null || holdMap.size === 0) return null
+  /** The other connections that have node `index` itself selected, in the order they took it. */
+  const holdersOf = (index: number): readonly Hold[] => {
+    const ref = host.doc()?.refAt(index) ?? null
+    if (ref === null || holdMap.size === 0) return []
     const mine = collab.connId()
-    for (let i: number | null = index; i !== null; i = open.parentOf(i)) {
-      const ref = open.refAt(i)
-      if (ref === null) continue
-      const h = holdMap.get(refKey(ref))
-      if (h !== undefined && h.connId !== mine) return h
-    }
-    return null
+    return (holdMap.get(refKey(ref)) ?? []).filter((h) => h.connId !== mine)
   }
-  /** The name of another connection holding node `index` or any node above it; `null` when it is free. */
-  const heldBy = (index: number): string | null => holderAt(index)?.name ?? null
 
-  /**
-   * Tell the room what I hold: the selection, whole, every time it changes. The server refuses a ref someone
-   * else has (a race the local filter lost): the refused nodes drop out of the selection.
-   */
+  /** Tell the room what I have selected: the selection, whole, every time it changes. */
   const syncHolds = (): void => {
     if (!live()) return
     const refs = host.selectionRefs()
     const key = refs.map(refKey).sort().join('|')
     if (key === lastHoldKey) return
     lastHoldKey = key
-    void collab.setHolds(refs).then((r) => {
-      if (r.ok) return
-      host.notify.warn(`${r.holder} has that selected`)
-      const refused = new Set(r.refused.map(refKey))
-      const open = host.doc()
-      if (open === null) return
-      host.applySelection(host.selection().filter((i) => {
-        const ref = open.refAt(i)
-        return ref === null || !refused.has(refKey(ref))
-      }))
-    })
+    void collab.setHolds(refs).catch(() => undefined)
   }
 
   /**
@@ -164,7 +146,7 @@ export const createLiveSession = (host: LiveHost) => {
     if (open === null || !live()) return
     const mine = collab.connId()
     const byConn = new Map<string, THREE.Object3D[]>()
-    for (const h of holdMap.values()) {
+    for (const h of [...holdMap.values()].flat()) {
       if (h.connId === mine) continue
       const i = open.indexOfRef(h.ref)
       const g = i === null ? undefined : host.groupAt(i)
@@ -174,11 +156,11 @@ export const createLiveSession = (host: LiveHost) => {
     holdOutlines = [...byConn].map(([connId, roots]) => ({ roots, color: peerColour(connId) }))
   }
 
-  /** The room's holds changed: drop what I can no longer have, redraw the badges and the outlines. */
+  /** The room's holds changed: redraw the badges and the outlines. Nothing leaves my selection for it. */
   const onHoldsChanged = (holds: Hold[]): void => {
-    holdMap = new Map(holds.map((h) => [refKey(h.ref), h]))
-    const mine = host.selection()
-    if (mine.some((i) => heldBy(i) !== null)) host.applySelection(mine.filter((i) => heldBy(i) === null))
+    const next = new Map<string, Hold[]>()
+    for (const h of holds) next.set(refKey(h.ref), [...(next.get(refKey(h.ref)) ?? []), h])
+    holdMap = next
     rebuildHoldOutlines()
     host.hierarchyRender()
   }
@@ -425,15 +407,13 @@ export const createLiveSession = (host: LiveHost) => {
     /** Send to everyone else in the room, kept nowhere (a camera, a follow). */
     presence: (data: unknown) => collab.presence(data),
     /** What a connection holds, for Focus and the card (ADR 0155). */
-    holdsOf: (connId: string): Hold[] => [...holdMap.values()].filter((h) => h.connId === connId),
+    holdsOf: (connId: string): Hold[] => [...holdMap.values()].flat().filter((h) => h.connId === connId),
     /** Report ops that arrived while the redraw was held off — a drag ending, a play-test ending. */
     drainDeferred: drainDeferredRemote,
     /** Redraw after ops changed the level from outside the document: a move puts groups back, anything else rebuilds. */
     repaint: repaintAfterOps,
-    /** The name of another connection holding this node or any above it; `null` when it is free. */
-    heldBy,
-    /** That hold itself, whose connection gives the badge its colour. */
-    holderAt,
+    /** The others who have this node selected — its badges in the Hierarchy (ADR 0158). */
+    holdersOf,
     /** Tell the room what I hold: the selection, whole, every time it changes. */
     syncHolds,
     /** A reconnect is a new connection: the server holds nothing for it yet. */

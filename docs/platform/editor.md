@@ -322,16 +322,18 @@ parsePresence(data: unknown): PosePresence | null   // collab.ts — peers' data
 
 Others' selection is what the hold outlines and badges show: a selection *is* a hold.
 
-### Holds — a node is yours while selected
+### Holds — who has what selected (ADR 0158)
+
+A hold is a selection, **shown and never refused**: several people may have one node, and anyone selects and edits
+anything. Two edits to one thing: the last batch to reach the server is what stays, and everyone repaints to it.
 
 | Piece | Behaviour |
 | --- | --- |
-| `syncHolds` | after every `applySelection`/`deselect`: `room.syncHolds()` → `collab.setHolds(host.selectionRefs())` — the **whole** selection, skipped when unchanged (`lastHoldKey`). Hold messages queue one behind another in `collab.ts`, so a release can never overtake the hold before it. A refusal (`{ ok: false, holder, refused }`, a lost race) drops the refused nodes from the selection with a warning. `reinstallLevel` (new `connId`) re-sends; a `hello` with a new `connId` posts `leave` for the old one |
+| `syncHolds` | after every `applySelection`/`deselect`: `room.syncHolds()` → `collab.setHolds(host.selectionRefs())` — the **whole** selection, skipped when unchanged (`lastHoldKey`). Hold messages queue one behind another in `collab.ts`, so a release can never overtake the hold before it. `reinstallLevel` (new `connId`) re-sends; a `hello` with a new `connId` posts `leave` for the old one |
 | heartbeat | the lock heartbeat also `collab.ping()`s while live: the server sweeps a connection it has not heard from in two minutes, holds with it |
-| `heldBy(index)` | the name of another connection holding this node **or any ancestor** (`holdMap` by `refKey`), else `null` |
-| `applySelection` | filters `heldBy(i) !== null` out, so the gizmo never attaches to a held node; `select`/`selectWith` say `X has that selected` (`refuseHeld`) |
-| `onHoldsChanged` | on every `holds` event: `holdMap` rebuilt, my selection loses what someone else now holds, `rebuildHoldOutlines`, `hierarchy.render()` |
-| Hierarchy | `rowsOf(doc, open, heldBy)` → `Row.held` (name or `''`); a held row has class `held` (dimmed), a `.badge.held` with the name in the holder's colour (`heldColour` → `--peer`, from `room.holderAt(i)`), and only `onSelect` wired (no rename, no drag); `onReparent` onto a held parent is refused |
+| `holdMap` | `refKey` → every `Hold` on it, theirs and mine; `holdersOf(index)` the others on that node itself (not its ancestors) |
+| `onHoldsChanged` | on every `holds` event: `holdMap` rebuilt, `rebuildHoldOutlines`, `hierarchy.render()` — nothing leaves my selection |
+| Hierarchy | `rowsOf(doc, open, holders)` → `Row.held: Holder[]` (`{ name, colour }`, from `room.holdersOf` + `peerCss`); a `.badge.held` per person in their colour (`--peer`), a title naming them; the row selects, renames and drags as any other |
 | viewport | an outline of the held node's group — its subtree — in the holder's `peerColour(connId)` (a hash to `HSL(h, 0.75, 0.6)`; `peerCss` for CSS — the icon and the badge take the same): `room.holdOutlines()`, one `OutlineGroup` per connection, cached and rebuilt on holds events and after structural repaints; drawn by the same pass as my own (below) |
 
 Holds work the same inside a prefab's room. A hold there does **not** block a level's override on the same
@@ -365,7 +367,7 @@ selection change. In the `selection-edges` group outside `instanceRoot`, so neve
 | cube | `rowIcon(row)`: `prefab` (filled) in `--link` for a placement, `object` in light blue (`is-piece`) for a prefab's piece, `object` in grey for the level's own. A placement's name stays `--link` |
 | name | italic and dim when switched off, here or above (ADR 0099); a switched-off row's cube at 0.45 |
 | eye | right end, before the count (ADR 0132, `Hiding a node` below): on hover, and always once hidden |
-| badge | `×N` for a prefab placed more than once, nothing else (`inline` went); or who holds it (ADR 0089) |
+| badge | `×N` for a prefab placed more than once, nothing else (`inline` went); and one per person who else has it selected (ADR 0158) |
 
 **Drag** — pointer events, not HTML5. A press becomes a drag after 4 px, so a click still selects; it carries the
 whole selection when the grabbed row is in it (ADR 0134); what a drop does is `Doc.reparent`'s. A copy with the grabbed

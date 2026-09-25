@@ -199,45 +199,24 @@ describe('flush', () => {
 })
 
 describe('holds', () => {
-  it('another connection cannot edit a held node or anything under it; the holder can; leaving releases', () => {
+  /** ADR 0158: holds are what people have selected, shown to the others and never refused. */
+  it('several connections hold one node, and anyone edits it: the last batch to land is what stays', () => {
     const { live } = world()
     const a = fake('c1')
     const b = fake('c2', BOB)
     live.join(LV, a.client)
     live.join(LV, b.client)
     expect(live.hold(LV, 'c1', ADA, [{ id: 'a' }])).toEqual({ ok: true })
-    expect(b.events.at(-1)?.event).toBe('holds')
-    expect(live.hold(LV, 'c2', BOB, [{ id: 'a' }])).toEqual({ ok: false, holder: 'Ada', refused: [{ id: 'a' }] })
-    expect(() => live.apply(LV, 'c2', BOB, { batchId: 'x', ops: [setName('a', 'X')] })).toThrow(/held by Ada/)
-    expect(() => live.apply(LV, 'c2', BOB, { batchId: 'x', ops: [setName('a1', 'X')] }), 'the subtree too').toThrow(/held by Ada/)
-    expect(() => live.apply(LV, 'c2', BOB, { batchId: 'x', ops: [{ kind: 'moveNode', id: 'b', parent: 'a', index: 0 }] }), 'moving into it too').toThrow(/held by Ada/)
-    expect(live.apply(LV, 'c1', ADA, { batchId: 'y', ops: [setName('a', 'mine')] }).ok).toBe(true)
-    expect(live.apply(LV, 'c2', BOB, { batchId: 'z', ops: [setName('b', 'free')] }).ok).toBe(true)
-    live.leave(LV, 'c1')
-    expect(live.apply(LV, 'c2', BOB, { batchId: 'w', ops: [setName('a', 'now mine')] }).ok).toBe(true)
+    expect(live.hold(LV, 'c2', BOB, [{ id: 'a' }])).toEqual({ ok: true })
+    const holds = (b.events.at(-1)!.data as { holds: { connId: string; name: string }[] }).holds
+    expect(holds.map((h) => h.name).sort(), 'both are shown').toEqual(['Ada', 'Bob'])
+    expect(live.apply(LV, 'c2', BOB, { batchId: 'x', ops: [setName('a', 'Bob’s')] }).ok).toBe(true)
+    expect(live.apply(LV, 'c2', BOB, { batchId: 'y', ops: [setName('a1', 'under it')] }).ok, 'its subtree too').toBe(true)
+    expect(live.apply(LV, 'c1', ADA, { batchId: 'z', ops: [setName('a', 'Ada’s')] }).ok).toBe(true)
+    expect(live.levelOf(LV)!.nodes[0]!.name).toBe('Ada’s')
   })
 
-  // A child a placement added under a piece lives in that piece's record, and the piece is above it (ADR 0151).
-  it('covers what a placement added under a held piece, and under a held placement', () => {
-    const w = world({ prefabs: store({ [PAD]: padFile() }) })
-    w.disk.set(LV, {
-      id: 'lv',
-      config: { mode: { name: 'parkour' } },
-      nodes: [{ id: 'pl', prefab: PAD, transform: { position: v3(0, 0, 0) }, components: [], overrides: { p0: { addedChildren: [{ id: 'flag', transform: { position: v3(0, 0, 0) }, components: [] }] } } }],
-    })
-    const a = fake('c1')
-    const b = fake('c2', BOB)
-    w.live.join(LV, a.client)
-    w.live.join(LV, b.client)
-    expect(w.live.hold(LV, 'c1', ADA, [{ owner: 'pl', node: 'p0' }])).toEqual({ ok: true })
-    expect(() => w.live.apply(LV, 'c2', BOB, { batchId: 'x', ops: [setName('flag', 'X')] }), 'under the held piece').toThrow(/held by Ada/)
-    expect(w.live.hold(LV, 'c1', ADA, [{ id: 'pl' }])).toEqual({ ok: true })
-    expect(() => w.live.apply(LV, 'c2', BOB, { batchId: 'y', ops: [setName('flag', 'X')] }), 'under the held placement').toThrow(/held by Ada/)
-    w.live.leave(LV, 'c1')
-    expect(w.live.apply(LV, 'c2', BOB, { batchId: 'z', ops: [setName('flag', 'free')] }).ok).toBe(true)
-  })
-
-  it('a hold is the whole set: what is left out is released, what another has is refused and left out', () => {
+  it('a hold is the whole set: what is left out is released, whoever else holds the rest', () => {
     const { live } = world()
     const a = fake('c1')
     const b = fake('c2', BOB)
@@ -247,12 +226,12 @@ describe('holds', () => {
     expect(live.status()[0]!.holds).toBe(2)
     expect(live.hold(LV, 'c1', ADA, [{ id: 'b' }]), 'a released by omission').toEqual({ ok: true })
     expect(live.status()[0]!.holds).toBe(1)
-    expect(live.hold(LV, 'c2', BOB, [{ id: 'a' }, { id: 'b' }])).toEqual({ ok: false, holder: 'Ada', refused: [{ id: 'b' }] })
-    expect(live.status()[0]!.holds, 'Bob still got a').toBe(2)
+    expect(live.hold(LV, 'c2', BOB, [{ id: 'a' }, { id: 'b' }])).toEqual({ ok: true })
+    expect(live.status()[0]!.holds, 'Ada’s b, and Bob’s a and b').toBe(3)
     expect(live.hold(LV, 'c1', ADA, []), 'an empty set is a release').toEqual({ ok: true })
-    expect(live.status()[0]!.holds).toBe(1)
+    expect(live.status()[0]!.holds).toBe(2)
     const before = b.events.length
-    live.hold(LV, 'c2', BOB, [{ id: 'a' }])
+    live.hold(LV, 'c2', BOB, [{ id: 'a' }, { id: 'b' }])
     expect(b.events.length, 'nothing changed: nothing broadcast').toBe(before)
   })
 
@@ -279,7 +258,8 @@ describe('holds', () => {
     live.join(LV, tab1.client)
     live.join(LV, tab2.client)
     live.hold(LV, 't1', ADA, [{ id: 'a1' }])
-    expect(live.hold(LV, 't2', ADA, [{ id: 'a1' }])).toEqual({ ok: false, holder: 'Ada', refused: [{ id: 'a1' }] })
+    expect(live.hold(LV, 't2', ADA, [{ id: 'a1' }])).toEqual({ ok: true })
+    expect(live.status()[0]!.holds, 'one each').toBe(2)
     live.apply(LV, 't1', ADA, { batchId: 'r', ops: [{ kind: 'removeNode', id: 'a' }] })
     expect(live.status()[0]!.holds).toBe(0)
     expect(tab2.events.at(-1)?.event).toBe('holds')
@@ -466,8 +446,8 @@ describe('a prefab is a live document (ADR 0091)', () => {
     w.live.join(prefabKey, a.client)
     w.live.join(prefabKey, b.client)
     expect(w.live.hold(prefabKey, 'c1', ADA, [{ id: 'p0' }])).toEqual({ ok: true })
-    expect(w.live.hold(prefabKey, 'c2', BOB, [{ id: 'p0' }])).toEqual({ ok: false, holder: 'Ada', refused: [{ id: 'p0' }] })
-    expect(() => w.live.apply(prefabKey, 'c2', BOB, { batchId: 'x', ops: [setName('p0', 'mine')] })).toThrow(/held by Ada/)
+    expect(w.live.hold(prefabKey, 'c2', BOB, [{ id: 'p0' }])).toEqual({ ok: true })
+    expect(w.live.apply(prefabKey, 'c2', BOB, { batchId: 'x', ops: [setName('p0', 'mine')] }).ok).toBe(true)
   })
 })
 

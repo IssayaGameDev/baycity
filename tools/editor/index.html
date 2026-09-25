@@ -971,11 +971,8 @@
         color: #7ddc9a;
         border-color: #2f5c40;
       }
-      /* Held by someone else (ADR 0089): dimmed, their name where the count would be. */
-      .row.held {
-        opacity: 0.6;
-      }
-      /* In the holder's colour, the same as their outline and their icon (ADR 0155). */
+      /* Who else has it selected (ADR 0158): a badge each, in their colour — their outline's and their icon's
+         (ADR 0155). The row is as usable as any other. */
       .row .badge.held {
         color: var(--peer, #f0b860);
         border-color: color-mix(in srgb, var(--peer, #f0b860) 45%, transparent);

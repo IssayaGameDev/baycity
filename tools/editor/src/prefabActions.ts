@@ -53,7 +53,6 @@ export interface PrefabActionsHost {
     recordEdit: (label: string) => void
     reset: () => void
   }
-  refuseHeld: (index: number) => boolean
   projectFolder: () => string | null
   reloadAssets: () => Promise<void>
   setProblem: (message: string) => void
@@ -170,7 +169,6 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     if (open === null || open.mode !== 'level' || library === null) return
     const definition = open.definitionOf(index)
     if (definition === null) return
-    if (host.refuseHeld(index)) return
 
     // Identity that survives the awaits: an index shifts under a remote edit, a ref does not.
     const ref = open.refAt(index)

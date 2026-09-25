@@ -44,8 +44,8 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *   GET  /api/live/:kind/:name/events → SSE: hello, snapshot, ops (id = seq), holds, peers, presence, error
  *                                       plus `prefab` on a level's stream: a prefab the level uses was edited
  *                                       :kind is `level` or `prefab` — a prefab is its own document (ADR 0091)
- *   POST /api/live/:kind/:name/ops          → { connId, batchId, ops } → { ok, seq } · 400 bad op · 423 held by another
- *   POST /api/live/:kind/:name/hold         → { connId, refs } — my holds are exactly these → { ok } / { ok: false, holder, refused }
+ *   POST /api/live/:kind/:name/ops          → { connId, batchId, ops } → { ok, seq } · 400 bad op
+ *   POST /api/live/:kind/:name/hold         → { connId, refs } — what I have selected is exactly these → { ok }; shown, never refused (ADR 0158)
  *   POST /api/live/:kind/:name/release      → { connId, refs } → { ok }
  *   POST /api/live/:kind/:name/ping         → { connId } — still here (the editor, every heartbeat)
  *   POST /api/live/:kind/:name/presence     → { connId, data } — relayed, unnumbered

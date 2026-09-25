@@ -215,19 +215,19 @@ describe('collab', () => {
     expect(s.h.posts, 'nothing is sent once left').toHaveLength(1)
   })
 
-  it('holds go out one at a time, in order, and answer with the holder when refused', async () => {
+  it('holds go out one at a time, in order', async () => {
     const s = await setUp()
     const p = s.collab.setHolds([{ id: 'a' }])
     const q = s.collab.setHolds([])
     await tick()
     expect(s.h.posts.map((x) => x.action), 'the second waits for the first').toEqual(['hold'])
-    s.h.posts[0]!.answer(false, 200, { ok: false, holder: 'Bob', refused: [{ id: 'a' }] })
-    expect(await p).toEqual({ ok: false, holder: 'Bob', refused: [{ id: 'a' }] })
+    s.h.posts[0]!.answer(true, 200, { ok: true })
+    await p
     await tick()
     expect(s.h.posts.map((x) => x.action)).toEqual(['hold', 'hold'])
     expect(s.h.posts[1]!.body.refs).toEqual([])
     s.h.posts[1]!.answer(true, 200, { ok: true })
-    expect(await q).toEqual({ ok: true })
+    await q
   })
 
   it('a new hello on the same session says goodbye for the old connection', async () => {

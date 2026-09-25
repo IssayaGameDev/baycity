@@ -651,7 +651,6 @@ const prefabs = createPrefabActions({
   openFile: (qualified) => openFile(qualified),
   room,
   edits: () => edits,
-  refuseHeld: (index) => refuseHeld(index),
   projectFolder: () => project.folder(),
   reloadAssets: () => reloadAssets(),
   setProblem: (message) => setProblem(message),
@@ -782,8 +781,8 @@ const applySelection = (next: readonly number[]): void => {
     selectedAsset = null
     assetInspector.show(null)
   }
-  // A node someone else holds is theirs: never in the selection, so the gizmo never lands on it (ADR 0089).
-  selection = clampTo(next, doc?.count() ?? 0).filter((i) => room.heldBy(i) === null)
+  // Anything, whoever else has it selected too (ADR 0158): theirs is shown, never in the way.
+  selection = clampTo(next, doc?.count() ?? 0)
   const primary = primaryOf(selection)
   selected = primary
   // Disarmed too: armed Record left running across a selection change would write keys onto the next object
@@ -802,23 +801,13 @@ const applySelection = (next: readonly number[]): void => {
 /** Select one item outright — the plain click, and what every command that lands on a new item does. */
 const select = (index: number): void => {
   if (meshes.groupAt(index) === undefined || doc === null) return
-  if (refuseHeld(index)) return
   applySelection([index])
 }
 
 /** A click that carries modifiers: Ctrl toggles one, Shift extends a range over `order`. */
 const selectWith = (index: number, mode: SelectMode, order: readonly number[]): void => {
   if (meshes.groupAt(index) === undefined || doc === null) return
-  if (refuseHeld(index)) return
   applySelection(applySelect(selection, index, mode, order))
-}
-
-/** A click on a node someone else holds: say who, do nothing. */
-const refuseHeld = (index: number): boolean => {
-  const holder = room.heldBy(index)
-  if (holder === null) return false
-  notify.warn(`${holder} has that selected`)
-  return true
 }
 
 const deselect = (): void => {
@@ -1312,11 +1301,8 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
     gameSelected = false
     selectWith(index, mode, order)
   },
-  heldBy: (index) => room.heldBy(index),
-  heldColour: (index) => {
-    const h = room.holderAt(index)
-    return h === null ? null : peerCss(h.connId)
-  },
+  // Who else has it selected, each in their colour (ADR 0158): shown, never in the way.
+  holders: (index) => room.holdersOf(index).map((h) => ({ name: h.name, colour: peerCss(h.connId) })),
   isHidden: (index) => doc !== null && hiddenView.hiddenAt(doc, index),
   /**
    * Hiding is sent to the room and comes back as the whole set (ADR 0132) — the echo is the ack, so
@@ -1338,7 +1324,6 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
   onReparent: (rows, parent, at) => {
     const open = doc
     if (open === null) return
-    if (parent !== null && refuseHeld(parent)) return
     /**
      * **The whole drag, in one edit** (ADR 0134).
      *

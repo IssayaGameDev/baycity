@@ -138,19 +138,17 @@ describe('rowsOf: the tree', () => {
   })
 })
 
-describe('rowsOf: holds', () => {
-  it('names the holder on the row and on every row under it; free rows say nothing', () => {
+describe('rowsOf: who else has it selected (ADR 0158)', () => {
+  it('names everyone who has the row itself selected, and nobody on the rows under it', () => {
     const doc = four()
     doc.reparent(idx(doc, 'b'), idx(doc, 'a'), 0)
     const a = idx(doc, 'a')
-    const heldBy = (i: number): string | null => {
-      for (let at: number | null = i; at !== null; at = doc.parentOf(at)) if (at === a) return 'Adrien'
-      return null
-    }
-    const rows = rowsOf(doc, allOpen(doc), heldBy)
-    const byLabel = Object.fromEntries(rows.filter((r) => r.kind === 'item').map((r) => [r.label, r.held]))
-    expect(byLabel).toEqual({ a: 'Adrien', b: 'Adrien', c: '', d: '' })
-    expect(rowsOf(doc, allOpen(doc)).every((r) => r.held === ''), 'no holder function: nothing held').toBe(true)
+    const holders = (i: number): { name: string; colour: string }[] =>
+      i === a ? [{ name: 'Adrien', colour: '#f00' }, { name: 'Titouan', colour: '#0f0' }] : []
+    const rows = rowsOf(doc, allOpen(doc), holders)
+    const byLabel = Object.fromEntries(rows.filter((r) => r.kind === 'item').map((r) => [r.label, r.held.map((h) => h.name)]))
+    expect(byLabel).toEqual({ a: ['Adrien', 'Titouan'], b: [], c: [], d: [] })
+    expect(rowsOf(doc, allOpen(doc)).every((r) => r.held.length === 0), 'no holder function: nobody').toBe(true)
   })
 })
 

@@ -1,6 +1,8 @@
 # ADR 0089 — A level is edited live
 
-Status: accepted, implemented in four phases (one commit each); each phase has its section here.
+Status: accepted, implemented in four phases (one commit each); each phase has its section here. Phase 3's
+holds no longer refuse anything (ADR 0158): a hold is what someone has selected, shown to the others, and anyone
+selects and edits any node.
 
 ## Context
 

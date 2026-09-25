@@ -101,10 +101,11 @@ export interface Collab {
   submit: (batch: LocalBatch) => void
   flush: () => Promise<void>
   /**
-   * My holds are exactly `refs`. Sent one after another, never two in flight, so the server sees them in the
-   * order they were asked — a hold overtaking its release left a node held that nobody had selected.
+   * My holds are exactly `refs` — what I have selected, shown to the others and never refused (ADR 0158). Sent
+   * one after another, never two in flight, so the server sees them in the order they were asked — a hold
+   * overtaking its release left a node shown as selected that nobody had selected.
    */
-  setHolds: (refs: NodeRef[]) => Promise<{ ok: true } | { ok: false; holder: string; refused: NodeRef[] }>
+  setHolds: (refs: NodeRef[]) => Promise<void>
   /** Still here. The server drops a connection it has not heard from in a while, holds included. */
   ping: () => void
   /**
@@ -437,11 +438,9 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
       await transport.post(kind, name, 'flush', { connId })
     },
     setHolds: (refs) => {
-      const send = async (): Promise<{ ok: true } | { ok: false; holder: string; refused: NodeRef[] }> => {
-        if (name === null || connId === null) return { ok: true }
-        const r = await transport.post(kind, name, 'hold', { connId, refs })
-        const body = r.body as { ok?: boolean; holder?: string; refused?: NodeRef[] } | null
-        return body?.ok === false ? { ok: false, holder: body.holder ?? 'someone', refused: body.refused ?? refs } : { ok: true }
+      const send = async (): Promise<void> => {
+        if (name === null || connId === null) return
+        await transport.post(kind, name, 'hold', { connId, refs })
       }
       const next = holdChain.then(send, send)
       holdChain = next.catch(() => undefined)

@@ -1,6 +1,6 @@
 // By file, not the package index: the index pulls in the loader (and `@mp/core`), which the Vite config that
 // bundles this file for the dev editor cannot load.
-import { applyBatch, OpError, refKey, touchedRefs, type NodeRef, type Op } from '../../../packages/content/src/ops'
+import { applyBatch, OpError, refKey, type NodeRef, type Op } from '../../../packages/content/src/ops'
 import type { Level, Node } from '../../../packages/content/src/types'
 import { hydratePrefabs, prefabRefsIn, stripHydrated } from '../../../packages/content/src/prefabs'
 import { validateLevel, validateNodeTree } from '../../../packages/content/src/validate'
@@ -23,10 +23,11 @@ import type { User } from './config'
  *   read of the file from outside. After the write, `changed` names every user who edited since the last
  *   write, so each of their sessions goes dirty (`sessions.ts`) and the mirror learns the path — disk first,
  *   feed second, as the mirror requires.
- * - Holds: a node a client holds (it has it selected) is refused to every other connection. `hold` is the
- *   whole set a connection wants — "my holds are exactly these" — so a late or reordered message cannot leave a
- *   ghost; released on the client leaving and when the node is removed. Identity is the **connection**, so two
- *   tabs of one person are two holders.
+ * - Holds: what each connection has selected, to be **shown** — outlines, badges, Focus — and never refused
+ *   (ADR 0158): several connections may hold one node, and anyone edits anything, the last batch to land being
+ *   what stays. `hold` is the whole set a connection wants — "my holds are exactly these" — so a late or
+ *   reordered message cannot leave a ghost; released on the client leaving and when the node is removed.
+ *   Identity is the **connection**, so two tabs of one person are two holders.
  * - Liveness: a connection is `seen` on every message; `sweep` leaves one silent for `staleMs` (a tab whose
  *   stream died without the server hearing it), which releases its holds. The editor pings while idle.
  *
@@ -164,10 +165,10 @@ export interface Live {
   /** Open (loading from disk if needed) and send `hello` + `snapshot`. Throws `LiveError` 404 / 400. */
   join: (name: string, client: LiveClient) => void
   leave: (name: string, connId: string) => void
-  /** Apply a batch from a connection. Throws `LiveError` 400 (bad op, unknown connection), 423 (held by another). */
+  /** Apply a batch from a connection. Throws `LiveError` 400 (bad op, unknown connection). */
   apply: (name: string, connId: string, user: User, batch: { batchId: string; ops: Op[] }) => ApplyResult
-  /** This connection's holds become exactly `refs`. Refused refs (another's) are named and left out. */
-  hold: (name: string, connId: string, user: User, refs: NodeRef[]) => { ok: true } | { ok: false; holder: string; refused: NodeRef[] }
+  /** This connection's holds become exactly `refs`, whoever else holds them too (ADR 0158). */
+  hold: (name: string, connId: string, user: User, refs: NodeRef[]) => { ok: true }
   /**
    * Hide or show nodes in every editor looking at this document (ADR 0132).
    *
@@ -219,6 +220,8 @@ export const createLive = (opts: LiveOptions): Live => {
   const docs = new Map<string, LiveDoc>()
 
   const peersOf = (d: LiveDoc): Peer[] => [...d.clients.values()].map((c) => ({ connId: c.connId, name: c.user.name }))
+  /** One hold per connection per node: several people may have the same node selected (ADR 0158). */
+  const holdKey = (connId: string, ref: NodeRef): string => `${connId}|${refKey(ref)}`
   const holdsOf = (d: LiveDoc): Hold[] => [...d.holds.values()]
   const broadcast = (d: LiveDoc, event: string, data: unknown, id?: number): void => {
     for (const c of d.clients.values()) c.send(event, data, id)
@@ -415,11 +418,12 @@ export const createLive = (opts: LiveOptions): Live => {
     d.cancelMax ??= schedule(() => flush(d), maxMs)
   }
 
-  const releaseHolds = (d: LiveDoc, connId: string, keys?: Set<string>): boolean => {
+  /** Drop this connection's holds — all of them, or those on `refs` (by `refKey`). */
+  const releaseHolds = (d: LiveDoc, connId: string, refs?: Set<string>): boolean => {
     let changed = false
     for (const [key, h] of d.holds) {
       if (h.connId !== connId) continue
-      if (keys !== undefined && !keys.has(key)) continue
+      if (refs !== undefined && !refs.has(refKey(h.ref))) continue
       d.holds.delete(key)
       changed = true
     }
@@ -457,24 +461,8 @@ export const createLive = (opts: LiveOptions): Live => {
     apply: (name, connId, user, batch) => {
       const d = must(name)
       editorOf(d, connId, user)
-      // A hold covers the node and everything under it: an op on a node, or on any of its ancestors' subtree
-      // through a held ancestor, is refused when the holder is another connection.
-      if (d.holds.size > 0) {
-        for (const op of batch.ops) {
-          let refs: NodeRef[]
-          try {
-            refs = touchedRefs(d.level, op)
-          } catch {
-            refs = []
-          }
-          for (const ref of refs) {
-            for (const key of [refKey(ref), ...ancestorKeys(d.level, ref)]) {
-              const h = d.holds.get(key)
-              if (h !== undefined && h.connId !== connId) throw new LiveError(423, `held by ${h.name}`)
-            }
-          }
-        }
-      }
+      // Not refused for being someone else's selection (ADR 0158): anyone edits anything, and batches apply in
+      // the order they arrive, so the last to land is what stays.
       let applied: Op[]
       /**
        * A prefab document is a one-root wrapper, so the op layer reads it as a level scope and would let a
@@ -543,27 +531,18 @@ export const createLive = (opts: LiveOptions): Live => {
     hold: (name, connId, user, refs) => {
       const d = must(name)
       clientOf(d, connId, user)
+      // Exactly these, whoever else has them too (ADR 0158): a selection is shown, never refused.
       const want = new Map(refs.map((r) => [refKey(r), r]))
-      // Another's: named, and not taken. The rest of the set still applies.
-      let holder: string | null = null
-      const refused: NodeRef[] = []
-      for (const [key, ref] of want) {
-        const h = d.holds.get(key)
-        if (h !== undefined && h.connId !== connId) {
-          holder ??= h.name
-          refused.push(ref)
-          want.delete(key)
-        }
-      }
-      const gone = new Set([...d.holds].filter(([key, h]) => h.connId === connId && !want.has(key)).map(([key]) => key))
+      const gone = new Set([...d.holds.values()].filter((h) => h.connId === connId && !want.has(refKey(h.ref))).map((h) => refKey(h.ref)))
       let changed = gone.size > 0 && releaseHolds(d, connId, gone)
-      for (const [key, ref] of want) {
+      for (const ref of want.values()) {
+        const key = holdKey(connId, ref)
         if (d.holds.has(key)) continue
         d.holds.set(key, { ref, connId, name: user.name })
         changed = true
       }
       if (changed) broadcast(d, 'holds', { holds: holdsOf(d) })
-      return holder === null ? { ok: true } : { ok: false, holder, refused }
+      return { ok: true }
     },
 
     ping: (name, connId, user) => {
@@ -601,58 +580,6 @@ export const createLive = (opts: LiveOptions): Live => {
     status: () => [...docs.values()].map((d) => ({ name: d.name, seq: d.seq, peers: peersOf(d), holds: d.holds.size })),
   }
   return api
-}
-
-/** The ids from the top of a prefab's tree down to `id`, inclusive, or `null` when it is not there. */
-const pathIn = (roots: readonly Node[], id: string): string[] | null => {
-  for (const n of roots) {
-    if (n.id === id) return [id]
-    const deeper = pathIn(n.children ?? [], id)
-    if (deeper !== null) return [n.id, ...deeper]
-  }
-  return null
-}
-
-/**
- * The refs of every ancestor of `ref` in its tree — a hold on any of them covers `ref`.
- *
- * Down every list (ADR 0151): a child a placement added under a piece has the placement, and the piece seen
- * through it, above it — so a hold on that piece covers it, as a hold on any parent covers its children.
- */
-const ancestorKeys = (level: Level, ref: NodeRef): string[] => {
-  /** The piece a record belongs to and its prefab-side ancestors, as refs through `placement`. The root's record adds none. */
-  const through = (placement: Node, key: string): string[] => {
-    const root = placement.prefab === undefined ? undefined : level.prefabs?.[placement.prefab]
-    if (root === undefined || key === root.id) return []
-    return (pathIn(root.children ?? [], key) ?? []).map((node) => refKey({ owner: placement.id, node }))
-  }
-  const chain = (roots: readonly Node[], id: string, trail: string[]): string[] | null => {
-    for (const n of roots) {
-      if (n.id === id) return trail
-      const here = [...trail, refKey({ id: n.id })]
-      const deeper = chain(n.children ?? [], id, here)
-      if (deeper !== null) return deeper
-      for (const [key, over] of Object.entries(n.overrides ?? {})) {
-        const added = over.addedChildren === undefined ? null : chain(over.addedChildren, id, [...here, ...through(n, key)])
-        if (added !== null) return added
-      }
-    }
-    return null
-  }
-  if ('owner' in ref) {
-    // The placement and its ancestors, then the prefab-side ancestors seen through the same placement.
-    const above = chain(level.nodes, ref.owner, []) ?? []
-    const placement = findNode(level.nodes, ref.owner)
-    const root = placement?.prefab === undefined ? undefined : level.prefabs?.[placement.prefab]
-    const inside = root === undefined ? [] : (pathIn(root.children ?? [], ref.node) ?? []).slice(0, -1)
-    return [...above, refKey({ id: ref.owner }), ...inside.map((node) => refKey({ owner: ref.owner, node }))]
-  }
-  if (ref.table !== undefined) {
-    const root = level.prefabs?.[ref.table]
-    const table = ref.table
-    return root === undefined ? [] : (pathIn([root], ref.id) ?? []).slice(0, -1).map((id) => refKey({ table, id }))
-  }
-  return chain(level.nodes, ref.id, []) ?? []
 }
 
 /** A node of the level by id, what placements added under their pieces included. */

@@ -24,7 +24,10 @@ const box = (id: string, name: string, children: Node[] = []): Node => ({
 const PREFAB: Node = { id: 'root', name: 'platform', transform: { position: vec3(0, 0, 0) }, components: [], children: [box('slab', 'slab')] }
 
 /** A level of `Walls` holding a `Wall`, and a prefab placed twice; everything open. `hidden` is what the eye hides. */
-const rig = (hidden: ReadonlySet<number> = new Set(), held: { index: number; name: string; colour: string } | null = null): { list: HTMLElement; toggles: [number, boolean][] } => {
+const rig = (
+  hidden: ReadonlySet<number> = new Set(),
+  held: { index: number; name: string; colour: string } | null = null,
+): { list: HTMLElement; toggles: [number, boolean][]; picked: number[] } => {
   const level: Level = { id: 'l', config: {}, nodes: [box('walls', 'Walls', [box('w1', 'Wall')])] }
   const doc = levelDoc(level)
   doc.placePrefab('a'.repeat(16), PREFAB, vec3(0, 0, 0))
@@ -32,10 +35,11 @@ const rig = (hidden: ReadonlySet<number> = new Set(), held: { index: number; nam
   const list = document.createElement('div')
   document.body.replaceChildren(list)
   const toggles: [number, boolean][] = []
+  const picked: number[] = []
   createHierarchy(list, {
     doc: () => doc,
     selection: () => [],
-    onSelect: () => {},
+    onSelect: (i) => void picked.push(i),
     isHidden: (i) => hidden.has(i),
     onToggleHidden: (i, only) => toggles.push([i, only]),
     gameSelected: () => false,
@@ -45,10 +49,9 @@ const rig = (hidden: ReadonlySet<number> = new Set(), held: { index: number; nam
     onSelectEnv: () => {},
     onRename: () => {},
     onReparent: () => {},
-    heldBy: (i) => (held !== null && i === held.index ? held.name : null),
-    heldColour: (i) => (held !== null && i === held.index ? held.colour : null),
+    holders: (i) => (held !== null && i === held.index ? [{ name: held.name, colour: held.colour }] : []),
   }).setAllOpen(true)
-  return { list, toggles }
+  return { list, toggles, picked }
 }
 
 const rowOf = (list: HTMLElement, name: string): HTMLElement =>
@@ -89,10 +92,14 @@ describe('the Hierarchy’s rows', () => {
     expect(rowOf(rig(new Set([0])).list, 'Walls').classList.contains('eyeshut')).toBe(true)
   })
 
-  it('names who holds a row in their colour, the one their icon and outline have (ADR 0155)', () => {
-    const { list } = rig(new Set(), { index: 0, name: 'Ana', colour: '#12ab34' })
-    const badge = rowOf(list, 'Walls').querySelector<HTMLElement>('.badge.held')!
+  it('names who else has a row selected in their colour, and the row stays yours to pick (ADR 0155, ADR 0158)', () => {
+    const { list, picked } = rig(new Set(), { index: 0, name: 'Ana', colour: '#12ab34' })
+    const row = rowOf(list, 'Walls')
+    const badge = row.querySelector<HTMLElement>('.badge.held')!
     expect(badge.textContent).toBe('Ana')
     expect(badge.style.getPropertyValue('--peer')).toBe('#12ab34')
+    expect(row.classList.contains('held'), 'not dimmed').toBe(false)
+    row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }))
+    expect(picked).toEqual([0])
   })
 })

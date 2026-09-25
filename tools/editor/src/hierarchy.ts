@@ -46,8 +46,8 @@ export interface Row {
    * `inline` was on every object that is not a prefab, so the commonest row said the least (ADR 0150).
    */
   badge: string
-  /** Who else has this node selected (ADR 0089) — the row is not selectable, renamable or draggable. `''` when free. */
-  held: string
+  /** Who else has this node selected, each in their colour (ADR 0158) — shown, never in the way. */
+  held: readonly Holder[]
   /** References a prefab — Unity tints these, and it is the distinction that matters most here. */
   linked: boolean
   /**
@@ -92,7 +92,7 @@ export interface Openness {
 export const rowsOf = (
   doc: Doc,
   open: Openness,
-  heldBy: (index: number) => string | null = () => null,
+  holders: (index: number) => readonly Holder[] = () => [],
   isHidden: (index: number) => boolean = () => false,
 ): Row[] => {
   const rows: Row[] = []
@@ -124,7 +124,7 @@ export const rowsOf = (
       siblingIndex: doc.siblingIndexOf(i),
       label: doc.label(i),
       badge: shared > 1 ? `×${shared}` : '',
-      held: heldBy(i) ?? '',
+      held: holders(i),
       linked: ref !== null,
       disabled: !doc.nodeEnabled(i),
       disabledAbove: doc.disabledByAncestor(i),
@@ -193,10 +193,18 @@ export interface HierarchyHost {
    * at sibling position `at`.
    */
   onReparent: (from: readonly number[], parent: number | null, at: number) => void
-  /** Who else holds this node, or `null` (ADR 0089). Absent when nothing is ever held (prefabs). */
-  heldBy?: (index: number) => string | null
-  /** The holder's colour, the same as their outline and their icon (ADR 0155). */
-  heldColour?: (index: number) => string | null
+  /**
+   * Who else has this node selected, each in their colour — the same as their outline and their icon (ADR 0155,
+   * ADR 0158). Absent when nobody else can be here.
+   */
+  holders?: (index: number) => readonly Holder[]
+}
+
+/** Someone else who has a node selected. */
+export interface Holder {
+  name: string
+  /** CSS colour. */
+  colour: string
 }
 
 export interface Hierarchy {
@@ -284,7 +292,7 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
 
     const selection = host.selection()
     const primary = selection[selection.length - 1] ?? null
-    const rows = rowsOf(doc, { expanded }, host.heldBy, host.isHidden)
+    const rows = rowsOf(doc, { expanded }, host.holders, host.isHidden)
     // Every visible row in draw order: what a Shift-range runs over. Pieces are selectable too, so they are
     // in it — a range that skipped them would jump over what the eye sees between two rows.
     const order = rows.map((r) => r.index)
@@ -300,7 +308,6 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
         // The primary is marked apart, because it is the one the Inspector shows and the one a range anchors
         // on: "which of these five am I editing" has to be answerable at a glance.
         row.index === primary && selection.length > 1 ? 'primary' : '',
-        row.held !== '' ? 'held' : '',
         // Off itself, or off because something above it is: both read as absent, and the second cannot be
         // fixed on this row, so they look the same and the checkbox says which.
         row.disabled || row.disabledAbove ? 'off' : '',
@@ -389,18 +396,13 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
       el.append(eye)
 
       if (row.badge !== '') el.append(span('badge', row.badge))
-      // Someone else has it: their name is the badge, and the row does nothing but say so.
-      if (row.held !== '') {
-        const holder = span('badge held', row.held)
-        const colour = host.heldColour?.(row.index) ?? null
-        if (colour !== null) holder.style.setProperty('--peer', colour)
+      // Who else has it selected: a badge each, in their colour. Shown, and nothing more (ADR 0158).
+      for (const h of row.held) {
+        const holder = span('badge held', h.name)
+        holder.style.setProperty('--peer', h.colour)
         el.append(holder)
-        el.title = `${row.held} has this selected`
-        el.addEventListener('pointerdown', (e) => host.onSelect(row.index, modeFor(e), order))
-        container.append(el)
-        drawn.push({ row, el }) // not draggable, but on screen: a drop beside it is measured around it
-        continue
       }
+      if (row.held.length > 0) el.title = `${row.held.map((h) => h.name).join(' and ')} ${row.held.length === 1 ? 'has' : 'have'} this selected too`
 
       // Selecting and renaming work on every row, pieces included: a piece is an object now (ADR 0033), so it
       // is what the Inspector shows and what the gizmo moves.
@@ -426,9 +428,7 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
           drawn: () => drawn,
           carried,
           label: { icon: look.icon, text: row.label, className: look.className },
-          // Not under something somebody else holds (ADR 0089): the drop would be refused, so it must not light up.
-          canReparent: (parent) =>
-            (parent === null || (host.heldBy?.(parent) ?? null) === null) && carried.some((i) => host.doc()?.canReparent(i, parent) === true),
+          canReparent: (parent) => carried.some((i) => host.doc()?.canReparent(i, parent) === true),
           expand: (index) => {
             const d = host.doc()
             if (d === null) return
