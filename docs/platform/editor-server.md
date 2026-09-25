@@ -116,7 +116,9 @@ One `Doc` per open level: `{ level, seq, log ≤ logKeep, clients: Map<connId, L
 dirtyBy: Set<email> }`. The first join reads the file (`readLevel` → `validateLevel`), sends `hello` + `snapshot`.
 `apply` runs `applyBatch` (in place; an `OpError` is a 400 and nothing changed), refuses an op whose touched ref or
 any ancestor is held by another `connId` (423), then `seq++`, logs, broadcasts `ops` to **every** client, the
-sender included. Holds go with their connection (leave, stream close) and with the node when it is removed.
+sender included. Ancestors are walked down every list (`forEachNode`, `content.md`, ADR 0151): a child a placement
+added under a piece has the placement, and that piece seen through it, above it. Holds go with their connection
+(leave, stream close) and with the node when it is removed.
 
 **Liveness.** `seen[connId]` is set on join and on every message. `sweep()` leaves every connection silent for
 `staleMs` (default two minutes; the box passes `lockStaleMs`) — a tab whose stream died without the server

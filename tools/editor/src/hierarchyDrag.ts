@@ -23,8 +23,6 @@ export interface DropRow {
   readonly depth: number
   readonly parent: number | null
   readonly siblingIndex: number
-  /** A prefab's piece cannot be a parent, so nothing is dropped *onto* one. */
-  readonly kind: 'item' | 'inherited'
   readonly top: number
   readonly bottom: number
 }
@@ -41,8 +39,8 @@ const EDGE_BAND = 0.3
 /**
  * Where a pointer at height `y` drops, with `wantDepth` the nesting level its distance from the left asks for.
  *
- * Over a row's middle, into it — when `canOnto` says it can take what is carried; over its top or bottom, or
- * over any part of a row that cannot, the gap beside it. A gap offers the depths that keep the tree what it
+ * Over a row's middle, into it — when `canOnto` says it can take what is carried, which a prefab's piece can
+ * (ADR 0151); over its top or bottom, or over any part of a row that cannot, the gap beside it. A gap offers the depths that keep the tree what it
  * shows: before a row at that row's own depth, or after the row above at any depth from the row below's up to
  * its own — closing the groups it ends. `null` only for an empty list.
  */
@@ -59,7 +57,7 @@ export const dropAt = (rows: readonly DropRow[], y: number, wantDepth: number, c
   } else {
     const r = rows[at]!
     const t = r.bottom > r.top ? (y - r.top) / (r.bottom - r.top) : 0
-    const onto = r.kind === 'item' && canOnto(r.index)
+    const onto = canOnto(r.index)
     const upper = onto ? t < EDGE_BAND : t < 0.5
     const lower = onto ? t > 1 - EDGE_BAND : t >= 0.5
     if (!upper && !lower) return { kind: 'onto', index: r.index }

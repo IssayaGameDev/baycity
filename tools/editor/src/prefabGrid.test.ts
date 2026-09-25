@@ -19,8 +19,8 @@ import { rowsOf } from './hierarchy'
  * opened again from its file, prefabs resolved from their files; the tree the game builds; and that undoing
  * every edit gives back exactly the level it started from.
  *
- * `it.fails` marks what does not work yet — each names what the survey traced it to. The rebuild turns them
- * into `it` one by one.
+ * Seventeen of these failed before the rebuild, each for a traced cause; the comments on them say what used
+ * to go wrong.
  */
 
 const TOWER = 't'.repeat(16)
@@ -165,8 +165,8 @@ describe('the prefab grid: delete', () => {
     holds(w, [...CRATE, 'T1', '  Base*', '    Door*', ...T2])
   })
 
-  // B3: `find` reports the placement as an added child's parent, so the undo puts it back under the placement.
-  it.fails('deletes an added child, and undo puts it back under its piece', () => {
+  // Undo puts it back in its piece's record: `find` knows which record holds it (ADR 0151).
+  it('deletes an added child, and undo puts it back under its piece', () => {
     const w = world()
     w.doc.remove(at(w.doc, 'T1/Top/Flag'))
     holds(w, [...CRATE, 'T1', '  Base*', '    Door*', '  Top*', '    Bell*', ...T2])
@@ -180,22 +180,22 @@ describe('the prefab grid: duplicate', () => {
     holds(w, ['Crate', '  Lid', '  Lid', ...T1, ...T2])
   })
 
-  // B7: the copy keeps the added child's id, so inserting it fails.
-  it.fails('duplicates a placement beside it, its own children included', () => {
+  // The copy re-mints the ids of what the placement added too, and follows them in its recorded order.
+  it('duplicates a placement beside it, its own children included', () => {
     const w = world()
     w.doc.duplicate(at(w.doc, 'T1'))
     holds(w, [...CRATE, ...T1, ...T1, ...T2])
   })
 
-  // B12: the copy goes to the end of the placement, not beside the piece.
-  it.fails('duplicates a piece beside it, as an object of the level', () => {
+  // Beside it, in the placement's record, placed by a recorded order — not at the end of the placement.
+  it('duplicates a piece beside it, as an object of the level', () => {
     const w = world()
     w.doc.duplicate(at(w.doc, 'T1/Base'))
     holds(w, [...CRATE, 'T1', '  Base*', '    Door*', '  Base', '    Door', '  Top*', '    Bell*', '    Flag', ...T2])
   })
 
-  // B2: the copy lands at the top of the level.
-  it.fails('duplicates an added child beside it', () => {
+  // Beside it in the same record — it used to land at the top of the level.
+  it('duplicates an added child beside it', () => {
     const w = world()
     w.doc.duplicate(at(w.doc, 'T1/Top/Flag'))
     holds(w, [...CRATE, ...T1, '    Flag', ...T2])
@@ -217,8 +217,8 @@ describe('the prefab grid: create a child', () => {
     holds(create('T1'), [...CRATE, ...T1, '  New', ...T2])
   })
 
-  // B9: undo removes the child and leaves `overrides.base: { addedChildren: [] }` behind (`tidyOverride`).
-  it.fails('under a piece', () => {
+  // Undo leaves no `addedChildren: []` behind: `tidyOverride` tidies every field (ADR 0151).
+  it('under a piece', () => {
     holds(create('T1/Base'), [...CRATE, 'T1', '  Base*', '    Door*', '    New', '  Top*', '    Bell*', '    Flag', ...T2])
   })
 
@@ -234,16 +234,15 @@ describe('the prefab grid: reorder among siblings', () => {
     holds(w, [...T2, ...CRATE, ...T1])
   })
 
-  // B14: a reorder goes through reparent, which takes the piece out as a copy.
-  it.fails('reorders a piece, which stays a piece', () => {
+  // A drop among its siblings is a reorder, recorded as the placement's order; it used to take the piece out as a copy.
+  it('reorders a piece, which stays a piece', () => {
     const w = world()
     w.doc.reparent(at(w.doc, 'T1/Top'), at(w.doc, 'T1'), 0)
     holds(w, [...CRATE, 'T1', '  Top*', '    Bell*', '    Flag', '  Base*', '    Door*', ...T2])
   })
 
-  // An added child is always listed after its inherited siblings unless an order is recorded, and a drop
-  // never records one.
-  it.fails('puts an added child before an inherited sibling', () => {
+  // An added child is listed after its inherited siblings unless an order is recorded — which a drop now does.
+  it('puts an added child before an inherited sibling', () => {
     const w = world()
     w.doc.reparent(at(w.doc, 'T1/Top/Flag'), at(w.doc, 'T1/Top'), 0)
     holds(w, [...CRATE, 'T1', '  Base*', '    Door*', '  Top*', '    Flag', '    Bell*', ...T2])
@@ -257,8 +256,8 @@ describe('the prefab grid: move into something else', () => {
     holds(w, [...T1, '  Crate', '    Lid', ...T2])
   })
 
-  // B9, as creating a child under a piece: undo leaves an empty record.
-  it.fails('moves a plain object into a piece', () => {
+  // Undo leaves no empty record behind, as for creating a child under a piece.
+  it('moves a plain object into a piece', () => {
     const w = world()
     w.doc.reparent(at(w.doc, 'Crate'), at(w.doc, 'T1/Base'), END)
     holds(w, ['T1', '  Base*', '    Door*', '    Crate', '      Lid', '  Top*', '    Bell*', '    Flag', ...T2])
@@ -282,22 +281,22 @@ describe('the prefab grid: move into something else', () => {
     holds(w, [...CRATE, 'T1', '  Base*', '  Top*', '    Bell*', '    Flag', '    Door', ...T2])
   })
 
-  // B3: the undo of the move puts it back under the placement rather than under its piece.
-  it.fails('moves an added child out to the top of the level', () => {
+  // Out of a record is a removal and an insert, whose undo puts it back in the record (ADR 0151).
+  it('moves an added child out to the top of the level', () => {
     const w = world()
     w.doc.reparent(at(w.doc, 'T1/Top/Flag'), null, END)
     holds(w, [...CRATE, 'T1', '  Base*', '    Door*', '  Top*', '    Bell*', ...T2, 'Flag'])
   })
 
-  // B8: `prefabRefsIn` does not walk added children, so a prefab placed only there is not resolved on reopen.
-  it.fails('moves a placement into a piece of another placement, and it still resolves', () => {
+  // `prefabRefsIn` walks what placements added, so a prefab placed only there is resolved when the level is opened again.
+  it('moves a placement into a piece of another placement, and it still resolves', () => {
     const w = world((doc) => doc.setName(doc.placePrefab(OTHER, other(), vec3(0, 0, 0)), 'O1'))
     w.doc.reparent(at(w.doc, 'O1'), at(w.doc, 'T2/Top'), END)
     holds(w, [...CRATE, ...T1, ...T2, '    O1', '      Leaf*'])
   })
 
-  // U5: the menu offers it and `paste` refuses a piece.
-  it.fails('pastes into a piece', () => {
+  // A piece takes a pasted child into its record, like any other child.
+  it('pastes into a piece', () => {
     const w = world()
     const clip = w.doc.copy(at(w.doc, 'Crate'))!
     w.doc.paste(clip, at(w.doc, 'T1/Base'))
@@ -306,8 +305,8 @@ describe('the prefab grid: move into something else', () => {
 })
 
 describe('the prefab grid: one storage for what a placement adds', () => {
-  // B1: a child created on a placement goes in the placement's own `children` (ADR 0130), not in its record.
-  it.fails('keeps a child added to a placement in the placement’s differences', () => {
+  // One storage (ADR 0151): in the record of the prefab's root, not in the placement's own `children` (ADR 0130).
+  it('keeps a child added to a placement in the placement’s differences', () => {
     const w = world()
     w.doc.placeEmpty(vec3(0, 0, 0), at(w.doc, 'T1'))
     const t1 = w.level.nodes.find((n) => n.name === 'T1')!
@@ -315,8 +314,8 @@ describe('the prefab grid: one storage for what a placement adds', () => {
     expect(t1.overrides?.root?.addedChildren?.length).toBe(1)
   })
 
-  // B13: a component added on the placement goes in its own `components`, which Revert and Apply never read.
-  it.fails('counts a component added to a placement as a difference, and Revert takes it away', () => {
+  // In the root's record too, where Revert and Apply look — not in the placement's own `components`.
+  it('counts a component added to a placement as a difference, and Revert takes it away', () => {
     const w = world()
     const t1 = at(w.doc, 'T1')
     w.doc.addComponent(t1, 'Hazard')
@@ -327,8 +326,8 @@ describe('the prefab grid: one storage for what a placement adds', () => {
 })
 
 describe('the prefab grid: Revert and Apply', () => {
-  // B4: the batch clears Top's record, Flag with it, and then tries to remove Flag.
-  it.fails('reverts a placement to its prefab, however it differs', () => {
+  // Every record cleared in one batch. It used to clear Top's record, Flag with it, then try to remove Flag.
+  it('reverts a placement to its prefab, however it differs', () => {
     const w = world()
     const t1 = at(w.doc, 'T1')
     w.doc.setName(at(w.doc, 'T1/Top'), 'Roof')
@@ -337,17 +336,75 @@ describe('the prefab grid: Revert and Apply', () => {
     holds(w, [...CRATE, 'T1', '  Base*', '    Door*', '  Top*', '    Bell*', ...T2])
   })
 
-  // B6: `overridesOf` does not read `nodeEnabled`, so the difference is never counted, reverted or applied.
-  it.fails('counts a piece switched off on one placement as a difference', () => {
+  // Every field counts, from the one list (`tree.ts`); `nodeEnabled` used to be missed.
+  it('counts a piece switched off on one placement as a difference', () => {
     const w = world()
     w.doc.setNodeEnabled(at(w.doc, 'T2/Base'), false)
     expect(w.doc.placementOverrides(at(w.doc, 'T2')).map((o) => o.index)).toContain(at(w.doc, 'T2/Base'))
   })
 })
 
+/**
+ * Apply, checked on the prefab itself: the ops a placement's Apply sends are run over the prefab's own
+ * document, and the prefab must come out looking like the placement did.
+ */
+describe('the prefab grid: Apply makes the prefab match', () => {
+  /** The prefab's tree after `ops`, as indented names. */
+  const applied = (ops: readonly import('@mp/content').Op[]): string[] => {
+    const prefab: Level = { id: 'p', config: {}, nodes: [tower()] }
+    applyBatch(prefab, ops)
+    return built(prefab)
+  }
+  /** What the placement shows, as the prefab would have it: its name the prefab's, no stars. */
+  const asPrefab = (w: World, placement: string): string[] => {
+    const lines = shown(w.doc)
+    const from = lines.indexOf(placement)
+    const rest = lines.slice(from + 1)
+    const end = rest.findIndex((l) => !l.startsWith('  '))
+    return ['Tower', ...(end < 0 ? rest : rest.slice(0, end)).map((l) => l.replace(/\*$/, ''))]
+  }
+
+  it('carries a piece’s added children and their order, from one piece', () => {
+    const w = world()
+    w.doc.reparent(at(w.doc, 'T1/Top/Flag'), at(w.doc, 'T1/Top'), 0)
+    const plan = w.doc.overrideOpsFor(at(w.doc, 'T1/Top'))!
+    expect(applied(plan.ops)).toEqual(['Tower', '  Base', '    Door', '  Top', '    Flag', '    Bell'])
+  })
+
+  it('carries a piece switched off', () => {
+    const w = world()
+    w.doc.setNodeEnabled(at(w.doc, 'T2/Base'), false)
+    const plan = w.doc.overrideOpsFor(at(w.doc, 'T2/Base'))!
+    expect(plan.ops).toContainEqual({ kind: 'setNodeEnabled', id: 'base', enabled: false })
+  })
+
+  it('carries everything at once from the placement: removals, renames, added children, order', () => {
+    const w = world()
+    w.doc.remove(at(w.doc, 'T1/Base/Door'))
+    w.doc.setName(at(w.doc, 'T1/Top'), 'Roof')
+    w.doc.setName(w.doc.placeEmpty(vec3(0, 0, 0), at(w.doc, 'T1')), 'Mast')
+    w.doc.reparent(at(w.doc, 'T1/Mast'), at(w.doc, 'T1'), 0)
+    expect(applied(w.doc.placementOverrideOps(at(w.doc, 'T1'))!.ops)).toEqual(asPrefab(w, 'T1'))
+  })
+})
+
+describe('the prefab grid: unlink', () => {
+  // The level authored what the placement added, so the level's references to it must keep working.
+  it('keeps the ids of what the placement added, and re-mints the prefab’s', () => {
+    const w = world()
+    const flag = w.level.nodes[1]!.overrides!.top!.addedChildren![0]!.id
+    w.doc.unlinkNode(at(w.doc, 'T1'))
+    const t1 = w.level.nodes[1]!
+    const top = t1.children!.find((k) => k.name === 'Top')!
+    expect(top.id, 'a piece becomes the level’s own, with an id of its own').not.toBe('top')
+    expect(top.children!.map((k) => k.id)).toContain(flag)
+    holds(w, [...CRATE, 'T1', '  Base', '    Door', '  Top', '    Bell', '    Flag', ...T2])
+  })
+})
+
 describe('the prefab grid: the Hierarchy agrees with the tree', () => {
-  // B10: `childCount` counts the prefab's children and not what a placement adds under a piece.
-  it.fails('opens a piece whose only child is one the placement added', () => {
+  // `childCount` counts what the tree shows, what a placement added under a piece included.
+  it('opens a piece whose only child is one the placement added', () => {
     const w = world((doc) => doc.placeEmpty(vec3(0, 0, 0), at(doc, 'T1/Base/Door')))
     const all = { expanded: new Set(Array.from({ length: w.doc.count() }, (_, i) => w.doc.pathOf(i))) }
     const door = rowsOf(w.doc, all).find((r) => r.index === at(w.doc, 'T1/Base/Door'))!
@@ -356,8 +413,8 @@ describe('the prefab grid: the Hierarchy agrees with the tree', () => {
 })
 
 describe('the prefab grid: a prefab edited on its own', () => {
-  // B11: dropping above the root makes a second root, which the prefab's file never writes.
-  it.fails('keeps one root: nothing can be moved beside it', () => {
+  // A second root would be lost: the prefab's file writes only its root.
+  it('keeps one root: nothing can be moved beside it', () => {
     const doc = prefabDoc(tower(), DEFAULT_REGISTRY)
     const base = at(doc, 'Tower/Base')
     expect(doc.canReparent(base, null)).toBe(false)

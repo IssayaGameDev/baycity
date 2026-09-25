@@ -128,7 +128,11 @@ export const checkComponents = (value: unknown, at: string, checker: ParamChecke
   })
 }
 
-export const checkOverrides = (value: unknown, at: string, checker: ParamChecker | undefined): void => {
+/**
+ * A placement's override records. `ctx`, when given, is the tree they sit in: what a placement added under a
+ * piece is part of that tree (ADR 0135), so its ids are checked against everything else's there (ADR 0151).
+ */
+export const checkOverrides = (value: unknown, at: string, checker: ParamChecker | undefined, ctx?: TreeContext): void => {
   if (value === undefined) return
   if (!isObj(value)) throw new LevelError(`${at}: expected an object keyed by node id`)
   for (const [id, o] of Object.entries(value)) {
@@ -160,6 +164,19 @@ export const checkOverrides = (value: unknown, at: string, checker: ParamChecker
       o.removed.forEach((cid: unknown, n: number) => {
         if (typeof cid !== 'string') throw new LevelError(`${oAt}.removed[${n}]: expected a component id`)
       })
+    }
+    for (const field of ['removedNodes', 'childOrder'] as const) {
+      const list = o[field]
+      if (list === undefined) continue
+      if (!Array.isArray(list)) throw new LevelError(`${oAt}.${field}: expected an array of node ids`)
+      list.forEach((id: unknown, n: number) => {
+        if (typeof id !== 'string') throw new LevelError(`${oAt}.${field}[${n}]: expected a node id`)
+      })
+    }
+    if (o.addedChildren !== undefined) {
+      if (!Array.isArray(o.addedChildren)) throw new LevelError(`${oAt}.addedChildren: expected an array of nodes`)
+      const inTree: TreeContext = ctx ?? { ids: new Set(), insidePrefab: false, ...(checker === undefined ? {} : { checker }) }
+      o.addedChildren.forEach((child: unknown, n: number) => validateNodeTree(child, `${oAt}.addedChildren[${n}]`, inTree))
     }
   }
   // Keys are node ids and are **not** checked against the referenced tree: an override for a node the
@@ -202,7 +219,7 @@ export const validateNodeTree = (node: unknown, at: string, ctx: TreeContext): v
      * override is inert (ADR 0033) and a missing material greyboxes.
      */
   }
-  checkOverrides(node.overrides, `${at}.overrides`, ctx.checker)
+  checkOverrides(node.overrides, `${at}.overrides`, ctx.checker, ctx)
   if (node.children !== undefined) {
     if (!Array.isArray(node.children)) throw new LevelError(`${at}.children: expected an array of nodes`)
     node.children.forEach((child, n) => validateNodeTree(child, `${at}.children[${n}]`, ctx))

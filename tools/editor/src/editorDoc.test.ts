@@ -1029,12 +1029,24 @@ describe('a component inherited from the prefab root', () => {
     expect(level.nodes[0]!.overrides?.kroot?.enabled?.c0).toBe(false)
   })
 
-  it('still edits a component the placement owns directly', () => {
+  // One storage (ADR 0151): a component added on a placement is a difference like any other, so it lives in
+  // the root's record, where Revert and Apply look — not in the placement's own `components`.
+  it('keeps a component added to the placement in its root’s record, and edits it there', () => {
     const { level, doc } = placedRootGeometry()
-    const own = doc.addComponent(0, MATERIAL_OVERRIDE)!
-    doc.setParams(0, own, { material: MAT_A })
-    expect(level.nodes[0]!.components.find((c) => c.id === own)?.params.material, 'its own, so no override').toBe(MAT_A)
-    expect(level.nodes[0]!.overrides?.kroot?.params?.[own]).toBeUndefined()
+    const added = doc.addComponent(0, MATERIAL_OVERRIDE)!
+    doc.setParams(0, added, { material: MAT_A })
+    expect(level.nodes[0]!.components, 'nothing in the placement’s own list').toEqual([])
+    expect(level.nodes[0]!.overrides?.kroot?.added?.find((c) => c.id === added)?.params.material).toBe(MAT_A)
+    expect(doc.components(0).find((c) => c.id === added)?.added, 'shown as added on this placement').toBe(true)
+  })
+
+  // What ADR 0130 stored on the placement's own node still edits where it is, until the migration moves it.
+  it('still edits a component a placement owns directly, the old way', () => {
+    const { level, doc } = placedRootGeometry()
+    level.nodes[0]!.components.push({ id: 'mine', type: MATERIAL_OVERRIDE, params: { material: '' } })
+    doc.setParams(0, 'mine', { material: MAT_A })
+    expect(level.nodes[0]!.components.find((c) => c.id === 'mine')?.params.material, 'its own, so no override').toBe(MAT_A)
+    expect(level.nodes[0]!.overrides?.kroot?.params?.mine).toBeUndefined()
   })
 
   it('refuses to reorder it, because the order is the prefab’s', () => {
@@ -1669,6 +1681,8 @@ describe('a child added to a placement', () => {
     expect(doc.placementAdded(0)).toEqual([])
   })
 
+  // The child lives in the root's record now (ADR 0151), so clearing the records takes it: one clear per
+  // record, the piece's and the root's, in one batch.
   it('is deleted in the same batch as the overrides it came with', () => {
     const { doc } = placed()
     doc.setTransform(1, { position: vec3(9, 9, 9) })
@@ -1676,7 +1690,7 @@ describe('a child added to a placement', () => {
     const batches = record(doc)
     doc.revertPlacement(0)
     expect(batches, 'one batch, so one Ctrl+Z and one message to the room').toHaveLength(1)
-    expect(batches[0]!.ops.map((o) => o.kind).sort()).toEqual(['removeNode', 'setNodeOverride'])
+    expect(batches[0]!.ops.map((o) => o.kind).sort()).toEqual(['setNodeOverride', 'setNodeOverride'])
   })
 
   it('leaves a subtree inside the added child alone, as one entry', () => {

@@ -1,7 +1,13 @@
 # ADR 0151 — Prefab editing is rebuilt on one tree and one translator
 
-Status: accepted, in progress. Step 1 of 4 has landed: the grid (`tools/editor/src/prefabGrid.test.ts`).
-Kodjo's calls: rebuild rather than patch, and migrate existing levels once.
+Status: accepted, in progress. Steps 1–3 of 4 have landed: the grid (`tools/editor/src/prefabGrid.test.ts`),
+and every edit on the tree and the translator, all seventeen failing gestures now holding. Step 4, the
+migration, is next. Kodjo's calls: rebuild rather than patch, and migrate existing levels once.
+
+As built, the tree is the document's `nodes()`, which was already a plain tree of addressable nodes; what was
+missing was the translator, and it came out as two functions rather than one diff: **child hosts**
+(`hostOf` → `insertOps` / `removeOps` / `reorderOps`) for everything structural, and `writeTarget` — which
+already existed — for a node's own fields. A whole-tree diff was not needed once structure had one door.
 
 ## Context
 

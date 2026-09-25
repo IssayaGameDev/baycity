@@ -2,7 +2,8 @@
 
 Status: accepted. Amends [ADR 0025](0025-nested-placement.md)'s three-zone drop and
 [ADR 0132](0132-hiding-a-node-is-a-view-not-an-edit.md)'s eye. Every choice below that a person sees is
-Kodjo's, asked with the question tool and two options each.
+Kodjo's, asked with the question tool and two options each. Amended by ADR 0151: a prefab's piece takes a
+drop too, now that the document can put one there.
 
 ## Context
 

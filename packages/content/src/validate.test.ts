@@ -150,6 +150,18 @@ describe('overrides', () => {
   it('accepts an override keyed by a node that does not exist', () => {
     expect(() => validateLevel(withOverrides({ ghost: { name: 'nobody' } }))).not.toThrow()
   })
+
+  // What a placement added under a piece is part of the level's tree (ADR 0135), checked as such (ADR 0151).
+  it('checks the children a placement added as nodes of the level, ids included', () => {
+    expect(() => validateLevel(withOverrides({ p0: { addedChildren: [solid('flag')], childOrder: ['flag', 'p0'] } }))).not.toThrow()
+    expect(() => validateLevel(withOverrides({ p0: { addedChildren: [solid('n0')] } })), 'an id the level already uses').toThrow(/used twice/)
+    expect(() => validateLevel(withOverrides({ p0: { addedChildren: [{ id: 'x' }] } }))).toThrow(/addedChildren\[0\]\.transform/)
+  })
+
+  it('rejects an order or a removal that is not node ids', () => {
+    expect(() => validateLevel(withOverrides({ p0: { childOrder: [3] } }))).toThrow(/childOrder\[0\]/)
+    expect(() => validateLevel(withOverrides({ p0: { removedNodes: 'p0' } }))).toThrow(/removedNodes/)
+  })
 })
 
 describe('parameters, when a registry is supplied', () => {

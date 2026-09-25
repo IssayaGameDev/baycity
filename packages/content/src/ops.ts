@@ -1,4 +1,5 @@
 import { sequenceOverrideProblem, type SequenceOverride } from './sequenceData'
+import { childListsOf, OVERRIDE_FIELD_NAMES, overrideFieldEmpty } from './tree'
 import type { ComponentData, EnvironmentConfig, Level, ModeRef, Node, NodeOverride, Transform } from './types'
 import { checkComponents, checkOverrides, checkTransform, LevelError, validateConfig, validateNodeTree } from './validate'
 
@@ -107,10 +108,16 @@ export type OpKind = OpBody['kind']
 
 interface Found {
   node: Node
+  /** The node whose list it is in: its parent, or — for a child added under a piece — the placement holding it. */
   parent: Node | null
   /** The array the node lives in; `null` for a table root, which lives in the table. */
   siblings: Node[] | null
   index: number
+  /**
+   * For a child a placement added under a piece (ADR 0135): the record that holds it. Undoing its removal has
+   * to put it back **there**, which an `insertNode` under the placement cannot say (ADR 0151).
+   */
+  record: { readonly owner: Node; readonly key: string } | null
 }
 
 interface Scope {
@@ -129,32 +136,28 @@ const scopeOf = (level: Level, table: string | undefined): Scope => {
 }
 
 /**
- * Every list of authored nodes hanging off `n`: its own children, and the children any placement adds under
- * one of its pieces (ADR 0135).
- *
- * An added child is an ordinary node that happens to live in an override record, so the walk has to reach it
- * or no op could edit one. Reached from the placement that owns the record, which is where it is stored.
+ * A node by id, wherever it lives: in a `children` list, or among what a placement added under one of its
+ * pieces (ADR 0135) — an ordinary node that happens to live in an override record, so the walk has to reach
+ * it or no op could edit one.
  */
-const childListsOf = (n: Node): Node[][] => {
-  const out: Node[][] = []
-  if (n.children !== undefined) out.push(n.children)
-  for (const over of Object.values(n.overrides ?? {})) if (over.addedChildren !== undefined) out.push(over.addedChildren)
-  return out
-}
-
 const find = (scope: Scope, id: string): Found | null => {
-  const walk = (list: Node[], parent: Node | null): Found | null => {
+  const walk = (list: Node[], parent: Node | null, record: Found['record']): Found | null => {
     for (let i = 0; i < list.length; i++) {
       const n = list[i]!
-      if (n.id === id) return { node: n, parent, siblings: scope.insidePrefab && parent === null ? null : list, index: i }
-      for (const kids of childListsOf(n)) {
-        const inner = walk(kids, n)
+      if (n.id === id) return { node: n, parent, siblings: scope.insidePrefab && parent === null ? null : list, index: i, record }
+      if (n.children !== undefined) {
+        const inner = walk(n.children, n, null)
+        if (inner !== null) return inner
+      }
+      for (const [key, over] of Object.entries(n.overrides ?? {})) {
+        if (over.addedChildren === undefined) continue
+        const inner = walk(over.addedChildren, n, { owner: n, key })
         if (inner !== null) return inner
       }
     }
     return null
   }
-  return walk(scope.roots, null)
+  return walk(scope.roots, null, null)
 }
 
 const must = (scope: Scope, id: string): Found => {
@@ -214,20 +217,18 @@ const overrideRecord = (owner: Node, node: string, create: boolean): NodeOverrid
   return (map[node] ??= {})
 }
 
-/** Remove an override with nothing left in it, and the map with it, so the JSON accumulates no husks. */
+/**
+ * Remove an override with nothing left in it, and the map with it, so the JSON accumulates no husks.
+ *
+ * Every field, from the one list (`tree.ts`, ADR 0151): this used to name five, so an emptied `addedChildren`
+ * stayed on disk as `[]` after its last child was taken back out.
+ */
 const tidyOverride = (owner: Node, node: string): void => {
   const map = owner.overrides
   if (map === undefined) return
   const over = map[node]
   if (over !== undefined) {
-    for (const k of ['params', 'enabled', 'sequences'] as const) {
-      const sub = over[k]
-      if (sub !== undefined && Object.keys(sub).length === 0) delete over[k]
-    }
-    for (const k of ['added', 'removed'] as const) {
-      const arr = over[k]
-      if (arr !== undefined && arr.length === 0) delete over[k]
-    }
+    for (const field of OVERRIDE_FIELD_NAMES) if (over[field] !== undefined && overrideFieldEmpty(over, field)) delete over[field]
     if (Object.keys(over).length === 0) delete map[node]
   }
   if (Object.keys(map).length === 0) delete owner.overrides
@@ -351,12 +352,17 @@ const invert = (level: Level, op: Op): Op | null => {
       const scope = scopeOf(level, t)
       const f = must(scope, op.id)
       if (f.siblings === null) throw new OpError(`'${op.id}' is the prefab's root; a prefab cannot lose its root`)
+      // Back where it was: a child a placement added goes back into that record, not under the placement.
+      if (f.record !== null) return stamp({ kind: 'insertOverrideChild', owner: f.record.owner.id, node: f.record.key, index: f.index, child: clone(f.node) })
       return stamp({ kind: 'insertNode', parent: f.parent?.id ?? null, index: f.index, node: clone(f.node) })
     }
     case 'moveNode': {
       const scope = scopeOf(level, t)
       const f = must(scope, op.id)
       if (f.siblings === null) throw new OpError(`'${op.id}' is the prefab's root; it cannot move`)
+      // Its undo would have to put it back in a record, which `moveNode` cannot address. The editor moves one
+      // as a removal and an insert instead (ADR 0151).
+      if (f.record !== null) throw new OpError(`'${op.id}' was added under a piece; move it with removeNode and insertOverrideChild`)
       if (op.parent === null && scope.insidePrefab) throw new OpError('a prefab has one root; move under it')
       if (op.parent !== null) {
         if (contains(f.node, op.parent)) throw new OpError(`'${op.parent}' is inside '${op.id}'; a node cannot become its own descendant`)
@@ -510,7 +516,7 @@ const invert = (level: Level, op: Op): Op | null => {
   }
 }
 
-const refersTo = (n: Node, key: string): boolean => n.prefab === key || (n.children ?? []).some((k) => refersTo(k, key))
+const refersTo = (n: Node, key: string): boolean => n.prefab === key || childListsOf(n).some((kids) => kids.some((k) => refersTo(k, key)))
 
 // ------------------------------------------------------------------------------------------------------------
 // apply
@@ -583,7 +589,8 @@ export const applyOp = (level: Level, op: Op): void => {
       const scope = scopeOf(level, t)
       const f = must(scope, op.id)
       f.siblings!.splice(f.index, 1)
-      tidyChildren(f.parent)
+      if (f.record !== null) tidyOverride(f.record.owner, f.record.key)
+      else tidyChildren(f.parent)
       return
     }
     case 'moveNode': {
@@ -814,7 +821,8 @@ export const touchedRefs = (level: Level, op: Op): NodeRef[] => {
         }
         if (root !== undefined) inherited(root)
       }
-      for (const kid of x.children ?? []) walk(kid)
+      // What the placement added under its pieces is under it too: a hold on one of those covers the subtree.
+      for (const kids of childListsOf(x)) for (const kid of kids) walk(kid)
     }
     walk(n)
     return out

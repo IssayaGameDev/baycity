@@ -112,12 +112,31 @@ the node switched off (ADR 0099), the piece **removed** (`removedNodes`, ADR 013
 (`addedChildren`, ADR 0130 generalised), the child **order** (`childOrder`), and a sequence's stages and steps
 (`sequences`, keyed by component id — `sequences.md`, ADR 0139).
 
-An added child is an ordinary authored node that lives in an override record. `find`, `idsIn`, `subtreeIds`
-and `contains` all walk `childListsOf`, so every existing op edits one and it takes part in id uniqueness —
-nothing else had to learn about it. `childrenFor(node, over, overrides)` is the one place a placement's
-children are resolved (prefab's, minus removed, plus added, in `childOrder`), exported so `bakeOverrides`
-and the editor's tree walk cannot disagree. `childOrder` is a preference: missing ids are skipped and
-unnamed children keep their place at the end, so a prefab gaining a piece does not invalidate it.
+An added child is an ordinary authored node that lives in an override record — at the placement's own level
+in the record of the prefab's **root** (one storage, ADR 0151; `children` and `components` on a placement are
+ADR 0130's storage, still read, no longer written). `childrenFor(node, over, overrides)` is the one place a
+placement's children are resolved (prefab's, minus removed, plus added, in `childOrder`), exported so
+`bakeOverrides` and the editor's tree walk cannot disagree. `childOrder` is a preference: missing ids are
+skipped and unnamed children keep their place at the end, so a prefab gaining a piece does not invalidate it.
+
+**The one walk and the one list** — `tree.ts` (ADR 0151), types-only imports:
+
+```ts
+childListsOf(n): Node[][]        // n.children, then every record's addedChildren
+forEachNode(roots, visit)        // depth-first over both
+idsUnder(n): string[];  addedIdsOf(placement): Set<string>
+OVERRIDE_FIELDS                  // every NodeOverride field → 'value' | 'map' | 'list'; a Record over the type's keys, so a new field must be listed
+overrideFieldEmpty(over, f); overrideFieldsSet(over): OverrideField[]
+```
+
+Every walker uses them: `find`/`idsIn`/`subtreeIds`/`contains`/`refersTo`/`touchedRefs` (`ops.ts`),
+`prefabRefsIn` and `unlinkPrefab` (`prefabs.ts`), the server's holds (`live.ts`), and the editor's re-id,
+copy, paste, reference count and component-type scans. `tidyOverride` drops every empty field from the table.
+In `ops.ts`, `find` reports the **record** holding an added child: `removeNode`'s inverse is then
+`insertOverrideChild` back into it, and `moveNode` refuses one (its undo could not address the record).
+`checkOverrides(value, at, checker, ctx?)` validates `addedChildren` as nodes of the tree in `ctx` (ids unique
+level-wide) and `removedNodes` / `childOrder` as id lists. `unlinkedNode` keeps the ids of what the placement
+added, re-minting only the prefab's.
 
 ## Motion — `sequences.md` (ADR 0137)
 

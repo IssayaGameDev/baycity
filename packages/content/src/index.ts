@@ -70,6 +70,8 @@ export type {
   Timing,
 } from './sequence'
 export { hydratePrefabs, stripHydrated, prefabRefsIn, unlinkPrefab, unlinkedNode, type UnlinkDeps } from './prefabs'
+export { OVERRIDE_FIELDS, OVERRIDE_FIELD_NAMES, addedIdsOf, childListsOf, forEachNode, idsUnder, overrideFieldEmpty, overrideFieldsSet } from './tree'
+export type { OverrideField } from './tree'
 export { fingerprintLevel, fingerprintGeometry, firstDifference } from './fingerprint'
 export { matchEntry, migrateLevelRefs, newRefReport } from './migratePrefabRefs'
 export {

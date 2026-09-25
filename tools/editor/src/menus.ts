@@ -110,13 +110,10 @@ export const createMenus = (host: MenuHost) => {
       // Open on a piece too (ADR 0135): the child goes in that piece's override record, so it belongs to
       // this placement and no other. Every hierarchy operation now works on a piece.
       { label: 'Create child', divider: true, enabled: true, items: createMenu(index) },
-      // Duplicate and Copy are open to a prefab's piece (ADR 0131): a copy of one is a plain object, even
-      // though the piece itself belongs to the prefab. Delete, Cut and the paste targets stay shut, because
-      // each of them would have to change the prefab.
+      // Every entry is open to a prefab's piece (ADR 0151). A copy of one is a plain object (ADR 0131), a
+      // removal is recorded on **this** placement (ADR 0133), and a child pasted or created under one goes in
+      // this placement's record (ADR 0135) — the prefab and every other placement keep what they had.
       { label: 'Duplicate', hint: 'Ctrl+D', enabled: true, run: () => host.nodes.duplicateSelected() },
-      // Delete and Cut are open to a prefab's piece too (ADR 0133): removing one is recorded on **this**
-      // placement, so the prefab keeps it and every other placement keeps it. Create-child and the paste
-      // targets stay shut, because there is still nowhere in this level to put a child of a piece.
       { label: 'Delete', hint: 'Del', enabled: true, run: () => host.nodes.deleteSelected() },
       { label: 'Copy', hint: 'Ctrl+C', divider: true, enabled: true, run: () => host.edits().copySelected() },
       { label: 'Cut', hint: 'Ctrl+X', enabled: true, run: () => host.edits().cutSelected() },
