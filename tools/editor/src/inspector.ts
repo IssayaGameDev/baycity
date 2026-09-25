@@ -24,6 +24,7 @@ import {
   type ScrubHandle,
   type ScrubSpec,
 } from './controls'
+import { cardJustDragged, pressCardToDrag } from './cardDrag'
 import { createCurveEditor } from './curveEditor'
 import { icon, type IconName } from './icons'
 import { sequenceSummary } from './sequenceEdit'
@@ -600,6 +601,8 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   /** A card's body, and how lines get into it. */
   interface Section {
     readonly root: HTMLElement
+    /** What a card is dragged by, when it can be (`cardDrag.ts`). */
+    readonly header: HTMLElement
     /** A labelled line holding controls. */
     readonly field: (label: string, ...controls: HTMLElement[]) => HTMLElement
     /** A read-only line: a label and a value, or — with no label — a note across the card. */
@@ -610,8 +613,9 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
 
   /**
    * One card (ADR 0152), shaped like a sequence's stage cards. Its header is a row of small controls rather
-   * than a title string (ADR 0038): twist, icon, enable, name, badge, the component's own tools, ⋯. A press on
-   * the header's empty part opens or shuts it too. A component with nothing to edit is its header alone.
+   * than a title string (ADR 0038): twist, icon, enable, name, badge, the component's own tools, ⋯. A click on
+   * the header's empty part opens or shuts it too. A component with nothing to edit is its header alone, and
+   * the Transform is always open. Neither has a twist; its place is kept, so the icons line up down the panel.
    */
   const addSection = (
     key: string,
@@ -630,16 +634,20 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       tools?: readonly HTMLElement[]
       /** Nothing to edit: no body and nothing to open. */
       empty?: boolean
+      /** Always open: the Transform. */
+      fixed?: boolean
     },
   ): Section => {
     const root = el('div', 'isec')
     const header = el('div', 'isec-h')
-    const collapsed = shut.has(key) && opts.empty !== true
+    const shuts = opts.empty !== true && opts.fixed !== true
+    const collapsed = shuts && shut.has(key)
     root.classList.toggle('shut', collapsed)
     root.classList.toggle('isec-bare', opts.empty === true)
+    root.classList.toggle('isec-fixed', opts.fixed === true)
 
     const toggle = (): void => {
-      if (opts.empty === true) return
+      if (!shuts) return
       if (shut.has(key)) shut.delete(key)
       else shut.add(key)
       rebuildKeepingScroll()
@@ -650,6 +658,8 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     twist.title = collapsed ? 'expand' : 'collapse'
     header.append(twist)
     header.addEventListener('click', (e) => {
+      // The click a drag ends with is the drop, not a click.
+      if (cardJustDragged()) return
       const control = (e.target as Element).closest('button, input, select')
       if (control === null || control === twist) toggle()
     })
@@ -711,7 +721,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       body.append(line)
       return line
     }
-    return { root, field, row, append: (node) => body.append(node) }
+    return { root, header, field, row, append: (node) => body.append(node) }
   }
 
   /**
@@ -1217,6 +1227,17 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       empty: shown !== null && shown.length === 0,
     })
     if (overridden) section.root.classList.add('over-sec')
+    /**
+     * Dragged by its header to reorder (`cardDrag.ts`) — where Move up / Move down are offered: an own
+     * component, one object selected. A press on the header's own controls is theirs.
+     */
+    if (!inherited && peers === null) {
+      section.root.classList.add('movable')
+      section.header.addEventListener('pointerdown', (e) => {
+        if ((e.target as Element).closest('button, input, select') !== null) return
+        pressCardToDrag(e, section.root, (from, to) => moveAndRebuild(doc, at, view.id, to - from))
+      })
+    }
 
     if (def === undefined) {
       // A level authored by a build that had a component this one does not. Saying so beats showing nothing
@@ -1254,7 +1275,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   const addTransformSection = (doc: Doc, at: number): void => {
     const overridden = doc.overridesOf(at).includes('transform')
     const items: MenuItem[] = overridden ? [{ label: 'Revert to prefab', run: () => host.revertOverride('transform') }] : []
-    const section = addSection(TRANSFORM, { title: 'Transform', icon: 'toolMove', badge: overridden ? '1' : '', menu: items })
+    const section = addSection(TRANSFORM, { title: 'Transform', icon: 'toolMove', badge: overridden ? '1' : '', menu: items, fixed: true })
     if (overridden) section.root.classList.add('over-sec')
 
     /**

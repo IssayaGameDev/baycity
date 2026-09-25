@@ -222,3 +222,65 @@ describe('several selected (ADR 0112)', () => {
     expect(paramOf(doc, 1, COLLIDER, 'center')).toEqual({ x: 5, y: 0, z: 3 })
   })
 })
+
+describe('the Transform', () => {
+  it('is always open: no twist, and a click on its header does not shut it', () => {
+    const { panel } = rig(levelDoc({ id: 'l', config: {}, nodes: [box('a', vec3(0, 0, 0))] }), [0])
+    const transform = card(panel, 'Transform')
+    expect(transform.classList.contains('isec-fixed')).toBe(true)
+    transform.querySelector<HTMLElement>('.isec-t')!.click()
+    const after = card(panel, 'Transform')
+    expect(after.classList.contains('shut')).toBe(false)
+    expect(after.querySelector<HTMLElement>('.isec-body')!.hidden).toBe(false)
+    expect(after.classList.contains('movable'), 'and it never moves').toBe(false)
+  })
+})
+
+describe('reordering components by dragging a card’s header', () => {
+  /** Cards stacked 100 px apart, 80 tall — happy-dom lays nothing out. */
+  const stack = (panel: HTMLElement): void => {
+    ;[...panel.querySelectorAll<HTMLElement>('.isec')].forEach((c, i) => {
+      c.getBoundingClientRect = () => ({ top: i * 100, bottom: i * 100 + 80, left: 0, right: 280, width: 280, height: 80, x: 0, y: i * 100, toJSON: () => ({}) })
+    })
+  }
+  const pointer = (type: string, y: number): PointerEvent => new PointerEvent(type, { bubbles: true, button: 0, clientX: 10, clientY: y, pointerId: 1 })
+  const withBumper = (): Doc => {
+    const a = box('a', vec3(0, 0, 0))
+    a.components.push(comp('a-bump', 'Bumper', { power: 26 }))
+    return levelDoc({ id: 'l', config: {}, nodes: [a] })
+  }
+  const types = (doc: Doc): string[] => doc.components(0).map((c) => c.type)
+
+  it('moves a component to where it is dropped', () => {
+    const doc = withBumper()
+    const { panel } = rig(doc, [0])
+    stack(panel)
+    // Transform 0–80, Collider 100–180, Renderer 200–280, Bumper 300–380.
+    card(panel, 'Bumper').querySelector('.isec-t')!.dispatchEvent(pointer('pointerdown', 330))
+    window.dispatchEvent(pointer('pointermove', 50))
+    window.dispatchEvent(pointer('pointerup', 50))
+    expect(types(doc)).toEqual(['Bumper', COLLIDER, RENDERER])
+  })
+
+  it('does nothing for a press that does not move, or a drag Escape takes back', () => {
+    const doc = withBumper()
+    const { panel } = rig(doc, [0])
+    stack(panel)
+    card(panel, 'Bumper').querySelector('.isec-t')!.dispatchEvent(pointer('pointerdown', 330))
+    window.dispatchEvent(pointer('pointerup', 330))
+    expect(types(doc)).toEqual([COLLIDER, RENDERER, 'Bumper'])
+    card(panel, 'Collider').querySelector('.isec-t')!.dispatchEvent(pointer('pointerdown', 130))
+    window.dispatchEvent(pointer('pointermove', 370))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    window.dispatchEvent(pointer('pointerup', 370))
+    expect(types(doc)).toEqual([COLLIDER, RENDERER, 'Bumper'])
+  })
+
+  it('leaves a prefab’s components where the prefab has them', () => {
+    const doc = levelDoc({ id: 'l', config: {}, nodes: [] })
+    doc.placePrefab(TOWER_ID, structuredClone(TOWER), vec3(0, 0, 0))
+    const piece = [...Array(doc.count()).keys()].find((i) => doc.kindOf(i) === 'inherited')!
+    const { panel } = rig(doc, [piece])
+    expect(panel.querySelectorAll('.isec.movable')).toHaveLength(0)
+  })
+})
