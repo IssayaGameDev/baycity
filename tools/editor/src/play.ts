@@ -289,6 +289,8 @@ export const createPlay = (host: PlayHost): Play => {
     controller = createLocalController({ world: local, tickRateHz: TICK_RATE_HZ })
 
     instanceRoot.visible = false
+    // Whether this level's camera sees through or collides (ADR 0148), read per play because it is an edit.
+    playCamera.params.camSeeThrough = level.config.cameraSeeThrough === true
     // The cutout mask, so an obstruction dithers away here exactly as it does in the game (ADR 0055). The
     // edit view deliberately does not get one — it would clone a material per occluder for a camera nobody
     // is playing through.

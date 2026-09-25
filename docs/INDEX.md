@@ -197,5 +197,6 @@ why matters.
 | [0145](adr/0145-a-selection-is-outlined-in-one-pass.md) | A selection is outlined, everyone's in one pass |
 | [0146](adr/0146-my-selection-shows-its-edges.md) | My selection shows its edges |
 | [0147](adr/0147-a-sequence-is-edited-as-cards-on-a-rail.md) | A sequence is edited as cards on a rail, with its own controls |
+| [0148](adr/0148-a-level-says-whether-the-camera-sees-through.md) | A level says whether the camera sees through; by default it collides |
 
 `Design archive/` holds superseded design material and is not maintained.

@@ -94,6 +94,8 @@ export type OpBody =
   | { kind: 'setEnvironment'; environment: Partial<EnvironmentConfig> | null }
   | { kind: 'setMode'; mode: ModeRef | null }
   | { kind: 'setNetBounds'; netBounds: number | null }
+  /** Whether the camera sees through (ADR 0148). `false` removes the key: absent is the default. */
+  | { kind: 'setCameraSeeThrough'; seeThrough: boolean }
 
 /** `table` scopes the op to `level.prefabs[table]` (a prefab opened on top, ADR 0089); absent = the level forest. */
 export type Op = OpBody & { table?: string }
@@ -487,6 +489,12 @@ const invert = (level: Level, op: Op): Op | null => {
       const prior = level.config.netBounds ?? null
       return prior === op.netBounds ? null : { kind: 'setNetBounds', netBounds: prior }
     }
+    case 'setCameraSeeThrough': {
+      if (t !== undefined) throw new OpError('a prefab has no camera of its own')
+      validateConfig({ ...level.config, cameraSeeThrough: op.seeThrough })
+      const prior = level.config.cameraSeeThrough === true
+      return prior === op.seeThrough ? null : { kind: 'setCameraSeeThrough', seeThrough: prior }
+    }
     case 'setEnvironment': {
       if (t !== undefined) throw new OpError('a prefab has no environment')
       validateConfig({ ...level.config, ...(op.environment === null ? {} : { environment: op.environment }) })
@@ -746,6 +754,11 @@ export const applyOp = (level: Level, op: Op): void => {
       level.config = op.netBounds === null ? rest : { ...rest, netBounds: op.netBounds }
       return
     }
+    case 'setCameraSeeThrough': {
+      const { cameraSeeThrough: _dropped, ...rest } = level.config
+      level.config = op.seeThrough ? { ...rest, cameraSeeThrough: true } : rest
+      return
+    }
     case 'setEnvironment': {
       const { environment: _dropped, ...rest } = level.config
       level.config = op.environment === null ? rest : { ...rest, environment: clone(op.environment) }
@@ -837,6 +850,7 @@ export const touchedRefs = (level: Level, op: Op): NodeRef[] => {
     case 'setEnvironment':
     case 'setMode':
     case 'setNetBounds':
+    case 'setCameraSeeThrough':
       return []
     default:
       return [{ owner: op.owner, node: op.node }]

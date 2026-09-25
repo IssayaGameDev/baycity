@@ -2,7 +2,8 @@
 
 Status: accepted, amended by ADR 0055 — an obstruction **dithers away** instead of pulling the boom in. The
 pull-in below survives for the two cases where it is still the only right answer: the camera would sit inside
-solid, or below the character's feet. The no-clipping argument here is exactly why.
+solid, or below the character's feet. The no-clipping argument here is exactly why. ADR 0148 makes the hole a
+level's choice: a level that does not ask for it gets this camera whole.
 
 ## Context
 

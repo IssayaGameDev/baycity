@@ -1,6 +1,8 @@
+import { vec3 } from '@mp/core'
+import { THREE } from '@mp/render-three'
 import { describe, expect, it } from 'vitest'
 
-import { CAMERA_TUNABLES, DEFAULT_CAMERA_PARAMS } from './index'
+import { CAMERA_TUNABLES, DEFAULT_CAMERA_PARAMS, createOrbitCamera, type OcclusionQueries } from './index'
 
 /**
  * The tunables are data so this package never learns what a Tweakpane is, and the price of that is a list
@@ -31,5 +33,50 @@ describe('the tunables', () => {
   // tunables. A slider for it would fight the wheel.
   it('leaves the zoom itself off the list', () => {
     expect(CAMERA_TUNABLES.map((t) => t.key)).not.toContain('camZoom')
+  })
+})
+
+/**
+ * The camera collides unless the level says it may see through (ADR 0148). A wall 3 m along every sightline,
+ * and the eases off, so one frame lands where it is going.
+ */
+describe('seeing through', () => {
+  const BODY = vec3(0, 1, 0)
+  /** The aim point: a metre above the capsule's centre. */
+  const AIM = new THREE.Vector3(0, 2, 0)
+  const WALL = 7
+  const wall: OcclusionQueries = {
+    cast: (_o, _d, _m, skip) => ((skip ?? []).includes(WALL) ? undefined : { distance: 3, colliderHandle: WALL }),
+    occupied: () => false,
+  }
+  const frame = (seeThrough?: boolean): { distance: number; holed: readonly number[] } => {
+    const three = new THREE.PerspectiveCamera(60, 1, 0.1, 1000)
+    const orbit = createOrbitCamera(three, {
+      params: {
+        camZoomSmooth: 0,
+        camPushInSmooth: 0,
+        camReturnSmooth: 0,
+        landKick: 0,
+        ...(seeThrough === undefined ? {} : { camSeeThrough: seeThrough }),
+      },
+    })
+    orbit.observe(wall)
+    let holed: readonly number[] = []
+    orbit.update(1 / 60, BODY, (handles) => {
+      holed = handles
+    })
+    return { distance: three.position.distanceTo(AIM), holed }
+  }
+
+  it('stops at the wall by default, and holes nothing', () => {
+    const { distance, holed } = frame()
+    expect(distance).toBeCloseTo(3, 6)
+    expect(holed).toEqual([])
+  })
+
+  it('keeps its distance and holes the wall when the level sees through', () => {
+    const { distance, holed } = frame(true)
+    expect(distance).toBeGreaterThan(6)
+    expect(holed).toEqual([WALL])
   })
 })

@@ -795,6 +795,26 @@ describe('the level’s game', () => {
   })
 })
 
+/** Whether the level's camera sees through or collides (ADR 0148). */
+describe('the level’s camera', () => {
+  it('collides on a fresh level, sees through once set, and writes the key only while it does', () => {
+    const doc = levelDoc(blank())
+    expect(doc.cameraSeeThrough()).toBe(false)
+    doc.setCameraSeeThrough(true)
+    expect(doc.cameraSeeThrough()).toBe(true)
+    expect((doc.toJSON() as Level).config.cameraSeeThrough).toBe(true)
+    doc.setCameraSeeThrough(false)
+    expect(doc.cameraSeeThrough()).toBe(false)
+    expect('cameraSeeThrough' in (doc.toJSON() as Level).config).toBe(false)
+  })
+
+  it('reports and refuses on a prefab, which has no camera of its own', () => {
+    const doc = prefabDoc(padPrefab())
+    doc.setCameraSeeThrough(true)
+    expect(doc.cameraSeeThrough()).toBe(false)
+  })
+})
+
 describe('a prefab the game cannot hold (ADR 0076, ADR 0077)', () => {
   /** A game with no `Bumper`: the engine's components and a hazard, like keyboard's. */
   const noBumper = createRegistry([...ENGINE_COMPONENTS, Hazard])

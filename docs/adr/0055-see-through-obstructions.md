@@ -1,6 +1,7 @@
 # ADR 0055 — An obstruction dithers away instead of shoving the camera
 
-Status: accepted. Amends ADR 0020, which pulled the boom in for everything.
+Status: accepted. Amends ADR 0020, which pulled the boom in for everything. Amended by ADR 0148: the hole is a
+level's choice (`config.cameraSeeThrough`), and without it the camera is ADR 0020's again.
 
 ## Context
 

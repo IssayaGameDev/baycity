@@ -1562,6 +1562,18 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     fxSection.pane().addBinding(postfx, 'bloom', { label: 'bloom' }).on('change', write)
     fxSection.pane().addBinding(postfx, 'bloomStrength', { min: 0, max: 1.5, step: 0.05, label: 'bloom str' }).on('change', write)
     fxSection.row('', 'bloom only fires on emissive materials')
+
+    /**
+     * The game camera (ADR 0148). Its own field on the level rather than part of `environment`, which is what
+     * the renderer lights and draws with; this is what the camera does about a wall.
+     */
+    const camera = { seeThrough: doc.cameraSeeThrough() }
+    const camSection = addSection('@env-camera', { title: 'Camera' })
+    camSection
+      .pane()
+      .addBinding(camera, 'seeThrough', { label: 'see through' })
+      .on('change', () => doc.setCameraSeeThrough(camera.seeThrough))
+    camSection.row('', 'on: a wall in the way gets a hole · off: it stops the camera')
   }
 
   /** Every rebuild re-learns which move steps are open, and tells the viewport (ADR 0144). */

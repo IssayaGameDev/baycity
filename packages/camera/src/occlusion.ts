@@ -1,7 +1,9 @@
 import type { Vec3 } from '@mp/core'
 
 /**
- * What the camera does about something between it and the character (ADR 0055).
+ * What the camera does about something between it and the character (ADR 0055) — when the level lets it see
+ * through at all (`OcclusionView.seeThrough`, ADR 0148). When it does not, only the first paragraph below
+ * applies, and the sweep's answer is the camera's place.
  *
  * ADR 0020's answer was one sphere cast and one rule: whatever the sweep cleared is where the camera goes.
  * That kept the character visible *and* kept the camera out of geometry, and it is the second job that
@@ -93,6 +95,15 @@ export interface OcclusionView {
    * Omitted means the camera may go anywhere.
    */
   feetY?: number
+  /**
+   * Whether an obstruction may be holed at all. `false` is ADR 0020's camera: whatever the boom meets stops
+   * it, so the one cast along the boom is the whole answer and nothing is holed (ADR 0148). It is the level's
+   * call (`config.cameraSeeThrough`), because it depends on how the level is built: open platforms read well
+   * seen through, rooms do not.
+   *
+   * Omitted means it may, which is ADR 0055's rule and what the tests of it exercise.
+   */
+  seeThrough?: boolean
 }
 
 /**
@@ -125,6 +136,9 @@ export const occlusionFor = (
   // The boom first, and its own first hit kept: the camera slides along *this* line, so this is the only
   // clearance that means anything if it turns out it has to move after all.
   const main = q.cast(target, boom, len)
+  // Colliding: the boom's own hit is where the camera goes. No probes down the body and no overlap query —
+  // both exist only to decide whether, and where, to hole.
+  if (view.seeThrough === false) return { ...CLEAR, limit: main?.distance ?? len }
   /**
    * Below the feet nothing is see-through, so whatever is in the way stops the camera — the pull-in, kept
    * for the one case it is still the right answer to.

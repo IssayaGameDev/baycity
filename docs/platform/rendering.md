@@ -198,7 +198,7 @@ outlineGeometryForCollider(c): BufferGeometry            // sharp edges, for wir
 
 Shaders (`shaders.ts`): `BUILTIN_SHADERS`, `shaderDef`, `registerShader`, `defaultParams`, `compileMaterial`.
 
-## Camera cutout — `cutout.ts` (ADR 0055)
+## Camera cutout — `cutout.ts` (ADR 0055, ADR 0148)
 
 ```ts
 interface CutoutState { camera: Vec3; target: Vec3; radius: number; feather: number; strength: number }
@@ -214,7 +214,9 @@ reference across variants; one `onBeforeCompile` closure so programs are shared.
 `radius = camMaskRadius × aperture`, `feather = camMaskFeather`; aperture chased on `camMaskSmooth`. Occluder
 handles come from `castSphere` with `probeRadius = 0.25`; pull-in only when the camera would be inside solid or
 below the feet. `OrbitCamera.update(dt, body, setOccluders): Placement { rigVisible }` hands the handles to
-`LevelView.setOccluders` each frame.
+`LevelView.setOccluders` each frame. **Only while `params.camSeeThrough`** — the level's `config.cameraSeeThrough`
+(ADR 0148), off by default: off, `occlusionFor(..., { seeThrough: false })` makes one cast along the boom, its hit
+is the limit (ADR 0020), and nothing is holed.
 
 ## World labels — `worldLabel.ts` (ADR 0082)
 
