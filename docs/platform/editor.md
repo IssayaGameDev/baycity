@@ -516,10 +516,32 @@ read at, so another person's upload, rename, move, delete or material edit reach
 | the watch | `watchAssets({ seq, changed, lost })`, started after boot: `since=seq&timeout=25000`; `assetPathsOf` keeps `content/assets/…` (a sidecar as its asset) and `changed` is awaited before the next poll. **410** → `lost`: wait out a drag or play, `reloadAssets`, redraw. Errors back off 2 s → 30 s |
 | gathering | `assetsChanged` adds to `waitingPaths` and drains them one batch at a time through `inAssetQueue` — the one queue `reloadAssets` runs in too, so two runtimes are never installed over each other |
 | its own writes | a path whose lock this tab holds (`heldLocks`, `lockKey.asset`) is skipped |
-| applying | `loadAssetLibrary({ reuse, refetch })`: the list, plus only the named material and prefab files — the rest kept from the library held. `libraryChanges(before, after, named)` (pure) → `{ list, ids }`; nothing → nothing. Waits while `busyEditing()` (a gizmo, point or field drag, or play). A changed material, texture or model → `freshRuntime()` + `meshes.buildAll()`; anything else only swaps `assets`. Then previews, the asset Inspector when its asset changed or went, `refreshUi` |
+| applying | `loadAssetLibrary({ reuse, refetch })`: the list, plus only the named material and prefab files — the rest kept from the library held. `libraryChanges(before, after, named)` (pure) → `{ list, ids }`; nothing → nothing. Waits while `busyEditing()` (a gizmo, point or field drag, or play). Then `refreshCompiled(ids)` (ADR 0157, below), and `meshes.buildAll()` only when it says so; a list-only change only swaps `assets`. Then previews, the asset Inspector when its asset changed or went, `refreshUi` |
 | the runtime | built over `libraryView`, an `AssetDatabase` whose `entries` / `byId` read the installed library at each lookup — so an asset added, renamed or moved loads with no new runtime |
 
 Levels on the feed are not the watch's: one open here is live already, and one that is not is read fresh.
+
+## What an asset change recompiles (ADR 0157)
+
+`refreshCompiled(ids)` in `main.ts` — the one path for a local material edit, `reloadAssets` and the watch:
+
+| Kind | What |
+| --- | --- |
+| texture | `runtime.refreshTexture(id)`: fetched again (`?v=`, past the browser's and Cloudflare's caches), then every loaded material using it recompiled in place — each holds its own clone |
+| material | `runtime.refreshMaterial(id)`: recompiled into the object meshes hold. `false` = the shader changed class → rebuild |
+| model | `runtime.refreshModel(id)` → rebuild: its placed clones are the old one |
+| fade copies | `meshes.followMaterial(m)` for every material recompiled: a fadeable node's copies record their original (`from`) and take its values, keeping the preview's opacity |
+
+`reloadAssets({ named?, fresh? })` reads the list, then `libraryChanges(before, after, named)` says what to refresh;
+`named` is an upload's paths (same id, new bytes), `fresh` starts the runtime over (boot, the feed's 410). The
+runtime is built over `libraryView`, so a new, renamed or moved asset needs none of this.
+
+**Editing a material** (`onMaterialChanged`): refused with a warning while someone else holds its lock; else
+`saveMaterial` puts it in the library at once and writes it behind (`latestWriter`: one write in flight per material,
+the newest waiting — in order, collapsed to what the round trip allows), `refreshCompiled([id])` shows it on the
+next frame, the asset Inspector is redrawn only for a new shader (its fields read `materialOf` at each edit; a vec2
+keeps its own latest), a texture pick updates its thumbnail itself, and `thumbnailsSoon()` refreshes the Project
+panel's pictures 400 ms after the edits stop.
 
 ## Refusing another game's private components (ADR 0076)
 

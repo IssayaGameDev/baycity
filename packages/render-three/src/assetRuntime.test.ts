@@ -1,4 +1,5 @@
-import type { VisualItem } from '@mp/content'
+import type { MaterialAsset, VisualItem } from '@mp/content'
+import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 
 import { buildDatabase } from '@mp/content'
@@ -54,5 +55,50 @@ describe('load', () => {
 
   it('says false for what there is nothing to fetch for: a built-in shape, an id nobody knows', async () => {
     expect(await runtime().load(['builtin:box', 'gggggggggggggggg', ''])).toBe(false)
+  })
+})
+
+/**
+ * A material edited while it is drawn (ADR 0157): the object every mesh holds takes the new values, so the next
+ * frame shows them and nothing is rebuilt — until the shader changes class, which only a rebuild can show.
+ */
+describe('refreshMaterial', () => {
+  const M = 'mmmmmmmmmmmmmmmm'
+  const rig = () => {
+    let asset: MaterialAsset = { shader: 'standard', params: { color: { kind: 'color', value: '#ff0000' } } }
+    const r = createAssetRuntime({
+      db: buildDatabase([{ id: M, kind: 'material', path: 'assets/red.mat.json', name: 'red' }]),
+      urlOf: (path) => path,
+      materialOf: () => asset,
+    })
+    return { r, set: (next: MaterialAsset) => void (asset = next) }
+  }
+
+  it('changes the material meshes hold, in place', async () => {
+    const { r, set } = rig()
+    await r.load([M])
+    const held = r.material(M) as THREE.MeshStandardMaterial
+    set({ shader: 'standard', params: { color: { kind: 'color', value: '#0000ff' }, roughness: { kind: 'number', value: 0.2 } } })
+    expect(await r.refreshMaterial(M)).toBe(true)
+    expect(r.material(M), 'the same object').toBe(held)
+    expect(held.color.getHexString()).toBe('0000ff')
+    expect(held.roughness).toBe(0.2)
+  })
+
+  it('replaces it, and says so, when the shader changes class', async () => {
+    const { r, set } = rig()
+    await r.load([M])
+    const held = r.material(M)
+    set({ shader: 'unlit', params: {} })
+    expect(await r.refreshMaterial(M)).toBe(false)
+    expect(r.material(M)).not.toBe(held)
+    expect(r.material(M)).toBeInstanceOf(THREE.MeshBasicMaterial)
+  })
+
+  it('has nothing to do for a material never loaded', async () => {
+    const { r } = rig()
+    expect(await r.refreshMaterial(M)).toBe(true)
+    expect(r.material(M)).toBeNull()
+    await r.refreshTexture('tttttttttttttttt')
   })
 })

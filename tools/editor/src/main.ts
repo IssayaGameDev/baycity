@@ -1512,7 +1512,7 @@ const fileOps = createFileActions({
   openFile: (qualified) => openFile(qualified),
   openFirstLevel: () => openFirstLevel(),
   refreshFileList: () => refreshFileList(),
-  reloadAssets: () => reloadAssets(),
+  reloadAssets: (named) => reloadAssets(named === undefined ? {} : { named }),
   invalidatePreviews: () => previews.invalidate(),
   notify,
   refreshUi: () => refreshUi(),
@@ -1553,9 +1553,15 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     if (tooBig.length > 0) notify.warn(`too big (cap ${Math.round(cap / 1024 / 1024)} MB): ${tooBig.join(', ')}`)
     const fits = files.filter((f) => f.size <= cap)
     if (fits.length === 0) return
-    fileOps.afterFileOp(`uploaded ${fits.map((f) => f.name).join(', ')}`, async () => {
-      for (const f of fits) await uploadAsset(folder === '' ? f.name : `${folder}/${f.name}`, f)
-    })
+    const paths = fits.map((f) => (folder === '' ? f.name : `${folder}/${f.name}`))
+    // Named, because a file uploaded over another keeps its id: only its bytes say it changed (ADR 0157).
+    fileOps.afterFileOp(
+      `uploaded ${fits.map((f) => f.name).join(', ')}`,
+      async () => {
+        for (const [i, f] of fits.entries()) await uploadAsset(paths[i]!, f)
+      },
+      paths,
+    )
   },
   onSelectAsset: (assetId) => {
     // Selecting an asset and selecting something in the scene are the same slot in the Inspector, so one
@@ -1794,26 +1800,45 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
   db: () => assets?.db ?? null,
   urlOf: (path) => assets?.urlOf(path) ?? path,
   materialOf: (id) => assets?.materialOf(id),
+  /**
+   * A material edit shows on the next frame (ADR 0157): the library takes it at once, the runtime recompiles it
+   * into the object every mesh holds, and the save goes behind — one in flight, the newest waiting. A colour
+   * drag used to save, throw every loaded asset away, reload the library and rebuild the viewport on each step,
+   * and redraw this panel under the pointer.
+   */
   onMaterialChanged: (id, material) => {
-    void (async () => {
-      if (assets === null) return
-      const owner = lockedAssets.get(id)
-      if (owner !== undefined) {
-        notify.warn(`not saved: ${assets.db.byId[id]?.name ?? 'material'} is locked by ${owner}`)
-        assetInspector.show(id)
-        return
-      }
-      await assets.saveMaterial(id, material).catch((e: unknown) => notify.error(`save failed: ${String(e)}`))
-      // Recompile and redraw: a material edit has to show on every piece using it, immediately. Its
-      // thumbnail is stale too, and so is any prefab preview that used it.
-      previews.invalidate()
-      await reloadAssets()
+    const library = assets
+    if (library === null) return
+    const owner = lockedAssets.get(id)
+    if (owner !== undefined) {
+      notify.warn(`not saved: ${library.db.byId[id]?.name ?? 'material'} is locked by ${owner}`)
       assetInspector.show(id)
-      meshes.buildAll()
-      refreshUi()
-    })()
+      return
+    }
+    const shaderChanged = library.materialOf(id)?.shader !== material.shader
+    void library.saveMaterial(id, material).catch((e: unknown) => notify.error(`save failed: ${String(e)}`))
+    void refreshCompiled([id]).then((rebuild) => {
+      if (rebuild) meshes.buildAll()
+    })
+    // Its fields are the new shader's; any other edit leaves the panel — and the field being dragged — alone.
+    if (shaderChanged) assetInspector.show(id)
+    thumbnailsSoon()
   },
 })
+
+/**
+ * The thumbnails, once edits have settled: a material's sphere and every prefab drawn with it are stale, and
+ * redrawing them on each step of a drag is a render per tile per step.
+ */
+let thumbnailTimer: number | null = null
+const thumbnailsSoon = (): void => {
+  if (thumbnailTimer !== null) clearTimeout(thumbnailTimer)
+  thumbnailTimer = window.setTimeout(() => {
+    thumbnailTimer = null
+    previews.invalidate()
+    project.render()
+  }, 400)
+}
 
 // --- inspector ---
 const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<HTMLDivElement>('#inspector'), {
@@ -2150,14 +2175,20 @@ stage.start((dt) => {
 })
 
 /**
- * (Re)read the asset database and rebuild the runtime, then fetch everything the open document needs.
+ * (Re)read the asset database, bring the runtime up to date with what changed in it, then fetch everything the
+ * open document needs.
  *
  * Loading is a separate pass from drawing on purpose: `meshes.buildAll` is synchronous, so a piece is never
- * briefly a grey box that becomes a model a moment later. The cost is that every asset edit reloads the
- * runtime, which at this scale is cheaper than tracking which cache entries a change invalidated.
+ * briefly a grey box that becomes a model a moment later.
+ *
+ * Only what changed is recompiled (ADR 0157): a material in place, a texture and the materials using it. It used
+ * to throw every texture, material and model away and load them again. `named` are paths this tab just wrote
+ * whose bytes cannot be compared (an upload replacing a texture); `fresh` starts the runtime over — at boot, and
+ * when the change feed lost track of what happened.
  */
-const reloadAssets = (): Promise<void> =>
+const reloadAssets = (opts: { named?: readonly string[]; fresh?: boolean } = {}): Promise<void> =>
   inAssetQueue(async () => {
+    const before = assets
     try {
       assets = await loadAssetLibrary()
       // Each game's shared-component list, live from disk (ADR 0077). Missing file = no extras.
@@ -2169,8 +2200,47 @@ const reloadAssets = (): Promise<void> =>
       setProblem(`assets did not load (${String(e)}) — restart pnpm dev:editor`)
       return
     }
-    await freshRuntime()
+    if (opts.fresh === true || before === null || runtime === null) {
+      await freshRuntime()
+      return
+    }
+    const { ids } = libraryChanges(before, assets, opts.named ?? [])
+    if (await refreshCompiled(ids)) meshes.buildAll()
+    await runtime.load(doc?.assetIds() ?? [])
   })
+
+/**
+ * Bring what the runtime compiled up to date with the library installed now, for these changed assets
+ * (ADR 0157): a texture fetched again and the materials using it recompiled, a material recompiled — both in
+ * place, into the objects meshes hold, their fade copies following — and a model fetched again. `true` when the
+ * viewport has to be rebuilt: a model changed, or a material became another class of Three material. Otherwise
+ * the next frame shows it.
+ */
+const refreshCompiled = async (ids: readonly string[]): Promise<boolean> => {
+  const r = runtime
+  const lib = assets
+  if (r === null || lib === null) return false
+  let rebuild = false
+  const recompiled = new Set<string>()
+  for (const id of ids) {
+    const kind = lib.db.byId[id]?.kind
+    if (kind === 'texture') for (const m of await r.refreshTexture(id)) recompiled.add(m)
+    else if (kind === 'model') {
+      await r.refreshModel(id)
+      rebuild = true
+    }
+  }
+  for (const id of ids) {
+    if (lib.db.byId[id]?.kind !== 'material' || recompiled.has(id)) continue
+    if (!(await r.refreshMaterial(id))) rebuild = true
+    recompiled.add(id)
+  }
+  for (const id of recompiled) {
+    const m = r.material(id)
+    if (m !== null) meshes.followMaterial(m)
+  }
+  return rebuild
+}
 
 /** Asset reloads, one at a time: a watch and a local edit must not install two runtimes over each other. */
 let assetQueue: Promise<void> = Promise.resolve()
@@ -2244,15 +2314,8 @@ const applyAssetChanges = async (paths: string[]): Promise<void> => {
   if (!list && ids.length === 0) return
   while (busyEditing()) await new Promise((r) => setTimeout(r, 250))
   assets = next
-  // Contents the runtime compiled are stale; what is only new, renamed or moved, the live view already sees.
-  const compiled = ids.filter((id) => {
-    const kind = next.db.byId[id]?.kind
-    return kind === 'material' || kind === 'texture' || kind === 'model'
-  })
-  if (compiled.length > 0) {
-    await freshRuntime()
-    meshes.buildAll()
-  }
+  // What is only new, renamed or moved, the runtime's live view already sees; contents it compiled are refreshed.
+  if (await refreshCompiled(ids)) meshes.buildAll()
   previews.invalidate()
   if (selectedAsset !== null && next.db.byId[selectedAsset] === undefined) {
     selectedAsset = null
@@ -2277,7 +2340,8 @@ watchAssets({
   changed: assetsChanged,
   lost: async () => {
     while (busyEditing()) await new Promise((r) => setTimeout(r, 250))
-    await reloadAssets()
+    // Whatever happened meanwhile is unknown, bytes replaced included: start the runtime over.
+    await reloadAssets({ fresh: true })
     previews.invalidate()
     meshes.buildAll()
     refreshUi()

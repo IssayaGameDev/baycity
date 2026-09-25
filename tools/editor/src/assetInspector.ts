@@ -55,16 +55,21 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
       select.append(o)
     }
     select.value = current ?? ''
-    select.addEventListener('change', () => onPick(select.value === '' ? null : select.value))
-
-    const entry = current === null ? undefined : db?.byId[current]
-    if (entry !== undefined) {
-      const img = el('img', 'thumb')
-      img.src = host.urlOf(entry.path)
-      img.alt = ''
-      wrap.append(img)
+    // The thumbnail follows the pick itself: the panel is not redrawn after an edit (ADR 0157).
+    const img = el('img', 'thumb')
+    img.alt = ''
+    const showThumb = (id: string | null): void => {
+      const entry = id === null ? undefined : db?.byId[id]
+      img.hidden = entry === undefined
+      if (entry !== undefined) img.src = host.urlOf(entry.path)
     }
-    wrap.append(select)
+    showThumb(current)
+    select.addEventListener('change', () => {
+      const id = select.value === '' ? null : select.value
+      showThumb(id)
+      onPick(id)
+    })
+    wrap.append(img, select)
     return wrap
   }
 
@@ -91,7 +96,8 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
     }
     if (param.kind === 'vec2') {
       const wrap = el('div', 'a-vec')
-      const v = value.kind === 'vec2' ? value.value : { x: 1, y: 1 }
+      // Its own latest, so an x then a y keeps the x: the panel is not redrawn between them (ADR 0157).
+      let v = value.kind === 'vec2' ? value.value : { x: 1, y: 1 }
       for (const axis of ['x', 'y'] as const) {
         const input = el('input', 'ctl')
         input.type = 'number'
@@ -99,7 +105,9 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
         input.value = String(v[axis])
         input.addEventListener('change', () => {
           const n = Number.parseFloat(input.value)
-          if (Number.isFinite(n)) onChange({ kind: 'vec2', value: { ...v, [axis]: n } })
+          if (!Number.isFinite(n)) return
+          v = { ...v, [axis]: n }
+          onChange({ kind: 'vec2', value: v })
         })
         wrap.append(input)
       }
@@ -122,6 +130,11 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
 
   const showMaterial = (entry: AssetEntry, material: MaterialAsset): void => {
     const def = shaderDef(material.shader)
+    /**
+     * The material as it is now, not as it was drawn: the panel stays up across edits (ADR 0157), so an edit
+     * made from the drawn copy would put back every field changed since.
+     */
+    const now = (): MaterialAsset => host.materialOf(entry.id) ?? material
 
     const shaderSelect = el('select', 'ctl')
     // Whatever the material names stays offered even if nothing is registered under it, so opening a
@@ -139,7 +152,7 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
       const nextDef = shaderDef(next)
       // Keep any parameter the new shader also declares; fill the rest from its defaults.
       const kept: Record<string, MaterialValue> = nextDef === undefined ? {} : defaultParams(nextDef)
-      for (const [key, v] of Object.entries(material.params)) if (key in kept) kept[key] = v
+      for (const [key, v] of Object.entries(now().params)) if (key in kept) kept[key] = v
       host.onMaterialChanged(entry.id, { shader: next, params: kept })
     })
     container.append(row('shader', shaderSelect))
@@ -157,7 +170,8 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
         row(
           param.label,
           valueField(param, value, (next) => {
-            host.onMaterialChanged(entry.id, { ...material, params: { ...material.params, [param.key]: next } })
+            const current = now()
+            host.onMaterialChanged(entry.id, { ...current, params: { ...current.params, [param.key]: next } })
           }),
         ),
       )

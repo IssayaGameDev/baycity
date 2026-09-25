@@ -28,7 +28,11 @@ export interface AssetLibrary {
   materialOf: (assetId: string) => MaterialAsset | undefined
   /** A loaded prefab asset's JSON, by asset id. */
   prefabOf: (assetId: string) => Node | undefined
-  /** Overwrite a material on disk and in memory. */
+  /**
+   * Overwrite a material in memory **at once** — what the renderer compiles from — and on disk after: one write
+   * in flight per material, the newest value waiting behind it (`latestWriter`). Resolves once the value given,
+   * or a later one, is on disk.
+   */
   saveMaterial: (assetId: string, material: MaterialAsset) => Promise<void>
   /**
    * Fetch one prefab again, as it is now — the server answers with its live copy when the prefab is open, so it
@@ -48,6 +52,39 @@ export interface AssetLibrary {
 }
 
 export const assetUrl = (path: string): string => `/assets/${path}`
+
+/**
+ * Writes per key, one in flight at a time, each writing whatever is newest when it starts (ADR 0157).
+ *
+ * A colour drag saved on every step, each save its own request, and nothing kept them in order — so on the box
+ * an older value could land after a newer one and be the one left on disk. Now a key has at most one write going;
+ * asking again while it runs means one more write after it, of the latest value, however many times it was asked.
+ */
+export const latestWriter = (): { write: (key: string, run: () => Promise<void>) => Promise<void> } => {
+  const going = new Map<string, { again: boolean; done: Promise<void> }>()
+  return {
+    write: (key, run) => {
+      const busy = going.get(key)
+      if (busy !== undefined) {
+        busy.again = true
+        return busy.done
+      }
+      const state = { again: false, done: Promise.resolve() }
+      state.done = (async () => {
+        try {
+          do {
+            state.again = false
+            await run()
+          } while (state.again)
+        } finally {
+          going.delete(key)
+        }
+      })()
+      going.set(key, state)
+      return state.done
+    },
+  }
+}
 
 const fetchJson = async <T>(url: string): Promise<T> => {
   const r = await fetch(url)
@@ -122,6 +159,8 @@ export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refe
     if (!r.ok) await failed(r, `PUT ${path}`)
   }
 
+  const saves = latestWriter()
+
   const rescan = async (path: string): Promise<AssetEntry | undefined> => {
     // The id is the importer's to assign, so a new file only has one after a rescan.
     const { entries: rescanned } = await fetchJson<{ entries: AssetEntry[] }>('/api/assets')
@@ -139,11 +178,12 @@ export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refe
     },
     materialOf: (id) => materials.get(id),
     prefabOf: (id) => prefabs.get(id),
-    saveMaterial: async (id, material) => {
+    saveMaterial: (id, material) => {
       const entry = db.byId[id]
-      if (entry === undefined) throw new Error(`material ${id}: not in the database`)
-      await put(entry.path, material)
+      if (entry === undefined) return Promise.reject(new Error(`material ${id}: not in the database`))
       materials.set(id, material)
+      // Whatever is newest when the write starts — a drag's saves collapse into as few as the network allows.
+      return saves.write(id, () => put(entry.path, materials.get(id)))
     },
     createMaterial: async (name, material, folder = 'materials') => {
       const safe = name.replace(/[^\w-]+/g, '-') || 'material'

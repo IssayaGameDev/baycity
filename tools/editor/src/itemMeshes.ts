@@ -86,6 +86,18 @@ export interface ItemMeshes {
   /** Whether the surface-cell preview is on, or `null` when the game describes none (ADR 0120). */
   cells: () => boolean | null
   setCells: (on: boolean) => void
+  /**
+   * A runtime material changed in place (ADR 0157): the fade copies made of it take the new values, keeping the
+   * opacity the preview set. Everything else draws the original, which has them already.
+   */
+  followMaterial: (original: THREE.Material) => void
+}
+
+/** A fadeable item's own copy of a material, the opacity it started at, and the original it was copied from. */
+interface Fading {
+  mat: THREE.Material
+  base: number
+  from: THREE.Material
 }
 
 export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
@@ -219,11 +231,11 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
      * them all. The preview sets their opacity; the holder keeps the list.
      */
     const fades = open.fadesAt(i)
-    const fading: { mat: THREE.Material; base: number }[] = []
+    const fading: Fading[] = []
     const ownCopy = (m: THREE.Material): THREE.Material => {
       const copy = m.clone()
       copy.transparent = true
-      fading.push({ mat: copy, base: m.opacity })
+      fading.push({ mat: copy, base: m.opacity, from: m })
       return copy
     }
     holder.userData.fading = fading
@@ -446,5 +458,18 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
     dispose: disposeMeshes,
     cells: cellsToggle,
     setCells: (on) => void (showCells = on),
+    followMaterial: (original) => {
+      for (const g of instanceGroups) {
+        const copies = (g.userData.meshes as THREE.Object3D | undefined)?.userData.fading as Fading[] | undefined
+        for (const f of copies ?? []) {
+          if (f.from !== original) continue
+          const opacity = f.mat.opacity
+          f.mat.copy(original)
+          f.mat.transparent = true
+          f.mat.opacity = opacity
+          f.mat.needsUpdate = true
+        }
+      }
+    },
   }
 }

@@ -1,7 +1,8 @@
 # ADR 0026 — Assets are referenced by id, and a material is a shader instance
 
 Status: accepted. Builds on the content pipeline (ADR 0014) and the editor (ADR 0023/0024). Supersedes
-ADR 0014's "glTF is in the schema, not built" — the seam is now consumed.
+ADR 0014's "glTF is in the schema, not built" — the seam is now consumed. Its "every asset edit reloads the
+runtime" is superseded by ADR 0157: only what changed is recompiled, in place.
 
 ## Context
 

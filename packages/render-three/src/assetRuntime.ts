@@ -32,6 +32,21 @@ export interface AssetRuntime {
    * so a caller that drew before they arrived knows whether drawing again shows anything new.
    */
   load: (assetIds: readonly string[]) => Promise<boolean>
+  /**
+   * Compile a loaded material again from its asset **into the object meshes already hold**, so an edit shows on
+   * the next frame with nothing rebuilt. `true` when it did, or had nothing to do — a material never loaded loads
+   * as it now is. `false` when it could not: the shader became another class of Three material, so the new one
+   * is cached and whatever draws the old one has to be rebuilt.
+   */
+  refreshMaterial: (assetId: string) => Promise<boolean>
+  /**
+   * Fetch a texture again — an upload replaced its bytes and kept its id — and recompile, in place, every loaded
+   * material using it: each holds its own copy of the texture, so a new one reaches them only that way. Resolves
+   * those materials' ids.
+   */
+  refreshTexture: (assetId: string) => Promise<string[]>
+  /** Fetch a model again. The clones already placed are the caller's to rebuild; `model(id)` hands out the new one. */
+  refreshModel: (assetId: string) => Promise<void>
   /** A compiled material, or `null` if the id is not a loaded material. */
   material: (assetId: string) => THREE.Material | null
   /** A fresh clone of a loaded model, or `null`. */
@@ -107,8 +122,53 @@ export const createAssetRuntime = (opts: AssetRuntimeOptions): AssetRuntime => {
     return run.then(() => true)
   }
 
+  /** A texture slot, on the material classes the shaders build. */
+  const mapOf = (m: THREE.Material): THREE.Texture | null => (m as THREE.Material & { map?: THREE.Texture | null }).map ?? null
+
+  const refreshMaterial = async (id: string): Promise<boolean> => {
+    const existing = materials.get(id)
+    const asset = opts.materialOf(id)
+    if (existing === undefined || asset === undefined) return true
+    await Promise.all(materialDependencies(asset).map(loadOne))
+    const fresh = compileMaterial(asset, (texId) => textures.get(texId) ?? null)
+    if (fresh.type !== existing.type) {
+      materials.set(id, fresh)
+      existing.dispose()
+      return false
+    }
+    const before = mapOf(existing)
+    existing.copy(fresh)
+    // A texture slot filled or emptied changes the program; a colour alone does not, and the cache says so.
+    existing.needsUpdate = true
+    // Every compile clones its texture, so the one this material had is nobody's now.
+    if (before !== null && before !== mapOf(existing)) before.dispose()
+    return true
+  }
+
+  /** Bytes replaced at the same URL: asked for past any cache in between (the browser's, Cloudflare's). */
+  const busted = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}v=${Date.now()}`
+
   return {
     load: async (assetIds) => (await Promise.all(assetIds.map(loadOne))).some(Boolean),
+    refreshMaterial,
+    refreshTexture: async (id) => {
+      const old = textures.get(id)
+      const entry = opts.db.byId[id]
+      if (old === undefined || entry === undefined) return []
+      await loadTexture(id, busted(opts.urlOf(entry.path)))
+      old.dispose()
+      const users = [...materials.keys()].filter((mid) => {
+        const asset = opts.materialOf(mid)
+        return asset !== undefined && materialDependencies(asset).includes(id)
+      })
+      await Promise.all(users.map(refreshMaterial))
+      return users
+    },
+    refreshModel: async (id) => {
+      const entry = opts.db.byId[id]
+      if (!models.has(id) || entry === undefined) return
+      await loadModel(id, busted(opts.urlOf(entry.path)))
+    },
     material: (id) => materials.get(id) ?? null,
     model: (id) => {
       const original = models.get(id)

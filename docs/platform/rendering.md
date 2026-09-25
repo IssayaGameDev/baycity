@@ -173,6 +173,9 @@ addMarkers(scene, markers: WorldMarker[]): MarkersView   // translucent pad + ri
 createAssetRuntime({ db: AssetDatabase, urlOf: (path) => string, materialOf: (id) => MaterialAsset | undefined }): AssetRuntime
 interface AssetRuntime {
   load: (assetIds: readonly string[]) => Promise<boolean>   // transitive (material → textures); dedupes in-flight; true when any was not held yet
+  refreshMaterial: (id) => Promise<boolean>              // recompile into the held object (copy + needsUpdate; its old map clone disposed); false = the class changed, new one cached, rebuild what draws it (ADR 0157)
+  refreshTexture: (id) => Promise<string[]>              // fetch again past caches (?v=), then refreshMaterial every loaded user — each holds its own clone; → their ids
+  refreshModel: (id) => Promise<void>                    // fetch again; placed clones are the caller's to rebuild
   material: (id) => THREE.Material | null                // compileMaterial(asset, textureLookup)
   model: (id) => THREE.Object3D | null                   // fresh clone(true) of cached GLTF scene
   texture: (id) => THREE.Texture | null                  // SRGBColorSpace

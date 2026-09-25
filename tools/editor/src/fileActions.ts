@@ -112,15 +112,19 @@ export interface FileActionsHost {
   /** Boot into whatever is left, rather than leaving a document with no file. */
   openFirstLevel: () => Promise<void>
   refreshFileList: () => Promise<void>
-  reloadAssets: () => Promise<void>
+  /** `named`: paths just written whose bytes the reload cannot compare — an upload replacing a texture (ADR 0157). */
+  reloadAssets: (named?: readonly string[]) => Promise<void>
   invalidatePreviews: () => void
   notify: Notify
   refreshUi: () => void
 }
 
 export const createFileActions = (host: FileActionsHost) => {
-  /** Run a file operation, then rebuild the database — every one of them changes what is on disk. */
-  const afterFileOp = (label: string, run: () => Promise<void>): void => {
+  /**
+   * Run a file operation, then rebuild the database — every one of them changes what is on disk. `named` are
+   * the paths whose contents it replaced, so what was compiled from them is too.
+   */
+  const afterFileOp = (label: string, run: () => Promise<void>, named?: readonly string[]): void => {
     void (async () => {
       try {
         await run()
@@ -129,7 +133,7 @@ export const createFileActions = (host: FileActionsHost) => {
         return
       }
       host.invalidatePreviews()
-      await host.reloadAssets()
+      await host.reloadAssets(named)
       host.notify.ok(label)
       host.refreshUi()
     })()
