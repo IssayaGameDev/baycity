@@ -17,7 +17,7 @@ is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walk
 | `src/git.ts` | `git`, `changedUnder`, `commitPaths`, `push`, `currentBranch` |
 | `src/changes.ts` | `createChangeFeed(keep)` — numbered, bounded log of written paths with long-poll `wait`; `null` = full sync needed (behind, or ahead after a restart) |
 | `src/live.ts` | `createLive(opts): Live` — the open documents (levels **and** prefabs, ADR 0091), their op log, holds, peers, debounced writes (ADR 0089); `docKey`, `LiveError(status)`, `levelPath`, `assetPath` |
-| `src/prefabStore.ts` | `createPrefabStore(assetsDir)` — prefab definitions by asset id, off disk: `root`, `pathOf`, `write`; rescans once on an unknown id so a prefab saved seconds ago resolves |
+| `src/prefabStore.ts` | `createPrefabStore(assetsDir)` — prefab definitions by asset id, off disk: `root`, `pathOf`, `write`; rescans on an unknown id so a prefab saved seconds ago resolves, **and when the remembered path's sidecar no longer carries the id** — a prefab renamed, moved or deleted while the server ran used to resolve to nothing and be written back to its old place |
 | `src/sse.ts` | `encodeSse(event, data, id?)`, `SSE_HEADERS`, `SSE_KEEPALIVE` |
 | `src/proxy.ts` | `proxyHttp`, `proxyUpgrade`, `routeFor` — the staging games and `/relay` under this origin (ADR 0086) |
 | `src/server.ts` | `startEditorServer(config)` — identity, static editor, game proxy, timers, commit queue, state files |

@@ -1560,6 +1560,37 @@ describe('prefab definitions a document resolved', () => {
     expect(written.nodes[0]!.prefab, 'the reference is').toBe(PAD_ID)
   })
 
+  /**
+   * Placing again must not swap in the caller's copy: the one the document has is what the room keeps current,
+   * and replacing it put every placement back to the Project panel's older copy, on this screen only.
+   */
+  it('keeps the definition it already has when the prefab is placed again', () => {
+    const level = blank()
+    const doc = levelDoc(level)
+    const current: Node = { ...padPrefab(), children: [solid('pad', ZERO), solid('added since', vec3(2, 0, 0))] }
+    doc.placePrefab(PAD_ID, current, vec3(0, 0, 0))
+    doc.placePrefab(PAD_ID, padPrefab(), vec3(4, 0, 0))
+    expect(level.prefabs?.[PAD_ID]?.children?.map((c) => c.name)).toEqual(['pad', 'added since'])
+    expect(labels(doc).filter((l) => l === 'added since'), 'both placements show it').toHaveLength(2)
+  })
+
+  it('keeps the table a level opened with when its prefab is placed, and does not claim it', () => {
+    const own = padPrefab()
+    const level: Level = { id: 'lv', config: {}, prefabs: { [PAD_ID]: own }, nodes: [] }
+    const doc = levelDoc(level)
+    doc.placePrefab(PAD_ID, { ...padPrefab(), name: 'from the panel' }, vec3(0, 0, 0))
+    expect(level.prefabs?.[PAD_ID]).toBe(own)
+    expect(doc.resolvedPrefabs()).toEqual([])
+  })
+
+  it('takes a copy of what it is given, not the caller\u2019s object', () => {
+    const given = padPrefab()
+    const level = blank()
+    levelDoc(level).placePrefab(PAD_ID, given, vec3(0, 0, 0))
+    expect(level.prefabs?.[PAD_ID]).toEqual(given)
+    expect(level.prefabs?.[PAD_ID]).not.toBe(given)
+  })
+
   /** A table the level itself carries is not this document's to strip \u2014 it was never resolved here. */
   it('does not claim a definition the level opened with', () => {
     const own = padPrefab()

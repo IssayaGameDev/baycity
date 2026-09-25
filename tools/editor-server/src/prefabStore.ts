@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 import { importAssets } from './assetImporter'
 
+import { META_SUFFIX } from '../../../packages/content/src/assets'
 import type { Node } from '../../../packages/content/src/types'
 
 /**
@@ -36,10 +37,28 @@ export const createPrefabStore = (assetsDir: string): PrefabStore => {
     byId = new Map(entries.filter((e) => e.kind === 'prefab').map((e) => [e.id, e.path]))
   }
 
-  /** The path for an id, rescanning once when it is not known — a prefab created since the last look. */
+  /**
+   * Does `rel` still hold this prefab? Its sidecar is what says so — the id travels with the file (ADR 0026) —
+   * so this is one small read rather than a walk of the tree.
+   */
+  const stillAt = (assetId: string, rel: string): boolean => {
+    try {
+      const meta: unknown = JSON.parse(readFileSync(join(assetsDir, `${rel}${META_SUFFIX}`), 'utf8'))
+      return typeof meta === 'object' && meta !== null && (meta as { id?: unknown }).id === assetId && existsSync(join(assetsDir, rel))
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * The path for an id, rescanning when it is not known — a prefab created since the last look — **or when the
+   * one remembered no longer holds it**. A prefab renamed, moved or deleted since kept its old path here, so a
+   * level opened afterwards resolved nothing for its placements, and a prefab edit was written back to where the
+   * file used to be (or refused, its folder gone) until the server restarted.
+   */
   const pathOf = (assetId: string): string | undefined => {
     const known = byId.get(assetId)
-    if (known !== undefined) return known
+    if (known !== undefined && stillAt(assetId, known)) return known
     scan()
     return byId.get(assetId)
   }

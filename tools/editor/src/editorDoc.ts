@@ -1406,9 +1406,16 @@ const docOver = (
         * The definition is put in the resolution map so this document can read the placement's inherited
         * nodes at once — **not** as an op and never written to the level: the server resolves it from the file
         * on its own side, and the save strips whatever was resolved (`prefabs.ts`, `resolvedPrefabs`).
+        *
+        * **Only when this document cannot resolve it yet**, as a paste does. One it already has is the one the
+        * room keeps current — a collaborator's edit to the prefab arrives there — and the server keeps it too
+        * (`hydratePrefabs` skips an id the level carries). Replacing it with the caller's copy, which is the
+        * Project panel's, put every placement of the prefab back to that copy on this screen alone.
         */
-      ;(level.prefabs ??= {})[assetId] = root
-      resolved.add(assetId)
+      if (level.prefabs?.[assetId] === undefined) {
+        ;(level.prefabs ??= {})[assetId] = structuredClone(root)
+        resolved.add(assetId)
+      }
       const placed: Node = { id: freshId(), transform: { position }, components: [], prefab: assetId }
       commit([{ kind: 'insertNode', parent: null, index: roots.length, node: placed }])
       return indexOfId(placed.id)

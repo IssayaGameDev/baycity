@@ -1642,12 +1642,8 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
         {
           label: isFolder ? (inFolder > 0 ? `Delete folder and ${inFolder} asset${inFolder === 1 ? '' : 's'}` : 'Delete empty folder') : 'Delete',
           divider: true,
-          run: () => {
-            // A confirm only where it is warranted: a folder takes everything under it, and an id that
-            // disappears greyboxes silently rather than failing (ADR 0028).
-            if (inFolder > 0 && !confirm(`Delete ${current} and the ${inFolder} asset${inFolder === 1 ? '' : 's'} in it?`)) return
-            fileOps.deleteAsset(path)
-          },
+          // It asks for itself: a folder with prefabs in it asks what their placements become (ADR 0097).
+          run: () => fileOps.deleteAsset(path),
         },
       ],
       current,

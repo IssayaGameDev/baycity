@@ -1,7 +1,8 @@
 # ADR 0097 — Deleting a prefab unlinks its placements
 
 Status: accepted. Amends ADR 0091's "a missing prefab draws nothing and says so", which stays for a file that
-went missing and no longer covers one somebody chose to delete.
+went missing and no longer covers one somebody chose to delete. Applies to a **folder** as well: deleting one
+unlinks every prefab in it first, as deleting each would — it used to remove them as plain files.
 
 ## Context
 

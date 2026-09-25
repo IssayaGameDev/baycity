@@ -28,6 +28,11 @@ export interface AssetLibrary {
   prefabOf: (assetId: string) => Node | undefined
   /** Overwrite a material on disk and in memory. */
   saveMaterial: (assetId: string, material: MaterialAsset) => Promise<void>
+  /**
+   * Fetch one prefab again, as it is now — the server answers with its live copy when the prefab is open, so it
+   * has everyone's edits since this library loaded. What placing one reads.
+   */
+  refreshPrefab: (assetId: string) => Promise<void>
   /** Overwrite a prefab asset on disk and in memory. */
   savePrefab: (assetId: string, prefab: Node) => Promise<void>
   /** Write a prefab to a path under the assets root, creating it. Returns its entry after a rescan. */
@@ -126,6 +131,12 @@ export const loadAssetLibrary = async (): Promise<AssetLibrary> => {
       const path = `${folder === '' ? '' : `${folder}/`}${safe}.mat.json`
       await put(path, material)
       return rescan(path)
+    },
+    refreshPrefab: async (id) => {
+      const entry = db.byId[id]
+      if (entry === undefined || entry.kind !== 'prefab') return
+      const parsed = await fetchJson<unknown>(assetUrl(entry.path))
+      if (isPrefab(parsed)) prefabs.set(id, parsed)
     },
     savePrefab: async (id, prefab) => {
       const entry = db.byId[id]

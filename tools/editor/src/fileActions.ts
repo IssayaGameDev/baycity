@@ -1,5 +1,5 @@
 import type { Registry } from '@mp/components'
-import { hydratePrefabs, isSegment, parseQualified, qualify, stripHydrated, unlinkPrefab, type Level, type PrefabSource } from '@mp/content'
+import { hydratePrefabs, isSegment, parseQualified, qualify, stripHydrated, unlinkPrefab, type AssetEntry, type Level, type PrefabSource, type UnlinkDeps } from '@mp/content'
 import { isSharedComponent } from '@mp/components'
 
 import type { AssetLibrary } from './assetsApi'
@@ -22,6 +22,71 @@ import type { Notify } from './notices'
  * follow a re-id, and the editor-server has none by design. Deleting a **level** is heavier still, because
  * nothing else holds a copy — a prefab lives on in the placements that referenced it, a level is the content.
  */
+
+/** What deleting a path takes with it: one asset, or a folder and everything under it. */
+export interface Deleted {
+  /** The file's asset name, or the folder's own name. */
+  name: string
+  folder: boolean
+  /** Assets under a folder; `0` for a file. */
+  inside: number
+  /** The prefabs among them, each of which is unlinked first (ADR 0097). */
+  prefabs: AssetEntry[]
+}
+
+/** What a delete of `path` covers, from the database. Pure. */
+export const deletedBy = (entries: readonly AssetEntry[], path: string): Deleted => {
+  const entry = entries.find((e) => e.path === path)
+  if (entry !== undefined) return { name: entry.name, folder: false, inside: 0, prefabs: entry.kind === 'prefab' ? [entry] : [] }
+  const under = entries.filter((e) => e.path.startsWith(`${path}/`))
+  return { name: path.slice(path.lastIndexOf('/') + 1), folder: true, inside: under.length, prefabs: under.filter((e) => e.kind === 'prefab') }
+}
+
+/**
+ * The question before deleting prefabs: what goes, and what happens to the objects placing them. `here` is how
+ * many placements the open level has, `others` the other levels placing any of them. Pure.
+ */
+export const deleteWording = (what: Deleted, here: number, others: readonly string[]): { title: string; body: string } => {
+  const counts = [
+    here > 0 ? `${here} in this level` : null,
+    others.length > 0 ? `${others.length} other level${others.length === 1 ? '' : 's'} (${others.join(', ')})` : null,
+  ].filter((s) => s !== null)
+  if (!what.folder) {
+    return {
+      title: `Delete ${what.name}?`,
+      body:
+        counts.length === 0
+          ? 'Nothing places it. The file and its id go for good — a prefab created again later gets a new id.'
+          : `Used by ${counts.join(' and ')}. Those objects stay where they are and keep what they are drawing; they just stop being copies of this prefab. The file and its id go for good.`,
+    }
+  }
+  const n = what.prefabs.length
+  const names = what.prefabs.map((p) => p.name)
+  const listed = names.length <= 3 ? names.join(', ') : `${names.slice(0, 3).join(', ')} and ${names.length - 3} more`
+  const holds = n === 1 ? `It holds the prefab ${listed}.` : `It holds ${n} prefabs: ${listed}.`
+  return {
+    title: `Delete ${what.name} and the ${what.inside} asset${what.inside === 1 ? '' : 's'} in it?`,
+    body:
+      counts.length === 0
+        ? `${holds} Nothing places ${n === 1 ? 'it' : 'them'}. The files and their ids go for good.`
+        : `${holds} Used by ${counts.join(' and ')}. Those objects stay where they are and keep what they are drawing; they just stop being copies of ${n === 1 ? 'that prefab' : 'those prefabs'}. The files and their ids go for good.`,
+  }
+}
+
+/**
+ * A level file with every placement of `ids` unlinked, as it goes back to disk, or `null` when it placed none of
+ * them. Pure, over a level read from disk.
+ *
+ * Everything hydration filled goes back out, not only the prefabs deleted: stripping just those wrote every
+ * *other* prefab the level places into its file, as a frozen copy that stopped following its prefab for good
+ * (ADR 0124).
+ */
+export const unlinkedLevel = (level: Level, ids: readonly string[], source: PrefabSource, deps: UnlinkDeps): Level | null => {
+  const { filled } = hydratePrefabs(level, source)
+  let n = 0
+  for (const id of ids) n += unlinkPrefab(level, id, deps)
+  return n === 0 ? null : stripHydrated(level, new Set([...filled, ...ids]))
+}
 
 /** What file operations need from the editor around them. */
 export interface FileActionsHost {
@@ -90,9 +155,22 @@ export const createFileActions = (host: FileActionsHost) => {
     return foreign.length === 0 ? null : `uses ${foreign.join(', ')}, which this game does not have`
   }
 
-  const armAsset = (assetId: string): void => {
-    const entry = host.assets()?.db.byId[assetId]
-    if (entry === undefined) return
+  /**
+   * `fresh` once the prefab has been fetched again. The copy the library loaded at boot is behind any edit a
+   * collaborator has made to it since, and a level that has no copy of its own places from this one — so a prefab
+   * is armed with the server's current copy, or with the one it had when the server cannot be asked.
+   */
+  const armAsset = (assetId: string, fresh = false): void => {
+    const library = host.assets()
+    const entry = library?.db.byId[assetId]
+    if (library === null || entry === undefined) return
+    if (entry.kind === 'prefab' && !fresh) {
+      void library
+        .refreshPrefab(assetId)
+        .catch(() => undefined)
+        .then(() => armAsset(assetId, true))
+      return
+    }
     const why = unplaceableWhy(assetId)
     if (why !== null) {
       host.notify.warn(`${entry.name} ${why}`)
@@ -102,7 +180,7 @@ export const createFileActions = (host: FileActionsHost) => {
     // a registry without it (ADR 0077). Not while a prefab is open on top: a prefab belongs to no game.
     const { shared } = missingIn(assetId)
     if (shared.length > 0 && host.hasGame() && !host.inPrefab()) {
-      void host.adopt(shared).then(() => armAsset(assetId))
+      void host.adopt(shared).then(() => armAsset(assetId, true))
       return
     }
     const kind = entry.kind === 'prefab' ? ('prefabAsset' as const) : ('model' as const)
@@ -147,51 +225,49 @@ export const createFileActions = (host: FileActionsHost) => {
    *
    * The prefab file goes last. A failed unlink then costs nothing, where the reverse order would leave
    * placements pointing at an id that no longer exists.
+   *
+   * **A folder is every prefab in it.** Deleting one used to remove its prefabs as plain files, so their
+   * placements lost their definitions and drew nothing — the very outcome ADR 0097 chose against.
    */
   const deleteAsset = (path: string): void => {
-    const entry = host.assets()?.db.entries.find((e) => e.path === path)
-    if (entry === undefined || entry.kind !== 'prefab') {
-      afterFileOp(`deleted ${path}`, async () => host.assets()?.remove(path) ?? Promise.resolve())
+    const db = host.assets()?.db
+    if (db === undefined) return
+    const covered = deletedBy(db.entries, path)
+    const remove = (): void => afterFileOp(`deleted ${path}`, async () => host.assets()?.remove(path) ?? Promise.resolve())
+    if (covered.prefabs.length === 0) {
+      // A confirm only where it is warranted: a folder takes everything under it, and an id that disappears
+      // greyboxes silently rather than failing (ADR 0028).
+      if (covered.inside > 0 && !confirm(`Delete ${covered.name} and the ${covered.inside} asset${covered.inside === 1 ? '' : 's'} in it?`)) return
+      remove()
       return
     }
     void (async () => {
-      const id = entry.id
+      const ids = covered.prefabs.map((e) => e.id)
       const all = await listFiles('levels').catch(() => [] as FileEntry[])
-      const users = all.filter((f) => f.prefabs?.includes(id) === true).map((f) => f.name)
       const openName = host.fileName()
-      const here = host.doc()?.refCount(id) ?? 0
       // The open document is ahead of the listing either way: it may have placed one since the last write, or
       // removed the last one.
-      const others = users.filter((n) => n !== openName)
-
-      const counts = [
-        here > 0 ? `${here} in this level` : null,
-        others.length > 0 ? `${others.length} other level${others.length === 1 ? '' : 's'} (${others.join(', ')})` : null,
-      ].filter((s) => s !== null)
-      const body =
-        counts.length === 0
-          ? 'Nothing places it. The file and its id go for good — a prefab created again later gets a new id.'
-          : `Used by ${counts.join(' and ')}. Those objects stay where they are and keep what they are drawing; they just stop being copies of this prefab. The file and its id go for good.`
-      if (!(await askDestructive(`Delete ${entry.name}?`, body, 'Delete'))) return host.notify.ok('kept')
+      const others = all.filter((f) => f.name !== openName && f.prefabs?.some((id) => ids.includes(id)) === true).map((f) => f.name)
+      const here = ids.reduce((n, id) => n + (host.doc()?.refCount(id) ?? 0), 0)
+      const ask = deleteWording(covered, here, others)
+      if (!(await askDestructive(ask.title, ask.body, 'Delete'))) return host.notify.ok('kept')
 
       // Other levels first: they are the ones that can refuse, and a refusal must stop the whole thing.
       for (const name of others) {
         try {
-          const level = (await loadLevelRaw(name)) as Level
-          hydratePrefabs(level, host.prefabSource)
-          const n = unlinkPrefab(level, id, { types: host.registry(), freshId: freshNodeId, refKeysOf: nodeRefKeysOf })
-          if (n > 0) await saveFile('levels', name, stripHydrated(level, [id]))
+          const unlinked = unlinkedLevel((await loadLevelRaw(name)) as Level, ids, host.prefabSource, { types: host.registry(), freshId: freshNodeId, refKeysOf: nodeRefKeysOf })
+          if (unlinked !== null) await saveFile('levels', name, unlinked)
         } catch (e) {
           host.notify.error(`${name} could not be unlinked (${String(e)}) — nothing deleted`)
           return
         }
       }
       if (here > 0) {
-        host.doc()?.unlinkPrefab(id)
-        host.recordEdit(`unlinked ${entry.name}`)
+        for (const id of ids) if ((host.doc()?.refCount(id) ?? 0) > 0) host.doc()?.unlinkPrefab(id)
+        host.recordEdit(covered.prefabs.length === 1 ? `unlinked ${covered.prefabs[0]!.name}` : `unlinked ${covered.prefabs.length} prefabs`)
         await host.room.flush().catch(() => undefined)
       }
-      afterFileOp(`deleted ${path}`, async () => host.assets()?.remove(path) ?? Promise.resolve())
+      remove()
     })()
   }
 
