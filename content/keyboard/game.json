@@ -3,7 +3,8 @@
     "Boss",
     "Bumper",
     "Checkpoint",
-    "Hazard"
+    "Hazard",
+    "Sequence"
   ],
   "settings": {
     "speed": [
