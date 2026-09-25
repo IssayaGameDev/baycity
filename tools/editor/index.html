@@ -1239,7 +1239,7 @@
       }
       .isec {
         margin-bottom: 6px;
-        border: 1px solid #2d3139;
+        border: 1px solid #3b4049;
         border-radius: 8px;
         background: #1e2126;
       }
@@ -1257,8 +1257,13 @@
         cursor: pointer;
         user-select: none;
       }
-      .isec.isec-bare .isec-h {
+      .isec.isec-bare .isec-h,
+      .isec.isec-fixed .isec-h {
         cursor: default;
+      }
+      /* Dragged by its header to reorder (`cardDrag.ts`). */
+      .isec.movable .isec-h {
+        cursor: grab;
       }
       /* An off component is still readable — it is a state, not an error — and its tick stays clear to click. */
       .isec.off .isec-i,
@@ -1289,7 +1294,8 @@
       .isec.shut .isec-tw .ic {
         transform: rotate(-90deg);
       }
-      .isec.isec-bare .isec-tw {
+      .isec.isec-bare .isec-tw,
+      .isec.isec-fixed .isec-tw {
         visibility: hidden;
       }
       .isec-m {
@@ -1959,7 +1965,8 @@
         opacity: 0.55;
       }
       /* Dragging (`sequenceDrag.ts`): the copy under the pointer, and where it would land. */
-      .seq-ghost {
+      .seq-ghost,
+      .isec-ghost {
         position: fixed;
         left: 0;
         top: 0;
@@ -1978,8 +1985,19 @@
       .seq-ph-stage {
         border-radius: 7px;
       }
+      .isec-ph {
+        margin-bottom: 6px;
+        border: 1.5px dashed color-mix(in srgb, var(--accent) 70%, transparent);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--accent) 8%, transparent);
+      }
+      .isec-ghost {
+        border-radius: 8px;
+      }
       body.seq-dragging,
-      body.seq-dragging * {
+      body.seq-dragging *,
+      body.card-dragging,
+      body.card-dragging * {
         cursor: grabbing !important;
         user-select: none !important;
       }
