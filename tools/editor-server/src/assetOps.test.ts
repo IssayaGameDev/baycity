@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { importAssets } from './assetImporter'
 import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './assetOps'
 
+/** The ops work on any root; the importer that writes the sidecars scans `content/`, whose shared library this is. */
+let content = ''
 let root = ''
 
 const write = (rel: string, body = 'x'): void => {
@@ -17,10 +19,12 @@ const has = (rel: string): boolean => existsSync(join(root, rel))
 const idOf = (rel: string): string => (JSON.parse(readFileSync(join(root, `${rel}.meta`), 'utf8')) as { id: string }).id
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), 'mp-ops-'))
+  content = mkdtempSync(join(tmpdir(), 'mp-ops-'))
+  root = join(content, 'assets')
+  mkdirSync(root)
 })
 afterEach(() => {
-  rmSync(root, { recursive: true, force: true })
+  rmSync(content, { recursive: true, force: true })
 })
 
 describe('listFolders', () => {
@@ -57,7 +61,7 @@ describe('movePath', () => {
   // sidecar moves with the file.
   it('carries the sidecar, so the id survives a rename', () => {
     write('textures/brick.png')
-    importAssets(root)
+    importAssets(content)
     const before = idOf('textures/brick.png')
 
     movePath(root, 'textures/brick.png', 'textures/stone.png')
@@ -65,12 +69,12 @@ describe('movePath', () => {
     expect(has('textures/brick.png')).toBe(false)
     expect(has('textures/brick.png.meta'), 'the old sidecar is gone too').toBe(false)
     expect(idOf('textures/stone.png'), 'same id, new name').toBe(before)
-    expect(importAssets(root).created, 'nothing to reissue').toEqual([])
+    expect(importAssets(content).created, 'nothing to reissue').toEqual([])
   })
 
   it('moves a file into another folder, creating it if needed', () => {
     write('brick.png')
-    importAssets(root)
+    importAssets(content)
     const before = idOf('brick.png')
 
     movePath(root, 'brick.png', 'textures/stone/brick.png')
@@ -80,7 +84,7 @@ describe('movePath', () => {
 
   it('moves a folder with everything in it', () => {
     write('textures/stone/brick.png')
-    importAssets(root)
+    importAssets(content)
     const before = idOf('textures/stone/brick.png')
 
     movePath(root, 'textures/stone', 'stone')
@@ -119,7 +123,7 @@ describe('movePath', () => {
 describe('removePath', () => {
   it('deletes a file and its sidecar', () => {
     write('textures/brick.png')
-    importAssets(root)
+    importAssets(content)
 
     removePath(root, 'textures/brick.png')
 
@@ -130,12 +134,12 @@ describe('removePath', () => {
   it('deletes a folder and everything under it', () => {
     write('textures/stone/brick.png')
     write('textures/loose.png')
-    importAssets(root)
+    importAssets(content)
 
     removePath(root, 'textures')
 
     expect(has('textures')).toBe(false)
-    expect(importAssets(root).entries).toEqual([])
+    expect(importAssets(content).entries).toEqual([])
   })
 
   it('refuses the root and an escape, and reports a missing path', () => {

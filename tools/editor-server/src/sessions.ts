@@ -52,7 +52,8 @@ export const takeAll = (table: SessionTable): Session[] => {
 
 const LEVEL = /^content\/levels\/([^/]+)\.json$/
 const GAME = /^content\/games\/([^/]+)\.json$/
-const ASSET = /^content\/assets\/(.+)$/
+/** The shared library, or a game's own (ADR 0161). */
+const ASSET = /^content\/(?:[^/]+\/)?assets\/(.+)$/
 
 const KINDS: [RegExp, string][] = [
   [/\.prefab\.json$/, 'prefab'],

@@ -1,7 +1,8 @@
 # ADR 0108 — A game is a folder
 
 Status: accepted. Finishes the job [ADR 0052](0052-a-game-is-a-descriptor.md) started; the shared asset
-library is unchanged, and so is [ADR 0026](0026-asset-pipeline.md)'s rule that a reference is an id.
+library is unchanged, and so is [ADR 0026](0026-asset-pipeline.md)'s rule that a reference is an id. Amended by
+[ADR 0161](0161-each-game-has-its-own-asset-library.md): each game has its own library beside the shared one.
 
 ## Context
 

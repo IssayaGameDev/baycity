@@ -80,9 +80,12 @@ export {
   GAME_FILE,
   LEVELS_DIR,
   LEVEL_SUFFIX,
-  assetFile,
   gameFile,
+  inLibrary,
   isGameName,
+  libraryDir,
+  libraryOf,
+  mayUse,
   isSegment,
   levelFile,
   levelRefForFile,
@@ -111,3 +114,4 @@ export {
 export type { AssetDatabase, AssetEntry, AssetKind, AssetMeta, MaterialAsset, MaterialValue } from './assets'
 export { LiveAssetError, applyAssetOps, diffAssetOps, isAssetOp, isLiveAssetPath, LIVE_ASSET_KINDS, mergeAssetOps, validateLiveAsset } from './liveAssets'
 export type { AssetOp } from './liveAssets'
+export { assetsUsedBy, levelsUsing } from './usage'

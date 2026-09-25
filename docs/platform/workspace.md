@@ -35,7 +35,7 @@ Each exports `./editorMode` (`<NAME>_MODE: ModeDescriptor`) and `./rules` (headl
 | `swing` | `SWING_MODE` | 5175 | **same port as `tools/viewer`** |
 | `keyboard` | `KEYBOARD_MODE` | 5177 | Keyboard Escape (ADR 0069/0073) |
 
-Every game `vite.config.ts`: `allowedHosts: ['.trycloudflare.com', '.playgorbo.com']`, `proxy: '/relay' → http://localhost:9200` (ws, ADR 0074), `build.target: es2022`; keyboard and `_template` also `base: MP_BASE ?? '/'` (ADR 0086) and, with `MP_BASE` set, `/api` → `:8080` and no watch on `content/<game>/levels/**` (ADR 0089).
+Every game `vite.config.ts`: `plugins: [contentBanner(), gameContent('<game>')]` (what it carries of `content/`, `content-sync.md`), `allowedHosts: ['.trycloudflare.com', '.playgorbo.com']`, `proxy: '/relay' → http://localhost:9200` (ws, ADR 0074), `build.target: es2022`; keyboard and `_template` also `base: MP_BASE ?? '/'` (ADR 0086) and, with `MP_BASE` set, `/api` → `:8080` and no watch on `content/<game>/levels/**` (ADR 0089).
 
 ## Tools — see `tooling.md`, `editor.md`
 
@@ -97,7 +97,7 @@ Conventions: cross-package imports by package name; tests colocated `src/**/*.te
 1. Copy `modes/_template` → `modes/<yours>` (skip `node_modules`, `dist`).
 2. Rename `TEMPLATE_MODE`, `TEMPLATE_REGISTRY`, `templateSession`; set `name`/`label` in `editorMode.ts`.
 3. `package.json` → `@mode/<yours>`.
-4. `vite.config.ts` → free port; keep `allowedHosts` + `/relay`.
+4. `vite.config.ts` → free port; keep `allowedHosts` + `/relay`; `gameContent('<game>')` with the new name.
 5. Root `dev:<yours>` script → `pnpm install`. Add to `SHARED_GAMES` (`tools/share/src/index.ts`) to make it shareable.
 6. `content/<yours>/game.json` (path imported by `rules.ts`) + a level in `content/<yours>/levels/`, authored in the editor with the game selected — the folder is what makes it yours (ADR 0108). Until then it throws at boot.
 

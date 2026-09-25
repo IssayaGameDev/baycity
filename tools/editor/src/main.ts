@@ -14,7 +14,7 @@ import {
   validateLevel, type NodeRef, refKey,
   BUILTIN_LABELS, BUILTIN_MODELS,
   isSegment, parseQualified, qualify,
-  applyAssetOps, diffAssetOps, isLiveAssetPath, LiveAssetError,
+  applyAssetOps, diffAssetOps, isLiveAssetPath, libraryOf, LiveAssetError, mayUse,
   type AssetDatabase, type MaterialAsset } from '@mp/content'
 
 import { DEFAULT_REGISTRY, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type Registry } from '@mp/components'
@@ -808,6 +808,18 @@ const selectWith = (index: number, mode: SelectMode, order: readonly number[]): 
   applySelection(applySelect(selection, index, mode, order))
 }
 
+/**
+ * Whose the document being edited is (ADR 0161): an open prefab's library — `null` for Shared's — or else the open
+ * level's game. What its pickers offer and what may be placed in it follow from this (`mayUse`).
+ */
+const editingFor = (): string | null => {
+  if (prefabOpen !== null) {
+    const entry = assets?.db.byId[prefabOpen.assetId]
+    return entry === undefined ? null : (libraryOf(entry.path) ?? null)
+  }
+  return activeMode?.name ?? null
+}
+
 const deselect = (): void => {
   selection = []
   selected = null
@@ -1496,6 +1508,7 @@ const fileOps = createFileActions({
   levelEntries: () => levelEntries,
   hasGame: () => activeMode !== undefined,
   inPrefab: () => docStack.length > 1,
+  editingFor: () => editingFor(),
   adoptable: () => adoptable(),
   adopt: (types) => adopt(types),
   arm: (kind, assetId) => {
@@ -1538,6 +1551,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   folders: () => assets?.folders ?? [],
   urlOf: (path) => assets?.urlOf(path) ?? path,
   armed: () => placing?.assetId ?? null,
+  game: () => activeMode?.name ?? null,
   selectedAsset: () => selectedAsset,
   onPickAsset: fileOps.armAsset,
   unplaceableWhy: (id) => fileOps.unplaceableWhy(id),
@@ -1547,7 +1561,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     if (tooBig.length > 0) notify.warn(`too big (cap ${Math.round(cap / 1024 / 1024)} MB): ${tooBig.join(', ')}`)
     const fits = files.filter((f) => f.size <= cap)
     if (fits.length === 0) return
-    const paths = fits.map((f) => (folder === '' ? f.name : `${folder}/${f.name}`))
+    const paths = fits.map((f) => `${folder}/${f.name}`)
     // Named, because a file uploaded over another keeps its id: only its bytes say it changed (ADR 0157).
     fileOps.afterFileOp(
       `uploaded ${fits.map((f) => f.name).join(', ')}`,
@@ -1686,7 +1700,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
       notify.warn('a folder cannot move inside itself')
       return
     }
-    fileOps.afterFileOp(`moved into ${toFolder === '' ? 'assets' : toFolder}`, async () => assets?.move(from, movedInto(from, toFolder)) ?? Promise.resolve())
+    fileOps.afterFileOp(`moved into ${toFolder}`, async () => assets?.move(from, movedInto(from, toFolder)) ?? Promise.resolve())
   },
 })
 
@@ -2063,7 +2077,9 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     // The built-in shapes (ADR 0090) sit in the model slot beside the uploaded files.
     if (of === 'model') for (const id of BUILTIN_MODELS) options[BUILTIN_LABELS[id]] = id
     const db = assets?.db
-    if (db !== undefined) for (const a of assetsOfKind(db, of)) options[a.name] = a.id
+    // Only what the document may use (ADR 0161): its game's own and Shared's, or Shared's in a Shared prefab.
+    const user = editingFor()
+    if (db !== undefined) for (const a of assetsOfKind(db, of)) if (mayUse(user, a.path)) options[a.name] = a.id
     return options
   },
 })

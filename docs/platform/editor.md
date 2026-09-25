@@ -9,7 +9,7 @@ Level/prefab editor. `pnpm dev:editor` → `http://localhost:5176` (the dev host
 | Level (node tree + `config`) | `content/<game>/levels/<name>.level.json` | `PUT /api/levels/<game>/<name>` (`saveFile`, `src/filesApi.ts`); locked while open (ADR 0083). Renamed and deleted through `POST /api/levels/move\|delete` (ADR 0110) |
 | Prefab (a root `Node`) | `content/assets/prefabs/<name>.prefab.json` — an **asset** with a `.meta` id (ADR 0026) | created once by `Save as prefab…` (`createPrefab`, `src/assetsApi.ts`), then **edited live** in its own room (ADR 0091) |
 | Game shared-component list | `content/<game>/game.json` | `PUT /api/games/<game>` (`saveGame`) — appended by adoption (ADR 0077) |
-| Materials | `content/assets/**/*.mat.json` | a live document: `POST /api/live/asset/<id>/ops` (`assetSync.ts`, ADR 0159); a new one is created with `PUT /assets/<path>` |
+| Materials | `content/assets/**/*.mat.json` | a live document: `POST /api/live/asset/<id>/ops` (`assetSync.ts`, ADR 0159); a new one is created with `PUT /content/<path>` |
 
 Levels and prefabs are live rooms and materials live documents, so there is no Save and no lock for any of them (ADR 0089, ADR 0091, ADR 0159).
 
@@ -417,7 +417,11 @@ assets           <- the existing folder tree, unchanged
 ```
 
 - `Place` (`src/assetTree.ts`) is where the panel is looking: `{ at: 'game', game }` or
-  `{ at: 'assets', folder }`. A union rather than a path with a magic prefix, because a game is not a folder of
+  `{ at: 'assets', folder }`, `folder` from `content/` (`SHARED` = `assets` at the top, `null` all folders). The tree
+  is one library's (`buildTree(db, folders, root)`, `Filter.library`); the panel draws the shared one (`assets`) and,
+  below it, the open game's own (`keyboard assets`, `ProjectHost.game`), even before it has a file, and names folders
+  without their library (`shownFolder`). Dragging between the two is a move between libraries, which the server may
+  refuse with why (ADR 0161). An asset's URL is `/content/<path>` (`assetUrl`), as on disk (ADR 0161). A union rather than a path with a magic prefix, because a game is not a folder of
   assets and its levels are not asset entries — the prefix version needs an `if` at every use of `folder`.
 - `gameRows(games, levels)` (pure, tested) groups the level listing under its games, games by label and
   `default` first. A game with no levels is still a row: it is where the first one is made.
@@ -525,7 +529,7 @@ read at, so another person's upload, rename, move, delete or material edit reach
 
 | | |
 | --- | --- |
-| the watch | `watchAssets({ seq, changed, lost })`, started after boot: `since=seq&timeout=25000`; `assetPathsOf` keeps `content/assets/…` (a sidecar as its asset) and `changed` is awaited before the next poll. **410** → `lost`: wait out a drag or play, `reloadAssets`, redraw. Errors back off 2 s → 30 s |
+| the watch | `watchAssets({ seq, changed, lost })`, started after boot: `since=seq&timeout=25000`; `assetPathsOf` keeps paths in any library, from `content/` (a sidecar as its asset) and `changed` is awaited before the next poll. **410** → `lost`: wait out a drag or play, `reloadAssets`, redraw. Errors back off 2 s → 30 s |
 | gathering | `assetsChanged` adds to `waitingPaths` and drains them one batch at a time through `inAssetQueue` — the one queue `reloadAssets` runs in too, so two runtimes are never installed over each other |
 | its own writes | a path whose lock this tab holds (`heldLocks`, `lockKey.asset`) is skipped |
 | applying | `loadAssetLibrary({ reuse, refetch })`: the list, plus only the named material and prefab files — the rest kept from the library held. `libraryChanges(before, after, named)` (pure) → `{ list, ids }`; nothing → nothing. Waits while `busyEditing()` (a gizmo, point or field drag, or play). Then `refreshCompiled(ids)` (ADR 0157, below), and `meshes.buildAll()` only when it says so; a list-only change only swaps `assets`. Then previews, the asset Inspector when its asset changed or went, `refreshUi` |
@@ -611,7 +615,7 @@ refs, each `room.docTarget(suffix)` = `<kind>:<doc>|<suffix>`; rings for the pri
 ## Refusing another game's private components (ADR 0076)
 
 - `unknownComponentTypes(root, registry)` (`src/editorDoc.ts`), pure.
-- `unplaceableWhy(assetId)` non-null only for `foreign` types → Project tile greyed, reason in tooltip (`unplaceableWhy` host option, `src/projectPanel.ts`); context-menu "Place in the level" disabled with the same reason.
+- `unplaceableWhy(assetId)` non-null for `foreign` types, **or an asset the document may not use** (ADR 0161: `mayUse(editingFor(), path)` — `editingFor` is the open prefab's library, `null` for Shared's, else the level's game) → Project tile greyed, reason in tooltip (`unplaceableWhy` host option, `src/projectPanel.ts`); context-menu "Place in the level" disabled with the same reason.
 - `Doc.placePrefab` returns `-1` on any remaining unknown type — second gate.
 
 ## Game settings (ADR 0087)
@@ -631,7 +635,7 @@ colliders are held at the matching unit shape — so scale is the one size a per
 
 | Piece | Behaviour |
 | --- | --- |
-| picker | `assetOptions('model')` lists `BUILTIN_LABELS` first, then the uploaded models: a built-in is picked like a file |
+| picker | `assetOptions('model')` lists `BUILTIN_LABELS` first, then the uploaded models: a built-in is picked like a file. Every `assetOptions(of)` lists only what `mayUse(editingFor(), path)` allows (ADR 0161), and a material's texture slot only what its own library may use |
 | locked collider | `Doc.setParams` of a built-in `model` on a `Renderer` rewrites every `Collider` on the node to `unitColliderFor(model)` **in the same batch** (one undo); `addComponent(Collider)` on such a node is born unit; `Doc.builtinOf(i)` says which built-in, or `null` |
 | Inspector | with `builtinOf` non-null the `collider` field is one row — `unit box · size is the object's scale` — instead of the kind picker and the dimensions |
 | Create | `createMenu` (blank space, Hierarchy *Create child*, viewport *Create here*) offers Box, Rounded box, Platform, Wall, Sphere, Capsule (`PRIMITIVE_ORDER`) then `Empty`; each is `Doc.placePrimitive(kind, position, parent)` = unit collider + an unsurfaced `Renderer` whose `model` is the built-in + the preset scale. In a prefab's room the same menu applies (`placeNamed` is the by-name variant its palette used) |

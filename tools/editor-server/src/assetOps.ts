@@ -11,7 +11,8 @@ import { META_SUFFIX } from '../../../packages/content/src/assets'
  * detail would quietly turn the id scheme back into paths.
  *
  * Every path is resolved against the root and refused if it escapes — this is reachable over HTTP from a dev
- * server, and it deletes things.
+ * server, and it deletes things. The root is `content/`; that a path is inside an asset library, and not a level,
+ * is the API's check (ADR 0161).
  */
 export class AssetOpError extends Error {}
 
@@ -19,7 +20,7 @@ export class AssetOpError extends Error {}
 const resolve = (root: string, rel: string): string => {
   const full = normalize(join(root, rel))
   const contained = full === root || full.startsWith(root + sep)
-  if (!contained) throw new AssetOpError(`path escapes the assets root: ${rel}`)
+  if (!contained) throw new AssetOpError(`path escapes the content root: ${rel}`)
   return full
 }
 
@@ -57,7 +58,7 @@ export const movePath = (root: string, from: string, to: string): void => {
   if (from.trim() === '' || to.trim() === '') throw new AssetOpError('move needs a source and a destination')
   const src = resolve(root, from)
   const dst = resolve(root, to)
-  if (src === root) throw new AssetOpError('the assets root cannot be moved')
+  if (src === root) throw new AssetOpError('the content root cannot be moved')
   if (!existsSync(src)) throw new AssetOpError(`not found: ${from}`)
   if (existsSync(dst)) throw new AssetOpError(`already exists: ${to}`)
   if (dst === src || dst.startsWith(src + sep)) throw new AssetOpError('a folder cannot be moved inside itself')
@@ -74,9 +75,9 @@ export const movePath = (root: string, from: string, to: string): void => {
 
 /** Delete a file (with its sidecar) or a folder and everything in it. */
 export const removePath = (root: string, path: string): void => {
-  if (path.trim() === '') throw new AssetOpError('the assets root cannot be deleted')
+  if (path.trim() === '') throw new AssetOpError('the content root cannot be deleted')
   const full = resolve(root, path)
-  if (full === root) throw new AssetOpError('the assets root cannot be deleted')
+  if (full === root) throw new AssetOpError('the content root cannot be deleted')
   if (!existsSync(full)) throw new AssetOpError(`not found: ${path}`)
 
   const isFile = statSync(full).isFile()

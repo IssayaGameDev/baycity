@@ -210,5 +210,6 @@ why matters.
 | [0158](adr/0158-a-selection-is-shown-never-refused.md) | A selection is shown, never refused: anyone edits anything |
 | [0159](adr/0159-data-file-assets-are-live-documents.md) | Assets that are data files are live documents |
 | [0160](adr/0160-a-field-someone-is-in-is-ringed-in-their-colour.md) | A field someone is in is ringed in their colour |
+| [0161](adr/0161-each-game-has-its-own-asset-library.md) | Each game has its own asset library, beside the shared one |
 
 `Design archive/` holds superseded design material and is not maintained.

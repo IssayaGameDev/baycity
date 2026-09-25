@@ -14,9 +14,14 @@ import {
   type AssetKind,
   type AssetMeta,
 } from '../../../packages/content/src/assets'
+import { ASSETS_DIR, isGameName, libraryDir } from '../../../packages/content/src/layout'
 
 /**
- * The importer: scans the assets tree and makes sure every asset has an identity.
+ * The importer: scans every asset library and makes sure every asset has an identity.
+ *
+ * **Every library in one pass** (ADR 0161) — the shared one and each game's own — so an id is unique across all of
+ * them: a file copied from one library into another with its sidecar is two files, and the second is reissued.
+ * Paths come out relative to `content/`, starting with their library.
  *
  * An asset's id lives in a `.meta` sidecar beside it, written once and never re-derived — that is what
  * makes a reference survive renaming and moving the file. Deriving an id from the path or the contents
@@ -54,11 +59,24 @@ const walk = (dir: string, out: string[]): void => {
   }
 }
 
-export const importAssets = (root: string): ImportedAssets => {
-  if (!existsSync(root)) mkdirSync(root, { recursive: true })
+/**
+ * The libraries under `content/`, as content-relative folders: the shared one, always (made if missing), then each
+ * game folder's `assets/` that exists, name-sorted.
+ */
+export const libraryFolders = (contentDir: string): string[] => {
+  const shared = join(contentDir, ASSETS_DIR)
+  if (!existsSync(shared)) mkdirSync(shared, { recursive: true })
+  const own = (game: string): boolean => {
+    const dir = join(contentDir, game, ASSETS_DIR)
+    return existsSync(dir) && statSync(dir).isDirectory()
+  }
+  const games = readdirSync(contentDir).filter((name) => isGameName(name) && own(name)).sort()
+  return [libraryDir(null), ...games.map((g) => libraryDir(g))]
+}
 
+export const importAssets = (contentDir: string): ImportedAssets => {
   const files: string[] = []
-  walk(root, files)
+  for (const library of libraryFolders(contentDir)) walk(join(contentDir, library), files)
   files.sort() // stable order, so the panel and the manifest do not reshuffle between scans
 
   const pairs: [string, AssetMeta][] = []
@@ -66,7 +84,7 @@ export const importAssets = (root: string): ImportedAssets => {
   const seen = new Set<string>()
 
   for (const full of files) {
-    const path = relative(root, full).split('\\').join('/')
+    const path = relative(contentDir, full).split('\\').join('/')
     const kind = kindForPath(path)
     if (kind === undefined) continue
 

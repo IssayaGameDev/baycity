@@ -29,7 +29,10 @@ export interface AssetMeta {
   kind: AssetKind
 }
 
-/** One asset as the database knows it. `path` is relative to the assets root, forward-slashed. */
+/**
+ * One asset as the database knows it. `path` is relative to `content/`, forward-slashed, and starts with its
+ * library (`libraryDir`, ADR 0161): `assets/…` for the shared one, `<game>/assets/…` for a game's own.
+ */
 export interface AssetEntry {
   id: string
   kind: AssetKind
@@ -107,7 +110,7 @@ export const META_SUFFIX = '.meta'
  * and not in the panel.
  *
  * Materials and shaders use compound extensions (`brick.mat.json`) rather than living in a magic folder, so
- * a file can be moved anywhere under the assets root and still be what it is.
+ * a file can be moved anywhere in a library and still be what it is.
  */
 const BY_EXTENSION: Record<string, AssetKind> = {
   png: 'texture',

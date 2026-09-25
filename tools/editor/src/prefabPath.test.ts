@@ -4,13 +4,14 @@ import { prefabFolder, prefabTarget, sanitisePrefabName } from './prefabPath'
 
 describe('where a prefab is saved', () => {
   it('writes into the folder the Project panel has open', () => {
-    expect(prefabTarget('prefabs/traps', 'Spike', [])).toEqual({ path: 'prefabs/traps/Spike.prefab.json', name: 'Spike' })
+    expect(prefabTarget('assets/prefabs/traps', 'Spike', [])).toEqual({ path: 'assets/prefabs/traps/Spike.prefab.json', name: 'Spike' })
   })
 
-  it('falls back to prefabs/ at the assets root and across all folders', () => {
-    expect(prefabFolder('')).toBe('prefabs')
-    expect(prefabFolder(null)).toBe('prefabs')
-    expect(prefabTarget(null, 'Spike', [])).toEqual({ path: 'prefabs/Spike.prefab.json', name: 'Spike' })
+  it('falls back to prefabs/ at a library’s top, and the shared library’s across all folders (ADR 0161)', () => {
+    expect(prefabFolder('assets')).toBe('assets/prefabs')
+    expect(prefabFolder('keyboard/assets')).toBe('keyboard/assets/prefabs')
+    expect(prefabFolder(null)).toBe('assets/prefabs')
+    expect(prefabTarget(null, 'Spike', [])).toEqual({ path: 'assets/prefabs/Spike.prefab.json', name: 'Spike' })
   })
 
   /**
@@ -19,9 +20,9 @@ describe('where a prefab is saved', () => {
    * something else.
    */
   it('refuses a name already in that folder rather than overwriting it', () => {
-    expect(prefabTarget('prefabs', 'Trampoline', ['prefabs/Trampoline.prefab.json'])).toEqual({ error: 'a prefab called Trampoline is already in prefabs/' })
-    expect(prefabTarget('prefabs/traps', 'Trampoline', ['prefabs/Trampoline.prefab.json']), 'the same name in another folder is fine').toEqual({
-      path: 'prefabs/traps/Trampoline.prefab.json',
+    expect(prefabTarget('assets/prefabs', 'Trampoline', ['assets/prefabs/Trampoline.prefab.json'])).toEqual({ error: 'a prefab called Trampoline is already in assets/prefabs/' })
+    expect(prefabTarget('assets/prefabs/traps', 'Trampoline', ['assets/prefabs/Trampoline.prefab.json']), 'the same name in another folder is fine').toEqual({
+      path: 'assets/prefabs/traps/Trampoline.prefab.json',
       name: 'Trampoline',
     })
   })

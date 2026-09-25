@@ -3,7 +3,8 @@ import { importAssets } from './assetImporter'
 import type { AssetEntry } from '../../../packages/content/src/assets'
 
 /**
- * The asset list, held in memory: one walk of the tree answers every lookup until something changes it.
+ * The asset list, held in memory: one walk of every library answers every lookup until something changes it.
+ * Paths are relative to `content/`, starting with their library (ADR 0161).
  *
  * Every write the API makes rescans, and so does every `GET /api/assets` — which is also where a file copied in
  * from outside the API first gets its sidecar. Everything else reads: a prefab served live looked its file up
@@ -14,7 +15,7 @@ import type { AssetEntry } from '../../../packages/content/src/assets'
  */
 export interface AssetIndex {
   entries: () => readonly AssetEntry[]
-  byPath: (rel: string) => AssetEntry | undefined
+  byPath: (path: string) => AssetEntry | undefined
   byId: (id: string) => AssetEntry | undefined
   /** Walk the tree again. Returns every sidecar written since the last `rescan`, for attribution. */
   rescan: () => string[]
@@ -22,7 +23,7 @@ export interface AssetIndex {
   refresh: () => void
 }
 
-export const createAssetIndex = (root: string): AssetIndex => {
+export const createAssetIndex = (contentDir: string): AssetIndex => {
   let list: AssetEntry[] | null = null
   let paths = new Map<string, AssetEntry>()
   let ids = new Map<string, AssetEntry>()
@@ -30,7 +31,7 @@ export const createAssetIndex = (root: string): AssetIndex => {
   let unreported: string[] = []
 
   const scan = (): string[] => {
-    const { entries, created } = importAssets(root)
+    const { entries, created } = importAssets(contentDir)
     list = entries
     paths = new Map(entries.map((e) => [e.path, e]))
     ids = new Map(entries.map((e) => [e.id, e]))
@@ -45,9 +46,9 @@ export const createAssetIndex = (root: string): AssetIndex => {
       ready()
       return list ?? []
     },
-    byPath: (rel) => {
+    byPath: (path) => {
       ready()
-      return paths.get(rel)
+      return paths.get(path)
     },
     byId: (id) => {
       ready()

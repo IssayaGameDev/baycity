@@ -17,10 +17,12 @@ is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walk
 | `src/git.ts` | `git`, `changedUnder`, `commitPaths`, `push`, `currentBranch` |
 | `src/changes.ts` | `createChangeFeed(keep)` — numbered, bounded log of written paths with long-poll `wait`; `null` = full sync needed (behind, or ahead after a restart) |
 | `src/live.ts` | `createLive(opts): Live` — the open documents (levels **and** prefabs, ADR 0091), their op log, holds, peers, debounced writes (ADR 0089); `docKey`, `LiveError(status)`, `levelPath`, `assetPath` |
-| `src/assetIndex.ts` | `createAssetIndex(assetsDir): AssetIndex` — the asset list in memory (ADR 0156): `entries`, `byPath`, `byId` answer from the last walk; `rescan()` walks and returns every sidecar written since the last `rescan` (for attribution), `refresh()` walks for a lookup and keeps its sidecars for the next `rescan`. `server.ts` and the dev editor's `vite.config.ts` make one and hand it to both the API (`ApiOptions.assets`) and the prefab store |
+| `src/assetIndex.ts` | `createAssetIndex(contentDir): AssetIndex` — the asset list in memory (ADR 0156), every library's, paths from `content/` (ADR 0161): `entries`, `byPath`, `byId` answer from the last walk; `rescan()` walks and returns every sidecar written since the last `rescan` (for attribution), `refresh()` walks for a lookup and keeps its sidecars for the next `rescan`. `server.ts` and the dev editor's `vite.config.ts` make one and hand it to both the API (`ApiOptions.assets`) and the prefab store |
 | `src/liveAssets.ts` | `createLiveAssets(opts): LiveAssets` — data-file assets as live documents (ADR 0159): `apply` (on a live connection, `opts.connection`; validated after applying; numbered; `asset { assetId, epoch, seq, from, batchId, ops }` to **every** connection, `opts.broadcast`), `current`, `forget`, `flushAll`, `epoch` (the process's start). Opened on the first edit, kept until the file is deleted, written behind (`idleMs` 500, `maxMs` 5000) through `opts.write` into the editors' sessions |
-| `src/liveAssetFiles.ts` | `liveAssetFiles(assetsDir, index)` → `read` / `write` by id through the asset index, wherever the file has moved |
-| `src/prefabStore.ts` | `createPrefabStore(assetsDir, index?)` — prefab definitions by asset id, off disk, found through the index: `root`, `pathOf`, `write`; rescans on an unknown id so a prefab saved seconds ago resolves, **and when the remembered path's sidecar no longer carries the id** — a prefab renamed, moved or deleted while the server ran used to resolve to nothing and be written back to its old place |
+| `src/liveAssetFiles.ts` | `liveAssetFiles(contentDir, index)` → `read` / `write` by id through the asset index, wherever the file has moved |
+| `src/libraryMoves.ts` | `moveRefusal(moving, to, { entries, levels, contentsOf })` → why not, or `null` (ADR 0161): into a game's library, refused while another game's level (`used by 2 parkour levels and 1 swing level`) or an asset outside that library uses any of it; anywhere, refused while it uses what is in neither Shared nor that library, unless that moves too. The API feeds it every level and asset JSON as they are now (live copies first) |
+| `src/assetImporter.ts` | `importAssets(contentDir)` → `{ entries, created }`: every library in one pass (`libraryFolders(contentDir)`: `assets`, made if missing, then each game folder's `assets/` that exists), so an id is unique across them; a sidecar claimed twice is reissued |
+| `src/prefabStore.ts` | `createPrefabStore(contentDir, index?)` — prefab definitions by asset id, off disk, found through the index: `root`, `pathOf`, `write`; rescans on an unknown id so a prefab saved seconds ago resolves, **and when the remembered path's sidecar no longer carries the id** — a prefab renamed, moved or deleted while the server ran used to resolve to nothing and be written back to its old place |
 | `src/sse.ts` | `encodeSse(event, data, id?)`, `SSE_HEADERS`, `SSE_KEEPALIVE` |
 | `src/proxy.ts` | `proxyHttp`, `proxyUpgrade`, `routeFor` — the staging games and `/relay` under this origin (ADR 0086) |
 | `src/server.ts` | `startEditorServer(config)` — identity, static editor, game proxy, timers, commit queue, state files |
@@ -60,12 +62,12 @@ shipped when `hidden` was added (ADR 0132). `api.test.ts` walks one over the wir
 | `POST /api/levels/delete` | `{ path }`, qualified — the file goes for good. **409** while it is open live (ADR 0110) | lock |
 | `GET /api/games` | `[{ name }]` — the folders at the content root that hold a `game.json` (ADR 0108) | |
 | `GET/PUT /api/games/:name` | `{ components: string[] }` — `content/<name>/game.json`; PUT makes the folder, which is how a new game starts | lock |
-| `GET /api/assets` | `{ entries, folders, seq }` — rescans the index (the importer: a file copied in gets its sidecar, attributed to this user); `seq` is the change feed's position in the same tick, where an editor's watch starts (ADR 0156) | |
-| `POST /api/assets/mkdir` · `move` · `delete` | `{ path }` · `{ from, to }` · `{ path }` | lock (move/delete; a folder is refused if anything under it is held) |
-| `POST /api/assets/upload?path=` | raw bytes → `{ entry }` | lock; ext ∈ `png jpg jpeg webp ktx2 glb`; `≤ maxUploadBytes` else 413 |
-| `GET /assets/<path>` | bytes — a prefab open live is served from its document, as a level is; a live asset (ADR 0159) from its document when open, with `x-asset-epoch` / `x-asset-seq` (`0` for the file) | |
+| `GET /api/assets` | `{ entries, libraries, folders, seq }` — every library's, paths from `content/` (ADR 0161); rescans the index (the importer: a file copied in gets its sidecar, attributed to this user); `seq` is the change feed's position in the same tick, where an editor's watch starts (ADR 0156) | |
+| `POST /api/assets/mkdir` · `move` · `delete` | `{ path }` · `{ from, to }` · `{ path }` — each path inside a library (`inLibrary`) of Shared or an existing game, else 400; a move into another library is **409** while something would be left using what it may not (`libraryMoves.ts`) | lock (move/delete; a folder is refused if anything under it is held) |
+| `POST /api/assets/upload?path=` | raw bytes → `{ entry }`; `path` from `content/`, inside a library | lock; ext ∈ `png jpg jpeg webp ktx2 glb`; `≤ maxUploadBytes` else 413 |
+| `GET /content/<path>` | bytes of a path inside a library (anything else 404) — a prefab open live is served from its document, as a level is; a live asset (ADR 0159) from its document when open, with `x-asset-epoch` / `x-asset-seq` (`0` for the file) | |
 | `POST /api/live/asset/<id>/ops` | `{ connId, batchId, ops }` — asset ops on any live connection of this user → `{ ok, seq }` · 400 not ops, an op that does not apply or leaves the file invalid, an unknown or foreign connection · 404 no such asset | |
-| `PUT /assets/<path>` | JSON asset; **409** while that prefab, or that live asset, is open live | lock |
+| `PUT /content/<path>` | JSON asset; **409** while that prefab, or that live asset, is open live | lock |
 | `POST /api/admin/commit-all` | `Authorization: Bearer <stateDir/admin.token>` → commits every session | token, no user |
 | `GET /api/tree` | `{ seq, files: [{ path, size, sha1 }] }` — every file under `content/` (mirror, ADR 0084); flushes every live level first, as `GET /api/file` does | |
 | `GET /api/changes?since=N&timeout=MS` | `{ seq, paths }` long-poll (≤ 60 s); **410** when N is behind the feed or ahead of it. Followed by the mirror and by every editor tab (ADR 0156) | |
@@ -75,9 +77,9 @@ Identity first: `identify(req)` → `null` is 401, `AuthError` is its status (40
 `aud` unset). **Lock gate**: `blocker(locks, key, user)` non-null → 423 `{ error: 'locked by X', owner }`. Lock
 keys = repo-relative posix paths, built by `keyFor` from `@mp/content`'s layout (ADR 0108):
 `content/<game>/levels/<name>.level.json`, `content/<game>/game.json`,
-`content/assets/<path>`. Every write reports its paths to `onChanged` and to the change feed (sidecars included; a PUT of a new JSON
+`content/<path>` for an asset (its path already starts with its library). Every write reports its paths to `onChanged` and to the change feed (sidecars included; a PUT of a new JSON
 asset rescans so its `.meta` is attributed to the writer; a folder move or delete is reported as the **files** it touched). Upload with the same path **replaces and keeps the
-sidecar**, so the id survives. Anything other than `/api/*` and `/assets/*` resolves `false` for the host to serve. The built editor's own files are under `/app/` (`build.assetsDir`), because `/assets/` is this route.
+sidecar**, so the id survives. Anything other than `/api/*` and `/content/*` resolves `false` for the host to serve. The built editor's own files are under `/app/` (`build.assetsDir`), apart from content's.
 
 ## Locks
 

@@ -5,7 +5,6 @@ import { dirname, extname, join } from 'node:path'
 
 import { createAccessVerifier } from './access'
 import { AuthError, contentTypeFor, createContentApi, safeJoin } from './api'
-import { ASSETS_DIR } from '../../../packages/content/src/layout'
 import { createChangeFeed } from './changes'
 import type { ServerConfig, User } from './config'
 import { commitPaths, push } from './git'
@@ -111,11 +110,11 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
   /** A level is named `<game>/<name>` and lives in its game's folder (ADR 0108); `levelPath` is the one rule. */
   const levelFileOf = (name: string): string => join(config.repoRoot, levelPath(name))
   /** One asset list for the API and the prefab store, so a prefab the API just moved is where the store looks (ADR 0156). */
-  const assets = createAssetIndex(join(CONTENT, ASSETS_DIR))
+  const assets = createAssetIndex(CONTENT)
   const live = createLive({
     staleMs: config.lockStaleMs,
     // A level references a prefab by asset id (ADR 0091); the definitions come off disk.
-    prefabs: createPrefabStore(join(CONTENT, ASSETS_DIR), assets),
+    prefabs: createPrefabStore(CONTENT, assets),
     readHidden: (key) => hidden[key] ?? [],
     writeHidden: (key, keys) => {
       if (keys.length === 0) delete hidden[key]
@@ -150,7 +149,7 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
    * written behind — into the editor's session, as a level's writes are.
    */
   const liveAssets = createLiveAssets({
-    ...liveAssetFiles(join(CONTENT, ASSETS_DIR), assets),
+    ...liveAssetFiles(CONTENT, assets),
     changed: (users, path) => {
       const now = Date.now()
       for (const u of users) markDirty(sessions, u, [path], now)
@@ -233,7 +232,7 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
     const ext = extname(file)
     res.statusCode = 200
     res.setHeader('content-type', STATIC_TYPES[ext] ?? contentTypeFor(file))
-    // Vite hashes everything under app/ (`assetsDir`; `assets/` is the content route); index.html must never be stale.
+    // Vite hashes everything under app/ (`assetsDir`; `content/` is the asset route); index.html must never be stale.
     res.setHeader('cache-control', rel.startsWith('app/') ? 'public, max-age=31536000, immutable' : 'no-cache')
     res.end(readFileSync(file))
   }

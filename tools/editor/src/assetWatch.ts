@@ -1,3 +1,5 @@
+import { libraryOf } from '@mp/content'
+
 import type { AssetLibrary } from './assetsApi'
 
 /**
@@ -12,13 +14,15 @@ import type { AssetLibrary } from './assetsApi'
  * already live, and one that is not is read fresh when opened.
  */
 
-/** The feed's repo-relative paths that are assets, as paths inside the assets folder. */
+/** The feed's repo-relative paths that are in an asset library — any library (ADR 0161) — as paths from `content/`. */
 export const assetPathsOf = (paths: readonly string[]): string[] => {
   const out = new Set<string>()
   for (const p of paths) {
-    if (!p.startsWith('content/assets/')) continue
+    if (!p.startsWith('content/')) continue
+    const path = p.slice('content/'.length)
+    if (libraryOf(path) === undefined) continue
     // A sidecar is its asset's: a new or moved one is a list change, found by comparing lists.
-    out.add(p.slice('content/assets/'.length).replace(/\.meta$/, ''))
+    out.add(path.replace(/\.meta$/, ''))
   }
   return [...out]
 }
@@ -31,7 +35,7 @@ export const assetPathsOf = (paths: readonly string[]): string[] => {
  */
 export const libraryChanges = (before: AssetLibrary | null, after: AssetLibrary, named: readonly string[]): { list: boolean; ids: string[] } => {
   if (before === null) return { list: true, ids: after.db.entries.map((e) => e.id) }
-  const key = (lib: AssetLibrary): string => JSON.stringify([lib.db.entries.map((e) => [e.id, e.kind, e.path]), lib.folders])
+  const key = (lib: AssetLibrary): string => JSON.stringify([lib.db.entries.map((e) => [e.id, e.kind, e.path]), lib.folders, lib.libraries])
   const list = key(before) !== key(after)
   const touched = new Set(named)
   const ids: string[] = []

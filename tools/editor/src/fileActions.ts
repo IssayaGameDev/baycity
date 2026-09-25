@@ -1,5 +1,5 @@
 import type { Registry } from '@mp/components'
-import { hydratePrefabs, isSegment, parseQualified, qualify, stripHydrated, unlinkPrefab, type AssetEntry, type Level, type PrefabSource, type UnlinkDeps } from '@mp/content'
+import { hydratePrefabs, isSegment, libraryOf, mayUse, parseQualified, qualify, stripHydrated, unlinkPrefab, type AssetEntry, type Level, type PrefabSource, type UnlinkDeps } from '@mp/content'
 import { isSharedComponent } from '@mp/components'
 
 import type { AssetLibrary } from './assetsApi'
@@ -102,6 +102,8 @@ export interface FileActionsHost {
   hasGame: () => boolean
   /** A prefab is open on top of the file; a prefab belongs to no game, so nothing is adopted into one. */
   inPrefab: () => boolean
+  /** Whose the document being edited is (ADR 0161): a level's game, or an open prefab's library (`null` for Shared). */
+  editingFor: () => string | null
   adoptable: () => readonly string[]
   adopt: (types: string[]) => Promise<void>
   /** Arm this asset for the next viewport click, or disarm the one already waiting. */
@@ -129,7 +131,7 @@ export const createFileActions = (host: FileActionsHost) => {
       try {
         await run()
       } catch (e) {
-        host.notify.error(`${label} failed: ${String(e)}`)
+        host.notify.error(`${label} failed: ${e instanceof Error ? e.message : String(e)}`)
         return
       }
       host.invalidatePreviews()
@@ -153,8 +155,16 @@ export const createFileActions = (host: FileActionsHost) => {
     return { shared: unknown.filter(isSharedComponent), foreign: unknown.filter((t: string) => !isSharedComponent(t)) }
   }
 
-  /** Why this asset cannot be placed into the open document, or `null`. Only another game's private component is a reason. */
+  /**
+   * Why this asset cannot be placed into the open document, or `null`: another game's private component (ADR 0076),
+   * or a library the document may not use (ADR 0161) — another game's, or any game's inside a Shared prefab.
+   */
   const unplaceableWhy = (assetId: string): string | null => {
+    const entry = host.assets()?.db.byId[assetId]
+    const user = host.editingFor()
+    if (entry !== undefined && !mayUse(user, entry.path)) {
+      return user === null ? `is ${libraryOf(entry.path) ?? 'another'}'s own: a Shared prefab uses only Shared's` : `is ${libraryOf(entry.path) ?? 'another game'}'s own, not ${user}'s`
+    }
     const { foreign } = missingIn(assetId)
     return foreign.length === 0 ? null : `uses ${foreign.join(', ')}, which this game does not have`
   }

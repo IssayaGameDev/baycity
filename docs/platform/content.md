@@ -227,9 +227,22 @@ completes override transforms from the node they now override — then **throws 
 
 - `AssetKind = 'prefab' | 'texture' | 'model' | 'material' | 'shader' | 'sound' | 'font'`. `animation` was retired with the keyframe model (ADR 0103).
 - Identity = sidecar `<file>.meta` → `AssetMeta { id; kind }`, written once. References by **id**, never path. Kind comes from the **path** (`kindForPath`: `.mat.json`, `.shader.json`, `.prefab.json`, else extension); sidecar `kind` not trusted.
-- `AssetEntry { id; kind; path; name }`, `AssetDatabase { entries; byId }`; `buildDatabase`, `entriesFrom`, `entryFor`, `assetsOfKind`, `nameForPath`.
+- `AssetEntry { id; kind; path; name }` — `path` from `content/`, starting with its library (`assets/…`, `<game>/assets/…`, ADR 0161); `AssetDatabase { entries; byId }`; `buildDatabase`, `entriesFrom`, `entryFor`, `assetsOfKind`, `nameForPath`.
 - `MaterialAsset { shader: 'standard' | 'unlit' | assetId; params: Record<string, MaterialValue> }`; `MaterialValue` kinds color/number/vec2/vec3/boolean/texture(`string|null`). `materialDependencies` = texture ids.
 - `*.prefab.json` = a `Node` root. Placing writes its **asset id** into the level; the definition stays in the file (ADR 0091, below).
+
+## Which levels use which asset — `packages/content/src/usage.ts` (ADR 0161)
+
+```ts
+assetsUsedBy(json, isAssetId, contentsOf): Set<string>      // a level's (or any asset's) ids, and through each prefab and material, theirs
+levelsUsing([[name, json]…], isAssetId, contentsOf): Map<id, string[]>   // asset → level names, sorted; unused assets absent
+```
+
+A reference is **a string value equal to a known id**, anywhere in the file (an id is 64 random bits): a game's own
+components' fields, the settings and a frozen copy's contents included; keys are not references. `contentsOf(id)` is
+a prefab's or material's JSON to follow (a material's textures and shader, a prefab's materials and models). A
+frozen copy is followed into the asset file too, so a level may count as using a little more than it draws, never
+less. An asset code loads by path (the game's sky, `client/services.md`) is in no level.
 
 ## Live assets — `packages/content/src/liveAssets.ts` (ADR 0159)
 
@@ -247,9 +260,8 @@ A kind is live when it has a validator: `material` (a non-empty `shader`, `param
 
 ## Layout — `packages/content/src/layout.ts` (ADR 0108)
 
-**A game is a folder at the content root**, holding its own `game.json` and its `levels/`. Assets stay one
-shared library at `content/assets/`, because they are shared in fact: of twenty assets nine are used by more
-than one game and four by exactly one.
+**A game is a folder at the content root**, holding its own `game.json`, its `levels/` and its own asset library
+`assets/`, beside the **shared** library at `content/assets/` (ADR 0161). Only the shared one has files so far.
 
 One module so the server, the editor and the game cannot disagree; every path it returns is relative to
 `content/` and forward-slashed.
@@ -258,7 +270,7 @@ One module so the server, the editor and the game cannot disagree; every path it
 |---|---|
 | `GAME_FILE` | `'game.json'` |
 | `LEVEL_SUFFIX` | `'.level.json'` — a compound suffix, like `.mat.json` |
-| `ASSETS_DIR` | `'assets'` — and therefore a name no game may take |
+| `ASSETS_DIR` | `'assets'` — every library's folder, so a name no game may take |
 | `LEVELS_DIR` | `'levels'` |
 | `LevelRef` | `{ game: string; name: string }` |
 | `isSegment(s)` | `/^[\w-]+$/` — what may be typed as a name |
@@ -267,7 +279,10 @@ One module so the server, the editor and the game cannot disagree; every path it
 | `parseQualified(q)` | `LevelRef \| null` — strict: two segments, both legal |
 | `levelFile(ref)` | `` `${game}/levels/${name}.level.json` `` |
 | `gameFile(game)` | `` `${game}/game.json` `` |
-| `assetFile(rel)` | `` `assets/${rel}` `` |
+| `libraryDir(game \| null)` | `'assets'` (shared) or `` `${game}/assets` `` — what every asset path starts with |
+| `libraryOf(path)` | `null` shared · the game · `undefined` in no library (a level, a `game.json`) |
+| `inLibrary(path)` | strictly inside a library: not its own folder, no empty, `.` or `..` segment |
+| `mayUse(user, path)` | `user` (a game, `null` for Shared) may use the asset at `path`: Shared's always, its own game's, nothing else |
 | `levelRefForFile(rel)` | `LevelRef \| null` — the game a path names, or `null` for anything that is not a level |
 
 A level's identity outside its own folder is the **qualified** `<game>/<name>`: the API route, the lock key,
