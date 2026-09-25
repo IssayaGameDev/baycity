@@ -47,7 +47,7 @@ describe('buildTree', () => {
 
   it('draws one library: another’s files are not in it', () => {
     const keyboard = buildTree(db, [], 'keyboard/assets')
-    expect(keyboard.name).toBe('keyboard')
+    expect(keyboard.name).toBe('keyboard assets')
     expect(flattenTree(keyboard, new Set()).map((n) => n.path)).toEqual(['keyboard/assets', 'keyboard/assets/textures'])
     expect(flattenTree(root, new Set()).some((n) => n.path.startsWith('keyboard/'))).toBe(false)
   })

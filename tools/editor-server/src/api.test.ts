@@ -487,7 +487,7 @@ describe('asset libraries (ADR 0161)', () => {
     expect(existsSync(join(root, LEVEL_FILE)), 'the level is untouched').toBe(true)
   })
 
-  it('gives a game its own library beside the shared one, and keeps moves inside one library for now', async () => {
+  it('gives a game its own library beside the shared one', async () => {
     expect((await call('ada', 'POST', '/api/assets/mkdir', { path: 'parkour/assets/textures' })).status).toBe(200)
     const up = await json<{ entry: { path: string } }>(await call('ada', 'POST', '/api/assets/upload?path=parkour/assets/textures/p.png', undefined, Buffer.from('png')))
     expect(up.entry.path).toBe('parkour/assets/textures/p.png')
@@ -496,9 +496,34 @@ describe('asset libraries (ADR 0161)', () => {
     expect(list.libraries).toEqual(['assets', 'parkour/assets'])
     expect(list.folders).toContain('parkour/assets/textures')
     expect(changed.flatMap((c) => c.paths)).toContain('content/parkour/assets/textures/p.png')
+  })
 
-    const across = await call('ada', 'POST', '/api/assets/move', { from: 'parkour/assets/textures/p.png', to: 'assets/textures/p.png' })
-    expect(across.status, 'between libraries waits for the usage check').toBe(400)
-    expect((await call('ada', 'POST', '/api/assets/move', { from: 'parkour/assets/textures/p.png', to: 'parkour/assets/p.png' })).status).toBe(200)
+  it('moves between libraries only when nothing is left using what it may not', async () => {
+    // A Shared texture, a Shared material drawn with it, and the parkour level using the material.
+    await call('ada', 'POST', '/api/assets/upload?path=assets/textures/t.png', undefined, Buffer.from('png'))
+    const idOf = async (path: string): Promise<string> =>
+      (await json<{ entries: { id: string; path: string }[] }>(await call('ada', 'GET', '/api/assets'))).entries.find((e) => e.path === path)!.id
+    const t = await idOf('assets/textures/t.png')
+    await call('ada', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: { map: { kind: 'texture', value: t } } })
+    const m = await idOf('assets/materials/m.mat.json')
+    const usingM = { ...LEVEL, nodes: [{ id: 'n', transform: { position: { x: 0, y: 0, z: 0 } }, components: [{ id: 'r', type: 'Renderer', params: { material: m } }] }] }
+    writeFileSync(join(root, LEVEL_FILE), JSON.stringify(usingM))
+    mkdirSync(join(root, 'content/keyboard'), { recursive: true })
+    writeFileSync(join(root, 'content/keyboard/game.json'), '{"components":[]}')
+
+    const intoKeyboard = await call('ada', 'POST', '/api/assets/move', { from: 'assets/materials/m.mat.json', to: 'keyboard/assets/materials/m.mat.json' })
+    expect(intoKeyboard.status).toBe(409)
+    expect((await json<{ error: string }>(intoKeyboard)).error).toBe('not moved into keyboard: used by 1 parkour level')
+    const texture = await call('ada', 'POST', '/api/assets/move', { from: 'assets/textures/t.png', to: 'keyboard/assets/textures/t.png' })
+    expect((await json<{ error: string }>(texture)).error, 'through the material').toBe('not moved into keyboard: used by 1 parkour level')
+
+    // Into the game whose level it is: the texture it uses stays in Shared, which any game may use.
+    expect((await call('ada', 'POST', '/api/assets/move', { from: 'assets/materials/m.mat.json', to: 'parkour/assets/materials/m.mat.json' })).status).toBe(200)
+    expect(await idOf('parkour/assets/materials/m.mat.json'), 'the id went with it').toBe(m)
+    // The texture may follow it: everything using it is Parkour's now.
+    expect((await call('ada', 'POST', '/api/assets/move', { from: 'assets/textures/t.png', to: 'parkour/assets/textures/t.png' })).status).toBe(200)
+    // Back to Shared alone, it would need Parkour's texture: refused.
+    expect((await call('ada', 'POST', '/api/assets/move', { from: 'parkour/assets/materials/m.mat.json', to: 'assets/materials/m.mat.json' })).status, "uses Parkour's texture").toBe(409)
+    expect((await call('ada', 'POST', '/api/assets/move', { from: 'parkour/assets', to: 'assets/from-parkour' })).status, 'a library itself does not move').toBe(400)
   })
 })

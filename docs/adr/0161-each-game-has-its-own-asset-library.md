@@ -1,7 +1,7 @@
 # ADR 0161 — Each game has its own asset library, beside the shared one
 
-Status: accepted, in progress. Steps 1 and 2 of 5 have landed: an asset's path starts with its library; which levels
-use which asset. Amends ADR 0108's single shared library.
+Status: accepted, in progress. Steps 1 to 3 of 5 have landed: an asset's path starts with its library; which levels
+use which asset; moving between libraries. Amends ADR 0108's single shared library.
 
 ## Context
 
@@ -35,6 +35,12 @@ library until step 3 can say who uses what. Level files store ids, so no content
 appearing in the file. A string equal to a known id is a reference wherever it sits, so a game's own components,
 whose fields no shared code knows, are covered like the shared ones; a prefab or material used is followed to what it
 uses in turn. Counting a little too much is safe for a refusal and a build; counting too little is not.
+
+**Step 3: moving between libraries.** Refused into a game's library while another game's level uses any of it
+(Kodjo's rule), and — so that rule cannot be got round through a material — while an asset in another library uses
+it: a Shared asset is anyone's, so it uses only Shared's. Refused anywhere while what it uses is in neither Shared
+nor where it goes, unless that moves with it. The Project panel draws the open game's library below Shared until the
+panel is rebuilt (Track B).
 
 ## Rejected
 

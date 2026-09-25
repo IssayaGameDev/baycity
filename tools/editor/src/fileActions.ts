@@ -129,7 +129,7 @@ export const createFileActions = (host: FileActionsHost) => {
       try {
         await run()
       } catch (e) {
-        host.notify.error(`${label} failed: ${String(e)}`)
+        host.notify.error(`${label} failed: ${e instanceof Error ? e.message : String(e)}`)
         return
       }
       host.invalidatePreviews()

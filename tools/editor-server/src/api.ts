@@ -14,6 +14,7 @@ import { libraryFolders } from './assetImporter'
 import type { LiveAssets } from './liveAssets'
 import { isAssetOp, isLiveAssetPath } from '../../../packages/content/src/liveAssets'
 import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './assetOps'
+import { libraryName, moveRefusal } from './libraryMoves'
 import type { ChangeFeed } from './changes'
 import type { User } from './config'
 import { docKey, LiveError, type FieldSpot, type Live } from './live'
@@ -36,7 +37,8 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *   POST /api/levels/delete           → { path } — qualified; the file goes for good (ADR 0110)
  *   GET/PUT /api/games/:name          → { components } (ADR 0077)
  *   GET  /api/assets                  → { entries, libraries, folders, seq } (runs the importer; seq: the change feed's position)
- *   POST /api/assets/mkdir|move|delete → { path } · { from, to } · { path }
+ *   POST /api/assets/mkdir|move|delete → { path } · { from, to } · { path } — a move into another library is 409 while
+ *                                       something would be left using what it may not (ADR 0161)
  *   POST /api/assets/upload?path=     → raw bytes → { entry }   (textures and .glb, capped, replace keeps the id)
  *   GET  /content/<path>              → the bytes
  *   PUT  /content/<path>              → a JSON asset
@@ -267,6 +269,41 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     const game = libraryOf(path)
     return game === null || (game !== undefined && existsSync(join(CONTENT, gameFile(game))))
   }
+  /** A level's JSON as it is now: an open document is ahead of its file. `undefined` when it will not read. */
+  const levelNow = (name: string, file: string): unknown => {
+    try {
+      return opts.live?.levelOf(name) ?? (JSON.parse(readFileSync(file, 'utf8')) as unknown)
+    } catch {
+      return undefined
+    }
+  }
+  /** A prefab's, material's or shader's JSON as it is now — a live copy when open — else `undefined`. */
+  const assetJsonNow = (id: string): unknown => {
+    const e = assets.byId(id)
+    if (e === undefined || !(e.kind === 'prefab' || e.kind === 'material' || e.kind === 'shader')) return undefined
+    if (e.kind === 'prefab') {
+      const doc = opts.live?.levelOf(docKey('prefab', id))
+      if (doc !== null && doc !== undefined) return doc.nodes[0]
+    }
+    const current = opts.liveAssets?.current(id)
+    if (current !== null && current !== undefined) return current.json
+    const file = safeJoin(CONTENT, e.path)
+    try {
+      return file === null ? undefined : (JSON.parse(readFileSync(file, 'utf8')) as unknown)
+    } catch {
+      return undefined
+    }
+  }
+  /**
+   * Why moving `from` into `to`'s library is refused, or `null` (ADR 0161): the whole of a folder counts, and what
+   * uses or is used by it, in every game's levels and every library, as they are now.
+   */
+  const crossLibraryRefusal = (from: string, to: string): string | null => {
+    const moving = assets.entries().filter((e) => e.path === from || e.path.startsWith(`${from}/`))
+    const levels = levelFiles().map(({ ref, file }) => [qualify(ref), levelNow(qualify(ref), file)] as const)
+    return moveRefusal(moving, libraryOf(to) ?? null, { entries: assets.entries(), levels, contentsOf: assetJsonNow })
+  }
+
   /** Every folder in every library, content-relative, the empty ones included. */
   const assetFolders = (): string[] => libraryFolders(CONTENT).flatMap((l) => listFolders(join(CONTENT, l)).map((f) => `${l}/${f}`))
 
@@ -362,9 +399,12 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
         } else if (op[1] === 'move') {
           const from = libraryPath('from')
           const to = libraryPath('to')
-          // Across libraries needs to know which levels use what first (ADR 0161, step 3): not yet.
-          if (libraryOf(from) !== libraryOf(to)) throw new AssetOpError('moving between libraries is not open yet')
           if (refuseIfLocked(res, user, [keyFor.asset(from), keyFor.asset(to)])) return true
+          // Into another library only when nothing is left using what it may not (ADR 0161).
+          if (libraryOf(from) !== libraryOf(to)) {
+            const why = crossLibraryRefusal(from, to)
+            if (why !== null) return sendJson(res, 409, { error: `not moved into ${libraryName(libraryOf(to) ?? null)}: ${why}` }), true
+          }
           const before = filesOf(from)
           movePath(CONTENT, from, to)
           const after = before.map((p) => `${to}${p.slice(from.length)}`)
@@ -533,8 +573,8 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
         const name = qualify(ref)
         try {
           // An open document is ahead of its file, and a placement made in the last few seconds counts.
-          const live = opts.live?.levelOf(name)
-          const parsed = (live ?? JSON.parse(readFileSync(file, 'utf8'))) as Level
+          const parsed = levelNow(name, file) as Level | undefined
+          if (parsed === undefined) return { name, mode: ref.game }
           const prefabs = prefabRefsIn(parsed)
           return { name, mode: ref.game, ...(prefabs.length > 0 ? { prefabs } : {}) }
         } catch {

@@ -1,4 +1,4 @@
-import { inLibrary, libraryDir, type AssetDatabase, type AssetEntry, type AssetKind } from '@mp/content'
+import { inLibrary, libraryDir, libraryOf, type AssetDatabase, type AssetEntry, type AssetKind } from '@mp/content'
 
 /**
  * The folder structure behind the asset database, derived from paths.
@@ -15,8 +15,23 @@ import { inLibrary, libraryDir, type AssetDatabase, type AssetEntry, type AssetK
  * `root` is that library's folder — `assets` for the shared one — and nothing outside it is drawn.
  */
 
-/** The shared library's folder: the one tree the Project panel draws today. */
+/** The shared library's folder. */
 export const SHARED = libraryDir(null)
+
+/** The folder of the library a path is in: `SHARED`, or a game's own (`keyboard/assets`). */
+export const libraryRootOf = (path: string): string => libraryDir(libraryOf(path) ?? null)
+
+/** A library as the panel names it: `assets` for the shared one, `keyboard assets` for a game's own. */
+export const libraryLabel = (root: string): string => {
+  const game = libraryOf(root)
+  return game === null || game === undefined ? 'assets' : `${game} assets`
+}
+
+/** A folder as the panel names it, inside its library: `materials`, not `assets/materials`; `''` at the top. */
+export const shownFolder = (folder: string): string => {
+  const root = libraryRootOf(folder)
+  return folder === root ? '' : folder.startsWith(`${root}/`) ? folder.slice(root.length + 1) : folder
+}
 export interface TreeNode {
   /** Folder path from `content/`, forward-slashed; the library's own folder at the root. */
   path: string
@@ -70,7 +85,7 @@ export const buildTree = (db: AssetDatabase, extraFolders: readonly string[] = [
   const rootDepth = root.split('/').length
   const nodeFor = (path: string): TreeNode => ({
     path,
-    name: path === root ? (root.split('/')[0] ?? root) : path.slice(path.lastIndexOf('/') + 1),
+    name: path === root ? libraryLabel(root) : path.slice(path.lastIndexOf('/') + 1),
     depth: path.split('/').length - rootDepth,
     children: [],
     fileCount: fileCounts.get(path) ?? 0,

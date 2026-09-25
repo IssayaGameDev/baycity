@@ -1538,6 +1538,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   folders: () => assets?.folders ?? [],
   urlOf: (path) => assets?.urlOf(path) ?? path,
   armed: () => placing?.assetId ?? null,
+  game: () => activeMode?.name ?? null,
   selectedAsset: () => selectedAsset,
   onPickAsset: fileOps.armAsset,
   unplaceableWhy: (id) => fileOps.unplaceableWhy(id),

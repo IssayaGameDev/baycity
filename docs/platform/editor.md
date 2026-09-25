@@ -418,8 +418,10 @@ assets           <- the existing folder tree, unchanged
 
 - `Place` (`src/assetTree.ts`) is where the panel is looking: `{ at: 'game', game }` or
   `{ at: 'assets', folder }`, `folder` from `content/` (`SHARED` = `assets` at the top, `null` all folders). The tree
-  is one library's (`buildTree(db, folders, root)`, `Filter.library`); the panel draws the shared one and names its
-  folders without the library (`shown`). An asset's URL is `/content/<path>` (`assetUrl`), as on disk (ADR 0161). A union rather than a path with a magic prefix, because a game is not a folder of
+  is one library's (`buildTree(db, folders, root)`, `Filter.library`); the panel draws the shared one (`assets`) and,
+  below it, the open game's own (`keyboard assets`, `ProjectHost.game`), even before it has a file, and names folders
+  without their library (`shownFolder`). Dragging between the two is a move between libraries, which the server may
+  refuse with why (ADR 0161). An asset's URL is `/content/<path>` (`assetUrl`), as on disk (ADR 0161). A union rather than a path with a magic prefix, because a game is not a folder of
   assets and its levels are not asset entries — the prefix version needs an `if` at every use of `folder`.
 - `gameRows(games, levels)` (pure, tested) groups the level listing under its games, games by label and
   `default` first. A game with no levels is still a row: it is where the first one is made.

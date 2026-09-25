@@ -1,6 +1,8 @@
 import { ASSET_KINDS, buildDatabase, type AssetDatabase, type AssetEntry, type AssetKind } from '@mp/content'
 
-import { buildTree, filterEntries, flattenTree, folderOf, gameRows, SHARED, subfoldersOf, type Filter, type Place, type TreeNode } from './assetTree'
+import { libraryDir } from '@mp/content'
+
+import { buildTree, filterEntries, flattenTree, folderOf, gameRows, libraryLabel, libraryRootOf, SHARED, shownFolder, subfoldersOf, type Filter, type Place, type TreeNode } from './assetTree'
 
 /**
  * The Project panel: every game and its levels, and a file explorer over the shared `content/assets/`.
@@ -34,6 +36,8 @@ export interface ProjectHost {
   levels: () => readonly { name: string; mode?: string }[]
   /** The level open right now, qualified — drawn as the selected tile. */
   openLevel: () => string
+  /** The game being edited, whose own asset library is drawn below the shared one (ADR 0161); `null` for none. */
+  game: () => string | null
   /** Open a level by its qualified name. The editor guards unsaved work and joins its live session. */
   onOpenLevel: (qualified: string) => void
   /**
@@ -144,8 +148,15 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
    * which is where it has always started, and the editor moves it to a game when a level opens.
    */
   let place: Place = { at: 'assets', folder: SHARED }
-  /** A folder as the panel names it: inside the shared library, without the library (`materials`, not `assets/materials`). */
-  const shown = (folder: string): string => (folder === SHARED ? '' : folder.startsWith(`${SHARED}/`) ? folder.slice(SHARED.length + 1) : folder)
+  const shown = shownFolder
+  /**
+   * The libraries the tree draws: the shared one, then the open game's own (ADR 0161) — even before it has a file,
+   * so there is somewhere to drop the first one.
+   */
+  const libraries = (): string[] => {
+    const game = host.game()
+    return game === null ? [SHARED] : [SHARED, libraryDir(game)]
+  }
   /** The asset folder on screen, or `null` for every folder — and `null` while a game is on screen. */
   const folderNow = (): string | null => (place.at === 'assets' ? place.folder : null)
   let kind: AssetKind | null = null
@@ -257,12 +268,13 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
       crumbs.append(crumb('content', SHARED), b)
       return
     }
-    crumbs.append(crumb('assets', SHARED))
+    const top = place.folder === null ? SHARED : libraryRootOf(place.folder)
+    crumbs.append(crumb(libraryLabel(top), top))
     if (place.folder === null) {
       crumbs.append(crumb('(all folders)', null))
       return
     }
-    let acc = SHARED
+    let acc = top
     for (const part of shown(place.folder) === '' ? [] : shown(place.folder).split('/')) {
       acc = `${acc}/${part}`
       crumbs.append(crumb(part, acc))
@@ -345,11 +357,11 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     }
   }
 
-  const renderTree = (root: TreeNode): void => {
+  const renderTree = (trees: readonly TreeNode[]): void => {
     treePane.replaceChildren()
     renderGames()
 
-    for (const node of flattenTree(root, collapsed)) {
+    for (const node of trees.flatMap((t) => flattenTree(t, collapsed))) {
       const row = el('div', `row${folderNow() === node.path ? ' sel' : ''}`)
       row.style.paddingLeft = `${6 + node.depth * 12}px`
 
@@ -467,7 +479,7 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
 
   const render = (): void => {
     const db = host.db() ?? buildDatabase([])
-    const root = buildTree(db, host.folders())
+    const trees = libraries().map((l) => buildTree(db, host.folders(), l))
 
     kindSelect.value = kind ?? ''
     recurseBox.checked = recursive
@@ -476,7 +488,7 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     newFolderButton.disabled = folder === null
     kindSelect.disabled = place.at === 'game'
     renderCrumbs()
-    renderTree(root)
+    renderTree(trees)
 
     // Every tile is about to be replaced, so the old observations are meaningless.
     observer.disconnect()
@@ -507,7 +519,8 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
 
     // Subfolders as tiles, so going down a level does not mean crossing to the tree.
     if (folder !== null && search === '') {
-      for (const node of subfoldersOf(root, folder)) {
+      const tree = trees.find((t) => t.path === libraryRootOf(folder))
+      for (const node of tree === undefined ? [] : subfoldersOf(tree, folder)) {
         const t = el('button', 'ctl tile folder')
         t.textContent = `▸ ${node.name}`
         t.title = node.path
@@ -529,10 +542,10 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
       grid.append(b)
     }
 
-    const filter: Filter = { library: SHARED, folder, kind, search, recursive }
+    const filter: Filter = { library: folder === null ? SHARED : libraryRootOf(folder), folder, kind, search, recursive }
     const entries = filterEntries(db, filter)
     if (entries.length === 0 && grid.children.length === 0) {
-      grid.append(empty(folder === null ? 'nothing matches' : `nothing in ${folder === SHARED ? 'assets' : shown(folder)}`))
+      grid.append(empty(folder === null ? 'nothing matches' : `nothing in ${shown(folder) === '' ? libraryLabel(folder) : shown(folder)}`))
       return
     }
 
