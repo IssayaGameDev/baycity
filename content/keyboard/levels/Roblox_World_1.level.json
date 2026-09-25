@@ -3269,7 +3269,7 @@
                         },
                         "timing": {
                           "by": "seconds",
-                          "seconds": 0.5
+                          "seconds": 1
                         },
                         "ease": "linear"
                       }
