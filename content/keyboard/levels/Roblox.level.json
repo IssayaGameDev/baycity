@@ -147,8 +147,8 @@
           "transform": {
             "position": {
               "x": -391.8501,
-              "y": 32.5,
-              "z": -115.5
+              "y": 36,
+              "z": -113.5
             },
             "scale": {
               "x": 3.2997,
@@ -13882,7 +13882,7 @@
           "transform": {
             "position": {
               "x": 182.5001,
-              "y": 34.5,
+              "y": 36,
               "z": -94.4999
             },
             "rotation": {
@@ -14629,13 +14629,13 @@
           "transform": {
             "position": {
               "x": 17.9673,
-              "y": 0,
+              "y": 1.5,
               "z": -2.3214
             },
             "scale": {
               "x": 250,
               "y": 0.3,
-              "z": 30
+              "z": 24
             }
           },
           "components": [
@@ -15421,6 +15421,206 @@
           },
           "components": [],
           "prefab": "36f14153a8e4c7a8"
+        },
+        {
+          "id": "6085838d",
+          "name": "box trapped",
+          "transform": {
+            "position": {
+              "x": -19.5655,
+              "y": 0.2066,
+              "z": 1.3572
+            }
+          },
+          "components": [],
+          "prefab": "36f14153a8e4c7a8",
+          "overrides": {
+            "root": {
+              "addedChildren": [
+                {
+                  "id": "a4b699eb",
+                  "name": "platform",
+                  "transform": {
+                    "position": {
+                      "x": 2.15,
+                      "y": 5.1033,
+                      "z": -2.0714
+                    },
+                    "rotation": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 1.5707963267948966
+                    },
+                    "scale": {
+                      "x": 11.2066,
+                      "y": 0.3,
+                      "z": 6.8572
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "61b9b4bf",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "cc89095c",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "",
+                        "material": ""
+                      },
+                      "enabled": false
+                    },
+                    {
+                      "id": "5b183bcf",
+                      "type": "Hazard",
+                      "params": {}
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "30a8ceba",
+          "name": "box trapped",
+          "transform": {
+            "position": {
+              "x": -28.5655,
+              "y": 0.2066,
+              "z": -7.1428
+            }
+          },
+          "components": [],
+          "prefab": "36f14153a8e4c7a8",
+          "overrides": {
+            "root": {
+              "addedChildren": [
+                {
+                  "id": "2121de8c",
+                  "name": "platform",
+                  "transform": {
+                    "position": {
+                      "x": 2.15,
+                      "y": 5.1033,
+                      "z": -2.0714
+                    },
+                    "rotation": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 1.5707963267948966
+                    },
+                    "scale": {
+                      "x": 11.2066,
+                      "y": 0.3,
+                      "z": 6.8572
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "61b9b4bf",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "cc89095c",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "",
+                        "material": ""
+                      },
+                      "enabled": false
+                    },
+                    {
+                      "id": "5b183bcf",
+                      "type": "Hazard",
+                      "params": {}
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "2a46e2f6",
+          "name": "platform",
+          "transform": {
+            "position": {
+              "x": 17.9345,
+              "y": 13.2066,
+              "z": -14.9928
+            },
+            "rotation": {
+              "x": -1.5707963267948966,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 250,
+              "y": 0.3,
+              "z": 24
+            }
+          },
+          "components": [
+            {
+              "id": "e08b6d52",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "4186a342",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:rounded-box",
+                "material": ""
+              }
+            }
+          ]
         }
       ]
     }
