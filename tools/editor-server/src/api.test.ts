@@ -10,6 +10,9 @@ import { createChangeFeed, type ChangeFeed } from './changes'
 import type { User } from './config'
 import { createLive, docKey, type Live } from './live'
 import type { LockTable } from './locks'
+import { createAssetIndex } from './assetIndex'
+import { liveAssetFiles } from './liveAssetFiles'
+import { createLiveAssets, type LiveAssets } from './liveAssets'
 
 /**
  * The API over a real socket in a scratch repo: identity comes from an `x-user` header the test sets, time from
@@ -28,6 +31,7 @@ let committedAll = 0
 let feed: ChangeFeed
 let live: Live
 let liveChanged: { users: string[]; path: string }[]
+let liveAssets: LiveAssets
 
 const LEVEL = { id: 'a', config: { mode: { name: 'parkour' } }, nodes: [] }
 /** A level is named `<game>/<name>` and lives in its game's folder (ADR 0108). */
@@ -57,7 +61,16 @@ beforeEach(async () => {
     idleMs: 20,
     maxMs: 200,
   })
+  const assetIndex = createAssetIndex(join(root, 'content/assets'))
+  liveAssets = createLiveAssets({
+    ...liveAssetFiles(join(root, 'content/assets'), assetIndex),
+    changed: () => {},
+    connection: (connId) => live.connection(connId),
+    broadcast: (event, data) => live.broadcastAll(event, data),
+  })
   const api = createContentApi({
+    assets: assetIndex,
+    liveAssets,
     repoRoot: root,
     identify: async (req) => USERS[String(req.headers['x-user'] ?? '')] ?? null,
     locks,
@@ -256,6 +269,30 @@ describe('assets', () => {
       keyFor.asset('prefabs/q.prefab.json'),
       keyFor.asset('prefabs/q.prefab.json.meta'),
     ])
+  })
+})
+
+describe('a material edited live (ADR 0159)', () => {
+  it('takes an edit on a room connection, sends it to everyone, serves the live copy and refuses a PUT over it', async () => {
+    await call('ada', 'PUT', '/assets/materials/m.mat.json', { shader: 'standard', params: { color: { kind: 'color', value: '#ff0000' } } })
+    const id = (await json<{ entries: { id: string; path: string }[] }>(await call('ada', 'GET', '/api/assets'))).entries.find((e) => e.path === 'materials/m.mat.json')!.id
+    const events: { event: string; data: unknown }[] = []
+    live.join(LV, { connId: 'c-ada', user: USERS.ada!, send: (event, data) => void events.push({ event, data }) })
+
+    const before = await call('bob', 'GET', '/assets/materials/m.mat.json')
+    expect(before.headers.get('x-asset-seq'), 'the file, before any live edit').toBe('0')
+
+    const r = await call('ada', 'POST', `/api/live/asset/${id}/ops`, { connId: 'c-ada', batchId: 'b1', ops: [{ kind: 'set', path: ['params', 'color', 'value'], value: '#00ff00' }] })
+    expect(await json(r)).toEqual({ ok: true, seq: 1 })
+    expect(events.at(-1)).toMatchObject({ event: 'asset', data: { assetId: id, seq: 1, from: 'c-ada', batchId: 'b1' } })
+
+    const after = await call('bob', 'GET', '/assets/materials/m.mat.json')
+    expect(after.headers.get('x-asset-seq')).toBe('1')
+    expect((await json<{ params: { color: { value: string } } }>(after)).params.color.value, 'the live copy, ahead of the file').toBe('#00ff00')
+    expect((await call('bob', 'PUT', '/assets/materials/m.mat.json', { shader: 'standard', params: {} })).status).toBe(409)
+
+    expect((await call('ada', 'POST', `/api/live/asset/${id}/ops`, { connId: 'c-ada', batchId: 'b2', ops: [{ kind: 'nope' }] })).status, 'not asset ops').toBe(400)
+    expect((await call('bob', 'POST', `/api/live/asset/${id}/ops`, { connId: 'c-ada', batchId: 'b3', ops: [] })).status, 'not Bob’s connection').toBe(400)
   })
 })
 

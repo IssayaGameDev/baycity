@@ -83,6 +83,8 @@ export interface LiveHost {
   onCamera: (from: string, pose: Omit<CameraPresence, 'kind'>) => void
   /** A peer started following `leader`, or stopped (`null`). */
   onFollow: (from: string, leader: string | null) => void
+  /** A data-file asset was edited, by anyone, this tab included (ADR 0159): `assetSync.ts` checks and applies it. */
+  onAsset: (data: unknown) => void
   /** Forget the history entries holding a batch the server refused. */
   dropHistoryWhere: (predicate: (entry: { ops: readonly Op[]; inverses: readonly Op[] }) => boolean) => void
 }
@@ -338,6 +340,7 @@ export const createLiveSession = (host: LiveHost) => {
     onHolds: (holds) => onHoldsChanged(holds),
     onPresence: (from, _name, data) => onPresence(from, data),
     onPrefabOps: (assetId, ops) => onPrefabOps(assetId, ops),
+    onAsset: (data) => host.onAsset(data),
     onError: (message) => host.notify.error(`live: ${message}`),
     onConnection: () => host.presenceChanged(),
   })

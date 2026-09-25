@@ -1,6 +1,6 @@
 # ADR 0083 — Content is authored on a hosted editor
 
-Status: accepted. The editor's file API is a package, `tools/editor-server`, that runs both inside `pnpm
+Status: accepted. Materials are no longer locked files: they are live documents (ADR 0159), as levels and prefabs are rooms (ADR 0089, ADR 0091). The editor's file API is a package, `tools/editor-server`, that runs both inside `pnpm
 dev:editor` and as a service on a VPS behind Cloudflare Access at `editor.playgorbo.com`. Files are locked
 while open, each person's work is committed as a session on the `content` branch, textures and models are
 uploaded through the Project panel.

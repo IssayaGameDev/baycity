@@ -191,6 +191,10 @@ export interface Live {
   /** The current level of an open document, or `null`. */
   levelOf: (name: string) => Level | null
   status: () => { name: string; seq: number; peers: Peer[]; holds: number }[]
+  /** A connection in any open document, marked as heard from — an edit to a live asset arrives on one (ADR 0159). */
+  connection: (connId: string) => LiveClient | null
+  /** Send to every connection in every open document, once each. */
+  broadcastAll: (event: string, data: unknown) => void
 }
 
 /**
@@ -578,6 +582,25 @@ export const createLive = (opts: LiveOptions): Live => {
     isOpen: (name) => docs.has(canonKey(name)),
     levelOf: (name) => docs.get(canonKey(name))?.level ?? null,
     status: () => [...docs.values()].map((d) => ({ name: d.name, seq: d.seq, peers: peersOf(d), holds: d.holds.size })),
+    connection: (connId) => {
+      for (const d of docs.values()) {
+        const c = d.clients.get(connId)
+        if (c === undefined) continue
+        d.seen.set(connId, now())
+        return c
+      }
+      return null
+    },
+    broadcastAll: (event, data) => {
+      const sent = new Set<string>()
+      for (const d of docs.values()) {
+        for (const c of d.clients.values()) {
+          if (sent.has(c.connId)) continue
+          sent.add(c.connId)
+          c.send(event, data)
+        }
+      }
+    },
   }
   return api
 }

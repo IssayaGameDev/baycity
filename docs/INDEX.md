@@ -208,5 +208,6 @@ why matters.
 | [0156](adr/0156-asset-changes-reach-every-editor.md) | Asset changes reach every editor, and the server keeps its asset list in memory |
 | [0157](adr/0157-the-editor-recompiles-only-what-changed.md) | The editor recompiles only what changed, in place, and saves a material in order |
 | [0158](adr/0158-a-selection-is-shown-never-refused.md) | A selection is shown, never refused: anyone edits anything |
+| [0159](adr/0159-data-file-assets-are-live-documents.md) | Assets that are data files are live documents |
 
 `Design archive/` holds superseded design material and is not maintained.

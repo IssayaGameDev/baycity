@@ -1,3 +1,4 @@
+import type { Origin } from './assetSync'
 import { failed } from './filesApi'
 import {
   buildDatabase,
@@ -29,11 +30,17 @@ export interface AssetLibrary {
   /** A loaded prefab asset's JSON, by asset id. */
   prefabOf: (assetId: string) => Node | undefined
   /**
-   * Overwrite a material in memory **at once** — what the renderer compiles from — and on disk after: one write
-   * in flight per material, the newest value waiting behind it (`latestWriter`). Resolves once the value given,
-   * or a later one, is on disk.
+   * Where a material's copy came from (ADR 0159): the server process that numbered it and how many live edits
+   * it holds — `seq` 0 for the file. `undefined` when the server did not say.
    */
-  saveMaterial: (assetId: string, material: MaterialAsset) => Promise<void>
+  originOf: (assetId: string) => Origin | undefined
+  /**
+   * Replace a material in memory — what `assetSync.ts` shows. Nothing is written: a material is a live document
+   * on the server, edited by ops (ADR 0159).
+   */
+  setMaterial: (assetId: string, material: MaterialAsset) => void
+  /** A material's live copy from the server, and where it stands. */
+  fetchLive: (assetId: string) => Promise<{ json: unknown; origin: Origin } | null>
   /**
    * Fetch one prefab again, as it is now — the server answers with its live copy when the prefab is open, so it
    * has everyone's edits since this library loaded. What placing one reads.
@@ -53,43 +60,20 @@ export interface AssetLibrary {
 
 export const assetUrl = (path: string): string => `/assets/${path}`
 
-/**
- * Writes per key, one in flight at a time, each writing whatever is newest when it starts (ADR 0157).
- *
- * A colour drag saved on every step, each save its own request, and nothing kept them in order — so on the box
- * an older value could land after a newer one and be the one left on disk. Now a key has at most one write going;
- * asking again while it runs means one more write after it, of the latest value, however many times it was asked.
- */
-export const latestWriter = (): { write: (key: string, run: () => Promise<void>) => Promise<void> } => {
-  const going = new Map<string, { again: boolean; done: Promise<void> }>()
-  return {
-    write: (key, run) => {
-      const busy = going.get(key)
-      if (busy !== undefined) {
-        busy.again = true
-        return busy.done
-      }
-      const state = { again: false, done: Promise.resolve() }
-      state.done = (async () => {
-        try {
-          do {
-            state.again = false
-            await run()
-          } while (state.again)
-        } finally {
-          going.delete(key)
-        }
-      })()
-      going.set(key, state)
-      return state.done
-    },
-  }
-}
-
 const fetchJson = async <T>(url: string): Promise<T> => {
   const r = await fetch(url)
   if (!r.ok) throw new Error(`GET ${url} → ${r.status}`)
   return (await r.json()) as T
+}
+
+/** A JSON asset and where it came from, off the headers every live asset's GET carries (ADR 0159). */
+const fetchWithOrigin = async (url: string): Promise<{ json: unknown; origin: Origin | undefined }> => {
+  const r = await fetch(url)
+  if (!r.ok) throw new Error(`GET ${url} → ${r.status}`)
+  const epoch = r.headers.get('x-asset-epoch')
+  const seq = r.headers.get('x-asset-seq')
+  const origin = epoch === null || seq === null ? undefined : { epoch: Number(epoch), seq: Number(seq) }
+  return { json: (await r.json()) as unknown, origin }
 }
 
 const isMaterial = (v: unknown): v is MaterialAsset =>
@@ -119,6 +103,7 @@ export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refe
   const { entries, folders, seq } = await fetchJson<{ entries: AssetEntry[]; folders: string[]; seq?: number }>('/api/assets')
   const db = buildDatabase(entries)
   const materials = new Map<string, MaterialAsset>()
+  const origins = new Map<string, Origin>()
   const prefabs = new Map<string, Node>()
   const reuse = opts.reuse ?? null
   const kept = (e: AssetEntry): boolean => reuse !== null && reuse.db.byId[e.id]?.path === e.path && opts.refetch?.has(e.path) !== true
@@ -132,16 +117,21 @@ export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refe
         if (kept(e)) {
           const held = e.kind === 'material' ? reuse?.materialOf(e.id) : reuse?.prefabOf(e.id)
           if (held !== undefined) {
-            if (e.kind === 'material') materials.set(e.id, held as MaterialAsset)
-            else prefabs.set(e.id, held as Node)
+            if (e.kind === 'material') {
+              materials.set(e.id, held as MaterialAsset)
+              const o = reuse?.originOf(e.id)
+              if (o !== undefined) origins.set(e.id, o)
+            } else prefabs.set(e.id, held as Node)
             return
           }
         }
         try {
-          const parsed = await fetchJson<unknown>(assetUrl(e.path))
+          const { json: parsed, origin } = await fetchWithOrigin(assetUrl(e.path))
           if (e.kind === 'material') {
-            if (isMaterial(parsed)) materials.set(e.id, parsed)
-            else console.warn(`material ${e.path}: no shader`)
+            if (isMaterial(parsed)) {
+              materials.set(e.id, parsed)
+              if (origin !== undefined) origins.set(e.id, origin)
+            } else console.warn(`material ${e.path}: no shader`)
           } else if (isPrefab(parsed)) prefabs.set(e.id, parsed)
           else console.warn(`prefab ${e.path}: no pieces`)
         } catch (err) {
@@ -158,8 +148,6 @@ export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refe
     })
     if (!r.ok) await failed(r, `PUT ${path}`)
   }
-
-  const saves = latestWriter()
 
   const rescan = async (path: string): Promise<AssetEntry | undefined> => {
     // The id is the importer's to assign, so a new file only has one after a rescan.
@@ -178,12 +166,13 @@ export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refe
     },
     materialOf: (id) => materials.get(id),
     prefabOf: (id) => prefabs.get(id),
-    saveMaterial: (id, material) => {
+    originOf: (id) => origins.get(id),
+    setMaterial: (id, material) => void materials.set(id, material),
+    fetchLive: async (id) => {
       const entry = db.byId[id]
-      if (entry === undefined) return Promise.reject(new Error(`material ${id}: not in the database`))
-      materials.set(id, material)
-      // Whatever is newest when the write starts — a drag's saves collapse into as few as the network allows.
-      return saves.write(id, () => put(entry.path, materials.get(id)))
+      if (entry === undefined) return null
+      const { json, origin } = await fetchWithOrigin(assetUrl(entry.path))
+      return origin === undefined ? null : { json, origin }
     },
     createMaterial: async (name, material, folder = 'materials') => {
       const safe = name.replace(/[^\w-]+/g, '-') || 'material'

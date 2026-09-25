@@ -23,7 +23,7 @@ const rig = () => {
   })
   inspector.show(M)
   const row = (label: string): HTMLElement => [...container.querySelectorAll<HTMLElement>('.a-row')].find((r) => r.querySelector('.a-label')?.textContent === label)!
-  return { store, container, row }
+  return { store, container, row, inspector }
 }
 
 describe('editing a material', () => {
@@ -38,6 +38,21 @@ describe('editing a material', () => {
     expect(store.get(M)!.params.color).toEqual({ kind: 'color', value: '#00ff00' })
     expect(store.get(M)!.params.roughness).toEqual({ kind: 'number', value: 0.3 })
     expect(row('colour').querySelector('input'), 'the field being dragged is still the one on screen').toBe(colour)
+  })
+
+  it('shows someone else’s edit in place, but not in the field being worked in (ADR 0159)', () => {
+    const { store, row, inspector } = rig()
+    const colour = row('colour').querySelector<HTMLInputElement>('input')!
+    const roughness = row('roughness').querySelector<HTMLInputElement>('input')!
+    roughness.focus()
+    store.set(M, { shader: 'standard', params: { color: { kind: 'color', value: '#0000ff' }, roughness: { kind: 'number', value: 0.9 } } })
+    inspector.refresh(M)
+    expect(row('colour').querySelector('input'), 'not redrawn').toBe(colour)
+    expect(colour.value).toBe('#0000ff')
+    expect(roughness.value, 'the field in use keeps what is being typed').not.toBe('0.9')
+    store.set(M, { shader: 'unlit', params: {} })
+    inspector.refresh(M)
+    expect(row('colour').querySelector('input'), 'a new shader redraws').not.toBe(colour)
   })
 
   it('keeps the x of a tiling when its y is edited', () => {

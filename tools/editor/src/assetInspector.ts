@@ -15,14 +15,29 @@ export interface AssetInspectorHost {
   db: () => AssetDatabase | null
   urlOf: (path: string) => string
   materialOf: (assetId: string) => MaterialAsset | undefined
-  /** Persist an edit. The caller writes the file and refreshes anything showing that material. */
+  /** An edit: the material as it now should be. The caller turns it into ops on its live document (ADR 0159). */
   onMaterialChanged: (assetId: string, material: MaterialAsset) => void
 }
 
 export interface AssetInspector {
   /** Draw `assetId`, or clear the panel when `null`. */
   show: (assetId: string | null) => void
+  /**
+   * The asset changed underneath — someone else's edit, or one of this tab's refused (ADR 0159): its values
+   * follow, in place, except in the field being worked in. A new shader redraws the panel, whose fields are
+   * the shader's.
+   */
+  refresh: (assetId: string) => void
 }
+
+/** A field, and how to show a value in it without redrawing it. */
+interface Field {
+  el: HTMLElement
+  update: (v: MaterialValue) => void
+}
+
+/** Whether the pointer or the keyboard is in this control right now: its value is the person's, not ours. */
+const busy = (control: HTMLElement): boolean => control.contains(document.activeElement)
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className = ''): HTMLElementTagNameMap[K] => {
   const node = document.createElement(tag)
@@ -40,7 +55,7 @@ const row = (label: string, control: HTMLElement): HTMLDivElement => {
 
 export const createAssetInspector = (container: HTMLElement, host: AssetInspectorHost): AssetInspector => {
   /** A picker over textures, plus a thumbnail of the current choice. */
-  const textureField = (current: string | null, onPick: (id: string | null) => void): HTMLElement => {
+  const textureField = (current: string | null, onPick: (id: string | null) => void): Field => {
     const wrap = el('div', 'a-texture')
     const db = host.db()
     const select = el('select', 'ctl')
@@ -70,16 +85,23 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
       onPick(id)
     })
     wrap.append(img, select)
-    return wrap
+    return {
+      el: wrap,
+      update: (v) => {
+        if (v.kind !== 'texture' || busy(select)) return
+        select.value = v.value ?? ''
+        showThumb(v.value)
+      },
+    }
   }
 
-  const valueField = (param: ShaderParam, value: MaterialValue, onChange: (v: MaterialValue) => void): HTMLElement => {
+  const valueField = (param: ShaderParam, value: MaterialValue, onChange: (v: MaterialValue) => void): Field => {
     if (param.kind === 'color') {
       const input = el('input', 'ctl')
       input.type = 'color'
       input.value = value.kind === 'color' ? value.value : '#ffffff'
       input.addEventListener('input', () => onChange({ kind: 'color', value: input.value }))
-      return input
+      return { el: input, update: (v) => void (v.kind === 'color' && !busy(input) && (input.value = v.value)) }
     }
     if (param.kind === 'number') {
       const input = el('input', 'ctl')
@@ -92,12 +114,13 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
         const n = Number.parseFloat(input.value)
         if (Number.isFinite(n)) onChange({ kind: 'number', value: n })
       })
-      return input
+      return { el: input, update: (v) => void (v.kind === 'number' && !busy(input) && (input.value = String(v.value))) }
     }
     if (param.kind === 'vec2') {
       const wrap = el('div', 'a-vec')
       // Its own latest, so an x then a y keeps the x: the panel is not redrawn between them (ADR 0157).
       let v = value.kind === 'vec2' ? value.value : { x: 1, y: 1 }
+      const inputs: HTMLInputElement[] = []
       for (const axis of ['x', 'y'] as const) {
         const input = el('input', 'ctl')
         input.type = 'number'
@@ -110,23 +133,35 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
           onChange({ kind: 'vec2', value: v })
         })
         wrap.append(input)
+        inputs.push(input)
       }
-      return wrap
+      return {
+        el: wrap,
+        update: (next) => {
+          if (next.kind !== 'vec2' || busy(wrap)) return
+          v = next.value
+          inputs[0]!.value = String(v.x)
+          inputs[1]!.value = String(v.y)
+        },
+      }
     }
     if (param.kind === 'boolean') {
       const input = el('input', 'ctl')
       input.type = 'checkbox'
       input.checked = value.kind === 'boolean' ? value.value : false
       input.addEventListener('change', () => onChange({ kind: 'boolean', value: input.checked }))
-      return input
+      return { el: input, update: (v) => void (v.kind === 'boolean' && !busy(input) && (input.checked = v.value)) }
     }
     if (param.kind === 'texture') {
       return textureField(value.kind === 'texture' ? value.value : null, (id) => onChange({ kind: 'texture', value: id }))
     }
     const unsupported = el('span', 'a-label')
     unsupported.textContent = `(${param.kind} not editable yet)`
-    return unsupported
+    return { el: unsupported, update: () => undefined }
   }
+
+  /** What the panel shows now, for `refresh`: which material, drawn with which shader, and its fields by key. */
+  let drawn: { assetId: string; shader: string; fields: Map<string, { field: Field; fallback: MaterialValue }> } | null = null
 
   const showMaterial = (entry: AssetEntry, material: MaterialAsset): void => {
     const def = shaderDef(material.shader)
@@ -164,22 +199,22 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
       return
     }
 
+    const fields = new Map<string, { field: Field; fallback: MaterialValue }>()
     for (const param of def.params) {
       const value = material.params[param.key] ?? param.fallback
-      container.append(
-        row(
-          param.label,
-          valueField(param, value, (next) => {
-            const current = now()
-            host.onMaterialChanged(entry.id, { ...current, params: { ...current.params, [param.key]: next } })
-          }),
-        ),
-      )
+      const field = valueField(param, value, (next) => {
+        const current = now()
+        host.onMaterialChanged(entry.id, { ...current, params: { ...current.params, [param.key]: next } })
+      })
+      fields.set(param.key, { field, fallback: param.fallback })
+      container.append(row(param.label, field.el))
     }
+    drawn = { assetId: entry.id, shader: material.shader, fields }
   }
 
   const show = (assetId: string | null): void => {
     container.replaceChildren()
+    drawn = null
     if (assetId === null) return
     const entry = host.db()?.byId[assetId]
     if (entry === undefined) return
@@ -204,5 +239,15 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
     showMaterial(entry, material)
   }
 
-  return { show }
+  const refresh = (assetId: string): void => {
+    if (drawn === null || drawn.assetId !== assetId) return
+    const material = host.materialOf(assetId)
+    if (material === undefined || material.shader !== drawn.shader) {
+      show(assetId)
+      return
+    }
+    for (const [key, { field, fallback }] of drawn.fields) field.update(material.params[key] ?? fallback)
+  }
+
+  return { show, refresh }
 }

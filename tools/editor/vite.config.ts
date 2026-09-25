@@ -12,6 +12,8 @@ import { createAssetIndex } from '../editor-server/src/assetIndex'
 import { createChangeFeed } from '../editor-server/src/changes'
 import { DEFAULTS } from '../editor-server/src/config'
 import { createLive, levelPath } from '../editor-server/src/live'
+import { liveAssetFiles } from '../editor-server/src/liveAssetFiles'
+import { createLiveAssets } from '../editor-server/src/liveAssets'
 import { createPrefabStore } from '../editor-server/src/prefabStore'
 import { SHARED_GAMES } from '../share/src/index'
 
@@ -41,6 +43,13 @@ const live = createLive({
   // A level references a prefab by asset id (ADR 0091); the definitions come off this disk.
   prefabs: createPrefabStore(join(ROOT, 'content', ASSETS_DIR), assets),
 })
+/** Data-file assets edited live, as on the box (ADR 0159). */
+const liveAssets = createLiveAssets({
+  ...liveAssetFiles(join(ROOT, 'content', ASSETS_DIR), assets),
+  changed: (_users, path) => feed.record([path]),
+  connection: (connId) => live.connection(connId),
+  broadcast: (event, data) => live.broadcastAll(event, data),
+})
 let sweeper: ReturnType<typeof setInterval> | null = null
 
 /**
@@ -67,6 +76,7 @@ const filesApi = (): Plugin => ({
       live,
       changes: feed,
       assets,
+      liveAssets,
     })
     server.middlewares.use((req, res, next) => {
       void api(req, res).then(

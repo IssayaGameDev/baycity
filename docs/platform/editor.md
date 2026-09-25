@@ -9,9 +9,9 @@ Level/prefab editor. `pnpm dev:editor` → `http://localhost:5176` (the dev host
 | Level (node tree + `config`) | `content/<game>/levels/<name>.level.json` | `PUT /api/levels/<game>/<name>` (`saveFile`, `src/filesApi.ts`); locked while open (ADR 0083). Renamed and deleted through `POST /api/levels/move\|delete` (ADR 0110) |
 | Prefab (a root `Node`) | `content/assets/prefabs/<name>.prefab.json` — an **asset** with a `.meta` id (ADR 0026) | created once by `Save as prefab…` (`createPrefab`, `src/assetsApi.ts`), then **edited live** in its own room (ADR 0091) |
 | Game shared-component list | `content/<game>/game.json` | `PUT /api/games/<game>` (`saveGame`) — appended by adoption (ADR 0077) |
-| Materials, clips | `content/assets/**` JSON | `PUT /assets/<path>` |
+| Materials | `content/assets/**/*.mat.json` | a live document: `POST /api/live/asset/<id>/ops` (`assetSync.ts`, ADR 0159); a new one is created with `PUT /assets/<path>` |
 
-Both levels and prefabs are live rooms, so there is no Save and no file lock for either (ADR 0089, ADR 0091); only materials and clips are still locked files.
+Levels and prefabs are live rooms and materials live documents, so there is no Save and no lock for any of them (ADR 0089, ADR 0091, ADR 0159).
 
 ## Panel layout (`tools/editor/index.html`)
 
@@ -64,7 +64,7 @@ The routes are `tools/editor-server/src/api.ts`, mounted by `vite.config.ts` (`f
 | `readOnlyBy` | a file this tab could not lock; the top bar's lock badge reads `Read-only · X has it` |
 | `saveNow` | returns `true` at once for a live room: every edit is already on the server |
 | `newBlank` | `createLevel(null)` — a level exists the moment it is named (below) |
-| materials | `lockAsset(id)` on select (`onSelectAsset`, kind `material`); refused ids in `lockedAssets` → `onMaterialChanged` refuses |
+| materials | no lock: live documents (ADR 0159, *Live assets* below) |
 | heartbeat | `setInterval(heartbeatMs)`: `heartbeatLocks(held)`; a lost file lock is re-taken or turns the file read-only; `serverStatus().pushError` → `pushProblem`, a banner line `not on GitHub yet: …` |
 | `pagehide` | `releaseLockBeacon` per held lock; `collab.beaconLeave()` |
 | upload | `ProjectHost.onUpload(files, folder)` from a desktop drop on a folder row, folder tile or the grid (`dropTargetFor`, `folder` getter; not for *All folders* or the level's own); files over `maxUploadBytes` are named and skipped; `afterFileOp` uploads the rest |
@@ -538,12 +538,32 @@ Levels on the feed are not the watch's: one open here is live already, and one t
 `named` is an upload's paths (same id, new bytes), `fresh` starts the runtime over (boot, the feed's 410). The
 runtime is built over `libraryView`, so a new, renamed or moved asset needs none of this.
 
-**Editing a material** (`onMaterialChanged`): refused with a warning while someone else holds its lock; else
-`saveMaterial` puts it in the library at once and writes it behind (`latestWriter`: one write in flight per material,
-the newest waiting — in order, collapsed to what the round trip allows), `refreshCompiled([id])` shows it on the
-next frame, the asset Inspector is redrawn only for a new shader (its fields read `materialOf` at each edit; a vec2
-keeps its own latest), a texture pick updates its thumbnail itself, and `thumbnailsSoon()` refreshes the Project
-panel's pictures 400 ms after the edits stop.
+**Editing a material** (`onMaterialChanged`): `assetSync.edit(id, diffAssetOps(shown, edited))` (*Live assets*
+below); `show` puts the result in the library, `refreshCompiled([id])` shows it on the next frame, the asset
+Inspector is redrawn only for a new shader (its fields read `materialOf` at each edit; a vec2 keeps its own
+latest), a texture pick updates its thumbnail itself, and `thumbnailsSoon()` refreshes the Project panel's pictures
+400 ms after the edits stop.
+
+## Live assets (ADR 0159, `src/assetSync.ts`)
+
+A JSON asset of a live kind (`LIVE_ASSET_KINDS`, `content.md`: `material`) is a document on the server, edited by
+path ops, with no lock. `createAssetSync(host)` keeps, per asset it has seen an edit to:
+
+| | |
+| --- | --- |
+| `base` at `origin` | what the server has confirmed: its `epoch` (the server process) and `seq` (edits in it; 0 = the file). The library's copy says where it came from (`AssetLibrary.originOf`, off the GET's `x-asset-epoch` / `x-asset-seq`) |
+| `inflight` | this tab's one batch on its way (`POST /api/live/asset/<id>/ops` with `room.connId()`); batch ids carry a per-tab prefix, so its echo is known on any connection |
+| `pending` | edits made meanwhile, merged by path (`mergeOps`, newest value; a path replaced drops the narrower ones under it) — the next batch when the echo comes |
+
+What shows is `base` + `inflight` + `pending` (`host.show`, into the library, the renderer, and `assetInspector.refresh`
+for someone else's). An `asset` event (every room's stream, `collab.ts` → `liveSession` → `onEvent`, checked by
+`parseAssetEvent`): `seq` ≤ `origin.seq` — in the copy; the next one — onto `base` (mine: `inflight` confirmed, the
+next goes); another epoch or a gap — `fetchLive` and start from the live copy. A refused batch comes off the screen
+with an error toast. `reloaded()` after any library load: a newer copy becomes `base`, and this tab's unconfirmed
+edits go back on top.
+
+`assetInspector.refresh(id)`: every field's `update` shows the new value, skipping the control in use (`busy`); a new
+shader redraws the panel.
 
 ## Refusing another game's private components (ADR 0076)
 

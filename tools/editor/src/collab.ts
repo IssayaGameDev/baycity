@@ -22,6 +22,8 @@ export type ServerEvent =
   | { event: 'hidden'; data: { hidden: string[] } }
   /** A prefab this level references was edited, in its own document (ADR 0091). Repaint, do not re-send. */
   | { event: 'prefab'; data: { assetId: string; ops: Op[] } }
+  /** A data-file asset was edited (ADR 0159) — on every room's stream, since everyone draws it. Checked by `assetSync.ts`. */
+  | { event: 'asset'; data: unknown }
   | { event: 'error'; data: { message: string } }
 
 export interface Hold {
@@ -86,6 +88,8 @@ export interface CollabHooks {
    */
   onPrefabOps: (assetId: string, ops: Op[]) => void
   onError: (message: string) => void
+  /** A data-file asset was edited, by anyone, this tab included (ADR 0159). */
+  onAsset?: (data: unknown) => void
   /** The stream's state changed; `null` once no room is open. */
   onConnection?: (state: Connection | null) => void
 }
@@ -354,6 +358,9 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
       case 'prefab':
         hooks.onPrefabOps(e.data.assetId, e.data.ops)
         return
+      case 'asset':
+        hooks.onAsset?.(e.data)
+        return
       case 'error':
         hooks.onError(e.data.message)
         return
@@ -482,7 +489,7 @@ export const createCollab = (transport: LiveTransport, hooks: CollabHooks): Coll
 export const httpTransport = (): LiveTransport => ({
   connect: (kind, name, onEvent, onDrop, onRetry) => {
     const source = new EventSource(`/api/live/${kind}/${encodeURIComponent(name)}/events`)
-    for (const event of ['hello', 'snapshot', 'ops', 'holds', 'peers', 'presence', 'hidden', 'prefab', 'error'] as const) {
+    for (const event of ['hello', 'snapshot', 'ops', 'holds', 'peers', 'presence', 'hidden', 'prefab', 'asset', 'error'] as const) {
       source.addEventListener(event, (m) => onEvent({ event, data: JSON.parse((m as MessageEvent<string>).data) } as ServerEvent))
     }
     // EventSource retries on its own after a network drop. A 4xx is a closed stream that never opened: the

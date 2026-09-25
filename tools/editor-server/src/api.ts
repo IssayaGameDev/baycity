@@ -10,6 +10,8 @@ import { prefabRefsIn } from '../../../packages/content/src/prefabs'
 import type { Level } from '../../../packages/content/src/types'
 import { LevelError, validateLevel } from '../../../packages/content/src/validate'
 import { createAssetIndex, type AssetIndex } from './assetIndex'
+import type { LiveAssets } from './liveAssets'
+import { isAssetOp, isLiveAssetPath } from '../../../packages/content/src/liveAssets'
 import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './assetOps'
 import type { ChangeFeed } from './changes'
 import type { User } from './config'
@@ -86,6 +88,8 @@ export interface ApiOptions {
   live?: Live
   /** The asset list in memory, shared with the prefab store so both see every write (ADR 0156). Made here when absent. */
   assets?: AssetIndex
+  /** Data-file assets edited live (ADR 0159). Absent: they are files with locks, as before. */
+  liveAssets?: LiveAssets
   /** SSE keepalive period; short in tests. */
   keepaliveMs?: number
 }
@@ -335,6 +339,8 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
           const path = strField(args, 'path')
           if (refuseIfLocked(res, user, [keyFor.asset(path)])) return true
           const gone = filesOf(path)
+          // A live asset deleted goes with its document, unwritten edits and all (ADR 0159).
+          for (const e of assets.entries()) if (e.path === path || e.path.startsWith(`${path}/`)) opts.liveAssets?.forget(e.id)
           removePath(ASSETS, path)
           rescanFor(user)
           changed(user, gone.map(keyFor.asset))
@@ -366,10 +372,26 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       return doc === null ? null : { id: entry.id, root: doc.nodes[0] }
     }
 
+    /**
+     * A data-file asset edited live (ADR 0159): its id, and its live copy when open. Every such GET says what it
+     * served (`x-asset-epoch`, `x-asset-seq`, `0` for the file) so an editor knows which edits it already has.
+     */
+    const liveAsset = (): { id: string; current: ReturnType<LiveAssets['current']> } | null => {
+      if (opts.liveAssets === undefined || !isLiveAssetPath(rel)) return null
+      const entry = assets.byPath(rel)
+      return entry === undefined ? null : { id: entry.id, current: opts.liveAssets.current(entry.id) }
+    }
+
     if (req.method === 'GET') {
       // The live copy wins, as it does for a level: it is up to five seconds ahead of the file.
       const live = openPrefab()
       if (live !== null) return sendJson(res, 200, live.root), true
+      const asset = liveAsset()
+      if (asset !== null && opts.liveAssets !== undefined) {
+        res.setHeader('x-asset-epoch', String(asset.current?.epoch ?? opts.liveAssets.epoch))
+        res.setHeader('x-asset-seq', String(asset.current?.seq ?? 0))
+        if (asset.current !== null) return sendJson(res, 200, asset.current.json), true
+      }
       if (!existsSync(file) || statSync(file).isDirectory()) return sendJson(res, 404, { error: 'not found' }), true
       res.statusCode = 200
       res.setHeader('content-type', contentTypeFor(file))
@@ -380,6 +402,8 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       // Refused while it is open, as a level's PUT is: the document would write its own copy back over this.
       const live = openPrefab()
       if (live !== null) return sendJson(res, 409, { error: `that prefab is open live; edit it in the editor` }), true
+      const asset = liveAsset()
+      if (asset !== null && asset.current !== null) return sendJson(res, 409, { error: 'that asset is being edited live; edit it in the editor' }), true
       if (refuseIfLocked(res, user, [keyFor.asset(rel)])) return true
       try {
         // JSON only: materials, prefabs and clips. Binaries go through upload, which has the cap.
@@ -526,7 +550,10 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
   const handleMirror = async (req: IncomingMessage, res: ServerResponse, url: string, query: URLSearchParams): Promise<boolean> => {
     if (req.method !== 'GET') return false
     // What is on disk must be current before anyone reads it from outside.
-    if (url === '/api/tree' || url === '/api/file') opts.live?.flushAll()
+    if (url === '/api/tree' || url === '/api/file') {
+      opts.live?.flushAll()
+      opts.liveAssets?.flushAll()
+    }
     if (url === '/api/tree') {
       const files = filesUnder(CONTENT).map((rel) => {
         const bytes = readFileSync(join(CONTENT, rel))
@@ -562,6 +589,33 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     const live = opts.live
     if (live === undefined || !url.startsWith('/api/live')) return false
     if (url === '/api/live' && req.method === 'GET') return sendJson(res, 200, { docs: live.status() }), true
+
+    /**
+     * An edit to a data-file asset (ADR 0159), sent on whatever room connection the editor has: the asset is not
+     * a room anyone joins, since everyone sees it drawn. The echo on every stream is the acknowledgement.
+     */
+    const am = /^\/api\/live\/asset\/([0-9a-f]{16})\/ops$/.exec(url)
+    if (am !== null) {
+      if (opts.liveAssets === undefined) return false
+      if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST expected' }), true
+      let args: Record<string, unknown>
+      try {
+        args = asRecord(await readJson(req))
+      } catch {
+        return sendJson(res, 400, { error: 'expected a JSON body' }), true
+      }
+      const ops = Array.isArray(args.ops) ? (args.ops as unknown[]) : null
+      if (ops === null || !ops.every(isAssetOp)) return sendJson(res, 400, { error: 'ops: expected asset ops' }), true
+      try {
+        const r = opts.liveAssets.apply(am[1]!, typeof args.connId === 'string' ? args.connId : '', user, {
+          batchId: typeof args.batchId === 'string' ? args.batchId : '',
+          ops,
+        })
+        return sendJson(res, 200, r), true
+      } catch (e) {
+        return sendJson(res, e instanceof LiveError ? e.status : 500, { error: e instanceof Error ? e.message : String(e) }), true
+      }
+    }
     /**
      * `/api/live/level/<game>/<name>/…` and `/api/live/prefab/<assetId>/…` (ADR 0091). The kind is its own
      * segment rather than a prefix in the name, because a `:` in a name would not match.

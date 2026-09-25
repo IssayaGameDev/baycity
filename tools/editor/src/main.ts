@@ -14,7 +14,8 @@ import {
   validateLevel, type NodeRef, refKey,
   BUILTIN_LABELS, BUILTIN_MODELS,
   isSegment, parseQualified, qualify,
-  type AssetDatabase } from '@mp/content'
+  diffAssetOps, isLiveAssetPath,
+  type AssetDatabase, type MaterialAsset } from '@mp/content'
 
 import { DEFAULT_REGISTRY, createRegistry, isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents, type Registry } from '@mp/components'
 import { type ModeDescriptor, readSettings } from '@mp/mode'
@@ -55,6 +56,7 @@ import { createInspector, type Inspector } from './inspector'
 import { createAssetInspector, type AssetInspector } from './assetInspector'
 import { loadAssetLibrary, type AssetLibrary } from './assetsApi'
 import { libraryChanges, watchAssets } from './assetWatch'
+import { createAssetSync } from './assetSync'
 import { canMoveFolder, movedInto } from './assetTree'
 import { createPreviews, type Previews } from './previews'
 import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
@@ -250,12 +252,13 @@ let assets: AssetLibrary | null = null
 // ============================== locks (ADR 0083) ==============================
 /** Who the server says you are. `null` until boot has asked. */
 let me: Me | null = null
-/** Every lock this tab holds: the open file, and any asset it has written. Released together when the file changes. */
+/**
+ * Every lock this tab holds. Levels and prefabs are live rooms and materials live documents (ADR 0159), so this is
+ * only a file saved outside a room. Released together when the file changes.
+ */
 const heldLocks = new Set<string>()
 /** Who holds the open file when it is not you. Save is off; the server would refuse it anyway. */
 let readOnlyBy: string | null = null
-/** Assets you selected that someone else holds, by id → their name. Edits to them are refused. */
-const lockedAssets = new Map<string, string>()
 /** The last push failure the server reported, or `''`. Kodjo's to fix; shown so nobody thinks their work is on GitHub. */
 let pushProblem = ''
 
@@ -279,7 +282,6 @@ const takeLock = async (path: string): Promise<string | null> => {
 const dropAllLocks = async (): Promise<void> => {
   const paths = [...heldLocks]
   heldLocks.clear()
-  lockedAssets.clear()
   readOnlyBy = null
   room.leaveAll()
   follow.reset()
@@ -356,6 +358,7 @@ const room = createLiveSession({
   },
   onCamera: (from, pose) => follow.onCamera(from, pose),
   onFollow: (from, leader) => follow.onFollow(from, leader, room.connId()),
+  onAsset: (data) => assetSync.onEvent(data),
   dropHistoryWhere: (predicate) => edits.dropWhere(predicate),
 })
 /** The connection the room last reported, so a reconnect is noticed. */
@@ -376,19 +379,6 @@ const docLockKey = (): string => lockKey.level(fileState.name)
  */
 const shortName = (qualified: string): string => parseQualified(qualified)?.name ?? qualified
 
-/** Lock an editable asset (a material, a clip) before writing it. `true` when it may be written. */
-const lockAsset = async (assetId: string): Promise<boolean> => {
-  const entry = assets?.db.byId[assetId]
-  if (entry === undefined) return false
-  const owner = await takeLock(lockKey.asset(entry.path))
-  if (owner === null) {
-    lockedAssets.delete(assetId)
-    return true
-  }
-  lockedAssets.set(assetId, owner)
-  notify.warn(`${entry.name} is read-only: locked by ${owner}`)
-  return false
-}
 
 /**
  * Prefab definitions, as the `PrefabSource` `hydratePrefabs` takes (ADR 0091). `loadAssetLibrary` already
@@ -1555,9 +1545,6 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     deselect()
     assetInspector.show(assetId)
     refreshUi()
-    // A material is edited the moment it is selected, so it is locked then — "lock on open" (ADR 0083).
-    const kind = assets?.db.byId[assetId]?.kind
-    if (kind === 'material') void lockAsset(assetId).then(() => renderStatus())
   },
   requestPreview: (kind, key, done) => previews.request(kind, key, done),
   onCreateAsset: (kind, folder) => {
@@ -1786,30 +1773,53 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
   urlOf: (path) => assets?.urlOf(path) ?? path,
   materialOf: (id) => assets?.materialOf(id),
   /**
-   * A material edit shows on the next frame (ADR 0157): the library takes it at once, the runtime recompiles it
-   * into the object every mesh holds, and the save goes behind — one in flight, the newest waiting. A colour
-   * drag used to save, throw every loaded asset away, reload the library and rebuild the viewport on each step,
-   * and redraw this panel under the pointer.
+   * A material edit is ops on its live document (ADR 0159): the difference between it as shown and as edited,
+   * shown at once and sent behind (`assetSync.ts`). No lock: anyone edits it, the last change to land stays.
    */
   onMaterialChanged: (id, material) => {
+    const before = assets?.materialOf(id)
+    if (before === undefined) return
+    const shaderChanged = before.shader !== material.shader
+    assetSync.edit(id, diffAssetOps(before, material))
+    // Its fields are the new shader's; any other edit leaves the panel — and the field being dragged — alone.
+    if (shaderChanged) assetInspector.show(id)
+  },
+})
+
+/**
+ * Data-file assets edited live (`assetSync.ts`, ADR 0159): this tab's edits and everyone's, in the server's order,
+ * onto the library's copies, the renderer following each in place (ADR 0157).
+ */
+const assetSync = createAssetSync({
+  shown: (id) => assets?.materialOf(id),
+  origin: (id) => assets?.originOf(id),
+  show: (id, json, remote) => {
     const library = assets
-    if (library === null) return
-    const owner = lockedAssets.get(id)
-    if (owner !== undefined) {
-      notify.warn(`not saved: ${library.db.byId[id]?.name ?? 'material'} is locked by ${owner}`)
-      assetInspector.show(id)
-      return
-    }
-    const shaderChanged = library.materialOf(id)?.shader !== material.shader
-    void library.saveMaterial(id, material).catch((e: unknown) => notify.error(`save failed: ${String(e)}`))
+    if (library === null || !isMaterialJson(json)) return
+    library.setMaterial(id, json)
     void refreshCompiled([id]).then((rebuild) => {
       if (rebuild) meshes.buildAll()
     })
-    // Its fields are the new shader's; any other edit leaves the panel — and the field being dragged — alone.
-    if (shaderChanged) assetInspector.show(id)
+    // Someone else's edit: the panel's values follow, without redrawing a field being worked in.
+    if (remote && selectedAsset === id) assetInspector.refresh(id)
     thumbnailsSoon()
   },
+  fetch: (id) => assets?.fetchLive(id) ?? Promise.resolve(null),
+  post: async (id, batch) => {
+    const connId = room.connId()
+    if (connId === null) return 'not connected to the editor server'
+    const r = await fetch(`/api/live/asset/${id}/ops`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ connId, ...batch }) })
+    if (r.ok) return null
+    const body = (await r.json().catch(() => null)) as { error?: unknown } | null
+    return typeof body?.error === 'string' ? body.error : `refused (${r.status})`
+  },
+  refused: (id, why) => {
+    notify.error(`${assets?.db.byId[id]?.name ?? 'material'}: edit not saved — ${why}`)
+    if (selectedAsset === id) assetInspector.refresh(id)
+  },
 })
+const isMaterialJson = (v: unknown): v is MaterialAsset =>
+  typeof v === 'object' && v !== null && typeof (v as { shader?: unknown }).shader === 'string'
 
 /**
  * The thumbnails, once edits have settled: a material's sphere and every prefab drawn with it are stale, and
@@ -2185,6 +2195,8 @@ const reloadAssets = (opts: { named?: readonly string[]; fresh?: boolean } = {})
       setProblem(`assets did not load (${String(e)}) — restart pnpm dev:editor`)
       return
     }
+    // This tab's live-asset edits the server has not confirmed yet go back on top of the fresh copies (ADR 0159).
+    assetSync.reloaded()
     if (opts.fresh === true || before === null || runtime === null) {
       await freshRuntime()
       return
@@ -2272,11 +2284,9 @@ const assetsChanged = async (paths: string[]): Promise<void> => {
   applying = true
   try {
     while (waitingPaths.size > 0) {
-      // A file this tab holds the lock on changes only through this tab, which has it already — and a drag's
-      // saves come back on the feed out of step with the ones still in flight.
-      const theirs = [...waitingPaths].filter((p) => !heldLocks.has(lockKey.asset(p)))
+      const paths = [...waitingPaths]
       waitingPaths.clear()
-      if (theirs.length > 0) await inAssetQueue(() => applyAssetChanges(theirs))
+      await inAssetQueue(() => applyAssetChanges(paths))
     }
   } finally {
     applying = false
@@ -2291,7 +2301,9 @@ const applyAssetChanges = async (paths: string[]): Promise<void> => {
   if (before === null) return
   let next: AssetLibrary
   try {
-    next = await loadAssetLibrary({ reuse: before, refetch: new Set(paths) })
+    // A live asset's contents come as its edits do (ADR 0159), ahead of its file and with this tab's own on top:
+    // the file written behind is never fetched over them. Its path on the feed still says the list may differ.
+    next = await loadAssetLibrary({ reuse: before, refetch: new Set(paths.filter((p) => !isLiveAssetPath(p))) })
   } catch {
     return // the next change, or the next local reload, brings it
   }
@@ -2299,6 +2311,7 @@ const applyAssetChanges = async (paths: string[]): Promise<void> => {
   if (!list && ids.length === 0) return
   while (busyEditing()) await new Promise((r) => setTimeout(r, 250))
   assets = next
+  assetSync.reloaded()
   // What is only new, renamed or moved, the runtime's live view already sees; contents it compiled are refreshed.
   if (await refreshCompiled(ids)) meshes.buildAll()
   previews.invalidate()

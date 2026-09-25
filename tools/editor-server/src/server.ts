@@ -12,6 +12,8 @@ import { commitPaths, push } from './git'
 import { createLive, levelPath } from './live'
 import { heldBy, sweep, type LockTable } from './locks'
 import { createAssetIndex } from './assetIndex'
+import { liveAssetFiles } from './liveAssetFiles'
+import { createLiveAssets } from './liveAssets'
 import { createPrefabStore } from './prefabStore'
 import { proxyHttp, proxyUpgrade, routeFor, stripPrefix } from './proxy'
 import { describeCommit, markDirty, take, takeAll, takeDue, type Session, type SessionTable } from './sessions'
@@ -99,6 +101,7 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
   }
   const commitAll = async (): Promise<void> => {
     live.flushAll() // unwritten live edits first, or the commit would miss them
+    liveAssets.flushAll()
     for (const s of takeAll(sessions)) void commitSession(s)
     await queue
   }
@@ -140,6 +143,21 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
         if (s !== null) void commitSession(s)
       }
     },
+  })
+
+  /**
+   * Data-file assets edited live (ADR 0159): a material's edits reach every editor in any room, and its file is
+   * written behind — into the editor's session, as a level's writes are.
+   */
+  const liveAssets = createLiveAssets({
+    ...liveAssetFiles(join(CONTENT, ASSETS_DIR), assets),
+    changed: (users, path) => {
+      const now = Date.now()
+      for (const u of users) markDirty(sessions, u, [path], now)
+      feed.record([path])
+    },
+    connection: (connId) => live.connection(connId),
+    broadcast: (event, data) => live.broadcastAll(event, data),
   })
 
   // --- identity ---
@@ -186,6 +204,7 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
     games: Object.fromEntries(Object.entries(config.games).map(([name, g]) => [name, g.path])),
     live,
     assets,
+    liveAssets,
   })
 
   // --- the staging games, under this origin (ADR 0086) ---
