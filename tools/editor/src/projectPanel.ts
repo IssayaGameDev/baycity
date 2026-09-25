@@ -108,6 +108,9 @@ const PLACEABLE = new Set<AssetKind>(['prefab', 'model'])
 /** Kinds with no picture worth inventing. */
 const UNPREVIEWABLE = new Set<AssetKind>(['sound', 'font'])
 
+/** What a tile drag carries: the paths it moves, one a line. Its own type, so nothing else dropped reads as one. */
+const TILES = 'application/x-mp-assets'
+
 /** What the upload picker offers: the server's `UPLOAD_EXTENSIONS`, what the runtime loads. */
 const UPLOADABLE = '.png,.jpg,.jpeg,.webp,.ktx2,.glb'
 
@@ -198,6 +201,16 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
   }
   const searching = (): boolean => search.trim() !== '' || kind !== null
   const entryAt = (path: string): AssetEntry | undefined => host.db()?.entries.find((e) => e.path === path)
+
+  /**
+   * Whether the drag going on began in this page. A picture dragged within the page carries itself as a file — a
+   * data URL comes as `download.png` — so a drop of files is an upload only when the drag came from outside.
+   */
+  let dragFromPage = false
+  document.addEventListener('dragstart', () => void (dragFromPage = true), true)
+  document.addEventListener('dragend', () => void (dragFromPage = false), true)
+  // And after any drop, for a drag whose tile was drawn away before it ended, which the document never hears end.
+  document.addEventListener('drop', () => void setTimeout(() => (dragFromPage = false)), true)
 
   const head = el('div', 'ex-head')
   const body = el('div', 'ex-body')
@@ -485,6 +498,8 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     const dest = (): string | null => (typeof into === 'string' ? into : into())
     target.addEventListener('dragover', (e) => {
       if (dest() === null) return
+      const types = e.dataTransfer?.types ?? []
+      if (!(dragFromPage ? types.includes(TILES) : types.includes('Files'))) return
       e.preventDefault()
       // A tile that can also be placed allows copy and move: into a folder, it moves.
       const dt = e.dataTransfer
@@ -498,13 +513,14 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
       e.preventDefault()
       e.stopPropagation()
       target.classList.remove('drop-onto')
+      // Only from outside the browser: a picture dragged within the page carries itself as a file too.
       const files = [...(e.dataTransfer?.files ?? [])]
-      if (files.length > 0) {
+      if (!dragFromPage && files.length > 0) {
         host.onUpload(files, to)
         return
       }
       // Not what is there already, nor a folder onto itself.
-      const froms = (e.dataTransfer?.getData('text/plain') ?? '').split('\n').filter((p) => p !== '' && p !== to && folderOf(p) !== to)
+      const froms = (e.dataTransfer?.getData(TILES) ?? '').split('\n').filter((p) => p !== '' && p !== to && folderOf(p) !== to)
       if (froms.length > 0) host.onMove(froms, to)
     })
   }
@@ -579,7 +595,7 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
       if (!picked.includes(path)) pickTile(path, 'replace')
       const dt = e.dataTransfer
       if (!dt) return
-      dt.setData('text/plain', picked.join('\n'))
+      dt.setData(TILES, picked.join('\n'))
       dt.effectAllowed = 'move'
     })
   }
@@ -597,6 +613,8 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
       const img = el('img', 'thumb')
       img.alt = ''
       img.hidden = true
+      // The tile is what is dragged, never its picture on its own.
+      img.draggable = false
       pic.append(img)
       t.dataset['previewKind'] = previewKind
       t.dataset['previewKey'] = key

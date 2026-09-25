@@ -290,6 +290,7 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
     if (entry.kind === 'texture') {
       const img = el('img')
       img.alt = entry.name
+      img.draggable = false
       img.addEventListener('load', () => fact('Size', `${img.naturalWidth} × ${img.naturalHeight} px`))
       img.src = url
       box.append(img)
@@ -321,6 +322,7 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
     const img = el('img')
     img.alt = ''
     img.hidden = true
+    img.draggable = false
     box.append(img)
     const kind = entry.kind
     const draw = (): void =>

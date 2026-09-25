@@ -258,7 +258,14 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
     return row
   }
 
+  /** Drawn in one read of the document: every row asks about its node, which would walk the tree each time (ADR 0167). */
   const render = (): void => {
+    const doc = host.doc()
+    if (doc === null) draw()
+    else doc.reading(draw)
+  }
+
+  const draw = (): void => {
     const doc = host.doc()
     container.replaceChildren()
     drawn = []

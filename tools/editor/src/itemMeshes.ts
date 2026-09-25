@@ -81,7 +81,7 @@ export interface ItemMeshes {
   buildMarkers: () => void
   /** Drop them, for a level that failed to instantiate. */
   clearMarkers: () => void
-  /** Remove and dispose every child of an object. Shared, so a caller's own root can be emptied too. */
+  /** Remove every child of an object, freeing what these meshes made for it and nothing shared (ADR 0167). */
   dispose: (o: THREE.Object3D) => void
   /** Whether the surface-cell preview is on, or `null` when the game describes none (ADR 0120). */
   cells: () => boolean | null
@@ -105,13 +105,50 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
   const markerGroup = new THREE.Group()
   let instanceGroups: THREE.Group[] = []
 
+  /**
+   * What these meshes made, and so may free (ADR 0167): a shape built for one node, its grey or faded material, a
+   * gizmo's. The rest is shared — the runtime's materials, each model's shape and materials (a placed model is a
+   * clone that keeps its original's), the key cells' — and freeing it made the next frame rebuild its shaders and
+   * upload its shape again, for every object using it: what a rebuild mostly cost after the tree walk.
+   */
+  const own = new WeakSet<object>()
+  const mine = <T extends object>(made: T): T => {
+    own.add(made)
+    return made
+  }
+  /**
+   * Freed two frames late, once the rebuild has drawn: a material freed before the one replacing it has drawn
+   * takes its shader with it when it was the last to use it — the whole grey world on a full rebuild.
+   */
+  let trash: { dispose: () => void }[] = []
+  let sweeping = false
+  const later = (fn: () => void): void => {
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(fn)
+    else setTimeout(fn, 16)
+  }
+  const throwAway = (x: { dispose: () => void }): void => {
+    trash.push(x)
+    if (sweeping) return
+    sweeping = true
+    later(() =>
+      later(() => {
+        sweeping = false
+        const now = trash
+        trash = []
+        for (const t of now) t.dispose()
+      }),
+    )
+  }
+
   const disposeMeshes = (g: THREE.Object3D): void => {
     for (const child of [...g.children]) {
       g.remove(child)
       child.traverse((o) => {
+        // A light made for its node, with its shadow map; an instanced mesh's per-instance buffer — never its shared shape.
+        if (o instanceof THREE.Light || o instanceof THREE.InstancedMesh) throwAway(o)
         if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments || o instanceof THREE.Line) {
-          o.geometry.dispose()
-          ;(o.material as THREE.Material).dispose()
+          if (own.has(o.geometry)) throwAway(o.geometry)
+          for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (own.has(m)) throwAway(m)
         }
       })
     }
@@ -129,12 +166,12 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
   const markerGizmo = (position: Vec3, color: number): THREE.Group => {
     const g = new THREE.Group()
     const disc = new THREE.Mesh(
-      new THREE.CylinderGeometry(1, 1, 0.05, 32),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.3, depthWrite: false, toneMapped: false }),
+      mine(new THREE.CylinderGeometry(1, 1, 0.05, 32)),
+      mine(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.3, depthWrite: false, toneMapped: false })),
     )
     const pillar = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1.5, 0)]),
-      new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false, toneMapped: false }),
+      mine(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1.5, 0)])),
+      mine(new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false, toneMapped: false })),
     )
     g.add(disc, pillar)
     g.position.set(position.x, position.y + 0.03, position.z)
@@ -191,21 +228,22 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
    */
   const lightGizmo = (light: LightDesc): THREE.Object3D => {
     const color = new THREE.Color().setStyle(light.color, THREE.SRGBColorSpace)
-    const material = new THREE.MeshBasicMaterial({ color, wireframe: true, depthWrite: false, toneMapped: false })
+    const material = mine(new THREE.MeshBasicMaterial({ color, wireframe: true, depthWrite: false, toneMapped: false }))
     const group = new THREE.Group()
     if (light.kind === 'spot') {
       const h = 1.2
       const r = Math.tan(THREE.MathUtils.degToRad(light.angleDeg)) * h
-      const cone = new THREE.Mesh(new THREE.ConeGeometry(r, h, 12, 1, true), material)
+      const cone = new THREE.Mesh(mine(new THREE.ConeGeometry(r, h, 12, 1, true)), material)
       // ConeGeometry points up +Y with its apex at the top; put the apex on the node and lay it down -Z.
       cone.rotation.x = -Math.PI / 2
       cone.position.z = -h / 2
       group.add(cone)
     } else {
-      group.add(new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 6), material))
+      group.add(new THREE.Mesh(mine(new THREE.SphereGeometry(0.22, 10, 6)), material))
     }
     if (light.kind === 'directional') {
-      group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1.6)]), new THREE.LineBasicMaterial({ color, toneMapped: false })))
+      const line = mine(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1.6)]))
+      group.add(new THREE.Line(line, mine(new THREE.LineBasicMaterial({ color, toneMapped: false }))))
     }
     return group
   }
@@ -233,7 +271,7 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
     const fades = open.fadesAt(i)
     const fading: Fading[] = []
     const ownCopy = (m: THREE.Material): THREE.Material => {
-      const copy = m.clone()
+      const copy = mine(m.clone())
       copy.transparent = true
       fading.push({ mat: copy, base: m.opacity, from: m })
       return copy
@@ -251,8 +289,8 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
         if (material !== null) model.traverse((o) => void (o instanceof THREE.Mesh && (o.material = material)))
         object = model
       } else {
-        const geometry = builtin !== null ? geometryForBuiltin(builtin, worldScale) : geometryForCollider(scaleCollider(spec.collider, worldScale))
-        object = new THREE.Mesh(geometry, material ?? createGreyboxMaterial())
+        const geometry = mine(builtin !== null ? geometryForBuiltin(builtin, worldScale) : geometryForCollider(scaleCollider(spec.collider, worldScale)))
+        object = new THREE.Mesh(geometry, material ?? mine(createGreyboxMaterial()))
       }
       const p = spec.transform.position
       applyTransform(object, vec3(p.x * ws.x, p.y * ws.y, p.z * ws.z), spec.transform.rotation, spec.transform.scale)
@@ -380,40 +418,43 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
       host.afterBuild()
       return
     }
-    // Depth-first order, so a parent's group always exists before its children ask for it.
-    for (let i = 0; i < open.count(); i++) {
-      const g = new THREE.Group()
-      const t = open.transformOf(i)
-      applyTransform(g, t.position, t.rotation, t.scale)
-      g.userData.index = i
-      const holder = new THREE.Group()
-      g.userData.meshes = holder
-      g.add(holder)
-      /**
-       * A switched-off node draws nothing (ADR 0099) — Kodjo's call, the same as Unity's scene view.
-       *
-       * **No meshes rather than an invisible group.** Three does not skip invisible objects when raycasting
-       * (`Raycaster.js`), so `visible = false` would leave it clickable in the viewport: you would select
-       * something you cannot see. Building nothing is also what the loader does, so the two agree.
-       *
-       * The group itself still exists, so document indices, the Hierarchy's selection and the gizmo all keep
-       * working — you can still move a disabled object, you just cannot see it.
-       */
-      /**
-       * **Parented before its meshes are built**, because `buildItemMeshes` asks for the group's *world* scale.
-       * Built the other way round it got the node's own scale instead, leaving the mesh holder's real world
-       * scale equal to the parent chain's — invisible for the meshes, which are built at `ws` and then
-       * multiplied by exactly that leftover, but not for anything placed at an absolute size. The game's
-       * surface cells (ADR 0120) are, and came out scaled by the parent and laid on the wrong cell count.
-       *
-       * It also made `buildItems` and `rebuildItemMeshes` disagree: the latter runs on a group that is already
-       * in the scene, so it always saw the true world scale.
-       */
-      const parent = open.parentOf(i)
-      ;(parent === null ? instanceRoot : (instanceGroups[parent] ?? instanceRoot)).add(g)
-      if (open.nodeEnabled(i) && !open.disabledByAncestor(i) && !host.hidden(i)) buildItemMeshes(g, i)
-      instanceGroups[i] = g
-    }
+    // Depth-first order, so a parent's group always exists before its children ask for it. One walk of the
+    // tree for the whole pass, not one per object asked about (ADR 0167).
+    open.reading(() => {
+      for (let i = 0; i < open.count(); i++) {
+        const g = new THREE.Group()
+        const t = open.transformOf(i)
+        applyTransform(g, t.position, t.rotation, t.scale)
+        g.userData.index = i
+        const holder = new THREE.Group()
+        g.userData.meshes = holder
+        g.add(holder)
+        /**
+         * A switched-off node draws nothing (ADR 0099) — Kodjo's call, the same as Unity's scene view.
+         *
+         * **No meshes rather than an invisible group.** Three does not skip invisible objects when raycasting
+         * (`Raycaster.js`), so `visible = false` would leave it clickable in the viewport: you would select
+         * something you cannot see. Building nothing is also what the loader does, so the two agree.
+         *
+         * The group itself still exists, so document indices, the Hierarchy's selection and the gizmo all keep
+         * working — you can still move a disabled object, you just cannot see it.
+         */
+        /**
+         * **Parented before its meshes are built**, because `buildItemMeshes` asks for the group's *world* scale.
+         * Built the other way round it got the node's own scale instead, leaving the mesh holder's real world
+         * scale equal to the parent chain's — invisible for the meshes, which are built at `ws` and then
+         * multiplied by exactly that leftover, but not for anything placed at an absolute size. The game's
+         * surface cells (ADR 0120) are, and came out scaled by the parent and laid on the wrong cell count.
+         *
+         * It also made `buildItems` and `rebuildItemMeshes` disagree: the latter runs on a group that is already
+         * in the scene, so it always saw the true world scale.
+         */
+        const parent = open.parentOf(i)
+        ;(parent === null ? instanceRoot : (instanceGroups[parent] ?? instanceRoot)).add(g)
+        if (open.nodeEnabled(i) && !open.disabledByAncestor(i) && !host.hidden(i)) buildItemMeshes(g, i)
+        instanceGroups[i] = g
+      }
+    })
     // Authored transforms are only where *static* items sit. An animated one belongs at its track's pose for
     // the current playhead — which at 0 is where the game starts it, so the two now agree (ADR 0029).
     host.afterBuild()
@@ -439,8 +480,10 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
   const rebuildSubtreeMeshes = (i: number): void => {
     const open = host.doc()
     if (open === null) return
-    const depth = open.depthOf(i)
-    for (let j = i; j < open.count() && (j === i || open.depthOf(j) > depth); j++) rebuildItemMeshes(j)
+    open.reading(() => {
+      const depth = open.depthOf(i)
+      for (let j = i; j < open.count() && (j === i || open.depthOf(j) > depth); j++) rebuildItemMeshes(j)
+    })
   }
 
   return {

@@ -142,7 +142,7 @@ httpTransport(): LiveTransport   // EventSource in, fetch POST out, sendBeacon f
 | outbound | `onDocOps` → `pending` (history) **and** `collab.submit(batch)`; the batch is *unacked* until its echo. `applyHistory` submits the inverses it applied |
 | inbound | a remote batch: unacked batches rolled back (inverses, newest first), remote applied, unacked re-applied (inverses recomputed; one that no longer applies is dropped and reported); `hooks.onApplied(ops)` → `repaintAfterOps` (`liveSession.ts`). A seq gap or a failing apply reopens the stream: the server greets with a fresh snapshot, `reinstallLevel` rebuilds the document over it (history kept), unacked batches are re-applied and re-sent |
 | rejected | a 4xx on the POST: that batch and everything after it rolled back, the later ones re-applied, `onRejected` → `history.dropWhere` (the entry holding it) + an error toast + repaint |
-| repaint | `repaintAfterOps(ops)`: transforms only (`setTransform` / `setOverrideTransform`) → `applyPreviewPoses` + `scheduleRebuild` + `inspectorSync` + track helper; anything else → environment/postfx re-applied, `host.rebuildViewport()`, selection put back by `indexOfRef`, `refreshUi` + `inspectorRebuild`. During a gizmo drag **or a play-test** ops queue in `deferredRemote` (the data is already changed) and repaint when it ends (`room.drainDeferred()`, from the drag's `mouseUp` and from both `play.stop` exits) — `rebuildLoaded` frees the physics world a play session's character lives in |
+| repaint | `repaintAfterOps(ops)`: transforms only (`setTransform` / `setOverrideTransform`) → `applyPreviewPoses` + `scheduleRebuild` + `inspectorSync` + track helper; else `repaintFor(ops, typeOf)` (`remoteRepaint.ts`, ADR 0167) — the environment re-applied only for `setEnvironment` / `setCameraSeeThrough`; nodes of the one-node kinds → `rebuildSubtree` each, `applyPreviewPoses`, `scheduleRebuild`, hold outlines, `hierarchyRender`, `inspectorRebuild` only when the Inspector shows one of them (or the environment), and their subtrees again once new references load; names → the Hierarchy only; anything else — a structural op, a `table` op, a sequence or a component gone, an op not on its list — `host.rebuildViewport()`, selection put back by `indexOfRef`, `refreshUi` + `inspectorRebuild`. During a gizmo drag **or a play-test** ops queue in `deferredRemote` (the data is already changed) and repaint when it ends (`room.drainDeferred()`, from the drag's `mouseUp` and from both `play.stop` exits) — `rebuildLoaded` frees the physics world a play session's character lives in |
 | Save | there is none; `dirty` stays `false` live (`recordEdit`, `applyHistory`), so `guardUnsaved` never asks. `saveNow` returns `true` |
 | Play | `startFramePlay`: live → `collab.flush()` first (the game reads the file), else the prefab path `saveNow()` |
 | New / Duplicate | `createLevel(from)`: `askName` (`confirm.ts`) → `^[\w-]+$` → refused if `listFiles('levels')` has it → `PUT /api/levels/<name>` a `blankLevel` with the active mode, or the open level (`loadLevelRaw`, the server's live copy) with `id` set → `refreshFileList` → `openFile`. From the games window: *New level* (`onNewLevel`, `createLevel(null, game)`) and a level's *Duplicate…* |
@@ -155,7 +155,11 @@ Two tabs of one person are two `connId`s: separate acks, separate holds.
 ### Rebuilding the viewport
 
 `buildItems()` disposes every mesh under `instanceRoot` and builds a fresh `THREE.Group` per document item, so
-**`instanceGroups` is a different array of different objects after every call**. Called on open, on a
+**`instanceGroups` is a different array of different objects after every call**. It reads the document in one
+`reading` pass, as `rebuildSubtree` and the Hierarchy's `render` do (ADR 0167). `disposeMeshes` frees only what
+`itemMeshes` made (`mine`: a node's shape, a grey or faded material, a gizmo's, and every light, with its shadow
+map) and never the runtime's materials, a model's shape or the key cells' — two frames late (`throwAway`), once the
+replacement has drawn, so a shader is never freed while it is still wanted. Called on open, on a
 structural repaint, on a remote batch, on entering and leaving a prefab — and, crucially, again from
 `loadNewReferences(buildItems)` once newly referenced assets have loaded, which is **asynchronous** and goes
 through no selection change. Only when something new arrived: `AssetRuntime.load` resolves `true` then, and every
@@ -436,7 +440,7 @@ the games window's (ADR 0162).
 | path | `.ex-crumb` per part, root label first; a click goes there. While searching: *Every folder* |
 | search | `.ex-search`: text (Escape clears it), `×` (clears text and kind), the kind button (`host.menu`: All kinds, then `ASSET_KINDS`, ✓ on the current). Text or a kind → `filterEntries({ libraries: every root, folder: null, kind, search })`, files only, names only |
 | bottom | `.ex-foot`: one picked, `named(path)` (`<root label>/<path inside>`); several, *N items selected*; the slider `SIZE` 40–144 step 4, start 64, per viewer (`localStorage` `mp.project.tileSize`, try/caught) |
-| drops | onto a tree row, a folder tile, or the grid (the folder on screen; not while searching): files from the desktop upload; tiles move — a tile of the selection carries all of it (`text/plain`, paths by line), another carries itself and is selected — `onMove(froms, to)`, less any there already or the folder itself; main refuses a folder into itself, then `AssetLibrary.move` or `moveMany` (all or none, ADR 0166); between libraries the server may refuse with why (ADR 0161) |
+| drops | onto a tree row, a folder tile, or the grid (the folder on screen; not while searching): files from the desktop upload — **only a drag from outside the page** (`dragFromPage`, set by any `dragstart` in the document, cleared on `dragend` and after any drop): a picture dragged within the page comes as a file too, a data URL as `download.png`; thumbnails are `draggable = false`, the tile is what is dragged. Tiles move — a tile of the selection carries all of it (`application/x-mp-assets`, paths by line), another carries itself and is selected — `onMove(froms, to)`, less any there already or the folder itself; main refuses a folder into itself, then `AssetLibrary.move` or `moveMany` (all or none, ADR 0166); between libraries the server may refuse with why (ADR 0161) |
 
 `folder()` is where *Save as prefab…* writes (ADR 0091). An asset's URL is `/content/<path>` (`assetUrl`), as on disk.
 `Filter` (`assetTree.ts`) is `{ libraries, folder: string | null, kind, search }`: one folder's own files, or — `null`
@@ -743,8 +747,8 @@ climb. Measured at 400 nodes: 17.17 ms a frame, against 0.20 ms for `posesAt`. A
 nodes, 96.32 ms against 0.21 ms.
 
 `posesAt(timeMs, { sequences? })` carries each parent's accumulated rotation and scale **down** — a
-depth-first list puts a parent before its children. No cache: the index-per-call rule is unchanged, `nodes()`
-is just called once instead of `4n` times. `poseOf(i, t, opts)` is `posesAt(t, opts)[i]`, so there is one
+depth-first list puts a parent before its children. `nodes()` is called once instead of `4n` times; any other
+pass that asks about many objects runs in `Doc.reading`, which holds the walk for the pass (ADR 0167). `poseOf(i, t, opts)` is `posesAt(t, opts)[i]`, so there is one
 composition to keep agreeing with the loader, not two — `editorDoc.test.ts` compares it with the loader's on a
 turned node, a scaled parent, a turned parent and a turning one.
 

@@ -65,11 +65,14 @@ import { routeSteps, type MoveStep } from './sequencePoints'
  * this placement references, so edits become overrides on the placement). Everything a node has — collider,
  * visual, motion, gameplay rule — is a component in a list, added and removed like Unity's.
  *
- * **Nodes are addressed by depth-first index**, recomputed per call. A cache would have to be invalidated by
- * every mutation, including one made through the level object rather than through this doc, and the day it
- * missed, an index would silently address the wrong node. Tens of nodes, so the walk costs nothing worth that
- * risk. Indices shift when the tree changes, which is safe because every structural edit rebuilds the meshes,
- * the physics world and the panels; the mutating calls return where the node landed.
+ * **Nodes are addressed by depth-first index**, recomputed per call. A cache kept between calls would have to be
+ * invalidated by every mutation, including one made through the level object rather than through this doc, and
+ * the day it missed, an index would silently address the wrong node. **Except inside `reading`**: a synchronous
+ * pass that only reads — a redraw, a panel — walks once and holds it; a commit inside drops it, and nothing else
+ * can change the level in the middle of one. Levels have hundreds of nodes now, and a redraw asking about each of
+ * them re-walked the tree each time: 430 ms of a collaborator's edit on a 395-node level (ADR 0167). Indices shift
+ * when the tree changes, which is safe because every structural edit rebuilds the meshes, the physics world and
+ * the panels; the mutating calls return where the node landed.
  *
  * Order per node: the node, then what it inherits from its prefab, then its own children. Inherited first
  * because they are what the object *is*; a child is something placed on it.
@@ -196,6 +199,12 @@ export interface Doc {
   refAt: (i: number) => NodeRef | null
   /** Where a ref is now, or `null` when the node is gone (someone removed it) or is not in this document. */
   indexOfRef: (ref: NodeRef) => number | null
+  /**
+   * Run a pass that only reads — a redraw, a panel — walking the tree once for all of it (ADR 0167). Outside one,
+   * every lookup by index walks the whole level, so a pass asking about each of N objects walked it N times. A
+   * commit inside drops what it held; nested passes share it.
+   */
+  reading: <T>(read: () => T) => T
   count: () => number
   kindOf: (i: number) => NodeKind
   transformOf: (i: number) => Transform
@@ -428,12 +437,12 @@ export interface Doc {
    * (ADR 0125).
    *
    * What the preview clock needs sixty times a second. Asking `poseOf` per index instead costs four full
-   * document walks per node: `nodes()` is recomputed per call on purpose (see the note at the top of this
+   * document walks per node: `nodes()` is recomputed per call outside `reading` (see the note at the top of this
    * file). Quadratic, on a level with hundreds of platforms, per frame.
    *
    * Here the list is walked once and each parent's accumulated rotation and scale are carried **down** — a
-   * depth-first list puts a parent before its children, so its accumulation is always ready. No cache, so the
-   * note at the top still holds: `nodes()` is called once rather than made to persist.
+   * depth-first list puts a parent before its children, so its accumulation is always ready. `nodes()` is called
+   * once rather than made to persist.
    */
   posesAt: (timeMs: number, opts?: { readonly sequences?: boolean }) => PreviewPose[]
   /** Whether a sequence moves this node — its own, or its parent's aimed at it: whether previewing shows it move. */
@@ -665,11 +674,25 @@ const docOver = (
   const commit = (ops: readonly Op[]): void => {
     if (ops.length === 0) return
     const r = applyBatch(level, ops)
+    held = null
     if (r.ops.length === 0) return
     self.onOps?.({ ops: r.ops.map(stamp), inverses: r.inverses.map(stamp) })
   }
 
-  const nodes = (): DocNode[] => {
+  /** The walked tree while a `reading` pass is on, and how many passes are: nothing is held outside one. */
+  let held: DocNode[] | null = null
+  let readers = 0
+  const nodes = (): DocNode[] => (readers > 0 ? (held ??= walk()) : walk())
+  const reading = <T,>(read: () => T): T => {
+    readers++
+    try {
+      return read()
+    } finally {
+      if (--readers === 0) held = null
+    }
+  }
+
+  const walk = (): DocNode[] => {
     const out: DocNode[] = []
     const push = (authored: Node, owner: Node | undefined, siblings: Node[] | undefined, index: number, slot: number, parent: number, depth: number, path: string): void => {
       const self = out.length
@@ -1316,6 +1339,7 @@ const docOver = (
             : all.findIndex((n) => n.owner === undefined && n.authored.id === ref.id)
       return at < 0 ? null : at
     },
+    reading,
     count: () => nodes().length,
     kindOf: (i) => (node(i)?.owner === undefined ? 'own' : 'inherited'),
     transformOf: (i) => node(i)?.view.transform ?? { position: vec3(0, 0, 0) },
