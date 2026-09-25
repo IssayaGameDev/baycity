@@ -117,6 +117,8 @@ describe('the Inspector’s cards', () => {
     const doc = levelDoc({ id: 'l', config: {}, nodes: [node('a', [comp('h', 'Hazard'), comp('b', 'Bumper', { power: 26 })])] })
     const { panel } = rig(doc, [0])
     expect([...panel.querySelectorAll('.isec')].every((c) => c.querySelector('svg.isec-i') !== null)).toBe(true)
+    const header = [...card(panel, 'Bumper').querySelector('.isec-h')!.children].map((e) => e.classList[e.classList.length - 1])
+    expect(header.slice(0, 4), 'twist, enable, icon, name').toEqual(['isec-tw', 'isec-en', 'isec-i', 'isec-t'])
     const hazard = card(panel, 'Hazard')
     expect(hazard.classList.contains('isec-bare')).toBe(true)
     expect(hazard.querySelector<HTMLElement>('.isec-body')!.hidden).toBe(true)

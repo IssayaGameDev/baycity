@@ -1,6 +1,6 @@
 # ADR 0152 — The Inspector is cards of our own fields
 
-Status: accepted, amended once at Kodjo's ask: a component's card is dragged by its header to reorder (`cardDrag.ts`, the stage cards' drag over one list), wherever Move up / Move down are offered; the Transform is always open, with no twist; the cards' outline has more contrast. Takes Tweakpane out of the editor, which ADR 0038 kept for the value widgets. Every choice a
+Status: accepted, amended twice at Kodjo's ask — the header reads twist, enable, icon, name, and: a component's card is dragged by its header to reorder (`cardDrag.ts`, the stage cards' drag over one list), wherever Move up / Move down are offered; the Transform is always open, with no twist; the cards' outline has more contrast. Takes Tweakpane out of the editor, which ADR 0038 kept for the value widgets. Every choice a
 person sees is Kodjo's, asked with the question tool and two options each; the Sequence card is unchanged
 (ADR 0147).
 

@@ -613,9 +613,9 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
 
   /**
    * One card (ADR 0152), shaped like a sequence's stage cards. Its header is a row of small controls rather
-   * than a title string (ADR 0038): twist, icon, enable, name, badge, the component's own tools, ⋯. A click on
+   * than a title string (ADR 0038): twist, enable, icon, name, badge, the component's own tools, ⋯. A click on
    * the header's empty part opens or shuts it too. A component with nothing to edit is its header alone, and
-   * the Transform is always open. Neither has a twist; its place is kept, so the icons line up down the panel.
+   * the Transform is always open. Neither has a twist; its place is kept, so the headers line up down the panel.
    */
   const addSection = (
     key: string,
@@ -664,12 +664,12 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       if (control === null || control === twist) toggle()
     })
 
-    if (opts.icon !== undefined) header.append(icon(opts.icon, 'ic isec-i'))
     if (opts.enable !== undefined) {
       const box = checkField(opts.off !== true, (on) => opts.enable?.(on), 'enabled — an off component is skipped by the loader and by the runtime')
       box.classList.add('isec-en')
       header.append(box)
     }
+    if (opts.icon !== undefined) header.append(icon(opts.icon, 'ic isec-i'))
 
     header.append(el('span', 'isec-t', opts.title))
     if (opts.summary !== undefined && opts.summary !== '') header.append(el('span', 'isec-sum', opts.summary))
