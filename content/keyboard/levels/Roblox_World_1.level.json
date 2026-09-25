@@ -125,16 +125,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 },
@@ -201,16 +195,10 @@
                       }
                     },
                     {
-                      "id": "f0392856",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:box"
-                      }
-                    },
-                    {
                       "id": "efa7dd05",
                       "type": "Renderer",
                       "params": {
+                        "model": "builtin:box",
                         "material": ""
                       }
                     }
@@ -257,16 +245,10 @@
                       }
                     },
                     {
-                      "id": "f0392856",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:box"
-                      }
-                    },
-                    {
                       "id": "efa7dd05",
                       "type": "Renderer",
                       "params": {
+                        "model": "builtin:box",
                         "material": ""
                       }
                     }
@@ -308,16 +290,10 @@
                       }
                     },
                     {
-                      "id": "f0392856",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:box"
-                      }
-                    },
-                    {
                       "id": "efa7dd05",
                       "type": "Renderer",
                       "params": {
+                        "model": "builtin:box",
                         "material": ""
                       }
                     }
@@ -365,16 +341,10 @@
                       }
                     },
                     {
-                      "id": "f0392856",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:box"
-                      }
-                    },
-                    {
                       "id": "efa7dd05",
                       "type": "Renderer",
                       "params": {
+                        "model": "builtin:box",
                         "material": ""
                       }
                     }
@@ -421,16 +391,10 @@
                       }
                     },
                     {
-                      "id": "f0392856",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:box"
-                      }
-                    },
-                    {
                       "id": "efa7dd05",
                       "type": "Renderer",
                       "params": {
+                        "model": "builtin:box",
                         "material": ""
                       }
                     }
@@ -477,16 +441,10 @@
                       }
                     },
                     {
-                      "id": "f0392856",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:box"
-                      }
-                    },
-                    {
                       "id": "efa7dd05",
                       "type": "Renderer",
                       "params": {
+                        "model": "builtin:box",
                         "material": ""
                       }
                     }
@@ -533,16 +491,10 @@
                       }
                     },
                     {
-                      "id": "f0392856",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:box"
-                      }
-                    },
-                    {
                       "id": "efa7dd05",
                       "type": "Renderer",
                       "params": {
+                        "model": "builtin:box",
                         "material": ""
                       }
                     }
@@ -589,16 +541,10 @@
                       }
                     },
                     {
-                      "id": "f0392856",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:box"
-                      }
-                    },
-                    {
                       "id": "efa7dd05",
                       "type": "Renderer",
                       "params": {
+                        "model": "builtin:box",
                         "material": ""
                       }
                     }
@@ -675,16 +621,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -726,16 +666,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -782,16 +716,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -838,16 +766,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -894,16 +816,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -950,16 +866,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -1006,16 +916,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -1057,16 +961,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -1113,16 +1011,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -1169,16 +1061,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -1222,16 +1108,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -1281,16 +1161,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -1340,16 +1214,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -1399,16 +1267,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -1458,16 +1320,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -1517,16 +1373,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -1576,16 +1426,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -1635,16 +1479,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -1694,16 +1532,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": "4a11d049f9f8e5ac"
               }
             },
@@ -1761,14 +1593,8 @@
               "id": "3cfed622",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
-              }
-            },
-            {
-              "id": "ef79a853",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
               }
             },
             {
@@ -1825,16 +1651,10 @@
               }
             },
             {
-              "id": "60ea7460",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:capsule"
-              }
-            },
-            {
               "id": "c0ba838f",
               "type": "Renderer",
               "params": {
+                "model": "builtin:capsule",
                 "material": "4a11d049f9f8e5ac"
               }
             },
@@ -1879,13 +1699,6 @@
           },
           "components": [
             {
-              "id": "c66f4fd1",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:rounded-box"
-              }
-            },
-            {
               "id": "3bffcb0e",
               "type": "Collider",
               "params": {
@@ -1909,6 +1722,7 @@
               "id": "6f0a89ae",
               "type": "Renderer",
               "params": {
+                "model": "builtin:rounded-box",
                 "material": ""
               },
               "enabled": false
@@ -1968,16 +1782,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -2024,16 +1832,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -2080,16 +1882,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -2136,16 +1932,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -2192,16 +1982,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -2248,16 +2032,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -2304,16 +2082,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -2355,16 +2127,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -2412,16 +2178,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -2492,16 +2252,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -2556,16 +2310,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -2596,16 +2344,10 @@
           },
           "components": [
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": "4a11d049f9f8e5ac"
               }
             },
@@ -2689,16 +2431,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -2745,16 +2481,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -2801,16 +2531,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -2857,16 +2581,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -2913,16 +2631,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -2969,16 +2681,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -3020,16 +2726,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -3076,16 +2776,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -3132,16 +2826,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -3188,16 +2876,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -3244,16 +2926,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -3299,16 +2975,10 @@
               }
             },
             {
-              "id": "b29d4737",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:sphere"
-              }
-            },
-            {
               "id": "618ab992",
               "type": "Renderer",
               "params": {
+                "model": "builtin:sphere",
                 "material": "4a11d049f9f8e5ac"
               }
             },
@@ -3490,16 +3160,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -3549,16 +3213,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -3608,16 +3266,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -3667,16 +3319,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -3726,16 +3372,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -3785,16 +3425,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -3844,16 +3478,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -3903,16 +3531,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -3962,16 +3584,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -4021,16 +3637,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": "4a11d049f9f8e5ac"
               }
             },
@@ -4094,16 +3704,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -4150,16 +3754,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -4206,16 +3804,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -4262,16 +3854,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -4318,16 +3904,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -4374,16 +3954,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -4430,16 +4004,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -4486,16 +4054,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -4542,16 +4104,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -4598,16 +4154,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -4654,16 +4204,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -4734,16 +4278,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -4793,16 +4331,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -4936,16 +4468,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -4995,16 +4521,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": "4a11d049f9f8e5ac"
               }
             },
@@ -5068,16 +4588,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -5124,16 +4638,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -5180,16 +4688,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -5236,16 +4738,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -5292,16 +4788,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -5348,16 +4838,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -5404,16 +4888,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -5556,16 +5034,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -5704,16 +5176,10 @@
                           }
                         },
                         {
-                          "id": "f0392856",
-                          "type": "Mesh",
-                          "params": {
-                            "model": "builtin:box"
-                          }
-                        },
-                        {
                           "id": "efa7dd05",
                           "type": "Renderer",
                           "params": {
+                            "model": "builtin:box",
                             "material": ""
                           }
                         }
@@ -5760,16 +5226,10 @@
                           }
                         },
                         {
-                          "id": "f0392856",
-                          "type": "Mesh",
-                          "params": {
-                            "model": "builtin:box"
-                          }
-                        },
-                        {
                           "id": "efa7dd05",
                           "type": "Renderer",
                           "params": {
+                            "model": "builtin:box",
                             "material": ""
                           }
                         }
@@ -5816,16 +5276,10 @@
                           }
                         },
                         {
-                          "id": "f0392856",
-                          "type": "Mesh",
-                          "params": {
-                            "model": "builtin:box"
-                          }
-                        },
-                        {
                           "id": "efa7dd05",
                           "type": "Renderer",
                           "params": {
+                            "model": "builtin:box",
                             "material": ""
                           }
                         }
@@ -5873,16 +5327,10 @@
                           }
                         },
                         {
-                          "id": "f0392856",
-                          "type": "Mesh",
-                          "params": {
-                            "model": "builtin:box"
-                          }
-                        },
-                        {
                           "id": "efa7dd05",
                           "type": "Renderer",
                           "params": {
+                            "model": "builtin:box",
                             "material": ""
                           }
                         }
@@ -5930,16 +5378,10 @@
                           }
                         },
                         {
-                          "id": "f0392856",
-                          "type": "Mesh",
-                          "params": {
-                            "model": "builtin:box"
-                          }
-                        },
-                        {
                           "id": "efa7dd05",
                           "type": "Renderer",
                           "params": {
+                            "model": "builtin:box",
                             "material": ""
                           }
                         }
@@ -5986,16 +5428,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": ""
                   }
                 }
@@ -6039,16 +5475,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": "4a11d049f9f8e5ac"
               }
             },
@@ -6251,16 +5681,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             },
@@ -6335,16 +5759,10 @@
                       }
                     },
                     {
-                      "id": "f0392856",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:box"
-                      }
-                    },
-                    {
                       "id": "efa7dd05",
                       "type": "Renderer",
                       "params": {
+                        "model": "builtin:box",
                         "material": ""
                       }
                     }
@@ -6391,16 +5809,10 @@
                       }
                     },
                     {
-                      "id": "f0392856",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:box"
-                      }
-                    },
-                    {
                       "id": "efa7dd05",
                       "type": "Renderer",
                       "params": {
+                        "model": "builtin:box",
                         "material": ""
                       }
                     }
@@ -6447,16 +5859,10 @@
                       }
                     },
                     {
-                      "id": "f0392856",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:box"
-                      }
-                    },
-                    {
                       "id": "efa7dd05",
                       "type": "Renderer",
                       "params": {
+                        "model": "builtin:box",
                         "material": ""
                       }
                     }
@@ -6503,16 +5909,10 @@
                       }
                     },
                     {
-                      "id": "f0392856",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:box"
-                      }
-                    },
-                    {
                       "id": "efa7dd05",
                       "type": "Renderer",
                       "params": {
+                        "model": "builtin:box",
                         "material": ""
                       }
                     }
@@ -6559,16 +5959,10 @@
                       }
                     },
                     {
-                      "id": "f0392856",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:box"
-                      }
-                    },
-                    {
                       "id": "efa7dd05",
                       "type": "Renderer",
                       "params": {
+                        "model": "builtin:box",
                         "material": ""
                       }
                     }
@@ -6615,16 +6009,10 @@
                       }
                     },
                     {
-                      "id": "f0392856",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:box"
-                      }
-                    },
-                    {
                       "id": "efa7dd05",
                       "type": "Renderer",
                       "params": {
+                        "model": "builtin:box",
                         "material": ""
                       }
                     }
@@ -6671,16 +6059,10 @@
                       }
                     },
                     {
-                      "id": "f0392856",
-                      "type": "Mesh",
-                      "params": {
-                        "model": "builtin:box"
-                      }
-                    },
-                    {
                       "id": "efa7dd05",
                       "type": "Renderer",
                       "params": {
+                        "model": "builtin:box",
                         "material": ""
                       }
                     }
@@ -6803,16 +6185,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": "4a11d049f9f8e5ac"
                   }
                 },
@@ -6864,16 +6240,10 @@
                   }
                 },
                 {
-                  "id": "f0392856",
-                  "type": "Mesh",
-                  "params": {
-                    "model": "builtin:box"
-                  }
-                },
-                {
                   "id": "efa7dd05",
                   "type": "Renderer",
                   "params": {
+                    "model": "builtin:box",
                     "material": "4a11d049f9f8e5ac"
                   }
                 },

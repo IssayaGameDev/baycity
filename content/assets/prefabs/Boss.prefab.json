@@ -30,14 +30,8 @@
           "id": "3cfed622",
           "type": "Renderer",
           "params": {
+            "model": "builtin:rounded-box",
             "material": "55205761e38bc929"
-          }
-        },
-        {
-          "id": "ef79a853",
-          "type": "Mesh",
-          "params": {
-            "model": "builtin:rounded-box"
           }
         },
         {
@@ -94,16 +88,10 @@
           }
         },
         {
-          "id": "60ea7460",
-          "type": "Mesh",
-          "params": {
-            "model": "builtin:capsule"
-          }
-        },
-        {
           "id": "c0ba838f",
           "type": "Renderer",
           "params": {
+            "model": "builtin:capsule",
             "material": "4a11d049f9f8e5ac"
           }
         },
@@ -148,13 +136,6 @@
       },
       "components": [
         {
-          "id": "c66f4fd1",
-          "type": "Mesh",
-          "params": {
-            "model": "builtin:rounded-box"
-          }
-        },
-        {
           "id": "3bffcb0e",
           "type": "Collider",
           "params": {
@@ -178,6 +159,7 @@
           "id": "6f0a89ae",
           "type": "Renderer",
           "params": {
+            "model": "builtin:rounded-box",
             "material": ""
           },
           "enabled": false

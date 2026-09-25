@@ -46,16 +46,10 @@
           }
         },
         {
-          "id": "f0392856",
-          "type": "Mesh",
-          "params": {
-            "model": "builtin:box"
-          }
-        },
-        {
           "id": "efa7dd05",
           "type": "Renderer",
           "params": {
+            "model": "builtin:box",
             "material": ""
           }
         },
@@ -100,16 +94,10 @@
           }
         },
         {
-          "id": "mesh",
-          "type": "Mesh",
-          "params": {
-            "model": "builtin:rounded-box"
-          }
-        },
-        {
           "id": "c1",
           "type": "Renderer",
           "params": {
+            "model": "builtin:rounded-box",
             "material": "d67ddcac4f57efc8"
           }
         },
@@ -153,16 +141,10 @@
           }
         },
         {
-          "id": "mesh",
-          "type": "Mesh",
-          "params": {
-            "model": "builtin:rounded-box"
-          }
-        },
-        {
           "id": "c1",
           "type": "Renderer",
           "params": {
+            "model": "builtin:rounded-box",
             "material": "6bbc0130aff311b5"
           }
         },
@@ -224,16 +206,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             }
@@ -280,16 +256,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             }
@@ -336,16 +306,10 @@
               }
             },
             {
-              "id": "f0392856",
-              "type": "Mesh",
-              "params": {
-                "model": "builtin:box"
-              }
-            },
-            {
               "id": "efa7dd05",
               "type": "Renderer",
               "params": {
+                "model": "builtin:box",
                 "material": ""
               }
             }
