@@ -12,7 +12,7 @@ const UNIT = { shape: { kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) } }
 
 const file = (assetId: string, name: string, root: Node): PrefabFile => ({ assetId, name, root })
 
-/** The prefab file as the primitives migration left it: a unit collider sized by scale, with a Mesh. */
+/** The prefab file as the primitives migration left it: a unit collider sized by scale, drawn as a rounded box (a Mesh then, the Mesh Renderer's model since ADR 0153). */
 const trampolineFile = (): Node => ({
   id: 'root',
   name: 'Trampoline',
@@ -23,12 +23,12 @@ const trampolineFile = (): Node => ({
       id: 'p0',
       name: 'pad',
       transform: { position: vec3(0, 0, 0), scale: vec3(3, 0.3, 3) },
-      components: [comp('c0', 'Collider', UNIT), comp('mesh', 'Mesh', { model: 'builtin:rounded-box' }), comp('c1', 'Renderer', { material: 'mat' }), comp('c2', 'Bumper', { power: 26 })],
+      components: [comp('c0', 'Collider', UNIT), comp('c1', 'Renderer', { model: 'builtin:rounded-box', material: 'mat' }), comp('c2', 'Bumper', { power: 26 })],
     },
   ],
 })
 
-/** The same trampoline as a level interned it before that migration: half extents, no Mesh, another node id. */
+/** The same trampoline as a level interned it before that migration: half extents, drawn as its collider, another node id. */
 const trampolineCopy = (): Node => ({
   id: 'root',
   name: 'Trampoline',
@@ -133,7 +133,7 @@ describe('migrating a level to references', () => {
   it('accepts a file that differs only where the placement overrides it', () => {
     const level = levelWith({ Trampoline: trampolineCopy() }, [placement('Trampoline', '91521042')])
     const masked = trampolineFile()
-    masked.children![0]!.components[3] = comp('c2', 'Bumper', { power: 5 }) // the override says 60 regardless
+    masked.children![0]!.components[2] = comp('c2', 'Bumper', { power: 5 }) // the override says 60 regardless
     const report = newRefReport()
     expect(migrateLevelRefs(level, 'lv', [file('aaa', 'Trampoline', masked)], TYPES, report)).toBe(true)
     expect(level.nodes[0]!.overrides!['p0']!.params!['c2']).toEqual({ power: 60 })

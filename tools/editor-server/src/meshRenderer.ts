@@ -42,6 +42,15 @@ export interface Folded {
   records: number
 }
 
+/**
+ * What a node draws by the rule before the fold: its `Renderer`'s own model, else an enabled `Mesh`'s. After it
+ * there is no `Mesh`, and this is `modelOf`. The tool keeps the old half itself, since nothing else reads a `Mesh` now.
+ */
+const drawnModel = (components: readonly ComponentData[]): string => {
+  const own = modelOf(components)
+  return own !== '' ? own : stringParam(firstOfType(components, MESH), 'model', '')
+}
+
 /** Every component type repeatable: both sides of a comparison use it, which is all it has to be. */
 const ANY_TYPE: TypeInfo = { get: () => undefined }
 
@@ -71,7 +80,7 @@ const foldList = (list: ComponentData[]): Moved | { problem: string } | null => 
     list.splice(at, 1, { id: mesh.id, type: RENDERER, enabled: false, params: { model, material: '' } })
     return { mesh: mesh.id, renderer: mesh.id }
   }
-  // A Renderer's own model already wins over the Mesh (`modelOf`); otherwise the Mesh's becomes its own.
+  // A Renderer's own model already won over the Mesh (`drawnModel`); otherwise the Mesh's becomes its own.
   if (stringParam(renderer, 'model', '') === '' && mesh.enabled !== false) {
     const rest = { ...renderer.params }
     delete rest.model
@@ -218,7 +227,7 @@ const canon = (v: unknown): unknown =>
 
 /**
  * What every object draws, as lines — switched-off ones included, since switching one back on must find it
- * as it was: whether it draws, its model (`modelOf`, which reads a Mesh too), its material, and every other
+ * as it was: whether it draws, its model (`drawnModel`, which reads a Mesh too), its material, and every other
  * component whole. The check a fold must pass: the same lines before and after.
  */
 export const drawnLines = (level: Level, definitionOf: (prefabId: string) => Node | undefined): string[] => {
@@ -236,7 +245,7 @@ export const drawnLines = (level: Level, definitionOf: (prefabId: string) => Nod
     const renderer = firstOfType(r.components, RENDERER)
     const rest = r.components.filter((c) => c.type !== MESH && c.type !== RENDERER).map((c) => `${c.type}#${c.id}${c.enabled === false ? ':off' : ''}=${JSON.stringify(canon(c.params))}`)
     out.push(
-      `${here}${r.enabled === false ? ' (off)' : ''} | ${renderer === undefined ? 'draws nothing' : `draws ${modelOf(r.components) || 'its colliders'} in ${stringParam(renderer, 'material', '') || 'grey'} (${renderer.id})`} | ${rest.join(' ')}`,
+      `${here}${r.enabled === false ? ' (off)' : ''} | ${renderer === undefined ? 'draws nothing' : `draws ${drawnModel(r.components) || 'its colliders'} in ${stringParam(renderer, 'material', '') || 'grey'} (${renderer.id})`} | ${rest.join(' ')}`,
     )
     for (const kid of r.children) walk(kid, here)
   }

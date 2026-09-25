@@ -1,4 +1,4 @@
-import { COLLIDER, LIGHT, MATERIAL_OVERRIDE, MESH, RENDERER, SPAWN } from '@mp/content'
+import { COLLIDER, LIGHT, MATERIAL_OVERRIDE, RENDERER, SPAWN } from '@mp/content'
 import { defineComponent } from './define'
 
 /**
@@ -41,24 +41,9 @@ export const Collider = defineComponent({
 })
 
 /**
- * **Retired** (ADR 0153): the shape a node drew, before it was folded into `Renderer`. Unity's `MeshFilter`.
- *
- * Still read, never added: a `Renderer` with no `model` of its own draws an enabled `Mesh`'s, so a level not yet
- * migrated draws as it did. `migrate-mesh-renderer.sh` folds every one into its node's `Renderer` on the box;
- * then this goes.
- */
-export const Mesh = defineComponent({
-  type: MESH,
-  params: {
-    model: { kind: 'asset', of: 'model', default: '', label: 'model' },
-  },
-  singleton: true,
-  retired: true,
-})
-
-/**
  * **What** this node draws, and with what surface — shown as **Mesh Renderer** (ADR 0153): Unity's
- * `MeshRenderer` with its `MeshFilter` folded in, since nothing drew one without the other.
+ * `MeshRenderer` with its `MeshFilter` folded in, since nothing drew one without the other. The `Mesh` component that
+ * was the `MeshFilter` is gone; the fold moved every one in.
  *
  * - `model` — an uploaded model's asset id, or a **built-in shape** (`builtin:box`, `builtin:rounded-box`,
  *   `builtin:sphere`, `builtin:capsule`, ADR 0090): a unit shape sized by the node's scale, and the editor keeps
@@ -143,4 +128,4 @@ export const Light = defineComponent({
   singleton: true,
 })
 
-export const ENGINE_COMPONENTS = [Collider, Mesh, Renderer, MaterialOverride, Spawn, Light]
+export const ENGINE_COMPONENTS = [Collider, Renderer, MaterialOverride, Spawn, Light]

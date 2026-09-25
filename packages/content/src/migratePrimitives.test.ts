@@ -2,7 +2,7 @@ import { vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
 import { migrateLevel, migrateNode, newReport } from './migratePrimitives'
-import { COLLIDER, MESH, RENDERER } from './nodes'
+import { COLLIDER, RENDERER } from './nodes'
 import type { Level, Node } from './types'
 
 const platform = (id: string, extra: Partial<Node> = {}): Node => ({
@@ -16,15 +16,15 @@ const platform = (id: string, extra: Partial<Node> = {}): Node => ({
 })
 
 describe('migrating a piece to a built-in shape', () => {
-  it('moves the box size into scale, keeps the centre where it was, and adds the rounded box mesh', () => {
+  it('moves the box size into scale, keeps the centre where it was, and draws the rounded box', () => {
     const n = platform('p', { transform: { position: vec3(0, 5, 0), scale: vec3(3.3, 1, 5) } })
     expect(migrateNode(n)).toBeNull()
     expect(n.transform.scale).toEqual(vec3(24.75, 0.5, 30))
-    expect(n.components.map((c) => c.type)).toEqual([COLLIDER, MESH, RENDERER])
+    expect(n.components.map((c) => c.type)).toEqual([COLLIDER, RENDERER])
     expect(n.components[0]!.params.shape).toEqual({ kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) })
     // 0.25 up, in a box now 0.5 tall: the same 0.25 m once the loader scales it.
     expect(n.components[0]!.params.center).toEqual(vec3(0, 0.5, 0))
-    expect(n.components[1]!.params).toEqual({ model: 'builtin:rounded-box' })
+    expect(n.components[1]!.params, 'the Mesh Renderer draws it (ADR 0153)').toEqual({ model: 'builtin:rounded-box', material: 'm' })
     expect(migrateNode(n), 'a second run changes nothing').toBeNull()
     expect(n.transform.scale).toEqual(vec3(24.75, 0.5, 30))
   })
@@ -62,6 +62,6 @@ describe('migrating a piece to a built-in shape', () => {
     migrateLevel(level, 'lv', report)
     expect(report.changed).toEqual(['lv/floor', 'lv/prefabs/pad/root/slab'])
     expect(report.skipped).toEqual([{ at: 'lv/prefabs/pad/root/rail', why: 'a placement overrides it' }])
-    expect(level.prefabs!.pad!.children![1]!.components.some((c) => c.type === MESH)).toBe(false)
+    expect(level.prefabs!.pad!.children![1]!.components.some((c) => c.params.model !== undefined)).toBe(false)
   })
 })

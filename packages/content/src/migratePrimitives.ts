@@ -1,6 +1,6 @@
 import { vec3, type Vec3 } from '@mp/core'
 
-import { COLLIDER, MESH, RENDERER } from './nodes'
+import { COLLIDER, RENDERER, modelOf } from './nodes'
 import type { BuiltinModel } from './primitives'
 import type { ColliderDesc, ComponentData, Level, Node } from './types'
 
@@ -32,20 +32,21 @@ const r4 = (n: number): number => Math.round(n * 10_000) / 10_000
 const round3 = (v: Vec3): Vec3 => vec3(r4(v.x), r4(v.y), r4(v.z))
 const isOne = (v: Vec3): boolean => v.x === 1 && v.y === 1 && v.z === 1
 
-/** A component id not yet used on this node — the migration adds one `Mesh`. */
-const freeComponentId = (node: Node, want: string): string => {
-  const taken = new Set(node.components.map((c) => c.id))
-  if (!taken.has(want)) return want
-  for (let n = 2; ; n++) if (!taken.has(`${want}${n}`)) return `${want}${n}`
+/** The Mesh Renderer draws the built-in now (ADR 0153): its `model`, first. It wrote a `Mesh` when it ran. */
+const drawWith = (renderer: ComponentData, model: BuiltinModel): void => {
+  const rest = { ...renderer.params }
+  delete rest.model
+  renderer.params = { model, ...rest }
 }
 
 /**
  * Migrate one node in place. Returns the reason it was left alone, or `null` when it changed. A node that
- * already draws a `Mesh` is not a candidate and is passed over silently (running twice changes nothing).
+ * already draws a model is not a candidate and is passed over silently (running twice changes nothing).
  */
 export const migrateNode = (node: Node): string | null => {
   const has = (type: string): ComponentData[] => node.components.filter((c) => c.type === type)
-  if (has(RENDERER).length === 0 || has(MESH).length > 0) return null
+  const renderer = has(RENDERER)[0]
+  if (renderer === undefined || modelOf(node.components) !== '') return null
   const colliders = has(COLLIDER)
   if (colliders.length !== 1) return colliders.length === 0 ? null : 'more than one collider'
   if ((node.children?.length ?? 0) > 0) return 'has children'
@@ -68,8 +69,8 @@ export const migrateNode = (node: Node): string | null => {
   }
   if (k.x <= 0 || k.y <= 0 || k.z <= 0) return 'a zero-sized collider'
   if (isOne(k)) {
-    // Already unit: only the mesh is missing, and nothing moves.
-    node.components.splice(node.components.indexOf(collider) + 1, 0, { id: freeComponentId(node, 'mesh'), type: MESH, params: { model } })
+    // Already unit: only the model is missing, and nothing moves.
+    drawWith(renderer, model)
     return null
   }
   const scale = node.transform.scale ?? vec3(1, 1, 1)
@@ -80,7 +81,7 @@ export const migrateNode = (node: Node): string | null => {
   const params: Record<string, unknown> = { ...collider.params, shape: shape.kind === 'ball' ? { kind: 'ball', radius: 0.5 } : { kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) } }
   if (isVec3(centre) && (centre.x !== 0 || centre.y !== 0 || centre.z !== 0)) params.center = round3(div(centre, k))
   collider.params = params
-  node.components.splice(node.components.indexOf(collider) + 1, 0, { id: freeComponentId(node, 'mesh'), type: MESH, params: { model } })
+  drawWith(renderer, model)
   return null
 }
 
@@ -88,7 +89,7 @@ const walk = (nodes: readonly Node[], at: string, protectedIds: ReadonlySet<stri
   for (const node of nodes) {
     const here = `${at}/${node.name ?? node.id}`
     if (protectedIds.has(node.id)) {
-      if (node.components.some((c) => c.type === RENDERER) && !node.components.some((c) => c.type === MESH) && node.components.some((c) => c.type === COLLIDER)) report.skipped.push({ at: here, why: 'a placement overrides it' })
+      if (node.components.some((c) => c.type === RENDERER) && modelOf(node.components) === '' && node.components.some((c) => c.type === COLLIDER)) report.skipped.push({ at: here, why: 'a placement overrides it' })
     } else {
       const before = JSON.stringify(node.components) + JSON.stringify(node.transform)
       const why = migrateNode(node)

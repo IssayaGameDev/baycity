@@ -599,8 +599,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     const colliders = componentsOfType(r.components, COLLIDER)
     /**
      * The Mesh Renderer (ADR 0153): no `Renderer`, nothing drawn; one with a `model`, the model; one without,
-     * the node's colliders — the greybox case. `modelOf` still reads a retired `Mesh` for a level not yet
-     * migrated.
+     * the node's colliders — the greybox case.
      */
     const renderer = firstOfType(r.components, RENDERER)
     const model = modelOf(r.components)

@@ -1,8 +1,8 @@
 # ADR 0153 — `Mesh` folds into `Renderer`: one Mesh Renderer
 
-Status: accepted, in progress. Step 1 of 2 has landed: the component, both shapes read, and the fold
-(`deploy/editor/migrate-mesh-renderer.sh`), which runs on the box after the deploy that carries it. Step 2 deletes
-`Mesh` once it has run. Supersedes the split of [ADR 0039](0039-mesh-and-renderer.md). Kodjo's calls: merge for real
+Status: accepted, done. Step 1 landed the component, both shapes read, and the fold
+(`deploy/editor/migrate-mesh-renderer.sh`); the fold ran on the box (705 Meshes, 5 placement records, 18 files, content
+`5c9a5ea`); step 2 deleted `Mesh`, `retired` and `modelOf`'s second half. A file still carrying a `Mesh` no longer loads. Supersedes the split of [ADR 0039](0039-mesh-and-renderer.md). Kodjo's calls: merge for real
 rather than one card over two components, and the name **Mesh Renderer**.
 
 ## Context

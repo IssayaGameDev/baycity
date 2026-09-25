@@ -4,7 +4,7 @@ import { defineComponent } from './define'
 import { ComponentError } from './params'
 import { DEFAULT_REGISTRY } from './defaults'
 import { Bumper, Sequence } from './gameplay'
-import { Collider, Mesh, Renderer } from './engine'
+import { Collider, Renderer } from './engine'
 
 const Fake = defineComponent({ type: 'Fake', params: { n: { kind: 'number', default: 1 } } })
 const Other = defineComponent({ type: 'Other', params: {} })
@@ -46,10 +46,9 @@ describe('the registry', () => {
 })
 
 describe('the built-in registry', () => {
-  it('holds the fourteen built-in components, engine first', () => {
+  it('holds the built-in components, engine first', () => {
     expect(DEFAULT_REGISTRY.all().map((d) => d.type)).toEqual([
       'Collider',
-      'Mesh',
       'Renderer',
       'MaterialOverride',
       'Spawn',
@@ -68,7 +67,7 @@ describe('the built-in registry', () => {
     // combine (ADR 0137).
     expect(Collider.singleton).toBeUndefined()
     expect(DEFAULT_REGISTRY.get('Sequence')?.singleton).toBeUndefined()
-    for (const type of ['Mesh', 'Renderer', 'MaterialOverride', 'Spawn', 'Checkpoint', 'Goal', 'Hazard', 'Bumper'])
+    for (const type of ['Renderer', 'MaterialOverride', 'Spawn', 'Checkpoint', 'Goal', 'Hazard', 'Bumper'])
       expect(DEFAULT_REGISTRY.get(type)?.singleton, type).toBe(true)
   })
 
@@ -89,9 +88,9 @@ describe('the built-in registry', () => {
     expect(Renderer.params.material.of).toBe('material')
   })
 
-  it('still reads a retired Mesh, and marks it so nothing offers one', () => {
-    expect(DEFAULT_REGISTRY.defaults('Mesh')).toEqual({ model: '' })
-    expect(Mesh.retired).toBe(true)
+  // Folded into the Mesh Renderer on every file (ADR 0153): a file still carrying one no longer loads.
+  it('has no Mesh any more', () => {
+    expect(DEFAULT_REGISTRY.has('Mesh')).toBe(false)
   })
 
   it('carries the bumper default in the schema, not in the editor', () => {

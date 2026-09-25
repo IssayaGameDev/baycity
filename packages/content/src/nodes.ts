@@ -12,7 +12,10 @@ import type { ComponentData, Node, Level, NodeOverride, Transform } from './type
 
 /** A collision shape. Repeatable per node. */
 export const COLLIDER = 'Collider'
-/** Retired (ADR 0153): the shape a node drew, now `Renderer.model`. Read until the migration has folded every one in. */
+/**
+ * A type that is gone (ADR 0153): the shape a node drew, folded into `Renderer.model` on every file. Named only by
+ * the one-off tools that wrote or folded it; no registry has it, so a file still carrying one does not load.
+ */
 export const MESH = 'Mesh'
 /** That a node draws, what, and with what surface — the Mesh Renderer (ADR 0153). Unity's `MeshRenderer` and `MeshFilter` in one. */
 export const RENDERER = 'Renderer'
@@ -84,14 +87,10 @@ export const stringParam = (c: ComponentData | undefined, key: string, fallback:
 }
 
 /**
- * The model a node draws (ADR 0153): its `Renderer`'s own `model`, else a retired `Mesh`'s — so a level the
- * migration has not reached yet draws as it did. `''` draws the node's colliders. Enabled components only; whether
+ * The model a node draws (ADR 0153): its enabled `Renderer`'s `model`. `''` draws the node's colliders; whether
  * anything is drawn at all is whether there is an enabled `Renderer`.
  */
-export const modelOf = (components: readonly ComponentData[]): string => {
-  const own = stringParam(firstOfType(components, RENDERER), 'model', '')
-  return own !== '' ? own : stringParam(firstOfType(components, MESH), 'model', '')
-}
+export const modelOf = (components: readonly ComponentData[]): string => stringParam(firstOfType(components, RENDERER), 'model', '')
 
 /** A boolean parameter, or the fallback. */
 export const boolParam = (c: ComponentData | undefined, key: string, fallback: boolean): boolean => {

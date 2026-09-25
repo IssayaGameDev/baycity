@@ -1,5 +1,5 @@
 import { vec3, type Vec3 } from '@mp/core'
-import { COLLIDER, LIGHT, MATERIAL_OVERRIDE, MESH, RENDERER, SEQUENCE, SPAWN, compileSequence, readStages, sequenceOf, unitColliderFor, type ColliderDesc } from '@mp/content'
+import { COLLIDER, LIGHT, MATERIAL_OVERRIDE, RENDERER, SEQUENCE, SPAWN, compileSequence, readStages, sequenceOf, unitColliderFor, type ColliderDesc } from '@mp/content'
 import { visibleParams, type AssetSpec, type ParamSpec } from '@mp/components'
 import { QUANT_BOUND } from '@mp/net'
 import { DEFAULT_POSTFX, DEFAULT_SKY_PARAMS } from '@mp/render-three'
@@ -206,7 +206,6 @@ const defaultShape = (kind: string, was: ColliderDesc): ColliderDesc => {
 /** The icon in a component's header. A game's own components, which the editor does not name, share one. */
 const COMPONENT_ICONS: Readonly<Record<string, IconName>> = {
   [COLLIDER]: 'colliderOn',
-  [MESH]: 'mesh',
   [RENDERER]: 'mesh',
   [MATERIAL_OVERRIDE]: 'material',
   [SPAWN]: 'spawn',

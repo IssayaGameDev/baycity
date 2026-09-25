@@ -4,7 +4,6 @@ import {
   COLLIDER,
   MATERIAL_OVERRIDE,
   SPAWN,
-  MESH,
   RENDERER,
   instantiateLevel,
   stripHydrated,
@@ -323,25 +322,6 @@ describe('components', () => {
     const i = doc.placeModel('m', vec3(0, 0, 0))
     doc.removeComponent(i, idOf(doc, i, RENDERER))
     expect(typesOn(doc, i)).toEqual([COLLIDER])
-  })
-
-  it('draws a retired Mesh’s model until the migration folds it in, and never offers one (ADR 0153)', () => {
-    const level = blank()
-    level.nodes.push({
-      id: 'old',
-      transform: { position: ZERO },
-      components: [
-        { id: 'c', type: COLLIDER, params: { shape: { kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) }, center: ZERO } },
-        { id: 'm', type: MESH, params: { model: 'builtin:sphere' } },
-        { id: 'r', type: RENDERER, params: { material: '' } },
-      ],
-    })
-    const doc = levelDoc(level)
-    expect(doc.meshSpecs(0)[0]?.model).toBe('builtin:sphere')
-    expect(doc.builtinOf(0)).toBe('builtin:sphere')
-    expect(doc.canAdd(0, MESH), 'retired: still read, never added').toBe(false)
-    doc.setParams(0, 'r', { model: 'builtin:box' })
-    expect(doc.meshSpecs(0)[0]?.model, 'the Mesh Renderer’s own model wins').toBe('builtin:box')
   })
 
   it('draws nothing once the Mesh Renderer is gone', () => {

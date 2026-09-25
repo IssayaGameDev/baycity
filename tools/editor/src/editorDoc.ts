@@ -10,7 +10,6 @@ import {
   COLLIDER,
   LIGHT,
   MATERIAL_OVERRIDE,
-  MESH,
   RENDERER,
   AT_REST_POSE,
   SELF,
@@ -1106,7 +1105,7 @@ const docOver = (
     const ops: (Op | null)[] = [paramsOp(componentId, patch)]
     // A built-in shape picked (ADR 0090): scale is the size, so every collider on the node becomes the unit
     // shape of that built-in. Same batch, one undo.
-    if ((target.type === RENDERER || target.type === MESH) && isBuiltinModel(patch.model)) {
+    if (target.type === RENDERER && isBuiltinModel(patch.model)) {
       const unit = unitColliderFor(patch.model)
       for (const c of n.view.components) if (c.type === COLLIDER) ops.push(paramsOp(c.id, { shape: unit }))
     }
@@ -1170,8 +1169,6 @@ const docOver = (
     // A player component is the game's, declared in its `ModeDescriptor` and never authored in a level
     // (ADR 0059). Both Add Component menus read this, so neither offers a death reaction for a staircase.
     if (def?.attachesTo === 'player') return false
-    // Still read, never added: a retired component's job is another's now (`Mesh`, ADR 0153).
-    if (def?.retired === true) return false
     if (def?.singleton !== true) return true
     return !n.view.components.some((c) => c.type === type)
   }
@@ -1553,7 +1550,7 @@ const docOver = (
       const ids = new Set<string>()
       const add = (components: readonly ComponentData[]): void => {
         for (const c of components) {
-          if (c.type === RENDERER || c.type === MESH) {
+          if (c.type === RENDERER) {
             const model = stringParam(c, 'model', '')
             // A built-in shape is geometry, not a file: nothing to fetch (ADR 0090).
             if (model !== '' && !isBuiltinModel(model)) ids.add(model)

@@ -3,7 +3,7 @@ import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { instantiateLevel } from './loader'
-import { effectiveNode, COLLIDER, LIGHT, MATERIAL_OVERRIDE, MESH, RENDERER, SPAWN, type TypeInfo } from './nodes'
+import { effectiveNode, COLLIDER, LIGHT, MATERIAL_OVERRIDE, RENDERER, SPAWN, type TypeInfo } from './nodes'
 import type { Stage } from './sequence'
 import { SEQUENCE } from './sequenceData'
 import type { ComponentData, Node, Level } from './types'
@@ -128,26 +128,6 @@ describe('a node draws only what it says it draws', () => {
     )
     expect(loaded.visuals).toHaveLength(1)
     expect(loaded.visuals[0]?.model, 'no model, so the collider shape').toBeUndefined()
-  })
-
-  /** A level the migration has not reached yet draws as it did (ADR 0153). */
-  describe('a retired Mesh', () => {
-    const withMesh = (...more: ReturnType<typeof comp>[]) =>
-      levelOf([{ id: 'n0', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', COLLIDER, box()), ...more] }])
-
-    it('still gives the Renderer beside it its model', () => {
-      expect(load(withMesh(comp('c1', MESH, { model: 'mesh1' }), comp('c2', RENDERER, { material: '' }))).visuals[0]?.model).toBe('mesh1')
-    })
-
-    it('draws nothing without a Renderer', () => {
-      const loaded = load(withMesh(comp('c1', MESH, { model: 'mesh1' })))
-      expect(loaded.visuals).toEqual([])
-      expect(loaded.nodes, 'still solid').toHaveLength(1)
-    })
-
-    it('gives way to the Renderer’s own model', () => {
-      expect(load(withMesh(comp('c1', MESH, { model: 'mesh1' }), comp('c2', RENDERER, { model: 'mesh2', material: '' }))).visuals[0]?.model).toBe('mesh2')
-    })
   })
 
   it('ignores a component that is switched off', () => {
