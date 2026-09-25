@@ -1,8 +1,10 @@
 # ADR 0151 — Prefab editing is rebuilt on one tree and one translator
 
 Status: accepted, in progress. Steps 1–3 of 4 have landed: the grid (`tools/editor/src/prefabGrid.test.ts`),
-and every edit on the tree and the translator, all seventeen failing gestures now holding. Step 4, the
-migration, is next. Kodjo's calls: rebuild rather than patch, and migrate existing levels once.
+and every edit on the tree and the translator, all seventeen failing gestures now holding. Step 4's tool has
+landed (`deploy/editor/migrate-one-storage.sh`) and runs on the box once Kodjo is happy with the rest; a
+component sharing a type with its prefab's root stays where it is, since only a registry could say whether it
+replaced that one. Kodjo's calls: rebuild rather than patch, and migrate existing levels once.
 
 As built, the tree is the document's `nodes()`, which was already a plain tree of addressable nodes; what was
 missing was the translator, and it came out as two functions rather than one diff: **child hosts**
