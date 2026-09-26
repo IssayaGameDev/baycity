@@ -1,0 +1,204 @@
+{
+  "id": "root",
+  "name": "box",
+  "transform": {
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    }
+  },
+  "components": [],
+  "children": [
+    {
+      "id": "9b5b7151",
+      "name": "platform",
+      "transform": {
+        "position": {
+          "x": -0.0655,
+          "y": 0.8566,
+          "z": -2.1428
+        },
+        "scale": {
+          "x": 4,
+          "y": 1,
+          "z": 8
+        }
+      },
+      "components": [
+        {
+          "id": "a5aa9617",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "c7f8ae72",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:rounded-box",
+            "material": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "ae118b37",
+      "name": "platform",
+      "transform": {
+        "position": {
+          "x": -0.0655,
+          "y": 5.9566,
+          "z": -5.6428
+        },
+        "rotation": {
+          "x": -1.5707963267948966,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 4,
+          "y": 1,
+          "z": 10.5
+        }
+      },
+      "components": [
+        {
+          "id": "a5aa9617",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "c7f8ae72",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:rounded-box",
+            "material": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "8264c2e3",
+      "name": "platform",
+      "transform": {
+        "position": {
+          "x": -0.0655,
+          "y": 5.9566,
+          "z": 1.3572
+        },
+        "rotation": {
+          "x": -1.5707963267948966,
+          "y": 0,
+          "z": 0
+        },
+        "scale": {
+          "x": 4,
+          "y": 1,
+          "z": 10.5
+        }
+      },
+      "components": [
+        {
+          "id": "a5aa9617",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "c7f8ae72",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:rounded-box",
+            "material": ""
+          }
+        }
+      ]
+    },
+    {
+      "id": "4cd0577f",
+      "name": "platform",
+      "transform": {
+        "position": {
+          "x": -0.0655,
+          "y": 10.7066,
+          "z": -2.1428
+        },
+        "scale": {
+          "x": 4,
+          "y": 1,
+          "z": 8
+        }
+      },
+      "components": [
+        {
+          "id": "a5aa9617",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "c7f8ae72",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:rounded-box",
+            "material": ""
+          }
+        }
+      ]
+    }
+  ]
+}
