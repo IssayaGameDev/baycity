@@ -243,7 +243,7 @@ A reference is **a string value equal to a known id**, anywhere in the file (an 
 components' fields, the settings and a frozen copy's contents included; keys are not references. `contentsOf(id)` is
 a prefab's or material's JSON to follow (a material's textures and shader, a prefab's materials and models). A
 frozen copy is followed into the asset file too, so a level may count as using a little more than it draws, never
-less. An asset code loads by path (the game's sky, `client/services.md`) is in no level.
+less.
 
 ## What a page downloads for one level — `packages/content/src/levelNeeds.ts` (ADR 0169)
 
@@ -252,13 +252,13 @@ PLAY_CONTENT_DIR = 'content'                  // relative to a game page's addre
 levelIndexFile(game) = '<game>/levels.json'   // → LevelIndex { levels: string[]; default: string }
 levelNeedsFile(ref) = '<game>/levels/<name>.needs.json'   // → LevelNeeds; levelOfNeedsFile(path) reads it back
 levelIndexOf(names): LevelIndex               // 'default' first when present, the rest sorted; default = the first
-levelNeeds(ref, level, catalog: ContentCatalog, code: readonly string[], urlOf): LevelNeeds
+levelNeeds(ref, level, catalog: ContentCatalog, urlOf): LevelNeeds
 interface LevelNeeds { level: string; assets: NeededAsset[] }   // NeededAsset { id; kind; path; url }, sorted by path
-interface ContentCatalog { byId(id) → { kind; path }; byPath(path) → { id }; contentsOf(id) }
+interface ContentCatalog { byId(id) → { kind; path }; contentsOf(id) }
 ```
 
 `levelNeeds` = `assetsUsedBy` over the level, restricted to what `mayUse(game, path)` allows (the game's own library
-and Shared's), plus `code` paths (`CODE_ASSETS`); `urlOf` maps a path from `content/` to the address the page fetches.
+and Shared's); `urlOf` maps a path from `content/` to the address the page fetches.
 One pure function for the build, the local dev server and the editor server (`content-sync.md`, `editor-server.md`).
 `contentTypeFor(path)` (`assets.ts`) is the content type both servers send.
 

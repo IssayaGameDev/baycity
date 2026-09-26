@@ -45,10 +45,9 @@ export interface LevelNeeds {
   assets: NeededAsset[]
 }
 
-/** The assets whoever serves the content knows: by id, by path, and a prefab's or material's JSON to follow. */
+/** The assets whoever serves the content knows: by id, and a prefab's or material's JSON to follow. */
 export interface ContentCatalog {
   byId: (id: string) => { kind: AssetKind; path: string } | undefined
-  byPath: (path: string) => { id: string } | undefined
   /** The asset's JSON as it is now, when it has any to follow (a prefab, a material), else `undefined`. */
   contentsOf: (id: string) => unknown
 }
@@ -73,8 +72,7 @@ export const levelIndexOf = (names: Iterable<string>): LevelIndex => {
 }
 
 /**
- * The list for level `ref`, whose JSON is `level`. `code`: paths the game's own code loads, which no level names
- * (`CODE_ASSETS`). `urlOf`: a path from `content/` → where the page fetches it.
+ * The list for level `ref`, whose JSON is `level`. `urlOf`: a path from `content/` → where the page fetches it.
  *
  * Only what the game may use is listed — its own library's and Shared's (`mayUse`, ADR 0161) — so a reference into
  * another game's library draws as it does in the editor: not at all.
@@ -83,7 +81,6 @@ export const levelNeeds = (
   ref: LevelRef,
   level: unknown,
   catalog: ContentCatalog,
-  code: readonly string[],
   urlOf: (path: string) => string,
 ): LevelNeeds => {
   const usable = (id: string): boolean => {
@@ -91,10 +88,6 @@ export const levelNeeds = (
     return entry !== undefined && mayUse(ref.game, entry.path)
   }
   const ids = assetsUsedBy(level, usable, (id) => (usable(id) ? catalog.contentsOf(id) : undefined))
-  for (const path of code) {
-    const id = catalog.byPath(path)?.id
-    if (id !== undefined && usable(id)) ids.add(id)
-  }
   const assets: NeededAsset[] = []
   for (const id of ids) {
     const entry = catalog.byId(id)

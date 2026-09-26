@@ -105,9 +105,7 @@ interface GreyboxEnvironment {
 - Sets `ACESFilmicToneMapping`, `PCFSoftShadowMap`. Sun shadow frustum ±`shadowRadius`, `bias −0.0002`, `normalBias 0.02`.
 - Sky (ADR 0046): `createProceduralSky(renderer, faceSize)` — monotonic gradient shader baked to a `HalfFloat`
   cubemap; `background` (with sun disc) and `environment()` PMREM (disc off). `DEFAULT_SKY_PARAMS`, `sunDirection`,
-  `skyUniformValues` exported. `sky: false` → `RoomEnvironment` PMREM.
-- `installSky(scene, texture): Sky` / `loadSky(scene, url): Promise<Sky | null>` — equirect **background only**
-  (ADR 0045); `Sky { texture; dispose }`.
+  `skyUniformValues` exported. `sky: false` → `RoomEnvironment` PMREM. The only sky (ADR 0170).
 
 ## A cubemap `scene.background` does not fill an orthographic view
 

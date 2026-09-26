@@ -39,7 +39,7 @@ diskResponse(root, game, rel): { type, body } | null   // what the local dev ser
 A game page reads one level at a time, with only what it uses (`loadLevel`, `client/services.md`), at addresses
 relative to itself: `content/<game>/levels.json`, `content/<game>/levels/<name>.needs.json`, then each list entry's
 `url` (`@mp/content` `levelNeeds.ts`: `levelIndexOf`, `levelNeeds` over `usage.ts`, `mayUse` — the game's own library
-and Shared's only — plus `CODE_ASSETS`). The plugin answers them wherever Vite runs:
+and Shared's only). The plugin answers them wherever Vite runs:
 
 | Where | What answers | Reload on a content edit |
 | --- | --- | --- |

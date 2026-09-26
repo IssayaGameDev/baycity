@@ -8,7 +8,6 @@ import { contentTypeFor, kindForPath, META_SUFFIX } from '../../../packages/cont
 export { contentTypeFor }
 import { gameFile, inLibrary, isGameName, levelFile, levelRefForFile, libraryOf, parseQualified, qualify, LEVELS_DIR } from '../../../packages/content/src/layout'
 import { levelIndexFile, levelIndexOf, levelNeeds, levelOfNeedsFile, PLAY_CONTENT_DIR, type ContentCatalog } from '../../../packages/content/src/levelNeeds'
-import { CODE_ASSETS } from '../../../packages/game-client/src/codeAssets'
 import type { NodeRef, Op } from '../../../packages/content/src/ops'
 import { prefabRefsIn } from '../../../packages/content/src/prefabs'
 import type { Level } from '../../../packages/content/src/types'
@@ -571,10 +570,6 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       const e = assets.byId(id)
       return e === undefined ? undefined : { kind: e.kind, path: e.path }
     },
-    byPath: (path) => {
-      const e = assets.byPath(path)
-      return e === undefined ? undefined : { id: e.id }
-    },
     contentsOf: assetJsonNow,
   }
 
@@ -600,7 +595,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       const found = levelOf(listed)
       if (found === undefined) return sendJson(res, 404, { error: `no level ${qualify(listed)}` }), true
       const level = levelNow(qualify(listed), found.file)
-      return sendJson(res, 200, levelNeeds(listed, level, playCatalog, CODE_ASSETS, (path) => `${PLAY_CONTENT_DIR}/${path}`)), true
+      return sendJson(res, 200, levelNeeds(listed, level, playCatalog, (path) => `${PLAY_CONTENT_DIR}/${path}`)), true
     }
     const ref = levelRefForFile(rel)
     if (ref !== null) {

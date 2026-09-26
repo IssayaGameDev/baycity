@@ -183,9 +183,6 @@ importers:
       '@mp/net':
         specifier: workspace:*
         version: link:../net
-      '@mp/physics':
-        specifier: workspace:*
-        version: link:../physics
 
   packages/components:
     dependencies:

@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { diskContent, diskResponse, gameContent } from '../../../game-content'
-import { SKY_TEXTURE } from './codeAssets'
 
 /**
  * A game's content as its page reads it (ADR 0169): one level's list at a time, from the game's own library and
@@ -27,7 +26,6 @@ const BRICK = 'bbbbbbbbbbbbbbbb'
 const PAD = 'cccccccccccccccc'
 const UNUSED = 'dddddddddddddddd'
 const OTHER = 'eeeeeeeeeeeeeeee'
-const SKY = 'ffffffffffffffff'
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'mp-game-content-'))
@@ -40,7 +38,6 @@ beforeEach(() => {
   asset('assets/materials/red.mat.json', RED, { shader: 'standard', params: { map: { kind: 'texture', value: BRICK } } })
   asset('assets/textures/brick.png', BRICK)
   asset('assets/textures/unused.png', UNUSED)
-  asset(SKY_TEXTURE, SKY)
   asset('parkour/assets/textures/other.png', OTHER)
 })
 afterEach(() => {
@@ -55,14 +52,14 @@ describe('a game’s content on disk', () => {
     expect(diskContent(root, 'parkour').index().levels).toEqual(['default'])
   })
 
-  it('lists for a level what it uses, through the prefab and the material, and what the code loads by path', () => {
+  it('lists for a level what it uses, through the prefab and the material', () => {
     const needs = diskContent(root, 'keyboard').needs('default', at)
     expect(needs.level).toBe('content/keyboard/levels/default.level.json')
-    expect(needs.assets.map((a) => a.path)).toEqual(['assets/materials/red.mat.json', 'assets/textures/brick.png', SKY_TEXTURE, 'keyboard/assets/prefabs/pad.prefab.json'].sort())
+    expect(needs.assets.map((a) => a.path)).toEqual(['assets/materials/red.mat.json', 'assets/textures/brick.png', 'keyboard/assets/prefabs/pad.prefab.json'])
   })
 
   it('lists nothing of another level’s', () => {
-    expect(diskContent(root, 'keyboard').needs('bare', at).assets.map((a) => a.path)).toEqual([SKY_TEXTURE])
+    expect(diskContent(root, 'keyboard').needs('bare', at).assets).toEqual([])
   })
 
   it('knows only its own library and Shared’s', () => {
@@ -80,7 +77,8 @@ describe('what the local dev server answers', () => {
 
   it('the index, a list and a level', () => {
     expect(JSON.parse(text('keyboard/levels.json') ?? 'null')).toEqual({ levels: ['default', 'bare'], default: 'default' })
-    expect(JSON.parse(text('keyboard/levels/bare.needs.json') ?? 'null')).toEqual({ level: 'content/keyboard/levels/bare.level.json', assets: [expect.objectContaining({ id: SKY, url: at(SKY_TEXTURE) })] })
+    expect(JSON.parse(text('keyboard/levels/bare.needs.json') ?? 'null')).toEqual({ level: 'content/keyboard/levels/bare.level.json', assets: [] })
+    expect(JSON.parse(text('keyboard/levels/default.needs.json') ?? 'null').assets).toContainEqual(expect.objectContaining({ id: BRICK, url: at('assets/textures/brick.png') }))
     expect(JSON.parse(text('keyboard/levels/bare.level.json') ?? 'null')).toEqual({ id: 'bare', config: {}, nodes: [] })
     expect(diskResponse(root, 'keyboard', 'assets/materials/red.mat.json')?.type).toBe('application/json')
   })
@@ -132,7 +130,7 @@ describe('what a build writes', () => {
 
   it('every level and every file some level uses, and nothing else', () => {
     const files = [...build().keys()].filter((f) => f.startsWith('assets/')).sort()
-    expect(files).toEqual(['assets/bare.level.json-h', 'assets/brick.png-h', 'assets/default.level.json-h', 'assets/pad.prefab.json-h', 'assets/red.mat.json-h', 'assets/sky_110_2k.webp-h'])
+    expect(files).toEqual(['assets/bare.level.json-h', 'assets/brick.png-h', 'assets/default.level.json-h', 'assets/pad.prefab.json-h', 'assets/red.mat.json-h'])
   })
 
   it('the index and each level’s list at the addresses the page asks for, pointing at the written files', () => {

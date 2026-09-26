@@ -32,8 +32,7 @@ export interface GreyboxEnvironmentOptions {
    * Procedural sky as the background *and* the source of ambient. Default on.
    *
    * Off falls back to what this did before: a neutral `RoomEnvironment` PMREM and whatever background the
-   * stage set. Kept because it is what a headless or GPU-less path gets, and because it is the control when
-   * comparing the sky against a photograph.
+   * stage set. Kept because it is what a headless or GPU-less path gets.
    */
   sky?: boolean
   skyParams?: Partial<SkyParams>
@@ -84,50 +83,6 @@ export interface GreyboxEnvironment {
    */
   applyEnvironment: (env: Partial<EnvironmentConfig> | undefined) => void
   dispose: () => void
-}
-
-export interface Sky {
-  texture: THREE.Texture
-  /** Restore whatever background was there before, and free the texture. */
-  dispose: () => void
-}
-
-/**
- * Put an equirectangular texture behind the scene (ADR 0045).
- *
- * **Background only.** `scene.environment` keeps the neutral `RoomEnvironment` PMREM that
- * `applyGreyboxEnvironment` installs, so hanging a sky does not relight the level. Lighting *from* the sky is
- * a different change and a worse one with this image: it is 8-bit sRGB, so it carries no sun. A PMREM built
- * from it would give flat ambient with none of the directional energy an HDR sky has.
- *
- * Split from `loadSky` so the half with no I/O in it is testable.
- */
-export const installSky = (scene: THREE.Scene, texture: THREE.Texture): Sky => {
-  texture.mapping = THREE.EquirectangularReflectionMapping
-  texture.colorSpace = THREE.SRGBColorSpace
-  const previous = scene.background
-  scene.background = texture
-  return {
-    texture,
-    dispose: () => {
-      if (scene.background === texture) scene.background = previous
-      texture.dispose()
-    },
-  }
-}
-
-/**
- * Load an equirectangular sky and install it, or warn and return `null` if it will not load, leaving the
- * background as it was. A missing sky costs the backdrop, not the session — the same call `addLevel` makes for
- * a material reference that has gone stale.
- */
-export const loadSky = async (scene: THREE.Scene, url: string): Promise<Sky | null> => {
-  try {
-    return installSky(scene, await new THREE.TextureLoader().loadAsync(url))
-  } catch (cause) {
-    console.warn(`sky: could not load ${url}`, cause)
-    return null
-  }
 }
 
 export const applyGreyboxEnvironment = (

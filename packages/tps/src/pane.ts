@@ -1,7 +1,7 @@
 import { CAMERA_TUNABLES, type OrbitCamera } from '@mp/camera'
 import type { CharacterTuning, GaitTuning } from '@mp/humanoid'
 import type { TouchLayout } from '@mp/client/dom'
-import type { GreyboxEnvironment, PostFX, Sky, ThreeStage } from '@mp/render-three'
+import type { GreyboxEnvironment, PostFX, ThreeStage } from '@mp/render-three'
 import Stats from 'stats.js'
 import { Pane } from 'tweakpane'
 
@@ -44,8 +44,6 @@ export type DebugFolder = (typeof DEBUG_FOLDERS)[number]
 export interface DebugPaneOptions {
   camera: OrbitCamera
   stage: ThreeStage
-  /** The equirect backdrop, if one loaded — it adds a source toggle to the Sky folder. */
-  photoSky: Sky | null
   /** The sun-shadow switch — see the Camera folder for why it exists. */
   debug: { sunShadows: boolean }
   env: GreyboxEnvironment
@@ -86,7 +84,7 @@ export interface DebugPane {
 }
 
 export const installDebugPane = (opts: DebugPaneOptions): DebugPane => {
-  const { camera: orbit, debug, env, postfx, stage, photoSky, tuning, gait, touchLayout, assembleTiming } = opts
+  const { camera: orbit, debug, env, postfx, stage, tuning, gait, touchLayout, assembleTiming } = opts
   const requestDeath = opts.onDeath
   // Own host element with an explicit stacking order: the Pixi UI canvas is at z-index 10, and
   // with tweakpane's default wrapper the pause screen covered the pane — i.e. it was unreachable
@@ -139,7 +137,7 @@ export const installDebugPane = (opts: DebugPaneOptions): DebugPane => {
       // because the shape wanted here (light at the top, darkening all the way down) is the inverse of what
       // scattering produces.
       const skyFolder = pane.addFolder({ title: 'Sky', expanded: false })
-      const skyView = { source: 'procedural' as 'procedural' | 'photo', fill: 0.4, sunIntensity: 2.4 }
+      const skyView = { fill: 0.4, sunIntensity: 2.4 }
       if (env.sky === null) return
       const rebake = (): void => env.refresh()
       skyFolder.addBinding(env.sunAngles, 'elevationDeg', { min: 1, max: 89, step: 1, label: 'sun elev °' }).on('change', rebake)
@@ -166,11 +164,6 @@ export const installDebugPane = (opts: DebugPaneOptions): DebugPane => {
       skyFolder.addBinding(skyView, 'fill', { min: 0, max: 2, step: 0.01, label: 'neutral fill' }).on('change', () => {
         env.fill.intensity = skyView.fill
       })
-      if (photoSky !== null) {
-        skyFolder.addBinding(skyView, 'source', { options: { procedural: 'procedural', photo: 'photo' }, label: 'backdrop' }).on('change', () => {
-          stage.scene.background = skyView.source === 'photo' ? photoSky.texture : env.sky?.background ?? null
-        })
-      }
     },
 
     touch: () => {
