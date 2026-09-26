@@ -25,7 +25,7 @@ is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walk
 | `src/assetImporter.ts` | `importAssets(contentDir)` → `{ entries, created }`: every library in one pass (`libraryFolders(contentDir)`: `assets`, made if missing, then each game folder's `assets/` that exists), so an id is unique across them; a sidecar claimed twice is reissued |
 | `src/prefabStore.ts` | `createPrefabStore(contentDir, index?)` — prefab definitions by asset id, off disk, found through the index: `root`, `pathOf`, `write`; rescans on an unknown id so a prefab saved seconds ago resolves, **and when the remembered path's sidecar no longer carries the id** — a prefab renamed, moved or deleted while the server ran used to resolve to nothing and be written back to its old place |
 | `src/sse.ts` | `encodeSse(event, data, id?)`, `SSE_HEADERS`, `SSE_KEEPALIVE` |
-| `src/proxy.ts` | `proxyHttp`, `proxyUpgrade`, `routeFor` — the staging games and `/relay` under this origin (ADR 0086) |
+| `src/proxy.ts` | `proxyHttp`, `proxyUpgrade`, `routeFor`, `hostRedirect` — the staging games and `/relay` under this origin (ADR 0086) |
 | `src/server.ts` | `startEditorServer(config)` — identity, static editor, game proxy, timers, commit queue, state files |
 | `src/assetOps.ts`, `src/assetImporter.ts` | moved from the editor: folder ops, `.meta` importer |
 | `src/main.ts` | CLI; SIGTERM/SIGINT commit every session then exit |
@@ -228,8 +228,9 @@ Dashboard names as of setup: Cloudflare One → *Access controls* (applications,
 
 The game runs with `MP_BASE=/play/keyboard/` and is reached **through this server** at
 `editor.playgorbo.com/play/keyboard/` (ADR 0086): every request under a configured `games[].path` is proxied
-to its `target` (HTTP and upgrade), `/relay` upgrades go to `config.relay`, and a request whose `Host` is a
-game's `host` (`dev.playgorbo.com`) is redirected to its path, query kept. The editor's Play frames that URL
+to its `target` (HTTP and upgrade), `/relay` upgrades go to `config.relay`, and a game's `host`
+(`dev.playgorbo.com`) at its bare address `/` is redirected to its path, query kept (`hostRedirect`); every other
+path on that host is answered as on any host, so a page there reaching this server is not turned back. The editor's Play frames that URL
 (`editor.md`). Tunnel hostname `dev.playgorbo.com → http://localhost:5177` still works too: Vite redirects its
 root to the base. Both units are installed by `setup.sh` and restarted by `update.sh`. Keyboard only; another
 game is another unit, a `games` entry and a hostname.

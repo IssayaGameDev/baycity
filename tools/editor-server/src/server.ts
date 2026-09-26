@@ -14,7 +14,7 @@ import { createAssetIndex } from './assetIndex'
 import { liveAssetFiles } from './liveAssetFiles'
 import { createLiveAssets } from './liveAssets'
 import { createPrefabStore } from './prefabStore'
-import { proxyHttp, proxyUpgrade, routeFor, stripPrefix } from './proxy'
+import { hostRedirect, proxyHttp, proxyUpgrade, routeFor, stripPrefix } from './proxy'
 import { describeCommit, markDirty, take, takeAll, takeDue, type Session, type SessionTable } from './sessions'
 
 /**
@@ -221,14 +221,6 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
   const gameRoutes = Object.values(config.games).map((g) => ({ path: g.path, target: new URL(g.target), host: g.host }))
   const relayRoute = { path: '/relay', target: new URL(config.relay) }
   const pathOf = (req: IncomingMessage): string => (req.url ?? '/').split('?')[0] ?? '/'
-  /** `dev.playgorbo.com/` → `/play/keyboard/`, query kept. `null` when no redirect applies. */
-  const hostRedirect = (req: IncomingMessage): string | null => {
-    const host = (req.headers.host ?? '').split(':')[0]
-    const game = gameRoutes.find((g) => g.host !== undefined && g.host === host)
-    if (game === undefined || pathOf(req).startsWith(game.path)) return null
-    const q = (req.url ?? '').indexOf('?')
-    return `${game.path}${q >= 0 ? (req.url ?? '').slice(q) : ''}`
-  }
 
   // --- static editor ---
   const serveStatic = (req: IncomingMessage, res: ServerResponse): void => {
@@ -249,7 +241,7 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
   }
 
   const server = createServer((req, res) => {
-    const redirect = hostRedirect(req)
+    const redirect = hostRedirect(req.headers.host, req.url ?? '/', gameRoutes)
     if (redirect !== null) {
       res.writeHead(302, { location: redirect })
       res.end()

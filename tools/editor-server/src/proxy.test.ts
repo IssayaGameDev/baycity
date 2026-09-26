@@ -3,7 +3,7 @@ import { connect } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { proxyHttp, proxyUpgrade, routeFor, stripPrefix } from './proxy'
+import { hostRedirect, proxyHttp, proxyUpgrade, routeFor, stripPrefix } from './proxy'
 
 const listen = (s: Server): Promise<number> =>
   new Promise((r) =>
@@ -108,5 +108,25 @@ describe('proxyUpgrade', () => {
     expect(got).toMatch(/^HTTP\/1\.1 101/)
     expect(got).toMatch(/x-path: \/relay\//)
     expect(got).toMatch(/echo:ping$/)
+  })
+})
+
+describe('hostRedirect', () => {
+  const games = [{ path: '/play/keyboard/', host: 'dev.playgorbo.com' }, { path: '/play/other/' }]
+
+  it('sends a game host’s bare address to the game, query kept', () => {
+    expect(hostRedirect('dev.playgorbo.com', '/', games)).toBe('/play/keyboard/')
+    expect(hostRedirect('dev.playgorbo.com:443', '/?level=Roblox', games)).toBe('/play/keyboard/?level=Roblox')
+  })
+
+  it('leaves every other path on that host alone: what the game’s page asks for', () => {
+    for (const url of ['/api/levels/keyboard/Roblox', '/api/live/level/keyboard/Roblox/events', '/api/play/keyboard/levels.json', '/relay/matchmake', '/play/keyboard/']) {
+      expect(hostRedirect('dev.playgorbo.com', url, games), url).toBeNull()
+    }
+  })
+
+  it('never redirects another host', () => {
+    expect(hostRedirect('editor.playgorbo.com', '/', games)).toBeNull()
+    expect(hostRedirect(undefined, '/', games)).toBeNull()
   })
 })
