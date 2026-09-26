@@ -20,12 +20,12 @@ const RADIUS = 5
 /**
  * Matchmaking filters rooms by game and level (`filterBy(['game', 'level'])`, ADR 0023/0052), so a bot has to name the same one a
  * browser tab would or it lands in a room of its own — which would silently halve the load test and stop
- * bots being visible from the game. `default` is what an unparameterised page loads (ADR 0027; it was `gym`
- * until that level was deleted, and this is the second time this default has had to follow it).
+ * bots being visible from the game. `default` is what an unparameterised page loads when the game has one (ADR 0027;
+ * it was `gym` until that level was deleted). Keyboard has none — its page loads its first level — so pass `LEVEL`.
  */
 const LEVEL = process.env['LEVEL'] ?? 'default'
 /** Which game the bots play. A matchmaking filter, like `LEVEL` (ADR 0052). */
-const GAME = process.env['GAME'] ?? 'parkour'
+const GAME = process.env['GAME'] ?? 'keyboard'
 
 export const createBot = (url: string, phase = 0): Bot => {
   let bytes = 0

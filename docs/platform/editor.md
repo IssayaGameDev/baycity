@@ -513,7 +513,7 @@ the name is still in the listing — a deleted or renamed level must not make ev
 - `MODES`: `import.meta.glob('../../../modes/*/src/editorMode.ts', { eager: true })`; every export passing structural `isDescriptor` (`name`, `registry`, `session`) is installed by `name`; duplicates warn, first wins.
 - Paths containing `/modes/_` skipped → `modes/_template` never in the picker.
 - `MODE_LIST` sorted by `label`; `modeOf(level)`; `soleMode()` = the only installed game, else `undefined`.
-- `package.json` lists only `@mode/parkour`; other games enter via the glob's relative path. `tsconfig.json` includes `content/<game>/levels/*.level.json`, `content/*/game.json`.
+- `package.json` lists no game; every game enters via the glob's relative path. `tsconfig.json` includes `content/<game>/levels/*.level.json`, `content/*/game.json`.
 
 ## Messages and the editor's state (ADR 0155, `src/notices.ts`)
 
@@ -565,7 +565,7 @@ server-side changed. Nobody following, nothing is sent.
 | `gameData` | per game, `content/<game>/game.json` (`parseGameData`), read by `loadGame` in `reloadAssets` with where the copy stands (`gameOrigins`), then kept live by `gameSync` (*Live assets* below) |
 | `registryFor(mode)` | `mode.registry` + `sharedComponents(gameData[mode.name] − present)` — live data merged over the bundled code |
 | `registry()` | `registryFor(activeMode)`, or `DEFAULT_REGISTRY` with no game |
-| `adoptable()` | `SHARED_COMPONENT_TYPES` the game lacks (`Boss`, `Bumper`, `Checkpoint`, `Goal`, `Hazard`, `Sequence`) |
+| `adoptable()` | `SHARED_COMPONENT_TYPES` the game lacks (`Boss`, `Bumper`, `Checkpoint`, `Hazard`, `Sequence`) |
 | `adopt(types)` | shared ∧ new → `gameSync.edit(gameDocId(game), [set components])` → `gameShown` → `reopenWithRegistry()` |
 | `gameShown(game, before)` | after any change to a game's copy — this tab's, anyone's, an undo: the list changed → `reopenWithRegistry()` (the game you are in) and the games window redrawn; the settings → `meshes.buildAll()` for a `surfaceGrid` game (the key pitch, ADR 0120) and `gamesWindow.settingsChanged(game)` |
 

@@ -17,7 +17,7 @@ import game from '@content/_template/game.json'
  * What this game's levels may contain: the engine's components, plus `Hazard` so a level can have a kill plane
  * under it (ADR 0053) and a fall is survivable authoring rather than an infinite drop.
  *
- * **Composed, not inherited.** Add `Checkpoint`, `Goal`, `Bumper` or your own from `@mp/components` as the
+ * **Composed, not inherited.** Add `Checkpoint`, `Bumper` or your own from `@mp/components` as the
  * game needs them; the editor offers exactly what is listed here and nothing else.
  */
 /**
@@ -42,8 +42,7 @@ export const spawnOf = spawnFrom(STAND_OFFSET)
  * A session with no progression: you spawn, you can die, you respawn where you started.
  *
  * `progress` is always `-1` and `onProgress` is never called, so the client saves nothing — which is correct
- * for a game with nothing to save yet, and is where a checkpoint rule would go. Compare `modes/parkour`, whose
- * session is the same shape with a checkpoint index threaded through it.
+ * for a game with nothing to save yet, and is where a checkpoint rule would go.
  */
 export const templateSession = (loaded: LoadedLevel, _opts: ModeSessionOptions = {}): ModeSession => {
   const spawn = spawnOf(loaded)

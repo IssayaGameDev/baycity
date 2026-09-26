@@ -18,7 +18,7 @@ Tripwires, not targets. Exceeding one is never resolved silently — mitigation 
 |---|---|---|
 | `BOTS` | 20 | `load.ts` |
 | `DURATION_MS` | 10000 | `load.ts` |
-| `GAME` | `parkour` | `bot.ts` (matchmaking filter) |
+| `GAME` | `keyboard` | `bot.ts` (matchmaking filter) |
 | `LEVEL` | `default` | `bot.ts` (matchmaking filter) |
 | port | 9300 | `load.ts` |
 | warm-up | 1500 ms before counting | `load.ts` |

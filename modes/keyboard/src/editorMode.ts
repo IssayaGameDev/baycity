@@ -60,7 +60,8 @@ export const KEYBOARD_MODE: ModeDescriptor = {
   gizmos: { [Hazard.type]: MARKER_COLORS.hazard, [WinsPad.type]: MARKER_COLORS.goal, [Treadmill.type]: MARKER_COLORS.checkpoint, [StepPad.type]: MARKER_COLORS.bumper },
   /**
    * The shipped locomotion, whose `moveSpeed` Level writes, and the **Stepper** that turns held input into the
-   * steps Experience is paid for (ADR 0081). This list and `playerDefs` have to agree (see `modes/swing`).
+   * steps Experience is paid for (ADR 0081). This list and `playerDefs` have to agree: a type listed here with no
+   * definition is refused by the component runtime.
    */
   player: [
     { id: 'loco', type: 'Locomotion', params: {} },

@@ -74,9 +74,7 @@ export interface CharacterAccess {
 /**
  * What a level can ask of a run. A mode with no such rule supplies a no-op and the component does nothing.
  *
- * Only the two rules that exist. `Goal` is a component with no hook because the mode has no goal rule —
- * nothing ends a run yet, and inventing one here would be a design decision wearing an implementation's
- * clothes.
+ * Only the rules that exist; a new one is a design decision, not an implementation's.
  */
 export interface Effects {
   /** The local player died. The mode decides what that means (respawn, ragdoll, both). */

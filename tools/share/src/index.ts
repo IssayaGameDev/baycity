@@ -35,17 +35,15 @@ export interface SharedGame {
  * or it cannot be shared.
  */
 export const SHARED_GAMES: readonly SharedGame[] = [
-  { name: 'parkour', script: 'dev:parkour', port: 5174 },
-  { name: 'swing', script: 'dev:swing', port: 5175 },
   { name: 'keyboard', script: 'dev:keyboard', port: 5177 },
 ]
 
 /**
- * Which game to share: `pnpm share <name>`, defaulting to parkour, which is what the command always did.
+ * Which game to share: `pnpm share <name>`, defaulting to keyboard, the one game there is.
  * Throws on a name that is not a game rather than silently sharing the wrong one.
  */
 export const gameToShare = (args: readonly string[], games: readonly SharedGame[] = SHARED_GAMES): SharedGame => {
-  const name = args.find((a) => !a.startsWith('-')) ?? 'parkour'
+  const name = args.find((a) => !a.startsWith('-')) ?? 'keyboard'
   const game = games.find((g) => g.name === name)
   if (game === undefined) throw new Error(`no game called "${name}"; one of: ${games.map((g) => g.name).join(', ')}`)
   return game

@@ -94,4 +94,4 @@ import game from '../../../content/keyboard/game.json'
 export const KEYBOARD_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, STEPPER_DEF, Keyboard, WinsPad, Treadmill, StepPad, ...sharedComponents(game.components)])
 ```
 
-= engine + player + the game's code components + the shared names in `content/<game>/game.json`. Same shape in `modes/parkour`, `modes/swing`, `modes/_template`. The editor merges the live data file on top (`registryFor`/`adopt`, `tools/editor/src/main.ts`) since its bundle does not reload on write.
+= engine + player + the game's code components + the shared names in `content/<game>/game.json`. Same shape in `modes/_template`. The editor merges the live data file on top (`registryFor`/`adopt`, `tools/editor/src/main.ts`) since its bundle does not reload on write.

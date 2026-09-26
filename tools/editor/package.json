@@ -10,7 +10,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mode/parkour": "workspace:*",
     "@mp/camera": "workspace:*",
     "@mp/client": "workspace:*",
     "@mp/components": "workspace:*",

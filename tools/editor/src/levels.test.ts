@@ -1,6 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 
-import { DEFAULT_REGISTRY } from '@mp/components'
 import { levelRefForFile, LEVELS_DIR, validateLevel } from '@mp/content'
 import { describe, expect, it } from 'vitest'
 
@@ -17,8 +16,8 @@ import { MODES } from './modes'
  *
  * The game is now the **folder** the level is in (ADR 0108), which is stronger than the `config.mode.name` it
  * used to read: a tag can be absent, stale or in a file that will not parse, and a folder cannot. A level in
- * a folder this build has no game for falls back to the shared registry, because a missing sibling app must
- * not fail the file.
+ * a folder this build has no game for is skipped: there is no registry to hold it to, and a game removed from
+ * the code keeps its folder in `content/` until its removal comes back from the box (ADR 0171).
  *
  * It exists because nothing else covers the files themselves. A component renamed, a parameter retyped, or a
  * migration writing a shape the validator rejects would all ship silently and fail in the browser.
@@ -38,16 +37,16 @@ describe('every authored level', () => {
   })
 
   it('has the games installed that its level folders name', () => {
-    // Not a validity check — a tripwire on the glob. If `MODES` came back empty the loop below would still
-    // pass on every file, having quietly fallen back to the shared registry for all of them.
+    // Not a validity check — a tripwire on the glob. If `MODES` came back empty the loop below would skip every
+    // file and pass having checked nothing.
     expect(Object.keys(MODES).length).toBeGreaterThan(0)
   })
 
   for (const rel of files) {
-    it(`${rel} validates against its own game, parameters included`, () => {
+    const mode = MODES[levelRefForFile(rel)!.game]
+    it.skipIf(mode === undefined)(`${rel} validates against its own game, parameters included`, () => {
       const raw: unknown = JSON.parse(readFileSync(`${root}/${rel}`, 'utf8'))
-      const mode = MODES[levelRefForFile(rel)!.game]
-      expect(() => validateLevel(raw, mode?.registry ?? DEFAULT_REGISTRY)).not.toThrow()
+      expect(() => validateLevel(raw, mode!.registry)).not.toThrow()
     })
   }
 })

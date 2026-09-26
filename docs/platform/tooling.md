@@ -16,11 +16,9 @@ Opt-in remote debugging: one game's page behind **one** Cloudflare quick tunnel,
 
 | name | script | port |
 | --- | --- | --- |
-| `parkour` (default) | `dev:parkour` | 5174 |
-| `swing` | `dev:swing` | 5175 |
-| `keyboard` | `dev:keyboard` | 5177 |
+| `keyboard` (default) | `dev:keyboard` | 5177 |
 
-`gameToShare(argv)` — first non-`-` arg, default `parkour`; unknown name throws listing the valid ones.
+`gameToShare(argv)` — first non-`-` arg, default `keyboard`; unknown name throws listing the valid ones.
 
 Sequence (`main.ts`):
 1. `assertCloudflared` — `cloudflared --version` must exit 0.
@@ -60,8 +58,8 @@ GAME=keyboard LEVEL=keyboard pnpm --filter @mp/bots run load
 | --- | --- | --- |
 | `BOTS` | `20` | bot count |
 | `DURATION_MS` | `10000` | measurement window (after a fixed 1.5 s matchmaking settle) |
-| `GAME` | `parkour` | matchmaking filter |
-| `LEVEL` | `default` | matchmaking filter — must match what a browser tab names or bots land in their own room |
+| `GAME` | `keyboard` | matchmaking filter |
+| `LEVEL` | `default` | matchmaking filter — must match what a browser tab names or bots land in their own room; Keyboard has no `default`, so pass its level |
 
 Starts its own server on `PORT = 9300`, in-process (server + bots share one event loop → tick timings include contention; ballpark, not a benchmark). Prints `budget 2 downstream/client avg/max kB/s (target ~20–30)` and `budget 3 server tick avg/max ms (target < 33)`, then exits. Live-server test runs in the vitest `live-server` project with `pool: 'threads'` (see `vitest.config.ts` for why forks break `@pm2/io`).
 
@@ -76,19 +74,3 @@ Starts its own server on `PORT = 9300`, in-process (server + bots share one even
 | `lossRate` | drop probability [0..1] |
 
 Extra methods: `setConditions`, `conditions`. Headless (→ `@mp/core` only). Tested with fake timers in `src/index.test.ts`. **Not wired into any client** — no import outside `tools/netsim` (ADR 0013). No run script.
-
-## `tools/viewer` — content viewer
-
-`pnpm dev:viewer` → `http://localhost:5175`. **Port clash:** `modes/swing/vite.config.ts` also binds 5175; they cannot run together.
-
-| File | Contents |
-| --- | --- |
-| `src/registry.ts` | `ENTRIES`: hand-written catalog, currently one entry — `level1` validated against `PARKOUR_MODE.registry`, `mode: PARKOUR_MODE` |
-| `src/main.ts` | Three stage + greybox environment + post-FX (renderer defaults), `OrbitControls`, Tweakpane panel |
-
-Panel (`Pane`, title "Content viewer"):
-- **Content** → entry picker.
-- **Overlays** → `grid`, `colliders (x-ray)` (edge outlines of every collider), `markers/triggers` (spawn + one gizmo per gameplay component coloured by `mode.gizmos`), `jump reach` (ring + arc from `tuning.jumpHeight`/`gravity`/`moveSpeed`).
-- **Play-in-place** → `play (WASD+Space)`: `addCharacter` + `stepCharacter` on a fixed loop, camera-relative move, no networking, no rules session.
-
-Deps: `@mode/parkour`, `@mp/humanoid`, `@mp/components`, `@mp/content`, `@mp/core`, `@mp/mode`, `@mp/physics`, `@mp/render-three`, `tweakpane`. Greyboxes everything (no asset runtime).

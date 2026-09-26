@@ -9,9 +9,8 @@ import { spawnFrom, standingAt } from './spawn'
  * The shared spawn placement — one copy now, where parkour, swing and the template each had their own
  * (identical) one.
  *
- * What is tested here is the part that became a parameter: the stand-off height. The rest of the behaviour is
- * also covered end-to-end through `modes/parkour/src/rules.test.ts`, which runs it against a real loaded
- * level; these read only the markers, which is all the function does.
+ * What is tested here is the part that became a parameter: the stand-off height. These read only the markers,
+ * which is all the function does.
  */
 
 const markers = (...at: readonly ReturnType<typeof vec3>[]): { markers: WorldMarker[] } => ({

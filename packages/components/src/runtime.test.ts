@@ -6,7 +6,7 @@ import { vec3 } from '@mp/core'
 import { createComponentRuntime, characterAccess, hasHooks, HOOK_NAMES, type Effects } from './runtime'
 import { createRegistry } from './registry'
 import { defineComponent } from './define'
-import { Bumper, Checkpoint, Goal, Hazard, Sequence } from './gameplay'
+import { Bumper, Checkpoint, Hazard, Sequence } from './gameplay'
 import { ENGINE_COMPONENTS } from './engine'
 
 /**
@@ -20,6 +20,9 @@ const comp = (id: string, type: string, params: Record<string, unknown> = {}): C
 const box = { shape: { kind: 'box', halfExtents: vec3(1, 1, 1) }, center: vec3(0, 0, 0) }
 
 const levelOf = (nodes: Node[]): Level => ({ id: 'fx', config: {}, nodes })
+
+/** Data only: no hooks, so the runner has nothing to run for it. */
+const Tag = defineComponent({ type: 'Tag', params: {}, singleton: true })
 
 /** Counts every call, so a test can assert order and how often something ran. */
 const log: string[] = []
@@ -87,7 +90,7 @@ const Turner = defineComponent({
   },
 })
 
-const TEST_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Bumper, Checkpoint, Goal, Hazard, Sequence, Counter, Peeker, Wanderer, Touchy, Riser, Sneak, Turner])
+const TEST_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Bumper, Checkpoint, Hazard, Sequence, Tag, Counter, Peeker, Wanderer, Touchy, Riser, Sneak, Turner])
 
 const load = (nodes: Node[]): ReturnType<typeof instantiateLevel> =>
   instantiateLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), levelOf(nodes), TEST_REGISTRY)
@@ -121,13 +124,13 @@ describe('which components the runner picks up', () => {
   })
 
   it('ignores anything with no hooks, so a data-only component costs nothing', () => {
-    const loaded = load([{ id: 'n', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', COLLIDER, box), comp('c1', Goal.type)] }])
+    const loaded = load([{ id: 'n', transform: { position: vec3(0, 0, 0) }, components: [comp('c0', COLLIDER, box), comp('c1', Tag.type)] }])
     expect(createComponentRuntime(loaded, TEST_REGISTRY, { character: anyCharacter(), effects: noEffects() }).count()).toBe(0)
   })
 
   it('says which definitions have anything to run', () => {
     expect(hasHooks(Bumper)).toBe(true)
-    expect(hasHooks(Goal), 'no goal rule exists yet').toBe(false)
+    expect(hasHooks(Tag), 'data only').toBe(false)
     expect(hasHooks(Sequence), 'motion is the loader’s pure function of time, not a hook').toBe(false)
   })
 
@@ -258,8 +261,8 @@ describe('the rules that own their reaction', () => {
     expect(progressed.map((n) => n.id)).toEqual(['cp'])
   })
 
-  it('does nothing at a goal, because no goal rule exists yet', () => {
-    const result = fire([solid('g', comp('c1', Goal.type))])
+  it('does nothing at a component with no hook', () => {
+    const result = fire([solid('g', comp('c1', Tag.type))])
     expect([result.launched, result.killed, result.progressed.length]).toEqual([0, 0, 0])
   })
 

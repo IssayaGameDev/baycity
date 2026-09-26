@@ -30,7 +30,7 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 | [editor.md](platform/editor.md) | What it authors, content API client, locks in the editor, edits as ops, live levels, game discovery, adoption, Play |
 | [editor-server.md](platform/editor-server.md) | The content API, Access identity, locks, live documents, session commits, upload, deploy |
 | [content-sync.md](platform/content-sync.md) | The live mirror, `content-root.ts`, the `@content` alias, `.env` |
-| [tooling.md](platform/tooling.md) | share, bots, netsim, viewer |
+| [tooling.md](platform/tooling.md) | share, bots, netsim |
 | [budgets.md](platform/budgets.md) | The tripwires and how each is measured |
 
 ## Games — `docs/games/`
@@ -38,8 +38,6 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 | Game | Docs |
 | --- | --- |
 | [keyboard](games/keyboard/README.md) | progression, balance, world-1, steps, keycaps, stages-and-wins, pads, hud, debug, known-open |
-| [parkour](games/parkour/README.md) | the reference game: checkpoints, goal, hazards |
-| [swing](games/swing/README.md) | the rope: a game-owned locomotion and a travelling state |
 
 `modes/_template` is documented in `platform/workspace.md` (how to add a game).
 
@@ -220,5 +218,6 @@ why matters.
 | [0168](adr/0168-the-inspector-follows-an-edit-made-elsewhere-in-place.md) | The Inspector follows an edit made elsewhere in place |
 | [0169](adr/0169-a-game-page-downloads-one-level-and-only-what-it-uses.md) | A game page downloads one level and only what it uses |
 | [0170](adr/0170-the-procedural-sky-is-the-only-sky.md) | The procedural sky is the only sky |
+| [0171](adr/0171-parkour-swing-the-viewer-and-goal-are-deleted.md) | Parkour, Swing, the viewer and `Goal` are deleted |
 
 `Design archive/` holds superseded design material and is not maintained.

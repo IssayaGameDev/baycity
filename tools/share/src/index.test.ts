@@ -27,8 +27,8 @@ describe('composeShareLink', () => {
 })
 
 describe('gameToShare', () => {
-  it('defaults to parkour, which is what the command always shared', () => {
-    expect(gameToShare([]).name).toBe('parkour')
+  it('defaults to keyboard, the one game there is', () => {
+    expect(gameToShare([]).name).toBe('keyboard')
   })
 
   it('picks the named game and its own port', () => {
@@ -40,7 +40,7 @@ describe('gameToShare', () => {
   })
 
   it('knows every game that has a dev script', () => {
-    expect(SHARED_GAMES.map((g) => g.name).sort()).toEqual(['keyboard', 'parkour', 'swing'])
+    expect(SHARED_GAMES.map((g) => g.name).sort()).toEqual(['keyboard'])
   })
 })
 

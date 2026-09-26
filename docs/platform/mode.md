@@ -1,6 +1,6 @@
 # `@mp/mode` — what a game contributes to the tools
 
-Package `packages/mode` (`@mp/mode`). Headless: no renderer import; gizmo colours are numbers. Deps: `@mp/components`, `@mp/content`, `@mp/core`, `@mp/humanoid`, `@mp/physics`. Source: `packages/mode/src/index.ts`, `spawn.ts`, `actions.ts`. ADR 0052 (descriptor), ADR 0065 (membership rule: a field lives here only when more than one consumer — editor, viewer, client — reads it).
+Package `packages/mode` (`@mp/mode`). Headless: no renderer import; gizmo colours are numbers. Deps: `@mp/components`, `@mp/content`, `@mp/core`, `@mp/humanoid`, `@mp/physics`. Source: `packages/mode/src/index.ts`, `spawn.ts`, `actions.ts`. ADR 0052 (descriptor), ADR 0065 (membership rule: a field lives here only when more than one consumer — editor, client — reads it).
 
 ## `ModeDescriptor` — `packages/mode/src/index.ts`
 
