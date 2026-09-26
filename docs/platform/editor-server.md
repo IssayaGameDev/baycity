@@ -3,8 +3,7 @@
 The content API the editor talks to, as one implementation with two hosts (ADR 0083): a Vite middleware in
 `pnpm dev:editor` (no login, no git) and a Node server on the box behind Cloudflare Access (`editor.playgorbo.com`,
 login, locks, commits on the `content` branch). `@mp/editor-server`, `tsx src/main.ts <config.json>`, no
-dependency beyond `@mp/content` and `@mp/game-client`'s import-free `codeAssets.ts` (both by relative path so
-`vite.config.ts` can bundle them). What that reaches
+dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` can bundle it). What that reaches
 must not import a workspace package **as a value** — plain Node loads the bundle, and the editor's build, which
 is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walks the imports to hold.
 
@@ -25,7 +24,7 @@ is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walk
 | `src/assetImporter.ts` | `importAssets(contentDir)` → `{ entries, created }`: every library in one pass (`libraryFolders(contentDir)`: `assets`, made if missing, then each game folder's `assets/` that exists), so an id is unique across them; a sidecar claimed twice is reissued |
 | `src/prefabStore.ts` | `createPrefabStore(contentDir, index?)` — prefab definitions by asset id, off disk, found through the index: `root`, `pathOf`, `write`; rescans on an unknown id so a prefab saved seconds ago resolves, **and when the remembered path's sidecar no longer carries the id** — a prefab renamed, moved or deleted while the server ran used to resolve to nothing and be written back to its old place |
 | `src/sse.ts` | `encodeSse(event, data, id?)`, `SSE_HEADERS`, `SSE_KEEPALIVE` |
-| `src/proxy.ts` | `proxyHttp`, `proxyUpgrade`, `routeFor` — the staging games and `/relay` under this origin (ADR 0086) |
+| `src/proxy.ts` | `proxyHttp`, `proxyUpgrade`, `routeFor`, `hostRedirect` — the staging games and `/relay` under this origin (ADR 0086) |
 | `src/server.ts` | `startEditorServer(config)` — identity, static editor, game proxy, timers, commit queue, state files |
 | `src/assetOps.ts`, `src/assetImporter.ts` | moved from the editor: folder ops, `.meta` importer |
 | `src/main.ts` | CLI; SIGTERM/SIGINT commit every session then exit |
@@ -68,7 +67,7 @@ shipped when `hidden` was added (ADR 0132). `api.test.ts` walks one over the wir
 | `POST /api/assets/mkdir` · `move` · `delete` | `{ path }` · `{ from, to }` or `{ moves: [{ from, to }] }` · `{ path }` or `{ paths }` — each path inside a library (`inLibrary`) of Shared or an existing game, else 400; a move into another library is **409** while something would be left using what it may not (`libraryMoves.ts`). Several are checked before any is done — locks (423), a source missing or a name taken (400), the library rule for all crossing into one library together (409) — so all or none (ADR 0166) | lock (move/delete; a folder is refused if anything under it is held) |
 | `POST /api/assets/upload?path=` | raw bytes → `{ entry }`; `path` from `content/`, inside a library | lock; ext ∈ `png jpg jpeg webp ktx2 glb`; `≤ maxUploadBytes` else 413 |
 | `GET /content/<path>` | bytes of a path inside a library (anything else 404) — a prefab open live is served from its document, as a level is; a live asset (ADR 0159) from its document when open, with `x-asset-epoch` / `x-asset-seq` (`0` for the file) | |
-| `GET /api/play/<address>` | a game page's content (ADR 0169), each as it is now: `<game>/levels.json` → `levelIndexOf` over its level files · `<game>/levels/<name>.needs.json` → `levelNeeds` over `levelNow`, the asset index and `assetJsonNow`, plus `CODE_ASSETS`, `url`s `content/<path>` · `<game>/levels/<name>.level.json` → `levelNow` · a library path → as `GET /content/<path>`. 404 anything else, 405 anything but GET, `cache-control: no-cache`. The staging game's dev server proxies its page's `content/` here (`content-sync.md`) | `identifyPlayer`: signed in, not necessarily in `users` |
+| `GET /api/play/<address>` | a game page's content (ADR 0169), each as it is now: `<game>/levels.json` → `levelIndexOf` over its level files · `<game>/levels/<name>.needs.json` → `levelNeeds` over `levelNow`, the asset index and `assetJsonNow`, `url`s `content/<path>` · `<game>/levels/<name>.level.json` → `levelNow` · a library path → as `GET /content/<path>`. 404 anything else, 405 anything but GET, `cache-control: no-cache`. The staging game's dev server proxies its page's `content/` here (`content-sync.md`) | `identifyPlayer`: signed in, not necessarily in `users` |
 | `POST /api/live/asset/<id>/ops` | `{ connId, batchId, ops }` — asset ops on any live connection of this user → `{ ok, seq }` · 400 not ops, an op that does not apply or leaves the file invalid, an unknown or foreign connection · 404 no such asset | |
 | `POST /api/live/game/<game>/ops` | the same, on a game's `game.json` (ADR 0162); echoed as an `asset` event with `assetId` `game:<game>` · 404 no such game | |
 | `PUT /content/<path>` | JSON asset; **409** while that prefab, or that live asset, is open live | lock |
@@ -212,6 +211,7 @@ A **service token** (the mirror, `content-sync.md`) arrives as a JWT with `commo
 | `strip-motion.sh` | one-off (ADR 0137): every `Mover`/`Spinner` out of levels, prefab files, a level's table, placement records and each game's list (`motionStrip.ts`, run by `stripMotion.ts`). Runs `origin/master`'s tool from a throwaway `git worktree`, so it goes **after the push and before the deploy** of the code that drops the two — which cannot load a file naming them. Needs nothing from `node_modules` but `tsx`, asserted in `motionStrip.test.ts`. Dry by default; `-- --write` as the migrations. Each rewrite read back and refused unless nothing of the two is left |
 | `migrate-one-storage.sh` | one-off (ADR 0151, step 4): what ADR 0130 kept on a placement's own node into its prefab root's record (`oneStorage.ts`, run by `migrateOneStorage.ts`) — children always, appended after the record's own; components only when the prefab's root has none of that type, the rest named as staying (a singleton needs a registry to tell, and the tool has none); empty record fields tidied. Every level must resolve exactly as before — `resolvedShape`, the loader's `effectiveNode` over ids and component ids — checked in the plan and again on read-back, else refused and restored. Placements inside records included. Same worktree, `tsx`-only (asserted in `oneStorage.test.ts`), dry-by-default mechanics as `strip-motion.sh`; free of deploy order, since the code before and after reads either shape |
 | `migrate-mesh-renderer.sh` | one-off (ADR 0153): every `Mesh` into the `Renderer` beside it (`meshRenderer.ts`, run by `migrateMeshRenderer.ts`) — the `Renderer` keeps its id, a `Mesh` alone becomes a switched-off `Renderer` holding the model; placement records naming a piece's `Mesh` move onto its `Renderer` (switched off or removed there = its model cleared), a `Mesh` a placement added folds the same way. Prefab files, levels, a level's table and records' added children. **All or nothing**: a level is remapped by its prefabs' folds; `drawnLines` (whether, what model, what material, every other component, switched-off objects included) must match before and after or nothing is written, and a switched-off `Mesh` holding a model is named for a person. Ran once from the box's **own checkout** (content `5c9a5ea`), stopping `editor-server` for the write; the code no longer reads a `Mesh`, so the tool keeps the old rule for its own check (`drawnModel`). Idempotent: run again, it finds nothing |
+| `remove-parkour-swing.sh` | one-off (ADR 0171): `content/parkour` and `content/swing` out of the content, their code having gone. Refuses unless the box's checkout is on `content`; dry by default (lists every file); `-- --write` commits every session, stops `editor-server`, `git rm`s the two folders, commits on `content` and pushes, and starts the server again. No tool, so free of deploy order. Idempotent: a rerun finds nothing |
 
 Box: Hetzner CX23 (2 vCPU, 4 GB) `2.28.227.20`, Ubuntu 26.04; cloudflared installed by the dashboard's tunnel
 command, `editor.playgorbo.com → localhost:8080`; Access application `Editor` with two policies: `Team` (Allow,
@@ -228,8 +228,9 @@ Dashboard names as of setup: Cloudflare One → *Access controls* (applications,
 
 The game runs with `MP_BASE=/play/keyboard/` and is reached **through this server** at
 `editor.playgorbo.com/play/keyboard/` (ADR 0086): every request under a configured `games[].path` is proxied
-to its `target` (HTTP and upgrade), `/relay` upgrades go to `config.relay`, and a request whose `Host` is a
-game's `host` (`dev.playgorbo.com`) is redirected to its path, query kept. The editor's Play frames that URL
+to its `target` (HTTP and upgrade), `/relay` upgrades go to `config.relay`, and a game's `host`
+(`dev.playgorbo.com`) at its bare address `/` is redirected to its path, query kept (`hostRedirect`); every other
+path on that host is answered as on any host, so a page there reaching this server is not turned back. The editor's Play frames that URL
 (`editor.md`). Tunnel hostname `dev.playgorbo.com → http://localhost:5177` still works too: Vite redirects its
 root to the base. Both units are installed by `setup.sh` and restarted by `update.sh`. Keyboard only; another
 game is another unit, a `games` entry and a hostname.

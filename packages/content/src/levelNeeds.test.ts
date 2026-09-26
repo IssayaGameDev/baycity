@@ -12,7 +12,6 @@ const PAD = 'aaaaaaaaaaaaaaaa'
 const RED = 'bbbbbbbbbbbbbbbb'
 const BRICK = 'cccccccccccccccc'
 const CRATE = 'dddddddddddddddd'
-const SKY = 'eeeeeeeeeeeeeeee'
 const THEIRS = 'ffffffffffffffff'
 const UNUSED = '1111111111111111'
 
@@ -21,17 +20,12 @@ const assets: Record<string, { kind: AssetKind; path: string; json?: unknown }> 
   [RED]: { kind: 'material', path: 'keyboard/assets/materials/red.mat.json', json: { shader: 'standard', params: { map: { kind: 'texture', value: BRICK } } } },
   [BRICK]: { kind: 'texture', path: 'assets/textures/brick.png' },
   [CRATE]: { kind: 'model', path: 'assets/models/crate.glb' },
-  [SKY]: { kind: 'texture', path: 'assets/textures/sky.webp' },
   [THEIRS]: { kind: 'material', path: 'parkour/assets/materials/theirs.mat.json', json: { shader: 'standard', params: {} } },
   [UNUSED]: { kind: 'texture', path: 'assets/textures/unused.png' },
 }
 
 const catalog: ContentCatalog = {
   byId: (id) => assets[id],
-  byPath: (path) => {
-    const id = Object.keys(assets).find((k) => assets[k]?.path === path)
-    return id === undefined ? undefined : { id }
-  },
   contentsOf: (id) => assets[id]?.json,
 }
 
@@ -41,7 +35,7 @@ const KEYBOARD_ONE = { game: 'keyboard', name: 'one' }
 
 describe('a level’s list', () => {
   it('names the level and everything it uses through its prefab and material, and nothing else', () => {
-    const needs = levelNeeds(KEYBOARD_ONE, level([{ id: 'p', prefab: PAD, components: [] }]), catalog, [], at)
+    const needs = levelNeeds(KEYBOARD_ONE, level([{ id: 'p', prefab: PAD, components: [] }]), catalog, at)
     expect(needs.level).toBe('content/keyboard/levels/one.level.json')
     // By path: Shared's models, prefabs, textures, then the game's own library.
     expect(needs.assets.map((a) => a.id)).toEqual([CRATE, PAD, BRICK, RED])
@@ -49,17 +43,12 @@ describe('a level’s list', () => {
   })
 
   it('leaves out what another game’s library holds, even when the level names it', () => {
-    const needs = levelNeeds(KEYBOARD_ONE, level([{ id: 'n', components: [{ id: 'c', type: 'Renderer', params: { material: THEIRS } }] }]), catalog, [], at)
+    const needs = levelNeeds(KEYBOARD_ONE, level([{ id: 'n', components: [{ id: 'c', type: 'Renderer', params: { material: THEIRS } }] }]), catalog, at)
     expect(needs.assets).toEqual([])
   })
 
-  it('adds what the game’s own code loads by path, which no level names', () => {
-    const needs = levelNeeds(KEYBOARD_ONE, level([]), catalog, ['assets/textures/sky.webp', 'assets/textures/not-there.png'], at)
-    expect(needs.assets.map((a) => a.id)).toEqual([SKY])
-  })
-
   it('writes each address with the server’s own mapping', () => {
-    const needs = levelNeeds(KEYBOARD_ONE, level([{ id: 'n', components: [{ id: 'c', type: 'Renderer', params: { model: CRATE } }] }]), catalog, [], (p) => `assets/${p.split('/').pop()}`)
+    const needs = levelNeeds(KEYBOARD_ONE, level([{ id: 'n', components: [{ id: 'c', type: 'Renderer', params: { model: CRATE } }] }]), catalog, (p) => `assets/${p.split('/').pop()}`)
     expect(needs.level).toBe('assets/one.level.json')
     expect(needs.assets[0]?.url).toBe('assets/crate.glb')
   })

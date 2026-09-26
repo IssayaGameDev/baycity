@@ -1,6 +1,6 @@
 # `@mp/mode` — what a game contributes to the tools
 
-Package `packages/mode` (`@mp/mode`). Headless: no renderer import; gizmo colours are numbers. Deps: `@mp/components`, `@mp/content`, `@mp/core`, `@mp/humanoid`, `@mp/physics`. Source: `packages/mode/src/index.ts`, `spawn.ts`, `actions.ts`. ADR 0052 (descriptor), ADR 0065 (membership rule: a field lives here only when more than one consumer — editor, viewer, client — reads it).
+Package `packages/mode` (`@mp/mode`). Headless: no renderer import; gizmo colours are numbers. Deps: `@mp/components`, `@mp/content`, `@mp/core`, `@mp/humanoid`, `@mp/physics`. Source: `packages/mode/src/index.ts`, `spawn.ts`, `actions.ts`. ADR 0052 (descriptor), ADR 0065 (membership rule: a field lives here only when more than one consumer — editor, client — reads it).
 
 ## `ModeDescriptor` — `packages/mode/src/index.ts`
 
@@ -9,7 +9,7 @@ Package `packages/mode` (`@mp/mode`). Headless: no renderer import; gizmo colour
 | `name` | `string` | Stable id; matches `LevelConfig.mode.name`. Never shown. |
 | `label` | `string` | Picker text. |
 | `registry` | `Registry` | Engine + shared (from `content/<name>/game.json`) + own components. Composed, not inherited (see `docs/platform/components/api.md`). |
-| `tuning` | `CharacterTuning` (`packages/humanoid/src/groundController.ts`) | Starting locomotion numbers. Field because the editor play-tests in place. |
+| `tuning` | `CharacterTuning` (`packages/humanoid/src/groundController.ts`) | Starting locomotion numbers; the client copies them. |
 | `gizmos` | `Readonly<Record<string, number>>` | Component type → `0xrrggbb` marker colour a tool draws over the rule's node. |
 | `surfaceGrid?` | `(components, size: Vec3, settings) => SurfaceGrid \| null` (`src/surface.ts`) | What this game would tile onto a box surface, for a tool to draw before the game runs (ADR 0120). Returns the **grid** (`cols`, `rows`, `pitch`, `size`, `startX`, `startZ`), never geometry — six numbers whatever the cell count, so a tool may ask per drag frame, and `@mp/mode` stays headless. The game reads the node's own components, so a tool never learns what one means. Helpers: `gridCells`, `gridMargin`. Absent = nothing generated on this game's surfaces. |
 | `spawn` | `(loaded: LoadedLevel, seed?: number) => Vec3` | Start position. `seed` = player id in a game, absent in a tool. |
@@ -74,28 +74,24 @@ Result fills `InputCommand.actions` (`packages/core/src/input.ts`); the game's l
 
 ## `PLAYER_NODE_ID = 'player'`
 
-The `self.node.id` the local player's components see, in both the game and the editor's play-test.
+The `self.node.id` the local player's components see.
 
 ## Where a descriptor lives and how tools find it
 
 - Each game exports one from `modes/<game>/src/editorMode.ts` under any export name (e.g. `KEYBOARD_MODE`, `modes/keyboard/src/editorMode.ts`). Rules stay in `modes/<game>/src/rules.ts`; `editorMode.ts` assembles them with tuning, gizmos and player lists.
 - `tools/editor/src/modes.ts`: `import.meta.glob('../../../modes/*/src/editorMode.ts', { eager: true })`; structural check `isDescriptor` (`name: string`, `registry: object`, `session: function`); directories starting with `_` skipped; duplicate `name` warns and keeps the first. Exports `MODES` (by name), `MODE_LIST` (label order), `modeOf(level)` (`config.mode?.name` → descriptor or `undefined`), `soleMode()`.
 
-## What the editor's play-test uses (`tools/editor/src/main.ts`)
+## What the editor uses (`tools/editor/src/main.ts`)
 
 | descriptor field | use |
 |---|---|
 | `name`, `registry` | `registryFor(mode)` — registry plus live `content/<name>/game.json` extras; `adopt` writes that file |
-| `label` | picker; status text |
+| `label` | picker; status text; Play's refusal |
 | `gizmos` | marker colours over rule nodes |
 | `surfaceGrid?` | the `Keys` overlay: cells drawn in each item's mesh holder, built-in box and rounded box only (ADR 0120) |
-| `spawn(loaded)` | character placement (no seed); fallback `(0, 3, 0)` with no game |
-| `session(loaded)` | rules; `effects` → `createComponentRuntime`; per tick `takeDeath()` → `setPosition(respawnAt())`, `takeTeleport?.()` → `setPosition(to)`; velocities zeroed (no ragdoll, no persistence) |
-| `player`, `playerDefs(host)` | `PlayerEntity { id: PLAYER_NODE_ID, components, defs }`; host = `{ character: () => char, tuning: () => mode.tuning, platforms: () => loaded?.basePose, world: () => world, level: () => loaded }` |
-| `tuning` | only via `PlayerHost.tuning`; the game's locomotion component reads it |
-| `actions` | `actionsHeld(activeMode?.actions, keys)` → `InputCommand.actions` per tick |
 
-Unassigned level or missing game → character + geometry only, no rules, `DEFAULT_REGISTRY`.
+The rest — `spawn`, `session`, `player`, `playerDefs`, `tuning`, `actions` — is the game client's; the editor plays a
+level in the game's own page (ADR 0172).
 
 ## Settings (ADR 0087)
 

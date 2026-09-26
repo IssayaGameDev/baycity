@@ -95,74 +95,6 @@ importers:
         specifier: ^6.0.0
         version: 6.4.3(@types/node@22.20.1)(tsx@4.23.1)
 
-  modes/parkour:
-    dependencies:
-      '@mp/components':
-        specifier: workspace:*
-        version: link:../../packages/components
-      '@mp/content':
-        specifier: workspace:*
-        version: link:../../packages/content
-      '@mp/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@mp/game-client':
-        specifier: workspace:*
-        version: link:../../packages/game-client
-      '@mp/humanoid':
-        specifier: workspace:*
-        version: link:../../packages/humanoid
-      '@mp/mode':
-        specifier: workspace:*
-        version: link:../../packages/mode
-      '@mp/physics':
-        specifier: workspace:*
-        version: link:../../packages/physics
-      '@mp/render-three':
-        specifier: workspace:*
-        version: link:../../packages/render-three
-      '@mp/tps':
-        specifier: workspace:*
-        version: link:../../packages/tps
-    devDependencies:
-      vite:
-        specifier: ^6.0.0
-        version: 6.4.3(@types/node@22.20.1)(tsx@4.23.1)
-
-  modes/swing:
-    dependencies:
-      '@mp/components':
-        specifier: workspace:*
-        version: link:../../packages/components
-      '@mp/content':
-        specifier: workspace:*
-        version: link:../../packages/content
-      '@mp/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@mp/game-client':
-        specifier: workspace:*
-        version: link:../../packages/game-client
-      '@mp/humanoid':
-        specifier: workspace:*
-        version: link:../../packages/humanoid
-      '@mp/mode':
-        specifier: workspace:*
-        version: link:../../packages/mode
-      '@mp/physics':
-        specifier: workspace:*
-        version: link:../../packages/physics
-      '@mp/render-three':
-        specifier: workspace:*
-        version: link:../../packages/render-three
-      '@mp/tps':
-        specifier: workspace:*
-        version: link:../../packages/tps
-    devDependencies:
-      vite:
-        specifier: ^6.0.0
-        version: 6.4.3(@types/node@22.20.1)(tsx@4.23.1)
-
   packages/camera:
     dependencies:
       '@mp/core':
@@ -183,9 +115,6 @@ importers:
       '@mp/net':
         specifier: workspace:*
         version: link:../net
-      '@mp/physics':
-        specifier: workspace:*
-        version: link:../physics
 
   packages/components:
     dependencies:
@@ -430,15 +359,6 @@ importers:
 
   tools/editor:
     dependencies:
-      '@mode/parkour':
-        specifier: workspace:*
-        version: link:../../modes/parkour
-      '@mp/camera':
-        specifier: workspace:*
-        version: link:../../packages/camera
-      '@mp/client':
-        specifier: workspace:*
-        version: link:../../packages/client
       '@mp/components':
         specifier: workspace:*
         version: link:../../packages/components
@@ -448,9 +368,6 @@ importers:
       '@mp/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@mp/humanoid':
-        specifier: workspace:*
-        version: link:../../packages/humanoid
       '@mp/mode':
         specifier: workspace:*
         version: link:../../packages/mode
@@ -488,43 +405,6 @@ importers:
         version: link:../../packages/core
 
   tools/share: {}
-
-  tools/viewer:
-    dependencies:
-      '@mode/parkour':
-        specifier: workspace:*
-        version: link:../../modes/parkour
-      '@mp/components':
-        specifier: workspace:*
-        version: link:../../packages/components
-      '@mp/content':
-        specifier: workspace:*
-        version: link:../../packages/content
-      '@mp/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@mp/humanoid':
-        specifier: workspace:*
-        version: link:../../packages/humanoid
-      '@mp/mode':
-        specifier: workspace:*
-        version: link:../../packages/mode
-      '@mp/physics':
-        specifier: workspace:*
-        version: link:../../packages/physics
-      '@mp/render-three':
-        specifier: workspace:*
-        version: link:../../packages/render-three
-      tweakpane:
-        specifier: ^4.0.5
-        version: 4.0.5
-    devDependencies:
-      '@tweakpane/core':
-        specifier: ^2.0.0
-        version: 2.0.5
-      vite:
-        specifier: ^6.0.0
-        version: 6.4.3(@types/node@22.20.1)(tsx@4.23.1)
 
 packages:
 

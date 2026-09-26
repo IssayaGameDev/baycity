@@ -211,7 +211,6 @@ const COMPONENT_ICONS: Readonly<Record<string, IconName>> = {
   [LIGHT]: 'light',
   [SEQUENCE]: 'motion',
   Checkpoint: 'flag',
-  Goal: 'goal',
   Hazard: 'hazard',
   Bumper: 'bumper',
   Death: 'death',

@@ -4,7 +4,7 @@
 - Games are **modes** (`modes/*`): one `ModeDescriptor` + headless `rules.ts` each (ADR 0052), composing the shipped third-person humanoid game (`@mp/tps`, ADR 0065) over shared services (`@mp/game-client`).
 - One shared stack: Rapier physics, Three.js + PixiJS rendering, data-driven levels of nodes with components (ADR 0035), assets by id (ADR 0026).
 - Content is authored in the localhost editor (`tools/editor`, ADR 0023) and validated against the owning game's registry.
-- Dependency direction: `modes/tools → packages`, never back; `core` imports nothing; simulation never imports rendering — the editor/viewer depending on games is the one deliberate sideways arrow.
+- Dependency direction: `modes/tools → packages`, never back; `core` imports nothing; simulation never imports rendering — the editor depending on games is the one deliberate sideways arrow.
 
 ## Docs
 
@@ -12,7 +12,7 @@
 | --- | --- |
 | `workspace.md` | package/game/tool list with deps and ports, dependency laws, scripts, adding a package or game, a game's own folder |
 | `editor.md` | `tools/editor`: authored files, panels, files API routes, game discovery, live registry + adoption, prefab refusal, play-test, level validation test |
-| `tooling.md` | `tools/share`, `tools/bots`, `tools/netsim`, `tools/viewer` — commands, env, ports |
+| `tooling.md` | `tools/share`, `tools/bots`, `tools/netsim` — commands, env, ports |
 | `content.md` | level/prefab/asset data model, validation, loader |
 | `components/api.md` | component declarations, hooks, runtime, registry |
 | `components/built-ins.md` | engine, shared and player components with their params |

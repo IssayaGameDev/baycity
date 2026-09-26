@@ -10,7 +10,6 @@ The definitions this package ships. Declaring and running one: [api.md](api.md).
 | | `Spawn` | — | singleton |
 | | `Light` (ADR 0047) | `kind: enum(point\|spot\|directional\|ambient\|hemisphere)`, `color`, `groundColor`, `intensity`, `range`, `decay`, `angle`, `penumbra`, `castShadow` | singleton; in `ENGINE_COMPONENTS` but **not re-exported by name** from `index.ts` |
 | `GAMEPLAY_COMPONENTS` = shared (`gameplay.ts`) | `Checkpoint` | — | `onContact → effects.progress(hit.node)` |
-| | `Goal` | — | no hook |
 | | `Hazard` | — | `onContact → effects.kill()`; kill plane = Hazard on a trigger (ADR 0053) |
 | | `Bumper` | `power: number` (26, 1–60) | `onContact → character.launch(power)` (ADR 0032) |
 | | `Sequence` (ADR 0137) | `name`, `clock: enum(shared\|local)`, `axes: enum(object\|level)`, `loop: enum(restart\|yoyo)`, `times: number` (0 = forever), `offset: number` cycles, `stages: stages` | no hook; **repeatable**; loader-evaluated (ADR 0141). Shared: adopted by a game the first time one is added to its level (ADR 0077). Edited as boxes in the Inspector (ADR 0143) |
@@ -28,4 +27,4 @@ two add and neither has to know about the other. The rules are `sequences.md`.
 
 ## Shared set — `packages/components/src/shared.ts` (ADR 0077)
 
-`SHARED_COMPONENT_TYPES` = `['Boss', 'Bumper', 'Checkpoint', 'Goal', 'Hazard', 'Sequence']`. `isSharedComponent(type)`. `sharedComponents(types): AnyComponentDef[]` throws on a non-shared name.
+`SHARED_COMPONENT_TYPES` = `['Boss', 'Bumper', 'Checkpoint', 'Hazard', 'Sequence']`. `isSharedComponent(type)`. `sharedComponents(types): AnyComponentDef[]` throws on a non-shared name.

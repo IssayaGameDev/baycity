@@ -3,15 +3,12 @@ import {
   applyGreyboxEnvironment,
   createPostFX,
   createThreeStage,
-  loadSky,
   type GreyboxEnvironment,
   type PostFX,
-  type Sky,
   type ThreeStage,
   type THREE,
 } from '@mp/render-three'
 
-import { SKY_TEXTURE } from './codeAssets'
 
 /**
  * The Three stage and everything that dresses it: the greybox pipeline, the sky, post-FX, and the render step
@@ -25,12 +22,9 @@ export interface Scene {
   stage: ThreeStage
   env: GreyboxEnvironment
   postfx: PostFX
-  /** The equirect backdrop, kept as the control the procedural sky is judged against (ADR 0046). */
-  photoSky: Sky | null
 }
 
-/** `urlOf`: an asset's path from `content/` → where its bytes are, from the level's list (`loadLevel`, ADR 0169). */
-export const createScene = async (canvas: HTMLCanvasElement, occluding: () => Iterable<THREE.Object3D>, urlOf: (path: string) => string): Promise<Scene> => {
+export const createScene = async (canvas: HTMLCanvasElement, occluding: () => Iterable<THREE.Object3D>): Promise<Scene> => {
   const stage = createThreeStage({ canvas, cameraPosition: [0, 6, 10], lookAt: [0, 1, 0] })
   // Polished greybox pipeline (content pipeline C3): IBL + ACES + soft shadows, with GTAO +
   // SMAA post-FX. Level meshes, materials (the "High-contrast dev" palette) and markers are
@@ -38,11 +32,6 @@ export const createScene = async (canvas: HTMLCanvasElement, occluding: () => It
   // `shadowRadius` is deliberately not passed: the renderer's own default is the one number, and the editor
   // and viewer overrode it to 40 while this said 30 — so the tools showed shadows the game did not have.
   const env = applyGreyboxEnvironment(stage.renderer, stage.scene, { sunIntensity: 2.4 })
-  // The photographic sky stays loaded as the control to judge the procedural one against (ADR 0046). It swaps
-  // the **background only** — the lighting keeps coming from the procedural bake either way, so flipping the
-  // toggle compares two backdrops rather than two whole looks. Deleted once the comparison is settled.
-  const photoSky = await loadSky(stage.scene, urlOf(SKY_TEXTURE))
-  if (photoSky !== null && env.sky !== null) stage.scene.background = env.sky.background
   // No look values here any more: ambient occlusion and bloom are level data (`config.environment.postfx`),
   // applied with the lighting they are tuned against. What stays is the one thing a level cannot know.
   const postfx = createPostFX(stage.renderer, stage.scene, stage.camera, {
@@ -76,5 +65,5 @@ export const createScene = async (canvas: HTMLCanvasElement, occluding: () => It
     r.autoClear = true
   })
 
-  return { stage, env, postfx, photoSky }
+  return { stage, env, postfx }
 }

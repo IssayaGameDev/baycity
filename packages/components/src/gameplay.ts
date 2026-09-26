@@ -9,9 +9,6 @@ import { defineComponent } from './define'
  * is touched, and the mode supplies only what dying and making progress mean for it (`Effects`). The branches
  * that used to sit in `modes/parkour/src/main.ts` are gone.
  *
- * `Goal` has no hook, because the mode has no goal rule — nothing ends a run yet, and writing one here would
- * be a design decision wearing an implementation's clothes.
- *
  * `Sequence` has no hook either, and that is not an omission: the loader's frame tree evaluates it as a pure
  * function of the synced clock, so a late joiner needs no catch-up and a static subtree costs nothing. An
  * accumulating hook would trade both away for nothing.
@@ -58,13 +55,6 @@ export const Checkpoint = defineComponent({
   // The node, not an index: what counts as progress is the mode's business, and it is the mode that holds the
   // ordered list a saved index means anything against.
   onContact: (_self, ctx, hit) => ctx.effects.progress(hit.node),
-})
-
-/** Touching it completes the level. No hook: the mode has no goal rule yet. */
-export const Goal = defineComponent({
-  type: 'Goal',
-  params: {},
-  singleton: true,
 })
 
 /** Touching it kills. Distinct from falling past the level's `fallY`, which is config, not a component. */
@@ -288,7 +278,7 @@ export const Sequence = defineComponent({
   },
 })
 
-export const GAMEPLAY_COMPONENTS = [Checkpoint, Goal, Hazard, Bumper, Sequence, Boss]
+export const GAMEPLAY_COMPONENTS = [Checkpoint, Hazard, Bumper, Sequence, Boss]
 
 /**
  * Components a game puts on its **player** rather than in a level (ADR 0059).

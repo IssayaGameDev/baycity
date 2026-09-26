@@ -353,7 +353,6 @@ const room = createLiveSession({
   groupAt: (i) => meshes.groupAt(i),
   groupPose: (g) => tool.groupPose(g),
   gizmoDragging: () => tool.dragging() || points.dragging() || fieldDragging,
-  playing: () => play.active(),
   applyPreviewPoses: () => motion.applyPoses(),
   onHidden: (keys) => {
     hiddenView.set(keys)
@@ -1006,41 +1005,34 @@ window.addEventListener('keydown', (e) => {
 
 
 
-// ============================ play-in-place and in the real game ============================
+// ============================ play, in the real game ============================
 /**
- * Play is its own module (`play.ts`): it owns the character, the controller, the loop, the play view and
- * lights, the component runtime and the game frame, and asks for the rest through `PlayHost`. What is left
- * here is that host — the getter bag every panel is wired with.
+ * Play is its own module (`play.ts`): the game's page in a frame, and nothing else (ADR 0172). What is left here
+ * is its host — the getter bag every panel is wired with.
  */
 const play = createPlay({
-  stage,
-  canvas,
   controls,
-  instanceRoot,
   doc: () => doc,
-  loaded: () => loaded,
-  world: () => world,
-  mode: () => activeMode,
-  registry: () => registry(),
   // Not a level, no game, or the server knows no page for it (ADR 0086).
   gamePageUrl: () =>
     fileState.mode !== 'level' || activeMode === undefined ? null : (me?.games[activeMode.name] ?? null),
+  noPageReason: () => {
+    if (fileState.mode !== 'level') return 'Play runs a level: open one to play it'
+    if (activeMode === undefined) return 'this level’s game is not in the editor, so it has nowhere to play'
+    return me?.games[activeMode.name] === undefined ? `${activeMode.label} has no game page on this server, so it cannot be played here` : null
+  },
   fileName: () => fileState.name,
   levelName: () => shortName(fileState.name),
   live: () => live(),
   flush: () => room.flush(),
   dirty: () => edits.dirty(),
   saveNow: () => edits.saveNow(),
-  setPreviewing: (on) => setPreviewing(on),
-  rebuildLoaded: () => rebuildLoaded(),
-  deselect: () => deselect(),
   hint: (text) => {
     playHint = text
     renderStatus()
   },
+  refuse: (message) => notify.error(message),
   uiChanged: () => uiChanged(),
-  drainDeferred: () => room.drainDeferred(),
-  setProjection: (ortho) => view.setProjection(ortho),
 })
 
 // ============================ panels ============================
@@ -2373,21 +2365,18 @@ createSplitter({
 
 // --- render loop ---
 stage.start((dt) => {
-  // A session takes the frame, or it does not and the edit clock does — the same either/or as before.
-  if (!play.frame(dt)) {
-    /**
-     * The preview clock: real time, and only while asked for (ADR 0142).
-     *
-     * Deliberately not the game clock — it poses the level's sequences and nothing else, with no physics, no
-     * character and no rules. It runs freely rather than wrapping: every sequence has its own cycle, so there
-     * is no single length to wrap to, and level time in the game does not wrap either.
-     */
-    motion.frame()
-    toolbar.setClock(motion.playing() ? motion.timeMs() / 1000 : null)
-    view.update(dt)
-    follow.frame(dt)
-    controls.update()
-  } else follow.frame(dt) // a session's frame: the follow ends, since play owns the camera
+  /**
+   * The preview clock: real time, and only while asked for (ADR 0142).
+   *
+   * Deliberately not the game clock — it poses the level's sequences and nothing else, with no physics, no
+   * character and no rules. It runs freely rather than wrapping: every sequence has its own cycle, so there
+   * is no single length to wrap to, and level time in the game does not wrap either.
+   */
+  motion.frame()
+  toolbar.setClock(motion.playing() ? motion.timeMs() / 1000 : null)
+  view.update(dt)
+  follow.frame(dt)
+  controls.update()
   points.frame()
   edges.frame()
 })

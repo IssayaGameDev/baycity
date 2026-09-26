@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@mp/core": "workspace:*",
-    "@mp/net": "workspace:*",
-    "@mp/physics": "workspace:*"
+    "@mp/net": "workspace:*"
   }
 }

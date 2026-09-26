@@ -18,8 +18,8 @@ export { disposeWorldLabel, layoutLabel, worldLabel } from './worldLabel'
 // Polished greybox pipeline (content pipeline C3) — shared by the game and the viewer.
 export { BEVEL_RADIUS, BEVEL_SEGMENTS, MARKER_COLORS, bevelFor, colorForMarker, createGreyboxMaterial, geometryForBuiltin, geometryForCollider, outlineGeometryForCollider } from './materials'
 export type { GizmoKind } from './materials'
-export type { GreyboxEnvironment, GreyboxEnvironmentOptions, Sky } from './environment'
-export { applyGreyboxEnvironment, installSky, loadSky } from './environment'
+export type { GreyboxEnvironment, GreyboxEnvironmentOptions } from './environment'
+export { applyGreyboxEnvironment } from './environment'
 // The sky (ADR 0046): a designed vertical gradient baked to a cubemap that is both background and IBL source.
 export type { ProceduralSky, SkyParams, SunAngles } from './sky'
 export { createProceduralSky, DEFAULT_SKY_PARAMS, skyUniformValues, sunDirection } from './sky'

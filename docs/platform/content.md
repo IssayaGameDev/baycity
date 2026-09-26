@@ -243,7 +243,7 @@ A reference is **a string value equal to a known id**, anywhere in the file (an 
 components' fields, the settings and a frozen copy's contents included; keys are not references. `contentsOf(id)` is
 a prefab's or material's JSON to follow (a material's textures and shader, a prefab's materials and models). A
 frozen copy is followed into the asset file too, so a level may count as using a little more than it draws, never
-less. An asset code loads by path (the game's sky, `client/services.md`) is in no level.
+less.
 
 ## What a page downloads for one level — `packages/content/src/levelNeeds.ts` (ADR 0169)
 
@@ -252,13 +252,13 @@ PLAY_CONTENT_DIR = 'content'                  // relative to a game page's addre
 levelIndexFile(game) = '<game>/levels.json'   // → LevelIndex { levels: string[]; default: string }
 levelNeedsFile(ref) = '<game>/levels/<name>.needs.json'   // → LevelNeeds; levelOfNeedsFile(path) reads it back
 levelIndexOf(names): LevelIndex               // 'default' first when present, the rest sorted; default = the first
-levelNeeds(ref, level, catalog: ContentCatalog, code: readonly string[], urlOf): LevelNeeds
+levelNeeds(ref, level, catalog: ContentCatalog, urlOf): LevelNeeds
 interface LevelNeeds { level: string; assets: NeededAsset[] }   // NeededAsset { id; kind; path; url }, sorted by path
-interface ContentCatalog { byId(id) → { kind; path }; byPath(path) → { id }; contentsOf(id) }
+interface ContentCatalog { byId(id) → { kind; path }; contentsOf(id) }
 ```
 
 `levelNeeds` = `assetsUsedBy` over the level, restricted to what `mayUse(game, path)` allows (the game's own library
-and Shared's), plus `code` paths (`CODE_ASSETS`); `urlOf` maps a path from `content/` to the address the page fetches.
+and Shared's); `urlOf` maps a path from `content/` to the address the page fetches.
 One pure function for the build, the local dev server and the editor server (`content-sync.md`, `editor-server.md`).
 `contentTypeFor(path)` (`assets.ts`) is the content type both servers send.
 
@@ -322,5 +322,5 @@ than guessing where an unassigned level goes. Idempotent.
 | Path | Contents |
 |---|---|
 | `content/assets/{materials,prefabs,textures}/` | 9 `*.mat.json`; `AlternatingDanger`/`FastElevator`/`Trampoline`/`board-start`/`kill-plane`/`Stage-End.prefab.json`; `checker.png`, `warn.png`, `sky_110_2k.webp`. Each with `.meta`. |
-| `content/<game>/levels/*.level.json` | The game is the **folder** (ADR 0108). parkour → default, level1, Test, FastElevator, mp-demo, mp-cointest; swing → swing; keyboard → keyboard, keyboard2, keyboard-copy. All set `environment.sun/ambient/sky`; keyboard also `postfx`. Loaded by `?level=<name>`, bare and resolved inside the game's own folder, default `default.level.json` (ADR 0027, ADR 0108). `config.mode.name` is kept in step with the folder, for a level fetched over HTTP where there is no folder to read. |
-| `content/<game>/game.json` | `{ "components": string[], "settings"?: Record<string, number> }` — shared gameplay types the game opts into (ADR 0077) and its tunable numbers (ADR 0087). parkour, swing: all five; keyboard: Bumper, Hazard; `_template`: Hazard. Read by `modes/<game>/src/rules.ts` via `sharedComponents(game.components)`; appended by the editor's `adopt` (`tools/editor/src/main.ts`). |
+| `content/<game>/levels/*.level.json` | The game is the **folder** (ADR 0108). keyboard → Roblox, Roblox_World_1, Roblox_World_1-copy, keyboard. All set `environment.sun/ambient/sky`; keyboard also `postfx`. Loaded by `?level=<name>`, bare and resolved inside the game's own folder, default `default.level.json` (ADR 0027, ADR 0108). `config.mode.name` is kept in step with the folder, for a level fetched over HTTP where there is no folder to read. |
+| `content/<game>/game.json` | `{ "components": string[], "settings"?: Record<string, number> }` — shared gameplay types the game opts into (ADR 0077) and its tunable numbers (ADR 0087). keyboard: Boss, Bumper, Checkpoint, Hazard, Sequence; `_template`: Hazard. Read by `modes/<game>/src/rules.ts` via `sharedComponents(game.components)`; appended by the editor's `adopt` (`tools/editor/src/main.ts`). |

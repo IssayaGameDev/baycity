@@ -35,7 +35,7 @@ import { TEMPLATE_MODE } from './editorMode'
  *    `TEMPLATE_REGISTRY` installs.
  *
  * Until step 6 it will not boot: `content/<game>/levels/` is filtered by `config.mode.name` and nothing there is
- * authored for `template`, so this throws with the list of what it does have. `modes/swing` is the worked
+ * authored for `template`, so this throws with the list of what it does have. `modes/keyboard` is the worked
  * example.
  */
 await startTpsClient({

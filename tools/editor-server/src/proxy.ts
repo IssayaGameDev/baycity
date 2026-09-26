@@ -55,3 +55,19 @@ export const proxyUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer,
 /** Which configured route a URL falls under, longest path first so `/play/keyboard/` beats `/play/`. */
 export const routeFor = <T extends { path: string }>(url: string, routes: readonly T[]): T | undefined =>
   [...routes].sort((a, b) => b.path.length - a.path.length).find((r) => url === r.path.replace(/\/$/, '') || url.startsWith(r.path))
+
+/**
+ * Where a request for a game's own host goes (ADR 0086): its bare address, `/`, to the game's path, query kept —
+ * `dev.playgorbo.com` → `/play/keyboard/`. `null` for anything else, which is answered as on any host.
+ *
+ * The bare address only. It used to catch every path outside the game's, so a page on that host asking this server
+ * for anything — its live level (ADR 0089) — got the game's page back instead and fell back quietly, where the
+ * editor's Play frame, on another host, worked.
+ */
+export const hostRedirect = (host: string | undefined, url: string, games: readonly { path: string; host?: string | undefined }[]): string | null => {
+  const name = (host ?? '').split(':')[0]
+  const game = games.find((g) => g.host !== undefined && g.host === name)
+  const q = url.indexOf('?')
+  if (game === undefined || (q >= 0 ? url.slice(0, q) : url) !== '/') return null
+  return `${game.path}${q >= 0 ? url.slice(q) : ''}`
+}

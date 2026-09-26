@@ -75,14 +75,13 @@ pose (for collision proxies). Unknown piece → values treated as world-space.
 ## `createScene` — `scene.ts`
 
 ```ts
-createScene(canvas: HTMLCanvasElement, occluding: () => Iterable<THREE.Object3D>, urlOf: (path: string) => string): Promise<Scene>
-interface Scene { stage: ThreeStage; env: GreyboxEnvironment; postfx: PostFX; photoSky: Sky | null }
+createScene(canvas: HTMLCanvasElement, occluding: () => Iterable<THREE.Object3D>): Promise<Scene>
+interface Scene { stage: ThreeStage; env: GreyboxEnvironment; postfx: PostFX }
 ```
 
 - `createThreeStage({ canvas, cameraPosition: [0, 6, 10], lookAt: [0, 1, 0] })`.
-- `applyGreyboxEnvironment(renderer, scene, { sunIntensity: 2.4 })`; `shadowRadius` deliberately not passed.
-- `loadSky(scene, urlOf(SKY_TEXTURE))` — `urlOf` from the level's list, which carries `CODE_ASSETS` (`codeAssets.ts`: in no level) — kept as the control backdrop (ADR 0046); background
-  reset to `env.sky.background` when both exist.
+- `applyGreyboxEnvironment(renderer, scene, { sunIntensity: 2.4 })`; `shadowRadius` deliberately not passed. The
+  procedural sky is the only sky (ADR 0170).
 - `createPostFX(renderer, scene, camera, { aoIgnores: occluding })`.
 - Sets the two-pass render step: `postfx.render()` then `OVERLAY_LAYER` drawn on top (details in
   `docs/platform/rendering.md`).

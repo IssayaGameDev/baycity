@@ -31,8 +31,6 @@ Each exports `./editorMode` (`<NAME>_MODE: ModeDescriptor`) and `./rules` (headl
 | Dir | Descriptor | Port | Notes |
 | --- | --- | --- | --- |
 | `_template` | `TEMPLATE_MODE` | 5179 | the game to copy (ADR 0056); `_` hides it from the editor; no level → throws at boot |
-| `parkour` | `PARKOUR_MODE` | 5174 | `main.ts` 16 lines |
-| `swing` | `SWING_MODE` | 5175 | **same port as `tools/viewer`** |
 | `keyboard` | `KEYBOARD_MODE` | 5177 | Keyboard Escape (ADR 0069/0073) |
 
 Every game `vite.config.ts`: `plugins: [contentBanner(), gameContent('<game>')]` (what answers its page's `content/`, `content-sync.md`), `allowedHosts: ['.trycloudflare.com', '.playgorbo.com']`, `proxy: '/relay' → http://localhost:9200` (ws, ADR 0074), `build.target: es2022`; keyboard and `_template` also `base: MP_BASE ?? '/'` (ADR 0086) and, with `MP_BASE` set, `gameContent('<game>', { live: 'http://127.0.0.1:8080' })` (ADR 0169).
@@ -41,10 +39,9 @@ Every game `vite.config.ts`: `plugins: [contentBanner(), gameContent('<game>')]`
 
 | Dir | Run | → |
 | --- | --- | --- |
-| `editor` | `pnpm dev:editor`, 5176 | @mode/parkour, camera, humanoid, client, components, content, core, mode, physics, render-three; all games via glob; mounts `editor-server`'s API by relative import |
+| `editor` | `pnpm dev:editor`, 5176 | camera, humanoid, client, components, content, core, mode, physics, render-three; all games via glob; mounts `editor-server`'s API by relative import |
 | `editor-server` | `pnpm --filter @mp/editor-server run start <config>`, 8080 on the box | content (relative path); `git`, `tsx` |
 | `content-sync` | `pnpm sync:content` | none; a service token in `.env` (`content-sync.md`) |
-| `viewer` | `pnpm dev:viewer`, 5175 | @mode/parkour, humanoid, components, content, core, mode, physics, render-three, tweakpane |
 | `bots` | `pnpm --filter @mp/bots run load` | net, server, colyseus.js |
 | `netsim` | library only | core |
 | `share` | `pnpm share [game]` | none; `cloudflared` on PATH |
@@ -53,7 +50,7 @@ Every game `vite.config.ts`: `plugins: [contentBanner(), gameContent('<game>')]`
 
 ## Dependency laws (SEED §6)
 
-1. **One-way:** `modes/tools → packages`, never back; `core` imports no sibling. Deliberate exception: editor and viewer depend on games (ADR 0052).
+1. **One-way:** `modes/tools → packages`, never back; `core` imports no sibling. Deliberate exception: the editor depends on games (ADR 0052).
 2. **Simulation never imports rendering.** Headless: `core`, `net`, `physics`, `humanoid`, `content`, `components`, `mode`, `i18n`, `server`, `client`. DOM lib only in `render-*`, `camera`, `game-client`, `tps`, browser apps. Enforced by the `lib` split at typecheck.
 3. **Modes are thin compositions:** a game is `ModeDescriptor` + `rules.ts`; netcode and UI toolkit are absent from its `package.json`.
 
@@ -61,7 +58,7 @@ Not CI-enforced beyond (2).
 
 ## `content/<game>/game.json` (ADR 0077)
 
-`{ "components": ["Bumper", "Hazard"], "settings"?: { … } }` — shared gameplay components the game opts into, and its settings (ADR 0087, edited in the editor's games window; absent keys are the game's defaults). Imported by its `rules.ts` (`sharedComponents(game.components)`); the editor edits it live (ADR 0162). Current: `_template` Hazard; `keyboard` Bumper, Hazard; `parkour`, `swing` Bumper, Checkpoint, Goal, Hazard, Track. A non-shared name throws at registry build.
+`{ "components": ["Bumper", "Hazard"], "settings"?: { … } }` — shared gameplay components the game opts into, and its settings (ADR 0087, edited in the editor's games window; absent keys are the game's defaults). Imported by its `rules.ts` (`sharedComponents(game.components)`); the editor edits it live (ADR 0162). Current: `_template` Hazard; `keyboard` Boss, Bumper, Checkpoint, Hazard, Sequence. A non-shared name throws at registry build.
 
 **Vite watcher:** the editor ignores `**/content/*/game.json` (its bundle imports those files via every `rules.ts`; a write would full-reload it). Game dev servers do watch them.
 
@@ -73,8 +70,8 @@ Not CI-enforced beyond (2).
 | `pnpm test` / `test:watch` | Vitest projects `unit` (`{packages,tools,modes}/*/src/**/*.test.ts`, `pool: forks`) + `live-server` (`tools/bots/src/matchmaking.test.ts`, `pool: threads`) |
 | `pnpm check` | typecheck + test — milestone gate |
 | `pnpm dev:server` | relay `ws://localhost:9200` (`tsx watch`; `PORT` overrides) |
-| `pnpm dev:parkour` / `dev:swing` / `dev:keyboard` | game on its port |
-| `pnpm dev:viewer` / `dev:editor` | 5175 / 5176 |
+| `pnpm dev:keyboard` | the game, 5177 |
+| `pnpm dev:editor` | 5176 |
 | `pnpm share [game]` | quick tunnel |
 | `pnpm deploy:editor` | `ssh root@2.28.227.20 bash -s < deploy/editor/update.sh` — redeploy the hosted editor (ADR 0083) |
 | `pnpm sync:content` | live mirror of the hosted editor's content into `.content-live/` (ADR 0084) |

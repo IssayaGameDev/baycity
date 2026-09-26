@@ -6,7 +6,7 @@ import type { AnyComponentDef } from './registry'
  * The components every game *could* have, looked up by name (ADR 0077).
  *
  * A game's registry is code plus data: its own components are code (`Keyboard`, `WinsPad`, `Swing`), and the
- * shared ones it has opted into — `Bumper`, `Checkpoint`, `Goal`, `Hazard`, `Sequence` — are a list of names in
+ * shared ones it has opted into — `Bumper`, `Checkpoint`, `Hazard`, `Sequence`, `Boss` — are a list of names in
  * `content/games/<game>.json`. The list is data so the **editor can append to it**: placing a trampoline into a
  * game that has no `Bumper` adds `Bumper` to that game, rather than refusing, or crashing the game at load.
  *

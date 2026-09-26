@@ -20,13 +20,13 @@ Loads the root `.env` (`process.loadEnvFile`) on import. Imported by **relative 
 
 | Consumer | Alias root |
 | --- | --- |
-| `modes/*/vite.config.ts`, `tools/viewer/vite.config.ts` | `contentAlias()` + `contentBanner()` — the mirror when configured |
+| `modes/*/vite.config.ts` | `contentAlias()` + `contentBanner()` — the mirror when configured |
 | `tools/editor/vite.config.ts` | `contentAlias(REPO_CONTENT)` — the dev editor edits the repo's folder, never the mirror |
 | `vitest.config.ts` (per project) | `contentAlias(REPO_CONTENT)` — tests validate master's content, whatever `.env` says; the ones reading a game's levels use `diskContent(REPO_CONTENT, game)` |
 | `tsconfig.base.json` | `paths: { "@content/*": ["./content/*"] }` for typecheck |
 
-Every content import is `@content/...`: `modes/*/src/rules.ts` (`@content/<game>/game.json`),
-`tools/viewer/src/registry.ts`. A game's levels and assets are never imported: the page fetches them (ADR 0169).
+Every content import is `@content/...`: `modes/*/src/rules.ts` (`@content/<game>/game.json`). A game's levels and
+assets are never imported: the page fetches them (ADR 0169).
 
 ## `game-content.ts` (repo root, ADR 0169)
 
@@ -39,7 +39,7 @@ diskResponse(root, game, rel): { type, body } | null   // what the local dev ser
 A game page reads one level at a time, with only what it uses (`loadLevel`, `client/services.md`), at addresses
 relative to itself: `content/<game>/levels.json`, `content/<game>/levels/<name>.needs.json`, then each list entry's
 `url` (`@mp/content` `levelNeeds.ts`: `levelIndexOf`, `levelNeeds` over `usage.ts`, `mayUse` — the game's own library
-and Shared's only — plus `CODE_ASSETS`). The plugin answers them wherever Vite runs:
+and Shared's only). The plugin answers them wherever Vite runs:
 
 | Where | What answers | Reload on a content edit |
 | --- | --- | --- |

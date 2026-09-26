@@ -7,8 +7,8 @@ import { composeShareLink, findTunnelUrl, gameToShare, isTunnelNews } from './in
 /**
  * Share the local dev stack over one Cloudflare quick tunnel and print one link.
  *
- *   pnpm share            — parkour, as it always did
- *   pnpm share keyboard   — any game in `SHARED_GAMES`
+ *   pnpm share            — keyboard
+ *   pnpm share <game>     — any game in `SHARED_GAMES`
  *
  * Debug-only, opt-in: nothing in the normal `dev:server` + `dev:<game>` flow changes.
  * Quick tunnels are anonymous and get a fresh random hostname per run, so the link is

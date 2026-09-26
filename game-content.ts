@@ -2,7 +2,6 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { basename, join, relative, resolve, sep } from 'node:path'
 
-import { CODE_ASSETS } from './packages/game-client/src/codeAssets'
 import { contentTypeFor, kindForPath, META_SUFFIX, type AssetKind } from './packages/content/src/assets'
 import { ASSETS_DIR, inLibrary, LEVELS_DIR, levelFile, levelRefForFile, libraryDir, mayUse } from './packages/content/src/layout'
 import {
@@ -85,13 +84,8 @@ export const diskContent = (root: string, game: string): DiskContent => {
 
   const catalog = (): ContentCatalog => {
     const byId = assets()
-    const idByPath = new Map([...byId].map(([id, e]) => [e.path, id]))
     return {
       byId: (id) => byId.get(id),
-      byPath: (path) => {
-        const id = idByPath.get(path)
-        return id === undefined ? undefined : { id }
-      },
       contentsOf: (id) => {
         const path = byId.get(id)?.path
         return path !== undefined && path.endsWith('.json') ? readJson(join(root, path)) : undefined
@@ -104,7 +98,7 @@ export const diskContent = (root: string, game: string): DiskContent => {
   return {
     index: () => levelIndexOf(levelNames()),
     level,
-    needs: (name, urlOf) => levelNeeds({ game, name }, level(name), catalog(), CODE_ASSETS, urlOf),
+    needs: (name, urlOf) => levelNeeds({ game, name }, level(name), catalog(), urlOf),
     assets,
     catalog,
   }

@@ -62,8 +62,6 @@ export interface LiveHost {
   groupPose: (g: THREE.Group) => LocalPose
   /** A gizmo drag owns the groups; a remote repaint waits for the pointer to come up. */
   gizmoDragging: () => boolean
-  /** A play session owns the physics world; a remote repaint would free it under the player. */
-  playing: () => boolean
   applyPreviewPoses: () => void
   /** Rebuild the item meshes and the physics world from the document. */
   rebuildViewport: () => void
@@ -240,14 +238,10 @@ export const createLiveSession = (host: LiveHost) => {
    * ADR 0167): each touched node's subtree, the physics a moment later, the Inspector only when it shows one of
    * them. What reshapes the tree, a prefab's definition, or an op not known rebuilds everything from data and puts
    * the selection back by identity. Mid-drag, the redraw waits: the gizmo owns the groups until the pointer comes up.
-   *
-   * **And while playing.** `rebuildLoaded` frees the physics world and builds a new one, and a play session
-   * lives in that world: its character is a body in it, its visuals came from that `loaded`. Repainting under
-   * a play-test therefore pulled the floor out from under the player on every remote edit. Editing is
-   * suspended while playing anyway, so the redraw waits exactly as a drag's does and `play.stop` drains it.
+   * Play is the game in a frame, with a world of its own (ADR 0172), so it holds nothing back.
    */
   const repaintAfterOps = (ops: readonly Op[]): void => {
-    if (host.gizmoDragging() || host.playing()) {
+    if (host.gizmoDragging()) {
       deferredRemote.push(...ops)
       return
     }
@@ -301,7 +295,7 @@ export const createLiveSession = (host: LiveHost) => {
     })
   }
 
-  /** Repaint what arrived while the redraw was held off — the end of a gizmo drag, the end of a play-test. */
+  /** Repaint what arrived while the redraw was held off — the end of a gizmo drag. */
   const drainDeferredRemote = (): void => {
     if (deferredRemote.length === 0) return
     const ops = deferredRemote

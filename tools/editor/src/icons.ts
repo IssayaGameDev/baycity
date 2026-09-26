@@ -50,7 +50,6 @@ export type IconName =
   | 'material'
   | 'light'
   | 'spawn'
-  | 'goal'
   | 'hazard'
   | 'bumper'
   | 'death'
@@ -124,7 +123,6 @@ const PATHS: Record<IconName, string> = {
   material: '<circle cx="12" cy="12" r="8.5"/><path d="M7.5 10a5 5 0 0 1 4-3.5"/><path d="M3.5 12.5c3 2 14 2 17 0"/>',
   light: '<path d="M9.5 17.5h5M10.5 21h3"/><path d="M8.3 14.3a6 6 0 1 1 7.4 0c-.7.6-1.2 1.6-1.2 3.2h-5c0-1.6-.5-2.6-1.2-3.2z"/>',
   spawn: '<circle cx="12" cy="7" r="3.2"/><path d="M5.5 20.5v-1.5a6.5 6.5 0 0 1 13 0v1.5"/>',
-  goal: '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 5.5H5.5a2.5 2.5 0 0 0 2.5 4M16 5.5h2.5a2.5 2.5 0 0 1-2.5 4"/><path d="M12 13v4M8.5 20.5h7M10 17h4v3.5h-4z"/>',
   hazard: '<path d="M12 21a6.5 6.5 0 0 0 6.5-6.5c0-4.5-3.5-6-4.5-11-2.2 1.6-3.5 4-3.5 6.5-1.1-.9-1.7-2.1-1.8-3.3-1.4 1.6-3.2 4.3-3.2 7.8A6.5 6.5 0 0 0 12 21z"/>',
   bumper: '<path d="M4 20.5h16"/><path d="M6.5 17.5h11"/><path d="M12 14V3.5M8 7.5l4-4 4 4"/>',
   death: '<path d="M12 3.5a7.5 7.5 0 0 0-4.5 13.5v3.5h9V17A7.5 7.5 0 0 0 12 3.5z"/><circle cx="9.3" cy="11.5" r="1.5"/><circle cx="14.7" cy="11.5" r="1.5"/><path d="M11 20.5v-2M13 20.5v-2"/>',

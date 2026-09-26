@@ -43,8 +43,7 @@ interface KeyboardSessionOptions extends ModeSessionOptions {
 ```
 
 `effects.progress(node)` dispatches on the node's component: `StepPad` → `onStepPad`; `Treadmill` →
-`onTreadmill`; `WinsPad` → cash-out. `progress()` is always `-1`: nothing persists through the platform. The
-editor's play-test calls the session with no callbacks and still teleports and dies.
+`onTreadmill`; `WinsPad` → cash-out. `progress()` is always `-1`: nothing persists through the platform.
 
 ## Level
 

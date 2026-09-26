@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
+import { gameFile } from '@mp/content'
+
 import { formatReport, simulate, type Scenario } from './balance'
 import { curveFrom } from './progression'
 
@@ -13,14 +15,14 @@ import { curveFrom } from './progression'
  *   --content <dir>       content root the curves are read from (default the repo's content/; .content-live for the mirror)
  *   --every 300           seconds between timeline rows (default 300)
  *
- * The curves come from content/games/keyboard.json `settings` — what the editor's Game row edits.
+ * The curves come from `content/keyboard/game.json` `settings` — what the games window's Settings edits.
  */
 const args = process.argv.slice(2)
 const one = (name: string, fallback: string): string => args.flatMap((a, i) => (a === `--${name}` && args[i + 1] !== undefined ? [args[i + 1]!] : []))[0] ?? fallback
 
 const ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const content = one('content', `${ROOT}content`)
-const game = JSON.parse(readFileSync(`${content}/games/keyboard.json`, 'utf8')) as { settings?: unknown }
+const game = JSON.parse(readFileSync(`${content}/${gameFile('keyboard')}`, 'utf8')) as { settings?: unknown }
 const curve = curveFrom(game.settings)
 const scenario = JSON.parse(readFileSync(one('scenario', fileURLToPath(new URL('../balance.world1.json', import.meta.url))), 'utf8')) as Scenario
 
