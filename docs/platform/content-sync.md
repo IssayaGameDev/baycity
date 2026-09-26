@@ -1,7 +1,7 @@
 # Content sync — `tools/content-sync` and `content-root.ts`
 
-The hosted editor writes to the box's disk; the browser apps bundle `content/` from **this** disk at dev time
-(`virtual:game-content`, below, and a few direct imports). `pnpm sync:content` bridges the two: a live, one-way mirror of the box's `content/` into
+The hosted editor writes to the box's disk; the browser apps read `content/` from **this** disk at dev time (a game
+page through its dev server, `game-content.ts` below; a few direct imports). `pnpm sync:content` bridges the two: a live, one-way mirror of the box's `content/` into
 `.content-live/`, and `content-root.ts` points every dev server at it (ADR 0084). Save on
 `editor.playgorbo.com`, the local game reloads within a second.
 
@@ -22,27 +22,33 @@ Loads the root `.env` (`process.loadEnvFile`) on import. Imported by **relative 
 | --- | --- |
 | `modes/*/vite.config.ts`, `tools/viewer/vite.config.ts` | `contentAlias()` + `contentBanner()` — the mirror when configured |
 | `tools/editor/vite.config.ts` | `contentAlias(REPO_CONTENT)` — the dev editor edits the repo's folder, never the mirror |
-| `vitest.config.ts` (per project) | `contentAlias(REPO_CONTENT)` + `gameContent(null, REPO_CONTENT)` — tests validate master's content, all of it, whatever `.env` says |
+| `vitest.config.ts` (per project) | `contentAlias(REPO_CONTENT)` — tests validate master's content, whatever `.env` says; the ones reading a game's levels use `diskContent(REPO_CONTENT, game)` |
 | `tsconfig.base.json` | `paths: { "@content/*": ["./content/*"] }` for typecheck |
 
-Every content import is `@content/...`: `virtual:game-content` for `packages/game-client/src/{levels,assets}.ts`,
-`modes/*/src/rules.ts` (`@content/<game>/game.json`), `tools/viewer/src/registry.ts`.
+Every content import is `@content/...`: `modes/*/src/rules.ts` (`@content/<game>/game.json`),
+`tools/viewer/src/registry.ts`. A game's levels and assets are never imported: the page fetches them (ADR 0169).
 
-## `game-content.ts` (repo root, ADR 0161)
+## `game-content.ts` (repo root, ADR 0169)
 
 ```ts
-gameContent(game: string | null, root = contentRoot())       // the Vite plugin: `virtual:game-content`
-gameContentFiles(root, game, 'library' | 'used'): { levels, assets }   // paths from content/
-gameContentModule(files): string                              // one @content import per file; LEVELS METAS MATERIALS PREFABS URLS
+gameContent(game: string, opts?: { root?: string; live?: string })   // the Vite plugin; root defaults to contentRoot()
+diskContent(root, game): DiskContent          // index(), level(name), needs(name, urlOf), assets(), catalog() — read fresh each call
+diskResponse(root, game, rel): { type, body } | null   // what the local dev server answers for content/<rel>
 ```
 
-Each game's `vite.config.ts` passes its name. A game carries **its own levels** and assets from **its own library and
-Shared's**, never another game's. Served (`vite`, the staging game on the box): the whole of both libraries, since a
-page reads its level live at boot (ADR 0089) and may use an asset placed seconds ago; a file added to or removed from
-a library or the levels folder rebuilds the module and reloads the page, unless `watch.ignored` covers it. Built
-(`vite build`): only what its levels and `game.json` use (`usage.ts`) plus `CODE_ASSETS`. `null` (the tests): every
-library, every game's levels. Keyboard today: its own levels are 872 KB of the 986 KB of all games', so a build is
-~46 KB smaller for leaving the others out; the build is 4.8 MB, 3.8 MB of it code and 0.86 MB the sky.
+A game page reads one level at a time, with only what it uses (`loadLevel`, `client/services.md`), at addresses
+relative to itself: `content/<game>/levels.json`, `content/<game>/levels/<name>.needs.json`, then each list entry's
+`url` (`@mp/content` `levelNeeds.ts`: `levelIndexOf`, `levelNeeds` over `usage.ts`, `mayUse` — the game's own library
+and Shared's only — plus `CODE_ASSETS`). The plugin answers them wherever Vite runs:
+
+| Where | What answers | Reload on a content edit |
+| --- | --- | --- |
+| `vite build` | files: `buildStart` writes every level and every file some level uses (`assets/<name>-<hash>`); `generateBundle` writes `content/<game>/levels.json` and each level's list, its `url`s the hashed files. No server of ours needed | — |
+| `vite`, local | middleware on `<base>content/`: `diskResponse` from `root` — the index, lists (`url` = `content/<path>`), level files, library files; 404 for anything else, another game's included; `cache-control: no-cache` | every add, change or unlink under Shared's library, the game's library or its levels folder: full reload (ADR 0084's loop) |
+| `vite`, the box (`live`, set when `MP_BASE` is) | a proxy: `<base>content/*` → `<live>/api/play/*`, `changeOrigin` (the editor server redirects `dev.playgorbo.com` hosts outside the game path) — live copies, `editor-server.md` | none: nothing of `content/` is in the module graph |
+
+A level file that will not parse fails the build. Nothing of `content/` is in a game's code; `game.json` still is,
+through `rules.ts`, so editing it on the box reloads open pages.
 
 ## `pnpm sync:content` — `tools/content-sync/src/main.ts`
 
@@ -73,4 +79,4 @@ Pure parts (`src/index.ts`, tested): `planSync`, `readEnv`, `isRepoContent`.
 - `.content-live/` is a mirror. Never edited by hand, never committed (`.gitignore`).
 - The repo's `content/` on master changes only by merging the `content` branch. Nobody edits it locally while
   the hosted editor is in use; the dev editor on it is for editor development.
-- Not running the sync = the game bundles a stale mirror. The banner is the only tell.
+- Not running the sync = the game plays a stale mirror. The banner is the only tell.

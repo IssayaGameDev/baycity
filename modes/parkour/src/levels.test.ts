@@ -1,14 +1,20 @@
-import { instantiateLevel, scaleCollider, COLLIDER, type ColliderDesc } from '@mp/content'
+import { instantiateLevel, scaleCollider, validateLevel, COLLIDER, DEFAULT_LEVEL, type ColliderDesc, type Level } from '@mp/content'
 import { Hazard } from '@mp/components'
 import { vec3 } from '@mp/core'
 import { PARKOUR_REGISTRY } from './rules'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { DEFAULT_NAME, levelsFor } from '@mp/game-client'
+import { REPO_CONTENT } from '../../../content-root'
+import { diskContent } from '../../../game-content'
 
-/** Parkour's own levels, validated against its own registry — the pair the client builds too. */
-const levels = levelsFor('parkour', PARKOUR_REGISTRY)
+/** Parkour's own levels, as its page is served them (ADR 0169), validated against its own registry as the page does. */
+const disk = diskContent(REPO_CONTENT, 'parkour')
+const index = disk.index()
+const levels = {
+  names: (): string[] => index.levels,
+  byName: (name: string | null): Level => validateLevel(disk.level(name ?? index.default), PARKOUR_REGISTRY),
+}
 
 describe('level selection', () => {
   beforeAll(async () => {
@@ -16,18 +22,17 @@ describe('level selection', () => {
   })
 
   it('defaults to default.level.json when no name is given', () => {
-    expect(levels.byName(null).id).toBe(levels.byName(DEFAULT_NAME).id)
+    expect(index.default).toBe(DEFAULT_LEVEL)
   })
 
   it('lists the default first, then the rest', () => {
     const names = levels.names()
-    expect(names[0]).toBe(DEFAULT_NAME)
+    expect(names[0]).toBe(DEFAULT_LEVEL)
     expect(new Set(names).size, 'no duplicates').toBe(names.length)
   })
 
-  it('names the alternatives when asked for a level that is not there', () => {
-    expect(() => levels.byName('nope')).toThrow(/no parkour level "nope"/)
-    expect(() => levels.byName('nope')).toThrow(new RegExp(DEFAULT_NAME))
+  it('has no level it was not given', () => {
+    expect(disk.level('nope')).toBeUndefined()
   })
 
   // Every file the mode will now load, actually loading. `validateLevel` only checks structure, so
@@ -112,7 +117,7 @@ describe('the kill plane', () => {
 /**
  * A game's levels are the ones in its own folder, `content/parkour/levels/` (ADR 0108). The tag inside each
  * file is kept in step with the folder, so it is still worth asserting: a level whose tag says another game
- * would be refused by `LevelSource.validate` if it ever arrived over HTTP.
+ * is refused by `loadLevel` when it arrives over HTTP.
  */
 describe('whose levels these are', () => {
   it('only lists levels that name this game, or name none', () => {
@@ -122,7 +127,8 @@ describe('whose levels these are', () => {
     }
   })
 
-  it('refuses a name it does not have, whoever owns it', () => {
-    expect(() => levels.byName('nope')).toThrow(/no parkour level "nope"/)
+  it('serves no level of another game’s, whoever owns the name', () => {
+    expect(diskContent(REPO_CONTENT, 'swing').index().levels).not.toContain('default')
+    expect(disk.level('swing')).toBeUndefined()
   })
 })

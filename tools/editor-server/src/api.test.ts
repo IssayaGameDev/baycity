@@ -73,6 +73,8 @@ beforeEach(async () => {
     liveAssets,
     repoRoot: root,
     identify: async (req) => USERS[String(req.headers['x-user'] ?? '')] ?? null,
+    // A player is anyone the login let in: here, anyone with a user header, listed or not.
+    identifyPlayer: async (req) => req.headers['x-user'] !== undefined,
     locks,
     rules: { staleMs: 1000, heartbeatMs: 100, maxUploadBytes: 64 },
     now: () => now,
@@ -342,6 +344,64 @@ describe('a material edited live (ADR 0159)', () => {
 
     expect((await call('ada', 'POST', `/api/live/asset/${id}/ops`, { connId: 'c-ada', batchId: 'b2', ops: [{ kind: 'nope' }] })).status, 'not asset ops').toBe(400)
     expect((await call('bob', 'POST', `/api/live/asset/${id}/ops`, { connId: 'c-ada', batchId: 'b3', ops: [] })).status, 'not Bob’s connection').toBe(400)
+  })
+})
+
+describe('a game page’s content (ADR 0169)', () => {
+  /** A Shared material with a Shared texture, and the level drawing a node with it. */
+  const withMaterial = async (): Promise<{ mat: string; tex: string }> => {
+    await call('ada', 'POST', '/api/assets/upload?path=assets/textures/t.png', undefined, Buffer.from('png'))
+    await call('ada', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: {} })
+    const entries = (await json<{ entries: { id: string; path: string }[] }>(await call('ada', 'GET', '/api/assets'))).entries
+    const tex = entries.find((e) => e.path === 'assets/textures/t.png')!.id
+    const mat = entries.find((e) => e.path === 'assets/materials/m.mat.json')!.id
+    await call('ada', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: { map: { kind: 'texture', value: tex } } })
+    const node = { id: 'n', transform: { position: { x: 0, y: 0, z: 0 } }, components: [{ id: 'r', type: 'Renderer', params: { material: mat } }] }
+    writeFileSync(join(root, LEVEL_FILE), `${JSON.stringify({ ...LEVEL, nodes: [node] })}
+`)
+    return { mat, tex }
+  }
+
+  it('the index of a game’s levels, and none for a game that is not there', async () => {
+    const r = await call('ada', 'GET', '/api/play/parkour/levels.json')
+    expect(await json(r)).toEqual({ levels: ['a'], default: 'a' })
+    expect(r.headers.get('cache-control'), 'the next load must see the next edit').toBe('no-cache')
+    expect((await call('ada', 'GET', '/api/play/nope/levels.json')).status).toBe(404)
+  })
+
+  it('a level’s list: the level and what it uses through its material, at addresses under the page’s content', async () => {
+    const { mat, tex } = await withMaterial()
+    const needs = await json<{ level: string; assets: { id: string; kind: string; url: string }[] }>(await call('ada', 'GET', '/api/play/parkour/levels/a.needs.json'))
+    expect(needs.level).toBe('content/parkour/levels/a.level.json')
+    expect(needs.assets.map((a) => [a.id, a.kind, a.url])).toEqual([
+      [mat, 'material', 'content/assets/materials/m.mat.json'],
+      [tex, 'texture', 'content/assets/textures/t.png'],
+    ])
+    expect((await call('ada', 'GET', '/api/play/parkour/levels/nope.needs.json')).status).toBe(404)
+  })
+
+  it('the level, and each file on the list — a material as it is being edited now', async () => {
+    const { mat } = await withMaterial()
+    expect((await json<{ id: string }>(await call('ada', 'GET', '/api/play/parkour/levels/a.level.json'))).id).toBe('a')
+    expect(await (await call('ada', 'GET', '/api/play/assets/textures/t.png')).text()).toBe('png')
+
+    live.join(LV, { connId: 'c-ada', user: USERS.ada!, send: () => {} })
+    await call('ada', 'POST', `/api/live/asset/${mat}/ops`, { connId: 'c-ada', batchId: 'b1', ops: [{ kind: 'set', path: ['params', 'tint'], value: { kind: 'color', value: '#00ff00' } }] })
+    const material = await json<{ params: { tint?: { value: string } } }>(await call('ada', 'GET', '/api/play/assets/materials/m.mat.json'))
+    expect(material.params.tint?.value).toBe('#00ff00')
+  })
+
+  it('nothing that is not a page’s content, and nothing but reading', async () => {
+    for (const path of ['parkour/game.json', 'parkour/levels/nope.level.json', '../secret', 'assets']) {
+      expect((await call('ada', 'GET', `/api/play/${path}`)).status, path).toBe(404)
+    }
+    expect((await call('ada', 'PUT', '/api/play/parkour/levels/a.level.json', LEVEL)).status).toBe(405)
+  })
+
+  it('answers anyone the login let in, where the editor wants a name in its list', async () => {
+    expect((await call(null, 'GET', '/api/play/parkour/levels.json')).status).toBe(401)
+    expect((await call('a-player', 'GET', '/api/play/parkour/levels.json')).status).toBe(200)
+    expect((await call('a-player', 'GET', '/api/levels')).status, 'not an editor').toBe(401)
   })
 })
 

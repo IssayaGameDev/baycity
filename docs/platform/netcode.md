@@ -119,7 +119,7 @@ Synchronous, join in flight; `id()` is `null` until `WELCOME`. `PING_INTERVAL_MS
 
 | Must be uniform across a room | Merely universal |
 |---|---|
-| `createNetHost`, `loadLevelInto`, `worldFromBase`; `TICK_RATE_HZ`; `PROTOCOL_VERSION` | `createScene`, `createShell`, `createStatusLine`, `levelsFor`, `localProgress` |
+| `createNetHost`, `loadLevelInto`, `worldFromBase`; `TICK_RATE_HZ`; `PROTOCOL_VERSION` | `createScene`, `createShell`, `createStatusLine`, `loadLevel`, `localProgress` |
 
 ## Endpoint override and `/relay` (ADR 0074)
 

@@ -218,5 +218,6 @@ why matters.
 | [0166](adr/0166-several-assets-at-once-keys-and-sorting.md) | Several assets at once, Unity's keys, and a sort in the Project window |
 | [0167](adr/0167-a-redraw-walks-once-frees-its-own-and-touches-what-changed.md) | A redraw walks the tree once, frees only its own, and touches only what changed |
 | [0168](adr/0168-the-inspector-follows-an-edit-made-elsewhere-in-place.md) | The Inspector follows an edit made elsewhere in place |
+| [0169](adr/0169-a-game-page-downloads-one-level-and-only-what-it-uses.md) | A game page downloads one level and only what it uses |
 
 `Design archive/` holds superseded design material and is not maintained.

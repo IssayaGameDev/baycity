@@ -13,7 +13,11 @@ import { gameContent } from '../../game-content'
  */
 export default defineConfig({
   // `@content` is the repo's content/, or the live mirror when `.env` says so (ADR 0084).
-  plugins: [contentBanner(), gameContent('keyboard')],
+  plugins: [
+    contentBanner(),
+    // On the box the page's level and what it uses come live from the editor server (ADR 0169); locally, from disk.
+    gameContent('keyboard', process.env.MP_BASE !== undefined ? { live: 'http://127.0.0.1:8080' } : {}),
+  ],
   resolve: { alias: contentAlias() },
   server: {
     port: 5177,
@@ -26,15 +30,7 @@ export default defineConfig({
      */
     proxy: {
       '/relay': { target: 'http://localhost:9200', ws: true, rewrite: (p) => p.replace(/^\/relay/, '') },
-      // On the box (`dev.playgorbo.com` → this server), the live level comes from the editor server (ADR 0089).
-      ...(process.env.MP_BASE !== undefined ? { '/api': { target: 'http://127.0.0.1:8080' } } : {}),
     },
-    /**
-     * On the box the hosted editor rewrites level files every few seconds; watching them reloaded every
-     * player's page each time. The page reads its level at boot instead (`pickLevel`, ADR 0089). Locally the
-     * watch stays: the mirror writing a level is what reloads the game, and that is the loop wanted there.
-     */
-    ...(process.env.MP_BASE !== undefined ? { watch: { ignored: ['**/content/*/levels/**', '**/.content-live/*/levels/**'] } } : {}),
   },
   // On the box the game is served under the editor's origin at this path (ADR 0086); locally at /.
   base: process.env.MP_BASE ?? '/',

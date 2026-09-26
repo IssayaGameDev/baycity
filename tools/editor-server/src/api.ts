@@ -3,8 +3,12 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname, join, normalize, relative, sep } from 'node:path'
 
-import { kindForPath, META_SUFFIX } from '../../../packages/content/src/assets'
+import { contentTypeFor, kindForPath, META_SUFFIX } from '../../../packages/content/src/assets'
+
+export { contentTypeFor }
 import { gameFile, inLibrary, isGameName, levelFile, levelRefForFile, libraryOf, parseQualified, qualify, LEVELS_DIR } from '../../../packages/content/src/layout'
+import { levelIndexFile, levelIndexOf, levelNeeds, levelOfNeedsFile, PLAY_CONTENT_DIR, type ContentCatalog } from '../../../packages/content/src/levelNeeds'
+import { CODE_ASSETS } from '../../../packages/game-client/src/codeAssets'
 import type { NodeRef, Op } from '../../../packages/content/src/ops'
 import { prefabRefsIn } from '../../../packages/content/src/prefabs'
 import type { Level } from '../../../packages/content/src/types'
@@ -51,6 +55,9 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *   POST /api/assets/upload?path=     → raw bytes → { entry }   (textures and .glb, capped, replace keeps the id)
  *   GET  /content/<path>              → the bytes
  *   PUT  /content/<path>              → a JSON asset
+ *   GET  /api/play/<address>          → a game page's content (ADR 0169): `<game>/levels.json` (the index),
+ *                                       `<game>/levels/<name>.needs.json` (a level's list), the level, a library
+ *                                       file — each as it is now. Anyone Access let in, not only the editor's users
  *
  * An asset path is relative to `content/` and inside a library (ADR 0161): `assets/…`, or `<game>/assets/…` for a
  * game that exists. Nothing else under `content/` is reachable through these routes.
@@ -88,6 +95,11 @@ export interface ApiOptions {
   repoRoot: string
   /** `null` → 401. Throwing → 500. */
   identify: (req: IncomingMessage) => Promise<User | null>
+  /**
+   * Whether this request may read a game page's content (`/api/play`, ADR 0169): anyone the login let in, where
+   * `identify` wants a name in the editor's list. Absent: `identify` decides.
+   */
+  identifyPlayer?: (req: IncomingMessage) => Promise<boolean>
   locks: LockTable
   rules: LockRules & { heartbeatMs: number; maxUploadBytes: number }
   now?: () => number
@@ -134,32 +146,11 @@ export class AuthError extends Error {
  * this regex, so the one definition of a legal name lives in `@mp/content`.
  */
 const ROUTE_RE = /^\/api\/(levels|games)(?:\/(.+))?$/
+/** Where a game page's content is answered (ADR 0169). */
+const PLAY_PREFIX = '/api/play/'
 const MAX_JSON_BYTES = 32 * 1024 * 1024
 /** What upload accepts: what the runtime loads. `.gltf` is refused — it drags `.bin` and textures along. */
 export const UPLOAD_EXTENSIONS: ReadonlySet<string> = new Set(['png', 'jpg', 'jpeg', 'webp', 'ktx2', 'glb'])
-
-const CONTENT_TYPES: Record<string, string> = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  webp: 'image/webp',
-  ktx2: 'image/ktx2',
-  glb: 'model/gltf-binary',
-  gltf: 'model/gltf+json',
-  wav: 'audio/wav',
-  mp3: 'audio/mpeg',
-  ogg: 'audio/ogg',
-  ttf: 'font/ttf',
-  otf: 'font/otf',
-  woff: 'font/woff',
-  woff2: 'font/woff2',
-  json: 'application/json',
-}
-
-export const contentTypeFor = (path: string): string => {
-  const dot = path.lastIndexOf('.')
-  return (dot >= 0 ? CONTENT_TYPES[path.slice(dot + 1).toLowerCase()] : undefined) ?? 'application/octet-stream'
-}
 
 /** Resolve `rel` inside `root`, or `null` if it escapes it. */
 export const safeJoin = (root: string, rel: string): string | null => {
@@ -305,6 +296,47 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       return undefined
     }
   }
+  /** The prefab document open on asset path `rel` (its file `file`), if any: a prefab is a live document now (ADR 0091). */
+  const openPrefabAt = (rel: string, file: string): { id: string; root: unknown } | null => {
+    if (opts.live === undefined || !rel.endsWith('.prefab.json')) return null
+    // The index, not a walk per request: an editor loading the library asks for every prefab in turn. A file
+    // the index has not seen yet (copied in from outside) gets one refresh.
+    let entry = assets.byPath(rel)
+    if (entry === undefined && existsSync(file)) {
+      assets.refresh()
+      entry = assets.byPath(rel)
+    }
+    if (entry === undefined || entry.kind !== 'prefab') return null
+    const doc = opts.live.levelOf(docKey('prefab', entry.id))
+    return doc === null ? null : { id: entry.id, root: doc.nodes[0] }
+  }
+
+  /**
+   * A data-file asset edited live (ADR 0159): its id, and its live copy when open. Every such GET says what it
+   * served (`x-asset-epoch`, `x-asset-seq`, `0` for the file) so an editor knows which edits it already has.
+   */
+  const liveAssetAt = (rel: string): { id: string; current: ReturnType<LiveAssets['current']> } | null => {
+    if (opts.liveAssets === undefined || !isLiveAssetPath(rel)) return null
+    const entry = assets.byPath(rel)
+    return entry === undefined ? null : { id: entry.id, current: opts.liveAssets.current(entry.id) }
+  }
+
+  /** Asset `rel` as it is now, its file `file`: the live copy wins, as it does for a level — up to five seconds ahead of the file. */
+  const sendAssetNow = (res: ServerResponse, rel: string, file: string): void => {
+    const live = openPrefabAt(rel, file)
+    if (live !== null) return sendJson(res, 200, live.root)
+    const asset = liveAssetAt(rel)
+    if (asset !== null && opts.liveAssets !== undefined) {
+      res.setHeader('x-asset-epoch', String(asset.current?.epoch ?? opts.liveAssets.epoch))
+      res.setHeader('x-asset-seq', String(asset.current?.seq ?? 0))
+      if (asset.current !== null) return sendJson(res, 200, asset.current.json)
+    }
+    if (!existsSync(file) || statSync(file).isDirectory()) return sendJson(res, 404, { error: 'not found' })
+    res.statusCode = 200
+    res.setHeader('content-type', contentTypeFor(file))
+    res.end(readFileSync(file))
+  }
+
   /**
    * Why moving `from` into `to`'s library is refused, or `null` (ADR 0161): the whole of a folder counts, and what
    * uses or is used by it, in every game's levels and every library, as they are now.
@@ -506,52 +538,15 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     const file = assetPathOk(rel) ? safeJoin(CONTENT, rel) : null
     if (file === null) return sendJson(res, 404, { error: 'not a path in an asset library' }), true
 
-    /** The prefab document open on this path, if any: a prefab is a live document now (ADR 0091). */
-    const openPrefab = (): { id: string; root: unknown } | null => {
-      if (opts.live === undefined || !rel.endsWith('.prefab.json')) return null
-      // The index, not a walk per request: an editor loading the library asks for every prefab in turn. A file
-      // the index has not seen yet (copied in from outside) gets one refresh.
-      let entry = assets.byPath(rel)
-      if (entry === undefined && existsSync(file)) {
-        assets.refresh()
-        entry = assets.byPath(rel)
-      }
-      if (entry === undefined || entry.kind !== 'prefab') return null
-      const doc = opts.live.levelOf(docKey('prefab', entry.id))
-      return doc === null ? null : { id: entry.id, root: doc.nodes[0] }
-    }
-
-    /**
-     * A data-file asset edited live (ADR 0159): its id, and its live copy when open. Every such GET says what it
-     * served (`x-asset-epoch`, `x-asset-seq`, `0` for the file) so an editor knows which edits it already has.
-     */
-    const liveAsset = (): { id: string; current: ReturnType<LiveAssets['current']> } | null => {
-      if (opts.liveAssets === undefined || !isLiveAssetPath(rel)) return null
-      const entry = assets.byPath(rel)
-      return entry === undefined ? null : { id: entry.id, current: opts.liveAssets.current(entry.id) }
-    }
-
     if (req.method === 'GET') {
-      // The live copy wins, as it does for a level: it is up to five seconds ahead of the file.
-      const live = openPrefab()
-      if (live !== null) return sendJson(res, 200, live.root), true
-      const asset = liveAsset()
-      if (asset !== null && opts.liveAssets !== undefined) {
-        res.setHeader('x-asset-epoch', String(asset.current?.epoch ?? opts.liveAssets.epoch))
-        res.setHeader('x-asset-seq', String(asset.current?.seq ?? 0))
-        if (asset.current !== null) return sendJson(res, 200, asset.current.json), true
-      }
-      if (!existsSync(file) || statSync(file).isDirectory()) return sendJson(res, 404, { error: 'not found' }), true
-      res.statusCode = 200
-      res.setHeader('content-type', contentTypeFor(file))
-      res.end(readFileSync(file))
+      sendAssetNow(res, rel, file)
       return true
     }
     if (req.method === 'PUT') {
       // Refused while it is open, as a level's PUT is: the document would write its own copy back over this.
-      const live = openPrefab()
+      const live = openPrefabAt(rel, file)
       if (live !== null) return sendJson(res, 409, { error: `that prefab is open live; edit it in the editor` }), true
-      const asset = liveAsset()
+      const asset = liveAssetAt(rel)
       if (asset !== null && asset.current !== null) return sendJson(res, 409, { error: 'that asset is being edited live; edit it in the editor' }), true
       if (refuseIfLocked(res, user, [keyFor.asset(rel)])) return true
       try {
@@ -568,6 +563,55 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       return true
     }
     return false
+  }
+
+  /** The assets a game page's list is made from, as they are now (ADR 0169). */
+  const playCatalog: ContentCatalog = {
+    byId: (id) => {
+      const e = assets.byId(id)
+      return e === undefined ? undefined : { kind: e.kind, path: e.path }
+    },
+    byPath: (path) => {
+      const e = assets.byPath(path)
+      return e === undefined ? undefined : { id: e.id }
+    },
+    contentsOf: assetJsonNow,
+  }
+
+  /**
+   * A game page's content (ADR 0169), at the addresses `levelNeeds.ts` names, relative to `/api/play/`: a game's level
+   * index, a level's list, the level, and a file in a library — each as it is now, an open document ahead of its
+   * file, so a page loaded a second after an edit plays it. The staging game's dev server hands its page's content
+   * requests here. Read-only, and never cached: the next load must see the next edit.
+   */
+  const handlePlay = (req: IncomingMessage, res: ServerResponse, url: string): boolean => {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: 'GET expected' }), true
+    res.setHeader('cache-control', 'no-cache')
+    const rel = url.slice(PLAY_PREFIX.length)
+    const levelOf = (ref: { game: string; name: string }): { file: string } | undefined =>
+      levelFiles().find((f) => f.ref.game === ref.game && f.ref.name === ref.name)
+    const game = rel.split('/')[0] ?? ''
+    if (isGameName(game) && rel === levelIndexFile(game)) {
+      if (!gameNames().includes(game)) return sendJson(res, 404, { error: `no game ${game}` }), true
+      return sendJson(res, 200, levelIndexOf(levelFiles().filter((f) => f.ref.game === game).map((f) => f.ref.name))), true
+    }
+    const listed = levelOfNeedsFile(rel)
+    if (listed !== null) {
+      const found = levelOf(listed)
+      if (found === undefined) return sendJson(res, 404, { error: `no level ${qualify(listed)}` }), true
+      const level = levelNow(qualify(listed), found.file)
+      return sendJson(res, 200, levelNeeds(listed, level, playCatalog, CODE_ASSETS, (path) => `${PLAY_CONTENT_DIR}/${path}`)), true
+    }
+    const ref = levelRefForFile(rel)
+    if (ref !== null) {
+      const found = levelOf(ref)
+      const level = found === undefined ? undefined : levelNow(qualify(ref), found.file)
+      return level === undefined ? sendJson(res, 404, { error: `no level ${qualify(ref)}` }) : sendJson(res, 200, level), true
+    }
+    const file = assetPathOk(rel) ? safeJoin(CONTENT, rel) : null
+    if (file === null) return sendJson(res, 404, { error: 'not a game page’s content' }), true
+    sendAssetNow(res, rel, file)
+    return true
   }
 
   /**
@@ -969,6 +1013,20 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
         sendJson(res, 500, { error: String(e instanceof Error ? e.message : e) })
       }
       return true
+    }
+
+    if (url.startsWith(PLAY_PREFIX)) {
+      // A player, not an editor: the login is enough, as it is for the page itself (ADR 0169).
+      const playerOk = opts.identifyPlayer ?? (async (r: IncomingMessage) => (await opts.identify(r)) !== null)
+      let allowed: boolean
+      try {
+        allowed = await playerOk(req)
+      } catch (e) {
+        sendJson(res, e instanceof AuthError ? e.status : 500, { error: String(e instanceof Error ? e.message : e) })
+        return true
+      }
+      if (!allowed) return sendJson(res, 401, { error: 'not signed in' }), true
+      return handlePlay(req, res, url)
     }
 
     let user: User | null

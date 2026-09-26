@@ -245,6 +245,23 @@ a prefab's or material's JSON to follow (a material's textures and shader, a pre
 frozen copy is followed into the asset file too, so a level may count as using a little more than it draws, never
 less. An asset code loads by path (the game's sky, `client/services.md`) is in no level.
 
+## What a page downloads for one level — `packages/content/src/levelNeeds.ts` (ADR 0169)
+
+```ts
+PLAY_CONTENT_DIR = 'content'                  // relative to a game page's address
+levelIndexFile(game) = '<game>/levels.json'   // → LevelIndex { levels: string[]; default: string }
+levelNeedsFile(ref) = '<game>/levels/<name>.needs.json'   // → LevelNeeds; levelOfNeedsFile(path) reads it back
+levelIndexOf(names): LevelIndex               // 'default' first when present, the rest sorted; default = the first
+levelNeeds(ref, level, catalog: ContentCatalog, code: readonly string[], urlOf): LevelNeeds
+interface LevelNeeds { level: string; assets: NeededAsset[] }   // NeededAsset { id; kind; path; url }, sorted by path
+interface ContentCatalog { byId(id) → { kind; path }; byPath(path) → { id }; contentsOf(id) }
+```
+
+`levelNeeds` = `assetsUsedBy` over the level, restricted to what `mayUse(game, path)` allows (the game's own library
+and Shared's), plus `code` paths (`CODE_ASSETS`); `urlOf` maps a path from `content/` to the address the page fetches.
+One pure function for the build, the local dev server and the editor server (`content-sync.md`, `editor-server.md`).
+`contentTypeFor(path)` (`assets.ts`) is the content type both servers send.
+
 ## Live assets — `packages/content/src/liveAssets.ts` (ADR 0159)
 
 A data-file asset edited live, by ops that know nothing about what the file means:

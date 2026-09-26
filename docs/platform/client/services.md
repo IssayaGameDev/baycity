@@ -9,7 +9,7 @@
 | Kind | Exports | Why |
 | --- | --- | --- |
 | **Must be uniform across a room** | `createNetHost`, `loadLevelInto`, `worldFromBase` | Wire format, clock, level instantiation order (`baseIndex` goes on the wire, ADR 0021). Disagreement = peers drawn in the wrong place. |
-| **Merely universal** | `createScene`, `createShell`, `createStatusLine`, `levelsFor`, `localProgress`, `ASSET_DB`/`CLIP_SOURCE` | No agreement needed; shared to avoid writing twice. |
+| **Merely universal** | `createScene`, `createShell`, `createStatusLine`, `loadLevel`, `levelAssets`, `localProgress` | No agreement needed; shared to avoid writing twice. |
 
 ## `createNetHost` — `netHost.ts`
 
@@ -55,8 +55,9 @@ interface LevelHost {
 }
 ```
 
-Order: `hydratePrefabs(data, PREFAB_SOURCE)` (ADR 0091 — a level names its prefabs and the definitions must be
-in place first; bundled, so this stays synchronous) → `instantiateLevel(world, data, registry, CLIP_SOURCE)` →
+`LevelHostOptions.assets: LevelAssets` — what `loadLevel` fetched with the level. Order:
+`hydratePrefabs(data, assets.prefabs)` (ADR 0091 — a level names its prefabs and the definitions must be in place
+first; fetched with the level, so this stays synchronous) → `instantiateLevel(world, data, registry)` →
 `assets.load([...assetIdsIn(visuals), ...assetParamIds(nodes, registry)])`
 → `addLevel` (sync) → `addLights` → `env.applyEnvironment(config.environment)` → `postfx.apply(config.environment?.postfx)`.
 Colliders and meshes in one call so a level is never walkable before visible.
@@ -74,13 +75,13 @@ pose (for collision proxies). Unknown piece → values treated as world-space.
 ## `createScene` — `scene.ts`
 
 ```ts
-createScene(canvas: HTMLCanvasElement, occluding: () => Iterable<THREE.Object3D>): Promise<Scene>
+createScene(canvas: HTMLCanvasElement, occluding: () => Iterable<THREE.Object3D>, urlOf: (path: string) => string): Promise<Scene>
 interface Scene { stage: ThreeStage; env: GreyboxEnvironment; postfx: PostFX; photoSky: Sky | null }
 ```
 
 - `createThreeStage({ canvas, cameraPosition: [0, 6, 10], lookAt: [0, 1, 0] })`.
 - `applyGreyboxEnvironment(renderer, scene, { sunIntensity: 2.4 })`; `shadowRadius` deliberately not passed.
-- `loadSky(scene, assetUrlOf(SKY_TEXTURE))` (`codeAssets.ts`: in no level, so `CODE_ASSETS` keeps it in a build) — kept as the control backdrop (ADR 0046); background
+- `loadSky(scene, urlOf(SKY_TEXTURE))` — `urlOf` from the level's list, which carries `CODE_ASSETS` (`codeAssets.ts`: in no level) — kept as the control backdrop (ADR 0046); background
   reset to `env.sky.background` when both exist.
 - `createPostFX(renderer, scene, camera, { aoIgnores: occluding })`.
 - Sets the two-pass render step: `postfx.render()` then `OVERLAY_LAYER` drawn on top (details in
@@ -117,25 +118,26 @@ interface StatusLine { set: (key: TranslationKey, params?: Record<string, string
 Key-driven, re-renders on locale change. Owns locale bootstrap: `localStorage['mp.locale']` else
 `matchLocale(navigator.language)`; persists on change (best-effort). Initial key `status.connecting`.
 
-## `levelsFor` — `levels.ts`
+## `loadLevel` — `levels.ts` (ADR 0169)
 
 ```ts
-levelsFor(mode: string, registry: ParamChecker): LevelSource
-interface LevelSource { names: () => string[]; defaultName: string; byName: (name: string | null) => Level; validate: (raw: unknown) => Level }
-DEFAULT_NAME = 'default'
-type LevelFetch = (name: string) => Promise<unknown | null>
-fetchLevel: LevelFetch                       // GET /api/levels/<name> on the page's origin; anything but JSON 200 → null
-pickLevel(source, requested: string | null, live: LevelFetch | null): Promise<{ name; level; from: 'live' | 'bundled' }>
+loadLevel(game: string, requested: string | null, registry: ParamChecker, base: string, read?: ReadJson): Promise<PlayedLevel>
+interface PlayedLevel extends LevelAssets { name: string; level: Level }
+levelNameFor(game: string, index: LevelIndex, requested: string | null): string
+type ReadJson = (url: string) => Promise<unknown>      // readJson: fetch, a non-2xx throws
 ```
 
-- `LEVELS` from `virtual:game-content` (`game-content.ts`, `content-sync.md`, ADR 0161): the game's own `content/<game>/levels/*.level.json`, keyed from `content/` — every game's in the tests; `@content` is the repo's `content/` or the live mirror (ADR 0084).
-- Filtered by `config.mode.name === mode` **or unassigned**. `names()` = default first, rest sorted.
-- `defaultName` = `'default'` if present else first level. `byName` validates with `validateLevel(data, registry)`;
-  throws for an unknown name. `validate(raw)` = the same check plus the game filter, for a copy from elsewhere.
-- **Live first on the box** (ADR 0089): `pickLevel` tries `live(name)` and `validate`s it (a bad or foreign copy
-  falls back to the bundle with a console warning); an unknown requested name falls back to the default, live
-  first. `@mp/tps` passes `fetchLevel` only when `import.meta.env.BASE_URL !== '/'` — the staging game served
-  under `/play/<game>/`; locally and in a build the bundle is the level.
+- Reads, each relative to `base` (the page's absolute address; `@mp/tps` passes `new URL(import.meta.env.BASE_URL,
+  location.href)`): `content/<game>/levels.json` (`LevelIndex`) → `content/<game>/levels/<name>.needs.json`
+  (`LevelNeeds`) → the level and every prefab and material on the list, at once. Textures and models on the list are
+  fetched later, by `AssetRuntime`, through `urlOf`. Nothing else: no other level, no other asset.
+- Name: `requested` when the index has it; `null` → `index.default`; unknown → `console.error` and the default; no
+  levels → throws.
+- The level must not name another game (`config.mode.name` absent or `game`), then `validateLevel(raw, registry)`.
+  An index, list or level that will not load throws; a prefab or material that will not is a warning and an
+  unresolved reference (greybox).
+- Who answers those addresses — a build's files, the local dev server, the editor server on the box —
+  `content-sync.md`. The page does not know which.
 
 ## `localProgress` — `persistence.ts`
 
@@ -147,21 +149,23 @@ localProgress(mode: string): PersistenceAdapter<PlayerProgress>
 
 `localStorage[`${mode}.state`]`; every failure falls back to `{ checkpoint: -1 }`.
 
-## `ASSET_DB`, `CLIP_SOURCE`, `assetUrlOf`, `materialOf` — `assets.ts`
+## `levelAssets` — `assets.ts`
 
 ```ts
-ASSET_DB: AssetDatabase                 // buildDatabase over the .meta sidecars virtual:game-content carries
-PREFAB_SOURCE: PrefabSource             // { root: (assetId) => Node | undefined } — ADR 0091
-assetUrlOf(path: string): string        // bundled URL, or the path itself
-materialOf(assetId: string): MaterialAsset | undefined
+levelAssets(needs: LevelNeeds, json: ReadonlyMap<string, unknown>, base: string): LevelAssets
+interface LevelAssets {
+  db: AssetDatabase                                    // the list's entries: this level's assets and nothing else
+  urlOf: (path: string) => string                      // the list's url, absolute; a path not on it → base + content/<path>
+  materialOf: (assetId: string) => MaterialAsset | undefined
+  prefabs: PrefabSource                                // ADR 0091
+}
 ```
 
-From `virtual:game-content` (`game-content.ts`, ADR 0161): `METAS` (sidecars as text), `MATERIALS`, `PREFABS`
-(parsed), `URLS` (every other kind, as a bundled URL), each keyed by its path from `content/`. The game's own library
-and Shared's; built, only what its levels and `game.json` use plus `CODE_ASSETS` (`codeAssets.ts`: `SKY_TEXTURE`). Kind from extension (`kindForPath`); a corrupt or missing sidecar = unknown asset, not a build error.
-Prefabs are parsed and eager for the same reason clips are: resolution has to finish before `instantiateLevel`,
-which stays synchronous (`baseIndex` goes on the wire, ADR 0021). A reference no file resolves draws nothing and
-warns once. Nothing hands a `builtin:` shape or a prefab id to `assets.load`: neither is a file (ADR 0090, 0091).
+`json`: each prefab's and material's fetched JSON by id. A material needs a `shader` string, a prefab a
+`components` array; anything else is an unresolved reference. Prefabs and materials are held before the level is
+built because resolution has to finish before `instantiateLevel`, which stays synchronous (`baseIndex` goes on the
+wire, ADR 0021). A reference no file resolves draws nothing and warns once. Nothing hands a `builtin:` shape or a
+prefab id to `assets.load`: neither is a file (ADR 0090, 0091).
 
 ## Other exports
 

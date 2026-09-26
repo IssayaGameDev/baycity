@@ -105,6 +105,7 @@ export {
   META_SUFFIX,
   assetsOfKind,
   buildDatabase,
+  contentTypeFor,
   entriesFrom,
   entryFor,
   kindForPath,
@@ -115,3 +116,5 @@ export type { AssetDatabase, AssetEntry, AssetKind, AssetMeta, MaterialAsset, Ma
 export { LiveAssetError, applyAssetOps, diffAssetOps, gameDocId, gameOfDocId, isAssetOp, isLiveAssetPath, LIVE_ASSET_KINDS, mergeAssetOps, validateLiveAsset } from './liveAssets'
 export type { AssetOp, LiveKind } from './liveAssets'
 export { assetsUsedBy, levelsUsing, usersOf } from './usage'
+export { DEFAULT_LEVEL, PLAY_CONTENT_DIR, levelIndexFile, levelIndexOf, levelNeeds, levelNeedsFile, levelOfNeedsFile } from './levelNeeds'
+export type { ContentCatalog, LevelIndex, LevelNeeds, NeededAsset } from './levelNeeds'
