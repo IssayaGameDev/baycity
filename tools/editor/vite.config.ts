@@ -97,7 +97,7 @@ export default defineConfig({
   // Always the repo's content/: the dev editor edits that folder, never the mirror (ADR 0084).
   resolve: { alias: contentAlias(REPO_CONTENT) },
   /**
-   * `content/games` is imported by every game's `rules.ts`, which the editor bundles (`modes.ts`), so a write
+   * `content/<game>/game.json` is imported by every game's `rules.ts`, which the editor bundles (`modes.ts`), so a write
    * to it would be a full page reload of the editor — losing the undo history — right after the editor itself
    * wrote it. The editor reads those files live over `/api/games` instead (ADR 0077); the game's own dev server
    * still watches them and reloads, which is the reload that matters.

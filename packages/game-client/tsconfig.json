@@ -3,8 +3,7 @@
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "resolveJsonModule": true,
-    // `vite/client` types `import.meta.glob`, which levels.ts and assets.ts use to bundle `content/`.
-    "types": ["vite/client", "node"]
+    "types": ["node"]
   },
-  "include": ["src/**/*", "../../content/*/levels/*.level.json"]
+  "include": ["src/**/*"]
 }

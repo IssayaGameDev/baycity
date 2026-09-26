@@ -174,7 +174,7 @@ export interface ModeDescriptor {
    */
   readonly player?: readonly ComponentData[]
   /**
-   * The game's tunable numbers, edited in the editor's Game section and stored in `content/games/<game>.json`
+   * The game's tunable numbers, edited in the editor's games window (Settings) and stored in `content/<game>/game.json`
    * under `settings` (ADR 0087). Absent means the game has none. What the game does with them is its own:
    * keyboard reads its progression curve off them (`curveFrom`).
    */

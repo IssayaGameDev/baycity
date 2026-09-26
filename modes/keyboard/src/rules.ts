@@ -23,7 +23,7 @@ import { curveFrom, type ProgressCurve } from './progression'
 
 /**
  * What this game's levels may contain (ADR 0077): the engine's components, the player's, this game's own code
- * components, and **the shared components named in `content/games/keyboard.json`** — a data file, so the editor can
+ * components, and **the shared components named in `content/keyboard/game.json`** — a data file, so the editor can
  * add to it when a level here needs a `Bumper` or a `Checkpoint` the game did not have yet.
  */
 /** The curve as `content/keyboard/game.json` sets it (ADR 0087) — what the game and the editor's play run on. */

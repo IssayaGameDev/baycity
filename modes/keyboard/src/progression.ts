@@ -14,7 +14,7 @@
  * the word "speed" for the only thing that is one.
  *
  * The shape of each conversion is a **designed curve** — control points Kodjo places in the editor, stored in
- * `content/games/keyboard.json` (ADR 0087/0088) — not a formula with parameters. Three of them:
+ * `content/keyboard/game.json` (ADR 0087/0088) — not a formula with parameters. Three of them:
  *
  * - `levelCost`: XP needed to go from Level L to L+1. Exponential, so edited on a log axis with constant-ratio
  *   segments; extends forever, because Level 500 must not be free.

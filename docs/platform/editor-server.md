@@ -157,8 +157,9 @@ level closing (`onDocClosed`), a stale sweep, `safetyCommitMs` since the session
 cleared by the next good push. **The server never pulls, rebases, merges or forces** — it is the only writer to
 its branch; deploy merges master in after `commit-all`. Commits are queued one at a time.
 
-Subjects: `Edit level keyboard` · `Edit texture warn.png` (sidecar folded) · `Edit material goal and 1 more` ·
-`Edit the keyboard component list`.
+Subjects name things as a person calls them — levels, then a game's settings, then assets; three named, the rest
+counted; a sidecar folded into its asset: `Edit Roblox level` · `Edit keyboard settings` · `Edit warn texture` ·
+`Edit Roblox level, keyboard settings, crate model and 1 more`.
 
 ## Config
 

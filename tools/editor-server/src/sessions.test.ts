@@ -36,14 +36,22 @@ describe('sessions', () => {
 })
 
 describe('describeCommit', () => {
-  it('names one thing, counts the rest, folds sidecars', () => {
-    expect(describeCommit(['content/levels/keyboard.json'])).toBe('Edit level keyboard')
-    expect(describeCommit(['content/assets/textures/warn.png', 'content/assets/textures/warn.png.meta'])).toBe('Edit texture warn.png')
-    expect(describeCommit(['content/assets/prefabs/Trampoline.prefab.json', 'content/assets/materials/goal.mat.json'])).toBe(
-      'Edit material goal and 1 more',
-    )
-    expect(describeCommit(['content/games/keyboard.json'])).toBe('Edit the keyboard component list')
-    expect(describeCommit(['content/assets/animations/rise.anim.json', 'content/assets/models/crate.glb'])).toBe('Edit clip rise and 1 more')
+  it('names a thing the way a person calls it, sidecars folded', () => {
+    expect(describeCommit(['content/keyboard/levels/Roblox.level.json'])).toBe('Edit Roblox level')
+    expect(describeCommit(['content/assets/textures/warn.png', 'content/assets/textures/warn.png.meta'])).toBe('Edit warn texture')
+    expect(describeCommit(['content/keyboard/game.json'])).toBe('Edit keyboard settings')
+    expect(describeCommit(['content/keyboard/assets/prefabs/pad.prefab.json'])).toBe('Edit pad prefab')
+    expect(describeCommit(['content/assets/animations/rise.anim.json'])).toBe('Edit rise clip')
     expect(describeCommit([])).toBe('Edit content')
+  })
+
+  it('puts levels first, then settings, then assets, and names up to three', () => {
+    expect(describeCommit(['content/assets/materials/red.mat.json', 'content/keyboard/levels/Roblox.level.json'])).toBe('Edit Roblox level and red material')
+    expect(describeCommit(['content/assets/materials/red.mat.json', 'content/keyboard/game.json', 'content/keyboard/levels/Roblox.level.json'])).toBe(
+      'Edit Roblox level, keyboard settings and red material',
+    )
+    expect(
+      describeCommit(['content/assets/materials/red.mat.json', 'content/assets/models/crate.glb', 'content/keyboard/game.json', 'content/keyboard/levels/Roblox.level.json']),
+    ).toBe('Edit Roblox level, keyboard settings, crate model and 1 more')
   })
 })
