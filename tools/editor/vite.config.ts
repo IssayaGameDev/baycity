@@ -67,8 +67,7 @@ const filesApi = (): Plugin => ({
     const api = createContentApi({
       repoRoot: ROOT,
       identify: async () => local,
-      locks: {},
-      rules: { staleMs: DEFAULTS.lockStaleMs, heartbeatMs: DEFAULTS.heartbeatMs, maxUploadBytes: DEFAULTS.maxUploadBytes },
+      rules: { heartbeatMs: DEFAULTS.heartbeatMs, maxUploadBytes: DEFAULTS.maxUploadBytes },
       // Play frames the game's own dev server on this machine (ADR 0086): `pnpm dev:<game>` has to be running.
       games: Object.fromEntries(SHARED_GAMES.map((g) => [g.name, `http://localhost:${g.port}/`])),
       // Levels are edited live here too (ADR 0089): the same session code, one person, files on this disk.
@@ -97,7 +96,7 @@ export default defineConfig({
   // Always the repo's content/: the dev editor edits that folder, never the mirror (ADR 0084).
   resolve: { alias: contentAlias(REPO_CONTENT) },
   /**
-   * `content/games` is imported by every game's `rules.ts`, which the editor bundles (`modes.ts`), so a write
+   * `content/<game>/game.json` is imported by every game's `rules.ts`, which the editor bundles (`modes.ts`), so a write
    * to it would be a full page reload of the editor — losing the undo history — right after the editor itself
    * wrote it. The editor reads those files live over `/api/games` instead (ADR 0077); the game's own dev server
    * still watches them and reloads, which is the reload that matters.

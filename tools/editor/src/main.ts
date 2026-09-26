@@ -34,16 +34,11 @@ import { componentTypesInRaw, levelDoc, type Doc, type Mode } from './editorDoc'
 import { createContextMenu, type ContextMenu } from './menu'
 import { askName } from './confirm'
 import {
-  acquireLock,
-  heartbeatLocks,
   listFiles,
   loadGame,
   loadLevelRaw,
   parseGameData,
-  lockKey,
   me as fetchMe,
-  releaseLock,
-  releaseLockBeacon,
   saveFile,
   serverStatus,
   uploadAsset,
@@ -172,7 +167,7 @@ let selected: number | null = null
  * What the viewport is not drawing (ADR 0132) — Unity's eye column.
  *
  * A view of the level and not a change to it: it never reaches the game, it is not in the level file, and
- * the server keeps it beside its locks and relays it to everyone in the room. Not to be confused with the
+ * the server keeps it in its state folder and relays it to everyone in the room. Not to be confused with the
  * `active` checkbox (ADR 0099), which switches a node off *in the level* and is content.
  */
 const hiddenView = createHiddenView()
@@ -279,44 +274,17 @@ const gameShown = (game: string, before: GameData | undefined): void => {
 /** Loaded assets. Both arrive at boot, before any document is opened. */
 let assets: AssetLibrary | null = null
 
-// ============================== locks (ADR 0083) ==============================
+// ============================== the server ==============================
 /** Who the server says you are. `null` until boot has asked. */
 let me: Me | null = null
-/**
- * Every lock this tab holds. Levels and prefabs are live rooms and materials live documents (ADR 0159), so this is
- * only a file saved outside a room. Released together when the file changes.
- */
-const heldLocks = new Set<string>()
-/** Who holds the open file when it is not you. Save is off; the server would refuse it anyway. */
-let readOnlyBy: string | null = null
 /** The last push failure the server reported, or `''`. Kodjo's to fix; shown so nobody thinks their work is on GitHub. */
 let pushProblem = ''
 
-/**
- * Take a lock, remembering it. Resolves the holder's name when someone else has it — the caller decides what
- * read-only means for that thing. A lock already held is a no-op (the server refreshes it).
- */
-const takeLock = async (path: string): Promise<string | null> => {
-  if (heldLocks.has(path)) return null
-  try {
-    const owner = await acquireLock(path)
-    if (owner === null) heldLocks.add(path)
-    return owner
-  } catch (e) {
-    setProblem(`lock failed: ${String(e)}`)
-    return null // the server refuses the write if it must; a hiccup here should not block the open
-  }
-}
-
-/** Release everything this tab holds. Runs when the file changes: the server commits the session then. */
-const dropAllLocks = async (): Promise<void> => {
-  const paths = [...heldLocks]
-  heldLocks.clear()
-  readOnlyBy = null
+/** Let go of the open file: leave its rooms, which is what commits the session there (ADR 0089). */
+const leaveFile = (): void => {
   room.leaveAll()
   follow.reset()
   edits.discardHeld()
-  await Promise.all(paths.map((p) => releaseLock(p).catch(() => undefined)))
 }
 
 // ============================== live levels (ADR 0089, ADR 0091) ==============================
@@ -406,16 +374,13 @@ const room = createLiveSession({
 /** The connection the room last reported, so a reconnect is noticed. */
 let presenceConn: string | null = null
 
-/** Is the open document a live room? Prefabs are too (ADR 0091); a material is a file with a lock. */
+/** Is the open document a live room? Prefabs are too (ADR 0091). */
 const live = (): boolean => room.live()
-
-/** The key the open file is locked by. Levels and prefabs are live rooms; this is for the rest. */
-const docLockKey = (): string => lockKey.level(fileState.name)
 
 /**
  * A level's own name, without its game (ADR 0108).
  *
- * `fileState.name` is the qualified `<game>/<name>` — what the route, the lock key and the live document key
+ * `fileState.name` is the qualified `<game>/<name>` — what the route and the live document key
  * all use. Two places want the bare half: the name in the top bar, and the game's `?level=`, which a page
  * qualifies with its own game. A prefab's name is already bare and passes straight through.
  */
@@ -430,7 +395,6 @@ const editorPrefabs: PrefabSource = { root: (assetId) => assets?.prefabOf(assetI
 /** Prefab references the open level could not resolve — named in the Hierarchy and the status line. */
 let missingPrefabs: string[] = []
 /** What hydration added to the open level's table, so a save writes the references and not the definitions. */
-let hydratedPrefabs: string[] = []
 let runtime: AssetRuntime | null = null
 let selectedAsset: string | null = null
 /**
@@ -1025,8 +989,6 @@ const play = createPlay({
   levelName: () => shortName(fileState.name),
   live: () => live(),
   flush: () => room.flush(),
-  dirty: () => edits.dirty(),
-  saveNow: () => edits.saveNow(),
   hint: (text) => {
     playHint = text
     renderStatus()
@@ -1045,8 +1007,8 @@ const app = $<HTMLDivElement>('#app')
 const fileState: { mode: Mode; name: string } = { mode: 'level', name: 'untitled' }
 
 const openFile = async (name: string): Promise<void> => {
-  // The previous file's locks go first — releasing them is what commits that session (ADR 0083).
-  await dropAllLocks()
+  // The previous file goes first — leaving its room is what commits that session (ADR 0089).
+  leaveFile()
   try {
     {
       /**
@@ -1075,11 +1037,9 @@ const openFile = async (name: string): Promise<void> => {
       /**
        * A placement names a prefab **asset**, so the definitions are resolved before the document is built
        * (ADR 0091). A level that still carries its own table keeps it — hydration fills only what is not
-       * already there, and the save strips only what it filled.
+       * already there.
        */
-      const resolved = hydratePrefabs(level, editorPrefabs)
-      hydratedPrefabs = resolved.filled
-      missingPrefabs = resolved.missing
+      missingPrefabs = hydratePrefabs(level, editorPrefabs).missing
       setDoc(edits.withOps(levelDoc(level, registry())), name)
       // Only now, past every throw above: a level that would not load must not be the one we come back to.
       rememberLevel(name)
@@ -1088,7 +1048,6 @@ const openFile = async (name: string): Promise<void> => {
   } catch (e) {
     notify.error(`load failed: ${String(e)}`)
   }
-  if (readOnlyBy !== null) notify.warn(`${name} is open read-only: ${readOnlyBy} has it`)
 }
 
 /** Every level on disk with the game it declares, so the list can be narrowed to one game (ADR 0052). */
@@ -1194,7 +1153,6 @@ const toolbar: Toolbar = createToolbar(
     surfaceCells: meshes.cells(),
     // `null` while nothing is hidden, so the button stays out of the way until it means something.
     showingAll: hiddenView.any() || hiddenView.showingAll() ? hiddenView.showingAll() : null,
-    lockedBy: readOnlyBy,
     history: historyView(),
     unseen: notices.unseen(),
   }),
@@ -1690,9 +1648,7 @@ const levelMenu = (at: { x: number; y: number }, qualified: string): void => {
         label: 'Open',
         enabled: !isOpen && prefabOpen === null,
         why: isOpen ? 'already open' : 'leave the prefab you are in first',
-        run: () => void edits.guardUnsaved().then(async (go) => {
-          if (go) await openFile(qualified)
-        }),
+        run: () => void openFile(qualified),
       },
       {
         label: 'Duplicate\u2026',
@@ -1738,9 +1694,7 @@ const gamesWindow: GamesWindow = createGamesWindow({
   },
   onOpenLevel: (qualified) => {
     gamesWindow.close()
-    void edits.guardUnsaved().then(async (go) => {
-      if (go) await openFile(qualified)
-    })
+    void openFile(qualified)
   },
   onNewLevel: (game) => {
     gamesWindow.close()
@@ -1810,8 +1764,8 @@ const selectionRefs = (): NodeRef[] => {
 const rootLevel = (): Level | null => docStack[0]?.doc.asLevel() ?? null
 
 /**
- * Undo, redo, the clipboard and edits.dirty() tracking (`historyStore.ts`, ADR 0121). It owns the history, the
- * pending batches, the coalescing flag, the held-back drag batches, `edits.dirty()` and the clipboard.
+ * Undo, redo and the clipboard (`historyStore.ts`, ADR 0121). It owns the history, the pending batches, the
+ * coalescing flag, the held-back drag batches and the clipboard.
  */
 const edits = createHistoryStore({
   doc: () => doc,
@@ -1825,23 +1779,6 @@ const edits = createHistoryStore({
   deleteSelected: () => nodes.deleteSelected(),
   live: () => live(),
   submit: (batch) => room.submit(batch),
-  fileName: () => fileState.name,
-  readOnlyBy: () => readOnlyBy,
-  // The name may have changed since the file was opened (Save-as), or this may be a new file: the lock
-  // follows what is about to be written.
-  claimFileLock: async () => {
-    const key = docLockKey()
-    return heldLocks.has(key) ? null : takeLock(key)
-  },
-  // What the open pass resolved, plus whatever the document has resolved since — placing a prefab, pasting
-  // one, Save as prefab. A definition that reaches disk is a frozen copy the level reads instead of the
-  // asset, for good (ADR 0124).
-  hydratedPrefabs: () => [...new Set([...hydratedPrefabs, ...(doc?.resolvedPrefabs() ?? [])])],
-  afterSave: async () => {
-    previews.invalidate()
-    await reloadAssets()
-    await refreshFileList()
-  },
   rebuildViewport: () => {
     meshes.buildAll()
     rebuildLoaded()
@@ -1937,10 +1874,7 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
     return ref === null ? qualified : `${MODES[ref.game]?.label ?? ref.game} › ${ref.name}`
   },
   named: (path) => project.named(path),
-  onOpenLevel: (qualified) =>
-    void edits.guardUnsaved().then(async (go) => {
-      if (go) await openFile(qualified)
-    }),
+  onOpenLevel: (qualified) => void openFile(qualified),
   // As a tile clicked in the Project window: selected there too, its folder open.
   onSelectAsset: (id) => {
     const path = assets?.db.byId[id]?.path
@@ -2275,7 +2209,7 @@ const showReadout = (text: string | null, at?: { x: number; y: number }): void =
 }
 
 /**
- * Redraw what shows the editor's state, now that the status bar is gone: the top bar (undo and redo, the lock,
+ * Redraw what shows the editor's state, now that the status bar is gone: the top bar (undo and redo,
  * the bell), the hint over the viewport — playing, or placing — and the Hierarchy's count. Cheap: the top bar
  * only updates values.
  */
@@ -2544,7 +2478,7 @@ const applyAssetChanges = async (paths: string[]): Promise<void> => {
 // --- boot ---
 await initPhysics()
 tool.applySnap()
-// Who you are, and the lock rules. A dev server answers `local`; the hosted one, whoever Access let in.
+// Who you are, and how often to ping. A dev server answers `local`; the hosted one, whoever Access let in.
 me = await fetchMe().catch((e: unknown) => {
   setProblem(`who am I? ${String(e)} — restart pnpm dev:editor`)
   return null
@@ -2566,21 +2500,11 @@ watchAssets({
 })
 
 /**
- * Keep every held lock alive, and re-take the file's if the server dropped it (a laptop asleep past the stale
- * window). Also the moment a push failure is learned about.
+ * Keep the live connection alive — the server drops one it has not heard from, holds included — and learn of a
+ * push failure.
  */
 window.setInterval(() => {
   void (async () => {
-    if (heldLocks.size > 0) {
-      const lost = await heartbeatLocks([...heldLocks]).catch(() => [] as string[])
-      for (const p of lost) heldLocks.delete(p)
-      const key = docLockKey()
-      if (lost.includes(key) && readOnlyBy === null) {
-        readOnlyBy = await takeLock(key)
-        if (readOnlyBy !== null) notify.warn(`${fileState.name} is now read-only: ${readOnlyBy} took it while this tab was away`)
-        refreshUi()
-      }
-    }
     if (live()) room.ping() // the server drops a connection it has not heard from, holds included
     const status = await serverStatus().catch(() => null)
     const next = status?.pushError ?? ''
@@ -2591,8 +2515,7 @@ window.setInterval(() => {
   })()
 }, me?.heartbeatMs ?? 30_000)
 
-// A closing tab lets go of its locks at once rather than waiting out the stale window.
+// A closing tab leaves its room at once rather than waiting out the stale window.
 window.addEventListener('pagehide', () => {
-  for (const p of heldLocks) releaseLockBeacon(p)
   room.beaconLeave()
 })

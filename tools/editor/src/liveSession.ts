@@ -110,8 +110,7 @@ export const createLiveSession = (host: LiveHost) => {
   let joining = false
   /** Remote ops that landed mid-drag: applied to the data already, repainted when the drag ends. */
   let deferredRemote: Op[] = []
-  /** Is the open document a level in a live session? Prefabs and materials are files with locks, as before. */
-  /** Is the open document a live room? Both kinds are now (ADR 0091); a material is still a file with a lock. */
+  /** Is the open document a live room? Levels and prefabs both are (ADR 0089, ADR 0091). */
   const live = (): boolean => collab.name() !== null
 
   const TRANSFORM_KINDS = new Set<string>(['setTransform', 'setOverrideTransform'])
@@ -494,7 +493,7 @@ export const createLiveSession = (host: LiveHost) => {
   }
 
   return {
-    /** Is the open document a live room? Both kinds are (ADR 0091); a material is still a file with a lock. */
+    /** Is the open document a live room? Levels and prefabs both are (ADR 0089, ADR 0091). */
     live,
     /** Join a room; resolves the snapshot it greeted us with, or `null`. */
     joinRoom,

@@ -27,8 +27,8 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 | [client/tps.md](platform/client/tps.md) | `startTpsClient` options and every `TpsClient` handle |
 | [client/input.md](platform/client/input.md) | Keyboard, mouse, touch zones, actions, `InputCommand` |
 | [rendering.md](platform/rendering.md) | Stage, post-FX, overlay layer, level view, assets, world labels, Pixi UI |
-| [editor.md](platform/editor.md) | What it authors, content API client, locks in the editor, edits as ops, live levels, game discovery, adoption, Play |
-| [editor-server.md](platform/editor-server.md) | The content API, Access identity, locks, live documents, session commits, upload, deploy |
+| [editor.md](platform/editor.md) | What it authors, content API client, edits as ops, live levels, game discovery, adoption, Play |
+| [editor-server.md](platform/editor-server.md) | The content API, Access identity, live documents, session commits, upload, deploy |
 | [content-sync.md](platform/content-sync.md) | The live mirror, `content-root.ts`, the `@content` alias, `.env` |
 | [tooling.md](platform/tooling.md) | share, bots, netsim |
 | [budgets.md](platform/budgets.md) | The tripwires and how each is measured |
@@ -220,5 +220,6 @@ why matters.
 | [0170](adr/0170-the-procedural-sky-is-the-only-sky.md) | The procedural sky is the only sky |
 | [0171](adr/0171-parkour-swing-the-viewer-and-goal-are-deleted.md) | Parkour, Swing, the viewer and `Goal` are deleted |
 | [0172](adr/0172-play-is-always-the-games-own-page.md) | Play is always the game's own page |
+| [0173](adr/0173-file-locks-are-deleted.md) | File locks are deleted |
 
 `Design archive/` holds superseded design material and is not maintained.

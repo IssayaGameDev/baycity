@@ -31,8 +31,6 @@ export interface PlayHost {
   live: () => boolean
   /** Push pending live edits, so the game page reads a current file. */
   flush: () => Promise<void>
-  dirty: () => boolean
-  saveNow: () => Promise<boolean>
   /**
    * The hint over the viewport while a session runs (ADR 0155), or `null` when it ends — stopping takes it away
    * rather than leaving a line about a session that is over.
@@ -57,8 +55,8 @@ export const createPlay = (host: PlayHost): Play => {
   let starting = false
 
   /**
-   * The game reads the file, so live edits are pushed first, and unsaved ones saved; a save that fails (read-only,
-   * locked) means no play. Stop is the toolbar button: Esc inside the frame is the game's pause, not ours.
+   * The game reads the level from the server, so live edits are pushed first. Stop is the toolbar button: Esc
+   * inside the frame is the game's pause, not ours.
    */
   const start = (): void => {
     if (host.doc() === null || gameFrame !== null || starting) return
@@ -71,7 +69,6 @@ export const createPlay = (host: PlayHost): Play => {
     void (async () => {
       try {
         if (host.live()) await host.flush()
-        else if (host.dirty() && !(await host.saveNow())) return
       } finally {
         starting = false
       }

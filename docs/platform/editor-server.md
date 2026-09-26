@@ -2,7 +2,7 @@
 
 The content API the editor talks to, as one implementation with two hosts (ADR 0083): a Vite middleware in
 `pnpm dev:editor` (no login, no git) and a Node server on the box behind Cloudflare Access (`editor.playgorbo.com`,
-login, locks, commits on the `content` branch). `@mp/editor-server`, `tsx src/main.ts <config.json>`, no
+login, commits on the `content` branch). `@mp/editor-server`, `tsx src/main.ts <config.json>`, no
 dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` can bundle it). What that reaches
 must not import a workspace package **as a value** — plain Node loads the bundle, and the editor's build, which
 is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walks the imports to hold.
@@ -12,7 +12,6 @@ is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walk
 | `src/api.ts` | `createContentApi(opts): ApiHandler` — every route below; `keyFor`, `UPLOAD_EXTENSIONS`, `AuthError`, `safeJoin`, `sendJson` |
 | `src/config.ts` | `ServerConfig`, `AuthConfig`, `User`, `parseConfig`, `loadConfig`, `DEFAULTS` |
 | `src/access.ts` | `verifyToken` (pure RS256 over a key set), `createAccessVerifier` (fetches `/cdn-cgi/access/certs`, refetches on unknown `kid` at most once a minute) |
-| `src/locks.ts` | `LockTable`, `acquire`, `release`, `heartbeat`, `holder`, `blocker`, `heldBy`, `sweep` — pure |
 | `src/sessions.ts` | `SessionTable`, `markDirty`, `take`, `takeDue`, `takeAll`, `describeCommit` — pure |
 | `src/git.ts` | `git`, `changedUnder`, `commitPaths`, `push`, `currentBranch` |
 | `src/changes.ts` | `createChangeFeed(keep)` — numbered, bounded log of written paths with long-poll `wait`; `null` = full sync needed (behind, or ahead after a restart) |
@@ -33,13 +32,10 @@ is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walk
 
 | Route | Body → reply | Gate |
 | --- | --- | --- |
-| `GET /api/me` | `{ user, heartbeatMs, lockStaleMs, maxUploadBytes, games }` — `games`: name → URL Play frames | |
-| `GET /api/status` | `{ pushError, locks: [{ path, owner, since }] }` (live locks only) | |
-| `POST /api/locks/acquire` | `{ path }` → `{ ok }` or `{ ok: false, owner: { name } }` | |
-| `POST /api/locks/release` | `{ path }` → `{ ok }`; then `onLockReleased(user)` | |
-| `POST /api/locks/heartbeat` | `{ paths }` → `{ lost }` | |
+| `GET /api/me` | `{ user, heartbeatMs, maxUploadBytes, games }` — `games`: name → URL Play frames | |
+| `GET /api/status` | `{ pushError }` | |
 | `GET /api/levels` | `[{ name, mode, prefabs? }]` — `name` qualified `<game>/<name>`, `mode` the **folder** it is in, so a file that will not parse still lists with its game (ADR 0108) | |
-| `GET/PUT /api/levels/:game/:name` | level JSON — two segments, because a game is a folder (ADR 0108). GET serves the **live copy** when the level is open; PUT runs `validateLevel(raw)` (structure only, no registry) and makes the game folder on demand, **409** while the level is open live. A name that is not a legal `<game>/<name>` is a 404 | lock |
+| `GET/PUT /api/levels/:game/:name` | level JSON — two segments, because a game is a folder (ADR 0108). GET serves the **live copy** when the level is open; PUT runs `validateLevel(raw)` (structure only, no registry) and makes the game folder on demand, **409** while the level is open live. A name that is not a legal `<game>/<name>` is a 404 | |
 | `GET /api/live` | `{ docs: [{ name, seq, peers, holds }] }` | |
 | `GET /api/live/:kind/:name/events` | `:kind` is `level` or `prefab` (ADR 0091); a level's `:name` is the qualified `<game>/<name>` and so spans two segments (ADR 0108). SSE (`text/event-stream`, `:keepalive` every 25 s): `hello { connId, name }`, `snapshot { level, seq, holds, peers, hidden }`, then `ops { seq, from, batchId, ops }` with `id: seq`, `holds`, `peers`, `presence`, `open-assets { open: [{ assetId, connId, name }] }` and `fields { fields: [{ connId, name, targets, card, field }] }` (each after the snapshot too, when not empty), `rooms { rooms: [{ kind, name, peers }] }` (every document anyone is in, to every connection on each join and leave, ADR 0162), `levels {}` (a level made, renamed or deleted), `asset`, `error`, and on a **level's** stream `prefab { assetId, ops }` when a prefab it uses was edited. 404 when there is no such document. The stream closing is the leave | |
 | `POST /api/live/:kind/:name/ops` | `{ connId, batchId, ops }` → `{ ok, seq }` · 400 an op does not apply (`OpError`). Never refused for another's selection (ADR 0158). On a **prefab**, a connection in a level that uses it is accepted too — what *Apply to prefab* needs | |
@@ -58,19 +54,19 @@ switch without adding the word to that alternation is a 404 with a correct handl
 shipped when `hidden` was added (ADR 0132). `api.test.ts` walks one over the wire for exactly this reason.
 | `POST /api/live/:kind/:name/flush` | write the file now (the editor's Play) | |
 | `POST /api/live/:kind/:name/leave` | `{ connId }` — a closing tab's beacon | |
-| `POST /api/levels/move` | `{ from, to }`, both qualified — rename, or move into another game's folder; the `id` inside follows the file name. **409** while either is open live, 400 on a clash or a bad name, 404 when `from` is not there (ADR 0110) | lock |
-| `POST /api/levels/delete` | `{ path }`, qualified — the file goes for good. **409** while it is open live (ADR 0110) | lock |
+| `POST /api/levels/move` | `{ from, to }`, both qualified — rename, or move into another game's folder; the `id` inside follows the file name. **409** while either is open live, 400 on a clash or a bad name, 404 when `from` is not there (ADR 0110) | |
+| `POST /api/levels/delete` | `{ path }`, qualified — the file goes for good. **409** while it is open live (ADR 0110) | |
 | `GET /api/games` | `[{ name }]` — the folders at the content root that hold a `game.json` (ADR 0108) | |
-| `GET/PUT /api/games/:name` | `{ components: string[], settings? }` — `content/<name>/game.json`. GET serves the live copy when open, with `x-asset-epoch` / `x-asset-seq` (`0` for the file); PUT makes the folder, which is how a new game starts, and is **409** while the file is open live (ADR 0162) | lock |
+| `GET/PUT /api/games/:name` | `{ components: string[], settings? }` — `content/<name>/game.json`. GET serves the live copy when open, with `x-asset-epoch` / `x-asset-seq` (`0` for the file); PUT makes the folder, which is how a new game starts, and is **409** while the file is open live (ADR 0162) | |
 | `GET /api/assets` | `{ entries, libraries, folders, seq, files }` — every library's, paths from `content/` (ADR 0161); rescans the index (the importer: a file copied in gets its sidecar, attributed to this user); `seq` is the change feed's position in the same tick, where an editor's watch starts (ADR 0156); `files` each entry's `{ bytes, modified }` (ms) by path, stat'd now (ADR 0165) | |
 | `GET /api/assets/users?id=` | `{ levels, assets }` — who uses it, directly or through another: every level (`levelNow`) and asset (`assetJsonNow`) as it is now (`usersOf`, `content.md`) · 404 no such asset | |
-| `POST /api/assets/mkdir` · `move` · `delete` | `{ path }` · `{ from, to }` or `{ moves: [{ from, to }] }` · `{ path }` or `{ paths }` — each path inside a library (`inLibrary`) of Shared or an existing game, else 400; a move into another library is **409** while something would be left using what it may not (`libraryMoves.ts`). Several are checked before any is done — locks (423), a source missing or a name taken (400), the library rule for all crossing into one library together (409) — so all or none (ADR 0166) | lock (move/delete; a folder is refused if anything under it is held) |
-| `POST /api/assets/upload?path=` | raw bytes → `{ entry }`; `path` from `content/`, inside a library | lock; ext ∈ `png jpg jpeg webp ktx2 glb`; `≤ maxUploadBytes` else 413 |
+| `POST /api/assets/mkdir` · `move` · `delete` | `{ path }` · `{ from, to }` or `{ moves: [{ from, to }] }` · `{ path }` or `{ paths }` — each path inside a library (`inLibrary`) of Shared or an existing game, else 400; a move into another library is **409** while something would be left using what it may not (`libraryMoves.ts`). Several are checked before any is done — a source missing or a name taken (400), the library rule for all crossing into one library together (409) — so all or none (ADR 0166) | |
+| `POST /api/assets/upload?path=` | raw bytes → `{ entry }`; `path` from `content/`, inside a library | ext ∈ `png jpg jpeg webp ktx2 glb`; `≤ maxUploadBytes` else 413 |
 | `GET /content/<path>` | bytes of a path inside a library (anything else 404) — a prefab open live is served from its document, as a level is; a live asset (ADR 0159) from its document when open, with `x-asset-epoch` / `x-asset-seq` (`0` for the file) | |
 | `GET /api/play/<address>` | a game page's content (ADR 0169), each as it is now: `<game>/levels.json` → `levelIndexOf` over its level files · `<game>/levels/<name>.needs.json` → `levelNeeds` over `levelNow`, the asset index and `assetJsonNow`, `url`s `content/<path>` · `<game>/levels/<name>.level.json` → `levelNow` · a library path → as `GET /content/<path>`. 404 anything else, 405 anything but GET, `cache-control: no-cache`. The staging game's dev server proxies its page's `content/` here (`content-sync.md`) | `identifyPlayer`: signed in, not necessarily in `users` |
 | `POST /api/live/asset/<id>/ops` | `{ connId, batchId, ops }` — asset ops on any live connection of this user → `{ ok, seq }` · 400 not ops, an op that does not apply or leaves the file invalid, an unknown or foreign connection · 404 no such asset | |
 | `POST /api/live/game/<game>/ops` | the same, on a game's `game.json` (ADR 0162); echoed as an `asset` event with `assetId` `game:<game>` · 404 no such game | |
-| `PUT /content/<path>` | JSON asset; **409** while that prefab, or that live asset, is open live | lock |
+| `PUT /content/<path>` | JSON asset; **409** while that prefab, or that live asset, is open live | |
 | `POST /api/admin/commit-all` | `Authorization: Bearer <stateDir/admin.token>` → commits every session | token, no user |
 | `GET /api/tree` | `{ seq, files: [{ path, size, sha1 }] }` — every file under `content/` (mirror, ADR 0084); flushes every live level first, as `GET /api/file` does | |
 | `GET /api/changes?since=N&timeout=MS` | `{ seq, paths }` long-poll (≤ 60 s); **410** when N is behind the feed or ahead of it. Followed by the mirror and by every editor tab (ADR 0156) | |
@@ -79,19 +75,13 @@ shipped when `hidden` was added (ADR 0132). `api.test.ts` walks one over the wir
 Identity first: `identify(req)` → `null` is 401, `AuthError` is its status (403 signed in but not in `users`, 503
 `aud` unset). `/api/play` alone asks `identifyPlayer(req)` instead (`ApiOptions.identifyPlayer`; absent: `identify`):
 any verified Access login, since the page itself is only behind the login and has no copy of its own to fall back
-on (ADR 0169). **Lock gate**: `blocker(locks, key, user)` non-null → 423 `{ error: 'locked by X', owner }`. Lock
-keys = repo-relative posix paths, built by `keyFor` from `@mp/content`'s layout (ADR 0108):
+on (ADR 0169). No file locks (ADR 0173): a level, a prefab, a material and a game's file are live documents, and
+anything else is last write wins. Keys = repo-relative posix paths, built by `keyFor` from `@mp/content`'s layout
+(ADR 0108), what the change feed and the commits name:
 `content/<game>/levels/<name>.level.json`, `content/<game>/game.json`,
 `content/<path>` for an asset (its path already starts with its library). Every write reports its paths to `onChanged` and to the change feed (sidecars included; a PUT of a new JSON
 asset rescans so its `.meta` is attributed to the writer; a folder move or delete is reported as the **files** it touched). Upload with the same path **replaces and keeps the
 sidecar**, so the id survives. Anything other than `/api/*` and `/content/*` resolves `false` for the host to serve. The built editor's own files are under `/app/` (`build.assetsDir`), apart from content's.
-
-## Locks
-
-`Lock { owner, since, seen }`, one per key. Live = `now − seen < staleMs`. Rules: your own re-acquire refreshes;
-a **stale** lock is anyone's; a live one is nobody else's; no force-unlock (everyone equal, Kodjo). Release of
-someone else's lock is a no-op `{ ok: false }`. Persisted to `stateDir/locks.json` on every change; swept once a
-minute — an owner whose last lock went stale has their session committed.
 
 ## Live documents (`live.ts`, ADR 0089, ADR 0091)
 
@@ -141,24 +131,24 @@ minute too. The editor pings on its heartbeat.
 on `flush`/`flushAll` (Play, `/api/tree`, `/api/file`, `commit-all`, shutdown): `level.id = name` →
 `writeLevel` → `changed(contributors, content/<game>/levels/<name>.level.json)`. In `server.ts`: `markDirty` per contributor,
 then `feed.record([path])` once — disk before the feed, so the mirror always reads the new file. When the last
-client leaves, `onDocClosed(contributors)` commits each contributor's session (the level's equivalent of a lock
-release). A restart loses at most `maxMs` of edits; clients reconnect and take the fresh snapshot.
+client leaves, `onDocClosed(contributors)` commits each contributor's session. A restart loses at most `maxMs` of edits; clients reconnect and take the fresh snapshot.
 
 The dev editor (`tools/editor/vite.config.ts`) mounts the same `createLive` over the repo's `content/<game>/levels` with
 `changed: () => {}`; the watcher ignores `content/<game>/levels/**`.
 
 ## Sessions and commits
 
-`Session { user, dirty: Set<path>, since }` per email. Commit points: a lock release (`take(user)`), a live
-level closing (`onDocClosed`), a stale sweep, `safetyCommitMs` since the session began (`takeDue`), `commit-all`, shutdown (`takeAll`). Commit =
+`Session { user, dirty: Set<path>, since }` per email. Commit points: a live
+level closing (`onDocClosed`), `safetyCommitMs` since the session began (`takeDue`), `commit-all`, shutdown (`takeAll`). Commit =
 `git status --porcelain -z -- <paths>` → `git add -A -- <changed>` → `git commit --only -m <describeCommit>` with
 `GIT_AUTHOR_*` = the user and `GIT_COMMITTER_*` = `config.git.committer`; unchanged paths mean no commit. Then
 `git push origin <branch>` when `push`; a failure sets `pushError` (shown by the editor as "not on GitHub yet"),
 cleared by the next good push. **The server never pulls, rebases, merges or forces** — it is the only writer to
 its branch; deploy merges master in after `commit-all`. Commits are queued one at a time.
 
-Subjects: `Edit level keyboard` · `Edit texture warn.png` (sidecar folded) · `Edit material goal and 1 more` ·
-`Edit the keyboard component list`.
+Subjects name things as a person calls them — levels, then a game's settings, then assets; three named, the rest
+counted; a sidecar folded into its asset: `Edit Roblox level` · `Edit keyboard settings` · `Edit warn texture` ·
+`Edit Roblox level, keyboard settings, crate model and 1 more`.
 
 ## Config
 
@@ -177,15 +167,15 @@ interface ServerConfig {
 | --- | --- | --- |
 | `port` | 8080 | cloudflared's origin |
 | `maxUploadBytes` | 10 MiB | Kodjo's cap; JSON bodies have a fixed 32 MiB limit |
-| `lockStaleMs` | 120 000 | |
-| `heartbeatMs` | 30 000 | advertised to the editor via `/api/me` |
+| `lockStaleMs` | 120 000 | a live connection not heard from this long is dropped (the name is from the file locks it once timed out) |
+| `heartbeatMs` | 30 000 | how often an editor pings its live connection, advertised via `/api/me` |
 | `safetyCommitMs` | 600 000 | |
 | `auth.aud` | `''` | empty refuses every login and logs the `aud` the token carried, so the tag can be read off the first attempt |
 | `auth.users` | | lower-cased email → display name; a verified email not listed is 403 |
 | `auth.services` | `{}` | service-token Client ID → display name for logs; any token Access let through is accepted (the Access policy is the list) |
 
-Dev host (`tools/editor/vite.config.ts`): `identify → { local, local@localhost }`, `locks: {}` in memory, rules
-from `DEFAULTS`, no git. Same handlers, so the editor's lock code runs against both.
+Dev host (`tools/editor/vite.config.ts`): `identify → { local, local@localhost }`, rules
+from `DEFAULTS`, no git. Same handlers.
 
 ## Access verification
 
@@ -237,7 +227,5 @@ game is another unit, a `games` entry and a hostname.
 
 ## Open
 
-- `content/<game>/game.json` writes are lock-gated but never locked by the editor: two adoptions in the same
-  second could drop one. Append-only set; the merge story is the rule that only the editor writes it (ADR 0083).
 - Contributors' names come from `auth.users`, edited by hand on the box.
 - No merge driver for `games.json`; ADR 0083 records the option.

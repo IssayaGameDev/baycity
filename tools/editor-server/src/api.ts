@@ -22,7 +22,6 @@ import { usersOf } from '../../../packages/content/src/usage'
 import type { ChangeFeed } from './changes'
 import type { User } from './config'
 import { docKey, LiveError, type FieldSpot, type Live } from './live'
-import { acquire, blocker, heartbeat, holder, release, type LockRules, type LockTable } from './locks'
 import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
 
 /**
@@ -30,11 +29,8 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  * hosted editor (a Node server behind Cloudflare Access), so what the editor can do to `content/` is defined
  * once (ADR 0083).
  *
- *   GET  /api/me                      → { user, heartbeatMs, lockStaleMs, maxUploadBytes, games }
- *   GET  /api/status                  → { pushError, locks: [{ path, owner, since }] }
- *   POST /api/locks/acquire           → { path } → { ok, owner? }
- *   POST /api/locks/release           → { path } → { ok }         (a sendBeacon on tab close lands here too)
- *   POST /api/locks/heartbeat         → { paths } → { lost }
+ *   GET  /api/me                      → { user, heartbeatMs, maxUploadBytes, games }
+ *   GET  /api/status                  → { pushError }
  *   GET  /api/levels                  → [{ name, mode?, prefabs?, components? }] — prefabs: asset ids it references (ADR 0097);
  *                                       components: every type it and its prefabs use (ADR 0162)
  *   GET/PUT /api/levels/:name         → the JSON (PUT validated structurally)
@@ -86,8 +82,7 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  *                                       Every editor tab follows it too, for other people's asset changes (ADR 0156)
  *   GET  /api/file?path=content/...   → the bytes of any content file (404 when gone)
  *
- * Every write is gated by the lock table: a path someone else holds live is a 423 with their name. Every
- * write reports the repo-relative paths it touched to `onChanged` and the change feed — always **file** paths,
+ * Every write reports the repo-relative paths it touched to `onChanged` and the change feed — always **file** paths,
  * so a folder move or delete is reported as the files it moved or removed.
  */
 export interface ApiOptions {
@@ -99,15 +94,10 @@ export interface ApiOptions {
    * `identify` wants a name in the editor's list. Absent: `identify` decides.
    */
   identifyPlayer?: (req: IncomingMessage) => Promise<boolean>
-  locks: LockTable
-  rules: LockRules & { heartbeatMs: number; maxUploadBytes: number }
-  now?: () => number
+  /** `heartbeatMs`: how often an editor pings its live connection; `maxUploadBytes`: the upload cap. */
+  rules: { heartbeatMs: number; maxUploadBytes: number }
   /** Repo-relative posix paths a user just changed on disk. */
   onChanged?: (user: User, paths: string[]) => void
-  /** A lock was released (or the release was a no-op); the caller may commit the user's session. */
-  onLockReleased?: (user: User) => void
-  /** Persist the lock table after it changed. */
-  onLocksChanged?: () => void
   status?: () => { pushError: string | null }
   admin?: { token: string; commitAll: () => Promise<void> }
   /** The live mirror's feed; every changed path is recorded here too. */
@@ -118,7 +108,7 @@ export interface ApiOptions {
   live?: Live
   /** The asset list in memory, shared with the prefab store so both see every write (ADR 0156). Made here when absent. */
   assets?: AssetIndex
-  /** Data-file assets edited live (ADR 0159). Absent: they are files with locks, as before. */
+  /** Data-file assets edited live (ADR 0159). Absent: they are plain files. */
   liveAssets?: LiveAssets
   /** SSE keepalive period; short in tests. */
   keepaliveMs?: number
@@ -206,7 +196,7 @@ const strField = (o: Record<string, unknown>, name: string): string => {
   return v
 }
 
-/** Repo-relative lock/commit key for a file the API knows. */
+/** Repo-relative key for a file the API knows: what the change feed and the commits name. */
 export const keyFor = {
   /** `name` is the qualified `<game>/<name>` (ADR 0108). */
   level: (name: string): string => {
@@ -234,7 +224,6 @@ const filesUnder = (dir: string): string[] => {
 }
 
 export const createContentApi = (opts: ApiOptions): ApiHandler => {
-  const now = opts.now ?? (() => Date.now())
   const CONTENT = join(opts.repoRoot, 'content')
   if (!existsSync(CONTENT)) mkdirSync(CONTENT, { recursive: true })
   const assets = opts.assets ?? createAssetIndex(CONTENT)
@@ -355,27 +344,12 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
   }
   /** The list of levels changed — made, renamed, deleted: every editor in any room reads it again (ADR 0162). */
   const levelsChanged = (): void => opts.live?.broadcastAll('levels', {})
-  const locksChanged = (): void => opts.onLocksChanged?.()
 
   /** A file's own path plus its sidecar; a folder's every file. For reporting what a move or delete touched. */
   const filesOf = (path: string): string[] => {
     const full = safeJoin(CONTENT, path)
     if (full !== null && existsSync(full) && statSync(full).isDirectory()) return filesUnder(full).map((f) => `${path}/${f}`)
     return [path, `${path}${META_SUFFIX}`]
-  }
-
-  /** Refuse with 423 when someone else holds `key` (or, for a folder, anything under it). Returns `true` when refused. */
-  const refuseIfLocked = (res: ServerResponse, user: User, keys: readonly string[]): boolean => {
-    const t = now()
-    for (const key of keys) {
-      const direct = blocker(opts.locks, key, user, t, opts.rules)
-      const under = direct ?? Object.keys(opts.locks).filter((p) => p.startsWith(`${key}/`)).map((p) => blocker(opts.locks, p, user, t, opts.rules)).find((b) => b !== null) ?? null
-      if (under !== null) {
-        sendJson(res, 423, { error: `locked by ${under.name}`, owner: { name: under.name } })
-        return true
-      }
-    }
-    return false
   }
 
   /** Rescan so a new file has its sidecar now, attributed to the user who made it. */
@@ -423,7 +397,6 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       const ext = rel.slice(rel.lastIndexOf('.') + 1).toLowerCase()
       if (!assetPathOk(rel)) return sendJson(res, 400, { error: 'not a path in an asset library' }), true
       if (!UPLOAD_EXTENSIONS.has(ext) || kindForPath(rel) === undefined) return sendJson(res, 400, { error: `.${ext} is not an uploadable asset (${[...UPLOAD_EXTENSIONS].join(', ')})` }), true
-      if (refuseIfLocked(res, user, [keyFor.asset(rel)])) return true
       let bytes: Buffer
       try {
         bytes = await readBody(req, opts.rules.maxUploadBytes)
@@ -476,7 +449,6 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
               })
             : [{ from: libraryPath('from'), to: libraryPath('to') }]
           if (moves.length === 0) throw new AssetOpError('moves: nothing to move')
-          if (refuseIfLocked(res, user, moves.flatMap((m) => [keyFor.asset(m.from), keyFor.asset(m.to)]))) return true
           const targets = new Set<string>()
           for (const { from, to } of moves) {
             if (!existsSync(safeJoin(CONTENT, from)!)) throw new AssetOpError(`not found: ${from}`)
@@ -513,7 +485,6 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
             : [libraryPath('path')]
           if (paths.length === 0) throw new AssetOpError('paths: nothing to delete')
           // Several at once are refused together (ADR 0166): nothing goes while anyone holds any of them.
-          if (refuseIfLocked(res, user, paths.map(keyFor.asset))) return true
           const gone: string[] = []
           for (const path of paths) {
             if (!existsSync(safeJoin(CONTENT, path)!)) continue // inside a folder already deleted with it
@@ -547,7 +518,6 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       if (live !== null) return sendJson(res, 409, { error: `that prefab is open live; edit it in the editor` }), true
       const asset = liveAssetAt(rel)
       if (asset !== null && asset.current !== null) return sendJson(res, 409, { error: 'that asset is being edited live; edit it in the editor' }), true
-      if (refuseIfLocked(res, user, [keyFor.asset(rel)])) return true
       try {
         // JSON only: materials, prefabs and clips. Binaries go through upload, which has the cap.
         const parsed: unknown = await readJson(req)
@@ -634,7 +604,6 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
         for (const q of [qualify(from), qualify(to)]) {
           if (openLive(q)) return sendJson(res, 409, { error: `${q} is open live; close it in the editor first` }), true
         }
-        if (refuseIfLocked(res, user, [keyFor.level(qualify(from)), keyFor.level(qualify(to))])) return true
         const src = fileOf(from)
         const dst = fileOf(to)
         if (!existsSync(src)) return sendJson(res, 404, { error: `no level ${qualify(from)}` }), true
@@ -663,7 +632,6 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       if (ref === null) throw new AssetOpError('path must be <game>/<name>')
       const qual = qualify(ref)
       if (openLive(qual)) return sendJson(res, 409, { error: `${qual} is open live; close it in the editor first` }), true
-      if (refuseIfLocked(res, user, [keyFor.level(qual)])) return true
       const file = fileOf(ref)
       if (!existsSync(file)) return sendJson(res, 404, { error: `no level ${qual}` }), true
       rmSync(file)
@@ -735,7 +703,6 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       const key = kind === 'levels' ? keyFor.level(name) : keyFor.game(name)
       if (kind === 'levels' && opts.live?.isOpen(name) === true) return sendJson(res, 409, { error: `${name} is open live; edit it in the editor` }), true
       if (liveGame !== null) return sendJson(res, 409, { error: `${name}'s game file is open live; edit it in the editor` }), true
-      if (refuseIfLocked(res, user, [key])) return true
       try {
         const parsed: unknown = await readJson(req)
         // Structure is checked here so a broken level never reaches disk or git; parameters need the game's
@@ -944,50 +911,17 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     }
   }
 
-  const handleLocks = async (req: IncomingMessage, res: ServerResponse, url: string, user: User): Promise<boolean> => {
+  /** Who you are and the numbers the editor runs on; whether the last push failed. */
+  const handleMe = (req: IncomingMessage, res: ServerResponse, url: string, user: User): boolean => {
     if (url === '/api/me' && req.method === 'GET') {
-      sendJson(res, 200, { user, heartbeatMs: opts.rules.heartbeatMs, lockStaleMs: opts.rules.staleMs, maxUploadBytes: opts.rules.maxUploadBytes, games: opts.games ?? {} })
+      sendJson(res, 200, { user, heartbeatMs: opts.rules.heartbeatMs, maxUploadBytes: opts.rules.maxUploadBytes, games: opts.games ?? {} })
       return true
     }
     if (url === '/api/status' && req.method === 'GET') {
-      const t = now()
-      const locks = Object.entries(opts.locks)
-        .filter(([path]) => holder(opts.locks, path, t, opts.rules) !== null)
-        .map(([path, lock]) => ({ path, owner: lock.owner.name, since: lock.since }))
-      sendJson(res, 200, { pushError: opts.status?.().pushError ?? null, locks })
+      sendJson(res, 200, { pushError: opts.status?.().pushError ?? null })
       return true
     }
-    const m = /^\/api\/locks\/(acquire|release|heartbeat)$/.exec(url)
-    if (m === null) return false
-    if (req.method !== 'POST') return sendJson(res, 405, { error: 'POST expected' }), true
-    let args: Record<string, unknown>
-    try {
-      args = asRecord(await readJson(req))
-    } catch {
-      return sendJson(res, 400, { error: 'expected a JSON body' }), true
-    }
-    const t = now()
-    if (m[1] === 'heartbeat') {
-      const paths = Array.isArray(args.paths) ? args.paths.filter((p): p is string => typeof p === 'string') : []
-      const lost = heartbeat(opts.locks, paths, user, t)
-      locksChanged()
-      sendJson(res, 200, { lost })
-      return true
-    }
-    const path = typeof args.path === 'string' ? args.path : ''
-    if (path === '') return sendJson(res, 400, { error: 'path: expected a string' }), true
-    if (m[1] === 'acquire') {
-      const r = acquire(opts.locks, path, user, t, opts.rules)
-      locksChanged()
-      sendJson(res, 200, r.ok ? { ok: true } : { ok: false, owner: { name: r.owner.name } })
-      return true
-    }
-    const ok = release(opts.locks, path, user)
-    locksChanged()
-    sendJson(res, 200, { ok })
-    // After the response: the commit can take a second and the editor does not wait for it.
-    opts.onLockReleased?.(user)
-    return true
+    return false
   }
 
   return async (req, res) => {
@@ -1035,7 +969,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
 
     if (await handleLive(req, res, url, user)) return true
     if (await handleMirror(req, res, url, query)) return true
-    if (await handleLocks(req, res, url, user)) return true
+    if (handleMe(req, res, url, user)) return true
     if (await handleLevelOps(req, res, url, user)) return true
     if (await handleFiles(req, res, url, user)) return true
     return handleAssets(req, res, url, query, user)

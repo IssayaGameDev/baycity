@@ -1,10 +1,12 @@
+import { kindForPath, nameForPath } from '../../../packages/content/src/assets'
+import { GAME_FILE, isGameName, levelRefForFile, libraryOf } from '../../../packages/content/src/layout'
 import type { User } from './config'
 
 /**
  * A session is one person's uncommitted work: the paths they have changed since their last commit.
  *
- * Commits are per session, not per save (ADR 0083): Ctrl+S every thirty seconds for two hours is one commit
- * when the lock is released, not two hundred and forty. Disk is always current either way — a session only
+ * Commits are per session, not per save (ADR 0083): two hours of edits is one commit when the document closes,
+ * not one per write. Disk is always current either way — a session only
  * decides *when git records it*. A safety commit every `safetyMs` bounds how much one crash could lose from
  * history (nothing is lost from disk).
  */
@@ -50,42 +52,36 @@ export const takeAll = (table: SessionTable): Session[] => {
   return all
 }
 
-const LEVEL = /^content\/levels\/([^/]+)\.json$/
-const GAME = /^content\/games\/([^/]+)\.json$/
-/** The shared library, or a game's own (ADR 0161). */
-const ASSET = /^content\/(?:[^/]+\/)?assets\/(.+)$/
-
-const KINDS: [RegExp, string][] = [
-  [/\.prefab\.json$/, 'prefab'],
-  [/\.mat\.json$/, 'material'],
-  [/\.anim\.json$/, 'clip'],
-  [/\.(png|jpe?g|webp|ktx2)$/i, 'texture'],
-  [/\.glb$/i, 'model'],
-]
-
-/** One path, as a commit subject reads it: `level keyboard`, `prefab Trampoline`, `texture warn.png`. */
-const describePath = (path: string): string => {
-  const level = LEVEL.exec(path)
-  if (level !== null) return `level ${level[1]}`
-  const game = GAME.exec(path)
-  if (game !== null) return `the ${game[1]} component list`
-  const asset = ASSET.exec(path)
-  if (asset !== null) {
-    const file = asset[1]!.split('/').pop() ?? asset[1]!
-    const kind = KINDS.find(([re]) => re.test(file))?.[1] ?? 'asset'
-    const name = file.replace(/\.(prefab|mat|anim)\.json$/, '')
-    return `${kind} ${name}`
+/** What a person calls the file at `rel` (a path from `content/`), and where it sorts: levels, settings, assets. */
+const describePath = (rel: string): { order: number; text: string } => {
+  const level = levelRefForFile(rel)
+  if (level !== null) return { order: 0, text: `${level.name} level` }
+  const [game, file, ...deeper] = rel.split('/')
+  if (game !== undefined && isGameName(game) && file === GAME_FILE && deeper.length === 0) return { order: 1, text: `${game} settings` }
+  if (libraryOf(rel) !== undefined) {
+    const kind = rel.endsWith('.anim.json') ? 'clip' : (kindForPath(rel) ?? 'asset')
+    return { order: 2, text: `${nameForPath(rel).replace(/\.anim$/, '')} ${kind}` }
   }
-  return path
+  return { order: 3, text: rel }
 }
 
+/** How many things a subject names before it counts the rest. */
+const NAMED = 3
+
 /**
- * The commit subject for a session: imperative, one line, the first item named and the rest counted.
- * Sidecars are folded into their asset: `warn.png` and `warn.png.meta` are one thing.
+ * The commit subject for a session, as a person reads it: `Edit Roblox level, red material and keyboard settings`.
+ * Levels first, then a game's settings, then assets; three named, the rest counted. Sidecars fold into their asset:
+ * `warn.png` and `warn.png.meta` are one thing.
  */
 export const describeCommit = (paths: Iterable<string>): string => {
-  const items = [...new Set([...paths].map((p) => p.replace(/\.meta$/, '')))].sort().map(describePath)
-  const [first, ...rest] = items
-  if (first === undefined) return 'Edit content'
-  return rest.length === 0 ? `Edit ${first}` : `Edit ${first} and ${rest.length} more`
+  const rels = new Set([...paths].map((p) => p.replace(/\.meta$/, '').replace(/^content\//, '')))
+  const items = [...rels]
+    .map(describePath)
+    .sort((a, b) => a.order - b.order || a.text.localeCompare(b.text))
+    .map((d) => d.text)
+  if (items.length === 0) return 'Edit content'
+  const named = items.slice(0, NAMED)
+  const rest = items.length - named.length
+  if (rest > 0) return `Edit ${named.join(', ')} and ${rest} more`
+  return named.length === 1 ? `Edit ${named[0]}` : `Edit ${named.slice(0, -1).join(', ')} and ${named[named.length - 1]}`
 }

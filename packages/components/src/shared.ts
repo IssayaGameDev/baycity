@@ -7,7 +7,7 @@ import type { AnyComponentDef } from './registry'
  *
  * A game's registry is code plus data: its own components are code (`Keyboard`, `WinsPad`, `Swing`), and the
  * shared ones it has opted into — `Bumper`, `Checkpoint`, `Hazard`, `Sequence`, `Boss` — are a list of names in
- * `content/games/<game>.json`. The list is data so the **editor can append to it**: placing a trampoline into a
+ * `content/<game>/game.json`. The list is data so the **editor can append to it**: placing a trampoline into a
  * game that has no `Bumper` adds `Bumper` to that game, rather than refusing, or crashing the game at load.
  *
  * Only these are addable that way, because only these ship in every build. Another game's private component
@@ -28,6 +28,6 @@ export const isSharedComponent = (type: string): boolean => SHARED_BY_TYPE.has(t
 export const sharedComponents = (types: readonly string[]): AnyComponentDef[] =>
   types.map((type) => {
     const def = SHARED_BY_TYPE.get(type)
-    if (def === undefined) throw new ComponentError(`content/games: '${type}' is not a shared component (one of ${SHARED_COMPONENT_TYPES.join(', ')})`)
+    if (def === undefined) throw new ComponentError(`game.json: '${type}' is not a shared component (one of ${SHARED_COMPONENT_TYPES.join(', ')})`)
     return def
   })

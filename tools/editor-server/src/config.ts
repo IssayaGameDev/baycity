@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
 
-/** Who is calling: the name commits carry and locks show, and the email Access verified. */
+/** Who is calling: the name commits carry and peers see, and the email Access verified. */
 export interface User {
   name: string
   email: string
@@ -12,7 +12,7 @@ export interface User {
  *
  * `none` is the dev editor: one machine, one person, no login — every request is `user`. `access` is the
  * hosted editor behind Cloudflare Access: every request carries a signed JWT for `teamDomain` and `aud`, and
- * `users` maps the verified email to the display name commits and locks use (ADR 0083).
+ * `users` maps the verified email to the display name commits and peers use (ADR 0083).
  */
 export type AuthConfig =
   | { kind: 'none'; user: User }
@@ -35,7 +35,7 @@ export interface ServerConfig {
   port: number
   /** The checkout the server edits and commits in. `content/` is under it. */
   repoRoot: string
-  /** Locks and the admin token live here, outside the repo — never a commit. */
+  /** The admin token and the hidden-node table live here, outside the repo — never a commit. */
   stateDir: string
   /** Where the built editor is served from. */
   editorDist: string
@@ -47,11 +47,11 @@ export interface ServerConfig {
   git: { branch: string; push: boolean; committer: User } | null
   /** Upload cap per file. Kodjo's knob; 10 MB to start. */
   maxUploadBytes: number
-  /** A lock whose holder has not been heard from for this long is anyone's. */
+  /** A live connection not heard from for this long is dropped. The name is from the file locks it once timed out. */
   lockStaleMs: number
-  /** How often the editor is expected to call heartbeat — advertised to it. */
+  /** How often an editor pings its live connection — advertised to it. */
   heartbeatMs: number
-  /** A session's dirty files are committed at least this often even if its lock is never released. */
+  /** A session's dirty files are committed at least this often, even if its documents never close. */
   safetyCommitMs: number
   /**
    * The staging games this server fronts (ADR 0086): by game name, the path they are served under here and the

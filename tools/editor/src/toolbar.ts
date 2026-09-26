@@ -9,7 +9,7 @@ import { icon, type IconName } from './icons'
  * | where | what |
  * | --- | --- |
  * | top bar | the game button, `game › level ▾`, which opens the games window (ADR 0162) — or `game ▾ › level › prefab` inside a
- *   prefab, the level being the way back — and its lock; Motion, with its
+ *   prefab, the level being the way back; Motion, with its
  *   clock, and Play; undo, redo, the bell and who is in the room (ADR 0155) |
  * | viewport, left edge | Move, Rotate, Scale, Face |
  * | viewport, top left | Global / Local; snap and the active tool's increment |
@@ -81,8 +81,6 @@ export interface ToolbarState {
    * reload. It is also the way out of somebody else's hiding, which is reachable now the set is shared.
    */
   showingAll: boolean | null
-  /** Who holds the level's lock when it is not you (ADR 0089): it is read-only here, and the bar says so. */
-  lockedBy: string | null
   /** What undo and redo would do, and how many steps each side holds — the buttons' state and tooltips. */
   history: { undo: string | null; redo: string | null; depth: { undo: number; redo: number } }
   /** Errors said since the log was last opened: the bell's count (ADR 0155). */
@@ -176,9 +174,7 @@ export const createToolbar = (bar: HTMLElement, overlays: HTMLElement, state: ()
   crumb.addEventListener('click', () => actions.back())
   const crumbSep = el('span', 'tb-crumb-sep', '›')
   const nameText = el('span', 'tb-name')
-  /** Someone else holds the level's lock: read-only here until they let go. */
-  const lock = el('span', 'tb-lock')
-  doc.append(gameButton, gameSep, crumb, crumbSep, nameText, lock)
+  doc.append(gameButton, gameSep, crumb, crumbSep, nameText)
 
   /**
    * One toggle for the whole level, not one per object: motion is timed against other motion, so a staggered
@@ -273,9 +269,6 @@ export const createToolbar = (bar: HTMLElement, overlays: HTMLElement, state: ()
     crumb.disabled = s.playing
     nameText.textContent = s.prefab?.name ?? ''
     nameText.title = 'the prefab open on top of the level'
-    lock.hidden = s.lockedBy === null
-    lock.replaceChildren(icon('lock'), el('span', undefined, s.lockedBy === null ? '' : `Read-only · ${s.lockedBy} has it`))
-    lock.title = s.lockedBy === null ? '' : `${s.lockedBy} holds this level's lock: you can look, and edit when they let go`
 
     const h = s.history
     undoButton.disabled = s.playing || h.undo === null

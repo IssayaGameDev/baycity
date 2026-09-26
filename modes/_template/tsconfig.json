@@ -3,8 +3,9 @@
   "compilerOptions": {
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "resolveJsonModule": true,
-    // `vite/client` types `import.meta.glob`, which `@mp/game-client` uses to bundle `content/`.
+    // `vite/client` types `import.meta.env`, which `@mp/tps` reads for the page's own address.
     "types": ["vite/client", "node"]
   },
-  "include": ["src/**/*", "vite.config.ts", "../../content/*/levels/*.level.json", "../../content/*/game.json"]
+  // `game.json` is imported by `rules.ts` (ADR 0077); levels are fetched, never imported (ADR 0169).
+  "include": ["src/**/*", "vite.config.ts", "../../content/*/game.json"]
 }

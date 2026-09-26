@@ -6,7 +6,6 @@ import {
   SPAWN,
   RENDERER,
   instantiateLevel,
-  stripHydrated,
   validateLevel,
   type ComponentData,
   type Node,
@@ -1504,60 +1503,18 @@ describe('overrides across a whole placement', () => {
 })
 
 /**
- * What a save must strip (ADR 0124).
- *
- * `level.prefabs` is a **resolution** table: the contents a document needs in memory to draw a placement's
- * inherited nodes, filled from the asset and removed again on the way out (`stripHydrated`). A definition
- * that reaches disk is worse than useless \u2014 `hydratePrefabs` skips an id the level already carries, so the
- * frozen copy is read *instead of* the asset from then on, for good.
- *
- * Three doors add one mid-session, and each used to add it with nothing recording that it had.
+ * A placement's prefab definition, in memory (ADR 0091, ADR 0124). `level.prefabs` is a **resolution** table: what a
+ * document needs to draw a placement's inherited nodes, never written to the level — the server resolves from the
+ * file on its own side.
  */
-describe('prefab definitions a document resolved', () => {
-  it('records nothing for a document that resolved nothing', () => {
-    expect(levelDoc(blank()).resolvedPrefabs()).toEqual([])
-  })
-
-  it('records placing a prefab', () => {
-    const doc = levelDoc(blank())
-    placeRef(doc, vec3(0, 0, 0))
-    expect(doc.resolvedPrefabs()).toEqual([PAD_ID])
-  })
-
-  /** The door that actually bit: Save as prefab left the definition in the level with nothing to strip it. */
-  it('records linking an object to a prefab it just created', () => {
+describe('a placement’s prefab definition, in memory', () => {
+  /** Save as prefab: the new placement draws at once. */
+  it('resolves linking an object to a prefab it just created', () => {
     const level = blank()
     const doc = levelDoc(level)
     const at = doc.placePrimitive('box', vec3(0, 0, 0), null)
     expect(doc.linkToPrefab(at, PAD_ID, padPrefab())).toBe(true)
-    expect(doc.resolvedPrefabs()).toEqual([PAD_ID])
     expect(level.prefabs?.[PAD_ID], 'resolvable in memory').toBeDefined()
-  })
-
-  it('records a paste that carried a definition this level had not seen', () => {
-    const source = levelDoc(blank())
-    placeRef(source, vec3(0, 0, 0))
-    const item = source.copy(0)!
-    const target = levelDoc(blank())
-    expect(target.paste(item, null)).toBeGreaterThanOrEqual(0)
-    expect(target.resolvedPrefabs()).toEqual([PAD_ID])
-  })
-
-  it('records an id once however many placements use it', () => {
-    const doc = levelDoc(blank())
-    placeRef(doc, vec3(0, 0, 0))
-    placeRef(doc, vec3(8, 0, 0))
-    expect(doc.resolvedPrefabs()).toEqual([PAD_ID])
-  })
-
-  /** The whole point: what it records is exactly what has to come out again. */
-  it('is what stripHydrated needs to leave a reference behind', () => {
-    const level = blank()
-    const doc = levelDoc(level)
-    placeRef(doc, vec3(0, 0, 0))
-    const written = stripHydrated(doc.asLevel(), doc.resolvedPrefabs())
-    expect(written.prefabs, 'no definition on disk').toBeUndefined()
-    expect(written.nodes[0]!.prefab, 'the reference is').toBe(PAD_ID)
   })
 
   /**
@@ -1574,30 +1531,20 @@ describe('prefab definitions a document resolved', () => {
     expect(labels(doc).filter((l) => l === 'added since'), 'both placements show it').toHaveLength(2)
   })
 
-  it('keeps the table a level opened with when its prefab is placed, and does not claim it', () => {
+  it('keeps the table a level opened with when its prefab is placed', () => {
     const own = padPrefab()
     const level: Level = { id: 'lv', config: {}, prefabs: { [PAD_ID]: own }, nodes: [] }
     const doc = levelDoc(level)
     doc.placePrefab(PAD_ID, { ...padPrefab(), name: 'from the panel' }, vec3(0, 0, 0))
     expect(level.prefabs?.[PAD_ID]).toBe(own)
-    expect(doc.resolvedPrefabs()).toEqual([])
   })
 
-  it('takes a copy of what it is given, not the caller\u2019s object', () => {
+  it('takes a copy of what it is given, not the caller’s object', () => {
     const given = padPrefab()
     const level = blank()
     levelDoc(level).placePrefab(PAD_ID, given, vec3(0, 0, 0))
     expect(level.prefabs?.[PAD_ID]).toEqual(given)
     expect(level.prefabs?.[PAD_ID]).not.toBe(given)
-  })
-
-  /** A table the level itself carries is not this document's to strip \u2014 it was never resolved here. */
-  it('does not claim a definition the level opened with', () => {
-    const own = padPrefab()
-    const level: Level = { id: 'lv', config: {}, prefabs: { [PAD_ID]: own }, nodes: [] }
-    const doc = levelDoc(level)
-    expect(doc.resolvedPrefabs()).toEqual([])
-    expect(stripHydrated(doc.asLevel(), doc.resolvedPrefabs()).prefabs?.[PAD_ID]).toBe(own)
   })
 })
 

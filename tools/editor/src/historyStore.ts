@@ -1,21 +1,18 @@
-import { mergeAssetOps, stripHydrated, applyBatch, OpError, type AssetOp, type Level, type NodeRef, type Op } from '@mp/content'
+import { mergeAssetOps, applyBatch, OpError, type AssetOp, type Level, type NodeRef, type Op } from '@mp/content'
 
-import { askUnsaved } from './confirm'
 import type { ClipItem, Doc, OpBatch } from './editorDoc'
-import { saveFile } from './filesApi'
 import { createOpHistory, foldBatches, type HistoryEntry } from './opHistory'
 import type { Notify } from './notices'
 
 /**
- * Undo, redo, the clipboard, and whether the open document is on disk (ADR 0121).
+ * Undo, redo and the clipboard (ADR 0121).
  *
  * One module because these are one mechanism. Every mutation reaches the room and the history through the
- * same seam: a document reports its ops, `recordEdit` folds everything reported since the last record into
- * one entry, and `dirty` is set there — so "can I undo" and "is this on disk" stay separate questions, which
- * they are (undo depth survives a save).
+ * same seam: a document reports its ops, and `recordEdit` folds everything reported since the last record into
+ * one entry. Every document is a live room (ADR 0089, ADR 0091), so there is nothing to save and no "unsaved".
  *
- * It owns six variables that were loose in the shell: the history itself, the pending batches, the
- * coalescing flag, the held-back drag batches, `dirty`, and the clipboard. `coalescing` and `heldBack` in
+ * It owns five variables that were loose in the shell: the history itself, the pending batches, the
+ * coalescing flag, the held-back drag batches, and the clipboard. `coalescing` and `heldBack` in
  * particular were written from three places and read from one, with nothing saying they belonged together.
  *
  * **One history for everything this tab edits** (ADR 0159): a data-file asset's edit — a material's — sits in the
@@ -53,20 +50,11 @@ export interface HistoryHost {
   /** The open level is a live room: every edit is already on the server (ADR 0089). */
   live: () => boolean
   submit: (batch: { ops: Op[]; inverses: Op[] }) => void
-  fileName: () => string
-  /** Who holds the file lock when it is not you, or `null`. */
-  readOnlyBy: () => string | null
-  /** Take the lock the pending write needs; resolves the owner when refused, `null` when it is ours. */
-  claimFileLock: () => Promise<string | null>
-  /** Prefabs hydration added to the table — stripped on the way out so the file keeps references. */
-  hydratedPrefabs: () => string[]
-  /** Invalidate previews, re-read the asset database, refresh the file list. */
-  afterSave: () => Promise<void>
   /** Rebuild the viewport from the document: the item meshes and the physics world. */
   rebuildViewport: () => void
   /**
    * Redraw after an undo's ops, as a remote batch is (`liveSession.ts`): a move puts the groups back where the
-   * data says, anything else rebuilds from data, and a gizmo drag or a play-test holds it off.
+   * data says, anything else rebuilds from data, and a gizmo drag holds it off.
    */
   repaint: (ops: readonly Op[]) => void
   /** Fetch what the document references but the runtime has not loaded, then run this. */
@@ -95,13 +83,6 @@ export interface HistoryStore {
   reset: () => void
   undo: () => void
   redo: () => void
-  /** Write the open document to disk; `false` when it did not happen, so a caller can refuse to move on. */
-  saveNow: () => Promise<boolean>
-  /** May the open document be replaced? Asks first when it has edits that are not on disk. */
-  guardUnsaved: () => Promise<boolean>
-  dirty: () => boolean
-  /** A live level is saved as it is edited, so opening one starts clean. */
-  setDirty: (value: boolean) => void
   copySelected: () => void
   pasteClipboard: (asChild: boolean) => void
   cutSelected: () => void
@@ -146,71 +127,6 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
   /** True while a gizmo drag is in flight: one history entry per drag, not one per pointer event. */
   let coalescing = false
   /**
-   * Are there edits not on disk?
-   *
-   * Set at `recordEdit`, the one seam every mutation already goes through, and cleared by `resetHistory` —
-   * which runs on save and on opening a document, the two moments after which there is nothing to lose. A
-   * separate flag rather than `history.canUndo()`: undo depth survives a save, and asking "can I undo" is not
-   * asking "is this on disk".
-   */
-  let dirty = false
-
-  /**
-   * Write the open document to disk. Awaitable, because the unsaved-edits prompt has to be able to save
-   * *and then* continue with whatever the person was doing.
-   *
-   * Resolves `true` on success. A failed write resolves `false` rather than throwing, so a caller that was
-   * about to replace the document does not replace it after a save that did not happen.
-   */
-  const saveNow = async (): Promise<boolean> => {
-    const root = host.rootDoc()
-    if (root === undefined) return false
-    if (host.live()) return true // every edit already reached the server; the file follows within a second
-    const blocked = host.readOnlyBy()
-    if (blocked !== null) {
-      host.notify.warn(`not saved: ${host.fileName()} is locked by ${blocked}`)
-      return false
-    }
-    // The name may have changed since the file was opened (Save-as), or this may be a new file: the lock follows
-    // what is about to be written. Refused means someone else has a file by that name open.
-    const owner = await host.claimFileLock()
-    if (owner !== null) {
-      host.notify.warn(`not saved: ${host.fileName()} is locked by ${owner}`)
-      return false
-    }
-    // Saving writes the *file*, not whatever prefab is open on top of it, and the id follows the name. Letting
-    // them drift is how content/levels ended up with three files all claiming "level1".
-    root.setId(host.fileName())
-    try {
-      await saveFile('levels', host.fileName(), stripHydrated(root.toJSON() as Level, host.hydratedPrefabs()))
-    } catch (e: unknown) {
-      host.notify.error(`save failed: ${String(e)}`)
-      return false
-    }
-    dirty = false
-    host.notify.ok(`saved ${host.fileName()}`)
-    await host.afterSave()
-    host.refreshUi()
-    return true
-  }
-
-  /**
-   * May the open document be replaced? Asks first if it has edits that are not on disk.
-   *
-   * Every path that unloads a document goes through this: switching game, switching between levels and
-   * prefabs, and opening another file. Nothing else may replace `docStack` — the undo history is cleared with
-   * the document, so unsaved work is gone for good rather than one Ctrl+Z away.
-   */
-  const guardUnsaved = async (): Promise<boolean> => {
-    if (!dirty) return true
-    const choice = await askUnsaved(host.fileName())
-    if (choice === 'cancel') return false
-    if (choice === 'discard') return true
-    return saveNow()
-  }
-
-
-  /**
    * Record that an edit just happened: fold the batches the document reported since the last record into one
    * history entry. An edit that changed nothing reported nothing — the document drops an op whose inverse is
    * `null` — so a click on a gizmo handle, or picking the material a piece already had, records nothing, and
@@ -222,7 +138,6 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
     pending = []
     if (entry === null) return
     history.push({ kind: 'level', ...entry })
-    dirty = !host.live() // a live level is saved as it is edited
     host.renderStatus()
   }
 
@@ -250,7 +165,6 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
     history.clear()
     pending = []
     open = null
-    dirty = false
   }
 
 
@@ -276,7 +190,6 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
     // An undo is an edit like any other to the room.
     if (host.live() && applied.ops.length > 0) host.submit(applied)
     pending = []
-    dirty = !host.live()
     host.repaint(applied.ops)
     const open = host.doc()
     const restored = open === null ? [] : keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
@@ -396,10 +309,6 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
     reset: resetHistory,
     undo,
     redo,
-    saveNow,
-    guardUnsaved,
-    dirty: () => dirty,
-    setDirty: (value) => void (dirty = value),
     copySelected,
     pasteClipboard,
     cutSelected,
