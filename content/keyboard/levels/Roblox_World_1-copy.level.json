@@ -4677,7 +4677,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "4a11d049f9f8e5ac"
                       }
                     }
                   ]
@@ -6943,7 +6943,7 @@
                 },
                 {
                   "id": "4c8bc539",
-                  "name": "floor",
+                  "name": "Lava",
                   "transform": {
                     "position": {
                       "x": -244.5,
@@ -6958,7 +6958,7 @@
                     "scale": {
                       "x": 502,
                       "y": 80,
-                      "z": 1
+                      "z": 10
                     }
                   },
                   "components": [
@@ -6986,7 +6986,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "4a11d049f9f8e5ac"
                       }
                     },
                     {
