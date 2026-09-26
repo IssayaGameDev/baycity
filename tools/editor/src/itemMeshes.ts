@@ -213,11 +213,18 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
 
   /**
    * Shadow cap for the authored viewport (ADR 0047). Three renders forward, so each caster is an extra scene
-   * render per frame and a point light is six of them. Reset per rebuild, and counted in document order so the
-   * same lights win each time rather than flickering between rebuilds.
+   * render per frame and a point light is six of them. The first lights wanting a shadow **in document order**
+   * get one, so the same lights win each time rather than flickering between rebuilds — on a full build and after
+   * one item's rebuild alike (`reshareShadows`).
+   *
+   * It was a counter reset only by the full build, so every one-item rebuild of a casting light took another
+   * slot: a few edits to lights, anyone's once a collaborator's edit redraws one node (ADR 0167), and they stopped
+   * casting — each change of caster count recompiling every lit shader.
    */
   const EDITOR_SHADOW_CAP = 4
-  let editorShadowCasters = 0
+  /** Whether this item's light wants a shadow, set on its holder by every build; an item not drawn wants none. */
+  const wantsShadow = (g: THREE.Group): boolean => meshHolderOf(g).userData.wantsShadow === true
+  const castsShadow = (g: THREE.Group): boolean => meshHolderOf(g).userData.castsShadow === true
 
   /**
    * A pickable wireframe for a light. Chrome, not content: it never casts, never writes depth, and is not
@@ -248,7 +255,8 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
     return group
   }
 
-  const buildItemMeshes = (g: THREE.Group, i: number): void => {
+  /** `slotFree`: whether a shadow is still to be had at this point in document order — asked only of a light wanting one. */
+  const buildItemMeshes = (g: THREE.Group, i: number, slotFree: () => boolean): void => {
     const open = host.doc()
     if (open === null) return
     const holder = meshHolderOf(g)
@@ -316,8 +324,10 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
      */
     const light = open.lightSpec(i)
     if (light !== undefined) {
-      const casts = light.castShadow && light.kind !== 'ambient' && editorShadowCasters < EDITOR_SHADOW_CAP
-      if (casts) editorShadowCasters += 1
+      const wants = light.castShadow && light.kind !== 'ambient'
+      const casts = wants && slotFree()
+      holder.userData.wantsShadow = wants
+      holder.userData.castsShadow = casts
       const object = createLight(light, casts)
       holder.add(object)
       if (lightAims(light.kind)) {
@@ -407,12 +417,19 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
     holder.add(mesh)
   }
 
+  /**
+   * Whether a node draws: switched on, not under a switched-off node (ADR 0099), not hidden (ADR 0132). One test
+   * for the full build and a one-item rebuild — the latter asked only `hidden`, so a node a collaborator switched
+   * off, redrawn alone since ADR 0167, stayed on screen, and editing a switched-off node's properties drew it.
+   */
+  const drawn = (open: Doc, i: number): boolean => open.nodeEnabled(i) && !open.disabledByAncestor(i) && !host.hidden(i)
+
   const buildItems = (): void => {
     disposeMeshes(instanceRoot)
     instanceGroups = []
-    // Counted fresh each rebuild, in document order, so the same lights keep their shadows instead of the cap
-    // handing them to whichever node happened to rebuild first.
-    editorShadowCasters = 0
+    // Handed out in document order, so the same lights keep their shadows instead of the cap giving them to
+    // whichever node happened to rebuild first.
+    let wanting = 0
     const open = host.doc()
     if (open === null) {
       host.afterBuild()
@@ -451,7 +468,8 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
          */
         const parent = open.parentOf(i)
         ;(parent === null ? instanceRoot : (instanceGroups[parent] ?? instanceRoot)).add(g)
-        if (open.nodeEnabled(i) && !open.disabledByAncestor(i) && !host.hidden(i)) buildItemMeshes(g, i)
+        if (drawn(open, i)) buildItemMeshes(g, i, () => wanting < EDITOR_SHADOW_CAP)
+        if (wantsShadow(g)) wanting += 1
         instanceGroups[i] = g
       }
     })
@@ -460,11 +478,42 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
     host.afterBuild()
   }
 
+  const rebuildOne = (index: number, g: THREE.Group, slotFree: () => boolean): void => {
+    const holder = meshHolderOf(g)
+    disposeMeshes(holder) // only this item's own meshes; its child items are siblings of the holder
+    holder.userData.wantsShadow = false
+    holder.userData.castsShadow = false
+    const open = host.doc()
+    if (open !== null && drawn(open, index)) buildItemMeshes(g, index, slotFree)
+  }
+
+  /**
+   * Deal the shadows again, as `buildItems` does: the first `EDITOR_SHADOW_CAP` lights wanting one, in document
+   * order. Run after one item's rebuild changed whether a light wants one, which moves the line for every light
+   * after it. A light that gains or loses its shadow is rebuilt, since `createLight` sets a shadow camera up only
+   * for a caster.
+   */
+  const reshareShadows = (): void => {
+    const deal = (): void => {
+      let wanting = 0
+      instanceGroups.forEach((g, i) => {
+        if (!wantsShadow(g)) return
+        const casts = wanting < EDITOR_SHADOW_CAP
+        wanting += 1
+        if (casts !== castsShadow(g)) rebuildOne(i, g, () => casts)
+      })
+    }
+    const open = host.doc()
+    if (open === null) deal()
+    else open.reading(deal)
+  }
+
   const rebuildItemMeshes = (index: number): void => {
     const g = instanceGroups[index]
     if (g === undefined) return
-    disposeMeshes(meshHolderOf(g)) // only this item's own meshes; its child items are siblings of the holder
-    if (!host.hidden(index)) buildItemMeshes(g, index)
+    const wanted = wantsShadow(g)
+    rebuildOne(index, g, () => instanceGroups.slice(0, index).filter(wantsShadow).length < EDITOR_SHADOW_CAP)
+    if (wanted !== wantsShadow(g)) reshareShadows()
   }
 
   const rebuildSelectedMeshes = (): void => {

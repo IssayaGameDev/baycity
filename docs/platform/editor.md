@@ -159,7 +159,13 @@ Two tabs of one person are two `connId`s: separate acks, separate holds.
 `reading` pass, as `rebuildSubtree` and the Hierarchy's `render` do (ADR 0167). `disposeMeshes` frees only what
 `itemMeshes` made (`mine`: a node's shape, a grey or faded material, a gizmo's, and every light, with its shadow
 map) and never the runtime's materials, a model's shape or the key cells' — two frames late (`throwAway`), once the
-replacement has drawn, so a shader is never freed while it is still wanted. Called on open, on a
+replacement has drawn, so a shader is never freed while it is still wanted. `drawn(open, i)` — switched on, not
+under a switched-off node (ADR 0099), not hidden (ADR 0132) — is the one test for the full build and a one-item
+rebuild (`rebuildItem`, `rebuildSubtree`) alike. The shadow cap (`EDITOR_SHADOW_CAP` 4,
+ADR 0047) goes to the first lights wanting a shadow in document order, each holder recording `wantsShadow` /
+`castsShadow`: `buildItems` deals them as it goes; a one-item rebuild takes its light's answer from the lights
+before it and, when whether it wants one changed, `reshareShadows` deals again, rebuilding any light that gains or
+loses one (`createLight` sets a shadow camera up only for a caster). Called on open, on a
 structural repaint, on a remote batch, on entering and leaving a prefab — and, crucially, again from
 `loadNewReferences(buildItems)` once newly referenced assets have loaded, which is **asynchronous** and goes
 through no selection change. Only when something new arrived: `AssetRuntime.load` resolves `true` then, and every
