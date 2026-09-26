@@ -6135,7 +6135,7 @@
                       {
                         "id": "40c11876",
                         "kind": "wait",
-                        "seconds": 1.5
+                        "seconds": 0
                       }
                     ]
                   }
