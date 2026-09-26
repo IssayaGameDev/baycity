@@ -471,16 +471,6 @@ export interface Doc {
   linkToPrefab: (i: number, assetId: string, root: Node) => boolean
   /** The definition behind an asset id, as this document resolved it — the object every placement reads. */
   prefabAt: (id: string) => Node | undefined
-  /**
-   * Prefab ids **this document** put in the resolution map, so a save can strip them (`stripHydrated`).
-   *
-   * Three doors add one mid-session — placing a prefab, pasting a clip that carries definitions, and Save as
-   * prefab — and each used to add it with nothing recording that it had. The claim in their comments, that the
-   * definition is "never written to the level", was then only true of the ids resolved when the file opened.
-   * A definition that reached disk is a frozen copy the level reads *instead of* the asset, for good
-   * (ADR 0124).
-   */
-  resolvedPrefabs: () => readonly string[]
   /** How many placements in **this level** reference `id`. A prefab is shared across levels the editor cannot see. */
   refCount: (id: string) => number
   /**
@@ -962,14 +952,6 @@ const docOver = (
     n.owner !== undefined ? n.authored : n.authored.prefab === undefined ? undefined : level.prefabs?.[n.authored.prefab]
 
   /**
-   * Prefab ids this document resolved into `level.prefabs`, which a save must strip (ADR 0124).
-   *
-   * The ids present when the file opened are the caller's to track — it did that hydration. These are the
-   * ones added since, by the three doors below.
-   */
-  const resolved = new Set<string>()
-
-  /**
    * One past the last node of `i`'s subtree. In a depth-first walk a subtree is the contiguous run of deeper
    * nodes right after its root, which is what makes the cycle check a scan rather than a recursion.
    */
@@ -1429,7 +1411,7 @@ const docOver = (
       /**
         * The definition is put in the resolution map so this document can read the placement's inherited
         * nodes at once — **not** as an op and never written to the level: the server resolves it from the file
-        * on its own side, and the save strips whatever was resolved (`prefabs.ts`, `resolvedPrefabs`).
+        * on its own side.
         *
         * **Only when this document cannot resolve it yet**, as a paste does. One it already has is the one the
         * room keeps current — a collaborator's edit to the prefab arrives there — and the server keeps it too
@@ -1438,7 +1420,6 @@ const docOver = (
         */
       if (level.prefabs?.[assetId] === undefined) {
         ;(level.prefabs ??= {})[assetId] = structuredClone(root)
-        resolved.add(assetId)
       }
       const placed: Node = { id: freshId(), transform: { position }, components: [], prefab: assetId }
       commit([{ kind: 'insertNode', parent: null, index: roots.length, node: placed }])
@@ -2007,7 +1988,6 @@ const docOver = (
         const carried = item.prefabs[x.prefab]
         if (carried === undefined) return
         ;(level.prefabs ??= {})[x.prefab] = structuredClone(carried)
-        resolved.add(x.prefab)
       })
       reidSubtree(fresh)
       // Refused here as in `placePrefab`: a level this game cannot load must not be producible by any door
@@ -2038,10 +2018,8 @@ const docOver = (
     linkToPrefab: (i, assetId, root) => {
       const n = own(i)
       if (n === undefined || n.authored.prefab !== undefined || mode === 'prefab') return false
-      // Resolved for this document so the inherited nodes read at once; not an op, and stripped on the way
-      // out because it is recorded here (`prefabs.ts`, `resolvedPrefabs`, ADR 0124).
+      // Resolved for this document so the inherited nodes read at once; not an op, and never written to the level.
       ;(level.prefabs ??= {})[assetId] = root
-      resolved.add(assetId)
       const { children: _kids, ...rest } = n.authored
       const placement: Node = { ...rest, components: [], prefab: assetId }
       commit([{ kind: 'replaceNode', id: n.authored.id, node: placement }])
@@ -2096,7 +2074,6 @@ const docOver = (
       return false
     },
     prefabAt: (id) => level.prefabs?.[id],
-    resolvedPrefabs: () => [...resolved],
     refCount: (id) => {
       let count = 0
       forEachNode(roots, (x) => {

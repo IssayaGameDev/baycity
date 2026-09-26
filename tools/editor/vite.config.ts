@@ -67,8 +67,7 @@ const filesApi = (): Plugin => ({
     const api = createContentApi({
       repoRoot: ROOT,
       identify: async () => local,
-      locks: {},
-      rules: { staleMs: DEFAULTS.lockStaleMs, heartbeatMs: DEFAULTS.heartbeatMs, maxUploadBytes: DEFAULTS.maxUploadBytes },
+      rules: { heartbeatMs: DEFAULTS.heartbeatMs, maxUploadBytes: DEFAULTS.maxUploadBytes },
       // Play frames the game's own dev server on this machine (ADR 0086): `pnpm dev:<game>` has to be running.
       games: Object.fromEntries(SHARED_GAMES.map((g) => [g.name, `http://localhost:${g.port}/`])),
       // Levels are edited live here too (ADR 0089): the same session code, one person, files on this disk.

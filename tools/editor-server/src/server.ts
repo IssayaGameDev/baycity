@@ -9,7 +9,6 @@ import { createChangeFeed } from './changes'
 import type { ServerConfig, User } from './config'
 import { commitPaths, push } from './git'
 import { createLive, levelPath } from './live'
-import { heldBy, sweep, type LockTable } from './locks'
 import { createAssetIndex } from './assetIndex'
 import { liveAssetFiles } from './liveAssetFiles'
 import { createLiveAssets } from './liveAssets'
@@ -19,10 +18,10 @@ import { describeCommit, markDirty, take, takeAll, takeDue, type Session, type S
 
 /**
  * The hosted editor's server (ADR 0083): the content API behind Cloudflare Access, the built editor as static
- * files, one lock table, one session per person, commits on the content branch.
+ * files, one session per person, commits on the content branch.
  *
- * State outside the repo (`stateDir`): `locks.json` so a restart keeps every lock, `admin.token` so deploy can
- * ask for every session to be committed before it merges.
+ * State outside the repo (`stateDir`): `admin.token` so deploy can ask for every session to be committed before it
+ * merges, and `hidden.json`.
  */
 export interface EditorServer {
   server: Server
@@ -44,20 +43,16 @@ const log = (msg: string): void => console.log(`${new Date().toISOString()} ${ms
 
 export const startEditorServer = (config: ServerConfig): EditorServer => {
   mkdirSync(config.stateDir, { recursive: true })
-  const locksFile = join(config.stateDir, 'locks.json')
   const tokenFile = join(config.stateDir, 'admin.token')
   /**
    * Which nodes are hidden in the editor's viewport, by document key (ADR 0132).
    *
-   * Beside `locks.json` and for the same reason: it belongs to this server, not to the content. Hiding
-   * never reaches the game and must not become a content edit everyone has to merge, so it is neither in
-   * the level file nor in the repo. Rewritten whole per toggle -- a handful of string keys, and the lock
-   * table is written the same way on every acquire.
+   * In the state folder because it belongs to this server, not to the content. Hiding never reaches the game
+   * and must not become a content edit everyone has to merge, so it is neither in the level file nor in the
+   * repo. Rewritten whole per toggle — a handful of string keys.
    */
   const hiddenFile = join(config.stateDir, 'hidden.json')
 
-  const locks: LockTable = existsSync(locksFile) ? (JSON.parse(readFileSync(locksFile, 'utf8')) as LockTable) : {}
-  const saveLocks = (): void => writeFileSync(locksFile, `${JSON.stringify(locks, null, 2)}\n`)
   if (!existsSync(tokenFile)) writeFileSync(tokenFile, randomBytes(24).toString('hex'), { mode: 0o600 })
   const adminToken = readFileSync(tokenFile, 'utf8').trim()
   const hidden: Record<string, string[]> = existsSync(hiddenFile) ? (JSON.parse(readFileSync(hiddenFile, 'utf8')) as Record<string, string[]>) : {}
@@ -200,14 +195,8 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
     repoRoot: config.repoRoot,
     identify,
     identifyPlayer,
-    locks,
-    rules: { staleMs: config.lockStaleMs, heartbeatMs: config.heartbeatMs, maxUploadBytes: config.maxUploadBytes },
+    rules: { heartbeatMs: config.heartbeatMs, maxUploadBytes: config.maxUploadBytes },
     onChanged: (user, paths) => markDirty(sessions, user, paths, Date.now()),
-    onLockReleased: (user) => {
-      const s = take(sessions, user)
-      if (s !== null) void commitSession(s)
-    },
-    onLocksChanged: saveLocks,
     status: () => ({ pushError }),
     admin: { token: adminToken, commitAll },
     changes: feed,
@@ -280,20 +269,10 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
     proxyUpgrade(req, socket, head, route.target, route === relayRoute ? stripPrefix(req.url ?? '/', relayRoute.path) : (req.url ?? '/'))
   })
 
-  // Stale locks and silent live connections are swept and overdue sessions committed once a minute.
+  // Silent live connections are swept and overdue sessions committed once a minute.
   const timer = setInterval(() => {
-    const now = Date.now()
     live.sweep()
-    const dropped = sweep(locks, now, { staleMs: config.lockStaleMs })
-    if (dropped.length > 0) {
-      saveLocks()
-      for (const lock of dropped) {
-        if (heldBy(locks, lock.owner).length > 0) continue
-        const s = take(sessions, lock.owner)
-        if (s !== null) void commitSession(s)
-      }
-    }
-    for (const s of takeDue(sessions, now, config.safetyCommitMs)) void commitSession(s)
+    for (const s of takeDue(sessions, Date.now(), config.safetyCommitMs)) void commitSession(s)
   }, 60_000)
 
   server.listen(config.port, () =>

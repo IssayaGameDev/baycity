@@ -34,7 +34,6 @@ const rig = (over: Partial<ToolbarState> = {}) => {
     markers: false,
     surfaceCells: null,
     showingAll: null,
-    lockedBy: null,
     history: { undo: null, redo: null, depth: { undo: 0, redo: 0 } },
     unseen: 0,
     ...over,
@@ -108,7 +107,7 @@ describe('the top bar', () => {
   })
 })
 
-/** What moved up from the status bar (ADR 0155): the history, the lock, the bell, the Motion clock. */
+/** What moved up from the status bar (ADR 0155): the history, the bell, the Motion clock. */
 describe('what the status bar used to say', () => {
   it('says what undo and redo would do, and greys out what there is none of', () => {
     const r = rig({ history: { undo: 'move', redo: null, depth: { undo: 3, redo: 0 } } })
@@ -118,16 +117,6 @@ describe('what the status bar used to say', () => {
     expect(r.titled(r.bar, 'Nothing to redo').disabled).toBe(true)
     undo.click()
     expect(r.calls).toEqual(['undo'])
-  })
-
-  it('says who holds the level when it is read-only here', () => {
-    const r = rig()
-    const lock = r.bar.querySelector<HTMLElement>('.tb-lock')!
-    expect(lock.hidden).toBe(true)
-    r.s.lockedBy = 'Ana'
-    r.toolbar.render()
-    expect(lock.hidden).toBe(false)
-    expect(lock.textContent).toBe('Read-only · Ana has it')
   })
 
   it('counts the errors not yet seen on the bell, and opens the log', () => {

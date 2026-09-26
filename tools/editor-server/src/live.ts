@@ -132,7 +132,7 @@ export interface LiveOptions {
    *
    * Read when a document opens and written when it changes. **Not the level's business**: hiding is a view
    * of it, it never reaches the game, and putting it in the file would make it a content edit that everyone
-   * has to merge. It lives in the server's `stateDir` beside `locks.json`, which is why these are callbacks
+   * has to merge. It lives in the server's `stateDir`, which is why these are callbacks
    * rather than fs calls in here.
    */
   readHidden?: (key: string) => string[]
@@ -143,7 +143,7 @@ export interface LiveOptions {
   logKeep?: number
   /** Timers, injectable for tests. */
   schedule?: (fn: () => void, ms: number) => () => void
-  /** A connection silent this long is gone (`sweep`). Default two minutes, the lock rule. */
+  /** A connection silent this long is gone (`sweep`). Default two minutes. */
   staleMs?: number
   /**
    * Prefab definitions on disk, by asset id (ADR 0091). A level references a prefab rather than carrying a
@@ -214,7 +214,7 @@ export interface Live {
    *
    * Not an op and not held: hiding is a view of the level, not a change to it, so it takes no sequence
    * number, contends with nobody, and never reaches the file. Everyone sees it because everyone is looking
-   * at the same room; it survives a restart because the server keeps it beside its locks.
+   * at the same room; it survives a restart because the server keeps it in its `stateDir`.
    */
   setHidden: (name: string, keys: string[], hidden: boolean) => void
   /** The connection is alive. Any message counts; the editor sends this while idle. */

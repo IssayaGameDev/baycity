@@ -6,7 +6,7 @@ Level/prefab editor. `pnpm dev:editor` → `http://localhost:5176` (the dev host
 
 | Document | On disk | Written via |
 | --- | --- | --- |
-| Level (node tree + `config`) | `content/<game>/levels/<name>.level.json` | `PUT /api/levels/<game>/<name>` (`saveFile`, `src/filesApi.ts`); locked while open (ADR 0083). Renamed and deleted through `POST /api/levels/move\|delete` (ADR 0110) |
+| Level (node tree + `config`) | `content/<game>/levels/<name>.level.json` | made with `PUT /api/levels/<game>/<name>` (`saveFile`, `src/filesApi.ts`), then edited live (ADR 0089). Renamed and deleted through `POST /api/levels/move\|delete` (ADR 0110) |
 | Prefab (a root `Node`) | `content/assets/prefabs/<name>.prefab.json` — an **asset** with a `.meta` id (ADR 0026) | created once by `Save as prefab…` (`createPrefab`, `src/assetsApi.ts`), then **edited live** in its own room (ADR 0091) |
 | Game data file (shared components, settings) | `content/<game>/game.json` | a live document: `POST /api/live/game/<game>/ops` (`gameSync`, ADR 0162) — its list appended by adoption (ADR 0077), its settings from the games window |
 | Materials | `content/assets/**/*.mat.json` | a live document: `POST /api/live/asset/<id>/ops` (`assetSync.ts`, ADR 0159); a new one is created with `PUT /content/<path>` |
@@ -23,7 +23,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | --- | --- | --- |
 | `itemMeshes.ts` | `instanceRoot`, `markerGroup`, the groups, the shadow budget, the cell toggle | `doc`, `loaded`, `runtime`, `mode`, `gameSettings`, `selected`, `afterBuild` |
 | `play.ts` | the game frame (ADR 0172) | `PlayHost` (13 getters) |
-| `historyStore.ts` | the history, pending batches, `coalescing`, the held-back drag batches, `dirty`, the clipboard | `HistoryHost` |
+| `historyStore.ts` | the history, pending batches, `coalescing`, the held-back drag batches, the clipboard | `HistoryHost` |
 | `liveSession.ts` | `collab`, the peer list, every `connId` this tab has had (`mineEver`), the last snapshot, `joining`, the deferred ops, the hold map and its key, the hold outlines, the presence timer | `LiveHost` |
 | `follow.ts` | whom this tab follows and the pose it glides to; who follows it, the send timer and the last pose sent (ADR 0155) | `FollowHost` |
 | `people.ts` | the icons it drew and whose card is open (ADR 0155) | `PeopleState` getter + `PeopleActions` |
@@ -42,7 +42,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 
 | Area | Element | Module |
 | --- | --- | --- |
-| Top | `#toolbar` (ADR 0149), a 3-column grid: the game button (`tb-game`, `game › level ▾`, which opens the games window, ADR 0162), or `game ▾ › level › prefab` inside a prefab — the level is a button and the way back, and a **lock badge** while someone else holds it; **Motion** (with its clock while it runs, `setClock`) and **Play** in the middle; **undo / redo**, the **bell** and **who is in the room** at the right end (ADR 0155). No New or Duplicate (the games window's), no level list (ADR 0108), no mode select and no Save: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts`, `src/people.ts` |
+| Top | `#toolbar` (ADR 0149), a 3-column grid: the game button (`tb-game`, `game › level ▾`, which opens the games window, ADR 0162), or `game ▾ › level › prefab` inside a prefab — the level is a button and the way back; **Motion** (with its clock while it runs, `setClock`) and **Play** in the middle; **undo / redo**, the **bell** and **who is in the room** at the right end (ADR 0155). No New or Duplicate (the games window's), no level list (ADR 0108), no mode select and no Save: both kinds of document are live rooms (ADR 0089, ADR 0091) | `src/toolbar.ts`, `src/people.ts` |
 | Over the viewport | `#overlays` in `#centre` (ADR 0149): a layer that passes the pointer through, its panels (`.ov`) taking it back; **hidden while playing**. Left edge, vertical: Move / Rotate / Scale / **Face** (ADR 0119). Top left: Global / Local (globe / cube), the magnet, the active tool's increment with its unit (ADR 0114). Top right, left of the navigation gizmo: Grid, Markers, **Keys** (ADR 0120; hidden unless the game declares `surfaceGrid`), **Reveal** (ADR 0132; hidden while nothing is). Under the gizmo: the Persp / Iso button (ADR 0094). Icons only (`icons.ts`), each named with its key in its tooltip | `src/toolbar.ts`, `src/cameraView.ts` |
 | Left | `#hierarchy` — node tree + context menu; how a row reads and drags is **The Hierarchy** below (ADR 0150). Rows alternate `--row-alt` by **rendered** position (`.row:where(:not(.env)):nth-child(even)`), declared before `:hover` and `.sel` so both win on source order | `src/hierarchy.ts`, `src/hierarchyDrag.ts`, `src/menu.ts` |
 | Centre | `#centre`: `#banner` above `#stage`, which holds `#view` — Three stage, orbit, transform gizmo, placement clicks — and the layers over it: `#overlays`, `#toasts`, `#vhint`, `#readout`, `#hint` | `src/main.ts`, `src/itemMeshes.ts`, `src/play.ts`, `src/notices.ts` |
@@ -53,81 +53,26 @@ Document model: `src/editorDoc.ts` (`Doc`, `levelDoc`, `prefabDoc`; a `Doc` capt
 
 ## Content API — `editor-server.md` (ADR 0083)
 
-The routes are `tools/editor-server/src/api.ts`, mounted by `vite.config.ts` (`filesApi` plugin: `createContentApi` with `identify → local`, in-memory locks, no git) and by the hosted server. Clients: `src/filesApi.ts` (levels, games, `me`, `serverStatus`, `acquireLock`/`releaseLock`/`releaseLockBeacon`/`heartbeatLocks`, `uploadAsset`, `lockKey`, `ApiError` with `status` and `owner`), `src/assetsApi.ts` (`loadAssetLibrary`).
+The routes are `tools/editor-server/src/api.ts`, mounted by `vite.config.ts` (`filesApi` plugin: `createContentApi` with `identify → local`, no git) and by the hosted server. Clients: `src/filesApi.ts` (levels, games, `me`, `serverStatus`, `uploadAsset`, `ApiError` with `status`), `src/assetsApi.ts` (`loadAssetLibrary`).
 
-### Identity, locks, upload in the editor (`src/main.ts`)
+### Identity and upload in the editor (`src/main.ts`)
+
+No file locks and no Save: levels and prefabs are live rooms, materials and game files live documents (ADR 0173).
 
 | Piece | Behaviour |
 | --- | --- |
 | `me` | `GET /api/me` at boot; `heartbeatMs`/`maxUploadBytes` read from it |
-| `heldLocks` | every key this tab holds; `takeLock(path)` → holder's name or `null`; `dropAllLocks()` releases all (→ the server commits the session) |
-| `openFile` | `dropAllLocks()`, then **joins the level's live room** (`room.joinRoom(name)`, below). Levels only: a prefab is entered with `enterPrefab`, not opened as a file |
-| `readOnlyBy` | a file this tab could not lock; the top bar's lock badge reads `Read-only · X has it` |
-| `saveNow` | returns `true` at once for a live room: every edit is already on the server |
+| `openFile` | `leaveFile()` (leave the rooms — the server commits that session — reset following, drop held drag batches), then **joins the level's live room** (`room.joinRoom(name)`, below). Levels only: a prefab is entered with `enterPrefab`, not opened as a file |
 | `newBlank` | `createLevel(null)` — a level exists the moment it is named (below) |
-| materials | no lock: live documents (ADR 0159, *Live assets* below) |
-| heartbeat | `setInterval(heartbeatMs)`: `heartbeatLocks(held)`; a lost file lock is re-taken or turns the file read-only; `serverStatus().pushError` → `pushProblem`, a banner line `not on GitHub yet: …` |
-| `pagehide` | `releaseLockBeacon` per held lock; `collab.beaconLeave()` |
+| heartbeat | `setInterval(heartbeatMs)`: `room.ping()` while live; `serverStatus().pushError` → `pushProblem`, a banner line `not on GitHub yet: …` |
+| `pagehide` | `room.beaconLeave()` |
 | upload | `ProjectHost.onUpload(files, folder)` from a desktop drop on a folder row, folder tile or the grid (`dropTargetFor`, `folder` getter; not while searching), or the **+** menu's *Upload files…*; files over `maxUploadBytes` are named and skipped; `afterFileOp` uploads the rest |
-
-`content/<game>/game.json` is written by `adopt` without a lock (gated only by others' locks).
-
-The dev editor's `@content` alias is pinned to the repo's `content/` (`contentAlias(REPO_CONTENT)`): it edits that folder, never the live mirror (`content-sync.md`, ADR 0084).
-
-**Watcher:** `watch.ignored: ['**/content/*/game.json']`. Every game's `rules.ts` imports its `content/<game>/game.json` and the editor bundles those modules, so a write would full-reload the editor and lose undo history right after the editor wrote it. The editor reads the files live over `/api/games`; the game's dev server still reloads (ADR 0077).
-
-## Edits are ops (ADR 0089)
-
-Every `Doc` mutator builds `Op`s (`@mp/content` `ops.ts`, `content.md`) and commits them through the one shared
-`applyBatch` on its own level; what changed is reported on `doc.onOps({ ops, inverses })`. No-op edits (inverse
-`null`) report nothing. Nodes are addressed on the wire by `NodeRef`: `refAt(i)` / `indexOfRef(ref)`.
-
-| Mutator | Ops |
-| --- | --- |
-| `setTransform` / `setName` / `setParams` / `setComponentEnabled` / `addComponent` / `removeComponent` / `moveComponent` | the own op on an own node; the `setOverride*` / `addOverrideComponent` / `removeOverrideComponent` flavour on an inherited one (an inherited component's removal = `setOverrideParams unset` + `setOverrideEnabled null` + `setOverrideRemoved`). **Three cases, not two** (ADR 0098): `writeTarget` also catches a component a *placement* shows but does not have — inherited from its prefab **root** — and writes an override on the placement keyed by the root's id. `setParams` resolves it per component id, since the built-in-shape branch writes several at once. `moveComponent` stays refused: order belongs to the prefab's list. `setSequenceStages(i, id, stages)` takes the stages as shown: `setParams` on an own node, `setOverrideParams` on a component the placement added, otherwise `setOverrideSequence` with `diffStages(prefab's, shown)` (ADR 0139) |
-| `placePrefab` / `placeNamed` / `placeEmpty` / `placePrimitive` / `placeModel` / `duplicate` / `paste` | `insertNode` (ids minted client-side; `reidSubtree` for copies, which repoints `nodeRef` parameters and sequence step targets, and the targets in a placement's `sequences` records). `placePrefab` writes the prefab's **asset id** and resolves the definition into `level.prefabs` without an op (ADR 0091) — a copy, and **only when the document has none**, as `paste` does: one it has is what the room keeps current. `whenPlaceable` fetches a prefab again before placing it (`AssetLibrary.refreshPrefab`, the server's live copy when open), since the library's is the one loaded at boot |
-| `remove` / `move` / `reparent` | `removeNode` / `moveNode`. **`reparent` takes the re-expressed local transform and commits `moveNode` + `setTransform` in one batch** (ADR 0113): preserving the world pose changes the stored local numbers, and as a second commit that op landed in the *next* history entry — one Ctrl+Z then restored a transform belonging to an earlier reparent and a child jumped by its parent's whole transform. The transform is `localInside` over the **authored** poses (`motion.withAuthoredPoses`, ADR 0126): the groups hold authored *plus* the motion offset while the clock runs, so reading them wrote the animation's position into the file for good. It is the one write path that cannot subtract the offset afterwards, because the offset is in the old parent's frame and the value is in the new one |
-| `linkToPrefab` | `replaceNode` (the node keeps its transform and name, loses its own components, gains the reference). `definitionOf` is pure: the definition becomes a **file**, which is the host's to write |
-| `revert` | `setNodeOverride` (the record with the field gone, or `null`) |
-| `overrideOpsFor` | pure — the ops the **prefab's own room** would take. The host sends them there, then calls `revert` here (ADR 0091) |
-| `setEnvironment` / `setMode` / `setNetBounds` / `setCameraSeeThrough` | the same-named op; all four are level-only and a no-op in a prefab. `setCameraSeeThrough` is the Environment row's **Camera** section, `see through` (ADR 0148) |
-| `setId` | not an op (the file name; live, the server sets it) |
-
-`prefabDoc(root, registry, clips)` — a prefab is edited as a document of one root node, in its own live room
-(below), so its ops carry no table scope.
-
-**Undo** (`src/historyStore.ts` over `src/opHistory.ts`, ADR 0121): `createHistoryStore(host)` → `edits`.
-`edits.withOps(d)` attaches `onDocOps` to every document; batches collect in `pending`; `edits.recordEdit(label)`
-folds them (`foldBatches`: one transform op per target, last value, first inverse)
-into `{ ops, inverses, label, selection: NodeRef[] }`. `undo` applies `inverses` with `applyBatch` straight on the
-root level (nothing re-reported), redraws through `host.repaint(ops)` — `room.repaint`, the remote batch's
-`repaintAfterOps`, so undoing a move only poses groups from data — and restores the selection by ref (which
-redraws the panels); an entry whose ops no longer apply is dropped with a warning. It used to re-bake the sky
-and build every mesh and the physics world twice, about a second on a level of a few hundred objects. Undo inside a prefab
-opened on top no longer pops back to the level. Live, the applied inverses go to the server as an ordinary batch
-(`host.submit`): an undo is an edit the room sees.
-
-**A drag is one entry**: `edits.beginDrag()` holds recording off while a hundred transform ops are reported, and
-`edits.endDrag(label)` folds them, sends the room one message and records one entry. `abortDrag` clears without
-folding. The gizmo, the face tool and the Inspector's `writeAxis` each held a verbatim copy of that sequence;
-they call these now, and `coalescing` and `heldBack` are private to the module.
-
-**One history for the level and its materials** (ADR 0159): an entry is `{ kind: 'level', …HistoryEntry }` or
-`{ kind: 'asset', assetId, ops, inverses, label }` (`AssetEdit`, asset ops, inverses in undo order), in one
-`createOpHistory<Entry>()` stack, so Ctrl+Z takes back whichever came last. `edits.recordAsset(edit, ongoing)`
-pushes one; while `ongoing`, a record of the same asset and label merges into it (`mergeAssetOps`: newest value
-per path, the value before the first) as long as it is still the last entry — a colour drag is one entry, ended by
-the picker's `change` or by any other entry, undo or redo. Undoing or redoing one is `host.applyAsset(id, ops, what)`:
-`assetSync.edit` as this tab's edit, then `selectAsset(id)` shows it; `false` (the material is gone, or the ops no
-longer apply) drops it with a warning. `dropWhere` (a refused level batch) passes only level entries. `reset`
-clears both kinds with the file. Labels are `<material> <param label>` or `<material> shader`.
 
 ## Live levels (`src/collab.ts`, ADR 0089)
 
-A level is not a file with a lock but a **live session** on the server (`editor-server.md`, *Live documents*):
-every batch the document reports is applied locally at once and sent; the server numbers it and echoes it to
-everyone, the sender included (the echo is the ack). Prefabs are rooms too (ADR 0091); materials and clips keep
-the file lock.
+A level is a **live session** on the server (`editor-server.md`, *Live documents*): every batch the document
+reports is applied locally at once and sent; the server numbers it and echoes it to everyone, the sender included
+(the echo is the ack). Prefabs are rooms too (ADR 0091).
 
 ```ts
 createCollab(transport: LiveTransport, hooks: CollabHooks): Collab
@@ -143,8 +88,7 @@ httpTransport(): LiveTransport   // EventSource in, fetch POST out, sendBeacon f
 | inbound | a remote batch: unacked batches rolled back (inverses, newest first), remote applied, unacked re-applied (inverses recomputed; one that no longer applies is dropped and reported); `hooks.onApplied(ops)` → `repaintAfterOps` (`liveSession.ts`). A seq gap or a failing apply reopens the stream: the server greets with a fresh snapshot, `reinstallLevel` rebuilds the document over it (history kept), unacked batches are re-applied and re-sent |
 | rejected | a 4xx on the POST: that batch and everything after it rolled back, the later ones re-applied, `onRejected` → `history.dropWhere` (the entry holding it) + an error toast + repaint |
 | repaint | `repaintAfterOps(ops)`: transforms only (`setTransform` / `setOverrideTransform`) → `applyPreviewPoses` + `scheduleRebuild` + `inspectorSync` + track helper; else `repaintFor(ops, typeOf)` (`remoteRepaint.ts`, ADR 0167) — the environment re-applied only for `setEnvironment` / `setCameraSeeThrough`; nodes of the one-node kinds → `rebuildSubtree` each, `applyPreviewPoses`, `scheduleRebuild`, hold outlines, `hierarchyRender`, `inspectorRefresh` only when the Inspector shows one of them (or the environment; ADR 0168), and their subtrees again once new references load; names → the Hierarchy only; anything else — a structural op, a `table` op, a sequence or a component gone, an op not on its list — `host.rebuildViewport()`, selection put back by `indexOfRef`, `refreshUi` + `inspectorRebuild`. During a gizmo drag ops queue in `deferredRemote` (the data is already changed) and repaint when it ends (`room.drainDeferred()`, from the drag's `mouseUp`). Play holds nothing back: the game in its frame has a world of its own |
-| Save | there is none; `dirty` stays `false` live (`recordEdit`, `applyHistory`), so `guardUnsaved` never asks. `saveNow` returns `true` |
-| Play | `startFramePlay`: live → `collab.flush()` first (the game reads the file), else the prefab path `saveNow()` |
+| Play | `play.start`: `collab.flush()` first — the game reads the level from the server (ADR 0172) |
 | New / Duplicate | `createLevel(from)`: `askName` (`confirm.ts`) → `^[\w-]+$` → refused if `listFiles('levels')` has it → `PUT /api/levels/<name>` a `blankLevel` with the active mode, or the open level (`loadLevelRaw`, the server's live copy) with `id` set → `refreshFileList` → `openFile`. From the games window: *New level* (`onNewLevel`, `createLevel(null, game)`) and a level's *Duplicate…* |
 | peers | `room.peers()`: `{ connId, name }` per connection in the room, this tab's included, from its `peers` events; `[]` with no room open. `peerChanges(before, after, mineEver)` (pure) → a toast `X joined` / `X left` per `peers` event — not for the room as it was on joining (`joining`), and never for a `connId` that was ever this tab's (a reconnect's old one is listed a moment under your name) |
 | connection | `Connection` = `connecting` (join, a reopened stream, `onRetry` from the `EventSource` retrying) → `live` (a snapshot) → `lost` (`onDrop`); `null` after `leave`. `hooks.onConnection` → `host.presenceChanged()` |
@@ -354,7 +298,7 @@ anything. Two edits to one thing: the last batch to reach the server is what sta
 | Piece | Behaviour |
 | --- | --- |
 | `syncHolds` | after every `applySelection`/`deselect`: `room.syncHolds()` → `collab.setHolds(host.selectionRefs())` — the **whole** selection, skipped when unchanged (`lastHoldKey`). Hold messages queue one behind another in `collab.ts`, so a release can never overtake the hold before it. `reinstallLevel` (new `connId`) re-sends; a `hello` with a new `connId` posts `leave` for the old one |
-| heartbeat | the lock heartbeat also `collab.ping()`s while live: the server sweeps a connection it has not heard from in two minutes, holds with it |
+| heartbeat | the editor's heartbeat `collab.ping()`s while live: the server sweeps a connection it has not heard from in two minutes, holds with it |
 | `holdMap` | `refKey` → every `Hold` on it, theirs and mine; `holdersOf(index)` the others on that node itself (not its ancestors) |
 | `onHoldsChanged` | on every `holds` event: `holdMap` rebuilt, `rebuildHoldOutlines`, `hierarchy.render()` — nothing leaves my selection |
 | Hierarchy | `rowsOf(doc, open, holders)` → `Row.held: Holder[]` (`{ name, colour }`, from `room.holdersOf` + `peerCss`); a `.badge.held` per person in their colour (`--peer`), a title naming them; the row selects, renames and drags as any other |
@@ -523,10 +467,10 @@ The status bar is gone. `createNotices(toasts, banner, onChange)` → `Notices`;
 | --- | --- |
 | toasts | `#toasts`, the viewport's bottom right, newest at the bottom, at most `MAX_TOASTS` 4 (the oldest non-error goes first). `TOAST_MS`: `ok` 2.5 s, `warn` 5 s, `error` until closed (×). A click dismisses one. The same message again, while it is up, counts (`×2`) and keeps it up |
 | the log | `toggleLog(bell)`: a popover of every message, newest first, with its time and its count (`logNotice`, pure; `LOG_SIZE` 200); Clear. Opening it zeroes `unseen` — errors said since, the bell's red count |
-| the banner | `setProblem(slot, text)`, `''` to clear: `main` (`main.ts`'s `setProblem`: assets, identity, a lock, the server's copy) and `push` (`not on GitHub yet: …`). `#banner` sits **above** `#stage` rather than over it, so it never covers the gizmo drawn in the canvas's corner; a `ResizeObserver` on the canvas runs `relayout` as it comes and goes |
+| the banner | `setProblem(slot, text)`, `''` to clear: `main` (`main.ts`'s `setProblem`: assets, identity, the server's copy) and `push` (`not on GitHub yet: …`). `#banner` sits **above** `#stage` rather than over it, so it never covers the gizmo drawn in the canvas's corner; a `ResizeObserver` on the canvas runs `relayout` as it comes and goes |
 | the hint | `#vhint`, top centre, the first that applies: a play session's (`PlayHost.hint`), following's (`Following X · move the camera to stop`) |
 | the readout | `#readout`, beside the pointer during a gesture |
-| `renderStatus` | redraws the top bar (undo / redo from `edits.labels()` + `depth()`, the lock, the bell), the people, the follow frame, the hint, and the Hierarchy's count (`#hier-count`) |
+| `renderStatus` | redraws the top bar (undo / redo from `edits.labels()` + `depth()`, the bell), the people, the follow frame, the hint, and the Hierarchy's count (`#hier-count`) |
 
 Where the status bar's items went: the level's name was already the top bar's; the selection is the Inspector's and the
 Hierarchy's; the undo depth is the buttons' tooltips (`Undo move (2 more)`); the room and your own name are the people's
@@ -584,7 +528,6 @@ read at, so another person's upload, rename, move, delete or material edit reach
 | --- | --- |
 | the watch | `watchAssets({ seq, changed, lost })`, started after boot: `since=seq&timeout=25000`; `assetPathsOf` keeps paths in any library, from `content/` (a sidecar as its asset) and `changed` is awaited before the next poll. **410** → `lost`: wait out a drag or play, `reloadAssets`, redraw. Errors back off 2 s → 30 s |
 | gathering | `assetsChanged` adds to `waitingPaths` and drains them one batch at a time through `inAssetQueue` — the one queue `reloadAssets` runs in too, so two runtimes are never installed over each other |
-| its own writes | a path whose lock this tab holds (`heldLocks`, `lockKey.asset`) is skipped |
 | applying | `loadAssetLibrary({ reuse, refetch })`: the list, plus only the named material and prefab files — the rest kept from the library held. `libraryChanges(before, after, named)` (pure) → `{ list, ids }`; nothing → nothing. Waits while `busyEditing()` (a gizmo, point or field drag, or play). Then `refreshCompiled(ids)` (ADR 0157, below), and `meshes.buildAll()` only when it says so; a list-only change only swaps `assets`. Then previews, the asset Inspector when its asset changed or went, `refreshUi` |
 | the runtime | built over `libraryView`, an `AssetDatabase` whose `entries` / `byId` read the installed library at each lookup — so an asset added, renamed or moved loads with no new runtime |
 
@@ -615,7 +558,7 @@ runtime is built over `libraryView`, so a new, renamed or moved asset needs none
 | `.a-head` | name, `.a-openers`, meta `kind · named(path) · id` |
 | `.a-facts` | `fieldRow`s, wrapping: *Size* / *Length* (from the picture, placed first), prefab *Parts* and *Components* (`prefabFacts(root)`: every node, each type with its count, most first; `componentLabel` = the registry's label), model *Triangles* and *Meshes* (`modelFacts`: `runtime.load` if not loaded, then the clone's geometry), then *File* (`shownBytes`) and *Changed* (`AssetLibrary.fileOf(path)`, the server's `files`) |
 | material | the fields below |
-| `.a-users` | *Used by*: `fetchUsers(id)` (`GET /api/assets/users`) each time it is shown — `…`, then a `.a-use` per level (`level` icon, `levelLabel` `Game › name`, a click `guardUnsaved` → `openFile`) and per asset (`ASSET_ICON`, name, a click `selectAsset` + `project.reveal(path)`); *Nothing uses it.*; *The server could not say.* |
+| `.a-users` | *Used by*: `fetchUsers(id)` (`GET /api/assets/users`) each time it is shown — `…`, then a `.a-use` per level (`level` icon, `levelLabel` `Game › name`, a click `openFile`) and per asset (`ASSET_ICON`, name, a click `selectAsset` + `project.reveal(path)`); *Nothing uses it.*; *The server could not say.* |
 
 **The asset Inspector's fields** are the object Inspector's (`controls.ts`, on `fieldRow` lines, `--lw` on
 `#asset-inspector`): shader and texture `selectField` (a texture with an `.a-thumb` beside it), colour
@@ -783,7 +726,7 @@ transform, never the animation (ADR 0050, ADR 0126). `offsetAt` is a `PreviewOff
 brings the rest.
 
 **A level plays in the real game, and only there.** `start` → `host.gamePageUrl()` (`me.games[activeMode.name]`,
-from `/api/me`): live level → `host.flush()`, else `host.saveNow()` if dirty (a refused save is no play); then an
+from `/api/me`): live level → `host.flush()`; then an
 `<iframe id="game-frame">` over `#centre` at `${url}?level=${host.levelName()}` (bare, ADR 0108), orbit off, the
 hint. Stop (toolbar, or Esc in the editor) removes the frame; Esc inside the frame is the game's pause. Hosted: `url`
 is the proxied `/play/<game>/`; dev: `http://localhost:<port>/` with `pnpm dev:<game>` running. No page — a prefab, a

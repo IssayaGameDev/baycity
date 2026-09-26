@@ -307,8 +307,8 @@ One module so the server, the editor and the game cannot disagree; every path it
 | `mayUse(user, path)` | `user` (a game, `null` for Shared) may use the asset at `path`: Shared's always, its own game's, nothing else |
 | `levelRefForFile(rel)` | `LevelRef \| null` — the game a path names, or `null` for anything that is not a level |
 
-A level's identity outside its own folder is the **qualified** `<game>/<name>`: the API route, the lock key,
-the live document key, the editor's open file. Two things stay bare — the level's own `id` field, which is a
+A level's identity outside its own folder is the **qualified** `<game>/<name>`: the API route, the live
+document key, the editor's open file. Two things stay bare — the level's own `id` field, which is a
 file name, and the game's `?level=`, which the page qualifies with its own name, so every game may own a
 `default` (`packages/game-client/src/levels.ts` used to carry the apology for why it could not).
 

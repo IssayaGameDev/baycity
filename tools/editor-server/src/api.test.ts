@@ -9,7 +9,6 @@ import { levelPath } from './live'
 import { createChangeFeed, type ChangeFeed } from './changes'
 import type { User } from './config'
 import { createLive, docKey, type Live } from './live'
-import type { LockTable } from './locks'
 import { createAssetIndex } from './assetIndex'
 import { liveAssetFiles } from './liveAssetFiles'
 import { createLiveAssets, type LiveAssets } from './liveAssets'
@@ -23,10 +22,7 @@ const USERS: Record<string, User> = { ada: { name: 'Ada', email: 'ada@x' }, bob:
 let root = ''
 let server: Server
 let base = ''
-let now = 0
-let locks: LockTable
 let changed: { user: string; paths: string[] }[]
-let released: string[]
 let committedAll = 0
 let feed: ChangeFeed
 let live: Live
@@ -45,10 +41,7 @@ beforeEach(async () => {
   mkdirSync(join(root, 'content/parkour/levels'), { recursive: true })
   writeFileSync(join(root, 'content/parkour/game.json'), `${JSON.stringify({ components: [], settings: {} })}\n`)
   writeFileSync(join(root, LEVEL_FILE), `${JSON.stringify(LEVEL)}\n`)
-  now = 0
-  locks = {}
   changed = []
-  released = []
   feed = createChangeFeed()
   liveChanged = []
   live = createLive({
@@ -75,11 +68,8 @@ beforeEach(async () => {
     identify: async (req) => USERS[String(req.headers['x-user'] ?? '')] ?? null,
     // A player is anyone the login let in: here, anyone with a user header, listed or not.
     identifyPlayer: async (req) => req.headers['x-user'] !== undefined,
-    locks,
-    rules: { staleMs: 1000, heartbeatMs: 100, maxUploadBytes: 64 },
-    now: () => now,
+    rules: { heartbeatMs: 100, maxUploadBytes: 64 },
     onChanged: (user, paths) => changed.push({ user: user.name, paths }),
-    onLockReleased: (user) => released.push(user.name),
     admin: {
       token: 'secret',
       commitAll: async () => {
@@ -188,45 +178,15 @@ describe('levels', () => {
       expect(existsSync(join(root, LEVEL_FILE))).toBe(true)
     })
 
-    it('is gated by the lock table like every other write', async () => {
-      await call('ada', 'POST', '/api/locks/acquire', { path: keyFor.level(LV) })
-      expect((await call('bob', 'POST', '/api/levels/delete', { path: LV })).status).toBe(423)
-      expect((await call('bob', 'POST', '/api/levels/move', { from: LV, to: 'parkour/b' })).status).toBe(423)
-      expect(existsSync(join(root, LEVEL_FILE))).toBe(true)
-    })
-
     it('answers 405 to anything but POST, rather than reading `move` as a level name', async () => {
       expect((await call('ada', 'GET', '/api/levels/move')).status).toBe(405)
     })
   })
 })
 
-describe('locks', () => {
-  it('a held file is read-only for everyone else until it goes stale', async () => {
-    expect(await json(await call('ada', 'POST', '/api/locks/acquire', { path: keyFor.level(LV) }))).toEqual({ ok: true })
-    expect(await json(await call('bob', 'POST', '/api/locks/acquire', { path: keyFor.level(LV) }))).toEqual({ ok: false, owner: { name: 'Ada' } })
-    const refused = await call('bob', 'PUT', `/api/levels/${LV}`, LEVEL)
-    expect(refused.status).toBe(423)
-    expect(await json(refused)).toEqual({ error: 'locked by Ada', owner: { name: 'Ada' } })
-    expect((await call('ada', 'PUT', `/api/levels/${LV}`, LEVEL)).status).toBe(200)
-
-    now = 900
-    expect(await json(await call('ada', 'POST', '/api/locks/heartbeat', { paths: [keyFor.level(LV), 'x'] }))).toEqual({ lost: ['x'] })
-    now = 1899
-    expect((await call('bob', 'PUT', `/api/levels/${LV}`, LEVEL)).status).toBe(423)
-    now = 1900
-    expect((await call('bob', 'PUT', `/api/levels/${LV}`, LEVEL)).status).toBe(200)
-    expect(await json(await call('bob', 'POST', '/api/locks/acquire', { path: keyFor.level(LV) }))).toEqual({ ok: true })
-  })
-
-  it('release reports back to the owner of sessions; status lists live locks', async () => {
-    await call('ada', 'POST', '/api/locks/acquire', { path: keyFor.level(LV) })
-    const st = await json<{ locks: { path: string; owner: string }[] }>(await call('bob', 'GET', '/api/status'))
-    expect(st.locks).toEqual([{ path: keyFor.level(LV), owner: 'Ada', since: 0 }])
-    expect(await json(await call('bob', 'POST', '/api/locks/release', { path: keyFor.level(LV) }))).toEqual({ ok: false })
-    expect(await json(await call('ada', 'POST', '/api/locks/release', { path: keyFor.level(LV) }))).toEqual({ ok: true })
-    expect(released).toEqual(['Bob', 'Ada'])
-    expect(locks[keyFor.level(LV)]).toBeUndefined()
+describe('status', () => {
+  it('says whether the last push failed, and nothing else', async () => {
+    expect(await json(await call('bob', 'GET', '/api/status'))).toEqual({ pushError: null })
   })
 })
 
@@ -249,9 +209,7 @@ describe('assets', () => {
     expect((await call('ada', 'POST', '/api/assets/upload?path=assets/big.png', undefined, Buffer.alloc(65))).status).toBe(413)
   })
 
-  it('a JSON asset write is gated and gets its sidecar attributed', async () => {
-    await call('bob', 'POST', '/api/locks/acquire', { path: keyFor.asset('assets/materials/m.mat.json') })
-    expect((await call('ada', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: {} })).status).toBe(423)
+  it('a JSON asset write gets its sidecar attributed to whoever wrote it', async () => {
     expect((await call('bob', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: {} })).status).toBe(200)
     expect(changed.filter((c) => c.user === 'Bob').flatMap((c) => c.paths)).toEqual([
       keyFor.asset('assets/materials/m.mat.json'),
@@ -259,11 +217,8 @@ describe('assets', () => {
     ])
   })
 
-  it('move and delete are refused while the file — or anything in the folder — is held', async () => {
+  it('a move reports both files and their sidecars', async () => {
     await call('ada', 'PUT', '/content/assets/prefabs/p.prefab.json', { id: 'p', transform: { position: { x: 0, y: 0, z: 0 } }, components: [] })
-    await call('ada', 'POST', '/api/locks/acquire', { path: keyFor.asset('assets/prefabs/p.prefab.json') })
-    expect((await call('bob', 'POST', '/api/assets/move', { from: 'assets/prefabs/p.prefab.json', to: 'assets/prefabs/q.prefab.json' })).status).toBe(423)
-    expect((await call('bob', 'POST', '/api/assets/delete', { path: 'assets/prefabs' })).status).toBe(423)
     expect((await call('ada', 'POST', '/api/assets/move', { from: 'assets/prefabs/p.prefab.json', to: 'assets/prefabs/q.prefab.json' })).status).toBe(200)
     expect(changed.at(-1)?.paths).toEqual([
       keyFor.asset('assets/prefabs/p.prefab.json'),
@@ -283,21 +238,13 @@ describe('several at once (ADR 0166)', () => {
     const clash = await call('ada', 'POST', '/api/assets/move', { moves: [into('a', 'old'), into('c', 'old')] })
     expect(clash.status, 'c is there already').toBe(400)
     expect(existsSync(join(root, 'content/assets/materials/a.mat.json')), 'so a stayed too').toBe(true)
-    await call('bob', 'POST', '/api/locks/acquire', { path: keyFor.asset('assets/materials/b.mat.json') })
-    expect((await call('ada', 'POST', '/api/assets/move', { moves: [into('a', 'old'), into('b', 'old')] })).status, 'b is held').toBe(423)
-    expect(existsSync(join(root, 'content/assets/materials/a.mat.json'))).toBe(true)
-    await call('bob', 'POST', '/api/locks/release', { path: keyFor.asset('assets/materials/b.mat.json') })
     expect((await call('ada', 'POST', '/api/assets/move', { moves: [into('a', 'old'), into('b', 'old')] })).status).toBe(200)
     expect(['a', 'b'].map((n) => existsSync(join(root, `content/assets/old/${n}.mat.json`)))).toEqual([true, true])
   })
 
-  it('deletes several, or none of them while anyone holds one', async () => {
+  it('deletes several at once', async () => {
     for (const n of ['a', 'b']) await call('ada', 'PUT', `/content/assets/materials/${n}.mat.json`, { shader: 'standard', params: {} })
     const paths = ['assets/materials/a.mat.json', 'assets/materials/b.mat.json']
-    await call('bob', 'POST', '/api/locks/acquire', { path: keyFor.asset(paths[1]!) })
-    expect((await call('ada', 'POST', '/api/assets/delete', { paths })).status).toBe(423)
-    expect(existsSync(join(root, 'content', paths[0]!)), 'a stayed').toBe(true)
-    await call('bob', 'POST', '/api/locks/release', { path: keyFor.asset(paths[1]!) })
     expect((await call('ada', 'POST', '/api/assets/delete', { paths })).status).toBe(200)
     expect(paths.map((p) => existsSync(join(root, 'content', p)))).toEqual([false, false])
   })

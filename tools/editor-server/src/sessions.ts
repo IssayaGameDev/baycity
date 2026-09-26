@@ -5,8 +5,8 @@ import type { User } from './config'
 /**
  * A session is one person's uncommitted work: the paths they have changed since their last commit.
  *
- * Commits are per session, not per save (ADR 0083): Ctrl+S every thirty seconds for two hours is one commit
- * when the lock is released, not two hundred and forty. Disk is always current either way — a session only
+ * Commits are per session, not per save (ADR 0083): two hours of edits is one commit when the document closes,
+ * not one per write. Disk is always current either way — a session only
  * decides *when git records it*. A safety commit every `safetyMs` bounds how much one crash could lose from
  * history (nothing is lost from disk).
  */

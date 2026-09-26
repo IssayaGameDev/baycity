@@ -22,7 +22,7 @@ import type { Node } from '../../../packages/content/src/types'
 export interface PrefabStore {
   /** The prefab file's root node for this id, or `undefined` when there is no such file. */
   root: (assetId: string) => Node | undefined
-  /** Path of a prefab asset relative to `content/` (ADR 0161), for a lock key or a change report. */
+  /** Path of a prefab asset relative to `content/` (ADR 0161), for a change report. */
   pathOf: (assetId: string) => string | undefined
   /** Write a prefab back to its own file. Returns the path written, or `null` when the id is unknown. */
   write: (assetId: string, root: Node) => string | null

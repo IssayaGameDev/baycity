@@ -4,7 +4,7 @@ import { refKey, type NodeRef } from '@mp/content'
  * What the editor is not drawing (ADR 0132) — Unity's eye column.
  *
  * **A view of the level, never a change to it.** It does not reach the game, it is not in the level file,
- * and it takes no sequence number: the server keeps it beside its locks and relays the whole set to everyone
+ * and it takes no sequence number: the server keeps it in its state folder and relays the whole set to everyone
  * in the room. That is what makes it different from the `active` checkbox (ADR 0099), which switches a node
  * off *in the level* and is content.
  *
