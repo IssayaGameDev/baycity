@@ -15,7 +15,7 @@ import {
   type THREE,
 } from '@mp/render-three'
 
-import { ASSET_DB, PREFAB_SOURCE, assetUrlOf, materialOf } from './assets'
+import type { LevelAssets } from './assets'
 
 /**
  * A level, instantiated into a world and built into a scene (ADR 0065).
@@ -60,6 +60,8 @@ export interface LevelHostOptions {
   env: GreyboxEnvironment
   /** Ambient occlusion and bloom are level data, applied by the object that owns those passes (ADR 0048). */
   postfx: PostFX
+  /** What the level uses, fetched with it (`loadLevel`, ADR 0169). */
+  assets: LevelAssets
 }
 
 /**
@@ -76,21 +78,22 @@ export const loadLevelInto = async ({
   cutout,
   env,
   postfx,
+  assets: content,
 }: LevelHostOptions): Promise<LevelHost> => {
   /**
    * Resolve the prefabs this level references, before instantiating (ADR 0091). A level holds asset ids, not
-   * copies, so the definitions have to be in place first; they are bundled, so this is synchronous and
-   * `instantiateLevel` stays synchronous with it. A reference with no file resolves to nothing — the placement
+   * copies, so the definitions have to be in place first; they were fetched with the level, so this is synchronous
+   * and `instantiateLevel` stays synchronous with it. A reference with no file resolves to nothing — the placement
    * draws nothing and the level still loads.
    */
-  const { missing } = hydratePrefabs(data, PREFAB_SOURCE)
+  const { missing } = hydratePrefabs(data, content.prefabs)
   if (missing.length > 0) console.warn(`level ${data.id}: no prefab file for ${missing.join(', ')}`)
   const loaded = instantiateLevel(world, data, registry)
 
   // Assets first, then build: `addLevel` is synchronous, so a level is never briefly walkable with its models
   // still arriving. Marker pads are just their colour-coded box here — radius and overlay visualization
   // belongs to the viewer.
-  const assets = createAssetRuntime({ db: ASSET_DB, urlOf: assetUrlOf, materialOf })
+  const assets = createAssetRuntime({ db: content.db, urlOf: content.urlOf, materialOf: content.materialOf })
   // The Renderers' models and materials, and every asset any component parameter names (ADR 0082) — a pad's
   // active material is a game's to pick in the editor, and it has to be here when the game asks for it.
   await assets.load([...assetIdsIn(loaded.visuals), ...assetParamIds(loaded.nodes, registry)])

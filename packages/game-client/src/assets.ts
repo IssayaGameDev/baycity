@@ -1,74 +1,64 @@
-/// <reference path="./virtual-game-content.d.ts" />
 import {
   buildDatabase,
-  entriesFrom,
-  kindForPath,
+  entryFor,
+  PLAY_CONTENT_DIR,
   type AssetDatabase,
-  type AssetMeta,
+  type AssetEntry,
+  type LevelNeeds,
   type MaterialAsset,
   type Node,
   type PrefabSource,
 } from '@mp/content'
-import { MATERIALS, METAS, PREFABS, URLS } from 'virtual:game-content'
 
 /**
- * The game's view of the asset tree, bundled at build time.
+ * One level's assets, as the page uses them: made from the level's list and the JSON fetched for it (ADR 0169).
  *
- * No server and no scan at runtime: the `gameContent` plugin (`game-content.ts`, ADR 0161) hands over this game's
- * assets — its own library's and Shared's, and in a build only what its levels use — keyed by their paths from
- * `content/`. Ids come from the `.meta` sidecars the editor's importer wrote, so the game resolves the same ids the
- * editor stored in a level, and a missing sidecar means an asset the editor has not imported yet rather than a guess.
+ * The list is the whole database the page knows — what this level uses and nothing more, so an id the list does
+ * not name greyboxes, as a dangling one always has. Its ids came from the `.meta` sidecars the editor's importer
+ * wrote, so the page resolves the same ids the editor stored in a level.
  *
- * Prefab definitions (ADR 0091) are eager, like materials, because a level references a prefab by asset id and
- * `hydrate` must resolve it **before** `instantiateLevel`, which stays synchronous (`baseIndex` goes on the wire,
- * ADR 0021).
+ * Prefab definitions (ADR 0091) and materials are held here before the level is built, because a level references
+ * a prefab by asset id and `hydrate` must resolve it **before** `instantiateLevel`, which stays synchronous
+ * (`baseIndex` goes on the wire, ADR 0021); the renderer asks for materials synchronously too.
  */
-
-const asMeta = (raw: string): AssetMeta | undefined => {
-  try {
-    const value: unknown = JSON.parse(raw)
-    if (typeof value !== 'object' || value === null) return undefined
-    const id = (value as { id?: unknown }).id
-    return typeof id === 'string' && id !== '' ? (value as AssetMeta) : undefined
-  } catch {
-    return undefined // a corrupt sidecar is an asset the game does not know about, not a broken build
-  }
+export interface LevelAssets {
+  db: AssetDatabase
+  /** An asset's path from `content/` → the absolute URL of its bytes. */
+  urlOf: (path: string) => string
+  materialOf: (assetId: string) => MaterialAsset | undefined
+  prefabs: PrefabSource
 }
 
-const pairs: [string, AssetMeta][] = []
-const urlByPath = new Map<string, string>()
-const materialsById = new Map<string, MaterialAsset>()
-const prefabsById = new Map<string, Node>()
+const isMaterial = (v: unknown): v is MaterialAsset =>
+  typeof v === 'object' && v !== null && typeof (v as { shader?: unknown }).shader === 'string'
 
-for (const [path, url] of Object.entries(URLS)) urlByPath.set(path, url)
+/** Structural, as the editor's check is: a root node has a components array. A malformed file is an unresolved reference. */
+const isPrefab = (v: unknown): v is Node => typeof v === 'object' && v !== null && Array.isArray((v as { components?: unknown }).components)
 
-for (const [path, raw] of Object.entries(METAS)) {
-  const meta = asMeta(raw)
-  if (meta === undefined) continue
-  // The extension decides the kind, as it does in the importer; the sidecar only carries identity.
-  const kind = kindForPath(path)
-  if (kind === undefined) continue
-  pairs.push([path, meta])
-
-  if (kind === 'material') {
-    const material = MATERIALS[path]
-    if (typeof material === 'object' && material !== null && typeof (material as { shader?: unknown }).shader === 'string') {
-      materialsById.set(meta.id, material as MaterialAsset)
-    }
-  } else if (kind === 'prefab') {
-    // Structural, as the editor's check is: a root node has a components array. A malformed file is an
-    // unresolved reference, not a broken build.
-    const prefab = PREFABS[path]
-    if (typeof prefab === 'object' && prefab !== null && Array.isArray((prefab as { components?: unknown }).components)) prefabsById.set(meta.id, prefab as Node)
+/**
+ * `needs`: the level's list. `json`: each prefab's and material's JSON by asset id, as fetched; a missing or malformed
+ * one is an unresolved reference, not a dead level. `base`: the game page's absolute address, which every `url` on
+ * the list is relative to.
+ */
+export const levelAssets = (needs: LevelNeeds, json: ReadonlyMap<string, unknown>, base: string): LevelAssets => {
+  const entries: AssetEntry[] = []
+  const urls = new Map<string, string>()
+  const materials = new Map<string, MaterialAsset>()
+  const prefabs = new Map<string, Node>()
+  for (const a of needs.assets) {
+    const entry = entryFor(a.path, { id: a.id, kind: a.kind })
+    if (entry === undefined) continue
+    entries.push(entry)
+    urls.set(a.path, new URL(a.url, base).href)
+    const doc = json.get(a.id)
+    if (entry.kind === 'material' && isMaterial(doc)) materials.set(a.id, doc)
+    if (entry.kind === 'prefab' && isPrefab(doc)) prefabs.set(a.id, doc)
+  }
+  return {
+    db: buildDatabase(entries),
+    // A path the list does not name is where every server would put it; nothing will be there in a build.
+    urlOf: (path) => urls.get(path) ?? new URL(`${PLAY_CONTENT_DIR}/${path}`, base).href,
+    materialOf: (id) => materials.get(id),
+    prefabs: { root: (id) => prefabs.get(id) },
   }
 }
-
-export const ASSET_DB: AssetDatabase = buildDatabase(entriesFrom(pairs))
-
-/** Bundled URL for an asset path, or the path itself if it was not bundled (nothing to serve it). */
-export const assetUrlOf = (path: string): string => urlByPath.get(path) ?? path
-
-export const materialOf = (assetId: string): MaterialAsset | undefined => materialsById.get(assetId)
-
-/** Prefab definitions, as the `PrefabSource` `hydrate` takes (ADR 0091). Bundled, so resolution is synchronous. */
-export const PREFAB_SOURCE: PrefabSource = { root: (assetId) => prefabsById.get(assetId) }

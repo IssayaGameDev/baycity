@@ -3,7 +3,8 @@
 The content API the editor talks to, as one implementation with two hosts (ADR 0083): a Vite middleware in
 `pnpm dev:editor` (no login, no git) and a Node server on the box behind Cloudflare Access (`editor.playgorbo.com`,
 login, locks, commits on the `content` branch). `@mp/editor-server`, `tsx src/main.ts <config.json>`, no
-dependency beyond `@mp/content` (imported by relative path so `vite.config.ts` can bundle it). What that reaches
+dependency beyond `@mp/content` and `@mp/game-client`'s import-free `codeAssets.ts` (both by relative path so
+`vite.config.ts` can bundle them). What that reaches
 must not import a workspace package **as a value** — plain Node loads the bundle, and the editor's build, which
 is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walks the imports to hold.
 
@@ -67,6 +68,7 @@ shipped when `hidden` was added (ADR 0132). `api.test.ts` walks one over the wir
 | `POST /api/assets/mkdir` · `move` · `delete` | `{ path }` · `{ from, to }` or `{ moves: [{ from, to }] }` · `{ path }` or `{ paths }` — each path inside a library (`inLibrary`) of Shared or an existing game, else 400; a move into another library is **409** while something would be left using what it may not (`libraryMoves.ts`). Several are checked before any is done — locks (423), a source missing or a name taken (400), the library rule for all crossing into one library together (409) — so all or none (ADR 0166) | lock (move/delete; a folder is refused if anything under it is held) |
 | `POST /api/assets/upload?path=` | raw bytes → `{ entry }`; `path` from `content/`, inside a library | lock; ext ∈ `png jpg jpeg webp ktx2 glb`; `≤ maxUploadBytes` else 413 |
 | `GET /content/<path>` | bytes of a path inside a library (anything else 404) — a prefab open live is served from its document, as a level is; a live asset (ADR 0159) from its document when open, with `x-asset-epoch` / `x-asset-seq` (`0` for the file) | |
+| `GET /api/play/<address>` | a game page's content (ADR 0169), each as it is now: `<game>/levels.json` → `levelIndexOf` over its level files · `<game>/levels/<name>.needs.json` → `levelNeeds` over `levelNow`, the asset index and `assetJsonNow`, plus `CODE_ASSETS`, `url`s `content/<path>` · `<game>/levels/<name>.level.json` → `levelNow` · a library path → as `GET /content/<path>`. 404 anything else, 405 anything but GET, `cache-control: no-cache`. The staging game's dev server proxies its page's `content/` here (`content-sync.md`) | `identifyPlayer`: signed in, not necessarily in `users` |
 | `POST /api/live/asset/<id>/ops` | `{ connId, batchId, ops }` — asset ops on any live connection of this user → `{ ok, seq }` · 400 not ops, an op that does not apply or leaves the file invalid, an unknown or foreign connection · 404 no such asset | |
 | `POST /api/live/game/<game>/ops` | the same, on a game's `game.json` (ADR 0162); echoed as an `asset` event with `assetId` `game:<game>` · 404 no such game | |
 | `PUT /content/<path>` | JSON asset; **409** while that prefab, or that live asset, is open live | lock |
@@ -76,7 +78,9 @@ shipped when `hidden` was added (ADR 0132). `api.test.ts` walks one over the wir
 | `GET /api/file?path=content/…` | the bytes; 404 when gone | |
 
 Identity first: `identify(req)` → `null` is 401, `AuthError` is its status (403 signed in but not in `users`, 503
-`aud` unset). **Lock gate**: `blocker(locks, key, user)` non-null → 423 `{ error: 'locked by X', owner }`. Lock
+`aud` unset). `/api/play` alone asks `identifyPlayer(req)` instead (`ApiOptions.identifyPlayer`; absent: `identify`):
+any verified Access login, since the page itself is only behind the login and has no copy of its own to fall back
+on (ADR 0169). **Lock gate**: `blocker(locks, key, user)` non-null → 423 `{ error: 'locked by X', owner }`. Lock
 keys = repo-relative posix paths, built by `keyFor` from `@mp/content`'s layout (ADR 0108):
 `content/<game>/levels/<name>.level.json`, `content/<game>/game.json`,
 `content/<path>` for an asset (its path already starts with its library). Every write reports its paths to `onChanged` and to the change feed (sidecars included; a PUT of a new JSON
@@ -220,7 +224,7 @@ Dashboard names as of setup: Cloudflare One → *Access controls* (applications,
 | Unit | Runs | Port |
 | --- | --- | --- |
 | `mp-relay.service` | `tsx packages/server/src/main.ts` | 9200 |
-| `mp-game-keyboard.service` | `vite --host 127.0.0.1 --port 5177 --strictPort` in `modes/keyboard` — the **dev server**; with `MP_BASE` set it does **not** watch `content/<game>/levels/**` and proxies `/api` → `:8080`, and the page reads its level at boot from `GET /api/levels/<game>/<name>` (`pickLevel`, ADR 0089), so a save never reloads a player | 5177 |
+| `mp-game-keyboard.service` | `vite --host 127.0.0.1 --port 5177 --strictPort` in `modes/keyboard` — the **dev server**; with `MP_BASE` set its page's `content/` is proxied to `:8080/api/play/` (`gameContent`'s `live`, ADR 0169): the page reads its level and what it uses at boot, live, and no content edit reloads a player. `game.json` is still imported, so a settings edit does | 5177 |
 
 The game runs with `MP_BASE=/play/keyboard/` and is reached **through this server** at
 `editor.playgorbo.com/play/keyboard/` (ADR 0086): every request under a configured `games[].path` is proxied

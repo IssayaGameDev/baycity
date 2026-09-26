@@ -11,7 +11,6 @@ import {
   type THREE,
 } from '@mp/render-three'
 
-import { assetUrlOf } from './assets'
 import { SKY_TEXTURE } from './codeAssets'
 
 /**
@@ -30,7 +29,8 @@ export interface Scene {
   photoSky: Sky | null
 }
 
-export const createScene = async (canvas: HTMLCanvasElement, occluding: () => Iterable<THREE.Object3D>): Promise<Scene> => {
+/** `urlOf`: an asset's path from `content/` → where its bytes are, from the level's list (`loadLevel`, ADR 0169). */
+export const createScene = async (canvas: HTMLCanvasElement, occluding: () => Iterable<THREE.Object3D>, urlOf: (path: string) => string): Promise<Scene> => {
   const stage = createThreeStage({ canvas, cameraPosition: [0, 6, 10], lookAt: [0, 1, 0] })
   // Polished greybox pipeline (content pipeline C3): IBL + ACES + soft shadows, with GTAO +
   // SMAA post-FX. Level meshes, materials (the "High-contrast dev" palette) and markers are
@@ -41,7 +41,7 @@ export const createScene = async (canvas: HTMLCanvasElement, occluding: () => It
   // The photographic sky stays loaded as the control to judge the procedural one against (ADR 0046). It swaps
   // the **background only** — the lighting keeps coming from the procedural bake either way, so flipping the
   // toggle compares two backdrops rather than two whole looks. Deleted once the comparison is settled.
-  const photoSky = await loadSky(stage.scene, assetUrlOf(SKY_TEXTURE))
+  const photoSky = await loadSky(stage.scene, urlOf(SKY_TEXTURE))
   if (photoSky !== null && env.sky !== null) stage.scene.background = env.sky.background
   // No look values here any more: ambient occlusion and bloom are level data (`config.environment.postfx`),
   // applied with the lighting they are tuned against. What stays is the one thing a level cannot know.

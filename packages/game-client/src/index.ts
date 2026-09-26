@@ -9,7 +9,7 @@
  * - **Must be uniform.** `createNetHost` (the room, the clock, the snapshot stream), `loadLevelInto` (the level
  *   schema), `worldFromBase` (wire semantics). Every client in a room has to agree on these or nobody sees
  *   anybody in the right place. This is the actual platform.
- * - **Merely universal.** `createScene`, `createShell`, `createStatusLine`, `levelsFor`, `localProgress`. No
+ * - **Merely universal.** `createScene`, `createShell`, `createStatusLine`, `loadLevel`, `localProgress`. No
  *   agreement needed; they are simply what any game rendered into a canvas wants, and writing them twice would
  *   be a waste rather than a bug.
  *
@@ -33,8 +33,7 @@ export type { UiOverlay } from '@mp/render-pixi'
 export { createShell } from './shell'
 export type { StatusLine } from './status'
 export { createStatusLine } from './status'
-export type { LevelSource } from './levels'
-export { DEFAULT_NAME, fetchLevel, levelsFor, pickLevel, type LevelFetch, type PickedLevel } from './levels'
-export { ASSET_DB, assetUrlOf, materialOf } from './assets'
+export { levelNameFor, loadLevel, readJson, type PlayedLevel, type ReadJson } from './levels'
+export { levelAssets, type LevelAssets } from './assets'
 export type { PersistenceAdapter, PlayerProgress } from './persistence'
 export { localProgress } from './persistence'

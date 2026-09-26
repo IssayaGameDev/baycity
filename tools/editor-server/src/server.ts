@@ -161,13 +161,17 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
 
   // --- identity ---
   let identify: (req: IncomingMessage) => Promise<User | null>
+  /** Anyone the login let in may play (`/api/play`, ADR 0169); the editor wants a name in its list. */
+  let identifyPlayer: (req: IncomingMessage) => Promise<boolean>
   if (config.auth.kind === 'none') {
     const user = config.auth.user
     identify = async () => user
+    identifyPlayer = async () => true
   } else {
     const auth = config.auth
     const verifier = createAccessVerifier(auth.teamDomain, auth.aud)
-    identify = async (req) => {
+    /** The login's verdict on this request, or `null` for none. */
+    const signedIn = async (req: IncomingMessage) => {
       const header = req.headers['cf-access-jwt-assertion']
       const token = Array.isArray(header) ? header[0] : header
       if (token === undefined || token === '') return null
@@ -179,16 +183,23 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
         }
         return null
       }
+      return v
+    }
+    identify = async (req) => {
+      const v = await signedIn(req)
+      if (v === null) return null
       if (v.service !== undefined) return { name: auth.services[v.service] ?? `service ${v.service.slice(0, 8)}…`, email: v.email }
       const name = auth.users[v.email]
       if (name === undefined) throw new AuthError(403, `${v.email} is signed in but not in the editor's user list`)
       return { name, email: v.email }
     }
+    identifyPlayer = async (req) => (await signedIn(req)) !== null
   }
 
   const api = createContentApi({
     repoRoot: config.repoRoot,
     identify,
+    identifyPlayer,
     locks,
     rules: { staleMs: config.lockStaleMs, heartbeatMs: config.heartbeatMs, maxUploadBytes: config.maxUploadBytes },
     onChanged: (user, paths) => markDirty(sessions, user, paths, Date.now()),

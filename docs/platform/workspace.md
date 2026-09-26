@@ -35,7 +35,7 @@ Each exports `./editorMode` (`<NAME>_MODE: ModeDescriptor`) and `./rules` (headl
 | `swing` | `SWING_MODE` | 5175 | **same port as `tools/viewer`** |
 | `keyboard` | `KEYBOARD_MODE` | 5177 | Keyboard Escape (ADR 0069/0073) |
 
-Every game `vite.config.ts`: `plugins: [contentBanner(), gameContent('<game>')]` (what it carries of `content/`, `content-sync.md`), `allowedHosts: ['.trycloudflare.com', '.playgorbo.com']`, `proxy: '/relay' → http://localhost:9200` (ws, ADR 0074), `build.target: es2022`; keyboard and `_template` also `base: MP_BASE ?? '/'` (ADR 0086) and, with `MP_BASE` set, `/api` → `:8080` and no watch on `content/<game>/levels/**` (ADR 0089).
+Every game `vite.config.ts`: `plugins: [contentBanner(), gameContent('<game>')]` (what answers its page's `content/`, `content-sync.md`), `allowedHosts: ['.trycloudflare.com', '.playgorbo.com']`, `proxy: '/relay' → http://localhost:9200` (ws, ADR 0074), `build.target: es2022`; keyboard and `_template` also `base: MP_BASE ?? '/'` (ADR 0086) and, with `MP_BASE` set, `gameContent('<game>', { live: 'http://127.0.0.1:8080' })` (ADR 0169).
 
 ## Tools — see `tooling.md`, `editor.md`
 
@@ -49,7 +49,7 @@ Every game `vite.config.ts`: `plugins: [contentBanner(), gameContent('<game>')]`
 | `netsim` | library only | core |
 | `share` | `pnpm share [game]` | none; `cloudflared` on PATH |
 
-`content/` — shared data, not a package: `levels/*.json`, `games/<game>.json`, `assets/**` + `.meta` sidecars; on master it arrives by merging the `content` branch. `.content-live/` — the git-ignored live mirror; `content-root.ts` + `.env` decide which of the two a dev server bundles (`@content` alias, `content-sync.md`). `deploy/editor/` — the hosted editor's setup/update scripts, unit and config example (`editor-server.md`). `infra/` — README only, deferred.
+`content/` — shared data, not a package: `levels/*.json`, `games/<game>.json`, `assets/**` + `.meta` sidecars; on master it arrives by merging the `content` branch. `.content-live/` — the git-ignored live mirror; `content-root.ts` + `.env` decide which of the two a dev server reads (`@content` alias, `content-sync.md`). `deploy/editor/` — the hosted editor's setup/update scripts, unit and config example (`editor-server.md`). `infra/` — README only, deferred.
 
 ## Dependency laws (SEED §6)
 

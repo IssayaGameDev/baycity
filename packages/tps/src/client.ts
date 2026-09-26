@@ -42,9 +42,7 @@ import {
   createScene,
   createShell,
   createStatusLine,
-  fetchLevel,
-  levelsFor,
-  pickLevel,
+  loadLevel,
   loadLevelInto,
   localProgress,
   worldFromBase,
@@ -307,17 +305,14 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
    * assigned in instance order at load (ADR 0021). Mismatched clients would place each other on the
    * wrong platform entirely.
    */
-  const levels = levelsFor(mode.name, mode.registry)
   /**
-   * Live copy first when this page is served under a base path — the staging game on the box, where the
-   * hosted editor rewrites level files every few seconds and the dev server no longer watches them (ADR 0089).
-   * Locally (`/`) and in a build the bundle is the level: the local loop is the mirror reloading the page.
+   * Fetched with only what it uses, relative to this page's own address (`loadLevel`, ADR 0169): files beside a
+   * build, the local dev server's from disk, the editor server's live on the box. Validated against the game's
+   * registry before anything is built.
    */
-  const live = import.meta.env.BASE_URL !== '/' ? fetchLevel(mode.name) : null
-  const picked = await pickLevel(levels, new URLSearchParams(location.search).get('level'), live)
+  const picked = await loadLevel(mode.name, new URLSearchParams(location.search).get('level'), mode.registry, new URL(import.meta.env.BASE_URL, location.href).href)
   const levelName = picked.name
   const levelData = picked.level
-  if (live !== null) console.info(`level ${levelName}: ${picked.from}`)
 
   const $ = <T extends HTMLElement>(sel: string): T => document.querySelector<T>(sel)!
   const canvas = $<HTMLCanvasElement>('#view')
@@ -332,7 +327,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
   // yet, it arrives with the first snapshot (ADR 0055).
   /** Objects a game keeps out of the AO prepass (ADR 0082), alongside the cutout's surfaces. */
   const aoExcluded = new Set<THREE.Object3D>()
-  const { stage, env, postfx, photoSky } = await createScene(canvas, () => [...(level?.occluding() ?? []), ...aoExcluded])
+  const { stage, env, postfx, photoSky } = await createScene(canvas, () => [...(level?.occluding() ?? []), ...aoExcluded], picked.urlOf)
 
   // Player views (own + peers): the blocky rig, procedurally animated, + billboard nametag.
   // One shared gait object so the debug pane retunes every character live (ADR 0018).
@@ -498,6 +493,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
       cutout: orbit.cutout,
       env,
       postfx,
+      assets: picked,
     })
     loaded = level.loaded
     /**

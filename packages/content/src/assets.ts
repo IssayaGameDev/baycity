@@ -140,6 +140,30 @@ export const kindForPath = (path: string): AssetKind | undefined => {
   return BY_EXTENSION[lower.slice(dot + 1)]
 }
 
+const CONTENT_TYPES: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  webp: 'image/webp',
+  ktx2: 'image/ktx2',
+  glb: 'model/gltf-binary',
+  gltf: 'model/gltf+json',
+  wav: 'audio/wav',
+  mp3: 'audio/mpeg',
+  ogg: 'audio/ogg',
+  ttf: 'font/ttf',
+  otf: 'font/otf',
+  woff: 'font/woff',
+  woff2: 'font/woff2',
+  json: 'application/json',
+}
+
+/** The HTTP content type a content file is served with: one table for the editor server and a game's dev server. */
+export const contentTypeFor = (path: string): string => {
+  const dot = path.lastIndexOf('.')
+  return (dot >= 0 ? CONTENT_TYPES[path.slice(dot + 1).toLowerCase()] : undefined) ?? 'application/octet-stream'
+}
+
 /** Display name: the file name with its extension (compound ones included) removed. */
 export const nameForPath = (path: string): string => {
   const file = path.slice(path.lastIndexOf('/') + 1)
