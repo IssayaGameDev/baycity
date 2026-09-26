@@ -1,10 +1,9 @@
 import { Death, Hazard } from '@mp/components'
-import { DEFAULT_TUNING, createLocomotion } from '@mp/humanoid'
+import { DEFAULT_TUNING } from '@mp/humanoid'
 import type { ModeDescriptor } from '@mp/mode'
 import { MARKER_COLORS } from '@mp/render-three'
 
-import { KEYBOARD_REGISTRY, keyboardSession, spawnOf, GAME_CURVE } from './rules'
-import { createStepper } from './steps'
+import { KEYBOARD_REGISTRY, keyboardSession, spawnOf } from './rules'
 import { KEY_SETTINGS, keyboardGridOf } from './keycaps'
 import { CURVE_SETTINGS } from './progression'
 import { StepPad } from './stepPad'
@@ -60,16 +59,14 @@ export const KEYBOARD_MODE: ModeDescriptor = {
   gizmos: { [Hazard.type]: MARKER_COLORS.hazard, [WinsPad.type]: MARKER_COLORS.goal, [Treadmill.type]: MARKER_COLORS.checkpoint, [StepPad.type]: MARKER_COLORS.bumper },
   /**
    * The shipped locomotion, whose `moveSpeed` Level writes, and the **Stepper** that turns held input into the
-   * steps Experience is paid for (ADR 0081). This list and `playerDefs` have to agree: a type listed here with no
-   * definition is refused by the component runtime.
+   * steps Experience is paid for (ADR 0081). Their definitions are bound to the client in `main.ts`'s
+   * `playerDefs`, and the two have to agree: a type listed here with no definition is refused by the runtime.
    */
   player: [
     { id: 'loco', type: 'Locomotion', params: {} },
     { id: 'stepper', type: 'Stepper', params: {} },
     { id: 'death', type: Death.type, params: {} },
   ],
-  /** The editor's play-test carries the Stepper with nowhere to report to; `main.ts` binds the sink. */
-  playerDefs: (host) => [createLocomotion(host), createStepper({ curve: () => GAME_CURVE, level: () => 0 })],
   /**
    * Where this game's keys land on a box face, so the editor can draw them before the level has run
    * (ADR 0120). The caps themselves are generated at load, which left an author placing platforms blind.

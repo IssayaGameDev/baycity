@@ -38,8 +38,7 @@ keysToMovement(codes: ReadonlySet<string>): InputState
 
 ### Actions (`ModeDescriptor.actions` / `TpsClientOptions.actions`)
 
-`Inputs.actions()` = `actionsHeld(bindings, keys)`; empty set when the game declared none. Shared with the editor's
-play-test via `@mp/mode`, so a binding means the same key in both.
+`Inputs.actions()` = `actionsHeld(bindings, keys)`; empty set when the game declared none (`@mp/mode`).
 
 ## Pointer lock (mouse) — `createInputs`
 

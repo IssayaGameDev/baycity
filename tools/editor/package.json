@@ -10,12 +10,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mp/camera": "workspace:*",
-    "@mp/client": "workspace:*",
     "@mp/components": "workspace:*",
     "@mp/content": "workspace:*",
     "@mp/core": "workspace:*",
-    "@mp/humanoid": "workspace:*",
     "@mp/mode": "workspace:*",
     "@mp/net": "workspace:*",
     "@mp/physics": "workspace:*",

@@ -55,4 +55,4 @@ ADR 0082), `depth: 'world'` (depth-tested, hidden behind geometry), kept out of 
 | `StepPad` | `+N/step` (44 px, green) | `Requires N Wins` (24 px, cream) |
 | `Treadmill` | `name` (44 px, cream) | `×N/step` (24 px, green) |
 
-Built once; a pad edited in the editor's play-test keeps its sign until reload.
+Built once, at load.

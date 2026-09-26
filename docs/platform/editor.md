@@ -22,7 +22,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | Subsystem | Owns | Host |
 | --- | --- | --- |
 | `itemMeshes.ts` | `instanceRoot`, `markerGroup`, the groups, the shadow budget, the cell toggle | `doc`, `loaded`, `runtime`, `mode`, `gameSettings`, `selected`, `afterBuild` |
-| `play.ts` | the character, controller, loop, play view and lights, component runtime, game frame | `PlayHost` (23 getters) |
+| `play.ts` | the game frame (ADR 0172) | `PlayHost` (13 getters) |
 | `historyStore.ts` | the history, pending batches, `coalescing`, the held-back drag batches, `dirty`, the clipboard | `HistoryHost` |
 | `liveSession.ts` | `collab`, the peer list, every `connId` this tab has had (`mineEver`), the last snapshot, `joining`, the deferred ops, the hold map and its key, the hold outlines, the presence timer | `LiveHost` |
 | `follow.ts` | whom this tab follows and the pose it glides to; who follows it, the send timer and the last pose sent (ADR 0155) | `FollowHost` |
@@ -142,7 +142,7 @@ httpTransport(): LiveTransport   // EventSource in, fetch POST out, sendBeacon f
 | outbound | `onDocOps` → `pending` (history) **and** `collab.submit(batch)`; the batch is *unacked* until its echo. `applyHistory` submits the inverses it applied |
 | inbound | a remote batch: unacked batches rolled back (inverses, newest first), remote applied, unacked re-applied (inverses recomputed; one that no longer applies is dropped and reported); `hooks.onApplied(ops)` → `repaintAfterOps` (`liveSession.ts`). A seq gap or a failing apply reopens the stream: the server greets with a fresh snapshot, `reinstallLevel` rebuilds the document over it (history kept), unacked batches are re-applied and re-sent |
 | rejected | a 4xx on the POST: that batch and everything after it rolled back, the later ones re-applied, `onRejected` → `history.dropWhere` (the entry holding it) + an error toast + repaint |
-| repaint | `repaintAfterOps(ops)`: transforms only (`setTransform` / `setOverrideTransform`) → `applyPreviewPoses` + `scheduleRebuild` + `inspectorSync` + track helper; else `repaintFor(ops, typeOf)` (`remoteRepaint.ts`, ADR 0167) — the environment re-applied only for `setEnvironment` / `setCameraSeeThrough`; nodes of the one-node kinds → `rebuildSubtree` each, `applyPreviewPoses`, `scheduleRebuild`, hold outlines, `hierarchyRender`, `inspectorRefresh` only when the Inspector shows one of them (or the environment; ADR 0168), and their subtrees again once new references load; names → the Hierarchy only; anything else — a structural op, a `table` op, a sequence or a component gone, an op not on its list — `host.rebuildViewport()`, selection put back by `indexOfRef`, `refreshUi` + `inspectorRebuild`. During a gizmo drag **or a play-test** ops queue in `deferredRemote` (the data is already changed) and repaint when it ends (`room.drainDeferred()`, from the drag's `mouseUp` and from both `play.stop` exits) — `rebuildLoaded` frees the physics world a play session's character lives in |
+| repaint | `repaintAfterOps(ops)`: transforms only (`setTransform` / `setOverrideTransform`) → `applyPreviewPoses` + `scheduleRebuild` + `inspectorSync` + track helper; else `repaintFor(ops, typeOf)` (`remoteRepaint.ts`, ADR 0167) — the environment re-applied only for `setEnvironment` / `setCameraSeeThrough`; nodes of the one-node kinds → `rebuildSubtree` each, `applyPreviewPoses`, `scheduleRebuild`, hold outlines, `hierarchyRender`, `inspectorRefresh` only when the Inspector shows one of them (or the environment; ADR 0168), and their subtrees again once new references load; names → the Hierarchy only; anything else — a structural op, a `table` op, a sequence or a component gone, an op not on its list — `host.rebuildViewport()`, selection put back by `indexOfRef`, `refreshUi` + `inspectorRebuild`. During a gizmo drag ops queue in `deferredRemote` (the data is already changed) and repaint when it ends (`room.drainDeferred()`, from the drag's `mouseUp`). Play holds nothing back: the game in its frame has a world of its own |
 | Save | there is none; `dirty` stays `false` live (`recordEdit`, `applyHistory`), so `guardUnsaved` never asks. `saveNow` returns `true` |
 | Play | `startFramePlay`: live → `collab.flush()` first (the game reads the file), else the prefab path `saveNow()` |
 | New / Duplicate | `createLevel(from)`: `askName` (`confirm.ts`) → `^[\w-]+$` → refused if `listFiles('levels')` has it → `PUT /api/levels/<name>` a `blankLevel` with the active mode, or the open level (`loadLevelRaw`, the server's live copy) with `id` set → `refreshFileList` → `openFile`. From the games window: *New level* (`onNewLevel`, `createLevel(null, game)`) and a level's *Duplicate…* |
@@ -208,10 +208,9 @@ the way back. Every path that installs an environment goes through **`installEnv
 replacing four pairs of `env.applyEnvironment` + `postfx.apply` calls — because a path that installs a sky
 without re-applying this is a black viewport that only appears in isometric.
 
-**Two cameras.** `stage.camera` stays perspective and stays the game's — play-in-place tunes its `fov` — and
-`orthoCamera` sits beside it in `main.ts`. `activeCamera()` says which is live; `setProjection(ortho)` copies
+**Two cameras.** `stage.camera` stays perspective, and `orthoCamera` sits beside it in `main.ts`. `activeCamera()` says which is live; `setProjection(ortho)` copies
 the placement across, cuts the frustum so both show the same height at the orbit target, and re-points
-`postfx.setCamera`, `controls.object` and `gizmo.camera`. Entering play forces perspective. `focusSelection`
+`postfx.setCamera`, `controls.object` and `gizmo.camera`. `focusSelection`
 and the picking raycast both go through `activeCamera()`.
 
 **The pointer.** `document` in the **capture** phase, `stopPropagation` when the gizmo takes a press:
@@ -778,39 +777,18 @@ move subtracted, its turn divided off the right, its scale divided out — so th
 transform, never the animation (ADR 0050, ADR 0126). `offsetAt` is a `PreviewOffset`
 `{ position, turn, scale }`, with sequences exactly when the preview shows them.
 
-## Play — `src/play.ts`
+## Play — `src/play.ts` (ADR 0086, ADR 0172)
 
-`createPlay(host)` → `Play { active, start, stop, frame }` (ADR 0121). It owns `char`, `controller`, `playLoop`,
-`playView`, `playLights`, `playComponents`, `gameFrame`, `ownPos` and the `active` flag; the
-twenty-three things it needs from the editor arrive as `PlayHost`, all getters. `main.ts` holds only that host
-literal and calls `play.frame(dt)` from the render loop — `true` when a session took the frame, so the edit
-clock runs only when it did not.
+`createPlay(host)` → `Play { active, start, stop }`. It owns the frame and a `starting` flag; `PlayHost`, all getters,
+brings the rest.
 
-**A level plays in the real game** (ADR 0086): `start` → `host.gamePageUrl()` (`me.games[activeMode.name]`,
-from `/api/me`) → `startFramePlay(url)`: live level → `host.flush()`; prefab → `host.saveNow()` if dirty (a refused save is no play); then an
-`<iframe id="game-frame">` over `#centre` at `${url}?level=${host.levelName()}` (bare, ADR 0108); `active = true`, orbit off. Stop
-(toolbar) removes the frame. Esc inside the frame is the game's pause; the `pointerlockchange` exit applies only
-to the in-editor loop. Hosted: `url` is the proxied `/play/<game>/`; dev: `http://localhost:<port>/` with
-`pnpm dev:<game>` running. A prefab, or a game the server has no page for, falls through to the loop below.
-
-## Play-test in place (`play.start`/`play.stop`) — prefabs
-
-The game's own code, not a copy (ADR 0052):
-
-| Piece | Source |
-| --- | --- |
-| Spawn | `host.mode().spawn(loaded)`; `{0,3,0}` with no game |
-| Rules | `host.mode().session(loaded)` → `ModeSession` |
-| Components | `createComponentRuntime(loaded, host.registry(), { character, effects: rules.effects, … })` incl. `player` components and `playerDefs(host)` (ADR 0059/0061) |
-| Movement | `playComponents.locomote(...)` — no game / no locomotion component → no movement |
-| Actions | `heldActions()` from the game's `actions` |
-| Loop | `createLocalController` + `startFixedLoop`; tick: `fixedUpdate` → `loaded.update` → `world.step` → `locomote` → `world.step` (ADR 0058). Each `frame` pumps the loop and draws at `playLoop.alpha()` (ADR 0140) |
-| Contacts | `contact([...collisions, ...overlaps])` (ADR 0054) |
-| Death | `rules.takeDeath()` → `setPosition(rules.respawnAt())`, velocities zeroed; no ragdoll, no persistence |
-| Teleport | `rules.takeTeleport?.()` non-null → same reposition (ADR 0073) |
-| View | `addLevel(..., { cutout })` — occlusion cutout as in game (ADR 0055) |
-
-Esc / pointer-lock loss exits play; play stops track preview.
+**A level plays in the real game, and only there.** `start` → `host.gamePageUrl()` (`me.games[activeMode.name]`,
+from `/api/me`): live level → `host.flush()`, else `host.saveNow()` if dirty (a refused save is no play); then an
+`<iframe id="game-frame">` over `#centre` at `${url}?level=${host.levelName()}` (bare, ADR 0108), orbit off, the
+hint. Stop (toolbar, or Esc in the editor) removes the frame; Esc inside the frame is the game's pause. Hosted: `url`
+is the proxied `/play/<game>/`; dev: `http://localhost:<port>/` with `pnpm dev:<game>` running. No page — a prefab, a
+level whose game is not in the editor, a game the server has no page for — is refused with `host.noPageReason()`
+as an error toast.
 
 ## Pulling a face (ADR 0119, amended by 0128 and 0129)
 

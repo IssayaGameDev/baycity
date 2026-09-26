@@ -219,5 +219,6 @@ why matters.
 | [0169](adr/0169-a-game-page-downloads-one-level-and-only-what-it-uses.md) | A game page downloads one level and only what it uses |
 | [0170](adr/0170-the-procedural-sky-is-the-only-sky.md) | The procedural sky is the only sky |
 | [0171](adr/0171-parkour-swing-the-viewer-and-goal-are-deleted.md) | Parkour, Swing, the viewer and `Goal` are deleted |
+| [0172](adr/0172-play-is-always-the-games-own-page.md) | Play is always the game's own page |
 
 `Design archive/` holds superseded design material and is not maintained.

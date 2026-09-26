@@ -359,12 +359,6 @@ importers:
 
   tools/editor:
     dependencies:
-      '@mp/camera':
-        specifier: workspace:*
-        version: link:../../packages/camera
-      '@mp/client':
-        specifier: workspace:*
-        version: link:../../packages/client
       '@mp/components':
         specifier: workspace:*
         version: link:../../packages/components
@@ -374,9 +368,6 @@ importers:
       '@mp/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@mp/humanoid':
-        specifier: workspace:*
-        version: link:../../packages/humanoid
       '@mp/mode':
         specifier: workspace:*
         version: link:../../packages/mode

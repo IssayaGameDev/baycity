@@ -25,9 +25,9 @@ STEPPER_DEF   // unbound, for the registry
 stepsThisTick(cmd, level, curve, dt) // = moveX||moveZ ? stepsPerSecond × dt : 0
 ```
 
-`Stepper` is a player component (`attachesTo: 'player'`, in `KEYBOARD_MODE.player` and `playerDefs`). It runs in
+`Stepper` is a player component (`attachesTo: 'player'`, in `KEYBOARD_MODE.player`; its definition is bound in `main.ts`'s `playerDefs`). It runs in
 the movement slot (`onLocomote`) with the tick's `InputCommand`, the one place a component sees input
-(ADR 0061), and reports fractional steps. The editor's play-test binds it with `level: () => 0` and no sink.
+(ADR 0061), and reports fractional steps.
 
 ## Paying out
 
