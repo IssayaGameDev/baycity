@@ -1,8 +1,8 @@
 import type { Vec3 } from '@mp/core'
 import type { InputCommand } from '@mp/core'
-import type { ComponentData, NodeDrive, LoadedLevel, WorldNode } from '@mp/content'
+import { COLLIDER, componentsOfType, type ColliderDesc, type ComponentData, type NodeDrive, type LoadedLevel, type WorldNode } from '@mp/content'
 import type { AnyComponentDef, Registry } from './registry'
-import { readParams, type ParamDecls, type Params } from './params'
+import { readParams, type ComponentRef, type ParamDecls, type Params } from './params'
 import type { ComponentDef } from './define'
 
 /**
@@ -83,6 +83,14 @@ export interface Effects {
   progress: (node: WorldNode) => void
 }
 
+/** What `self.findComponent` finds (ADR 0177). */
+export interface FoundComponent<O extends ParamDecls> {
+  readonly node: WorldNode
+  readonly params: Params<O>
+  /** The component's collider as the world has it, scaled — for a `Collider`; `undefined` for anything else. */
+  readonly collider: ColliderDesc | undefined
+}
+
 /** What a component instance sees of itself. */
 export interface Self<D extends ParamDecls, S> {
   readonly params: Params<D>
@@ -100,6 +108,13 @@ export interface Self<D extends ParamDecls, S> {
    * `self.find(self.params.target)`.
    */
   readonly find: (ref: string | null) => WorldNode | undefined
+  /**
+   * The component a `componentRef` parameter points at, typed by its definition, or `undefined` (ADR 0177): its node
+   * (found as `find` finds one), its parameters, and — for a `Collider` — its world-scaled shape, the one in
+   * `node.colliders`. `undefined` too for a component switched off, gone, or not of `def`'s type.
+   * `self.findComponent(self.params.zone, Collider)`.
+   */
+  readonly findComponent: <O extends ParamDecls>(ref: ComponentRef | null, def: ComponentDef<O>) => FoundComponent<O> | undefined
   /**
    * Move this node: a **live, mutable offset** from its authored transform, in local space (ADR 0058).
    *
@@ -422,6 +437,16 @@ export const createComponentRuntime = (
           return found === undefined ? undefined : readParams(other.params, found.params, other.type)
         },
         find: (ref) => (ref === null || ref === '' ? undefined : loaded.findNode(node, ref)),
+        findComponent: (ref, other) => {
+          const target = ref === null || ref.node === '' ? undefined : loaded.findNode(node, ref.node)
+          if (ref === null || target === undefined) return undefined
+          // The enabled ones, in order — the order the loader built `colliders` in, so the index is shared.
+          const ofType = componentsOfType(target.components, other.type)
+          const at = ref.component === '' ? 0 : ofType.findIndex((c) => c.id === ref.component)
+          const found = ofType[at]
+          if (found === undefined) return undefined
+          return { node: target, params: readParams(other.params, found.params, other.type), collider: other.type === COLLIDER ? target.colliders[at] : undefined }
+        },
         // Only for a component that asked. Handing it to every component would mean every node with any
         // hook at all became kinematic and got posed every tick, which is a cost nothing asked for.
         offset: def.moves === true ? loaded.driveOf(node) : undefined,

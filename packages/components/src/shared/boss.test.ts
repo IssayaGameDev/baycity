@@ -33,7 +33,7 @@ const scene = (opts: { rotationDeg?: number; zoneAt?: Vec3; half?: Vec3; speed?:
   {
     id: 'boss',
     transform: { position: vec3(0, 0, 0) },
-    components: [comp('b0', Boss.type, { zone: 'zone', speed: opts.speed ?? 6, turn: opts.turn ?? 3600 })],
+    components: [comp('b0', Boss.type, { zone: { node: 'zone', component: 'z0' }, speed: opts.speed ?? 6, turn: opts.turn ?? 3600 })],
   },
   {
     id: 'zone',
@@ -181,9 +181,34 @@ describe('Boss', () => {
 
   it('does nothing at all when its zone reference is broken', () => {
     const nodes = scene()
-    nodes[0]!.components = [comp('b0', Boss.type, { zone: 'nope', speed: 6, turn: 3600 })]
+    nodes[0]!.components = [comp('b0', Boss.type, { zone: { node: 'nope', component: 'z0' }, speed: 6, turn: 3600 })]
     const at = run(nodes, [peer(1000, vec3(0, 0, 15))], 60)
     expect(at.position.z).toBeCloseTo(0, 6)
+  })
+
+  it('does nothing when its zone names a collider the zone does not have', () => {
+    const nodes = scene()
+    nodes[0]!.components = [comp('b0', Boss.type, { zone: { node: 'zone', component: 'gone' }, speed: 6, turn: 3600 })]
+    const at = run(nodes, [peer(1000, vec3(0, 0, 15))], 60)
+    expect(at.position.z).toBeCloseTo(0, 6)
+  })
+
+  // The old shape, a bare node id, reads as that node's first Collider until the box's content is migrated.
+  it('still reads a zone saved as a node id', () => {
+    const nodes = scene()
+    nodes[0]!.components = [comp('b0', Boss.type, { zone: 'zone', speed: 6, turn: 3600 })]
+    const at = run(nodes, [peer(1000, vec3(0, 0, 15))], 30)
+    expect(at.position.z).toBeGreaterThan(0.5)
+  })
+
+  it('uses the collider it names, not the node’s first', () => {
+    const nodes = scene()
+    nodes[1]!.components = [
+      comp('z1', COLLIDER, { shape: { kind: 'ball', radius: 1 }, center: vec3(0, 0, 0), trigger: true }),
+      ...nodes[1]!.components,
+    ]
+    const at = run(nodes, [peer(1000, vec3(0, 0, 15))], 30)
+    expect(at.position.z, 'the box, second on the node').toBeGreaterThan(0.5)
   })
 })
 

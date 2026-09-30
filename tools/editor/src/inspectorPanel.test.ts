@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { COLLIDER, RENDERER, type ComponentData, type Node } from '@mp/content'
+import { createRegistry, defineComponent, ENGINE_COMPONENTS, SHARED_COMPONENTS } from '@mp/components'
 import { vec3, type Vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
@@ -71,6 +72,8 @@ const rig = (doc: Doc, selection: readonly number[], transform: Partial<Transfor
     draggedAssets: () => [],
     pingNode: () => {},
     revealAsset: () => {},
+    selectNode: () => {},
+    openAsset: () => {},
     revertOverride: () => {},
     unlinkPrefab: () => {},
     applyOverrides: () => {},
@@ -137,7 +140,7 @@ describe('the Inspector’s cards', () => {
       draggedAssets: () => dragged,
     })
     const field = (): HTMLElement => line(card(panel, 'Mesh Renderer'), 'material').querySelector<HTMLElement>('.rf')!
-    expect(field().textContent).toContain('None (material)')
+    expect(field().textContent).toContain('None (Material)')
     dragged = ['m-red']
     const over = new Event('dragover', { bubbles: true, cancelable: true })
     field().dispatchEvent(over)
@@ -147,21 +150,59 @@ describe('the Inspector’s cards', () => {
     expect(field().textContent).toContain('red')
   })
 
-  it('draws an object parameter as a reference field, which takes a Hierarchy row and pings what it names (ADR 0176)', () => {
-    const doc = levelDoc({ id: 'l', config: {}, nodes: [node('boss', [comp('bo', 'Boss')]), node('zone', [])] })
-    const pinged: number[] = []
-    const { panel, refresh } = rig(doc, [0], {}, { pingNode: (i) => void pinged.push(i) })
-    const field = (): HTMLElement => line(card(panel, 'Boss'), 'zone').querySelector<HTMLElement>('.rf')!
-    expect(field().textContent).toContain('None (object)')
+  it('draws an object parameter as a reference field: a row or a card names an object, a press pings it, a double-click selects it (ADR 0176)', () => {
+    const Linked = defineComponent({ type: 'Linked', params: { target: { kind: 'nodeRef' } } })
+    const reg = createRegistry([...ENGINE_COMPONENTS, Linked])
+    const doc = levelDoc({ id: 'l', config: {}, nodes: [node('watcher', [comp('li', 'Linked')]), box('post', vec3(0, 0, 0))] }, reg)
+    const calls: string[] = []
+    const { panel, refresh } = rig(doc, [0], {}, { pingNode: (i) => void calls.push(`ping ${i}`), selectNode: (i) => void calls.push(`select ${i}`) })
+    const field = (): HTMLElement => line(card(panel, 'Linked'), 'target').querySelector<HTMLElement>('.rf')!
+    expect(field().textContent).toContain('None (Object)')
     const target = refTargetOf(field())!
     expect(target.offer({ kind: 'node', index: 1 })).toBe(true)
     target.take({ kind: 'node', index: 1 })
-    expect(paramOf(doc, 0, 'Boss', 'zone')).toBe('zone')
+    expect(paramOf(doc, 0, 'Linked', 'target')).toBe('post')
+    // A card names its object, as a dragged component header does in Unity.
+    target.take({ kind: 'component', index: 0, component: 'li' })
+    expect(paramOf(doc, 0, 'Linked', 'target')).toBe('watcher')
+    target.take({ kind: 'node', index: 1 })
     refresh()
-    expect(field().querySelector('.rf-name')!.textContent).toBe('zone')
+    expect(field().querySelector('.rf-name')!.textContent).toBe('post')
     field().querySelector<HTMLElement>('.rf-name')!.click()
-    expect(pinged).toEqual([1])
+    field().querySelector<HTMLElement>('.rf-name')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    expect(calls).toEqual(['ping 1', 'select 1'])
     expect(target.offer({ kind: 'asset', id: 'm-red' }), 'an asset is not an object').toBe(false)
+  })
+
+  it('draws a component parameter as a component field: a row gives its first of the type, a card itself (ADR 0177)', () => {
+    const reg = createRegistry([...ENGINE_COMPONENTS, ...SHARED_COMPONENTS])
+    const zone = node('zone', [comp('z-ball', COLLIDER, { shape: { kind: 'ball', radius: 1 } }), comp('z-box', COLLIDER, { shape: { kind: 'box', halfExtents: vec3(1, 1, 1) } })])
+    const doc = levelDoc({ id: 'l', config: {}, nodes: [node('boss', [comp('bo', 'Boss'), comp('b-col', COLLIDER, { shape: { kind: 'box', halfExtents: vec3(1, 1, 1) } })]), zone, node('bare', [])] }, reg)
+    const { panel, refresh } = rig(doc, [0])
+    const field = (): HTMLElement => line(card(panel, 'Boss'), 'zone').querySelector<HTMLElement>('.rf')!
+    const name = (): string => field().querySelector('.rf-name')!.textContent ?? ''
+    expect(name()).toBe('None (Collider)')
+    const target = refTargetOf(field())!
+    target.take({ kind: 'node', index: 1 })
+    expect(paramOf(doc, 0, 'Boss', 'zone'), 'the row’s first Collider').toEqual({ node: 'zone', component: 'z-ball' })
+    target.take({ kind: 'component', index: 1, component: 'z-box' })
+    expect(paramOf(doc, 0, 'Boss', 'zone'), 'the card’s own').toEqual({ node: 'zone', component: 'z-box' })
+    refresh()
+    expect(name(), 'its object, and which of its two').toBe('zone (Collider 2)')
+    expect(target.offer({ kind: 'node', index: 2 })).toBe(false)
+    expect(name()).toBe('bare has no Collider')
+    expect(target.offer({ kind: 'component', index: 0, component: 'bo' })).toBe(false)
+    expect(name()).toBe('this takes a Collider, not a Boss')
+    target.leave()
+    // Its own Collider, by its card.
+    expect(target.offer({ kind: 'component', index: 0, component: 'b-col' })).toBe(true)
+  })
+
+  it('reads a component parameter still saved as a node id as that node’s first of the type', () => {
+    const reg = createRegistry([...ENGINE_COMPONENTS, ...SHARED_COMPONENTS])
+    const doc = levelDoc({ id: 'l', config: {}, nodes: [node('boss', [comp('bo', 'Boss', { zone: 'zone' })]), box('zone', vec3(0, 0, 0))] }, reg)
+    const { panel } = rig(doc, [0])
+    expect(line(card(panel, 'Boss'), 'zone').querySelector('.rf-name')!.textContent).toBe('zone (Collider)')
   })
 
   it('draws the Renderer as one Mesh Renderer card: its model, then its material (ADR 0153)', () => {

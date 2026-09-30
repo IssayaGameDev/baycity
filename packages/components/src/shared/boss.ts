@@ -1,5 +1,6 @@
 import { rotateVec3, type Quat, type Vec3 } from '@mp/core'
 import { defineComponent } from '../define'
+import { Collider } from '../engine/collider'
 
 const FORWARD: Vec3 = { x: 0, y: 0, z: 1 }
 
@@ -42,7 +43,7 @@ const turnToward = (from: number, to: number, limit: number): number => {
  *
  * ### The zone
  *
- * `zone` names a node with a box `Collider`, normally a `trigger` so it is felt and not stood on. Membership
+ * `zone` is a box `Collider` (a component field, ADR 0177), normally a `trigger` so it is felt and not stood on. Membership
  * is tested **geometrically**, against that box's world oriented extents — not by contact. It has to be:
  * a sensor only ever reports the local player, because peers are relayed positions and were never in this
  * client's physics world at all (ADR 0011). A box test sees everybody `ctx.players()` sees.
@@ -80,7 +81,7 @@ const turnToward = (from: number, to: number, limit: number): number => {
 export const Boss = defineComponent({
   type: 'Boss',
   params: {
-    zone: { kind: 'nodeRef', label: 'zone' },
+    zone: { kind: 'componentRef', of: Collider.type, label: 'zone' },
     speed: { kind: 'number', default: 8, min: 0.5, max: 60, step: 0.5, label: 'speed (m/s)' },
     turn: { kind: 'number', default: 180, min: 15, max: 720, step: 15, label: 'turn (°/s)' },
   },
@@ -92,8 +93,10 @@ export const Boss = defineComponent({
     const drive = self.offset
     if (drive === undefined) return // declared `moves`, so this cannot happen; the honest guard is free
 
-    const zone = self.find(self.params.zone)
-    const box = zone === undefined ? undefined : zone.colliders.find((c) => c.kind === 'box')
+    const found = self.findComponent(self.params.zone, Collider)
+    const zone = found?.node
+    const shape = found?.collider
+    const box = shape?.kind === 'box' ? shape : undefined
     // No zone, or a zone that is not a box: go home and stay there rather than hunt the whole level.
     const forward = zone === undefined ? FORWARD : flatten(rotateVec3(zone.rotation, FORWARD))
     if (self.state.heading === null) self.state.heading = Math.atan2(forward.x, forward.z)

@@ -2655,7 +2655,7 @@
         text-align: left;
       }
       /* One popover at a time (`controls.ts`): the palette, the eases, a sequence's settings. */
-      /* A reference field (ADR 0176): what it points at, ✕, the picker — and a drop target, lit or greyed. */
+      /* A reference field (ADR 0176, ADR 0177): what it points at, the picker — and a drop target, lit or greyed. */
       .rf {
         flex: 1 1 auto;
         min-width: 0;
@@ -2704,7 +2704,6 @@
       .rf-missing .rf-name svg {
         color: #e0a340;
       }
-      .rf-x,
       .rf-pick {
         flex: none;
         display: grid;
@@ -2720,12 +2719,10 @@
       .rf-pick {
         border-left: 1px solid #2f343c;
       }
-      .rf-x:hover,
       .rf-pick:hover {
         color: var(--text);
         background: var(--hover);
       }
-      .rf-x svg,
       .rf-pick svg {
         width: 12px;
         height: 12px;

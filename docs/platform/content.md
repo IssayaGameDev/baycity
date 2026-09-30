@@ -26,7 +26,7 @@ interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: Su
 - No prefab-in-prefab (ADR 0023). Override keys are not checked against the tree; dangling = inert (ADR 0033), and so is a `prefab` no file resolves (ADR 0091).
 - Keys are **offsets** from `Transform`, per channel; rotation lerps per component (ADR 0050).
 - `environment` absent/partial → renderer defaults; sun is config, not a `Light` (ADR 0048).
-- `unlinkPrefab(level, assetId, deps)` / `unlinkedNode(level, node, assetId, deps)` (`prefabs.ts`, ADR 0097; one placement at a time through `Doc.unlinkNode`, ADR 0111): turn placements of one prefab into plain nodes that keep what they were drawing. `deps` carries `types`, `freshId` and `refKeysOf` — a registry is needed for singleton layering and for `nodeRef`s that must follow the re-id, which is why only the editor can do this. The inherited subtree is cloned and re-idded as one forest; `nodeRef`s and sequence step targets follow the map, in that forest **and** on the placement's own components (a root sequence targets the root's children, ADR 0139).
+- `unlinkPrefab(level, assetId, deps)` / `unlinkedNode(level, node, assetId, deps)` (`prefabs.ts`, ADR 0097; one placement at a time through `Doc.unlinkNode`, ADR 0111): turn placements of one prefab into plain nodes that keep what they were drawing. `deps` carries `types`, `freshId` and `refKeysOf` — a registry is needed for singleton layering and for the reference parameters (`nodeRef`, `componentRef`) that must follow the re-id, which is why only the editor can do this. `retargetRef(value, to)` re-points one: a node id, or a `componentRef`'s node — its component keeps its id, as a copy's components do (ADR 0177). The inherited subtree is cloned and re-idded as one forest; `nodeRef`s and sequence step targets follow the map, in that forest **and** on the placement's own components (a root sequence targets the root's children, ADR 0139).
 - `netBounds`: half-extent in metres that peer positions are quantized over on the wire (ADR 0093). Absent → `QUANT_BOUND` (1000 m). Step is `2 × netBounds / 65535`. The editor draws it as a box (ADR 0093); a peer outside it stops being relayed (ADR 0092).
 - `cameraSeeThrough`: `true` = the game camera holes what is in its way and keeps its distance (ADR 0055); absent = it is stopped by it (ADR 0020). Only `true` is written (ADR 0148).
 
@@ -169,6 +169,14 @@ it out, and `AssetRuntime.load` ignores one that reaches it anyway.
 `scaleCollider` lives here, not in the loader: the loader, the game's `levelView`, the editor viewport and the
 Project previews all run it, so what is drawn and what is collided with are one computation. Presets:
 `platform` = rounded box at 3 × 0.3 × 3, `wall` = 3 × 2 × 0.3, the rest unit.
+
+**Component fields** (`migrateComponentRefs.ts`, run once by `deploy/editor/migrate-component-refs.sh`, ADR 0177):
+`migrateLevelComponentRefs(level, at, deps, report)` / `migratePrefabComponentRefs(root, at, deps, report)` turn a
+component field saved as a bare node id — Boss's `zone`, an object field until then — into `{ node, component }`:
+the node's first enabled box Collider (what the old read took), else its first of the type; resolved as the runtime
+scopes it (a prefab in itself, a level's own node among its own, a placement's record among its pieces then the
+level's). `deps` = `{ refsOf(type), prefabOf(id) }`; `report` = `{ changed, left }`, the runner writes nothing while
+anything is left.
 
 **Migration** (`migratePrimitives.ts`, run once by `deploy/editor/migrate-primitives.sh`):
 `migrateNode(node) → string | null` moves a drawn box or ball's size into `transform.scale`, sets the collider

@@ -2195,6 +2195,11 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   draggedAssets: () => draggedAssets,
   pingNode: (index) => hierarchy.ping(index),
   revealAsset: (id) => revealAsset(id),
+  selectNode: (index) => select(index),
+  openAsset: (id) => {
+    selectAsset(id)
+    revealAsset(id)
+  },
 })
 
 /**

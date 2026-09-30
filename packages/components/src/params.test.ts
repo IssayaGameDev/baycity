@@ -17,10 +17,11 @@ describe('declared parameters', () => {
     v: { kind: 'vec3', default: { x: 0, y: 1, z: 0 } },
     m: { kind: 'asset', of: 'material', default: '' },
     r: { kind: 'nodeRef' },
+    c: { kind: 'componentRef', of: 'Collider' },
   } satisfies ParamDecls
 
   it('defaults every declared key, and forces the one that has no default of its own', () => {
-    expect(defaultsOf(decls)).toEqual({ n: 7, b: true, s: 'hi', e: 'a', v: { x: 0, y: 1, z: 0 }, m: '', r: null })
+    expect(defaultsOf(decls)).toEqual({ n: 7, b: true, s: 'hi', e: 'a', v: { x: 0, y: 1, z: 0 }, m: '', r: null, c: null })
   })
 
   it('fills what is absent and keeps what is authored', () => {
@@ -58,6 +59,18 @@ describe('declared parameters', () => {
     expect(readParams(decls, { r: 'node-7' }, at).r).toBe('node-7')
     expect(readParams(decls, { r: null }, at).r).toBeNull()
     expect(() => readParams(decls, { r: 3 }, at)).toThrow(/expected a node id or null/)
+  })
+
+  it('takes a component ref as a node and a component, or null (ADR 0177)', () => {
+    expect(readParams(decls, { c: { node: 'zone', component: 'col' } }, at).c).toEqual({ node: 'zone', component: 'col' })
+    expect(readParams(decls, { c: null }, at).c).toBeNull()
+    expect(() => readParams(decls, { c: { node: 'zone' } }, at)).toThrow(/expected \{ node, component \} or null/)
+    expect(() => readParams(decls, { c: 3 }, at)).toThrow(/expected \{ node, component \} or null/)
+  })
+
+  // The old shape, until the box's content is migrated: the node's first component of the type.
+  it('reads a component ref saved as a bare node id as that node’s first of the type', () => {
+    expect(readParams(decls, { c: 'zone' }, at).c).toEqual({ node: 'zone', component: '' })
   })
 
   // min/max drive the Inspector's slider. Enforcing them at load would make a bound a schema change.

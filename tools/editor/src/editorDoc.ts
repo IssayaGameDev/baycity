@@ -24,6 +24,7 @@ import {
   diffStages,
   readStages,
   retargetSequenceOverride,
+  retargetRef,
   retargetSequenceParams,
   type Stage,
   type SequenceAxes,
@@ -1001,10 +1002,10 @@ const docOver = (
     return undefined
   }
 
-  /** Every `nodeRef` parameter a component declares. */
+  /** Every reference parameter a component declares: `nodeRef` and `componentRef` (ADR 0177). */
   const refKeys = (type: string): string[] => {
     const def = registry.get(type)
-    return def === undefined ? [] : Object.entries(def.params).filter(([, spec]) => spec.kind === 'nodeRef').map(([key]) => key)
+    return def === undefined ? [] : Object.entries(def.params).filter(([, spec]) => spec.kind === 'nodeRef' || spec.kind === 'componentRef').map(([key]) => key)
   }
 
   /**
@@ -1027,10 +1028,7 @@ const docOver = (
 
     const retarget = (c: ComponentData): void => {
       for (const key of refKeys(c.type)) {
-        const was = c.params[key]
-        if (typeof was !== 'string') continue
-        const to = map.get(was)
-        if (to !== undefined) c.params[key] = to
+        if (key in c.params) c.params[key] = retargetRef(c.params[key], (id) => map.get(id))
       }
       // A step's target names a child by id, the same as a `nodeRef` does (ADR 0137).
       retargetSequenceParams(c, (id) => map.get(id))
@@ -1049,10 +1047,7 @@ const docOver = (
           const type = inherited === undefined ? undefined : typeOfComponent(inherited, cid)
           if (type === undefined) continue
           for (const key of refKeys(type)) {
-            const was = patch[key]
-            if (typeof was !== 'string') continue
-            const to = map.get(was)
-            if (to !== undefined) patch[key] = to
+            if (key in patch) patch[key] = retargetRef(patch[key], (id) => map.get(id))
           }
         }
       }
