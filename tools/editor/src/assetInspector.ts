@@ -163,7 +163,7 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
     }
     const field = refField({
       shown: shownFor(current),
-      none: 'None (texture)',
+      none: 'None (Texture)',
       choices: () =>
         (db === null ? [] : assetsOfKind(db, 'texture'))
           .filter((t) => mayUse(user, t.path))
@@ -172,7 +172,10 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
       ping: () => {
         if (now !== null) host.revealAsset(now)
       },
-      refuse: (drag) => (drag.kind === 'asset' ? assetRefusal(db, 'texture', drag.id, user) : 'this takes a texture, not an object'),
+      open: () => {
+        if (now !== null) host.onSelectAsset(now)
+      },
+      refuse: (drag) => (drag.kind === 'asset' ? assetRefusal(db, 'texture', drag.id, user) : `this takes a texture, not ${drag.kind === 'node' ? 'an object' : 'a component'}`),
       take: (drag) => {
         if (drag.kind === 'asset') choose(drag.id)
       },

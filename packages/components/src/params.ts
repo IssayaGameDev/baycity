@@ -85,9 +85,28 @@ export interface ColliderSpec extends SpecBase {
   readonly kind: 'collider'
   readonly default: ColliderDesc
 }
-/** A pointer to another node, by id. Always defaults to `null`. Resolution lands in stage C4. */
+/** A pointer to another node, by id. Always defaults to `null`. Resolved by `self.find` (stage C4). */
 export interface NodeRefSpec extends SpecBase {
   readonly kind: 'nodeRef'
+}
+/**
+ * A pointer to one component of another node (ADR 0177): Unity's field typed by a component, `public BoxCollider
+ * zone`. `of` is the component type it takes. Always defaults to `null`; resolved by `self.findComponent`.
+ */
+export interface ComponentRefSpec extends SpecBase {
+  readonly kind: 'componentRef'
+  readonly of: string
+}
+
+/**
+ * Where a `componentRef` points: a node by id — found in the reference's scope, as a `nodeRef` is — and one of its
+ * components by id, so a node with two Colliders is not ambiguous. A component id of `''` is the node's first of
+ * the field's type: what a reference still in the old shape, a bare node id, reads as until the box's content is
+ * migrated (`migrateComponentRefs`).
+ */
+export interface ComponentRef {
+  readonly node: string
+  readonly component: string
 }
 
 /**
@@ -100,7 +119,7 @@ export interface StagesSpec extends SpecBase {
   readonly default: readonly Stage[]
 }
 
-export type ParamSpec = NumberSpec | BoolSpec | StringSpec | ColorSpec | EnumSpec | Vec3Spec | AssetSpec | ColliderSpec | NodeRefSpec | StagesSpec
+export type ParamSpec = NumberSpec | BoolSpec | StringSpec | ColorSpec | EnumSpec | Vec3Spec | AssetSpec | ColliderSpec | NodeRefSpec | ComponentRefSpec | StagesSpec
 
 /**
  * Runtime value per spec kind. A lookup table keyed on `kind` rather than a chain of `S extends …`,
@@ -117,6 +136,7 @@ interface ValueByKind {
   asset: string
   collider: ColliderDesc
   nodeRef: string | null
+  componentRef: ComponentRef | null
   stages: readonly Stage[]
 }
 
@@ -169,9 +189,9 @@ const checkCollider = (v: unknown, at: string): void => {
   }
 }
 
-/** The value a spec falls back to. `nodeRef` carries no `default` because its is forced. */
+/** The value a spec falls back to. The references carry no `default` because theirs is forced. */
 const defaultFor = (spec: ParamSpec): unknown => {
-  if (spec.kind === 'nodeRef') return null
+  if (spec.kind === 'nodeRef' || spec.kind === 'componentRef') return null
   return spec.default
 }
 
@@ -211,6 +231,12 @@ const checkOne = (spec: ParamSpec, value: unknown, at: string): void => {
       return
     case 'nodeRef':
       if (value !== null && typeof value !== 'string') throw new ComponentError(`${at}: expected a node id or null`)
+      return
+    case 'componentRef':
+      // A bare node id is the old shape (see `ComponentRef`), still read until the content is migrated.
+      if (value === null || typeof value === 'string') return
+      if (!isObj(value) || typeof value.node !== 'string' || typeof value.component !== 'string')
+        throw new ComponentError(`${at}: expected { node, component } or null`)
       return
     case 'stages': {
       const bad = stagesProblem(value, at)
@@ -261,7 +287,7 @@ export const readParams = <D extends ParamDecls>(decls: D, raw: RawParams | unde
       continue
     }
     checkOne(spec, value, `${at}.${key}`)
-    out[key] = value
+    out[key] = spec.kind === 'componentRef' && typeof value === 'string' ? { node: value, component: '' } : value
   }
   return out as Params<D>
 }

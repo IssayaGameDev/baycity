@@ -720,6 +720,23 @@ describe('node references (stage C4)', () => {
     expect(copy).toBeGreaterThan(0)
   })
 
+  // A copy's components keep their ids, so only the node half of a component reference moves (ADR 0177).
+  it('re-points a component reference when the subtree carrying it is duplicated', () => {
+    const Aimed = defineComponent({ type: 'Aimed', params: { at: { kind: 'componentRef', of: COLLIDER } } })
+    const reg = createRegistry([...ENGINE_COMPONENTS, Aimed])
+    const anchor: Node = { id: 'k', name: 'anchor', transform: { position: ZERO }, components: [{ id: 'kc', type: COLLIDER, params: { shape: { kind: 'box', halfExtents: vec3(1, 1, 1) } } }] }
+    const level: Level = {
+      id: 'l',
+      config: {},
+      nodes: [{ id: 'w', name: 'watcher', transform: { position: ZERO }, components: [{ id: 'a', type: 'Aimed', params: { at: { node: 'k', component: 'kc' } } }], children: [anchor] }],
+    }
+    const doc = levelDoc(level, reg)
+    doc.duplicate(0)
+    const copy = level.nodes[1]!
+    expect(copy.components[0]!.params.at, 'the copy names the copy').toEqual({ node: copy.children![0]!.id, component: 'kc' })
+    expect(level.nodes[0]!.components[0]!.params.at, 'the original is untouched').toEqual({ node: 'k', component: 'kc' })
+  })
+
   it('re-points a reference when the subtree carrying it is pasted', () => {
     const { level, doc } = linked()
     doc.reparent(named(doc, 'anchor'), named(doc, 'watcher'), 0)

@@ -97,13 +97,26 @@ export interface UnlinkDeps {
   /** A node id nothing in this level uses. Inherited children enter the level's id space and must not collide. */
   readonly freshId: () => string
   /**
-   * Every `nodeRef` parameter a component type declares, so a reference between two inherited nodes follows
-   * them when they are re-idded.
+   * Every `nodeRef` and `componentRef` parameter a component type declares, so a reference between two inherited
+   * nodes follows them when they are re-idded (`retargetRef`).
    *
    * Injected because only a component registry knows, and this package has none — which is also why the
    * editor-server cannot do this and the editor must (ADR 0097).
    */
   readonly refKeysOf: (type: string) => readonly string[]
+}
+
+/**
+ * A reference parameter's value with the node it names re-pointed: a `nodeRef`'s node id, or a `componentRef`'s
+ * `{ node, component }` — the component id stays, since a copy's components keep theirs (ADR 0177). Anything else,
+ * or a node `to` does not map, comes back as it was.
+ */
+export const retargetRef = (value: unknown, to: (id: string) => string | undefined): unknown => {
+  if (typeof value === 'string') return to(value) ?? value
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
+  const node = (value as { node?: unknown }).node
+  const moved = typeof node === 'string' ? to(node) : undefined
+  return moved === undefined ? value : { ...value, node: moved }
 }
 
 /**
@@ -163,13 +176,10 @@ const reidForest = (roots: readonly Node[], deps: UnlinkDeps, keep: ReadonlySet<
     for (const kid of x.children ?? []) rename(kid)
   }
   for (const root of roots) rename(root)
-  /** One component's references, repointed in place: its `nodeRef` parameters, and a sequence's step targets. */
+  /** One component's references, repointed in place: its reference parameters, and a sequence's step targets. */
   const repoint = (c: ComponentData): void => {
     for (const key of deps.refKeysOf(c.type)) {
-      const was = c.params[key]
-      if (typeof was !== 'string') continue
-      const to = map.get(was)
-      if (to !== undefined) c.params[key] = to
+      if (key in c.params) c.params[key] = retargetRef(c.params[key], (id) => map.get(id))
     }
     retargetSequenceParams(c, (id) => map.get(id))
   }

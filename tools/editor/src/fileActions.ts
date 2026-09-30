@@ -226,10 +226,10 @@ export const createFileActions = (host: FileActionsHost) => {
     return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
   }
 
-  /** Every `nodeRef` parameter a component type declares — what a re-id has to follow (ADR 0097). */
+  /** Every reference parameter a component type declares — what a re-id has to follow (ADR 0097, ADR 0177). */
   const nodeRefKeysOf = (type: string): string[] => {
     const def = host.registry().get(type)
-    return def === undefined ? [] : Object.entries(def.params).filter(([, spec]) => spec.kind === 'nodeRef').map(([key]) => key)
+    return def === undefined ? [] : Object.entries(def.params).filter(([, spec]) => spec.kind === 'nodeRef' || spec.kind === 'componentRef').map(([key]) => key)
   }
 
   /**

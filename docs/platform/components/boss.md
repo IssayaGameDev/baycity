@@ -13,7 +13,7 @@ Authored values live in the Inspector. None are repeated here.
 
 | param | kind | is |
 |---|---|---|
-| `zone` | `nodeRef` | the node whose box collider is the area it patrols |
+| `zone` | `componentRef` of `Collider` (ADR 0177) | the box Collider it patrols — `self.findComponent(zone, Collider)`, its node's position and rotation and the collider's world half-extents |
 | `speed` | `number` (m/s) | how fast it drives, chasing and returning alike |
 | `turn` | `number` (°/s) | how fast its heading may swing — the whole dodge window |
 
@@ -25,7 +25,7 @@ react to being touched, it only drives.
 ```
 <root>            empty, no components — the thing you place
 ├── Zone          Collider: box, trigger on
-└── Boss          Boss (zone → Zone), Hazard, Collider (trigger on), Renderer (Mesh Renderer)
+└── Boss          Boss (zone → Zone's Collider), Hazard, Collider (trigger on), Renderer (Mesh Renderer)
 ```
 
 Siblings under an empty root, **not** parent and child. A component moves the node it sits on and everything

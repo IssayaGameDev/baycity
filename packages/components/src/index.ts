@@ -14,6 +14,8 @@ export type {
   AssetSpec,
   BoolSpec,
   ColliderSpec,
+  ComponentRef,
+  ComponentRefSpec,
   EnumSpec,
   NodeRefSpec,
   NumberSpec,
@@ -32,7 +34,7 @@ export { defineComponent } from './define'
 export type { ComponentDef, ComponentSpec } from './define'
 export { characterAccess, createComponentRuntime, hasHooks } from './runtime'
 export type { PlayerView } from './runtime'
-export type { CharacterAccess, ComponentRuntime, Ctx, Effects, ErasedHooks, Hit, Self } from './runtime'
+export type { CharacterAccess, ComponentRuntime, Ctx, Effects, ErasedHooks, FoundComponent, Hit, Self } from './runtime'
 export { createRegistry } from './registry'
 export type { AnyComponentDef, Registry } from './registry'
 export { ENGINE_COMPONENTS } from './engine/index'

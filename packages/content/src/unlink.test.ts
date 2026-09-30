@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { unlinkPrefab, type UnlinkDeps } from './prefabs'
+import { retargetRef, unlinkPrefab, type UnlinkDeps } from './prefabs'
 import type { ComponentData, Level, Node } from './types'
 
 /**
@@ -19,8 +19,8 @@ const deps = (): UnlinkDeps => {
   return {
     types: { get: (type) => (type === 'Renderer' ? { singleton: true } : undefined) },
     freshId: () => `n${++minted}`,
-    // Only `Boss` declares a nodeRef in these fixtures.
-    refKeysOf: (type) => (type === 'Boss' ? ['target'] : []),
+    // Only `Boss` declares references in these fixtures: a nodeRef, and a componentRef (ADR 0177).
+    refKeysOf: (type) => (type === 'Boss' ? ['target', 'zone'] : []),
   }
 }
 
@@ -32,7 +32,7 @@ const definition = (): Node => ({
   components: [comp('c0', 'Collider')],
   children: [
     { id: 'lamp', transform: at(1), components: [comp('c1', 'Renderer')] },
-    { id: 'mover', transform: at(2), components: [comp('c2', 'Boss', { target: 'lamp' })] },
+    { id: 'mover', transform: at(2), components: [comp('c2', 'Boss', { target: 'lamp', zone: { node: 'lamp', component: 'c1' } })] },
   ],
 })
 
@@ -75,6 +75,14 @@ describe('unlinkPrefab', () => {
     }
     // And the two placements do not point at each other.
     expect(level.nodes[0]!.children![1]!.components[0]!.params.target).not.toBe(level.nodes[1]!.children![0]!.id)
+  })
+
+  // A component keeps its id in a copy, so only the node half moves (ADR 0177).
+  it('re-points a component reference’s node, keeping its component', () => {
+    const level = levelWith([{ id: 'a', transform: at(0), components: [], prefab: 'P' }])
+    unlinkPrefab(level, 'P', deps())
+    const n = level.nodes[0]!
+    expect(n.children![1]!.components[0]!.params.zone).toEqual({ node: n.children![0]!.id, component: 'c1' })
   })
 
   it('does not let two placements share a child object', () => {
@@ -171,6 +179,18 @@ describe('unlinkPrefab', () => {
  * own components are not in the re-minted forest, and a sequence on a root always targets its children — so
  * they have to follow the same map, or the door's halves stop opening the moment its prefab is deleted.
  */
+describe('retargetRef', () => {
+  const to = (id: string): string | undefined => (id === 'old' ? 'new' : undefined)
+
+  it('moves a node id, and a component reference’s node, and nothing it does not map', () => {
+    expect(retargetRef('old', to)).toBe('new')
+    expect(retargetRef('other', to)).toBe('other')
+    expect(retargetRef({ node: 'old', component: 'c' }, to)).toEqual({ node: 'new', component: 'c' })
+    expect(retargetRef({ node: 'other', component: 'c' }, to)).toEqual({ node: 'other', component: 'c' })
+    expect(retargetRef(null, to)).toBeNull()
+  })
+})
+
 describe('a sequence in an unlinked placement', () => {
   const step = (id: string, target: string): Record<string, unknown> => ({ id, kind: 'move', to: { x: 1, y: 0, z: 0 }, timing: { by: 'seconds', seconds: 1 }, ease: 'linear', target })
   const doorDefinition = (): Node => ({

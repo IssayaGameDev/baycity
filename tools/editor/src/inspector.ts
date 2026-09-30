@@ -28,7 +28,7 @@ import {
 } from './controls'
 import { cardJustDragged, pressCardToDrag } from './cardDrag'
 import { icon, type IconName } from './icons'
-import { refField, type RefShown } from './refField'
+import { refField, refFieldAt, type RefShown } from './refField'
 import { sequenceSummary } from './sequenceEdit'
 import { sequenceEditor } from './sequenceEditor'
 
@@ -133,6 +133,10 @@ export interface InspectorHost {
   pingNode: (index: number) => void
   /** Show an asset's tile in the Project window, the selection left alone (ADR 0176). */
   revealAsset: (id: string) => void
+  /** Select an object: a reference field's double-click (ADR 0177). */
+  selectNode: (index: number) => void
+  /** Select an asset and show it: a reference field's double-click (ADR 0177). */
+  openAsset: (id: string) => void
   /** Revert one override — `'transform'`, `'name'`, or a component id — or all of them. */
   revertOverride: (field?: string) => void
   /**
@@ -226,6 +230,9 @@ const COMPONENT_ICONS: Readonly<Record<string, IconName>> = {
   Boss: 'boss',
 }
 export const componentIcon = (type: string): IconName => COMPONENT_ICONS[type] ?? 'component'
+
+/** Why a reference field cannot take something out of its reach (`nodeChoices`, stage C4). */
+const UNREACHABLE = 'a piece inside another prefab cannot be linked from here'
 
 /**
  * The values a component's fields are built from: declared defaults, the authored params over them, and
@@ -479,7 +486,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     const doc = host.doc()
     const at = host.selected()
     if (doc === null || at === null || host.levelSelected() || host.envSelected()) return null
-    const followed = new Set<string>(['number', 'bool', 'string', 'color', 'vec3', 'asset', 'nodeRef'])
+    const followed = new Set<string>(['number', 'bool', 'string', 'color', 'vec3', 'asset', 'nodeRef', 'componentRef'])
     return doc.reading(() => {
       const indices = host.selectionIndices()
       const cards = doc.components(at).map((view) => {
@@ -890,8 +897,8 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       }
       case 'asset': {
         /**
-         * A reference field (ADR 0176): the asset's name, a picker, ✕, and a tile dropped from the Project window.
-         * The names are the picker's own, so a built-in shape (ADR 0090) reads as it does there.
+         * A reference field (ADR 0176, ADR 0177): the asset's name, a picker, and a tile dropped from the Project
+         * window. The names are the picker's own, so a built-in shape (ADR 0090) reads as it does there.
          */
         const glyph = (id: string): IconName => (id.startsWith('builtin:') ? 'object' : spec.of === 'model' ? 'mesh' : 'material')
         const shownFor = (v: unknown): RefShown => {
@@ -907,7 +914,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         }
         const field = refField({
           shown: mixed ? 'mixed' : shownFor(state[key]),
-          none: `None (${spec.of})`,
+          none: `None (${spec.of === 'model' ? 'Model' : 'Material'})`,
           title: label,
           choices: () =>
             Object.entries(host.assetOptions(spec.of))
@@ -918,7 +925,12 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
             const v = now()
             if (typeof v === 'string' && v !== '' && !v.startsWith('builtin:')) host.revealAsset(v)
           },
-          refuse: (drag) => (drag.kind === 'asset' ? host.assetRefusal(spec.of, drag.id) : `this takes a ${spec.of}, not an object`),
+          open: () => {
+            const v = now()
+            if (typeof v === 'string' && v !== '' && !v.startsWith('builtin:')) host.openAsset(v)
+          },
+          refuse: (drag) =>
+            drag.kind === 'asset' ? host.assetRefusal(spec.of, drag.id) : `this takes a ${spec.of}, not ${drag.kind === 'node' ? 'an object' : 'a component'}`,
           take: (drag) => {
             if (drag.kind === 'asset') set(drag.id)
           },
@@ -1003,10 +1015,15 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       case 'nodeRef': {
         /**
          * A reference field (ADR 0176): the object's name — a press pings its row — a picker of the nodes this one
-         * may name, ✕, and a Hierarchy row dropped on it. The reach is `nodeChoices`' (`refTo` for a drop), which
-         * refuses anything that would author a dangling reference. The schema's none is `null`.
+         * may name, and a Hierarchy row dropped on it, or a card, which names its object as Unity's does. The reach
+         * is `nodeChoices`' (`refTo` for a drop), which refuses anything that would author a dangling reference.
+         * The schema's none is `null`.
          */
         if (mixed) return differs()
+        const target = (): number | null => {
+          const v = now()
+          return typeof v === 'string' ? doc.refTarget(at, v) : null
+        }
         const shownFor = (v: unknown): RefShown => {
           if (typeof v !== 'string') return null
           const j = doc.refTarget(at, v)
@@ -1014,20 +1031,102 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         }
         const field = refField({
           shown: shownFor(state[key]),
-          none: 'None (object)',
+          none: 'None (Object)',
           title: label,
           choices: () => doc.nodeChoices(at).map((c) => ({ value: c.id, label: `${c.label} · ${c.id.slice(0, 6)}`, icon: 'object' })),
           pick: (v) => write({ [key]: v }),
           ping: () => {
-            const v = now()
-            const j = typeof v === 'string' ? doc.refTarget(at, v) : null
+            const j = target()
             if (j !== null) host.pingNode(j)
           },
-          refuse: (drag) =>
-            drag.kind !== 'node' ? 'this takes an object, not an asset' : doc.refTo(at, drag.index) === null ? 'a piece inside another prefab cannot be linked from here' : null,
+          open: () => {
+            const j = target()
+            if (j !== null) host.selectNode(j)
+          },
+          refuse: (drag) => (drag.kind === 'asset' ? 'this takes an object, not an asset' : doc.refTo(at, drag.index) === null ? UNREACHABLE : null),
           take: (drag) => {
-            const id = drag.kind === 'node' ? doc.refTo(at, drag.index) : null
+            const id = drag.kind === 'asset' ? null : doc.refTo(at, drag.index)
             if (id !== null) write({ [key]: id })
+          },
+          draggedAssets: host.draggedAssets,
+        })
+        line(field.root)
+        follow((v) => field.set(shownFor(v)))
+        return
+      }
+      case 'componentRef': {
+        /**
+         * A component field (ADR 0177): Unity's field typed by a component. It shows `Zone (Collider)` — the ordinal
+         * too where the object has several — and takes an Inspector card of its type by the header, or a Hierarchy
+         * row, whose first component of the type it takes, as Unity's does. The reach is an object field's.
+         */
+        if (mixed) return differs()
+        const typeLabel = doc.registry.get(spec.of)?.label ?? spec.of
+        const glyph = componentIcon(spec.of)
+        const ofType = (j: number): ComponentView[] => doc.components(j).filter((c) => c.type === spec.of)
+        /** A component's name in the field: its object's, and the ordinal where the object has more than one. */
+        const named = (j: number, id: string): string => {
+          const all = ofType(j)
+          const n = all.findIndex((c) => c.id === id)
+          return `${doc.label(j)} (${typeLabel}${all.length > 1 ? ` ${n + 1}` : ''})`
+        }
+        /** Where it points: the node's index and the component, the old shape — a bare node id — read as its first. */
+        const resolve = (v: unknown): { j: number; id: string } | null | 'missing' => {
+          const ref: unknown = typeof v === 'string' ? { node: v, component: '' } : v
+          if (typeof ref !== 'object' || ref === null) return null
+          const { node, component } = ref as { node?: unknown; component?: unknown }
+          if (typeof node !== 'string' || typeof component !== 'string') return null
+          const j = doc.refTarget(at, node)
+          const c = j === null ? undefined : component === '' ? ofType(j)[0] : ofType(j).find((x) => x.id === component)
+          return j === null || c === undefined ? 'missing' : { j, id: c.id }
+        }
+        const shownFor = (v: unknown): RefShown => {
+          const r = resolve(v)
+          if (r === null) return null
+          return r === 'missing' ? { label: `missing ${typeLabel}`, icon: 'warn', missing: true } : { label: named(r.j, r.id), icon: glyph }
+        }
+        interface Row {
+          key: string
+          value: { node: string; component: string }
+          label: string
+        }
+        /** The picker's rows, keyed by index and component: everything of the type this field can reach. */
+        const rows = (): Row[] => {
+          const out: Row[] = []
+          for (let j = 0; j < doc.count(); j++) {
+            const node = doc.refTo(at, j)
+            if (node !== null) for (const c of ofType(j)) out.push({ key: `${j}/${c.id}`, value: { node, component: c.id }, label: named(j, c.id) })
+          }
+          return out
+        }
+        const field = refField({
+          shown: shownFor(state[key]),
+          none: `None (${typeLabel})`,
+          title: label,
+          choices: () => rows().map((r) => ({ value: r.key, label: r.label, icon: glyph })),
+          pick: (v) => write({ [key]: v === null ? null : (rows().find((r) => r.key === v)?.value ?? null) }),
+          ping: () => {
+            const r = resolve(now())
+            if (r !== null && r !== 'missing') host.pingNode(r.j)
+          },
+          open: () => {
+            const r = resolve(now())
+            if (r !== null && r !== 'missing') host.selectNode(r.j)
+          },
+          refuse: (drag) => {
+            if (drag.kind === 'asset') return `this takes a ${typeLabel}, not an asset`
+            if (drag.kind === 'component') {
+              const c = doc.components(drag.index).find((x) => x.id === drag.component)
+              if (c !== undefined && c.type !== spec.of) return `this takes a ${typeLabel}, not a ${doc.registry.get(c.type)?.label ?? c.type}`
+            } else if (ofType(drag.index).length === 0) return `${doc.label(drag.index)} has no ${typeLabel}`
+            return doc.refTo(at, drag.index) === null ? UNREACHABLE : null
+          },
+          take: (drag) => {
+            if (drag.kind === 'asset') return
+            const node = doc.refTo(at, drag.index)
+            // A row gives its first of the type, as Unity's does; a card, itself.
+            const component = drag.kind === 'component' ? drag.component : ofType(drag.index)[0]?.id
+            if (node !== null && component !== undefined) write({ [key]: { node, component } })
           },
           draggedAssets: host.draggedAssets,
         })
@@ -1337,14 +1436,25 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     })
     if (overridden) section.root.classList.add('over-sec')
     /**
-     * Dragged by its header to reorder (`cardDrag.ts`) — where Move up / Move down are offered: an own
-     * component, one object selected. A press on the header's own controls is theirs.
+     * Dragged by its header (`cardDrag.ts`): to reorder — where Move up / Move down are offered, an own component —
+     * and onto a reference field, which takes this component as Unity's does a dragged header (ADR 0177), a
+     * prefab's included. One object selected. A press on the header's own controls is theirs.
      */
-    if (!inherited && peers === null) {
-      section.root.classList.add('movable')
+    if (peers === null) {
+      const movable = !inherited
+      if (movable) section.root.classList.add('movable')
       section.header.addEventListener('pointerdown', (e) => {
         if ((e.target as Element).closest('button, input, select') !== null) return
-        pressCardToDrag(e, section.root, (from, to) => moveAndRebuild(doc, at, view.id, to - from))
+        pressCardToDrag(e, section.root, {
+          ...(movable ? { drop: (from: number, to: number) => moveAndRebuild(doc, at, view.id, to - from) } : {}),
+          label: { icon: componentIcon(view.type), text: `${doc.label(at)} (${def?.label ?? view.type})` },
+          outside: (x, y) => {
+            const field = refFieldAt(x, y)
+            if (field === null) return null
+            const drag = { kind: 'component', index: at, component: view.id } as const
+            return { key: field, offer: () => field.offer(drag), leave: () => field.leave(), take: () => field.take(drag) }
+          },
+        })
       })
     }
 

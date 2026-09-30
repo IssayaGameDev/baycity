@@ -20,6 +20,7 @@ Package `packages/components`. Headless; deps `@mp/content`, `@mp/core` (`@mp/ph
 | `collider` | `default: ColliderDesc` | `ColliderDesc` | per kind; convex ≥ 4 points |
 | `stages` | `default: readonly Stage[]` | a sequence's stages of steps (ADR 0137) | whole, by `stagesProblem` (`sequences.md`) |
 | `nodeRef` | — | `string \| null`, default `null` | target unchecked |
+| `componentRef` (ADR 0177) | `of: string` — the component type it takes | `ComponentRef \| null` = `{ node, component }` (a node id, found in the reference's scope as a `nodeRef` is, and one of its components by id), default `null` | shape; target unchecked. A bare node id — the old shape, until the box's content is migrated — reads as `{ node, component: '' }`: the node's first of the type |
 
 `readParams(decls, raw, at): Params<D>` — absent key → default; unknown key dropped; throws `ComponentError`. `defaultsOf`, `Params<D>`, `ParamDecls`, `RawParams`.
 
@@ -60,7 +61,10 @@ interface ComponentRuntime { attach(tick, timeMs, dt); fixedUpdate(tick, timeMs,
 interface Ctx { tick; dt; timeMs; random(): number /* hash(tick, instance, call) */; character: CharacterAccess; effects: Effects
                 players(): readonly PlayerView[] }   // ADR 0095
 interface PlayerView { id: number /* 0 = self */; position: Vec3; isSelf: boolean; alive: boolean }
-interface Self<D, S> { params: Params<D>; state: S /* never serialized */; node: WorldNode; get(def); find(ref); offset: NodeDrive | undefined }
+interface Self<D, S> { params: Params<D>; state: S /* never serialized */; node: WorldNode; get(def); find(ref); findComponent(ref, def); offset: NodeDrive | undefined }
+// findComponent(ref: ComponentRef | null, def: ComponentDef<O>) → { node: WorldNode; params: Params<O>; collider: ColliderDesc | undefined } | undefined
+//   (ADR 0177): the node as `find` finds it, then its enabled components of def's type by id ('' = the first); for a
+//   Collider, `collider` is its world-scaled shape — the same index into `node.colliders`. Undefined when off, gone, or another type.
 interface Hit { colliderHandle: number; node: WorldNode }          // no contact normal
 interface CharacterAccess { launch(speed) /* max per tick */; position(); velocity(); carry(); grounded(); push(v) /* sums per tick */ }
 interface Effects { kill(): void; progress(node: WorldNode): void }

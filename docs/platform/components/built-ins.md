@@ -15,7 +15,7 @@ Declaring and running one: [api.md](api.md).
 | | `Hazard` | — | `onContact → effects.kill()`; kill plane = Hazard on a trigger (ADR 0053) |
 | | `Bumper` | `power: number` (26, 1–60) | `onContact → character.launch(power)` (ADR 0032) |
 | | `Sequence` (ADR 0137) | `name`, `clock: enum(shared\|local)`, `axes: enum(object\|level)`, `loop: enum(restart\|yoyo)`, `times: number` (0 = forever), `offset: number` cycles, `stages: stages` | no hook; **repeatable**; loader-evaluated (ADR 0141). Shared: adopted by a game the first time one is added to its level (ADR 0077). Edited as boxes in the Inspector (ADR 0143) |
-| | `Boss` (ADR 0095) | `zone: nodeRef`, `speed: number` (8, 0.5–60 m/s), `turn: number` (180, 15–720 °/s) | `moves`; chases the living player furthest through its zone. Assembling one has rules — [boss.md](boss.md) |
+| | `Boss` (ADR 0095) | `zone: componentRef(Collider)` (ADR 0177), `speed: number` (8, 0.5–60 m/s), `turn: number` (180, 15–720 °/s) | `moves`; chases the living player furthest through its zone. Assembling one has rules — [boss.md](boss.md) |
 | `PLAYER_COMPONENTS` (`player/`) | `Death` | `ragdoll: bool`, `assembleStagger`, `assembleFall`, `assembleHeight` | `attachesTo: 'player'`; data read by the client (ADR 0059) |
 
 All shared/player built-ins are `singleton` except `Sequence`.
