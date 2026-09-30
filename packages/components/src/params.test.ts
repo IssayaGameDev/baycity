@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { ComponentError, defaultsOf, readParams, visibleParams, type ParamDecls } from './params'
-import { Bumper, Sequence } from './gameplay'
-import { Collider, Renderer } from './engine'
+import { Bumper } from './shared/bumper'
+import { Sequence } from './shared/sequence'
+import { Collider } from './engine/collider'
+import { Renderer } from './engine/renderer'
 
 const at = 'node[0].components[0]'
 const vec = (n: number): { x: number; y: number; z: number } => ({ x: n, y: n, z: n })

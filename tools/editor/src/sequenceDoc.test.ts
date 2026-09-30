@@ -1,5 +1,5 @@
 import { COLLIDER, SEQUENCE, validateLevel, type ComponentData, type Level, type Node, type Stage, type Step } from '@mp/content'
-import { ENGINE_COMPONENTS, GAMEPLAY_COMPONENTS, createRegistry } from '@mp/components'
+import { ENGINE_COMPONENTS, SHARED_COMPONENTS, createRegistry } from '@mp/components'
 import { vec3, type Vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
@@ -13,7 +13,7 @@ import { levelDoc, type Doc } from './editorDoc'
 
 const ZERO: Vec3 = { x: 0, y: 0, z: 0 }
 /** A game's registry: the engine's components and the shared ones, `Sequence` among them. */
-const REG = createRegistry([...ENGINE_COMPONENTS, ...GAMEPLAY_COMPONENTS])
+const REG = createRegistry([...ENGINE_COMPONENTS, ...SHARED_COMPONENTS])
 const PAD_ID = 'aaaaaaaaaaaaaaaa'
 const move = (id: string, x: number, target?: string): Step => ({
   id,

@@ -1,26 +1,5 @@
 import { rotateVec3, type Quat, type Vec3 } from '@mp/core'
-import { SEQUENCE } from '@mp/content'
-import { defineComponent } from './define'
-
-/**
- * Gameplay rules and motion — what a **mode** reads. The loader never looks at these.
- *
- * Three of them **own their own reaction** since stage C2: `onContact` fires when a collider on the same node
- * is touched, and the mode supplies only what dying and making progress mean for it (`Effects`). The branches
- * that used to sit in `modes/parkour/src/main.ts` are gone.
- *
- * `Sequence` has no hook either, and that is not an omission: the loader's frame tree evaluates it as a pure
- * function of the synced clock, so a late joiner needs no catch-up and a static subtree costs nothing. An
- * accumulating hook would trade both away for nothing.
- *
- * A rule fires on **contact with any `Collider` on the same node**, no wiring between the two. That is
- * Unity's model: the contact is delivered to the node and every component on it hears about it. The
- * rejected alternative — a rule holding a pointer to its collider — has a dangling state this cannot have.
- *
- * The rules are `singleton` because a second copy on one node is redundant rather than expressive (two
- * hazards kill once; two bumpers resolve to the stronger, which is the same as deleting the weaker).
- * Colliders are the repeatable ones. Reversible if a rule ever grows a per-copy parameter that stacks.
- */
+import { defineComponent } from '../define'
 
 const FORWARD: Vec3 = { x: 0, y: 0, z: 1 }
 
@@ -46,88 +25,6 @@ const turnToward = (from: number, to: number, limit: number): number => {
   else if (delta < -limit) delta = -limit
   return from + delta
 }
-
-/** Touching it saves this as the respawn point. Ordered by tree walk, which is what indexes them. */
-export const Checkpoint = defineComponent({
-  type: 'Checkpoint',
-  params: {},
-  singleton: true,
-  // The node, not an index: what counts as progress is the mode's business, and it is the mode that holds the
-  // ordered list a saved index means anything against.
-  onContact: (_self, ctx, hit) => ctx.effects.progress(hit.node),
-})
-
-/** Touching it kills. Distinct from falling past the level's `fallY`, which is config, not a component. */
-export const Hazard = defineComponent({
-  type: 'Hazard',
-  params: {},
-  singleton: true,
-  onContact: (_self, ctx) => ctx.effects.kill(),
-})
-
-/**
- * Launches whatever lands on it.
- *
- * `power` is an upward speed in m/s, replacing the character's vertical velocity. Apex is
- * `power² / (2·gravity)`; at the tuned gravity of 55 a jump leaves the ground at `√(2·55·3) ≈ 18.2` m/s,
- * so **anything below 18 throws you lower than your own jump**. 26 gives about 6.1 m, roughly twice a
- * jump (ADR 0032).
- *
- * The default lives here rather than in the editor, which is where `DEFAULT_BUMPER_POWER` sat: a schema
- * value defaulted by the tool means hand-written JSON has no default at all.
- */
-export const Bumper = defineComponent({
-  type: 'Bumper',
-  params: {
-    power: { kind: 'number', default: 26, min: 1, max: 60, step: 1, label: 'launch (m/s)' },
-  },
-  singleton: true,
-  /**
-   * `self.params.power` is a `number` here with no cast and no lookup — the payoff of declaring parameters.
-   *
-   * The request goes through the character's `launch` field rather than onto `vy`, because leaving a surface
-   * is five decisions in `stepCharacter` and not one (ADR 0032). `CharacterAccess.launch` keeps the strongest
-   * request in a tick, so a stack of bumpers throws you as hard as the hardest one.
-   */
-  onContact: (self, ctx) => ctx.character.launch(self.params.power),
-})
-
-/**
- * What dying looks like — the reaction, not the rule (ADR 0059).
- *
- * The rule is already a component: a `Hazard` fires `effects.kill` and the game's session decides whether
- * that counts. What was left hardcoded in the shared game client was everything *after* that: the rig falls
- * apart into loose bodies, you wait for a click, and the body drops back in two parts at a time on a fixed
- * timing. Every game got the same one whether it suited them or not.
- *
- * **Data, with no hooks**, and read by the client — the same arrangement as `Collider` and `Renderer`, which
- * are components the *loader* reads. It has to be: a ragdoll is ten dynamic Rapier bodies and ten Three
- * meshes built from the rig's live pose, so a headless component cannot produce one. It does not need to —
- * the client already knows the death happened, and what it was missing was the game's opinion about it.
- *
- * **On the player**, so it is declared by the game rather than dragged onto a platform.
- *
- * Its defaults are exactly what the client hardcoded, so a game that says nothing dies the way it always did.
- */
-export const Death = defineComponent({
-  type: 'Death',
-  label: 'Death reaction',
-  attachesTo: 'player',
-  singleton: true,
-  params: {
-    /**
-     * Break the rig into loose bodies on death. Off leaves the body where it fell and skips straight to the
-     * wait — which is what a game whose character is not a jointed figure wants.
-     */
-    ragdoll: { kind: 'bool', default: true },
-    /** Seconds between each pair of parts arriving as the body reassembles. */
-    assembleStagger: { kind: 'number', default: 0.05, min: 0, max: 0.4 },
-    /** Seconds a part takes to fall into place. */
-    assembleFall: { kind: 'number', default: 0.18, min: 0.02, max: 1 },
-    /** Metres above its final position a part starts from. */
-    assembleHeight: { kind: 'number', default: 2.5, min: 0.2, max: 8 },
-  },
-})
 
 /**
  * A chaser that wakes when someone enters its zone, hunts whoever is furthest through it, and parks itself
@@ -249,42 +146,3 @@ export const Boss = defineComponent({
     drive.rotation.y = self.state.heading
   },
 })
-
-/**
- * An object's motion as stages of steps, a pure function of time (ADR 0137). Loader-evaluated, with no hook:
- * the editor only runs hooks while playing, and a sequence has to preview while editing.
- *
- * **Repeatable**: each loops on its own, and several on one node combine (moves add, off wins). Its settings
- * are ordinary parameters, so a placement overrides them like any other; its `stages` are patched step by
- * step (ADR 0139).
- *
- * Shared: a game adopts it the first time one is added to its level (ADR 0077).
- */
-export const Sequence = defineComponent({
-  type: SEQUENCE,
-  label: 'Sequence',
-  params: {
-    name: { kind: 'string', default: '', label: 'name' },
-    /** The room's clock, the same on every screen, or this browser's own. */
-    clock: { kind: 'enum', options: ['shared', 'local'], default: 'shared', label: 'clock' },
-    /** The object's axes as placed, or the level's: for moves and turns both. */
-    axes: { kind: 'enum', options: ['object', 'level'], default: 'object', label: 'axes' },
-    loop: { kind: 'enum', options: ['restart', 'yoyo'], default: 'restart', label: 'loop' },
-    /** Passes before it holds; 0 is forever. A yo-yo's out and back is two. */
-    times: { kind: 'number', default: 0, min: 0, step: 1, label: 'times' },
-    /** Where in its cycle it starts, as a fraction, for staggering a row. */
-    offset: { kind: 'number', default: 0, min: 0, max: 1, step: 0.05, label: 'offset (cycles)' },
-    stages: { kind: 'stages', default: [], label: 'stages' },
-  },
-})
-
-export const GAMEPLAY_COMPONENTS = [Checkpoint, Hazard, Bumper, Sequence, Boss]
-
-/**
- * Components a game puts on its **player** rather than in a level (ADR 0059).
- *
- * Separate from `GAMEPLAY_COMPONENTS` because the two are offered in different places: those go in the
- * editor's Add Component menu, these go in a `ModeDescriptor.player` list. A game still has to list them in
- * its registry, which is what validates their parameters.
- */
-export const PLAYER_COMPONENTS = [Death]

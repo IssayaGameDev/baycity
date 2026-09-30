@@ -98,7 +98,7 @@ interface DebugPane { readonly pane: Pane; frame: () => void; dispose: () => voi
 
 ## Death / ragdoll / assembly
 
-`Death` component (`packages/components/src/gameplay.ts`, `attachesTo: 'player'`, singleton) is read once from
+`Death` component (`packages/components/src/player/death.ts`, `attachesTo: 'player'`, singleton) is read once from
 `options.player` (defaults via `readParams(Death.params, {}, Death.type)` when absent): `ragdoll: bool = true`,
 `assembleStagger = 0.05`, `assembleFall = 0.18`, `assembleHeight = 2.5`. Timing goes into a live `AssemblyTiming`
 (`{ stagger, fall, height }`) bound by the `death` pane folder. On `die()` (hazard or fall plane via `rules.takeDeath`;

@@ -1,10 +1,10 @@
-import { defineComponent } from '@mp/components'
 import type { Vec3 } from '@mp/core'
 import type { LoadedLevel, VisualItem } from '@mp/content'
 import type { SurfaceGrid, SurfaceGridOf } from '@mp/mode'
 import { THREE } from '@mp/render-three'
 import type { TpsClient } from '@mp/tps'
 
+import { Keyboard } from './components/keyboard'
 import { DEFAULT_KEYCAP_SHAPE, keycapGeometry, type KeycapShape } from './keycapGeometry'
 
 /**
@@ -19,35 +19,9 @@ import { DEFAULT_KEYCAP_SHAPE, keycapGeometry, type KeycapShape } from './keycap
  * - **No per-cap colliders.** The collider is the platform box that was already authored. Which cap a footfall
  *   hit is arithmetic on the foot's position, not a physics contact — cheap, exact, and it works for other
  *   players without anything on the wire.
- * - **No per-cap nodes.** Hundreds of nodes per platform would be unauthorable and unloadable. The component is
- *   *data* on one node, and the caps are generated.
+ * - **No per-cap nodes.** Hundreds of nodes per platform would be unauthorable and unloadable. The component
+ *   (`components/keyboard.ts`) is *data* on one node, and the caps are generated here.
  */
-
-/** The component a level author places. Data only: nothing here draws or collides. */
-export const Keyboard = defineComponent({
-  type: 'Keyboard',
-  label: 'Keyboard surface',
-  /**
-   * **The key geometry is not here.** Pitch, fill and height are game settings (`KEY_SETTINGS`, ADR 0115):
-   * a level is a succession of platforms — thousands of them — and a pitch per platform means a pitch to
-   * change per platform, and any two that disagree cannot align however the grid is anchored.
-   *
-   * What is left is per-surface because it genuinely differs per surface: which letters this board draws
-   * from, and the seed that scatters them.
-   */
-  params: {
-    /**
-     * Which letters get used, and in what order — hashed per cell, so the same level always reads the same.
-     *
-     * Not a real QWERTY layout: Kodjo's call was individual caps with letters scattered over them, so the
-     * layout is deliberately meaningless.
-     */
-    glyphs: { kind: 'string', default: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', label: 'glyphs' },
-    /** Change it and every cap re-letters. Same seed, same board, on every machine. */
-    seed: { kind: 'number', default: 1, min: 0, max: 9999, step: 1, label: 'letter seed' },
-  },
-  singleton: true,
-})
 
 export interface KeycapLook {
   /** Cap top and sides. */

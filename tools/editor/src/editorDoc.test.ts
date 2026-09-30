@@ -11,7 +11,7 @@ import {
   type Node,
   type Level,
 } from '@mp/content'
-import { Bumper, Checkpoint, DEFAULT_REGISTRY, ENGINE_COMPONENTS, GAMEPLAY_COMPONENTS, Hazard, createRegistry, defineComponent } from '@mp/components'
+import { Bumper, Checkpoint, DEFAULT_REGISTRY, ENGINE_COMPONENTS, SHARED_COMPONENTS, Hazard, createRegistry, defineComponent } from '@mp/components'
 import { eulerToQuat, mulQuat, quat, rotateVec3, vec3, type Vec3 } from '@mp/core'
 
 import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type Doc } from './editorDoc'
@@ -646,7 +646,7 @@ describe('what it writes is what the game loads', () => {
 
 describe('node references (stage C4)', () => {
   const Linked = defineComponent({ type: 'Linked', params: { target: { kind: 'nodeRef' } } })
-  const REG = createRegistry([...ENGINE_COMPONENTS, ...GAMEPLAY_COMPONENTS, Linked])
+  const REG = createRegistry([...ENGINE_COMPONENTS, ...SHARED_COMPONENTS, Linked])
 
   const linked = (): { level: Level; doc: Doc } => {
     const level = blank()

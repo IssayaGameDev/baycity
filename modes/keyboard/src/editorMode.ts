@@ -6,9 +6,9 @@ import { MARKER_COLORS } from '@mp/render-three'
 import { KEYBOARD_REGISTRY, keyboardSession, spawnOf } from './rules'
 import { KEY_SETTINGS, keyboardGridOf } from './keycaps'
 import { CURVE_SETTINGS } from './progression'
-import { StepPad } from './stepPad'
-import { Treadmill } from './treadmill'
-import { WinsPad } from './wins'
+import { StepPad } from './components/stepPad'
+import { Treadmill } from './components/treadmill'
+import { WinsPad } from './components/wins'
 
 /**
  * Keyboard Escape, as the tools see it (ADR 0052, ADR 0065).

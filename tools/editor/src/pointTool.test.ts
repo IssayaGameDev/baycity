@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { COLLIDER, SEQUENCE, type ComponentData, type Level, type Stage, type Step } from '@mp/content'
-import { ENGINE_COMPONENTS, GAMEPLAY_COMPONENTS, createRegistry } from '@mp/components'
+import { ENGINE_COMPONENTS, SHARED_COMPONENTS, createRegistry } from '@mp/components'
 import { vec3, type Vec3 } from '@mp/core'
 import { THREE } from '@mp/render-three'
 import { describe, expect, it } from 'vitest'
@@ -14,7 +14,7 @@ import { createPointTool } from './pointTool'
  * writes the step's point as one edit, and the route runs through the points in play order.
  */
 
-const REG = createRegistry([...ENGINE_COMPONENTS, ...GAMEPLAY_COMPONENTS])
+const REG = createRegistry([...ENGINE_COMPONENTS, ...SHARED_COMPONENTS])
 const move = (id: string, to: Vec3): Step => ({ id, kind: 'move', to, timing: { by: 'seconds', seconds: 1 }, ease: 'linear' })
 const STAGES: readonly Stage[] = [
   { id: 'A', steps: [move('m', vec3(0, 0, 2))] },

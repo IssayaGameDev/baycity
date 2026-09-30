@@ -1,6 +1,6 @@
 # Keycaps
 
-`modes/keyboard/src/keycaps.ts`, `keycapGeometry.ts`. A platform's top face becomes a board of keys
+`modes/keyboard/src/components/keyboard.ts` (the component), `keycaps.ts`, `keycapGeometry.ts`. A platform's top face becomes a board of keys
 (ADR 0069). **Visual only**: caps press under every character; they pay nothing (ADR 0081).
 
 ## The component

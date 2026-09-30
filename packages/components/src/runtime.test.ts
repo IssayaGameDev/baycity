@@ -6,8 +6,11 @@ import { vec3 } from '@mp/core'
 import { createComponentRuntime, characterAccess, hasHooks, HOOK_NAMES, type Effects } from './runtime'
 import { createRegistry } from './registry'
 import { defineComponent } from './define'
-import { Bumper, Checkpoint, Hazard, Sequence } from './gameplay'
-import { ENGINE_COMPONENTS } from './engine'
+import { Bumper } from './shared/bumper'
+import { Checkpoint } from './shared/checkpoint'
+import { Hazard } from './shared/hazard'
+import { Sequence } from './shared/sequence'
+import { ENGINE_COMPONENTS } from './engine/index'
 
 /**
  * Running components (stage C2).

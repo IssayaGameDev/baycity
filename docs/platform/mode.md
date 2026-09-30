@@ -78,7 +78,7 @@ The `self.node.id` the local player's components see.
 
 ## Where a descriptor lives and how tools find it
 
-- Each game exports one from `modes/<game>/src/editorMode.ts` under any export name (e.g. `KEYBOARD_MODE`, `modes/keyboard/src/editorMode.ts`). Rules stay in `modes/<game>/src/rules.ts`; `editorMode.ts` assembles them with tuning, gizmos and player lists.
+- Each game exports one from `modes/<game>/src/editorMode.ts` under any export name (e.g. `KEYBOARD_MODE`, `modes/keyboard/src/editorMode.ts`). Rules stay in `modes/<game>/src/rules.ts`, the game's own components in `modes/<game>/src/components/`, one per file (ADR 0174); `editorMode.ts` assembles them with tuning, gizmos and player lists.
 - `tools/editor/src/modes.ts`: `import.meta.glob('../../../modes/*/src/editorMode.ts', { eager: true })`; structural check `isDescriptor` (`name: string`, `registry: object`, `session: function`); directories starting with `_` skipped; duplicate `name` warns and keeps the first. Exports `MODES` (by name), `MODE_LIST` (label order), `modeOf(level)` (`config.mode?.name` → descriptor or `undefined`), `soleMode()`.
 
 ## What the editor uses (`tools/editor/src/main.ts`)

@@ -1,6 +1,6 @@
 # Steps
 
-`modes/keyboard/src/steps.ts`. A step is **a tick of held movement input**, nothing else (ADR 0081 and its
+`modes/keyboard/src/components/steps.ts`. A step is **a tick of held movement input**, nothing else (ADR 0081 and its
 amendments). Not a key struck, not a footfall, not a distance, not the ground: pushing a wall counts, mid-air
 counts, standing still with no input does not.
 

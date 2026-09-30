@@ -1,6 +1,6 @@
 # Stages and Wins
 
-`modes/keyboard/src/wins.ts`, `rules.ts` (ADR 0073).
+`modes/keyboard/src/components/wins.ts`, `rules.ts` (ADR 0073).
 
 ## A stage is not a thing
 
