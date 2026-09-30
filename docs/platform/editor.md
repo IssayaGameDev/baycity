@@ -8,7 +8,7 @@ Level/prefab editor. `pnpm dev:editor` → `http://localhost:5176` (the dev host
 | --- | --- | --- |
 | Level (node tree + `config`) | `content/<game>/levels/<name>.level.json` | made with `PUT /api/levels/<game>/<name>` (`saveFile`, `src/filesApi.ts`), then edited live (ADR 0089). Renamed and deleted through `POST /api/levels/move\|delete` (ADR 0110) |
 | Prefab (a root `Node`) | `content/assets/prefabs/<name>.prefab.json` — an **asset** with a `.meta` id (ADR 0026) | created once by `Save as prefab…` (`createPrefab`, `src/assetsApi.ts`), then **edited live** in its own room (ADR 0091) |
-| Game data file (shared components, settings) | `content/<game>/game.json` | a live document: `POST /api/live/game/<game>/ops` (`gameSync`, ADR 0162) — its list appended by adoption (ADR 0077), its settings from the games window |
+| Game data file (shared components, settings) | `content/<game>/game.json` | a live document: `POST /api/live/game/<game>/ops` (`gameSync`, ADR 0162) — its list appended by adoption (ADR 0077) and trimmed from the games window (ADR 0175), its settings from the games window |
 | Materials | `content/assets/**/*.mat.json` | a live document: `POST /api/live/asset/<id>/ops` (`assetSync.ts`, ADR 0159); a new one is created with `PUT /content/<path>` |
 
 Levels and prefabs are live rooms and materials and game files live documents, so there is no Save and no lock for any of them (ADR 0089, ADR 0091, ADR 0159, ADR 0162).
@@ -421,10 +421,10 @@ browses.
 
 | Part | Now |
 | --- | --- |
-| Levels | `gameRows(games, levels)` (`assetTree.ts`, default first): a **New level** tile (`createLevel(null, game)`) and a tile per level, the open one lit, faces of who is in it (`room.peopleIn`, colours `peerCss`). Double-click opens (`guardUnsaved` → `openFile`, which is how the editor moves between games); right-click is `levelMenu` |
+| Levels | `gameRows(games, levels)` (`assetTree.ts`, default first): a **New level** tile (`createLevel(null, game)`) and a tile per level, the open one lit, faces of who is in it (`room.peopleIn`, colours `peerCss`). Double-click opens (`openFile`, which is how the editor moves between games); right-click is `levelMenu` |
 | Moving | a tile dragged onto another game on the left: held over it, the game lights or greys with why (`moveRefusal` → `levelMoveRefusal` in `main.ts`: a level of that name there, someone in it, a component of another game's own it cannot have, from `FileEntry.components`); dropped, `fileOps.moveLevelToGame` asks (`askDestructive`, *Move*) and relocates it as a rename does (`relocateLevel`: leave if open, move, reopen); the server refuses while it uses its old game's own assets |
 | Settings | *Game settings* below: any game's, not only the one you are in |
-| Components | `registryFor(MODES[game]).all()` as its own (not engine, not shared), Shared (`isSharedComponent`), Built in (`ENGINE_COMPONENTS` + `PLAYER_COMPONENTS`); read-only |
+| Components | `registryFor(MODES[game]).all()` as its own (not engine, not shared), Shared (`isSharedComponent`), Built in (`ENGINE_COMPONENTS` + `PLAYER_COMPONENTS`). A Shared row has a remove button (`.gw-component-x`) → `onRemoveShared` → `removeShared` (*Removal* below); the others are code |
 | keys | the level behind gets none: a key pressed outside the window is stopped at `window` (capture), one pressed in it (or in a graph opened large, which goes inside `.gw-scrim`) reaches its field first and stops at `.gw-scrim` on the way out. Escape and a press outside close it; Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z are `host.undo` / `redo`, the one history — not while typing in a field. Left alone while a menu or a dialog (`[data-dialog]`, `confirm.ts`) is up |
 | live | `rooms` (who is in which document) and `levels` (the list changed) from the server (`collab.ts` → `liveSession` → `roomsChanged` → `render`, `levelsChanged` → `refreshFileList`) |
 
@@ -506,7 +506,7 @@ server-side changed. Nobody following, nothing is sent.
 | --- | --- |
 | `activeMode` | the opened level's **folder** — its name is qualified `<game>/<name>` (ADR 0108), so the game is known before the file is read (fallback `soleMode()`) |
 | `gameData` | per game, `content/<game>/game.json` (`parseGameData`), read by `loadGame` in `reloadAssets` with where the copy stands (`gameOrigins`), then kept live by `gameSync` (*Live assets* below) |
-| `registryFor(mode)` | `mode.registry` + `sharedComponents(gameData[mode.name] − present)` — live data merged over the bundled code |
+| `registryFor(mode)` | `mode.registry`'s own and built-in types + the shared types `gameData[mode.name].components` lists now: a shared type the code has but the list dropped is left out, one the list added is appended (`sharedComponents`). `mode.registry` untouched until the data arrives |
 | `registry()` | `registryFor(activeMode)`, or `DEFAULT_REGISTRY` with no game |
 | `adoptable()` | `SHARED_COMPONENT_TYPES` the game lacks (`Boss`, `Bumper`, `Checkpoint`, `Hazard`, `Sequence`) |
 | `adopt(types)` | shared ∧ new → `gameSync.edit(gameDocId(game), [set components])` → `gameShown` → `reopenWithRegistry()` |
@@ -516,6 +516,8 @@ Adoption points (ADR 0077):
 1. **Open** (`openFile`): `componentTypesInRaw(raw)` unknown-but-shared → adopted before `validateLevel`; any other unknown type is a load error.
 2. **Place** (`whenPlaceable`, on a drop): `missingIn(assetId)` splits a prefab's unknown types into `shared`/`foreign`; shared adopted before placing — not while a prefab is open on top (a prefab belongs to no game).
 3. **Add Component** (Inspector button, Hierarchy submenu): `adoptable()` listed beside addable types; pick → `adopt` → `doc.addComponent`.
+
+Removal (ADR 0175): `removeShared(game, type)`, from the games window. `refreshFileList()` first (the server's `FileEntry.components` counts live rooms), then `componentUse(type, game, levelEntries, prefabs)` (`componentUse.ts`): the game's levels using it (with their placed prefabs), its own prefabs using it (`libraryOf(path) === game`, from `assets.prefabOf`), and its levels the server could not read. `removalRefusal` → `notify.warn` with where (three names, then "and N more"); nothing → `gameSync.edit(set components, list − type)` → `gameShown`. No undo entry, as adoption has none: adding one again adopts it.
 
 There is no unassigned level: a `.level.json` outside a game's `levels/` is not listed at all (ADR 0108).
 

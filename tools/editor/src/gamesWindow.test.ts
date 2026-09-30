@@ -26,6 +26,7 @@ const rig = (over: Partial<GamesWindowHost> = {}) => {
     openLevel: () => 'keyboard/Roblox',
     peopleIn: (q) => (q === 'keyboard/default' ? [{ name: 'Ana Lima', colour: '#ff0000' }] : []),
     components: () => ({ own: [{ type: 'Keyboard', label: 'Keyboard surface' }], shared: [{ type: 'Hazard', label: 'Hazard' }], engine: [{ type: 'Renderer', label: 'Mesh Renderer' }] }),
+    onRemoveShared: (g, type) => calls.push(`remove ${type} from ${g}`),
     onOpenLevel: (q) => calls.push(`open ${q}`),
     onNewLevel: (g) => calls.push(`new ${g}`),
     onLevelContext: (_at, q) => calls.push(`menu ${q}`),
@@ -72,6 +73,15 @@ describe('the games window', () => {
     $$('.gw-tab').find((t) => t.textContent === 'Components')!.click()
     expect($$('.gw-section').map((s) => s.textContent)).toEqual(['Its own', 'Shared', 'Built in'])
     expect($$('.gw-component-l').map((l) => l.textContent)).toEqual(['Keyboard surface', 'Hazard', 'Mesh Renderer'])
+  })
+
+  it('offers to remove a shared component, and only a shared one', () => {
+    const { $$, calls } = rig()
+    $$('.gw-tab').find((t) => t.textContent === 'Components')!.click()
+    const removes = $$('.gw-component-x')
+    expect(removes.map((b) => b.title)).toEqual(['Remove Hazard from this game'])
+    removes[0]!.click()
+    expect(calls).toEqual(['remove Hazard from keyboard'])
   })
 
   it('moves a level dropped on another game, and shows why one cannot go while it is held over it', () => {

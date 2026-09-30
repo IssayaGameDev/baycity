@@ -36,6 +36,8 @@ export interface GamesWindowHost {
   peopleIn: (qualified: string) => readonly { name: string; colour: string }[]
   /** A game's components: its own code's, the shared ones it has taken (ADR 0077), and the engine's. */
   components: (game: string) => { own: readonly ComponentRow[]; shared: readonly ComponentRow[]; engine: readonly ComponentRow[] } | null
+  /** Take a shared component out of a game (ADR 0175): the host refuses while anything of the game uses it, and says where. */
+  onRemoveShared: (game: string, type: string) => void
   /** Open a level — which moves the editor to its game. The host guards unsaved work. */
   onOpenLevel: (qualified: string) => void
   /** Make a level in this game's folder, and open it. */
@@ -244,17 +246,31 @@ export const createGamesWindow = (host: GamesWindowHost): GamesWindow => {
       page.append(el('div', 'gw-note', 'This build has no code for this game.'))
       return page
     }
-    const section = (title: string, note: string, rows: readonly ComponentRow[]): void => {
+    // Only a shared one can go: the others are the game's code, or every game's.
+    const section = (title: string, note: string, rows: readonly ComponentRow[], removable = false): void => {
       page.append(el('div', 'gw-section', title), el('div', 'gw-note', note))
       if (rows.length === 0) page.append(el('div', 'gw-none', 'none'))
       for (const r of rows) {
         const line = el('div', 'gw-component')
         line.append(el('span', 'gw-component-l', r.label), el('span', 'gw-component-t', r.type))
+        if (removable) {
+          const remove = el('button', 'gw-component-x')
+          remove.type = 'button'
+          remove.title = `Remove ${r.label} from this game`
+          remove.append(icon('close'))
+          remove.addEventListener('click', () => host.onRemoveShared(game, r.type))
+          line.append(remove)
+        }
         page.append(line)
       }
     }
     section('Its own', 'Written for this game: another game cannot use them.', list.own)
-    section('Shared', 'From the shared set, taken by this game. Placing a prefab that uses another adds it.', list.shared)
+    section(
+      'Shared',
+      'From the shared set, taken by this game. Placing a prefab that uses another adds it; one nothing here uses can be removed.',
+      list.shared,
+      true,
+    )
     section('Built in', 'Every game has these.', list.engine)
     return page
   }
