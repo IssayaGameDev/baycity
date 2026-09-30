@@ -30,6 +30,7 @@ Package `packages/components`. Headless; deps `@mp/content`, `@mp/core` (`@mp/ph
 defineComponent<const D extends ParamDecls, S = undefined>(spec: ComponentSpec<D, S>): ComponentDef<D>
 interface ComponentSpec<D, S> {
   type: string; params: D; label?: string
+  menu?: string                    // its Add Component folder (ADR 0178): Physics | Rendering | Gameplay | Animation; absent = its game's
   singleton?: boolean              // one per node; placement's copy replaces prefab's (effectiveNode)
   moves?: boolean                  // kinematic body + live self.offset (ADR 0058); must be declared
   attachesTo?: 'node' | 'player'   // default 'node'; 'player' hidden from the add menu (ADR 0059); not enforced at load

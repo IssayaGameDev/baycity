@@ -80,6 +80,7 @@ const turnToward = (from: number, to: number, limit: number): number => {
  */
 export const Boss = defineComponent({
   type: 'Boss',
+  menu: 'Gameplay',
   params: {
     zone: { kind: 'componentRef', of: Collider.type, label: 'zone' },
     speed: { kind: 'number', default: 8, min: 0.5, max: 60, step: 0.5, label: 'speed (m/s)' },

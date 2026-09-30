@@ -1,6 +1,6 @@
 import { vec3, type Vec3 } from '@mp/core'
 import { COLLIDER, LIGHT, MATERIAL_OVERRIDE, RENDERER, SEQUENCE, SPAWN, compileSequence, readStages, sequenceOf, unitColliderFor, type ColliderDesc } from '@mp/content'
-import { visibleParams, type AssetSpec, type ParamSpec } from '@mp/components'
+import { sharedComponents, visibleParams, type AssetSpec, type ParamSpec } from '@mp/components'
 import { QUANT_BOUND } from '@mp/net'
 import { DEFAULT_POSTFX, DEFAULT_SKY_PARAMS } from '@mp/render-three'
 
@@ -29,6 +29,8 @@ import {
 import { cardJustDragged, pressCardToDrag } from './cardDrag'
 import { icon, type IconName } from './icons'
 import { refField, refFieldAt, type RefShown } from './refField'
+import { folderTree, treePicker, type TreeItem } from './treePicker'
+import { byMenuFolder, menuFolderOf } from './componentMenu'
 import { sequenceSummary } from './sequenceEdit'
 import { sequenceEditor } from './sequenceEditor'
 
@@ -59,6 +61,8 @@ export interface InspectorHost {
   adoptable: () => readonly string[]
   /** Add a shared component to the game, rebuild the document, then resolve. */
   adopt: (type: string) => Promise<void>
+  /** The open level's game, by its label: the folder its own components go in (ADR 0178). `null` for none. */
+  gameLabel: () => string | null
   selected: () => number | null
   /**
    * The Environment row is selected instead of a node (ADR 0048). The panel then edits the level's sun, which
@@ -125,6 +129,11 @@ export interface InspectorHost {
    * the same list, so a new asset-valued parameter needs nothing here.
    */
   assetOptions: (of: AssetSpec['of']) => Record<string, string>
+  /**
+   * The same assets, each with the folders it sits in as the Project window names them — `Keyboard`, `materials` —
+   * and the built-in shapes in `Built-in`: a reference field's picker as a tree (ADR 0178).
+   */
+  assetFolders: (of: AssetSpec['of']) => readonly { readonly id: string; readonly label: string; readonly folders: readonly string[] }[]
   /** Why an asset cannot go in a field of that kind here, or `null` (ADR 0176): wrong kind, or not this game's. */
   assetRefusal: (of: AssetSpec['of'], id: string) => string | null
   /** The assets a Project window drag carries right now, for a reference field (ADR 0176); empty when none. */
@@ -233,6 +242,29 @@ export const componentIcon = (type: string): IconName => COMPONENT_ICONS[type] ?
 
 /** Why a reference field cannot take something out of its reach (`nodeChoices`, stage C4). */
 const UNREACHABLE = 'a piece inside another prefab cannot be linked from here'
+
+/**
+ * The document's nodes as the Hierarchy lays them out, for a reference field's picker (ADR 0178): `offer(j)` says
+ * what node `j` is there — its row, pickable or not, and anything listed under it before its children — and a
+ * branch with nothing pickable anywhere in it is left out, so the tree holds only the way to what fits.
+ */
+const hierarchyTree = (doc: Doc, offer: (j: number) => { row: TreeItem; extra?: readonly TreeItem[] }): TreeItem[] =>
+  doc.reading(() => {
+    const kids = new Map<number | null, number[]>()
+    for (let j = 0; j < doc.count(); j++) {
+      const up = doc.parentOf(j)
+      const list = kids.get(up) ?? []
+      list.push(j)
+      kids.set(up, list)
+    }
+    const build = (j: number): TreeItem | null => {
+      const { row, extra = [] } = offer(j)
+      const children = [...extra, ...(kids.get(j) ?? []).map(build).filter((x): x is TreeItem => x !== null)]
+      if (!row.pickable && children.length === 0) return null
+      return children.length === 0 ? row : { ...row, children }
+    }
+    return (kids.get(null) ?? []).map(build).filter((x): x is TreeItem => x !== null)
+  })
 
 /**
  * The values a component's fields are built from: declared defaults, the authored params over them, and
@@ -916,10 +948,11 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
           shown: mixed ? 'mixed' : shownFor(state[key]),
           none: `None (${spec.of === 'model' ? 'Model' : 'Material'})`,
           title: label,
-          choices: () =>
-            Object.entries(host.assetOptions(spec.of))
-              .filter(([, id]) => id !== '')
-              .map(([name, id]) => ({ value: id, label: name, icon: glyph(id) })),
+          choices: () => folderTree(host.assetFolders(spec.of).map((a) => ({ key: a.id, label: a.label, icon: glyph(a.id), folders: a.folders }))),
+          current: () => {
+            const v = now()
+            return typeof v === 'string' && v !== '' ? v : null
+          },
           pick: (v) => set(v ?? ''),
           ping: () => {
             const v = now()
@@ -1033,8 +1066,16 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
           shown: shownFor(state[key]),
           none: 'None (Object)',
           title: label,
-          choices: () => doc.nodeChoices(at).map((c) => ({ value: c.id, label: `${c.label} · ${c.id.slice(0, 6)}`, icon: 'object' })),
-          pick: (v) => write({ [key]: v }),
+          // The Hierarchy's tree, what this node may name pickable (`refTo`): by index, so a key is a row.
+          choices: () =>
+            hierarchyTree(doc, (j) => ({
+              row: { key: String(j), label: doc.label(j), icon: doc.refOf(j) === null ? 'object' : 'prefab', pickable: doc.refTo(at, j) !== null },
+            })),
+          current: () => {
+            const j = target()
+            return j === null ? null : String(j)
+          },
+          pick: (v) => write({ [key]: v === null ? null : doc.refTo(at, Number(v)) }),
           ping: () => {
             const j = target()
             if (j !== null) host.pingNode(j)
@@ -1085,26 +1126,35 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
           if (r === null) return null
           return r === 'missing' ? { label: `missing ${typeLabel}`, icon: 'warn', missing: true } : { label: named(r.j, r.id), icon: glyph }
         }
-        interface Row {
-          key: string
-          value: { node: string; component: string }
-          label: string
-        }
-        /** The picker's rows, keyed by index and component: everything of the type this field can reach. */
-        const rows = (): Row[] => {
-          const out: Row[] = []
-          for (let j = 0; j < doc.count(); j++) {
-            const node = doc.refTo(at, j)
-            if (node !== null) for (const c of ofType(j)) out.push({ key: `${j}/${c.id}`, value: { node, component: c.id }, label: named(j, c.id) })
-          }
-          return out
-        }
+        /**
+         * The picker's tree (ADR 0178): the Hierarchy's, keyed `<index>/<component id>`. An object in reach with one
+         * of the type is itself the row to pick; one with several lists them under it, before its children.
+         */
+        const tree = (): TreeItem[] =>
+          hierarchyTree(doc, (j) => {
+            const found = doc.refTo(at, j) === null ? [] : ofType(j)
+            const only = found.length === 1 ? found[0] : undefined
+            const row: TreeItem =
+              only !== undefined
+                ? { key: `${j}/${only.id}`, label: named(j, only.id), icon: glyph, pickable: true }
+                : { key: `node:${j}`, label: doc.label(j), icon: doc.refOf(j) === null ? 'object' : 'prefab', pickable: false }
+            return found.length > 1 ? { row, extra: found.map((c) => ({ key: `${j}/${c.id}`, label: named(j, c.id), icon: glyph, pickable: true })) } : { row }
+          })
         const field = refField({
           shown: shownFor(state[key]),
           none: `None (${typeLabel})`,
           title: label,
-          choices: () => rows().map((r) => ({ value: r.key, label: r.label, icon: glyph })),
-          pick: (v) => write({ [key]: v === null ? null : (rows().find((r) => r.key === v)?.value ?? null) }),
+          choices: tree,
+          current: () => {
+            const r = resolve(now())
+            return r === null || r === 'missing' ? null : `${r.j}/${r.id}`
+          },
+          pick: (v) => {
+            if (v === null) return write({ [key]: null })
+            const cut = v.indexOf('/')
+            const node = doc.refTo(at, Number(v.slice(0, cut)))
+            if (node !== null) write({ [key]: { node, component: v.slice(cut + 1) } })
+          },
           ping: () => {
             const r = resolve(now())
             if (r !== null && r !== 'missing') host.pingNode(r.j)
@@ -1544,7 +1594,10 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     }
   }
 
-  /** One button opening a filtered list, where a dropdown plus a button cost two rows and two clicks. */
+  /**
+   * One button opening a searchable tree of components by folder (ADR 0178) — Unity's Add Component: Physics,
+   * Rendering, Gameplay, Animation, then the game's own under its name. A search lists every match flat.
+   */
   const addAddButton = (doc: Doc, at: number): void => {
     /**
      * With several selected, offer a component **any** of them can take, and add it to each that can
@@ -1580,19 +1633,36 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     }
     button.addEventListener('click', (e) => {
       e.stopPropagation()
-      openMenu(button, [
-        ...addable.map((type) => ({ label: doc.registry.get(type)?.label ?? type, run: () => place(doc, type) })),
-        ...adoptable.map((type) => ({
-          label: `${type} (adds to game)`,
-          run: () => {
-            // The document is rebuilt against the grown registry, so add to the one the host now holds.
-            void host.adopt(type).then(() => {
-              const fresh = host.doc()
-              if (fresh !== null) place(fresh, type)
-            })
-          },
-        })),
-      ])
+      if (popoverOpenFor(button)) return closePopover()
+      const entries = [
+        ...addable.map((type) => ({ type, def: doc.registry.get(type), adopts: false })),
+        // Not in the game's registry yet: its definition comes from the shared set.
+        ...adoptable.map((type) => ({ type, def: sharedComponents([type])[0], adopts: true })),
+      ]
+      const items: TreeItem[] = byMenuFolder(entries, (x) => menuFolderOf(x.def, host.gameLabel())).map((g) => ({
+        key: `folder:${g.folder}`,
+        label: g.folder,
+        icon: 'folder',
+        pickable: false,
+        children: g.entries.map((x) => ({ key: x.type, label: x.def?.label ?? x.type, icon: componentIcon(x.type), pickable: true, ...(x.adopts ? { hint: 'adds to game' } : {}) })),
+      }))
+      const picker = treePicker({
+        items,
+        openAll: true,
+        pick: (type) => {
+          closePopover()
+          const x = entries.find((en) => en.type === type)
+          if (x === undefined) return
+          if (!x.adopts) return place(doc, x.type)
+          // The document is rebuilt against the grown registry, so add to the one the host now holds.
+          void host.adopt(x.type).then(() => {
+            const fresh = host.doc()
+            if (fresh !== null) place(fresh, x.type)
+          })
+        },
+      })
+      openPopover(button, picker.root, { className: 'pop-ref pop-add' })
+      picker.focus()
     })
     container.append(button)
   }

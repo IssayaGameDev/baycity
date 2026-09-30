@@ -19,8 +19,8 @@ const rig = (over: Partial<RefFieldOptions> = {}) => {
     shown: { label: 'Zone', icon: 'object' },
     none: 'None (Object)',
     choices: () => [
-      { value: 'a', label: 'Zone', icon: 'object' },
-      { value: 'b', label: 'Door', icon: 'object' },
+      { key: 'a', label: 'Zone', icon: 'object', pickable: true },
+      { key: 'b', label: 'Door', icon: 'object', pickable: true },
     ],
     pick: (v) => calls.push(`pick ${v ?? 'none'}`),
     ping: () => calls.push('ping'),
@@ -78,12 +78,12 @@ describe('the reference field', () => {
     expect(calls).toEqual(['ping', 'open'])
   })
 
-  it('picks from a searchable list, None first, Enter taking the first match', () => {
+  it('picks from a searchable tree, None first, Enter taking the first match', () => {
     const { calls, $ } = rig()
     $('.rf-pick').click()
-    const rows = (): string[] => [...document.querySelectorAll('.pop-ref .rf-row')].map((r) => r.textContent ?? '')
+    const rows = (): string[] => [...document.querySelectorAll('.pop-ref .tp-row')].map((r) => r.textContent ?? '')
     expect(rows()).toEqual(['None', 'Zone', 'Door'])
-    const search = $('.rf-search') as HTMLInputElement
+    const search = $('.tp-search') as HTMLInputElement
     search.value = 'do'
     search.dispatchEvent(new Event('input'))
     expect(rows()).toEqual(['Door'])

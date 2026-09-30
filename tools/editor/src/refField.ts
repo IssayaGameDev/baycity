@@ -1,5 +1,6 @@
 import { closePopover, installPopoverDismissal, openPopover, popoverOpenFor } from './controls'
 import { icon, type IconName } from './icons'
+import { treePicker, type TreeItem } from './treePicker'
 
 /**
  * A reference field (ADR 0176, ADR 0177): a parameter that points at something — an object, a component, a material,
@@ -27,19 +28,18 @@ export type RefDrag =
 /** What the field shows: a name and its icon; `null` for none; `'mixed'` when a multi-selection disagrees. */
 export type RefShown = { readonly label: string; readonly icon: IconName; readonly missing?: boolean } | null | 'mixed'
 
-export interface RefChoice {
-  readonly value: string
-  readonly label: string
-  readonly icon: IconName
-}
-
 export interface RefFieldOptions {
   readonly shown: RefShown
   /** What it says when it points at nothing: `None (Material)`. */
   readonly none: string
   readonly title?: string
-  /** The picker's list, asked each time it opens. */
-  readonly choices: () => readonly RefChoice[]
+  /**
+   * The picker's tree, asked each time it opens (ADR 0178): objects as the Hierarchy lays them out, assets by their
+   * folders. A pickable item's key is what `pick` gets.
+   */
+  readonly choices: () => readonly TreeItem[]
+  /** The key of what it points at now, lit in the picker with its folders open; `null` for none. */
+  readonly current?: () => string | null
   /** Write a value; `null` clears it. */
   readonly pick: (value: string | null) => void
   /** Find what it points at, without selecting it. Absent where there is nothing to find (a built-in shape). */
@@ -140,45 +140,20 @@ export const refField = (o: RefFieldOptions): RefField => {
     if (shown !== null) o.pick(null)
   })
 
-  /** The picker: a search box over the choices, None first. A press on one writes it and closes. */
+  /** The picker: a searchable tree of what fits, None first (`treePicker`). A press on one writes it and closes. */
   open.addEventListener('click', () => {
     if (popoverOpenFor(open)) return closePopover()
-    const panel = el('div', 'rf-list')
-    const search = el('input', 'txt rf-search')
-    search.type = 'text'
-    search.spellcheck = false
-    search.placeholder = 'Search'
-    const rows = el('div', 'rf-rows')
-    const all = o.choices()
-    const draw = (): void => {
-      const q = search.value.trim().toLowerCase()
-      rows.replaceChildren()
-      const row = (label: string, glyph: IconName | null, value: string | null): void => {
-        const b = el('button', 'rf-row')
-        b.type = 'button'
-        if (glyph !== null) b.append(icon(glyph))
-        b.append(el('span', 'rf-t', label))
-        b.addEventListener('click', () => {
-          closePopover()
-          o.pick(value)
-        })
-        rows.append(b)
-      }
-      if (q === '') row('None', null, null)
-      const hits = all.filter((c) => q === '' || c.label.toLowerCase().includes(q))
-      for (const c of hits) row(c.label, c.icon, c.value)
-      if (hits.length === 0 && q !== '') rows.append(el('div', 'rf-empty', 'nothing matches'))
-    }
-    search.addEventListener('input', draw)
-    // Enter takes the first match, as a search box in a picker does.
-    search.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter') return
-      rows.querySelector<HTMLButtonElement>('.rf-row')?.click()
+    const picker = treePicker({
+      items: o.choices(),
+      none: 'None',
+      current: o.current?.() ?? null,
+      pick: (key) => {
+        closePopover()
+        o.pick(key)
+      },
     })
-    draw()
-    panel.append(search, rows)
-    openPopover(open, panel, { className: 'pop-ref' })
-    search.focus()
+    openPopover(open, picker.root, { className: 'pop-ref' })
+    picker.focus()
   })
 
   const target: RefTarget = {

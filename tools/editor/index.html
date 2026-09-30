@@ -2737,24 +2737,25 @@
       .rf.rf-no .rf-name {
         color: #d98c8c;
       }
-      .rf-list {
+      /* The searchable tree (ADR 0178): the reference fields' picker and Add Component. */
+      .tp {
         display: flex;
         flex-direction: column;
         gap: 6px;
-        width: 240px;
+        width: 280px;
       }
-      .rf-rows {
+      .tp-rows {
         display: flex;
         flex-direction: column;
-        max-height: 260px;
+        max-height: 320px;
         overflow-y: auto;
       }
-      .rf-row {
+      .tp-row {
         display: flex;
         align-items: center;
-        gap: 7px;
+        gap: 6px;
         min-height: 24px;
-        padding: 0 6px;
+        padding-right: 6px;
         border: 0;
         border-radius: 4px;
         background: none;
@@ -2764,16 +2765,53 @@
         text-align: left;
         cursor: pointer;
       }
-      .rf-row:hover {
+      .tp-row:hover {
         background: var(--hover);
       }
-      .rf-row svg {
+      .tp-row.on {
+        background: var(--sel);
+      }
+      .tp-row svg {
         flex: none;
         width: 13px;
         height: 13px;
         color: var(--dim);
       }
-      .rf-empty {
+      .tp-folder {
+        color: var(--dim);
+      }
+      .tp-tw {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 14px;
+        height: 14px;
+      }
+      .tp-tw svg {
+        width: 11px;
+        height: 11px;
+        transform: rotate(-90deg);
+        transition: transform 0.12s ease;
+      }
+      .tp-tw.open svg {
+        transform: none;
+      }
+      .tp-t {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .tp-hint {
+        flex: 0 1 auto;
+        min-width: 0;
+        margin-left: auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--dim);
+        font-size: 10.5px;
+      }
+      .tp-empty {
         padding: 4px 6px;
         color: var(--dim);
         font-style: italic;
