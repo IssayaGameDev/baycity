@@ -6,11 +6,11 @@ import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { KEYBOARD_REGISTRY, STAND_OFFSET, keyboardSession } from './rules'
-import { qualifies, StepPad } from './stepPad'
-import { stepsThisTick } from './steps'
+import { qualifies, StepPad } from './components/stepPad'
+import { stepsThisTick } from './components/steps'
 import { DEFAULT_CURVE, stepsPerMinute } from './progression'
-import { Treadmill, treadmillStepValue } from './treadmill'
-import { WinsPad, padTop } from './wins'
+import { Treadmill, treadmillStepValue } from './components/treadmill'
+import { WinsPad, padTop } from './components/wins'
 
 /**
  * Keyboard Escape's rules (ADR 0073): a stage ends on a `WinsPad`, which pays out and sends you back to the

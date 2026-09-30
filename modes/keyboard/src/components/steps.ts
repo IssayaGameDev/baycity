@@ -1,7 +1,7 @@
 import { defineComponent, type ComponentDef } from '@mp/components'
 import type { InputCommand } from '@mp/core'
 
-import { DEFAULT_CURVE, stepsPerMinute, type ProgressCurve } from './progression'
+import { DEFAULT_CURVE, stepsPerMinute, type ProgressCurve } from '../progression'
 
 /**
  * A step is a tick of time holding a direction, at a cadence set by your Level (ADR 0081).

@@ -3,10 +3,10 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { COLLIDER, instantiateLevel, type ComponentData, type Node, type Level } from '@mp/content'
 import { vec3, type Vec3 } from '@mp/core'
 
-import { createComponentRuntime, characterAccess, type Effects } from './runtime'
-import { createRegistry } from './registry'
-import { Boss } from './gameplay'
-import { ENGINE_COMPONENTS } from './engine'
+import { createComponentRuntime, characterAccess, type Effects } from '../runtime'
+import { createRegistry } from '../registry'
+import { ENGINE_COMPONENTS } from '../engine/index'
+import { Boss } from './boss'
 
 /**
  * The Boss (ADR 0095): who it picks, where it drives, and what it does with an empty zone.

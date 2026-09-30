@@ -66,6 +66,8 @@ import { createFollow } from './follow'
 import { createPeople, type PeopleState } from './people'
 import { createFieldPresence, type Ring } from './fieldPresence'
 import { createGamesWindow, type GamesWindow } from './gamesWindow'
+import { componentUse, removalRefusal } from './componentUse'
+import { assetRefusal } from './assetRefusal'
 import { createFileActions } from './fileActions'
 import { createMotionPreview } from './motionPreview'
 import { createMenus } from './menus'
@@ -199,17 +201,24 @@ let activeMode: ModeDescriptor | undefined = soleMode()
  * Each game's data file — its shared-component list (ADR 0077) and its settings (ADR 0087) — as it is **right
  * now**: read over `/api/games` at boot, then kept current as it is edited live, by anyone (`gameSync`, ADR 0162).
  * The game's own `registry` already folds the list in at build time, but the editor's bundle does not reload when
- * it changes (see `vite.config.ts`), so the live list is merged here rather than trusted from the code.
+ * it changes (see `vite.config.ts`), so the live list replaces the code's rather than being trusted from it.
  */
 const gameData: Record<string, GameData> = {}
 /** Where each game's copy in `gameData` came from, for the live edits that follow it. */
 const gameOrigins: Record<string, Origin | undefined> = {}
 
-/** A game's registry: its code, plus whatever the live data file adds that the code did not already have. */
+/**
+ * A game's registry: its code's own and built-in components, and the shared ones its live data file lists now —
+ * added since the build, or taken out (ADR 0175). Every shared type in a game's code came from that list.
+ */
 const registryFor = (mode: ModeDescriptor): Registry => {
-  const have = new Set(mode.registry.all().map((d) => d.type))
-  const extra = (gameData[mode.name]?.components ?? []).filter((type) => !have.has(type) && isSharedComponent(type))
-  return extra.length === 0 ? mode.registry : createRegistry([...mode.registry.all(), ...sharedComponents(extra)])
+  const live = gameData[mode.name]?.components
+  if (live === undefined) return mode.registry
+  const code = mode.registry.all()
+  const kept = code.filter((d) => !isSharedComponent(d.type) || live.includes(d.type))
+  const have = new Set(kept.map((d) => d.type))
+  const extra = live.filter((type) => !have.has(type) && isSharedComponent(type))
+  return extra.length === 0 && kept.length === code.length ? mode.registry : createRegistry([...kept, ...sharedComponents(extra)])
 }
 
 /** The component set the open document is validated and edited against. */
@@ -235,6 +244,30 @@ const adopt = async (types: readonly string[]): Promise<void> => {
   if (fresh.length === 0) return
   gameSync.edit(gameDocId(mode.name), [{ kind: 'set', path: ['components'], value: [...have.components, ...fresh].sort() }])
   notify.ok(`added ${fresh.join(', ')} to ${mode.label}`)
+}
+
+/**
+ * Take a shared component out of a game (ADR 0175): an edit to its live data file, refused while any of its
+ * levels or its own prefabs still use it, with where. The level list is fetched again first — the server counts
+ * what is open in a room, and a friend may have placed one since the window opened.
+ */
+const removeShared = async (game: string, type: string): Promise<void> => {
+  const mode = MODES[game]
+  if (mode === undefined || gameData[game]?.components.includes(type) !== true) return
+  await refreshFileList()
+  const db = assets?.db
+  const prefabs = (db === undefined ? [] : assetsOfKind(db, 'prefab')).map((a) => ({ name: a.name, path: a.path, root: assets?.prefabOf(a.id) }))
+  const label = registryFor(mode).get(type)?.label ?? type
+  const why = removalRefusal(label, componentUse(type, game, levelEntries, prefabs))
+  if (why !== null) {
+    notify.warn(why)
+    return
+  }
+  // Read again past the fetch: the list may have changed while it was out.
+  const now = gameData[game]
+  if (now === undefined || !now.components.includes(type)) return
+  gameSync.edit(gameDocId(game), [{ kind: 'set', path: ['components'], value: now.components.filter((t) => t !== type) }])
+  notify.ok(`removed ${label} from ${mode.label}`)
 }
 
 /**
@@ -1513,6 +1546,18 @@ const dragPlace = createDragPlace(canvas, {
   readout: (text, at) => showReadout(text, at),
 })
 
+/**
+ * What a drag of Project window tiles carries, by id, while one is under way (ADR 0176): a reference field has to
+ * know before the drop, and a browser drag cannot say until then.
+ */
+let draggedAssets: readonly string[] = []
+
+/** An asset's tile, shown in the Project window with the selection left alone: where a reference field points. */
+const revealAsset = (id: string): void => {
+  const path = assets?.db.byId[id]?.path
+  if (path !== undefined) project.reveal(path)
+}
+
 const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   db: () => assets?.db ?? null,
   folders: () => assets?.folders ?? [],
@@ -1526,6 +1571,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     else void prefabs.enterPrefab(id)
   },
   onDragAsset: (id) => dragPlace.dragging(id),
+  onDragAssets: (ids) => void (draggedAssets = ids),
   onUpload: (files, folder) => {
     const cap = me?.maxUploadBytes ?? Infinity
     const tooBig = files.filter((f) => f.size > cap).map((f) => f.name)
@@ -1692,6 +1738,7 @@ const gamesWindow: GamesWindow = createGamesWindow({
       engine: rows.filter((r) => ENGINE_TYPES.has(r.type)),
     }
   },
+  onRemoveShared: (game, type) => void removeShared(game, type),
   onOpenLevel: (qualified) => {
     gamesWindow.close()
     void openFile(qualified)
@@ -1845,6 +1892,8 @@ showBottomTab('palette')
 // --- asset inspector (materials) ---
 const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#asset-inspector'), {
   db: () => assets?.db ?? null,
+  draggedAssets: () => draggedAssets,
+  revealAsset: (id) => revealAsset(id),
   urlOf: (path) => assets?.urlOf(path) ?? path,
   materialOf: (id) => assets?.materialOf(id),
   openers: (id) => room.openersOf(id).map((p) => ({ name: p.name, colour: peerCss(p.connId) })),
@@ -2142,6 +2191,10 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     if (db !== undefined) for (const a of assetsOfKind(db, of)) if (mayUse(user, a.path)) options[a.name] = a.id
     return options
   },
+  assetRefusal: (of, id) => assetRefusal(assets?.db ?? null, of, id, editingFor()),
+  draggedAssets: () => draggedAssets,
+  pingNode: (index) => hierarchy.ping(index),
+  revealAsset: (id) => revealAsset(id),
 })
 
 /**

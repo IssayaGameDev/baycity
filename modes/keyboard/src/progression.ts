@@ -19,7 +19,7 @@
  * - `levelCost`: XP needed to go from Level L to L+1. Exponential, so edited on a log axis with constant-ratio
  *   segments; extends forever, because Level 500 must not be free.
  * - `speed`: Max Speed at Level, studs/s. Linear segments; extends.
- * - `cadence`: steps per minute at Level (`steps.ts`). Linear segments; holds past the last point.
+ * - `cadence`: steps per minute at Level (`components/steps.ts`). Linear segments; holds past the last point.
  *
  * Headless and pure, so the curves can be checked against real save data rather than eyeballed in play.
  */

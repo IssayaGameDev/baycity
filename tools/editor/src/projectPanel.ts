@@ -49,6 +49,11 @@ export interface ProjectHost {
   onOpenPrefab: (assetId: string) => void
   /** A prefab or model's tile began to be dragged — into the viewport, it places (ADR 0164) — or, `null`, stopped. */
   onDragAsset: (assetId: string | null) => void
+  /**
+   * The assets any drag of tiles carries, by id — onto an Inspector reference field (ADR 0176), which cannot read a
+   * browser drag before its drop — or, empty, the drag ended.
+   */
+  onDragAssets: (assetIds: readonly string[]) => void
   /** Make a new asset of a kind this panel can author, in `folder`: a material, from the **+** menu. */
   onCreateAsset: (kind: AssetKind, folder: string) => void
   onMkdir: (parent: string, name: string) => void
@@ -588,16 +593,21 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     })
   }
 
-  /** Dragging one of several selected carries them all; dragging another carries it alone, and selects it. */
+  /**
+   * Dragging one of several selected carries them all; dragging another carries it alone and leaves the selection
+   * be, so the Inspector keeps showing what a reference field is being filled on (ADR 0176).
+   */
   const draggable = (target: HTMLElement, path: string): void => {
     target.draggable = true
     target.addEventListener('dragstart', (e) => {
-      if (!picked.includes(path)) pickTile(path, 'replace')
+      const carried = picked.includes(path) ? picked : [path]
+      host.onDragAssets(carried.map((p) => entryAt(p)?.id).filter((id): id is string => id !== undefined))
       const dt = e.dataTransfer
       if (!dt) return
-      dt.setData(TILES, picked.join('\n'))
+      dt.setData(TILES, carried.join('\n'))
       dt.effectAllowed = 'move'
     })
+    target.addEventListener('dragend', () => host.onDragAssets([]))
   }
 
   /** One square tile, whatever it is: its picture (a preview, or its kind's icon) and its name under it. */
@@ -675,7 +685,8 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
       t.addEventListener('dragstart', (e) => {
         const dt = e.dataTransfer
         if (dt) dt.effectAllowed = 'copyMove'
-        if (picked.length === 1) host.onDragAsset(entry.id)
+        // Alone: this tile was not among those picked, or was the only one (see `draggable`).
+        if (!picked.includes(entry.path) || picked.length === 1) host.onDragAsset(entry.id)
       })
       t.addEventListener('dragend', () => host.onDragAsset(null))
     }

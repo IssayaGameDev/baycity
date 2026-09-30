@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { Bumper, Hazard } from './gameplay'
-import { isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents } from './shared'
+import { Bumper } from './bumper'
+import { Hazard } from './hazard'
+import { isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents } from './index'
 
 /** The shared-component lookup a game's data file resolves through (ADR 0077). */
 describe('shared components', () => {
-  it('is the gameplay set, by name', () => {
+  it('is the shared set, by name', () => {
     expect(SHARED_COMPONENT_TYPES).toEqual(['Boss', 'Bumper', 'Checkpoint', 'Hazard', 'Sequence'])
   })
 

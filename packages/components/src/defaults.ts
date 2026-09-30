@@ -1,6 +1,6 @@
 import { createRegistry } from './registry'
-import { ENGINE_COMPONENTS } from './engine'
-import { GAMEPLAY_COMPONENTS } from './gameplay'
+import { ENGINE_COMPONENTS } from './engine/index'
+import { SHARED_COMPONENTS } from './shared/index'
 
 /**
  * Every component this build knows about: what the engine reads, then the shared gameplay library.
@@ -15,4 +15,4 @@ import { GAMEPLAY_COMPONENTS } from './gameplay'
  * Its own module so `index.ts` stays a re-export list, and so a test can build a registry of fakes without
  * importing this one.
  */
-export const DEFAULT_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...GAMEPLAY_COMPONENTS])
+export const DEFAULT_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...SHARED_COMPONENTS])

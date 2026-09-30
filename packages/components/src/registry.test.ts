@@ -3,8 +3,10 @@ import { createRegistry } from './registry'
 import { defineComponent } from './define'
 import { ComponentError } from './params'
 import { DEFAULT_REGISTRY } from './defaults'
-import { Bumper, Sequence } from './gameplay'
-import { Collider, Renderer } from './engine'
+import { Bumper } from './shared/bumper'
+import { Sequence } from './shared/sequence'
+import { Collider } from './engine/collider'
+import { Renderer } from './engine/renderer'
 
 const Fake = defineComponent({ type: 'Fake', params: { n: { kind: 'number', default: 1 } } })
 const Other = defineComponent({ type: 'Other', params: {} })

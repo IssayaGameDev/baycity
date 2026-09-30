@@ -694,6 +694,28 @@
         color: var(--dim);
         font-size: 11px;
       }
+      .gw-component-x {
+        margin-left: auto;
+        align-self: center;
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        padding: 0;
+        border: 0;
+        border-radius: 4px;
+        background: none;
+        color: var(--dim);
+        cursor: pointer;
+      }
+      .gw-component-x:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .gw-component-x svg {
+        width: 14px;
+        height: 14px;
+      }
       .tb-run {
         display: flex;
         gap: 2px;
@@ -1090,6 +1112,16 @@
       }
       .row.sel {
         background: var(--sel);
+      }
+      /* Where a reference field points, found for a moment without selecting it (ADR 0176). */
+      .row.ping {
+        box-shadow: inset 0 0 0 1px var(--accent);
+        animation: row-ping 1.2s ease-out;
+      }
+      @keyframes row-ping {
+        from {
+          background: var(--accent-dim);
+        }
       }
       /* The Level and Environment rows are level settings, not objects, so they sit above the tree with a rule
          under them rather than being indented into it (ADR 0048). */
@@ -2623,6 +2655,133 @@
         text-align: left;
       }
       /* One popover at a time (`controls.ts`): the palette, the eases, a sequence's settings. */
+      /* A reference field (ADR 0176): what it points at, ✕, the picker — and a drop target, lit or greyed. */
+      .rf {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        height: 24px;
+        border: 1px solid #2f343c;
+        border-radius: 5px;
+        background: #15171b;
+      }
+      .rf:hover {
+        border-color: #3d434d;
+      }
+      .rf-name {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 100%;
+        padding: 0 8px;
+        border: 0;
+        background: none;
+        color: var(--text);
+        font: inherit;
+        font-size: 11.5px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .rf-name svg {
+        flex: none;
+        width: 13px;
+        height: 13px;
+        color: var(--dim);
+      }
+      .rf-t {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .rf-none .rf-name,
+      .rf-missing .rf-name {
+        color: var(--dim);
+        cursor: default;
+      }
+      .rf-missing .rf-name svg {
+        color: #e0a340;
+      }
+      .rf-x,
+      .rf-pick {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 22px;
+        height: 100%;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--dim);
+        cursor: pointer;
+      }
+      .rf-pick {
+        border-left: 1px solid #2f343c;
+      }
+      .rf-x:hover,
+      .rf-pick:hover {
+        color: var(--text);
+        background: var(--hover);
+      }
+      .rf-x svg,
+      .rf-pick svg {
+        width: 12px;
+        height: 12px;
+      }
+      .rf.rf-ok {
+        border-color: var(--accent);
+        background: #1a2638;
+      }
+      .rf.rf-no {
+        border-color: #6b3a3a;
+      }
+      .rf.rf-no .rf-name {
+        color: #d98c8c;
+      }
+      .rf-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: 240px;
+      }
+      .rf-rows {
+        display: flex;
+        flex-direction: column;
+        max-height: 260px;
+        overflow-y: auto;
+      }
+      .rf-row {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 24px;
+        padding: 0 6px;
+        border: 0;
+        border-radius: 4px;
+        background: none;
+        color: var(--text);
+        font: inherit;
+        font-size: 11.5px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .rf-row:hover {
+        background: var(--hover);
+      }
+      .rf-row svg {
+        flex: none;
+        width: 13px;
+        height: 13px;
+        color: var(--dim);
+      }
+      .rf-empty {
+        padding: 4px 6px;
+        color: var(--dim);
+        font-style: italic;
+        font-size: 11.5px;
+      }
       .pop {
         position: fixed;
         z-index: 60;

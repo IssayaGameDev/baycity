@@ -28,6 +28,7 @@ import {
 } from './controls'
 import { cardJustDragged, pressCardToDrag } from './cardDrag'
 import { icon, type IconName } from './icons'
+import { refField, type RefShown } from './refField'
 import { sequenceSummary } from './sequenceEdit'
 import { sequenceEditor } from './sequenceEditor'
 
@@ -124,6 +125,14 @@ export interface InspectorHost {
    * the same list, so a new asset-valued parameter needs nothing here.
    */
   assetOptions: (of: AssetSpec['of']) => Record<string, string>
+  /** Why an asset cannot go in a field of that kind here, or `null` (ADR 0176): wrong kind, or not this game's. */
+  assetRefusal: (of: AssetSpec['of'], id: string) => string | null
+  /** The assets a Project window drag carries right now, for a reference field (ADR 0176); empty when none. */
+  draggedAssets: () => readonly string[]
+  /** Flash a Hierarchy row, the selection left alone: where an object field points (ADR 0176). */
+  pingNode: (index: number) => void
+  /** Show an asset's tile in the Project window, the selection left alone (ADR 0176). */
+  revealAsset: (id: string) => void
   /** Revert one override — `'transform'`, `'name'`, or a component id — or all of them. */
   revertOverride: (field?: string) => void
   /**
@@ -461,16 +470,16 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
 
   /**
    * What the panel is made of, as the document has it now (ADR 0168): the object, its cards and their lines, and
-   * every value that decides them — an enum gating other lines, a picked asset, a collider's kind, a node picked, a
-   * sequence, each card's switch and overrides; with several selected, all of their values. What a line only shows —
-   * a number, a tick, a text, a colour, a vector, a collider's sizes — is left out: a change to one is followed in
-   * place. `null` for no object, or the level's or the environment's panel, which draw again every time.
+   * every value that decides them — an enum gating other lines, a collider's kind, a sequence, each card's switch and
+   * overrides, the built-in shape a model field holds; with several selected, all of their values. What a line only
+   * shows — a number, a tick, a text, a colour, a vector, a collider's sizes, what a reference field points at
+   * (ADR 0176) — is left out: a change to one is followed in place. `null` for no object, or the level's or the environment's panel, which draw again every time.
    */
   const shapeNow = (): string | null => {
     const doc = host.doc()
     const at = host.selected()
     if (doc === null || at === null || host.levelSelected() || host.envSelected()) return null
-    const followed = new Set<string>(['number', 'bool', 'string', 'color', 'vec3'])
+    const followed = new Set<string>(['number', 'bool', 'string', 'color', 'vec3', 'asset', 'nodeRef'])
     return doc.reading(() => {
       const indices = host.selectionIndices()
       const cards = doc.components(at).map((view) => {
@@ -880,19 +889,43 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         return
       }
       case 'asset': {
-        const choices = Object.entries(host.assetOptions(spec.of)).map(([text, id]) => ({ value: id, label: text }))
-        line(
-          selectField(
-            choices,
-            mixed ? null : String(state[key] ?? ''),
-            (v) => {
-              write({ [key]: v })
-              // A built-in shape picked or dropped changes what the Collider card shows (ADR 0090).
-              rebuildKeepingScroll()
-            },
-            label,
-          ),
-        )
+        /**
+         * A reference field (ADR 0176): the asset's name, a picker, ✕, and a tile dropped from the Project window.
+         * The names are the picker's own, so a built-in shape (ADR 0090) reads as it does there.
+         */
+        const glyph = (id: string): IconName => (id.startsWith('builtin:') ? 'object' : spec.of === 'model' ? 'mesh' : 'material')
+        const shownFor = (v: unknown): RefShown => {
+          if (typeof v !== 'string' || v === '') return null
+          const options = host.assetOptions(spec.of)
+          const name = Object.keys(options).find((k) => options[k] === v)
+          return name === undefined ? { label: `missing ${spec.of}`, icon: 'warn', missing: true } : { label: name, icon: glyph(v) }
+        }
+        const set = (v: string): void => {
+          write({ [key]: v })
+          // A built-in shape picked or dropped changes what the Collider card shows (ADR 0090).
+          rebuildKeepingScroll()
+        }
+        const field = refField({
+          shown: mixed ? 'mixed' : shownFor(state[key]),
+          none: `None (${spec.of})`,
+          title: label,
+          choices: () =>
+            Object.entries(host.assetOptions(spec.of))
+              .filter(([, id]) => id !== '')
+              .map(([name, id]) => ({ value: id, label: name, icon: glyph(id) })),
+          pick: (v) => set(v ?? ''),
+          ping: () => {
+            const v = now()
+            if (typeof v === 'string' && v !== '' && !v.startsWith('builtin:')) host.revealAsset(v)
+          },
+          refuse: (drag) => (drag.kind === 'asset' ? host.assetRefusal(spec.of, drag.id) : `this takes a ${spec.of}, not an object`),
+          take: (drag) => {
+            if (drag.kind === 'asset') set(drag.id)
+          },
+          draggedAssets: host.draggedAssets,
+        })
+        line(field.root)
+        follow((v) => field.set(shownFor(v)))
         return
       }
       case 'collider': {
@@ -969,15 +1002,37 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       }
       case 'nodeRef': {
         /**
-         * A dropdown of the nodes this one may name, rather than Unity's drag-an-object-into-the-field: the
-         * scope is already narrow (`nodeChoices` refuses anything that would author a dangling reference), and a
-         * picker cannot express a target the document does not have. `''` is "none"; the schema's is `null`.
+         * A reference field (ADR 0176): the object's name — a press pings its row — a picker of the nodes this one
+         * may name, ✕, and a Hierarchy row dropped on it. The reach is `nodeChoices`' (`refTo` for a drop), which
+         * refuses anything that would author a dangling reference. The schema's none is `null`.
          */
         if (mixed) return differs()
-        const choices: Choice[] = [{ value: '', label: '(none)' }]
-        for (const choice of doc.nodeChoices(at)) choices.push({ value: choice.id, label: `${choice.label} · ${choice.id.slice(0, 6)}` })
-        const named = state[key]
-        line(selectField(choices, typeof named === 'string' ? named : '', (v) => write({ [key]: v === '' ? null : v }), label))
+        const shownFor = (v: unknown): RefShown => {
+          if (typeof v !== 'string') return null
+          const j = doc.refTarget(at, v)
+          return j === null ? { label: `missing · ${v.slice(0, 6)}`, icon: 'warn', missing: true } : { label: doc.label(j), icon: doc.refOf(j) === null ? 'object' : 'prefab' }
+        }
+        const field = refField({
+          shown: shownFor(state[key]),
+          none: 'None (object)',
+          title: label,
+          choices: () => doc.nodeChoices(at).map((c) => ({ value: c.id, label: `${c.label} · ${c.id.slice(0, 6)}`, icon: 'object' })),
+          pick: (v) => write({ [key]: v }),
+          ping: () => {
+            const v = now()
+            const j = typeof v === 'string' ? doc.refTarget(at, v) : null
+            if (j !== null) host.pingNode(j)
+          },
+          refuse: (drag) =>
+            drag.kind !== 'node' ? 'this takes an object, not an asset' : doc.refTo(at, drag.index) === null ? 'a piece inside another prefab cannot be linked from here' : null,
+          take: (drag) => {
+            const id = drag.kind === 'node' ? doc.refTo(at, drag.index) : null
+            if (id !== null) write({ [key]: id })
+          },
+          draggedAssets: host.draggedAssets,
+        })
+        line(field.root)
+        follow((v) => field.set(shownFor(v)))
         return
       }
       case 'stages': {

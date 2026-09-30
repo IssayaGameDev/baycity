@@ -11,10 +11,10 @@ import { DEFAULT_KEYCAP_LOOK, DEFAULT_PRESS, drawKeycaps, type KeycapLook, type 
 import { createPopups, DEFAULT_POPUP, type PopupFeel } from './popups'
 import { abbreviate, BASE_PER_STEP, levelAt, loadExperience, maxSpeedAt, METRES_PER_STUD, saveExperience, type ProgressCurve } from './progression'
 import { keyboardSession, GAME_CURVE, GAME_KEYS } from './rules'
-import { createStepper, stepsPerSecond } from './steps'
-import { Treadmill, TREADMILL_STATE, treadmillStepValue, type TreadmillTick } from './treadmill'
-import { loadPerStep, loadWins, padTop, savePerStep, saveWins } from './wins'
-import { qualifies, StepPad, type StepPadOffer } from './stepPad'
+import { createStepper, stepsPerSecond } from './components/steps'
+import { Treadmill, TREADMILL_STATE, treadmillStepValue, type TreadmillTick } from './components/treadmill'
+import { loadPerStep, loadWins, padTop, savePerStep, saveWins } from './components/wins'
+import { qualifies, StepPad, type StepPadOffer } from './components/stepPad'
 
 /**
  * Keyboard Escape, as an application (ADR 0069, ADR 0071).

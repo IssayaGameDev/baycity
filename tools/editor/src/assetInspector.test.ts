@@ -51,6 +51,8 @@ const rig = (over: Partial<AssetInspectorHost> = {}, show: string = M) => {
     named: (path) => `Shared/${path.slice('assets/'.length)}`,
     onOpenLevel: (q) => calls.push(`open ${q}`),
     onSelectAsset: (id) => calls.push(`select ${id}`),
+    draggedAssets: () => [],
+    revealAsset: (id) => calls.push(`reveal ${id}`),
     ...over,
   })
   inspector.show(show)

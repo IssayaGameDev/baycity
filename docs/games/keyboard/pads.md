@@ -3,7 +3,7 @@
 Both are contact-driven level components (a stay: `onContact` every tick) that report through
 `effects.progress(node)`; the session reads their params off the node (ADR 0080, ADR 0082). Both get a sign.
 
-## `StepPad` — `stepPad.ts`
+## `StepPad` — `components/stepPad.ts`
 
 Sets what a step pays. The real game's row of numbered buttons at spawn.
 
@@ -26,7 +26,7 @@ The shipped eight (children of `step-pads`, x −12, two rows of four, 3 m apart
 50/500, 100/2.5K, 250/15K, 500/50K; active = goal yellow `6bbc0130aff311b5`, idle = checkpoint green
 `d67ddcac4f57efc8`.
 
-## `Treadmill` — `treadmill.ts`
+## `Treadmill` — `components/treadmill.ts`
 
 Stand on it and earn steps without input.
 

@@ -11,6 +11,9 @@ import { icon, type IconName } from './icons'
  * picks. Holding over a shut row opens it, the panel scrolls at its edges, and Escape puts everything back.
  *
  * The decision is `dropAt`, pure, over measured rows; the rest measures and draws.
+ *
+ * Off the list, the drag asks `outside` what is under the pointer (ADR 0176): an Inspector reference field, which
+ * lights or greys itself and takes the grabbed row on the drop instead of a reparent.
  */
 
 /** Left padding of a row, and how far each level of nesting indents it. The guides and the line share them. */
@@ -105,6 +108,15 @@ export interface DrawnRow {
   readonly el: HTMLElement
 }
 
+/** Something off the list a row can be dropped on (ADR 0176). `key` is its identity from one frame to the next. */
+export interface OutsideTarget {
+  readonly key: unknown
+  /** Show whether the row may land here; `true` when it may. */
+  readonly offer: () => boolean
+  readonly leave: () => void
+  readonly take: () => void
+}
+
 export interface RowDragHost {
   /** The scrolling list the rows are in. */
   readonly list: HTMLElement
@@ -119,6 +131,8 @@ export interface RowDragHost {
   /** Open a shut row the pointer has held over. */
   readonly expand: (index: number) => void
   readonly drop: (parent: number | null, at: number) => void
+  /** What is under the pointer off the list, if it takes a row; absent or `null` for nothing. */
+  readonly outside?: (x: number, y: number) => OutsideTarget | null
 }
 
 const THRESHOLD = 4
@@ -141,6 +155,8 @@ export const pressRowToDrag = (e: PointerEvent, host: RowDragHost): void => {
   let line: HTMLElement | null = null
   let landing: RowDrop | null = null
   let holding: { index: number; since: number } | null = null
+  /** The target off the list under the pointer, and whether it takes the row. */
+  let aside: { target: OutsideTarget; ok: boolean } | null = null
   let frame = 0
 
   const marks = (): void => {
@@ -183,6 +199,14 @@ export const pressRowToDrag = (e: PointerEvent, host: RowDragHost): void => {
     const want = (x - box.left - ROW_BASE - INDENT / 2) / INDENT
     const drop = over ? dropAt(rows, y, want, (index) => host.canReparent(index)) : null
     landing = drop !== null && host.canReparent(drop.kind === 'onto' ? drop.index : drop.parent) ? drop : null
+
+    // Asked only when the target changes: what it says about this row does not change while the pointer rests on it.
+    const outside = over ? null : (host.outside?.(x, y) ?? null)
+    if (aside !== null && aside.target.key !== outside?.key) {
+      aside.target.leave()
+      aside = null
+    }
+    if (outside !== null && aside === null) aside = { target: outside, ok: outside.offer() }
 
     if (line !== null) {
       if (landing?.kind === 'between') {
@@ -233,6 +257,13 @@ export const pressRowToDrag = (e: PointerEvent, host: RowDragHost): void => {
     const landed = landing
     landing = null
     for (const d of host.drawn()) d.el.classList.remove('carried', 'drop-onto')
+    const off = aside
+    aside = null
+    if (off !== null) {
+      if (drop && off.ok) off.target.take()
+      else off.target.leave()
+      return
+    }
     if (!drop || landed === null) return
     if (landed.kind === 'onto') host.drop(landed.index, Number.MAX_SAFE_INTEGER) // appended; clamped by the doc
     else host.drop(landed.parent, landed.at)

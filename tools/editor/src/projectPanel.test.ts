@@ -46,6 +46,7 @@ const rig = (over: Partial<ProjectHost> = {}) => {
   document.body.append(container)
   const calls: string[] = []
   let menu: readonly MenuItem[] = []
+  let dragged: readonly string[] = []
   const host: ProjectHost = {
     db: () => DB,
     game: () => ({ name: 'keyboard', label: 'Keyboard' }),
@@ -61,6 +62,7 @@ const rig = (over: Partial<ProjectHost> = {}) => {
     onSelectAsset: (id) => calls.push(`select ${id}`),
     onOpenPrefab: (id) => calls.push(`open ${id}`),
     onDragAsset: (id) => calls.push(`drag ${id ?? 'over'}`),
+    onDragAssets: (ids) => void (dragged = ids),
     onCreateAsset: (kind, folder) => calls.push(`new ${kind} in ${folder}`),
     onMkdir: (parent, name) => calls.push(`mkdir ${name} in ${parent}`),
     onContext: () => {},
@@ -78,7 +80,7 @@ const rig = (over: Partial<ProjectHost> = {}) => {
   const tree = (): string[] => $$('.ex-tree .row').map((r) => r.querySelector('.name')!.textContent ?? '')
   const crumbs = (): string[] => $$('.ex-crumbs > *').map((c) => c.textContent ?? '')
   const tile = (name: string): HTMLElement => $$('.ex-grid .pt').find((t) => t.querySelector('.pt-name')?.textContent === name)!
-  return { project, host, calls, $$, tiles, tree, crumbs, tile, menu: () => menu, container }
+  return { project, host, calls, $$, tiles, tree, crumbs, tile, menu: () => menu, container, dragged: () => dragged }
 }
 
 describe('the Project window', () => {
@@ -227,6 +229,17 @@ describe('the Project window', () => {
     drag(tile('sounds'), tile('textures'))
     drag(tile('materials'), tile('textures'))
     expect(calls.filter((c) => c.startsWith('move'))).toEqual(['move assets/prefabs assets/sounds to assets/textures', 'move assets/materials to assets/textures'])
+  })
+
+  // So the Inspector keeps showing the object whose reference field the tile is being dragged onto (ADR 0176).
+  it('drags a tile that is not selected without selecting it, and says what a drag carries', () => {
+    const { tile, calls, dragged } = rig()
+    tile('materials').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    tile('red').dispatchEvent(new Event('dragstart', { bubbles: true }))
+    expect(dragged()).toEqual(['id-assets/materials/red.mat.json'])
+    expect(calls, 'nothing selected').toEqual([])
+    tile('red').dispatchEvent(new Event('dragend', { bubbles: true }))
+    expect(dragged()).toEqual([])
   })
 
   it('uploads files dragged in from outside, and never a picture dragged within the page', () => {

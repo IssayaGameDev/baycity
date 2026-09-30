@@ -99,6 +99,9 @@ describe('the Hierarchy’s rows', () => {
     expect(badge.style.getPropertyValue('--peer')).toBe('#12ab34')
     expect(row.classList.contains('held'), 'not dimmed').toBe(false)
     row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0 }))
+    // The press waits for the click, so a press that becomes a drag selects nothing (ADR 0176).
+    expect(picked, 'not on the press').toEqual([])
+    row.click()
     expect(picked).toEqual([0])
   })
 })
