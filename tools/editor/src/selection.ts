@@ -19,15 +19,15 @@ export const modeFor = (e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boole
   e.shiftKey ? 'range' : e.ctrlKey || e.metaKey ? 'toggle' : 'replace'
 
 /**
- * Whether a press should leave the selection alone until it turns out to be a click (ADR 0134).
+ * Whether a press should leave the selection alone until it turns out to be a click (ADR 0134, ADR 0176).
  *
- * A plain press on a row already in a multi-selection. Collapsing on the press is what made a drag carry one
- * row: the selection was down to the grabbed one before `dragstart` read it. The click that follows a press
- * with no drag collapses it instead, as Unity's does. Primary button only, so a right-click keeps today's
- * behaviour.
+ * Every plain press: a press that becomes a drag selects nothing. Collapsing a multi-selection on the press made
+ * a drag carry one row (ADR 0134); selecting the row pressed swapped the Inspector to it, so a row could never be
+ * dragged into the field of the object the Inspector was showing (ADR 0176). The click that follows a press with
+ * no drag selects instead. Primary button only, so a right-click keeps selecting on the press; Ctrl and Shift
+ * presses still act at once.
  */
-export const defersToClick = (selection: readonly number[], index: number, mode: SelectMode, button: number): boolean =>
-  button === 0 && mode === 'replace' && selection.length > 1 && selection.includes(index)
+export const defersToClick = (mode: SelectMode, button: number): boolean => button === 0 && mode === 'replace'
 
 /** The primary — the last clicked — or `null` when nothing is selected. */
 export const primaryOf = (selection: readonly number[]): number | null => selection[selection.length - 1] ?? null

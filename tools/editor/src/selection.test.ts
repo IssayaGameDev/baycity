@@ -178,25 +178,20 @@ describe('rootsOf', () => {
 })
 
 describe('defersToClick', () => {
-  /** The bug: the press collapsed the selection before the drag could read it, so a drag carried one row. */
-  it('holds a multi-selection on a plain press of one of its rows', () => {
-    expect(defersToClick([1, 4, 7], 4, 'replace', 0)).toBe(true)
-  })
-
-  it('selects at once when the row is not in the selection', () => {
-    expect(defersToClick([1, 4, 7], 5, 'replace', 0)).toBe(false)
-  })
-
-  it('selects at once when only that row is selected, since there is nothing to keep', () => {
-    expect(defersToClick([4], 4, 'replace', 0)).toBe(false)
+  /**
+   * A press that becomes a drag selects nothing: collapsing a multi-selection made a drag carry one row (ADR 0134),
+   * and selecting the pressed row swapped the Inspector away from the field it was being dragged to (ADR 0176).
+   */
+  it('holds every plain press until it turns out to be a click', () => {
+    expect(defersToClick('replace', 0)).toBe(true)
   })
 
   it('leaves Ctrl and Shift presses alone', () => {
-    expect(defersToClick([1, 4, 7], 4, 'toggle', 0)).toBe(false)
-    expect(defersToClick([1, 4, 7], 4, 'range', 0)).toBe(false)
+    expect(defersToClick('toggle', 0)).toBe(false)
+    expect(defersToClick('range', 0)).toBe(false)
   })
 
   it('leaves a right-click alone', () => {
-    expect(defersToClick([1, 4, 7], 4, 'replace', 2)).toBe(false)
+    expect(defersToClick('replace', 2)).toBe(false)
   })
 })

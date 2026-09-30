@@ -2,7 +2,9 @@ import { assetsOfKind, libraryOf, mayUse, type AssetDatabase, type AssetEntry, t
 import { BUILTIN_SHADERS, defaultParams, shaderDef, type ShaderParam } from '@mp/render-three'
 
 import { checkField, colorFieldOf, fieldRow, numberScrub, scrubFieldOf, selectField, type Live } from './controls'
+import { assetRefusal } from './assetRefusal'
 import { ASSET_ICON, icon } from './icons'
+import { refField, type RefShown } from './refField'
 import { initials } from './people'
 
 /**
@@ -55,6 +57,10 @@ export interface AssetInspectorHost {
   onOpenLevel: (qualified: string) => void
   /** An asset in *Used by* was clicked: select it. */
   onSelectAsset: (assetId: string) => void
+  /** The assets a Project window drag carries right now, for a texture slot (ADR 0176); empty when none. */
+  draggedAssets: () => readonly string[]
+  /** Show an asset's tile in the Project window, the selection left alone (ADR 0176). */
+  revealAsset: (assetId: string) => void
 }
 
 export interface AssetInspector {
@@ -129,33 +135,54 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
   // Its lines' card, for who is in which field (ADR 0160): the asset is the field's target, so one name serves.
   container.dataset.card = 'asset'
   /**
-   * A dropdown over the textures `user`'s material may use (ADR 0161) — its game's own and Shared's, or only
-   * Shared's for a Shared material — and a thumbnail of the current choice beside it.
+   * A texture slot: a reference field (ADR 0176) over the textures `user`'s material may use (ADR 0161) — its game's
+   * own and Shared's, or only Shared's for a Shared material — taking a tile dropped from the Project window, and a
+   * thumbnail of the current one beside it.
    */
   const textureField = (current: string | null, onPick: (id: string | null) => void, user: string | null): Field => {
     const db = host.db()
-    const usable = (db === null ? [] : assetsOfKind(db, 'texture')).filter((t) => mayUse(user, t.path))
-    const choices = [{ value: '', label: '(none)' }, ...usable.map((t) => ({ value: t.id, label: t.name }))]
-    // The thumbnail follows the pick itself: the panel is not redrawn after an edit (ADR 0157).
+    // The thumbnail and the name follow the pick itself: the panel is not redrawn after an edit (ADR 0157).
     const img = el('img', 'a-thumb')
     img.alt = ''
-    const showThumb = (id: string | null): void => {
+    let now = current
+    const shownFor = (id: string | null): RefShown => {
+      if (id === null) return null
+      const entry = db?.byId[id]
+      return entry === undefined ? { label: 'missing texture', icon: 'warn', missing: true } : { label: entry.name, icon: 'image' }
+    }
+    const show = (id: string | null): void => {
+      now = id
       const entry = id === null ? undefined : db?.byId[id]
       img.hidden = entry === undefined
       if (entry !== undefined) img.src = host.urlOf(entry.path)
+      field.set(shownFor(id))
     }
-    showThumb(current)
-    const select = selectField(choices, current ?? '', (v) => {
-      const id = v === '' ? null : v
-      showThumb(id)
+    const choose = (id: string | null): void => {
+      show(id)
       onPick(id)
+    }
+    const field = refField({
+      shown: shownFor(current),
+      none: 'None (texture)',
+      choices: () =>
+        (db === null ? [] : assetsOfKind(db, 'texture'))
+          .filter((t) => mayUse(user, t.path))
+          .map((t) => ({ value: t.id, label: t.name, icon: 'image' as const })),
+      pick: choose,
+      ping: () => {
+        if (now !== null) host.revealAsset(now)
+      },
+      refuse: (drag) => (drag.kind === 'asset' ? assetRefusal(db, 'texture', drag.id, user) : 'this takes a texture, not an object'),
+      take: (drag) => {
+        if (drag.kind === 'asset') choose(drag.id)
+      },
+      draggedAssets: host.draggedAssets,
     })
+    show(current)
     return {
-      controls: [img, select],
+      controls: [img, field.root],
       update: (v) => {
-        if (v.kind !== 'texture' || busy(select)) return
-        select.value = v.value ?? ''
-        showThumb(v.value)
+        if (v.kind === 'texture') show(v.value)
       },
     }
   }

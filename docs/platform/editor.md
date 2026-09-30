@@ -337,8 +337,12 @@ selection change. In the `selection-edges` group outside `instanceRoot`, so neve
 | eye | right end, before the count (ADR 0132, `Hiding a node` below): on hover, and always once hidden |
 | badge | `×N` for a prefab placed more than once, nothing else (`inline` went); and one per person who else has it selected (ADR 0158) |
 
-**Drag** — pointer events, not HTML5. A press becomes a drag after 4 px, so a click still selects; it carries the
-whole selection when the grabbed row is in it (ADR 0134); what a drop does is `Doc.reparent`'s. A copy with the grabbed
+**Drag** — pointer events, not HTML5. A press becomes a drag after 4 px; a plain press selects nothing — the click
+does (`defersToClick(mode, button)`, ADR 0176) — so a drag leaves the selection and the Inspector alone. It carries the
+whole selection when the grabbed row is in it (ADR 0134), else that row; what a drop does is `Doc.reparent`'s. Off the
+list, `outside(x, y)` → `refFieldAt` (the Inspector reference field under the pointer, *Inspector — reference fields*):
+offered the grabbed row once per field (`offer` lights or greys it), `take` on the drop instead of a reparent, `leave`
+on moving off. `ping(index)`: `reveal` + `.ping` for 1.2 s, the selection untouched — a reference field's press. A copy with the grabbed
 row's cube and name (`+N` for more) follows the pointer; the carried rows dim. Where it lands is
 `dropAt(rows, y, wantDepth, canOnto)`, pure, over the rows measured each frame:
 
@@ -389,7 +393,10 @@ the games window's (ADR 0162).
 | path | `.ex-crumb` per part, root label first; a click goes there. While searching: *Every folder* |
 | search | `.ex-search`: text (Escape clears it), `×` (clears text and kind), the kind button (`host.menu`: All kinds, then `ASSET_KINDS`, ✓ on the current). Text or a kind → `filterEntries({ libraries: every root, folder: null, kind, search })`, files only, names only |
 | bottom | `.ex-foot`: one picked, `named(path)` (`<root label>/<path inside>`); several, *N items selected*; the slider `SIZE` 40–144 step 4, start 64, per viewer (`localStorage` `mp.project.tileSize`, try/caught) |
-| drops | onto a tree row, a folder tile, or the grid (the folder on screen; not while searching): files from the desktop upload — **only a drag from outside the page** (`dragFromPage`, set by any `dragstart` in the document, cleared on `dragend` and after any drop): a picture dragged within the page comes as a file too, a data URL as `download.png`; thumbnails are `draggable = false`, the tile is what is dragged. Tiles move — a tile of the selection carries all of it (`application/x-mp-assets`, paths by line), another carries itself and is selected — `onMove(froms, to)`, less any there already or the folder itself; main refuses a folder into itself, then `AssetLibrary.move` or `moveMany` (all or none, ADR 0166); between libraries the server may refuse with why (ADR 0161) |
+| drops | onto a tree row, a folder tile, or the grid (the folder on screen; not while searching): files from the desktop upload — **only a drag from outside the page** (`dragFromPage`, set by any `dragstart` in the document, cleared on `dragend` and after any drop): a picture dragged within the page comes as a file too, a data URL as `download.png`; thumbnails are `draggable = false`, the tile is what is dragged. Tiles move — a tile of the selection carries all of it (`application/x-mp-assets`, paths by line), another carries itself, the selection left alone (ADR 0176) — `onMove(froms, to)`, less any there already or the folder itself; main refuses a folder into itself, then `AssetLibrary.move` or `moveMany` (all or none, ADR 0166); between libraries the server may refuse with why (ADR 0161) |
+
+Any drag of tiles reports the asset ids it carries, `onDragAssets(ids)` (`[]` on `dragend`) → main's `draggedAssets`:
+what a reference field reads before the drop, since a browser drag cannot say until then (ADR 0176).
 
 `folder()` is where *Save as prefab…* writes (ADR 0091). An asset's URL is `/content/<path>` (`assetUrl`), as on disk.
 `Filter` (`assetTree.ts`) is `{ libraries, folder: string | null, kind, search }`: one folder's own files, or — `null`
@@ -563,7 +570,8 @@ runtime is built over `libraryView`, so a new, renamed or moved asset needs none
 | `.a-users` | *Used by*: `fetchUsers(id)` (`GET /api/assets/users`) each time it is shown — `…`, then a `.a-use` per level (`level` icon, `levelLabel` `Game › name`, a click `openFile`) and per asset (`ASSET_ICON`, name, a click `selectAsset` + `project.reveal(path)`); *Nothing uses it.*; *The server could not say.* |
 
 **The asset Inspector's fields** are the object Inspector's (`controls.ts`, on `fieldRow` lines, `--lw` on
-`#asset-inspector`): shader and texture `selectField` (a texture with an `.a-thumb` beside it), colour
+`#asset-inspector`): shader `selectField`, texture a reference field (`refField`, ADR 0176; a texture tile dropped on
+it, refused by `assetRefusal(db, 'texture', id, user)`) with an `.a-thumb` beside it, colour
 `colorFieldOf`, number `scrubFieldOf` (`numberScrub(param)`), vec2 two of them (`X` / `Y`, step 0.1), boolean
 `checkField`. Each field's `update` shows someone else's value through the handle's `set`, which skips a field being
 dragged, picked or typed in. A drag is `dragged(change, settle)`: each `move` is an `ongoing` edit, the commit the
@@ -837,10 +845,28 @@ A line is `fieldRow(label, ...controls)` (`controls.ts`), which a card's `field`
 | head | active tick (ADR 0102) and the name; the **prefab bar** on a placement or a piece — icon, the prefab's name (`host.prefabName(id)`) or `part of <prefab>`, `×N` (`Doc.refCount`), **Open** (a ref only), **Overrides ▾** with the count: on a placement `Revert all` / `Apply all` / `Unlink from prefab` over everything inside it (`placementOverrides` + `placementAdded` + `placementRemoved`), on a piece `Revert all` / `Apply` over its own (`overridesOf`); greyed with `matches the prefab` when there is nothing. A plain object has no bar. `N selected · editing what they share` under it |
 | cards | `.isec`, one per component, Transform first: twist, enable, `componentIcon(type)` (a game's own components share `component`), name, badge (`added` or the override count), a sequence's tools, ⋯. A click on the header's empty part opens or shuts it; shut state per component id survives rebuilds. A component with no visible parameter is `.isec-bare`: its header alone. The Transform is `.isec-fixed`: always open, no twist, never moved. **Reorder** (`cardDrag.ts`): a `.movable` card — an own component, one object selected, where Move up / Move down are offered — is dragged by its header; after 4 px a copy follows the pointer, a placeholder opens at `slotFor(y, middles)` (pure: before the first other card whose middle is below), the cards slide, the panel scrolls at its edge, Escape cancels; the drop is `Doc.moveComponent(i, id, to − from)`, one op. `cardJustDragged()` keeps the drop from toggling the card. Then **Add Component** (`.iadd`). No footer |
 | lines | `.irow`: a label in `--lw` = `clamp(72px, 40% - 24px, 280px)` of the line, then the controls; `.over` bars an overridden one, `.mixed` italicises one the selection disagrees about; `.inote` for a line of explanation |
-| fields | `scrubFieldOf` (numbers; `numberScrub(decl)` says how they drag), `checkField`, `selectField`, `textField`, `colorField` (the browser's picker and the `#rrggbb`). `null` is mixed: blank, and a number is then typed only. Environment and network bounds use the same fields, as do the games window's settings |
+| fields | `scrubFieldOf` (numbers; `numberScrub(decl)` says how they drag), `checkField`, `selectField`, `textField`, `colorField` (the browser's picker and the `#rrggbb`), `refField` for what points at something (*Inspector — reference fields*). `null` is mixed: blank, and a number is then typed only. Environment and network bounds use the same fields, as do the games window's settings |
 | a drag | `Live` on the field: `liveWrite` opens `host.beginDrag()` when the press becomes a drag, writes on every move, and `host.endDrag(label)` when it lets go — one history entry, one message to the room, the viewport following the pointer. `main.ts` counts it in `gizmoDragging`, so a remote repaint waits, and drains it at the end. Written as they settle instead: the network bound, and a multi-selection's transform (`writeAxis` is its own entry). A rebuild mid-drag closes the entry |
 | sync | the gizmo moved the selection: `sync` sets the transform's nine fields (`ScrubHandle.set`), skipping one being dragged or typed in; nothing is rebuilt |
-| refresh | an edit from elsewhere to the object shown (ADR 0168): `shapeNow()` — JSON of the object, its selection, kind, prefab, built-in, overrides, and per card id, type, switch, added, inherited, overridden, the lines shown, the values of lines not followed (enum, asset, collider kind, nodeRef, stages), a sequence's params and override, several selected's params — against `drawnShape` (set in `build`; `null` for none, the level's and the environment's panels). Equal: `renderHead`, `sync`, then each `followers` entry (pushed by `addParam`, one object only) shows the value now — `ScrubHandle.set` / `ColorHandle.set` (they skip a field in use), a text only when not focused, a tick always; a vector's and a collider's own copies follow too. Else `rebuildKeepingScroll` |
+| refresh | an edit from elsewhere to the object shown (ADR 0168): `shapeNow()` — JSON of the object, its selection, kind, prefab, built-in, overrides, and per card id, type, switch, added, inherited, overridden, the lines shown, the values of lines not followed (enum, collider kind, stages), a sequence's params and override, several selected's params — against `drawnShape` (set in `build`; `null` for none, the level's and the environment's panels). Equal: `renderHead`, `sync`, then each `followers` entry (pushed by `addParam`, one object only) shows the value now — `ScrubHandle.set` / `ColorHandle.set` (they skip a field in use), a text only when not focused, a tick always; a vector's and a collider's own copies follow too. Else `rebuildKeepingScroll` |
+
+## Inspector — reference fields (ADR 0176, `src/refField.ts`)
+
+An `asset` parameter, a `nodeRef` parameter and a material's texture slot are one control, `refField(o)` →
+`{ root, set(shown) }`, drawn as Unity draws one; no dropdown.
+
+| | |
+| --- | --- |
+| name | `.rf-name`: the icon and name it points at (`RefShown`), `None (<kind>)`, `—` for a selection that differs, `missing …` (`.rf-missing`) for an id that resolves to nothing. A press **pings**: `host.pingNode(doc.refTarget(at, id))` (the Hierarchy's `ping`) or `host.revealAsset(id)` (`project.reveal(path)`); the selection stays. Nothing for a built-in shape |
+| ✕ | `.rf-x`, hidden at none: `pick(null)` — `''` for an asset, `null` for a node |
+| picker | `.rf-pick` → `openPopover(…, 'pop-ref')`: a search box (`.rf-search`, focused; Enter takes the first match) over *None* and `choices()` — an asset field's `host.assetOptions(of)` (built-in shapes included, ADR 0090; the game's own and Shared's, ADR 0161), a node field's `doc.nodeChoices(at)` as `label · id6` |
+| drop, a tile | the browser's drag: `dragover` reads `draggedAssets()` (the Project window's `onDragAssets`); one id → `refuse`, `preventDefault` only when it fits (`dropEffect` `move` for a `move`-only tile, else `copy`); several → *one at a time*; `drop` → `take` |
+| drop, a row | the Hierarchy's pointer drag asks `refFieldAt(x, y)` (`elementFromPoint` → `.rf` → the field's `RefTarget`): `offer(drag)`, `leave()`, `take(drag)`, `RefDrag` `{ kind: 'node', index }` |
+| refusals | shown in place of the name, `.rf-no`; `.rf-ok` lights one that fits. Asset: `assetRefusal(db, of, id, user)` (`assetRefusal.ts`) — *not in the project*, *this takes a material, not a texture*, *X belongs to another game*, *X is a game's own, and this is Shared*; a row on an asset field *this takes a material, not an object*. Node: `Doc.refTo(at, index)` — the id to store, `null` out of reach (*a piece inside another prefab cannot be linked from here*); an asset on it *this takes an object, not an asset* |
+| in place | `follow` → `set(shownFor(now()))` (`asset` and `nodeRef` are in `shapeNow`'s followed kinds); several selected: an asset shows `—` and writes all, a node reference differing is the *differs* row |
+
+`Doc.refTo(i, j)` and `Doc.refTarget(i, id)` share `nodeChoices`' reach (`reaches(n, o)`: an own node names own nodes; a
+piece names its own placement's pieces or the level's), by index — two placements of one prefab carry the same piece ids.
 
 ## Numbers in the Inspector (ADR 0113)
 

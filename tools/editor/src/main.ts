@@ -67,6 +67,7 @@ import { createPeople, type PeopleState } from './people'
 import { createFieldPresence, type Ring } from './fieldPresence'
 import { createGamesWindow, type GamesWindow } from './gamesWindow'
 import { componentUse, removalRefusal } from './componentUse'
+import { assetRefusal } from './assetRefusal'
 import { createFileActions } from './fileActions'
 import { createMotionPreview } from './motionPreview'
 import { createMenus } from './menus'
@@ -1545,6 +1546,18 @@ const dragPlace = createDragPlace(canvas, {
   readout: (text, at) => showReadout(text, at),
 })
 
+/**
+ * What a drag of Project window tiles carries, by id, while one is under way (ADR 0176): a reference field has to
+ * know before the drop, and a browser drag cannot say until then.
+ */
+let draggedAssets: readonly string[] = []
+
+/** An asset's tile, shown in the Project window with the selection left alone: where a reference field points. */
+const revealAsset = (id: string): void => {
+  const path = assets?.db.byId[id]?.path
+  if (path !== undefined) project.reveal(path)
+}
+
 const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   db: () => assets?.db ?? null,
   folders: () => assets?.folders ?? [],
@@ -1558,6 +1571,7 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
     else void prefabs.enterPrefab(id)
   },
   onDragAsset: (id) => dragPlace.dragging(id),
+  onDragAssets: (ids) => void (draggedAssets = ids),
   onUpload: (files, folder) => {
     const cap = me?.maxUploadBytes ?? Infinity
     const tooBig = files.filter((f) => f.size > cap).map((f) => f.name)
@@ -1878,6 +1892,8 @@ showBottomTab('palette')
 // --- asset inspector (materials) ---
 const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#asset-inspector'), {
   db: () => assets?.db ?? null,
+  draggedAssets: () => draggedAssets,
+  revealAsset: (id) => revealAsset(id),
   urlOf: (path) => assets?.urlOf(path) ?? path,
   materialOf: (id) => assets?.materialOf(id),
   openers: (id) => room.openersOf(id).map((p) => ({ name: p.name, colour: peerCss(p.connId) })),
@@ -2175,6 +2191,10 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     if (db !== undefined) for (const a of assetsOfKind(db, of)) if (mayUse(user, a.path)) options[a.name] = a.id
     return options
   },
+  assetRefusal: (of, id) => assetRefusal(assets?.db ?? null, of, id, editingFor()),
+  draggedAssets: () => draggedAssets,
+  pingNode: (index) => hierarchy.ping(index),
+  revealAsset: (id) => revealAsset(id),
 })
 
 /**

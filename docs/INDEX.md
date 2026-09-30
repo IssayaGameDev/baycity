@@ -223,5 +223,6 @@ why matters.
 | [0173](adr/0173-file-locks-are-deleted.md) | File locks are deleted |
 | [0174](adr/0174-one-component-per-file.md) | One component per file |
 | [0175](adr/0175-a-shared-component-can-be-removed-from-a-game.md) | A shared component can be removed from a game |
+| [0176](adr/0176-reference-fields-take-drops.md) | Reference fields take drops, and a press that drags selects nothing |
 
 `Design archive/` holds superseded design material and is not maintained.

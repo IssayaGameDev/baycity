@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { levelDoc, type Doc } from './editorDoc'
 import { createInspector, type InspectorHost, type TransformValues } from './inspector'
 import type { MenuItem } from './menu'
+import { refTargetOf } from './refField'
 
 /**
  * What the Inspector draws (ADR 0152): a card per component with its icon, every field ours, a drag that
@@ -34,7 +35,7 @@ interface Rig {
   readonly calls: { begins: number; drags: string[]; transforms: TransformValues[]; menus: { items: readonly MenuItem[]; title: string }[] }
 }
 
-const rig = (doc: Doc, selection: readonly number[], transform: Partial<TransformValues> = {}): Rig => {
+const rig = (doc: Doc, selection: readonly number[], transform: Partial<TransformValues> = {}, over: Partial<InspectorHost> = {}): Rig => {
   const head = document.createElement('div')
   const panel = document.createElement('div')
   document.body.replaceChildren(head, panel)
@@ -66,6 +67,10 @@ const rig = (doc: Doc, selection: readonly number[], transform: Partial<Transfor
     prefabName: (id) => (id === TOWER_ID ? 'Tower' : null),
     openPrefab: () => {},
     assetOptions: () => ({ '(none)': '' }),
+    assetRefusal: () => null,
+    draggedAssets: () => [],
+    pingNode: () => {},
+    revealAsset: () => {},
     revertOverride: () => {},
     unlinkPrefab: () => {},
     applyOverrides: () => {},
@@ -73,6 +78,7 @@ const rig = (doc: Doc, selection: readonly number[], transform: Partial<Transfor
     applyPlacementOverrides: async () => {},
     menu: { open: (_at, items, title) => void calls.menus.push({ items, title: title ?? '' }), close: () => {}, isOpen: () => false },
     pointsChanged: () => {},
+    ...over,
   }
   const inspector = createInspector(head, panel, host)
   inspector.rebuild()
@@ -120,6 +126,42 @@ describe('the Inspector’s cards', () => {
     expect(hazard.classList.contains('isec-bare')).toBe(true)
     expect(hazard.querySelector<HTMLElement>('.isec-body')!.hidden).toBe(true)
     expect(panel.textContent).not.toContain('no parameters')
+  })
+
+  it('draws an asset parameter as a reference field, which takes a Project tile dropped on it (ADR 0176)', () => {
+    const doc = levelDoc({ id: 'l', config: {}, nodes: [box('a', vec3(0, 0, 0))] })
+    let dragged: readonly string[] = []
+    const { panel } = rig(doc, [0], {}, {
+      assetOptions: (of) => (of === 'material' ? { '(none)': '', red: 'm-red' } : { '(none)': '', Box: 'builtin:box' }),
+      assetRefusal: (of, id) => (of === 'material' && id === 'm-red' ? null : 'this takes a material'),
+      draggedAssets: () => dragged,
+    })
+    const field = (): HTMLElement => line(card(panel, 'Mesh Renderer'), 'material').querySelector<HTMLElement>('.rf')!
+    expect(field().textContent).toContain('None (material)')
+    dragged = ['m-red']
+    const over = new Event('dragover', { bubbles: true, cancelable: true })
+    field().dispatchEvent(over)
+    expect(over.defaultPrevented, 'it may land').toBe(true)
+    field().dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }))
+    expect(paramOf(doc, 0, RENDERER, 'material')).toBe('m-red')
+    expect(field().textContent).toContain('red')
+  })
+
+  it('draws an object parameter as a reference field, which takes a Hierarchy row and pings what it names (ADR 0176)', () => {
+    const doc = levelDoc({ id: 'l', config: {}, nodes: [node('boss', [comp('bo', 'Boss')]), node('zone', [])] })
+    const pinged: number[] = []
+    const { panel, refresh } = rig(doc, [0], {}, { pingNode: (i) => void pinged.push(i) })
+    const field = (): HTMLElement => line(card(panel, 'Boss'), 'zone').querySelector<HTMLElement>('.rf')!
+    expect(field().textContent).toContain('None (object)')
+    const target = refTargetOf(field())!
+    expect(target.offer({ kind: 'node', index: 1 })).toBe(true)
+    target.take({ kind: 'node', index: 1 })
+    expect(paramOf(doc, 0, 'Boss', 'zone')).toBe('zone')
+    refresh()
+    expect(field().querySelector('.rf-name')!.textContent).toBe('zone')
+    field().querySelector<HTMLElement>('.rf-name')!.click()
+    expect(pinged).toEqual([1])
+    expect(target.offer({ kind: 'asset', id: 'm-red' }), 'an asset is not an object').toBe(false)
   })
 
   it('draws the Renderer as one Mesh Renderer card: its model, then its material (ADR 0153)', () => {

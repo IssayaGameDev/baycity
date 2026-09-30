@@ -680,6 +680,29 @@ describe('node references (stage C4)', () => {
     expect(doc.nodeChoices(2).map((c) => c.id)).not.toContain(inheritedId)
   })
 
+  /**
+   * A drag names the row it was (ADR 0176). Two placements of one prefab carry the same piece ids, so reach is asked
+   * by index: a piece reaches its own placement's twin, never the other placement's.
+   */
+  it('says what a dragged row would be stored as, and where a stored id points, by placement', () => {
+    const level = blank()
+    const doc = levelDoc(level, REG)
+    const rootA = placeRef(doc, vec3(0, 0, 0))
+    const rootB = placeRef(doc, vec3(5, 0, 0))
+    const pieces = [...Array(doc.count()).keys()].filter((i) => doc.kindOf(i) === 'inherited')
+    expect(pieces).toHaveLength(2)
+    const [pieceA, pieceB] = doc.parentOf(pieces[0]!) === rootA ? [pieces[0]!, pieces[1]!] : [pieces[1]!, pieces[0]!]
+    const pieceId = doc.prefabAt(PAD_ID)!.children![0]!.id
+    expect(doc.refTo(pieceA, pieceA)).toBe(pieceId)
+    expect(doc.refTo(pieceA, rootB), 'a piece reaches the level').toBe(level.nodes[1]!.id)
+    expect(doc.refTo(pieceA, pieceB), 'not the twin in the other placement').toBeNull()
+    expect(doc.refTo(rootA, pieceA), 'an own node does not reach into a prefab').toBeNull()
+    expect(doc.refTarget(pieceA, pieceId)).toBe(pieceA)
+    expect(doc.refTarget(pieceB, pieceId)).toBe(pieceB)
+    expect(doc.refTarget(rootA, doc.refTo(rootA, rootB)!)).toBe(rootB)
+    expect(doc.refTarget(rootA, 'nobody')).toBeNull()
+  })
+
   it('re-points a reference when the subtree carrying it is duplicated', () => {
     const { level, doc } = linked()
     const watcher = named(doc, 'watcher')

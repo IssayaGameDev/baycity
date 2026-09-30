@@ -1,6 +1,7 @@
 import type { Doc } from './editorDoc'
 import { pressRowToDrag, rowJustDragged, INDENT, ROW_BASE, type DrawnRow } from './hierarchyDrag'
 import { icon, type IconName } from './icons'
+import { refFieldAt } from './refField'
 import { defersToClick, modeFor, type SelectMode } from './selection'
 
 /**
@@ -218,6 +219,11 @@ export interface Hierarchy {
    */
   reveal: (index: number) => void
   /**
+   * Reveal a row and flash it, leaving the selection alone: where a reference field's object is (ADR 0176), as
+   * Unity pings one.
+   */
+  ping: (index: number) => void
+  /**
    * Start the inline rename on a row, as a double-click does.
    *
    * Exposed so a context menu can offer Rename: double-click is the only way in today, which is a gesture
@@ -242,7 +248,10 @@ const span = (className: string, text?: string): HTMLSpanElement => {
 
 export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hierarchy => {
   const expanded = new Set<string>()
-  /** The row whose press left a multi-selection alone, to collapse it on the click if no drag came of it. */
+  /** The row a ping is flashing, kept across renders until the flash ends. */
+  let pinged: number | null = null
+  let pingTimer: ReturnType<typeof setTimeout> | undefined
+  /** The row whose press left the selection alone, to select it on the click if no drag came of it. */
   let pressKept: number | null = null
   let editing: number | null = null
   /** What the last render drew, for a drag to measure. */
@@ -323,6 +332,7 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
       // Indentation is the only thing that says "inside", so it comes from the data, not from a class.
       el.style.paddingLeft = `${ROW_BASE + row.depth * INDENT}px`
       el.dataset.index = String(row.index) // what `reveal` scrolls to after a render
+      if (row.index === pinged) el.classList.add('ping')
 
       // A line down each level of nesting above this row, so a long open group reads as one.
       if (row.depth > 0) {
@@ -410,11 +420,11 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
 
       // Selecting and renaming work on every row, pieces included: a piece is an object now (ADR 0033), so it
       // is what the Inspector shows and what the gizmo moves.
-      // A plain press on a row of a multi-selection waits for the click, so a drag can still carry the whole
-      // selection (ADR 0134). A drag never produces the click, so the selection survives it.
+      // A plain press waits for the click, so a drag carries the whole selection (ADR 0134) and a row goes into an
+      // Inspector field without the Inspector swapping to it (ADR 0176). A drag never produces the click.
       el.addEventListener('pointerdown', (e) => {
         const mode = modeFor(e)
-        pressKept = defersToClick(host.selection(), row.index, mode, e.button) ? row.index : null
+        pressKept = defersToClick(mode, e.button) ? row.index : null
         if (pressKept === null) host.onSelect(row.index, mode, order)
         // Read after the press has had its say, so a Ctrl-press that took this row out carries it alone.
         const selected = host.selection()
@@ -442,6 +452,13 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
           drop: (parent, at) => {
             pressKept = null
             host.onReparent(carried, parent, at)
+          },
+          // Onto an Inspector reference field, the grabbed row alone: a field holds one (ADR 0176).
+          outside: (x, y) => {
+            const field = refFieldAt(x, y)
+            if (field === null) return null
+            const drag = { kind: 'node', index: row.index } as const
+            return { key: field, offer: () => field.offer(drag), leave: () => field.leave(), take: () => field.take(drag) }
           },
         })
       })
@@ -484,9 +501,22 @@ export const createHierarchy = (container: HTMLElement, host: HierarchyHost): Hi
     container.querySelector(`[data-index="${index}"]`)?.scrollIntoView({ block: 'nearest' })
   }
 
+  const ping = (index: number): void => {
+    reveal(index)
+    clearTimeout(pingTimer)
+    container.querySelector('.ping')?.classList.remove('ping')
+    pinged = index
+    container.querySelector(`[data-index="${index}"]`)?.classList.add('ping')
+    pingTimer = setTimeout(() => {
+      pinged = null
+      container.querySelector('.ping')?.classList.remove('ping')
+    }, 1200)
+  }
+
   return {
     render,
     reveal,
+    ping,
     beginRename: (index) => {
       editing = index
       render()

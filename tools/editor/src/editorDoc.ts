@@ -367,6 +367,14 @@ export interface Doc {
    * inherited node gets both, because a reference set *there* is an override and lives in the level.
    */
   nodeChoices: (i: number) => readonly { readonly id: string; readonly label: string }[]
+  /**
+   * The value a `nodeRef` on node `i` stores to point at node `j` — `j`'s id — or `null` when `j` is out of its
+   * reach, by the rule `nodeChoices` lists by (ADR 0176). By index, not id: two placements of one prefab carry the
+   * same piece ids, and a drag names the row it was.
+   */
+  refTo: (i: number, j: number) => string | null
+  /** Where a `nodeRef` on node `i` holding `id` points: its own placement's piece first, then the level's. */
+  refTarget: (i: number, id: string) => number | null
 
   // ---- prefab overrides ---------------------------------------------------------------------------
   /** What this placement changes about the node, in a stable order. Empty for an own node. */
@@ -743,6 +751,11 @@ const docOver = (
   }
 
   const node = (i: number): DocNode | undefined => nodes()[i]
+  /**
+   * Whether a `nodeRef` on `n` may name `o` (stage C4): an own node names own nodes, and a placement's piece its own
+   * placement's pieces or the level's — a reference authored inside a prefab must not dangle in its other levels.
+   */
+  const reaches = (n: DocNode, o: DocNode): boolean => (n.owner === undefined ? o.owner === undefined : o.owner === n.owner || o.owner === undefined)
 
   /**
    * Compiled sequences, keyed by what they say rather than by object: the Inspector patches a component's
@@ -1671,12 +1684,23 @@ const docOver = (
     nodeChoices: (i) => {
       const n = node(i)
       if (n === undefined) return []
-      const all = nodes()
-      const visible = (o: DocNode): boolean => (n.owner === undefined ? o.owner === undefined : o.owner === n.owner || o.owner === undefined)
-      return all
+      return nodes()
         .map((o, at) => ({ o, at }))
-        .filter(({ o }) => visible(o))
+        .filter(({ o }) => reaches(n, o))
         .map(({ o, at }) => ({ id: o.authored.id, label: labelAt(at) }))
+    },
+    refTo: (i, j) => {
+      const n = node(i)
+      const o = node(j)
+      return n === undefined || o === undefined || !reaches(n, o) ? null : o.authored.id
+    },
+    refTarget: (i, id) => {
+      const n = node(i)
+      if (n === undefined) return null
+      const all = nodes()
+      const own = n.owner === undefined ? -1 : all.findIndex((o) => o.owner === n.owner && o.authored.id === id)
+      const at = own >= 0 ? own : all.findIndex((o) => o.owner === undefined && o.authored.id === id)
+      return at >= 0 ? at : null
     },
     overridesOf: (i) => describeRecord(i, true),
     revert: (i, field) => {
