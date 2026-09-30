@@ -68,6 +68,8 @@ const rig = (doc: Doc, selection: readonly number[], transform: Partial<Transfor
     prefabName: (id) => (id === TOWER_ID ? 'Tower' : null),
     openPrefab: () => {},
     assetOptions: () => ({ '(none)': '' }),
+    assetFolders: () => [],
+    gameLabel: () => 'Keyboard',
     assetRefusal: () => null,
     draggedAssets: () => [],
     pingNode: () => {},
@@ -189,6 +191,13 @@ describe('the Inspector’s cards', () => {
     expect(paramOf(doc, 0, 'Boss', 'zone'), 'the card’s own').toEqual({ node: 'zone', component: 'z-box' })
     refresh()
     expect(name(), 'its object, and which of its two').toBe('zone (Collider 2)')
+    // The picker is the Hierarchy's tree (ADR 0178): an object with one Collider is the row, one with two lists them,
+    // the way to the current one is open, and an object with none is not there.
+    field().querySelector<HTMLElement>('.rf-pick')!.click()
+    const rows = [...document.querySelectorAll('.pop-ref .tp-row')].map((r) => r.querySelector('.tp-t')!.textContent)
+    expect(rows).toEqual(['None', 'boss (Collider)', 'zone', 'zone (Collider 1)', 'zone (Collider 2)'])
+    document.querySelector<HTMLElement>('.pop-ref .tp-row:nth-child(4)')!.click()
+    expect(paramOf(doc, 0, 'Boss', 'zone')).toEqual({ node: 'zone', component: 'z-ball' })
     expect(target.offer({ kind: 'node', index: 2 })).toBe(false)
     expect(name()).toBe('bare has no Collider')
     expect(target.offer({ kind: 'component', index: 0, component: 'bo' })).toBe(false)
@@ -212,6 +221,24 @@ describe('the Inspector’s cards', () => {
     const renderer = card(panel, 'Mesh Renderer')
     expect([...renderer.querySelectorAll('.irow-l')].map((l) => l.textContent)).toEqual(['model', 'material'])
     expect(line(card(panel, 'Collider'), 'shape').textContent, 'the built-in holds the collider').toContain('unit ball')
+  })
+
+  // Unity's Add Component (ADR 0178): folders, open, with a search that lists every match flat.
+  it('lists what can be added by folder, searches it, and adds what is picked', () => {
+    const doc = levelDoc({ id: 'l', config: {}, nodes: [box('a', vec3(0, 0, 0))] })
+    const { panel } = rig(doc, [0])
+    panel.querySelector<HTMLElement>('.iadd')!.click()
+    const rows = (): string[] => [...document.querySelectorAll('.pop-add .tp-row')].map((r) => r.querySelector('.tp-t')!.textContent ?? '')
+    const folders = [...document.querySelectorAll('.pop-add .tp-row.tp-folder')].map((r) => r.textContent)
+    expect(folders).toEqual(['Physics', 'Rendering', 'Gameplay', 'Animation'])
+    expect(rows().slice(0, 4), 'folders open, their components under them').toEqual(['Physics', 'Collider', 'Rendering', 'MaterialOverride'])
+    const search = document.querySelector<HTMLInputElement>('.pop-add .tp-search')!
+    search.value = 'bump'
+    search.dispatchEvent(new Event('input'))
+    expect(rows()).toEqual(['Bumper'])
+    expect(document.querySelector('.pop-add .tp-hint')!.textContent, 'where it is').toBe('Gameplay')
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    expect(doc.components(0).map((c) => c.type)).toContain('Bumper')
   })
 
   it('ends with Add Component, and no Duplicate or Delete', () => {

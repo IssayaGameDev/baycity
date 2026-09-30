@@ -19,6 +19,7 @@ import { defineComponent } from '../define'
  */
 export const Light = defineComponent({
   type: LIGHT,
+  menu: 'Rendering',
   params: {
     kind: { kind: 'enum', options: ['point', 'spot', 'directional', 'ambient', 'hemisphere'], default: 'point', label: 'kind' },
     color: { kind: 'color', default: '#ffffff', label: 'colour' },

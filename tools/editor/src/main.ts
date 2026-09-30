@@ -1434,6 +1434,7 @@ const menus = createMenus({
   prefabs,
   adoptable: () => adoptable(),
   adopt: (types) => adopt(types),
+  gameLabel: () => activeMode?.label ?? null,
   scheduleRebuild: () => scheduleRebuild(),
   inspectorRebuild: () => inspectorRebuild(),
   uiChanged: () => uiChanged(),
@@ -2031,6 +2032,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   doc: () => doc,
   adoptable,
   adopt: (type) => adopt([type]),
+  gameLabel: () => activeMode?.label ?? null,
   selected: () => selected,
   envSelected: () => envSelected,
   levelSelected: () => levelSelected,
@@ -2190,6 +2192,15 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     const user = editingFor()
     if (db !== undefined) for (const a of assetsOfKind(db, of)) if (mayUse(user, a.path)) options[a.name] = a.id
     return options
+  },
+  assetFolders: (of) => {
+    const out: { id: string; label: string; folders: string[] }[] = []
+    if (of === 'model') for (const id of BUILTIN_MODELS) out.push({ id, label: BUILTIN_LABELS[id], folders: ['Built-in'] })
+    const db = assets?.db
+    const user = editingFor()
+    // The folders as the Project window names them: `Keyboard/materials/red.mat.json` is in Keyboard › materials.
+    if (db !== undefined) for (const a of assetsOfKind(db, of)) if (mayUse(user, a.path)) out.push({ id: a.id, label: a.name, folders: project.named(a.path).split('/').slice(0, -1) })
+    return out
   },
   assetRefusal: (of, id) => assetRefusal(assets?.db ?? null, of, id, editingFor()),
   draggedAssets: () => draggedAssets,

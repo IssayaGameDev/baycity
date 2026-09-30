@@ -14,6 +14,7 @@ import { defineComponent } from '../define'
  */
 export const Sequence = defineComponent({
   type: SEQUENCE,
+  menu: 'Animation',
   label: 'Sequence',
   params: {
     name: { kind: 'string', default: '', label: 'name' },

@@ -12,6 +12,7 @@ import { defineComponent } from '../define'
  */
 export const MaterialOverride = defineComponent({
   type: MATERIAL_OVERRIDE,
+  menu: 'Rendering',
   params: {
     material: { kind: 'asset', of: 'material', default: '', label: 'material' },
   },

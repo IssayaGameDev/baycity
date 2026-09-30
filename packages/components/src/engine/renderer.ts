@@ -19,6 +19,7 @@ import { defineComponent } from '../define'
  */
 export const Renderer = defineComponent({
   type: RENDERER,
+  menu: 'Rendering',
   label: 'Mesh Renderer',
   params: {
     model: { kind: 'asset', of: 'model', default: '', label: 'model' },

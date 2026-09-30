@@ -2,7 +2,9 @@
 
 The definitions this package ships, **one component per file** (ADR 0174): `src/engine/`, `src/shared/`, `src/player/`, each
 with an `index.ts` holding its set. A game's own components live in `modes/<game>/src/components/`, one per file.
-Declaring and running one: [api.md](api.md).
+Declaring and running one: [api.md](api.md). Add Component folders (`menu`, ADR 0178): Collider — Physics;
+Mesh Renderer, MaterialOverride, Light — Rendering; Spawn, Checkpoint, Hazard, Bumper, Boss — Gameplay; Sequence —
+Animation. A game's own components have none, and go under the game's name.
 
 | set | type | params | notes |
 |---|---|---|---|

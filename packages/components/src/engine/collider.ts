@@ -13,6 +13,7 @@ import { defineComponent } from '../define'
  */
 export const Collider = defineComponent({
   type: COLLIDER,
+  menu: 'Physics',
   params: {
     shape: { kind: 'collider', default: { kind: 'box', halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } },
     center: { kind: 'vec3', default: { x: 0, y: 0, z: 0 }, label: 'center' },

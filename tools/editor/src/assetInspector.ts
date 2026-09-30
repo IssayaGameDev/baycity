@@ -5,6 +5,7 @@ import { checkField, colorFieldOf, fieldRow, numberScrub, scrubFieldOf, selectFi
 import { assetRefusal } from './assetRefusal'
 import { ASSET_ICON, icon } from './icons'
 import { refField, type RefShown } from './refField'
+import { folderTree } from './treePicker'
 import { initials } from './people'
 
 /**
@@ -164,10 +165,14 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
     const field = refField({
       shown: shownFor(current),
       none: 'None (Texture)',
+      // By folder, as the Project window names them (ADR 0178).
       choices: () =>
-        (db === null ? [] : assetsOfKind(db, 'texture'))
-          .filter((t) => mayUse(user, t.path))
-          .map((t) => ({ value: t.id, label: t.name, icon: 'image' as const })),
+        folderTree(
+          (db === null ? [] : assetsOfKind(db, 'texture'))
+            .filter((t) => mayUse(user, t.path))
+            .map((t) => ({ key: t.id, label: t.name, icon: 'image' as const, folders: host.named(t.path).split('/').slice(0, -1) })),
+        ),
+      current: () => now,
       pick: choose,
       ping: () => {
         if (now !== null) host.revealAsset(now)

@@ -13,6 +13,7 @@ import { defineComponent } from '../define'
  */
 export const Bumper = defineComponent({
   type: 'Bumper',
+  menu: 'Gameplay',
   params: {
     power: { kind: 'number', default: 26, min: 1, max: 60, step: 1, label: 'launch (m/s)' },
   },

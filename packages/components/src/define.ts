@@ -17,6 +17,11 @@ export interface ComponentDef<D extends ParamDecls = ParamDecls> {
   /** Inspector heading. Falls back to `type`. */
   readonly label?: string
   /**
+   * Its folder in the Add Component menu — Unity's `AddComponentMenu` path (ADR 0178): `Physics`, `Rendering`,
+   * `Gameplay`, `Animation`. Absent on a game's own component, which goes in a folder named after its game.
+   */
+  readonly menu?: string
+  /**
    * At most one per node — the add menu offers it greyed out once present.
    *
    * Set only where a second copy is *meaningless*, never as a taste call: two `Renderer`s draw one node
@@ -59,6 +64,8 @@ export interface ComponentSpec<D extends ParamDecls, S> {
   readonly type: string
   readonly params: D
   readonly label?: string
+  /** See `ComponentDef.menu`. */
+  readonly menu?: string
   readonly singleton?: boolean
   /** See `ComponentDef.moves`. */
   readonly moves?: boolean
@@ -103,6 +110,7 @@ export const defineComponent = <const D extends ParamDecls, S = undefined>(spec:
     type: spec.type,
     params: spec.params,
     ...(spec.label !== undefined ? { label: spec.label } : {}),
+    ...(spec.menu !== undefined ? { menu: spec.menu } : {}),
     ...(spec.singleton !== undefined ? { singleton: spec.singleton } : {}),
     ...(spec.moves !== undefined ? { moves: spec.moves } : {}),
     ...(spec.attachesTo !== undefined ? { attachesTo: spec.attachesTo } : {}),

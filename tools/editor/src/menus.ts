@@ -1,6 +1,8 @@
 import { PRIMITIVE_LABELS, PRIMITIVE_ORDER } from '@mp/content'
+import { sharedComponents } from '@mp/components'
 import type { Vec3 } from '@mp/core'
 
+import { byMenuFolder, menuFolderOf } from './componentMenu'
 import type { Doc } from './editorDoc'
 import type { MenuItem } from './menu'
 
@@ -49,6 +51,8 @@ export interface MenuHost {
   }
   /** Shared components the game has not opted into: picking one adds it to the game first (ADR 0077). */
   adoptable: () => readonly string[]
+  /** The open level's game, by its label: the folder its own components go in (ADR 0178). */
+  gameLabel: () => string | null
   adopt: (types: string[]) => Promise<void>
   scheduleRebuild: () => void
   inspectorRebuild: () => void
@@ -76,36 +80,36 @@ export const createMenus = (host: MenuHost) => {
       { label: 'Rename', hint: 'double-click', run: () => host.hierarchy.beginRename(index) },
       {
         label: 'Add component',
-        // The submenu the Inspector's Add Component button opens, reachable without going there first.
-        items: [
-          ...open.registry
-            .all()
-            .map((d) => d.type)
-            .filter((type) => open.canAdd(index, type))
-            .map((type) => ({
-              label: open.registry.get(type)?.label ?? type,
-              run: () => {
-                host.doc()?.addComponent(index, type)
-                host.edits().recordEdit('add component')
-                host.scheduleRebuild()
-                host.inspectorRebuild()
-                host.uiChanged()
-              },
-            })),
-          // Shared components the game has not opted into: picking one adds it to the game first (ADR 0077).
-          ...host.adoptable().map((type) => ({
-            label: `${type} (adds to game)`,
+        // What the Inspector's Add Component button lists, reachable without going there first: a submenu per
+        // folder (ADR 0178).
+        items: byMenuFolder(
+          [
+            ...open.registry
+              .all()
+              .map((d) => d.type)
+              .filter((type) => open.canAdd(index, type))
+              .map((type) => ({ type, def: open.registry.get(type), adopts: false })),
+            // Shared components the game has not opted into: picking one adds it to the game first (ADR 0077).
+            ...host.adoptable().map((type) => ({ type, def: sharedComponents([type])[0], adopts: true })),
+          ],
+          (x) => menuFolderOf(x.def, host.gameLabel()),
+        ).map((g) => ({
+          label: g.folder,
+          items: g.entries.map((x) => ({
+            label: x.adopts ? `${x.def?.label ?? x.type} (adds to game)` : (x.def?.label ?? x.type),
             run: () => {
-              void host.adopt([type]).then(() => {
-                host.doc()?.addComponent(index, type)
+              const add = (): void => {
+                host.doc()?.addComponent(index, x.type)
                 host.edits().recordEdit('add component')
                 host.scheduleRebuild()
                 host.inspectorRebuild()
                 host.uiChanged()
-              })
+              }
+              if (x.adopts) void host.adopt([x.type]).then(add)
+              else add()
             },
           })),
-        ],
+        })),
       },
       // Open on a piece too (ADR 0135): the child goes in that piece's override record, so it belongs to
       // this placement and no other. Every hierarchy operation now works on a piece.
