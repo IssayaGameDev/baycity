@@ -105,7 +105,7 @@ only when a row changed.
 | `carry(visual, restInverse, delta, toRest)` | pure: `delta` = the visual's pose now (position, rotation, `drawScale` — the level view's) × the pose at load inverted; `toRest` its inverse. `false` when not drawn (`!visible`, or `fades` at opacity 0), and `delta` folds every cap to a point |
 | `rideShader(shader)` | `MeshStandardMaterial`'s sources, patched: `boardSlot` → a row → `#define instanceMatrix boardInstance` at the top of `main`, so every chunk that places by it (`defaultnormal_vertex`, `project_vertex`, `worldpos_vertex`) is carried; `diffuseColor.a *= vBoardOpacity` after `color_fragment`. Throws if three's sources lose either hook |
 | riding material | `transparent` from the start; shares the glyph's texture with the still mesh |
-| riding mesh | not frustum-culled; the cap geometry's attributes shared, not copied |
+| riding mesh | not frustum-culled; the cap geometry's attributes shared, not copied; out of the AO prepass (`client.excludeFromAO`, ADR 0183) — its override material has no riding patch, so it would shade the caps where they were built |
 | footfalls | `Board.moving = { toRest, hidden }`: `capsUnder` skips a hidden board and takes the foot through `toRest` first; a struck cap's top goes back out through `delta` |
 
 The cost is a few texel fetches per vertex of a carried cap and up to 26 draw calls; none of it per cap on the

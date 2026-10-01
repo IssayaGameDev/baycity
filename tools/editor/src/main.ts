@@ -401,6 +401,8 @@ const room = createLiveSession({
   },
   onCamera: (from, pose) => follow.onCamera(from, pose),
   onFollow: (from, leader) => follow.onFollow(from, leader, room.connId()),
+  onMotion: (from, ms) => follow.onMotion(from, ms),
+  holdsChanged: () => follow.holdsChanged(),
   // A material's edit, or a game data file's (ADR 0162): each to the copies that follow it.
   onAsset: (data) => (gameOfDocId(parseAssetEvent(data)?.assetId ?? '') === null ? assetSync : gameSync).onEvent(data),
   openAssetIds: () => (selectedAsset === null ? [] : [selectedAsset]),
@@ -778,6 +780,17 @@ const follow = createFollow({
   send: (data) => room.presence(data),
   playing: () => play.active(),
   changed: () => renderStatus(),
+  selectLike: (leader) => selectLike(leader),
+  busy: () => tool.dragging() || points.dragging() || fieldDragging,
+  motion: () => (motion.playing() ? motion.timeMs() : null),
+  setMotion: (ms) => {
+    if (ms === null) {
+      if (motion.playing()) motion.setPlaying(false)
+      return
+    }
+    if (!motion.playing()) motion.setPlaying(true)
+    motion.setTime(ms)
+  },
 })
 /**
  * Your own hand on the camera ends a follow, Kodjo's call: an orbit or pan dragged past a few pixels, or the
@@ -839,16 +852,50 @@ const applySelection = (next: readonly number[]): void => {
   room.syncHolds()
 }
 
-/** Select one item outright — the plain click, and what every command that lands on a new item does. */
+/**
+ * Select one item outright — the plain click, and what every command that lands on a new item does.
+ *
+ * A selection of your own ends a follow (ADR 0184, Kodjo's call), as moving the camera does: the leader's next
+ * would replace it. So do `selectWith`, `selectAsset` and `deselectOwn` — the inputs, never a restore after a
+ * rebuild nor the follow's own `selectLike`, which go through `applySelection` and `deselect`.
+ */
 const select = (index: number): void => {
   if (meshes.groupAt(index) === undefined || doc === null) return
+  follow.stop()
   applySelection([index])
 }
 
 /** A click that carries modifiers: Ctrl toggles one, Shift extends a range over `order`. */
 const selectWith = (index: number, mode: SelectMode, order: readonly number[]): void => {
   if (meshes.groupAt(index) === undefined || doc === null) return
+  follow.stop()
   applySelection(applySelect(selection, index, mode, order))
+}
+
+/**
+ * What the leader holds, as this tab's selection (ADR 0184) — in the order they took it, so their primary is
+ * yours. Nothing when it already is, so a hold elsewhere in the room rebuilds no Inspector.
+ */
+const selectLike = (leader: string): void => {
+  const open = doc
+  if (open === null || play.active()) return
+  const theirs = room
+    .holdsOf(leader)
+    .map((h) => open.indexOfRef(h.ref))
+    .filter((i): i is number => i !== null)
+  const showsOther = selectedAsset !== null || envSelected || levelSelected
+  if (!showsOther && theirs.length === selection.length && theirs.every((i, n) => selection[n] === i)) return
+  // Theirs is the Inspector's one thing: not an asset, the sun or the level of yours from before the follow.
+  envSelected = false
+  levelSelected = false
+  if (theirs.length > 0) applySelection(theirs)
+  else {
+    if (selectedAsset !== null) {
+      selectedAsset = null
+      assetInspector.show(null)
+    }
+    deselect()
+  }
 }
 
 /**
@@ -872,11 +919,18 @@ const deselect = (): void => {
   room.syncHolds()
 }
 
+/** A deselect of your own — a click on nothing, Escape, the sun's or the level's row: it ends a follow (`select`). */
+const deselectOwn = (): void => {
+  follow.stop()
+  deselect()
+}
+
 /**
  * Show an asset in the Inspector. Selecting an asset and selecting something in the scene are the same slot in
  * the Inspector, so one clears the other rather than both claiming it.
  */
 const selectAsset = (assetId: string): void => {
+  follow.stop()
   selectedAsset = assetId
   deselect()
   assetInspector.show(assetId)
@@ -898,7 +952,7 @@ const pick = createPickTool({
   selection: () => selection,
   select: (index) => select(index),
   selectWith: (index, mode, order) => selectWith(index, mode, order),
-  deselect: () => deselect(),
+  deselect: () => deselectOwn(),
   groupAt: (i) => meshes.groupAt(i),
   holderOf: (g) => meshes.holderOf(g),
   activeCamera: () => view.activeCamera(),
@@ -984,7 +1038,10 @@ const editorShortcuts = createShortcuts([
     id: 'select-all',
     chords: ['mod+a'],
     label: 'Select all',
-    run: () => applySelection(doc === null ? [] : Array.from({ length: doc.count() }, (_, i) => i)),
+    run: () => {
+      follow.stop()
+      applySelection(doc === null ? [] : Array.from({ length: doc.count() }, (_, i) => i))
+    },
     enabled: () => !play.active() && doc !== null && doc.count() > 0,
   },
   // The menu offers Focus with `F` beside it, so the key has to exist or the menu is lying.
@@ -1003,7 +1060,7 @@ const editorShortcuts = createShortcuts([
         play.stop()
         return
       }
-      deselect()
+      deselectOwn()
     },
     // The only binding that stays live during play, because it is the way out of it.
     enabled: () => true,
@@ -1323,14 +1380,14 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
     // Set before deselecting: `deselect` rebuilds the Inspector, and by then it has to know to show the sun.
     envSelected = true
     levelSelected = false
-    deselect()
+    deselectOwn()
     hierarchy.render()
   },
   levelSelected: () => levelSelected,
   onSelectLevel: () => {
     levelSelected = true
     envSelected = false
-    deselect()
+    deselectOwn()
     hierarchy.render()
   },
   onSelect: (index, mode, order) => {
@@ -1915,7 +1972,10 @@ historyView = () => ({ ...edits.labels(), depth: edits.depth() })
  * wherever the clock stopped would look exactly like content someone had moved.
  */
 function setPreviewing(on: boolean): void {
+  // Your own press ends a follow (ADR 0184), and tells anyone following you.
+  follow.stop()
   motion.setPlaying(on)
+  follow.motionChanged()
 }
 
 /**

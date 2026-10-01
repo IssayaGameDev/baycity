@@ -25,7 +25,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | `play.ts` | the game frame (ADR 0172) | `PlayHost` (13 getters) |
 | `historyStore.ts` | the history, pending batches, `coalescing`, the held-back drag batches, the clipboard | `HistoryHost` |
 | `liveSession.ts` | `collab`, the peer list, every `connId` this tab has had (`mineEver`), the last snapshot, `joining`, the deferred ops, the hold map and its key, the hold outlines, the presence timer | `LiveHost` |
-| `follow.ts` | whom this tab follows and the pose it glides to; who follows it, the send timer and the last pose sent (ADR 0155) | `FollowHost` |
+| `follow.ts` | whom this tab follows, the pose it glides to and whether the leader's holds are still to be taken; who follows it, the send timer and the last pose sent (ADR 0155, ADR 0184) | `FollowHost` |
 | `people.ts` | the icons it drew and whose card is open (ADR 0155) | `PeopleState` getter + `PeopleActions` |
 | `motionPreview.ts` | the preview clock, whether it runs, the last frame. Poses via `Doc.posesAt(timeMs, { sequences: playing })` — one walk, not `poseOf` per node (ADR 0125, ADR 0142) | `MotionPreviewHost` |
 | `cameraView.ts` | the orthographic camera, `isometric`, the nav gizmo and its drag flag, the stand-in background, the bounds box | `CameraViewHost` |
@@ -285,7 +285,7 @@ parsePresence(data: unknown): PosePresence | null   // collab.ts — peers' data
 | --- | --- |
 | send | gizmo `dragging-changed` true → `startPresence()`: every 100 ms `collab.presence({ kind: 'pose', poses: dragPoses() })` — the selection's groups' local poses (`groupPose` + scale), not the document's. Drag end → `stopPresence()`: `{ poses: [], end: true }` |
 | ops | `onDocOps` while `coalescing` pushes to `heldBack` instead of submitting; drag end folds them (`foldBatches`) and submits **one** batch, the same ops the history entry holds. Nothing else changes: without a drag every batch still goes at once |
-| receive | `onPresence(from, data)`: a camera or a follow goes to `follow.ts` (*Who is in the room* below); else `parsePresence` → for each pose `indexOfRef` → set the group's position/quaternion/scale; skipped for a node in my own selection while my gizmo drags. `end` → `applyPreviewPoses()` unless my gizmo is dragging (my drag end repaints). The hold outline follows, since it is drawn from the group each frame |
+| receive | `onPresence(from, data)`: a camera, a follow or a Motion preview goes to `follow.ts` (*Who is in the room* below); else `parsePresence` → for each pose `indexOfRef` → set the group's position/quaternion/scale; skipped for a node in my own selection while my gizmo drags. `end` → `applyPreviewPoses()` unless my gizmo is dragging (my drag end repaints). The hold outline follows, since it is drawn from the group each frame |
 | nothing kept | presence is unnumbered and never written; the op at drag end is what lands, and a drag that came back to its start lands nothing |
 
 Others' selection is what the hold outlines and badges show: a selection *is* a hold.
@@ -483,7 +483,7 @@ Where the status bar's items went: the level's name was already the top bar's; t
 Hierarchy's; the undo depth is the buttons' tooltips (`Undo move (2 more)`); the room and your own name are the people's
 icons; the clipboard count is not shown.
 
-## Who is in the room, Focus and Follow (ADR 0155, `src/people.ts`, `src/follow.ts`)
+## Who is in the room, Focus and Follow (ADR 0155, ADR 0184, `src/people.ts`, `src/follow.ts`)
 
 `createPeople(toolbar.people, state, { focus, follow })` fills `.tb-people`, the top bar's last slot.
 
@@ -492,20 +492,22 @@ icons; the clipboard count is not shown.
 | icons | `.pp` per connection in the room, in the order they came (two tabs are two icons: two holders, two colours), filled with `peerCss(connId)`, `initials(name)` (two letters at most). Yours last, `.pp.me`, not a button: the colour the others see you in, and `.pp-dot` for `room.connection()` — green live, amber connecting, red lost. Rebuilt only when the people, the connection or the follow changed |
 | card | click an icon: a popover (`.pop-person`) with the name, `selectedText(heldLabels(connId))` (`Selected: A, B and 2 more`, asked only on opening), **Focus** (disabled when nothing is held) and **Follow** / **Stop following**. It closes when its person leaves |
 | Focus | `focusPeer`: their holds → `indexOfRef` → `nodes.frame(indices)` (the F key's framing, any nodes) → `hierarchy.reveal` each, the first scrolled into view |
-| Follow | `follow.start(connId)` → presence `{ kind: 'follow', leader }`; stop → `leader: null`. While following: `#stage.following` draws a 2 px frame in their colour (`--follow`), the hint names them, their icon rings (`.pp.on`) |
-| following | each frame, before `controls.update()`: `view.setPose(approach(view.pose(), goal, 1 − e^(−dt·FOLLOW_RATE 12)))` — 5 Hz arriving as a glide. `setPose` takes their projection quietly, their target, their position (orthographic: `zoom` 1, the frustum cut to their half-height) |
-| what ends it | **any move of your own**, Kodjo's call: an orbit or pan dragged past 4 px (`controls` `start`, pointer from a captured `pointerdown`; a click to select is not one), the wheel, the view gizmo, the Persp / Iso button, framing (F, the menus, Focus: `NodeActionsHost.cameraMoved`), play starting, the leader leaving the room (`prune`), leaving the room (`reset`) |
-| leading | a `follow` naming this tab adds its sender to `followers` and sends the camera at once; while any follow, every `FOLLOW_SEND_MS` 200 the pose is rounded to the millimetre and sent when it moved (`posesDiffer`), and not while playing. A follower leaving the room, or unfollowing, is dropped; none left, the timer stops |
+| Follow | `follow.start(connId)` → presence `{ kind: 'follow', leader }`, and their holds are to be taken; stop → `leader: null`. While following: `#stage.following` draws a 2 px frame in their colour (`--follow`), the hint names them, their icon rings (`.pp.on`) |
+| following | each frame, before `controls.update()`: `view.setPose(approach(view.pose(), goal, 1 − e^(−dt·FOLLOW_RATE 12)))` — 5 Hz arriving as a glide. `setPose` takes their projection quietly, their target, their position (orthographic: `zoom` 1, the frustum cut to their half-height). **Selection** (ADR 0184): when the follow starts and whenever the room's holds change (`LiveHost.holdsChanged`), the next frame not `busy` (a gizmo, point or field drag) runs `selectLike(leader)` — `room.holdsOf(leader)` (the room's list as sent, so in the order they took them: their primary is yours) → `indexOfRef` → `applySelection`, or `deselect` for none, clearing an asset, the sun or the level shown; nothing when it already is. **Motion**: a `motion` from the leader → `setMotion(ms)` — stopped (`null`) stops the preview, else runs it and `setTime(ms)`; passed on to this tab's own followers |
+| what ends it | **any move of your own**, Kodjo's call: an orbit or pan dragged past 4 px (`controls` `start`, pointer from a captured `pointerdown`; a click to select is not one), the wheel, the view gizmo, the Persp / Iso button, framing (F, the menus, Focus: `NodeActionsHost.cameraMoved`); **a selection of your own** (ADR 0184) — `select`, `selectWith`, `selectAsset`, `deselectOwn` (a click on nothing, Escape, the sun's or the level's row), Select all: the inputs, never a restore after a rebuild (`applySelection` / `deselect`) nor `selectLike`; your own **Motion** press (`setPreviewing`); play starting, the leader leaving the room (`prune`), leaving the room (`reset`) |
+| leading | a `follow` naming this tab adds its sender to `followers` and sends the camera at once; while any follow, every `FOLLOW_SEND_MS` 200 the pose is rounded to the millimetre and sent when it moved (`posesDiffer`), and not while playing. A follower leaving the room, or unfollowing, is dropped; none left, the timer stops. The Motion preview (ADR 0184): `{ kind: 'motion', ms }` — the clock running, `null` stopped — on every own press (`motionChanged`) and to a new follower; not while playing |
 | reconnect | a new `connId` (`presenceChanged`) re-sends the follow (`announce`): the leader drops the old one when it leaves |
 
 ```ts
 interface CameraPresence { kind: 'camera'; position: Vec3; target: Vec3; ortho: number | null }   // ortho: half-height shown
 interface FollowPresence { kind: 'follow'; leader: string | null }
+interface MotionPresence { kind: 'motion'; ms: number | null }   // ADR 0184: the clock while it runs, null stopped
 parseCameraPresence(data: unknown): CameraPresence | null   // collab.ts, peers' data, validated
 parseFollowPresence(data: unknown): FollowPresence | null
+parseMotionPresence(data: unknown): MotionPresence | null   // ms finite and ≥ 0, or null
 ```
 
-The server relays both as it does a drag's poses (`live.presence`: everyone but the sender, kept nowhere); nothing
+The server relays all three as it does a drag's poses (`live.presence`: everyone but the sender, kept nowhere); nothing
 server-side changed. Nobody following, nothing is sent.
 
 

@@ -336,6 +336,8 @@ export const drawKeycaps = (
   styleOf: (assetId: string) => KeyStyleColours | undefined = () => undefined,
 ): Keycaps => {
   const meshes: THREE.InstancedMesh[] = []
+  /** Undoes keeping each riding mesh out of the AO prepass (below). */
+  const backIntoAO: (() => void)[] = []
   const textures: THREE.Texture[] = []
   const boards: Board[] = []
   /** Every cap, by `board:col:row`. */
@@ -514,6 +516,12 @@ export const drawKeycaps = (
       if (rides) {
         // Its caps are wherever their boards have gone, which bounds taken at load do not know.
         mesh.frustumCulled = false
+        /**
+         * **No ambient occlusion on a carried board's caps** (Kodjo's call). The AO prepass draws the scene with
+         * one override material, which never gets the riding patch: it would see every cap where it was built,
+         * at full strength — a dark ghost of the keys left behind by a move, and kept after a fade.
+         */
+        backIntoAO.push(client.excludeFromAO(mesh))
       } else {
         /**
          * Frustum culling needs the instances' bounds, not the geometry's.
@@ -600,6 +608,8 @@ export const drawKeycaps = (
           ; (mesh.material as THREE.Material).dispose()
         mesh.dispose()
       }
+      for (const undo of backIntoAO) undo()
+      backIntoAO.length = 0
       // Shared by every mesh, so disposed once rather than per glyph.
       geometry.dispose()
       for (const g of meshGeometries) g.dispose()

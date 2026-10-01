@@ -1,12 +1,15 @@
-import type { CameraPresence, FollowPresence } from './collab'
+import type { CameraPresence, FollowPresence, MotionPresence } from './collab'
 
 /**
- * Following someone's view (ADR 0155): your camera copies theirs until you move it yourself.
+ * Following someone's view (ADR 0155, ADR 0184): your camera, your selection and your Motion preview copy
+ * theirs until you move the camera, select something or press Motion yourself.
  *
  * Both sides are here, because a tab can be each at once. **Following**: say so to the room, then glide the
- * camera to every pose the leader sends. **Leading**: while anyone follows this tab, send its camera ~5 Hz, and
- * only when it moved — nobody following, nothing sent. The server relays both like any presence and keeps
- * neither.
+ * camera to every pose the leader sends, take what the leader holds as your selection, and run your Motion
+ * preview as theirs runs. **Leading**: while anyone follows this tab, send its camera ~5 Hz, and only when it
+ * moved, and its Motion preview when it starts or stops — nobody following, nothing sent. The server relays
+ * these like any presence and keeps none; a selection needs nothing sent, since the room already has everyone's
+ * holds (ADR 0158).
  *
  * 5 Hz is a few dozen bytes a message; the follower's glide (`FOLLOW_RATE`) is what keeps that from reading as
  * a camera stepping five times a second.
@@ -64,9 +67,17 @@ export interface FollowHost {
   /** Put this tab's camera at a pose; the frame's `controls.update()` aims it. */
   setPose: (pose: CameraPose) => void
   /** To everyone else in the room. */
-  send: (data: CameraPresence | FollowPresence) => void
+  send: (data: CameraPresence | FollowPresence | MotionPresence) => void
   /** A play session owns the camera: nothing is followed or sent then. */
   playing: () => boolean
+  /** Make what `leader` holds this tab's selection. */
+  selectLike: (leader: string) => void
+  /** A drag or a field edit is under way: the selection is not swapped out from under it, but taken after. */
+  busy: () => boolean
+  /** This tab's Motion clock while it runs, `null` stopped. */
+  motion: () => number | null
+  /** Run this tab's Motion preview from a clock, or stop it (`null`). */
+  setMotion: (ms: number | null) => void
   /** Whom this tab follows changed: the pill, the frame and the icons redraw. */
   changed: () => void
 }
@@ -79,6 +90,12 @@ export interface Follow {
   stop: (tell?: boolean) => void
   /** A pose arrived. Only the leader's is taken. */
   onCamera: (from: string, pose: CameraPose) => void
+  /** Someone's Motion preview started or stopped. Only the leader's is taken. */
+  onMotion: (from: string, ms: number | null) => void
+  /** What anyone in the room holds changed: a follower takes the leader's at the next frame. */
+  holdsChanged: () => void
+  /** This tab's own Motion preview started or stopped: its followers are told. */
+  motionChanged: () => void
   /** Someone started or stopped following; `me` is this tab's connection. */
   onFollow: (from: string, leader: string | null, me: string | null) => void
   /** Who is in the room now: followers who left are forgotten, and a leader who left ends the follow. */
@@ -100,6 +117,8 @@ export const createFollow = (host: FollowHost): Follow => {
   let leader: string | null = null
   /** The leader's last pose, which the camera glides to. `null` until the first arrives. */
   let goal: CameraPose | null = null
+  /** The leader's holds are to be taken: at most once a frame, and not in the middle of a drag. */
+  let reselect = false
 
   const followers = new Set<string>()
   let timer: ReturnType<typeof setInterval> | null = null
@@ -113,6 +132,10 @@ export const createFollow = (host: FollowHost): Follow => {
     sent = pose
     host.send({ kind: 'camera', ...pose })
   }
+  const sendMotion = (): void => {
+    if (followers.size === 0 || host.playing()) return
+    host.send({ kind: 'motion', ms: host.motion() })
+  }
   const lead = (): void => {
     if (followers.size > 0 && timer === null) timer = setInterval(tick, FOLLOW_SEND_MS)
     if (followers.size === 0 && timer !== null) {
@@ -125,6 +148,7 @@ export const createFollow = (host: FollowHost): Follow => {
     if (leader === null) return
     leader = null
     goal = null
+    reselect = false
     if (tell) host.send({ kind: 'follow', leader: null })
     host.changed()
   }
@@ -135,6 +159,7 @@ export const createFollow = (host: FollowHost): Follow => {
       if (leader === connId) return
       leader = connId
       goal = null
+      reselect = true
       host.send({ kind: 'follow', leader: connId })
       host.changed()
     },
@@ -142,13 +167,24 @@ export const createFollow = (host: FollowHost): Follow => {
     onCamera: (from, pose) => {
       if (from === leader) goal = pose
     },
+    onMotion: (from, ms) => {
+      if (from !== leader || host.playing()) return
+      host.setMotion(ms)
+      // Passed on to whoever follows this tab, as its camera and its selection are.
+      sendMotion()
+    },
+    holdsChanged: () => {
+      if (leader !== null) reselect = true
+    },
+    motionChanged: sendMotion,
     onFollow: (from, to, me) => {
       if (to !== null && to === me) {
         followers.add(from)
-        // A new follower has nothing to glide to until the camera moves: send it now.
+        // A new follower has nothing to glide to until the camera moves, nor a Motion preview to match: send both now.
         sent = null
         lead()
         tick()
+        sendMotion()
       } else if (followers.delete(from)) lead()
     },
     prune: (present) => {
@@ -162,6 +198,10 @@ export const createFollow = (host: FollowHost): Follow => {
       if (host.playing()) {
         stop()
         return
+      }
+      if (reselect && !host.busy()) {
+        reselect = false
+        host.selectLike(leader)
       }
       if (goal === null) return
       host.setPose(approach(host.pose(), goal, 1 - Math.exp(-dt * FOLLOW_RATE)))

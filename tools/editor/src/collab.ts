@@ -239,6 +239,15 @@ export interface FollowPresence {
 }
 
 /**
+ * A leader's Motion preview (ADR 0184): its clock in milliseconds while it runs, `null` stopped. Sent only while
+ * somebody follows — when it starts or stops, and to a new follower — and the follower's clock runs on from it.
+ */
+export interface MotionPresence {
+  kind: 'motion'
+  ms: number | null
+}
+
+/**
  * Who came and who went between two peer lists (ADR 0155), leaving out every connection that was ever this
  * tab's: a reconnect is a new connection, and the old one may still be listed for a moment under your name.
  */
@@ -267,6 +276,15 @@ export const parseFollowPresence = (data: unknown): FollowPresence | null => {
   const d = data as Record<string, unknown>
   if (d.kind !== 'follow' || (d.leader !== null && typeof d.leader !== 'string')) return null
   return { kind: 'follow', leader: d.leader }
+}
+
+/** A Motion presence off the wire, or `null`. */
+export const parseMotionPresence = (data: unknown): MotionPresence | null => {
+  if (typeof data !== 'object' || data === null) return null
+  const d = data as Record<string, unknown>
+  if (d.kind !== 'motion') return null
+  if (d.ms === null) return { kind: 'motion', ms: null }
+  return typeof d.ms === 'number' && Number.isFinite(d.ms) && d.ms >= 0 ? { kind: 'motion', ms: d.ms } : null
 }
 
 /**

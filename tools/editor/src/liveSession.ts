@@ -3,7 +3,7 @@ import { vec3, type Vec3 } from '@mp/core'
 import { eulerToQuat } from '@mp/core'
 import { createThreeStage, THREE, type OutlineGroup } from '@mp/render-three'
 
-import { createCollab, httpTransport, parseCameraPresence, parseFollowPresence, parsePresence, peerChanges, type CameraPresence, type FieldFocus, type FieldSpot, type Hold, type OpenAsset, type Peer, type Room } from './collab'
+import { createCollab, httpTransport, parseCameraPresence, parseFollowPresence, parseMotionPresence, parsePresence, peerChanges, type CameraPresence, type FieldFocus, type FieldSpot, type Hold, type OpenAsset, type Peer, type Room } from './collab'
 import type { Doc, LocalPose } from './editorDoc'
 import type { Notify } from './notices'
 import { repaintFor } from './remoteRepaint'
@@ -84,6 +84,10 @@ export interface LiveHost {
   onCamera: (from: string, pose: Omit<CameraPresence, 'kind'>) => void
   /** A peer started following `leader`, or stopped (`null`). */
   onFollow: (from: string, leader: string | null) => void
+  /** A peer's Motion preview started or stopped, while this tab follows someone (ADR 0184). */
+  onMotion: (from: string, ms: number | null) => void
+  /** What anyone in the room holds changed: a follow takes the leader's (ADR 0184). */
+  holdsChanged: () => void
   /** A data-file asset was edited, by anyone, this tab included (ADR 0159): `assetSync.ts` checks and applies it. */
   onAsset: (data: unknown) => void
   /** The assets this tab has open in its Inspector (ADR 0159): told to everyone with the selection. */
@@ -121,6 +125,11 @@ export const createLiveSession = (host: LiveHost) => {
    * refused** (ADR 0158) — several people may have one node, and anyone edits anything.
    */
   let holdMap = new Map<string, Hold[]>()
+  /**
+   * The same holds as the room sent them. A connection's come in the order it took them, which a selection's
+   * primary — its last — depends on; `holdMap` groups them by node, which loses that.
+   */
+  let holdsNow: Hold[] = []
   /** The selection the server was last told to hold, as a key, so an unchanged selection sends nothing. */
   let lastHoldKey: string | null = null
 
@@ -227,8 +236,10 @@ export const createLiveSession = (host: LiveHost) => {
     const next = new Map<string, Hold[]>()
     for (const h of holds) next.set(refKey(h.ref), [...(next.get(refKey(h.ref)) ?? []), h])
     holdMap = next
+    holdsNow = holds
     rebuildHoldOutlines()
     host.hierarchyRender()
+    host.holdsChanged()
   }
 
   /**
@@ -346,8 +357,9 @@ export const createLiveSession = (host: LiveHost) => {
   }
 
   /**
-   * What a peer streams: a drag's poses, or, for following (ADR 0155), a camera or who they follow. A drag poses
-   * their groups where they are and writes nothing; `end` puts every group back on its data.
+   * What a peer streams: a drag's poses, or, for following (ADR 0155, ADR 0184), a camera, who they follow, or
+   * their Motion preview. A drag poses their groups where they are and writes nothing; `end` puts every group
+   * back on its data.
    */
   const onPresence = (from: string, data: unknown): void => {
     const camera = parseCameraPresence(data)
@@ -358,6 +370,11 @@ export const createLiveSession = (host: LiveHost) => {
     const follow = parseFollowPresence(data)
     if (follow !== null) {
       host.onFollow(from, follow.leader)
+      return
+    }
+    const motion = parseMotionPresence(data)
+    if (motion !== null) {
+      host.onMotion(from, motion.ms)
       return
     }
     const p = parsePresence(data)
@@ -502,6 +519,7 @@ export const createLiveSession = (host: LiveHost) => {
     leaveAll: () => {
       collab.leave()
       holdMap = new Map()
+      holdsNow = []
       lastHoldKey = null
       lastOpenKey = null
       lastFieldKey = null
@@ -520,8 +538,8 @@ export const createLiveSession = (host: LiveHost) => {
     connection: () => collab.connection(),
     /** Send to everyone else in the room, kept nowhere (a camera, a follow). */
     presence: (data: unknown) => collab.presence(data),
-    /** What a connection holds, for Focus and the card (ADR 0155). */
-    holdsOf: (connId: string): Hold[] => [...holdMap.values()].flat().filter((h) => h.connId === connId),
+    /** What a connection holds, in the order it took them: for Focus, the card (ADR 0155) and a follow (ADR 0184). */
+    holdsOf: (connId: string): Hold[] => holdsNow.filter((h) => h.connId === connId),
     /** Report ops that arrived while the redraw was held off — a drag ending, a play-test ending. */
     drainDeferred: drainDeferredRemote,
     /** Redraw after ops changed the level from outside the document: a move puts groups back, anything else rebuilds. */
