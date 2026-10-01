@@ -13,7 +13,7 @@
         "shadows": false
       },
       "ambient": {
-        "intensity": 0.2
+        "intensity": 0.1
       },
       "sky": {
         "topColor": "#2f86cc",
@@ -2306,7 +2306,7 @@
               "z": 31.25
             },
             "rotation": {
-              "x": -0.2618,
+              "x": -0.2617993877991494,
               "y": 0,
               "z": 0
             },
@@ -6462,6 +6462,39 @@
         }
       },
       "components": []
+    },
+    {
+      "id": "434588f1",
+      "name": "empty",
+      "transform": {
+        "position": {
+          "x": -8.8327,
+          "y": 31.7992,
+          "z": 179.3353
+        },
+        "rotation": {
+          "x": -2.6179938779914944,
+          "y": -0.7853981633974483,
+          "z": -0.5235987755982988
+        }
+      },
+      "components": [
+        {
+          "id": "fd50d1c0",
+          "type": "Light",
+          "params": {
+            "kind": "directional",
+            "color": "#ffffff",
+            "groundColor": "#808080",
+            "intensity": 1,
+            "range": 12,
+            "decay": 2,
+            "angle": 40,
+            "penumbra": 0.3,
+            "castShadow": false
+          }
+        }
+      ]
     }
   ]
 }
