@@ -62,6 +62,8 @@ import { createItemMeshes } from './itemMeshes'
 import { createLiveSession, peerCss } from './liveSession'
 import type { FieldSpot } from './collab'
 import { createCameraView } from './cameraView'
+import { createAssistantDock } from './assistant/assistantDock'
+import type { EditorContext } from './assistant/assistantApi'
 import { createFollow } from './follow'
 import { createPeople, type PeopleState } from './people'
 import { createFieldPresence, type Ring } from './fieldPresence'
@@ -2424,6 +2426,34 @@ const hintPill = $<HTMLDivElement>('#vhint')
 const hierarchyCount = $<HTMLSpanElement>('#hier-count')
 const stageEl = $<HTMLDivElement>('#stage')
 
+/**
+ * The assistant (ADR 0192): the round button at the viewport's bottom right and its chat. What it is told the person
+ * is looking at — the open game, level or prefab, the selection with each object's components, the latest problems —
+ * goes with each message, from this tab or to a tab the chat moved to.
+ */
+const assistantContext = (): EditorContext => {
+  const open = doc
+  const picked =
+    open === null
+      ? []
+      : selection.slice(0, 12).map((i) => {
+          const types = open.components(i).map((c) => open.registry.get(c.type)?.label ?? c.type)
+          return `${open.label(i)} (${types.length === 0 ? 'no components' : types.join(', ')})`
+        })
+  return {
+    ...(activeMode === undefined ? {} : { game: activeMode.name }),
+    ...(fileState.name === '' ? {} : { level: fileState.name }),
+    ...(prefabOpen === null ? {} : { prefab: prefabOpen.name }),
+    selection: picked,
+    problems: notices
+      .log()
+      .filter((n) => n.kind !== 'ok')
+      .slice(-8)
+      .map((n) => n.text),
+  }
+}
+const assistantDock = createAssistantDock(stageEl, { context: assistantContext, playing: () => play.active() })
+
 /** The figure by the pointer during a gesture — the size while pulling a face — or none. */
 const readoutTag = $<HTMLDivElement>('#readout')
 const showReadout = (text: string | null, at?: { x: number; y: number }): void => {
@@ -2454,6 +2484,7 @@ const renderStatus = (): void => {
   hintPill.hidden = hint === null
   hintPill.textContent = hint ?? ''
   hierarchyCount.textContent = doc === null ? '' : String(doc.count())
+  assistantDock.render()
 }
 chromeChanged = renderStatus
 

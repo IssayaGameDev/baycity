@@ -25,6 +25,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | `play.ts` | the game frame (ADR 0172) | `PlayHost` (13 getters) |
 | `historyStore.ts` | the history, pending batches, `coalescing`, the held-back drag batches, the clipboard | `HistoryHost` |
 | `liveSession.ts` | `collab`, the peer list, every `connId` this tab has had (`mineEver`), the last snapshot, `joining`, the deferred ops, the hold map and its key, the hold outlines, the presence timer | `LiveHost` |
+| `assistant/` | the assistant's button, chat and tab (ADR 0192, `assistant.md`) | `AssistantDockHost` |
 | `follow.ts` | whom this tab follows, the pose it glides to and whether the leader's holds are still to be taken; who follows it, the send timer and the last pose sent (ADR 0155, ADR 0184) | `FollowHost` |
 | `people.ts` | the icons it drew and whose card is open (ADR 0155) | `PeopleState` getter + `PeopleActions` |
 | `motionPreview.ts` | the preview clock, whether it runs, the last frame. Poses via `Doc.posesAt(timeMs, { sequences: playing })` — one walk, not `poseOf` per node (ADR 0125, ADR 0142) | `MotionPreviewHost` |

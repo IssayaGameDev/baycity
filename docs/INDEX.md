@@ -29,6 +29,7 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 | [rendering.md](platform/rendering.md) | Stage, post-FX, overlay layer, level view, assets, world labels, Pixi UI |
 | [editor.md](platform/editor.md) | What it authors, content API client, edits as ops, live levels, game discovery, adoption, Play |
 | [editor-server.md](platform/editor-server.md) | The content API, Access identity, live documents, session commits, upload, deploy |
+| [assistant.md](platform/assistant.md) | The editor's AI assistant: read and report, its tools, keys, budget, the chat and its tab |
 | [content-sync.md](platform/content-sync.md) | The live mirror, `content-root.ts`, the `@content` alias, `.env` |
 | [tooling.md](platform/tooling.md) | share, bots, netsim |
 | [budgets.md](platform/budgets.md) | The tripwires and how each is measured |
@@ -239,5 +240,6 @@ why matters.
 | [0189](adr/0189-text-and-quads-in-the-world.md) | Text and quads in the world |
 | [0190](adr/0190-any-font-and-a-drawn-bold.md) | Any font, and a drawn bold |
 | [0191](adr/0191-copy-and-paste-a-component.md) | Copy and paste a component |
+| [0192](adr/0192-an-assistant-in-the-editor.md) | An assistant in the editor |
 
 `Design archive/` holds superseded design material and is not maintained.

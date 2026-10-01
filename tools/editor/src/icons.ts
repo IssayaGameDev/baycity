@@ -66,6 +66,9 @@ export type IconName =
   | 'font'
   | 'search'
   | 'data'
+  | 'assistant'
+  | 'popOut'
+  | 'send'
 
 /** An asset kind's picture where it has none of its own: a tile before its preview, a row in *Used by*. */
 export const ASSET_ICON: Record<AssetKind, IconName> = {
@@ -142,6 +145,11 @@ const PATHS: Record<IconName, string> = {
   component: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
   // A sheet of fields: a data asset (ADR 0181).
   data: '<path d="M6 3.5h8.5L18.5 7.5v13H6z"/><path d="M14.5 3.5v4h4"/><path d="M9 11.5h6.5M9 14.5h6.5M9 17.5h4"/>',
+  // A speech bubble with a spark: the assistant (ADR 0192).
+  assistant: '<path d="M4 5.5h16v10.5h-9l-4.5 3.5V16H4z"/><path d="M12 8v4.5M9.75 10.25h4.5"/>',
+  // Out of the panel, into a tab of its own.
+  popOut: '<path d="M14 4h6v6"/><path d="M20 4l-8.5 8.5"/><path d="M18 13.5V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5.5"/>',
+  send: '<path d="M4 12l16-7.5-6 15.5-2.5-6.5z"/><path d="M11.5 13.5 20 4.5"/>',
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg'

@@ -87,6 +87,8 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  */
 export interface ApiOptions {
   repoRoot: string
+  /** The editor's assistant (ADR 0192), its `/api/assistant` routes, for a signed-in user. Absent: none. */
+  assistant?: { handle: (req: IncomingMessage, res: ServerResponse, url: string, user: User) => Promise<boolean> }
   /** `null` → 401. Throwing → 500. */
   identify: (req: IncomingMessage) => Promise<User | null>
   /**
@@ -974,6 +976,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     }
     if (user === null) return sendJson(res, 401, { error: 'not signed in' }), true
 
+    if (opts.assistant !== undefined && (await opts.assistant.handle(req, res, url, user))) return true
     if (await handleLive(req, res, url, user)) return true
     if (await handleMirror(req, res, url, query)) return true
     if (handleMe(req, res, url, user)) return true

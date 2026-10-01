@@ -1,0 +1,260 @@
+/* The assistant's chat (ADR 0192): the panel over the viewport and the tab it can move to. */
+.asst {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel, #1c1f24);
+  color: var(--text, #d5d9e0);
+  font: 12.5px/1.45 system-ui, sans-serif;
+}
+.asst-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--panel-head, #23272e);
+  border-bottom: 1px solid var(--line, #34383f);
+}
+.asst-head-i {
+  width: 16px;
+  height: 16px;
+  color: var(--accent, #4a8cf7);
+}
+.asst-title {
+  font-weight: 600;
+}
+.asst-spent {
+  margin-left: auto;
+  color: var(--dim, #8b929d);
+  font-size: 11px;
+}
+.asst-hb {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--dim, #8b929d);
+  cursor: pointer;
+}
+.asst-hb:hover {
+  background: var(--hover, #2a2f37);
+  color: var(--text, #d5d9e0);
+}
+.asst-hb .ic,
+.asst-send .ic {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.asst-log {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.asst-msg {
+  max-width: 92%;
+  padding: 7px 10px;
+  border-radius: 9px;
+  overflow-wrap: anywhere;
+}
+.asst-you {
+  align-self: flex-end;
+  background: var(--accent-dim, #2f5fa8);
+  white-space: pre-wrap;
+}
+.asst-ai {
+  align-self: flex-start;
+  background: var(--panel-head, #23272e);
+}
+.asst-ai p,
+.asst-draft-b p {
+  margin: 0 0 6px;
+}
+.asst-ai p:last-child,
+.asst-draft-b p:last-child {
+  margin-bottom: 0;
+}
+.asst-ai pre,
+.asst-draft-b pre {
+  overflow-x: auto;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg, #14161a);
+}
+.asst-ai code,
+.asst-draft-b code {
+  font: 11.5px/1.4 ui-monospace, Consolas, monospace;
+}
+.asst-ai a,
+.asst-draft-b a,
+.asst-filed {
+  color: var(--link, #6ab0ff);
+}
+.asst-ai ul,
+.asst-ai ol {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+.asst-intro,
+.asst-note {
+  color: var(--dim, #8b929d);
+}
+.asst-act {
+  align-self: flex-start;
+  color: var(--dim, #8b929d);
+  font-size: 11px;
+}
+.asst-act::before {
+  content: '› ';
+}
+.asst-err {
+  color: #f08a7e;
+}
+.asst-draft {
+  align-self: stretch;
+  padding: 8px 10px;
+  border: 1px solid var(--line, #34383f);
+  border-left: 3px solid var(--accent, #4a8cf7);
+  border-radius: 7px;
+  background: var(--bg, #14161a);
+}
+.asst-draft-k {
+  color: var(--dim, #8b929d);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.asst-draft-t {
+  margin: 2px 0 4px;
+  font-weight: 600;
+}
+.asst-draft-b {
+  max-height: 180px;
+  overflow-y: auto;
+}
+.asst-draft-f {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+.asst-file {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--accent, #4a8cf7);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.asst-file:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.asst-form {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid var(--line, #34383f);
+}
+.asst-in {
+  flex: 1 1 auto;
+  min-width: 0;
+  resize: none;
+  padding: 6px 8px;
+  border: 1px solid var(--line, #34383f);
+  border-radius: 6px;
+  background: var(--bg, #14161a);
+  color: var(--text, #d5d9e0);
+  font: inherit;
+}
+.asst-in:focus {
+  outline: none;
+  border-color: var(--accent, #4a8cf7);
+}
+.asst-send {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent, #4a8cf7);
+  color: #fff;
+  cursor: pointer;
+}
+.asst-send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.asst-busy .asst-send {
+  animation: asst-pulse 1s ease-in-out infinite;
+}
+@keyframes asst-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* The round button at the viewport's bottom right, and the panel it opens above it. */
+.asst-fab {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent, #4a8cf7);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+.asst-fab:hover {
+  filter: brightness(1.1);
+}
+.asst-fab .ic {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.asst-panel {
+  position: absolute;
+  right: 14px;
+  bottom: 68px;
+  z-index: 30;
+  width: min(400px, calc(100% - 28px));
+  height: min(560px, calc(100% - 90px));
+  border: 1px solid var(--line, #34383f);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.asst-panel[hidden] {
+  display: none;
+}
+
+/* The tab of its own: the window is the page. */
+.asst-page {
+  height: 100vh;
+}

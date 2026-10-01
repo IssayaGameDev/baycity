@@ -105,6 +105,16 @@ the game is its pause menu, not Stop.
 The same game is at **https://dev.playgorbo.com**, same login, if you want it in its own tab. People are
 together when they are on the same level. This is not the public game, it is the three of us.
 
+## Asking the assistant
+
+The round button at the bottom right of the scene opens a chat. Ask it how to do something in the editor, or tell
+it what looks broken: it reads the game's code, docs and levels to work out why. It cannot change anything — your
+level, the scene or the game are yours to edit.
+
+When it finds a real bug it drafts a report; **File it** puts it on GitHub with your name on it. Nothing is filed
+unless you click. ↗ moves the chat to a tab of its own. A chat lasts until its tab closes, and each person has
+$1 of questions a day.
+
 ## Where it ends up
 
 Nothing you save is in the game until Kodjo has played it and merged it. Ask him when you want a look.

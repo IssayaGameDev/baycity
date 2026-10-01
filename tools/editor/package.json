@@ -16,7 +16,9 @@
     "@mp/mode": "workspace:*",
     "@mp/net": "workspace:*",
     "@mp/physics": "workspace:*",
-    "@mp/render-three": "workspace:*"
+    "@mp/render-three": "workspace:*",
+    "dompurify": "^3.4.16",
+    "marked": "^18.0.14"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
