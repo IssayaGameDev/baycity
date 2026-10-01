@@ -108,7 +108,8 @@ export const loadLevelInto = async ({
   await assets.load([...assetIdsIn(loaded.visuals), ...assetParamIds(loaded.nodes, registry)])
   const view: LevelView = addLevel(scene, loaded.visuals, { assets, cutout })
   const lights: ContentLights = addLights(scene, loaded.lights)
-  const texts: LevelTexts = addTexts(scene, loaded.texts)
+  // A Text's font is fetched by the text library itself, from the address the level's needs list gave its file (ADR 0190).
+  const texts: LevelTexts = addTexts(scene, loaded.texts, (id) => assets.fontUrl(id))
 
   env.applyEnvironment(loaded.config.environment)
   postfx.apply(loaded.config.environment?.postfx)

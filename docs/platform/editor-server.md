@@ -61,13 +61,14 @@ shipped when `hidden` was added (ADR 0132). `api.test.ts` walks one over the wir
 | `GET /api/assets` | `{ entries, libraries, folders, seq, files }` — every library's, paths from `content/` (ADR 0161); rescans the index (the importer: a file copied in gets its sidecar, attributed to this user); `seq` is the change feed's position in the same tick, where an editor's watch starts (ADR 0156); `files` each entry's `{ bytes, modified }` (ms) by path, stat'd now (ADR 0165) | |
 | `GET /api/assets/users?id=` | `{ levels, assets }` — who uses it, directly or through another: every level (`levelNow`) and asset (`assetJsonNow`) as it is now (`usersOf`, `content.md`) · 404 no such asset | |
 | `POST /api/assets/mkdir` · `move` · `delete` | `{ path }` · `{ from, to }` or `{ moves: [{ from, to }] }` · `{ path }` or `{ paths }` — each path inside a library (`inLibrary`) of Shared or an existing game, else 400; a move into another library is **409** while something would be left using what it may not (`libraryMoves.ts`). Several are checked before any is done — a source missing or a name taken (400), the library rule for all crossing into one library together (409) — so all or none (ADR 0166) | |
-| `POST /api/assets/upload?path=` | raw bytes → `{ entry }`; `path` from `content/`, inside a library | ext ∈ `png jpg jpeg webp ktx2 glb`; `≤ maxUploadBytes` else 413 |
+| `POST /api/assets/upload?path=` | raw bytes → `{ entry }`; `path` from `content/`, inside a library | ext ∈ `png jpg jpeg webp ktx2 glb ttf otf woff` (fonts for a Text, ADR 0190; not woff2); `≤ maxUploadBytes` else 413 |
 | `GET /content/<path>` | bytes of a path inside a library (anything else 404) — a prefab open live is served from its document, as a level is; a live asset (ADR 0159) from its document when open, with `x-asset-epoch` / `x-asset-seq` (`0` for the file) | |
 | `GET /api/play/<address>` | a game page's content (ADR 0169), each as it is now: `<game>/levels.json` → `levelIndexOf` over its level files · `<game>/levels/<name>.needs.json` → `levelNeeds` over `levelNow`, the asset index and `assetJsonNow`, `url`s `content/<path>` · `<game>/levels/<name>.level.json` → `levelNow` · a library path → as `GET /content/<path>`. 404 anything else, 405 anything but GET, `cache-control: no-cache`. The staging game's dev server proxies its page's `content/` here (`content-sync.md`) | `identifyPlayer`: signed in, not necessarily in `users` |
 | `POST /api/live/asset/<id>/ops` | `{ connId, batchId, ops }` — asset ops on any live connection of this user → `{ ok, seq }` · 400 not ops, an op that does not apply or leaves the file invalid, an unknown or foreign connection · 404 no such asset | |
 | `POST /api/live/game/<game>/ops` | the same, on a game's `game.json` (ADR 0162); echoed as an `asset` event with `assetId` `game:<game>` · 404 no such game | |
 | `PUT /content/<path>` | JSON asset; **409** while that prefab, or that live asset, is open live; a `.data.json` **409** in Shared and **400** unless `isDataAsset` (ADR 0181) | |
 | `POST /api/admin/commit-all` | `Authorization: Bearer <stateDir/admin.token>` → commits every session | token, no user |
+| `/api/assistant…` | the assistant (ADR 0192, `assistant.md`): status, conversations, a turn as server-sent events, filing a draft | |
 | `GET /api/tree` | `{ seq, files: [{ path, size, sha1 }] }` — every file under `content/` (mirror, ADR 0084); flushes every live level first, as `GET /api/file` does | |
 | `GET /api/changes?since=N&timeout=MS` | `{ seq, paths }` long-poll (≤ 60 s); **410** when N is behind the feed or ahead of it. Followed by the mirror and by every editor tab (ADR 0156) | |
 | `GET /api/file?path=content/…` | the bytes; 404 when gone | |
@@ -207,7 +208,8 @@ Box: Hetzner CX23 (2 vCPU, 4 GB) `2.28.227.20`, Ubuntu 26.04; cloudflared instal
 command, `editor.playgorbo.com → localhost:8080`; Access application `Editor` with two policies: `Team` (Allow,
 emails, One-time PIN login) and `Sync` (Service Auth, the `content-sync` service token, `content-sync.md`).
 Dashboard names as of setup: Cloudflare One → *Access controls* (applications, service credentials),
-*Integrations → Identity providers* (One-time PIN). Nothing listens publicly. State in `/var/lib/editor-server/`.
+*Integrations → Identity providers* (One-time PIN). Nothing listens publicly. State in `/var/lib/editor-server/`:
+`admin.token`, `hidden.json`, and the assistant's `anthropic.key`, `github.token`, `assistant-spend.json` (`assistant.md`).
 
 ## Staging game — `dev.playgorbo.com` (ADR 0085)
 

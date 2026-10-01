@@ -35,6 +35,7 @@ import { listField } from './listField'
 import { byMenuFolder, menuFolderOf } from './componentMenu'
 import { sequenceSummary } from './sequenceEdit'
 import { sequenceEditor } from './sequenceEditor'
+import { assetsRefusal, valuesRefusal, type Clip } from './componentClipboard'
 
 /**
  * The Inspector panel: a card per component, with the fields inside each generated from that component's
@@ -100,6 +101,8 @@ export interface InspectorHost {
   selectionIndices: () => readonly number[]
   /** The selection's current transform, or `null` if there isn't one. */
   readTransform: () => TransformValues | null
+  /** Put these values on every selected object's transform, as one edit (ADR 0191: Paste Component Values). */
+  pasteTransform: (v: TransformValues) => void
   writeTransform: (t: TransformValues) => void
   /**
    * Every selected node's transform, primary last. Empty when nothing is selected (ADR 0112).
@@ -352,6 +355,11 @@ export const peersOf = (doc: Doc, indices: readonly number[], at: number, view: 
 }
 
 export const createInspector = (head: HTMLElement, container: HTMLElement, host: InspectorHost): Inspector => {
+  /**
+   * What Copy Component last took (ADR 0191), in this tab only: it lives here, so a rebuild, another selection,
+   * another level or a prefab opened on top keeps it. A copy rebuilds the panel, so every card's menu offers it.
+   */
+  let clip: Clip | null = null
   /** Open under a header button, which is where the pointer already is. */
   const openMenu = (at: HTMLElement, items: readonly MenuItem[], title?: string): void => {
     const rect = at.getBoundingClientRect()
@@ -762,6 +770,11 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         openMenu(dots, items, opts.title)
       })
       header.append(dots)
+      // Unity's: a right-click on a component's header is its menu, where the pointer is (ADR 0191).
+      header.addEventListener('contextmenu', (e) => {
+        e.preventDefault()
+        host.menu.open({ x: e.clientX, y: e.clientY }, items, opts.title)
+      })
     }
 
     root.append(header)
@@ -1441,6 +1454,87 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     )
   }
 
+  /**
+   * A copied component's values into this document's, or why not (ADR 0191): an asset another game owns is refused
+   * here as it would be dropped on the field.
+   */
+  const clipAssetsRefusal = (doc: Doc, c: Extract<Clip, { kind: 'component' }>): string | null => {
+    const decls = doc.registry.get(c.type)?.params
+    return decls === undefined ? null : assetsRefusal(c.params, decls, (of, id, dataType) => host.assetRefusal(of, id, dataType))
+  }
+
+  /** Write a copied component's values onto one component: a sequence's stages by their own route (ADR 0139). */
+  const writeClip = (doc: Doc, i: number, componentId: string, c: Extract<Clip, { kind: 'component' }>): void => {
+    if (c.type === SEQUENCE) {
+      const { stages, ...rest } = c.params
+      doc.setParams(i, componentId, { ...rest })
+      doc.setSequenceStages(i, componentId, readStages(stages))
+    } else doc.setParams(i, componentId, structuredClone({ ...c.params }))
+  }
+
+  /** Paste Component As New (ADR 0191): the copy added to each of `into` that may take it, as one edit. */
+  const pasteAsNewItem = (doc: Doc, into: readonly number[]): MenuItem => {
+    const c = clip?.kind === 'component' ? clip : null
+    const able = c === null ? [] : into.filter((i) => doc.canAdd(i, c.type))
+    const why =
+      c === null
+        ? 'nothing copied — Copy Component first'
+        : !doc.registry.has(c.type)
+          ? `this game has no ${c.label}`
+          : able.length === 0
+            ? doc.registry.get(c.type)?.singleton === true
+              ? `${c.label} can only be on an object once, and ${into.length > 1 ? 'these have one' : 'this has one'}`
+              : `${c.label} cannot go here`
+            : clipAssetsRefusal(doc, c)
+    return {
+      label: into.length > 1 && able.length > 0 ? `Paste Component As New (${able.length})` : 'Paste Component As New',
+      ...(why === null ? {} : { enabled: false, why }),
+      run: () => {
+        if (c === null || why !== null) return
+        edited(() => {
+          for (const i of able) {
+            const id = doc.addComponent(i, c.type)
+            if (id === null) continue
+            writeClip(doc, i, id, c)
+            if (!c.enabled) doc.setComponentEnabled(i, id, false)
+          }
+        })
+        rebuildKeepingScroll()
+      },
+    }
+  }
+
+  /** A component card's Copy Component, Paste Component As New and Paste Component Values — Unity's three. */
+  const clipboardItems = (doc: Doc, at: number, view: ComponentView, peers: readonly Peer[] | null): MenuItem[] => {
+    const label = doc.registry.get(view.type)?.label ?? view.type
+    const targets = peers ?? [{ at, componentId: view.id }]
+    const c = clip?.kind === 'component' ? clip : null
+    const valuesWhy = valuesRefusal(clip, view.type) ?? (c === null ? null : clipAssetsRefusal(doc, c))
+    return [
+      {
+        label: 'Copy Component',
+        divider: true,
+        run: () => {
+          // Every value, the defaults filled in, so a paste sets all of them as Unity's does.
+          clip = { kind: 'component', type: view.type, label, params: structuredClone({ ...doc.registry.defaults(view.type), ...view.params }), enabled: view.enabled }
+          rebuildKeepingScroll()
+        },
+      },
+      pasteAsNewItem(doc, peers === null ? [at] : peers.map((p) => p.at)),
+      {
+        label: peers === null ? 'Paste Component Values' : `Paste Component Values (${peers.length})`,
+        ...(valuesWhy === null ? {} : { enabled: false, why: valuesWhy }),
+        run: () => {
+          if (c === null || valuesWhy !== null) return
+          edited(() => {
+            for (const t of targets) writeClip(doc, t.at, t.componentId, c)
+          })
+          rebuildKeepingScroll()
+        },
+      },
+    ]
+  }
+
   /** One card per component: header controls, then its visible parameters. */
   const addComponentSection = (doc: Doc, at: number, view: ComponentView, peers: readonly Peer[] | null): void => {
     const def = doc.registry.get(view.type)
@@ -1486,6 +1580,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         rebuildKeepingScroll()
       },
     })
+    items.push(...clipboardItems(doc, at, view, peers))
 
     const state = boundState(doc.registry.defaults(view.type), view.params)
     const shown = def === undefined || view.type === SEQUENCE ? null : visibleParams(def.params, state)
@@ -1568,6 +1663,31 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
   const addTransformSection = (doc: Doc, at: number): void => {
     const overridden = doc.overridesOf(at).includes('transform')
     const items: MenuItem[] = overridden ? [{ label: 'Revert to prefab', run: () => host.revertOverride('transform') }] : []
+    // Unity's Transform menu (ADR 0191): its three lines copied and pasted, and a copied component added here.
+    const values = host.readTransform()
+    const count = host.selectionCount()
+    items.push(
+      {
+        label: 'Copy Component',
+        divider: items.length > 0,
+        enabled: values !== null,
+        run: () => {
+          if (values === null) return
+          clip = { kind: 'transform', position: { ...values.position }, rotationDeg: { ...values.rotationDeg }, scale: { ...values.scale } }
+          rebuildKeepingScroll()
+        },
+      },
+      pasteAsNewItem(doc, count > 1 ? host.selectionIndices() : [at]),
+      {
+        label: count > 1 ? `Paste Component Values (${count})` : 'Paste Component Values',
+        ...(clip?.kind === 'transform' ? {} : { enabled: false, why: 'nothing copied — Copy Component on a Transform first' }),
+        run: () => {
+          if (clip?.kind !== 'transform') return
+          host.pasteTransform({ position: { ...clip.position }, rotationDeg: { ...clip.rotationDeg }, scale: { ...clip.scale } })
+          rebuildKeepingScroll()
+        },
+      },
+    )
     const section = addSection(TRANSFORM, { title: 'Transform', icon: 'toolMove', badge: overridden ? '1' : '', menu: items, fixed: true })
     if (overridden) section.root.classList.add('over-sec')
 

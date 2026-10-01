@@ -1,6 +1,6 @@
 # ADR 0189 — Text and quads in the world
 
-Status: accepted. Extends ADR 0082 (world labels) and ADR 0090 (built-in shapes). Kodjo's calls: the sharp-text
+Status: accepted; its fonts and bold amended by ADR 0190. Extends ADR 0082 (world labels) and ADR 0090 (built-in shapes). Kodjo's calls: the sharp-text
 library over canvas text; text on the object by default, facing the camera as an option; mirrored from behind
 by default, hidden as an option; never seen through walls; the old labels reworked onto the same drawing.
 

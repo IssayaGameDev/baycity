@@ -87,6 +87,8 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  */
 export interface ApiOptions {
   repoRoot: string
+  /** The editor's assistant (ADR 0192), its `/api/assistant` routes, for a signed-in user. Absent: none. */
+  assistant?: { handle: (req: IncomingMessage, res: ServerResponse, url: string, user: User) => Promise<boolean> }
   /** `null` → 401. Throwing → 500. */
   identify: (req: IncomingMessage) => Promise<User | null>
   /**
@@ -138,8 +140,11 @@ const ROUTE_RE = /^\/api\/(levels|games)(?:\/(.+))?$/
 /** Where a game page's content is answered (ADR 0169). */
 const PLAY_PREFIX = '/api/play/'
 const MAX_JSON_BYTES = 32 * 1024 * 1024
-/** What upload accepts: what the runtime loads. `.gltf` is refused — it drags `.bin` and textures along. */
-export const UPLOAD_EXTENSIONS: ReadonlySet<string> = new Set(['png', 'jpg', 'jpeg', 'webp', 'ktx2', 'glb'])
+/**
+ * What upload accepts: what the runtime loads. `.gltf` is refused — it drags `.bin` and textures along. Fonts are what
+ * a Text can draw with (ADR 0190): TrueType, OpenType and WOFF, not WOFF2, which the text library cannot read.
+ */
+export const UPLOAD_EXTENSIONS: ReadonlySet<string> = new Set(['png', 'jpg', 'jpeg', 'webp', 'ktx2', 'glb', 'ttf', 'otf', 'woff'])
 
 /** Resolve `rel` inside `root`, or `null` if it escapes it. */
 export const safeJoin = (root: string, rel: string): string | null => {
@@ -971,6 +976,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     }
     if (user === null) return sendJson(res, 401, { error: 'not signed in' }), true
 
+    if (opts.assistant !== undefined && (await opts.assistant.handle(req, res, url, user))) return true
     if (await handleLive(req, res, url, user)) return true
     if (await handleMirror(req, res, url, query)) return true
     if (handleMe(req, res, url, user)) return true

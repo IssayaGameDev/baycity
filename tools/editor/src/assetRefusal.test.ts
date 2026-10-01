@@ -10,6 +10,8 @@ const DB = buildDatabase([
   entry('assets/materials/red.mat.json', 'material'),
   entry('keyboard/assets/materials/key.mat.json', 'material'),
   entry('assets/textures/brick.png', 'texture'),
+  entry('assets/fonts/pixel.ttf', 'font'),
+  entry('assets/fonts/round.woff2', 'font'),
 ])
 
 describe('an asset dropped on a reference field', () => {
@@ -23,5 +25,11 @@ describe('an asset dropped on a reference field', () => {
     expect(assetRefusal(DB, 'material', 'id-keyboard/assets/materials/key.mat.json', 'obby')).toBe('key belongs to another game')
     expect(assetRefusal(DB, 'material', 'id-keyboard/assets/materials/key.mat.json', null)).toBe("key is a game's own, and this is Shared")
     expect(assetRefusal(DB, 'material', 'nothing', 'keyboard')).toBe('not in the project')
+  })
+
+  /** A Text's font (ADR 0190): any the text library reads, and a woff2 refused with what to do about it. */
+  it('takes a font a text can draw with, and refuses a woff2', () => {
+    expect(assetRefusal(DB, 'font', 'id-assets/fonts/pixel.ttf', 'keyboard')).toBeNull()
+    expect(assetRefusal(DB, 'font', 'id-assets/fonts/round.woff2', 'keyboard')).toMatch(/convert it to woff, ttf or otf/)
   })
 })

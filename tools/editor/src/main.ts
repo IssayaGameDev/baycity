@@ -14,7 +14,7 @@ import {
   validateLevel, type NodeRef, refKey,
   BUILTIN_LABELS, BUILTIN_MODELS,
   isSegment, parseQualified, qualify,
-  applyAssetOps, diffAssetOps, gameDocId, gameOfDocId, isDataAsset, isLiveAssetPath, libraryOf, LiveAssetError, mayUse,
+  applyAssetOps, diffAssetOps, gameDocId, gameOfDocId, isDataAsset, isLiveAssetPath, libraryOf, LiveAssetError, mayUse, textFontRefusal,
   type AssetDatabase, type AssetOp, type MaterialAsset } from '@mp/content'
 
 import { DEFAULT_REGISTRY, createRegistry, dataMenuPath, ENGINE_COMPONENTS, isSharedComponent, newDataAsset, PLAYER_COMPONENTS, SHARED_COMPONENT_TYPES, sharedComponents, type DataTypeDef, type Registry } from '@mp/components'
@@ -62,6 +62,8 @@ import { createItemMeshes } from './itemMeshes'
 import { createLiveSession, peerCss } from './liveSession'
 import type { FieldSpot } from './collab'
 import { createCameraView } from './cameraView'
+import { createAssistantDock } from './assistant/assistantDock'
+import type { EditorContext } from './assistant/assistantApi'
 import { createFollow } from './follow'
 import { createPeople, type PeopleState } from './people'
 import { createFieldPresence, type Ring } from './fieldPresence'
@@ -2253,6 +2255,32 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     motion.applyPoses()
     inspector.sync()
   },
+  /**
+   * Paste Component Values on the Transform (ADR 0191): every selected object to the copied three lines, as one
+   * edit — `writeAxis`'s way, through each group and its write-back, so a moving item's offset comes out right.
+   */
+  pasteTransform: (t) => {
+    if (doc === null || tool.dragging() || selection.length === 0) return
+    const q = eulerToQuat(vec3(THREE.MathUtils.degToRad(t.rotationDeg.x), THREE.MathUtils.degToRad(t.rotationDeg.y), THREE.MathUtils.degToRad(t.rotationDeg.z)))
+    edits.beginDrag()
+    try {
+      for (const i of selection) {
+        const g = meshes.groupAt(i)
+        if (g === undefined) continue
+        g.position.set(t.position.x, t.position.y, t.position.z)
+        g.quaternion.set(q.x, q.y, q.z, q.w)
+        g.scale.set(t.scale.x, t.scale.y, t.scale.z)
+        tool.writeBackItem(i)
+        meshes.rebuildSubtree(i)
+      }
+    } finally {
+      edits.abortDrag()
+    }
+    edits.endDrag(selection.length > 1 ? `paste transform ${selection.length}` : 'paste transform')
+    rebuildLoaded()
+    motion.applyPoses()
+    inspector.sync()
+  },
   writeTransform: (t) => {
     // The gizmo is the authority while it is dragging: see `tool.dragging()`.
     if (selected === null || tool.dragging()) return
@@ -2326,7 +2354,10 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     const user = editingFor()
     // The folders as the Project window names them: `Keyboard/materials/red.mat.json` is in Keyboard › materials.
     if (db !== undefined)
-      for (const a of assetsOfKind(db, of)) if (mayUse(user, a.path) && ofDataType(a.id, of, dataType)) out.push({ id: a.id, label: a.name, folders: project.named(a.path).split('/').slice(0, -1) })
+      for (const a of assetsOfKind(db, of))
+        // A woff2 is a font the text library cannot read (ADR 0190): not offered, and refused if dropped.
+        if (mayUse(user, a.path) && ofDataType(a.id, of, dataType) && !(of === 'font' && textFontRefusal(a.path) !== null))
+          out.push({ id: a.id, label: a.name, folders: project.named(a.path).split('/').slice(0, -1) })
     return out
   },
   dataTypeLabel: (type) => (activeMode?.dataTypes ?? []).find((d) => d.type === type)?.label ?? type,
@@ -2395,6 +2426,34 @@ const hintPill = $<HTMLDivElement>('#vhint')
 const hierarchyCount = $<HTMLSpanElement>('#hier-count')
 const stageEl = $<HTMLDivElement>('#stage')
 
+/**
+ * The assistant (ADR 0192): the round button at the viewport's bottom right and its chat. What it is told the person
+ * is looking at — the open game, level or prefab, the selection with each object's components, the latest problems —
+ * goes with each message, from this tab or to a tab the chat moved to.
+ */
+const assistantContext = (): EditorContext => {
+  const open = doc
+  const picked =
+    open === null
+      ? []
+      : selection.slice(0, 12).map((i) => {
+          const types = open.components(i).map((c) => open.registry.get(c.type)?.label ?? c.type)
+          return `${open.label(i)} (${types.length === 0 ? 'no components' : types.join(', ')})`
+        })
+  return {
+    ...(activeMode === undefined ? {} : { game: activeMode.name }),
+    ...(fileState.name === '' ? {} : { level: fileState.name }),
+    ...(prefabOpen === null ? {} : { prefab: prefabOpen.name }),
+    selection: picked,
+    problems: notices
+      .log()
+      .filter((n) => n.kind !== 'ok')
+      .slice(-8)
+      .map((n) => n.text),
+  }
+}
+const assistantDock = createAssistantDock(stageEl, { context: assistantContext, playing: () => play.active() })
+
 /** The figure by the pointer during a gesture — the size while pulling a face — or none. */
 const readoutTag = $<HTMLDivElement>('#readout')
 const showReadout = (text: string | null, at?: { x: number; y: number }): void => {
@@ -2425,6 +2484,7 @@ const renderStatus = (): void => {
   hintPill.hidden = hint === null
   hintPill.textContent = hint ?? ''
   hierarchyCount.textContent = doc === null ? '' : String(doc.count())
+  assistantDock.render()
 }
 chromeChanged = renderStatus
 

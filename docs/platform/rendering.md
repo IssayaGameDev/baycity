@@ -219,21 +219,28 @@ below the feet. `OrbitCamera.update(dt, body, setOccluders): Placement { rigVisi
 (ADR 0148), off by default: off, `occlusionFor(..., { seeThrough: false })` makes one cast along the boom, its hit
 is the limit (ADR 0020), and nothing is holed.
 
-## Text — `text.ts`, `levelText.ts`, `worldLabel.ts` (ADR 0189, ADR 0082)
+## Text — `text.ts`, `levelText.ts`, `worldLabel.ts` (ADR 0189, ADR 0190, ADR 0082)
 
 One drawing for every text: `troika-three-text` (signed-distance glyphs laid out in a worker, one shared atlas,
-one draw call a block), with this package's own fonts — `src/fonts/roboto-latin-{400,700}-normal.woff`, Roboto,
-OFL (`fonts/OFL.txt`), each 21 KB, by `new URL(…, import.meta.url)` so Vite ships them. The library reaches for a
-CDN only for a character neither file has. `troika-three-text.d.ts` types the part used.
+one draw call a block). The default font is this package's own file — `src/fonts/roboto-latin-400-normal.woff`,
+Roboto, OFL (`fonts/OFL.txt`), 21 KB, by `new URL(…, import.meta.url)` so Vite ships it; any other is an uploaded
+font's URL (`font`). The library reaches for a CDN only for a character its font has not got.
+`troika-three-text.d.ts` types the part used.
+
+**Bold is drawn** (ADR 0190, Kodjo's call: one way, for every font): `outlineWidth = size × BOLD_WIDEN` (0.017),
+`outlineColor` the text's — each letter's edge widened in its own colour. `BOLD_WIDEN` is measured to ink Roboto as
+its own Bold file does (1913 against 1899 lit pixels, headless).
 
 ```ts
-interface TextStyle { text; size /* em, metres */; color; align: 'left'|'center'|'right'; width /* wrap m, 0 none */;
-  weight: 'normal'|'bold'; facing: 'object'|'camera'; back: 'mirrored'|'hidden'; depth: 'world'|'over'; opacity }
+interface TextStyle { text; font: string | null /* URL, null Roboto */; size /* em, metres */; color;
+  align: 'left'|'center'|'right'; width /* wrap m, 0 none */; weight: 'normal'|'bold' /* drawn */;
+  facing: 'object'|'camera'; back: 'mirrored'|'hidden'; depth: 'world'|'over'; opacity }
 createText(style?: Partial<TextStyle>, facing?: { around?: Object3D }): WorldText
 interface WorldText { object: THREE.Mesh; material; set(style); fade(opacity); laidOut(fn(bounds)); dispose() }
 faceCamera(object, { around? })   // turns it to each camera at draw time, in matrixWorld only
-textStyleOf(desc: TextDesc): Partial<TextStyle>   // a Text component's reading, depth 'world' — game and editor
-addTexts(scene, items: TextItem[]): LevelTexts { sync; objects; dispose }   // posed from the loader every frame
+textStyleOf(desc: TextDesc, fontUrl?: FontUrlOf): Partial<TextStyle>   // a Text's reading, depth 'world' — game and editor
+addTexts(scene, items: TextItem[], fontUrl?: FontUrlOf): LevelTexts { sync; objects; dispose }   // posed every frame
+type FontUrlOf = (assetId: string) => string | null   // the game's and the editor's `AssetRuntime.fontUrl`
 ```
 
 | | |
@@ -251,7 +258,7 @@ the stack holds; a line's `size` relative, the whole `heightM` tall; a backdrop 
 its alpha) sized once every line is laid out.
 
 ```ts
-interface LabelLine { text: string; size: number; color?: string; weight?: 'normal' | 'bold' }   // weight default bold
+interface LabelLine { text: string; size: number; color?: string; weight?: 'normal' | 'bold' }   // weight default bold (drawn)
 interface WorldLabelOptions { heightM? = 0.5; depth? = 'over' | 'world'; background? = 'rgba(11,16,32,0.6)' | null; padding? = 12 }
 worldLabel(lines, opts?): THREE.Group
 stackLines(lines, padding): { total; rows: { line; y }[] }   // pure, tested; GAP 4
@@ -263,6 +270,9 @@ Nametag = `worldLabel([{ text, size: 32 }], { heightM: 0.5 })` (`packages/tps/sr
 A visual with `fades` gets its **own** material copy per mesh at build, `transparent` from the start, so fading one piece fades no other and never recompiles; its see-through-hole copy (ADR 0055) fades with it. Faded to 0 it is not drawn at all, so it casts nothing.
 
 `geometryForBuiltin('builtin:quad', scale)` is a `PlaneGeometry(scale.x, scale.y)` toward +Z (ADR 0189), not its collider.
+
+`AssetRuntime.fontUrl(id)` (ADR 0190): a font asset's file URL for the text library, which fetches it itself — nothing
+loaded; `null` for no such font or a woff2 (`textFontRefusal`).
 
 Also exported: `addLights(scene, lights: WorldLight[]): ContentLights { sync; dispose }` (ADR 0047; `sync` also applies `visible`),
 `createCharacterRig`/`createLooseParts`, `createThumbnailer`/`fitDistance`.

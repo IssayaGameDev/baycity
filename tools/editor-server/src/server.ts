@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { dirname, extname, join } from 'node:path'
 
 import { createAccessVerifier } from './access'
+import { createAssistant } from './assistant/routes'
 import { AuthError, contentTypeFor, createContentApi, safeJoin } from './api'
 import { createChangeFeed } from './changes'
 import type { ServerConfig, User } from './config'
@@ -191,8 +192,12 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
     identifyPlayer = async (req) => (await signedIn(req)) !== null
   }
 
+  // The editor's assistant (ADR 0192): read and report only, its keys in the state directory beside the admin token.
+  const assistant = createAssistant({ repoRoot: config.repoRoot, stateDir: config.stateDir })
+
   const api = createContentApi({
     repoRoot: config.repoRoot,
+    assistant,
     identify,
     identifyPlayer,
     rules: { heartbeatMs: config.heartbeatMs, maxUploadBytes: config.maxUploadBytes },
@@ -272,6 +277,7 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
   // Silent live connections are swept and overdue sessions committed once a minute.
   const timer = setInterval(() => {
     live.sweep()
+    assistant.sweep()
     for (const s of takeDue(sessions, Date.now(), config.safetyCommitMs)) void commitSession(s)
   }, 60_000)
 

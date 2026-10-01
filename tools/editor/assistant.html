@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Assistant — editor</title>
+    <style>
+      /* The editor's own colours, so the chat looks the same in its tab (ADR 0192). */
+      :root {
+        --bg: #14161a;
+        --panel: #1c1f24;
+        --panel-head: #23272e;
+        --line: #34383f;
+        --text: #d5d9e0;
+        --dim: #8b929d;
+        --accent: #4a8cf7;
+        --accent-dim: #2f5fa8;
+        --hover: #2a2f37;
+        --link: #6ab0ff;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+      }
+    </style>
+  </head>
+  <body>
+    <script type="module" src="/src/assistant/page.ts"></script>
+  </body>
+</html>

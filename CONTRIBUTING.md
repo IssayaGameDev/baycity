@@ -75,7 +75,7 @@ object that uses it. Two people changing the same value: the last change wins.
 Drag a file from your desktop onto a folder in the **Project** panel (bottom), or onto the tiles of the folder
 you are looking at, or use **+ → Upload files…** there.
 
-- Allowed: `.png`, `.jpg`, `.webp`, `.ktx2`, `.glb`. Not `.gltf` — export a `.glb` instead.
+- Allowed: `.png`, `.jpg`, `.webp`, `.ktx2`, `.glb`, and fonts `.ttf`, `.otf`, `.woff` for text. Not `.gltf` — export a `.glb` instead. Not `.woff2` — convert it to `.woff` or `.ttf`.
 - Max size is 10 MB per file.
 - Dropping a file with the same name into the same folder **replaces** it everywhere it is used.
 
@@ -104,6 +104,16 @@ the game is its pause menu, not Stop.
 
 The same game is at **https://dev.playgorbo.com**, same login, if you want it in its own tab. People are
 together when they are on the same level. This is not the public game, it is the three of us.
+
+## Asking the assistant
+
+The round button at the bottom right of the scene opens a chat. Ask it how to do something in the editor, or tell
+it what looks broken: it reads the game's code, docs and levels to work out why. It cannot change anything — your
+level, the scene or the game are yours to edit.
+
+When it finds a real bug it drafts a report; **File it** puts it on GitHub with your name on it. Nothing is filed
+unless you click. ↗ moves the chat to a tab of its own. A chat lasts until its tab closes, and each person has
+$1 of questions a day.
 
 ## Where it ends up
 

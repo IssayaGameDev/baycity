@@ -32,6 +32,7 @@ interface Rig {
   readonly panel: HTMLElement
   readonly sync: () => void
   readonly refresh: () => void
+  readonly rebuild: () => void
   readonly t: { current: TransformValues }
   readonly calls: { begins: number; drags: string[]; transforms: TransformValues[]; menus: { items: readonly MenuItem[]; title: string }[] }
 }
@@ -59,6 +60,7 @@ const rig = (doc: Doc, selection: readonly number[], transform: Partial<Transfor
     selectionIndices: () => selection,
     readTransform: () => t.current,
     writeTransform: (v) => void calls.transforms.push(structuredClone(v)),
+    pasteTransform: (v) => void calls.transforms.push(structuredClone(v)),
     selectionTransforms: () => selection.map(() => t.current),
     writeAxis: () => {},
     beginDrag: () => void calls.begins++,
@@ -88,7 +90,7 @@ const rig = (doc: Doc, selection: readonly number[], transform: Partial<Transfor
   }
   const inspector = createInspector(head, panel, host)
   inspector.rebuild()
-  return { head, panel, sync: inspector.sync, refresh: inspector.refresh, t, calls }
+  return { head, panel, sync: inspector.sync, refresh: inspector.refresh, rebuild: inspector.rebuild, t, calls }
 }
 
 const card = (panel: HTMLElement, title: string): HTMLElement =>
@@ -476,5 +478,71 @@ describe('someone else’s edit to the object shown (ADR 0168)', () => {
     expect(after).not.toBe(before)
     expect(line(after, 'radius')).toBeDefined()
     expect(line(after, 'half extents')).toBeUndefined()
+  })
+})
+
+/**
+ * Unity's component menu (ADR 0191): a right-click on a card's header opens it, and Copy Component, Paste Component
+ * As New and Paste Component Values go between objects — the copy kept by the Inspector, in this tab.
+ */
+describe('copying and pasting a component', () => {
+  const twoBumpers = () => {
+    const reg = createRegistry([...ENGINE_COMPONENTS, ...SHARED_COMPONENTS])
+    return levelDoc(
+      { id: 'l', config: {}, nodes: [node('a', [comp('a-b', 'Bumper', { power: 40 })]), node('b', [comp('b-b', 'Bumper', { power: 26 })]), node('c', [])] },
+      reg,
+    )
+  }
+  /** Right-click the card titled `title` and pick `label` from the menu it opens. */
+  const pick = (r: Rig, title: string, label: string): MenuItem => {
+    card(r.panel, title).querySelector('.isec-h')!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    const menu = r.calls.menus.at(-1)!
+    const item = menu.items.find((i) => i.label.startsWith(label))!
+    expect(item, label).toBeDefined()
+    return item
+  }
+
+  it('opens the card’s menu on a right-click, with Unity’s three', () => {
+    const r = rig(twoBumpers(), [0])
+    const labels = (() => {
+      pick(r, 'Bumper', 'Copy Component')
+      return r.calls.menus.at(-1)!.items.map((i) => i.label)
+    })()
+    expect(labels).toEqual(expect.arrayContaining(['Copy Component', 'Paste Component As New', 'Paste Component Values']))
+    expect(pick(r, 'Bumper', 'Paste Component Values').enabled, 'nothing copied yet').toBe(false)
+  })
+
+  it('pastes one Bumper’s values onto another’s, and as a new one onto an object without', () => {
+    const doc = twoBumpers()
+    const selection = [0]
+    const r = rig(doc, selection)
+    pick(r, 'Bumper', 'Copy Component').run!()
+    selection[0] = 1
+    r.rebuild()
+    pick(r, 'Bumper', 'Paste Component Values').run!()
+    expect(paramOf(doc, 1, 'Bumper', 'power')).toBe(40)
+    expect(pick(r, 'Bumper', 'Paste Component As New').why, 'a Bumper is once to an object').toMatch(/only be on an object once/)
+    selection[0] = 2
+    r.rebuild()
+    pick(r, 'Transform', 'Paste Component As New').run!()
+    expect(paramOf(doc, 2, 'Bumper', 'power')).toBe(40)
+  })
+
+  it('refuses a paste carrying an asset this document may not use, and says why', () => {
+    const doc = levelDoc({ id: 'l', config: {}, nodes: [node('a', [comp('a-r', RENDERER, { model: '', material: 'theirs' })]), node('b', [comp('b-r', RENDERER, { material: '' })])] })
+    const selection = [0]
+    const r = rig(doc, selection, {}, { assetRefusal: (_of, id) => (id === 'theirs' ? 'red belongs to another game' : null) })
+    pick(r, 'Mesh Renderer', 'Copy Component').run!()
+    selection[0] = 1
+    r.rebuild()
+    expect(pick(r, 'Mesh Renderer', 'Paste Component Values').why).toBe('material: red belongs to another game')
+  })
+
+  it('copies and pastes the Transform’s three lines', () => {
+    const r = rig(twoBumpers(), [0], { position: vec3(1, 2, 3), rotationDeg: vec3(0, 90, 0), scale: vec3(2, 2, 2) })
+    pick(r, 'Transform', 'Copy Component').run!()
+    r.rebuild()
+    pick(r, 'Transform', 'Paste Component Values').run!()
+    expect(r.calls.transforms.at(-1)).toEqual({ position: vec3(1, 2, 3), rotationDeg: vec3(0, 90, 0), scale: vec3(2, 2, 2) })
   })
 })

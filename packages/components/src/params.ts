@@ -87,7 +87,7 @@ export interface Vec3Spec extends SpecBase {
  */
 export interface AssetSpec extends SpecBase {
   readonly kind: 'asset'
-  readonly of: 'material' | 'model' | 'data'
+  readonly of: 'material' | 'model' | 'data' | 'font'
   /** For `of: 'data'`: the data type it takes (`DataTypeDef.type`). */
   readonly dataType?: string
   readonly default: string

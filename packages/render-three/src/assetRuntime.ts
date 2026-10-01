@@ -1,4 +1,4 @@
-import { isBuiltinModel, materialDependencies, type AssetDatabase, type MaterialAsset, type VisualItem } from '@mp/content'
+import { isBuiltinModel, materialDependencies, textFontRefusal, type AssetDatabase, type MaterialAsset, type VisualItem } from '@mp/content'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 
@@ -52,6 +52,11 @@ export interface AssetRuntime {
   /** A fresh clone of a loaded model, or `null`. */
   model: (assetId: string) => THREE.Object3D | null
   texture: (assetId: string) => THREE.Texture | null
+  /**
+   * Where a font asset's file is (ADR 0190), for the text library, which fetches it itself — nothing to load.
+   * `null` for no such font, or one it cannot read (a woff2).
+   */
+  fontUrl: (assetId: string) => string | null
   dispose: () => void
 }
 
@@ -175,6 +180,10 @@ export const createAssetRuntime = (opts: AssetRuntimeOptions): AssetRuntime => {
       return original === undefined ? null : original.clone(true)
     },
     texture: (id) => textures.get(id) ?? null,
+    fontUrl: (id) => {
+      const entry = opts.db.byId[id]
+      return entry === undefined || entry.kind !== 'font' || textFontRefusal(entry.path) !== null ? null : opts.urlOf(entry.path)
+    },
     dispose: () => {
       for (const t of textures.values()) t.dispose()
       for (const m of materials.values()) m.dispose()

@@ -125,7 +125,7 @@ const UNPREVIEWABLE = new Set<AssetKind>(['sound', 'font', 'data'])
 const TILES = 'application/x-mp-assets'
 
 /** What the upload picker offers: the server's `UPLOAD_EXTENSIONS`, what the runtime loads. */
-const UPLOADABLE = '.png,.jpg,.jpeg,.webp,.ktx2,.glb'
+const UPLOADABLE = '.png,.jpg,.jpeg,.webp,.ktx2,.glb,.ttf,.otf,.woff'
 
 /** The slider's range, in pixels of a tile's picture. All the way left is the one-line list. */
 export const SIZE = { list: 40, min: 40, max: 144, step: 4, start: 64 } as const
