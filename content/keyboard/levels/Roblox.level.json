@@ -15515,7 +15515,7 @@
                               {
                                 "id": "68f4eaf0",
                                 "kind": "wait",
-                                "seconds": 2
+                                "seconds": 3
                               }
                             ]
                           },
