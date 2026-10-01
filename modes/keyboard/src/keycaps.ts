@@ -52,7 +52,7 @@ export interface Keycaps {
    * when they leave — so standing still leaves a print of your feet in the board rather than a key that bobs
    * once and pops up under you. Call it once per character per frame; anything not called for goes back up.
    *
-   * `radius` is the character's footprint, so a 0.4 m capsule on a 0.6 m pitch holds one to four caps
+   * `radius` is the character's footprint, so a 0.4 m capsule on the 0.9 m pitch holds one to four caps
    * depending on where it is standing, which is what makes the print read as feet.
    *
    * Silently does nothing when there is no board under the point, which is the common case — most of a level
@@ -671,9 +671,14 @@ export const capsUnder = <T>(
 
     // Inverting exactly the arithmetic `capsFor` used. Two different copies of that rule is how a press lands
     // beside the foot instead of under it.
+    //
+    // The candidates reach as far as the distance check below does — the footprint **plus half a cap**. They once
+    // reached the footprint alone, which on the game's 0.9 m pitch (ADR 0115) is less than half a cell either
+    // way: one key under a foot at most, and none within a few centimetres of the line between two.
     const cellOf = (v: number, start: number): number => (v - start) / board.pitch
-    const lo = (v: number, start: number): number => Math.max(0, Math.ceil(cellOf(v - radius, start)))
-    const hi = (v: number, start: number, count: number): number => Math.min(count - 1, Math.floor(cellOf(v + radius, start)))
+    const reachOut = radius + board.pitch / 2
+    const lo = (v: number, start: number): number => Math.max(0, Math.ceil(cellOf(v - reachOut, start)))
+    const hi = (v: number, start: number, count: number): number => Math.min(count - 1, Math.floor(cellOf(v + reachOut, start)))
 
     for (let c = lo(local.x, board.startX); c <= hi(local.x, board.startX, board.cols); c += 1)
       for (let r = lo(local.z, board.startZ); r <= hi(local.z, board.startZ, board.rows); r += 1) {

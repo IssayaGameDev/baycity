@@ -230,6 +230,17 @@ describe('finding the caps under a character', () => {
     expect(capsUnder([board], caps, between, FOOT)).toHaveLength(4)
   })
 
+  /** The game's own pitch (ADR 0115): the candidate cells once reached only the footprint, under half a cell. */
+  it('presses the two caps either side of a seam and the four round a corner, on the game’s pitch', () => {
+    const game: KeyboardParams = { ...P, pitch: DEFAULT_KEY_GEOMETRY.pitch }
+    const { board, caps, points } = placed(platform(vec3(0, 0, 0), vec3(4, 0.25, 4)), game)
+    const onCap = [...points.values()][20]!
+    const up = onCap.y + 0.3
+    expect(capsUnder([board], caps, vec3(onCap.x, up, onCap.z), FOOT)).toHaveLength(1)
+    expect(capsUnder([board], caps, vec3(onCap.x + board.pitch / 2, up, onCap.z), FOOT)).toHaveLength(2)
+    expect(capsUnder([board], caps, vec3(onCap.x + board.pitch / 2, up, onCap.z + board.pitch / 2), FOOT)).toHaveLength(4)
+  })
+
   it('presses more of the board as the footprint grows', () => {
     const { board, caps, points } = placed(platform())
     const at = [...points.values()][40]!

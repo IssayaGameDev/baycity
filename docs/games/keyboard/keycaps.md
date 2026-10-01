@@ -81,7 +81,9 @@ the sRGB hex), and `paintShader` replaces `map_fragment` with `diffuseColor.rgb 
   and current position (`lastSole` in `main.ts`).
 - `capsUnder(boards, caps, centre, radius, reach = DEFAULT_REACH 0.35)`: the caps whose top is within `reach`
   of the sole's height. The sole is **the torso's height less a rig constant** (`TORSO_ABOVE_GROUND` in
-  `main.ts`), not the drawn feet, which float at long strides (ADR 0079 known open).
+  `main.ts`), not the drawn feet, which float at long strides (ADR 0079 known open). A cap is under the footprint
+  when its centre is within `radius + pitch / 2` of the sole, across the face — the candidate cells reach that far
+  too, so on the 0.9 m pitch a 0.4 m footprint holds one cap mid-key, two across a seam and four at a corner.
 - `advancePress(cap, feel, dt)` (pure, tested): down toward 1 while `held` or `committed`, up toward 0
   otherwise. A struck cap is `committed` until fully down, so a one-frame footfall still bottoms out.
 
