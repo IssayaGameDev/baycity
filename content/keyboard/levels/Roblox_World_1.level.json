@@ -3133,12 +3133,31 @@
               "y": 0.9992,
               "z": 9
             }
+          },
+          "params": {
+            "efa7dd05": {
+              "material": "546152d8d2e2b3d2"
+            }
           }
         },
         "c65ac1fb": {
           "params": {
             "93eb0bc1": {
               "style": "dbd2775e3fece4fd"
+            }
+          }
+        },
+        "37e81b77": {
+          "params": {
+            "efa7dd05": {
+              "material": "546152d8d2e2b3d2"
+            }
+          }
+        },
+        "c1e380bb": {
+          "params": {
+            "efa7dd05": {
+              "material": "546152d8d2e2b3d2"
             }
           }
         }
@@ -3196,7 +3215,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -3250,7 +3269,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -3304,7 +3323,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -3358,7 +3377,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -3412,7 +3431,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -3466,7 +3485,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -3520,7 +3539,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -3574,7 +3593,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -3628,7 +3647,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -3748,7 +3767,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -3798,7 +3817,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -3848,7 +3867,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -3898,7 +3917,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -3948,7 +3967,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -3998,7 +4017,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -4048,7 +4067,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -4098,7 +4117,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -4148,7 +4167,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -4198,7 +4217,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -4248,7 +4267,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
