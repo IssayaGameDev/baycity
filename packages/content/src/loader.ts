@@ -17,6 +17,7 @@ import {
   type SequencePose,
 } from './sequence'
 import { SEQUENCE, sequenceOf } from './sequenceData'
+import { textOf, type TextDesc } from './text'
 import {
   COLLIDER,
   LIGHT,
@@ -128,6 +129,26 @@ export interface WorldLight {
   rotation: Quat
   /** Off while a sequence has its node, or one above it, disabled (ADR 0137). Mutated by `update`. */
   visible: boolean
+}
+
+/**
+ * One `Text` to draw (ADR 0189): what `textOf` read, and where it stands. Headless, as `WorldLight` is — the
+ * renderer makes the mesh. The pose is mutated by `update`/`render`, so a sign on a moving platform rides it.
+ */
+export interface TextItem extends TextDesc {
+  /** The node that owns it. */
+  readonly node: string
+  /** The node's origin: the text block is centred on it. */
+  position: Vec3
+  rotation: Quat
+  /** The node's world scale at load: the text is drawn at this times `drawScale`. */
+  readonly scale: Vec3
+  /** What a sequence scales it by since load (ADR 0141), as a visual's. Mutated by `update`/`render`. */
+  drawScale: Vec3
+  /** Off while a sequence has its node, or one above it, disabled. */
+  visible: boolean
+  /** A sequence's fade, 1 unless one fades it. */
+  opacity: number
 }
 
 /** Which of a clock-driven node's three known poses to read — see `LoadedLevel.basePoseOf`. */
@@ -251,6 +272,8 @@ interface Dynamic {
   visual: VisualItem | undefined
   /** A light riding this frame. Its own entry, since a node's light is independent of its collider count. */
   light: WorldLight | undefined
+  /** A text riding this frame (ADR 0189), its own entry as a light is. */
+  text: TextItem | undefined
   /**
    * The collider's own offset from the frame, **before** scale — `undefined` when it sits on the origin, which
    * is every migrated piece. Scaled and re-applied each tick, since the frame's pose and scale are what move.
@@ -318,6 +341,8 @@ export interface LoadedLevel {
   visuals: VisualItem[]
   /** Every `Light` component in the tree, in creation order (ADR 0047). Visual only, nothing on the wire. */
   lights: WorldLight[]
+  /** Every `Text` component in the tree, in creation order (ADR 0189). Visual only, nothing on the wire. */
+  texts: TextItem[]
   /**
    * The node a `nodeRef` on `from` points at, or `undefined`.
    *
@@ -406,6 +431,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
   const visuals: VisualItem[] = []
   const markers: WorldMarker[] = []
   const lights: WorldLight[] = []
+  const texts: TextItem[] = []
   const nodes: WorldNode[] = []
   const allNodes: WorldNode[] = []
   const nodeByCollider = new Map<number, WorldNode>()
@@ -518,6 +544,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     light: WorldLight | undefined = undefined,
     shape: ColliderDesc | undefined = undefined,
     sensor = false,
+    text: TextItem | undefined = undefined,
   ): void => {
     if (body !== undefined) dynamicByCollider.set(body.colliderHandle, dynamics.length)
     const at = placeAt(frame, scaledCentre(frame, centre))
@@ -526,6 +553,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
       body,
       visual,
       light,
+      text,
       centre,
       shape,
       shapeScale: { ...frame.scale },
@@ -601,6 +629,23 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
       lights.push(light)
       // Its own dynamic, so a light rides a moving frame whether or not the node has a collider.
       if (f.animated) addDynamic(f, undefined, undefined, undefined, light)
+    }
+
+    const writes = textOf(r.components)
+    if (writes !== undefined) {
+      const text: TextItem = {
+        ...writes,
+        node: r.id,
+        position: { ...f.worldPos },
+        rotation: { ...f.worldRot },
+        scale: { ...f.scale },
+        drawScale: vec3(1, 1, 1),
+        visible: f.shown,
+        opacity: f.seq.opacity,
+      }
+      texts.push(text)
+      // Its own dynamic, as a light's: a sign rides a moving frame whether or not the node has a collider.
+      if (f.animated) addDynamic(f, undefined, undefined, undefined, undefined, undefined, false, text)
     }
 
     const handles: number[] = []
@@ -821,6 +866,13 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         d.visual.visible = f.shown
       }
       if (d.light !== undefined) d.light.visible = f.shown
+      if (d.text !== undefined) {
+        d.text.position = d.currPos
+        d.text.rotation = d.currRot
+        d.text.drawScale = d.currScale
+        d.text.opacity = d.currOpacity
+        d.text.visible = f.shown
+      }
     }
     primed = true
   }
@@ -838,6 +890,12 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
       if (d.light !== undefined) {
         d.light.position = d.renderPos
         d.light.rotation = d.renderRot
+      }
+      if (d.text !== undefined) {
+        d.text.position = d.renderPos
+        d.text.rotation = d.renderRot
+        d.text.drawScale = lerpVec3(d.prevScale, d.currScale, alpha)
+        d.text.opacity = d.prevOpacity + (d.currOpacity - d.prevOpacity) * alpha
       }
     }
   }
@@ -889,6 +947,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     findNode: (from, id) => byScope.get(from.scope)?.get(id) ?? byScope.get(0)?.get(id),
     visuals,
     lights,
+    texts,
     driveOf,
     update,
     shove: (character) => {

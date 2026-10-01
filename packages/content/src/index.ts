@@ -17,6 +17,7 @@ export {
   RENDERER,
   SEQUENCE,
   SPAWN,
+  TEXT,
   bakeOverrides,
   childrenFor,
   boolParam,
@@ -99,7 +100,9 @@ export { BUILTIN_MODELS, BUILTIN_LABELS, isBuiltinModel, unitColliderFor, scaleC
 export type { BuiltinModel, PrimitiveKind, PrimitivePreset } from './primitives'
 export { migrateNode, migrateLevel, migratePrefabTree, newReport } from './migratePrimitives'
 export type { MigrationReport } from './migratePrimitives'
-export type { BasePhase, LoadedLevel, NodeDrive, VisualItem, WorldLight, WorldMarker, WorldNode } from './loader'
+export type { BasePhase, LoadedLevel, NodeDrive, TextItem, VisualItem, WorldLight, WorldMarker, WorldNode } from './loader'
+export type { TextDesc } from './text'
+export { textOf } from './text'
 export {
   ASSET_KINDS,
   META_SUFFIX,

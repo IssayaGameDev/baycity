@@ -241,6 +241,22 @@ describe('the Inspector’s cards', () => {
     expect(line(card(panel, 'Collider'), 'shape').textContent, 'the built-in holds the collider').toContain('unit ball')
   })
 
+  /** A Text's words are several lines (ADR 0189): a text area, where Enter is a new line and leaving it saves. */
+  it('draws a Text’s words as a text area, and offers its back only while it lies on the object', () => {
+    const doc = levelDoc({ id: 'l', config: {}, nodes: [node('sign', [comp('sign-text', 'Text', { text: 'Exit' })])] })
+    const { panel } = rig(doc, [0])
+    const text = card(panel, 'Text')
+    const area = line(text, 'text').querySelector('textarea')!
+    expect(area.value).toBe('Exit')
+    area.value = 'Way\nout'
+    area.dispatchEvent(new Event('change'))
+    expect(paramOf(doc, 0, 'Text', 'text')).toBe('Way\nout')
+    expect(line(card(panel, 'Text'), 'from behind')).toBeDefined()
+    doc.setParams(0, 'sign-text', { facing: 'camera' })
+    const again = rig(doc, [0])
+    expect(line(card(again.panel, 'Text'), 'from behind'), 'a text facing the camera has no behind').toBeUndefined()
+  })
+
   // Unity's Add Component (ADR 0178): folders, open, with a search that lists every match flat.
   it('lists what can be added by folder, searches it, and adds what is picked', () => {
     const doc = levelDoc({ id: 'l', config: {}, nodes: [box('a', vec3(0, 0, 0))] })

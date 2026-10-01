@@ -55,6 +55,7 @@ describe('the built-in registry', () => {
       'MaterialOverride',
       'Spawn',
       'Light',
+      'Text',
       'Checkpoint',
       'Hazard',
       'Bumper',

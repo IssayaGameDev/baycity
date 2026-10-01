@@ -121,6 +121,9 @@ export const geometryForCollider = (c: ColliderDesc): THREE.BufferGeometry => sh
  * not be.
  */
 export const geometryForBuiltin = (id: BuiltinModel, scale: Vec3): THREE.BufferGeometry => {
+  // A quad is a face, not its centimetre-thick collider (ADR 0189): one plane toward +Z, its UVs the whole
+  // texture once — so a picture shows once, the right way up, rather than on six faces of a box.
+  if (id === 'builtin:quad') return new THREE.PlaneGeometry(scale.x, scale.y)
   const { collider, rounded } = builtinShape(id, scale)
   return shapeGeometry(collider, rounded)
 }

@@ -53,6 +53,8 @@ export interface BoolSpec extends SpecBase {
 export interface StringSpec extends SpecBase {
   readonly kind: 'string'
   readonly default: string
+  /** Several lines: the Inspector draws a text area, where Enter starts a new line (ADR 0189). */
+  readonly multiline?: boolean
 }
 /**
  * An sRGB colour as `#rrggbb`.

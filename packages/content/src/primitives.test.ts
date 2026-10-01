@@ -18,6 +18,12 @@ describe('built-in shapes', () => {
     expect(builtinShape('builtin:capsule', vec3(1, 2, 1)).collider).toEqual({ kind: 'capsule', halfHeight: 1, radius: 0.5 })
   })
 
+  /** A quad (ADR 0189): a 1 × 1 face, colliding as a centimetre-thick box its scale sizes. */
+  it('a quad collides as a thin square its scale sizes', () => {
+    expect(isBuiltinModel('builtin:quad')).toBe(true)
+    expect(builtinShape('builtin:quad', vec3(4, 2, 1)).collider).toEqual({ kind: 'box', halfExtents: vec3(2, 1, 0.005) })
+  })
+
   it('scales a box exactly and averages a ball, as the loader always has', () => {
     expect(scaleCollider(unitColliderFor('builtin:box'), vec3(4, 1, 2))).toEqual({ kind: 'box', halfExtents: vec3(2, 0.5, 1) })
     expect(scaleCollider(unitColliderFor('builtin:sphere'), vec3(1, 2, 3))).toEqual({ kind: 'ball', radius: 1 })
