@@ -1387,7 +1387,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "9ceea29d6ae4cca8"
               }
             },
             {
