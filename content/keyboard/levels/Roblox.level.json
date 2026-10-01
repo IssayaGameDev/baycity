@@ -14733,9 +14733,9 @@
                         },
                         "timing": {
                           "by": "speed",
-                          "speed": 10
+                          "speed": 30
                         },
-                        "ease": "out-elastic"
+                        "ease": "in-out-back"
                       }
                     ]
                   }
