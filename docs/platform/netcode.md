@@ -113,7 +113,7 @@ Synchronous, join in flight; `id()` is `null` until `WELCOME`. `PING_INTERVAL_MS
 ### Local body and sim clock
 
 - `createLocalController({ world: LocalWorld, tickRateHz })` — `step(cmd)`, `state()`, `renderPositions(alpha?)` (lerp of the last two ticks, by the loop's `alpha()` when given — ADR 0140). Run by `@mp/tps` inside `startFixedLoop({ tickRateHz: TICK_RATE_HZ })`; each tick `net.send` with `flags`, base-relative `position`/`yaw`, `speed = hypot(vx, vz)`.
-- `createSimClock({ tickMs: TICK_DT * 1000, reference: net.serverNow })`: `tick()` advances exactly `tickMs`, slews ≤ `maxSlewMsPerTick` (default 5 % of `tickMs`), snaps when drift > `resyncThresholdMs` (500). Clock-driven pieces are posed from `simClock.tick()`, never `serverNow()` directly.
+- `createSimClock({ tickMs: TICK_DT * 1000, reference: net.serverNow })`: `tick(lateMs)` advances exactly `tickMs`, slews ≤ `maxSlewMsPerTick` (default 5 % of `tickMs`) toward `reference() − lateMs` — the reference at the instant the tick was **due** (`startFixedLoop`'s `onTick(dt, index, lateMs)`, by the schedule), so a frame's or a timer's lateness is not chased as drift (ADR 0185) — and snaps when drift > `resyncThresholdMs` (500). Clock-driven pieces are posed from `simClock.tick(lateMs)`, never `serverNow()` directly.
 
 ## Uniform vs universal (ADR 0065)
 

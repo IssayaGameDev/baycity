@@ -15,8 +15,12 @@
  * snapped. Cross-client agreement is bounded by the slew band, not by timer accuracy.
  */
 export interface SimClock {
-  /** Advance one fixed step and return this step's simulation time (ms). */
-  tick: () => number
+  /**
+   * Advance one fixed step and return this step's simulation time (ms). `lateMs`: how long after it was due the
+   * tick runs (the loop's `onTick` says) — the reference is read now, and is taken back to the tick's due
+   * instant before it is compared, so a frame's or a timer's lateness is not mistaken for drift.
+   */
+  tick: (lateMs?: number) => number
   /** Current simulation time (ms) without advancing — for render interpolation. */
   now: () => number
 }
@@ -44,14 +48,18 @@ export const createSimClock = (opts: SimClockOptions): SimClock => {
   let t: number | null = null // null until the first tick anchors it
 
   return {
-    tick: () => {
+    tick: (lateMs = 0) => {
+      // The reference at the instant this tick was due, not at whenever it ran. Read when it ran, every
+      // correction chased that lateness — up to a frame, different each tick — and the steps came out up to
+      // ±5% uneven: a platform drawn between them wobbled by that much of its speed (ADR 0185).
+      const due = opts.reference() - lateMs
       if (t === null) {
-        t = opts.reference()
+        t = due
         return t
       }
       t += opts.tickMs
-      const drift = opts.reference() - t
-      if (Math.abs(drift) > resync) t = opts.reference()
+      const drift = due - t
+      if (Math.abs(drift) > resync) t = due
       else t += Math.max(-maxSlew, Math.min(maxSlew, drift))
       return t
     },
