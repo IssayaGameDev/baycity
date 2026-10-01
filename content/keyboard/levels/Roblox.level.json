@@ -4832,6 +4832,68 @@
               "id": "d7704de5",
               "type": "Hazard",
               "params": {}
+            },
+            {
+              "id": "b10448cd",
+              "type": "Sequence",
+              "params": {
+                "name": "",
+                "clock": "shared",
+                "axes": "object",
+                "loop": "restart",
+                "times": 0,
+                "offset": 0,
+                "stages": [
+                  {
+                    "id": "d0dcfcd4",
+                    "steps": [
+                      {
+                        "id": "965c267e",
+                        "kind": "move",
+                        "to": {
+                          "x": 6.5,
+                          "y": 0,
+                          "z": 0
+                        },
+                        "timing": {
+                          "by": "seconds",
+                          "seconds": 1
+                        },
+                        "ease": "out-bounce"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "05c446e4",
+                    "steps": [
+                      {
+                        "id": "2b4e2039",
+                        "kind": "wait",
+                        "seconds": 1
+                      }
+                    ]
+                  },
+                  {
+                    "id": "47c91893",
+                    "steps": [
+                      {
+                        "id": "a27eb9cc",
+                        "kind": "move",
+                        "to": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        },
+                        "timing": {
+                          "by": "seconds",
+                          "seconds": 1
+                        },
+                        "ease": "linear"
+                      }
+                    ]
+                  }
+                ]
+              }
             }
           ]
         },
@@ -4900,6 +4962,35 @@
                     "steps": [
                       {
                         "id": "01d3d9c6",
+                        "kind": "move",
+                        "to": {
+                          "x": -6.5,
+                          "y": 0,
+                          "z": 0
+                        },
+                        "timing": {
+                          "by": "seconds",
+                          "seconds": 1
+                        },
+                        "ease": "out-bounce"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "b1e5fd0d",
+                    "steps": [
+                      {
+                        "id": "d4c4d3a4",
+                        "kind": "wait",
+                        "seconds": 1
+                      }
+                    ]
+                  },
+                  {
+                    "id": "4fdafc02",
+                    "steps": [
+                      {
+                        "id": "798fa2ab",
                         "kind": "move",
                         "to": {
                           "x": 0,
@@ -4977,7 +5068,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.2,
                 "stages": [
                   {
                     "id": "1f986ebb",
@@ -5090,7 +5181,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.2,
                 "stages": [
                   {
                     "id": "04b165b4",
@@ -6293,6 +6384,68 @@
               "id": "de951866",
               "type": "Hazard",
               "params": {}
+            },
+            {
+              "id": "89c2390b",
+              "type": "Sequence",
+              "params": {
+                "name": "",
+                "clock": "shared",
+                "axes": "object",
+                "loop": "restart",
+                "times": 0,
+                "offset": 0,
+                "stages": [
+                  {
+                    "id": "0197b71c",
+                    "steps": [
+                      {
+                        "id": "22308e40",
+                        "kind": "move",
+                        "to": {
+                          "x": -0.0005,
+                          "y": 0,
+                          "z": 72
+                        },
+                        "timing": {
+                          "by": "speed",
+                          "speed": 20
+                        },
+                        "ease": "in-sine"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "d616f505",
+                    "steps": [
+                      {
+                        "id": "8febcc44",
+                        "kind": "enabled",
+                        "on": false
+                      }
+                    ]
+                  },
+                  {
+                    "id": "d2117df9",
+                    "steps": [
+                      {
+                        "id": "0770ec7d",
+                        "kind": "move",
+                        "to": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        },
+                        "timing": {
+                          "by": "seconds",
+                          "seconds": 1
+                        },
+                        "ease": "linear"
+                      }
+                    ]
+                  }
+                ]
+              }
             }
           ]
         },
