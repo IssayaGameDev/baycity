@@ -231,5 +231,6 @@ why matters.
 | [0181](adr/0181-data-assets.md) | Data assets |
 | [0182](adr/0182-keys-take-their-colours-from-a-style.md) | Keys take their colours from a style, and letters can face four ways |
 | [0183](adr/0183-no-ambient-occlusion-on-carried-caps.md) | No ambient occlusion on a carried board's caps |
+| [0184](adr/0184-follow-takes-their-selection-and-motion.md) | Following takes their selection and their Motion preview |
 
 `Design archive/` holds superseded design material and is not maintained.

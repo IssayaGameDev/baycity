@@ -6,6 +6,7 @@ import {
   createCollab,
   parseCameraPresence,
   parseFollowPresence,
+  parseMotionPresence,
   parsePresence,
   peerChanges,
   type Connection,
@@ -272,6 +273,14 @@ describe('following, over the wire (ADR 0155)', () => {
     expect(parseFollowPresence({ kind: 'follow', leader: null })).toEqual({ kind: 'follow', leader: null })
     expect(parseFollowPresence({ kind: 'follow', leader: 3 })).toBeNull()
     expect(parseFollowPresence({ kind: 'follow' })).toBeNull()
+  })
+  it('reads a Motion preview running or stopped, and refuses a clock it cannot run from (ADR 0184)', () => {
+    expect(parseMotionPresence({ kind: 'motion', ms: 1250, junk: 1 })).toEqual({ kind: 'motion', ms: 1250 })
+    expect(parseMotionPresence({ kind: 'motion', ms: null })).toEqual({ kind: 'motion', ms: null })
+    expect(parseMotionPresence({ kind: 'motion', ms: -1 })).toBeNull()
+    expect(parseMotionPresence({ kind: 'motion', ms: Number.NaN })).toBeNull()
+    expect(parseMotionPresence({ kind: 'motion' })).toBeNull()
+    expect(parseMotionPresence({ kind: 'camera', ms: 0 })).toBeNull()
   })
 })
 
