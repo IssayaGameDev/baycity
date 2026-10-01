@@ -7791,7 +7791,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -48,
+                  "x": -58,
                   "y": 0.5,
                   "z": 0.75
                 },
@@ -7905,6 +7905,276 @@
                   "x": 7.5,
                   "y": 16,
                   "z": 11.5
+                }
+              },
+              "components": [
+                {
+                  "id": "3377f95c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "cc8ca8c9",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": ""
+                  }
+                },
+                {
+                  "id": "a8bf84cf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1
+                  }
+                }
+              ]
+            },
+            {
+              "id": "086e38ce",
+              "name": "platform",
+              "transform": {
+                "position": {
+                  "x": -111.75,
+                  "y": 16.9712,
+                  "z": -43.3165
+                },
+                "rotation": {
+                  "x": 0.2617993877991494,
+                  "y": 0,
+                  "z": 0
+                },
+                "scale": {
+                  "x": 7.5,
+                  "y": 1,
+                  "z": 11.5
+                }
+              },
+              "components": [
+                {
+                  "id": "3377f95c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "cc8ca8c9",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": ""
+                  }
+                },
+                {
+                  "id": "a8bf84cf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1
+                  }
+                }
+              ]
+            },
+            {
+              "id": "03934490",
+              "name": "platform",
+              "transform": {
+                "position": {
+                  "x": -111.75,
+                  "y": 18.5,
+                  "z": -52.25
+                },
+                "scale": {
+                  "x": 7.5,
+                  "y": 1,
+                  "z": 7.5
+                }
+              },
+              "components": [
+                {
+                  "id": "3377f95c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "cc8ca8c9",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": ""
+                  }
+                },
+                {
+                  "id": "a8bf84cf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1
+                  }
+                }
+              ]
+            },
+            {
+              "id": "3326a52c",
+              "name": "platform",
+              "transform": {
+                "position": {
+                  "x": -104.25,
+                  "y": 28,
+                  "z": -52.25
+                },
+                "scale": {
+                  "x": 7.5,
+                  "y": 1,
+                  "z": 7.5
+                }
+              },
+              "components": [
+                {
+                  "id": "3377f95c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "cc8ca8c9",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": ""
+                  }
+                },
+                {
+                  "id": "a8bf84cf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1
+                  }
+                }
+              ]
+            },
+            {
+              "id": "53dc164f",
+              "name": "platform",
+              "transform": {
+                "position": {
+                  "x": -63,
+                  "y": 28,
+                  "z": -52.25
+                },
+                "scale": {
+                  "x": 13,
+                  "y": 1,
+                  "z": 7.5
+                }
+              },
+              "components": [
+                {
+                  "id": "3377f95c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "cc8ca8c9",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": ""
+                  }
+                },
+                {
+                  "id": "a8bf84cf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1
+                  }
+                }
+              ]
+            },
+            {
+              "id": "2c56e141",
+              "name": "platform",
+              "transform": {
+                "position": {
+                  "x": -18.5,
+                  "y": 28,
+                  "z": -52.25
+                },
+                "scale": {
+                  "x": 13,
+                  "y": 1,
+                  "z": 7.5
                 }
               },
               "components": [
