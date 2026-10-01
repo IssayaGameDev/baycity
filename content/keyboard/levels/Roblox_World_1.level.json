@@ -352,56 +352,6 @@
                   ]
                 },
                 {
-                  "id": "d283c100",
-                  "name": "Wall",
-                  "transform": {
-                    "position": {
-                      "x": 0,
-                      "y": 7,
-                      "z": -15.4999
-                    },
-                    "rotation": {
-                      "x": 1.5707998174534008,
-                      "y": 0,
-                      "z": 0
-                    },
-                    "scale": {
-                      "x": 30,
-                      "y": 1,
-                      "z": 17.0001
-                    }
-                  },
-                  "components": [
-                    {
-                      "id": "e94eb0e6",
-                      "type": "Collider",
-                      "params": {
-                        "shape": {
-                          "kind": "box",
-                          "halfExtents": {
-                            "x": 0.5,
-                            "y": 0.5,
-                            "z": 0.5
-                          }
-                        },
-                        "center": {
-                          "x": 0,
-                          "y": 0,
-                          "z": 0
-                        }
-                      }
-                    },
-                    {
-                      "id": "efa7dd05",
-                      "type": "Renderer",
-                      "params": {
-                        "model": "builtin:box",
-                        "material": ""
-                      }
-                    }
-                  ]
-                },
-                {
                   "id": "f4a84dde",
                   "name": "Wall",
                   "transform": {
@@ -1574,6 +1524,30 @@
           "params": {
             "93eb0bc1": {
               "style": "dbd2775e3fece4fd"
+            },
+            "efa7dd05": {
+              "material": "546152d8d2e2b3d2"
+            }
+          }
+        },
+        "c1e380bb": {
+          "params": {
+            "efa7dd05": {
+              "material": "546152d8d2e2b3d2"
+            }
+          }
+        },
+        "d1d3088a": {
+          "params": {
+            "efa7dd05": {
+              "material": "546152d8d2e2b3d2"
+            }
+          }
+        },
+        "37e81b77": {
+          "params": {
+            "efa7dd05": {
+              "material": "546152d8d2e2b3d2"
             }
           }
         }
@@ -1612,7 +1586,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -1805,7 +1779,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -1855,7 +1829,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -1905,7 +1879,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -1955,7 +1929,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -2005,7 +1979,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -2055,7 +2029,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -2105,7 +2079,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -2150,7 +2124,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ],
@@ -2201,7 +2175,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -2227,6 +2201,27 @@
           "params": {
             "93eb0bc1": {
               "style": "a17f3493c7ef345c"
+            }
+          }
+        },
+        "37e81b77": {
+          "params": {
+            "efa7dd05": {
+              "material": "9ceea29d6ae4cca8"
+            }
+          }
+        },
+        "d1d3088a": {
+          "params": {
+            "efa7dd05": {
+              "material": "9ceea29d6ae4cca8"
+            }
+          }
+        },
+        "c1e380bb": {
+          "params": {
+            "efa7dd05": {
+              "material": "9ceea29d6ae4cca8"
             }
           }
         }
@@ -2284,7 +2279,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "9ceea29d6ae4cca8"
               }
             },
             {
@@ -2343,7 +2338,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "9ceea29d6ae4cca8"
               }
             },
             {
@@ -2465,7 +2460,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -2515,7 +2510,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -2565,7 +2560,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -2615,7 +2610,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -2665,7 +2660,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -2715,7 +2710,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -2760,7 +2755,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -2810,7 +2805,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -2860,7 +2855,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -2910,7 +2905,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -2960,7 +2955,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]

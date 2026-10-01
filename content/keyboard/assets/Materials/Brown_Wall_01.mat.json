@@ -1,0 +1,9 @@
+{
+  "shader": "standard",
+  "params": {
+    "color": {
+      "kind": "color",
+      "value": "#804729"
+    }
+  }
+}
