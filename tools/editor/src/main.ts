@@ -2253,6 +2253,32 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     motion.applyPoses()
     inspector.sync()
   },
+  /**
+   * Paste Component Values on the Transform (ADR 0191): every selected object to the copied three lines, as one
+   * edit — `writeAxis`'s way, through each group and its write-back, so a moving item's offset comes out right.
+   */
+  pasteTransform: (t) => {
+    if (doc === null || tool.dragging() || selection.length === 0) return
+    const q = eulerToQuat(vec3(THREE.MathUtils.degToRad(t.rotationDeg.x), THREE.MathUtils.degToRad(t.rotationDeg.y), THREE.MathUtils.degToRad(t.rotationDeg.z)))
+    edits.beginDrag()
+    try {
+      for (const i of selection) {
+        const g = meshes.groupAt(i)
+        if (g === undefined) continue
+        g.position.set(t.position.x, t.position.y, t.position.z)
+        g.quaternion.set(q.x, q.y, q.z, q.w)
+        g.scale.set(t.scale.x, t.scale.y, t.scale.z)
+        tool.writeBackItem(i)
+        meshes.rebuildSubtree(i)
+      }
+    } finally {
+      edits.abortDrag()
+    }
+    edits.endDrag(selection.length > 1 ? `paste transform ${selection.length}` : 'paste transform')
+    rebuildLoaded()
+    motion.applyPoses()
+    inspector.sync()
+  },
   writeTransform: (t) => {
     // The gizmo is the authority while it is dragging: see `tool.dragging()`.
     if (selected === null || tool.dragging()) return
