@@ -230,5 +230,6 @@ why matters.
 | [0180](adr/0180-the-world-grid-and-align-to-grid.md) | The world grid, and Align to Grid |
 | [0181](adr/0181-data-assets.md) | Data assets |
 | [0182](adr/0182-keys-take-their-colours-from-a-style.md) | Keys take their colours from a style, and letters can face four ways |
+| [0183](adr/0183-no-ambient-occlusion-on-carried-caps.md) | No ambient occlusion on a carried board's caps |
 
 `Design archive/` holds superseded design material and is not maintained.
