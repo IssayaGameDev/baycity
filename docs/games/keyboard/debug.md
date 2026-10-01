@@ -26,7 +26,7 @@ Gaining speed has no slider: `groundMaxAccel` is `Infinity`, so a start is insta
 | --- | --- |
 | Reset experience | `experience = 0`, saved |
 | Reset wins | `wins = 0`, saved |
-| `grant XP` + **Add experience** | adds the field's amount to Experience, saved |
+| `level` | slider 0–500: Experience set to exactly where that Level starts (`experienceForLevel`), saved on release; follows the Level as it is earned (ADR 0187) |
 | `grant Wins` + **Add wins** | adds the field's amount to Wins, saved |
 
 To get a platform folder back for a session, list it in `debugFolders` in `main.ts`:

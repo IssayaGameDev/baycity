@@ -9,7 +9,7 @@ import { createHud } from './hud'
 import { DEFAULT_KEYCAP_SHAPE, type KeycapShape } from './keycapGeometry'
 import { DEFAULT_KEYCAP_LOOK, DEFAULT_PRESS, drawKeycaps, type KeycapLook, type PressFeel } from './keycaps'
 import { createPopups, DEFAULT_POPUP, type PopupFeel } from './popups'
-import { abbreviate, BASE_PER_STEP, levelAt, loadExperience, maxSpeedAt, METRES_PER_STUD, saveExperience, type ProgressCurve } from './progression'
+import { abbreviate, BASE_PER_STEP, experienceForLevel, levelAt, loadExperience, maxSpeedAt, METRES_PER_STUD, saveExperience, type ProgressCurve } from './progression'
 import { keyboardSession, GAME_CURVE, GAME_KEYS } from './rules'
 import { createStepper, stepsPerSecond } from './components/steps'
 import { Treadmill, TREADMILL_STATE, treadmillStepValue, type TreadmillTick } from './components/treadmill'
@@ -320,6 +320,10 @@ client.onFrame((dt) => {
   const speedStuds = speedPick.enabled ? Math.min(speedPick.studs, maxStuds) : maxStuds
   hud.set(experience, at.level, at.into, at.next, speedStuds)
   hud.setWins(wins)
+  if (levelPick.level !== at.level) {
+    levelPick.level = at.level
+    levelSlider.refresh()
+  }
   // Written into the **client's** live tuning — the object the controller reads. It went into the descriptor's
   // object for fifty levels and changed nothing: the client copies that on the way in (ADR 0057, ADR 0071's
   // correction).
@@ -336,8 +340,8 @@ client.onFrame((dt) => {
 
 /**
  * The two folders this game adds (ADR 0075). Kodjo's list, nothing else: Movement holds the two acceleration
- * caps (ADR 0078); Progression holds the two resets and a grant. The curve, the keycap press feel and the popup
- * feel have defaults and no sliders — nobody asked for sliders.
+ * caps (ADR 0078); Progression holds the two resets, the Level (ADR 0187) and a Wins grant. The curve, the keycap
+ * press feel and the popup feel have defaults and no sliders — nobody asked for sliders.
  */
 // The movement numbers this game owns (ADR 0078, ADR 0096): how hard a fast character may lose or redirect
 // speed, and how steeply that grows with speed. Their own folder — nothing to do with progression.
@@ -365,12 +369,15 @@ loop.addButton({ title: 'Reset wins' }).on('click', () => {
   wins = 0
   saveWins(0)
 })
-// Jump ahead: type an amount, press the button. For reaching a level without walking there.
-const grant = { amount: 1000 }
-loop.addBinding(grant, 'amount', { min: 0, step: 1, label: 'grant XP' })
-loop.addButton({ title: 'Add experience' }).on('click', () => {
-  experience += Math.max(0, Math.floor(grant.amount))
-  saveExperience(experience)
+// Set the Level outright (Kodjo's call, in place of an XP grant): Experience goes to exactly where that Level
+// starts. It follows the Level as it is earned (the frame loop refreshes it), and a value that already matches
+// — that refresh itself — changes nothing.
+const levelPick = { level: levelAt(experience, curve).level }
+const levelSlider = loop.addBinding(levelPick, 'level', { min: 0, max: 500, step: 1, label: 'level' })
+levelSlider.on('change', (e) => {
+  const level = Math.round(e.value)
+  if (levelAt(experience, curve).level !== level) experience = experienceForLevel(level, curve)
+  if (e.last) saveExperience(experience)
 })
 // The same for Wins: the step pads are gated on them, and earning 50K by running is not a debug workflow.
 const grantWins = { amount: 100 }
