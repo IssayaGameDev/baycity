@@ -1606,7 +1606,7 @@
                     "position": {
                       "x": 0,
                       "y": 4.5,
-                      "z": -7.5
+                      "z": 7.5
                     },
                     "rotation": {
                       "x": -3.141592653589793,
@@ -1620,6 +1620,38 @@
                       "type": "Text",
                       "params": {
                         "text": "Level X",
+                        "size": 1.75,
+                        "color": "#fb00ff",
+                        "align": "center",
+                        "width": 0,
+                        "bold": false,
+                        "facing": "object",
+                        "back": "mirrored"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "ad7903e2",
+                  "name": "Safe Zone",
+                  "transform": {
+                    "position": {
+                      "x": 0,
+                      "y": 4.5,
+                      "z": -7.5
+                    },
+                    "rotation": {
+                      "x": -3.141592653589793,
+                      "y": 0,
+                      "z": 3.141592653589793
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "6f858b59",
+                      "type": "Text",
+                      "params": {
+                        "text": "Safe Zone",
                         "size": 1.75,
                         "color": "#fb00ff",
                         "align": "center",
