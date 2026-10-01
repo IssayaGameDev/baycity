@@ -4883,6 +4883,39 @@
               "id": "5aab5308",
               "type": "Hazard",
               "params": {}
+            },
+            {
+              "id": "c08bd5ef",
+              "type": "Sequence",
+              "params": {
+                "name": "",
+                "clock": "shared",
+                "axes": "object",
+                "loop": "restart",
+                "times": 0,
+                "offset": 0,
+                "stages": [
+                  {
+                    "id": "d3de681c",
+                    "steps": [
+                      {
+                        "id": "01d3d9c6",
+                        "kind": "move",
+                        "to": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        },
+                        "timing": {
+                          "by": "seconds",
+                          "seconds": 1
+                        },
+                        "ease": "linear"
+                      }
+                    ]
+                  }
+                ]
+              }
             }
           ]
         },
@@ -4961,7 +4994,7 @@
                           "by": "seconds",
                           "seconds": 1
                         },
-                        "ease": "in-out-cubic"
+                        "ease": "out-bounce"
                       }
                     ]
                   },
@@ -5074,7 +5107,7 @@
                           "by": "seconds",
                           "seconds": 1
                         },
-                        "ease": "in-out-cubic"
+                        "ease": "out-bounce"
                       }
                     ]
                   },
