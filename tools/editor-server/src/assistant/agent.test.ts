@@ -15,16 +15,18 @@ const use = (id: string, name: string, input: Record<string, unknown>): Anthropi
 const usage = { input_tokens: 1000, output_tokens: 100 }
 
 /** A model that answers from a script, one reply a call, streaming each reply's text. */
-const scripted = (replies: (readonly Anthropic.ContentBlock[])[]): { talk: Talk; seen: Anthropic.MessageParam[][] } => {
+const scripted = (replies: (readonly Anthropic.ContentBlock[])[]): { talk: Talk; seen: Anthropic.MessageParam[][]; systems: string[] } => {
   const seen: Anthropic.MessageParam[][] = []
+  const systems: string[] = []
   let n = 0
   const talk: Talk = async (request, onText) => {
     seen.push(request.messages)
+    systems.push(request.system.map((b) => b.text).join(''))
     const content = replies[n++] ?? [text('…')]
     for (const b of content) if (b.type === 'text') onText(b.text)
     return { content, usage, stop_reason: content.some((b) => b.type === 'tool_use') ? 'tool_use' : 'end_turn' }
   }
-  return { talk, seen }
+  return { talk, seen, systems }
 }
 
 const chat = (): Conversation => ({ id: 'c', email: 'ada@x.com', name: 'Ada', messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: 0, busy: false })
@@ -32,13 +34,13 @@ const chat = (): Conversation => ({ id: 'c', email: 'ada@x.com', name: 'Ada', me
 const turn = async (talk: Talk, run: (name: string, input: Record<string, unknown>) => Promise<ToolRun>, conv = chat(), limit = 1) => {
   const events: AssistantEvent[] = []
   const budget = createBudget({ file: null, limit })
-  await runTurn(conv, 'Why does the hazard not kill?', { game: 'keyboard', level: 'World 1', selection: ['Lava (Collider, Hazard)'] }, { talk, run, budget }, (e) => events.push(e))
+  await runTurn(conv, 'Why does the hazard not kill?', { game: 'keyboard', level: 'World 1', selection: ['Lava (Collider, Hazard)'] }, { instructions: 'Answer from the docs.', talk, run, budget }, (e) => events.push(e))
   return { events, conv, budget }
 }
 
 describe('a turn', () => {
   it('searches, reads what it found, and answers — each step shown as it happens', async () => {
-    const { talk, seen } = scripted([[text('Let me look.'), use('t1', 'search_repo', { query: 'onContact' })], [text('It kills on contact.')]])
+    const { talk, seen, systems } = scripted([[text('Let me look.'), use('t1', 'search_repo', { query: 'onContact' })], [text('It kills on contact.')]])
     const ran: string[] = []
     const { events, conv } = await turn(talk, async (name, input) => {
       ran.push(`${name}:${String(input.query)}`)
@@ -48,6 +50,8 @@ describe('a turn', () => {
     expect(events.filter((e) => e.kind === 'text').map((e) => (e.kind === 'text' ? e.text : ''))).toEqual(['Let me look.', 'It kills on contact.'])
     expect(events.find((e) => e.kind === 'activity')).toEqual({ kind: 'activity', text: 'Searching for “onContact”' })
     expect(events.at(-1)).toEqual({ kind: 'done' })
+    // The instructions were the system prompt, every call.
+    expect(systems).toEqual(['Answer from the docs.', 'Answer from the docs.'])
     // What the person was looking at went with the message.
     const first = seen[0]![0]!
     const firstText = typeof first.content === 'string' ? first.content : (first.content[0] as Anthropic.TextBlockParam).text

@@ -9,7 +9,7 @@ no tool writes a file, a level, the scene or the game.
 | File | |
 | --- | --- |
 | `routes.ts` | `createAssistant({ repoRoot, stateDir, limitUsd?, talk?, github?, now? }): { handle, sweep }` — the routes below; `claudeTalk(client)` the real model call; `contextOf` |
-| `agent.ts` | `runTurn(conv, text, context, { talk, run, budget }, emit)`: the loop; `MODEL`, `SYSTEM_PROMPT`, `Conversation`, `AssistantEvent`, `Shown` |
+| `agent.ts` | `runTurn(conv, text, context, { instructions, talk, run, budget }, emit)`: the loop; `MODEL`, `Conversation`, `AssistantEvent`, `Shown` |
 | `tools.ts` | `TOOLS` (the model's tool list), `createToolRunner({ files, github, nextDraftId })`, `activityOf`, `Draft` |
 | `repoFiles.ts` | `createRepoFiles(root)`: `list`, `read`, `search`; `cleanPath`, `looksSecret`, `Refused` |
 | `github.ts` | `createGitHub({ token, repo, fetch? })`: `searchIssues`, `issue`, `createIssue`, `comment`; `repoOfRemote` |
@@ -29,6 +29,10 @@ Wired in `server.ts`: `createAssistant({ repoRoot, stateDir })` → `ApiOptions.
 
 A conversation is its owner's (verified email); anyone else gets 404. Kept in memory: closed by its tab, dropped after
 `IDLE_MS` 6 h silent. A failed turn is rolled back out of the conversation.
+
+**Instructions** `ASSISTANT.md` at the repository's root (ADR 0193), the whole system prompt: its rules, where it
+looks (`docs/INDEX.md` first), how it answers. Change it to change how it behaves. Read from the checkout for every
+turn (`INSTRUCTIONS_FILE`); missing: `ready: false`, the `why` naming it.
 
 **Model** `claude-haiku-4-5-20251001` (Kodjo's call: the cheaper), `MAX_TOKENS` 2048, `MAX_ROUNDS` 12 calls a turn.
 System prompt and tools carry cache points, and so does the newest message (3 of 4); tool results older than 8
