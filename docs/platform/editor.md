@@ -111,7 +111,8 @@ ADR 0047) goes to the first lights wanting a shadow in document order, each hold
 before it and, when whether it wants one changed, `reshareShadows` deals again, rebuilding any light that gains or
 loses one (`createLight` sets a shadow camera up only for a caster). A node's `Text` (ADR 0189) is
 `createText(textStyleOf(doc.textSpec(i)))` in its holder, its scale put back to the world scale the holder undoes,
-pickable, and on the fade list when the node fades — the game's drawing, from the same `textOf`. Called on open, on a
+pickable, and on the fade list when the node fades — the game's drawing, from the same `textOf`, its font from
+`runtime.fontUrl`. A `font` field's picker leaves out a woff2, and `assetRefusal` refuses one dropped (ADR 0190). Called on open, on a
 structural repaint, on a remote batch, on entering and leaving a prefab — and, crucially, again from
 `loadNewReferences(buildItems)` once newly referenced assets have loaded, which is **asynchronous** and goes
 through no selection change. Only when something new arrived: `AssetRuntime.load` resolves `true` then, and every

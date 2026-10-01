@@ -13,7 +13,7 @@ Animation. A game's own components have none, and go under the game's name.
 | | `MaterialOverride` | `material: asset(material)` | singleton; cascades down |
 | | `Spawn` | — | singleton |
 | | `Light` (ADR 0047) | `kind: enum(point\|spot\|directional\|ambient\|hemisphere)`, `color`, `groundColor`, `intensity`, `range`, `decay`, `angle`, `penumbra`, `castShadow` | singleton; in `ENGINE_COMPONENTS` but **not re-exported by name** from `index.ts` |
-| | `Text` (ADR 0189) | `text: string` (multiline), `size` 0.5 m, `color`, `align: enum(left\|center\|right)`, `width` (wrap, 0 none), `bold`, `facing: enum(object\|camera)`, `back: enum(mirrored\|hidden)` (while `facing` is `object`) | singleton; read by `textOf` (`@mp/content`), drawn by `createText` (`rendering.md`); no collider |
+| | `Text` (ADR 0189) | `text: string` (multiline), `font: asset(font)` (`''` Roboto, ADR 0190), `size` 0.5 m, `color`, `align: enum(left\|center\|right)`, `width` (wrap, 0 none), `bold` (drawn, every font), `facing: enum(object\|camera)`, `back: enum(mirrored\|hidden)` (while `facing` is `object`) | singleton; read by `textOf` (`@mp/content`), drawn by `createText` (`rendering.md`); no collider |
 | `SHARED_COMPONENTS` (`shared/`) | `Checkpoint` | — | `onContact → effects.progress(hit.node)` |
 | | `Hazard` | — | `onContact → effects.kill()`; kill plane = Hazard on a trigger (ADR 0053) |
 | | `Bumper` | `power: number` (26, 1–60) | `onContact → character.launch(power)` (ADR 0032) |

@@ -14,7 +14,7 @@ import {
   validateLevel, type NodeRef, refKey,
   BUILTIN_LABELS, BUILTIN_MODELS,
   isSegment, parseQualified, qualify,
-  applyAssetOps, diffAssetOps, gameDocId, gameOfDocId, isDataAsset, isLiveAssetPath, libraryOf, LiveAssetError, mayUse,
+  applyAssetOps, diffAssetOps, gameDocId, gameOfDocId, isDataAsset, isLiveAssetPath, libraryOf, LiveAssetError, mayUse, textFontRefusal,
   type AssetDatabase, type AssetOp, type MaterialAsset } from '@mp/content'
 
 import { DEFAULT_REGISTRY, createRegistry, dataMenuPath, ENGINE_COMPONENTS, isSharedComponent, newDataAsset, PLAYER_COMPONENTS, SHARED_COMPONENT_TYPES, sharedComponents, type DataTypeDef, type Registry } from '@mp/components'
@@ -2326,7 +2326,10 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     const user = editingFor()
     // The folders as the Project window names them: `Keyboard/materials/red.mat.json` is in Keyboard › materials.
     if (db !== undefined)
-      for (const a of assetsOfKind(db, of)) if (mayUse(user, a.path) && ofDataType(a.id, of, dataType)) out.push({ id: a.id, label: a.name, folders: project.named(a.path).split('/').slice(0, -1) })
+      for (const a of assetsOfKind(db, of))
+        // A woff2 is a font the text library cannot read (ADR 0190): not offered, and refused if dropped.
+        if (mayUse(user, a.path) && ofDataType(a.id, of, dataType) && !(of === 'font' && textFontRefusal(a.path) !== null))
+          out.push({ id: a.id, label: a.name, folders: project.named(a.path).split('/').slice(0, -1) })
     return out
   },
   dataTypeLabel: (type) => (activeMode?.dataTypes ?? []).find((d) => d.type === type)?.label ?? type,

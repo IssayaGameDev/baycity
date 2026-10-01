@@ -75,7 +75,7 @@ object that uses it. Two people changing the same value: the last change wins.
 Drag a file from your desktop onto a folder in the **Project** panel (bottom), or onto the tiles of the folder
 you are looking at, or use **+ → Upload files…** there.
 
-- Allowed: `.png`, `.jpg`, `.webp`, `.ktx2`, `.glb`. Not `.gltf` — export a `.glb` instead.
+- Allowed: `.png`, `.jpg`, `.webp`, `.ktx2`, `.glb`, and fonts `.ttf`, `.otf`, `.woff` for text. Not `.gltf` — export a `.glb` instead. Not `.woff2` — convert it to `.woff` or `.ttf`.
 - Max size is 10 MB per file.
 - Dropping a file with the same name into the same folder **replaces** it everywhere it is used.
 

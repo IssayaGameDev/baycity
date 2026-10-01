@@ -1,4 +1,4 @@
-import { mayUse, type AssetDatabase, type AssetKind } from '@mp/content'
+import { mayUse, textFontRefusal, type AssetDatabase, type AssetKind } from '@mp/content'
 
 /**
  * Why asset `id` cannot fill a reference field that takes `of`, in a document of `user`'s — a game's name, or `null`
@@ -10,5 +10,7 @@ export const assetRefusal = (db: AssetDatabase | null, of: AssetKind, id: string
   if (entry === undefined) return 'not in the project'
   if (entry.kind !== of) return `this takes a ${of}, not a ${entry.kind}`
   if (!mayUse(user, entry.path)) return user === null ? `${entry.name} is a game's own, and this is Shared` : `${entry.name} belongs to another game`
+  // A font the text library cannot read (ADR 0190).
+  if (of === 'font') return textFontRefusal(entry.path)
   return null
 }

@@ -356,7 +356,7 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
      */
     const writes = open.textSpec(i)
     if (writes !== undefined) {
-      const text = createText(textStyleOf(writes))
+      const text = createText(textStyleOf(writes, (id) => host.runtime()?.fontUrl(id) ?? null))
       text.object.scale.copy(ws)
       holder.add(text.object)
       texts.set(text.object, text.dispose)

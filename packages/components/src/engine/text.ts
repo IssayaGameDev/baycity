@@ -14,12 +14,15 @@ export const Text = defineComponent({
   menu: 'Rendering',
   params: {
     text: { kind: 'string', default: 'Text', multiline: true, label: 'text' },
+    /** An uploaded font (ADR 0190); none is Roboto. A woff2 cannot be read — the field refuses one. */
+    font: { kind: 'asset', of: 'font', default: '', label: 'font' },
     /** The em, in metres at scale 1 — a little more than a capital's height. The node's scale scales it. */
     size: { kind: 'number', default: 0.5, min: 0.01, max: 50, step: 0.05, label: 'font size' },
     color: { kind: 'color', default: '#ffffff', label: 'colour' },
     align: { kind: 'enum', options: ['left', 'center', 'right'], default: 'center', label: 'alignment' },
     /** Where lines wrap, in metres at scale 1. 0 never wraps: only the text's own line breaks. */
     width: { kind: 'number', default: 0, min: 0, max: 500, step: 0.1, label: 'wrap width' },
+    /** Thicker, for every font alike: each letter's edge widened in its own colour — one file per font (ADR 0190). */
     bold: { kind: 'bool', default: false, label: 'bold' },
     facing: { kind: 'enum', options: ['object', 'camera'], default: 'object', label: 'facing' },
     /** From behind: mirrored, as Unity draws it, or not at all. A text facing the camera has no behind. */

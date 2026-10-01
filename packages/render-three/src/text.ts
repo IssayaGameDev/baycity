@@ -8,20 +8,27 @@ import { OVERLAY_LAYER } from './stage'
  * Text in the world (ADR 0189): one way to draw it, for the `Text` component, a nametag and a sign alike.
  *
  * `troika-three-text`: each block of text is a mesh of glyph quads, laid out in a worker and drawn from one shared
- * signed-distance atlas, so it is sharp at any size and distance and costs one draw call. The fonts are this
- * package's own files, Roboto (OFL, `fonts/OFL.txt`), so text never waits on another site — the library reaches
- * for a CDN only for a character neither file has.
+ * signed-distance atlas, so it is sharp at any size and distance and costs one draw call. The default font is this
+ * package's own file, Roboto (OFL, `fonts/OFL.txt`), so text never waits on another site; any other is an uploaded
+ * font's URL (ADR 0190). The library reaches for a CDN only for a character its font has not got.
+ *
+ * **Bold is drawn, for every font alike** (ADR 0190, Kodjo's call): each letter's edge widened in its own colour —
+ * an outline the colour of the text — so one file is every font, and bold is one look whatever the font.
  *
  * Two facings. **On the object**: the text lies in the node's own XY plane, read from its +Z (the blue axis
  * toward the reader), turning and scaling with it — Unity's TextMeshPro. **Facing the camera**: it turns to each
  * camera that draws it, about its own origin or a parent's — a nametag, Roblox's BillboardGui.
  */
 
-const REGULAR = new URL('./fonts/roboto-latin-400-normal.woff', import.meta.url).href
-const BOLD = new URL('./fonts/roboto-latin-700-normal.woff', import.meta.url).href
+const ROBOTO = new URL('./fonts/roboto-latin-400-normal.woff', import.meta.url).href
+
+/** How far bold widens each letter's edge, as a fraction of the font size: measured to ink Roboto as its own Bold file does. */
+export const BOLD_WIDEN = 0.017
 
 export interface TextStyle {
   text: string
+  /** A font file's URL — `.ttf`, `.otf` or `.woff` — or `null` for Roboto. */
+  font: string | null
   /** The font size, in metres: the em, a little more than a capital's height. */
   size: number
   /** sRGB `#rrggbb`. */
@@ -42,6 +49,7 @@ export interface TextStyle {
 
 export const DEFAULT_TEXT_STYLE: TextStyle = {
   text: '',
+  font: null,
   size: 0.5,
   color: '#ffffff',
   align: 'center',
@@ -135,8 +143,10 @@ export const createText = (style: Partial<TextStyle> = {}, facing: FacingOptions
   const apply = (): void => {
     text.text = now.text
     text.fontSize = Math.max(1e-4, now.size)
-    text.font = now.weight === 'bold' ? BOLD : REGULAR
+    text.font = now.font ?? ROBOTO
     text.color = now.color
+    text.outlineWidth = now.weight === 'bold' ? now.size * BOLD_WIDEN : 0
+    text.outlineColor = now.color
     text.textAlign = now.align
     text.maxWidth = now.width > 0 ? now.width : Infinity
     material.opacity = Math.max(0, Math.min(1, now.opacity))

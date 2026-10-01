@@ -138,8 +138,11 @@ const ROUTE_RE = /^\/api\/(levels|games)(?:\/(.+))?$/
 /** Where a game page's content is answered (ADR 0169). */
 const PLAY_PREFIX = '/api/play/'
 const MAX_JSON_BYTES = 32 * 1024 * 1024
-/** What upload accepts: what the runtime loads. `.gltf` is refused — it drags `.bin` and textures along. */
-export const UPLOAD_EXTENSIONS: ReadonlySet<string> = new Set(['png', 'jpg', 'jpeg', 'webp', 'ktx2', 'glb'])
+/**
+ * What upload accepts: what the runtime loads. `.gltf` is refused — it drags `.bin` and textures along. Fonts are what
+ * a Text can draw with (ADR 0190): TrueType, OpenType and WOFF, not WOFF2, which the text library cannot read.
+ */
+export const UPLOAD_EXTENSIONS: ReadonlySet<string> = new Set(['png', 'jpg', 'jpeg', 'webp', 'ktx2', 'glb', 'ttf', 'otf', 'woff'])
 
 /** Resolve `rel` inside `root`, or `null` if it escapes it. */
 export const safeJoin = (root: string, rel: string): string | null => {

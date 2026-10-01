@@ -102,7 +102,7 @@ export { migrateNode, migrateLevel, migratePrefabTree, newReport } from './migra
 export type { MigrationReport } from './migratePrimitives'
 export type { BasePhase, LoadedLevel, NodeDrive, TextItem, VisualItem, WorldLight, WorldMarker, WorldNode } from './loader'
 export type { TextDesc } from './text'
-export { textOf } from './text'
+export { textFontRefusal, textOf } from './text'
 export {
   ASSET_KINDS,
   META_SUFFIX,

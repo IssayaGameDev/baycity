@@ -3,12 +3,16 @@ import * as THREE from 'three'
 
 import { createText, type TextStyle, type WorldText } from './text'
 
+/** A font asset's file, by id (ADR 0190); `null` for none or one the text library cannot read — Roboto then. */
+export type FontUrlOf = (assetId: string) => string | null
+
 /**
  * A `Text` component's reading as a drawing style (ADR 0189): in the world, hidden behind what is in front of it.
  * The editor builds its viewport's texts from this too, so the two cannot draw a different sign.
  */
-export const textStyleOf = (desc: TextDesc): Partial<TextStyle> => ({
+export const textStyleOf = (desc: TextDesc, fontUrl: FontUrlOf = () => null): Partial<TextStyle> => ({
   text: desc.text,
+  font: desc.font === '' ? null : fontUrl(desc.font),
   size: desc.size,
   color: desc.color,
   align: desc.align,
@@ -28,9 +32,9 @@ export interface LevelTexts {
   dispose: () => void
 }
 
-export const addTexts = (scene: THREE.Scene, items: readonly TextItem[]): LevelTexts => {
+export const addTexts = (scene: THREE.Scene, items: readonly TextItem[], fontUrl: FontUrlOf = () => null): LevelTexts => {
   const drawn: { item: TextItem; text: WorldText }[] = items.map((item) => {
-    const text = createText(textStyleOf(item))
+    const text = createText(textStyleOf(item, fontUrl))
     scene.add(text.object)
     return { item, text }
   })

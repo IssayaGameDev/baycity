@@ -209,6 +209,16 @@ describe('assets', () => {
     expect((await call('ada', 'POST', '/api/assets/upload?path=assets/big.png', undefined, Buffer.alloc(65))).status).toBe(413)
   })
 
+  /** A Text's font (ADR 0190): TrueType, OpenType and WOFF upload as fonts; a woff2, which text cannot read, does not. */
+  it('uploads a font a text can draw with, and refuses a woff2', async () => {
+    for (const name of ['pixel.ttf', 'serif.otf', 'round.woff']) {
+      const r = await call('ada', 'POST', `/api/assets/upload?path=assets/fonts/${name}`, undefined, Buffer.from('font bytes'))
+      expect(r.status, name).toBe(200)
+      expect((await json<{ entry: { kind: string } }>(r)).entry.kind).toBe('font')
+    }
+    expect((await call('ada', 'POST', '/api/assets/upload?path=assets/fonts/x.woff2', undefined, Buffer.from('font bytes'))).status).toBe(400)
+  })
+
   it('a JSON asset write gets its sidecar attributed to whoever wrote it', async () => {
     expect((await call('bob', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: {} })).status).toBe(200)
     expect(changed.filter((c) => c.user === 'Bob').flatMap((c) => c.paths)).toEqual([

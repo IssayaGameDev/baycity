@@ -16,7 +16,7 @@ Package `packages/components`. Headless; deps `@mp/content`, `@mp/core` (`@mp/ph
 | `color` | `default`, `optional?` (ADR 0182: `''` allowed, read as auto) | `string` | `#rrggbb`, or `''` when optional |
 | `enum` | `options: readonly O[]`, `default: O` | `O` (literal union kept) | in options |
 | `vec3` | `default: Vec3` | `Vec3` | finite |
-| `asset` | `of: 'material' \| 'model' \| 'data'`, `dataType?` (a data field's type, ADR 0181), `default` (`''` = none) | `string` | string |
+| `asset` | `of: 'material' \| 'model' \| 'data' \| 'font'` (ADR 0190), `dataType?` (a data field's type, ADR 0181), `default` (`''` = none) | `string` | string |
 | `collider` | `default: ColliderDesc` | `ColliderDesc` | per kind; convex ≥ 4 points |
 | `stages` | `default: readonly Stage[]` | a sequence's stages of steps (ADR 0137) | whole, by `stagesProblem` (`sequences.md`) |
 | `string` `multiline` (ADR 0189) | `multiline?: true` | `string` | the Inspector draws a text area: Enter a new line, leaving it saves |

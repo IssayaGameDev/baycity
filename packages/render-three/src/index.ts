@@ -15,7 +15,7 @@ export { createThreeStage, OVERLAY_LAYER } from './stage'
 // the camera (ADR 0082).
 export type { FacingOptions, TextStyle, WorldText } from './text'
 export { createText, DEFAULT_TEXT_STYLE, faceCamera } from './text'
-export type { LevelTexts } from './levelText'
+export type { FontUrlOf, LevelTexts } from './levelText'
 export { addTexts, textStyleOf } from './levelText'
 export type { LabelLine, WorldLabelOptions } from './worldLabel'
 export { disposeWorldLabel, stackLines, worldLabel } from './worldLabel'

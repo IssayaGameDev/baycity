@@ -19,6 +19,9 @@ declare module 'troika-three-text' {
     font: string | null
     fontWeight: number | 'normal' | 'bold'
     color: string | number | Color | null
+    /** A stroke round each glyph, in world units or a `%` of the font size; 0 for none. */
+    outlineWidth: number | string
+    outlineColor: string | number | Color
     anchorX: number | 'left' | 'center' | 'right'
     anchorY: number | 'top' | 'top-baseline' | 'top-cap' | 'top-ex' | 'middle' | 'bottom-baseline' | 'bottom'
     textAlign: 'left' | 'right' | 'center' | 'justify'
