@@ -21,9 +21,9 @@ Run: `pnpm dev:keyboard` (port 5177) with `pnpm dev:server`. Share: `pnpm share 
 
 Source map (`modes/keyboard/src/`): `editorMode.ts` (the `ModeDescriptor`), `rules.ts` (registry + session),
 `main.ts` (the composition: `startTpsClient`, earning, pads, signs, HUD, pane), `progression.ts`, `balance.ts` + `balance.cli.ts`,
-`keycaps.ts` + `keycapGeometry.ts`, `hud.ts`, `popups.ts`; the game's components, one per file (ADR 0174), in `components/`:
+`keycaps.ts` + `keycapGeometry.ts` + `keyColours.ts`, `hud.ts`, `popups.ts`; the game's components, one per file (ADR 0174), in `components/`:
 `keyboard.ts`, `wins.ts`, `treadmill.ts`, `stepPad.ts`, `steps.ts`; its data types in `data/`: `keyboardStyle.ts` (Keyboard Style,
-New data › Keyboard › Keyboard Style — a placeholder field, nothing reads it yet, ADR 0181).
+New data › Keyboard › Keyboard Style — key colours and shade jitter, ADR 0181/0182).
 Level: `content/keyboard/levels/keyboard.level.json`. Shared components: `content/keyboard/game.json`.
 
 Decisions: ADR 0069 (keyboard is one node), 0071 (Experience/Level/Speed), 0072 (`toScreen`, popups),

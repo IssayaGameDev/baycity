@@ -64,6 +64,11 @@ export interface StringSpec extends SpecBase {
 export interface ColorSpec extends SpecBase {
   readonly kind: 'color'
   readonly default: string
+  /**
+   * May be left empty (ADR 0182): `''` is then **auto**, what the reader works out for itself — a key's letter
+   * colour, picked to read against its cap.
+   */
+  readonly optional?: boolean
 }
 export interface EnumSpec<O extends string = string> extends SpecBase {
   readonly kind: 'enum'
@@ -124,7 +129,30 @@ export interface StagesSpec extends SpecBase {
   readonly default: readonly Stage[]
 }
 
-export type ParamSpec = NumberSpec | BoolSpec | StringSpec | ColorSpec | EnumSpec | Vec3Spec | AssetSpec | ColliderSpec | NodeRefSpec | ComponentRefSpec | StagesSpec
+/**
+ * A list of rows, each with its own fields (ADR 0182) — Unity's serialized array of a struct. A row is read and
+ * defaulted as a component's parameters are, so a field added to the row later takes its default in rows written
+ * before it. A row's fields are the plain kinds; the Inspector draws number, bool, string, colour and enum.
+ */
+export interface ListSpec<I extends ParamDecls = ParamDecls> extends SpecBase {
+  readonly kind: 'list'
+  readonly item: I
+  readonly default: readonly RawParams[]
+}
+
+export type ParamSpec =
+  | NumberSpec
+  | BoolSpec
+  | StringSpec
+  | ColorSpec
+  | EnumSpec
+  | Vec3Spec
+  | AssetSpec
+  | ColliderSpec
+  | NodeRefSpec
+  | ComponentRefSpec
+  | StagesSpec
+  | ListSpec
 
 /**
  * Runtime value per spec kind. A lookup table keyed on `kind` rather than a chain of `S extends …`,
@@ -143,10 +171,11 @@ interface ValueByKind {
   nodeRef: string | null
   componentRef: ComponentRef | null
   stages: readonly Stage[]
+  list: readonly Readonly<Record<string, unknown>>[]
 }
 
-/** `enum` keeps its literal union, so `self.params.loop` narrows to `'loop' | 'pingPong' | 'once'`. */
-export type ValueOf<S extends ParamSpec> = S extends EnumSpec<infer O> ? O : ValueByKind[S['kind']]
+/** `enum` keeps its literal union, so `self.params.loop` narrows to `'loop' | 'pingPong' | 'once'`; a list's rows are typed by their fields. */
+export type ValueOf<S extends ParamSpec> = S extends EnumSpec<infer O> ? O : S extends ListSpec<infer I> ? readonly Params<I>[] : ValueByKind[S['kind']]
 
 export type ParamDecls = Record<string, ParamSpec>
 
@@ -197,6 +226,8 @@ const checkCollider = (v: unknown, at: string): void => {
 /** The value a spec falls back to. The references carry no `default` because theirs is forced. */
 const defaultFor = (spec: ParamSpec): unknown => {
   if (spec.kind === 'nodeRef' || spec.kind === 'componentRef') return null
+  // Fresh rows, completed: a default list shared by reference would be edited through every component holding it.
+  if (spec.kind === 'list') return spec.default.map((row, n) => readParams(spec.item, row, `default[${n}]`))
   return spec.default
 }
 
@@ -220,6 +251,7 @@ const checkOne = (spec: ParamSpec, value: unknown, at: string): void => {
       if (typeof value !== 'string') throw new ComponentError(`${at}: expected a string`)
       return
     case 'color':
+      if (spec.optional === true && value === '') return
       // Rejected at load rather than reaching a shader as black, which is the failure a plain string allows.
       if (typeof value !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(value))
         throw new ComponentError(`${at}: expected an sRGB colour as #rrggbb`)
@@ -248,6 +280,13 @@ const checkOne = (spec: ParamSpec, value: unknown, at: string): void => {
       if (bad !== null) throw new ComponentError(bad)
       return
     }
+    case 'list':
+      if (!Array.isArray(value)) throw new ComponentError(`${at}: expected a list`)
+      value.forEach((row: unknown, n) => {
+        if (!isObj(row)) throw new ComponentError(`${at}[${n}]: expected a row of fields`)
+        readParams(spec.item, row, `${at}[${n}]`)
+      })
+      return
   }
 }
 
@@ -292,7 +331,8 @@ export const readParams = <D extends ParamDecls>(decls: D, raw: RawParams | unde
       continue
     }
     checkOne(spec, value, `${at}.${key}`)
-    out[key] = spec.kind === 'componentRef' && typeof value === 'string' ? { node: value, component: '' } : value
+    if (spec.kind === 'list') out[key] = (value as RawParams[]).map((row, n) => readParams(spec.item, row, `${at}.${key}[${n}]`))
+    else out[key] = spec.kind === 'componentRef' && typeof value === 'string' ? { node: value, component: '' } : value
   }
   return out as Params<D>
 }

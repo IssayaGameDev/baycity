@@ -2737,6 +2737,104 @@
       .rf.rf-no .rf-name {
         color: #d98c8c;
       }
+      /* A list field (ADR 0182): a header naming the row's fields, a row each — grip, fields, ✕ — and Add. */
+      .lf {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+      .lf-head,
+      .lf-row {
+        display: grid;
+        grid-template-columns: 14px repeat(var(--lf-cols, 1), minmax(0, 1fr)) 20px;
+        gap: 4px;
+        align-items: center;
+      }
+      .lf-h {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--dim);
+        font-size: 10.5px;
+      }
+      .lf-grip {
+        display: grid;
+        place-items: center;
+        color: var(--dim);
+        cursor: grab;
+        touch-action: none;
+      }
+      .lf-grip svg,
+      .lf-x svg {
+        width: 12px;
+        height: 12px;
+      }
+      .lf-row.lf-moving {
+        opacity: 0.45;
+      }
+      .lf-x {
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        padding: 0;
+        border: 0;
+        border-radius: 4px;
+        background: none;
+        color: var(--dim);
+        cursor: pointer;
+      }
+      .lf-x:hover {
+        background: var(--hover);
+        color: var(--text);
+      }
+      .lf-opt {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+      }
+      .lf-opt.is-auto > :last-child {
+        opacity: 0.35;
+      }
+      .lf-auto {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        flex: none;
+        color: var(--dim);
+        font-size: 10.5px;
+      }
+      .lf-add {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        height: 22px;
+        border: 1px dashed #3a3f48;
+        border-radius: 5px;
+        background: none;
+        color: var(--dim);
+        font: inherit;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      .lf-add:hover {
+        border-color: var(--accent);
+        color: var(--text);
+      }
+      .lf-add svg {
+        width: 11px;
+        height: 11px;
+      }
+      .lf-empty,
+      .lf-none {
+        color: var(--dim);
+        font-style: italic;
+        font-size: 11px;
+      }
       /* The searchable tree (ADR 0178): the reference fields' picker and Add Component. */
       .tp {
         display: flex;

@@ -2,7 +2,7 @@ import { vec3 } from '@mp/core'
 import { THREE } from '@mp/render-three'
 import { describe, expect, it } from 'vitest'
 
-import { advancePress, boardGrid, boardOf, capsFor, capsUnder, carry, DEFAULT_KEY_GEOMETRY, DEFAULT_PRESS, glyphAt, keyGeometryFrom, keyboardGridOf, MAX_SWEEP, rideShader, sweepPoints, type KeyboardParams, type Moving, type PressState } from './keycaps'
+import { advancePress, boardGrid, boardOf, capsFor, capsUnder, carry, DEFAULT_KEY_GEOMETRY, DEFAULT_PRESS, glyphAt, keyGeometryFrom, keyboardGridOf, MAX_SWEEP, facingTurns, paintShader, rideShader, sweepPoints, type KeyboardParams, type Moving, type PressState } from './keycaps'
 
 /**
  * Turning a standing character back into the caps under them (ADR 0069).
@@ -14,7 +14,7 @@ import { advancePress, boardGrid, boardOf, capsFor, capsUnder, carry, DEFAULT_KE
  * Headless. There is no renderer here and none is needed — the maths is the part that goes wrong.
  */
 
-const P: KeyboardParams = { pitch: 0.6, fill: 0.88, height: 0.3, maxKeys: 20_000, glyphs: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', seed: 1 }
+const P: KeyboardParams = { pitch: 0.6, fill: 0.88, height: 0.3, maxKeys: 20_000, glyphs: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', seed: 1, facing: 0 }
 /** A character's footprint: the capsule's radius. */
 const FOOT = 0.4
 
@@ -459,5 +459,56 @@ describe('the riding shader', () => {
 
   it('refuses a shader without the hooks rather than drawing caps that do not follow', () => {
     expect(() => rideShader({ vertexShader: 'void main(){}', fragmentShader: '' })).toThrow(/riding patch/)
+  })
+})
+
+/** Each key's own colours (ADR 0182): the letter texture a stencil, mixed between two per-cap colours. */
+describe('the paint shader', () => {
+  const standard = (): { vertexShader: string; fragmentShader: string } => ({ vertexShader: THREE.ShaderLib.standard.vertexShader, fragmentShader: THREE.ShaderLib.standard.fragmentShader })
+
+  it('mixes each cap’s two colours by the stencil, in place of the plain map', () => {
+    const shader = standard()
+    paintShader(shader)
+    expect(shader.vertexShader).toContain('attribute vec3 capColor;')
+    expect(shader.vertexShader).toContain('vCapColor = capColor;')
+    expect(shader.fragmentShader).toContain('diffuseColor.rgb *= mix(vCapColor, vInkColor, texture2D(map, vMapUv).r);')
+    expect(shader.fragmentShader).not.toContain('#include <map_fragment>')
+  })
+
+  it('goes with the riding patch on a carried board', () => {
+    const shader = standard()
+    paintShader(shader)
+    expect(() => rideShader(shader)).not.toThrow()
+    expect(shader.vertexShader).toContain('vInkColor = inkColor;')
+    expect(shader.vertexShader).toContain('#define instanceMatrix boardInstance')
+  })
+
+  it('refuses a shader without the hooks', () => {
+    expect(() => paintShader({ vertexShader: 'void main(){}', fragmentShader: '' })).toThrow(/paint patch/)
+  })
+})
+
+/** Which way the letters face (ADR 0182): the cap turned a quarter at a time about its board's up. */
+describe('the letters’ facing', () => {
+  it('reads the field’s four ways, and anything else as forward', () => {
+    expect(['forward', 'right', 'back', 'left', 'sideways', undefined].map(facingTurns)).toEqual([0, 1, 2, 3, 0, 0])
+  })
+
+  it('turns a cap so its letter’s top, +Z on the cap, points along the board’s red +X for right', () => {
+    const board = boardOf(platform(vec3(0, 1, 0), vec3(2, 0.25, 2)), P)!
+    const top = (facing: number): THREE.Vector3 => {
+      const cap = capsFor(board, vec3(2, 0.25, 2), { ...P, facing })[0]!
+      const quat = new THREE.Quaternion()
+      cap.matrix.decompose(new THREE.Vector3(), quat, new THREE.Vector3())
+      return new THREE.Vector3(0, 0, 1).applyQuaternion(quat)
+    }
+    const near = (v: THREE.Vector3, x: number, z: number): void => {
+      expect(v.x).toBeCloseTo(x, 6)
+      expect(v.z).toBeCloseTo(z, 6)
+    }
+    near(top(0), 0, 1)
+    near(top(1), 1, 0)
+    near(top(2), 0, -1)
+    near(top(3), -1, 0)
   })
 })

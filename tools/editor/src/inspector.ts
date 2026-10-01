@@ -30,6 +30,7 @@ import { cardJustDragged, pressCardToDrag } from './cardDrag'
 import { icon, type IconName } from './icons'
 import { refField, refFieldAt, type RefShown } from './refField'
 import { folderTree, treePicker, type TreeItem } from './treePicker'
+import { listField } from './listField'
 import { byMenuFolder, menuFolderOf } from './componentMenu'
 import { sequenceSummary } from './sequenceEdit'
 import { sequenceEditor } from './sequenceEditor'
@@ -520,7 +521,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
     const doc = host.doc()
     const at = host.selected()
     if (doc === null || at === null || host.levelSelected() || host.envSelected()) return null
-    const followed = new Set<string>(['number', 'bool', 'string', 'color', 'vec3', 'asset', 'nodeRef', 'componentRef'])
+    const followed = new Set<string>(['number', 'bool', 'string', 'color', 'vec3', 'asset', 'nodeRef', 'componentRef', 'list'])
     return doc.reading(() => {
       const indices = host.selectionIndices()
       const cards = doc.components(at).map((view) => {
@@ -1186,6 +1187,23 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         })
         line(field.root)
         follow((v) => field.set(shownFor(v)))
+        return
+      }
+      case 'list': {
+        // Rows (ADR 0182): every edit is the whole list; a row's number or colour writes when it lets go.
+        if (mixed) return differs()
+        const rowsOf = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : [])
+        const field = listField({
+          item: spec.item,
+          value: rowsOf(state[key]),
+          title: label,
+          write: (rows, ongoing) => {
+            if (ongoing !== true) write({ [key]: rows })
+          },
+          settle: () => undefined,
+        })
+        line(field.root)
+        follow((v) => field.set(rowsOf(v)))
         return
       }
       case 'stages': {

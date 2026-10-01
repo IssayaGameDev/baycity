@@ -1,6 +1,6 @@
 import { TICK_DT } from '@mp/core'
 import { CHAR_RADIUS, createAnimator, createLocomotion, DEFAULT_GAIT, FOOT_Y, RIG } from '@mp/humanoid'
-import { componentOn } from '@mp/components'
+import { componentOn, readData } from '@mp/components'
 import { worldLabel, type LabelLine, type THREE } from '@mp/render-three'
 import { startTpsClient } from '@mp/tps'
 
@@ -15,6 +15,7 @@ import { createStepper, stepsPerSecond } from './components/steps'
 import { Treadmill, TREADMILL_STATE, treadmillStepValue, type TreadmillTick } from './components/treadmill'
 import { loadPerStep, loadWins, padTop, savePerStep, saveWins } from './components/wins'
 import { qualifies, StepPad, type StepPadOffer } from './components/stepPad'
+import { KeyboardStyle } from './data/keyboardStyle'
 
 /**
  * Keyboard Escape, as an application (ADR 0069, ADR 0071).
@@ -150,8 +151,17 @@ const client = await startTpsClient({
     }),
   ],
 })
-// The key geometry is the game's, not each platform's (ADR 0115): one pitch for the level.
-const keycaps = drawKeycaps(client, look, shape, feel, () => GAME_KEYS)
+// The key geometry is the game's, not each platform's (ADR 0115): one pitch for the level. A board's colours are its
+// Keyboard Style's (ADR 0182), read from the level's data assets; one that will not read leaves the plain look.
+const styleOf = (id: string) => {
+  try {
+    return readData(KeyboardStyle, client.data(id), id)
+  } catch (e) {
+    console.warn(`keyboard style ${id}: ${String(e)}`)
+    return undefined
+  }
+}
+const keycaps = drawKeycaps(client, look, shape, feel, () => GAME_KEYS, styleOf)
 const hud = createHud(client, curve)
 const popups = createPopups(client, pops)
 

@@ -68,6 +68,26 @@ describe('declared parameters', () => {
     expect(() => readParams(decls, { c: 3 }, at)).toThrow(/expected \{ node, component \} or null/)
   })
 
+  // A list of rows (ADR 0182): each row read as a component's parameters are, so a field added later defaults.
+  it('reads a list row by row, completing each with its fields’ defaults, and names a bad row', () => {
+    const rows = {
+      keys: {
+        kind: 'list',
+        item: { cap: { kind: 'color', default: '#ffffff' }, letter: { kind: 'color', default: '', optional: true }, weight: { kind: 'number', default: 1 } },
+        default: [{ cap: '#e8e6e1' }],
+      },
+    } satisfies ParamDecls
+    expect(defaultsOf(rows).keys, 'the default rows, completed').toEqual([{ cap: '#e8e6e1', letter: '', weight: 1 }])
+    expect(readParams(rows, { keys: [{ cap: '#ff0000', weight: 3 }, {}] }, at).keys).toEqual([
+      { cap: '#ff0000', letter: '', weight: 3 },
+      { cap: '#ffffff', letter: '', weight: 1 },
+    ])
+    expect(() => readParams(rows, { keys: 'no' }, at)).toThrow(/expected a list/)
+    expect(() => readParams(rows, { keys: [{ cap: 'reddish' }] }, at)).toThrow(/keys\[0\]\.cap/)
+    // An optional colour may be empty — auto — and a plain one may not.
+    expect(() => readParams(rows, { keys: [{ cap: '' }] }, at)).toThrow(/cap/)
+  })
+
   // The old shape, until the box's content is migrated: the node's first component of the type.
   it('reads a component ref saved as a bare node id as that node’s first of the type', () => {
     expect(readParams(decls, { c: 'zone' }, at).c).toEqual({ node: 'zone', component: '' })

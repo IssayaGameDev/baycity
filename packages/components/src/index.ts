@@ -17,6 +17,7 @@ export type {
   ComponentRef,
   ComponentRefSpec,
   EnumSpec,
+  ListSpec,
   NodeRefSpec,
   NumberSpec,
   ParamDecls,

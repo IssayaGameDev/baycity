@@ -11,6 +11,8 @@
 | --- | --- | --- |
 | `glyphs` | `A…Z` | alphabet the letters come from |
 | `seed` | 1 | deterministic lettering (`glyphAt`); same seed, same board everywhere |
+| `style` | none | a Keyboard Style data asset (ADR 0181), shared by the boards naming it: its key colours (below); none, the plain look |
+| `facing` | `forward` | which way the letters' tops point, along the node's own axes: forward blue +Z, right red +X, back, left (ADR 0182) |
 
 **The geometry is the game's, not the platform's** (ADR 0115). `pitch`, `fill` and `height` are settings in
 `content/keyboard/game.json`, one field each in the editor's games window (Settings), read by `keyGeometryFrom(settings)`
@@ -50,11 +52,27 @@ Caps are drawn as **one `InstancedMesh` per glyph** across the whole level, `cas
 `receiveShadow: true`, `DynamicDrawUsage` — the **still** boards'. A board whose visual is `animated` (a sequence
 drives it or anything above it) is carried instead (below). Geometry: `keycapGeometry(shape)` — superellipse outline, taper 0.82,
 dish 0.28, 12 segments, 2 dish rings (~84 tris); top face UVs into the legend tile, walls sample one flat point
-(so the letter is only on top, reads correctly from behind).
+(so the letter is only on top, reads correctly from behind). The letters' facing is the cap's own turn about its
+board's up, `facingTurns(facing)` quarter turns (`capsFor`); a press re-composes from the decomposed turn.
+
+**Key colours (ADR 0182).** The legend texture is a **stencil** (`glyphTexture`: white letter on black, the wall tile
+black, `NoColorSpace`); each mesh's geometry carries two instance attributes, `capColor` and `inkColor` (linear, from
+the sRGB hex), and `paintShader` replaces `map_fragment` with `diffuseColor.rgb *= mix(vCapColor, vInkColor, stencil)`
+— still meshes and riding ones (`paintShader` then `rideShader`). No extra draw call for any palette.
+`keyColoursAt(style, seed, col, row, plain)` (`keyColours.ts`, pure, tested) picks each key's row by weight with
+`cellHash(seed, col, row, salt)` — `glyphAt`'s mixing, salted — takes its letter colour or `autoInk(cap)` (whichever of
+`AUTO_DARK` 0x2b2b31 / `AUTO_LIGHT` 0xf2f0ea contrasts more, WCAG), and moves the cap's brightness by up to
+±`jitter`. No style, no rows or no weight: the plain look, `DEFAULT_KEYCAP_LOOK`. A board's style is read by
+`main.ts`'s `styleOf(id)` = `readData(KeyboardStyle, client.data(id))`, one that will not read warned and left plain.
+
+| Keyboard Style field | | |
+| --- | --- | --- |
+| `keys` | list: `cap` colour, `letter` colour (optional, `''` auto), `weight` (≥ 0) | default one row, `#e8e6e1` / `#2b2b31` / 1 — the plain look |
+| `jitter` | number 0–0.3 | each cap's brightness ±this fraction; 0 off |
 
 ## Pressing
 
-`drawKeycaps(client, look, shape, feel)` → `Keycaps { hold, sweep, update, ready, dispose }`.
+`drawKeycaps(client, look, shape, feel, keyGeometry, styleOf)` → `Keycaps { hold, sweep, update, ready, dispose }`.
 
 - `hold(centre, radius)`: every cap under a footprint of `radius` at `centre` is `held` this frame; returns the
   **tops** of caps newly struck (nobody reads them for Experience any more).
