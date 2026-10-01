@@ -78,8 +78,9 @@ speed, base })` (v10 base frame; `packStates(states, playerStates())` in spare f
 `rules.takeDeath()` → `die()` → `rules.takeTeleport?.()`.
 
 `LocalWorld.applyInput`: `components.fixedUpdate` → per slice (ADR 0104): `loaded.update(at, base, s === 1)` →
-`world.step(slice/2)` → `loaded.shove(char.body)` (ADR 0186: out of whatever moved into it) →
-`components.locomote(cmd)` → `world.step(slice/2)`.
+`loaded.shove(char.body)` (ADR 0186: out of whatever moved into it; before the step, ADR 0188) →
+`world.step(slice/2)` → `components.locomote(cmd)` → `world.step(slice/2)`. At the tick's end, alive:
+`components.contact` with `touching()` ∪ `collisions()` ∪ `overlaps()`, each handle once (ADR 0188).
 
 ## Debug pane — `pane.ts`
 

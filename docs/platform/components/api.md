@@ -64,7 +64,7 @@ interface ComponentSpec<D, S> {
 | `onAttach` | `attach`, after `init`, tree order |
 | `onFixedUpdate` | `fixedUpdate`, every sim tick, before the host's physics steps |
 | `onLocomote` | `locomote` — the **movement slot** (ADR 0061): between the host's two physics half-steps, given the tick's `InputCommand` |
-| `onContact` | `contact(handles)` — every node owning a handle from `collisions()`/`overlaps()`, **every tick of contact** (a stay) |
+| `onContact` | `contact(handles)` — every node owning a handle from `touching()`/`collisions()`/`overlaps()` (each once), **every tick of contact** (a stay). Touching is the character's touch skin (ADR 0188): ridden, pushing or landed on counts, whichever moved |
 | `onDetach` | `detach`, reverse order |
 
 Order: `loaded.allNodes` depth-first, component order within node, player's components last. Player node: no colliders (never `onContact`), `position` zero, `offset` undefined.
