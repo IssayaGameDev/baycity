@@ -943,7 +943,11 @@ export const stepCharacter = (
   // further away, and the character re-accelerates into the same wall next tick. That is the bounce-fall
   // on a fast descender. So when the probe missed and the controller says otherwise, take the base from
   // the collider it actually touched.
-  if (baseFrame === undefined && grounded && !leaving && platforms !== undefined) {
+  //
+  // **Missed**, not "found nothing that moves": standing on still ground against a moving wall, the wall was
+  // taken as the base (ADR 0186) — never ridden, since the probe kept finding the ground, but excused from
+  // pushing the character as a ridden base is, so it walked straight through them.
+  if (under === undefined && grounded && !leaving && platforms !== undefined) {
     for (const h of state.body.collisions()) {
       const touched = platforms(h)
       if (touched !== undefined) {

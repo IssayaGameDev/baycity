@@ -57,6 +57,8 @@ interface CharacterBody {
   probeGround(extraReach?): GroundContact | undefined   // { colliderHandle, point, normal }
   collisions(): number[]                 // solids contacted during the last move
   overlaps(): number[]                   // sensors currently overlapped (ADR 0054)
+  touchedBy(handle, from: { position; rotation }, motion): number | undefined   // ADR 0186, below
+  push(by: Vec3, ignore: readonly number[]): Vec3                               // ADR 0186, below
   remove()
 }
 ```
@@ -77,6 +79,14 @@ Defaults and constants (`world.ts`):
 - `probeGround` reach = `halfHeight + radius + snap + extraReach`, ray from the capsule centre, own collider excluded. Caller must check `colliderHandle` when passing `extraReach` (ADR 0042).
 - `move`'s `snapAtLeast` raises snap-to-ground for that one call and is restored afterwards; only ever widened, never narrowed. For a caller asking for a descent a shortfall in would cost it its footing — a character following a slope downhill (ADR 0127). Unset, the configured distance stands.
 - **A step's resolve is not reliable.** Rapier returns part of a step intermittently — `CONTACT_NUDGE` has it at 33 of 200 ticks on the horizontal, and it happens on the vertical too (half of a 1.14 m descent, once in a 120-tick run). Anything asking for a large single-tick translation needs a recovery path; snap-to-ground is it, which is what `snapAtLeast` exists to size.
+- `touchedBy` (ADR 0186): collider `handle`'s shape set at `from` and cast by `motion` against this capsule
+  where it stands — `Shape.castShape`, one pair, no scene query, `stopAtPenetration: true`. The fraction
+  `0…1` of `motion` at first touch; `0` already overlapping at `from`; `undefined` no touch, a sensor, or
+  switched off.
+- `push` (ADR 0186): the capsule moved by `by` at once, outside the controller — a scene `castShape` of the
+  capsule along it, `stopAtPenetration: false`, `EXCLUDE_SENSORS`, its own layers, its own collider and the
+  `ignore` handles excluded — stopped `offset` short of a hit; body and collider set immediately (as
+  `setPosition`). Returns what it moved.
 - `collisions()` and `overlaps()` are disjoint; hosts concatenate them (`packages/tps/src/client.ts`: `components.contact([...collisions(), ...overlaps()])`).
 
 ## Sensors / triggers (ADR 0054)
@@ -111,4 +121,4 @@ Content loader: `f.animated ? world.addKinematicBody(desc) : world.addFixedBody(
 
 ## Tests
 
-`packages/physics/src/world.test.ts`: gravity/rest, teleport vs setPosition, kinematic blocking, controller grounding/walls/kinematic capsule, replay after setPosition, initial and kinematic rotation, contact reporting, two-phase platform ride, `castSphere` (6 cases), `sphereOverlaps` (7), collision layers (2), trigger collider (5). `packages/physics/src/index.test.ts`: backend banner. Platform carry: `packages/humanoid/src/platformCarry.test.ts`.
+`packages/physics/src/world.test.ts`: gravity/rest, teleport vs setPosition, kinematic blocking, controller grounding/walls/kinematic capsule, replay after setPosition, initial and kinematic rotation, contact reporting, two-phase platform ride, `castSphere` (6 cases), `sphereOverlaps` (7), collision layers (2), trigger collider (5). `packages/physics/src/index.test.ts`: backend banner. Platform carry: `packages/humanoid/src/platformCarry.test.ts`. A platform moving into a player (ADR 0186): `packages/tps/src/sequencePush.test.ts`.
