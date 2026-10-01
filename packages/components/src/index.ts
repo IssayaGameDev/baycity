@@ -31,6 +31,8 @@ export type {
   Vec3Spec,
 } from './params'
 export { defineComponent } from './define'
+export { dataMenuPath, defineDataType, newDataAsset, readData } from './data'
+export type { DataTypeDef } from './data'
 export type { ComponentDef, ComponentSpec } from './define'
 export { characterAccess, createComponentRuntime, hasHooks } from './runtime'
 export type { PlayerView } from './runtime'

@@ -2,9 +2,11 @@ import type { Origin } from './assetSync'
 import { failed } from './filesApi'
 import {
   buildDatabase,
+  isDataAsset,
   libraryDir,
   type AssetDatabase,
   type AssetEntry,
+  type DataAsset,
   type MaterialAsset,
   type Node,
 } from '@mp/content'
@@ -34,9 +36,11 @@ export interface AssetLibrary {
   materialOf: (assetId: string) => MaterialAsset | undefined
   /** A loaded prefab asset's JSON, by asset id. */
   prefabOf: (assetId: string) => Node | undefined
+  /** A loaded data asset's JSON, by asset id (ADR 0181). */
+  dataOf: (assetId: string) => DataAsset | undefined
   /**
-   * Where a material's copy came from (ADR 0159): the server process that numbered it and how many live edits
-   * it holds — `seq` 0 for the file. `undefined` when the server did not say.
+   * Where a material's or data asset's copy came from (ADR 0159): the server process that numbered it and how many
+   * live edits it holds — `seq` 0 for the file. `undefined` when the server did not say.
    */
   originOf: (assetId: string) => Origin | undefined
   /**
@@ -44,7 +48,9 @@ export interface AssetLibrary {
    * on the server, edited by ops (ADR 0159).
    */
   setMaterial: (assetId: string, material: MaterialAsset) => void
-  /** A material's live copy from the server, and where it stands. */
+  /** Replace a data asset in memory, as `setMaterial` does a material (ADR 0181). */
+  setData: (assetId: string, data: DataAsset) => void
+  /** A material's or data asset's live copy from the server, and where it stands. */
   fetchLive: (assetId: string) => Promise<{ json: unknown; origin: Origin } | null>
   /**
    * Fetch one prefab again, as it is now — the server answers with its live copy when the prefab is open, so it
@@ -65,6 +71,8 @@ export interface AssetLibrary {
   removeMany: (paths: readonly string[]) => Promise<void>
   /** Create `<name>.mat.json` in `folder` (from `content/`; the shared library's `materials` by default). Resolves once the importer has given it an id. */
   createMaterial: (name: string, material: MaterialAsset, folder?: string) => Promise<AssetEntry | undefined>
+  /** Create `<name>.data.json` in `folder`, a game's library (ADR 0181). Resolves once the importer has given it an id. */
+  createData: (name: string, data: DataAsset, folder: string) => Promise<AssetEntry | undefined>
 }
 
 /** Where an asset's bytes are served: its path from `content/`, as on disk (ADR 0161). */
@@ -136,35 +144,36 @@ export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refe
   const materials = new Map<string, MaterialAsset>()
   const origins = new Map<string, Origin>()
   const prefabs = new Map<string, Node>()
+  const data = new Map<string, DataAsset>()
   const reuse = opts.reuse ?? null
   const kept = (e: AssetEntry): boolean => reuse !== null && reuse.db.byId[e.id]?.path === e.path && opts.refetch?.has(e.path) !== true
 
-  // Both are small JSON and both are needed synchronously — a material to compile, a prefab to preview or
-  // place — so they are fetched up front rather than on demand.
+  /**
+   * Hold one JSON asset by its kind, and where its copy came from for the live kinds; `false` when the file is not
+   * that kind's shape.
+   */
+  const hold = (e: AssetEntry, json: unknown, origin: Origin | undefined): boolean => {
+    if (e.kind === 'material' && isMaterial(json)) materials.set(e.id, json)
+    else if (e.kind === 'data' && isDataAsset(json)) data.set(e.id, json)
+    else if (e.kind === 'prefab' && isPrefab(json)) prefabs.set(e.id, json)
+    else return false
+    if (origin !== undefined && e.kind !== 'prefab') origins.set(e.id, origin)
+    return true
+  }
+
+  // All small JSON, needed synchronously — a material to compile, a prefab to preview or place, a data asset to
+  // show and read — so they are fetched up front rather than on demand.
   await Promise.all(
     entries
-      .filter((e) => e.kind === 'material' || e.kind === 'prefab')
+      .filter((e) => e.kind === 'material' || e.kind === 'prefab' || e.kind === 'data')
       .map(async (e) => {
-        if (kept(e)) {
-          const held = e.kind === 'material' ? reuse?.materialOf(e.id) : reuse?.prefabOf(e.id)
-          if (held !== undefined) {
-            if (e.kind === 'material') {
-              materials.set(e.id, held as MaterialAsset)
-              const o = reuse?.originOf(e.id)
-              if (o !== undefined) origins.set(e.id, o)
-            } else prefabs.set(e.id, held as Node)
-            return
-          }
+        if (kept(e) && reuse !== null) {
+          const held = e.kind === 'material' ? reuse.materialOf(e.id) : e.kind === 'data' ? reuse.dataOf(e.id) : reuse.prefabOf(e.id)
+          if (held !== undefined && hold(e, held, reuse.originOf(e.id))) return
         }
         try {
-          const { json: parsed, origin } = await fetchWithOrigin(assetUrl(e.path))
-          if (e.kind === 'material') {
-            if (isMaterial(parsed)) {
-              materials.set(e.id, parsed)
-              if (origin !== undefined) origins.set(e.id, origin)
-            } else console.warn(`material ${e.path}: no shader`)
-          } else if (isPrefab(parsed)) prefabs.set(e.id, parsed)
-          else console.warn(`prefab ${e.path}: no pieces`)
+          const { json, origin } = await fetchWithOrigin(assetUrl(e.path))
+          if (!hold(e, json, origin)) console.warn(`${e.kind} ${e.path}: not a ${e.kind} file`)
         } catch (err) {
           console.warn(`${e.kind} ${e.path}: ${String(err)}`)
         }
@@ -199,8 +208,10 @@ export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refe
     },
     materialOf: (id) => materials.get(id),
     prefabOf: (id) => prefabs.get(id),
+    dataOf: (id) => data.get(id),
     originOf: (id) => origins.get(id),
     setMaterial: (id, material) => void materials.set(id, material),
+    setData: (id, json) => void data.set(id, json),
     fetchLive: async (id) => {
       const entry = db.byId[id]
       if (entry === undefined) return null
@@ -211,6 +222,12 @@ export const loadAssetLibrary = async (opts: { reuse?: AssetLibrary | null; refe
       const safe = name.replace(/[^\w-]+/g, '-') || 'material'
       const path = `${folder}/${safe}.mat.json`
       await put(path, material)
+      return rescan(path)
+    },
+    createData: async (name, json, folder) => {
+      const safe = name.replace(/[^\w-]+/g, '-') || 'data'
+      const path = `${folder}/${safe}.data.json`
+      await put(path, json)
       return rescan(path)
     },
     refreshPrefab: async (id) => {

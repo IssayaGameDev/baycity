@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { buildDatabase, type AssetEntry, type MaterialAsset, type Node } from '@mp/content'
+import { buildDatabase, type AssetEntry, type DataAsset, type MaterialAsset, type Node } from '@mp/content'
+import { defineDataType } from '@mp/components'
 import { describe, expect, it } from 'vitest'
 
 import { createAssetInspector, prefabFacts, shownBytes, type AssetInspectorHost } from './assetInspector'
@@ -11,9 +12,11 @@ import { createAssetInspector, prefabFacts, shownBytes, type AssetInspectorHost 
 
 const M = 'mmmmmmmmmmmmmmmm'
 const P = 'pppppppppppppppp'
+const D = 'dddddddddddddddd'
 const ENTRIES: AssetEntry[] = [
   { id: M, kind: 'material', path: 'assets/materials/m.mat.json', name: 'm' },
   { id: P, kind: 'prefab', path: 'assets/prefabs/pad.prefab.json', name: 'pad' },
+  { id: D, kind: 'data', path: 'keyboard/assets/red.data.json', name: 'red' },
 ]
 const PAD: Node = {
   id: 'root',
@@ -53,6 +56,9 @@ const rig = (over: Partial<AssetInspectorHost> = {}, show: string = M) => {
     onSelectAsset: (id) => calls.push(`select ${id}`),
     draggedAssets: () => [],
     revealAsset: (id) => calls.push(`reveal ${id}`),
+    dataOf: () => undefined,
+    dataTypeOf: () => undefined,
+    onDataChanged: () => undefined,
     ...over,
   })
   inspector.show(show)
@@ -201,5 +207,54 @@ describe('what the Inspector shows of each kind (ADR 0165)', () => {
   it('counts a prefab’s parts and components, and shows a size a person reads', () => {
     expect(prefabFacts(PAD)).toEqual({ parts: 2, components: [{ type: 'Renderer', count: 2 }, { type: 'Hazard', count: 1 }] })
     expect([shownBytes(900), shownBytes(2560), shownBytes(250_000), shownBytes(3_400_000)]).toEqual(['900 B', '2.5 KB', '244 KB', '3.2 MB'])
+  })
+})
+
+describe('a data asset (ADR 0181)', () => {
+  const Style = defineDataType({
+    type: 'KeyboardStyle',
+    label: 'Keyboard Style',
+    fields: {
+      tint: { kind: 'color', default: '#ffffff' },
+      gloss: { kind: 'number', default: 0.5 },
+      glossy: { kind: 'bool', default: false },
+    },
+  })
+  const withData = (fields: Record<string, unknown>, type = 'KeyboardStyle') => {
+    const data = new Map<string, DataAsset>([[D, { type, fields }]])
+    const r = rig(
+      {
+        dataOf: (id) => data.get(id),
+        dataTypeOf: (_path, t) => (t === 'KeyboardStyle' ? Style : undefined),
+        onDataChanged: (id, d) => void data.set(id, d),
+      },
+      D,
+    )
+    return { ...r, data }
+  }
+
+  it('draws its type’s fields at its values or their defaults, and writes each edit onto the asset as it is now', () => {
+    const { row, container, data } = withData({ tint: '#ff0000' })
+    expect(container.querySelector('.a-meta')!.textContent).toContain('Keyboard Style')
+    expect(row('tint').querySelector<HTMLInputElement>('.clr-v')!.value).toBe('#ff0000')
+    typeInto(row('gloss').querySelector<HTMLInputElement>('.sf-v')!, '0.8')
+    expect(data.get(D)!.fields).toEqual({ tint: '#ff0000', gloss: 0.8 })
+    row('glossy').querySelector<HTMLInputElement>('input')!.click()
+    expect(data.get(D)!.fields, 'the earlier edit kept').toEqual({ tint: '#ff0000', gloss: 0.8, glossy: true })
+  })
+
+  it('shows someone else’s edit in place', () => {
+    const { row, inspector, data } = withData({ tint: '#ff0000' })
+    const tint = row('tint').querySelector<HTMLInputElement>('.clr-v')!
+    data.set(D, { type: 'KeyboardStyle', fields: { tint: '#00ff00' } })
+    inspector.refresh(D)
+    expect(row('tint').querySelector('.clr-v'), 'not redrawn').toBe(tint)
+    expect(tint.value).toBe('#00ff00')
+  })
+
+  it('says so when its game’s code has no such type, and draws no field', () => {
+    const { container } = withData({}, 'Gone')
+    expect(container.querySelector('.a-warn')!.textContent).toMatch(/No data type "Gone"/)
+    expect(container.querySelectorAll('.irow')).toHaveLength(0)
   })
 })

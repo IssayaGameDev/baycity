@@ -74,10 +74,15 @@ export interface Vec3Spec extends SpecBase {
   readonly kind: 'vec3'
   readonly default: Vec3
 }
-/** An asset id, restricted to one kind so the Inspector can offer the right list. `''` means none. */
+/**
+ * An asset id, restricted to one kind so the Inspector can offer the right list. `''` means none. A data asset field
+ * names its **data type** too (ADR 0181): a field that takes a Keyboard Style takes nothing else.
+ */
 export interface AssetSpec extends SpecBase {
   readonly kind: 'asset'
-  readonly of: 'material' | 'model'
+  readonly of: 'material' | 'model' | 'data'
+  /** For `of: 'data'`: the data type it takes (`DataTypeDef.type`). */
+  readonly dataType?: string
   readonly default: string
 }
 /** A collision shape. Its own kind rather than a bag of numbers, so the Inspector can switch shape. */

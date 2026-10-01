@@ -1,7 +1,7 @@
 import { firstOfType, type ComponentData } from '@mp/content'
 import type { ComponentDef } from './define'
 import type { Registry } from './registry'
-import { readParams, type ParamDecls, type Params } from './params'
+import { readParams, type AssetSpec, type ParamDecls, type Params } from './params'
 
 /**
  * Reading a component off a node, typed by its declaration.
@@ -33,7 +33,7 @@ export const componentOn = <D extends ParamDecls>(components: readonly Component
 export const assetParamIds = (
   nodes: readonly { readonly components: readonly ComponentData[] }[],
   registry: Registry,
-  of?: 'material' | 'model',
+  of?: AssetSpec['of'],
 ): string[] => {
   const ids = new Set<string>()
   for (const node of nodes)

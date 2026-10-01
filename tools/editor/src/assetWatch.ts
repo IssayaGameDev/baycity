@@ -29,8 +29,8 @@ export const assetPathsOf = (paths: readonly string[]): string[] => {
 
 /**
  * What differs between the library this tab has and a fresh one: whether the list itself changed (an asset
- * added, removed, renamed or moved, a folder made), and which assets' contents did. A material or prefab is
- * compared by its JSON; a texture or model cannot be, so one the feed named is taken as changed — its bytes
+ * added, removed, renamed or moved, a folder made), and which assets' contents did. A material, prefab or data asset
+ * is compared by its JSON; a texture or model cannot be, so one the feed named is taken as changed — its bytes
  * were replaced (an upload keeps the id). Pure.
  */
 export const libraryChanges = (before: AssetLibrary | null, after: AssetLibrary, named: readonly string[]): { list: boolean; ids: string[] } => {
@@ -44,6 +44,8 @@ export const libraryChanges = (before: AssetLibrary | null, after: AssetLibrary,
       if (JSON.stringify(before.materialOf(e.id)) !== JSON.stringify(after.materialOf(e.id))) ids.push(e.id)
     } else if (e.kind === 'prefab') {
       if (JSON.stringify(before.prefabOf(e.id)) !== JSON.stringify(after.prefabOf(e.id))) ids.push(e.id)
+    } else if (e.kind === 'data') {
+      if (JSON.stringify(before.dataOf(e.id)) !== JSON.stringify(after.dataOf(e.id))) ids.push(e.id)
     } else if (touched.has(e.path) && before.db.byId[e.id]?.path === e.path) ids.push(e.id)
   }
   return { list, ids }

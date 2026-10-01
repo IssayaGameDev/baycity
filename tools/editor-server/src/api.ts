@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname, join, normalize, relative, sep } from 'node:path'
 
-import { contentTypeFor, kindForPath, META_SUFFIX } from '../../../packages/content/src/assets'
+import { contentTypeFor, isDataAsset, kindForPath, META_SUFFIX } from '../../../packages/content/src/assets'
 
 export { contentTypeFor }
 import { gameFile, inLibrary, isGameName, levelFile, levelRefForFile, libraryOf, parseQualified, qualify, LEVELS_DIR } from '../../../packages/content/src/layout'
@@ -267,10 +267,10 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       return undefined
     }
   }
-  /** A prefab's, material's or shader's JSON as it is now — a live copy when open — else `undefined`. */
+  /** A prefab's, material's, shader's or data asset's JSON as it is now — a live copy when open — else `undefined`. */
   const assetJsonNow = (id: string): unknown => {
     const e = assets.byId(id)
-    if (e === undefined || !(e.kind === 'prefab' || e.kind === 'material' || e.kind === 'shader')) return undefined
+    if (e === undefined || !(e.kind === 'prefab' || e.kind === 'material' || e.kind === 'shader' || e.kind === 'data')) return undefined
     if (e.kind === 'prefab') {
       const doc = opts.live?.levelOf(docKey('prefab', id))
       if (doc !== null && doc !== undefined) return doc.nodes[0]
@@ -518,9 +518,13 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       if (live !== null) return sendJson(res, 409, { error: `that prefab is open live; edit it in the editor` }), true
       const asset = liveAssetAt(rel)
       if (asset !== null && asset.current !== null) return sendJson(res, 409, { error: 'that asset is being edited live; edit it in the editor' }), true
+      // A data asset belongs to the game that declares its type (ADR 0181): Shared has no code to read one.
+      const data = kindForPath(rel) === 'data'
+      if (data && libraryOf(rel) === null) return sendJson(res, 409, { error: 'a data asset belongs to a game: make it in that game’s library, not in Shared' }), true
       try {
-        // JSON only: materials, prefabs and clips. Binaries go through upload, which has the cap.
+        // JSON only: materials, prefabs, data assets. Binaries go through upload, which has the cap.
         const parsed: unknown = await readJson(req)
+        if (data && !isDataAsset(parsed)) return sendJson(res, 400, { error: 'a data asset names its type and holds its fields as an object' }), true
         mkdirSync(join(file, '..'), { recursive: true })
         writeFileSync(file, `${JSON.stringify(parsed, null, 2)}\n`)
         changed(user, [keyFor.asset(rel)])

@@ -51,6 +51,7 @@ interface LevelHost {
   setOccluders: (handles: readonly number[]) => void
   meshesOf: (handle: number) => readonly THREE.Mesh[]   // node's drawn meshes by collider handle (ADR 0082)
   material: (assetId: string) => THREE.Material | null  // any material a component parameter names (ADR 0082)
+  data: (assetId: string) => DataAsset | undefined      // a data asset as its file holds it; read it with readData (ADR 0181)
   dispose: () => void
 }
 ```
@@ -156,12 +157,14 @@ interface LevelAssets {
   db: AssetDatabase                                    // the list's entries: this level's assets and nothing else
   urlOf: (path: string) => string                      // the list's url, absolute; a path not on it → base + content/<path>
   materialOf: (assetId: string) => MaterialAsset | undefined
+  dataOf: (assetId: string) => DataAsset | undefined   // ADR 0181
   prefabs: PrefabSource                                // ADR 0091
 }
 ```
 
-`json`: each prefab's and material's fetched JSON by id. A material needs a `shader` string, a prefab a
-`components` array; anything else is an unresolved reference. Prefabs and materials are held before the level is
+`json`: each prefab's, material's and data asset's fetched JSON by id (`loadLevel` fetches those three kinds). A
+material needs a `shader` string, a prefab a `components` array, a data asset `isDataAsset`; anything else is an
+unresolved reference. Prefabs and materials are held before the level is
 built because resolution has to finish before `instantiateLevel`, which stays synchronous (`baseIndex` goes on the
 wire, ADR 0021). A reference no file resolves draws nothing and warns once. Nothing hands a `builtin:` shape or a
 prefab id to `assets.load`: neither is a file (ADR 0090, 0091).

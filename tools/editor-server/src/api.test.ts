@@ -217,6 +217,20 @@ describe('assets', () => {
     ])
   })
 
+  // A data asset belongs to the game that declares its type (ADR 0181): never in Shared, and always shaped as one.
+  it('writes a data asset only into a game’s library, and only shaped as one', async () => {
+    mkdirSync(join(root, 'content/keyboard'), { recursive: true })
+    writeFileSync(join(root, 'content/keyboard/game.json'), '{"components":[]}')
+    const style = { type: 'KeyboardStyle', fields: { placeholder: '#ffffff' } }
+    const shared = await call('ada', 'PUT', '/content/assets/red.data.json', style)
+    expect(shared.status).toBe(409)
+    expect((await json<{ error: string }>(shared)).error).toMatch(/belongs to a game/)
+    expect((await call('ada', 'PUT', '/content/keyboard/assets/red.data.json', { fields: {} })).status).toBe(400)
+    expect((await call('ada', 'PUT', '/content/keyboard/assets/red.data.json', style)).status).toBe(200)
+    const listed = await json<{ entries: { id: string; kind: string; path: string }[] }>(await call('ada', 'GET', '/api/assets'))
+    expect(listed.entries.find((e) => e.path === 'keyboard/assets/red.data.json')?.kind).toBe('data')
+  })
+
   it('a move reports both files and their sidecars', async () => {
     await call('ada', 'PUT', '/content/assets/prefabs/p.prefab.json', { id: 'p', transform: { position: { x: 0, y: 0, z: 0 } }, components: [] })
     expect((await call('ada', 'POST', '/api/assets/move', { from: 'assets/prefabs/p.prefab.json', to: 'assets/prefabs/q.prefab.json' })).status).toBe(200)

@@ -65,6 +65,7 @@ export type IconName =
   | 'sound'
   | 'font'
   | 'search'
+  | 'data'
 
 /** An asset kind's picture where it has none of its own: a tile before its preview, a row in *Used by*. */
 export const ASSET_ICON: Record<AssetKind, IconName> = {
@@ -75,6 +76,7 @@ export const ASSET_ICON: Record<AssetKind, IconName> = {
   texture: 'image',
   sound: 'sound',
   font: 'font',
+  data: 'data',
 }
 
 const DOT = (x: number, y: number): string => `<circle cx="${x}" cy="${y}" r="1.6" fill="currentColor" stroke="none"/>`
@@ -138,6 +140,8 @@ const PATHS: Record<IconName, string> = {
   // Four corners closing on a point: frame what is there.
   focus: '<path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15"/><circle cx="12" cy="12" r="2.5"/>',
   component: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+  // A sheet of fields: a data asset (ADR 0181).
+  data: '<path d="M6 3.5h8.5L18.5 7.5v13H6z"/><path d="M14.5 3.5v4h4"/><path d="M9 11.5h6.5M9 14.5h6.5M9 17.5h4"/>',
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg'

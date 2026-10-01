@@ -63,6 +63,8 @@ const rig = (over: Partial<ProjectHost> = {}) => {
     onOpenPrefab: (id) => calls.push(`open ${id}`),
     onDragAsset: (id) => calls.push(`drag ${id ?? 'over'}`),
     onDragAssets: (ids) => void (dragged = ids),
+    dataTypes: (folder) => (folder.startsWith('keyboard/') ? [{ type: 'KeyboardStyle', path: ['Keyboard', 'Keyboard Style'] }] : []),
+    onCreateData: (type, folder) => calls.push(`new data ${type} in ${folder}`),
     onCreateAsset: (kind, folder) => calls.push(`new ${kind} in ${folder}`),
     onMkdir: (parent, name) => calls.push(`mkdir ${name} in ${parent}`),
     onContext: () => {},
@@ -143,9 +145,25 @@ describe('the Project window', () => {
     const { $$, calls, menu, tile } = rig()
     tile('materials').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     $$('.ex-plus')[0]!.click()
-    expect(menu().map((i) => i.label)).toEqual(['New folder…', 'New material', 'Upload files…'])
+    expect(menu().map((i) => i.label)).toEqual(['New folder…', 'New material', 'New data', 'Upload files…'])
     menu().find((i) => i.label === 'New material')!.run!()
     expect(calls).toEqual(['new material in assets/materials'])
+    // Shared holds no data (ADR 0181): the entry is there, greyed, with why.
+    const data = menu().find((i) => i.label === 'New data')!
+    expect(data.enabled).toBe(false)
+    expect(data.why).toBe('data belongs to a game: open a game’s library')
+  })
+
+  // Unity's CreateAssetMenu (ADR 0181): each type at its menu path, in the game's library.
+  it('makes a data asset of one of the game’s types, by its menu path, in the game’s library', () => {
+    const { $$, calls, menu } = rig()
+    $$('.ex-tree .row').find((r) => r.textContent === 'Keyboard')!.click()
+    $$('.ex-plus')[0]!.click()
+    const data = menu().find((i) => i.label === 'New data')!
+    expect(data.items!.map((i) => i.label)).toEqual(['Keyboard'])
+    const style = data.items![0]!.items!.find((i) => i.label === 'Keyboard Style')!
+    style.run!()
+    expect(calls).toEqual(['new data KeyboardStyle in keyboard/assets'])
   })
 
   it('opens a file on a click, names it in the bottom bar, and shows who has it open', () => {

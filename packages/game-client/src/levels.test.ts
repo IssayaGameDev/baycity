@@ -17,6 +17,7 @@ const BASE = 'https://game.test/play/keyboard/'
 const PAD = 'aaaaaaaaaaaaaaaa'
 const RED = 'bbbbbbbbbbbbbbbb'
 const BRICK = 'cccccccccccccccc'
+const STYLE = 'dddddddddddddddd'
 
 const level = (id: string, extra: Record<string, unknown> = {}): unknown => ({ id, config: { mode: { name: 'keyboard' } }, nodes: [], ...extra })
 
@@ -29,11 +30,13 @@ const files = (): Record<string, unknown> => ({
       { id: BRICK, kind: 'texture', path: 'assets/textures/brick.png', url: 'assets/brick-1a2b.png' },
       { id: RED, kind: 'material', path: 'assets/materials/red.mat.json', url: 'content/assets/materials/red.mat.json' },
       { id: PAD, kind: 'prefab', path: 'keyboard/assets/prefabs/pad.prefab.json', url: 'content/keyboard/assets/prefabs/pad.prefab.json' },
+      { id: STYLE, kind: 'data', path: 'keyboard/assets/red.data.json', url: 'content/keyboard/assets/red.data.json' },
     ],
   },
   [`${BASE}content/keyboard/levels/default.level.json`]: level('default'),
   [`${BASE}content/assets/materials/red.mat.json`]: { shader: 'standard', params: {} },
   [`${BASE}content/keyboard/assets/prefabs/pad.prefab.json`]: { id: 'root', components: [] },
+  [`${BASE}content/keyboard/assets/red.data.json`]: { type: 'KeyboardStyle', fields: { placeholder: '#ff0000' } },
   [`${BASE}content/keyboard/levels/bare.needs.json`]: { level: 'content/keyboard/levels/bare.level.json', assets: [] },
   [`${BASE}content/keyboard/levels/bare.level.json`]: level('bare'),
 })
@@ -85,17 +88,20 @@ describe('loading a level', () => {
         `${BASE}content/keyboard/levels/default.level.json`,
         `${BASE}content/assets/materials/red.mat.json`,
         `${BASE}content/keyboard/assets/prefabs/pad.prefab.json`,
+        `${BASE}content/keyboard/assets/red.data.json`,
       ].sort(),
     )
   })
 
   it('hands over the list as the asset database, its files at their absolute addresses, its prefabs and materials resolved', async () => {
     const played = await loadLevel('keyboard', null, ANY, BASE, reader(files()).read)
-    expect(played.db.entries.map((e) => e.id).sort()).toEqual([BRICK, PAD, RED].sort())
+    expect(played.db.entries.map((e) => e.id).sort()).toEqual([BRICK, PAD, RED, STYLE].sort())
     expect(played.urlOf('assets/textures/brick.png')).toBe(`${BASE}assets/brick-1a2b.png`)
     expect(played.materialOf(RED)?.shader).toBe('standard')
     expect(played.prefabs.root(PAD)?.id).toBe('root')
     expect(played.prefabs.root(RED), 'a material is no prefab').toBeUndefined()
+    // A data asset (ADR 0181), as its file holds it, for the game to read against its type.
+    expect(played.dataOf(STYLE)).toEqual({ type: 'KeyboardStyle', fields: { placeholder: '#ff0000' } })
   })
 
   it('downloads nothing another level uses', async () => {

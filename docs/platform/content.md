@@ -233,10 +233,11 @@ completes override transforms from the node they now override — then **throws 
 
 ## Assets — `packages/content/src/assets.ts` (ADR 0026, ADR 0028)
 
-- `AssetKind = 'prefab' | 'texture' | 'model' | 'material' | 'shader' | 'sound' | 'font'`. `animation` was retired with the keyframe model (ADR 0103).
-- Identity = sidecar `<file>.meta` → `AssetMeta { id; kind }`, written once. References by **id**, never path. Kind comes from the **path** (`kindForPath`: `.mat.json`, `.shader.json`, `.prefab.json`, else extension); sidecar `kind` not trusted.
+- `AssetKind = 'prefab' | 'texture' | 'model' | 'material' | 'shader' | 'sound' | 'font' | 'data'`. `animation` was retired with the keyframe model (ADR 0103).
+- Identity = sidecar `<file>.meta` → `AssetMeta { id; kind }`, written once. References by **id**, never path. Kind comes from the **path** (`kindForPath`: `.mat.json`, `.shader.json`, `.prefab.json`, `.data.json`, else extension); sidecar `kind` not trusted.
 - `AssetEntry { id; kind; path; name }` — `path` from `content/`, starting with its library (`assets/…`, `<game>/assets/…`, ADR 0161); `AssetDatabase { entries; byId }`; `buildDatabase`, `entriesFrom`, `entryFor`, `assetsOfKind`, `nameForPath`.
 - `MaterialAsset { shader: 'standard' | 'unlit' | assetId; params: Record<string, MaterialValue> }`; `MaterialValue` kinds color/number/vec2/vec3/boolean/texture(`string|null`). `materialDependencies` = texture ids.
+- `DataAsset { type: string; fields: Record<string, unknown> }` (ADR 0181), `isDataAsset(json)`: Unity's ScriptableObject — a file naming its data type and holding its field values; the type is a game's code (`defineDataType`, `components/api.md`), as a material's fields are its shader's. Lives only in the declaring game's library.
 - `*.prefab.json` = a `Node` root. Placing writes its **asset id** into the level; the definition stays in the file (ADR 0091, below).
 
 ## Which levels use which asset — `packages/content/src/usage.ts` (ADR 0161)
@@ -284,7 +285,8 @@ type LiveKind = AssetKind | 'game'
 gameDocId(game) = `game:${game}` · gameOfDocId(id): string | null   // no asset id has a colon
 ```
 
-A kind is live when it has a validator: `material` (a non-empty `shader`, `params` of tagged values); and a game's
+A kind is live when it has a validator: `material` (a non-empty `shader`, `params` of tagged values); `data` (its
+shape, `isDataAsset`: its fields are checked against its type where the type is known — the editor — ADR 0181); and a game's
 `game.json`, not an asset (ADR 0162): `components` a list of names, `settings` absent or an object of numbers and
 curve-point lists. `LIVE_ASSET_KINDS` is the asset kinds only.
 

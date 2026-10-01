@@ -15,10 +15,10 @@ import type { Vec3 } from '@mp/core'
  * Headless: this is the schema and the resolution rules. Loading a texture or compiling a material is a
  * renderer's job (`@mp/render-three`), and playing a sound is nobody's yet.
  */
-export type AssetKind = 'prefab' | 'texture' | 'model' | 'material' | 'shader' | 'sound' | 'font'
+export type AssetKind = 'prefab' | 'texture' | 'model' | 'material' | 'shader' | 'sound' | 'font' | 'data'
 
 /** Every kind, for iteration in a browser panel and for validation. */
-export const ASSET_KINDS: readonly AssetKind[] = ['prefab', 'texture', 'model', 'material', 'shader', 'sound', 'font']
+export const ASSET_KINDS: readonly AssetKind[] = ['prefab', 'texture', 'model', 'material', 'shader', 'sound', 'font', 'data']
 
 /**
  * What a `.meta` sidecar holds. Written once by the importer and then never regenerated — the id *is* the
@@ -100,6 +100,27 @@ export interface MaterialAsset {
   params: Record<string, MaterialValue>
 }
 
+/**
+ * A data asset (ADR 0181): Unity's ScriptableObject. A file naming its **type** and holding that type's field values;
+ * the type and its fields are declared in a game's code (`defineDataType`), as a material's are by its shader. The
+ * values are checked against the declaration where it is known — the editor and the game — and the file stays
+ * openable when it is not, as a material whose shader is missing does.
+ */
+export interface DataAsset {
+  type: string
+  fields: Record<string, unknown>
+}
+
+/** Whether a parsed file has a data asset's shape. */
+export const isDataAsset = (json: unknown): json is DataAsset =>
+  typeof json === 'object' &&
+  json !== null &&
+  typeof (json as { type?: unknown }).type === 'string' &&
+  (json as { type: string }).type !== '' &&
+  typeof (json as { fields?: unknown }).fields === 'object' &&
+  (json as { fields?: unknown }).fields !== null &&
+  !Array.isArray((json as { fields?: unknown }).fields)
+
 /** Suffix of an identity sidecar: `crate.glb` is described by `crate.glb.meta`. */
 export const META_SUFFIX = '.meta'
 
@@ -109,8 +130,8 @@ export const META_SUFFIX = '.meta'
  * database from them, because two lists would drift and the symptom would be an asset that exists on disk
  * and not in the panel.
  *
- * Materials and shaders use compound extensions (`brick.mat.json`) rather than living in a magic folder, so
- * a file can be moved anywhere in a library and still be what it is.
+ * Materials, shaders, prefabs and data assets use compound extensions (`brick.mat.json`, `red.data.json`) rather
+ * than living in a magic folder, so a file can be moved anywhere in a library and still be what it is.
  */
 const BY_EXTENSION: Record<string, AssetKind> = {
   png: 'texture',
@@ -135,6 +156,7 @@ export const kindForPath = (path: string): AssetKind | undefined => {
   if (lower.endsWith('.mat.json')) return 'material'
   if (lower.endsWith('.shader.json')) return 'shader'
   if (lower.endsWith('.prefab.json')) return 'prefab'
+  if (lower.endsWith('.data.json')) return 'data'
   const dot = lower.lastIndexOf('.')
   if (dot < 0) return undefined
   return BY_EXTENSION[lower.slice(dot + 1)]
@@ -167,7 +189,7 @@ export const contentTypeFor = (path: string): string => {
 /** Display name: the file name with its extension (compound ones included) removed. */
 export const nameForPath = (path: string): string => {
   const file = path.slice(path.lastIndexOf('/') + 1)
-  for (const suffix of ['.mat.json', '.shader.json', '.prefab.json']) {
+  for (const suffix of ['.mat.json', '.shader.json', '.prefab.json', '.data.json']) {
     if (file.toLowerCase().endsWith(suffix)) return file.slice(0, -suffix.length)
   }
   const dot = file.lastIndexOf('.')

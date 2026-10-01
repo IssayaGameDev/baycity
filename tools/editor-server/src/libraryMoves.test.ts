@@ -29,6 +29,15 @@ describe('moving assets between libraries', () => {
   const brick = entry(BRICK, 'texture', 'assets/textures/brick.png')
   const files = { [PAD]: drawnWith(RED), [RED]: { shader: 'standard', params: { map: { kind: 'texture', value: BRICK } } } }
 
+  // A data asset's type is its game's code (ADR 0181): nowhere else has what reads it.
+  it('keeps a data asset in its game’s library', () => {
+    const style = entry('eeeeeeeeeeeeeeee', 'data', 'keyboard/assets/red.data.json')
+    const w = world([style], {}, [])
+    expect(moveRefusal([style], null, w)).toBe("red is a data asset: it stays in keyboard's library")
+    expect(moveRefusal([style], 'obby', w)).toMatch(/stays in keyboard/)
+    expect(moveRefusal([style], 'keyboard', w), 'a move inside its own library').toBeNull()
+  })
+
   it('lets a game take what only its own levels use', () => {
     const w = world([pad, red, brick], files, [['keyboard/a', placing(PAD)]])
     expect(moveRefusal([pad], 'keyboard', w)).toBeNull()

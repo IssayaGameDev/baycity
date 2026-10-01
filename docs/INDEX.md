@@ -228,5 +228,6 @@ why matters.
 | [0178](adr/0178-pickers-and-add-component-in-folders.md) | Pickers and Add Component in folders |
 | [0179](adr/0179-snapping-moves-the-centre-on-the-axes-dragged.md) | Snapping moves the centre, on the axes dragged |
 | [0180](adr/0180-the-world-grid-and-align-to-grid.md) | The world grid, and Align to Grid |
+| [0181](adr/0181-data-assets.md) | Data assets |
 
 `Design archive/` holds superseded design material and is not maintained.

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   assetsOfKind,
   buildDatabase,
+  isDataAsset,
   kindForPath,
   materialDependencies,
   nameForPath,
@@ -33,6 +34,14 @@ describe('kindForPath', () => {
     expect(kindForPath('shaders/water.shader.json')).toBe('shader')
     // `.anim.json` was an asset kind until ADR 0103 retired keyframe tracks; it now reads as a plain file.
     expect(kindForPath('animations/rise-4m.anim.json')).toBeUndefined()
+  })
+
+  it('recognises a data asset by its compound extension (ADR 0181), and names it without it', () => {
+    expect(kindForPath('keyboard/assets/styles/red.data.json')).toBe('data')
+    expect(nameForPath('keyboard/assets/styles/red.data.json')).toBe('red')
+    expect(isDataAsset({ type: 'KeyboardStyle', fields: {} })).toBe(true)
+    expect(isDataAsset({ type: '', fields: {} }), 'a type is named').toBe(false)
+    expect(isDataAsset({ type: 'KeyboardStyle', fields: [] }), 'fields are an object').toBe(false)
   })
 
   it('is not fooled by a plain .json, which is a level or a prefab', () => {
