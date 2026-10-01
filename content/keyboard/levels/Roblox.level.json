@@ -13064,7 +13064,7 @@
                           "by": "speed",
                           "speed": 30
                         },
-                        "ease": "linear"
+                        "ease": "out-bounce"
                       }
                     ]
                   }
