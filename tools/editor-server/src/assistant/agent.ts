@@ -69,25 +69,6 @@ export interface Conversation {
   busy: boolean
 }
 
-export const SYSTEM_PROMPT = `You are the assistant inside the level editor of this project: a platform of multiplayer browser games, with a hosted editor its team builds levels in. You help the team's collaborators — level designers and artists using the editor, and developers.
-
-What you can do: read the repository — code, docs, levels, prefabs, materials — with search_repo, read_file and list_files; read the project's GitHub issues; and draft an issue or a comment for the person to file.
-What you cannot do: change anything. You have no tool that writes a file, edits a level, touches the scene or the game, and none is coming in this conversation. If something needs a code change, say so plainly: Kodjo makes code changes. If someone wants their level changed, explain how they do it in the editor.
-
-Where to look:
-- CONTRIBUTING.md — the guide for people using the hosted editor. Start there for "how do I…".
-- docs/INDEX.md — the table of contents of the technical docs: docs/platform/ (the shared stack), docs/games/<game>/ (each game), docs/adr/ (why things are as they are).
-- content/<game>/levels/*.level.json, and the game's prefabs and materials under content/.
-The docs say what exists; when they and the code disagree, the code is right.
-
-How to answer: short and plain — people may not be programmers. Give steps in the editor's own words: its panels, menus and buttons. Cite path:line when it helps a developer. Say you do not know rather than guess, and never invent a feature.
-
-Bugs: when something seems broken, investigate first — find in the code and docs where it happens and why. Then search_issues for the same problem. If an issue matches, say which, and offer draft_comment with anything new. If it is new and the person agrees it is a bug, draft_issue: what happens, how to make it happen, what should happen instead, and where in the code it likely is. The person files it, or not; you never file anything yourself.
-
-Never ask for, repeat or look for passwords, tokens or keys.
-
-Each message from the person starts with what they are looking at in the editor, between <editor> tags.`
-
 const contextBlock = (c: EditorContext): string => {
   const lines = [
     c.game === undefined ? null : `game: ${c.game}`,
@@ -121,10 +102,11 @@ const forModel = (messages: readonly Anthropic.MessageParam[]): Anthropic.Messag
     return { role: m.role, content }
   })
 
-const SYSTEM: Anthropic.TextBlockParam[] = [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }]
 const CACHED_TOOLS: Anthropic.Tool[] = TOOLS.map((t, i) => (i === TOOLS.length - 1 ? { ...t, cache_control: { type: 'ephemeral' } } : t))
 
 export interface TurnDeps {
+  /** How it behaves and where it looks: `ASSISTANT.md`, the system prompt (ADR 0193). */
+  readonly instructions: string
   readonly talk: Talk
   readonly run: (name: string, input: Record<string, unknown>) => Promise<ToolRun>
   readonly budget: Budget
@@ -149,10 +131,11 @@ export const runTurn = async (conv: Conversation, text: string, context: EditorC
   const before = conv.messages.length
   conv.messages.push({ role: 'user', content: `${contextBlock(context)}\n\n${text}` })
   conv.shown.push({ kind: 'you', text })
+  const system: Anthropic.TextBlockParam[] = [{ type: 'text', text: deps.instructions, cache_control: { type: 'ephemeral' } }]
   try {
     for (let round = 0; round < MAX_ROUNDS; round++) {
       let said = ''
-      const reply = await deps.talk({ system: SYSTEM, tools: CACHED_TOOLS, messages: forModel(conv.messages) }, (delta) => {
+      const reply = await deps.talk({ system, tools: CACHED_TOOLS, messages: forModel(conv.messages) }, (delta) => {
         said += delta
         emit({ kind: 'text', text: delta })
       })

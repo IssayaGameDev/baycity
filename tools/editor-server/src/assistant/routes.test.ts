@@ -41,6 +41,7 @@ beforeEach(async () => {
   state = mkdtempSync(join(tmpdir(), 'mp-assist-state-'))
   await git(repo, ['init', '--quiet'])
   writeFileSync(join(repo, 'README.md'), 'hello\n')
+  writeFileSync(join(repo, 'ASSISTANT.md'), 'Answer from the docs.\n')
   await git(repo, ['-c', 'user.name=s', '-c', 'user.email=s@x', 'add', '-A'])
   await git(repo, ['-c', 'user.name=s', '-c', 'user.email=s@x', 'commit', '--quiet', '-m', 'seed'])
   filed.length = 0
@@ -113,5 +114,11 @@ describe('the assistant’s routes', () => {
     expect(await (await fetch(`${at}/api/assistant`)).json()).toMatchObject({ ready: false, github: false })
     expect((await fetch(`${at}/api/assistant/chats`, { method: 'POST' })).status).toBe(503)
     await new Promise<void>((r) => server2.close(() => r()))
+  })
+
+  it('is not ready without its instructions, and says which file', async () => {
+    rmSync(join(repo, 'ASSISTANT.md'))
+    expect(await (await call('/api/assistant')).json()).toMatchObject({ ready: false, why: 'The assistant has no instructions: ASSISTANT.md is missing.' })
+    expect((await call('/api/assistant/chats', { method: 'POST' })).status).toBe(503)
   })
 })

@@ -241,5 +241,6 @@ why matters.
 | [0190](adr/0190-any-font-and-a-drawn-bold.md) | Any font, and a drawn bold |
 | [0191](adr/0191-copy-and-paste-a-component.md) | Copy and paste a component |
 | [0192](adr/0192-an-assistant-in-the-editor.md) | An assistant in the editor |
+| [0193](adr/0193-the-assistants-instructions-in-a-file.md) | The assistant's instructions in a file |
 
 `Design archive/` holds superseded design material and is not maintained.

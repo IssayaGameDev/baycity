@@ -27,6 +27,9 @@ import { createToolRunner } from './tools'
  *
  * Keys: `anthropic.key` and `github.token` in the state directory, outside the checkout — read here and nowhere
  * else, never sent to the model or the browser. Looked for again while missing, so adding one needs no restart.
+ *
+ * Instructions: `ASSISTANT.md` at the checkout's root, the system prompt (ADR 0193) — read for every turn, so a deploy
+ * that changes it needs nothing more. Missing, the assistant is not ready.
  */
 
 export interface AssistantOptions {
@@ -51,7 +54,14 @@ export interface Assistant {
 const MAX_OPEN = 6
 const MAX_BODY = 64 * 1024
 
-const readSecret = (file: string): string | null => {
+/** How the assistant behaves and where it looks, at the checkout's root (ADR 0193). */
+export const INSTRUCTIONS_FILE = 'ASSISTANT.md'
+
+const NOT_SET_UP = 'The assistant is not set up on this server yet.'
+const NO_INSTRUCTIONS = `The assistant has no instructions: ${INSTRUCTIONS_FILE} is missing.`
+
+/** A file's text, trimmed; `null` when it is missing or empty. */
+const readText = (file: string): string | null => {
   if (!existsSync(file)) return null
   const v = readFileSync(file, 'utf8').trim()
   return v === '' ? null : v
@@ -123,7 +133,7 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
   let talk: Talk | null = opts.talk ?? null
   const talkNow = (): Talk | null => {
     if (talk !== null) return talk
-    const key = readSecret(join(opts.stateDir, 'anthropic.key'))
+    const key = readText(join(opts.stateDir, 'anthropic.key'))
     if (key !== null) talk = claudeTalk(new Anthropic({ apiKey: key }))
     return talk
   }
@@ -132,7 +142,7 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
   const githubNow = (): GitHub | null => {
     if (github !== undefined && github !== null) return github
     if (opts.github === null) return null
-    const token = readSecret(join(opts.stateDir, 'github.token'))
+    const token = readText(join(opts.stateDir, 'github.token'))
     if (token === null) return null
     let repo: string | null = null
     try {
@@ -144,6 +154,10 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
     return github
   }
 
+  const instructionsNow = (): string | null => readText(join(opts.repoRoot, INSTRUCTIONS_FILE))
+  /** Why no turn can run now, or `null`: a key and the instructions are both needed. */
+  const whyNot = (): string | null => (talkNow() === null ? NOT_SET_UP : instructionsNow() === null ? NO_INSTRUCTIONS : null)
+
   const chatOf = (id: string, user: User): Conversation | null => {
     const c = chats.get(id)
     return c === undefined || c.email !== user.email.toLowerCase() ? null : c
@@ -154,13 +168,14 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
     const email = user.email.toLowerCase()
 
     if (url === '/api/assistant' && req.method === 'GET') {
-      const ready = talkNow() !== null
-      send(res, 200, { ready, ...(ready ? {} : { why: 'The assistant is not set up on this server yet.' }), github: githubNow() !== null, spent: budget.spent(email), limit: budget.limit })
+      const why = whyNot()
+      send(res, 200, { ready: why === null, ...(why === null ? {} : { why }), github: githubNow() !== null, spent: budget.spent(email), limit: budget.limit })
       return true
     }
 
     if (url === '/api/assistant/chats' && req.method === 'POST') {
-      if (talkNow() === null) return send(res, 503, { error: 'The assistant is not set up on this server yet.' }), true
+      const why = whyNot()
+      if (why !== null) return send(res, 503, { error: why }), true
       const mine = [...chats.values()].filter((c) => c.email === email).sort((a, b) => a.lastUsed - b.lastUsed)
       for (const old of mine.slice(0, Math.max(0, mine.length - MAX_OPEN + 1))) chats.delete(old.id)
       const id = randomBytes(16).toString('hex')
@@ -199,7 +214,8 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
       const text = typeof body.text === 'string' ? body.text.trim().slice(0, 8000) : ''
       if (text === '') return send(res, 400, { error: 'nothing to say' }), true
       const model = talkNow()
-      if (model === null) return send(res, 503, { error: 'The assistant is not set up on this server yet.' }), true
+      const instructions = instructionsNow()
+      if (model === null || instructions === null) return send(res, 503, { error: model === null ? NOT_SET_UP : NO_INSTRUCTIONS }), true
       res.writeHead(200, SSE_HEADERS)
       const keepalive = setInterval(() => res.write(SSE_KEEPALIVE), 15_000)
       const emit = (e: AssistantEvent): void => {
@@ -208,7 +224,7 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
       const run = createToolRunner({ files, github: githubNow(), nextDraftId: () => `d${++draftCount}` })
       try {
         // Answered to the end whether or not the tab stays: a tab the conversation moved to reads the rest.
-        await runTurn(chat, text, contextOf(body.context), { talk: model, run, budget, now }, emit)
+        await runTurn(chat, text, contextOf(body.context), { instructions, talk: model, run, budget, now }, emit)
       } finally {
         clearInterval(keepalive)
         res.end()
