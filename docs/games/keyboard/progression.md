@@ -45,7 +45,7 @@ metres at the top (ADR 0107). Measured reach cost is −1.6 % holding the stick,
 
 ## Saves
 
-`localStorage`, this game's own keys, written every 3 s and on the debug resets/grants:
+`localStorage`, this game's own keys, written every 3 s and on the debug resets, `level` and Wins grant:
 
 | Key | Value |
 | --- | --- |

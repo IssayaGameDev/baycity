@@ -234,5 +234,6 @@ why matters.
 | [0184](adr/0184-follow-takes-their-selection-and-motion.md) | Following takes their selection and their Motion preview |
 | [0185](adr/0185-moving-platforms-drawn-as-smoothly-as-the-editor.md) | Moving platforms drawn as smoothly as the editor's preview |
 | [0186](adr/0186-moving-platforms-push-the-player.md) | Moving platforms push the player |
+| [0187](adr/0187-the-debug-level-slider.md) | The debug Level slider |
 
 `Design archive/` holds superseded design material and is not maintained.
