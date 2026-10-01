@@ -131,7 +131,7 @@ or base index — the caller passes `dead` and world-space placement.
 ## Other exports
 
 `createFrameHooks(): FrameHooks` (`add/run/clear/size`; iterates a copy so a hook may remove itself),
-`createCharacterViews`, `SELF_COLORS`/`PEER_COLORS`, `makeNameLabel(text): THREE.Sprite` (`worldLabel` at
+`createCharacterViews`, `SELF_COLORS`/`PEER_COLORS`, `makeNameLabel(text): THREE.Group` (`worldLabel` at
 `CHAR_HALF_HEIGHT + CHAR_RADIUS + 0.5`), `createRagdoll`, `createAssembly`, `BODY_LAYERS`/`CORPSE_LAYERS`
 (`layers.ts`: capsules never collide with corpses), `createInputs` (`docs/platform/client/input.md`),
 `TPS_VERSION = '0.0.0'`.

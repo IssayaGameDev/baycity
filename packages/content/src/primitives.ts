@@ -4,7 +4,7 @@ import type { ColliderDesc } from './types'
 
 /**
  * Built-in shapes (ADR 0090): a `Mesh` whose `model` is one of these draws a unit shape sized by the node's
- * scale — Unity's cube and sphere, plus the rounded box every platform has always been drawn as. They are ids
+ * scale — Unity's cube, sphere and quad, plus the rounded box every platform has always been drawn as. They are ids
  * in the same slot as an uploaded model, so the picker lists them beside the files and the loader tells them
  * apart by prefix.
  *
@@ -12,7 +12,7 @@ import type { ColliderDesc } from './types'
  * at the matching unit shape (the editor enforces it), so the one number a person edits is the scale, and the
  * collision follows because the loader bakes scale into colliders anyway.
  */
-export const BUILTIN_MODELS = ['builtin:box', 'builtin:rounded-box', 'builtin:sphere', 'builtin:capsule'] as const
+export const BUILTIN_MODELS = ['builtin:box', 'builtin:rounded-box', 'builtin:sphere', 'builtin:capsule', 'builtin:quad'] as const
 export type BuiltinModel = (typeof BUILTIN_MODELS)[number]
 
 export const BUILTIN_LABELS: Record<BuiltinModel, string> = {
@@ -20,17 +20,29 @@ export const BUILTIN_LABELS: Record<BuiltinModel, string> = {
   'builtin:rounded-box': 'Rounded box',
   'builtin:sphere': 'Sphere',
   'builtin:capsule': 'Capsule',
+  'builtin:quad': 'Quad',
 }
 
 export const isBuiltinModel = (id: unknown): id is BuiltinModel => typeof id === 'string' && (BUILTIN_MODELS as readonly string[]).includes(id)
 
-/** The collider a built-in shape collides as, at scale 1: a unit box, a ball of diameter 1, a capsule 1 wide and 2 tall. */
+/**
+ * How thick a quad collides, at scale 1 (ADR 0189): a centimetre. A quad is a face, Unity's, drawn one-sided
+ * toward +Z — a poster, a picture, a sign — and a box this thin is the nearest solid to it.
+ */
+export const QUAD_HALF_DEPTH = 0.005
+
+/**
+ * The collider a built-in shape collides as, at scale 1: a unit box, a ball of diameter 1, a capsule 1 wide and
+ * 2 tall, a 1 × 1 quad a centimetre thick.
+ */
 export const unitColliderFor = (id: BuiltinModel): ColliderDesc => {
   switch (id) {
     case 'builtin:sphere':
       return { kind: 'ball', radius: 0.5 }
     case 'builtin:capsule':
       return { kind: 'capsule', halfHeight: 0.5, radius: 0.5 }
+    case 'builtin:quad':
+      return { kind: 'box', halfExtents: vec3(0.5, 0.5, QUAD_HALF_DEPTH) }
     default:
       return { kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) }
   }
@@ -71,7 +83,7 @@ export interface PrimitivePreset {
   model: BuiltinModel
   scale: Vec3
 }
-export const PRIMITIVE_ORDER = ['box', 'rounded-box', 'platform', 'wall', 'sphere', 'capsule'] as const
+export const PRIMITIVE_ORDER = ['box', 'rounded-box', 'platform', 'wall', 'sphere', 'capsule', 'quad'] as const
 export type PrimitiveKind = (typeof PRIMITIVE_ORDER)[number]
 export const PRIMITIVE_PRESETS: Record<PrimitiveKind, PrimitivePreset> = {
   box: { model: 'builtin:box', scale: vec3(1, 1, 1) },
@@ -80,5 +92,6 @@ export const PRIMITIVE_PRESETS: Record<PrimitiveKind, PrimitivePreset> = {
   wall: { model: 'builtin:rounded-box', scale: vec3(3, 2, 0.3) },
   sphere: { model: 'builtin:sphere', scale: vec3(1, 1, 1) },
   capsule: { model: 'builtin:capsule', scale: vec3(1, 1, 1) },
+  quad: { model: 'builtin:quad', scale: vec3(1, 1, 1) },
 }
-export const PRIMITIVE_LABELS: Record<PrimitiveKind, string> = { box: 'Box', 'rounded-box': 'Rounded box', platform: 'Platform', wall: 'Wall', sphere: 'Sphere', capsule: 'Capsule' }
+export const PRIMITIVE_LABELS: Record<PrimitiveKind, string> = { box: 'Box', 'rounded-box': 'Rounded box', platform: 'Platform', wall: 'Wall', sphere: 'Sphere', capsule: 'Capsule', quad: 'Quad' }

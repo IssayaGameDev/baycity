@@ -3,7 +3,7 @@ import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { instantiateLevel } from './loader'
-import { COLLIDER, LIGHT, RENDERER, type TypeInfo } from './nodes'
+import { COLLIDER, LIGHT, RENDERER, TEXT, type TypeInfo } from './nodes'
 import type { Stage, Step, Timing } from './sequence'
 import { SEQUENCE } from './sequenceData'
 import type { ComponentData, Level, Node } from './types'
@@ -65,6 +65,34 @@ describe('position', () => {
     const loaded = load(levelOf([{ id: 'placed', transform: { position: vec3(10, 0, 0) }, components: [], prefab: 'door' }], { door: prefab }))
     loaded.update(1000)
     expect(loaded.visuals[0]!.position).toEqual(vec3(10, 0, 5))
+  })
+})
+
+/** A `Text` rides its node as a light does (ADR 0189), and fades and switches off with it. */
+describe('text', () => {
+  it('is surfaced where its node stands, and rides the node’s sequence', () => {
+    const fade: Step = { id: id(), kind: 'fade', to: 0, timing: secs(1), ease: 'linear' }
+    const loaded = load(
+      levelOf([node('sign', [comp('t', TEXT, { text: 'Exit', size: 2 }), sequence([stage(move(vec3(0, 4, 0), 2)), stage(fade), stage(wait(5))])], { transform: { position: vec3(1, 0, 0) } })]),
+    )
+    expect(loaded.texts).toHaveLength(1)
+    const text = loaded.texts[0]!
+    expect([text.text, text.size, text.node]).toEqual(['Exit', 2, 'sign'])
+    expect(text.position).toEqual(vec3(1, 0, 0))
+    loaded.update(1000)
+    loaded.render(1)
+    expect(text.position).toEqual(vec3(1, 2, 0))
+    loaded.update(2500)
+    loaded.render(1)
+    expect(text.opacity).toBeCloseTo(0.5, 6)
+  })
+
+  it('switches off with its node', () => {
+    const loaded = load(levelOf([node('sign', [comp('t', TEXT, {}), sequence([stage(wait(1)), stage({ id: id(), kind: 'enabled', on: false }), stage(wait(5))])])]))
+    loaded.update(500)
+    expect(loaded.texts[0]!.visible).toBe(true)
+    loaded.update(1500)
+    expect(loaded.texts[0]!.visible).toBe(false)
   })
 })
 

@@ -219,27 +219,50 @@ below the feet. `OrbitCamera.update(dt, body, setOccluders): Placement { rigVisi
 (ADR 0148), off by default: off, `occlusionFor(..., { seeThrough: false })` makes one cast along the boom, its hit
 is the limit (ADR 0020), and nothing is holed.
 
-## World labels — `worldLabel.ts` (ADR 0082)
+## Text — `text.ts`, `levelText.ts`, `worldLabel.ts` (ADR 0189, ADR 0082)
+
+One drawing for every text: `troika-three-text` (signed-distance glyphs laid out in a worker, one shared atlas,
+one draw call a block), with this package's own fonts — `src/fonts/roboto-latin-{400,700}-normal.woff`, Roboto,
+OFL (`fonts/OFL.txt`), each 21 KB, by `new URL(…, import.meta.url)` so Vite ships them. The library reaches for a
+CDN only for a character neither file has. `troika-three-text.d.ts` types the part used.
 
 ```ts
-interface LabelLine { text: string; size: number; color?: string; weight?: 'normal' | 'bold' }
-interface WorldLabelOptions { heightM? = 0.5; depth? = 'over' | 'world'; background? = 'rgba(11,16,32,0.6)' | null; padding? = 12 }
-worldLabel(lines: readonly LabelLine[], opts?): THREE.Sprite
-layoutLabel(lines, padding, measure: (line) => number): { width; height; rows: { y; line }[] }   // canvas-free, tested
-disposeWorldLabel(sprite: THREE.Sprite): void    // texture + material; caller removes from scene
+interface TextStyle { text; size /* em, metres */; color; align: 'left'|'center'|'right'; width /* wrap m, 0 none */;
+  weight: 'normal'|'bold'; facing: 'object'|'camera'; back: 'mirrored'|'hidden'; depth: 'world'|'over'; opacity }
+createText(style?: Partial<TextStyle>, facing?: { around?: Object3D }): WorldText
+interface WorldText { object: THREE.Mesh; material; set(style); fade(opacity); laidOut(fn(bounds)); dispose() }
+faceCamera(object, { around? })   // turns it to each camera at draw time, in matrixWorld only
+textStyleOf(desc: TextDesc): Partial<TextStyle>   // a Text component's reading, depth 'world' — game and editor
+addTexts(scene, items: TextItem[]): LevelTexts { sync; objects; dispose }   // posed from the loader every frame
 ```
 
-`SpriteMaterial { transparent, depthTest: false, depthWrite: false, toneMapped: false }`, `CanvasTexture` sRGB,
-scale `(heightM × w/h, heightM, 1)`.
+| | |
+| --- | --- |
+| block | `anchorX 'center'`, `anchorY 'middle'` on the origin; `textAlign` lines up the lines |
+| `facing: 'object'` | the node's XY plane, read from +Z; turns and scales with it (Unity's TextMeshPro) |
+| `facing: 'camera'` | `faceCamera` in `onBeforeRender`: `matrixWorld` recomposed with the camera's turn, about the object's origin or `around`'s (its position then an offset in the camera's frame) |
+| `back` | `'mirrored'` `DoubleSide` (Unity's default), `'hidden'` `FrontSide`; facing the camera always double |
+| material | base `MeshBasicMaterial { transparent, depthWrite: false, toneMapped: false }` troika derives from: unlit, and a glyph's empty margin hides nothing |
+| `depth` | `'world'` layer 0, depth-tested; `'over'` `OVERLAY_LAYER`, `renderOrder 999+`, no depth test |
+| AO | world text is kept out of the prepass: the level's by `LevelHost.texts()` (`tps` adds it to `aoIgnores`), a sign's by `excludeFromAO` |
 
-| `depth` | Layer | Depth test | Hidden by walls | AO |
-| --- | --- | --- | --- | --- |
-| `'over'` (default) | `OVERLAY_LAYER`, `renderOrder 999` | off | no | excluded by layer |
-| `'world'` | 0 (world pass) | on | yes | caller **must** `TpsClient.excludeFromAO(sprite)` or it ghosts |
+**Labels** (`worldLabel.ts`): lines facing the camera — a `createText` per line, each about the label's group so
+the stack holds; a line's `size` relative, the whole `heightM` tall; a backdrop plane (`parseFill`: `rgba()` keeps
+its alpha) sized once every line is laid out.
 
-Nametag = `worldLabel([{ text, size: 32 }], { heightM: 0.5 })` (`packages/tps/src/nametag.ts`).
+```ts
+interface LabelLine { text: string; size: number; color?: string; weight?: 'normal' | 'bold' }   // weight default bold
+interface WorldLabelOptions { heightM? = 0.5; depth? = 'over' | 'world'; background? = 'rgba(11,16,32,0.6)' | null; padding? = 12 }
+worldLabel(lines, opts?): THREE.Group
+stackLines(lines, padding): { total; rows: { line; y }[] }   // pure, tested; GAP 4
+disposeWorldLabel(label: THREE.Object3D): void               // its texts and backdrop; caller removes from scene
+```
+
+Nametag = `worldLabel([{ text, size: 32 }], { heightM: 0.5 })` (`packages/tps/src/nametag.ts`), `'over'`.
 
 A visual with `fades` gets its **own** material copy per mesh at build, `transparent` from the start, so fading one piece fades no other and never recompiles; its see-through-hole copy (ADR 0055) fades with it. Faded to 0 it is not drawn at all, so it casts nothing.
+
+`geometryForBuiltin('builtin:quad', scale)` is a `PlaneGeometry(scale.x, scale.y)` toward +Z (ADR 0189), not its collider.
 
 Also exported: `addLights(scene, lights: WorldLight[]): ContentLights { sync; dispose }` (ADR 0047; `sync` also applies `visible`),
 `createCharacterRig`/`createLooseParts`, `createThumbnailer`/`fitDistance`.

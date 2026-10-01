@@ -1,23 +1,24 @@
 import * as THREE from 'three'
 
+import { createText, faceCamera, type WorldText } from './text'
 import { OVERLAY_LAYER } from './stage'
 
 /**
- * Text standing in the world (ADR 0082): a canvas drawn once to a texture on a billboard sprite, on the overlay
- * layer so post-FX never touches it, drawn over everything. Roblox's BillboardGui.
+ * A label standing in the world (ADR 0082, ADR 0189): lines of text facing the camera, sized in metres. Roblox's
+ * BillboardGui — a nametag, a sign over a pad.
  *
- * It was the nametag (`@mp/tps`), which is one line at head height. A sign over a pad wants two lines in two
- * sizes and no rig to hang from, and nothing about the drawing is the humanoid's — so the drawing lives here,
- * beside the layer it draws on, and the nametag calls it.
+ * Drawn by `text.ts` like every other text: one `createText` per line, each turning to the camera about the
+ * label's origin so the lines stay stacked whichever way it is seen. A line's `size` is relative to the others;
+ * the whole label is `heightM` tall.
  *
- * **Sized by the world, not the screen.** The sprite has a height in metres and shrinks with distance like any
- * other thing in the scene; that is what makes it a sign rather than a HUD. Screen-space text pinned to a
- * point (`TpsClient.toScreen`, ADR 0072) is the other tool, for numbers that must stay readable at any range.
+ * **Sized by the world, not the screen.** It shrinks with distance like any other thing in the scene; that is what
+ * makes it a sign rather than a HUD. Screen-space text pinned to a point (`TpsClient.toScreen`, ADR 0072) is the
+ * other tool, for numbers that must stay readable at any range.
  */
 
 export interface LabelLine {
   text: string
-  /** Type size in canvas pixels. The whole label is scaled to `heightM`, so this is relative to the other lines. */
+  /** Type size, relative to the other lines: the whole label is scaled to `heightM`. */
   size: number
   color?: string
   weight?: 'normal' | 'bold'
@@ -30,88 +31,102 @@ export interface WorldLabelOptions {
    * Where it sits in the picture (ADR 0082).
    *
    * `'over'` (default): the overlay layer, drawn after post-FX over everything, never hidden — a nametag, which
-   * must be readable through the crowd. `'world'`: the world pass, depth-tested against the level, hidden
-   * behind a wall like a sign is, tone mapping and bloom left off the text. A `'world'` label writes no depth,
-   * so it never shades anything, but the AO prepass draws with an override material that ignores that — the
-   * caller **must** keep it out of the AO prepass (`TpsClient.excludeFromAO`), or it ghosts as a dark quad.
+   * must be readable through the crowd. `'world'`: the world pass, depth-tested against the level, hidden behind a
+   * wall like a sign is. A `'world'` label writes no depth, so it never shades anything, but the AO prepass draws
+   * with an override material that ignores that — the caller **must** keep it out of the AO prepass
+   * (`TpsClient.excludeFromAO`), or it ghosts as a dark quad.
    */
   depth?: 'over' | 'world'
-  /** Behind the text. `null` for none. */
+  /** Behind the text, as CSS colour (`rgba()` for a translucent one). `null` for none. */
   background?: string | null
-  /** Canvas pixels around the text. */
+  /** Around the text, in the same units as a line's `size`. */
   padding?: number
 }
 
-/** Rows and canvas size for `lines`: what the drawing needs, computed with a caller-supplied measurer so it can be tested without a canvas. */
-export const layoutLabel = (
-  lines: readonly LabelLine[],
-  padding: number,
-  measure: (line: LabelLine) => number,
-): { width: number; height: number; rows: { y: number; line: LabelLine }[] } => {
-  const gap = 4
-  let width = 0
-  let y = padding
-  const rows: { y: number; line: LabelLine }[] = []
-  for (const line of lines) {
-    width = Math.max(width, measure(line))
-    rows.push({ y: y + line.size / 2, line })
-    y += line.size + gap
-  }
-  // Even sizes: some GPUs want it, and it costs nothing.
-  const even = (n: number): number => Math.ceil(n / 2) * 2
-  return { width: even(width + padding * 2), height: even(y - gap + padding), rows }
+/** Between two lines, in a line's `size` units. */
+const GAP = 4
+
+/**
+ * Each line's height in the label's units, and where its middle sits from the label's centre: the stack,
+ * centred, `padding` above and below. Pure, so it is tested without a renderer.
+ */
+export const stackLines = (lines: readonly LabelLine[], padding: number): { total: number; rows: { line: LabelLine; y: number }[] } => {
+  const total = lines.reduce((sum, l) => sum + l.size, 0) + GAP * Math.max(0, lines.length - 1) + padding * 2
+  let top = total / 2 - padding
+  const rows = lines.map((line) => {
+    const y = top - line.size / 2
+    top -= line.size + GAP
+    return { line, y }
+  })
+  return { total, rows }
 }
 
-const fontOf = (line: LabelLine): string => `${line.weight ?? 'bold'} ${line.size}px sans-serif`
+/** A CSS colour as three's colour and an opacity: `rgba(r,g,b,a)` carries its alpha, anything else is opaque. */
+const parseFill = (css: string): { color: THREE.Color; opacity: number } => {
+  const rgba = /^rgba\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)$/i.exec(css.trim())
+  if (rgba === null) return { color: new THREE.Color(css), opacity: 1 }
+  const [r, g, b, a] = rgba.slice(1).map(Number) as [number, number, number, number]
+  return { color: new THREE.Color().setRGB(r / 255, g / 255, b / 255, THREE.SRGBColorSpace), opacity: a }
+}
 
-export const worldLabel = (lines: readonly LabelLine[], opts: WorldLabelOptions = {}): THREE.Sprite => {
+/** What a label owns, by the label, for `disposeWorldLabel`. */
+const owned = new WeakMap<THREE.Object3D, () => void>()
+
+export const worldLabel = (lines: readonly LabelLine[], opts: WorldLabelOptions = {}): THREE.Group => {
   const padding = opts.padding ?? 12
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')!
-  const { width, height, rows } = layoutLabel(lines, padding, (line) => {
-    ctx.font = fontOf(line)
-    return ctx.measureText(line.text).width
+  const depth = opts.depth ?? 'over'
+  const { total, rows } = stackLines(lines, padding)
+  const metre = (opts.heightM ?? 0.5) / total
+  const group = new THREE.Group()
+  const texts: WorldText[] = rows.map(({ line, y }) => {
+    const text = createText(
+      { text: line.text, size: line.size * metre, color: line.color ?? '#e5e7eb', weight: line.weight ?? 'bold', facing: 'camera', depth },
+      { around: group },
+    )
+    text.object.position.set(0, y * metre, 0)
+    group.add(text.object)
+    return text
   })
-  canvas.width = width
-  canvas.height = height
-  // Resizing the canvas resets its state.
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
+
+  let backdrop: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> | null = null
   const background = opts.background === undefined ? 'rgba(11,16,32,0.6)' : opts.background
   if (background !== null) {
-    ctx.fillStyle = background
-    ctx.fillRect(0, 0, width, height)
+    const fill = parseFill(background)
+    const material = new THREE.MeshBasicMaterial({ color: fill.color, transparent: true, opacity: fill.opacity, depthWrite: false, toneMapped: false })
+    backdrop = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material)
+    if (depth === 'over') {
+      backdrop.layers.set(OVERLAY_LAYER)
+      backdrop.renderOrder = 999
+      material.depthTest = false
+    }
+    // Hidden until the lines are laid out, which is what says how wide it is.
+    backdrop.visible = false
+    faceCamera(backdrop, { around: group })
+    group.add(backdrop)
+    let widest = 0
+    let pending = texts.length
+    for (const text of texts)
+      text.laidOut(([minX, , maxX]) => {
+        widest = Math.max(widest, maxX - minX)
+        pending -= 1
+        if (pending > 0 || backdrop === null) return
+        backdrop.scale.set(widest + padding * 2 * metre, total * metre, 1)
+        backdrop.visible = true
+      })
   }
-  for (const { y, line } of rows) {
-    ctx.font = fontOf(line)
-    ctx.fillStyle = line.color ?? '#e5e7eb'
-    ctx.fillText(line.text, width / 2, y)
-  }
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace // canvas pixels are sRGB — decode them correctly
-  const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({
-      map: texture,
-      transparent: true,
-      depthTest: false, // draw over the world
-      depthWrite: false, // ...and stay out of the depth buffer GTAO reads
-      toneMapped: false, // in-world UI, not a lit surface
-    }),
-  )
-  const heightM = opts.heightM ?? 0.5
-  sprite.scale.set((heightM * width) / height, heightM, 1)
-  if ((opts.depth ?? 'over') === 'world') {
-    // In the world: tested against the level's depth, sorted with the other transparent things.
-    sprite.material.depthTest = true
-  } else {
-    sprite.renderOrder = 999
-    sprite.layers.set(OVERLAY_LAYER)
-  }
-  return sprite
+
+  owned.set(group, () => {
+    for (const text of texts) text.dispose()
+    if (backdrop !== null) {
+      backdrop.geometry.dispose()
+      backdrop.material.dispose()
+    }
+  })
+  return group
 }
 
-/** Free what a label owns: its texture and material. The caller removes it from the scene. */
-export const disposeWorldLabel = (sprite: THREE.Sprite): void => {
-  sprite.material.map?.dispose()
-  sprite.material.dispose()
+/** Free what a label owns: its texts and its backdrop. The caller removes it from the scene. */
+export const disposeWorldLabel = (label: THREE.Object3D): void => {
+  owned.get(label)?.()
+  owned.delete(label)
 }

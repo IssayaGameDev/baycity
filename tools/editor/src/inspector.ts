@@ -20,6 +20,7 @@ import {
   scrubFieldOf,
   segmented,
   selectField,
+  textArea,
   textField,
   type Choice,
   type Live,
@@ -864,7 +865,8 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         return
       }
       case 'string': {
-        const input = textField(mixed ? null : String(state[key] ?? ''), (s) => write({ [key]: s }), { title: label })
+        const make = spec.multiline === true ? textArea : textField
+        const input = make(mixed ? null : String(state[key] ?? ''), (s) => write({ [key]: s }), { title: label })
         line(input)
         follow((s) => void (idle(input) && (input.value = String(s ?? ''))))
         return

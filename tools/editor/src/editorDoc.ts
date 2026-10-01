@@ -7,6 +7,8 @@ import {
   numberParam,
   vec3Param,
   stringParam,
+  textOf,
+  type TextDesc,
   COLLIDER,
   LIGHT,
   MATERIAL_OVERRIDE,
@@ -221,6 +223,8 @@ export interface Doc {
    * into the node's own group, which already carries its transform.
    */
   lightSpec: (i: number) => LightDesc | undefined
+  /** The node's text, or `undefined` (ADR 0189): `textOf`, as the loader reads it. Placed by the node's group. */
+  textSpec: (i: number) => TextDesc | undefined
   /**
    * Place a primitive by name under a prefab's root — what the prefab palette offers. `-1` in a level, where a
    * primitive is placed by `placePrimitive` and a prefab by `placePrefab` (ADR 0091).
@@ -1366,6 +1370,10 @@ const docOver = (
           model: undefined,
           material: surfaced,
         }))
+    },
+    textSpec: (i) => {
+      const n = node(i)
+      return n === undefined ? undefined : textOf(n.view.components)
     },
     lightSpec: (i) => {
       const n = node(i)

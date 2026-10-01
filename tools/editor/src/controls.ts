@@ -322,6 +322,28 @@ export const textField = (value: string | null, commit: (v: string) => void, opt
   return input
 }
 
+/**
+ * Several lines of text (ADR 0189): a `string` parameter declared `multiline`. Enter starts a new line, as in
+ * Unity's text area; it commits when it loses focus, and Escape leaves it. `null` disagrees: blank.
+ */
+export const textArea = (value: string | null, commit: (v: string) => void, opts: { readonly title?: string } = {}): HTMLTextAreaElement => {
+  const area = el('textarea', 'txt txt-area')
+  area.spellcheck = false
+  area.rows = 3
+  area.value = value ?? ''
+  area.placeholder = value === null ? '—' : ''
+  if (opts.title !== undefined) area.title = opts.title
+  // The editor's shortcuts already pass a text area by (`shortcuts.ts`); Escape is the way out.
+  area.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') area.blur()
+  })
+  area.addEventListener('change', () => {
+    if (value === null && area.value.trim() === '') return
+    commit(area.value)
+  })
+  return area
+}
+
 const HEX = /^#?([0-9a-f]{6})$/i
 
 /**

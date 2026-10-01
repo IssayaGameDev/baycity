@@ -67,6 +67,7 @@ interface WorldLight { …; position; rotation; visible: boolean /* off while it
 | `visuals`, `lights: WorldLight[]` | Draw list, light list; poses mutated by `update`/`render`. |
 | `driveOf(node)` | `NodeDrive { position; rotation }` local offset (ADR 0058); only for nodes with a `moves` component. |
 | `update(nowMs, ridingHandle?, opensTick = true)`, `render(alpha)` | Kinematic tick pose (riding body posed frozen); interpolated render pose, from where the **tick** began: a tick's later slices pass `opensTick: false` and move only `curr` (ADR 0185). Sequences (ADR 0141): `shared` on `nowMs`, `local` on `nowMs −` the first `update`'s; collider shapes re-set when the scale changed, bodies switched with `shown && solid`; `render` interpolates `drawScale` and `opacity` too. |
+| `texts` | Every enabled `Text` (ADR 0189): `TextItem` = `textOf`'s `TextDesc` + `node`, `position`/`rotation` (the node's origin), `scale` (world, at load), `drawScale`, `visible`, `opacity` — mutated by `update`/`render` through a dynamic of its own when the frame is animated, as a light's |
 | `shove(character)` | ADR 0186: pushes the character out of every solid, shown mover that came into it over the last `update` — each swept from its last slice's pose (`slicePos`/`sliceRot`) by the motion it gave the capsule's centre (its turn there as well as its travel), `touchedBy` → the rest of that motion + `SHOVE_SKIN` 0.02 m, summed, one `push` ignoring those movers. Already inside at the slice's start (`0`) pushes nothing: pinned, it passes through (Kodjo's call). The ridden base pushes too — the ride places by an absolute point, so a push first is not added to. Turns are swept in pieces of at most `SHOVE_TURN` 5° (a sweep is a straight line at a fixed facing). Called after `update` and **before** the step: the pushers are then posed frozen (`poseFrozen`), because the character controller otherwise pushes again by a touched body's whole last step (ADR 0188) |
 | `basePose`, `baseIndex`, `basePoseOf(i, 'render'\|'tick'\|'prev')`, `baseCarry` | Movement-base lookups for the wire (ADR 0021). `baseIndex` is `undefined` for a piece a `local` sequence moves (ADR 0141); `basePose` still carries a rider on it here. |
 
@@ -156,13 +157,13 @@ slot as an uploaded model. Scale is then the only size: the editor holds such a 
 shape (`editor.md`), and the loader bakes scale into colliders anyway, so collision follows what is drawn.
 
 ```ts
-BUILTIN_MODELS = ['builtin:box', 'builtin:rounded-box', 'builtin:sphere', 'builtin:capsule']
-BUILTIN_LABELS: Record<BuiltinModel, string>      // 'Box' | 'Rounded box' | 'Sphere' | 'Capsule'
+BUILTIN_MODELS = ['builtin:box', 'builtin:rounded-box', 'builtin:sphere', 'builtin:capsule', 'builtin:quad']
+BUILTIN_LABELS: Record<BuiltinModel, string>      // 'Box' | 'Rounded box' | 'Sphere' | 'Capsule' | 'Quad'
 isBuiltinModel(id: unknown): id is BuiltinModel
-unitColliderFor(id): ColliderDesc                  // box ½(.5,.5,.5) · ball r .5 · capsule h½ .5 r .5
+unitColliderFor(id): ColliderDesc                  // box ½(.5,.5,.5) · ball r .5 · capsule h½ .5 r .5 · quad ½(.5,.5,QUAD_HALF_DEPTH .005)
 scaleCollider(c: ColliderDesc, s: Vec3): ColliderDesc          // box/convex exact, ball/capsule averaged
 builtinShape(id, scale): { collider: ColliderDesc; rounded: boolean }   // rounded only for builtin:rounded-box
-PRIMITIVE_ORDER = ['box','rounded-box','platform','wall','sphere','capsule']; PRIMITIVE_PRESETS, PRIMITIVE_LABELS
+PRIMITIVE_ORDER = ['box','rounded-box','platform','wall','sphere','capsule','quad']; PRIMITIVE_PRESETS, PRIMITIVE_LABELS
 ```
 
 A built-in is **never** an asset to fetch: `assetIdsIn` (`rendering.md`) and the editor's `Doc.assetIds` leave
@@ -170,7 +171,9 @@ it out, and `AssetRuntime.load` ignores one that reaches it anyway.
 
 `scaleCollider` lives here, not in the loader: the loader, the game's `levelView`, the editor viewport and the
 Project previews all run it, so what is drawn and what is collided with are one computation. Presets:
-`platform` = rounded box at 3 × 0.3 × 3, `wall` = 3 × 2 × 0.3, the rest unit.
+`platform` = rounded box at 3 × 0.3 × 3, `wall` = 3 × 2 × 0.3, the rest unit. A **quad** (ADR 0189) is Unity's: one
+face toward +Z, drawn one-sided as a plane its scale sizes, colliding as a box a centimetre thick — a texture on
+its material shows once.
 
 **Component fields** (`migrateComponentRefs.ts`, run once by `deploy/editor/migrate-component-refs.sh`, ADR 0177):
 `migrateLevelComponentRefs(level, at, deps, report)` / `migratePrefabComponentRefs(root, at, deps, report)` turn a

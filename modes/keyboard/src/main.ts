@@ -202,7 +202,7 @@ const lastSole = new Map<CharacterId, { x: number; y: number; z: number }>()
  * `+N/step` and what it requires; a treadmill says its name and `×N/step`. Built once, on the first frame the
  * level exists — it arrives with the first snapshot (ADR 0055).
  */
-const signs: THREE.Sprite[] = []
+const signs: THREE.Group[] = []
 let signsBuilt = false
 const buildSigns = (): void => {
   if (signsBuilt) return

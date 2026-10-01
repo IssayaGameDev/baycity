@@ -6,9 +6,11 @@ import {
   colorForMarker,
   createGreyboxMaterial,
   createLight,
+  createText,
   geometryForBuiltin,
   geometryForCollider,
   lightAims,
+  textStyleOf,
   THREE,
   type AssetRuntime,
   type LightDesc,
@@ -142,10 +144,14 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
     )
   }
 
+  /** A node's text mesh (ADR 0189) owns troika's geometry and its own material, freed by its own call. */
+  const texts = new WeakMap<THREE.Object3D, () => void>()
+
   const disposeMeshes = (g: THREE.Object3D): void => {
     for (const child of [...g.children]) {
       g.remove(child)
       child.traverse((o) => {
+        texts.get(o)?.()
         // A light made for its node, with its shadow map; an instanced mesh's per-instance buffer — never its shared shape.
         if (o instanceof THREE.Light || o instanceof THREE.InstancedMesh) throwAway(o)
         if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments || o instanceof THREE.Line) {
@@ -340,6 +346,21 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
         ;(object as THREE.SpotLight | THREE.DirectionalLight).target = target
       }
       holder.add(lightGizmo(light))
+    }
+
+    /**
+     * The node's text (ADR 0189), drawn as the game draws it — `textStyleOf` over the same `textOf` reading. Its
+     * own mesh, which the holder's undoing of the world scale would shrink, so the scale goes back on: text is
+     * sized by the node's scale, as Unity's is. Pickable, so clicking a sign selects it. A fade gets its material,
+     * as a mesh's copies are.
+     */
+    const writes = open.textSpec(i)
+    if (writes !== undefined) {
+      const text = createText(textStyleOf(writes))
+      text.object.scale.copy(ws)
+      holder.add(text.object)
+      texts.set(text.object, text.dispose)
+      if (fades) fading.push({ mat: text.material, base: 1, from: text.material })
     }
 
     buildSurfaceCells(holder, i, worldScale)

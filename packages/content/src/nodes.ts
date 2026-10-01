@@ -27,6 +27,8 @@ export { SEQUENCE }
 export const SPAWN = 'Spawn'
 /** A light. Realized by the renderer, but the loader has to surface it, so the engine knows the name. */
 export const LIGHT = 'Light'
+/** Text in the world (ADR 0189). Surfaced by the loader as a light is; drawn by the renderer. */
+export const TEXT = 'Text'
 
 /**
  * The one thing resolution needs to know about a component type, and the only reason this package needs

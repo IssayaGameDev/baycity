@@ -10,7 +10,7 @@ import {
   type Pose,
 } from '@mp/humanoid'
 import type { EntityId, Vec3 } from '@mp/core'
-import { createCharacterRig, THREE, type CharacterRig } from '@mp/render-three'
+import { createCharacterRig, disposeWorldLabel, THREE, type CharacterRig } from '@mp/render-three'
 
 import { makeNameLabel } from './nametag'
 
@@ -68,7 +68,7 @@ interface Rendered {
   base: number
   /** Decaying world-space offset that hides the step at a base change. */
   slip: Vec3
-  label?: THREE.Sprite
+  label?: THREE.Group
   labelText?: string
 }
 
@@ -212,16 +212,15 @@ export const createCharacterViews = (
   }
 
   /**
-   * Everything one character owns: its rig, and the nametag sprite hung off the rig's root.
+   * Everything one character owns: its rig, and the nametag label hung off the rig's root.
    *
    * The label is separate because it is added to `rig.root` after the rig is built, so `rig.dispose()` has no
-   * idea it is there — `prune` was leaking one texture and one material per player who left the room.
+   * idea it is there — `prune` was leaking a label's meshes and materials per player who left the room.
    */
   const drop = (r: Rendered): void => {
     if (r.label !== undefined) {
       r.rig.root.remove(r.label)
-      r.label.material.map?.dispose()
-      r.label.material.dispose()
+      disposeWorldLabel(r.label)
     }
     r.rig.dispose()
   }
@@ -230,8 +229,7 @@ export const createCharacterViews = (
     if (r.labelText === name) return
     if (r.label !== undefined) {
       r.rig.root.remove(r.label)
-      r.label.material.map?.dispose()
-      r.label.material.dispose()
+      disposeWorldLabel(r.label)
     }
     r.label = makeNameLabel(name)
     r.rig.root.add(r.label)

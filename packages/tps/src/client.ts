@@ -332,7 +332,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
   // yet, it arrives with the first snapshot (ADR 0055).
   /** Objects a game keeps out of the AO prepass (ADR 0082), alongside the cutout's surfaces. */
   const aoExcluded = new Set<THREE.Object3D>()
-  const { stage, env, postfx } = await createScene(canvas, () => [...(level?.occluding() ?? []), ...aoExcluded])
+  const { stage, env, postfx } = await createScene(canvas, () => [...(level?.occluding() ?? []), ...(level?.texts() ?? []), ...aoExcluded])
 
   // Player views (own + peers): the blocky rig, procedurally animated, + billboard nametag.
   // One shared gait object so the debug pane retunes every character live (ADR 0018).

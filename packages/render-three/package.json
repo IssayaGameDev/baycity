@@ -10,10 +10,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mp/humanoid": "workspace:*",
     "@mp/content": "workspace:*",
     "@mp/core": "workspace:*",
-    "three": "^0.169.0"
+    "@mp/humanoid": "workspace:*",
+    "three": "^0.169.0",
+    "troika-three-text": "0.52.5"
   },
   "devDependencies": {
     "@types/three": "^0.169.0"

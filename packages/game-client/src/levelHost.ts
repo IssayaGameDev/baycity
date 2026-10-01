@@ -5,11 +5,13 @@ import type { Registry } from '@mp/components'
 import {
   addLevel,
   addLights,
+  addTexts,
   assetIdsIn,
   createAssetRuntime,
   type ContentLights,
   type CutoutMask,
   type GreyboxEnvironment,
+  type LevelTexts,
   type LevelView,
   type PostFX,
   type THREE,
@@ -39,6 +41,8 @@ export interface LevelHost {
   render: (tickAlpha: number) => void
   /** The surfaces currently wearing a see-through hole, for the AO prepass to skip (ADR 0055). */
   occluding: () => Iterable<THREE.Object3D>
+  /** The level's texts (ADR 0189), which the AO prepass must skip too: their glyph quads would ghost there. */
+  texts: () => readonly THREE.Object3D[]
   /** Hand the camera the surfaces it wants holed. */
   setOccluders: (handles: readonly number[]) => void
   /** The meshes drawing the node that owns a collider handle (ADR 0082). */
@@ -104,6 +108,7 @@ export const loadLevelInto = async ({
   await assets.load([...assetIdsIn(loaded.visuals), ...assetParamIds(loaded.nodes, registry)])
   const view: LevelView = addLevel(scene, loaded.visuals, { assets, cutout })
   const lights: ContentLights = addLights(scene, loaded.lights)
+  const texts: LevelTexts = addTexts(scene, loaded.texts)
 
   env.applyEnvironment(loaded.config.environment)
   postfx.apply(loaded.config.environment?.postfx)
@@ -114,8 +119,10 @@ export const loadLevelInto = async ({
       loaded.render(tickAlpha)
       view.sync()
       lights.sync()
+      texts.sync()
     },
     occluding: () => view.occluding(),
+    texts: () => texts.objects(),
     setOccluders: (handles) => {
       view.setOccluders(handles)
     },
@@ -125,6 +132,7 @@ export const loadLevelInto = async ({
     dispose: () => {
       view.dispose()
       lights.dispose()
+      texts.dispose()
     },
   }
 }

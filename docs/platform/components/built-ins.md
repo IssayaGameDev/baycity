@@ -3,16 +3,17 @@
 The definitions this package ships, **one component per file** (ADR 0174): `src/engine/`, `src/shared/`, `src/player/`, each
 with an `index.ts` holding its set. A game's own components live in `modes/<game>/src/components/`, one per file.
 Declaring and running one: [api.md](api.md). Add Component folders (`menu`, ADR 0178): Collider — Physics;
-Mesh Renderer, MaterialOverride, Light — Rendering; Spawn, Checkpoint, Hazard, Bumper, Boss — Gameplay; Sequence —
+Mesh Renderer, MaterialOverride, Light, Text — Rendering; Spawn, Checkpoint, Hazard, Bumper, Boss — Gameplay; Sequence —
 Animation. A game's own components have none, and go under the game's name.
 
 | set | type | params | notes |
 |---|---|---|---|
 | `ENGINE_COMPONENTS` (`engine/`) | `Collider` | `shape: collider`, `center: vec3`, `trigger: bool` (ADR 0054) | repeatable |
-| | `Renderer`, shown as **Mesh Renderer** (ADR 0153) | `model: asset(model)` — an asset id, or a **built-in shape** `builtin:box` / `rounded-box` / `sphere` / `capsule` sized by the node's scale (ADR 0090, `content.md`); `''` draws the colliders. `material: asset(material)` | singleton |
+| | `Renderer`, shown as **Mesh Renderer** (ADR 0153) | `model: asset(model)` — an asset id, or a **built-in shape** `builtin:box` / `rounded-box` / `sphere` / `capsule` / `quad` (ADR 0189) sized by the node's scale (ADR 0090, `content.md`); `''` draws the colliders. `material: asset(material)` | singleton |
 | | `MaterialOverride` | `material: asset(material)` | singleton; cascades down |
 | | `Spawn` | — | singleton |
 | | `Light` (ADR 0047) | `kind: enum(point\|spot\|directional\|ambient\|hemisphere)`, `color`, `groundColor`, `intensity`, `range`, `decay`, `angle`, `penumbra`, `castShadow` | singleton; in `ENGINE_COMPONENTS` but **not re-exported by name** from `index.ts` |
+| | `Text` (ADR 0189) | `text: string` (multiline), `size` 0.5 m, `color`, `align: enum(left\|center\|right)`, `width` (wrap, 0 none), `bold`, `facing: enum(object\|camera)`, `back: enum(mirrored\|hidden)` (while `facing` is `object`) | singleton; read by `textOf` (`@mp/content`), drawn by `createText` (`rendering.md`); no collider |
 | `SHARED_COMPONENTS` (`shared/`) | `Checkpoint` | — | `onContact → effects.progress(hit.node)` |
 | | `Hazard` | — | `onContact → effects.kill()`; kill plane = Hazard on a trigger (ADR 0053) |
 | | `Bumper` | `power: number` (26, 1–60) | `onContact → character.launch(power)` (ADR 0032) |

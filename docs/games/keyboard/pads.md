@@ -47,7 +47,7 @@ read the bit and do the same.
 ## Signs
 
 `buildSigns()` in `main.ts`, once the level exists: a `worldLabel` per pad and per treadmill (`@mp/render-three`,
-ADR 0082), `depth: 'world'` (depth-tested, hidden behind geometry), kept out of the AO prepass with
+ADR 0082, drawn by troika since ADR 0189), `depth: 'world'` (depth-tested, hidden behind geometry), kept out of the AO prepass with
 `client.excludeFromAO(sign)`, 0.9 m tall, no background, 1.1 m above `padTop`.
 
 | Node | Line 1 | Line 2 |

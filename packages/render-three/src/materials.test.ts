@@ -3,7 +3,7 @@ import { vec3 } from '@mp/core'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 
-import { BEVEL_RADIUS, bevelFor, geometryForCollider, outlineGeometryForCollider } from './materials'
+import { BEVEL_RADIUS, bevelFor, geometryForBuiltin, geometryForCollider, outlineGeometryForCollider } from './materials'
 
 /**
  * The standard bevel (ADR 0044).
@@ -85,5 +85,17 @@ describe('outlineGeometryForCollider', () => {
   it('is the same shape for everything else', () => {
     const c: ColliderDesc = { kind: 'ball', radius: 1 }
     expect(sizeOf(outlineGeometryForCollider(c))).toEqual(sizeOf(geometryForCollider(c)))
+  })
+})
+
+/** A quad (ADR 0189) is one face toward +Z at its scale, its texture once — not its centimetre-thick collider. */
+describe('the built-in quad', () => {
+  it('is a single plane facing +Z, sized by the scale', () => {
+    const g = geometryForBuiltin('builtin:quad', { x: 4, y: 2, z: 1 })
+    g.computeBoundingBox()
+    const size = g.boundingBox!.getSize(new THREE.Vector3())
+    expect([size.x, size.y, size.z]).toEqual([4, 2, 0])
+    expect(g.getAttribute('normal').getZ(0)).toBe(1)
+    expect(g.getAttribute('position').count).toBe(4)
   })
 })
