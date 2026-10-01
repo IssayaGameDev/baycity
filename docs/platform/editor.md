@@ -826,6 +826,14 @@ exactly where it was, on the grid or not (under `1e-9` of change is not a move).
 snap: whole steps along each handle axis from the start, since a world grid cannot be followed along a tilted axis.
 Converted back through the parent; the others get the primary's delta (`mirrorDragToSelection`). Placing a new
 object snaps the click point, so its centre lands on the grid too. A sequence point's copy snaps the same way.
+The grid is the **world's**, as Unity's: an object inside a group that sits off the grid lands on the world's lines,
+and the Inspector, relative to the parent, then shows the group's offset (ADR 0180).
+
+**Align to Grid** (`alignToGrid`, `gizmoTool.ts`, ADR 0180) — Unity's, Ctrl+\ (`'mod+\\'`) and *Align to grid* in
+the object's right-click menu: every selected object's world position onto the move step's grid, all three axes,
+snapping on or off; parents first (ascending index), each converted back through its parent and written with
+`writeBackItem`; one history entry (`beginDrag` … `endDrag('align to grid')`); nothing off the grid says *already on
+the 0.5 m grid*. A group off the grid, aligned once, puts its children's grid back on round numbers.
 
 Rotation is ours because three snaps `rotationAngle`, the distance dragged, so a round amount is added to
 wherever you already were and round angles are unreachable. `snapAnglesDeg` (`src/snap.ts`, pure and tested)

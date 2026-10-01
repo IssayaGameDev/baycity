@@ -977,6 +977,8 @@ const editorShortcuts = createShortcuts([
   },
   // The menu offers Focus with `F` beside it, so the key has to exist or the menu is lying.
   { id: 'focus', chords: ['f'], label: 'Focus the selection', run: () => nodes.focusSelection(), enabled: () => !play.active() && selection.length > 0 },
+  // Unity's Align to Grid (ADR 0180). On a layout with no plain backslash key, the right-click menu has it.
+  { id: 'align', chords: ['mod+\\'], label: 'Align to grid', run: () => tool.alignToGrid(), enabled: () => !play.active() && selection.length > 0 },
   { id: 'translate', chords: ['t', 'g'], label: 'Translate tool', run: () => tool.setMode('translate'), enabled: () => !play.active() },
   { id: 'rotate', chords: ['r'], label: 'Rotate tool', run: () => tool.setMode('rotate'), enabled: () => !play.active() },
   { id: 'scale', chords: ['s'], label: 'Scale tool', run: () => tool.setMode('scale'), enabled: () => !play.active() },
@@ -1435,6 +1437,7 @@ const menus = createMenus({
   adoptable: () => adoptable(),
   adopt: (types) => adopt(types),
   gameLabel: () => activeMode?.label ?? null,
+  alignToGrid: () => tool.alignToGrid(),
   scheduleRebuild: () => scheduleRebuild(),
   inspectorRebuild: () => inspectorRebuild(),
   uiChanged: () => uiChanged(),

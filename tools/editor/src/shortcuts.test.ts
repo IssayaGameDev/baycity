@@ -86,6 +86,11 @@ describe('chordOf', () => {
   it('reads Ctrl+Z on AZERTY from the key marked Z', () => {
     expect(chordOf(ev('z', 'KeyW', { ctrl: true }))).toBe('mod+z')
   })
+
+  // Align to Grid (ADR 0180): punctuation is taken as typed, so a binding written with it matches.
+  it('reads Ctrl+\ as the binding written for it', () => {
+    expect(chordOf(ev('\\', 'Backslash', { ctrl: true }))).toBe(normalizeChord('mod+\\'))
+  })
 })
 
 describe('normalizeChord', () => {
