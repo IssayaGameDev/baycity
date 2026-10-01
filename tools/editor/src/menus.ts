@@ -53,6 +53,8 @@ export interface MenuHost {
   adoptable: () => readonly string[]
   /** The open level's game, by its label: the folder its own components go in (ADR 0178). */
   gameLabel: () => string | null
+  /** The selection's positions onto the move grid, all three axes (ADR 0180). */
+  alignToGrid: () => void
   adopt: (types: string[]) => Promise<void>
   scheduleRebuild: () => void
   inspectorRebuild: () => void
@@ -119,6 +121,7 @@ export const createMenus = (host: MenuHost) => {
       // this placement's record (ADR 0135) — the prefab and every other placement keep what they had.
       { label: 'Duplicate', hint: 'Ctrl+D', enabled: true, run: () => host.nodes.duplicateSelected() },
       { label: 'Delete', hint: 'Del', enabled: true, run: () => host.nodes.deleteSelected() },
+      { label: 'Align to grid', hint: 'Ctrl+\\', enabled: true, run: () => host.alignToGrid() },
       { label: 'Copy', hint: 'Ctrl+C', divider: true, enabled: true, run: () => host.edits().copySelected() },
       { label: 'Cut', hint: 'Ctrl+X', enabled: true, run: () => host.edits().cutSelected() },
       { label: 'Paste as child', hint: 'Ctrl+Shift+V', enabled: host.edits().clipboardSize() > 0, why: 'nothing copied', run: () => host.edits().pasteClipboard(true) },

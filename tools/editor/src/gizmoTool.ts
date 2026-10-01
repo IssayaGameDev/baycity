@@ -4,7 +4,7 @@ import { createThreeStage, OrbitControls, THREE, TransformControls } from '@mp/r
 
 import type { Doc, LocalPose } from './editorDoc'
 import type { PreviewOffset } from './motionPreview'
-import { roundAngle, snapAnglesDeg, snapMove } from './snap'
+import { roundAngle, snapAnglesDeg, snapMove, snapToGrid } from './snap'
 import type { GizmoMode, GizmoSpace } from './toolbar'
 import type { Notify } from './notices'
 
@@ -380,6 +380,43 @@ export const createGizmoTool = (host: GizmoHost) => {
     })
   }
 
+  /**
+   * Unity's Align to Grid (Ctrl+\, ADR 0180): every selected object's position — its centre — onto the move grid,
+   * all three axes at once, snapping on or off. The world grid, as the move snap's, converted back through each
+   * parent; parents before children (ascending index is tree order), so a child aligned with its parent ends on the
+   * grid too. One history entry; nothing to do says so.
+   */
+  const alignToGrid = (): void => {
+    const step = edit.steps.translate
+    if (host.doc() === null || host.playing() || step <= 0) return
+    const off = host.selection().filter((i) => {
+      const w = host.groupAt(i)?.getWorldPosition(new THREE.Vector3())
+      return w !== undefined && (snapToGrid(w.x, step) !== w.x || snapToGrid(w.y, step) !== w.y || snapToGrid(w.z, step) !== w.z)
+    })
+    if (off.length === 0) {
+      host.notify.ok(`already on the ${step} m grid`)
+      return
+    }
+    host.edits().beginDrag()
+    for (const i of [...host.selection()].sort((a, b) => a - b)) {
+      const g = host.groupAt(i)
+      if (g === undefined) continue
+      // Read again here, not from `off`: aligning a parent has just moved what is under it.
+      const w = g.getWorldPosition(new THREE.Vector3())
+      const to = new THREE.Vector3(snapToGrid(w.x, step), snapToGrid(w.y, step), snapToGrid(w.z, step))
+      if (to.equals(w)) continue
+      const parent = g.parent ?? host.instanceRoot()
+      parent.updateWorldMatrix(true, false)
+      g.position.copy(parent.worldToLocal(to))
+      g.updateMatrixWorld(true)
+      writeBackItem(i)
+    }
+    host.edits().endDrag(host.selection().length > 1 ? `align ${host.selection().length} to grid` : 'align to grid')
+    host.rebuildLoaded()
+    host.inspectorSync()
+    host.uiChanged()
+  }
+
   /** The primary's own write-back — what a gizmo drag or a typed Inspector value lands on first. */
   const writeBackSelected = (): void => {
     const at = host.selected()
@@ -426,6 +463,7 @@ export const createGizmoTool = (host: GizmoHost) => {
     dragging: () => gizmoDragging,
     /** Write one item's group pose back into the document. */
     writeBackItem,
+    alignToGrid,
     writeBackSelected,
     /** A group's pose as the document stores it. */
     transformOfGroup,
