@@ -6495,6 +6495,45 @@
           }
         }
       ]
+    },
+    {
+      "id": "1b7353d1",
+      "transform": {
+        "position": {
+          "x": 1.5,
+          "y": -0.5,
+          "z": 151.5
+        }
+      },
+      "components": [
+        {
+          "id": "633030c5",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "d959cbd8",
+          "type": "Renderer",
+          "params": {
+            "model": "f0e202885d498d05",
+            "material": ""
+          }
+        }
+      ]
     }
   ]
 }
