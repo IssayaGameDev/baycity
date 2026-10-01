@@ -14699,6 +14699,278 @@
                       "id": "5b183bcf",
                       "type": "Hazard",
                       "params": {}
+                    },
+                    {
+                      "id": "a7341769",
+                      "type": "Sequence",
+                      "params": {
+                        "name": "",
+                        "clock": "shared",
+                        "axes": "object",
+                        "loop": "restart",
+                        "times": 0,
+                        "offset": 0,
+                        "stages": [
+                          {
+                            "id": "d937cde0",
+                            "steps": [
+                              {
+                                "id": "4c2d37c8",
+                                "kind": "enabled",
+                                "on": true
+                              }
+                            ]
+                          },
+                          {
+                            "id": "05a898a7",
+                            "steps": [
+                              {
+                                "id": "e6852c7b",
+                                "kind": "wait",
+                                "seconds": 2
+                              }
+                            ]
+                          },
+                          {
+                            "id": "2253aac8",
+                            "steps": [
+                              {
+                                "id": "b9653d20",
+                                "kind": "enabled",
+                                "on": false
+                              }
+                            ]
+                          },
+                          {
+                            "id": "88476911",
+                            "steps": [
+                              {
+                                "id": "28cac2ed",
+                                "kind": "wait",
+                                "seconds": 2
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "32b3336b",
+                  "name": "platform",
+                  "transform": {
+                    "position": {
+                      "x": 51.5,
+                      "y": 5.1033,
+                      "z": -15
+                    },
+                    "rotation": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 1.5707963267948966
+                    },
+                    "scale": {
+                      "x": 11.2066,
+                      "y": 0.3,
+                      "z": 6.8572
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "61b9b4bf",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "cc89095c",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "",
+                        "material": ""
+                      }
+                    },
+                    {
+                      "id": "5b183bcf",
+                      "type": "Hazard",
+                      "params": {}
+                    },
+                    {
+                      "id": "a7341769",
+                      "type": "Sequence",
+                      "params": {
+                        "name": "",
+                        "clock": "shared",
+                        "axes": "object",
+                        "loop": "restart",
+                        "times": 0,
+                        "offset": 0,
+                        "stages": [
+                          {
+                            "id": "d937cde0",
+                            "steps": [
+                              {
+                                "id": "4c2d37c8",
+                                "kind": "enabled",
+                                "on": true
+                              }
+                            ]
+                          },
+                          {
+                            "id": "05a898a7",
+                            "steps": [
+                              {
+                                "id": "e6852c7b",
+                                "kind": "wait",
+                                "seconds": 2
+                              }
+                            ]
+                          },
+                          {
+                            "id": "2253aac8",
+                            "steps": [
+                              {
+                                "id": "b9653d20",
+                                "kind": "enabled",
+                                "on": false
+                              }
+                            ]
+                          },
+                          {
+                            "id": "88476911",
+                            "steps": [
+                              {
+                                "id": "28cac2ed",
+                                "kind": "wait",
+                                "seconds": 2
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "7c2bb7e9",
+                  "name": "platform",
+                  "transform": {
+                    "position": {
+                      "x": 91.5,
+                      "y": 5.1033,
+                      "z": -2.5
+                    },
+                    "rotation": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 1.5707963267948966
+                    },
+                    "scale": {
+                      "x": 11.2066,
+                      "y": 0.3,
+                      "z": 6.8572
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "61b9b4bf",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "cc89095c",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "",
+                        "material": ""
+                      }
+                    },
+                    {
+                      "id": "5b183bcf",
+                      "type": "Hazard",
+                      "params": {}
+                    },
+                    {
+                      "id": "a7341769",
+                      "type": "Sequence",
+                      "params": {
+                        "name": "",
+                        "clock": "shared",
+                        "axes": "object",
+                        "loop": "restart",
+                        "times": 0,
+                        "offset": 0,
+                        "stages": [
+                          {
+                            "id": "d937cde0",
+                            "steps": [
+                              {
+                                "id": "4c2d37c8",
+                                "kind": "enabled",
+                                "on": true
+                              }
+                            ]
+                          },
+                          {
+                            "id": "05a898a7",
+                            "steps": [
+                              {
+                                "id": "e6852c7b",
+                                "kind": "wait",
+                                "seconds": 2
+                              }
+                            ]
+                          },
+                          {
+                            "id": "2253aac8",
+                            "steps": [
+                              {
+                                "id": "b9653d20",
+                                "kind": "enabled",
+                                "on": false
+                              }
+                            ]
+                          },
+                          {
+                            "id": "88476911",
+                            "steps": [
+                              {
+                                "id": "28cac2ed",
+                                "kind": "wait",
+                                "seconds": 2
+                              }
+                            ]
+                          }
+                        ]
+                      }
                     }
                   ]
                 }
@@ -14803,68 +15075,7 @@
             }
           },
           "components": [],
-          "prefab": "36f14153a8e4c7a8",
-          "overrides": {
-            "root": {
-              "addedChildren": [
-                {
-                  "id": "d1192086",
-                  "name": "platform",
-                  "transform": {
-                    "position": {
-                      "x": 2.15,
-                      "y": 5.1033,
-                      "z": -2.0714
-                    },
-                    "rotation": {
-                      "x": 0,
-                      "y": 0,
-                      "z": 1.5707963267948966
-                    },
-                    "scale": {
-                      "x": 11.2066,
-                      "y": 0.3,
-                      "z": 6.8572
-                    }
-                  },
-                  "components": [
-                    {
-                      "id": "61b9b4bf",
-                      "type": "Collider",
-                      "params": {
-                        "shape": {
-                          "kind": "box",
-                          "halfExtents": {
-                            "x": 0.5,
-                            "y": 0.5,
-                            "z": 0.5
-                          }
-                        },
-                        "center": {
-                          "x": 0,
-                          "y": 0,
-                          "z": 0
-                        }
-                      }
-                    },
-                    {
-                      "id": "cc89095c",
-                      "type": "Renderer",
-                      "params": {
-                        "model": "",
-                        "material": ""
-                      }
-                    },
-                    {
-                      "id": "5b183bcf",
-                      "type": "Hazard",
-                      "params": {}
-                    }
-                  ]
-                }
-              ]
-            }
-          }
+          "prefab": "36f14153a8e4c7a8"
         },
         {
           "id": "1f584ab3",
@@ -14877,68 +15088,7 @@
             }
           },
           "components": [],
-          "prefab": "36f14153a8e4c7a8",
-          "overrides": {
-            "root": {
-              "addedChildren": [
-                {
-                  "id": "c6bbe97b",
-                  "name": "platform",
-                  "transform": {
-                    "position": {
-                      "x": 2.15,
-                      "y": 5.1033,
-                      "z": -2.0714
-                    },
-                    "rotation": {
-                      "x": 0,
-                      "y": 0,
-                      "z": 1.5707963267948966
-                    },
-                    "scale": {
-                      "x": 11.2066,
-                      "y": 0.3,
-                      "z": 6.8572
-                    }
-                  },
-                  "components": [
-                    {
-                      "id": "61b9b4bf",
-                      "type": "Collider",
-                      "params": {
-                        "shape": {
-                          "kind": "box",
-                          "halfExtents": {
-                            "x": 0.5,
-                            "y": 0.5,
-                            "z": 0.5
-                          }
-                        },
-                        "center": {
-                          "x": 0,
-                          "y": 0,
-                          "z": 0
-                        }
-                      }
-                    },
-                    {
-                      "id": "cc89095c",
-                      "type": "Renderer",
-                      "params": {
-                        "model": "",
-                        "material": ""
-                      }
-                    },
-                    {
-                      "id": "5b183bcf",
-                      "type": "Hazard",
-                      "params": {}
-                    }
-                  ]
-                }
-              ]
-            }
-          }
+          "prefab": "36f14153a8e4c7a8"
         },
         {
           "id": "c59d2bfb",
@@ -14951,68 +15101,7 @@
             }
           },
           "components": [],
-          "prefab": "36f14153a8e4c7a8",
-          "overrides": {
-            "root": {
-              "addedChildren": [
-                {
-                  "id": "3e3876b2",
-                  "name": "platform",
-                  "transform": {
-                    "position": {
-                      "x": 2.15,
-                      "y": 5.1033,
-                      "z": -2.0714
-                    },
-                    "rotation": {
-                      "x": 0,
-                      "y": 0,
-                      "z": 1.5707963267948966
-                    },
-                    "scale": {
-                      "x": 11.2066,
-                      "y": 0.3,
-                      "z": 6.8572
-                    }
-                  },
-                  "components": [
-                    {
-                      "id": "61b9b4bf",
-                      "type": "Collider",
-                      "params": {
-                        "shape": {
-                          "kind": "box",
-                          "halfExtents": {
-                            "x": 0.5,
-                            "y": 0.5,
-                            "z": 0.5
-                          }
-                        },
-                        "center": {
-                          "x": 0,
-                          "y": 0,
-                          "z": 0
-                        }
-                      }
-                    },
-                    {
-                      "id": "cc89095c",
-                      "type": "Renderer",
-                      "params": {
-                        "model": "",
-                        "material": ""
-                      }
-                    },
-                    {
-                      "id": "5b183bcf",
-                      "type": "Hazard",
-                      "params": {}
-                    }
-                  ]
-                }
-              ]
-            }
-          }
+          "prefab": "36f14153a8e4c7a8"
         },
         {
           "id": "33b40797",
@@ -15025,68 +15114,7 @@
             }
           },
           "components": [],
-          "prefab": "36f14153a8e4c7a8",
-          "overrides": {
-            "root": {
-              "addedChildren": [
-                {
-                  "id": "94219845",
-                  "name": "platform",
-                  "transform": {
-                    "position": {
-                      "x": 2.15,
-                      "y": 5.1033,
-                      "z": -2.0714
-                    },
-                    "rotation": {
-                      "x": 0,
-                      "y": 0,
-                      "z": 1.5707963267948966
-                    },
-                    "scale": {
-                      "x": 11.2066,
-                      "y": 0.3,
-                      "z": 6.8572
-                    }
-                  },
-                  "components": [
-                    {
-                      "id": "61b9b4bf",
-                      "type": "Collider",
-                      "params": {
-                        "shape": {
-                          "kind": "box",
-                          "halfExtents": {
-                            "x": 0.5,
-                            "y": 0.5,
-                            "z": 0.5
-                          }
-                        },
-                        "center": {
-                          "x": 0,
-                          "y": 0,
-                          "z": 0
-                        }
-                      }
-                    },
-                    {
-                      "id": "cc89095c",
-                      "type": "Renderer",
-                      "params": {
-                        "model": "",
-                        "material": ""
-                      }
-                    },
-                    {
-                      "id": "5b183bcf",
-                      "type": "Hazard",
-                      "params": {}
-                    }
-                  ]
-                }
-              ]
-            }
-          }
+          "prefab": "36f14153a8e4c7a8"
         },
         {
           "id": "3eaf637a",
@@ -15260,68 +15288,7 @@
             }
           },
           "components": [],
-          "prefab": "36f14153a8e4c7a8",
-          "overrides": {
-            "root": {
-              "addedChildren": [
-                {
-                  "id": "e49c9a5b",
-                  "name": "platform",
-                  "transform": {
-                    "position": {
-                      "x": 2.15,
-                      "y": 5.1033,
-                      "z": -2.0714
-                    },
-                    "rotation": {
-                      "x": 0,
-                      "y": 0,
-                      "z": 1.5707963267948966
-                    },
-                    "scale": {
-                      "x": 11.2066,
-                      "y": 0.3,
-                      "z": 6.8572
-                    }
-                  },
-                  "components": [
-                    {
-                      "id": "61b9b4bf",
-                      "type": "Collider",
-                      "params": {
-                        "shape": {
-                          "kind": "box",
-                          "halfExtents": {
-                            "x": 0.5,
-                            "y": 0.5,
-                            "z": 0.5
-                          }
-                        },
-                        "center": {
-                          "x": 0,
-                          "y": 0,
-                          "z": 0
-                        }
-                      }
-                    },
-                    {
-                      "id": "cc89095c",
-                      "type": "Renderer",
-                      "params": {
-                        "model": "",
-                        "material": ""
-                      }
-                    },
-                    {
-                      "id": "5b183bcf",
-                      "type": "Hazard",
-                      "params": {}
-                    }
-                  ]
-                }
-              ]
-            }
-          }
+          "prefab": "36f14153a8e4c7a8"
         },
         {
           "id": "94d1062b",
@@ -15403,6 +15370,427 @@
                       "id": "5b183bcf",
                       "type": "Hazard",
                       "params": {}
+                    },
+                    {
+                      "id": "0576d2f1",
+                      "type": "Sequence",
+                      "params": {
+                        "name": "",
+                        "clock": "shared",
+                        "axes": "object",
+                        "loop": "restart",
+                        "times": 0,
+                        "offset": 0,
+                        "stages": [
+                          {
+                            "id": "ffc43806",
+                            "steps": [
+                              {
+                                "id": "32fb1e64",
+                                "kind": "wait",
+                                "seconds": 3
+                              }
+                            ]
+                          },
+                          {
+                            "id": "ff2dfa46",
+                            "steps": [
+                              {
+                                "id": "261f6f8a",
+                                "kind": "enabled",
+                                "on": true
+                              }
+                            ]
+                          },
+                          {
+                            "id": "b9202f17",
+                            "steps": [
+                              {
+                                "id": "4208e290",
+                                "kind": "wait",
+                                "seconds": 2
+                              }
+                            ]
+                          },
+                          {
+                            "id": "af47a414",
+                            "steps": [
+                              {
+                                "id": "ac72a3f2",
+                                "kind": "enabled",
+                                "on": false
+                              }
+                            ]
+                          },
+                          {
+                            "id": "935db19f",
+                            "steps": [
+                              {
+                                "id": "7e9e4427",
+                                "kind": "wait",
+                                "seconds": 2
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "ac807794",
+                  "name": "platform",
+                  "transform": {
+                    "position": {
+                      "x": 29.5,
+                      "y": 5.1033,
+                      "z": -7
+                    },
+                    "rotation": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 1.5707963267948966
+                    },
+                    "scale": {
+                      "x": 11.2066,
+                      "y": 0.3,
+                      "z": 6.8572
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "61b9b4bf",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "cc89095c",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "",
+                        "material": ""
+                      }
+                    },
+                    {
+                      "id": "5b183bcf",
+                      "type": "Hazard",
+                      "params": {}
+                    },
+                    {
+                      "id": "0576d2f1",
+                      "type": "Sequence",
+                      "params": {
+                        "name": "",
+                        "clock": "shared",
+                        "axes": "object",
+                        "loop": "restart",
+                        "times": 0,
+                        "offset": 0,
+                        "stages": [
+                          {
+                            "id": "ffc43806",
+                            "steps": [
+                              {
+                                "id": "32fb1e64",
+                                "kind": "wait",
+                                "seconds": 3
+                              }
+                            ]
+                          },
+                          {
+                            "id": "ff2dfa46",
+                            "steps": [
+                              {
+                                "id": "261f6f8a",
+                                "kind": "enabled",
+                                "on": true
+                              }
+                            ]
+                          },
+                          {
+                            "id": "b9202f17",
+                            "steps": [
+                              {
+                                "id": "4208e290",
+                                "kind": "wait",
+                                "seconds": 2
+                              }
+                            ]
+                          },
+                          {
+                            "id": "af47a414",
+                            "steps": [
+                              {
+                                "id": "ac72a3f2",
+                                "kind": "enabled",
+                                "on": false
+                              }
+                            ]
+                          },
+                          {
+                            "id": "935db19f",
+                            "steps": [
+                              {
+                                "id": "7e9e4427",
+                                "kind": "wait",
+                                "seconds": 2
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "2da23738",
+                  "name": "platform",
+                  "transform": {
+                    "position": {
+                      "x": 77.5,
+                      "y": 5.1033,
+                      "z": 4.5
+                    },
+                    "rotation": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 1.5707963267948966
+                    },
+                    "scale": {
+                      "x": 11.2066,
+                      "y": 0.3,
+                      "z": 6.8572
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "61b9b4bf",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "cc89095c",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "",
+                        "material": ""
+                      }
+                    },
+                    {
+                      "id": "5b183bcf",
+                      "type": "Hazard",
+                      "params": {}
+                    },
+                    {
+                      "id": "0576d2f1",
+                      "type": "Sequence",
+                      "params": {
+                        "name": "",
+                        "clock": "shared",
+                        "axes": "object",
+                        "loop": "restart",
+                        "times": 0,
+                        "offset": 0,
+                        "stages": [
+                          {
+                            "id": "ffc43806",
+                            "steps": [
+                              {
+                                "id": "32fb1e64",
+                                "kind": "wait",
+                                "seconds": 3
+                              }
+                            ]
+                          },
+                          {
+                            "id": "ff2dfa46",
+                            "steps": [
+                              {
+                                "id": "261f6f8a",
+                                "kind": "enabled",
+                                "on": true
+                              }
+                            ]
+                          },
+                          {
+                            "id": "b9202f17",
+                            "steps": [
+                              {
+                                "id": "4208e290",
+                                "kind": "wait",
+                                "seconds": 2
+                              }
+                            ]
+                          },
+                          {
+                            "id": "af47a414",
+                            "steps": [
+                              {
+                                "id": "ac72a3f2",
+                                "kind": "enabled",
+                                "on": false
+                              }
+                            ]
+                          },
+                          {
+                            "id": "935db19f",
+                            "steps": [
+                              {
+                                "id": "7e9e4427",
+                                "kind": "wait",
+                                "seconds": 2
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "66da701c",
+                  "name": "platform",
+                  "transform": {
+                    "position": {
+                      "x": 124.5,
+                      "y": 5.1033,
+                      "z": -10.5
+                    },
+                    "rotation": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 1.5707963267948966
+                    },
+                    "scale": {
+                      "x": 11.2066,
+                      "y": 0.3,
+                      "z": 6.8572
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "61b9b4bf",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "cc89095c",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "",
+                        "material": ""
+                      }
+                    },
+                    {
+                      "id": "5b183bcf",
+                      "type": "Hazard",
+                      "params": {}
+                    },
+                    {
+                      "id": "0576d2f1",
+                      "type": "Sequence",
+                      "params": {
+                        "name": "",
+                        "clock": "shared",
+                        "axes": "object",
+                        "loop": "restart",
+                        "times": 0,
+                        "offset": 0,
+                        "stages": [
+                          {
+                            "id": "ffc43806",
+                            "steps": [
+                              {
+                                "id": "32fb1e64",
+                                "kind": "wait",
+                                "seconds": 3
+                              }
+                            ]
+                          },
+                          {
+                            "id": "ff2dfa46",
+                            "steps": [
+                              {
+                                "id": "261f6f8a",
+                                "kind": "enabled",
+                                "on": true
+                              }
+                            ]
+                          },
+                          {
+                            "id": "b9202f17",
+                            "steps": [
+                              {
+                                "id": "4208e290",
+                                "kind": "wait",
+                                "seconds": 2
+                              }
+                            ]
+                          },
+                          {
+                            "id": "af47a414",
+                            "steps": [
+                              {
+                                "id": "ac72a3f2",
+                                "kind": "enabled",
+                                "on": false
+                              }
+                            ]
+                          },
+                          {
+                            "id": "935db19f",
+                            "steps": [
+                              {
+                                "id": "7e9e4427",
+                                "kind": "wait",
+                                "seconds": 2
+                              }
+                            ]
+                          }
+                        ]
+                      }
                     }
                   ]
                 }
@@ -15474,11 +15862,6 @@
                       }
                     },
                     {
-                      "id": "5b183bcf",
-                      "type": "Hazard",
-                      "params": {}
-                    },
-                    {
                       "id": "59df5fb5",
                       "type": "Sequence",
                       "params": {
@@ -15500,22 +15883,12 @@
                             ]
                           },
                           {
-                            "id": "a14e10af",
-                            "steps": [
-                              {
-                                "id": "f68b8bd6",
-                                "kind": "collider",
-                                "on": true
-                              }
-                            ]
-                          },
-                          {
                             "id": "06b9264e",
                             "steps": [
                               {
                                 "id": "68f4eaf0",
                                 "kind": "wait",
-                                "seconds": 3
+                                "seconds": 2
                               }
                             ]
                           },
@@ -15530,17 +15903,22 @@
                             ]
                           },
                           {
-                            "id": "709abd2d",
+                            "id": "1c310bff",
                             "steps": [
                               {
-                                "id": "b31192ca",
-                                "kind": "collider",
-                                "on": false
+                                "id": "3516a376",
+                                "kind": "wait",
+                                "seconds": 2
                               }
                             ]
                           }
                         ]
                       }
+                    },
+                    {
+                      "id": "5b183bcf",
+                      "type": "Hazard",
+                      "params": {}
                     }
                   ]
                 }
