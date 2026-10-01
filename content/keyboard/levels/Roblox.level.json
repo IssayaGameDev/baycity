@@ -146,9 +146,9 @@
           "id": "2d23a1ab",
           "transform": {
             "position": {
-              "x": -573.5,
-              "y": 37,
-              "z": -64
+              "x": -4,
+              "y": 3,
+              "z": -3
             },
             "scale": {
               "x": 3.2997,
@@ -7634,7 +7634,7 @@
                         },
                         "timing": {
                           "by": "speed",
-                          "speed": 20
+                          "speed": 10
                         },
                         "ease": "linear"
                       }
@@ -14852,9 +14852,9 @@
           "name": "Stage End",
           "transform": {
             "position": {
-              "x": 182.5001,
+              "x": 175,
               "y": 36,
-              "z": -94.4999
+              "z": -44
             },
             "rotation": {
               "x": 0,
@@ -15714,9 +15714,9 @@
       "name": "stage 16",
       "transform": {
         "position": {
-          "x": -279.4345,
+          "x": -215,
           "y": 34.7934,
-          "z": -110.8572
+          "z": -57.5
         }
       },
       "components": [],
@@ -17305,9 +17305,9 @@
       "name": "Satge 17",
       "transform": {
         "position": {
-          "x": -254.5926,
-          "y": -4.0332,
-          "z": -158.5726
+          "x": 73.5,
+          "y": 6,
+          "z": -9.5
         }
       },
       "components": [],
