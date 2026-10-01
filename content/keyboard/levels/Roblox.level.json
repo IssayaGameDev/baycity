@@ -146,9 +146,9 @@
           "id": "2d23a1ab",
           "transform": {
             "position": {
-              "x": -379,
-              "y": 38,
-              "z": -63
+              "x": -654,
+              "y": 39,
+              "z": -47.5
             },
             "scale": {
               "x": 3.2997,
@@ -13045,7 +13045,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 1
+                        "seconds": 0.5
                       }
                     ]
                   },
@@ -13436,7 +13436,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.1,
                 "stages": [
                   {
                     "id": "54ac3e91",
@@ -13463,7 +13463,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 1.1
+                        "seconds": 0.6
                       }
                     ]
                   },
@@ -13553,7 +13553,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.3,
                 "stages": [
                   {
                     "id": "54ac3e91",
@@ -13580,7 +13580,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 1.3
+                        "seconds": 0.8
                       }
                     ]
                   },
@@ -13697,7 +13697,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 1.5
+                        "seconds": 1
                       }
                     ]
                   },
@@ -13814,7 +13814,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 1
+                        "seconds": 0.5
                       }
                     ]
                   },
@@ -13904,7 +13904,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.1,
                 "stages": [
                   {
                     "id": "54ac3e91",
@@ -13931,7 +13931,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 1.1
+                        "seconds": 0.6
                       }
                     ]
                   },
@@ -14021,7 +14021,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.3,
                 "stages": [
                   {
                     "id": "54ac3e91",
@@ -14048,7 +14048,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 1.3
+                        "seconds": 0.8
                       }
                     ]
                   },
@@ -14165,7 +14165,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 1.5
+                        "seconds": 1
                       }
                     ]
                   },
@@ -14255,7 +14255,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.2,
                 "stages": [
                   {
                     "id": "54ac3e91",
@@ -14282,7 +14282,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 1.2
+                        "seconds": 0.7
                       }
                     ]
                   },
@@ -14399,7 +14399,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 1.4
+                        "seconds": 0.9
                       }
                     ]
                   },
@@ -14516,7 +14516,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 1.6
+                        "seconds": 1.1
                       }
                     ]
                   },
