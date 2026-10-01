@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 /**
  * A platform a sequence moves **into** a player (ADR 0186), through the loader and the character exactly as the
- * game ticks them: sliced (ADR 0104), posed, half a step, the push, the character, half a step. The character
+ * game ticks them: sliced (ADR 0104), posed, the push, half a step, the character, half a step. The character
  * controller resolves only the character's own motion, so before the push a wall arriving at any speed — slow
  * ones included — passed straight through whoever it met.
  */
@@ -49,13 +49,15 @@ const levelOf = (nodes: Node[]): Level => ({ id: 'fx', config: {}, nodes })
 const ground = box('ground', vec3(0, -0.5, 0), vec3(40, 0.5, 40))
 
 /** Run the game's tick for `seconds`; the player's position and the last node's (the mover's) at the end. */
-const run = (level: Level, spawn: Vec3, seconds: number, cmd = STILL): { player: Vec3; mover: Vec3; highest: number } => {
+const run = (level: Level, spawn: Vec3, seconds: number, cmd = STILL): { player: Vec3; mover: Vec3; highest: number; touched: number } => {
   const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
   const loaded = instantiateLevel(world, level, TYPES)
   const mover = loaded.nodes[loaded.nodes.length - 1]!.colliderHandles[0]!
   const char = addCharacter(world, spawn)
   let prev = -1
   let highest = -Infinity
+  /** Ticks the mover was among what the capsule touched (ADR 0188). */
+  let touched = 0
   for (let k = 0; k < seconds * 30; k++) {
     const now = k * TICK_DT * 1000
     if (prev < 0) prev = now
@@ -63,15 +65,16 @@ const run = (level: Level, spawn: Vec3, seconds: number, cmd = STILL): { player:
     for (let s = 1; s <= slices; s++) {
       const at = prev + ((now - prev) * s) / slices
       loaded.update(at, char.base?.colliderHandle, s === 1)
-      world.step(TICK_DT / slices / 2)
       loaded.shove(char.body)
+      world.step(TICK_DT / slices / 2)
       stepCharacter(char, cmd, TICK_DT / slices, undefined, loaded.basePose)
       world.step(TICK_DT / slices / 2)
     }
     prev = now
     highest = Math.max(highest, char.body.translation().y)
+    if (char.body.touching().includes(mover)) touched++
   }
-  const result = { player: char.body.translation(), mover: loaded.basePose(mover)!.position, highest }
+  const result = { player: char.body.translation(), mover: loaded.basePose(mover)!.position, highest, touched }
   world.free()
   return result
 }
@@ -93,6 +96,26 @@ describe('a platform moving into a player', () => {
       const { player, face } = sweep(speed)
       expect(player.x, `${speed} m/s`).toBeGreaterThan(face + CHAR_RADIUS - 0.03)
     }
+  })
+
+  /**
+   * Against the wall, not a step ahead of it (ADR 0188): the controller pushed by the mover's whole step on top
+   * of the push, and the rider floated 0.35 m clear at 10 m/s — never touching it, so a hazard never killed.
+   */
+  it('keeps the pushed player against the wall, and counts it as touched', () => {
+    for (const speed of [2, 10]) {
+      const wall = box('wall', vec3(-3, 1.5, 0), vec3(0.5, 1.5, 3), vec3(13, 0, 0), speed)
+      const end = run(levelOf([ground, wall]), vec3(0, SOLE + 0.3, 0), 1.5 + 6 / speed)
+      expect(end.player.x - CHAR_RADIUS - (end.mover.x + 0.5), `${speed} m/s`).toBeLessThan(0.03)
+      expect(end.touched, `${speed} m/s`).toBeGreaterThan(0)
+    }
+  })
+
+  it('counts a platform being ridden as touched every tick', () => {
+    const deck = box('deck', vec3(0, 10, 0), vec3(6, 0.2, 6), vec3(30, 0, 0), 3)
+    const end = run(levelOf([deck]), vec3(0, 10.2 + SOLE + 0.3, 0), 5)
+    // The first second is the landing; every tick after it the rider is on the deck.
+    expect(end.touched).toBeGreaterThanOrEqual(5 * 30 - 30)
   })
 
   it('stays a wall to a player walking into it as it comes', () => {

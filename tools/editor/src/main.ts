@@ -526,7 +526,7 @@ const meshes = createItemMeshes({
   runtime: () => runtime,
   mode: () => activeMode,
   gameSettings: () => gameData[activeMode?.name ?? '']?.settings ?? {},
-  selected: () => selected,
+  selection: () => selection,
   hidden: (i) => doc !== null && hiddenView.hiddenAt(doc, i),
   // Each of these reads the groups that were just replaced, and none of them is that module's business.
   afterBuild: () => {
@@ -2282,13 +2282,17 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     room.drainDeferred()
   },
   onPropsChanged: () => {
-    const item = selected
+    // Every selected object, as the edit was written to every one (ADR 0112) — kept, since the selection may
+    // have moved on by the time a material arrives.
+    const items = [...selection]
     edits.recordEdit('properties')
     meshes.rebuildSelected()
     scheduleRebuild()
     hierarchy.render() // a trigger or name change shows in the row's badge/label
     // Draw with what is loaded now, then again once a newly named material has arrived.
-    if (item !== null) loadNewReferences(() => meshes.rebuildItem(item))
+    if (items.length > 0) loadNewReferences(() => {
+      for (const i of items) meshes.rebuildItem(i)
+    })
   },
   // A rename only changes a label: redraw the chrome, leave the property grid and the meshes alone.
   // Called through the hook, since `refreshUi` is declared below this block.

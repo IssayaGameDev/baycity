@@ -732,10 +732,11 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
           const at = prevTickMs + ((nowMs - prevTickMs) * s) / slices
           // Only the first slice moves where a frame blends from, so the drawing spans the whole tick.
           loaded?.update(at, char.base?.colliderHandle, s === 1)
-          world.step(half) // (A) platforms move
           // Whatever moved into the character pushes it on the way it was going (ADR 0186): the controller only
           // resolves the character's own motion, so a platform arriving would otherwise pass straight through.
+          // Before the step, which then sees those movers placed rather than moved (ADR 0188).
           loaded?.shove(char.body)
+          world.step(half) // (A) platforms move
           // The movement slot (ADR 0061). This was `stepCharacter(...)` called straight from here, which is
           // why every game had the same locomotion whether it suited them or not. The game's own locomotion
           // component occupies this moment now — between the two half-steps, so the character resolves
@@ -849,11 +850,12 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
             speed: Math.hypot(char.vx, char.vz),
             base: basePose === undefined ? 0 : base,
           })
-          // Real contact: the colliders the capsule pushed against this tick. Handed straight to the
-          // components on whatever nodes own them — a corpse triggers nothing, which is why this is gated.
-          // Solids the capsule pushed against, plus the triggers it is standing inside (ADR 0054) 2014 a sensor
-          // resolves no movement, so it never appears in `collisions` and has to be asked for.
-          if (!dead) components.contact([...char.body.collisions(), ...char.body.overlaps()])
+          // Real contact, handed straight to the components on whatever nodes own them — a corpse triggers
+          // nothing, which is why this is gated. The solids touching the capsule's skin, whichever of the two moved
+          // (ADR 0188); those its own move ran into; and the triggers it is standing inside (ADR 0054) — a sensor
+          // resolves no movement, so it never appears in `collisions` and has to be asked for. Each once: a
+          // component's `onContact` runs per handle.
+          if (!dead) components.contact([...new Set([...char.body.touching(), ...char.body.collisions(), ...char.body.overlaps()])])
           // A rule killed us — a hazard pad, or the hazard plane under the level (ADR 0053). One question,
           // asked of the rules, which also consumes the flag. Gated on `dead`, because a corpse still resting
           // on the plane keeps generating contacts.

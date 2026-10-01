@@ -974,6 +974,7 @@ With more than one selected the panel edits **what they have in common**.
 | a value they differ about | the same field **blank** (`value: null`), `—` placeholder, the line `.mixed`: a pre-filled one would be a claim about values it has not got. Untouched writes nothing; a mixed number is typed only. Per **axis** for vec3 and the transform — a vec3 axis is written over **each node's own** other axes (`setParamsAcross` with a patch per target), since a patch replaces the whole value. A collider shape, a node reference and stages say `differs across the selection` |
 | a compound value | a collider shape is reported as differing, not offered blank |
 | writing | `Doc.setParamsAcross(targets, patch)` — each node's ops concatenated into **one** commit, so one undo entry and one message to the room |
+| redrawing | `onPropsChanged` → `meshes.rebuildSelected()` (every index in `ItemMeshHost.selection()`), and again for the same indices once newly named references load. It redrew the primary alone, so the rest kept their old look until a reload |
 | transform | `host.selectionTransforms()` + `host.writeAxis(field, axis, value)`; three inputs per row, each writing its axis to every selected node. Also what fixed typing moving only the primary while a drag moved all |
 | Reset / Remove / enable | every selected node; the menu labels carry the count |
 | Add Component | anything **any** of them can take, added to each that can |

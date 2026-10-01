@@ -191,6 +191,13 @@ export interface CharacterBody {
    */
   overlaps: () => number[]
   /**
+   * Handles of the **solids** the capsule is touching (ADR 0188): what its touch skin — a sensor a few
+   * centimetres proud of it — intersects, as the physics' narrow phase found it at the last `step`. Whichever
+   * moved: a platform ridden, a wall pushing, a surface landed on, as well as what the capsule walked into.
+   * Overlaps `collisions`; a host merges them.
+   */
+  touching: () => number[]
+  /**
    * How far along `motion` (0…1) collider `handle`, set at `from`, first touches this capsule where it stands
    * now — `undefined` when it does not touch it at all over that motion, when it is a sensor or switched off,
    * and `0` when it already overlaps at `from`. One pair, no scene query: what a mover that came into the
@@ -281,6 +288,11 @@ const CEILING_NORMAL_MAX_Y = -0.5
 const GROUND_PROBE_FALLBACK = 0.05
 // Default gap kept between the capsule and its surroundings.
 const CHAR_OFFSET = 0.02
+/**
+ * How far the touch skin stands proud of the capsule (m), ADR 0188: past the controller's own gap, so what the
+ * capsule rests on, rides or is pushed by intersects it — whichever of the two moved.
+ */
+const TOUCH_SKIN = 0.05
 /**
  * Rapier's character controller intermittently resolves a perfectly valid step to nothing. With
  * the capsule resting at its offset above a flat surface, an identical request — same gap, same
@@ -456,6 +468,21 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
     // capsule's layers have to be handed to every one of them or `move` resolves against layers the
     // capsule cannot actually touch.
     const queryLayers = o.layers === undefined ? undefined : packLayers(o.layers)
+    /**
+     * **The touch skin** (ADR 0188): a sensor `TOUCH_SKIN` larger than the capsule, on the same body — Unity's
+     * trigger around a CharacterController. The controller keeps the capsule its gap clear of everything, so the
+     * capsule itself never touches anything; the skin does, and the physics' own narrow phase says what.
+     *
+     * Rapier finds no pairs between two bodies moved by code unless asked, and that is the capsule against
+     * every platform, still or moving: kinematic–fixed and kinematic–kinematic are switched on for it. Every
+     * query and the controller already pass sensors by, so it blocks and holds up nothing.
+     */
+    const skin = world.createCollider(
+      makeCollider({ kind: 'capsule', halfHeight: o.halfHeight, radius: o.radius + TOUCH_SKIN }, undefined, o.layers, true).setActiveCollisionTypes(
+        RAPIER.ActiveCollisionTypes.DEFAULT | RAPIER.ActiveCollisionTypes.KINEMATIC_FIXED | RAPIER.ActiveCollisionTypes.KINEMATIC_KINEMATIC,
+      ),
+      body,
+    )
     queriesStale = true
     const lastCollisions: number[] = []
     return {
@@ -661,7 +688,16 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
           RAPIER.QueryFilterFlags.EXCLUDE_SOLIDS,
           queryLayers, // a layer the capsule cannot touch is not a trigger it can enter
           collider, // never ourselves
+          body, // nor our own touch skin, a sensor on the same body
         )
+        return found
+      },
+      touching: () => {
+        const found: number[] = []
+        world.intersectionPairsWith(skin, (other) => {
+          if (other.isSensor() || other.parent()?.handle === body.handle) return
+          if (world.intersectionPair(skin, other)) found.push(other.handle)
+        })
         return found
       },
       remove: () => {

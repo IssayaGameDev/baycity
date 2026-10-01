@@ -485,6 +485,61 @@ describe('physics world', () => {
    * footing, and does not stop a camera. Each of those is a separate Rapier path, and getting one wrong is
    * silent — you would stand on a kill plane, or a trigger volume would shove the view.
    */
+  /**
+   * The touch skin (ADR 0188): the capsule keeps its gap from everything, so what it touches is what a sensor a
+   * few centimetres proud of it overlaps — still or moving, a fixed body or a kinematic one.
+   */
+  describe('what the capsule touches', () => {
+    const scene = () => {
+      const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })
+      const floor = world.addFixedBody({ position: { x: 0, y: -0.5, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 10, y: 0.5, z: 10 } } })
+      const char = world.addCharacter({ position: { x: 0, y: 0.92, z: 0 }, radius: 0.4, halfHeight: 0.5 })
+      return { world, floor, char }
+    }
+
+    /**
+     * While it moves. Rapier refreshes a sensor's pairs only on a step where one of the two moved — measured, a
+     * capsule and a floor both at rest are never reported — and what a resting capsule presses on is
+     * `collisions`' already.
+     */
+    it('is the floor it walks along, held its gap clear of it', () => {
+      const { world, floor, char } = scene()
+      for (let i = 0; i < 10; i++) {
+        char.move({ x: 0.05, y: -0.01, z: 0 })
+        world.step(1 / 60)
+        expect(char.touching(), `step ${i}`).toContain(floor.colliderHandle)
+      }
+      world.free()
+    })
+
+    it('is a moving body that came up against it, which its own move never ran into', () => {
+      const { world, char } = scene()
+      const wall = world.addKinematicBody({ position: { x: -2, y: 1, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 0.5, y: 1, z: 2 } } })
+      world.step(1 / 60)
+      expect(char.touching()).not.toContain(wall.colliderHandle)
+      // Its face to within 2 cm of the capsule, as a push leaves it.
+      wall.setNextKinematicTranslation({ x: -0.92, y: 1, z: 0 })
+      world.step(1 / 60)
+      world.step(1 / 60)
+      expect(char.touching()).toContain(wall.colliderHandle)
+      expect(char.collisions()).not.toContain(wall.colliderHandle)
+      world.free()
+    })
+
+    it('is neither the capsule itself, a trigger, nor something a hand away', () => {
+      const { world, char } = scene()
+      const trigger = world.addFixedBody({ position: { x: 0, y: 1, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 2, y: 2, z: 2 } }, sensor: true })
+      const away = world.addFixedBody({ position: { x: 1.1, y: 1, z: 0 }, shape: { kind: 'cuboid', halfExtents: { x: 0.5, y: 1, z: 1 } } })
+      world.step(1 / 60)
+      const touched = char.touching()
+      expect(touched).not.toContain(char.colliderHandle)
+      expect(touched).not.toContain(trigger.colliderHandle)
+      expect(touched, '0.2 m off').not.toContain(away.colliderHandle)
+      expect(char.overlaps(), 'the skin is not a trigger the capsule stands in').toEqual([trigger.colliderHandle])
+      world.free()
+    })
+  })
+
   describe("a trigger collider", () => {
     const floorAndTrigger = (): ReturnType<typeof createPhysicsWorld> => {
       const world = createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } })

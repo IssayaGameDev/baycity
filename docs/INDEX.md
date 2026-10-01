@@ -235,5 +235,6 @@ why matters.
 | [0185](adr/0185-moving-platforms-drawn-as-smoothly-as-the-editor.md) | Moving platforms drawn as smoothly as the editor's preview |
 | [0186](adr/0186-moving-platforms-push-the-player.md) | Moving platforms push the player |
 | [0187](adr/0187-the-debug-level-slider.md) | The debug Level slider |
+| [0188](adr/0188-a-touch-skin-and-one-push.md) | A touch skin, and one push |
 
 `Design archive/` holds superseded design material and is not maintained.

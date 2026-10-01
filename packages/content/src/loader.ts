@@ -370,6 +370,9 @@ export interface LoadedLevel {
    * of that motion plus a sliver. Applied at once (`CharacterBody.push`), before the step's own move, so that
    * starts clear of them and a mover is a wall again; anything else solid in the way stops it short.
    *
+   * Call it after `update` and **before** the physics step: the movers that push are then posed without motion
+   * for the step (ADR 0188), or the character controller pushes by their travel a second time.
+   *
    * The base being ridden pushes too. The ride places its rider at a point on it, not by a step, so a push
    * first is not added to — and a base the controller took a tick early, a lift still below a floor edge the
    * rider stands on, rises into them as anything else would. A mover the capsule was already inside before it
@@ -381,6 +384,8 @@ export interface LoadedLevel {
 const UNIT_BOX: ColliderDesc = { kind: 'box', halfExtents: { x: 0.5, y: 0.5, z: 0.5 } }
 /** How far clear of a mover's face a shove leaves the capsule (m): about the character controller's own gap. */
 const SHOVE_SKIN = 0.02
+/** The most a mover may turn within one piece of a shove's sweep (rad): 5°, a tip 3 m out moving 0.26 m. */
+const SHOVE_TURN = (5 * Math.PI) / 180
 const ZERO: Vec3 = { x: 0, y: 0, z: 0 }
 /** What a node no component drives adds. Shared, so the still case allocates nothing per tick. */
 const UNDRIVEN: NodeDrive = { position: ZERO, rotation: ZERO }
@@ -891,24 +896,54 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
       let x = 0
       let y = 0
       let z = 0
-      const pushers: number[] = []
+      const pushers: Dynamic[] = []
       for (const d of dynamics) {
         if (d.body === undefined || d.sensor || !(d.frame.shown && d.frame.solid)) continue
-        // Where its motion over the slice takes the capsule's centre: the travel, and the turn at that place —
-        // a sweeping bar comes faster at its tip than at its hub.
-        const local = rotateVec3(conjQuat(d.sliceRot), sub(at, d.slicePos))
-        const motion = sub(add(d.currPos, rotateVec3(d.currRot, local)), at)
-        const length = Math.hypot(motion.x, motion.y, motion.z)
-        if (length < 1e-6) continue
-        const touched = character.touchedBy(d.body.colliderHandle, { position: d.slicePos, rotation: d.sliceRot }, motion)
-        if (touched === undefined || touched <= 0) continue
-        const k = 1 - touched + SHOVE_SKIN / length
-        x += motion.x * k
-        y += motion.y * k
-        z += motion.z * k
-        pushers.push(d.body.colliderHandle)
+        /**
+         * Swept in pieces of at most `SHOVE_TURN` of turn. A sweep is a straight line at a fixed orientation, and
+         * a bar turning fast enough changes its own facing too much in one slice for one line to follow it: at
+         * two turns a second its far end went straight past the rider.
+         */
+        const turn = 2 * Math.acos(Math.min(1, Math.abs(d.sliceRot.x * d.currRot.x + d.sliceRot.y * d.currRot.y + d.sliceRot.z * d.currRot.z + d.sliceRot.w * d.currRot.w)))
+        const pieces = Math.max(1, Math.ceil(turn / SHOVE_TURN))
+        const poseAt = (t: number): { position: Vec3; rotation: Quat } => ({ position: lerpVec3(d.slicePos, d.currPos, t), rotation: slerpQuat(d.sliceRot, d.currRot, t) })
+        // Where each piece's motion takes the capsule's centre: the travel, and the turn at that place — a
+        // sweeping bar comes faster at its tip than at its hub.
+        const motionOver = (from: { position: Vec3; rotation: Quat }, to: { position: Vec3; rotation: Quat }): Vec3 =>
+          sub(add(to.position, rotateVec3(to.rotation, rotateVec3(conjQuat(from.rotation), sub(at, from.position)))), at)
+        let push: Vec3 | undefined
+        for (let i = 0; i < pieces && push === undefined; i++) {
+          const from = poseAt(i / pieces)
+          const motion = motionOver(from, poseAt((i + 1) / pieces))
+          if (Math.hypot(motion.x, motion.y, motion.z) < 1e-6) continue
+          const touched = character.touchedBy(d.body.colliderHandle, from, motion)
+          if (touched === undefined) continue
+          // Inside at the slice's start: pinned last slice, so it passes through.
+          if (touched <= 0 && i === 0) break
+          // The rest of the slice from the moment of touch: what that point of the mover goes on to do.
+          const rest = motionOver(poseAt((i + touched) / pieces), poseAt(1))
+          const length = Math.hypot(rest.x, rest.y, rest.z)
+          push = length < 1e-9 ? vec3(0, 0, 0) : add(rest, vec3((rest.x / length) * SHOVE_SKIN, (rest.y / length) * SHOVE_SKIN, (rest.z / length) * SHOVE_SKIN))
+        }
+        if (push === undefined) continue
+        x += push.x
+        y += push.y
+        z += push.z
+        pushers.push(d)
       }
-      return pushers.length === 0 ? vec3(0, 0, 0) : character.push(vec3(x, y, z), pushers)
+      if (pushers.length === 0) return vec3(0, 0, 0)
+      const pushed = character.push(
+        vec3(x, y, z),
+        pushers.map((d) => d.body!.colliderHandle),
+      )
+      /**
+       * **Placed, not moved, for this step** (ADR 0188): the character controller pushes by whatever a body it
+       * touches moved over the last step — measured, the whole step's travel, even with the capsule already
+       * clear — so it would push again, and the rider floated a step ahead of the wall, never touching it. The
+       * pose is the same; only the motion Rapier would read off it goes, as for the ridden body.
+       */
+      for (const d of pushers) poseFrozen(d.body!, d.currPos, d.currRot)
+      return pushed
     },
     motionSlices: (fromMs, toMs, maxStep) => {
       if (!(maxStep > 0)) return 1

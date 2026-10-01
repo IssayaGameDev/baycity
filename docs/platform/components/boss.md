@@ -34,11 +34,10 @@ occupant around.
 
 ## Four rules
 
-**The boss's collider must be a `trigger`.** A solid one is resolved by the character controller, so it shoves
-players instead of killing them; and it reaches the `Hazard` only through `CharacterBody.collisions()`, which
-holds what the **character's own movement** ran into — a boss driving into somebody standing still reports
-nothing at all. A trigger is found by `overlaps()`, an explicit shape query run every tick wherever the capsule
-is, and does not care which of the two moved (ADR 0054, `physics.md`).
+**The boss's collider must be a `trigger`.** A solid one is resolved: it pushes players ahead of it (ADR 0186)
+and kills them only by touching them (ADR 0188), a hunter that shoves. A trigger is entered — found by
+`overlaps()`, an explicit shape query run every tick wherever the capsule is, whichever of the two moved
+(ADR 0054, `physics.md`).
 
 **It does not kill; the `Hazard` does.** Dying is already a component. A boss with no `Hazard` is a harmless
 prop that follows you around, which is a legitimate thing to build.

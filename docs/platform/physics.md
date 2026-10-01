@@ -57,6 +57,7 @@ interface CharacterBody {
   probeGround(extraReach?): GroundContact | undefined   // { colliderHandle, point, normal }
   collisions(): number[]                 // solids contacted during the last move
   overlaps(): number[]                   // sensors currently overlapped (ADR 0054)
+  touching(): number[]                   // solids the touch skin overlaps (ADR 0188), below
   touchedBy(handle, from: { position; rotation }, motion): number | undefined   // ADR 0186, below
   push(by: Vec3, ignore: readonly number[]): Vec3                               // ADR 0186, below
   remove()
@@ -79,6 +80,15 @@ Defaults and constants (`world.ts`):
 - `probeGround` reach = `halfHeight + radius + snap + extraReach`, ray from the capsule centre, own collider excluded. Caller must check `colliderHandle` when passing `extraReach` (ADR 0042).
 - `move`'s `snapAtLeast` raises snap-to-ground for that one call and is restored afterwards; only ever widened, never narrowed. For a caller asking for a descent a shortfall in would cost it its footing — a character following a slope downhill (ADR 0127). Unset, the configured distance stands.
 - **A step's resolve is not reliable.** Rapier returns part of a step intermittently — `CONTACT_NUDGE` has it at 33 of 200 ticks on the horizontal, and it happens on the vertical too (half of a 1.14 m descent, once in a 120-tick run). Anything asking for a large single-tick translation needs a recovery path; snap-to-ground is it, which is what `snapAtLeast` exists to size.
+- **The touch skin** (ADR 0188): every character body carries a second collider, a sensor capsule `TOUCH_SKIN`
+  0.05 m wider than the capsule, on the same body, with `ActiveCollisionTypes` `DEFAULT | KINEMATIC_FIXED |
+  KINEMATIC_KINEMATIC` — Rapier finds no pairs between two code-moved bodies otherwise, and that is the capsule
+  against every platform. `touching()`: `intersectionPairsWith(skin)` → each `intersectionPair` that is a solid
+  and not on the capsule's own body. The capsule keeps `offset` clear of everything, so it is the skin that
+  touches: what is ridden, what pushes, what is landed on, whichever moved. **Rapier refreshes a sensor's pairs
+  only on a step where one of the two moved** — measured, a capsule and a floor both at rest are never reported;
+  what a resting capsule presses on is in `collisions`. Every query and `move` pass sensors by, so the skin
+  blocks and holds up nothing; `overlaps` excludes the capsule's own body.
 - `touchedBy` (ADR 0186): collider `handle`'s shape set at `from` and cast by `motion` against this capsule
   where it stands — `Shape.castShape`, one pair, no scene query, `stopAtPenetration: true`. The fraction
   `0…1` of `motion` at first touch; `0` already overlapping at `from`; `undefined` no touch, a sensor, or

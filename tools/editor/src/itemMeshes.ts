@@ -42,7 +42,8 @@ export interface ItemMeshHost {
   mode: () => ModeDescriptor | undefined
   /** The active game's live setting values, which the surface grid is laid out from. */
   gameSettings: () => Readonly<Record<string, unknown>>
-  selected: () => number | null
+  /** Every selected node: an Inspector edit with several selected writes to all of them (ADR 0112). */
+  selection: () => readonly number[]
   /**
    * Is this node hidden in the viewport (ADR 0132)?
    *
@@ -74,6 +75,7 @@ export interface ItemMeshes {
   buildAll: () => void
   /** Rebuild one item's own meshes. */
   rebuildItem: (i: number) => void
+  /** Rebuild every selected item's own meshes — all of them, not the primary alone. */
   rebuildSelected: () => void
   /** Rebuild a node and everything under it — what a size change needs (ADR 0090). */
   rebuildSubtree: (i: number) => void
@@ -517,9 +519,8 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
   }
 
   const rebuildSelectedMeshes = (): void => {
-    const i = host.selected()
-    if (i === null) return
-    rebuildItemMeshes(i)
+    // Every one: the primary alone left the rest of a multi-selection drawn as it was until a reload.
+    for (const i of host.selection()) rebuildItemMeshes(i)
   }
 
   /**
