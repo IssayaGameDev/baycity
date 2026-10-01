@@ -13018,7 +13018,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.7,
                 "stages": [
                   {
                     "id": "54ac3e91",
@@ -13436,7 +13436,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0.1,
+                "offset": 0.6,
                 "stages": [
                   {
                     "id": "54ac3e91",
@@ -13463,7 +13463,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 0.6
+                        "seconds": 0.5
                       }
                     ]
                   },
@@ -13553,7 +13553,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0.3,
+                "offset": 0.4,
                 "stages": [
                   {
                     "id": "54ac3e91",
@@ -13580,7 +13580,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 0.8
+                        "seconds": 0.5
                       }
                     ]
                   },
@@ -13670,7 +13670,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.2,
                 "stages": [
                   {
                     "id": "54ac3e91",
@@ -13697,7 +13697,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 1
+                        "seconds": 0.5
                       }
                     ]
                   },
@@ -13787,7 +13787,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.7,
                 "stages": [
                   {
                     "id": "54ac3e91",
@@ -13904,7 +13904,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0.1,
+                "offset": 0.6,
                 "stages": [
                   {
                     "id": "54ac3e91",
@@ -13931,7 +13931,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 0.6
+                        "seconds": 0.5
                       }
                     ]
                   },
@@ -14021,7 +14021,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0.3,
+                "offset": 0.4,
                 "stages": [
                   {
                     "id": "54ac3e91",
@@ -14030,7 +14030,7 @@
                         "id": "3a3e3598",
                         "kind": "move",
                         "to": {
-                          "x": 0,
+                          "x": -0.5,
                           "y": 10,
                           "z": 0
                         },
@@ -14048,7 +14048,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 0.8
+                        "seconds": 0.5
                       }
                     ]
                   },
@@ -14138,7 +14138,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.2,
                 "stages": [
                   {
                     "id": "54ac3e91",
@@ -14165,7 +14165,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 1
+                        "seconds": 0.5
                       }
                     ]
                   },
@@ -14255,7 +14255,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0.2,
+                "offset": 0.5,
                 "stages": [
                   {
                     "id": "54ac3e91",
@@ -14282,7 +14282,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 0.7
+                        "seconds": 0.5
                       }
                     ]
                   },
@@ -14372,7 +14372,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.3,
                 "stages": [
                   {
                     "id": "54ac3e91",
@@ -14399,7 +14399,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 0.9
+                        "seconds": 0.5
                       }
                     ]
                   },
@@ -14489,7 +14489,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.1,
                 "stages": [
                   {
                     "id": "54ac3e91",
@@ -14516,7 +14516,7 @@
                       {
                         "id": "b8210ba3",
                         "kind": "wait",
-                        "seconds": 1.1
+                        "seconds": 0.5
                       }
                     ]
                   },
@@ -14679,7 +14679,7 @@
                           "by": "speed",
                           "speed": 35
                         },
-                        "ease": "linear"
+                        "ease": "in-out-back"
                       }
                     ]
                   }
@@ -14762,7 +14762,7 @@
                           "by": "speed",
                           "speed": 35
                         },
-                        "ease": "linear"
+                        "ease": "in-out-back"
                       }
                     ]
                   }
@@ -14845,7 +14845,7 @@
                           "by": "speed",
                           "speed": 35
                         },
-                        "ease": "linear"
+                        "ease": "in-out-back"
                       }
                     ]
                   }
@@ -14928,7 +14928,7 @@
                           "by": "speed",
                           "speed": 35
                         },
-                        "ease": "linear"
+                        "ease": "in-out-back"
                       }
                     ]
                   }
