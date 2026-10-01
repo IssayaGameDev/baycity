@@ -7473,9 +7473,9 @@
                   "name": "floor",
                   "transform": {
                     "position": {
-                      "x": -21.0747,
-                      "y": 73.8982,
-                      "z": 16.4034
+                      "x": -21,
+                      "y": 74,
+                      "z": 16.5
                     },
                     "rotation": {
                       "x": -1.5707963267948966,
@@ -7484,8 +7484,126 @@
                     },
                     "scale": {
                       "x": 149,
-                      "y": 0.5,
+                      "y": 1,
                       "z": 55.5
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "4c1a690c",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "c9b1bc29",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": ""
+                      }
+                    },
+                    {
+                      "id": "eec994bf",
+                      "type": "Keyboard",
+                      "params": {
+                        "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                        "seed": 1
+                      },
+                      "enabled": false
+                    }
+                  ]
+                },
+                {
+                  "id": "f575fd93",
+                  "name": "floor",
+                  "transform": {
+                    "position": {
+                      "x": -20.8247,
+                      "y": 41.6482,
+                      "z": 55
+                    },
+                    "rotation": {
+                      "x": -1.5707963267948966,
+                      "y": 0,
+                      "z": 1.5707963267948966
+                    },
+                    "scale": {
+                      "x": 72.5,
+                      "y": 1,
+                      "z": 10
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "4c1a690c",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "c9b1bc29",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": ""
+                      }
+                    },
+                    {
+                      "id": "eec994bf",
+                      "type": "Keyboard",
+                      "params": {
+                        "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                        "seed": 1
+                      },
+                      "enabled": false
+                    }
+                  ]
+                },
+                {
+                  "id": "e19dd0ce",
+                  "name": "floor",
+                  "transform": {
+                    "position": {
+                      "x": -20.8247,
+                      "y": 41.3982,
+                      "z": -34.3466
+                    },
+                    "rotation": {
+                      "x": -1.5707963267948966,
+                      "y": 0,
+                      "z": 1.5707963267948966
+                    },
+                    "scale": {
+                      "x": 72.5,
+                      "y": 1,
+                      "z": 9.5
                     }
                   },
                   "components": [
@@ -7528,6 +7646,25 @@
                   ]
                 }
               ]
+            },
+            "55e72194": {
+              "transform": {
+                "position": {
+                  "x": -121,
+                  "y": 69,
+                  "z": 90.5
+                },
+                "rotation": {
+                  "x": -1.5707963267948966,
+                  "y": 0,
+                  "z": 0
+                },
+                "scale": {
+                  "x": 200,
+                  "y": 1,
+                  "z": 65
+                }
+              }
             }
           }
         }
