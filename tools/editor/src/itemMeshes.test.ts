@@ -20,14 +20,14 @@ const lamp = (n: number): Node => ({
 
 const fiveLamps = (): Doc => levelDoc({ id: 'lv', config: {}, nodes: [0, 1, 2, 3, 4].map(lamp) } satisfies Level)
 
-const meshesOver = (doc: Doc): ItemMeshes => {
+const meshesOver = (doc: Doc, selection: readonly number[] = []): ItemMeshes => {
   const meshes = createItemMeshes({
     doc: () => doc,
     loaded: () => null,
     runtime: () => null,
     mode: () => undefined,
     gameSettings: () => ({}),
-    selected: () => null,
+    selection: () => selection,
     hidden: () => false,
     afterBuild: () => {},
   })
@@ -44,6 +44,17 @@ const casting = (meshes: ItemMeshes): number[] =>
   })
 
 const setShadow = (doc: Doc, i: number, on: boolean): void => doc.setParams(i, `lamp${i}-light`, { castShadow: on })
+
+/** The bug: only the primary was redrawn, so the rest of a multi-selection showed its old look until a reload. */
+describe('redrawing a selection', () => {
+  it('rebuilds every selected item, not the primary alone', () => {
+    const doc = fiveLamps()
+    const meshes = meshesOver(doc, [0, 1, 2])
+    for (const i of [0, 1, 2]) setShadow(doc, i, false)
+    meshes.rebuildSelected()
+    expect(casting(meshes)).toEqual([3, 4])
+  })
+})
 
 describe('the editor shadow cap', () => {
   it('gives the first four lights wanting one a shadow', () => {
