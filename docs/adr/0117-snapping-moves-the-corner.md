@@ -1,6 +1,7 @@
 # ADR 0117 — Snapping moves the corner, not the centre
 
-Status: accepted. Continues [ADR 0114](0114-one-snap-increment-per-tool.md)'s snapping; the third appearance
+Status: accepted. **Superseded by ADR 0179** (a move snaps the centre, on the axes dragged). Continues
+[ADR 0114](0114-one-snap-increment-per-tool.md)'s snapping; the third appearance
 of the same fault, after [ADR 0113](0113-a-reparent-is-one-edit.md) and ADR 0114.
 
 ## Context

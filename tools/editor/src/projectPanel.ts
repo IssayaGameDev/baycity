@@ -1,9 +1,9 @@
-import { ASSET_KINDS, buildDatabase, libraryDir, type AssetDatabase, type AssetEntry, type AssetKind } from '@mp/content'
+import { ASSET_KINDS, buildDatabase, libraryDir, libraryOf, type AssetDatabase, type AssetEntry, type AssetKind } from '@mp/content'
 
 import { ancestorsOf, buildTree, filterEntries, flattenTree, folderOf, libraryRootOf, SHARED, shownFolder, sortEntries, subfoldersOf, type SortBy, type TreeNode } from './assetTree'
 import { askName } from './confirm'
 import { ASSET_ICON, icon, type IconName } from './icons'
-import type { ContextMenu } from './menu'
+import type { ContextMenu, MenuItem } from './menu'
 import { initials } from './people'
 import { modeFor, type SelectMode } from './selection'
 
@@ -56,6 +56,13 @@ export interface ProjectHost {
   onDragAssets: (assetIds: readonly string[]) => void
   /** Make a new asset of a kind this panel can author, in `folder`: a material, from the **+** menu. */
   onCreateAsset: (kind: AssetKind, folder: string) => void
+  /**
+   * The data types a data asset made in `folder` may have (ADR 0181): the declaring game's, each with its menu path —
+   * folders, then its name. None in Shared, nor in a game that declares none.
+   */
+  dataTypes: (folder: string) => readonly { readonly type: string; readonly path: readonly string[] }[]
+  /** Make a data asset of `type` in `folder`, from **New data**. */
+  onCreateData: (type: string, folder: string) => void
   onMkdir: (parent: string, name: string) => void
   /**
    * Open a context menu for a file or folder.
@@ -106,12 +113,13 @@ const KIND_LABEL: Record<AssetKind, string> = {
   shader: 'Shaders',
   sound: 'Sounds',
   font: 'Fonts',
+  data: 'Data',
 }
 
 /** Kinds a drag into the viewport places. */
 const PLACEABLE = new Set<AssetKind>(['prefab', 'model'])
 /** Kinds with no picture worth inventing. */
-const UNPREVIEWABLE = new Set<AssetKind>(['sound', 'font'])
+const UNPREVIEWABLE = new Set<AssetKind>(['sound', 'font', 'data'])
 
 /** What a tile drag carries: the paths it moves, one a line. Its own type, so nothing else dropped reads as one. */
 const TILES = 'application/x-mp-assets'
@@ -271,6 +279,38 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
     picker.value = ''
     if (files.length > 0) host.onUpload(files, folder)
   })
+  /**
+   * **New data** (ADR 0181): each of the library's data types at its menu path, folders by `/` — Unity's
+   * `CreateAssetMenu`, so `Keyboard/Keyboard Style` is New data › Keyboard › Keyboard Style. Greyed, with why, where
+   * no type may be made: Shared, or a game that declares none.
+   */
+  const dataMenu = (into: string): MenuItem => {
+    const types = host.dataTypes(into)
+    if (types.length === 0)
+      return { label: 'New data', enabled: false, why: libraryOf(into) === null ? 'data belongs to a game: open a game’s library' : 'this game declares no data types' }
+    interface Branch {
+      label: string
+      kids: Branch[]
+      run?: () => void
+    }
+    const top: Branch[] = []
+    for (const t of types) {
+      let level = top
+      t.path.forEach((name, i) => {
+        const leaf = i === t.path.length - 1
+        let b = level.find((x) => x.label === name && (x.run !== undefined) === leaf)
+        if (b === undefined) {
+          b = { label: name, kids: [], ...(leaf ? { run: () => host.onCreateData(t.type, into) } : {}) }
+          level.push(b)
+        }
+        level = b.kids
+      })
+    }
+    const items = (branches: readonly Branch[]): MenuItem[] =>
+      branches.map((b) => (b.run !== undefined ? { label: b.label, run: b.run } : { label: b.label, items: items(b.kids) }))
+    return { label: 'New data', items: items(top) }
+  }
+
   plus.addEventListener('click', () => {
     const into = folder
     const at = plus.getBoundingClientRect()
@@ -283,6 +323,7 @@ export const createProjectPanel = (container: HTMLElement, host: ProjectHost): P
           }),
       },
       { label: 'New material', run: () => host.onCreateAsset('material', into) },
+      dataMenu(into),
       { label: 'Upload files…', divider: true, run: () => picker.click() },
     ])
   })

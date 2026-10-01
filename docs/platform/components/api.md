@@ -16,13 +16,27 @@ Package `packages/components`. Headless; deps `@mp/content`, `@mp/core` (`@mp/ph
 | `color` | `default` | `string` | `#rrggbb` |
 | `enum` | `options: readonly O[]`, `default: O` | `O` (literal union kept) | in options |
 | `vec3` | `default: Vec3` | `Vec3` | finite |
-| `asset` | `of: 'material' \| 'model'`, `default` (`''` = none) | `string` | string |
+| `asset` | `of: 'material' \| 'model' \| 'data'`, `dataType?` (a data field's type, ADR 0181), `default` (`''` = none) | `string` | string |
 | `collider` | `default: ColliderDesc` | `ColliderDesc` | per kind; convex ≥ 4 points |
 | `stages` | `default: readonly Stage[]` | a sequence's stages of steps (ADR 0137) | whole, by `stagesProblem` (`sequences.md`) |
 | `nodeRef` | — | `string \| null`, default `null` | target unchecked |
 | `componentRef` (ADR 0177) | `of: string` — the component type it takes | `ComponentRef \| null` = `{ node, component }` (a node id, found in the reference's scope as a `nodeRef` is, and one of its components by id), default `null` | shape; target unchecked. A bare node id — the old shape, until the box's content is migrated — reads as `{ node, component: '' }`: the node's first of the type |
 
 `readParams(decls, raw, at): Params<D>` — absent key → default; unknown key dropped; throws `ComponentError`. `defaultsOf`, `Params<D>`, `ParamDecls`, `RawParams`.
+
+## Data types — `packages/components/src/data.ts` (ADR 0181)
+
+```ts
+defineDataType<const D extends ParamDecls>(def: DataTypeDef<D>): DataTypeDef<D>
+interface DataTypeDef<D> { type: string; label?: string; menu?: string /* New data path, 'Keyboard/Keyboard Style' */; fields: D }
+newDataAsset(def): DataAsset                       // every field at its default — what New data writes
+readData(def, asset, at): Params<D> | undefined     // typed, defaulted; undefined for none or another type; throws on a bad value
+dataMenuPath(def): string[]                        // menu split on '/', else [label ?? type]
+```
+
+Unity's ScriptableObject classes. Fields are `ParamSpec`s, read and defaulted as a component's; `nodeRef`,
+`componentRef`, `stages` and `collider` mean nothing without a scene and are not drawn. A game declares its own
+(`ModeDescriptor.dataTypes`); a data asset of one lives only in that game's library.
 
 ## Definition — `packages/components/src/define.ts`
 

@@ -9,6 +9,7 @@ Package `packages/mode` (`@mp/mode`). Headless: no renderer import; gizmo colour
 | `name` | `string` | Stable id; matches `LevelConfig.mode.name`. Never shown. |
 | `label` | `string` | Picker text. |
 | `registry` | `Registry` | Engine + shared (from `content/<name>/game.json`) + own components. Composed, not inherited (see `docs/platform/components/api.md`). |
+| `dataTypes?` | `readonly DataTypeDef[]` | The data types this game declares (ADR 0181): what New data offers in its library, what its data assets are read against. Absent = none. |
 | `tuning` | `CharacterTuning` (`packages/humanoid/src/groundController.ts`) | Starting locomotion numbers; the client copies them. |
 | `gizmos` | `Readonly<Record<string, number>>` | Component type → `0xrrggbb` marker colour a tool draws over the rule's node. |
 | `surfaceGrid?` | `(components, size: Vec3, settings) => SurfaceGrid \| null` (`src/surface.ts`) | What this game would tile onto a box surface, for a tool to draw before the game runs (ADR 0120). Returns the **grid** (`cols`, `rows`, `pitch`, `size`, `startX`, `startZ`), never geometry — six numbers whatever the cell count, so a tool may ask per drag frame, and `@mp/mode` stays headless. The game reads the node's own components, so a tool never learns what one means. Helpers: `gridCells`, `gridMargin`. Absent = nothing generated on this game's surfaces. |

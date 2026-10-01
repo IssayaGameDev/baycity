@@ -9,6 +9,7 @@ import { CURVE_SETTINGS } from './progression'
 import { StepPad } from './components/stepPad'
 import { Treadmill } from './components/treadmill'
 import { WinsPad } from './components/wins'
+import { KEYBOARD_DATA_TYPES } from './data/keyboardStyle'
 
 /**
  * Keyboard Escape, as the tools see it (ADR 0052, ADR 0065).
@@ -28,6 +29,7 @@ export const KEYBOARD_MODE: ModeDescriptor = {
   name: 'keyboard',
   label: 'Keyboard',
   registry: KEYBOARD_REGISTRY,
+  dataTypes: KEYBOARD_DATA_TYPES,
   /**
    * The **starting** tuning. `moveSpeed` here is what you run at before the first frame writes Max Speed into
    * the client's live copy (`client.tuning`, ADR 0071) — the client copies this object on the way in

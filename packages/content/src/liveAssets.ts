@@ -1,4 +1,4 @@
-import { kindForPath, type AssetKind } from './assets'
+import { isDataAsset, kindForPath, type AssetKind } from './assets'
 
 /**
  * Assets that are data files, edited live (ADR 0159).
@@ -40,6 +40,11 @@ const VALIDATORS: Partial<Record<LiveKind, (json: unknown) => string | null>> = 
     }
     return null
   },
+  /**
+   * A data asset (ADR 0181): its shape only. Its fields are checked against its type's declaration where that is
+   * known — the editor, before it sends — and the server, which has no game's code, keeps to the shape.
+   */
+  data: (json) => (isDataAsset(json) ? null : 'a data asset names its type and holds its fields as an object'),
   /** Its shared components (ADR 0077), and its settings: a number or curve points each (ADR 0087/0088). */
   game: (json) => {
     if (typeof json !== 'object' || json === null || Array.isArray(json)) return 'a game file is an object'

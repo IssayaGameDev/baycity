@@ -1,5 +1,5 @@
 import { assetParamIds } from '@mp/components'
-import { hydratePrefabs, instantiateLevel, type Level, type LoadedLevel } from '@mp/content'
+import { hydratePrefabs, instantiateLevel, type DataAsset, type Level, type LoadedLevel } from '@mp/content'
 import type { PhysicsWorld } from '@mp/physics'
 import type { Registry } from '@mp/components'
 import {
@@ -45,6 +45,11 @@ export interface LevelHost {
   meshesOf: (handle: number) => readonly THREE.Mesh[]
   /** A loaded material asset by id, or `null`. Everything a component parameter names is loaded (ADR 0082). */
   material: (assetId: string) => THREE.Material | null
+  /**
+   * A data asset by id, as its file holds it, or `undefined` (ADR 0181): read it against its type with `readData`.
+   * Every one the level names is on its needs list, so a component's data field finds it.
+   */
+  data: (assetId: string) => DataAsset | undefined
   dispose: () => void
 }
 
@@ -116,6 +121,7 @@ export const loadLevelInto = async ({
     },
     meshesOf: (handle) => view.meshesOf(handle),
     material: (assetId) => assets.material(assetId),
+    data: (assetId) => content.dataOf(assetId),
     dispose: () => {
       view.dispose()
       lights.dispose()

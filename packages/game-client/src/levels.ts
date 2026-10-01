@@ -96,7 +96,8 @@ export const loadLevel = async (game: string, requested: string | null, registry
   const name = levelNameFor(game, asIndex(await read(indexAt), indexAt), requested)
   const needsAt = at(`${PLAY_CONTENT_DIR}/${levelNeedsFile({ game, name })}`)
   const needs = asNeeds(await read(needsAt), needsAt)
-  const docs = needs.assets.filter((a) => a.kind === 'prefab' || a.kind === 'material')
+  // The JSON kinds: what the page holds as data rather than bytes for the renderer (data assets, ADR 0181).
+  const docs = needs.assets.filter((a) => a.kind === 'prefab' || a.kind === 'material' || a.kind === 'data')
   const [raw, ...fetched] = await Promise.all([
     read(at(needs.level)),
     ...docs.map((a) =>

@@ -1,9 +1,11 @@
 import {
   buildDatabase,
   entryFor,
+  isDataAsset,
   PLAY_CONTENT_DIR,
   type AssetDatabase,
   type AssetEntry,
+  type DataAsset,
   type LevelNeeds,
   type MaterialAsset,
   type Node,
@@ -26,6 +28,8 @@ export interface LevelAssets {
   /** An asset's path from `content/` → the absolute URL of its bytes. */
   urlOf: (path: string) => string
   materialOf: (assetId: string) => MaterialAsset | undefined
+  /** A data asset's file as fetched (ADR 0181): its type and its field values, to read with `readData`. */
+  dataOf: (assetId: string) => DataAsset | undefined
   prefabs: PrefabSource
 }
 
@@ -45,6 +49,7 @@ export const levelAssets = (needs: LevelNeeds, json: ReadonlyMap<string, unknown
   const urls = new Map<string, string>()
   const materials = new Map<string, MaterialAsset>()
   const prefabs = new Map<string, Node>()
+  const data = new Map<string, DataAsset>()
   for (const a of needs.assets) {
     const entry = entryFor(a.path, { id: a.id, kind: a.kind })
     if (entry === undefined) continue
@@ -53,12 +58,14 @@ export const levelAssets = (needs: LevelNeeds, json: ReadonlyMap<string, unknown
     const doc = json.get(a.id)
     if (entry.kind === 'material' && isMaterial(doc)) materials.set(a.id, doc)
     if (entry.kind === 'prefab' && isPrefab(doc)) prefabs.set(a.id, doc)
+    if (entry.kind === 'data' && isDataAsset(doc)) data.set(a.id, doc)
   }
   return {
     db: buildDatabase(entries),
     // A path the list does not name is where every server would put it; nothing will be there in a build.
     urlOf: (path) => urls.get(path) ?? new URL(`${PLAY_CONTENT_DIR}/${path}`, base).href,
     materialOf: (id) => materials.get(id),
+    dataOf: (id) => data.get(id),
     prefabs: { root: (id) => prefabs.get(id) },
   }
 }

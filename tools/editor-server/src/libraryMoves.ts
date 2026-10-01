@@ -80,6 +80,10 @@ export const moveRefusal = (moving: readonly AssetEntry[], to: string | null, wo
   const moved = new Set(moving.map((e) => e.id))
   const thing = (e: AssetEntry): string => `${libraryName(libraryOf(e.path) ?? null)}'s ${e.kind} ${e.name}`
 
+  // A data asset's type is its game's code (ADR 0181): no other library has what reads it.
+  const data = moving.filter((e) => e.kind === 'data' && (libraryOf(e.path) ?? null) !== to)
+  if (data.length > 0) return `${listed(data.map((e) => e.name).sort())} ${data.length === 1 ? 'is a data asset' : 'are data assets'}: ${data.length === 1 ? 'it stays' : 'they stay'} in ${libraryName(libraryOf(data[0]!.path) ?? null)}'s library`
+
   if (to !== null) {
     const byLevel = levelsUsing(world.levels, isAssetId, world.contentsOf)
     const levels = new Set<string>()

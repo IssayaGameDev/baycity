@@ -14,10 +14,10 @@ import {
   validateLevel, type NodeRef, refKey,
   BUILTIN_LABELS, BUILTIN_MODELS,
   isSegment, parseQualified, qualify,
-  applyAssetOps, diffAssetOps, gameDocId, gameOfDocId, isLiveAssetPath, libraryOf, LiveAssetError, mayUse,
+  applyAssetOps, diffAssetOps, gameDocId, gameOfDocId, isDataAsset, isLiveAssetPath, libraryOf, LiveAssetError, mayUse,
   type AssetDatabase, type AssetOp, type MaterialAsset } from '@mp/content'
 
-import { DEFAULT_REGISTRY, createRegistry, ENGINE_COMPONENTS, isSharedComponent, PLAYER_COMPONENTS, SHARED_COMPONENT_TYPES, sharedComponents, type Registry } from '@mp/components'
+import { DEFAULT_REGISTRY, createRegistry, dataMenuPath, ENGINE_COMPONENTS, isSharedComponent, newDataAsset, PLAYER_COMPONENTS, SHARED_COMPONENT_TYPES, sharedComponents, type DataTypeDef, type Registry } from '@mp/components'
 import { type CurvePoint, type ModeDescriptor, readSettings } from '@mp/mode'
 import { eulerToQuat, vec3, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
@@ -220,6 +220,18 @@ const registryFor = (mode: ModeDescriptor): Registry => {
   const extra = live.filter((type) => !have.has(type) && isSharedComponent(type))
   return extra.length === 0 && kept.length === code.length ? mode.registry : createRegistry([...kept, ...sharedComponents(extra)])
 }
+
+/**
+ * A data type as the game whose library holds the asset declares it (ADR 0181), or `undefined`: a path in Shared, a
+ * game this build has no code for, a type that game does not declare.
+ */
+const dataTypeAt = (path: string, type: string): DataTypeDef | undefined => {
+  const game = libraryOf(path)
+  return game === null || game === undefined ? undefined : MODES[game]?.dataTypes?.find((d) => d.type === type)
+}
+
+/** Whether asset `id` fits a field taking `of`: any of its kind, and for a data field only its type (ADR 0181). */
+const ofDataType = (id: string, of: string, dataType: string | undefined): boolean => of !== 'data' || dataType === undefined || assets?.dataOf(id)?.type === dataType
 
 /** The component set the open document is validated and edited against. */
 const registry = (): Registry => (activeMode === undefined ? DEFAULT_REGISTRY : registryFor(activeMode))
@@ -1594,6 +1606,35 @@ const project: Project = createProjectPanel($<HTMLDivElement>('#palette'), {
   },
   onSelectAsset: (assetId) => selectAsset(assetId),
   requestPreview: (kind, key, done) => previews.request(kind, key, done),
+  dataTypes: (folder) => {
+    const game = libraryOf(folder)
+    return game === null || game === undefined ? [] : (MODES[game]?.dataTypes ?? []).map((d) => ({ type: d.type, path: dataMenuPath(d) }))
+  },
+  /**
+   * New data (ADR 0181): a data asset of `type`, every field at its default, named after the type — `Keyboard-Style`,
+   * then `Keyboard-Style-1` — in `folder`, which `dataTypes` only offers inside the declaring game's library.
+   */
+  onCreateData: (type, folder) => {
+    void (async () => {
+      const def = dataTypeAt(folder, type)
+      if (assets === null || def === undefined) return
+      const base = (def.label ?? def.type).replace(/[^\w-]+/g, '-') || 'data'
+      const taken = (name: string): boolean => assets?.db.entries.some((e) => e.path === `${folder}/${name}.data.json`) === true
+      let name = base
+      for (let n = 1; taken(name); n++) name = `${base}-${n}`
+      const created = await assets.createData(name, newDataAsset(def), folder).catch((e: unknown) => {
+        notify.error(`new ${def.label ?? def.type} failed: ${String(e)}`)
+        return undefined
+      })
+      await reloadAssets()
+      if (created !== undefined) {
+        selectedAsset = created.id
+        assetInspector.show(created.id)
+        room.syncHolds()
+      }
+      refreshUi()
+    })()
+  },
   onCreateAsset: (kind, folder) => {
     void (async () => {
       if (assets === null) return
@@ -1840,9 +1881,9 @@ const edits = createHistoryStore({
   // selection; a game's data file's through `gameSync`, the games window's fields following if it is open.
   applyAsset: (id, ops, what) => {
     const game = gameOfDocId(id)
-    const shown = game === null ? assets?.materialOf(id) : gameData[game]
+    const shown = game === null ? (assets?.materialOf(id) ?? assets?.dataOf(id)) : gameData[game]
     if (shown === undefined) {
-      notify.warn(`cannot ${what}: the ${game === null ? 'material' : 'game'} is gone`)
+      notify.warn(`cannot ${what}: the ${game === null ? 'asset' : 'game'} is gone`)
       return false
     }
     try {
@@ -1949,6 +1990,16 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
     // Its fields are the new shader's; any other edit leaves the panel — and the field being dragged — alone.
     if (shaderChanged) assetInspector.show(id)
   },
+  dataOf: (id) => assets?.dataOf(id),
+  dataTypeOf: (path, type) => dataTypeAt(path, type),
+  /** A data asset edited (ADR 0181), as a material is: ops on its live document, and one undo entry per drag. */
+  onDataChanged: (id, data, label, ongoing = false) => {
+    const before = assets?.dataOf(id)
+    if (before === undefined) return
+    const ops = diffAssetOps(before, data)
+    assetSync.edit(id, ops)
+    edits.recordAsset({ assetId: id, ops, inverses: applyAssetOps(before, ops).inverses.reverse(), label }, ongoing)
+  },
 })
 
 /**
@@ -1956,11 +2007,19 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
  * onto the library's copies, the renderer following each in place (ADR 0157).
  */
 const assetSync = createAssetSync({
-  shown: (id) => assets?.materialOf(id),
+  shown: (id) => assets?.materialOf(id) ?? assets?.dataOf(id),
   origin: (id) => assets?.originOf(id),
   show: (id, json, remote) => {
     const library = assets
-    if (library === null || !isMaterialJson(json)) return
+    if (library === null) return
+    // A data asset (ADR 0181): only its panel shows it; nothing is drawn from one in the editor.
+    if (library.db.byId[id]?.kind === 'data') {
+      if (!isDataAsset(json)) return
+      library.setData(id, json)
+      if (remote && selectedAsset === id) assetInspector.refresh(id)
+      return
+    }
+    if (!isMaterialJson(json)) return
     library.setMaterial(id, json)
     void refreshCompiled([id]).then((rebuild) => {
       if (rebuild) meshes.buildAll()
@@ -1972,7 +2031,7 @@ const assetSync = createAssetSync({
   fetch: (id) => assets?.fetchLive(id) ?? Promise.resolve(null),
   post: (id, batch) => postLiveOps(`/api/live/asset/${id}/ops`, batch),
   refused: (id, why) => {
-    notify.error(`${assets?.db.byId[id]?.name ?? 'material'}: edit not saved — ${why}`)
+    notify.error(`${assets?.db.byId[id]?.name ?? 'asset'}: edit not saved — ${why}`)
     if (selectedAsset === id) assetInspector.refresh(id)
   },
 })
@@ -2186,26 +2245,30 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
   applyOverrides: () => void prefabs.applyOverrides(),
   revertPlacement: (index) => prefabs.revertPlacement(index),
   applyPlacementOverrides: (index) => prefabs.applyPlacementOverrides(index),
-  assetOptions: (of) => {
+  assetOptions: (of, dataType) => {
     const options: Record<string, string> = { '(none)': '' }
     // The built-in shapes (ADR 0090) sit in the model slot beside the uploaded files.
     if (of === 'model') for (const id of BUILTIN_MODELS) options[BUILTIN_LABELS[id]] = id
     const db = assets?.db
     // Only what the document may use (ADR 0161): its game's own and Shared's, or Shared's in a Shared prefab.
     const user = editingFor()
-    if (db !== undefined) for (const a of assetsOfKind(db, of)) if (mayUse(user, a.path)) options[a.name] = a.id
+    if (db !== undefined) for (const a of assetsOfKind(db, of)) if (mayUse(user, a.path) && ofDataType(a.id, of, dataType)) options[a.name] = a.id
     return options
   },
-  assetFolders: (of) => {
+  assetFolders: (of, dataType) => {
     const out: { id: string; label: string; folders: string[] }[] = []
     if (of === 'model') for (const id of BUILTIN_MODELS) out.push({ id, label: BUILTIN_LABELS[id], folders: ['Built-in'] })
     const db = assets?.db
     const user = editingFor()
     // The folders as the Project window names them: `Keyboard/materials/red.mat.json` is in Keyboard › materials.
-    if (db !== undefined) for (const a of assetsOfKind(db, of)) if (mayUse(user, a.path)) out.push({ id: a.id, label: a.name, folders: project.named(a.path).split('/').slice(0, -1) })
+    if (db !== undefined)
+      for (const a of assetsOfKind(db, of)) if (mayUse(user, a.path) && ofDataType(a.id, of, dataType)) out.push({ id: a.id, label: a.name, folders: project.named(a.path).split('/').slice(0, -1) })
     return out
   },
-  assetRefusal: (of, id) => assetRefusal(assets?.db ?? null, of, id, editingFor()),
+  dataTypeLabel: (type) => (activeMode?.dataTypes ?? []).find((d) => d.type === type)?.label ?? type,
+  assetRefusal: (of, id, dataType) =>
+    assetRefusal(assets?.db ?? null, of, id, editingFor()) ??
+    (ofDataType(id, of, dataType) ? null : `this takes a ${(activeMode?.dataTypes ?? []).find((d) => d.type === dataType)?.label ?? dataType}, not a ${assets?.dataOf(id)?.type ?? 'data asset of another type'}`),
   draggedAssets: () => draggedAssets,
   pingNode: (index) => hierarchy.ping(index),
   revealAsset: (id) => revealAsset(id),

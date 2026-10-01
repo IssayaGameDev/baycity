@@ -43,8 +43,8 @@ Two platforms edge to edge therefore do not continue each other. A world lattice
 (ADR 0118): it moved the caps off centre on every platform, and a clean join then needed platforms sized and
 placed to the grid instead of the other way round — either a missing row at 88% of seam positions, or caps
 overhanging an outer rim by half a key. What came out of that attempt and stayed: the geometry as a game
-setting, and corner snapping in the editor (ADR 0117), which is what makes a box's edges land on the grid at
-all.
+setting. Corner snapping (ADR 0117) came out of it too and has gone: a move snaps a box's centre (ADR 0179), so
+an odd-sized platform's edges fall between grid lines.
 
 Caps are drawn as **one `InstancedMesh` per glyph** across the whole level, `castShadow: false`,
 `receiveShadow: true`, `DynamicDrawUsage` — the **still** boards'. A board whose visual is `animated` (a sequence

@@ -70,6 +70,7 @@ const rig = (doc: Doc, selection: readonly number[], transform: Partial<Transfor
     assetOptions: () => ({ '(none)': '' }),
     assetFolders: () => [],
     gameLabel: () => 'Keyboard',
+    dataTypeLabel: (type) => (type === 'KeyboardStyle' ? 'Keyboard Style' : type),
     assetRefusal: () => null,
     draggedAssets: () => [],
     pingNode: () => {},
@@ -212,6 +213,23 @@ describe('the Inspector’s cards', () => {
     const doc = levelDoc({ id: 'l', config: {}, nodes: [node('boss', [comp('bo', 'Boss', { zone: 'zone' })]), box('zone', vec3(0, 0, 0))] }, reg)
     const { panel } = rig(doc, [0])
     expect(line(card(panel, 'Boss'), 'zone').querySelector('.rf-name')!.textContent).toBe('zone (Collider)')
+  })
+
+  // A data field takes one type, by name (ADR 0181): what it offers is asked for that type.
+  it('draws a data asset parameter by its type’s name, and asks for that type alone', () => {
+    const Styled = defineComponent({ type: 'Styled', params: { style: { kind: 'asset', of: 'data', dataType: 'KeyboardStyle', default: '' } } })
+    const doc = levelDoc({ id: 'l', config: {}, nodes: [node('a', [comp('s', 'Styled')])] }, createRegistry([...ENGINE_COMPONENTS, Styled]))
+    const asked: string[] = []
+    const { panel } = rig(doc, [0], {}, {
+      assetFolders: (of, dataType) => {
+        asked.push(`${of}:${dataType ?? ''}`)
+        return []
+      },
+    })
+    const field = line(card(panel, 'Styled'), 'style')
+    expect(field.querySelector('.rf-name')!.textContent).toBe('None (Keyboard Style)')
+    field.querySelector<HTMLElement>('.rf-pick')!.click()
+    expect(asked).toEqual(['data:KeyboardStyle'])
   })
 
   it('draws the Renderer as one Mesh Renderer card: its model, then its material (ADR 0153)', () => {

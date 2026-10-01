@@ -1,7 +1,8 @@
-import { assetsOfKind, libraryOf, mayUse, type AssetDatabase, type AssetEntry, type MaterialAsset, type MaterialValue, type Node } from '@mp/content'
+import { assetsOfKind, libraryOf, mayUse, type AssetDatabase, type AssetEntry, type DataAsset, type MaterialAsset, type MaterialValue, type Node } from '@mp/content'
+import { defaultsOf, type DataTypeDef, type ParamSpec } from '@mp/components'
 import { BUILTIN_SHADERS, defaultParams, shaderDef, type ShaderParam } from '@mp/render-three'
 
-import { checkField, colorFieldOf, fieldRow, numberScrub, scrubFieldOf, selectField, type Live } from './controls'
+import { checkField, colorFieldOf, fieldRow, numberScrub, scrubFieldOf, selectField, textField, type Live } from './controls'
 import { assetRefusal } from './assetRefusal'
 import { ASSET_ICON, icon } from './icons'
 import { refField, type RefShown } from './refField'
@@ -58,6 +59,12 @@ export interface AssetInspectorHost {
   onOpenLevel: (qualified: string) => void
   /** An asset in *Used by* was clicked: select it. */
   onSelectAsset: (assetId: string) => void
+  /** A loaded data asset's JSON, by asset id (ADR 0181). */
+  dataOf: (assetId: string) => DataAsset | undefined
+  /** The type a data asset at `path` names, as its game's code declares it, or `undefined` (ADR 0181). */
+  dataTypeOf: (path: string, type: string) => DataTypeDef | undefined
+  /** A data asset edited: its whole new content, as `onMaterialChanged`'s; `ongoing` while a field is still dragged. */
+  onDataChanged: (assetId: string, data: DataAsset, label: string, ongoing?: boolean) => void
   /** The assets a Project window drag carries right now, for a texture slot (ADR 0176); empty when none. */
   draggedAssets: () => readonly string[]
   /** Show an asset's tile in the Project window, the selection left alone (ADR 0176). */
@@ -108,6 +115,9 @@ export const prefabFacts = (root: Node): { parts: number; components: { type: st
   const components = [...counts].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count || a.type.localeCompare(b.type))
   return { parts, components }
 }
+
+const isVec3 = (v: unknown): v is { x: number; y: number; z: number } =>
+  typeof v === 'object' && v !== null && ['x', 'y', 'z'].every((k) => typeof (v as Record<string, unknown>)[k] === 'number')
 
 /** Whether the keyboard is in this control right now: its value is the person's, not ours. */
 const busy = (control: HTMLElement): boolean => control.contains(document.activeElement)
@@ -263,6 +273,8 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
 
   /** What the panel shows now, for `refresh`: which material, drawn with which shader, and its fields by key. */
   let drawn: { assetId: string; shader: string; fields: Map<string, { field: Field; fallback: MaterialValue }> } | null = null
+  /** The data asset on show and each field's way to show a value in place (ADR 0181). */
+  let drawnData: { assetId: string; type: string; fields: Map<string, (v: unknown) => void> } | null = null
 
   const showMaterial = (entry: AssetEntry, material: MaterialAsset): void => {
     const def = shaderDef(material.shader)
@@ -315,6 +327,161 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
     drawn = { assetId: entry.id, shader: material.shader, fields }
   }
 
+  /**
+   * One data field (ADR 0181), from its declaration — the parameter kinds a component's fields use — with a way to
+   * show a value in place. A kind with no meaning outside a scene (a node or component reference, a sequence's
+   * stages, a collider) is named, not drawn.
+   */
+  const dataField = (
+    spec: ParamSpec,
+    value: unknown,
+    write: (v: unknown, ongoing?: boolean) => void,
+    settle: () => void,
+    user: string | null,
+    title: string,
+  ): { controls: HTMLElement[]; set: (v: unknown) => void } => {
+    switch (spec.kind) {
+      case 'number': {
+        const field = scrubFieldOf({
+          value: typeof value === 'number' ? value : spec.default,
+          spec: numberScrub(spec),
+          title,
+          commit: (v) => write(v),
+          live: { start: () => undefined, move: (v) => write(v, true), end: settle },
+        })
+        return { controls: [field.root], set: (v) => void (typeof v === 'number' && field.set(v)) }
+      }
+      case 'bool': {
+        const box = checkField(typeof value === 'boolean' ? value : spec.default, (on) => write(on), title)
+        return { controls: [box], set: (v) => void (box.checked = v === true) }
+      }
+      case 'string': {
+        const input = textField(typeof value === 'string' ? value : spec.default, (v) => write(v), { title })
+        return { controls: [input], set: (v) => void (!busy(input) && (input.value = typeof v === 'string' ? v : '')) }
+      }
+      case 'color': {
+        const w = dragged<string>((v, ongoing) => write(v, ongoing), settle)
+        const field = colorFieldOf(typeof value === 'string' ? value : spec.default, w.commit, w.live)
+        return { controls: [field.root], set: (v) => void (typeof v === 'string' && field.set(v)) }
+      }
+      case 'enum': {
+        const select = selectField(
+          spec.options.map((o) => ({ value: o, label: o })),
+          typeof value === 'string' ? value : spec.default,
+          (v) => write(v),
+          title,
+        )
+        return { controls: [select], set: (v) => void (!busy(select) && typeof v === 'string' && (select.value = v)) }
+      }
+      case 'vec3': {
+        let held = isVec3(value) ? { ...value } : { ...spec.default }
+        const axes = (['x', 'y', 'z'] as const).map((axis) => {
+          const put = (v: number, ongoing: boolean): void => {
+            held = { ...held, [axis]: v }
+            write(held, ongoing)
+          }
+          return {
+            axis,
+            field: scrubFieldOf({
+              value: held[axis],
+              label: axis.toUpperCase(),
+              axis,
+              spec: numberScrub({ step: 0.1 }),
+              title: `${title} ${axis}`,
+              commit: (v) => put(v, false),
+              live: { start: () => undefined, move: (v) => put(v, true), end: settle },
+            }),
+          }
+        })
+        return {
+          controls: axes.map((a) => a.field.root),
+          set: (v) => {
+            if (!isVec3(v)) return
+            held = { ...v }
+            for (const a of axes) a.field.set(v[a.axis])
+          },
+        }
+      }
+      case 'asset': {
+        // What the declaration takes: a kind, and for a data asset its type too — what this game may use (ADR 0161).
+        const of = spec.of
+        const db = host.db()
+        const fits = (id: string): boolean => of !== 'data' || host.dataOf(id)?.type === spec.dataType
+        const typeName = of === 'data' ? (spec.dataType ?? 'Data') : `${of[0]!.toUpperCase()}${of.slice(1)}`
+        const shownFor = (v: unknown): RefShown => {
+          if (typeof v !== 'string' || v === '') return null
+          const entry = db?.byId[v]
+          return entry === undefined ? { label: `missing ${typeName}`, icon: 'warn', missing: true } : { label: entry.name, icon: ASSET_ICON[entry.kind] }
+        }
+        let now = typeof value === 'string' ? value : ''
+        const field = refField({
+          shown: shownFor(now),
+          none: `None (${typeName})`,
+          title,
+          choices: () =>
+            folderTree(
+              (db === null ? [] : assetsOfKind(db, of))
+                .filter((a) => mayUse(user, a.path) && fits(a.id))
+                .map((a) => ({ key: a.id, label: a.name, icon: ASSET_ICON[a.kind], folders: host.named(a.path).split('/').slice(0, -1) })),
+            ),
+          current: () => (now === '' ? null : now),
+          pick: (v) => write(v ?? ''),
+          ping: () => void (now !== '' && host.revealAsset(now)),
+          open: () => void (now !== '' && host.onSelectAsset(now)),
+          refuse: (drag) =>
+            drag.kind !== 'asset'
+              ? `this takes a ${typeName}, not ${drag.kind === 'node' ? 'an object' : 'a component'}`
+              : (assetRefusal(db, of, drag.id, user) ?? (fits(drag.id) ? null : `this takes a ${typeName}`)),
+          take: (drag) => void (drag.kind === 'asset' && write(drag.id)),
+          draggedAssets: host.draggedAssets,
+        })
+        return {
+          controls: [field.root],
+          set: (v) => {
+            now = typeof v === 'string' ? v : ''
+            field.set(shownFor(now))
+          },
+        }
+      }
+      default: {
+        const note = el('span', 'a-none')
+        note.textContent = 'not used in a data asset'
+        return { controls: [note], set: () => undefined }
+      }
+    }
+  }
+
+  /**
+   * A data asset's fields (ADR 0181), drawn from its type's declaration as a component's are from its own: a line per
+   * field, at its value or its default. A type this game's code does not declare is said so, and the file left alone.
+   */
+  const showData = (entry: AssetEntry, data: DataAsset): void => {
+    const def = host.dataTypeOf(entry.path, data.type)
+    if (def === undefined) {
+      const warn = el('div', 'a-warn')
+      warn.textContent = `No data type "${data.type}" in ${libraryOf(entry.path) ?? 'Shared'}'s code — its fields cannot be shown.`
+      container.append(warn)
+      return
+    }
+    // As it is now, not as it was drawn: the panel stays up across edits (ADR 0157).
+    const now = (): DataAsset => host.dataOf(entry.id) ?? data
+    const defaults: Record<string, unknown> = { ...defaultsOf(def.fields) }
+    const user = libraryOf(entry.path) ?? null
+    const fields = new Map<string, (v: unknown) => void>()
+    for (const [key, spec] of Object.entries(def.fields)) {
+      const label = spec.label ?? key
+      const what = `${entry.name} ${label}`
+      const write = (v: unknown, ongoing = false): void => {
+        const current = now()
+        host.onDataChanged(entry.id, { ...current, fields: { ...current.fields, [key]: v } }, what, ongoing)
+      }
+      const field = dataField(spec, data.fields[key] ?? defaults[key], write, () => host.onDataChanged(entry.id, now(), what, false), user, label)
+      fields.set(key, (v) => field.set(v ?? defaults[key]))
+      container.append(fieldRow(label, ...field.controls))
+    }
+    drawnData = { assetId: entry.id, type: data.type, fields }
+  }
+
   /** The picture on show, to draw again when it goes out of date. */
   let picture: { assetId: string; draw: () => void } | null = null
 
@@ -354,6 +521,8 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
       return box
     }
     box.append(icon(ASSET_ICON[entry.kind], 'ic a-pic-ic'))
+    // A data asset is its fields: its kind's icon says what it is (ADR 0181).
+    if (entry.kind === 'data') return box
     const img = el('img')
     img.alt = ''
     img.hidden = true
@@ -460,6 +629,7 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
   const show = (assetId: string | null): void => {
     container.replaceChildren()
     drawn = null
+    drawnData = null
     head = null
     picture = null
     if (assetId === null) return
@@ -476,7 +646,9 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
     top.append(name, openers)
     const meta = el('div', 'a-meta')
     // The id is worth showing: it is what content stores, so it is what appears in a level file.
-    meta.textContent = `${entry.kind} · ${host.named(entry.path)} · ${entry.id}`
+    const data = entry.kind === 'data' ? host.dataOf(assetId) : undefined
+    const typeName = data === undefined ? null : (host.dataTypeOf(entry.path, data.type)?.label ?? data.type)
+    meta.textContent = `${typeName ?? entry.kind} · ${host.named(entry.path)} · ${entry.id}`
     header.append(top, meta)
     container.append(header, facts.box)
     head = { assetId, slot: openers }
@@ -490,10 +662,23 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
         container.append(warn)
       } else showMaterial(entry, material)
     }
+    if (entry.kind === 'data') {
+      if (data === undefined) {
+        const warn = el('div', 'a-warn')
+        warn.textContent = 'This data asset did not parse.'
+        container.append(warn)
+      } else showData(entry, data)
+    }
     container.append(usedBy(entry))
   }
 
   const refresh = (assetId: string): void => {
+    if (drawnData !== null && drawnData.assetId === assetId) {
+      const data = host.dataOf(assetId)
+      if (data === undefined || data.type !== drawnData.type) return show(assetId)
+      for (const [key, set] of drawnData.fields) set(data.fields[key])
+      return
+    }
     if (drawn === null || drawn.assetId !== assetId) return
     const material = host.materialOf(assetId)
     if (material === undefined || material.shader !== drawn.shader) {

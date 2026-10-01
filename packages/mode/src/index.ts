@@ -1,6 +1,6 @@
 import type { CharacterState, CharacterTuning, PlatformPoseLookup } from '@mp/humanoid'
 import type { PhysicsWorld } from '@mp/physics'
-import type { ComponentDef, Effects, Registry } from '@mp/components'
+import type { ComponentDef, DataTypeDef, Effects, Registry } from '@mp/components'
 import type { ComponentData, LoadedLevel, WorldNode } from '@mp/content'
 import type { Vec3 } from '@mp/core'
 
@@ -131,6 +131,11 @@ export interface ModeDescriptor {
   readonly label: string
   /** Engine components + the shared ones this game uses + its own. */
   readonly registry: Registry
+  /**
+   * The data types this game declares (ADR 0181): what **New data** offers in its library, and what its data assets
+   * are read against. A data asset of one lives only in this game's library. Absent = none.
+   */
+  readonly dataTypes?: readonly DataTypeDef[]
 /**
    * How a character moves here. A game with different locomotion supplies different numbers.
    *

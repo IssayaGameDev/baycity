@@ -128,14 +128,16 @@ export interface InspectorHost {
    * One accessor keyed by the kind the parameter declares, rather than one per kind: `AssetSpec['of']` is
    * the same list, so a new asset-valued parameter needs nothing here.
    */
-  assetOptions: (of: AssetSpec['of']) => Record<string, string>
+  assetOptions: (of: AssetSpec['of'], dataType?: string) => Record<string, string>
   /**
    * The same assets, each with the folders it sits in as the Project window names them — `Keyboard`, `materials` —
    * and the built-in shapes in `Built-in`: a reference field's picker as a tree (ADR 0178).
    */
-  assetFolders: (of: AssetSpec['of']) => readonly { readonly id: string; readonly label: string; readonly folders: readonly string[] }[]
+  assetFolders: (of: AssetSpec['of'], dataType?: string) => readonly { readonly id: string; readonly label: string; readonly folders: readonly string[] }[]
+  /** A data type's name as a person reads it — `Keyboard Style` — from the open level's game (ADR 0181). */
+  dataTypeLabel: (type: string) => string
   /** Why an asset cannot go in a field of that kind here, or `null` (ADR 0176): wrong kind, or not this game's. */
-  assetRefusal: (of: AssetSpec['of'], id: string) => string | null
+  assetRefusal: (of: AssetSpec['of'], id: string, dataType?: string) => string | null
   /** The assets a Project window drag carries right now, for a reference field (ADR 0176); empty when none. */
   draggedAssets: () => readonly string[]
   /** Flash a Hierarchy row, the selection left alone: where an object field points (ADR 0176). */
@@ -932,12 +934,14 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
          * A reference field (ADR 0176, ADR 0177): the asset's name, a picker, and a tile dropped from the Project
          * window. The names are the picker's own, so a built-in shape (ADR 0090) reads as it does there.
          */
-        const glyph = (id: string): IconName => (id.startsWith('builtin:') ? 'object' : spec.of === 'model' ? 'mesh' : 'material')
+        const glyph = (id: string): IconName => (id.startsWith('builtin:') ? 'object' : spec.of === 'model' ? 'mesh' : spec.of === 'data' ? 'data' : 'material')
+        // A data field takes one type, by name (ADR 0181).
+        const kindName = spec.of === 'model' ? 'Model' : spec.of === 'data' ? host.dataTypeLabel(spec.dataType ?? 'Data') : 'Material'
         const shownFor = (v: unknown): RefShown => {
           if (typeof v !== 'string' || v === '') return null
-          const options = host.assetOptions(spec.of)
+          const options = host.assetOptions(spec.of, spec.dataType)
           const name = Object.keys(options).find((k) => options[k] === v)
-          return name === undefined ? { label: `missing ${spec.of}`, icon: 'warn', missing: true } : { label: name, icon: glyph(v) }
+          return name === undefined ? { label: `missing ${kindName}`, icon: 'warn', missing: true } : { label: name, icon: glyph(v) }
         }
         const set = (v: string): void => {
           write({ [key]: v })
@@ -946,9 +950,9 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         }
         const field = refField({
           shown: mixed ? 'mixed' : shownFor(state[key]),
-          none: `None (${spec.of === 'model' ? 'Model' : 'Material'})`,
+          none: `None (${kindName})`,
           title: label,
-          choices: () => folderTree(host.assetFolders(spec.of).map((a) => ({ key: a.id, label: a.label, icon: glyph(a.id), folders: a.folders }))),
+          choices: () => folderTree(host.assetFolders(spec.of, spec.dataType).map((a) => ({ key: a.id, label: a.label, icon: glyph(a.id), folders: a.folders }))),
           current: () => {
             const v = now()
             return typeof v === 'string' && v !== '' ? v : null
@@ -963,7 +967,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
             if (typeof v === 'string' && v !== '' && !v.startsWith('builtin:')) host.openAsset(v)
           },
           refuse: (drag) =>
-            drag.kind === 'asset' ? host.assetRefusal(spec.of, drag.id) : `this takes a ${spec.of}, not ${drag.kind === 'node' ? 'an object' : 'a component'}`,
+            drag.kind === 'asset' ? host.assetRefusal(spec.of, drag.id, spec.dataType) : `this takes a ${kindName}, not ${drag.kind === 'node' ? 'an object' : 'a component'}`,
           take: (drag) => {
             if (drag.kind === 'asset') set(drag.id)
           },

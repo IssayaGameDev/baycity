@@ -91,6 +91,12 @@ describe('what is live, and what a material must be', () => {
     expect([gameDocId('keyboard'), gameOfDocId('game:keyboard'), gameOfDocId('0123456789abcdef')]).toEqual(['game:keyboard', 'keyboard', null])
   })
 
+  it('takes a data asset as a live document by its shape alone (ADR 0181): the server has no game’s code', () => {
+    expect(isLiveAssetPath('keyboard/assets/red.data.json')).toBe(true)
+    expect(validateLiveAsset('data', { type: 'KeyboardStyle', fields: { placeholder: '#ffffff' } })).toBeNull()
+    expect(validateLiveAsset('data', { fields: {} })).toMatch(/type/)
+  })
+
   it('checks ops off the wire', () => {
     expect(isAssetOp({ kind: 'set', path: ['a'], value: null })).toBe(true)
     expect(isAssetOp({ kind: 'unset', path: ['a'] })).toBe(true)
