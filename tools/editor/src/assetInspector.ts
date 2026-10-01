@@ -6,6 +6,7 @@ import { checkField, colorFieldOf, fieldRow, numberScrub, scrubFieldOf, selectFi
 import { assetRefusal } from './assetRefusal'
 import { ASSET_ICON, icon } from './icons'
 import { refField, type RefShown } from './refField'
+import { listField } from './listField'
 import { folderTree } from './treePicker'
 import { initials } from './people'
 
@@ -442,6 +443,12 @@ export const createAssetInspector = (container: HTMLElement, host: AssetInspecto
             field.set(shownFor(now))
           },
         }
+      }
+      case 'list': {
+        // Rows (ADR 0182): every edit the whole list, a drag one undo entry as any other field's.
+        const rowsOf = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : [])
+        const field = listField({ item: spec.item, value: rowsOf(value), title, write: (rows, ongoing) => write(rows, ongoing), settle })
+        return { controls: [field.root], set: (v) => field.set(rowsOf(v)) }
       }
       default: {
         const note = el('span', 'a-none')

@@ -45,6 +45,7 @@ world: () => PhysicsWorld | null          // null before first snapshot
 level: () => LoadedLevel | null
 meshesOf: (node: WorldNode) => readonly THREE.Mesh[]   // deduped across node.colliderHandles (ADR 0082)
 material: (assetId: string) => THREE.Material | null   // level-loaded material (ADR 0082)
+data: (assetId: string) => DataAsset | undefined       // a level-loaded data asset as its file holds it; readData reads it (ADR 0181)
 excludeFromAO: (object: THREE.Object3D) => () => void  // add to AO-ignore set; returns undo (ADR 0082)
 ```
 

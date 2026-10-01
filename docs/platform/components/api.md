@@ -13,12 +13,13 @@ Package `packages/components`. Headless; deps `@mp/content`, `@mp/core` (`@mp/ph
 | `number` | `default`, `min?`/`max?`/`step?` (hints, **not enforced**) | `number` | finite |
 | `bool` | `default` | `boolean` | |
 | `string` | `default` | `string` | |
-| `color` | `default` | `string` | `#rrggbb` |
+| `color` | `default`, `optional?` (ADR 0182: `''` allowed, read as auto) | `string` | `#rrggbb`, or `''` when optional |
 | `enum` | `options: readonly O[]`, `default: O` | `O` (literal union kept) | in options |
 | `vec3` | `default: Vec3` | `Vec3` | finite |
 | `asset` | `of: 'material' \| 'model' \| 'data'`, `dataType?` (a data field's type, ADR 0181), `default` (`''` = none) | `string` | string |
 | `collider` | `default: ColliderDesc` | `ColliderDesc` | per kind; convex ≥ 4 points |
 | `stages` | `default: readonly Stage[]` | a sequence's stages of steps (ADR 0137) | whole, by `stagesProblem` (`sequences.md`) |
+| `list` (ADR 0182) | `item: ParamDecls` (a row's fields), `default: rows` | `readonly Params<item>[]` — each row read and defaulted as parameters are | an array of objects, each row by `readParams(item)`, naming `key[n].field` |
 | `nodeRef` | — | `string \| null`, default `null` | target unchecked |
 | `componentRef` (ADR 0177) | `of: string` — the component type it takes | `ComponentRef \| null` = `{ node, component }` (a node id, found in the reference's scope as a `nodeRef` is, and one of its components by id), default `null` | shape; target unchecked. A bare node id — the old shape, until the box's content is migrated — reads as `{ node, component: '' }`: the node's first of the type |
 

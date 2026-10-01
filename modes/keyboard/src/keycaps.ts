@@ -5,6 +5,7 @@ import { THREE } from '@mp/render-three'
 import type { TpsClient } from '@mp/tps'
 
 import { Keyboard } from './components/keyboard'
+import { keyColoursAt, type KeyColours, type KeyStyleColours } from './keyColours'
 import { DEFAULT_KEYCAP_SHAPE, keycapGeometry, type KeycapShape } from './keycapGeometry'
 
 /**
@@ -207,6 +208,29 @@ export const RIDING_VERTEX_MAIN = /* glsl */ `
 #define instanceMatrix boardInstance
 `
 
+/**
+ * Every cap's own colours (ADR 0182): the letter texture is a stencil — white letter, black elsewhere — and each cap
+ * carries its cap and letter colours as two instance attributes, mixed by it. One shader for every key on every board,
+ * so a palette costs no draw call; the walls sample the black tile, so they are the cap colour.
+ */
+export const PAINT_VERTEX_HEAD = /* glsl */ `attribute vec3 capColor;
+attribute vec3 inkColor;
+varying vec3 vCapColor;
+varying vec3 vInkColor;
+`
+
+/** Patch a material's shader sources in place for painted caps. Throws if three's sources stop having the hooks. */
+export const paintShader = (shader: { vertexShader: string; fragmentShader: string }): void => {
+  if (!shader.vertexShader.includes('void main() {') || !shader.fragmentShader.includes('#include <map_fragment>')) {
+    throw new Error('keycaps: the standard material shader changed; the paint patch no longer applies')
+  }
+  shader.vertexShader = PAINT_VERTEX_HEAD + shader.vertexShader.replace('void main() {', 'void main() {\n\tvCapColor = capColor;\n\tvInkColor = inkColor;')
+  shader.fragmentShader = `varying vec3 vCapColor;\nvarying vec3 vInkColor;\n${shader.fragmentShader.replace(
+    '#include <map_fragment>',
+    '\tdiffuseColor.rgb *= mix(vCapColor, vInkColor, texture2D(map, vMapUv).r);',
+  )}`
+}
+
 /** Patch a material's shader sources in place for riding caps. Throws if three's sources stop having the hooks. */
 export const rideShader = (shader: { vertexShader: string; fragmentShader: string }): void => {
   if (!shader.vertexShader.includes('void main() {') || !shader.fragmentShader.includes('#include <color_fragment>')) {
@@ -308,6 +332,8 @@ export const drawKeycaps = (
    * the settings are editable live in the Game row, and the boards are rebuilt when they change.
    */
   keyGeometry: () => KeyGeometry = () => DEFAULT_KEY_GEOMETRY,
+  /** A Keyboard Style's colours by asset id (ADR 0182), read by the caller; `undefined` for none, or not one. */
+  styleOf: (assetId: string) => KeyStyleColours | undefined = () => undefined,
 ): Keycaps => {
   const meshes: THREE.InstancedMesh[] = []
   const textures: THREE.Texture[] = []
@@ -338,8 +364,8 @@ export const drawKeycaps = (
   let state: THREE.DataTexture | null = null
   /** What `state` uploads: kept typed here, since three types a texture's data loosely. */
   let stateData = new Float32Array(0)
-  /** The riding meshes' geometries: the cap's own attributes, shared, plus which board each cap rides. */
-  const ridingGeometries: THREE.BufferGeometry[] = []
+  /** Each mesh's geometry: the cap's own attributes, shared, plus each cap's colours and, riding, its board. */
+  const meshGeometries: THREE.BufferGeometry[] = []
 
   /** Write each carried board's row, and upload only when one of them moved. One row per board, per frame. */
   const follow = (): void => {
@@ -366,13 +392,16 @@ export const drawKeycaps = (
     if (changed) state.needsUpdate = true
   }
 
-  /** One cap to place: where it rests, which way its board faces down, and the board's row when it is carried. */
+  /** One cap to place: where it rests, which way its board faces down, its colours, and its board's row when carried. */
   interface Placed {
     key: string
     matrix: THREE.Matrix4
     down: THREE.Vector3
     slot: number
+    colours: KeyColours
   }
+  /** A board with no style, or none that reads: the plain look. */
+  const plain: KeyColours = { cap: look.cap, ink: look.ink }
 
   const build = (loaded: LoadedLevel): void => {
     /**
@@ -383,7 +412,7 @@ export const drawKeycaps = (
     const carried = new Map<string, Placed[]>()
 
     for (const item of loaded.visuals) {
-      const params = keyboardOn(loaded, item, keyGeometry())
+      const params = keyboardOn(loaded, item, keyGeometry(), styleOf)
       if (params === null || item.collider.kind !== 'box') continue
       const board = boardOf(item, params)
       if (board === null) continue
@@ -401,7 +430,8 @@ export const drawKeycaps = (
       const into = slot < 0 ? still : carried
       for (const cap of capsFor(board, item.collider.halfExtents, params)) {
         const list = into.get(cap.glyph) ?? []
-        list.push({ key: `${boardIndex}:${cap.col}:${cap.row}`, matrix: cap.matrix, down, slot })
+        const colours = keyColoursAt(params.style, params.seed, cap.col, cap.row, plain)
+        list.push({ key: `${boardIndex}:${cap.col}:${cap.row}`, matrix: cap.matrix, down, slot, colours })
         into.set(cap.glyph, list)
       }
     }
@@ -418,7 +448,7 @@ export const drawKeycaps = (
     const textureOf = (glyph: string): THREE.Texture => {
       let texture = glyphs.get(glyph)
       if (texture === undefined) {
-        texture = glyphTexture(glyph, look)
+        texture = glyphTexture(glyph)
         glyphs.set(glyph, texture)
         textures.push(texture)
       }
@@ -427,7 +457,22 @@ export const drawKeycaps = (
 
     const addMesh = (glyph: string, placed: readonly Placed[], rides: boolean): void => {
       const material = new THREE.MeshStandardMaterial({ map: textureOf(glyph), roughness: 0.5, metalness: 0 })
-      let shape: THREE.BufferGeometry = geometry
+      // The cap's own attributes, shared rather than copied, plus each cap's two colours (ADR 0182) — and, riding,
+      // the board it rides: four bytes a cap.
+      const shape = new THREE.BufferGeometry()
+      shape.setIndex(geometry.index)
+      for (const [name, attribute] of Object.entries(geometry.attributes)) shape.setAttribute(name, attribute)
+      const caps3 = new Float32Array(placed.length * 3)
+      const inks3 = new Float32Array(placed.length * 3)
+      const colour = new THREE.Color()
+      placed.forEach((p, i) => {
+        colour.setHex(p.colours.cap, THREE.SRGBColorSpace).toArray(caps3, i * 3)
+        colour.setHex(p.colours.ink, THREE.SRGBColorSpace).toArray(inks3, i * 3)
+      })
+      shape.setAttribute('capColor', new THREE.InstancedBufferAttribute(caps3, 3))
+      shape.setAttribute('inkColor', new THREE.InstancedBufferAttribute(inks3, 3))
+      meshGeometries.push(shape)
+      material.onBeforeCompile = paintShader
       if (rides) {
         /**
          * Transparent from the start, as a fadeable platform's own material is (ADR 0137), so a fade never
@@ -437,14 +482,10 @@ export const drawKeycaps = (
         const texture = state!
         material.onBeforeCompile = (shader) => {
           shader.uniforms.boardState = { value: texture }
+          paintShader(shader)
           rideShader(shader)
         }
-        // The cap's own attributes, shared rather than copied, plus the board each cap rides: four bytes a cap.
-        shape = new THREE.BufferGeometry()
-        shape.setIndex(geometry.index)
-        for (const [name, attribute] of Object.entries(geometry.attributes)) shape.setAttribute(name, attribute)
         shape.setAttribute('boardSlot', new THREE.InstancedBufferAttribute(Float32Array.from(placed, (p) => p.slot), 1))
-        ridingGeometries.push(shape)
       }
       const mesh = new THREE.InstancedMesh(shape, material, placed.length)
       // Dynamic, because pressing rewrites a cap's matrix. Static uploads once and would never show a press.
@@ -561,13 +602,13 @@ export const drawKeycaps = (
       }
       // Shared by every mesh, so disposed once rather than per glyph.
       geometry.dispose()
-      for (const g of ridingGeometries) g.dispose()
+      for (const g of meshGeometries) g.dispose()
       state?.dispose()
       for (const texture of textures) texture.dispose()
       meshes.length = 0
       textures.length = 0
       boards.length = 0
-      ridingGeometries.length = 0
+      meshGeometries.length = 0
       riding.length = 0
       state = null
       stateData = new Float32Array(0)
@@ -680,7 +721,12 @@ export const KEY_SETTINGS = {
  * A `pitch` still sitting in an old component's params is ignored — `readParams` walks the declarations, not
  * the file — so no level needed rewriting when the three moved (ADR 0115).
  */
-const keyboardOn = (loaded: LoadedLevel, item: VisualItem, geometry: KeyGeometry): KeyboardParams | null => {
+const keyboardOn = (
+  loaded: LoadedLevel,
+  item: VisualItem,
+  geometry: KeyGeometry,
+  styleOf: (assetId: string) => KeyStyleColours | undefined = () => undefined,
+): KeyboardParams | null => {
   const handle = item.colliderHandles[0]
   const node = handle === undefined ? undefined : loaded.nodeOf(handle)
   if (node === undefined) return null
@@ -694,6 +740,8 @@ const keyboardOn = (loaded: LoadedLevel, item: VisualItem, geometry: KeyGeometry
     maxKeys: geometry.maxKeys,
     glyphs: typeof p.glyphs === 'string' && p.glyphs.length > 0 ? p.glyphs : 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
     seed: numberOr(p.seed, 1),
+    facing: facingTurns(p.facing),
+    style: typeof p.style === 'string' && p.style !== '' ? styleOf(p.style) : undefined,
   }
 }
 
@@ -704,7 +752,16 @@ export interface KeyboardParams {
   maxKeys: number
   glyphs: string
   seed: number
+  /** Quarter turns of the letters from forward, toward right (ADR 0182): 0 forward, 1 right, 2 back, 3 left. */
+  facing: number
+  /** The board's Keyboard Style's colours, read; `undefined` for the plain look. */
+  style?: KeyStyleColours | undefined
 }
+
+/** The letters' facing as quarter turns: forward (blue +Z) is 0, then right (red +X), back, left; anything else forward. */
+export const facingTurns = (facing: unknown): number => Math.max(0, ['forward', 'right', 'back', 'left'].indexOf(String(facing)))
+
+const UP = new THREE.Vector3(0, 1, 0)
 
 const numberOr = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback)
 
@@ -822,13 +879,16 @@ export const capsFor = (
 ): { glyph: string; col: number; row: number; matrix: THREE.Matrix4 }[] => {
   const size = params.pitch * params.fill
   const out: { glyph: string; col: number; row: number; matrix: THREE.Matrix4 }[] = []
+  // The letters' facing (ADR 0182): the cap turned about the board's up, a quarter at a time — a cap is square, so
+  // only its letter shows the turn.
+  const turned = params.facing === 0 ? board.quat : board.quat.clone().multiply(new THREE.Quaternion().setFromAxisAngle(UP, (params.facing * Math.PI) / 2))
   for (let c = 0; c < board.cols; c += 1)
     for (let r = 0; r < board.rows; r += 1) {
       // `half.y` and not `half.y + height / 2`: the cap's geometry runs y 0…1 from its own base, so its origin
       // belongs **on** the platform's face rather than half a cap above it.
       const local = new THREE.Vector3(board.startX + c * params.pitch, half.y, board.startZ + r * params.pitch)
       const world = local.applyQuaternion(board.quat).add(board.origin)
-      const matrix = new THREE.Matrix4().compose(world, board.quat, new THREE.Vector3(size, params.height, size))
+      const matrix = new THREE.Matrix4().compose(world, turned, new THREE.Vector3(size, params.height, size))
       const glyph = params.glyphs[glyphAt(params.seed, c, r, params.glyphs.length)] ?? 'A'
       out.push({ glyph, col: c, row: r, matrix })
     }
@@ -857,16 +917,17 @@ export const glyphAt = (seed: number, col: number, row: number, count: number): 
  *
  * Drawn on a canvas, which is the same trick the nametags use.
  */
-const glyphTexture = (glyph: string, look: KeycapLook): THREE.Texture => {
+const glyphTexture = (glyph: string): THREE.Texture => {
   const tile = 128
   const canvas = document.createElement('canvas')
   canvas.width = tile * 2
   canvas.height = tile
   const ctx = canvas.getContext('2d')
   if (ctx !== null) {
-    ctx.fillStyle = `#${look.cap.toString(16).padStart(6, '0')}`
+    // A stencil (ADR 0182): black is the cap, white the letter; each cap's own colours are mixed by it.
+    ctx.fillStyle = '#000000'
     ctx.fillRect(0, 0, tile * 2, tile)
-    ctx.fillStyle = `#${look.ink.toString(16).padStart(6, '0')}`
+    ctx.fillStyle = '#ffffff'
     ctx.font = `600 ${tile * 0.46}px system-ui, sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
@@ -874,7 +935,8 @@ const glyphTexture = (glyph: string, look: KeycapLook): THREE.Texture => {
     ctx.fillText(glyph, tile * 0.38, tile * 0.4)
   }
   const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
+  // Data, not colour: a mix amount, read as it is.
+  texture.colorSpace = THREE.NoColorSpace
   // The top face samples right up to the tile's edge; without this it bleeds into the blank tile beside it.
   texture.wrapS = THREE.ClampToEdgeWrapping
   texture.wrapT = THREE.ClampToEdgeWrapping

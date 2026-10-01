@@ -27,7 +27,7 @@ import {
 } from '@mp/humanoid'
 import { createOrbitCamera, type OcclusionQueries, type OrbitCamera } from '@mp/camera'
 import { PLAYER_NODE_ID, type ModeDescriptor, type PlayerHost } from '@mp/mode'
-import { type ComponentData, type LoadedLevel, type WorldNode } from '@mp/content'
+import { type ComponentData, type DataAsset, type LoadedLevel, type WorldNode } from '@mp/content'
 import {
   Death,
   characterAccess,
@@ -218,6 +218,11 @@ export interface TpsClient {
    * with the level, so a game restyling a node reads the id off the component and asks here.
    */
   material: (assetId: string) => THREE.Material | null
+  /**
+   * A data asset the level loaded, by id, as its file holds it (ADR 0181): every one a component parameter names
+   * is on the level's needs list. Read it against its type with `readData`.
+   */
+  data: (assetId: string) => DataAsset | undefined
   /**
    * Keep an object out of the ambient-occlusion prepass (ADR 0082). Returns the undo.
    *
@@ -1064,6 +1069,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
       return [...out]
     },
     material: (assetId) => level?.material(assetId) ?? null,
+    data: (assetId) => level?.data(assetId),
     excludeFromAO: (object) => {
       aoExcluded.add(object)
       return () => aoExcluded.delete(object)
