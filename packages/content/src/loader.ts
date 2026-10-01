@@ -1,5 +1,5 @@
-import { eulerToQuat, lerpVec3, mulQuat, quat, rotateVec3, slerpQuat, vec3, type Quat, type Vec3 } from '@mp/core'
-import type { PhysicsBody, PhysicsWorld, ShapeDesc } from '@mp/physics'
+import { conjQuat, eulerToQuat, lerpVec3, mulQuat, quat, rotateVec3, slerpQuat, vec3, type Quat, type Vec3 } from '@mp/core'
+import type { CharacterBody, PhysicsBody, PhysicsWorld, ShapeDesc } from '@mp/physics'
 
 import { scaleCollider } from './primitives'
 import {
@@ -134,6 +134,7 @@ export interface WorldLight {
 export type BasePhase = 'render' | 'tick' | 'prev'
 
 const add = (a: Vec3, b: Vec3): Vec3 => vec3(a.x + b.x, a.y + b.y, a.z + b.z)
+const sub = (a: Vec3, b: Vec3): Vec3 => vec3(a.x - b.x, a.y - b.y, a.z - b.z)
 const mul = (a: Vec3, b: Vec3): Vec3 => vec3(a.x * b.x, a.y * b.y, a.z * b.z)
 const scaleOf = (t: Transform): Vec3 => t.scale ?? vec3(1, 1, 1)
 
@@ -267,6 +268,11 @@ interface Dynamic {
   prevRot: Quat
   currPos: Vec3
   currRot: Quat
+  /** Where the body was before the last `update` — the last slice's pose, where `prev` is the tick's: what `shove` sweeps from. */
+  slicePos: Vec3
+  sliceRot: Quat
+  /** A trigger's body: overlapped, never resolved, so it pushes nothing (ADR 0054). */
+  sensor: boolean
   renderPos: Vec3
   renderRot: Quat
 }
@@ -357,9 +363,24 @@ export interface LoadedLevel {
   baseIndex: (colliderHandle: number) => number | undefined
   basePoseOf: (index: number, phase: BasePhase) => { position: Vec3; rotation: Quat } | undefined
   baseCarry: (index: number, localPos: Vec3) => Vec3 | undefined
+  /**
+   * Push `character` out of the movers that came into it over the last `update` (ADR 0186), and return how
+   * far it went. For each solid, shown body that moved: its shape swept from its last pose by the motion it
+   * gave the capsule's centre — its turn at that place as well as its travel — and, where it touched, the rest
+   * of that motion plus a sliver. Applied at once (`CharacterBody.push`), before the step's own move, so that
+   * starts clear of them and a mover is a wall again; anything else solid in the way stops it short.
+   *
+   * The base being ridden pushes too. The ride places its rider at a point on it, not by a step, so a push
+   * first is not added to — and a base the controller took a tick early, a lift still below a floor edge the
+   * rider stands on, rises into them as anything else would. A mover the capsule was already inside before it
+   * moved pushes nothing: pinned against something last slice, it passes through (Kodjo's call).
+   */
+  shove: (character: Pick<CharacterBody, 'translation' | 'touchedBy' | 'push'>) => Vec3
 }
 
 const UNIT_BOX: ColliderDesc = { kind: 'box', halfExtents: { x: 0.5, y: 0.5, z: 0.5 } }
+/** How far clear of a mover's face a shove leaves the capsule (m): about the character controller's own gap. */
+const SHOVE_SKIN = 0.02
 const ZERO: Vec3 = { x: 0, y: 0, z: 0 }
 /** What a node no component drives adds. Shared, so the still case allocates nothing per tick. */
 const UNDRIVEN: NodeDrive = { position: ZERO, rotation: ZERO }
@@ -491,6 +512,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     centre: Vec3 | undefined,
     light: WorldLight | undefined = undefined,
     shape: ColliderDesc | undefined = undefined,
+    sensor = false,
   ): void => {
     if (body !== undefined) dynamicByCollider.set(body.colliderHandle, dynamics.length)
     const at = placeAt(frame, scaledCentre(frame, centre))
@@ -510,6 +532,9 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
       prevRot: { ...frame.worldRot },
       currPos: { ...at },
       currRot: { ...frame.worldRot },
+      slicePos: { ...at },
+      sliceRot: { ...frame.worldRot },
+      sensor,
       renderPos: { ...at },
       renderRot: { ...frame.worldRot },
     })
@@ -672,7 +697,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
             paired.colliderHandles.push(body.colliderHandle)
           }
         }
-        if (f.animated) addDynamic(f, body, paired, centre, undefined, shapeOf(c))
+        if (f.animated) addDynamic(f, body, paired, centre, undefined, shapeOf(c), trigger)
       })
     } else if (drawsModel) {
       /**
@@ -777,6 +802,8 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         d.prevScale = drawn
         d.prevOpacity = f.seq.opacity
       }
+      d.slicePos = primed ? d.currPos : at
+      d.sliceRot = primed ? d.currRot : f.worldRot
       d.currPos = at
       d.currRot = f.worldRot
       d.currScale = drawn
@@ -859,6 +886,30 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     lights,
     driveOf,
     update,
+    shove: (character) => {
+      const at = character.translation()
+      let x = 0
+      let y = 0
+      let z = 0
+      const pushers: number[] = []
+      for (const d of dynamics) {
+        if (d.body === undefined || d.sensor || !(d.frame.shown && d.frame.solid)) continue
+        // Where its motion over the slice takes the capsule's centre: the travel, and the turn at that place —
+        // a sweeping bar comes faster at its tip than at its hub.
+        const local = rotateVec3(conjQuat(d.sliceRot), sub(at, d.slicePos))
+        const motion = sub(add(d.currPos, rotateVec3(d.currRot, local)), at)
+        const length = Math.hypot(motion.x, motion.y, motion.z)
+        if (length < 1e-6) continue
+        const touched = character.touchedBy(d.body.colliderHandle, { position: d.slicePos, rotation: d.sliceRot }, motion)
+        if (touched === undefined || touched <= 0) continue
+        const k = 1 - touched + SHOVE_SKIN / length
+        x += motion.x * k
+        y += motion.y * k
+        z += motion.z * k
+        pushers.push(d.body.colliderHandle)
+      }
+      return pushers.length === 0 ? vec3(0, 0, 0) : character.push(vec3(x, y, z), pushers)
+    },
     motionSlices: (fromMs, toMs, maxStep) => {
       if (!(maxStep > 0)) return 1
       const widest = widestStep(fromMs, toMs)

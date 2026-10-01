@@ -109,7 +109,10 @@ Step order:
 6. Leaving adds ride velocity (`ride/dt`, or `liftVel` from a coyote jump). Impulse added, zeroed.
 6b. **Slope following** (ADR 0127). Not riding, with footing that is staying put (`settling`) and `state.grounded` as of last tick, the vertical carries what keeps the soles on the probe's plane: `slopeDy = −(n.x·dx + n.z·dz) / n.y`, added to the settling press. Zero while airborne, leaving or rising, so no arc and no envelope number moves. `n.y` needs no guard — `probeGround` rejects anything flatter than the 50° limit.
 7. `body.move(desired, snapAtLeast)`: own `v·dt` + ride delta horizontally; **riding, the vertical seats the soles on the probe contact** (`under.point.y + 0.02 − feetY`, ADR 0105) rather than repeating the anchor's motion, which is what stopped a boarding gap being carried. Not riding, `slopeDy` plus the trapezoid `½(v₀+v₁)·dt`, except when settling where the press is `vy·dt`. Descending a slope, `snapAtLeast` is the step's own length and is also stored in `slopeReach` for next tick's probe: the resolve intermittently returns part of a step, and snap-to-ground is the only thing that absorbs the remainder (ADR 0127).
-8. Update `carry`, `grounded`, `coyote`, `liftVel/liftStore`; ceiling cancels rise; `base` re-anchored.
+8. Update `carry`, `grounded`, `coyote`, `liftVel/liftStore`; ceiling cancels rise; `base` re-anchored. A base
+   the probe could not see — it **missed** (`under === undefined`), grounded, not leaving — is taken from a
+   collider `move` touched that has a frame. Not when the probe found still ground: a moving wall beside the
+   character was taken as its base there, never ridden, and so excused from pushing it (ADR 0186).
 
 ### `approachVec` (ADR 0078)
 
@@ -120,6 +123,8 @@ Moves `(vx, vz)` toward the target by at most `maxDelta` **along the difference 
 - Held while the probe finds the same collider, not on `grounded` (flickers).
 - Position re-derived each tick from `base.localPos` under the frame's current pose; never nudged by a delta.
 - Ridden piece must be posed with zero derived velocity (`LoadedLevel.update(base?.colliderHandle)`) or Rapier double-applies.
+- Nothing in the step moves the character out of a piece that moved into it: the controller resolves only the
+  character's own motion. The tick does it first, `LoadedLevel.shove` (ADR 0186).
 - `base.localPos` is what a rider sends on the wire (v10).
 - Jump/launch off a mover inherits ride velocity; walking off inherits nothing.
 

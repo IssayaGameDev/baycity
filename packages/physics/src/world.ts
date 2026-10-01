@@ -190,6 +190,19 @@ export interface CharacterBody {
    * every contact concatenates them.
    */
   overlaps: () => number[]
+  /**
+   * How far along `motion` (0…1) collider `handle`, set at `from`, first touches this capsule where it stands
+   * now — `undefined` when it does not touch it at all over that motion, when it is a sensor or switched off,
+   * and `0` when it already overlaps at `from`. One pair, no scene query: what a mover that came into the
+   * capsule asks (ADR 0186).
+   */
+  touchedBy: (handle: number, from: { readonly position: Vec3; readonly rotation: Quat }, motion: Vec3) => number | undefined
+  /**
+   * Move the capsule by `by` now, outside the controller, stopped the controller's gap short of anything solid
+   * in the way — but not the `ignore` colliders, which are the movers doing the pushing and which it starts
+   * inside (ADR 0186). Returns how far it went. Before the step's own `move`, so that starts clear of them.
+   */
+  push: (by: Vec3, ignore: readonly number[]) => Vec3
   remove: () => void
 }
 
@@ -546,6 +559,52 @@ export const createPhysicsWorld = (opts: PhysicsWorldOptions = {}): PhysicsWorld
         }
         if (wider !== undefined && snap !== false) controller.enableSnapToGround(snap)
         return { grounded, applied: c, ceiling }
+      },
+      touchedBy: (handle, from, motion) => {
+        const other = world.getCollider(handle)
+        if (other === null || !other.isEnabled() || other.isSensor()) return undefined
+        const hit = other.shape.castShape(
+          from.position,
+          from.rotation,
+          motion,
+          collider.shape,
+          collider.translation(),
+          collider.rotation(),
+          { x: 0, y: 0, z: 0 },
+          0,
+          1,
+          true,
+        )
+        return hit === null ? undefined : hit.time_of_impact
+      },
+      push: (by, ignore) => {
+        const length = Math.hypot(by.x, by.y, by.z)
+        if (length < 1e-9) return vec3(0, 0, 0)
+        freshenQueries()
+        const t = body.translation()
+        const along = { x: by.x / length, y: by.y / length, z: by.z / length }
+        // `stopAtPenetration: false`, as `castSphere` has it: the floor underfoot is within the gap already, and
+        // a push along it or away from it must not read that as a wall.
+        const hit = world.castShape(
+          t,
+          NO_ROTATION,
+          along,
+          collider.shape,
+          0,
+          length,
+          false,
+          RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+          queryLayers,
+          collider,
+          undefined,
+          ignore.length === 0 ? undefined : (c) => !ignore.includes(c.handle),
+        )
+        const go = hit === null ? length : Math.max(0, hit.time_of_impact - (o.offset ?? CHAR_OFFSET))
+        const to = { x: t.x + along.x * go, y: t.y + along.y * go, z: t.z + along.z * go }
+        body.setTranslation(to, true)
+        collider.setTranslation(to)
+        queriesStale = true
+        return vec3(along.x * go, along.y * go, along.z * go)
       },
       probeGround: (extraReach = 0) => {
         freshenQueries()

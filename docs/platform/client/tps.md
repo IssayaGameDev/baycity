@@ -77,8 +77,9 @@ moveX, moveZ, jump, actions })` → landing dip `orbit.land` → `avatars.captur
 speed, base })` (v10 base frame; `packStates(states, playerStates())` in spare flag bits) → `components.contact` →
 `rules.takeDeath()` → `die()` → `rules.takeTeleport?.()`.
 
-`LocalWorld.applyInput`: `components.fixedUpdate` → `loaded.update` → `world.step(TICK_DT/2)` →
-`components.locomote(cmd)` → `world.step(TICK_DT/2)`.
+`LocalWorld.applyInput`: `components.fixedUpdate` → per slice (ADR 0104): `loaded.update(at, base, s === 1)` →
+`world.step(slice/2)` → `loaded.shove(char.body)` (ADR 0186: out of whatever moved into it) →
+`components.locomote(cmd)` → `world.step(slice/2)`.
 
 ## Debug pane — `pane.ts`
 

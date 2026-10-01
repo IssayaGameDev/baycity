@@ -733,6 +733,9 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
           // Only the first slice moves where a frame blends from, so the drawing spans the whole tick.
           loaded?.update(at, char.base?.colliderHandle, s === 1)
           world.step(half) // (A) platforms move
+          // Whatever moved into the character pushes it on the way it was going (ADR 0186): the controller only
+          // resolves the character's own motion, so a platform arriving would otherwise pass straight through.
+          loaded?.shove(char.body)
           // The movement slot (ADR 0061). This was `stepCharacter(...)` called straight from here, which is
           // why every game had the same locomotion whether it suited them or not. The game's own locomotion
           // component occupies this moment now — between the two half-steps, so the character resolves
