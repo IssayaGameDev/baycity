@@ -1,16 +1,16 @@
 import type { Transform } from '@mp/content'
-import { eulerToQuat, vec3, type Vec3 } from '@mp/core'
+import { eulerToQuat, vec3, type Quat, type Vec3 } from '@mp/core'
 import { createThreeStage, OrbitControls, THREE, TransformControls } from '@mp/render-three'
 
 import type { Doc, LocalPose } from './editorDoc'
 import type { PreviewOffset } from './motionPreview'
-import { cornerSnapDelta, roundAngle, snapAnglesDeg, worldHalfExtents } from './snap'
+import { roundAngle, snapAnglesDeg, snapMove } from './snap'
 import type { GizmoMode, GizmoSpace } from './toolbar'
 import type { Notify } from './notices'
 
 /**
  * The transform gizmo: the handles, what they snap to, and how a drag reaches the document (ADR 0031,
- * ADR 0114, ADR 0117, ADR 0121).
+ * ADR 0114, ADR 0179, ADR 0121).
  *
  * Last of the eight to move, and the most tangled, because three things had to own themselves first: the
  * item groups it attaches to, the history a drag folds into one entry, and the pointer that tells a click
@@ -48,25 +48,6 @@ export const unpreviewed = (
     rotation: vec3(e.x, e.y, e.z),
     scale: vec3(div(g.scale.x, off.scale.x), div(g.scale.y, off.scale.y), div(g.scale.z, off.scale.z)),
   }
-}
-
-/**
- * The world move that puts an object's **minimum corner** on the grid (ADR 0117): what a move snaps to, for an
- * item and for a sequence point's copy (ADR 0144) alike. The corner is of the world axis-aligned box, and a
- * built-in shape is a unit box at scale 1 (ADR 0090), so the world scale *is* the size in metres.
- */
-export const cornerSnapOf = (g: THREE.Object3D, step: number): Vec3 => {
-  g.updateWorldMatrix(true, false)
-  const world = new THREE.Vector3()
-  const quat = new THREE.Quaternion()
-  const scale = new THREE.Vector3()
-  g.matrixWorld.decompose(world, quat, scale)
-  const half = worldHalfExtents(new THREE.Matrix4().makeRotationFromQuaternion(quat).elements, {
-    x: Math.abs(scale.x) / 2,
-    y: Math.abs(scale.y) / 2,
-    z: Math.abs(scale.z) / 2,
-  })
-  return cornerSnapDelta({ x: world.x - half.x, y: world.y - half.y, z: world.z - half.z }, step)
 }
 
 /** What the gizmo needs from the editor around it. */
@@ -127,8 +108,8 @@ export const createGizmoTool = (host: GizmoHost) => {
 
   const gizmo = new TransformControls(host.stage.camera, host.canvas)
   /**
-   * Translation and scale snap to an **absolute** grid anchored at zero, which is what `TransformControls` does
-   * for both: `Math.round(v / snap) * snap`.
+   * Scale snaps to an **absolute** grid anchored at zero, which is what `TransformControls` does: `Math.round(v /
+   * snap) * snap`. Translation is ours (`snapTranslation`, ADR 0179).
    *
    * Rotation is left to us (ADR 0114). Three snaps `rotationAngle` — how far the drag has turned — not the
    * angle it lands on, so an object sitting at 7° goes to 22°, 37°, 52° and can never reach 15° or 30°. That
@@ -136,41 +117,34 @@ export const createGizmoTool = (host: GizmoHost) => {
    * below does it absolutely instead.
    */
   const applySnap = (): void => {
-    // Translation and rotation are ours: three snaps a position's **centre** and a rotation's **delta**, and
-    // neither is what snapping is for (ADR 0114, ADR 0117). Scale it does absolutely, which is right.
+    // Translation and rotation are ours: three snaps every axis of a position, the ones not dragged included, and
+    // a rotation's **delta** (ADR 0114, ADR 0179). Scale it does absolutely, which is right.
     gizmo.setTranslationSnap(null)
     gizmo.setRotationSnap(null)
     gizmo.setScaleSnap(edit.snap ? edit.steps.scale : null)
   }
 
   /**
-   * Snap the primary's **minimum corner** to the grid, not its centre (ADR 0117).
+   * Snap the primary's move as Unity's grid snap does (ADR 0179, `snapMove`): with world handles, each axis the drag
+   * moved puts the object's **position** — its centre — on the grid, and an axis it did not move stays where it
+   * was; with local handles, whole steps along the handle axes from where the drag started.
    *
-   * Snapping the centre made half of all sizes wrong: a box three cells wide, centred on a grid line, has its
-   * edges halfway between lines, so its end cells are half covered — which is where keycaps hung over a
-   * platform's edge. The edge is what meets the next platform; the centre is a number nobody looks at.
-   *
-   * The corner is of the **world axis-aligned** box, so a wall rotated on its edge snaps by the face you are
-   * butting against something. Snapped in world space and converted back through the parent, so a child of a
-   * moved or rotated group lands where the grid is rather than where its parent's frame happens to put it.
-   *
-   * Only the primary; `mirrorDragToSelection` gives the others its delta, as translation always has.
+   * In world space, converted back through the parent, so a child of a moved or rotated group lands where the grid
+   * is rather than where its parent's frame puts it. Only the primary; `mirrorDragToSelection` gives the others its
+   * delta, as translation always has.
    */
   const snapTranslation = (): void => {
     const at = host.selected()
     if (edit.mode !== 'translate' || !edit.snap || at === null) return
     const g = host.groupAt(at)
+    const start = dragStart.get(at)
     const step = edit.steps.translate
-    if (g === undefined || step <= 0) return
-    const d = cornerSnapOf(g, step)
-    if (d.x === 0 && d.y === 0 && d.z === 0) return
-    // The delta is a world translation; the group's position is in its parent's frame.
-    const world = g.getWorldPosition(new THREE.Vector3())
+    if (g === undefined || start === undefined || step <= 0) return
+    const now = g.getWorldPosition(new THREE.Vector3())
+    const to = snapMove(now, start.world, step, edit.space === 'local' ? start.turn : undefined)
     const parent = g.parent ?? host.instanceRoot()
     parent.updateWorldMatrix(true, false)
-    const before = parent.worldToLocal(world.clone())
-    const after = parent.worldToLocal(world.clone().add(new THREE.Vector3(d.x, d.y, d.z)))
-    g.position.add(after.sub(before))
+    g.position.copy(parent.worldToLocal(new THREE.Vector3(to.x, to.y, to.z)))
   }
 
   /**
@@ -254,6 +228,9 @@ export const createGizmoTool = (host: GizmoHost) => {
   interface DragStart {
     pose: LocalPose
     scale: Vec3
+    /** Where it was in the world, and which way it faced: what a snapped move is counted from (ADR 0179). */
+    world: Vec3
+    turn: Quat
   }
   let dragStart = new Map<number, DragStart>()
 
@@ -282,12 +259,16 @@ export const createGizmoTool = (host: GizmoHost) => {
         for (const i of host.selection()) {
           const g = host.groupAt(i)
           if (g === undefined) continue
+          const world = g.getWorldPosition(new THREE.Vector3())
+          const turn = g.getWorldQuaternion(new THREE.Quaternion())
           dragStart.set(i, {
             // Read off the group, not from `poseOf`, though at this instant they agree: every value compared
             // against it later is also read off a group, so both sides share one rounding and one euler branch.
             // Mixing the stored euler with a re-derived one leaves a residue in the delta that accumulates.
             pose: groupPose(g),
             scale: vec3(g.scale.x, g.scale.y, g.scale.z),
+            world: vec3(world.x, world.y, world.z),
+            turn: { x: turn.x, y: turn.y, z: turn.z, w: turn.w },
           })
         }
       }
@@ -302,7 +283,7 @@ export const createGizmoTool = (host: GizmoHost) => {
   })
   gizmo.addEventListener('objectChange', () => {
     // Before the write-back and before the mirror, so the document and the other host.selected() items both see the
-    // snapped value rather than the raw one (ADR 0114, ADR 0117).
+    // snapped value rather than the raw one (ADR 0114, ADR 0179).
     snapTranslation()
     snapRotation()
     writeBackSelected()

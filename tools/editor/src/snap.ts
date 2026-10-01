@@ -1,3 +1,5 @@
+import { rotateVec3, type Quat, type Vec3 } from '@mp/core'
+
 /**
  * Snapping to an increment (ADR 0114).
  *
@@ -37,36 +39,30 @@ export const snapAnglesDeg = (radians: { x: number; y: number; z: number }, step
   return { x: snapToGrid(radians.x, step), y: snapToGrid(radians.y, step), z: snapToGrid(radians.z, step) }
 }
 
-/**
- * The half-extents of a box's **world axis-aligned** bounding box (ADR 0117).
- *
- * A rotated box reaches further along a world axis than its own half-extents: the standard result is
- * `|R| · h`, the rotation matrix with every entry made positive, applied to the half-extents. At 90° that
- * simply swaps two axes, which is what a wall standing on its edge needs.
- *
- * `m` is the rotation's 3×3 part in column-major order, as `THREE.Matrix4.elements` gives it.
- */
-export const worldHalfExtents = (m: readonly number[], half: { x: number; y: number; z: number }): { x: number; y: number; z: number } => {
-  const a = (i: number): number => Math.abs(m[i] ?? 0)
-  return {
-    x: a(0) * half.x + a(4) * half.y + a(8) * half.z,
-    y: a(1) * half.x + a(5) * half.y + a(9) * half.z,
-    z: a(2) * half.x + a(6) * half.y + a(10) * half.z,
-  }
-}
+/** Below this, an axis did not move: what a drag leaves of an untouched axis after a trip through the matrices. */
+const MOVED = 1e-9
 
 /**
- * How far to move something so its **minimum corner** lands on the grid (ADR 0117).
+ * A move's world position, snapped as Unity snaps one (ADR 0179).
  *
- * Snapping the centre is what made half of all sizes wrong: a box three cells wide, centred on a grid line,
- * has its edges halfway between lines — so the end cells are half covered. The edge is the thing that meets
- * the next platform, and the middle is a number nobody looks at.
+ * - **World handles** (no `rotation`): Unity's grid snap. Every axis the drag moved lands on the nearest multiple of
+ *   `step` — the object's **position**, its centre — and an axis it did not move stays exactly where it started, on
+ *   the grid or not. Snapping an axis nobody touched is how dragging X used to move Y and Z.
+ * - **Local handles** (`rotation`, the handles' frame): a world grid cannot be followed along a tilted axis, so the
+ *   move goes in whole steps along each handle axis, counted from where it started — Unity's increment snap, which
+ *   is also all Unity does with local handles.
+ *
+ * `now` and `start` are world positions; so is what comes back.
  */
-export const cornerSnapDelta = (
-  min: { x: number; y: number; z: number },
-  step: number,
-): { x: number; y: number; z: number } => ({
-  x: snapToGrid(min.x, step) - min.x,
-  y: snapToGrid(min.y, step) - min.y,
-  z: snapToGrid(min.z, step) - min.z,
-})
+export const snapMove = (now: Vec3, start: Vec3, step: number, rotation?: Quat): Vec3 => {
+  if (step <= 0) return { x: now.x, y: now.y, z: now.z }
+  if (rotation === undefined) {
+    const axis = (n: number, s: number): number => (Math.abs(n - s) < MOVED ? s : snapToGrid(n, step))
+    return { x: axis(now.x, start.x), y: axis(now.y, start.y), z: axis(now.z, start.z) }
+  }
+  const back = { x: -rotation.x, y: -rotation.y, z: -rotation.z, w: rotation.w }
+  const d = rotateVec3(back, { x: now.x - start.x, y: now.y - start.y, z: now.z - start.z })
+  const along = (v: number): number => (Math.abs(v) < MOVED ? 0 : snapToGrid(v, step))
+  const moved = rotateVec3(rotation, { x: along(d.x), y: along(d.y), z: along(d.z) })
+  return { x: start.x + moved.x, y: start.y + moved.y, z: start.z + moved.z }
+}

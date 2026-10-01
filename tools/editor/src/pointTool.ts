@@ -3,7 +3,7 @@ import { vec3, type Vec3 } from '@mp/core'
 import { THREE, TransformControls } from '@mp/render-three'
 
 import type { Doc, SequenceRoute } from './editorDoc'
-import { cornerSnapOf } from './gizmoTool'
+import { snapMove } from './snap'
 import type { OpenPoint } from './inspector'
 import { findStep, replaceStep } from './sequenceEdit'
 import { pointToWorld, worldToPoint, type MoveStep, type PointFrame } from './sequencePoints'
@@ -16,7 +16,7 @@ import type { GizmoSpace } from './toolbar'
  * **The copy.** While a move step is open in the Inspector, its target is drawn again, see-through, where the
  * step puts it, and the handles are on the copy rather than on the object — the object's gizmo gives way, as
  * it does for Face (ADR 0119). Dragging the copy writes the step's `to`, one history entry per drag, snapped
- * like any move: the copy's minimum corner goes on the grid (ADR 0117).
+ * like any move: the axes dragged put the copy's centre on the grid (ADR 0179).
  *
  * **The route.** For one selected object, a thin line from where it was placed through its move points in the
  * order they play, with a numbered dot at each. One line per sequence that moves it.
@@ -164,6 +164,8 @@ export const createPointTool = (host: PointToolHost): PointTool => {
 
   let editing: Editing | null = null
   let copy: THREE.Object3D | null = null
+  /** Where the copy was when the drag began. */
+  let dragFrom: { world: Vec3; turn: { x: number; y: number; z: number; w: number } } | null = null
   /** What the copy was made from, so a rebuild of the object's meshes rebuilds the copy too. */
   let copiedFrom: { group: THREE.Group; first: THREE.Object3D | undefined } | null = null
   let dragging = false
@@ -356,6 +358,12 @@ export const createPointTool = (host: PointToolHost): PointTool => {
     // At both ends: the release after a drag is not a click on whatever is behind the copy.
     host.setDragged(true)
     if (on) {
+      // Where the copy started, which a snapped move is counted from (ADR 0179).
+      if (copy !== null) {
+        const p = copy.getWorldPosition(new THREE.Vector3())
+        const q = copy.getWorldQuaternion(new THREE.Quaternion())
+        dragFrom = { world: vec3(p.x, p.y, p.z), turn: { x: q.x, y: q.y, z: q.z, w: q.w } }
+      }
       // One history entry per drag, as the gizmo's: the ops each pointer event makes are folded at the end.
       host.edits().beginDrag()
       return
@@ -366,9 +374,13 @@ export const createPointTool = (host: PointToolHost): PointTool => {
   })
   gizmo.addEventListener('objectChange', () => {
     if (copy === null) return
-    if (host.snapping()) {
-      const d = cornerSnapOf(copy, host.snapStep())
-      copy.position.add(new THREE.Vector3(d.x, d.y, d.z))
+    // The object's own snap (ADR 0179): the axes dragged put the copy's centre on the grid, or whole steps along
+    // local handles.
+    if (host.snapping() && dragFrom !== null) {
+      const p = copy.getWorldPosition(new THREE.Vector3())
+      const to = snapMove(vec3(p.x, p.y, p.z), dragFrom.world, host.snapStep(), gizmo.space === 'local' ? dragFrom.turn : undefined)
+      const world = new THREE.Vector3(to.x, to.y, to.z)
+      copy.position.copy(copy.parent === null ? world : copy.parent.worldToLocal(world))
     }
     write()
   })

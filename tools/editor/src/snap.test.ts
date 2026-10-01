@@ -1,7 +1,7 @@
 import { THREE } from '@mp/render-three'
 import { describe, expect, it } from 'vitest'
 
-import { cornerSnapDelta, roundAngle, snapAnglesDeg, snapToGrid, worldHalfExtents } from './snap'
+import { roundAngle, snapAnglesDeg, snapMove, snapToGrid } from './snap'
 
 const deg = (radians: number): number => Number(((radians * 180) / Math.PI).toFixed(6))
 
@@ -98,65 +98,44 @@ describe('roundAngle', () => {
   })
 })
 
-describe('worldHalfExtents', () => {
-  /** A rotation matrix's 3x3 part, column-major, as THREE.Matrix4.elements gives it. */
-  const yaw = (deg: number): number[] => {
-    const r = (deg * Math.PI) / 180
-    const c = Math.cos(r)
-    const s = Math.sin(r)
-    // Column-major: columns are the rotated basis vectors.
-    return [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]
-  }
+describe('snapMove', () => {
+  const v = (x: number, y: number, z: number) => ({ x, y, z })
 
-  it('is the box itself when there is no rotation', () => {
-    const out = worldHalfExtents(yaw(0), { x: 2, y: 0.5, z: 3 })
-    expect(out.x).toBeCloseTo(2, 6)
-    expect(out.y).toBeCloseTo(0.5, 6)
-    expect(out.z).toBeCloseTo(3, 6)
+  /**
+   * Kodjo's case (ADR 0179): at 20, 41, 55 with a 0.5 step, one tick along X. The centre goes to 20.5 and Y and Z
+   * stay put. Before, the corner was snapped on every axis, and a 0.35 m object ended at 20.175, 41.148, 55.153.
+   */
+  it('puts the centre on the grid along the axis dragged, and leaves the others where they were', () => {
+    expect(snapMove(v(20.4, 41, 55), v(20, 41, 55), 0.5)).toEqual(v(20.5, 41, 55))
   })
 
-  it('swaps the two axes at a right angle, which is what a wall on its edge needs', () => {
-    const out = worldHalfExtents(yaw(90), { x: 2, y: 0.5, z: 3 })
-    expect(out.x).toBeCloseTo(3, 6)
-    expect(out.y).toBeCloseTo(0.5, 6)
-    expect(out.z).toBeCloseTo(2, 6)
+  it('leaves an axis off the grid if the drag did not move it', () => {
+    expect(snapMove(v(3.3, 41.148, 55.153), v(2.9, 41.148, 55.153), 0.5)).toEqual(v(3.5, 41.148, 55.153))
   })
 
-  it('reaches further along both axes at 45°, as a rotated box does', () => {
-    const out = worldHalfExtents(yaw(45), { x: 1, y: 1, z: 1 })
-    expect(out.x).toBeCloseTo(Math.SQRT2, 6)
-    expect(out.z).toBeCloseTo(Math.SQRT2, 6)
-  })
-})
-
-describe('cornerSnapDelta', () => {
-  it('moves the minimum corner onto the grid', () => {
-    const d = cornerSnapDelta({ x: 2.3, y: 0, z: -1.2 }, 1)
-    // Nearest line, so 2.3 comes back to 2 and -1.2 goes out to -1.
-    expect(d.x).toBeCloseTo(-0.3, 6)
-    expect(d.z).toBeCloseTo(0.2, 6)
+  it('snaps both axes of a plane handle', () => {
+    expect(snapMove(v(1.2, 7.13, 2.8), v(0, 7.13, 0), 0.5)).toEqual(v(1, 7.13, 3))
   })
 
-  it('does nothing when the corner is already on it', () => {
-    expect(cornerSnapDelta({ x: 3, y: 0, z: -2 }, 1)).toEqual({ x: 0, y: 0, z: 0 })
+  it('takes a trip through the matrices as not having moved', () => {
+    expect(snapMove(v(4.6, 41 + 1e-13, 55 - 1e-13), v(4, 41, 55), 0.5)).toEqual(v(4.5, 41, 55))
+  })
+
+  it('passes the move through with no step', () => {
+    expect(snapMove(v(1.23, 4, 5), v(1, 4, 5), 0)).toEqual(v(1.23, 4, 5))
   })
 
   /**
-   * The whole point (ADR 0117). A box an odd number of cells wide, centre-snapped, has its edges halfway
-   * between grid lines; corner-snapped it fills whole cells whatever its size.
+   * Local handles on a turned object (ADR 0179): whole steps along the handle from where it started — Unity's
+   * increment snap — since a world grid cannot be followed along a tilted axis.
    */
-  it('fills whole cells at any size, where centre snapping cannot', () => {
-    for (const cells of [1, 2, 3, 4, 5, 7]) {
-      const size = cells * 1
-      // Centre snapping: put the centre on a line and see where the edges land.
-      const centreLo = snapToGrid(4.37, 1) - size / 2
-      const centreOnGrid = Math.abs(centreLo - Math.round(centreLo)) < 1e-9
-      // Corner snapping: the low edge is on a line by construction, so the high edge is too.
-      const cornerLo = 4.37 - size / 2 + cornerSnapDelta({ x: 4.37 - size / 2, y: 0, z: 0 }, 1).x
-      expect(Math.abs(cornerLo - Math.round(cornerLo)), `${cells} cells`).toBeLessThan(1e-9)
-      expect(Math.abs(cornerLo + size - Math.round(cornerLo + size)), `${cells} cells, far edge`).toBeLessThan(1e-9)
-      // And centre snapping only manages it for the even ones.
-      expect(centreOnGrid, `${cells} cells under centre snapping`).toBe(cells % 2 === 0)
-    }
+  it('steps along a turned object’s own axis with local handles, from where it started', () => {
+    const yaw45 = { x: 0, y: Math.sin(Math.PI / 8), z: 0, w: Math.cos(Math.PI / 8) }
+    const along = (d: number) => v(10 + d * Math.SQRT1_2, 2, 5 - d * Math.SQRT1_2) // local +X turned 45° about Y
+    const out = snapMove(along(0.7), v(10, 2, 5), 0.5, yaw45)
+    const want = along(0.5)
+    expect(out.x).toBeCloseTo(want.x, 9)
+    expect(out.y).toBeCloseTo(2, 9)
+    expect(out.z).toBeCloseTo(want.z, 9)
   })
 })
