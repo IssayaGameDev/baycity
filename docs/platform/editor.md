@@ -814,16 +814,18 @@ the active tool's with its unit and its own bounds, so it stays one field.
 
 | Tool | Default | Range | Unit | Snapped by |
 | --- | --- | --- | --- | --- |
-| Move | 0.5 | 0.05–10 | m | **us** — `snapTranslation`, on the **corner** (ADR 0117) |
+| Move | 0.5 | 0.05–10 | m | **us** — `snapTranslation`, the **centre**, axes dragged only (ADR 0179) |
 | Rotate | 15 | 1–90 | ° | **us** — `snapRotation` on `objectChange` |
 | Scale | 0.1 | 0.05–5 | × | `TransformControls.setScaleSnap` (absolute) |
 | Face | 0.5 | 0.05–10 | m | **us** — `snappedPull`, on the face's plane (ADR 0119) |
 
-**Translation snaps the minimum corner of the world axis-aligned box**, not the centre (ADR 0117). A box is a
-centre plus a size, so centre-snapping puts the edges on the grid only for even cell counts and halfway
-between for odd ones — which is where keycaps hung over a platform's edge. Corner-snapped, any size fills
-whole cells. `worldHalfExtents` (`|R| · h`) is why a wall rotated onto its edge snaps by the face you are
-butting against something. Placing a new object still snaps the click point, so its centre lands on the grid.
+**Translation snaps as Unity's does** (ADR 0179), `snapMove(now, start, step, rotation?)` (`src/snap.ts`) on the
+primary's world position against where the drag started (`DragStart.world`, `.turn`). World handles — Unity's grid
+snap: each axis the drag moved puts the **position** (the centre) on the grid, and an axis it did not move stays
+exactly where it was, on the grid or not (under `1e-9` of change is not a move). Local handles — Unity's increment
+snap: whole steps along each handle axis from the start, since a world grid cannot be followed along a tilted axis.
+Converted back through the parent; the others get the primary's delta (`mirrorDragToSelection`). Placing a new
+object snaps the click point, so its centre lands on the grid too. A sequence point's copy snaps the same way.
 
 Rotation is ours because three snaps `rotationAngle`, the distance dragged, so a round amount is added to
 wherever you already were and round angles are unreachable. `snapAnglesDeg` (`src/snap.ts`, pure and tested)
@@ -943,7 +945,7 @@ of the one selected object; every rebuild calls `InspectorHost.pointsChanged`, w
 | --- | --- |
 | the copy | `copyOf(target group)`: its meshes and its children's, geometry shared, one see-through material. Rebuilt on refresh, and when the target's holder was rebuilt under it; never mid-drag |
 | its handles | a second `TransformControls`, translate only, in the toolbar's space. The object's gizmo detaches while a point is open (`GizmoHost.editingPoint`) |
-| a drag | `beginDrag` … `endDrag('move point')`; each `objectChange` snaps the copy's corner (`cornerSnapOf`) and writes `to`, rounded to 4 places, when it changed, then rebuilds the Inspector. A remote repaint waits (`gizmoDragging` covers it), `afterDrag` = `rebuildLoaded` + `drainDeferred` |
+| a drag | `beginDrag` … `endDrag('move point')`; each `objectChange` snaps the copy as an object moves (`snapMove` from where the drag began, ADR 0179) and writes `to`, rounded to 4 places, when it changed, then rebuilds the Inspector. A remote repaint waits (`gizmoDragging` covers it), `afterDrag` = `rebuildLoaded` + `drainDeferred` |
 | the route | one selected object: `Doc.routesAt(i)` — its own sequences' steps aimed at itself, then its parent's aimed at it, switched-off ones left out; a `Line` from its place through the points, a numbered `Sprite` per point, `DOT` of the viewport's height in either projection |
 | where | `pointToWorld(to, axes, frame)` (`sequencePoints.ts`); `frame.rest` = the parent group's world matrix × the target's local pose — the group's own when Motion is stopped, `transformOf` while it runs |
 | picking | the overlay group `sequence-points` sits outside `instanceRoot`, which is all a click raycasts |
