@@ -4,6 +4,33 @@
     "color": {
       "kind": "color",
       "value": "#d385c6"
+    },
+    "albedo": {
+      "kind": "texture",
+      "value": null
+    },
+    "tiling": {
+      "kind": "vec2",
+      "value": {
+        "x": 1,
+        "y": 1
+      }
+    },
+    "metalness": {
+      "kind": "number",
+      "value": 0
+    },
+    "roughness": {
+      "kind": "number",
+      "value": 0.85
+    },
+    "emissive": {
+      "kind": "color",
+      "value": "#000000"
+    },
+    "emissiveIntensity": {
+      "kind": "number",
+      "value": 1
     }
   }
 }

@@ -2201,6 +2201,9 @@
           "params": {
             "93eb0bc1": {
               "style": "a17f3493c7ef345c"
+            },
+            "efa7dd05": {
+              "material": "9ceea29d6ae4cca8"
             }
           }
         },
@@ -4295,6 +4298,27 @@
               "style": "a17f3493c7ef345c"
             }
           }
+        },
+        "c1e380bb": {
+          "params": {
+            "efa7dd05": {
+              "material": "9ceea29d6ae4cca8"
+            }
+          }
+        },
+        "d1d3088a": {
+          "params": {
+            "efa7dd05": {
+              "material": "9ceea29d6ae4cca8"
+            }
+          }
+        },
+        "37e81b77": {
+          "params": {
+            "efa7dd05": {
+              "material": "9ceea29d6ae4cca8"
+            }
+          }
         }
       }
     },
@@ -4350,7 +4374,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "9ceea29d6ae4cca8"
               }
             },
             {
@@ -4404,7 +4428,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "9ceea29d6ae4cca8"
               }
             },
             {
@@ -4542,7 +4566,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "9ceea29d6ae4cca8"
               }
             },
             {
@@ -4663,7 +4687,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -4713,7 +4737,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -4763,7 +4787,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -4813,7 +4837,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -4863,7 +4887,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -4913,7 +4937,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -4963,7 +4987,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -4998,6 +5022,11 @@
                       "y": 1,
                       "z": 40.0012
                     }
+                  },
+                  "params": {
+                    "efa7dd05": {
+                      "material": "9ceea29d6ae4cca8"
+                    }
                   }
                 },
                 "96d1dffd": {
@@ -5017,6 +5046,11 @@
                       "y": 1,
                       "z": 40.0024
                     }
+                  },
+                  "params": {
+                    "efa7dd05": {
+                      "material": "9ceea29d6ae4cca8"
+                    }
                   }
                 },
                 "c4dce4ac": {
@@ -5035,6 +5069,18 @@
                       "x": 14,
                       "y": 1,
                       "z": 14.5036
+                    }
+                  },
+                  "params": {
+                    "efa7dd05": {
+                      "material": "9ceea29d6ae4cca8"
+                    }
+                  }
+                },
+                "6e7e3ae1": {
+                  "params": {
+                    "efa7dd05": {
+                      "material": "9ceea29d6ae4cca8"
                     }
                   }
                 }
@@ -5060,7 +5106,31 @@
         "c65ac1fb": {
           "params": {
             "93eb0bc1": {
-              "style": "a17f3493c7ef345c"
+              "style": "dbd2775e3fece4fd"
+            },
+            "efa7dd05": {
+              "material": "546152d8d2e2b3d2"
+            }
+          }
+        },
+        "c1e380bb": {
+          "params": {
+            "efa7dd05": {
+              "material": "546152d8d2e2b3d2"
+            }
+          }
+        },
+        "d1d3088a": {
+          "params": {
+            "efa7dd05": {
+              "material": "546152d8d2e2b3d2"
+            }
+          }
+        },
+        "37e81b77": {
+          "params": {
+            "efa7dd05": {
+              "material": "546152d8d2e2b3d2"
             }
           }
         }
@@ -5118,7 +5188,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -5126,7 +5196,9 @@
               "type": "Keyboard",
               "params": {
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                "seed": 1
+                "seed": 1,
+                "facing": "left",
+                "style": "dbd2775e3fece4fd"
               }
             }
           ]
@@ -5173,6 +5245,11 @@
                       "y": 1,
                       "z": 40.0012
                     }
+                  },
+                  "params": {
+                    "efa7dd05": {
+                      "material": "546152d8d2e2b3d2"
+                    }
                   }
                 },
                 "96d1dffd": {
@@ -5192,6 +5269,11 @@
                       "y": 1,
                       "z": 40.0024
                     }
+                  },
+                  "params": {
+                    "efa7dd05": {
+                      "material": "546152d8d2e2b3d2"
+                    }
                   }
                 },
                 "c4dce4ac": {
@@ -5210,6 +5292,11 @@
                       "x": 14,
                       "y": 1,
                       "z": 14.5036
+                    }
+                  },
+                  "params": {
+                    "efa7dd05": {
+                      "material": "546152d8d2e2b3d2"
                     }
                   }
                 },
@@ -5260,7 +5347,7 @@
                           "type": "Renderer",
                           "params": {
                             "model": "builtin:box",
-                            "material": ""
+                            "material": "546152d8d2e2b3d2"
                           }
                         }
                       ]
@@ -5310,7 +5397,7 @@
                           "type": "Renderer",
                           "params": {
                             "model": "builtin:box",
-                            "material": ""
+                            "material": "546152d8d2e2b3d2"
                           }
                         }
                       ]
@@ -5469,6 +5556,13 @@
                       "enabled": false
                     }
                   ]
+                },
+                "6e7e3ae1": {
+                  "params": {
+                    "efa7dd05": {
+                      "material": "546152d8d2e2b3d2"
+                    }
+                  }
                 }
               }
             },
@@ -5512,7 +5606,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
