@@ -3265,6 +3265,364 @@
               "params": {}
             }
           ]
+        },
+        {
+          "id": "179d421f",
+          "name": "Ground",
+          "transform": {
+            "position": {
+              "x": 8.75,
+              "y": 8.9212,
+              "z": 40.2859
+            },
+            "rotation": {
+              "x": -0.2617993877991494,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 7.5,
+              "y": 1,
+              "z": 7.5
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": "9ceea29d6ae4cca8"
+              }
+            },
+            {
+              "id": "93eb0bc1",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1,
+                "style": "a17f3493c7ef345c"
+              }
+            }
+          ]
+        },
+        {
+          "id": "b21cddc1",
+          "name": "Ground",
+          "transform": {
+            "position": {
+              "x": -8.75,
+              "y": 3.7448,
+              "z": 20.9674
+            },
+            "rotation": {
+              "x": -0.2617993877991494,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 7.5,
+              "y": 1,
+              "z": 7.5
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": "9ceea29d6ae4cca8"
+              }
+            },
+            {
+              "id": "93eb0bc1",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1,
+                "style": "a17f3493c7ef345c"
+              }
+            }
+          ]
+        },
+        {
+          "id": "58fc3342",
+          "name": "Ground",
+          "transform": {
+            "position": {
+              "x": -9,
+              "y": 5.3794,
+              "z": 24.4116
+            },
+            "rotation": {
+              "x": -0.2617993877991494,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 8,
+              "y": 2.3748,
+              "z": 1
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": "9ceea29d6ae4cca8"
+              }
+            },
+            {
+              "id": "93eb0bc1",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1,
+                "style": "a17f3493c7ef345c"
+              },
+              "enabled": false
+            }
+          ]
+        },
+        {
+          "id": "f3654c91",
+          "name": "Ground",
+          "transform": {
+            "position": {
+              "x": -12.5,
+              "y": 4.4088,
+              "z": 20.7895
+            },
+            "rotation": {
+              "x": -0.2617993877991494,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 2.3748,
+              "z": 7.5
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": "9ceea29d6ae4cca8"
+              }
+            },
+            {
+              "id": "93eb0bc1",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1,
+                "style": "a17f3493c7ef345c"
+              },
+              "enabled": false
+            }
+          ]
+        },
+        {
+          "id": "97b9194c",
+          "name": "Ground",
+          "transform": {
+            "position": {
+              "x": 9,
+              "y": 10.6852,
+              "z": 44.2131
+            },
+            "rotation": {
+              "x": -0.2617993877991494,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 8,
+              "y": 2.3748,
+              "z": 1
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": "9ceea29d6ae4cca8"
+              }
+            },
+            {
+              "id": "93eb0bc1",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1,
+                "style": "a17f3493c7ef345c"
+              },
+              "enabled": false
+            }
+          ]
+        },
+        {
+          "id": "a23fca36",
+          "name": "Ground",
+          "transform": {
+            "position": {
+              "x": 12.5,
+              "y": 9.5852,
+              "z": 40.108
+            },
+            "rotation": {
+              "x": -0.2617993877991494,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 1,
+              "y": 2.3748,
+              "z": 7.5
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": "9ceea29d6ae4cca8"
+              }
+            },
+            {
+              "id": "93eb0bc1",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1,
+                "style": "a17f3493c7ef345c"
+              },
+              "enabled": false
+            }
+          ]
         }
       ]
     },
