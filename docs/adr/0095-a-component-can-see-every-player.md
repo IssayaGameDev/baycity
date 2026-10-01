@@ -1,6 +1,7 @@
 # ADR 0095 — A component can see every player, and the Boss is what wanted it
 
-Status: accepted. Opens a hole in ADR 0036's determinism rule, deliberately and narrowly.
+Status: accepted. Opens a hole in ADR 0036's determinism rule, deliberately and narrowly. **The Boss's `zone` as
+a node reference superseded by ADR 0177**: a Collider field.
 
 ## Context
 

@@ -1,6 +1,7 @@
 # ADR 0144 — A move point is dragged on a copy in the viewport
 
 Status: accepted. The viewport half of [ADR 0143](0143-a-sequence-is-edited-as-boxes-in-the-inspector.md).
+**Its corner snap superseded by ADR 0179**: the copy snaps as any move does.
 Kodjo's picks: a move's point is typed **or dragged**, and the route shows for the **selected object only**.
 
 ## Context

@@ -1,6 +1,7 @@
 # ADR 0176 — Reference fields take drops, and a press that drags selects nothing
 
 Status: accepted. Amends ADR 0134 (a press defers only on a multi-selection) and stage C4's dropdown for `nodeRef`.
+**Its ✕ and its refusal of several tiles superseded by ADR 0177; its flat picker by ADR 0178.**
 
 ## Context
 
