@@ -5,12 +5,12 @@
     "keys": [
       {
         "cap": "#ffadfc",
-        "letter": "#ffffff",
+        "letter": "#000000",
         "weight": 1
       },
       {
         "cap": "#ff61ad",
-        "letter": "#ffffff",
+        "letter": "#000000",
         "weight": 1
       }
     ],
