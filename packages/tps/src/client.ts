@@ -681,6 +681,8 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
     // the loop runs several ticks in one wake, while the character kept advancing a full step
     // each — the platform-carry jitter (see @mp/core simClock).
     const simClock = createSimClock({ tickMs: TICK_DT * 1000, reference: () => net.serverNow() })
+    /** How late, by the loop's schedule, the tick running now runs: the clock takes its reference back by it. */
+    let tickLateMs = 0
 
     const local: LocalWorld = {
       applyInput: (cmd) => {
@@ -695,7 +697,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
         // the ragdoll's parts did. Neither of the other two things in here is affected: the level's pieces are
         // kinematic and move to a pose the loader sets rather than by integration, and the character's own
         // translation is computed by `stepCharacter` from the full `TICK_DT` and applied through `move`.
-        const nowMs = simClock.tick()
+        const nowMs = simClock.tick(tickLateMs)
         // Components run **before** the frame tree, not after it (ADR 0058). A component can move its own
         // node now, and it writes an offset the frame tree reads — so running `update` first would pose
         // everything from last tick's offsets and land every driven node one tick late. The old order was
@@ -728,7 +730,8 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
           // Motion is a pure function of time (ADR 0103), so an intermediate pose is exact rather than
           // interpolated: the level really is where it would have been at that instant.
           const at = prevTickMs + ((nowMs - prevTickMs) * s) / slices
-          loaded?.update(at, char.base?.colliderHandle)
+          // Only the first slice moves where a frame blends from, so the drawing spans the whole tick.
+          loaded?.update(at, char.base?.colliderHandle, s === 1)
           world.step(half) // (A) platforms move
           // The movement slot (ADR 0061). This was `stepCharacter(...)` called straight from here, which is
           // why every game had the same locomotion whether it suited them or not. The game's own locomotion
@@ -772,7 +775,8 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
 
     simLoop = startFixedLoop({
       tickRateHz: TICK_RATE_HZ,
-      onTick: () => {
+      onTick: (_dt, _index, lateMs) => {
+        tickLateMs = lateMs
         syncRemotes()
         // No input while dead — but the character is still stepped, because that same world step is what
         // makes the ragdoll's bodies fall and the level's platforms move.

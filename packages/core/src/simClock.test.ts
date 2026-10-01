@@ -22,6 +22,20 @@ describe('createSimClock', () => {
     }
   })
 
+  /** The wobble (ADR 0185): read when the tick ran, the reference carried that lateness into every correction. */
+  it('takes the reference back to when each tick was due, so lateness is not drift', () => {
+    let wall = 1000
+    const clock = createSimClock({ tickMs: TICK, reference: () => wall })
+    let prev = clock.tick(0)
+    for (let n = 1; n < 200; n++) {
+      const late = (n * 7) % 16 // a frame's worth of lateness, different every tick
+      wall = 1000 + n * TICK + late
+      const t = clock.tick(late)
+      expect(t - prev).toBeCloseTo(TICK, 9)
+      prev = t
+    }
+  })
+
   it('anchors to the reference on the first tick', () => {
     const clock = createSimClock({ tickMs: TICK, reference: () => 4242 })
     expect(clock.tick()).toBe(4242)

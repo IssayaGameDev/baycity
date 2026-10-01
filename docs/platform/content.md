@@ -66,7 +66,7 @@ interface WorldLight { …; position; rotation; visible: boolean /* off while it
 | `findNode(from, id)` | `nodeRef` resolution: `from.scope`, then scope 0 (level). |
 | `visuals`, `lights: WorldLight[]` | Draw list, light list; poses mutated by `update`/`render`. |
 | `driveOf(node)` | `NodeDrive { position; rotation }` local offset (ADR 0058); only for nodes with a `moves` component. |
-| `update(nowMs, ridingHandle?)`, `render(alpha)` | Kinematic tick pose (riding body posed frozen); interpolated render pose. Sequences (ADR 0141): `shared` on `nowMs`, `local` on `nowMs −` the first `update`'s; collider shapes re-set when the scale changed, bodies switched with `shown && solid`; `render` interpolates `drawScale` and `opacity` too. |
+| `update(nowMs, ridingHandle?, opensTick = true)`, `render(alpha)` | Kinematic tick pose (riding body posed frozen); interpolated render pose, from where the **tick** began: a tick's later slices pass `opensTick: false` and move only `curr` (ADR 0185). Sequences (ADR 0141): `shared` on `nowMs`, `local` on `nowMs −` the first `update`'s; collider shapes re-set when the scale changed, bodies switched with `shown && solid`; `render` interpolates `drawScale` and `opacity` too. |
 | `basePose`, `baseIndex`, `basePoseOf(i, 'render'\|'tick'\|'prev')`, `baseCarry` | Movement-base lookups for the wire (ADR 0021). `baseIndex` is `undefined` for a piece a `local` sequence moves (ADR 0141); `basePose` still carries a rider on it here. |
 
 Build rules:
@@ -145,7 +145,8 @@ from its authored transform, and a component's drive (`NodeDrive`, ADR 0058) add
 
 `motionSlices(fromMs, toMs, maxStep)`: how many equal slices a tick needs so nothing travels more than
 `maxStep` between two of them (ADR 0104). `1` when still or slow; capped at 8. Position only; a frame's
-sequences add.
+sequences add. Level-wide: one fast mover slices every tick for the whole level, so a slice must never move
+where `render` blends from (`update`'s `opensTick`, ADR 0185).
 
 ## Built-in shapes — `packages/content/src/primitives.ts` (ADR 0090)
 

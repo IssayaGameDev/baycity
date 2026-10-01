@@ -232,5 +232,6 @@ why matters.
 | [0182](adr/0182-keys-take-their-colours-from-a-style.md) | Keys take their colours from a style, and letters can face four ways |
 | [0183](adr/0183-no-ambient-occlusion-on-carried-caps.md) | No ambient occlusion on a carried board's caps |
 | [0184](adr/0184-follow-takes-their-selection-and-motion.md) | Following takes their selection and their Motion preview |
+| [0185](adr/0185-moving-platforms-drawn-as-smoothly-as-the-editor.md) | Moving platforms drawn as smoothly as the editor's preview |
 
 `Design archive/` holds superseded design material and is not maintained.

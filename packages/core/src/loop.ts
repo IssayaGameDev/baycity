@@ -56,12 +56,12 @@ export interface LoopHandle {
 /**
  * Wall-clock fixed-timestep loop. Uses `performance.now` + `setTimeout` (both
  * available headless in Node and in the browser). `onTick` receives the fixed
- * step in seconds and a monotonically increasing tick index. `now` is injectable
- * for tests.
+ * step in seconds, a monotonically increasing tick index, and how long after it was due this tick runs (ms,
+ * by the schedule: a frame or a late timer runs several in one wake). `now` is injectable for tests.
  */
 export const startFixedLoop = (opts: {
   tickRateHz: number
-  onTick: (fixedDtSeconds: number, tickIndex: number) => void
+  onTick: (fixedDtSeconds: number, tickIndex: number, lateMs: number) => void
   maxStepsPerWake?: number
   now?: () => number
 }): LoopHandle => {
@@ -79,7 +79,9 @@ export const startFixedLoop = (opts: {
     const at = now()
     const steps = stepper.push(at - last)
     last = at
-    for (let i = 0; i < steps; i++) opts.onTick(fixedDtSeconds, tickIndex++)
+    // The last tick of this wake was due `pending` ago, each before it a step earlier.
+    const pending = stepper.pending()
+    for (let i = 0; i < steps; i++) opts.onTick(fixedDtSeconds, tickIndex++, pending + (steps - 1 - i) * fixedDtMs)
   }
 
   const wake = (): void => {

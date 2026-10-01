@@ -329,7 +329,11 @@ export interface LoadedLevel {
    * moves things has to say so, exactly as one that may appear only once says `singleton`.
    */
   driveOf: (node: WorldNode) => NodeDrive | undefined
-  update: (nowMs: number, ridingColliderHandle?: number) => void
+  /**
+   * Pose everything at `nowMs`. `opensTick` is `false` for a tick's later slices (ADR 0104): they move the pose
+   * and the bodies, and leave where `render` blends from at the tick's start.
+   */
+  update: (nowMs: number, ridingColliderHandle?: number, opensTick?: boolean) => void
   /**
    * How many equal slices this tick has to be posed in so nothing moves more than `maxStep` metres
    * between two of them (ADR 0104). `1` when the level is still or slow, which is every level without a
@@ -735,8 +739,14 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     return widest
   }
 
-  const update = (nowMs: number, ridingColliderHandle?: number): void => {
-    prevMs = primed ? currMs : nowMs
+  const update = (nowMs: number, ridingColliderHandle?: number, opensTick = true): void => {
+    /**
+     * Where `render` blends from: the pose the **tick** began at. A tick posed in slices (ADR 0104) calls this
+     * once per slice, and a later slice moves `curr` only — it once moved `prev` too, so a frame blended across
+     * the last slice alone and the rest of the tick's move landed as a jump, on every moving thing in the level.
+     */
+    const shift = primed && opensTick
+    if (!primed || opensTick) prevMs = primed ? currMs : nowMs
     currMs = nowMs
     if (localStart === null) localStart = nowMs
     const clocks = clocksAt(nowMs)
@@ -755,14 +765,21 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         }
         d.body.setEnabled(f.shown && f.solid)
       }
-      d.prevPos = primed ? d.currPos : at
-      d.prevRot = primed ? d.currRot : f.worldRot
+      const drawn = drawScaleOf(f)
+      if (shift) {
+        d.prevPos = d.currPos
+        d.prevRot = d.currRot
+        d.prevScale = d.currScale
+        d.prevOpacity = d.currOpacity
+      } else if (!primed) {
+        d.prevPos = at
+        d.prevRot = f.worldRot
+        d.prevScale = drawn
+        d.prevOpacity = f.seq.opacity
+      }
       d.currPos = at
       d.currRot = f.worldRot
-      const drawn = drawScaleOf(f)
-      d.prevScale = primed ? d.currScale : drawn
       d.currScale = drawn
-      d.prevOpacity = primed ? d.currOpacity : f.seq.opacity
       d.currOpacity = f.seq.opacity
       if (d.visual !== undefined) {
         d.visual.position = d.currPos

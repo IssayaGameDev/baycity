@@ -218,6 +218,20 @@ describe('tick slicing (ADR 0104)', () => {
     expect(loaded.motionSlices(0, 1000 / 30, 1)).toBe(2)
     expect(loaded.motionSlices(1100, 1100 + 1000 / 30, 1), 'during the wait nothing moves').toBe(1)
   })
+
+  /** The jitter (ADR 0185): a later slice moved where the frame blends from, so a frame spanned only the last slice. */
+  it('draws a sliced tick blended from where the tick began, not from its last slice', () => {
+    const loaded = load(levelOf([node('p', [...solidBox('p'), sequence([stage(move(vec3(0, 60, 0), 1)), stage(wait(1))])])]))
+    const tick = 1000 / 30
+    loaded.update(0)
+    loaded.update(tick / 2, undefined, true)
+    loaded.update(tick, undefined, false)
+    loaded.render(0.5)
+    // Halfway through a tick in which it rose 2 m from 0: 1 m. Blended from the last slice it would be 1.5 m.
+    expect(loaded.visuals[0]!.position.y).toBeCloseTo(1, 6)
+    loaded.render(1)
+    expect(loaded.visuals[0]!.position.y).toBeCloseTo(2, 6)
+  })
 })
 
 /**

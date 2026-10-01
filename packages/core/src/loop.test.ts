@@ -68,6 +68,17 @@ describe('startFixedLoop, pumped by frames', () => {
     loop.stop()
   })
 
+  it('says how long after it was due each tick of a wake runs', () => {
+    const t = { now: 0 }
+    const late: number[] = []
+    const loop = startFixedLoop({ tickRateHz: 10, onTick: (_, __, lateMs) => late.push(lateMs), now: () => t.now })
+    t.now = 230 // the ticks due at 100 and 200 run now
+    loop.pump()
+    expect(late[0]).toBeCloseTo(130, 9)
+    expect(late[1]).toBeCloseTo(30, 9)
+    loop.stop()
+  })
+
   it('does nothing once stopped', () => {
     const { t, ticks, loop } = at100ms()
     loop.stop()
