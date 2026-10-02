@@ -7118,7 +7118,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -7127,7 +7127,7 @@
               "params": {
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                 "seed": 1,
-                "style": "",
+                "style": "dbd2775e3fece4fd",
                 "facing": "left"
               }
             },
@@ -7245,7 +7245,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -7254,7 +7254,7 @@
               "params": {
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                 "seed": 1,
-                "style": "",
+                "style": "dbd2775e3fece4fd",
                 "facing": "left"
               }
             },
@@ -7372,7 +7372,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -7381,7 +7381,7 @@
               "params": {
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                 "seed": 1,
-                "style": "",
+                "style": "dbd2775e3fece4fd",
                 "facing": "left"
               }
             },
@@ -7499,7 +7499,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -7508,7 +7508,7 @@
               "params": {
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                 "seed": 1,
-                "style": "",
+                "style": "dbd2775e3fece4fd",
                 "facing": "left"
               }
             },
@@ -7626,7 +7626,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -7635,7 +7635,7 @@
               "params": {
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                 "seed": 1,
-                "style": "",
+                "style": "dbd2775e3fece4fd",
                 "facing": "left"
               }
             },
@@ -7753,7 +7753,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -7762,7 +7762,7 @@
               "params": {
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                 "seed": 1,
-                "style": "",
+                "style": "dbd2775e3fece4fd",
                 "facing": "left"
               }
             },
@@ -7880,7 +7880,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -7889,7 +7889,7 @@
               "params": {
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                 "seed": 1,
-                "style": "",
+                "style": "dbd2775e3fece4fd",
                 "facing": "left"
               }
             },
@@ -8007,7 +8007,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -8016,7 +8016,7 @@
               "params": {
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                 "seed": 1,
-                "style": "",
+                "style": "dbd2775e3fece4fd",
                 "facing": "left"
               }
             },
@@ -8134,7 +8134,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -8143,7 +8143,7 @@
               "params": {
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                 "seed": 1,
-                "style": "",
+                "style": "dbd2775e3fece4fd",
                 "facing": "left"
               }
             },
@@ -8261,7 +8261,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -8270,7 +8270,7 @@
               "params": {
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                 "seed": 1,
-                "style": "",
+                "style": "dbd2775e3fece4fd",
                 "facing": "left"
               }
             },
@@ -8413,7 +8413,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     }
                   ]
@@ -8463,7 +8463,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     }
                   ]
@@ -8513,7 +8513,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     }
                   ]
@@ -8563,7 +8563,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     }
                   ]
@@ -8613,7 +8613,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     }
                   ]
@@ -8663,7 +8663,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     }
                   ]
@@ -8713,12 +8713,40 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     }
                   ]
                 }
               ]
+            },
+            "6c1aca3c": {
+              "params": {
+                "efa7dd05": {
+                  "material": "546152d8d2e2b3d2"
+                }
+              }
+            },
+            "96d1dffd": {
+              "params": {
+                "efa7dd05": {
+                  "material": "546152d8d2e2b3d2"
+                }
+              }
+            },
+            "6e7e3ae1": {
+              "params": {
+                "efa7dd05": {
+                  "material": "546152d8d2e2b3d2"
+                }
+              }
+            },
+            "c4dce4ac": {
+              "params": {
+                "efa7dd05": {
+                  "material": "546152d8d2e2b3d2"
+                }
+              }
             }
           }
         }
