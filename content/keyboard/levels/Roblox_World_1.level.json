@@ -7081,23 +7081,18 @@
       ]
     },
     {
-      "id": "978017ab",
-      "name": "red sphere",
+      "id": "76cae5d2",
+      "name": "Bouncing Ball",
       "transform": {
         "position": {
           "x": 0,
-          "y": 37,
+          "y": 8,
           "z": 0
-        },
-        "scale": {
-          "x": 10,
-          "y": 10,
-          "z": 10
         }
       },
       "components": [
         {
-          "id": "283beeae",
+          "id": "a957474c",
           "type": "Collider",
           "params": {
             "shape": {
@@ -7112,141 +7107,25 @@
           }
         },
         {
-          "id": "12b77650",
+          "id": "cd9fa2b3",
           "type": "Renderer",
           "params": {
             "model": "builtin:sphere",
-            "material": "4a11d049f9f8e5ac"
+            "material": ""
           }
-        }
-      ],
-      "children": [
-        {
-          "id": "3df30378",
-          "name": "left eye",
-          "transform": {
-            "position": {
-              "x": -2,
-              "y": 2,
-              "z": 2
-            },
-            "scale": {
-              "x": 0.5,
-              "y": 0.5,
-              "z": 0.5
-            }
-          },
-          "components": [
-            {
-              "id": "8087c09d",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "ball",
-                  "radius": 0.5
-                },
-                "center": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 0
-                }
-              }
-            },
-            {
-              "id": "a286e6c2",
-              "type": "Renderer",
-              "params": {
-                "model": "builtin:sphere",
-                "material": ""
-              }
-            }
-          ]
         },
         {
-          "id": "05363679",
-          "name": "right eye",
-          "transform": {
-            "position": {
-              "x": 2,
-              "y": 2,
-              "z": 2
-            },
-            "scale": {
-              "x": 0.5,
-              "y": 0.5,
-              "z": 0.5
-            }
-          },
-          "components": [
-            {
-              "id": "955b00d9",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "ball",
-                  "radius": 0.5
-                },
-                "center": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 0
-                }
-              }
-            },
-            {
-              "id": "fb6a3324",
-              "type": "Renderer",
-              "params": {
-                "model": "builtin:sphere",
-                "material": ""
-              }
-            }
-          ]
-        },
-        {
-          "id": "8b9fdf28",
-          "name": "mouth",
-          "transform": {
-            "position": {
-              "x": 0,
-              "y": -1,
-              "z": 2
-            },
-            "scale": {
-              "x": 3,
-              "y": 0.5,
-              "z": 0.5
-            }
-          },
-          "components": [
-            {
-              "id": "2b9cb801",
-              "type": "Collider",
-              "params": {
-                "shape": {
-                  "kind": "box",
-                  "halfExtents": {
-                    "x": 0.5,
-                    "y": 0.5,
-                    "z": 0.5
-                  }
-                },
-                "center": {
-                  "x": 0,
-                  "y": 0,
-                  "z": 0
-                }
-              }
-            },
-            {
-              "id": "5a27138f",
-              "type": "Renderer",
-              "params": {
-                "model": "builtin:box",
-                "material": ""
-              }
-            }
-          ]
+          "id": "3d4ede59",
+          "type": "Sequence",
+          "params": {
+            "name": "",
+            "clock": "shared",
+            "axes": "object",
+            "loop": "yoyo",
+            "times": 1,
+            "offset": 0,
+            "stages": []
+          }
         }
       ]
     }
