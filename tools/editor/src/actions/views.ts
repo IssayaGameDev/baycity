@@ -1,5 +1,5 @@
 import type { ParamSpec } from '@mp/components'
-import { BUILTIN_LABELS, BUILTIN_MODELS, isBuiltinModel, type AssetEntry } from '@mp/content'
+import { BUILTIN_LABELS, BUILTIN_MODELS, compileSequence, isBuiltinModel, SEQUENCE, sequenceOf, type AssetEntry, type SequenceProblem } from '@mp/content'
 
 import type { Doc } from '../editorDoc'
 import { ActionError, type ActionCtx } from './actions'
@@ -75,6 +75,29 @@ const shownValue = (ctx: ActionCtx, doc: Doc, i: number, spec: ParamSpec | undef
   return value
 }
 
+/**
+ * What the Inspector's ⚠ says about a Sequence, in words, each naming its stage and step by place (ADR 0198): what a
+ * model has to see to put it right, as a person sees the mark.
+ */
+export const sequenceProblems = (componentId: string, params: Record<string, unknown>): string[] => {
+  const seq = sequenceOf({ id: componentId, type: SEQUENCE, params })
+  const where = (p: SequenceProblem): string => {
+    for (const [n, stage] of seq.stages.entries()) {
+      if ('stage' in p && stage.id === p.stage) return `stage ${n + 1}`
+      const k = 'step' in p ? stage.steps.findIndex((s) => s.id === p.step) : -1
+      if (k >= 0) return `stage ${n + 1}, step ${k + 1} (${stage.steps[k]!.kind})`
+    }
+    return 'a step'
+  }
+  const say: Record<SequenceProblem['kind'], string> = {
+    'stage-has-no-end': 'every step lasts as long as its stage, so nothing says how long the stage is: it lasts 0 s',
+    'goes-nowhere': 'goes nowhere: it ends where it starts — the steps in one stage start together, from where the stage began',
+    'speed-not-positive': 'a speed of 0 or less, where the speed decides how long it takes',
+    'speed-not-allowed': 'a scale or a fade has no speed to go at: time it in seconds, or by its stage',
+  }
+  return compileSequence(seq).problems.map((p) => `${where(p)}: ${say[p.kind]}`)
+}
+
 /** Object `i` as the Inspector shows it: transform (rotation in degrees), each component's id, type and every field. */
 export const objectView = (ctx: ActionCtx, doc: Doc, i: number): Record<string, unknown> =>
   doc.reading(() => {
@@ -100,6 +123,7 @@ export const objectView = (ctx: ActionCtx, doc: Doc, i: number): Record<string, 
       components: doc.components(i).map((c) => {
         const def = doc.registry.get(c.type)
         const values = def === undefined ? c.params : { ...doc.registry.defaults(c.type), ...c.params }
+        const problems = c.type === SEQUENCE ? sequenceProblems(c.id, values) : []
         return {
           componentId: c.id,
           type: c.type,
@@ -107,6 +131,7 @@ export const objectView = (ctx: ActionCtx, doc: Doc, i: number): Record<string, 
           ...(c.inherited ? { inherited: true } : {}),
           ...(c.overridden.length > 0 ? { overridden: c.overridden } : {}),
           fields: Object.fromEntries(Object.entries(values).map(([k, v]) => [k, shownValue(ctx, doc, i, def?.params[k], v)])),
+          ...(problems.length > 0 ? { problems } : {}),
         }
       }),
       ...heldNote(ctx, doc, i),

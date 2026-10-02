@@ -395,6 +395,17 @@ describe('a sequence’s steps (ADR 0198)', () => {
     expect(notMine).toEqual({ ok: false, error: 'stages[0].steps[0].target: n:b is not one of this object’s own children' })
   })
 
+  it('answers with what the Inspector would mark: two moves in one stage start together, so the second goes nowhere', async () => {
+    const { actions, seq } = await withSequence()
+    type Answer = { result: { object: { components: { componentId: string; problems?: string[] }[] } } }
+    const together = (await actions.run('set_sequence_stages', { id: 'n:a', componentId: seq, stages: [{ steps: [move(2), move(0)] }] })) as Answer
+    expect(together.result.object.components.find((c) => c.componentId === seq)!.problems).toEqual([
+      'stage 1, step 2 (move): goes nowhere: it ends where it starts — the steps in one stage start together, from where the stage began',
+    ])
+    const apart = (await actions.run('set_sequence_stages', { id: 'n:a', componentId: seq, stages: [{ steps: [move(2)] }, { steps: [move(0)] }] })) as Answer
+    expect(apart.result.object.components.find((c) => c.componentId === seq)!.problems).toBeUndefined()
+  })
+
   it('refuses a step the content would refuse, saying where', async () => {
     const { actions, seq } = await withSequence()
     const r = await actions.run('set_sequence_stages', { id: 'n:a', componentId: seq, stages: [{ steps: [{ ...move(1), ease: 'bouncy' }] }] })
