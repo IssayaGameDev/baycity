@@ -68,7 +68,7 @@ shipped when `hidden` was added (ADR 0132). `api.test.ts` walks one over the wir
 | `POST /api/live/game/<game>/ops` | the same, on a game's `game.json` (ADR 0162); echoed as an `asset` event with `assetId` `game:<game>` · 404 no such game | |
 | `PUT /content/<path>` | JSON asset; **409** while that prefab, or that live asset, is open live; a `.data.json` **409** in Shared and **400** unless `isDataAsset` (ADR 0181) | |
 | `POST /api/admin/commit-all` | `Authorization: Bearer <stateDir/admin.token>` → commits every session | token, no user |
-| `/api/assistant…` | the assistant (ADR 0192, `assistant.md`): status, conversations, a turn as server-sent events, filing a draft | |
+| `/api/assistant…` | the assistant (ADR 0192, `assistant.md`): status, conversations, a turn as server-sent events, filing a draft; the editing modes' calls, their results, Stop (ADR 0195) | |
 | `GET /api/tree` | `{ seq, files: [{ path, size, sha1 }] }` — every file under `content/` (mirror, ADR 0084); flushes every live level first, as `GET /api/file` does | |
 | `GET /api/changes?since=N&timeout=MS` | `{ seq, paths }` long-poll (≤ 60 s); **410** when N is behind the feed or ahead of it. Followed by the mirror and by every editor tab (ADR 0156) | |
 | `GET /api/file?path=content/…` | the bytes; 404 when gone | |
@@ -209,7 +209,7 @@ command, `editor.playgorbo.com → localhost:8080`; Access application `Editor` 
 emails, One-time PIN login) and `Sync` (Service Auth, the `content-sync` service token, `content-sync.md`).
 Dashboard names as of setup: Cloudflare One → *Access controls* (applications, service credentials),
 *Integrations → Identity providers* (One-time PIN). Nothing listens publicly. State in `/var/lib/editor-server/`:
-`admin.token`, `hidden.json`, and the assistant's `anthropic.key`, `github.token`, `assistant-spend.json` (`assistant.md`).
+`admin.token`, `hidden.json`, and the assistant's `anthropic.key`, `github.token`, `assistant-spend.json`, `assistant-editors` (`assistant.md`).
 
 ## Staging game — `dev.playgorbo.com` (ADR 0085)
 

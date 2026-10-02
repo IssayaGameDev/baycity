@@ -1,5 +1,6 @@
 import { closeChat, CONTEXT_CHANNEL, type ContextMessage, type EditorContext } from './assistantApi'
 import { createChatWindow } from './chatWindow'
+import { remoteLink } from './editorLink'
 
 /**
  * The assistant in a tab of its own (ADR 0192): the conversation the editor's panel handed over, by id in the
@@ -42,7 +43,8 @@ const root = document.createElement('div')
 root.className = 'asst-page'
 document.body.append(root)
 document.title = 'Assistant — editor'
-const chat = createChatWindow({ root, ...(chatId === undefined ? {} : { chatId }), context })
+// The editing modes change the editor tab that opened this one (ADR 0195), over the channel.
+const chat = createChatWindow({ root, ...(chatId === undefined ? {} : { chatId }), context, ...(from === '' ? {} : { link: remoteLink(from) }) })
 chat.focus()
 
 window.addEventListener('pagehide', () => {

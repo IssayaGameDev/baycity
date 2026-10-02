@@ -1,6 +1,8 @@
+import { editorActions } from '../actions'
 import { icon } from '../icons'
 import { closeChat, CONTEXT_CHANNEL, type ContextMessage, type EditorContext } from './assistantApi'
 import { createChatWindow, type ChatWindow } from './chatWindow'
+import { answerLinks, localLink } from './editorLinkLocal'
 
 /**
  * The assistant in the editor (ADR 0192): a round button at the viewport's bottom right that opens the chat above it,
@@ -45,6 +47,8 @@ export const createAssistantDock = (stage: HTMLElement, host: AssistantDockHost)
     chat ??= createChatWindow({
       root: panel,
       context: async () => host.context(),
+      // The editing modes change this tab's editor (ADR 0195).
+      link: localLink(editorActions),
       onClose: hide,
       onPopOut: (id) => {
         window.open(`/assistant.html#chat=${id}&from=${TAB}`, '_blank')
@@ -64,6 +68,9 @@ export const createAssistantDock = (stage: HTMLElement, host: AssistantDockHost)
   channel.addEventListener('message', (e: MessageEvent<ContextMessage & { tab?: string }>) => {
     if (e.data.kind === 'ask' && e.data.tab === TAB) channel.postMessage({ kind: 'context', tab: TAB, context: host.context() })
   })
+
+  // A chat tab this one opened runs the editor's actions here: this is the tab with the editor (ADR 0195).
+  answerLinks(TAB, editorActions)
 
   window.addEventListener('pagehide', () => {
     const id = chat?.chatId() ?? null

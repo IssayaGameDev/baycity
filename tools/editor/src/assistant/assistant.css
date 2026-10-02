@@ -258,3 +258,74 @@
 .asst-page {
   height: 100vh;
 }
+
+/* The modes (ADR 0195): Assistant · Confirm · Auto, beside the title, for the people the server opens them to. */
+.asst-modes {
+  display: flex;
+  margin-left: 6px;
+  border: 1px solid var(--line, #34383f);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.asst-modes[hidden] {
+  display: none;
+}
+.asst-mode {
+  padding: 2px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--dim, #8b929d);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.asst-mode + .asst-mode {
+  border-left: 1px solid var(--line, #34383f);
+}
+.asst-mode[aria-pressed='true'] {
+  background: var(--accent-dim, #2f5fa8);
+  color: #fff;
+}
+.asst-mode:disabled {
+  cursor: default;
+}
+
+/* A change asked about in Confirm: what it does, Apply or Don't. */
+.asst-change {
+  align-self: stretch;
+  padding: 8px 10px;
+  border: 1px solid var(--line, #34383f);
+  border-left: 3px solid #e0a948;
+  border-radius: 7px;
+  background: var(--bg, #14161a);
+}
+.asst-change-t {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+.asst-dont {
+  padding: 4px 12px;
+  border: 1px solid var(--line, #34383f);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text, #d5d9e0);
+  font: inherit;
+  cursor: pointer;
+}
+.asst-stop {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  border: 0;
+  border-radius: 6px;
+  background: #b5483c;
+  color: #fff;
+  cursor: pointer;
+}
+.asst-stop[hidden] {
+  display: none;
+}
+.asst-stop .ic {
+  width: 14px;
+  height: 14px;
+}

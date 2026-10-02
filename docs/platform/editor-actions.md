@@ -1,8 +1,8 @@
 # Editor actions (ADR 0194)
 
 What a person does in the editor, named and taking its input as data — `tools/editor/src/actions/` — so an agent can
-be handed the same ones as tools. Through the editor's own `Doc` calls, history and room. Nothing runs them yet: the
-agent's bridge and an MCP endpoint are not built (Kodjo's call: later).
+be handed the same ones as tools. Through the editor's own `Doc` calls, history and room. The assistant's Confirm and
+Auto modes run them (ADR 0195, `assistant.md`); an MCP endpoint is not built (Kodjo's call: later).
 
 | File | |
 | --- | --- |

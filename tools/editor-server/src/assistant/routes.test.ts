@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { git } from '../git'
 import type { Talk } from './agent'
 import type { GitHub } from './github'
-import { createAssistant } from './routes'
+import { createAssistant, DECLINED, editorToolsOf } from './routes'
 
 /**
  * The assistant's routes (ADR 0192), through a real server: a conversation is its owner's, a turn streams, a draft is
@@ -77,7 +77,7 @@ const call = (path: string, init: { method?: string; body?: unknown; as?: 'ada' 
 
 describe('the assistant’s routes', () => {
   it('says it is ready, with the person’s day', async () => {
-    expect(await (await call('/api/assistant')).json()).toEqual({ ready: true, github: true, spent: 0, limit: 1 })
+    expect(await (await call('/api/assistant')).json()).toEqual({ ready: true, github: true, spent: 0, limit: 1, modes: ['assistant'] })
   })
 
   it('streams a turn, keeps its draft, and files it only when asked — signed by the server', async () => {
@@ -120,5 +120,144 @@ describe('the assistant’s routes', () => {
     rmSync(join(repo, 'ASSISTANT.md'))
     expect(await (await call('/api/assistant')).json()).toMatchObject({ ready: false, why: 'The assistant has no instructions: ASSISTANT.md is missing.' })
     expect((await call('/api/assistant/chats', { method: 'POST' })).status).toBe(503)
+  })
+})
+
+describe('the editing modes (ADR 0195)', () => {
+  /** An assistant over its own server, with this model; `editors` written to the state directory when given. */
+  const serve = async (talk: Talk, editors?: string) => {
+    if (editors !== undefined) writeFileSync(join(state, 'assistant-editors'), editors)
+    const a = createAssistant({ repoRoot: repo, stateDir: state, talk, github })
+    const s = createServer((req, res) => void a.handle(req, res, (req.url ?? '').split('?')[0]!, { name: 'Ada', email: 'ada@x.com' }))
+    await new Promise<void>((r) => s.listen(0, '127.0.0.1', () => r()))
+    const at = `http://127.0.0.1:${(s.address() as AddressInfo).port}`
+    const post = (path: string, body?: unknown) =>
+      fetch(`${at}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
+    return { at, post, close: () => new Promise<void>((r) => s.close(() => r())) }
+  }
+
+  /** A turn's stream, read as it comes: `next(kind)` waits for an event of that kind. */
+  const stream = (r: Response) => {
+    const reader = r.body!.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    const events: { kind: string; [k: string]: unknown }[] = []
+    const next = async (kind: string) => {
+      for (;;) {
+        const found = events.find((e) => e.kind === kind)
+        if (found !== undefined) return found
+        const { done, value } = await reader.read()
+        if (done) throw new Error(`the stream ended before ${kind}`)
+        buffer += decoder.decode(value, { stream: true })
+        let end: number
+        while ((end = buffer.indexOf('\n\n')) >= 0) {
+          const data = buffer.slice(0, end).split('\n').find((l) => l.startsWith('data: '))
+          buffer = buffer.slice(end + 2)
+          if (data !== undefined) events.push(JSON.parse(data.slice(6)))
+        }
+      }
+    }
+    return { next, events }
+  }
+
+  const RENAME = { name: 'rename_object', description: 'Rename an object.', input_schema: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } } } }
+
+  /** A model that renames, then says what it got back; every request kept. */
+  const renamer = () => {
+    const requests: Parameters<Talk>[0][] = []
+    let n = 0
+    const talk: Talk = async (request, onText) => {
+      requests.push(request)
+      const content: Anthropic.ContentBlock[] = n++ === 0 ? [use('t1', 'rename_object', { id: 'n:a', name: 'Crate' })] : [text('Renamed.')]
+      for (const b of content) if (b.type === 'text') onText(b.text)
+      return { content, usage: { input_tokens: 10, output_tokens: 10 }, stop_reason: n === 1 ? 'tool_use' : 'end_turn' }
+    }
+    return { talk, requests }
+  }
+
+  it('are open only to the emails in assistant-editors, and refused to anyone else', async () => {
+    const closed = await serve(renamer().talk)
+    expect(((await (await fetch(`${closed.at}/api/assistant`)).json()) as { modes: string[] }).modes).toEqual(['assistant'])
+    const { id } = (await (await closed.post('/api/assistant/chats')).json()) as { id: string }
+    expect((await closed.post(`/api/assistant/chats/${id}/say`, { text: 'rename it', mode: 'auto', tools: [RENAME] })).status).toBe(403)
+    await closed.close()
+    const open = await serve(renamer().talk, '# who may edit\nADA@x.com\n')
+    expect(((await (await fetch(`${open.at}/api/assistant`)).json()) as { modes: string[] }).modes).toEqual(['assistant', 'confirm', 'auto'])
+    await open.close()
+  })
+
+  it('hands an editor action to the tab, and carries on with the tab’s answer', async () => {
+    const { talk, requests } = renamer()
+    const s = await serve(talk, 'ada@x.com')
+    const { id } = (await (await s.post('/api/assistant/chats')).json()) as { id: string }
+    const turn = stream(await s.post(`/api/assistant/chats/${id}/say`, { text: 'rename it', mode: 'auto', tools: [RENAME] }))
+    const call = (await turn.next('call')).call as { id: string; name: string; input: unknown }
+    expect(call.name).toBe('rename_object')
+    expect(call.input).toEqual({ id: 'n:a', name: 'Crate' })
+    expect((await s.post(`/api/assistant/chats/${id}/result/${call.id}`, { outcome: { ok: true, result: null } })).status).toBe(204)
+    await turn.next('done')
+    expect(requests).toHaveLength(2)
+    expect(requests[0]!.tools.map((t) => t.name)).toContain('rename_object')
+    expect(JSON.stringify(requests[1]!.messages.at(-1))).toContain('"tool_use_id":"t1"')
+    await s.close()
+  })
+
+  it('ends the turn on the person’s no, without asking the model again', async () => {
+    const { talk, requests } = renamer()
+    const s = await serve(talk, 'ada@x.com')
+    const { id } = (await (await s.post('/api/assistant/chats')).json()) as { id: string }
+    const turn = stream(await s.post(`/api/assistant/chats/${id}/say`, { text: 'rename it', mode: 'confirm', tools: [RENAME] }))
+    const call = (await turn.next('call')).call as { id: string }
+    await s.post(`/api/assistant/chats/${id}/result/${call.id}`, { declined: true })
+    await turn.next('done')
+    expect(requests).toHaveLength(1)
+    await s.close()
+  })
+
+  it('ends the turn on Stop while a call waits', async () => {
+    const { talk, requests } = renamer()
+    const s = await serve(talk, 'ada@x.com')
+    const { id } = (await (await s.post('/api/assistant/chats')).json()) as { id: string }
+    const turn = stream(await s.post(`/api/assistant/chats/${id}/say`, { text: 'rename it', mode: 'confirm', tools: [RENAME] }))
+    await turn.next('call')
+    expect((await s.post(`/api/assistant/chats/${id}/stop`)).status).toBe(204)
+    await turn.next('done')
+    expect(requests).toHaveLength(1)
+    await s.close()
+  })
+
+  it('gives the model a picture of the viewport as an image', async () => {
+    const shot = defineShot()
+    const { talk, requests } = renamer()
+    const s = await serve(talk, 'ada@x.com')
+    const { id } = (await (await s.post('/api/assistant/chats')).json()) as { id: string }
+    const turn = stream(await s.post(`/api/assistant/chats/${id}/say`, { text: 'look', mode: 'auto', tools: [RENAME] }))
+    const call = (await turn.next('call')).call as { id: string }
+    await s.post(`/api/assistant/chats/${id}/result/${call.id}`, { outcome: { ok: true, result: shot } })
+    await turn.next('done')
+    const results = requests[1]!.messages.at(-1)!.content as Anthropic.ToolResultBlockParam[]
+    expect(results[0]!.content).toEqual([
+      { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: 'AAAA' } },
+      { type: 'text', text: '{"width":512,"height":288}' },
+    ])
+    await s.close()
+  })
+})
+
+const defineShot = () => ({ image: { mediaType: 'image/jpeg', data: 'AAAA' }, width: 512, height: 288 })
+
+describe('the editor’s actions as tools', () => {
+  it('keeps what is a tool, and drops a name the server’s own tools have or one that is not a name', () => {
+    const tools = editorToolsOf([
+      { name: 'rename_object', description: 'Rename.', input_schema: { type: 'object' } },
+      { name: 'read_file', description: 'mine now', input_schema: { type: 'object' } },
+      { name: 'Bad Name', description: 'x', input_schema: { type: 'object' } },
+      { name: 'no_schema', description: 'x' },
+    ])
+    expect(tools.map((t) => t.name)).toEqual(['rename_object'])
+  })
+
+  it('tells the model a declined change ended the turn', () => {
+    expect(DECLINED).toContain('turn ended')
   })
 })

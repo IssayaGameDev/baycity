@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 
 import { costOf, type Budget, type Usage } from './budget'
-import { activityOf, TOOLS, type Draft, type ToolRun } from './tools'
+import { activityOf, type Draft, type ToolRun } from './tools'
 
 /**
  * The assistant's conversations and its turn (ADR 0192): a person's message, then the model and its tools in a loop
@@ -16,6 +16,16 @@ import { activityOf, TOOLS, type Draft, type ToolRun } from './tools'
 export const MODEL = 'claude-haiku-4-5-20251001'
 /** Model calls in one turn at most: a search, a read, another, an answer — and a stop before it runs away. */
 export const MAX_ROUNDS = 12
+/** The same in the modes that edit (ADR 0195): reading the scene, a change or several, a look at the result. */
+export const EDIT_ROUNDS = 30
+
+/**
+ * What the assistant may do in this chat (ADR 0195, Kodjo's calls): `assistant` reads and reports; `confirm` changes
+ * the open level or prefab through the editor's actions, each change applied only on the person's click; `auto` the
+ * same, applied at once.
+ */
+export type AssistantMode = 'assistant' | 'confirm' | 'auto'
+export const ASSISTANT_MODES: readonly AssistantMode[] = ['assistant', 'confirm', 'auto']
 export const MAX_TOKENS = 2048
 /** A conversation nobody has spoken in for this long is dropped. */
 export const IDLE_MS = 6 * 60 * 60 * 1000
@@ -47,6 +57,8 @@ export type AssistantEvent =
   | { readonly kind: 'activity'; readonly text: string }
   | { readonly kind: 'draft'; readonly draft: Draft }
   | { readonly kind: 'spent'; readonly spent: number; readonly limit: number }
+  /** An editor action for the tab to run (ADR 0195), answered by its result. */
+  | { readonly kind: 'call'; readonly call: { readonly id: string; readonly name: string; readonly input: unknown } }
   | { readonly kind: 'done' }
   | { readonly kind: 'error'; readonly message: string }
 
@@ -67,10 +79,13 @@ export interface Conversation {
   readonly filed: Map<string, string>
   lastUsed: number
   busy: boolean
+  /** The person asked it to stop: the turn ends at the next step. */
+  stopping: boolean
 }
 
-const contextBlock = (c: EditorContext): string => {
+const contextBlock = (c: EditorContext, mode: AssistantMode): string => {
   const lines = [
+    `mode: ${mode}`,
     c.game === undefined ? null : `game: ${c.game}`,
     c.level === undefined ? null : `level: ${c.level}`,
     c.prefab === undefined ? null : `prefab open: ${c.prefab}`,
@@ -102,11 +117,16 @@ const forModel = (messages: readonly Anthropic.MessageParam[]): Anthropic.Messag
     return { role: m.role, content }
   })
 
-const CACHED_TOOLS: Anthropic.Tool[] = TOOLS.map((t, i) => (i === TOOLS.length - 1 ? { ...t, cache_control: { type: 'ephemeral' } } : t))
-
 export interface TurnDeps {
   /** How it behaves and where it looks: `ASSISTANT.md`, the system prompt (ADR 0193). */
   readonly instructions: string
+  /** Every tool this turn: the server's, and in an editing mode the editor's actions (ADR 0195). */
+  readonly tools: readonly Anthropic.Tool[]
+  readonly mode: AssistantMode
+  /** Model calls this turn at most; `MAX_ROUNDS` when absent. */
+  readonly maxRounds?: number
+  /** Tools whose activity the tab draws itself — the editor's, which it describes in its own words. */
+  readonly silent?: (name: string) => boolean
   readonly talk: Talk
   readonly run: (name: string, input: Record<string, unknown>) => Promise<ToolRun>
   readonly budget: Budget
@@ -126,16 +146,26 @@ export const runTurn = async (conv: Conversation, text: string, context: EditorC
     return
   }
   conv.busy = true
+  conv.stopping = false
   conv.lastUsed = now()
   // Where the turn began: a failed one is taken back out, so the next starts from a conversation the API accepts.
   const before = conv.messages.length
-  conv.messages.push({ role: 'user', content: `${contextBlock(context)}\n\n${text}` })
+  const said0 = `${contextBlock(context, deps.mode)}\n\n${text}`
+  const last = conv.messages[conv.messages.length - 1]
+  // A turn that ended on the person's no, or their Stop, ends on tool results: this message joins them, as the API
+  // takes one user turn at a time.
+  if (last?.role === 'user' && Array.isArray(last.content)) conv.messages[conv.messages.length - 1] = { role: 'user', content: [...last.content, { type: 'text', text: said0 }] }
+  else conv.messages.push({ role: 'user', content: said0 })
+  const merged = last?.role === 'user' && Array.isArray(last.content) ? last : null
   conv.shown.push({ kind: 'you', text })
   const system: Anthropic.TextBlockParam[] = [{ type: 'text', text: deps.instructions, cache_control: { type: 'ephemeral' } }]
+  const tools: Anthropic.Tool[] = deps.tools.map((t, i) => (i === deps.tools.length - 1 ? { ...t, cache_control: { type: 'ephemeral' } } : t))
+  const rounds = deps.maxRounds ?? MAX_ROUNDS
   try {
-    for (let round = 0; round < MAX_ROUNDS; round++) {
+    for (let round = 0; round < rounds; round++) {
+      if (conv.stopping) break
       let said = ''
-      const reply = await deps.talk({ system, tools: CACHED_TOOLS, messages: forModel(conv.messages) }, (delta) => {
+      const reply = await deps.talk({ system, tools, messages: forModel(conv.messages) }, (delta) => {
         said += delta
         emit({ kind: 'text', text: delta })
       })
@@ -147,10 +177,17 @@ export const runTurn = async (conv: Conversation, text: string, context: EditorC
       const uses = reply.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
       if (uses.length === 0 || reply.stop_reason !== 'tool_use') break
       const results: Anthropic.ToolResultBlockParam[] = []
+      // The person said no, or stop: what is left of this round is not run, and the turn ends with it answered.
+      let ended = false
       for (const use of uses) {
+        if (ended || conv.stopping) {
+          ended = true
+          results.push({ type: 'tool_result', tool_use_id: use.id, content: 'Not run: the person ended this turn.', is_error: true })
+          continue
+        }
         const input = typeof use.input === 'object' && use.input !== null ? (use.input as Record<string, unknown>) : {}
         const activity = activityOf(use.name, input)
-        emit({ kind: 'activity', text: activity })
+        if (deps.silent?.(use.name) !== true) emit({ kind: 'activity', text: activity })
         conv.shown.push({ kind: 'activity', text: activity })
         const ran = await deps.run(use.name, input)
         if (ran.draft !== undefined) {
@@ -159,18 +196,22 @@ export const runTurn = async (conv: Conversation, text: string, context: EditorC
           emit({ kind: 'draft', draft: ran.draft })
         }
         results.push({ type: 'tool_result', tool_use_id: use.id, content: ran.result, ...(ran.isError === true ? { is_error: true } : {}) })
+        if (ran.ends === true) ended = true
       }
       conv.messages.push({ role: 'user', content: results })
+      if (ended || conv.stopping) break
       if (over()) {
         emit({ kind: 'error', message: `Today's $${deps.budget.limit.toFixed(2)} ran out mid-answer. The assistant is back tomorrow (UTC).` })
         // The model's tool calls were answered, so the conversation stays well-formed for tomorrow.
         return
       }
-      if (round === MAX_ROUNDS - 1) emit({ kind: 'error', message: 'Stopped: that took too many steps. Ask a narrower question.' })
+      if (round === rounds - 1) emit({ kind: 'error', message: 'Stopped: that took too many steps. Ask a narrower question.' })
     }
     emit({ kind: 'done' })
   } catch (e) {
     conv.messages.length = before
+    // The message that joined the last turn's results is taken back off them too.
+    if (merged !== null) conv.messages[before - 1] = merged
     emit({ kind: 'error', message: `The assistant failed: ${e instanceof Error ? e.message : String(e)}` })
   } finally {
     conv.busy = false

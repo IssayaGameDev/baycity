@@ -1,7 +1,13 @@
+import type { ActionOutcome } from '../actions'
+import type { EditorTool } from './editorLink'
+
 /**
  * The editor's side of the assistant's routes (ADR 0192): `/api/assistant` on the editor's own server, the login the
  * page already has. A turn comes back as server-sent events over the POST's own response, read as it arrives.
  */
+
+/** What the assistant may do in a chat (ADR 0195): read and report, change things on the person's click, or by itself. */
+export type AssistantMode = 'assistant' | 'confirm' | 'auto'
 
 /** What the person is looking at, sent with each message. */
 export interface EditorContext {
@@ -27,6 +33,8 @@ export type AssistantEvent =
   | { readonly kind: 'activity'; readonly text: string }
   | { readonly kind: 'draft'; readonly draft: Draft }
   | { readonly kind: 'spent'; readonly spent: number; readonly limit: number }
+  /** An editor action for this tab to run (ADR 0195), answered with `answerCall`. */
+  | { readonly kind: 'call'; readonly call: { readonly id: string; readonly name: string; readonly input: unknown } }
   | { readonly kind: 'done' }
   | { readonly kind: 'error'; readonly message: string }
 
@@ -36,6 +44,8 @@ export interface Status {
   readonly github: boolean
   readonly spent: number
   readonly limit: number
+  /** The modes open to this person: `assistant` alone, or all three. Absent from a server before ADR 0195. */
+  readonly modes?: readonly AssistantMode[]
 }
 
 const json = async <T>(r: Response): Promise<T> => {
@@ -56,6 +66,16 @@ export const newChat = async (): Promise<string> => (await json<{ id: string }>(
 export const chatSoFar = async (id: string): Promise<{ shown: Shown[]; filed: Record<string, string>; busy: boolean }> => json(await fetch(`/api/assistant/chats/${id}`))
 
 export const fileDraft = async (id: string, draft: string): Promise<string> => (await json<{ url: string }>(await fetch(`/api/assistant/chats/${id}/file/${draft}`, { method: 'POST' }))).url
+
+/** This tab's answer to an editor action the turn asked it to run: what it came to, or the person's no. */
+export const answerCall = async (id: string, callId: string, answer: { readonly outcome: ActionOutcome } | { readonly declined: true }): Promise<void> => {
+  await fetch(`/api/assistant/chats/${id}/result/${callId}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(answer) })
+}
+
+/** The person's Stop: the turn ends at its next step. */
+export const stopChat = async (id: string): Promise<void> => {
+  await fetch(`/api/assistant/chats/${id}/stop`, { method: 'POST' })
+}
 
 /** Tell the server this tab is done with the conversation — as the page goes, so a beacon. */
 export const closeChat = (id: string): void => {
@@ -83,9 +103,23 @@ export const sseParser = (on: (event: string, data: string) => void): ((chunk: s
   }
 }
 
-/** Say something; each event of the turn reaches `on` as it streams. Resolves when the turn ends. */
-export const say = async (id: string, text: string, context: EditorContext, on: (e: AssistantEvent) => void): Promise<void> => {
-  const r = await fetch(`/api/assistant/chats/${id}/say`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, context }) })
+/**
+ * Say something; each event of the turn reaches `on` as it streams. Resolves when the turn ends. In an editing mode
+ * the editor's actions go with it, as the tools the model may call.
+ */
+export const say = async (
+  id: string,
+  text: string,
+  context: EditorContext,
+  on: (e: AssistantEvent) => void,
+  editing: { readonly mode: AssistantMode; readonly tools: readonly EditorTool[] } = { mode: 'assistant', tools: [] },
+): Promise<void> => {
+  const tools = editing.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema }))
+  const r = await fetch(`/api/assistant/chats/${id}/say`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text, context, mode: editing.mode, ...(editing.mode === 'assistant' ? {} : { tools }) }),
+  })
   if (!r.ok || r.body === null) {
     const why = (await r.json().catch(() => ({}))) as { error?: unknown }
     on({ kind: 'error', message: typeof why.error === 'string' ? why.error : `the server answered ${r.status}` })
