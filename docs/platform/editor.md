@@ -23,7 +23,8 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | --- | --- | --- |
 | `itemMeshes.ts` | `instanceRoot`, `markerGroup`, the groups, the shadow budget, the cell toggle | `doc`, `loaded`, `runtime`, `mode`, `gameSettings`, `selected`, `afterBuild` |
 | `play.ts` | the game frame (ADR 0172) | `PlayHost` (13 getters) |
-| `historyStore.ts` | the history, pending batches, `coalescing`, the held-back drag batches, the clipboard | `HistoryHost` |
+| `historyStore.ts` | the history (a level edit, an asset edit, a turn), pending batches, `coalescing`, the held-back drag batches, an action's held batches, the open turns, the clipboard | `HistoryHost` |
+| `actions/` | nothing — the editor's actions as data, the tab's set installed at the end of `main.ts` (ADR 0194, `editor-actions.md`) | `ActionHost` |
 | `liveSession.ts` | `collab`, the peer list, every `connId` this tab has had (`mineEver`), the last snapshot, `joining`, the deferred ops, the hold map and its key, the hold outlines, the presence timer | `LiveHost` |
 | `assistant/` | the assistant's button, chat and tab (ADR 0192, `assistant.md`) | `AssistantDockHost` |
 | `follow.ts` | whom this tab follows, the pose it glides to and whether the leader's holds are still to be taken; who follows it, the send timer and the last pose sent (ADR 0155, ADR 0184) | `FollowHost` |
@@ -50,7 +51,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | Right | `#insp-head`, `#inspector`, `#asset-inspector` | `src/inspector.ts`, `src/assetInspector.ts` |
 | Bottom panel | `#palette` **Project** (asset tree, previews) | `src/projectPanel.ts`, `src/assetTree.ts`, `src/previews.ts` |
 
-Document model: `src/editorDoc.ts` (`Doc`, `levelDoc`, `prefabDoc`; a `Doc` captures its `registry`; every mutation is an op batch, below). Undo: `src/opHistory.ts` (inverse ops, ADR 0089). Shortcuts: `src/shortcuts.ts` (ADR 0030).
+Document model: `src/editorDoc.ts` (`Doc`, `levelDoc`, `prefabDoc`; a `Doc` captures its `registry`; every mutation is an op batch, below). Undo: `src/opHistory.ts` (the stack, inverse ops, ADR 0089), each entry undone step by step around what others changed since, `src/undoSteps.ts` (ADR 0194, `editor-actions.md`). Shortcuts: `src/shortcuts.ts` (ADR 0030).
 
 ## Content API — `editor-server.md` (ADR 0083)
 
@@ -296,8 +297,8 @@ Others' selection is what the hold outlines and badges show: a selection *is* a 
 
 ### Holds — who has what selected (ADR 0158)
 
-A hold is a selection, **shown and never refused**: several people may have one node, and anyone selects and edits
-anything. Two edits to one thing: the last batch to reach the server is what stays, and everyone repaints to it.
+A hold is a selection, **shown and never refused** to a person: several people may have one node, and anyone selects
+and edits anything. An agent's edit is refused on another connection's hold (`room.heldByOthers`, ADR 0194). Two edits to one thing: the last batch to reach the server is what stays, and everyone repaints to it.
 
 | Piece | Behaviour |
 | --- | --- |

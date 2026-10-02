@@ -28,6 +28,7 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 | [client/input.md](platform/client/input.md) | Keyboard, mouse, touch zones, actions, `InputCommand` |
 | [rendering.md](platform/rendering.md) | Stage, post-FX, overlay layer, level view, assets, world labels, Pixi UI |
 | [editor.md](platform/editor.md) | What it authors, content API client, edits as ops, live levels, game discovery, adoption, Play |
+| [editor-actions.md](platform/editor-actions.md) | The editor's actions as data: the rules in `ctx.edit`, a turn's undo, the list |
 | [editor-server.md](platform/editor-server.md) | The content API, Access identity, live documents, session commits, upload, deploy |
 | [assistant.md](platform/assistant.md) | The editor's AI assistant: read and report, its tools, keys, budget, the chat and its tab |
 | [content-sync.md](platform/content-sync.md) | The live mirror, `content-root.ts`, the `@content` alias, `.env` |
@@ -242,5 +243,6 @@ why matters.
 | [0191](adr/0191-copy-and-paste-a-component.md) | Copy and paste a component |
 | [0192](adr/0192-an-assistant-in-the-editor.md) | An assistant in the editor |
 | [0193](adr/0193-the-assistants-instructions-in-a-file.md) | The assistant's instructions in a file |
+| [0194](adr/0194-editor-actions-and-an-agents-edits.md) | Editor actions, and an agent's edits in a shared level |
 
 `Design archive/` holds superseded design material and is not maintained.

@@ -199,6 +199,20 @@ export const createCameraView = (host: CameraViewHost) => {
   })
 
   /**
+   * Draw the frame now and hand the canvas to `read` before the navigation gizmo goes on — the view as a picture
+   * (ADR 0194) — then finish the frame as the loop does, so the screen shows what it always does. Synchronous: the
+   * drawing buffer is readable only in the task that drew it, and a hidden tab draws no frames to wait for.
+   */
+  const captureFrame = <T,>(read: (canvas: HTMLCanvasElement) => T): T => {
+    host.renderPostFX()
+    try {
+      return read(stage.renderer.domElement)
+    } finally {
+      if (!host.playing()) viewGizmo.render(stage.renderer)
+    }
+  }
+
+  /**
    * The gizmo gets the pointer before anything else does.
    *
    * On the document in the **capture** phase rather than on the canvas: `OrbitControls` and the rest listen on
@@ -357,6 +371,7 @@ export const createCameraView = (host: CameraViewHost) => {
     installEnvironment,
     /** Once per frame, so the navigation gizmo keeps up. */
     update: (dt: number) => viewGizmo.update(dt),
+    captureFrame,
     boundsBox,
     showBounds: () => showBoundsBox,
     setShowBounds: (on: boolean) => {

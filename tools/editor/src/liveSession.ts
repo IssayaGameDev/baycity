@@ -546,6 +546,18 @@ export const createLiveSession = (host: LiveHost) => {
     repaint: repaintAfterOps,
     /** The others who have this node selected — its badges in the Hierarchy (ADR 0158). */
     holdersOf,
+    /**
+     * Another connection holding one of these nodes, first found — what an agent's edit stays off (ADR 0194). Never
+     * this tab, nor a connection this tab had before a reconnect.
+     */
+    heldByOthers: (refs: readonly NodeRef[]): Hold | null => {
+      const mine = collab.connId()
+      for (const ref of refs) {
+        const h = (holdMap.get(refKey(ref)) ?? []).find((x) => x.connId !== mine && !mineEver.has(x.connId))
+        if (h !== undefined) return h
+      }
+      return null
+    },
     /** Tell the room what I hold: the selection and the asset open, whole, every time they change. */
     syncHolds,
     /** The others who have this asset open (ADR 0159) — the icons on it in the Inspector. */

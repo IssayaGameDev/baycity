@@ -3,6 +3,7 @@ import { mergeAssetOps, applyBatch, OpError, type AssetOp, type Level, type Node
 import type { ClipItem, Doc, OpBatch } from './editorDoc'
 import { createOpHistory, foldBatches, type HistoryEntry } from './opHistory'
 import type { Notify } from './notices'
+import { assetSteps, levelSteps, planRedo, planUndo, squashTransforms, type AssetStep, type LevelStep, type UndoStep } from './undoSteps'
 
 /**
  * Undo, redo and the clipboard (ADR 0121).
@@ -17,6 +18,10 @@ import type { Notify } from './notices'
  *
  * **One history for everything this tab edits** (ADR 0159): a data-file asset's edit — a material's — sits in the
  * same stack as the level's, in the order they were made, and Ctrl+Z takes back whichever came last.
+ *
+ * **An undo leaves what someone changed since** (ADR 0194, Kodjo's call): every entry keeps its steps, and an undo or
+ * a redo takes back each only while what it wrote is still there (`undoSteps.ts`) — a level edit, an asset edit and
+ * an agent's turn alike.
  */
 
 /**
@@ -30,7 +35,30 @@ export interface AssetEdit {
   label: string
 }
 
-type Entry = ({ kind: 'level' } & HistoryEntry) | ({ kind: 'asset' } & AssetEdit)
+/**
+ * One prompt to an agent, while it works (ADR 0194): its edits gather here, and become one history entry when it
+ * ends — one Ctrl+Z for the whole prompt, the level's edits and the assets' together.
+ */
+export interface Turn {
+  readonly label: string
+  readonly steps: UndoStep[]
+  /** Which file's history it belongs to: a turn still open when another file is opened is not this one's. */
+  readonly generation: number
+}
+
+/** A finished turn in the history. */
+interface TurnEntry {
+  kind: 'turn'
+  label: string
+  steps: UndoStep[]
+}
+
+/** A level edit: its ops and inverses, as the room was sent them, and its steps — what an undo works from. */
+type LevelEntry = { kind: 'level' } & HistoryEntry & { steps: LevelStep[] }
+/** An asset edit, its steps kept up with its ops while a gesture merges into it. */
+type AssetEntry = { kind: 'asset' } & AssetEdit & { steps: AssetStep[] }
+
+type Entry = LevelEntry | AssetEntry | TurnEntry
 
 /** What the history needs from the editor around it. Getters, so nothing here holds a stale document. */
 export interface HistoryHost {
@@ -61,9 +89,12 @@ export interface HistoryHost {
   loadNewReferencesThen: (redraw: () => void) => void
   /**
    * Apply a data-file asset's ops as this tab's edit — an undo is an edit like any other to everyone else — and
-   * show that asset, as a level undo shows what was selected. `false` when they no longer apply (it is gone).
+   * show that asset, as a level undo shows what was selected — unless `show` is false: a turn's undo, which leaves
+   * the selection alone. `false` when they no longer apply (it is gone).
    */
-  applyAsset: (assetId: string, ops: readonly AssetOp[], what: string) => boolean
+  applyAsset: (assetId: string, ops: readonly AssetOp[], what: string, show?: boolean) => boolean
+  /** A data-file asset as this tab shows it now — what a turn's undo checks its values against. */
+  assetNow: (assetId: string) => unknown
   notify: Notify
   renderStatus: () => void
   refreshUi: () => void
@@ -78,7 +109,20 @@ export interface HistoryStore {
    * An edit to a data-file asset, already made (ADR 0159). `ongoing` while a gesture is still adding to it — a
    * colour being dragged is one entry — until a record of that asset without it, or any other entry, ends it.
    */
-  recordAsset: (edit: AssetEdit, ongoing: boolean) => void
+  recordAsset: (edit: AssetEdit, ongoing: boolean, turn?: Turn | null) => void
+  /**
+   * Run `edit` with this tab's document changes held here (ADR 0194): applied, but neither sent nor recorded, and
+   * gathered in `into` — even when `edit` throws — for the caller to `commitHeld` or `discardHeld`.
+   */
+  holding: <T>(into: OpBatch[], edit: () => T) => T
+  /** Send held batches to the room as one, and record them: an entry of their own, or steps of `turn`. */
+  commitHeld: (batches: readonly OpBatch[], label: string, turn: Turn | null) => void
+  /** Take held batches back off the level, never sent. The ops that did it, for a repaint. */
+  discardHeldBatches: (batches: readonly OpBatch[]) => Op[]
+  /** A turn begins: nothing is recorded until it ends. */
+  startTurn: (label: string) => Turn
+  /** A turn ends: its edits, if it made any, become one entry. */
+  endTurn: (turn: Turn) => void
   /** Start over: a different file's edits are not this one's. */
   reset: () => void
   undo: () => void
@@ -112,7 +156,15 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
   const history = createOpHistory<Entry>()
   /** Batches the open documents reported since the last `recordEdit`. A gizmo drag piles up a hundred. */
   let pending: OpBatch[] = []
+  /** Where batches go while an action's edit is held (`holding`): not to the room, not to the history. */
+  let holdingInto: OpBatch[] | null = null
+  /** Bumped by every reset: a turn begun before it belongs to another file. */
+  let generation = 0
   const onDocOps = (batch: OpBatch): void => {
+    if (holdingInto !== null) {
+      holdingInto.push(batch)
+      return
+    }
     pending.push(batch)
     if (!host.live()) return
     // Mid-drag the room sees presence, not a hundred ops: the batches wait and go as one when the drag ends.
@@ -133,26 +185,38 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
    * Ctrl+Z never needs pressing twice for one visible change.
    */
   const recordEdit = (label: string): void => {
-    if (coalescing) return
-    const entry = foldBatches(pending, label, host.selectionRefs())
+    // A held edit is recorded by whoever holds it; a shared function's own record inside one is not a second entry.
+    if (coalescing || holdingInto !== null) return
+    pushLevel(pending, label)
     pending = []
+  }
+
+  /** A level entry of these batches: folded for the room's record, its steps squashed for undo. */
+  const pushLevel = (batches: readonly OpBatch[], label: string): void => {
+    const entry = foldBatches([...batches], label, host.selectionRefs())
     if (entry === null) return
-    history.push({ kind: 'level', ...entry })
+    open = null
+    history.push({ kind: 'level', ...entry, steps: squashTransforms(levelSteps(batches)) })
     host.renderStatus()
   }
 
   /** The asset entry a gesture is still adding to, while it is the last thing done. */
-  let open: Entry | null = null
+  let open: AssetEntry | null = null
 
-  const recordAsset = (edit: AssetEdit, ongoing: boolean): void => {
+  const recordAsset = (edit: AssetEdit, ongoing: boolean, turn: Turn | null = null): void => {
+    if (turn !== null) {
+      if (turn.generation === generation) turn.steps.push(...assetSteps(edit.assetId, edit.ops, edit.inverses))
+      return
+    }
     const top = history.last()
     if (edit.ops.length > 0) {
-      if (open !== null && open === top && open.kind === 'asset' && open.assetId === edit.assetId && open.label === edit.label) {
+      if (open !== null && open === top && open.assetId === edit.assetId && open.label === edit.label) {
         // One more step of the same gesture: the newest value per path, and the value before the first.
         open.ops = mergeAssetOps(open.ops, edit.ops)
         open.inverses = mergeAssetOps(edit.inverses, open.inverses)
+        open.steps = assetSteps(open.assetId, open.ops, open.inverses)
       } else {
-        open = { kind: 'asset', ...edit }
+        open = { kind: 'asset', ...edit, steps: assetSteps(edit.assetId, edit.ops, edit.inverses) }
         history.push(open)
       }
     }
@@ -165,45 +229,96 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
     history.clear()
     pending = []
     open = null
+    generation++
+  }
+
+  const holding = <T,>(into: OpBatch[], edit: () => T): T => {
+    if (holdingInto !== null) throw new Error('an edit is already being held')
+    holdingInto = into
+    try {
+      return edit()
+    } finally {
+      holdingInto = null
+    }
+  }
+
+  const commitHeld = (batches: readonly OpBatch[], label: string, turn: Turn | null): void => {
+    const ops = batches.flatMap((b) => b.ops)
+    if (ops.length === 0) return
+    // One message to the room for the whole action, applied there all or nothing.
+    if (host.live()) host.submit({ ops, inverses: [...batches].reverse().flatMap((b) => b.inverses) })
+    if (turn !== null) {
+      if (turn.generation === generation) turn.steps.push(...levelSteps(batches))
+      return
+    }
+    pushLevel(batches, label)
+  }
+
+  const discardHeldBatches = (batches: readonly OpBatch[]): Op[] => {
+    const level = host.rootLevel()
+    const inverses = [...batches].reverse().flatMap((b) => b.inverses)
+    if (level === null || inverses.length === 0) return []
+    return applyBatch(level, inverses).ops
+  }
+
+  /** Turns begun and not ended: a batch the server refuses mid-turn is taken out of one of these. */
+  const openTurns = new Set<Turn>()
+  const startTurn = (label: string): Turn => {
+    const turn: Turn = { label, steps: [], generation }
+    openTurns.add(turn)
+    return turn
+  }
+  const endTurn = (turn: Turn): void => {
+    openTurns.delete(turn)
+    if (turn.generation !== generation || turn.steps.length === 0) return
+    open = null
+    history.push({ kind: 'turn', label: turn.label, steps: turn.steps })
+    host.renderStatus()
   }
 
 
   /**
-   * Apply a history entry's ops straight to the level — not through a document, so nothing is re-reported — then
-   * redraw the way a remote batch is, and put the selection back by identity. Resolves `false` when the ops no
-   * longer apply (the node is gone); the entry is dropped and a warning says why.
+   * Undo or redo an entry around what others changed since (`undoSteps.ts`, ADR 0194): worked out on copies, then
+   * applied straight to the level — not through a document, so nothing is re-reported — and sent as this tab's edit,
+   * as any undo is. What someone changed since is left theirs, and counted. `null` when nothing of it could be taken
+   * back or put again: the entry is dropped and a warning says why.
    *
-   * The redraw is `host.repaint`, not a rebuild of everything: undoing a move puts the groups back where the
-   * data says, as a teammate's move does. It used to re-bake the sky and build every mesh and the physics world
-   * twice, which on a level of a few hundred objects was the second an undo took.
+   * The redraw is `host.repaint`, not a rebuild of everything: undoing a move puts the groups back where the data
+   * says, as a teammate's move does. A level edit puts back what was selected when it was made; a turn leaves the
+   * selection alone (the agent never chose it), and only an asset edit shows its asset.
    */
-  const applyHistory = (ops: readonly Op[], keep: readonly NodeRef[], what: string): boolean => {
-    const level = host.rootLevel()
-    if (level === null) return false
-    let applied: { ops: Op[]; inverses: Op[] }
-    try {
-      applied = applyBatch(level, ops)
-    } catch (e) {
-      host.notify.warn(`cannot ${what}: ${e instanceof OpError ? e.message : String(e)}`)
-      return false
+  const applyEntry = (entry: Entry, way: 'undo' | 'redo', what: string): number | null => {
+    open = null
+    const level = host.rootLevel() ?? { id: '', config: {}, nodes: [] }
+    const plan = (way === 'undo' ? planUndo : planRedo)(entry.steps, level, host.assetNow)
+    if (plan.level.length === 0 && plan.assets.size === 0) {
+      host.notify.warn(plan.kept > 0 ? `cannot ${what}: everything it changed has been changed since by someone else` : `cannot ${what}: it is gone`)
+      return null
     }
-    // An undo is an edit like any other to the room.
-    if (host.live() && applied.ops.length > 0) host.submit(applied)
-    pending = []
-    host.repaint(applied.ops)
-    const open = host.doc()
-    const restored = open === null ? [] : keep.map((r) => open.indexOfRef(r)).filter((i): i is number => i !== null)
-    // What was selected when the edit was made; putting it back also redraws the panels.
-    host.applySelection(restored)
-    return true
+    if (plan.level.length > 0) {
+      let applied: { ops: Op[]; inverses: Op[] }
+      try {
+        applied = applyBatch(level, plan.level)
+      } catch (e) {
+        host.notify.warn(`cannot ${what}: ${e instanceof OpError ? e.message : String(e)}`)
+        return null
+      }
+      if (host.live() && applied.ops.length > 0) host.submit(applied)
+      pending = []
+      host.repaint(applied.ops)
+    }
+    for (const [assetId, ops] of plan.assets) host.applyAsset(assetId, ops, what, entry.kind === 'asset')
+    plan.done()
+    if (entry.kind === 'level') {
+      const doc = host.doc()
+      // What was selected when the edit was made; putting it back also redraws the panels.
+      host.applySelection(doc === null ? [] : entry.selection.map((r: NodeRef) => doc.indexOfRef(r)).filter((i): i is number => i !== null))
+    }
+    return plan.kept
   }
 
-  /** Apply one side of an entry: a level's ops, or an asset's, each the way it is edited. */
-  const applyEntry = (entry: Entry, side: 'ops' | 'inverses', what: string): boolean => {
-    open = null
-    if (entry.kind === 'asset') return host.applyAsset(entry.assetId, entry[side], what)
-    return applyHistory(entry[side], entry.selection, what)
-  }
+  /** What was left alone, said with the undo: changes someone made since. */
+  const keptNote = (kept: number): string => (kept === 0 ? '' : ` — kept ${kept} change${kept === 1 ? '' : 's'} made since by someone else`)
 
   const undo = (): void => {
     const entry = history.undo()
@@ -211,11 +326,12 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
       host.notify.warn('nothing to undo')
       return
     }
-    if (!applyEntry(entry, 'inverses', `undo ${entry.label}`)) {
+    const kept = applyEntry(entry, 'undo', `undo ${entry.label}`)
+    if (kept === null) {
       history.drop(entry)
       return
     }
-    host.notify.ok(`undid: ${entry.label}`)
+    host.notify.ok(`undid: ${entry.label}${keptNote(kept)}`)
   }
 
   const redo = (): void => {
@@ -224,11 +340,12 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
       host.notify.warn('nothing to redo')
       return
     }
-    if (!applyEntry(entry, 'ops', `redo ${entry.label}`)) {
+    const kept = applyEntry(entry, 'redo', `redo ${entry.label}`)
+    if (kept === null) {
       history.drop(entry)
       return
     }
-    host.notify.ok(`redid: ${entry.label}`)
+    host.notify.ok(`redid: ${entry.label}${keptNote(kept)}`)
   }
 
   /**
@@ -306,6 +423,11 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
     withOps,
     recordEdit,
     recordAsset,
+    holding,
+    commitHeld,
+    discardHeldBatches,
+    startTurn,
+    endTurn,
     reset: resetHistory,
     undo,
     redo,
@@ -320,7 +442,22 @@ export const createHistoryStore = (host: HistoryHost): HistoryStore => {
     abortDrag: () => void (coalescing = false),
     canUndo: () => history.canUndo(),
     canRedo: () => history.canRedo(),
-    dropWhere: (predicate) => history.dropWhere((e) => e.kind === 'level' && predicate(e)),
+    dropWhere: (predicate) => {
+      // A refused batch takes only its own steps out of a turn, open or finished; a turn goes once nothing is left of it.
+      const prune = (steps: UndoStep[]): void => {
+        for (let i = steps.length - 1; i >= 0; i--) {
+          const s = steps[i]!
+          if (s.kind === 'level' && predicate({ ops: [s.op], inverses: [s.inverse] })) steps.splice(i, 1)
+        }
+      }
+      for (const t of openTurns) prune(t.steps)
+      history.dropWhere((e) => {
+        if (e.kind === 'level') return predicate(e)
+        if (e.kind !== 'turn') return false
+        prune(e.steps)
+        return e.steps.length === 0
+      })
+    },
     depth: () => history.depth(),
     labels: () => ({ undo: history.undoLabel(), redo: history.redoLabel() }),
   }

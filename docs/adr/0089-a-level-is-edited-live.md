@@ -2,7 +2,8 @@
 
 Status: accepted, implemented in four phases (one commit each); each phase has its section here. Phase 3's
 holds no longer refuse anything (ADR 0158): a hold is what someone has selected, shown to the others, and anyone
-selects and edits any node.
+selects and edits any node. Its undo rule — a node put back where *I* had it even if someone moved it since — is
+reversed by ADR 0194: an undo leaves what someone has changed since.
 
 ## Context
 
