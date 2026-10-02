@@ -16,6 +16,7 @@ const fakeActions = () => {
   const ended: string[] = []
   const actions: EditorActions = {
     list: () => EDITOR_ACTIONS,
+    schemaOf: (a) => a.input,
     run: async (name, _input, turn = null) => {
       runs.push({ name, turn: turn?.label ?? null })
       return { ok: true, result: null }

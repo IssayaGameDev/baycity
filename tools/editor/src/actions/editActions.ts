@@ -174,6 +174,11 @@ const addComponent = defineAction({
   summary: 'Add a component of this game to an object, at its defaults. Returns its componentId.',
   effect: 'edit',
   input: object({ id: id('the object'), type: str('the component type, from list_component_types') }),
+  // The game's own types, the only ones there are: a name that is none is not offered (ADR 0198).
+  inputFor: (host) => {
+    const types = host.doc()?.registry.all().map((d) => d.type) ?? []
+    return object({ id: id('the object'), type: types.length === 0 ? str('the component type') : oneOf(types, 'the component type: one of this game’s') }).json
+  },
   run: (ctx, input) => {
     const doc = ctx.doc()
     const i = ctx.at(input.id)
@@ -221,7 +226,7 @@ const storedValue = (ctx: ActionCtx, doc: Doc | null, i: number | null, key: str
   const where = doc === null || i === null ? 'a data asset' : 'this object'
   switch (spec.kind) {
     case 'stages':
-      throw new ActionError(`${key} is a sequence’s steps, which an action does not set yet`)
+      throw new ActionError(`${key} is a sequence’s steps: set them with set_sequence_stages`)
     case 'collider':
       if (doc === null || i === null) throw new ActionError(`${key} means nothing in ${where}`)
       if (doc.builtinOf(i) !== null) throw new ActionError(`${key} is locked to the built-in shape: its size is the object’s scale`)

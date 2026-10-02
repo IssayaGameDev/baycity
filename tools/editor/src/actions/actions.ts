@@ -37,6 +37,11 @@ export interface ActionDef<I> {
   readonly summary: string
   readonly effect: ActionEffect
   readonly input: Schema<I>
+  /**
+   * Its input as the open document narrows it, for a tool definition: the game's own component types as the only
+   * ones to choose from (ADR 0198). Absent, `input`'s.
+   */
+  readonly inputFor?: (host: ActionHost) => JsonSchema
   readonly run: (ctx: ActionCtx, input: I) => unknown
 }
 
@@ -47,6 +52,7 @@ export interface Action {
   readonly effect: ActionEffect
   /** Its input as JSON Schema: what a tool definition carries. */
   readonly input: JsonSchema
+  readonly inputFor?: (host: ActionHost) => JsonSchema
   readonly invoke: (ctx: ActionCtx, raw: unknown) => Promise<unknown>
 }
 
@@ -55,6 +61,7 @@ export const defineAction = <I>(def: ActionDef<I>): Action => ({
   summary: def.summary,
   effect: def.effect,
   input: def.input.json,
+  ...(def.inputFor === undefined ? {} : { inputFor: def.inputFor }),
   invoke: async (ctx, raw) => await def.run(ctx, def.input.parse(raw ?? {}, 'input')),
 })
 
@@ -144,6 +151,8 @@ export type ActionOutcome = { readonly ok: true; readonly result: unknown } | { 
 
 export interface EditorActions {
   readonly list: () => readonly Action[]
+  /** An action's input as JSON Schema for the document open now: what a tool definition carries. */
+  readonly schemaOf: (action: Action) => JsonSchema
   /** Run one by name. `turn` for an agent's prompt; absent, the person's own. */
   readonly run: (name: string, input: unknown, turn?: Turn | null) => Promise<ActionOutcome>
   /** An agent's prompt begins: what its actions change gathers as one undo entry, made when it ends. */
@@ -232,6 +241,7 @@ export const createEditorActions = (host: ActionHost, actions: readonly Action[]
 
   return {
     list: () => actions,
+    schemaOf: (action) => action.inputFor?.(host) ?? action.input,
     startTurn: (label) => host.history.startTurn(label),
     endTurn: (turn) => host.history.endTurn(turn),
     nameOf: (id) => {
