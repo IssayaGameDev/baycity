@@ -7079,6 +7079,42 @@
           }
         }
       ]
+    },
+    {
+      "id": "d5c8247b",
+      "name": "Red Sphere",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 5,
+          "z": 0
+        }
+      },
+      "components": [
+        {
+          "id": "544772a6",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "ball",
+              "radius": 0.5
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "270650f9",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:sphere",
+            "material": "4a11d049f9f8e5ac"
+          }
+        }
+      ]
     }
   ]
 }
