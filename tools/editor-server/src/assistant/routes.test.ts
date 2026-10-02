@@ -98,12 +98,13 @@ describe('the assistant’s routes', () => {
     expect(filed, 'filed once, however often it is clicked').toHaveLength(1)
   })
 
-  it('is its owner’s alone, and ends when its tab closes', async () => {
+  it('is its owner’s alone, outlives its tab, and goes when deleted (ADR 0197)', async () => {
     const { id } = (await (await call('/api/assistant/chats', { method: 'POST' })).json()) as { id: string }
     expect((await call(`/api/assistant/chats/${id}`, { as: 'bob' })).status).toBe(404)
-    expect((await call(`/api/assistant/chats/${id}/close`, { method: 'POST', as: 'bob' })).status).toBe(204)
-    expect((await call(`/api/assistant/chats/${id}`)).status, 'another person cannot close it').toBe(200)
+    expect((await call(`/api/assistant/chats/${id}`, { method: 'DELETE', as: 'bob' })).status, 'another person cannot delete it').toBe(404)
     await call(`/api/assistant/chats/${id}/close`, { method: 'POST' })
+    expect((await call(`/api/assistant/chats/${id}`)).status, 'its tab closing keeps it').toBe(200)
+    expect((await call(`/api/assistant/chats/${id}`, { method: 'DELETE' })).status).toBe(204)
     expect((await call(`/api/assistant/chats/${id}`)).status).toBe(404)
   })
 

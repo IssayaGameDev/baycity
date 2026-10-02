@@ -4,7 +4,9 @@ import {
   answerCall,
   assistantStatus,
   chatSoFar,
+  deleteChat,
   fileDraft,
+  listChats,
   newChat,
   say,
   stopChat,
@@ -28,7 +30,11 @@ import './assistant.css'
  *
  * **Modes** (ADR 0195), for the people the server opens them to: Assistant reads and reports; Confirm hands the model
  * the editor's actions and asks before each change — Apply, or Don't, which ends the prompt (Kodjo's calls); Auto
- * applies them at once. Either way a prompt is one undo, and Stop ends it at its next step.
+ * applies them at once. Either way a prompt is one undo, and Stop ends it at its next step. The mode is picked beside
+ * Send, as what the next message is sent in (ADR 0197).
+ *
+ * **Sessions** (ADR 0197): the server keeps each person's chats; the header's Chats menu starts a new one, opens a
+ * saved one, or deletes one — asked once more first, as it is for good.
  */
 
 export interface ChatWindowOptions {
@@ -75,11 +81,29 @@ export const INTRO =
 
 const MODE_LABELS: Readonly<Record<AssistantMode, string>> = { assistant: 'Assistant', confirm: 'Confirm', auto: 'Auto' }
 
-/** What each mode does, said when it is chosen. */
+/** What each mode does, under its name in the mode menu. */
 export const MODE_NOTES: Readonly<Record<AssistantMode, string>> = {
-  assistant: 'Assistant: I read and explain. I change nothing.',
-  confirm: 'Confirm: I can change the open level or prefab, and I ask before each change. Don’t ends what I was doing.',
-  auto: 'Auto: I make the changes myself. One Ctrl+Z takes back everything one message did. Stop ends it.',
+  assistant: 'Reads and explains. Changes nothing.',
+  confirm: 'Changes the open level or prefab, asking before each change.',
+  auto: 'Makes the changes itself. One Ctrl+Z takes back a whole message.',
+}
+
+/** A chat with nothing said yet, in the menu's words. */
+const NEW_CHAT = 'New chat'
+
+/** What a session is called before the server has a title for it: the first words of its first message. */
+const titleOf = (text: string): string => {
+  const words = text.replace(/\s+/g, ' ').trim()
+  return words.length <= 48 ? words : `${words.slice(0, 47).trimEnd()}…`
+}
+
+/** How long ago, short. */
+const ago = (ms: number, now = Date.now()): string => {
+  const min = Math.round((now - ms) / 60_000)
+  if (min < 1) return 'just now'
+  if (min < 60) return `${min} min`
+  const h = Math.round(min / 60)
+  return h < 24 ? `${h} h` : `${Math.round(h / 24)} d`
 }
 
 /** A prompt's label in the undo history: what was asked, short. */
@@ -95,26 +119,23 @@ export const createChatWindow = (opts: ChatWindowOptions): ChatWindow => {
   let tools: readonly EditorTool[] = []
   /** The change waiting for the person's Apply or Don't: settles it, `null` for a Stop. */
   let settleCard: ((yes: boolean | null) => void) | null = null
+  /** Whether this person has the editing modes and the chat an editor to change. */
+  let canEdit = false
 
   const root = opts.root
   root.replaceChildren()
   root.classList.add('asst')
 
   const head = el('div', 'asst-head')
-  head.append(icon('assistant', 'ic asst-head-i'), el('span', 'asst-title', 'Assistant'))
-  // Shown once the server says which modes are this person's, and only with an editor to change.
-  const modes = el('div', 'asst-modes')
-  modes.hidden = true
-  const modeButtons = new Map<AssistantMode, HTMLButtonElement>()
-  for (const m of ['assistant', 'confirm', 'auto'] as const) {
-    const b = el('button', 'asst-mode', MODE_LABELS[m])
-    b.type = 'button'
-    b.addEventListener('click', () => setMode(m))
-    modeButtons.set(m, b)
-    modes.append(b)
-  }
+  // The session this window shows, and the menu of the others.
+  const chats = el('button', 'asst-chats')
+  chats.type = 'button'
+  chats.title = 'Chats: start a new one, open or delete a saved one'
+  const chatTitle = el('span', 'asst-chats-t', NEW_CHAT)
+  chats.append(chatTitle, icon('chevron', 'ic asst-chev'))
+  chats.addEventListener('click', () => void openChatsMenu())
   const spent = el('span', 'asst-spent')
-  head.append(modes, spent)
+  head.append(icon('assistant', 'ic asst-head-i'), chats, spent)
   if (opts.onPopOut !== undefined) {
     const pop = opts.onPopOut
     head.append(
@@ -138,11 +159,72 @@ export const createChatWindow = (opts: ChatWindowOptions): ChatWindow => {
   const input = el('textarea', 'asst-in')
   input.rows = 2
   input.placeholder = 'Ask the assistant… (Enter sends, Shift+Enter for a new line)'
+  // What the next message is sent in: beside Send, shown once the server says the editing modes are this person's.
+  const modePick = el('button', 'asst-modepick')
+  modePick.type = 'button'
+  modePick.title = 'Mode: what the assistant may do with your next message'
+  const modeLabel = el('span', '', MODE_LABELS.assistant)
+  modePick.append(modeLabel, icon('chevron', 'ic asst-chev'))
+  modePick.hidden = true
+  modePick.addEventListener('click', () => openModeMenu())
   const send = button('asst-send', 'send', 'Send', () => void submit())
   const stopper = button('asst-stop', 'stop', 'Stop — what it changed so far stays one Ctrl+Z', () => void stop())
   stopper.hidden = true
-  form.append(input, send, stopper)
+  form.append(input, modePick, send, stopper)
   root.append(head, log, form)
+
+  /** The open menu, and how it closes: a pick, a press elsewhere, Escape. */
+  let closeMenu: (() => void) | null = null
+  const menu = (anchor: HTMLElement, rows: readonly HTMLElement[], above: boolean): void => {
+    closeMenu?.()
+    const pop = el('div', `asst-pop${above ? ' asst-pop-up' : ''}`)
+    pop.append(...rows)
+    const box = root.getBoundingClientRect()
+    const at = anchor.getBoundingClientRect()
+    if (above) {
+      pop.style.bottom = `${box.bottom - at.top + 4}px`
+      pop.style.right = `${Math.max(4, box.right - at.right)}px`
+    } else {
+      pop.style.top = `${at.bottom - box.top + 4}px`
+      pop.style.left = `${Math.max(4, at.left - box.left)}px`
+    }
+    root.append(pop)
+    const away = (e: Event): void => {
+      if (!pop.contains(e.target as globalThis.Node) && !anchor.contains(e.target as globalThis.Node)) closeMenu?.()
+    }
+    const key = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') closeMenu?.()
+    }
+    document.addEventListener('pointerdown', away, true)
+    document.addEventListener('keydown', key, true)
+    closeMenu = () => {
+      pop.remove()
+      document.removeEventListener('pointerdown', away, true)
+      document.removeEventListener('keydown', key, true)
+      closeMenu = null
+    }
+  }
+  const menuRow = (className: string, onPick: () => void, ...content: (Node | string)[]): HTMLButtonElement => {
+    const row = el('button', `asst-pop-row ${className}`)
+    row.type = 'button'
+    row.append(...content)
+    row.addEventListener('click', onPick)
+    return row
+  }
+
+  const openModeMenu = (): void => {
+    if (busy) return
+    menu(
+      modePick,
+      (['assistant', 'confirm', 'auto'] as const).map((m) =>
+        menuRow(`asst-pop-mode${m === mode ? ' on' : ''}`, () => {
+          closeMenu?.()
+          setMode(m)
+        }, el('span', 'asst-pop-t', MODE_LABELS[m]), el('span', 'asst-pop-d', MODE_NOTES[m])),
+      ),
+      true,
+    )
+  }
 
   const showSpent = (usd: number, limit: number): void => {
     spent.textContent = `${money(usd)} of ${money(limit)} today`
@@ -252,14 +334,82 @@ export const createChatWindow = (opts: ChatWindowOptions): ChatWindow => {
     send.disabled = on || status?.ready !== true
     root.classList.toggle('asst-busy', on)
     stopper.hidden = !on || mode === 'assistant'
-    for (const b of modeButtons.values()) b.disabled = on
+    modePick.disabled = on
+    chats.disabled = on
   }
 
   const setMode = (m: AssistantMode): void => {
-    if (busy || m === mode) return
-    mode = m
-    for (const [k, b] of modeButtons) b.setAttribute('aria-pressed', String(k === m))
-    note(MODE_NOTES[m])
+    if (busy) return
+    mode = canEdit ? m : 'assistant'
+    modeLabel.textContent = MODE_LABELS[mode]
+    modePick.dataset.mode = mode
+  }
+
+  /** Show a session: the new one, empty, or a saved one drawn again — waited for while it is still answering elsewhere. */
+  const showChat = async (id: string | null): Promise<void> => {
+    chatId = id
+    filed.clear()
+    if (id === null) {
+      chatTitle.textContent = NEW_CHAT
+      draw([])
+      return
+    }
+    let so = await chatSoFar(id)
+    while (so.busy) {
+      await new Promise((r) => setTimeout(r, 1500))
+      so = await chatSoFar(id)
+    }
+    for (const [d, url] of Object.entries(so.filed)) filed.set(d, url)
+    chatTitle.textContent = so.title !== undefined && so.title !== '' ? so.title : NEW_CHAT
+    if (so.mode !== undefined) setMode(so.mode)
+    draw(so.shown)
+  }
+
+  /** The Chats menu: a new chat, then the saved ones, the latest first, each with a delete asked once more. */
+  const openChatsMenu = async (): Promise<void> => {
+    if (busy || status?.ready !== true) return
+    let saved: readonly { id: string; title: string; lastUsed: number }[] = []
+    try {
+      saved = await listChats()
+    } catch (e) {
+      note(String(e instanceof Error ? e.message : e), 'asst-err')
+    }
+    const rows: HTMLElement[] = [
+      menuRow('asst-pop-new', () => {
+        closeMenu?.()
+        void showChat(null)
+      }, icon('plus', 'ic'), el('span', 'asst-pop-t', NEW_CHAT)),
+    ]
+    for (const s of saved) {
+      const row = el('div', `asst-pop-chat${s.id === chatId ? ' on' : ''}`)
+      const open = menuRow('asst-pop-open', () => {
+        closeMenu?.()
+        void showChat(s.id).catch((e: unknown) => note(String(e instanceof Error ? e.message : e), 'asst-err'))
+      }, el('span', 'asst-pop-t', s.title === '' ? NEW_CHAT : s.title), el('span', 'asst-pop-d', ago(s.lastUsed)))
+      const del = button('asst-pop-x', 'trash', 'Delete this chat', () => {
+        // For good, so asked once more, in the row itself.
+        const sure = el('div', 'asst-pop-sure')
+        sure.append(
+          el('span', 'asst-pop-t', `Delete “${s.title === '' ? NEW_CHAT : s.title}”?`),
+          menuRow('asst-pop-yes', () => {
+            void deleteChat(s.id).then(
+              () => {
+                row.remove()
+                if (s.id === chatId) void showChat(null)
+              },
+              (e: unknown) => note(String(e instanceof Error ? e.message : e), 'asst-err'),
+            )
+          }, 'Delete'),
+          menuRow('asst-pop-no', () => sure.replaceWith(open, del), 'Cancel'),
+        )
+        open.replaceWith(sure)
+        del.remove()
+      })
+      row.append(open, del)
+      rows.push(row)
+    }
+    if (saved.length === 0) rows.push(el('div', 'asst-pop-empty', 'No saved chats yet'))
+    menu(chats, rows, false)
   }
 
   /**
@@ -357,6 +507,7 @@ export const createChatWindow = (opts: ChatWindowOptions): ChatWindow => {
     const text = input.value.trim()
     if (text === '' || busy || status?.ready !== true) return
     input.value = ''
+    if (log.querySelector('.asst-you') === null) chatTitle.textContent = titleOf(text)
     you(text)
     setBusy(true)
     const link = opts.link
@@ -399,20 +550,14 @@ export const createChatWindow = (opts: ChatWindowOptions): ChatWindow => {
         return
       }
       showSpent(status.spent, status.limit)
-      if (opts.link !== undefined && (status.modes ?? []).some((m) => m !== 'assistant')) {
-        modes.hidden = false
-        for (const [k, b] of modeButtons) b.setAttribute('aria-pressed', String(k === mode))
+      canEdit = opts.link !== undefined && (status.modes ?? []).some((m) => m !== 'assistant')
+      modePick.hidden = !canEdit
+      if (status.storage !== undefined) {
+        const mb = (b: number): string => `${Math.round(b / 1024 ** 2)} MB`
+        note(`Saved chats take ${mb(status.storage.bytes)} on the server, past the ${mb(status.storage.warnAt)} warning. Unused ones go after 30 days; delete old ones to free space now.`, 'asst-err')
       }
-      if (chatId !== null) {
-        // Carried from another tab. Still answering there: wait for it to finish, then draw it all.
-        let so = await chatSoFar(chatId)
-        while (so.busy) {
-          await new Promise((r) => setTimeout(r, 1500))
-          so = await chatSoFar(chatId)
-        }
-        for (const [d, url] of Object.entries(so.filed)) filed.set(d, url)
-        draw(so.shown)
-      }
+      // Carried from another tab: still answering there, waited for, then drawn whole.
+      if (chatId !== null) await showChat(chatId)
     } catch (e) {
       note(String(e instanceof Error ? e.message : e), 'asst-err')
       chatId = null

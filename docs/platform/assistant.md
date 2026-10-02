@@ -15,6 +15,7 @@ through the editor's actions (ADR 0195, *Modes* below). No mode writes a file, c
 | `repoFiles.ts` | `createRepoFiles(root)`: `list`, `read`, `search`; `cleanPath`, `looksSecret`, `Refused` |
 | `github.ts` | `createGitHub({ token, repo, fetch? })`: `searchIssues`, `issue`, `createIssue`, `comment`; `repoOfRemote` |
 | `budget.ts` | `createBudget({ file, limit, now? })`: `spent`, `add`; `costOf(usage)`, `HAIKU_4_5_PRICES` |
+| `sessions.ts` | `createSessionStore(dir)`: `list`, `load`, `save`, `remove`, `sweep`; `titleOf`, `SESSION_DAYS` |
 
 Wired in `server.ts`: `createAssistant({ repoRoot, stateDir })` → `ApiOptions.assistant`, asked after the login
 (`identify`) and before every other route; `sweep()` in the minute timer.
@@ -22,16 +23,25 @@ Wired in `server.ts`: `createAssistant({ repoRoot, stateDir })` → `ApiOptions.
 | Route (signed-in user) | |
 | --- | --- |
 | `GET /api/assistant` | `{ ready, why?, github, spent, limit, modes }` — `modes` all three for an email in `assistant-editors`, else `['assistant']` |
-| `POST /api/assistant/chats` | `{ id }` (32 hex); 503 without a key. At most 6 open a person, the oldest dropped |
-| `GET /api/assistant/chats/:id` | `{ shown, filed, busy }` — for a tab the chat moved to |
+| `GET /api/assistant/chats` | `{ chats: { id, title, mode, lastUsed }[] }` — the person's saved sessions, the latest used first (ADR 0197) |
+| `POST /api/assistant/chats` | `{ id }` (32 hex); 503 without a key |
+| `GET /api/assistant/chats/:id` | `{ shown, filed, busy, title, mode }` — to draw it again; opening it is using it |
+| `DELETE /api/assistant/chats/:id` | 204: gone from memory and disk, its waiting calls answered |
 | `POST /api/assistant/chats/:id/say` | `{ text ≤ 8000, context, mode?, tools? }` → server-sent events `text` / `activity` / `draft` / `spent` / `call` / `error` / `done`, each `{ kind, … }`; keepalive 15 s. A turn runs to its end whether or not the tab stays. An editing mode not open to the person: 403 |
 | `POST /api/assistant/chats/:id/result/:call` | the tab's answer to a `call`: `{ outcome: ActionOutcome }` or `{ declined: true }`, ≤ 2 MB (a picture) → 204; 404 for no such call waiting |
 | `POST /api/assistant/chats/:id/stop` | 204: `stopping`, every waiting call answered — the turn ends at its next step |
 | `POST /api/assistant/chats/:id/file/:draft` | files an issue or posts a comment → `{ url }`; once per draft; body + `\n\n---\nRaised by <name> in the editor.` (the server's line, not the model's) |
-| `POST /api/assistant/chats/:id/close` | 204 — the tab's beacon |
+| `POST /api/assistant/chats/:id/close` | 204 — the tab's beacon: its waiting calls answered; the session is kept |
 
-A conversation is its owner's (verified email); anyone else gets 404. Kept in memory: closed by its tab, dropped after
-`IDLE_MS` 6 h silent. A failed turn is rolled back out of the conversation.
+A conversation is its owner's (verified email); anyone else gets 404. A failed turn is rolled back out of it.
+
+**Sessions** (`sessions.ts`, ADR 0197, Kodjo's calls): every conversation is kept on disk, in
+`stateDir/assistant-chats/<sha256(email)[0:16]>/<id>.json` — written after each turn, a filing and an opening, through
+a `.tmp` and a rename; one with nothing said yet is not written. Without viewport pictures (`[a picture of the viewport,
+not kept]`). Read back when first asked for; out of memory after `IDLE_MS` 6 h silent, on disk until **30 days unused**
+(`SESSION_DAYS`, by the file's time) — swept at start and hourly. The sweep measures them all: past
+`SESSION_WARN_BYTES` (1 GB) the status carries `storage: { bytes, warnAt }` for the people who edit, and the server
+logs it. `title` is the first message's first words (`titleOf`, ≤ 48); `mode` the last message's.
 
 **Instructions**, at the repository's root, each mode's whole system prompt: `ASSISTANT.md` for Assistant mode (ADR
 0193) — its rules, where it looks (`docs/INDEX.md` first), how it answers — and `ASSISTANT-EDIT.md` for Confirm and Auto
@@ -91,7 +101,7 @@ ssh root@2.28.227.20 'echo you@example.com > /var/lib/editor-server/assistant-ed
 | File | |
 | --- | --- |
 | `assistantDock.ts` | `createAssistantDock(stage, { context, playing })`: the round button (`.asst-fab`) at `#stage`'s bottom right and the panel (`.asst-panel`) it opens above; hidden while playing; the pop-out; the context channel; `answerLinks` for the chat tabs it opened; the close beacon on `pagehide` |
-| `chatWindow.ts` | `createChatWindow({ root, chatId?, context, onPopOut?, onClose?, link? })`: the chat — one for the panel and the tab; the modes, the change card, Stop |
+| `chatWindow.ts` | `createChatWindow({ root, chatId?, context, onPopOut?, onClose?, link? })`: the chat — one for the panel and the tab; the Chats menu, the mode dropdown, the change card, Stop |
 | `editorLink.ts` | `EditorLink { tools, begin, run, describe, end }`, `EditorTool`; `remoteLink(editorTab)` over `BroadcastChannel('mp-assistant-link')` — all a chat tab of its own loads |
 | `editorLinkLocal.ts` | `localLink(editorActions)`, `toolsOf` (reads and edits, never `view`), `describeCall`, `answerLinks(tab, editorActions)` |
 | `page.ts` + `assistant.html` | the chat in a tab of its own: `/assistant.html#chat=<id>&from=<tab>` |
@@ -101,7 +111,9 @@ ssh root@2.28.227.20 'echo you@example.com > /var/lib/editor-server/assistant-ed
 
 | | |
 | --- | --- |
-| a conversation | made on the first message (or on pop-out), by id; the server's. Lasts as long as its tab (Kodjo's call) |
+| a conversation | made on the first message (or on pop-out), by id; the server's, kept until deleted or 30 days unused (ADR 0197) |
+| the Chats menu | the header's `.asst-chats`, the session's title: *New chat*, then the saved ones by title and age (`listChats`), the latest first — a row opens one (`showChat`: drawn again, its mode set), its trash deletes it once asked again in the row (`deleteChat`). Locked while busy |
+| the size warning | `status.storage`: a line in the chat that saved chats are past the warning |
 | a message | `context()` first: `game`, `level` (qualified), `prefab`, `selection` (≤ 12, `name (Component, …)`), `problems` (the notices' last 8 warnings and errors) — sent beside the text, which the model sees in `<editor>` tags |
 | the window | the intro; you / answer (Markdown, redrawn at most once a frame as it streams) / activity (`› Reading …`) / draft card (*File it* / *Post it* → `Filed ↗`, refused without GitHub); `$x of $1.00 today`; Enter sends, Shift+Enter a line |
 | pop-out | ↗: `window.open` the tab with the id and this tab's token, the panel emptied — the conversation is the tab's now. The tab asks for the editor's context over `BroadcastChannel('mp-assistant-context')` before each message, addressed to that token, waiting 250 ms, else the last it heard. A conversation still answering when it moves is waited for (`busy`), then drawn |
@@ -112,7 +124,7 @@ Built as a second page: `vite.config.ts` `rollupOptions.input` `{ main, assistan
 
 | | |
 | --- | --- |
-| the switch | **Assistant · Confirm · Auto** in the header (`.asst-modes`), shown when `status.modes` has more than Assistant and the chat has a `link`; a new chat is in Assistant; locked while busy; each choice says what it does (`MODE_NOTES`) |
+| the mode | a dropdown beside Send (`.asst-modepick`, ADR 0197): **Assistant · Confirm · Auto**, each with what it does (`MODE_NOTES`); shown when `status.modes` has more than Assistant and the chat has a `link`; a new chat is in Assistant, a saved one in the mode it was last sent in; locked while busy |
 | a message in an editing mode | `link.tools()` (`toolsOf`: the editor's reads and edits — never `select_objects` or `focus_objects`: the selection and the camera stay the person's, Kodjo's call) sent with it; `link.begin('assistant: <text>')` starts a turn, `link.end()` ends it however the turn ends — **one Ctrl+Z for the prompt** (ADR 0194) |
 | a `call` | the server hands the tab an editor action and waits ≤ 15 min for `result`. The tab says it in words (`describeCall`, objects by name), then **Confirm**: an edit waits on a card (`.asst-change`) — *Apply* runs it and the card says *Applied*, or *Not applied — why*, once it has; *Don't* answers `{ declined: true }` (Kodjo's calls: every change asked; a no ends the prompt). **Auto**, or a read: run at once, the words as activity. A refusal (someone has it selected…) is shown too |
 | a no | the model's tool result is `DECLINED`, the rest of the round `Not run`, and the turn ends with no further model call; the next message joins those results in one user turn |

@@ -1,5 +1,6 @@
 /* The assistant's chat (ADR 0192): the panel over the viewport and the tab it can move to. */
 .asst {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -24,9 +25,11 @@
   font-weight: 600;
 }
 .asst-spent {
+  flex: none;
   margin-left: auto;
   color: var(--dim, #8b929d);
   font-size: 11px;
+  white-space: nowrap;
 }
 .asst-hb {
   display: grid;
@@ -259,37 +262,6 @@
   height: 100vh;
 }
 
-/* The modes (ADR 0195): Assistant · Confirm · Auto, beside the title, for the people the server opens them to. */
-.asst-modes {
-  display: flex;
-  margin-left: 6px;
-  border: 1px solid var(--line, #34383f);
-  border-radius: 6px;
-  overflow: hidden;
-}
-.asst-modes[hidden] {
-  display: none;
-}
-.asst-mode {
-  padding: 2px 8px;
-  border: 0;
-  background: transparent;
-  color: var(--dim, #8b929d);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-.asst-mode + .asst-mode {
-  border-left: 1px solid var(--line, #34383f);
-}
-.asst-mode[aria-pressed='true'] {
-  background: var(--accent-dim, #2f5fa8);
-  color: #fff;
-}
-.asst-mode:disabled {
-  cursor: default;
-}
-
 /* A change asked about in Confirm: what it does, Apply or Don't. */
 .asst-change {
   align-self: stretch;
@@ -328,4 +300,168 @@
 .asst-stop .ic {
   width: 14px;
   height: 14px;
+}
+
+/* The session in the header and the menu of the others (ADR 0197); the mode beside Send. */
+.asst-chats,
+.asst-modepick {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text, #d5d9e0);
+  font: inherit;
+  cursor: pointer;
+}
+.asst-chats {
+  flex: 0 1 auto;
+  font-weight: 600;
+}
+.asst-chats-t {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 190px;
+}
+.asst-chats:hover,
+.asst-modepick:hover {
+  background: var(--hover, #2a2f37);
+}
+.asst-chats:disabled,
+.asst-modepick:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.asst-modepick {
+  align-self: stretch;
+  border: 1px solid var(--line, #34383f);
+  border-radius: 6px;
+  color: var(--dim, #8b929d);
+  font-size: 11.5px;
+}
+.asst-modepick[hidden] {
+  display: none;
+}
+.asst-modepick[data-mode='confirm'] {
+  color: #e0a948;
+}
+.asst-modepick[data-mode='auto'] {
+  color: #f08a7e;
+}
+.asst-chev {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  flex: none;
+}
+.asst-pop {
+  position: absolute;
+  z-index: 5;
+  min-width: 220px;
+  max-width: calc(100% - 8px);
+  max-height: 60%;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line, #34383f);
+  border-radius: 8px;
+  background: var(--panel-head, #23272e);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.asst-pop-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text, #d5d9e0);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.asst-pop-row:hover {
+  background: var(--hover, #2a2f37);
+}
+.asst-pop-mode {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+.asst-pop-mode.on .asst-pop-t,
+.asst-pop-chat.on .asst-pop-t {
+  color: var(--accent, #4a8cf7);
+}
+.asst-pop-t {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.asst-pop-d {
+  color: var(--dim, #8b929d);
+  font-size: 11px;
+}
+.asst-pop-row .ic {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+.asst-pop-chat,
+.asst-pop-sure {
+  display: flex;
+  align-items: center;
+}
+.asst-pop-sure {
+  gap: 4px;
+  padding: 4px 8px;
+}
+.asst-pop-yes,
+.asst-pop-no {
+  width: auto;
+  flex: none;
+  padding: 3px 8px;
+}
+.asst-pop-yes {
+  color: #f08a7e;
+}
+.asst-pop-x {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--dim, #8b929d);
+  cursor: pointer;
+}
+.asst-pop-x:hover {
+  background: var(--hover, #2a2f37);
+  color: #f08a7e;
+}
+.asst-pop-x .ic {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.asst-pop-empty {
+  padding: 6px 8px;
+  color: var(--dim, #8b929d);
 }

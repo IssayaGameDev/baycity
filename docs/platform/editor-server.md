@@ -209,7 +209,7 @@ command, `editor.playgorbo.com → localhost:8080`; Access application `Editor` 
 emails, One-time PIN login) and `Sync` (Service Auth, the `content-sync` service token, `content-sync.md`).
 Dashboard names as of setup: Cloudflare One → *Access controls* (applications, service credentials),
 *Integrations → Identity providers* (One-time PIN). Nothing listens publicly. State in `/var/lib/editor-server/`:
-`admin.token`, `hidden.json`, and the assistant's `anthropic.key`, `github.token`, `assistant-spend.json`, `assistant-editors` (`assistant.md`).
+`admin.token`, `hidden.json`, and the assistant's `anthropic.key`, `github.token`, `assistant-spend.json`, `assistant-editors`, `assistant-chats/` (`assistant.md`).
 
 ## Staging game — `dev.playgorbo.com` (ADR 0085)
 

@@ -112,8 +112,9 @@ it what looks broken: it reads the game's code, docs and levels to work out why.
 level, the scene or the game are yours to edit.
 
 When it finds a real bug it drafts a report; **File it** puts it on GitHub with your name on it. Nothing is filed
-unless you click. ↗ moves the chat to a tab of its own. A chat lasts until its tab closes, and each person has
-$1 of questions a day.
+unless you click. ↗ moves the chat to a tab of its own. Your chats are kept: the menu at the top of the chat starts
+a new one, opens an old one, or deletes one, and a chat unused for 30 days goes by itself. Each person has $1 of
+questions a day.
 
 ## Where it ends up
 

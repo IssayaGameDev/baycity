@@ -11,6 +11,7 @@ import { ASSISTANT_MODES, EDIT_ROUNDS, IDLE_MS, MAX_ROUNDS, MAX_TOKENS, MODEL, r
 import { createBudget, type Budget } from './budget'
 import { createGitHub, repoOfRemote, type GitHub } from './github'
 import { createRepoFiles, type RepoFiles } from './repoFiles'
+import { createSessionStore, titleOf } from './sessions'
 import { createToolRunner, TOOLS, type ToolRun } from './tools'
 
 /**
@@ -19,13 +20,15 @@ import { createToolRunner, TOOLS, type ToolRun } from './tools'
  * | | |
  * | --- | --- |
  * | `GET /api/assistant` | `{ ready, why?, spent, limit }` — whether it is set up, and the person's day |
+ * | `GET /api/assistant/chats` | the person's sessions, the latest used first (ADR 0197) → `{ chats }` |
  * | `POST /api/assistant/chats` | a new conversation → `{ id }` |
- * | `GET /api/assistant/chats/:id` | what it shows, for a tab it moves to → `{ shown, filed }` |
+ * | `GET /api/assistant/chats/:id` | what it shows, to draw it again → `{ shown, filed, busy, title, mode }` |
+ * | `DELETE /api/assistant/chats/:id` | the session gone, from memory and disk → 204 |
  * | `POST /api/assistant/chats/:id/say` | `{ text, context }` → the turn, as server-sent events |
  * | `POST /api/assistant/chats/:id/file/:draft` | the person files a draft → `{ url }` |
  * | `POST /api/assistant/chats/:id/result/:call` | the tab's answer to an editor action it was asked to run (ADR 0195) → 204 |
  * | `POST /api/assistant/chats/:id/stop` | the person's Stop: the turn ends at its next step → 204 |
- * | `POST /api/assistant/chats/:id/close` | the tab is going (a beacon) → 204 |
+ * | `POST /api/assistant/chats/:id/close` | the tab is going (a beacon): its calls answered; the session is kept → 204 |
  *
  * Keys: `anthropic.key` and `github.token` in the state directory, outside the checkout — read here and nowhere
  * else, never sent to the model or the browser. Looked for again while missing, so adding one needs no restart.
@@ -49,6 +52,8 @@ export interface AssistantOptions {
   /** GitHub; from `github.token` and the checkout's `origin` by default. `null` for none. */
   readonly github?: GitHub | null
   readonly now?: () => number
+  /** All sessions on disk past this many bytes, and the people who may edit are warned (ADR 0197). */
+  readonly sessionWarnBytes?: number
 }
 
 export interface Assistant {
@@ -57,9 +62,11 @@ export interface Assistant {
   sweep: () => void
 }
 
-/** Open conversations a person may hold at once: a tab each, and a few left behind. */
-const MAX_OPEN = 6
 const MAX_BODY = 64 * 1024
+/** Sessions on disk past this, all people's together, and a warning says so (ADR 0197): 1 GB of the box's 40, Kodjo's call. */
+const SESSION_WARN_BYTES = 1024 ** 3
+/** How often the disk is swept for sessions past their thirty days, and measured. */
+const DISK_SWEEP_MS = 60 * 60 * 1000
 /** A tab's answer to an action can carry a picture of the viewport. */
 const MAX_RESULT_BODY = 2 * 1024 * 1024
 /** How long a turn waits for the tab to answer a call: in Confirm mode, for the person to decide. */
@@ -189,7 +196,13 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
   const now = opts.now ?? (() => Date.now())
   const budget: Budget = createBudget({ file: join(opts.stateDir, 'assistant-spend.json'), limit: opts.limitUsd ?? 1, now })
   const files: RepoFiles = createRepoFiles(opts.repoRoot)
+  /** The sessions in use, from disk when first asked for; on disk they stay (ADR 0197). */
   const chats = new Map<string, Conversation>()
+  const store = createSessionStore(join(opts.stateDir, 'assistant-chats'))
+  const warnBytes = opts.sessionWarnBytes ?? SESSION_WARN_BYTES
+  /** What all sessions take on disk, as the last sweep measured; swept now, so a restart knows. */
+  let storedBytes = store.sweep(now()).bytes
+  let sweptAt = now()
   let draftCount = 0
 
   let talk: Talk | null = opts.talk ?? null
@@ -253,9 +266,18 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
   /** Why no turn can run now, or `null`: a key and the instructions are both needed. */
   const whyNot = (): string | null => (talkNow() === null ? NOT_SET_UP : instructionsNow() === null ? NO_INSTRUCTIONS : null)
 
+  /** One of this person's sessions: in use, or from disk. Never another person's. */
   const chatOf = (id: string, user: User): Conversation | null => {
+    const email = user.email.toLowerCase()
     const c = chats.get(id)
-    return c === undefined || c.email !== user.email.toLowerCase() ? null : c
+    if (c !== undefined) return c.email === email ? c : null
+    const loaded = store.load(email, id)
+    if (loaded !== null) chats.set(id, loaded)
+    return loaded
+  }
+  /** Written to disk: after a turn, a filing, an opening. A session with nothing said yet is not written. */
+  const keep = (c: Conversation): void => {
+    if (c.messages.length > 0) store.save(c)
   }
 
   const handle = async (req: IncomingMessage, res: ServerResponse, url: string, user: User): Promise<boolean> => {
@@ -265,17 +287,23 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
     if (url === '/api/assistant' && req.method === 'GET') {
       const why = whyNot()
       const modes: readonly AssistantMode[] = mayEdit(email) ? ASSISTANT_MODES : ['assistant']
-      send(res, 200, { ready: why === null, ...(why === null ? {} : { why }), github: githubNow() !== null, spent: budget.spent(email), limit: budget.limit, modes })
+      // Who may edit is told when the sessions grow past the warning: Kodjo's to act on.
+      const storage = mayEdit(email) && storedBytes >= warnBytes ? { storage: { bytes: storedBytes, warnAt: warnBytes } } : {}
+      send(res, 200, { ready: why === null, ...(why === null ? {} : { why }), github: githubNow() !== null, spent: budget.spent(email), limit: budget.limit, modes, ...storage })
+      return true
+    }
+
+    if (url === '/api/assistant/chats' && req.method === 'GET') {
+      send(res, 200, { chats: store.list(email) })
       return true
     }
 
     if (url === '/api/assistant/chats' && req.method === 'POST') {
       const why = whyNot()
       if (why !== null) return send(res, 503, { error: why }), true
-      const mine = [...chats.values()].filter((c) => c.email === email).sort((a, b) => a.lastUsed - b.lastUsed)
-      for (const old of mine.slice(0, Math.max(0, mine.length - MAX_OPEN + 1))) chats.delete(old.id)
       const id = randomBytes(16).toString('hex')
-      chats.set(id, { id, email, name: user.name, messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: now(), busy: false, stopping: false })
+      const t = now()
+      chats.set(id, { id, email, name: user.name, title: '', mode: 'assistant', createdAt: t, messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: t, busy: false, stopping: false })
       send(res, 200, { id })
       return true
     }
@@ -286,15 +314,23 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
     const chat = chatOf(id, user)
 
     if (action === 'close' && req.method === 'POST') {
-      if (chat !== null) {
-        endCalls(chat.id, 'The chat was closed.')
-        chats.delete(chat.id)
-      }
+      // The tab is going: what it was asked to run will not be answered. The session stays (ADR 0197).
+      if (chat !== null) endCalls(chat.id, 'The chat’s tab was closed.')
       res.writeHead(204)
       res.end()
       return true
     }
-    if (chat === null) return send(res, 404, { error: 'That conversation has ended.' }), true
+    if (chat === null) return send(res, 404, { error: 'No such chat: it may have been deleted.' }), true
+
+    if (action === undefined && req.method === 'DELETE') {
+      endCalls(chat.id, 'The chat was deleted.')
+      chats.delete(chat.id)
+      waiting.delete(chat.id)
+      store.remove(email, chat.id)
+      res.writeHead(204)
+      res.end()
+      return true
+    }
 
     if (action === 'stop' && req.method === 'POST') {
       chat.stopping = true
@@ -320,8 +356,10 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
     }
 
     if (action === undefined && req.method === 'GET') {
+      // Opening it is using it: its thirty days start again.
       chat.lastUsed = now()
-      send(res, 200, { shown: chat.shown, filed: Object.fromEntries(chat.filed), busy: chat.busy })
+      keep(chat)
+      send(res, 200, { shown: chat.shown, filed: Object.fromEntries(chat.filed), busy: chat.busy, title: chat.title, mode: chat.mode })
       return true
     }
 
@@ -349,6 +387,8 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
       const emit = (e: AssistantEvent): void => {
         if (!res.writableEnded) res.write(encodeSse(e.kind, e))
       }
+      if (chat.title === '') chat.title = titleOf(text)
+      chat.mode = mode
       const serverTools = createToolRunner({ files, github: githubNow(), nextDraftId: () => `d${++draftCount}` })
       const run = (name: string, input: Record<string, unknown>): Promise<ToolRun> => (editorNames.has(name) ? askTab(chat.id, name, input, emit) : serverTools(name, input))
       try {
@@ -362,6 +402,7 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
         )
       } finally {
         clearInterval(keepalive)
+        keep(chat)
         res.end()
       }
       return true
@@ -379,6 +420,7 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
       try {
         const url2 = draft.kind === 'issue' ? (await gh.createIssue(draft.title, `${draft.body}${footer}`, draft.labels)).url : (await gh.comment(draft.number, `${draft.body}${footer}`)).url
         chat.filed.set(draftId, url2)
+        keep(chat)
         send(res, 200, { url: url2 })
       } catch (e) {
         send(res, 502, { error: e instanceof Error ? e.message : String(e) })
@@ -394,11 +436,16 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
     handle,
     sweep: () => {
       const t = now()
+      // Out of memory after a long silence; on disk until its thirty days are up.
       for (const c of chats.values())
         if (!c.busy && t - c.lastUsed > IDLE_MS) {
           chats.delete(c.id)
           waiting.delete(c.id)
         }
+      if (t - sweptAt < DISK_SWEEP_MS) return
+      sweptAt = t
+      storedBytes = store.sweep(t).bytes
+      if (storedBytes >= warnBytes) console.warn(`assistant: saved chats take ${(storedBytes / 1024 ** 2).toFixed(0)} MB, past the ${(warnBytes / 1024 ** 2).toFixed(0)} MB warning`)
     },
   }
 }
