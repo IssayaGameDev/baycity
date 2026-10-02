@@ -10,7 +10,7 @@ through the editor's actions (ADR 0195, *Modes* below). No mode writes a file, c
 | File | |
 | --- | --- |
 | `routes.ts` | `createAssistant({ repoRoot, stateDir, limitUsd?, talk?, github?, now? }): { handle, sweep }` — the routes below; `claudeTalk(apiKey)` the real model call; `contextOf`; `editorToolsOf`, `runOfAnswer`, `DECLINED` |
-| `agent.ts` | `runTurn(conv, text, context, { instructions, tools, mode, model, maxRounds?, silent?, talk, run, budget }, emit)`: the loop; `AssistantMode`, `EDIT_ROUNDS`, `Conversation`, `AssistantEvent`, `Shown`, `Talk` (its request carries the model's id) |
+| `agent.ts` | `runTurn(conv, text, context, { instructions, tools, mode, model, maxRounds?, silent?, talk, run, budget }, emit)`: the loop; `answered`, `CUT_OFF`, `UNANSWERED`; `AssistantMode`, `EDIT_ROUNDS`, `Conversation`, `AssistantEvent`, `Shown`, `Talk` (its request carries the model's id) |
 | `models.ts` | `MODELS: AssistantModel[]` (`{ id, label, prices }`), `DEFAULT_MODEL`, `modelOf(id)` |
 | `tools.ts` | `TOOLS` (the model's tool list), `createToolRunner({ files, github, nextDraftId })`, `activityOf`, `Draft` |
 | `repoFiles.ts` | `createRepoFiles(root)`: `list`, `read`, `search`; `cleanPath`, `looksSecret`, `Refused` |
@@ -65,8 +65,14 @@ is, and its first call there writes the cache again.
 | Opus 5.5 | `claude-opus-5-5` | 4 | 20 | 5 | 0.20 |
 | Fable 5.1 | `claude-fable-5-1` | 10 | 50 | 12.50 | 0.25 |
 
-USD a million tokens, Anthropic's list in October 2026. `MAX_TOKENS` 2048, `MAX_ROUNDS` 12 calls a turn, `EDIT_ROUNDS` 30
-in an editing mode, whichever the model.
+USD a million tokens, Anthropic's list in October 2026. `MAX_TOKENS` 8192 (room for many calls in one reply; only
+what is written is paid for), `MAX_ROUNDS` 12 calls a turn, `EDIT_ROUNDS` 30 in an editing mode, whichever the model.
+
+**Every call answered**: the API refuses a conversation with a `tool_use` the next message has no result for — for
+good, as it stays in the history. A reply that stops on anything but `tool_use` runs none of its calls (they may be
+half-written): cut off at `MAX_TOKENS`, each is answered `CUT_OFF` (make fewer at once) and the model goes again;
+anything else, `UNANSWERED`, and the turn ends. Each turn first runs `answered(messages)`, which gives any call still
+unanswered — a conversation saved before this — an `UNANSWERED` result, so it is taken again.
 System prompt and tools carry cache points, and so does the newest message (3 of 4). An earlier turn's tool results
 older than 8 messages go back trimmed (`forModel`); this turn's never — a model that loses an id it read makes one up.
 

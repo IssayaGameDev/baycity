@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { describe, expect, it } from 'vitest'
 
-import { forModel, runTurn, type AssistantEvent, type AssistantMode, type Conversation, type Talk } from './agent'
+import { answered, CUT_OFF, forModel, runTurn, UNANSWERED, type AssistantEvent, type AssistantMode, type Conversation, type Talk } from './agent'
 import { createBudget } from './budget'
 import { DEFAULT_MODEL, modelOf, type AssistantModel } from './models'
 import { TOOLS, type ToolRun } from './tools'
@@ -173,6 +173,63 @@ describe('a turn that edits (ADR 0195)', () => {
     const { events, conv } = await turn(talk, async () => ({ result: 'ok' }), chat(), 1, 'auto')
     expect(events.some((e) => e.kind === 'activity')).toBe(false)
     expect(conv.shown.some((s) => s.kind === 'activity' && s.text === 'Rename object')).toBe(true)
+  })
+})
+
+describe('a reply that does not end on its calls', () => {
+  it('runs none of the calls of a reply cut off at its length, answers each, and asks again', async () => {
+    const seen: Anthropic.MessageParam[][] = []
+    let n = 0
+    const talk: Talk = async (request, onText) => {
+      seen.push(structuredClone(request.messages))
+      if (n++ === 0) return { content: [use('t1', 'rename_object', { id: 'n:a' }), use('t2', 'rename_object', { id: 'n:b' })], usage, stop_reason: 'max_tokens' }
+      onText('Done.')
+      return { content: [text('Done.')], usage, stop_reason: 'end_turn' }
+    }
+    const ran: string[] = []
+    const run = async (_name: string, input: Record<string, unknown>) => {
+      ran.push(String(input.id))
+      return { result: 'ok' }
+    }
+    const { events, conv } = await turn(talk, run, chat(), 1, 'auto')
+    expect(ran, 'half-written calls are never run').toEqual([])
+    expect(seen).toHaveLength(2)
+    const results = seen[1]!.at(-1)!.content as Anthropic.ToolResultBlockParam[]
+    expect(results.map((r) => [r.tool_use_id, r.content])).toEqual([
+      ['t1', CUT_OFF],
+      ['t2', CUT_OFF],
+    ])
+    expect(events.at(-1)).toEqual({ kind: 'done' })
+    expect(answered(conv.messages), 'every call answered').toEqual(conv.messages)
+  })
+
+  it('takes back up a conversation saved with calls nothing answered', async () => {
+    const conv = chat()
+    conv.messages.push({ role: 'user', content: 'Make it brown' }, { role: 'assistant', content: [{ type: 'tool_use', id: 't9', name: 'list_assets', input: {} }] })
+    const { talk, seen } = scripted([[text('Back.')]])
+    await turn(talk, async () => ({ result: 'r' }), conv, 1, 'auto', 'You crashed')
+    const sent = seen[0]!.at(-1)!.content as Anthropic.ContentBlockParam[]
+    expect(sent.map((b) => b.type)).toEqual(['tool_result', 'text'])
+    expect((sent[0] as Anthropic.ToolResultBlockParam).content).toBe(UNANSWERED)
+    expect((sent[1] as Anthropic.TextBlockParam).text).toContain('You crashed')
+  })
+
+  it('answers a call wherever it was left, beside the results that are there', () => {
+    const call = (...ids: string[]): Anthropic.MessageParam => ({ role: 'assistant', content: ids.map((id) => ({ type: 'tool_use', id, name: 'x', input: {} })) })
+    const fixed = answered([
+      { role: 'user', content: 'a' },
+      call('t1'),
+      { role: 'user', content: 'b' },
+      call('t2', 't3'),
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't2', content: 'r' }] },
+    ])
+    expect(fixed.map((m) => (typeof m.content === 'string' ? m.content : m.content.map((b) => (b.type === 'tool_result' ? b.tool_use_id : b.type))))).toEqual([
+      'a',
+      ['tool_use'],
+      ['t1', 'text'],
+      ['tool_use', 'tool_use'],
+      ['t3', 't2'],
+    ])
   })
 })
 
