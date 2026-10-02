@@ -170,7 +170,7 @@ describe.skipIf(KEY === undefined)('the assistant editing, against the real mode
         }
         return ran
       }
-      const conv: Conversation = { id: 'e', email: 'eval@x', name: 'Eval', messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: 0, busy: false, stopping: false }
+      const conv: Conversation = { id: 'e', email: 'eval@x', name: 'Eval', title: '', mode: 'auto', createdAt: 0, messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: 0, busy: false, stopping: false }
       const events: AssistantEvent[] = []
       let rounds = 0
       await runTurn(

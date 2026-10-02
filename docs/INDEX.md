@@ -246,5 +246,6 @@ why matters.
 | [0194](adr/0194-editor-actions-and-an-agents-edits.md) | Editor actions, and an agent's edits in a shared level |
 | [0195](adr/0195-the-assistant-edits-in-two-modes.md) | The assistant edits, in Confirm and Auto |
 | [0196](adr/0196-editing-instructions-and-tools-that-answer.md) | Editing instructions of their own, and tools that answer |
+| [0197](adr/0197-the-assistants-chats-are-kept.md) | The assistant's chats are kept, and its mode sits by Send |
 
 `Design archive/` holds superseded design material and is not maintained.

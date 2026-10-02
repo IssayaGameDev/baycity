@@ -46,6 +46,16 @@ export interface Status {
   readonly limit: number
   /** The modes open to this person: `assistant` alone, or all three. Absent from a server before ADR 0195. */
   readonly modes?: readonly AssistantMode[]
+  /** All sessions on disk past the warning size: told to the people who edit (ADR 0197). */
+  readonly storage?: { readonly bytes: number; readonly warnAt: number }
+}
+
+/** A saved session as the list shows it (ADR 0197). */
+export interface ChatSummary {
+  readonly id: string
+  readonly title: string
+  readonly mode: AssistantMode
+  readonly lastUsed: number
 }
 
 const json = async <T>(r: Response): Promise<T> => {
@@ -63,7 +73,17 @@ export const assistantStatus = async (): Promise<Status> => {
 
 export const newChat = async (): Promise<string> => (await json<{ id: string }>(await fetch('/api/assistant/chats', { method: 'POST' }))).id
 
-export const chatSoFar = async (id: string): Promise<{ shown: Shown[]; filed: Record<string, string>; busy: boolean }> => json(await fetch(`/api/assistant/chats/${id}`))
+export const chatSoFar = async (id: string): Promise<{ shown: Shown[]; filed: Record<string, string>; busy: boolean; title?: string; mode?: AssistantMode }> =>
+  json(await fetch(`/api/assistant/chats/${id}`))
+
+/** This person's saved sessions, the latest used first. */
+export const listChats = async (): Promise<readonly ChatSummary[]> => (await json<{ chats: ChatSummary[] }>(await fetch('/api/assistant/chats'))).chats
+
+/** Delete a session for good. */
+export const deleteChat = async (id: string): Promise<void> => {
+  const r = await fetch(`/api/assistant/chats/${id}`, { method: 'DELETE' })
+  if (!r.ok && r.status !== 404) throw new Error(`the server answered ${r.status}`)
+}
 
 export const fileDraft = async (id: string, draft: string): Promise<string> => (await json<{ url: string }>(await fetch(`/api/assistant/chats/${id}/file/${draft}`, { method: 'POST' }))).url
 

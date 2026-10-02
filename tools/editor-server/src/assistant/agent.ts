@@ -75,6 +75,11 @@ export interface Conversation {
   readonly id: string
   readonly email: string
   readonly name: string
+  /** What the session list calls it: the first words of its first message (ADR 0197). */
+  title: string
+  /** The mode its last message was sent in, kept with it. */
+  mode: AssistantMode
+  readonly createdAt: number
   readonly messages: Anthropic.MessageParam[]
   readonly shown: Shown[]
   readonly drafts: Map<string, Draft>

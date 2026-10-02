@@ -69,6 +69,7 @@ export type IconName =
   | 'assistant'
   | 'popOut'
   | 'send'
+  | 'trash'
 
 /** An asset kind's picture where it has none of its own: a tile before its preview, a row in *Used by*. */
 export const ASSET_ICON: Record<AssetKind, IconName> = {
@@ -150,6 +151,8 @@ const PATHS: Record<IconName, string> = {
   // Out of the panel, into a tab of its own.
   popOut: '<path d="M14 4h6v6"/><path d="M20 4l-8.5 8.5"/><path d="M18 13.5V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5.5"/>',
   send: '<path d="M4 12l16-7.5-6 15.5-2.5-6.5z"/><path d="M11.5 13.5 20 4.5"/>',
+  // Delete, for good: a saved chat (ADR 0197).
+  trash: '<path d="M5 7h14"/><path d="M10 7V5h4v2"/><path d="M7 7l1 12h8l1-12"/><path d="M10.5 10.5v5.5M13.5 10.5v5.5"/>',
 }
 
 const SVG_NS = 'http://www.w3.org/2000/svg'

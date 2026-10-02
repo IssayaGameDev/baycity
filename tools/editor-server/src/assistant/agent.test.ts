@@ -29,7 +29,7 @@ const scripted = (replies: (readonly Anthropic.ContentBlock[])[]): { talk: Talk;
   return { talk, seen, systems }
 }
 
-const chat = (): Conversation => ({ id: 'c', email: 'ada@x.com', name: 'Ada', messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: 0, busy: false, stopping: false })
+const chat = (): Conversation => ({ id: 'c', email: 'ada@x.com', name: 'Ada', title: '', mode: 'assistant', createdAt: 0, messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: 0, busy: false, stopping: false })
 
 const turn = async (talk: Talk, run: (name: string, input: Record<string, unknown>) => Promise<ToolRun>, conv = chat(), limit = 1, mode: AssistantMode = 'assistant', text = 'Why does the hazard not kill?') => {
   const events: AssistantEvent[] = []
