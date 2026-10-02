@@ -7124,7 +7124,140 @@
             "loop": "yoyo",
             "times": 1,
             "offset": 0,
-            "stages": []
+            "stages": [
+              {
+                "id": "670d648d",
+                "steps": [
+                  {
+                    "kind": "move",
+                    "to": {
+                      "x": 0,
+                      "y": 3,
+                      "z": 0
+                    },
+                    "timing": {
+                      "by": "seconds",
+                      "seconds": 0.4
+                    },
+                    "ease": "in-quad",
+                    "id": "47fa934c"
+                  },
+                  {
+                    "kind": "move",
+                    "to": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "timing": {
+                      "by": "seconds",
+                      "seconds": 0.4
+                    },
+                    "ease": "out-bounce",
+                    "id": "7dee1be6"
+                  }
+                ]
+              },
+              {
+                "id": "b4cf80e9",
+                "steps": [
+                  {
+                    "kind": "move",
+                    "to": {
+                      "x": 0,
+                      "y": 1.8,
+                      "z": 0
+                    },
+                    "timing": {
+                      "by": "seconds",
+                      "seconds": 0.3
+                    },
+                    "ease": "in-quad",
+                    "id": "7922fd2f"
+                  },
+                  {
+                    "kind": "move",
+                    "to": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "timing": {
+                      "by": "seconds",
+                      "seconds": 0.3
+                    },
+                    "ease": "out-bounce",
+                    "id": "c4b7bc53"
+                  }
+                ]
+              },
+              {
+                "id": "d6650bb7",
+                "steps": [
+                  {
+                    "kind": "move",
+                    "to": {
+                      "x": 0,
+                      "y": 0.9,
+                      "z": 0
+                    },
+                    "timing": {
+                      "by": "seconds",
+                      "seconds": 0.2
+                    },
+                    "ease": "in-quad",
+                    "id": "e31d937d"
+                  },
+                  {
+                    "kind": "move",
+                    "to": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "timing": {
+                      "by": "seconds",
+                      "seconds": 0.2
+                    },
+                    "ease": "out-bounce",
+                    "id": "4b0728d3"
+                  }
+                ]
+              },
+              {
+                "id": "634b1c5e",
+                "steps": [
+                  {
+                    "kind": "move",
+                    "to": {
+                      "x": 0,
+                      "y": 0.3,
+                      "z": 0
+                    },
+                    "timing": {
+                      "by": "seconds",
+                      "seconds": 0.1
+                    },
+                    "ease": "in-quad",
+                    "id": "d9d182c8"
+                  },
+                  {
+                    "kind": "move",
+                    "to": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "timing": {
+                      "by": "seconds",
+                      "seconds": 0.1
+                    },
+                    "ease": "out-bounce",
+                    "id": "0a9c3623"
+                  }
+                ]
+              }
+            ]
           }
         }
       ]
