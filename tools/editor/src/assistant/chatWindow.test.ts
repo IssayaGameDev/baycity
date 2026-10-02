@@ -195,6 +195,7 @@ describe('the editing modes (ADR 0195)', () => {
     await settle()
     expect(ed.ran).toEqual([['rename_object', { id: 'n:a', name: 'Crate' }]])
     expect(server.answers).toEqual([{ outcome: { ok: true, result: null } }])
+    expect(root.querySelector('.asst-change .asst-note')!.textContent, 'said once it ran').toBe('Applied')
     expect(ed.turns).toEqual(['begin assistant: Rename the box to Crate', 'end'])
   })
 
@@ -227,5 +228,62 @@ describe('the editing modes (ADR 0195)', () => {
     await settle()
     expect(server.says[0]).toMatchObject({ mode: 'assistant' })
     expect(server.says[0]!.tools).toBeUndefined()
+  })
+})
+
+describe('a change that is refused when it runs', () => {
+  it('says so on its card, not Applied', async () => {
+    const sse = (events: object[]): string => events.map((e) => `event: ${(e as { kind: string }).kind}
+data: ${JSON.stringify(e)}
+
+`).join('')
+    let release = (): void => {}
+    vi.stubGlobal('requestAnimationFrame', (fn: () => void) => setTimeout(fn, 0))
+    vi.stubGlobal('fetch', async (url: string, init?: { method?: string }) => {
+      if (url === '/api/assistant') return new Response(JSON.stringify({ ready: true, github: true, spent: 0, limit: 1, modes: ['assistant', 'confirm', 'auto'] }))
+      if (url === '/api/assistant/chats' && init?.method === 'POST') return new Response(JSON.stringify({ id: 'a'.repeat(32) }))
+      if (url.endsWith('/say')) {
+        const gate = new Promise<void>((r) => (release = r))
+        const enc = new TextEncoder()
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            async start(c) {
+              c.enqueue(enc.encode(sse([{ kind: 'call', call: { id: 'k1', name: 'rename_object', input: { id: 'n:a', name: 'X' } } }])))
+              await gate
+              c.enqueue(enc.encode(sse([{ kind: 'done' }])))
+              c.close()
+            },
+          }),
+        )
+      }
+      if (url.includes('/result/')) {
+        release()
+        return new Response(null, { status: 204 })
+      }
+      return new Response('{}', { status: 404 })
+    })
+    const link: EditorLink = {
+      tools: async () => [{ name: 'rename_object', description: 'Rename.', input_schema: { type: 'object' }, edits: true }],
+      begin: async () => {},
+      run: async () => ({ ok: false, error: 'Bob has “Box” selected, so it was left alone' }),
+      describe: async () => 'Rename object',
+      end: async () => {},
+    }
+    const settle = () => new Promise((r) => setTimeout(r, 20))
+    const root = document.createElement('div')
+    document.body.replaceChildren(root)
+    createChatWindow({ root, context: async () => ({}), link })
+    await settle()
+    ;[...root.querySelectorAll<HTMLButtonElement>('.asst-mode')].find((b) => b.textContent === 'Confirm')!.click()
+    const input = root.querySelector<HTMLTextAreaElement>('.asst-in')!
+    input.value = 'rename'
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+    await settle()
+    await settle()
+    root.querySelector<HTMLButtonElement>('.asst-change .asst-file')!.click()
+    await settle()
+    await settle()
+    expect(root.querySelector('.asst-change .asst-err')!.textContent).toBe('Not applied — Bob has “Box” selected, so it was left alone')
+    vi.unstubAllGlobals()
   })
 })

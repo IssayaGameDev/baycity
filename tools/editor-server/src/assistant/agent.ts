@@ -29,7 +29,10 @@ export const ASSISTANT_MODES: readonly AssistantMode[] = ['assistant', 'confirm'
 export const MAX_TOKENS = 2048
 /** A conversation nobody has spoken in for this long is dropped. */
 export const IDLE_MS = 6 * 60 * 60 * 1000
-/** Tool results further back than this many messages go back to the model trimmed: what it read stays read. */
+/**
+ * Tool results of earlier turns further back than this many messages go back to the model trimmed. Never this
+ * turn's: a model that has lost an id it read makes one up (ADR 0195).
+ */
 const KEEP_RESULTS = 8
 
 /** What the person is looking at in the editor, sent with each message. */
@@ -100,12 +103,12 @@ const asParam = (b: Anthropic.ContentBlock): Anthropic.ContentBlockParam | null 
   b.type === 'text' ? { type: 'text', text: b.text } : b.type === 'tool_use' ? { type: 'tool_use', id: b.id, name: b.name, input: b.input } : null
 
 /**
- * The messages as they go to the model: older tool results trimmed, and a cache point on the newest block so the
- * conversation so far is read from cache, not paid for again, on the next call.
+ * The messages as they go to the model: earlier turns' older tool results trimmed — this turn's, from `turnStart`, kept
+ * whole — and a cache point on the newest block so the conversation so far is read from cache, not paid for again.
  */
-const forModel = (messages: readonly Anthropic.MessageParam[]): Anthropic.MessageParam[] =>
+export const forModel = (messages: readonly Anthropic.MessageParam[], turnStart: number): Anthropic.MessageParam[] =>
   messages.map((m, n) => {
-    const old = n < messages.length - KEEP_RESULTS
+    const old = n < turnStart && n < messages.length - KEEP_RESULTS
     const last = n === messages.length - 1
     if (typeof m.content === 'string') return last ? { role: m.role, content: [{ type: 'text', text: m.content, cache_control: { type: 'ephemeral' } }] } : m
     const content = m.content.map((b, i): Anthropic.ContentBlockParam => {
@@ -165,7 +168,7 @@ export const runTurn = async (conv: Conversation, text: string, context: EditorC
     for (let round = 0; round < rounds; round++) {
       if (conv.stopping) break
       let said = ''
-      const reply = await deps.talk({ system, tools, messages: forModel(conv.messages) }, (delta) => {
+      const reply = await deps.talk({ system, tools, messages: forModel(conv.messages, merged === null ? before : before - 1) }, (delta) => {
         said += delta
         emit({ kind: 'text', text: delta })
       })

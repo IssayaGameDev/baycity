@@ -245,5 +245,6 @@ why matters.
 | [0193](adr/0193-the-assistants-instructions-in-a-file.md) | The assistant's instructions in a file |
 | [0194](adr/0194-editor-actions-and-an-agents-edits.md) | Editor actions, and an agent's edits in a shared level |
 | [0195](adr/0195-the-assistant-edits-in-two-modes.md) | The assistant edits, in Confirm and Auto |
+| [0196](adr/0196-editing-instructions-and-tools-that-answer.md) | Editing instructions of their own, and tools that answer |
 
 `Design archive/` holds superseded design material and is not maintained.
