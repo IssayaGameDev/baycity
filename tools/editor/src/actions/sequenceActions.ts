@@ -37,7 +37,7 @@ const stepJson = (kind: string, fields: Record<string, JsonSchema>, required: st
 })
 const STEPS_JSON: JsonSchema = {
   oneOf: [
-    stepJson('move', { to: vec3Json, timing: timingJson, ease: easeJson }, ['to', 'timing', 'ease'], 'Move to a point, in metres from where the object was placed'),
+    stepJson('move', { to: vec3Json, timing: timingJson, ease: easeJson }, ['to', 'timing', 'ease'], 'Move to a point, in metres from where the object was placed — not from the step before'),
     stepJson('turn', { axis: vec3Json, angle: { type: 'number', description: 'degrees, turned by' }, timing: timingJson, ease: easeJson }, ['axis', 'angle', 'timing', 'ease'], 'Turn by an angle about an axis'),
     stepJson('scale', { to: vec3Json, timing: timingJson, ease: easeJson }, ['to', 'timing', 'ease'], 'Scale to a factor of the scale it was placed at'),
     stepJson('fade', { to: { type: 'number', description: 'a factor of its material’s opacity, 0 to 1' }, timing: timingJson, ease: easeJson }, ['to', 'timing', 'ease'], 'Fade to an opacity'),
@@ -77,7 +77,7 @@ const mint = (): string => [...crypto.getRandomValues(new Uint8Array(4))].map((b
 const setSequenceStages = defineAction({
   name: 'set_sequence_stages',
   summary:
-    'Set a Sequence’s stages, whole: what its object does over time — move, turn, scale, fade, switch its collider or itself on or off, wait. Stages play one after another, the steps in a stage together; the Sequence’s loop, times and offset are its other fields.',
+    'Set a Sequence’s stages, whole: what its object does over time — move, turn, scale, fade, switch its collider or itself on or off, wait. Stages play one after another. The steps in one stage play at the same time, each from where the stage began — so a move there and a move back are two stages. The Sequence’s loop, times and offset are its other fields. The answer lists any problems, as the Inspector marks them.',
   effect: 'edit',
   input: object({ id: str('the object the Sequence is on'), componentId: str('the Sequence’s id'), stages: stagesInput }),
   run: (ctx, input) => {

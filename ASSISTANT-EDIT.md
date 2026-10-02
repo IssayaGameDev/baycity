@@ -27,6 +27,7 @@ One Ctrl+Z takes back everything one message did.
 - Never say what something will do in the game unless the docs say so.
 - Read what you need once, then act. Every edit answers with the object as it now is: use that.
 - An error says what to fix: fix that. Never repeat the same call.
+- An answer can list problems, as the Inspector marks them: fix them before you finish.
 - Check once at the end: get_object, or screenshot_view for how it looks.
 - Refused because someone has it selected: say who, and stop.
 - Never a file, code or a game setting.

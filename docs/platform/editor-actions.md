@@ -73,7 +73,7 @@ finished turns (`dropWhere`).
 | --- | --- | --- |
 | `get_editor` | read | game, level, prefab open, selected ids |
 | `get_scene { under? }` | read | objects in Hierarchy order: id, name, parent, components, `inherited`, `prefab`, `enabled: false`, `heldBy`; ≤ 400 |
-| `get_object { id }` | read | transform (rotation in degrees), children, each component's id, type, enabled, overrides, every field with defaults; a step's `target` as the child's object id |
+| `get_object { id }` | read | transform (rotation in degrees), children, each component's id, type, enabled, overrides, every field with defaults; a step's `target` as the child's object id; a Sequence's `problems` — what the Inspector marks ⚠, from `compileSequence`, by stage and step (`sequenceProblems`) |
 | `list_component_types { type? }` | read | the game's types and labels; with `type`, its fields: `kind`, default, range, options |
 | `list_assets { kind?, search? }` | read | the built-in shapes, then assets the document may use (`mayUse`, ADR 0161); ≤ 300 |
 | `get_asset { asset }` | read | a material's shader, values, parameters; a data asset's type, fields, declarations |
@@ -92,7 +92,7 @@ finished turns (`dropWhere`).
 | `set_component_enabled` / `set_object_enabled` / `move_component` | edit | the Inspector's ticks and Move up / down; an inherited component's order refused |
 | `set_material_values { asset, values }` | edit | by shader parameter, tagged by its kind; textures refused as the Inspector does (`editMaterial`) |
 | `set_data_fields { asset, values }` | edit | by declared field, whole asset `readParams`'d (`editData`) |
-| `set_sequence_stages { id, componentId, stages }` | edit | a Sequence's stages whole, by `Doc.setSequenceStages` — an override on a placement's copy; ids minted where none is given; a step's `target` a direct child's object id, stored as its id; checked by `stagesProblem`. Its tool input spells every step kind, timing and ease (ADR 0198) |
+| `set_sequence_stages { id, componentId, stages }` | edit | a Sequence's stages whole, by `Doc.setSequenceStages` — an override on a placement's copy; ids minted where none is given; a step's `target` a direct child's object id, stored as its id; checked by `stagesProblem`. Its tool input spells every step kind, timing and ease, and that a stage's steps start together from where the stage began (ADR 0198); its answer's object carries the `problems` |
 
 Not actions: what undo cannot take back — files (an asset, folder or level made, renamed, moved, deleted; uploads),
 Apply to prefab, Save as prefab, adopting a shared component — stays out until each can be undone as one (Kodjo's
