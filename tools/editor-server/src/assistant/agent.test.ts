@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { forModel, runTurn, type AssistantEvent, type AssistantMode, type Conversation, type Talk } from './agent'
 import { createBudget } from './budget'
+import { DEFAULT_MODEL, modelOf, type AssistantModel } from './models'
 import { TOOLS, type ToolRun } from './tools'
 
 /**
@@ -15,30 +16,40 @@ const use = (id: string, name: string, input: Record<string, unknown>): Anthropi
 const usage = { input_tokens: 1000, output_tokens: 100 }
 
 /** A model that answers from a script, one reply a call, streaming each reply's text. */
-const scripted = (replies: (readonly Anthropic.ContentBlock[])[]): { talk: Talk; seen: Anthropic.MessageParam[][]; systems: string[] } => {
+const scripted = (replies: (readonly Anthropic.ContentBlock[])[]): { talk: Talk; seen: Anthropic.MessageParam[][]; systems: string[]; models: string[] } => {
   const seen: Anthropic.MessageParam[][] = []
   const systems: string[] = []
+  const models: string[] = []
   let n = 0
   const talk: Talk = async (request, onText) => {
     seen.push(request.messages)
     systems.push(request.system.map((b) => b.text).join(''))
+    models.push(request.model)
     const content = replies[n++] ?? [text('…')]
     for (const b of content) if (b.type === 'text') onText(b.text)
     return { content, usage, stop_reason: content.some((b) => b.type === 'tool_use') ? 'tool_use' : 'end_turn' }
   }
-  return { talk, seen, systems }
+  return { talk, seen, systems, models }
 }
 
-const chat = (): Conversation => ({ id: 'c', email: 'ada@x.com', name: 'Ada', title: '', mode: 'assistant', createdAt: 0, messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: 0, busy: false, stopping: false })
+const chat = (): Conversation => ({ id: 'c', email: 'ada@x.com', name: 'Ada', title: '', mode: 'assistant', model: DEFAULT_MODEL.id, createdAt: 0, messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: 0, busy: false, stopping: false })
 
-const turn = async (talk: Talk, run: (name: string, input: Record<string, unknown>) => Promise<ToolRun>, conv = chat(), limit = 1, mode: AssistantMode = 'assistant', text = 'Why does the hazard not kill?') => {
+const turn = async (
+  talk: Talk,
+  run: (name: string, input: Record<string, unknown>) => Promise<ToolRun>,
+  conv = chat(),
+  limit = 1,
+  mode: AssistantMode = 'assistant',
+  text = 'Why does the hazard not kill?',
+  model: AssistantModel = DEFAULT_MODEL,
+) => {
   const events: AssistantEvent[] = []
-  const budget = createBudget({ file: null, limit })
+  const budget = createBudget({ file: null, limitOf: () => limit })
   await runTurn(
     conv,
     text,
     { game: 'keyboard', level: 'World 1', selection: ['Lava (Collider, Hazard)'] },
-    { instructions: 'Answer from the docs.', tools: TOOLS, mode, silent: (n) => n === 'rename_object', talk, run, budget },
+    { instructions: 'Answer from the docs.', tools: TOOLS, mode, model, silent: (n) => n === 'rename_object', talk, run, budget },
     (e) => events.push(e),
   )
   return { events, conv, budget }
@@ -83,6 +94,15 @@ describe('a turn', () => {
     expect(events.some((e) => e.kind === 'text' && e.text === 'never said')).toBe(false)
     const { events: next } = await turn(talk, async () => ({ result: 'r' }), chat(), 0)
     expect(next).toEqual([{ kind: 'error', message: "Today's $0.00 is used up. The assistant is back tomorrow (UTC)." }])
+  })
+
+  it('asks the model it was given, and counts the day at that model’s prices (ADR 0199)', async () => {
+    const fable = modelOf('claude-fable-5-1')!
+    const { talk, models } = scripted([[use('t1', 'search_repo', { query: 'x' })], [text('Found it.')]])
+    const { budget } = await turn(talk, async () => ({ result: 'r' }), chat(), 1, 'assistant', 'Where is it?', fable)
+    expect(models).toEqual(['claude-fable-5-1', 'claude-fable-5-1'])
+    // 1000 in + 100 out at Fable 5.1's 10 and 50 a million is $0.015 a call.
+    expect(budget.spent('ada@x.com')).toBeCloseTo(0.03, 9)
   })
 
   it('takes a failed turn back out, so the next one starts clean', async () => {

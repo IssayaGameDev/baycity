@@ -29,7 +29,7 @@ import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from './sse'
  * hosted editor (a Node server behind Cloudflare Access), so what the editor can do to `content/` is defined
  * once (ADR 0083).
  *
- *   GET  /api/me                      → { user, heartbeatMs, maxUploadBytes, games }
+ *   GET  /api/me                      → { user, heartbeatMs, maxUploadBytes, games, admin? } — admin: true for an admin (ADR 0200)
  *   GET  /api/status                  → { pushError }
  *   GET  /api/levels                  → [{ name, mode?, prefabs?, components? }] — prefabs: asset ids it references (ADR 0097);
  *                                       components: every type it and its prefabs use (ADR 0162)
@@ -89,6 +89,8 @@ export interface ApiOptions {
   repoRoot: string
   /** The editor's assistant (ADR 0192), its `/api/assistant` routes, for a signed-in user. Absent: none. */
   assistant?: { handle: (req: IncomingMessage, res: ServerResponse, url: string, user: User) => Promise<boolean> }
+  /** Whether this user is an admin (ADR 0200): `/api/me` says so, for the editor's link to the admin page. Absent: nobody. */
+  isAdmin?: (user: User) => boolean
   /** `null` → 401. Throwing → 500. */
   identify: (req: IncomingMessage) => Promise<User | null>
   /**
@@ -923,7 +925,8 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
   /** Who you are and the numbers the editor runs on; whether the last push failed. */
   const handleMe = (req: IncomingMessage, res: ServerResponse, url: string, user: User): boolean => {
     if (url === '/api/me' && req.method === 'GET') {
-      sendJson(res, 200, { user, heartbeatMs: opts.rules.heartbeatMs, maxUploadBytes: opts.rules.maxUploadBytes, games: opts.games ?? {} })
+      const admin = opts.isAdmin?.(user) === true ? { admin: true } : {}
+      sendJson(res, 200, { user, heartbeatMs: opts.rules.heartbeatMs, maxUploadBytes: opts.rules.maxUploadBytes, games: opts.games ?? {}, ...admin })
       return true
     }
     if (url === '/api/status' && req.method === 'GET') {

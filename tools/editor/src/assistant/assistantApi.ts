@@ -48,6 +48,15 @@ export interface Status {
   readonly modes?: readonly AssistantMode[]
   /** All sessions on disk past the warning size: told to the people who edit (ADR 0197). */
   readonly storage?: { readonly bytes: number; readonly warnAt: number }
+  /** The models this person may pick, the default first (ADR 0199); absent for everyone else. */
+  readonly models?: readonly ModelChoice[]
+}
+
+/** A model to pick, with what it costs: USD a million tokens in and out. */
+export interface ModelChoice {
+  readonly id: string
+  readonly label: string
+  readonly prices: { readonly input: number; readonly output: number }
 }
 
 /** A saved session as the list shows it (ADR 0197). */
@@ -73,7 +82,7 @@ export const assistantStatus = async (): Promise<Status> => {
 
 export const newChat = async (): Promise<string> => (await json<{ id: string }>(await fetch('/api/assistant/chats', { method: 'POST' }))).id
 
-export const chatSoFar = async (id: string): Promise<{ shown: Shown[]; filed: Record<string, string>; busy: boolean; title?: string; mode?: AssistantMode }> =>
+export const chatSoFar = async (id: string): Promise<{ shown: Shown[]; filed: Record<string, string>; busy: boolean; title?: string; mode?: AssistantMode; model?: string }> =>
   json(await fetch(`/api/assistant/chats/${id}`))
 
 /** This person's saved sessions, the latest used first. */
@@ -125,20 +134,20 @@ export const sseParser = (on: (event: string, data: string) => void): ((chunk: s
 
 /**
  * Say something; each event of the turn reaches `on` as it streams. Resolves when the turn ends. In an editing mode
- * the editor's actions go with it, as the tools the model may call.
+ * the editor's actions go with it, as the tools the model may call; a model picked goes with it too (ADR 0199).
  */
 export const say = async (
   id: string,
   text: string,
   context: EditorContext,
   on: (e: AssistantEvent) => void,
-  editing: { readonly mode: AssistantMode; readonly tools: readonly EditorTool[] } = { mode: 'assistant', tools: [] },
+  sent: { readonly mode: AssistantMode; readonly tools: readonly EditorTool[]; readonly model?: string } = { mode: 'assistant', tools: [] },
 ): Promise<void> => {
-  const tools = editing.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema }))
+  const tools = sent.tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema }))
   const r = await fetch(`/api/assistant/chats/${id}/say`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ text, context, mode: editing.mode, ...(editing.mode === 'assistant' ? {} : { tools }) }),
+    body: JSON.stringify({ text, context, mode: sent.mode, ...(sent.mode === 'assistant' ? {} : { tools }), ...(sent.model === undefined ? {} : { model: sent.model }) }),
   })
   if (!r.ok || r.body === null) {
     const why = (await r.json().catch(() => ({}))) as { error?: unknown }

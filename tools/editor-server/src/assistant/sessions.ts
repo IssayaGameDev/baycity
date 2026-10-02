@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, s
 import { join } from 'node:path'
 
 import { ASSISTANT_MODES, type AssistantMode, type Conversation, type Shown } from './agent'
+import { DEFAULT_MODEL, modelOf } from './models'
 import type { Draft } from './tools'
 
 /**
@@ -35,6 +36,8 @@ interface Saved {
   readonly name: string
   readonly title: string
   readonly mode: AssistantMode
+  /** Absent from a file saved before ADR 0199: the default. */
+  readonly model?: string
   readonly createdAt: number
   readonly lastUsed: number
   readonly messages: Anthropic.MessageParam[]
@@ -114,6 +117,8 @@ export const createSessionStore = (dir: string): SessionStore => {
         name: s.name,
         title: s.title,
         mode: ASSISTANT_MODES.includes(s.mode) ? s.mode : 'assistant',
+        // A model since taken off the list is the default's again.
+        model: (modelOf(s.model) ?? DEFAULT_MODEL).id,
         createdAt: s.createdAt,
         messages: s.messages,
         shown: s.shown,
@@ -132,6 +137,7 @@ export const createSessionStore = (dir: string): SessionStore => {
         name: c.name,
         title: c.title,
         mode: c.mode,
+        model: c.model,
         createdAt: c.createdAt,
         lastUsed: c.lastUsed,
         messages: c.messages.map(withoutPictures),

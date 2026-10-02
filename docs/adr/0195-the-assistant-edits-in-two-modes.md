@@ -1,6 +1,7 @@
 # ADR 0195 — The assistant edits, in Confirm and Auto
 
-Status: accepted. Amends ADR 0192 (read and report only). Its mode switch moved beside Send by ADR 0197. Kodjo's calls: three modes in the chat — Assistant, Confirm,
+Status: accepted. Amends ADR 0192 (read and report only). Its mode switch moved beside Send by ADR 0197; Haiku no
+longer the only model, by ADR 0199. Kodjo's calls: three modes in the chat — Assistant, Confirm,
 Auto; in Confirm every change is asked about, one by one; a no ends the prompt; only Kodjo has the editing modes for
 now; Haiku still.
 

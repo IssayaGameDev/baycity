@@ -302,9 +302,10 @@
   height: 14px;
 }
 
-/* The session in the header and the menu of the others (ADR 0197); the mode beside Send. */
+/* The session in the header and the menu of the others (ADR 0197); the mode and the model beside Send (ADR 0199). */
 .asst-chats,
-.asst-modepick {
+.asst-modepick,
+.asst-modelpick {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -328,22 +329,27 @@
   max-width: 190px;
 }
 .asst-chats:hover,
-.asst-modepick:hover {
+.asst-modepick:hover,
+.asst-modelpick:hover {
   background: var(--hover, #2a2f37);
 }
 .asst-chats:disabled,
-.asst-modepick:disabled {
+.asst-modepick:disabled,
+.asst-modelpick:disabled {
   opacity: 0.6;
   cursor: default;
 }
-.asst-modepick {
+.asst-modepick,
+.asst-modelpick {
   align-self: stretch;
   border: 1px solid var(--line, #34383f);
   border-radius: 6px;
   color: var(--dim, #8b929d);
   font-size: 11.5px;
+  white-space: nowrap;
 }
-.asst-modepick[hidden] {
+.asst-modepick[hidden],
+.asst-modelpick[hidden] {
   display: none;
 }
 .asst-modepick[data-mode='confirm'] {
@@ -390,12 +396,14 @@
 .asst-pop-row:hover {
   background: var(--hover, #2a2f37);
 }
-.asst-pop-mode {
+.asst-pop-mode,
+.asst-pop-model {
   flex-direction: column;
   align-items: flex-start;
   gap: 1px;
 }
 .asst-pop-mode.on .asst-pop-t,
+.asst-pop-model.on .asst-pop-t,
 .asst-pop-chat.on .asst-pop-t {
   color: var(--accent, #4a8cf7);
 }

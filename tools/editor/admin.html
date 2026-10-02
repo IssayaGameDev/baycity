@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin — editor</title>
+    <style>
+      /* The editor's own colours (ADR 0200). */
+      :root {
+        --bg: #14161a;
+        --panel: #1c1f24;
+        --panel-head: #23272e;
+        --line: #34383f;
+        --text: #d5d9e0;
+        --dim: #8b929d;
+        --accent: #4a8cf7;
+        --hover: #2a2f37;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--bg);
+      }
+    </style>
+  </head>
+  <body>
+    <script type="module" src="/src/admin/page.ts"></script>
+  </body>
+</html>

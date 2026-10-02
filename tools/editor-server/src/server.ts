@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { dirname, extname, join } from 'node:path'
 
 import { createAccessVerifier } from './access'
+import { isAdmin } from './admins'
 import { createAssistant } from './assistant/routes'
 import { AuthError, contentTypeFor, createContentApi, safeJoin } from './api'
 import { createChangeFeed } from './changes'
@@ -198,6 +199,7 @@ export const startEditorServer = (config: ServerConfig): EditorServer => {
   const api = createContentApi({
     repoRoot: config.repoRoot,
     assistant,
+    isAdmin: (user) => isAdmin(config.stateDir, user.email),
     identify,
     identifyPlayer,
     rules: { heartbeatMs: config.heartbeatMs, maxUploadBytes: config.maxUploadBytes },

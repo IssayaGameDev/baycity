@@ -5,11 +5,13 @@ import { existsSync, readFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
 
+import { isAdmin, listedIn } from '../admins'
 import type { User } from '../config'
 import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from '../sse'
-import { ASSISTANT_MODES, EDIT_ROUNDS, IDLE_MS, MAX_ROUNDS, MAX_TOKENS, MODEL, runTurn, type AssistantEvent, type AssistantMode, type Conversation, type EditorContext, type Talk } from './agent'
-import { createBudget, type Budget } from './budget'
+import { ASSISTANT_MODES, EDIT_ROUNDS, IDLE_MS, MAX_ROUNDS, MAX_TOKENS, runTurn, type AssistantEvent, type AssistantMode, type Conversation, type EditorContext, type Talk } from './agent'
+import { createBudget, createLimits, isLimit, type Budget, type Limits } from './budget'
 import { createGitHub, repoOfRemote, type GitHub } from './github'
+import { DEFAULT_MODEL, modelOf, MODELS } from './models'
 import { createRepoFiles, type RepoFiles } from './repoFiles'
 import { createSessionStore, titleOf } from './sessions'
 import { createToolRunner, TOOLS, type ToolRun } from './tools'
@@ -19,16 +21,19 @@ import { createToolRunner, TOOLS, type ToolRun } from './tools'
  *
  * | | |
  * | --- | --- |
- * | `GET /api/assistant` | `{ ready, why?, spent, limit }` — whether it is set up, and the person's day |
+ * | `GET /api/assistant` | `{ ready, why?, spent, limit, modes, models? }` — whether it is set up, the person's day, what they may pick |
  * | `GET /api/assistant/chats` | the person's sessions, the latest used first (ADR 0197) → `{ chats }` |
  * | `POST /api/assistant/chats` | a new conversation → `{ id }` |
- * | `GET /api/assistant/chats/:id` | what it shows, to draw it again → `{ shown, filed, busy, title, mode }` |
+ * | `GET /api/assistant/chats/:id` | what it shows, to draw it again → `{ shown, filed, busy, title, mode, model }` |
  * | `DELETE /api/assistant/chats/:id` | the session gone, from memory and disk → 204 |
  * | `POST /api/assistant/chats/:id/say` | `{ text, context }` → the turn, as server-sent events |
  * | `POST /api/assistant/chats/:id/file/:draft` | the person files a draft → `{ url }` |
  * | `POST /api/assistant/chats/:id/result/:call` | the tab's answer to an editor action it was asked to run (ADR 0195) → 204 |
  * | `POST /api/assistant/chats/:id/stop` | the person's Stop: the turn ends at its next step → 204 |
  * | `POST /api/assistant/chats/:id/close` | the tab is going (a beacon): its calls answered; the session is kept → 204 |
+ * | `GET /api/assistant/admin` | an admin's view (ADR 0200) → `{ you, everyone, own, people: { email, spent, limit }[] }`; 403 for anyone else |
+ * | `PUT /api/assistant/admin/limits` | `{ everyone?, own? }` — dollars a day; `own: null` follows everyone's → the view |
+ * | `POST /api/assistant/admin/reset` | `{ email }` — that person's day starts again → the view |
  *
  * Keys: `anthropic.key` and `github.token` in the state directory, outside the checkout — read here and nowhere
  * else, never sent to the model or the browser. Looked for again while missing, so adding one needs no restart.
@@ -40,12 +45,17 @@ import { createToolRunner, TOOLS, type ToolRun } from './tools'
  * directory, one a line — Kodjo's call: only him, for now. In one, the tab sends the editor's actions as tools with its
  * message; a call to one goes to the tab as a `call` event, and the turn waits for the tab's `result`. The person's no
  * to a change, or their Stop, ends the turn there.
+ *
+ * Models (ADR 0199): the same people pick the model a message is answered by, any message; everyone else has Haiku.
+ *
+ * Limits (ADR 0200): set on the admin page by the emails in `admins`, kept in `assistant-limits.json` — everyone's,
+ * and an admin's own over it.
  */
 
 export interface AssistantOptions {
   readonly repoRoot: string
   readonly stateDir: string
-  /** Dollars a person may spend a day. Kodjo's call: 1. */
+  /** Dollars a person may spend a day until the admin page sets it. Kodjo's call: 1. */
   readonly limitUsd?: number
   /** The model call; the real one by default. Tests hand in their own. */
   readonly talk?: Talk
@@ -139,7 +149,7 @@ const readText = (file: string): string | null => {
 export const claudeTalk = (apiKey: string): Talk => {
   const client = new Anthropic({ apiKey })
   return async (request, onText) => {
-    const stream = client.messages.stream({ model: MODEL, max_tokens: MAX_TOKENS, system: request.system, tools: request.tools, messages: request.messages })
+    const stream = client.messages.stream({ model: request.model, max_tokens: MAX_TOKENS, system: request.system, tools: request.tools, messages: request.messages })
     stream.on('text', (delta) => onText(delta))
     const message = await stream.finalMessage()
     return { content: message.content, usage: message.usage, stop_reason: message.stop_reason }
@@ -194,7 +204,8 @@ export const contextOf = (raw: unknown): EditorContext => {
 
 export const createAssistant = (opts: AssistantOptions): Assistant => {
   const now = opts.now ?? (() => Date.now())
-  const budget: Budget = createBudget({ file: join(opts.stateDir, 'assistant-spend.json'), limit: opts.limitUsd ?? 1, now })
+  const limits: Limits = createLimits({ file: join(opts.stateDir, 'assistant-limits.json'), everyone: opts.limitUsd ?? 1 })
+  const budget: Budget = createBudget({ file: join(opts.stateDir, 'assistant-spend.json'), limitOf: limits.of, now })
   const files: RepoFiles = createRepoFiles(opts.repoRoot)
   /** The sessions in use, from disk when first asked for; on disk they stay (ADR 0197). */
   const chats = new Map<string, Conversation>()
@@ -231,11 +242,46 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
 
   const instructionsNow = (): string | null => readText(join(opts.repoRoot, INSTRUCTIONS_FILE))
   /** Whether this person may use the editing modes: their email in `assistant-editors`, read each time it is asked. */
-  const mayEdit = (email: string): boolean =>
-    (readText(join(opts.stateDir, 'assistant-editors')) ?? '')
-      .split('\n')
-      .map((l) => l.trim().toLowerCase())
-      .some((l) => l !== '' && !l.startsWith('#') && l === email)
+  const mayEdit = (email: string): boolean => listedIn(join(opts.stateDir, 'assistant-editors'), email)
+
+  /** What an admin sees (ADR 0200): the limits, and everyone's day so far — theirs too — the most spent first. */
+  const adminView = (email: string): { you: string; everyone: number; own: number | null; people: { email: string; spent: number; limit: number }[] } => {
+    const spent = { [email]: 0, ...budget.today() }
+    return {
+      you: email,
+      everyone: limits.everyone(),
+      own: limits.own(email) ?? null,
+      people: Object.entries(spent)
+        .map(([who, usd]) => ({ email: who, spent: usd, limit: limits.of(who) }))
+        .sort((a, b) => b.spent - a.spent || a.email.localeCompare(b.email)),
+    }
+  }
+  /** The admin page's routes; `false` for any other. */
+  const handleAdmin = async (req: IncomingMessage, res: ServerResponse, url: string, email: string): Promise<boolean> => {
+    if (url !== '/api/assistant/admin' && !url.startsWith('/api/assistant/admin/')) return false
+    if (!isAdmin(opts.stateDir, email)) return send(res, 403, { error: 'This is for admins.' }), true
+    if (url === '/api/assistant/admin' && req.method === 'GET') return send(res, 200, adminView(email)), true
+    let body: Record<string, unknown>
+    try {
+      const raw = await readJson(req)
+      body = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {}
+    } catch (e) {
+      return send(res, 400, { error: e instanceof Error ? e.message : String(e) }), true
+    }
+    if (url === '/api/assistant/admin/limits' && req.method === 'PUT') {
+      const { everyone, own } = body
+      if (everyone !== undefined && !isLimit(everyone)) return send(res, 400, { error: 'everyone: dollars, 0 or more' }), true
+      if (own !== undefined && own !== null && !isLimit(own)) return send(res, 400, { error: 'own: dollars, 0 or more, or null' }), true
+      limits.set({ ...(everyone === undefined ? {} : { everyone }), ...(own === undefined ? {} : { people: { [email]: own } }) })
+      return send(res, 200, adminView(email)), true
+    }
+    if (url === '/api/assistant/admin/reset' && req.method === 'POST') {
+      if (typeof body.email !== 'string' || body.email === '') return send(res, 400, { error: 'email: whose day to start again' }), true
+      budget.reset(body.email)
+      return send(res, 200, adminView(email)), true
+    }
+    return send(res, 404, { error: 'no such admin route' }), true
+  }
 
   /** Each conversation's calls waiting on its tab, by call id: how each is answered. */
   const waiting = new Map<string, Map<string, (run: ToolRun) => void>>()
@@ -283,13 +329,17 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
   const handle = async (req: IncomingMessage, res: ServerResponse, url: string, user: User): Promise<boolean> => {
     if (url !== '/api/assistant' && !url.startsWith('/api/assistant/')) return false
     const email = user.email.toLowerCase()
+    if (await handleAdmin(req, res, url, email)) return true
 
     if (url === '/api/assistant' && req.method === 'GET') {
       const why = whyNot()
-      const modes: readonly AssistantMode[] = mayEdit(email) ? ASSISTANT_MODES : ['assistant']
+      const editor = mayEdit(email)
+      const modes: readonly AssistantMode[] = editor ? ASSISTANT_MODES : ['assistant']
+      // The models to pick from, the default first, each with what it costs a million tokens in and out.
+      const models = editor ? { models: MODELS.map((m) => ({ id: m.id, label: m.label, prices: { input: m.prices.input, output: m.prices.output } })) } : {}
       // Who may edit is told when the sessions grow past the warning: Kodjo's to act on.
-      const storage = mayEdit(email) && storedBytes >= warnBytes ? { storage: { bytes: storedBytes, warnAt: warnBytes } } : {}
-      send(res, 200, { ready: why === null, ...(why === null ? {} : { why }), github: githubNow() !== null, spent: budget.spent(email), limit: budget.limit, modes, ...storage })
+      const storage = editor && storedBytes >= warnBytes ? { storage: { bytes: storedBytes, warnAt: warnBytes } } : {}
+      send(res, 200, { ready: why === null, ...(why === null ? {} : { why }), github: githubNow() !== null, spent: budget.spent(email), limit: budget.limitOf(email), modes, ...models, ...storage })
       return true
     }
 
@@ -303,7 +353,7 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
       if (why !== null) return send(res, 503, { error: why }), true
       const id = randomBytes(16).toString('hex')
       const t = now()
-      chats.set(id, { id, email, name: user.name, title: '', mode: 'assistant', createdAt: t, messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: t, busy: false, stopping: false })
+      chats.set(id, { id, email, name: user.name, title: '', mode: 'assistant', model: DEFAULT_MODEL.id, createdAt: t, messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: t, busy: false, stopping: false })
       send(res, 200, { id })
       return true
     }
@@ -359,7 +409,7 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
       // Opening it is using it: its thirty days start again.
       chat.lastUsed = now()
       keep(chat)
-      send(res, 200, { shown: chat.shown, filed: Object.fromEntries(chat.filed), busy: chat.busy, title: chat.title, mode: chat.mode })
+      send(res, 200, { shown: chat.shown, filed: Object.fromEntries(chat.filed), busy: chat.busy, title: chat.title, mode: chat.mode, model: chat.model })
       return true
     }
 
@@ -375,6 +425,10 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
       if (text === '') return send(res, 400, { error: 'nothing to say' }), true
       const mode: AssistantMode = body.mode === 'confirm' || body.mode === 'auto' ? body.mode : 'assistant'
       if (mode !== 'assistant' && !mayEdit(email)) return send(res, 403, { error: 'The editing modes are not open to you.' }), true
+      // Any message may change it; the conversation so far goes to the new one as it is.
+      const picked = body.model === undefined ? DEFAULT_MODEL : modelOf(body.model)
+      if (picked === undefined) return send(res, 400, { error: 'no such model' }), true
+      if (picked !== DEFAULT_MODEL && !mayEdit(email)) return send(res, 403, { error: 'Picking the model is not open to you.' }), true
       const editorTools = mode === 'assistant' ? [] : editorToolsOf(body.tools)
       const editorNames = new Set(editorTools.map((t) => t.name))
       const model = talkNow()
@@ -389,6 +443,7 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
       }
       if (chat.title === '') chat.title = titleOf(text)
       chat.mode = mode
+      chat.model = picked.id
       const serverTools = createToolRunner({ files, github: githubNow(), nextDraftId: () => `d${++draftCount}` })
       const run = (name: string, input: Record<string, unknown>): Promise<ToolRun> => (editorNames.has(name) ? askTab(chat.id, name, input, emit) : serverTools(name, input))
       try {
@@ -397,7 +452,7 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
           chat,
           text,
           contextOf(body.context),
-          { instructions, tools: [...TOOLS, ...editorTools], mode, maxRounds: mode === 'assistant' ? MAX_ROUNDS : EDIT_ROUNDS, silent: (n) => editorNames.has(n), talk: model, run, budget, now },
+          { instructions, tools: [...TOOLS, ...editorTools], mode, model: picked, maxRounds: mode === 'assistant' ? MAX_ROUNDS : EDIT_ROUNDS, silent: (n) => editorNames.has(n), talk: model, run, budget, now },
           emit,
         )
       } finally {

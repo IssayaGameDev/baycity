@@ -14,6 +14,7 @@ import {
   type AssistantMode,
   type Draft,
   type EditorContext,
+  type ModelChoice,
   type Shown,
   type Status,
 } from './assistantApi'
@@ -35,6 +36,9 @@ import './assistant.css'
  *
  * **Sessions** (ADR 0197): the server keeps each person's chats; the header's Chats menu starts a new one, opens a
  * saved one, or deletes one — asked once more first, as it is for good.
+ *
+ * **Model** (ADR 0199), for the people the server lists models to: picked beside the mode, what the next message is
+ * answered by — any message, the conversation so far going to it as it is; a saved chat opens on its last one.
  */
 
 export interface ChatWindowOptions {
@@ -88,6 +92,9 @@ export const MODE_NOTES: Readonly<Record<AssistantMode, string>> = {
   auto: 'Makes the changes itself. One Ctrl+Z takes back a whole message.',
 }
 
+/** What a model costs, under its name in the model menu. */
+const pricesOf = (m: ModelChoice): string => `$${m.prices.input} in · $${m.prices.output} out, a million tokens`
+
 /** A chat with nothing said yet, in the menu's words. */
 const NEW_CHAT = 'New chat'
 
@@ -121,6 +128,10 @@ export const createChatWindow = (opts: ChatWindowOptions): ChatWindow => {
   let settleCard: ((yes: boolean | null) => void) | null = null
   /** Whether this person has the editing modes and the chat an editor to change. */
   let canEdit = false
+  /** The models this person may pick, the default first; none for everyone else. */
+  let models: readonly ModelChoice[] = []
+  /** The model the next message is answered by; `null` leaves it to the server. */
+  let model: string | null = null
 
   const root = opts.root
   root.replaceChildren()
@@ -167,10 +178,18 @@ export const createChatWindow = (opts: ChatWindowOptions): ChatWindow => {
   modePick.append(modeLabel, icon('chevron', 'ic asst-chev'))
   modePick.hidden = true
   modePick.addEventListener('click', () => openModeMenu())
+  // Who answers the next message: beside the mode, shown once the server lists models to pick from.
+  const modelPick = el('button', 'asst-modelpick')
+  modelPick.type = 'button'
+  modelPick.title = 'Model: who answers your next message'
+  const modelLabel = el('span')
+  modelPick.append(modelLabel, icon('chevron', 'ic asst-chev'))
+  modelPick.hidden = true
+  modelPick.addEventListener('click', () => openModelMenu())
   const send = button('asst-send', 'send', 'Send', () => void submit())
   const stopper = button('asst-stop', 'stop', 'Stop — what it changed so far stays one Ctrl+Z', () => void stop())
   stopper.hidden = true
-  form.append(input, modePick, send, stopper)
+  form.append(input, modelPick, modePick, send, stopper)
   root.append(head, log, form)
 
   /** The open menu, and how it closes: a pick, a press elsewhere, Escape. */
@@ -221,6 +240,20 @@ export const createChatWindow = (opts: ChatWindowOptions): ChatWindow => {
           closeMenu?.()
           setMode(m)
         }, el('span', 'asst-pop-t', MODE_LABELS[m]), el('span', 'asst-pop-d', MODE_NOTES[m])),
+      ),
+      true,
+    )
+  }
+
+  const openModelMenu = (): void => {
+    if (busy) return
+    menu(
+      modelPick,
+      models.map((m) =>
+        menuRow(`asst-pop-model${m.id === model ? ' on' : ''}`, () => {
+          closeMenu?.()
+          setModel(m.id)
+        }, el('span', 'asst-pop-t', m.label), el('span', 'asst-pop-d', pricesOf(m))),
       ),
       true,
     )
@@ -335,6 +368,7 @@ export const createChatWindow = (opts: ChatWindowOptions): ChatWindow => {
     root.classList.toggle('asst-busy', on)
     stopper.hidden = !on || mode === 'assistant'
     modePick.disabled = on
+    modelPick.disabled = on
     chats.disabled = on
   }
 
@@ -343,6 +377,14 @@ export const createChatWindow = (opts: ChatWindowOptions): ChatWindow => {
     mode = canEdit ? m : 'assistant'
     modeLabel.textContent = MODE_LABELS[mode]
     modePick.dataset.mode = mode
+  }
+
+  /** Pick one of the listed models; an id the list does not have is left alone. */
+  const setModel = (id: string): void => {
+    const m = models.find((x) => x.id === id)
+    if (m === undefined) return
+    model = m.id
+    modelLabel.textContent = m.label
   }
 
   /** Show a session: the new one, empty, or a saved one drawn again — waited for while it is still answering elsewhere. */
@@ -362,6 +404,7 @@ export const createChatWindow = (opts: ChatWindowOptions): ChatWindow => {
     for (const [d, url] of Object.entries(so.filed)) filed.set(d, url)
     chatTitle.textContent = so.title !== undefined && so.title !== '' ? so.title : NEW_CHAT
     if (so.mode !== undefined) setMode(so.mode)
+    if (so.model !== undefined) setModel(so.model)
     draw(so.shown)
   }
 
@@ -518,7 +561,8 @@ export const createChatWindow = (opts: ChatWindowOptions): ChatWindow => {
         tools = await link.tools()
         await link.begin(turnLabel(text))
       }
-      await say(chatId, text, await opts.context(), onEvent, editing ? { mode, tools } : { mode: 'assistant', tools: [] })
+      const picked = model === null ? {} : { model }
+      await say(chatId, text, await opts.context(), onEvent, editing ? { mode, tools, ...picked } : { mode: 'assistant', tools: [], ...picked })
     } catch (e) {
       note(String(e instanceof Error ? e.message : e), 'asst-err')
     } finally {
@@ -552,6 +596,9 @@ export const createChatWindow = (opts: ChatWindowOptions): ChatWindow => {
       showSpent(status.spent, status.limit)
       canEdit = opts.link !== undefined && (status.modes ?? []).some((m) => m !== 'assistant')
       modePick.hidden = !canEdit
+      models = status.models ?? []
+      modelPick.hidden = models.length < 2
+      if (models[0] !== undefined) setModel(models[0].id)
       if (status.storage !== undefined) {
         const mb = (b: number): string => `${Math.round(b / 1024 ** 2)} MB`
         note(`Saved chats take ${mb(status.storage.bytes)} on the server, past the ${mb(status.storage.warnAt)} warning. Unused ones go after 30 days; delete old ones to free space now.`, 'asst-err')

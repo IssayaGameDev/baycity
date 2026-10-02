@@ -298,6 +298,80 @@ data: ${JSON.stringify(e)}
   })
 })
 
+describe('the model (ADR 0199)', () => {
+  const settle = () => new Promise((r) => setTimeout(r, 20))
+  const A = 'a'.repeat(32)
+  const MODELS = [
+    { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', prices: { input: 1, output: 5 } },
+    { id: 'claude-opus-5-5', label: 'Opus 5.5', prices: { input: 4, output: 20 } },
+  ]
+
+  /** A server that lists these models, or none; what each message was sent with, kept. */
+  const serve = (models?: readonly object[]) => {
+    const says: Record<string, unknown>[] = []
+    vi.stubGlobal('requestAnimationFrame', (fn: () => void) => setTimeout(fn, 0))
+    vi.stubGlobal('fetch', async (url: string, init?: { method?: string; body?: string }) => {
+      if (url === '/api/assistant') return new Response(JSON.stringify({ ready: true, github: false, spent: 0, limit: 1, modes: ['assistant'], ...(models === undefined ? {} : { models }) }))
+      if (url === '/api/assistant/chats' && init?.method === 'POST') return new Response(JSON.stringify({ id: A }))
+      if (url === '/api/assistant/chats' && (init?.method ?? 'GET') === 'GET') return new Response(JSON.stringify({ chats: [{ id: A, title: 'Old', mode: 'assistant', lastUsed: Date.now() }] }))
+      if (url === `/api/assistant/chats/${A}`) return new Response(JSON.stringify({ shown: [], filed: {}, busy: false, title: 'Old', mode: 'assistant', model: 'claude-opus-5-5' }))
+      if (url.endsWith('/say')) {
+        says.push(JSON.parse(init?.body ?? '{}') as Record<string, unknown>)
+        return new Response('event: done\ndata: {"kind":"done"}\n\n')
+      }
+      return new Response('{}', { status: 404 })
+    })
+    return { says }
+  }
+  afterEach(() => vi.unstubAllGlobals())
+
+  const open = async () => {
+    const root = document.createElement('div')
+    document.body.replaceChildren(root)
+    createChatWindow({ root, context: async () => ({}) })
+    await settle()
+    const sendText = async (text: string) => {
+      const input = root.querySelector<HTMLTextAreaElement>('.asst-in')!
+      input.value = text
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+      await settle()
+    }
+    return { root, sendText, picker: root.querySelector<HTMLButtonElement>('.asst-modelpick')! }
+  }
+
+  it('is hidden, and sends no model, when the server lists none to pick', async () => {
+    const server = serve()
+    const { picker, sendText } = await open()
+    expect(picker.hidden).toBe(true)
+    await sendText('hi')
+    expect(server.says[0]).not.toHaveProperty('model')
+  })
+
+  it('starts on the default, and any message can go to another', async () => {
+    const server = serve(MODELS)
+    const { root, picker, sendText } = await open()
+    expect(picker.hidden).toBe(false)
+    expect(picker.textContent).toBe('Haiku 4.5')
+    await sendText('one')
+    picker.click()
+    expect([...root.querySelectorAll('.asst-pop-model .asst-pop-d')].map((n) => n.textContent)).toEqual(['$1 in · $5 out, a million tokens', '$4 in · $20 out, a million tokens'])
+    ;[...root.querySelectorAll<HTMLButtonElement>('.asst-pop-model')].find((b) => b.querySelector('.asst-pop-t')!.textContent === 'Opus 5.5')!.click()
+    expect(picker.textContent).toBe('Opus 5.5')
+    await sendText('two')
+    expect(server.says.map((s) => s.model)).toEqual(['claude-haiku-4-5-20251001', 'claude-opus-5-5'])
+  })
+
+  it('opens a saved chat on the model it was last answered by', async () => {
+    serve(MODELS)
+    const { root, picker } = await open()
+    root.querySelector<HTMLButtonElement>('.asst-chats')!.click()
+    await settle()
+    root.querySelector<HTMLButtonElement>('.asst-pop-open')!.click()
+    await settle()
+    expect(picker.textContent).toBe('Opus 5.5')
+  })
+})
+
 describe('saved chats (ADR 0197)', () => {
   const settle = () => new Promise((r) => setTimeout(r, 20))
   const A = 'a'.repeat(32)
