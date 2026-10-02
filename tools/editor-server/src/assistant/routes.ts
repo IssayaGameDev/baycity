@@ -7,9 +7,10 @@ import { join } from 'node:path'
 
 import type { User } from '../config'
 import { encodeSse, SSE_HEADERS, SSE_KEEPALIVE } from '../sse'
-import { ASSISTANT_MODES, EDIT_ROUNDS, IDLE_MS, MAX_ROUNDS, MAX_TOKENS, MODEL, runTurn, type AssistantEvent, type AssistantMode, type Conversation, type EditorContext, type Talk } from './agent'
+import { ASSISTANT_MODES, EDIT_ROUNDS, IDLE_MS, MAX_ROUNDS, MAX_TOKENS, runTurn, type AssistantEvent, type AssistantMode, type Conversation, type EditorContext, type Talk } from './agent'
 import { createBudget, type Budget } from './budget'
 import { createGitHub, repoOfRemote, type GitHub } from './github'
+import { DEFAULT_MODEL, modelOf, MODELS } from './models'
 import { createRepoFiles, type RepoFiles } from './repoFiles'
 import { createSessionStore, titleOf } from './sessions'
 import { createToolRunner, TOOLS, type ToolRun } from './tools'
@@ -19,10 +20,10 @@ import { createToolRunner, TOOLS, type ToolRun } from './tools'
  *
  * | | |
  * | --- | --- |
- * | `GET /api/assistant` | `{ ready, why?, spent, limit }` — whether it is set up, and the person's day |
+ * | `GET /api/assistant` | `{ ready, why?, spent, limit, modes, models? }` — whether it is set up, the person's day, what they may pick |
  * | `GET /api/assistant/chats` | the person's sessions, the latest used first (ADR 0197) → `{ chats }` |
  * | `POST /api/assistant/chats` | a new conversation → `{ id }` |
- * | `GET /api/assistant/chats/:id` | what it shows, to draw it again → `{ shown, filed, busy, title, mode }` |
+ * | `GET /api/assistant/chats/:id` | what it shows, to draw it again → `{ shown, filed, busy, title, mode, model }` |
  * | `DELETE /api/assistant/chats/:id` | the session gone, from memory and disk → 204 |
  * | `POST /api/assistant/chats/:id/say` | `{ text, context }` → the turn, as server-sent events |
  * | `POST /api/assistant/chats/:id/file/:draft` | the person files a draft → `{ url }` |
@@ -40,6 +41,8 @@ import { createToolRunner, TOOLS, type ToolRun } from './tools'
  * directory, one a line — Kodjo's call: only him, for now. In one, the tab sends the editor's actions as tools with its
  * message; a call to one goes to the tab as a `call` event, and the turn waits for the tab's `result`. The person's no
  * to a change, or their Stop, ends the turn there.
+ *
+ * Models (ADR 0199): the same people pick the model a message is answered by, any message; everyone else has Haiku.
  */
 
 export interface AssistantOptions {
@@ -139,7 +142,7 @@ const readText = (file: string): string | null => {
 export const claudeTalk = (apiKey: string): Talk => {
   const client = new Anthropic({ apiKey })
   return async (request, onText) => {
-    const stream = client.messages.stream({ model: MODEL, max_tokens: MAX_TOKENS, system: request.system, tools: request.tools, messages: request.messages })
+    const stream = client.messages.stream({ model: request.model, max_tokens: MAX_TOKENS, system: request.system, tools: request.tools, messages: request.messages })
     stream.on('text', (delta) => onText(delta))
     const message = await stream.finalMessage()
     return { content: message.content, usage: message.usage, stop_reason: message.stop_reason }
@@ -286,10 +289,13 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
 
     if (url === '/api/assistant' && req.method === 'GET') {
       const why = whyNot()
-      const modes: readonly AssistantMode[] = mayEdit(email) ? ASSISTANT_MODES : ['assistant']
+      const editor = mayEdit(email)
+      const modes: readonly AssistantMode[] = editor ? ASSISTANT_MODES : ['assistant']
+      // The models to pick from, the default first, each with what it costs a million tokens in and out.
+      const models = editor ? { models: MODELS.map((m) => ({ id: m.id, label: m.label, prices: { input: m.prices.input, output: m.prices.output } })) } : {}
       // Who may edit is told when the sessions grow past the warning: Kodjo's to act on.
-      const storage = mayEdit(email) && storedBytes >= warnBytes ? { storage: { bytes: storedBytes, warnAt: warnBytes } } : {}
-      send(res, 200, { ready: why === null, ...(why === null ? {} : { why }), github: githubNow() !== null, spent: budget.spent(email), limit: budget.limit, modes, ...storage })
+      const storage = editor && storedBytes >= warnBytes ? { storage: { bytes: storedBytes, warnAt: warnBytes } } : {}
+      send(res, 200, { ready: why === null, ...(why === null ? {} : { why }), github: githubNow() !== null, spent: budget.spent(email), limit: budget.limit, modes, ...models, ...storage })
       return true
     }
 
@@ -303,7 +309,7 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
       if (why !== null) return send(res, 503, { error: why }), true
       const id = randomBytes(16).toString('hex')
       const t = now()
-      chats.set(id, { id, email, name: user.name, title: '', mode: 'assistant', createdAt: t, messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: t, busy: false, stopping: false })
+      chats.set(id, { id, email, name: user.name, title: '', mode: 'assistant', model: DEFAULT_MODEL.id, createdAt: t, messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: t, busy: false, stopping: false })
       send(res, 200, { id })
       return true
     }
@@ -359,7 +365,7 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
       // Opening it is using it: its thirty days start again.
       chat.lastUsed = now()
       keep(chat)
-      send(res, 200, { shown: chat.shown, filed: Object.fromEntries(chat.filed), busy: chat.busy, title: chat.title, mode: chat.mode })
+      send(res, 200, { shown: chat.shown, filed: Object.fromEntries(chat.filed), busy: chat.busy, title: chat.title, mode: chat.mode, model: chat.model })
       return true
     }
 
@@ -375,6 +381,10 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
       if (text === '') return send(res, 400, { error: 'nothing to say' }), true
       const mode: AssistantMode = body.mode === 'confirm' || body.mode === 'auto' ? body.mode : 'assistant'
       if (mode !== 'assistant' && !mayEdit(email)) return send(res, 403, { error: 'The editing modes are not open to you.' }), true
+      // Any message may change it; the conversation so far goes to the new one as it is.
+      const picked = body.model === undefined ? DEFAULT_MODEL : modelOf(body.model)
+      if (picked === undefined) return send(res, 400, { error: 'no such model' }), true
+      if (picked !== DEFAULT_MODEL && !mayEdit(email)) return send(res, 403, { error: 'Picking the model is not open to you.' }), true
       const editorTools = mode === 'assistant' ? [] : editorToolsOf(body.tools)
       const editorNames = new Set(editorTools.map((t) => t.name))
       const model = talkNow()
@@ -389,6 +399,7 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
       }
       if (chat.title === '') chat.title = titleOf(text)
       chat.mode = mode
+      chat.model = picked.id
       const serverTools = createToolRunner({ files, github: githubNow(), nextDraftId: () => `d${++draftCount}` })
       const run = (name: string, input: Record<string, unknown>): Promise<ToolRun> => (editorNames.has(name) ? askTab(chat.id, name, input, emit) : serverTools(name, input))
       try {
@@ -397,7 +408,7 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
           chat,
           text,
           contextOf(body.context),
-          { instructions, tools: [...TOOLS, ...editorTools], mode, maxRounds: mode === 'assistant' ? MAX_ROUNDS : EDIT_ROUNDS, silent: (n) => editorNames.has(n), talk: model, run, budget, now },
+          { instructions, tools: [...TOOLS, ...editorTools], mode, model: picked, maxRounds: mode === 'assistant' ? MAX_ROUNDS : EDIT_ROUNDS, silent: (n) => editorNames.has(n), talk: model, run, budget, now },
           emit,
         )
       } finally {

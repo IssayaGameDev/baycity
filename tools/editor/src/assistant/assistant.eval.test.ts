@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 
 import { EDIT_ROUNDS, runTurn, type AssistantEvent, type Conversation } from '../../../editor-server/src/assistant/agent'
 import { createBudget } from '../../../editor-server/src/assistant/budget'
+import { DEFAULT_MODEL } from '../../../editor-server/src/assistant/models'
 import { createRepoFiles } from '../../../editor-server/src/assistant/repoFiles'
 import { claudeTalk, editorToolsOf, runOfAnswer } from '../../../editor-server/src/assistant/routes'
 import { createToolRunner, TOOLS } from '../../../editor-server/src/assistant/tools'
@@ -170,7 +171,7 @@ describe.skipIf(KEY === undefined)('the assistant editing, against the real mode
         }
         return ran
       }
-      const conv: Conversation = { id: 'e', email: 'eval@x', name: 'Eval', title: '', mode: 'auto', createdAt: 0, messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: 0, busy: false, stopping: false }
+      const conv: Conversation = { id: 'e', email: 'eval@x', name: 'Eval', title: '', mode: 'auto', model: DEFAULT_MODEL.id, createdAt: 0, messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: 0, busy: false, stopping: false }
       const events: AssistantEvent[] = []
       let rounds = 0
       await runTurn(
@@ -181,6 +182,7 @@ describe.skipIf(KEY === undefined)('the assistant editing, against the real mode
           instructions,
           tools: [...TOOLS, ...editorTools],
           mode: 'auto',
+          model: DEFAULT_MODEL,
           maxRounds: EDIT_ROUNDS,
           silent: (n) => names.has(n),
           talk: async (request, onText) => {

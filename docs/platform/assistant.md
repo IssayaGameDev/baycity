@@ -1,4 +1,4 @@
-# Assistant (ADR 0192, ADR 0195)
+# Assistant (ADR 0192, ADR 0195, ADR 0199)
 
 An AI helper in the hosted editor: it answers "how do I…", investigates what looks broken by reading the repository,
 and drafts GitHub issues and comments that the person files with a click. **Assistant mode reads and reports only**
@@ -10,11 +10,12 @@ through the editor's actions (ADR 0195, *Modes* below). No mode writes a file, c
 | File | |
 | --- | --- |
 | `routes.ts` | `createAssistant({ repoRoot, stateDir, limitUsd?, talk?, github?, now? }): { handle, sweep }` — the routes below; `claudeTalk(apiKey)` the real model call; `contextOf`; `editorToolsOf`, `runOfAnswer`, `DECLINED` |
-| `agent.ts` | `runTurn(conv, text, context, { instructions, tools, mode, maxRounds?, silent?, talk, run, budget }, emit)`: the loop; `MODEL`, `AssistantMode`, `EDIT_ROUNDS`, `Conversation`, `AssistantEvent`, `Shown` |
+| `agent.ts` | `runTurn(conv, text, context, { instructions, tools, mode, model, maxRounds?, silent?, talk, run, budget }, emit)`: the loop; `AssistantMode`, `EDIT_ROUNDS`, `Conversation`, `AssistantEvent`, `Shown`, `Talk` (its request carries the model's id) |
+| `models.ts` | `MODELS: AssistantModel[]` (`{ id, label, prices }`), `DEFAULT_MODEL`, `modelOf(id)` |
 | `tools.ts` | `TOOLS` (the model's tool list), `createToolRunner({ files, github, nextDraftId })`, `activityOf`, `Draft` |
 | `repoFiles.ts` | `createRepoFiles(root)`: `list`, `read`, `search`; `cleanPath`, `looksSecret`, `Refused` |
 | `github.ts` | `createGitHub({ token, repo, fetch? })`: `searchIssues`, `issue`, `createIssue`, `comment`; `repoOfRemote` |
-| `budget.ts` | `createBudget({ file, limit, now? })`: `spent`, `add`; `costOf(usage)`, `HAIKU_4_5_PRICES` |
+| `budget.ts` | `createBudget({ file, limit, now? })`: `spent`, `add`; `costOf(usage, prices)`, `Prices` |
 | `sessions.ts` | `createSessionStore(dir)`: `list`, `load`, `save`, `remove`, `sweep`; `titleOf`, `SESSION_DAYS` |
 
 Wired in `server.ts`: `createAssistant({ repoRoot, stateDir })` → `ApiOptions.assistant`, asked after the login
@@ -22,12 +23,12 @@ Wired in `server.ts`: `createAssistant({ repoRoot, stateDir })` → `ApiOptions.
 
 | Route (signed-in user) | |
 | --- | --- |
-| `GET /api/assistant` | `{ ready, why?, github, spent, limit, modes }` — `modes` all three for an email in `assistant-editors`, else `['assistant']` |
+| `GET /api/assistant` | `{ ready, why?, github, spent, limit, modes, models? }` — `modes` all three for an email in `assistant-editors`, else `['assistant']`; `models` (`{ id, label, prices: { input, output } }[]`, the default first) for those emails only |
 | `GET /api/assistant/chats` | `{ chats: { id, title, mode, lastUsed }[] }` — the person's saved sessions, the latest used first (ADR 0197) |
 | `POST /api/assistant/chats` | `{ id }` (32 hex); 503 without a key |
-| `GET /api/assistant/chats/:id` | `{ shown, filed, busy, title, mode }` — to draw it again; opening it is using it |
+| `GET /api/assistant/chats/:id` | `{ shown, filed, busy, title, mode, model }` — to draw it again; opening it is using it |
 | `DELETE /api/assistant/chats/:id` | 204: gone from memory and disk, its waiting calls answered |
-| `POST /api/assistant/chats/:id/say` | `{ text ≤ 8000, context, mode?, tools? }` → server-sent events `text` / `activity` / `draft` / `spent` / `call` / `error` / `done`, each `{ kind, … }`; keepalive 15 s. A turn runs to its end whether or not the tab stays. An editing mode not open to the person: 403 |
+| `POST /api/assistant/chats/:id/say` | `{ text ≤ 8000, context, mode?, tools?, model? }` → server-sent events `text` / `activity` / `draft` / `spent` / `call` / `error` / `done`, each `{ kind, … }`; keepalive 15 s. A turn runs to its end whether or not the tab stays. An editing mode, or a model but the default, not open to the person: 403; a model not in `MODELS`: 400; no model: the default |
 | `POST /api/assistant/chats/:id/result/:call` | the tab's answer to a `call`: `{ outcome: ActionOutcome }` or `{ declined: true }`, ≤ 2 MB (a picture) → 204; 404 for no such call waiting |
 | `POST /api/assistant/chats/:id/stop` | 204: `stopping`, every waiting call answered — the turn ends at its next step |
 | `POST /api/assistant/chats/:id/file/:draft` | files an issue or posts a comment → `{ url }`; once per draft; body + `\n\n---\nRaised by <name> in the editor.` (the server's line, not the model's) |
@@ -41,7 +42,8 @@ a `.tmp` and a rename; one with nothing said yet is not written. Without viewpor
 not kept]`). Read back when first asked for; out of memory after `IDLE_MS` 6 h silent, on disk until **30 days unused**
 (`SESSION_DAYS`, by the file's time) — swept at start and hourly. The sweep measures them all: past
 `SESSION_WARN_BYTES` (1 GB) the status carries `storage: { bytes, warnAt }` for the people who edit, and the server
-logs it. `title` is the first message's first words (`titleOf`, ≤ 48); `mode` the last message's.
+logs it. `title` is the first message's first words (`titleOf`, ≤ 48); `mode` and `model` the last message's — a file
+without a model, or with one no longer in `MODELS`, opens on the default.
 
 **Instructions**, at the repository's root, each mode's whole system prompt: `ASSISTANT.md` for Assistant mode (ADR
 0193) — its rules, where it looks (`docs/INDEX.md` first), how it answers — and `ASSISTANT-EDIT.md` for Confirm and Auto
@@ -49,18 +51,29 @@ logs it. `title` is the first message's first words (`titleOf`, ≤ 48); `mode` 
 how that mode behaves. Read from the checkout for every turn (`INSTRUCTIONS_FILE`, `EDIT_INSTRUCTIONS_FILE`); missing:
 the turn refused naming it, and Assistant mode's missing is `ready: false`.
 
-**Model** `claude-haiku-4-5-20251001` (Kodjo's call: the cheaper, in every mode), `MAX_TOKENS` 2048, `MAX_ROUNDS` 12
-calls a turn, `EDIT_ROUNDS` 30 in an editing mode.
+**Models** (`models.ts`, ADR 0199, Kodjo's calls): Haiku 4.5 for everyone, the default; the emails in
+`assistant-editors` pick per message, and may change at any message — the conversation goes to the new model as it
+is, and its first call there writes the cache again.
+
+| Label | Id | Input | Output | Cache write | Cache read |
+| --- | --- | --- | --- | --- | --- |
+| Haiku 4.5 | `claude-haiku-4-5-20251001` | 1 | 5 | 1.25 | 0.10 |
+| Sonnet 5.5 | `claude-sonnet-5-5` | 2 | 10 | 2.50 | 0.20 |
+| Opus 5.5 | `claude-opus-5-5` | 4 | 20 | 5 | 0.20 |
+| Fable 5.1 | `claude-fable-5-1` | 10 | 50 | 12.50 | 0.25 |
+
+USD a million tokens, Anthropic's list in October 2026. `MAX_TOKENS` 2048, `MAX_ROUNDS` 12 calls a turn, `EDIT_ROUNDS` 30
+in an editing mode, whichever the model.
 System prompt and tools carry cache points, and so does the newest message (3 of 4). An earlier turn's tool results
 older than 8 messages go back trimmed (`forModel`); this turn's never — a model that loses an id it read makes one up.
 
 **Eval** (`tools/editor/src/assistant/assistant.eval.test.ts`, ADR 0196): six fixed prompts, each on a fresh small
-level, through `runTurn`, the real model and the editor's actions in Auto: model calls, tool calls, refusals, cost, and
+level, through `runTurn`, the real model (the default) and the editor's actions in Auto: model calls, tool calls, refusals, cost, and
 whether the level ended as asked. Skipped unless `ASSISTANT_EVAL=1` and `ANTHROPIC_API_KEY` are set.
 
-**Budget** $1 a person a UTC day (Kodjo's call): `costOf` at Haiku 4.5's rates (input 1, output 5, cache write 1.25,
-cache read 0.1 USD a million tokens), counted after every model call, kept in `stateDir/assistant-spend.json`. Spent:
-no new turn; ran out mid-turn: the turn ends with its tool calls answered.
+**Budget** $1 a person a UTC day (Kodjo's call), whichever the model: `costOf` at the rates of the model that answered
+(the table above), counted after every model call, kept in `stateDir/assistant-spend.json`. Spent: no new turn; ran out
+mid-turn: the turn ends with its tool calls answered.
 
 **Tools** — read and report:
 
@@ -101,7 +114,7 @@ ssh root@2.28.227.20 'echo you@example.com > /var/lib/editor-server/assistant-ed
 | File | |
 | --- | --- |
 | `assistantDock.ts` | `createAssistantDock(stage, { context, playing })`: the round button (`.asst-fab`) at `#stage`'s bottom right and the panel (`.asst-panel`) it opens above; hidden while playing; the pop-out; the context channel; `answerLinks` for the chat tabs it opened; the close beacon on `pagehide` |
-| `chatWindow.ts` | `createChatWindow({ root, chatId?, context, onPopOut?, onClose?, link? })`: the chat — one for the panel and the tab; the Chats menu, the mode dropdown, the change card, Stop |
+| `chatWindow.ts` | `createChatWindow({ root, chatId?, context, onPopOut?, onClose?, link? })`: the chat — one for the panel and the tab; the Chats menu, the model and mode dropdowns, the change card, Stop |
 | `editorLink.ts` | `EditorLink { tools, begin, run, describe, end }`, `EditorTool`; `remoteLink(editorTab)` over `BroadcastChannel('mp-assistant-link')` — all a chat tab of its own loads |
 | `editorLinkLocal.ts` | `localLink(editorActions)`, `toolsOf` (reads and edits, never `view`), `describeCall`, `answerLinks(tab, editorActions)` |
 | `page.ts` + `assistant.html` | the chat in a tab of its own: `/assistant.html#chat=<id>&from=<tab>` |
@@ -114,6 +127,7 @@ ssh root@2.28.227.20 'echo you@example.com > /var/lib/editor-server/assistant-ed
 | a conversation | made on the first message (or on pop-out), by id; the server's, kept until deleted or 30 days unused (ADR 0197) |
 | the Chats menu | the header's `.asst-chats`, the session's title: *New chat*, then the saved ones by title and age (`listChats`), the latest first — a row opens one (`showChat`: drawn again, its mode set), its trash deletes it once asked again in the row (`deleteChat`). Locked while busy |
 | the size warning | `status.storage`: a line in the chat that saved chats are past the warning |
+| the model | a dropdown left of the mode (`.asst-modelpick`, ADR 0199): each of `status.models` by label, with its prices in and out; shown when the server lists two or more; starts on the first, a saved chat opens on its last; sent as `model` with every message; any message may change it; locked while busy |
 | a message | `context()` first: `game`, `level` (qualified), `prefab`, `selection` (≤ 12, `name (Component, …)`), `problems` (the notices' last 8 warnings and errors) — sent beside the text, which the model sees in `<editor>` tags |
 | the window | the intro; you / answer (Markdown, redrawn at most once a frame as it streams) / activity (`› Reading …`) / draft card (*File it* / *Post it* → `Filed ↗`, refused without GitHub); `$x of $1.00 today`; Enter sends, Shift+Enter a line |
 | pop-out | ↗: `window.open` the tab with the id and this tab's token, the panel emptied — the conversation is the tab's now. The tab asks for the editor's context over `BroadcastChannel('mp-assistant-context')` before each message, addressed to that token, waiting 250 ms, else the last it heard. A conversation still answering when it moves is waited for (`busy`), then drawn |

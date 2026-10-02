@@ -1,6 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 
 import { costOf, type Budget, type Usage } from './budget'
+import type { AssistantModel } from './models'
 import { activityOf, type Draft, type ToolRun } from './tools'
 
 /**
@@ -12,8 +13,6 @@ import { activityOf, type Draft, type ToolRun } from './tools'
  * asking for it by id — the same person, so only they can.
  */
 
-/** The cheaper model, Kodjo's call. */
-export const MODEL = 'claude-haiku-4-5-20251001'
 /** Model calls in one turn at most: a search, a read, another, an answer — and a stop before it runs away. */
 export const MAX_ROUNDS = 12
 /** The same in the modes that edit (ADR 0195): reading the scene, a change or several, a look at the result. */
@@ -67,7 +66,7 @@ export type AssistantEvent =
 
 /** What a turn needs of a model call: the finished message, its text streamed out as it comes. */
 export type Talk = (
-  request: { readonly system: Anthropic.TextBlockParam[]; readonly tools: Anthropic.Tool[]; readonly messages: Anthropic.MessageParam[] },
+  request: { readonly model: string; readonly system: Anthropic.TextBlockParam[]; readonly tools: Anthropic.Tool[]; readonly messages: Anthropic.MessageParam[] },
   onText: (delta: string) => void,
 ) => Promise<{ readonly content: readonly Anthropic.ContentBlock[]; readonly usage: Usage; readonly stop_reason: string | null }>
 
@@ -79,6 +78,8 @@ export interface Conversation {
   title: string
   /** The mode its last message was sent in, kept with it. */
   mode: AssistantMode
+  /** The model its last message was answered by, an id of `MODELS` (ADR 0199). */
+  model: string
   readonly createdAt: number
   readonly messages: Anthropic.MessageParam[]
   readonly shown: Shown[]
@@ -131,6 +132,8 @@ export interface TurnDeps {
   /** Every tool this turn: the server's, and in an editing mode the editor's actions (ADR 0195). */
   readonly tools: readonly Anthropic.Tool[]
   readonly mode: AssistantMode
+  /** Who answers, and at what prices its calls are counted (ADR 0199). */
+  readonly model: AssistantModel
   /** Model calls this turn at most; `MAX_ROUNDS` when absent. */
   readonly maxRounds?: number
   /** Tools whose activity the tab draws itself — the editor's, which it describes in its own words. */
@@ -173,11 +176,11 @@ export const runTurn = async (conv: Conversation, text: string, context: EditorC
     for (let round = 0; round < rounds; round++) {
       if (conv.stopping) break
       let said = ''
-      const reply = await deps.talk({ system, tools, messages: forModel(conv.messages, merged === null ? before : before - 1) }, (delta) => {
+      const reply = await deps.talk({ model: deps.model.id, system, tools, messages: forModel(conv.messages, merged === null ? before : before - 1) }, (delta) => {
         said += delta
         emit({ kind: 'text', text: delta })
       })
-      deps.budget.add(conv.email, costOf(reply.usage))
+      deps.budget.add(conv.email, costOf(reply.usage, deps.model.prices))
       emit({ kind: 'spent', spent: deps.budget.spent(conv.email), limit: deps.budget.limit })
       const content = reply.content.map(asParam).filter((b): b is Anthropic.ContentBlockParam => b !== null)
       conv.messages.push({ role: 'assistant', content })

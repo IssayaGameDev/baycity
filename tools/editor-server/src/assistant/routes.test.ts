@@ -229,6 +229,33 @@ describe('the editing modes (ADR 0195)', () => {
     await s.close()
   })
 
+  it('offers the models only to the emails in assistant-editors, and answers each message with the one picked (ADR 0199)', async () => {
+    const closed = await serve(renamer().talk)
+    expect(await (await fetch(`${closed.at}/api/assistant`)).json()).not.toHaveProperty('models')
+    const { id: theirs } = (await (await closed.post('/api/assistant/chats')).json()) as { id: string }
+    expect((await closed.post(`/api/assistant/chats/${theirs}/say`, { text: 'hi', model: 'claude-opus-5-5' })).status).toBe(403)
+    await closed.close()
+
+    const requests: Parameters<Talk>[0][] = []
+    const talk: Talk = async (request, onText) => {
+      requests.push(request)
+      onText('ok')
+      return { content: [text('ok')], usage: { input_tokens: 10, output_tokens: 10 }, stop_reason: 'end_turn' }
+    }
+    const s = await serve(talk, 'ada@x.com')
+    const status = (await (await fetch(`${s.at}/api/assistant`)).json()) as { models: { id: string; label: string; prices: { input: number; output: number } }[] }
+    expect(status.models.map((m) => m.label)).toEqual(['Haiku 4.5', 'Sonnet 5.5', 'Opus 5.5', 'Fable 5.1'])
+    expect(status.models[0]).toEqual({ id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', prices: { input: 1, output: 5 } })
+    const { id } = (await (await s.post('/api/assistant/chats')).json()) as { id: string }
+    await (await s.post(`/api/assistant/chats/${id}/say`, { text: 'one' })).text()
+    await (await s.post(`/api/assistant/chats/${id}/say`, { text: 'two', model: 'claude-opus-5-5' })).text()
+    expect(requests.map((r) => r.model), 'the default, then the pick, mid-chat').toEqual(['claude-haiku-4-5-20251001', 'claude-opus-5-5'])
+    expect(requests[1]!.messages, 'the conversation so far goes to the new model').toHaveLength(3)
+    expect(((await (await fetch(`${s.at}/api/assistant/chats/${id}`)).json()) as { model: string }).model).toBe('claude-opus-5-5')
+    expect((await s.post(`/api/assistant/chats/${id}/say`, { text: 'three', model: 'claude-nope' })).status).toBe(400)
+    await s.close()
+  })
+
   it('gives the model a picture of the viewport as an image', async () => {
     const shot = defineShot()
     const { talk, requests } = renamer()

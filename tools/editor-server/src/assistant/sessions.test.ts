@@ -37,6 +37,7 @@ const conversation = (over: Partial<Conversation> = {}): Conversation => ({
   name: 'Ada',
   title: 'Rename the box',
   mode: 'confirm',
+  model: 'claude-sonnet-5-5',
   createdAt: 1,
   messages: [{ role: 'user', content: 'Rename the box' }],
   shown: [{ kind: 'you', text: 'Rename the box' }],
@@ -55,6 +56,7 @@ describe('the session store', () => {
     const back = store.load('ada@x.com', 'a'.repeat(32))
     expect(back?.title).toBe('Rename the box')
     expect(back?.mode).toBe('confirm')
+    expect(back?.model).toBe('claude-sonnet-5-5')
     expect(back?.filed.get('d1')).toBe('https://github.com/o/r/issues/1')
     expect(back?.busy).toBe(false)
     expect(store.load('bob@x.com', 'a'.repeat(32))).toBeNull()
@@ -69,6 +71,19 @@ describe('the session store', () => {
     expect(store.list('ada@x.com').map((s) => s.title)).toEqual(['new', 'old'])
     expect(store.remove('ada@x.com', '1'.repeat(32))).toBe(true)
     expect(store.list('ada@x.com').map((s) => s.title)).toEqual(['new'])
+  })
+
+  it('opens a session saved before models were picked, or with one no longer offered, on the default (ADR 0199)', () => {
+    const dir = join(state, 'chats')
+    const store = createSessionStore(dir)
+    store.save(conversation())
+    const person = readdirSync(dir)[0]!
+    const file = join(dir, person, `${'a'.repeat(32)}.json`)
+    const { model: _model, ...older } = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+    writeFileSync(file, JSON.stringify(older))
+    expect(store.load('ada@x.com', 'a'.repeat(32))?.model).toBe('claude-haiku-4-5-20251001')
+    writeFileSync(file, JSON.stringify({ ...older, model: 'claude-gone-1' }))
+    expect(store.load('ada@x.com', 'a'.repeat(32))?.model).toBe('claude-haiku-4-5-20251001')
   })
 
   it('keeps no picture of the viewport', () => {
