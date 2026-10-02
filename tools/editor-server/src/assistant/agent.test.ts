@@ -1,9 +1,9 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { describe, expect, it } from 'vitest'
 
-import { runTurn, type AssistantEvent, type Conversation, type Talk } from './agent'
+import { runTurn, type AssistantEvent, type AssistantMode, type Conversation, type Talk } from './agent'
 import { createBudget } from './budget'
-import type { ToolRun } from './tools'
+import { TOOLS, type ToolRun } from './tools'
 
 /**
  * The assistant's turn (ADR 0192): the model and its tools in a loop until it answers, streamed, counted against the
@@ -29,12 +29,18 @@ const scripted = (replies: (readonly Anthropic.ContentBlock[])[]): { talk: Talk;
   return { talk, seen, systems }
 }
 
-const chat = (): Conversation => ({ id: 'c', email: 'ada@x.com', name: 'Ada', messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: 0, busy: false })
+const chat = (): Conversation => ({ id: 'c', email: 'ada@x.com', name: 'Ada', messages: [], shown: [], drafts: new Map(), filed: new Map(), lastUsed: 0, busy: false, stopping: false })
 
-const turn = async (talk: Talk, run: (name: string, input: Record<string, unknown>) => Promise<ToolRun>, conv = chat(), limit = 1) => {
+const turn = async (talk: Talk, run: (name: string, input: Record<string, unknown>) => Promise<ToolRun>, conv = chat(), limit = 1, mode: AssistantMode = 'assistant', text = 'Why does the hazard not kill?') => {
   const events: AssistantEvent[] = []
   const budget = createBudget({ file: null, limit })
-  await runTurn(conv, 'Why does the hazard not kill?', { game: 'keyboard', level: 'World 1', selection: ['Lava (Collider, Hazard)'] }, { instructions: 'Answer from the docs.', talk, run, budget }, (e) => events.push(e))
+  await runTurn(
+    conv,
+    text,
+    { game: 'keyboard', level: 'World 1', selection: ['Lava (Collider, Hazard)'] },
+    { instructions: 'Answer from the docs.', tools: TOOLS, mode, silent: (n) => n === 'rename_object', talk, run, budget },
+    (e) => events.push(e),
+  )
   return { events, conv, budget }
 }
 
@@ -55,7 +61,7 @@ describe('a turn', () => {
     // What the person was looking at went with the message.
     const first = seen[0]![0]!
     const firstText = typeof first.content === 'string' ? first.content : (first.content[0] as Anthropic.TextBlockParam).text
-    expect(firstText).toContain('<editor>\ngame: keyboard\nlevel: World 1\nselected: Lava (Collider, Hazard)\n</editor>')
+    expect(firstText).toContain('<editor>\nmode: assistant\ngame: keyboard\nlevel: World 1\nselected: Lava (Collider, Hazard)\n</editor>')
     // The tool's answer went back as the result of that call.
     expect(JSON.stringify(seen[1]!.at(-1))).toContain('"tool_use_id":"t1"')
     expect(conv.shown.map((s) => s.kind)).toEqual(['you', 'assistant', 'activity', 'assistant'])
@@ -87,5 +93,65 @@ describe('a turn', () => {
     expect(events.at(-1)).toEqual({ kind: 'error', message: 'The assistant failed: overloaded' })
     expect(conv.messages).toEqual([])
     expect(conv.busy).toBe(false)
+  })
+})
+
+describe('a turn that edits (ADR 0195)', () => {
+  it('ends where the person says no: the rest of the round is answered, not run, and the model is not asked again', async () => {
+    const { talk, seen } = scripted([[use('t1', 'rename_object', { id: 'n:a', name: 'X' }), use('t2', 'rename_object', { id: 'n:b', name: 'Y' })], [text('never said')]])
+    const ran: string[] = []
+    const { events, conv } = await turn(
+      talk,
+      async (_name, input) => {
+        ran.push(String(input.id))
+        return { result: 'declined', isError: true, ends: true }
+      },
+      chat(),
+      1,
+      'confirm',
+    )
+    expect(ran, 'only the first is asked about').toEqual(['n:a'])
+    expect(seen).toHaveLength(1)
+    expect(events.at(-1)).toEqual({ kind: 'done' })
+    const results = conv.messages.at(-1)!.content as Anthropic.ToolResultBlockParam[]
+    expect(results.map((r) => [r.tool_use_id, r.content])).toEqual([
+      ['t1', 'declined'],
+      ['t2', 'Not run: the person ended this turn.'],
+    ])
+  })
+
+  it('takes the next message onto the results it ended on, one user turn', async () => {
+    const conv = chat()
+    await turn(scripted([[use('t1', 'rename_object', { id: 'n:a' })]]).talk, async () => ({ result: 'declined', isError: true, ends: true }), conv, 1, 'confirm')
+    const next = scripted([[text('Understood.')]])
+    await turn(next.talk, async () => ({ result: 'r' }), conv, 1, 'confirm', 'Make it blue instead')
+    const roles = conv.messages.map((m) => m.role)
+    expect(roles).toEqual(['user', 'assistant', 'user', 'assistant'])
+    const joined = conv.messages[2]!.content as Anthropic.ContentBlockParam[]
+    expect(joined.map((b) => b.type)).toEqual(['tool_result', 'text'])
+    expect((joined[1] as Anthropic.TextBlockParam).text).toContain('Make it blue instead')
+  })
+
+  it('stops at the next step once the person says stop', async () => {
+    const conv = chat()
+    const { talk, seen } = scripted([[use('t1', 'rename_object', { id: 'n:a' })], [text('never said')]])
+    await turn(
+      talk,
+      async () => {
+        conv.stopping = true
+        return { result: 'renamed' }
+      },
+      conv,
+      1,
+      'auto',
+    )
+    expect(seen, 'no model call after the stop').toHaveLength(1)
+  })
+
+  it('leaves the activity of an editor action to the tab, and keeps it for a tab the chat moves to', async () => {
+    const { talk } = scripted([[use('t1', 'rename_object', { id: 'n:a' })], [text('Done.')]])
+    const { events, conv } = await turn(talk, async () => ({ result: 'ok' }), chat(), 1, 'auto')
+    expect(events.some((e) => e.kind === 'activity')).toBe(false)
+    expect(conv.shown.some((s) => s.kind === 'activity' && s.text === 'Rename object')).toBe(true)
   })
 })

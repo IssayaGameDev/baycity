@@ -85,16 +85,19 @@ export const activityOf = (name: string, input: Record<string, unknown>): string
     case 'draft_comment':
       return `Drafting a comment on #${String(input.number ?? '')}`
     default:
-      return name
+      // An editor action (ADR 0195): its name, as words.
+      return name.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
   }
 }
 
 export interface ToolRun {
-  /** What goes back to the model. */
-  readonly result: string
+  /** What goes back to the model: text, or blocks — a picture of the viewport and its words (ADR 0195). */
+  readonly result: string | Exclude<Anthropic.ToolResultBlockParam['content'], string | undefined>
   readonly isError?: boolean
   /** A draft for the person, when the tool made one. */
   readonly draft?: Draft
+  /** The turn ends after this: the person said no to the change, or stop (ADR 0195). */
+  readonly ends?: boolean
 }
 
 export const createToolRunner = (deps: { readonly files: RepoFiles; readonly github: GitHub | null; readonly nextDraftId: () => string }) => {

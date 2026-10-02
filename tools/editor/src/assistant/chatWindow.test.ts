@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { sseParser } from './assistantApi'
 import { createChatWindow } from './chatWindow'
+import type { EditorLink } from './editorLink'
 import { escapeHtml } from './markdown'
 
 /**
@@ -98,5 +99,133 @@ describe('a turn in the chat', () => {
     await settle()
     expect(root.querySelector('.asst-err')!.textContent).toBe('The assistant is not set up on this server yet.')
     expect(root.querySelector<HTMLTextAreaElement>('.asst-in')!.disabled).toBe(true)
+  })
+})
+
+describe('the editing modes (ADR 0195)', () => {
+  const sse = (events: object[]): string => events.map((e) => `event: ${(e as { kind: string }).kind}\ndata: ${JSON.stringify(e)}\n\n`).join('')
+  const CALL = { kind: 'call', call: { id: 'k1', name: 'rename_object', input: { id: 'n:a', name: 'Crate' } } }
+
+  /** A server whose turn asks the tab to run one action and waits for its answer, as the real one does. */
+  const serve = (modes: readonly string[]) => {
+    const answers: unknown[] = []
+    const says: Record<string, unknown>[] = []
+    let release = (): void => {}
+    vi.stubGlobal('requestAnimationFrame', (fn: () => void) => setTimeout(fn, 0))
+    vi.stubGlobal('fetch', async (url: string, init?: { method?: string; body?: string }) => {
+      if (url === '/api/assistant') return new Response(JSON.stringify({ ready: true, github: true, spent: 0, limit: 1, modes }))
+      if (url === '/api/assistant/chats' && init?.method === 'POST') return new Response(JSON.stringify({ id: 'a'.repeat(32) }))
+      if (url.endsWith('/say')) {
+        says.push(JSON.parse(init?.body ?? '{}') as Record<string, unknown>)
+        const gate = new Promise<void>((r) => (release = r))
+        const enc = new TextEncoder()
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            async start(c) {
+              c.enqueue(enc.encode(sse([CALL])))
+              await gate
+              c.enqueue(enc.encode(sse([{ kind: 'done' }])))
+              c.close()
+            },
+          }),
+        )
+      }
+      if (url.includes('/result/')) {
+        answers.push(JSON.parse(init?.body ?? '{}'))
+        release()
+        return new Response(null, { status: 204 })
+      }
+      return new Response('{}', { status: 404 })
+    })
+    return { answers, says }
+  }
+
+  /** An editor that renames, and says what it ran and which turn it was in. */
+  const editor = () => {
+    const ran: unknown[] = []
+    const turns: string[] = []
+    const link: EditorLink = {
+      tools: async () => [{ name: 'rename_object', description: 'Rename an object.', input_schema: { type: 'object' }, edits: true }],
+      begin: async (label) => void turns.push(`begin ${label}`),
+      run: async (name, input) => {
+        ran.push([name, input])
+        return { ok: true, result: null }
+      },
+      describe: async () => 'Rename object — id: “Box”; name: Crate',
+      end: async () => void turns.push('end'),
+    }
+    return { link, ran, turns }
+  }
+  afterEach(() => vi.unstubAllGlobals())
+  const settle = () => new Promise((r) => setTimeout(r, 20))
+
+  const start = async (modes: readonly string[], withEditor = true) => {
+    const server = serve(modes)
+    const ed = editor()
+    const root = document.createElement('div')
+    document.body.replaceChildren(root)
+    createChatWindow({ root, context: async () => ({}), ...(withEditor ? { link: ed.link } : {}) })
+    await settle()
+    const sendText = async (text: string) => {
+      const input = root.querySelector<HTMLTextAreaElement>('.asst-in')!
+      input.value = text
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+      await settle()
+      await settle()
+    }
+    const pick = (label: string) => [...root.querySelectorAll<HTMLButtonElement>('.asst-mode')].find((b) => b.textContent === label)!.click()
+    return { root, server, ed, sendText, pick }
+  }
+
+  it('shows the modes only when the server opens them and there is an editor to change', async () => {
+    expect((await start(['assistant'])).root.querySelector<HTMLElement>('.asst-modes')!.hidden).toBe(true)
+    expect((await start(['assistant', 'confirm', 'auto'], false)).root.querySelector<HTMLElement>('.asst-modes')!.hidden).toBe(true)
+    expect((await start(['assistant', 'confirm', 'auto'])).root.querySelector<HTMLElement>('.asst-modes')!.hidden).toBe(false)
+  })
+
+  it('in Confirm asks before the change, runs it on Apply, and makes the prompt one undo', async () => {
+    const { root, server, ed, sendText, pick } = await start(['assistant', 'confirm', 'auto'])
+    pick('Confirm')
+    await sendText('Rename the box to Crate')
+    expect(server.says[0]).toMatchObject({ mode: 'confirm', tools: [{ name: 'rename_object', description: 'Rename an object.', input_schema: { type: 'object' } }] })
+    expect(root.querySelector('.asst-change-t')!.textContent).toBe('Rename object — id: “Box”; name: Crate')
+    expect(ed.ran, 'nothing runs before the click').toEqual([])
+    root.querySelector<HTMLButtonElement>('.asst-change .asst-file')!.click()
+    await settle()
+    await settle()
+    expect(ed.ran).toEqual([['rename_object', { id: 'n:a', name: 'Crate' }]])
+    expect(server.answers).toEqual([{ outcome: { ok: true, result: null } }])
+    expect(ed.turns).toEqual(['begin assistant: Rename the box to Crate', 'end'])
+  })
+
+  it('in Confirm answers no on Don’t, and runs nothing', async () => {
+    const { root, server, ed, sendText, pick } = await start(['assistant', 'confirm', 'auto'])
+    pick('Confirm')
+    await sendText('Rename the box')
+    root.querySelector<HTMLButtonElement>('.asst-dont')!.click()
+    await settle()
+    await settle()
+    expect(ed.ran).toEqual([])
+    expect(server.answers).toEqual([{ declined: true }])
+    expect(root.querySelector('.asst-change .asst-note')!.textContent).toBe('Not done — say what you want instead')
+  })
+
+  it('in Auto runs the change without asking, and says what it did', async () => {
+    const { root, server, ed, sendText, pick } = await start(['assistant', 'confirm', 'auto'])
+    pick('Auto')
+    await sendText('Rename the box')
+    await settle()
+    expect(root.querySelector('.asst-change')).toBeNull()
+    expect(ed.ran).toHaveLength(1)
+    expect(server.answers).toHaveLength(1)
+    expect([...root.querySelectorAll('.asst-act')].map((n) => n.textContent)).toContain('Rename object — id: “Box”; name: Crate')
+  })
+
+  it('sends no tools in Assistant mode', async () => {
+    const { server, sendText } = await start(['assistant', 'confirm', 'auto'])
+    void sendText('How do I rename?')
+    await settle()
+    expect(server.says[0]).toMatchObject({ mode: 'assistant' })
+    expect(server.says[0]!.tools).toBeUndefined()
   })
 })

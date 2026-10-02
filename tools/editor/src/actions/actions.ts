@@ -145,6 +145,11 @@ export interface EditorActions {
   readonly list: () => readonly Action[]
   /** Run one by name. `turn` for an agent's prompt; absent, the person's own. */
   readonly run: (name: string, input: unknown, turn?: Turn | null) => Promise<ActionOutcome>
+  /** An agent's prompt begins: what its actions change gathers as one undo entry, made when it ends. */
+  readonly startTurn: (label: string) => Turn
+  readonly endTurn: (turn: Turn) => void
+  /** The name the Hierarchy shows for the object with this id, or `null` when there is none. */
+  readonly nameOf: (id: string) => string | null
 }
 
 /** A `refKey` read back: `n:<id>`, `t:<table>:<id>`, `i:<owner>:<node>`. `null` for anything else. */
@@ -226,6 +231,14 @@ export const createEditorActions = (host: ActionHost, actions: readonly Action[]
 
   return {
     list: () => actions,
+    startTurn: (label) => host.history.startTurn(label),
+    endTurn: (turn) => host.history.endTurn(turn),
+    nameOf: (id) => {
+      const ref = parseRef(id)
+      const d = host.doc()
+      const i = ref === null || d === null ? null : d.indexOfRef(ref)
+      return i === null || d === null ? null : d.label(i)
+    },
     run: async (name, input, turn = null) => {
       const action = byName.get(name)
       if (action === undefined) return { ok: false, error: `no action '${name}'` }
