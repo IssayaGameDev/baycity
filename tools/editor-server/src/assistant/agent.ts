@@ -25,7 +25,12 @@ export const EDIT_ROUNDS = 30
  */
 export type AssistantMode = 'assistant' | 'confirm' | 'auto'
 export const ASSISTANT_MODES: readonly AssistantMode[] = ['assistant', 'confirm', 'auto']
-export const MAX_TOKENS = 2048
+/** Most a reply may write: room for a model that sends many calls at once. Only what is written is paid for. */
+export const MAX_TOKENS = 8192
+/** A call whose reply was cut off at `MAX_TOKENS` before it was whole: not run, and what to do instead. */
+export const CUT_OFF = 'Not run: your reply was cut off at its length limit before its calls were complete. Make fewer calls at once.'
+/** A call nothing answered — a reply that stopped for another reason, or a conversation saved with one. */
+export const UNANSWERED = 'Not run: the turn ended before this call was answered.'
 /** A conversation nobody has spoken in for this long is dropped. */
 export const IDLE_MS = 6 * 60 * 60 * 1000
 /**
@@ -126,6 +131,29 @@ export const forModel = (messages: readonly Anthropic.MessageParam[], turnStart:
     return { role: m.role, content }
   })
 
+/**
+ * The messages with every tool call answered, as the API wants them: a call the next message has no result for gets
+ * one, `UNANSWERED`, at that message's front — or in a message of its own when none follows. A conversation saved
+ * with one unanswered (a reply cut off, before that was handled) is otherwise one the API refuses for good.
+ */
+export const answered = (messages: readonly Anthropic.MessageParam[]): Anthropic.MessageParam[] => {
+  const out = [...messages]
+  for (let n = 0; n < out.length; n++) {
+    const m = out[n]!
+    if (m.role !== 'assistant' || typeof m.content === 'string') continue
+    const next = out[n + 1]
+    const blocks: Anthropic.ContentBlockParam[] = next?.role !== 'user' ? [] : typeof next.content === 'string' ? [{ type: 'text', text: next.content }] : next.content
+    const have = new Set(blocks.flatMap((b) => (b.type === 'tool_result' ? [b.tool_use_id] : [])))
+    const missing = m.content.flatMap((b): Anthropic.ToolResultBlockParam[] =>
+      b.type === 'tool_use' && !have.has(b.id) ? [{ type: 'tool_result', tool_use_id: b.id, content: UNANSWERED, is_error: true }] : [],
+    )
+    if (missing.length === 0) continue
+    if (next?.role === 'user') out[n + 1] = { role: 'user', content: [...missing, ...blocks] }
+    else out.splice(n + 1, 0, { role: 'user', content: missing })
+  }
+  return out
+}
+
 export interface TurnDeps {
   /** How it behaves and where it looks: `ASSISTANT.md`, the system prompt (ADR 0193). */
   readonly instructions: string
@@ -159,6 +187,8 @@ export const runTurn = async (conv: Conversation, text: string, context: EditorC
   conv.busy = true
   conv.stopping = false
   conv.lastUsed = now()
+  // A call an earlier turn left unanswered is answered now, so the API takes the conversation.
+  conv.messages.splice(0, conv.messages.length, ...answered(conv.messages))
   // Where the turn began: a failed one is taken back out, so the next starts from a conversation the API accepts.
   const before = conv.messages.length
   const said0 = `${contextBlock(context, deps.mode)}\n\n${text}`
@@ -186,28 +216,36 @@ export const runTurn = async (conv: Conversation, text: string, context: EditorC
       conv.messages.push({ role: 'assistant', content })
       if (said !== '') conv.shown.push({ kind: 'assistant', text: said })
       const uses = reply.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
-      if (uses.length === 0 || reply.stop_reason !== 'tool_use') break
+      if (uses.length === 0) break
       const results: Anthropic.ToolResultBlockParam[] = []
       // The person said no, or stop: what is left of this round is not run, and the turn ends with it answered.
       let ended = false
-      for (const use of uses) {
-        if (ended || conv.stopping) {
-          ended = true
-          results.push({ type: 'tool_result', tool_use_id: use.id, content: 'Not run: the person ended this turn.', is_error: true })
-          continue
+      if (reply.stop_reason !== 'tool_use') {
+        // Its calls may be half-written: none is run, every one is answered. Cut off at its length, the model goes
+        // again, told to make fewer; stopped for anything else, the turn ends there.
+        const cut = reply.stop_reason === 'max_tokens'
+        for (const use of uses) results.push({ type: 'tool_result', tool_use_id: use.id, content: cut ? CUT_OFF : UNANSWERED, is_error: true })
+        ended = !cut
+      } else {
+        for (const use of uses) {
+          if (ended || conv.stopping) {
+            ended = true
+            results.push({ type: 'tool_result', tool_use_id: use.id, content: 'Not run: the person ended this turn.', is_error: true })
+            continue
+          }
+          const input = typeof use.input === 'object' && use.input !== null ? (use.input as Record<string, unknown>) : {}
+          const activity = activityOf(use.name, input)
+          if (deps.silent?.(use.name) !== true) emit({ kind: 'activity', text: activity })
+          conv.shown.push({ kind: 'activity', text: activity })
+          const ran = await deps.run(use.name, input)
+          if (ran.draft !== undefined) {
+            conv.drafts.set(ran.draft.id, ran.draft)
+            conv.shown.push({ kind: 'draft', draft: ran.draft })
+            emit({ kind: 'draft', draft: ran.draft })
+          }
+          results.push({ type: 'tool_result', tool_use_id: use.id, content: ran.result, ...(ran.isError === true ? { is_error: true } : {}) })
+          if (ran.ends === true) ended = true
         }
-        const input = typeof use.input === 'object' && use.input !== null ? (use.input as Record<string, unknown>) : {}
-        const activity = activityOf(use.name, input)
-        if (deps.silent?.(use.name) !== true) emit({ kind: 'activity', text: activity })
-        conv.shown.push({ kind: 'activity', text: activity })
-        const ran = await deps.run(use.name, input)
-        if (ran.draft !== undefined) {
-          conv.drafts.set(ran.draft.id, ran.draft)
-          conv.shown.push({ kind: 'draft', draft: ran.draft })
-          emit({ kind: 'draft', draft: ran.draft })
-        }
-        results.push({ type: 'tool_result', tool_use_id: use.id, content: ran.result, ...(ran.isError === true ? { is_error: true } : {}) })
-        if (ran.ends === true) ended = true
       }
       conv.messages.push({ role: 'user', content: results })
       if (ended || conv.stopping) break
