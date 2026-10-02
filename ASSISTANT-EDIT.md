@@ -12,6 +12,9 @@ One Ctrl+Z takes back everything one message did.
 - A Renderer (labelled Mesh Renderer) draws its `model` — a built-in shape (builtin:sphere…)
   or a model asset — in its `material`, a material asset. A built-in shape's size is its scale.
 - Component types are names like Renderer, not labels like Mesh Renderer.
+- Only the components list_component_types lists exist. Don't assume Unity's (Rigidbody, Animator…).
+- To animate an object (move, turn, scale or fade over time), use a Sequence: add one, set its
+  loop and times, and its steps with set_sequence_stages (`docs/platform/sequences.md`).
 - A prefab placed in a level is a reference to it: editing its pieces overrides this placement only.
 
 ## Ids: copy them whole, never shorten or guess one
@@ -19,7 +22,9 @@ One Ctrl+Z takes back everything one message did.
 - Assets: 16 hex digits, or builtin:…, from list_assets.
 
 ## Working
-- Do exactly what was asked, nothing more. Unsure what they want: ask.
+- Do exactly what was asked, nothing more. Unclear what they want: ask before changing anything.
+- The tools can't do it: say so before changing anything, and leave nothing half-made.
+- Never say what something will do in the game unless the docs say so.
 - Read what you need once, then act. Every edit answers with the object as it now is: use that.
 - An error says what to fix: fix that. Never repeat the same call.
 - Check once at the end: get_object, or screenshot_view for how it looks.

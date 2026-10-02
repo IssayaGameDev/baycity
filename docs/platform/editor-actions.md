@@ -12,12 +12,13 @@ Auto modes run them (ADR 0195, `assistant.md`); an MCP endpoint is not built (Ko
 | `editActions.ts` | `EDIT_ACTIONS` |
 | `views.ts` | `objectView`, `viewOf(ctx, id)`, `assetView`, `describeSpec`, `builtInModels`, `assetIdHint`: one shape for a read and an edit's answer |
 | `hints.ts` | `closest`, `didYouMean`, `componentTypeHint`: what a refusal says to put right |
+| `sequenceActions.ts` | `SEQUENCE_ACTIONS`: a Sequence's stages (ADR 0198) |
 | `index.ts` | `EDITOR_ACTIONS` (reads, views, edits) |
 | `installed.ts` | `installEditorActions`, `editorActions()`: the tab's set, built at the end of `main.ts` over its own host |
 | `../undoSteps.ts` | `levelSteps`, `squashTransforms`, `assetSteps`, `planUndo`, `planRedo`: every undo's, not only a turn's |
 
 ```ts
-interface ActionDef<I> { name: string; summary: string; effect: 'read' | 'view' | 'edit'; input: Schema<I>; run: (ctx: ActionCtx, input: I) => unknown }
+interface ActionDef<I> { name: string; summary: string; effect: 'read' | 'view' | 'edit'; input: Schema<I>; inputFor?: (host: ActionHost) => JsonSchema; run: (ctx: ActionCtx, input: I) => unknown }
 type ActionOutcome = { ok: true; result: unknown } | { ok: false; error: string }
 ```
 
@@ -72,7 +73,7 @@ finished turns (`dropWhere`).
 | --- | --- | --- |
 | `get_editor` | read | game, level, prefab open, selected ids |
 | `get_scene { under? }` | read | objects in Hierarchy order: id, name, parent, components, `inherited`, `prefab`, `enabled: false`, `heldBy`; ≤ 400 |
-| `get_object { id }` | read | transform (rotation in degrees), children, each component's id, type, enabled, overrides, every field with defaults |
+| `get_object { id }` | read | transform (rotation in degrees), children, each component's id, type, enabled, overrides, every field with defaults; a step's `target` as the child's object id |
 | `list_component_types { type? }` | read | the game's types and labels; with `type`, its fields: `kind`, default, range, options |
 | `list_assets { kind?, search? }` | read | the built-in shapes, then assets the document may use (`mayUse`, ADR 0161); ≤ 300 |
 | `get_asset { asset }` | read | a material's shader, values, parameters; a data asset's type, fields, declarations |
@@ -86,16 +87,17 @@ finished turns (`dropWhere`).
 | `rename_object { id, name }` | edit | `setName` |
 | `reparent_object { id, parent, index? }` | edit | `canReparent`, then `reframedLocal` (the Hierarchy drag's: world pose kept) |
 | `set_transform { id, position?, rotation?, scale? }` | edit | local, degrees in, rounded and cleaned as the gizmo writes |
-| `add_component { id, type }` / `remove_component` | edit | `canAdd`; a shared type not adopted is refused, named |
-| `set_component_fields { id, componentId, values }` | edit | each key declared; references and assets resolved and refused as the Inspector does; a built-in's collider locked; stages refused; whole component `checkParams`'d |
+| `add_component { id, type }` / `remove_component` | edit | `canAdd`; a shared type not adopted is refused, named. Its tool input offers `type` as the game's own types only (`inputFor`, `EditorActions.schemaOf`, ADR 0198) |
+| `set_component_fields { id, componentId, values }` | edit | each key declared; references and assets resolved and refused as the Inspector does; a built-in's collider locked; stages sent to `set_sequence_stages`; whole component `checkParams`'d |
 | `set_component_enabled` / `set_object_enabled` / `move_component` | edit | the Inspector's ticks and Move up / down; an inherited component's order refused |
 | `set_material_values { asset, values }` | edit | by shader parameter, tagged by its kind; textures refused as the Inspector does (`editMaterial`) |
 | `set_data_fields { asset, values }` | edit | by declared field, whole asset `readParams`'d (`editData`) |
+| `set_sequence_stages { id, componentId, stages }` | edit | a Sequence's stages whole, by `Doc.setSequenceStages` — an override on a placement's copy; ids minted where none is given; a step's `target` a direct child's object id, stored as its id; checked by `stagesProblem`. Its tool input spells every step kind, timing and ease (ADR 0198) |
 
 Not actions: what undo cannot take back — files (an asset, folder or level made, renamed, moved, deleted; uploads),
 Apply to prefab, Save as prefab, adopting a shared component — stays out until each can be undone as one (Kodjo's
-call). Not built yet: a sequence's stages, a material's shader, environment, network bounds, camera see-through,
-prefab enter/leave, Play.
+call). Not built yet: a material's shader, environment, network bounds, camera see-through, prefab enter/leave,
+Play.
 
 **A new editor feature adds its action**: `defineAction` in `editActions.ts` or `readActions.ts`, through the same calls
 as its control, listed in `EDITOR_ACTIONS`, tested in `actions.test.ts`.

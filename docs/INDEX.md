@@ -247,5 +247,6 @@ why matters.
 | [0195](adr/0195-the-assistant-edits-in-two-modes.md) | The assistant edits, in Confirm and Auto |
 | [0196](adr/0196-editing-instructions-and-tools-that-answer.md) | Editing instructions of their own, and tools that answer |
 | [0197](adr/0197-the-assistants-chats-are-kept.md) | The assistant's chats are kept, and its mode sits by Send |
+| [0198](adr/0198-the-assistant-writes-sequences.md) | The assistant writes sequences, and adds only the game's components |
 
 `Design archive/` holds superseded design material and is not maintained.

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { createRegistry, defineComponent, ENGINE_COMPONENTS } from '@mp/components'
+import { createRegistry, defineComponent, ENGINE_COMPONENTS, Sequence, type Registry } from '@mp/components'
 import { applyBatch, COLLIDER, refKey, type Level, type Op } from '@mp/content'
 import { vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
@@ -36,7 +36,7 @@ const level = (): Level => ({
   ],
 })
 
-const rig = (extra: readonly Action[] = []) => {
+const rig = (extra: readonly Action[] = [], registry: Registry = REG) => {
   const lv = level()
   const submits: { ops: Op[] }[] = []
   const repaints: (readonly Op[])[] = []
@@ -44,7 +44,7 @@ const rig = (extra: readonly Action[] = []) => {
   const held = new Map<string, string>()
   /** The viewport's picture, as the shell would take it; `null` while Play runs. */
   let shot: Screenshot | null = { mediaType: 'image/jpeg', data: 'AAAA', width: 512, height: 288 }
-  let doc: Doc = levelDoc(lv, REG)
+  let doc: Doc = levelDoc(lv, registry)
   const historyHost: HistoryHost = {
     doc: () => doc,
     rootDoc: () => doc,
@@ -362,5 +362,70 @@ describe('a refusal names what would have worked', () => {
     expect(JSON.stringify(all.result)).not.toContain('fields')
     const one = (await actions.run('list_component_types', { type: 'Spinner' })) as { result: { fields: Record<string, { kind: string }> } }
     expect(Object.keys(one.result.fields)).toEqual(['speed', 'axis', 'target'])
+  })
+})
+
+describe('a sequence’s steps (ADR 0198)', () => {
+  const WITH_SEQUENCE = createRegistry([...ENGINE_COMPONENTS, Spinner, Sequence])
+  /** A Sequence on the box, and its id. */
+  const withSequence = async () => {
+    const r = rig([], WITH_SEQUENCE)
+    const added = (await r.actions.run('add_component', { id: 'n:a', type: 'Sequence' })) as { result: { componentId: string } }
+    return { ...r, seq: added.result.componentId }
+  }
+  const move = (y: number) => ({ kind: 'move', to: { x: 0, y, z: 0 }, timing: { by: 'seconds', seconds: 0.4 }, ease: 'out-quad' })
+
+  it('sets the stages whole, minting the ids it is not given', async () => {
+    const { lv, actions, seq } = await withSequence()
+    const r = await actions.run('set_sequence_stages', { id: 'n:a', componentId: seq, stages: [{ steps: [move(2)] }, { steps: [move(0)] }] })
+    expect(r.ok).toBe(true)
+    const stages = lv.nodes[0]!.components.find((c) => c.id === seq)!.params.stages as { id: string; steps: { id: string; kind: string; to: { y: number } }[] }[]
+    expect(stages.map((st) => st.steps.map((x) => x.to.y))).toEqual([[2], [0]])
+    expect(stages.every((st) => /^[0-9a-f]{8}$/.test(st.id) && st.steps.every((x) => /^[0-9a-f]{8}$/.test(x.id)))).toBe(true)
+  })
+
+  it('takes a child as its object id, and reads it back as one', async () => {
+    const { lv, actions, seq } = await withSequence()
+    expect((await actions.run('set_sequence_stages', { id: 'n:a', componentId: seq, stages: [{ steps: [{ ...move(1), target: 'n:c' }] }] })).ok).toBe(true)
+    const stored = lv.nodes[0]!.components.find((c) => c.id === seq)!.params.stages as { steps: { target?: string }[] }[]
+    expect(stored[0]!.steps[0]!.target).toBe('c')
+    const read = (await actions.run('get_object', { id: 'n:a' })) as { result: { components: { componentId: string; fields: { stages: { steps: { target: string }[] }[] } }[] } }
+    expect(read.result.components.find((c) => c.componentId === seq)!.fields.stages[0]!.steps[0]!.target).toBe('n:c')
+    const notMine = await actions.run('set_sequence_stages', { id: 'n:a', componentId: seq, stages: [{ steps: [{ ...move(1), target: 'n:b' }] }] })
+    expect(notMine).toEqual({ ok: false, error: 'stages[0].steps[0].target: n:b is not one of this object’s own children' })
+  })
+
+  it('refuses a step the content would refuse, saying where', async () => {
+    const { actions, seq } = await withSequence()
+    const r = await actions.run('set_sequence_stages', { id: 'n:a', componentId: seq, stages: [{ steps: [{ ...move(1), ease: 'bouncy' }] }] })
+    expect(r).toEqual({ ok: false, error: 'stages[0].steps[0].ease: expected one of the easing names' })
+  })
+
+  it('is one undo in a turn, with its other fields', async () => {
+    const { lv, actions, history, seq } = await withSequence()
+    const before = structuredClone(lv)
+    const turn = history.startTurn('assistant: bounce')
+    await actions.run('set_component_fields', { id: 'n:a', componentId: seq, values: { loop: 'yoyo' } }, turn)
+    await actions.run('set_sequence_stages', { id: 'n:a', componentId: seq, stages: [{ steps: [move(2)] }] }, turn)
+    history.endTurn(turn)
+    history.undo()
+    expect(lv).toEqual(before)
+  })
+
+  it('points set_component_fields at it for the stages', async () => {
+    const { actions, seq } = await withSequence()
+    const r = await actions.run('set_component_fields', { id: 'n:a', componentId: seq, values: { stages: [] } })
+    expect(r).toEqual({ ok: false, error: 'stages is a sequence’s steps: set them with set_sequence_stages' })
+  })
+})
+
+describe('the component types a model may add', () => {
+  it('are the game’s own, as a fixed list in add_component’s input', () => {
+    const { actions } = rig()
+    const add = actions.list().find((a) => a.name === 'add_component')!
+    const schema = actions.schemaOf(add) as { properties: { type: { enum?: string[] } } }
+    expect(schema.properties.type.enum).toContain('Renderer')
+    expect(schema.properties.type.enum).toContain('Spinner')
+    expect(schema.properties.type.enum).not.toContain('Rigidbody')
   })
 })

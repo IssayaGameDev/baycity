@@ -15,7 +15,7 @@ export const toolsOf = (actions: EditorActions): EditorTool[] =>
   actions
     .list()
     .filter((a) => a.effect !== 'view')
-    .map((a) => ({ name: a.name, description: a.summary, input_schema: a.input, edits: a.effect === 'edit' }))
+    .map((a) => ({ name: a.name, description: a.summary, input_schema: actions.schemaOf(a), edits: a.effect === 'edit' }))
 
 /** A read, in the words the chat shows while it happens. */
 const READS: Readonly<Record<string, string>> = {

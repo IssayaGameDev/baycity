@@ -31,7 +31,7 @@ export const describeSpec = (spec: ParamSpec): Record<string, unknown> => {
     case 'list':
       return { ...base, item: Object.fromEntries(Object.entries(spec.item).map(([k, s]) => [k, describeSpec(s)])) }
     case 'stages':
-      return { ...base, note: 'a sequence’s steps: edited in the Inspector, not by actions yet' }
+      return { ...base, note: 'stages of steps — move, turn, scale, fade, collider, enabled, wait — set with set_sequence_stages; stages play one after another, the steps in a stage together' }
     case 'color':
       return { ...base, default: spec.default, ...(spec.optional === true ? { optional: 'an empty string is automatic' } : {}) }
     default:
@@ -51,6 +51,21 @@ const shownValue = (ctx: ActionCtx, doc: Doc, i: number, spec: ParamSpec | undef
   if (spec?.kind === 'nodeRef' && typeof value === 'string') {
     const j = doc.refTarget(i, value)
     return j === null ? { missing: value } : ctx.idAt(j)
+  }
+  if (spec?.kind === 'stages' && Array.isArray(value)) {
+    // A step's target as the child's object id, as set_sequence_stages takes it.
+    return value.map((s: { steps?: unknown }) =>
+      typeof s === 'object' && s !== null && Array.isArray(s.steps)
+        ? {
+            ...s,
+            steps: s.steps.map((step: { target?: unknown }) => {
+              if (typeof step !== 'object' || step === null || typeof step.target !== 'string' || step.target === '') return step
+              const j = doc.stepTargetOf(i, step.target)
+              return j === null ? { ...step, target: { missing: step.target } } : { ...step, target: ctx.idAt(j) }
+            }),
+          }
+        : s,
+    )
   }
   if (spec?.kind === 'componentRef' && typeof value === 'object' && value !== null) {
     const r = value as { node?: unknown; component?: unknown }
