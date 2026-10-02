@@ -104,10 +104,12 @@ export default defineConfig({
   // A game's own files too: the live session writes those every few seconds, and the editor does not import them.
   server: { port: 5176, watch: { ignored: ['**/content/*/game.json', '**/content/*/levels/**'] } },
   // `app/`, not Vite's default `assets/`: the built editor's own files, kept apart from content's (`/content/`, ADR 0161).
-  // Two pages: the editor, and the assistant's chat in a tab of its own (ADR 0192).
+  // Three pages: the editor, the assistant's chat in a tab of its own (ADR 0192), and the admin page (ADR 0200).
   build: {
     target: 'es2022',
     assetsDir: 'app',
-    rollupOptions: { input: { main: join(ROOT, 'tools/editor/index.html'), assistant: join(ROOT, 'tools/editor/assistant.html') } },
+    rollupOptions: {
+      input: { main: join(ROOT, 'tools/editor/index.html'), assistant: join(ROOT, 'tools/editor/assistant.html'), admin: join(ROOT, 'tools/editor/admin.html') },
+    },
   },
 })

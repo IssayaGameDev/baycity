@@ -36,6 +36,7 @@ const rig = (over: Partial<ToolbarState> = {}) => {
     showingAll: null,
     history: { undo: null, redo: null, depth: { undo: 0, redo: 0 } },
     unseen: 0,
+    admin: false,
     ...over,
   }
   const calls: string[] = []
@@ -45,6 +46,7 @@ const rig = (over: Partial<ToolbarState> = {}) => {
     undo: () => calls.push('undo'),
     redo: () => calls.push('redo'),
     toggleLog: () => calls.push('log'),
+    openAdmin: () => calls.push('admin'),
     setGizmo: (g) => {
       calls.push(`gizmo:${g}`)
       s.gizmo = g
@@ -75,7 +77,7 @@ describe('the top bar', () => {
     const r = rig()
     expect(r.bar.querySelector('.tb-game-l')!.textContent, 'the game button says where you are (ADR 0162)').toBe('Keyboard › World_1')
     expect(r.bar.querySelector<HTMLElement>('.tb-crumb')!.hidden, 'no way back from a level').toBe(true)
-    expect([...r.bar.querySelectorAll('button')].map((b) => b.title).filter((t) => t !== 'back to the level')).toEqual([
+    expect([...r.bar.querySelectorAll('button')].filter((b) => !b.hidden).map((b) => b.title)).toEqual([
       'Games: every game and its levels, and who is in each',
       'Motion: run the level’s sequences in the viewport, without entering play',
       'Play',
@@ -87,6 +89,16 @@ describe('the top bar', () => {
     r.titled(r.bar, 'Motion').click()
     r.titled(r.bar, 'Games').click()
     expect(r.calls).toEqual(['play:true', 'motion:true', 'games'])
+  })
+
+  it('shows Admin to an admin alone, and opens the admin page (ADR 0200)', () => {
+    const plain = rig()
+    expect(plain.titled(plain.bar, 'Admin').hidden).toBe(true)
+    const r = rig({ admin: true })
+    const admin = r.titled(r.bar, 'Admin')
+    expect(admin.hidden).toBe(false)
+    admin.click()
+    expect(r.calls).toEqual(['admin'])
   })
 
   it('reads level › prefab inside a prefab, and the level is the way back', () => {

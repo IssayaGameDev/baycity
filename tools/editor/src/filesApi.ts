@@ -147,6 +147,8 @@ export interface Me {
   maxUploadBytes: number
   /** Game name → where its playable page is, for Play to frame (ADR 0086). Relative to this origin or absolute. */
   games: Record<string, string>
+  /** Only for an admin, `true` (ADR 0200): the top bar's link to the admin page. */
+  admin?: true
 }
 
 const getJson = async <T>(url: string): Promise<T> => {

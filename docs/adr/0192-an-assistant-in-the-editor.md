@@ -2,7 +2,7 @@
 
 Status: accepted; its instructions moved to `ASSISTANT.md` by ADR 0193; read and report only in Assistant mode, with
 editing modes beside it, by ADR 0195; its chats kept past their tab by ADR 0197; its model picked per message, for
-the people who edit, by ADR 0199. Kodjo's calls: inside the editor; Claude on Kodjo's API key, the cheaper model; read and report
+the people who edit, by ADR 0199; its $1 a day the admin page's to change, by ADR 0200. Kodjo's calls: inside the editor; Claude on Kodjo's API key, the cheaper model; read and report
 only — it teaches and helps, and never touches the scene, the levels or the code; it drafts issues and the person
 files them; $1 a person a day; a round button at the viewport's bottom right, with the chat movable to a tab of its
 own; a chat lasting as long as its tab; Anthropic's library on the server, marked and DOMPurify in the editor.

@@ -158,7 +158,7 @@ describe.skipIf(KEY === undefined)('the assistant editing, against the real mode
       const editorTools = editorToolsOf(toolsOf(r.actions).map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema })))
       const names = new Set(editorTools.map((t) => t.name))
       const serverTools = createToolRunner({ files, github: null, nextDraftId: () => 'd1' })
-      const budget = createBudget({ file: null, limit: 5 })
+      const budget = createBudget({ file: null, limitOf: () => 5 })
       const turn = r.actions.startTurn('eval')
       let calls = 0
       let refused = 0

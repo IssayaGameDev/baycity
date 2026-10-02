@@ -44,7 +44,7 @@ const turn = async (
   model: AssistantModel = DEFAULT_MODEL,
 ) => {
   const events: AssistantEvent[] = []
-  const budget = createBudget({ file: null, limit })
+  const budget = createBudget({ file: null, limitOf: () => limit })
   await runTurn(
     conv,
     text,

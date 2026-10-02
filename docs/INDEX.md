@@ -31,6 +31,7 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 | [editor-actions.md](platform/editor-actions.md) | The editor's actions as data: the rules in `ctx.edit`, a turn's undo, the list |
 | [editor-server.md](platform/editor-server.md) | The content API, Access identity, live documents, session commits, upload, deploy |
 | [assistant.md](platform/assistant.md) | The editor's AI assistant: read and report, its tools, keys, budget, the chat and its tab |
+| [admin.md](platform/admin.md) | The admin role and the admin page: who is one, the routes, what the page sets |
 | [content-sync.md](platform/content-sync.md) | The live mirror, `content-root.ts`, the `@content` alias, `.env` |
 | [tooling.md](platform/tooling.md) | share, bots, netsim |
 | [budgets.md](platform/budgets.md) | The tripwires and how each is measured |
@@ -249,5 +250,6 @@ why matters.
 | [0197](adr/0197-the-assistants-chats-are-kept.md) | The assistant's chats are kept, and its mode sits by Send |
 | [0198](adr/0198-the-assistant-writes-sequences.md) | The assistant writes sequences, and adds only the game's components |
 | [0199](adr/0199-the-assistants-model-is-picked.md) | The assistant's model is picked per message |
+| [0200](adr/0200-an-admin-page.md) | An admin page, for the admins |
 
 `Design archive/` holds superseded design material and is not maintained.

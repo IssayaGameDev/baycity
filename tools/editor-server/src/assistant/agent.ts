@@ -151,9 +151,9 @@ export const runTurn = async (conv: Conversation, text: string, context: EditorC
     emit({ kind: 'error', message: 'Still answering the last message.' })
     return
   }
-  const over = (): boolean => deps.budget.spent(conv.email) >= deps.budget.limit
+  const over = (): boolean => deps.budget.spent(conv.email) >= deps.budget.limitOf(conv.email)
   if (over()) {
-    emit({ kind: 'error', message: `Today's $${deps.budget.limit.toFixed(2)} is used up. The assistant is back tomorrow (UTC).` })
+    emit({ kind: 'error', message: `Today's $${deps.budget.limitOf(conv.email).toFixed(2)} is used up. The assistant is back tomorrow (UTC).` })
     return
   }
   conv.busy = true
@@ -181,7 +181,7 @@ export const runTurn = async (conv: Conversation, text: string, context: EditorC
         emit({ kind: 'text', text: delta })
       })
       deps.budget.add(conv.email, costOf(reply.usage, deps.model.prices))
-      emit({ kind: 'spent', spent: deps.budget.spent(conv.email), limit: deps.budget.limit })
+      emit({ kind: 'spent', spent: deps.budget.spent(conv.email), limit: deps.budget.limitOf(conv.email) })
       const content = reply.content.map(asParam).filter((b): b is Anthropic.ContentBlockParam => b !== null)
       conv.messages.push({ role: 'assistant', content })
       if (said !== '') conv.shown.push({ kind: 'assistant', text: said })
@@ -212,7 +212,7 @@ export const runTurn = async (conv: Conversation, text: string, context: EditorC
       conv.messages.push({ role: 'user', content: results })
       if (ended || conv.stopping) break
       if (over()) {
-        emit({ kind: 'error', message: `Today's $${deps.budget.limit.toFixed(2)} ran out mid-answer. The assistant is back tomorrow (UTC).` })
+        emit({ kind: 'error', message: `Today's $${deps.budget.limitOf(conv.email).toFixed(2)} ran out mid-answer. The assistant is back tomorrow (UTC).` })
         // The model's tool calls were answered, so the conversation stays well-formed for tomorrow.
         return
       }

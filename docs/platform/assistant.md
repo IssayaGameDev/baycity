@@ -15,7 +15,7 @@ through the editor's actions (ADR 0195, *Modes* below). No mode writes a file, c
 | `tools.ts` | `TOOLS` (the model's tool list), `createToolRunner({ files, github, nextDraftId })`, `activityOf`, `Draft` |
 | `repoFiles.ts` | `createRepoFiles(root)`: `list`, `read`, `search`; `cleanPath`, `looksSecret`, `Refused` |
 | `github.ts` | `createGitHub({ token, repo, fetch? })`: `searchIssues`, `issue`, `createIssue`, `comment`; `repoOfRemote` |
-| `budget.ts` | `createBudget({ file, limit, now? })`: `spent`, `add`; `costOf(usage, prices)`, `Prices` |
+| `budget.ts` | `createBudget({ file, limitOf, now? })`: `limitOf`, `spent`, `add`, `today`, `reset`; `createLimits({ file, everyone })`: `everyone`, `own`, `of`, `set`; `isLimit`; `costOf(usage, prices)`, `Prices` |
 | `sessions.ts` | `createSessionStore(dir)`: `list`, `load`, `save`, `remove`, `sweep`; `titleOf`, `SESSION_DAYS` |
 
 Wired in `server.ts`: `createAssistant({ repoRoot, stateDir })` → `ApiOptions.assistant`, asked after the login
@@ -33,6 +33,9 @@ Wired in `server.ts`: `createAssistant({ repoRoot, stateDir })` → `ApiOptions.
 | `POST /api/assistant/chats/:id/stop` | 204: `stopping`, every waiting call answered — the turn ends at its next step |
 | `POST /api/assistant/chats/:id/file/:draft` | files an issue or posts a comment → `{ url }`; once per draft; body + `\n\n---\nRaised by <name> in the editor.` (the server's line, not the model's) |
 | `POST /api/assistant/chats/:id/close` | 204 — the tab's beacon: its waiting calls answered; the session is kept |
+| `GET /api/assistant/admin` | the admin page's view (ADR 0200, `admin.md`): `{ you, everyone, own, people: { email, spent, limit }[] }` — `people` today's spenders and `you`, the most spent first. 403 unless the email is in `admins` |
+| `PUT /api/assistant/admin/limits` | `{ everyone?, own? }` — dollars ≥ 0 (`isLimit`), `own: null` follows everyone's → the view; 400 otherwise |
+| `POST /api/assistant/admin/reset` | `{ email }` — that person's day starts again, nothing spent → the view |
 
 A conversation is its owner's (verified email); anyone else gets 404. A failed turn is rolled back out of it.
 
@@ -71,9 +74,11 @@ older than 8 messages go back trimmed (`forModel`); this turn's never — a mode
 level, through `runTurn`, the real model (the default) and the editor's actions in Auto: model calls, tool calls, refusals, cost, and
 whether the level ended as asked. Skipped unless `ASSISTANT_EVAL=1` and `ANTHROPIC_API_KEY` are set.
 
-**Budget** $1 a person a UTC day (Kodjo's call), whichever the model: `costOf` at the rates of the model that answered
-(the table above), counted after every model call, kept in `stateDir/assistant-spend.json`. Spent: no new turn; ran out
-mid-turn: the turn ends with its tool calls answered.
+**Budget** a limit a person a UTC day, whichever the model: `costOf` at the rates of the model that answered (the
+table above), counted after every model call, kept in `stateDir/assistant-spend.json`. Spent: no new turn; ran out
+mid-turn: the turn ends with its tool calls answered. The limit (ADR 0200) is the admin page's: everyone's — $1 until
+it is set (`limitUsd`, Kodjo's call) — and an admin's own over it, kept in `stateDir/assistant-limits.json`
+(`{ everyone, people }`); `/api/assistant`'s `limit` is the person's. A Reset there starts one person's day again.
 
 **Tools** — read and report:
 

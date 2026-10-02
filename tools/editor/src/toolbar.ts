@@ -10,7 +10,7 @@ import { icon, type IconName } from './icons'
  * | --- | --- |
  * | top bar | the game button, `game › level ▾`, which opens the games window (ADR 0162) — or `game ▾ › level › prefab` inside a
  *   prefab, the level being the way back; Motion, with its
- *   clock, and Play; undo, redo, the bell and who is in the room (ADR 0155) |
+ *   clock, and Play; undo, redo, Admin for an admin (ADR 0200), the bell and who is in the room (ADR 0155) |
  * | viewport, left edge | Move, Rotate, Scale, Face |
  * | viewport, top left | Global / Local; snap and the active tool's increment |
  * | viewport, top right | Grid, Markers, Keys, Reveal — beside the navigation gizmo |
@@ -85,6 +85,8 @@ export interface ToolbarState {
   history: { undo: string | null; redo: string | null; depth: { undo: number; redo: number } }
   /** Errors said since the log was last opened: the bell's count (ADR 0155). */
   unseen: number
+  /** This person is an admin (ADR 0200): the button to the admin page shows. */
+  admin: boolean
 }
 
 export interface ToolbarActions {
@@ -96,6 +98,8 @@ export interface ToolbarActions {
   redo: () => void
   /** Open or close the log of messages under the bell. */
   toggleLog: (anchor: HTMLElement) => void
+  /** Open the admin page in a tab of its own (ADR 0200). */
+  openAdmin: () => void
   setGizmo: (g: GizmoMode) => void
   setSpace: (s: GizmoSpace) => void
   setSnap: (on: boolean) => void
@@ -192,10 +196,13 @@ export const createToolbar = (bar: HTMLElement, overlays: HTMLElement, state: ()
   const redoButton = iconButton('tb-b', 'redo', () => actions.redo())
   const bell = iconButton('tb-b tb-bell', 'bell', () => actions.toggleLog(bell))
   const badge = el('span', 'tb-badge')
+  // Only an admin's (ADR 0200): hidden, not disabled, for everyone else.
+  const adminButton = iconButton('tb-b', 'admin', () => actions.openAdmin())
+  setTitle(adminButton, 'Admin: the assistant’s limits and each person’s day (a tab of its own)')
   /** Who is in the room, filled by `people.ts`: the bar only gives it its place, last. */
   const people = el('div', 'tb-people')
   const end = el('div', 'tb-end')
-  end.append(undoButton, redoButton, el('span', 'tb-sep'), bell, people)
+  end.append(undoButton, redoButton, el('span', 'tb-sep'), adminButton, bell, people)
 
   bar.append(doc, run, end)
 
@@ -280,6 +287,7 @@ export const createToolbar = (bar: HTMLElement, overlays: HTMLElement, state: ()
     badge.textContent = s.unseen > 99 ? '99+' : String(s.unseen)
     if (s.unseen > 0) bell.append(badge)
     else badge.remove()
+    adminButton.hidden = !s.admin
 
     setIcon(playButton, s.playing ? 'stop' : 'play')
     setTitle(playButton, s.playing ? 'Stop' : 'Play')

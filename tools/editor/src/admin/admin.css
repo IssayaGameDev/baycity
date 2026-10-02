@@ -1,0 +1,94 @@
+/* The admin page (ADR 0200): one column, the editor's colours. */
+.adm {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+  color: var(--text, #d5d9e0);
+  font: 13px/1.45 system-ui, sans-serif;
+}
+.adm-h {
+  margin: 0 0 4px;
+  font-size: 20px;
+}
+.adm-h2 {
+  margin: 20px 0 2px;
+  font-size: 15px;
+}
+.adm-d {
+  margin: 0 0 12px;
+  color: var(--dim, #8b929d);
+}
+.adm-note {
+  min-height: 1.45em;
+  color: var(--dim, #8b929d);
+}
+.adm-note.adm-err {
+  color: #f08a7e;
+}
+.adm-limits {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 18px;
+}
+.adm-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.adm-label {
+  color: var(--dim, #8b929d);
+}
+.adm-in {
+  width: 110px;
+  padding: 5px 7px;
+  border: 1px solid var(--line, #34383f);
+  border-radius: 6px;
+  background: var(--panel, #1c1f24);
+  color: var(--text, #d5d9e0);
+  font: inherit;
+}
+.adm-b {
+  padding: 5px 12px;
+  border: 1px solid var(--line, #34383f);
+  border-radius: 6px;
+  background: var(--panel-head, #23272e);
+  color: var(--text, #d5d9e0);
+  font: inherit;
+  cursor: pointer;
+}
+.adm-b:hover {
+  background: var(--hover, #2a2f37);
+}
+.adm-b:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.adm-t {
+  width: 100%;
+  border-collapse: collapse;
+}
+.adm-t th {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line, #34383f);
+  color: var(--dim, #8b929d);
+  font-weight: 500;
+  text-align: left;
+}
+.adm-t td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line, #34383f);
+}
+.adm-who {
+  overflow-wrap: anywhere;
+}
+.adm-num {
+  font-variant-numeric: tabular-nums;
+}
+.adm-you .adm-who {
+  color: var(--accent, #4a8cf7);
+}
+.adm-reset {
+  padding: 3px 10px;
+}

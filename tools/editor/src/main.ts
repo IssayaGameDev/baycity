@@ -1281,6 +1281,7 @@ const toolbar: Toolbar = createToolbar(
     showingAll: hiddenView.any() || hiddenView.showingAll() ? hiddenView.showingAll() : null,
     history: historyView(),
     unseen: notices.unseen(),
+    admin: me?.admin === true,
   }),
   {
     back: prefabs.closePrefab,
@@ -1288,6 +1289,7 @@ const toolbar: Toolbar = createToolbar(
     undo: () => edits.undo(),
     redo: () => edits.redo(),
     toggleLog: (anchor) => notices.toggleLog(anchor),
+    openAdmin: () => void window.open('/admin.html', '_blank', 'noopener'),
     setGizmo: (mode) => tool.setMode(mode),
     setSpace: (space) => tool.setSpace(space),
     setSnap: (on) => {

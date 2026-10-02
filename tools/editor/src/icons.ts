@@ -56,6 +56,7 @@ export type IconName =
   | 'boss'
   | 'component'
   | 'check'
+  | 'admin'
   | 'bell'
   | 'undo'
   | 'redo'
@@ -133,6 +134,7 @@ const PATHS: Record<IconName, string> = {
   death: '<path d="M12 3.5a7.5 7.5 0 0 0-4.5 13.5v3.5h9V17A7.5 7.5 0 0 0 12 3.5z"/><circle cx="9.3" cy="11.5" r="1.5"/><circle cx="14.7" cy="11.5" r="1.5"/><path d="M11 20.5v-2M13 20.5v-2"/>',
   boss: '<path d="M3.5 18.5h17l-1.3-11-4.7 4.5L12 5.5 9.5 12 4.8 7.5z"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  admin: '<path d="M12 3l7.5 3v5.5c0 4.5-3.1 7.9-7.5 9.5-4.4-1.6-7.5-5-7.5-9.5V6z"/><path d="M9 12l2.2 2.2L15.5 10"/>',
   bell: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
   undo: '<path d="M9 7.5 4.5 12 9 16.5"/><path d="M4.5 12H15a4.5 4.5 0 0 1 0 9h-2"/>',
   redo: '<path d="M15 7.5 19.5 12 15 16.5"/><path d="M19.5 12H9a4.5 4.5 0 0 0 0 9h2"/>',

@@ -276,6 +276,67 @@ describe('the editing modes (ADR 0195)', () => {
 
 const defineShot = () => ({ image: { mediaType: 'image/jpeg', data: 'AAAA' }, width: 512, height: 288 })
 
+describe('the admin page’s routes (ADR 0200)', () => {
+  /** A turn costs $0.06 at Haiku's rates: 10 000 tokens in, 10 000 out. */
+  const spender: Talk = async (_request, onText) => {
+    onText('ok')
+    return { content: [text('ok')], usage: { input_tokens: 10_000, output_tokens: 10_000 }, stop_reason: 'end_turn' }
+  }
+  const serve = async () => {
+    const a = createAssistant({ repoRoot: repo, stateDir: state, talk: spender, github })
+    const s = createServer((req, res) => {
+      const email = req.headers['x-user'] === 'bob' ? 'bob@x.com' : 'ada@x.com'
+      void a.handle(req, res, (req.url ?? '').split('?')[0]!, { name: email, email })
+    })
+    await new Promise<void>((r) => s.listen(0, '127.0.0.1', () => r()))
+    const at = `http://127.0.0.1:${(s.address() as AddressInfo).port}`
+    const go = (path: string, init: { method?: string; body?: unknown; as?: 'ada' | 'bob' } = {}) =>
+      fetch(`${at}${path}`, { method: init.method ?? 'GET', headers: { 'x-user': init.as ?? 'ada', 'content-type': 'application/json' }, ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }) })
+    const spend = async (as: 'ada' | 'bob') => {
+      const { id } = (await (await go('/api/assistant/chats', { method: 'POST', as })).json()) as { id: string }
+      await (await go(`/api/assistant/chats/${id}/say`, { method: 'POST', body: { text: 'hi' }, as })).text()
+    }
+    return { go, spend, close: () => new Promise<void>((r) => s.close(() => r())) }
+  }
+
+  it('are only for the emails in admins', async () => {
+    const s = await serve()
+    expect((await s.go('/api/assistant/admin')).status).toBe(403)
+    writeFileSync(join(state, 'admins'), '# admins\nADA@x.com\n')
+    expect((await s.go('/api/assistant/admin')).status).toBe(200)
+    expect((await s.go('/api/assistant/admin', { as: 'bob' })).status).toBe(403)
+    expect((await s.go('/api/assistant/admin/limits', { method: 'PUT', body: { everyone: 99 }, as: 'bob' })).status).toBe(403)
+    await s.close()
+  })
+
+  it('set everyone’s limit and an admin’s own, show each person’s day, and start one again', async () => {
+    writeFileSync(join(state, 'admins'), 'ada@x.com')
+    const s = await serve()
+    await s.spend('bob')
+    const view = await (await s.go('/api/assistant/admin')).json()
+    expect(view).toEqual({
+      you: 'ada@x.com',
+      everyone: 1,
+      own: null,
+      people: [
+        { email: 'bob@x.com', spent: expect.closeTo(0.06, 9), limit: 1 },
+        { email: 'ada@x.com', spent: 0, limit: 1 },
+      ],
+    })
+    const set = await (await s.go('/api/assistant/admin/limits', { method: 'PUT', body: { everyone: 2, own: 20 } })).json()
+    expect(set).toMatchObject({ everyone: 2, own: 20 })
+    expect(await (await s.go('/api/assistant')).json(), 'the chat shows the admin’s own').toMatchObject({ limit: 20 })
+    expect(await (await s.go('/api/assistant', { as: 'bob' })).json(), 'and everyone else’s').toMatchObject({ limit: 2, spent: expect.closeTo(0.06, 9) })
+    expect((await s.go('/api/assistant/admin/limits', { method: 'PUT', body: { everyone: -1 } })).status).toBe(400)
+    const reset = (await (await s.go('/api/assistant/admin/reset', { method: 'POST', body: { email: 'bob@x.com' } })).json()) as { people: { email: string; spent: number }[] }
+    expect(reset.people.find((p) => p.email === 'bob@x.com')).toBeUndefined()
+    expect(await (await s.go('/api/assistant', { as: 'bob' })).json()).toMatchObject({ spent: 0 })
+    const back = await (await s.go('/api/assistant/admin/limits', { method: 'PUT', body: { own: null } })).json()
+    expect(back, 'own taken away: everyone’s').toMatchObject({ own: null, people: [{ email: 'ada@x.com', limit: 2 }] })
+    await s.close()
+  })
+})
+
 describe('the editor’s actions as tools', () => {
   it('keeps what is a tool, and drops a name the server’s own tools have or one that is not a name', () => {
     const tools = editorToolsOf([

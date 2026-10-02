@@ -32,7 +32,7 @@ is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walk
 
 | Route | Body → reply | Gate |
 | --- | --- | --- |
-| `GET /api/me` | `{ user, heartbeatMs, maxUploadBytes, games }` — `games`: name → URL Play frames | |
+| `GET /api/me` | `{ user, heartbeatMs, maxUploadBytes, games, admin? }` — `games`: name → URL Play frames; `admin: true` for an email in `admins` (`ApiOptions.isAdmin`, ADR 0200, `admin.md`) | |
 | `GET /api/status` | `{ pushError }` | |
 | `GET /api/levels` | `[{ name, mode, prefabs? }]` — `name` qualified `<game>/<name>`, `mode` the **folder** it is in, so a file that will not parse still lists with its game (ADR 0108) | |
 | `GET/PUT /api/levels/:game/:name` | level JSON — two segments, because a game is a folder (ADR 0108). GET serves the **live copy** when the level is open; PUT runs `validateLevel(raw)` (structure only, no registry) and makes the game folder on demand, **409** while the level is open live. A name that is not a legal `<game>/<name>` is a 404 | |
@@ -209,7 +209,7 @@ command, `editor.playgorbo.com → localhost:8080`; Access application `Editor` 
 emails, One-time PIN login) and `Sync` (Service Auth, the `content-sync` service token, `content-sync.md`).
 Dashboard names as of setup: Cloudflare One → *Access controls* (applications, service credentials),
 *Integrations → Identity providers* (One-time PIN). Nothing listens publicly. State in `/var/lib/editor-server/`:
-`admin.token`, `hidden.json`, and the assistant's `anthropic.key`, `github.token`, `assistant-spend.json`, `assistant-editors`, `assistant-chats/` (`assistant.md`).
+`admin.token`, `hidden.json`, `admins` (`admin.md`), and the assistant's `anthropic.key`, `github.token`, `assistant-spend.json`, `assistant-limits.json`, `assistant-editors`, `assistant-chats/` (`assistant.md`).
 
 ## Staging game — `dev.playgorbo.com` (ADR 0085)
 

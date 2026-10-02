@@ -66,6 +66,7 @@ beforeEach(async () => {
     liveAssets,
     repoRoot: root,
     identify: async (req) => USERS[String(req.headers['x-user'] ?? '')] ?? null,
+    isAdmin: (user) => user.email === 'ada@x',
     // A player is anyone the login let in: here, anyone with a user header, listed or not.
     identifyPlayer: async (req) => req.headers['x-user'] !== undefined,
     rules: { heartbeatMs: 100, maxUploadBytes: 64 },
@@ -114,6 +115,11 @@ describe('identity', () => {
     const me = await json<{ user: User; heartbeatMs: number }>(await call('ada', 'GET', '/api/me'))
     expect(me.user).toEqual(USERS.ada)
     expect(me.heartbeatMs).toBe(100)
+  })
+
+  it('/api/me says an admin is one, and says nothing of it to anyone else (ADR 0200)', async () => {
+    expect(await json(await call('ada', 'GET', '/api/me'))).toMatchObject({ admin: true })
+    expect(await json(await call('bob', 'GET', '/api/me'))).not.toHaveProperty('admin')
   })
 })
 
