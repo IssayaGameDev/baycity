@@ -1,7 +1,7 @@
 import type Anthropic from '@anthropic-ai/sdk'
 import { describe, expect, it } from 'vitest'
 
-import { runTurn, type AssistantEvent, type AssistantMode, type Conversation, type Talk } from './agent'
+import { forModel, runTurn, type AssistantEvent, type AssistantMode, type Conversation, type Talk } from './agent'
 import { createBudget } from './budget'
 import { TOOLS, type ToolRun } from './tools'
 
@@ -153,5 +153,20 @@ describe('a turn that edits (ADR 0195)', () => {
     const { events, conv } = await turn(talk, async () => ({ result: 'ok' }), chat(), 1, 'auto')
     expect(events.some((e) => e.kind === 'activity')).toBe(false)
     expect(conv.shown.some((s) => s.kind === 'activity' && s.text === 'Rename object')).toBe(true)
+  })
+})
+
+describe('what goes back to the model', () => {
+  const result = (id: string): Anthropic.MessageParam => ({ role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: `result ${id}` }] })
+  const call = (id: string): Anthropic.MessageParam => ({ role: 'assistant', content: [{ type: 'tool_use', id, name: 'list_assets', input: {} }] })
+  const contents = (ms: Anthropic.MessageParam[]): string[] =>
+    ms.flatMap((m) => (typeof m.content === 'string' ? [] : m.content.flatMap((b) => (b.type === 'tool_result' && typeof b.content === 'string' ? [b.content] : []))))
+
+  it('keeps every result of this turn whole however long it runs, and trims an earlier turn’s old ones', () => {
+    const earlier = [call('e1'), result('e1')]
+    const thisTurn = Array.from({ length: 12 }, (_, n) => [call(`t${n}`), result(`t${n}`)]).flat()
+    const sent = contents(forModel([...earlier, { role: 'user', content: 'next' }, ...thisTurn], earlier.length))
+    expect(sent[0]).toBe('[earlier result trimmed — read it again if needed]')
+    expect(sent.slice(1)).toEqual(Array.from({ length: 12 }, (_, n) => `result t${n}`))
   })
 })

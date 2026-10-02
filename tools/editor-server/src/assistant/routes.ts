@@ -112,11 +112,14 @@ export const runOfAnswer = (body: unknown): ToolRun => {
   return { result: JSON.stringify(r ?? null).slice(0, MAX_RESULT_TEXT) }
 }
 
-/** How the assistant behaves and where it looks, at the checkout's root (ADR 0193). */
+/** How the assistant behaves and where it looks, at the checkout's root (ADR 0193): Assistant mode's. */
 export const INSTRUCTIONS_FILE = 'ASSISTANT.md'
+/** The same for the modes that edit, Confirm and Auto (ADR 0195): how the editor's things are built, how to work. */
+export const EDIT_INSTRUCTIONS_FILE = 'ASSISTANT-EDIT.md'
 
 const NOT_SET_UP = 'The assistant is not set up on this server yet.'
-const NO_INSTRUCTIONS = `The assistant has no instructions: ${INSTRUCTIONS_FILE} is missing.`
+const noInstructions = (file: string): string => `The assistant has no instructions: ${file} is missing.`
+const NO_INSTRUCTIONS = noInstructions(INSTRUCTIONS_FILE)
 
 /** A file's text, trimmed; `null` when it is missing or empty. */
 const readText = (file: string): string | null => {
@@ -125,15 +128,16 @@ const readText = (file: string): string | null => {
   return v === '' ? null : v
 }
 
-/** The real model: Claude, streamed. */
-export const claudeTalk =
-  (client: Anthropic): Talk =>
-  async (request, onText) => {
+/** The real model on this API key: Claude, streamed. What the server talks to, and what the eval does. */
+export const claudeTalk = (apiKey: string): Talk => {
+  const client = new Anthropic({ apiKey })
+  return async (request, onText) => {
     const stream = client.messages.stream({ model: MODEL, max_tokens: MAX_TOKENS, system: request.system, tools: request.tools, messages: request.messages })
     stream.on('text', (delta) => onText(delta))
     const message = await stream.finalMessage()
     return { content: message.content, usage: message.usage, stop_reason: message.stop_reason }
   }
+}
 
 const readJson = (req: IncomingMessage, limit = MAX_BODY): Promise<unknown> =>
   new Promise((resolve, reject) => {
@@ -192,7 +196,7 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
   const talkNow = (): Talk | null => {
     if (talk !== null) return talk
     const key = readText(join(opts.stateDir, 'anthropic.key'))
-    if (key !== null) talk = claudeTalk(new Anthropic({ apiKey: key }))
+    if (key !== null) talk = claudeTalk(key)
     return talk
   }
 
@@ -336,8 +340,10 @@ export const createAssistant = (opts: AssistantOptions): Assistant => {
       const editorTools = mode === 'assistant' ? [] : editorToolsOf(body.tools)
       const editorNames = new Set(editorTools.map((t) => t.name))
       const model = talkNow()
-      const instructions = instructionsNow()
-      if (model === null || instructions === null) return send(res, 503, { error: model === null ? NOT_SET_UP : NO_INSTRUCTIONS }), true
+      // Each mode its own system prompt: one that reads and reports, one that edits.
+      const file = mode === 'assistant' ? INSTRUCTIONS_FILE : EDIT_INSTRUCTIONS_FILE
+      const instructions = readText(join(opts.repoRoot, file))
+      if (model === null || instructions === null) return send(res, 503, { error: model === null ? NOT_SET_UP : noInstructions(file) }), true
       res.writeHead(200, SSE_HEADERS)
       const keepalive = setInterval(() => res.write(SSE_KEEPALIVE), 15_000)
       const emit = (e: AssistantEvent): void => {

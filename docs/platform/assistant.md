@@ -9,7 +9,7 @@ through the editor's actions (ADR 0195, *Modes* below). No mode writes a file, c
 
 | File | |
 | --- | --- |
-| `routes.ts` | `createAssistant({ repoRoot, stateDir, limitUsd?, talk?, github?, now? }): { handle, sweep }` — the routes below; `claudeTalk(client)` the real model call; `contextOf`; `editorToolsOf`, `runOfAnswer`, `DECLINED` |
+| `routes.ts` | `createAssistant({ repoRoot, stateDir, limitUsd?, talk?, github?, now? }): { handle, sweep }` — the routes below; `claudeTalk(apiKey)` the real model call; `contextOf`; `editorToolsOf`, `runOfAnswer`, `DECLINED` |
 | `agent.ts` | `runTurn(conv, text, context, { instructions, tools, mode, maxRounds?, silent?, talk, run, budget }, emit)`: the loop; `MODEL`, `AssistantMode`, `EDIT_ROUNDS`, `Conversation`, `AssistantEvent`, `Shown` |
 | `tools.ts` | `TOOLS` (the model's tool list), `createToolRunner({ files, github, nextDraftId })`, `activityOf`, `Draft` |
 | `repoFiles.ts` | `createRepoFiles(root)`: `list`, `read`, `search`; `cleanPath`, `looksSecret`, `Refused` |
@@ -33,14 +33,20 @@ Wired in `server.ts`: `createAssistant({ repoRoot, stateDir })` → `ApiOptions.
 A conversation is its owner's (verified email); anyone else gets 404. Kept in memory: closed by its tab, dropped after
 `IDLE_MS` 6 h silent. A failed turn is rolled back out of the conversation.
 
-**Instructions** `ASSISTANT.md` at the repository's root (ADR 0193), the whole system prompt: its rules, where it
-looks (`docs/INDEX.md` first), how it answers. Change it to change how it behaves. Read from the checkout for every
-turn (`INSTRUCTIONS_FILE`); missing: `ready: false`, the `why` naming it.
+**Instructions**, at the repository's root, each mode's whole system prompt: `ASSISTANT.md` for Assistant mode (ADR
+0193) — its rules, where it looks (`docs/INDEX.md` first), how it answers — and `ASSISTANT-EDIT.md` for Confirm and Auto
+(ADR 0196, Kodjo's call) — how the editor's things are built, the three kinds of ids, how to work. Change one to change
+how that mode behaves. Read from the checkout for every turn (`INSTRUCTIONS_FILE`, `EDIT_INSTRUCTIONS_FILE`); missing:
+the turn refused naming it, and Assistant mode's missing is `ready: false`.
 
 **Model** `claude-haiku-4-5-20251001` (Kodjo's call: the cheaper, in every mode), `MAX_TOKENS` 2048, `MAX_ROUNDS` 12
 calls a turn, `EDIT_ROUNDS` 30 in an editing mode.
-System prompt and tools carry cache points, and so does the newest message (3 of 4); tool results older than 8
-messages go back trimmed.
+System prompt and tools carry cache points, and so does the newest message (3 of 4). An earlier turn's tool results
+older than 8 messages go back trimmed (`forModel`); this turn's never — a model that loses an id it read makes one up.
+
+**Eval** (`tools/editor/src/assistant/assistant.eval.test.ts`, ADR 0196): six fixed prompts, each on a fresh small
+level, through `runTurn`, the real model and the editor's actions in Auto: model calls, tool calls, refusals, cost, and
+whether the level ended as asked. Skipped unless `ASSISTANT_EVAL=1` and `ANTHROPIC_API_KEY` are set.
 
 **Budget** $1 a person a UTC day (Kodjo's call): `costOf` at Haiku 4.5's rates (input 1, output 5, cache write 1.25,
 cache read 0.1 USD a million tokens), counted after every model call, kept in `stateDir/assistant-spend.json`. Spent:
@@ -108,7 +114,7 @@ Built as a second page: `vite.config.ts` `rollupOptions.input` `{ main, assistan
 | --- | --- |
 | the switch | **Assistant · Confirm · Auto** in the header (`.asst-modes`), shown when `status.modes` has more than Assistant and the chat has a `link`; a new chat is in Assistant; locked while busy; each choice says what it does (`MODE_NOTES`) |
 | a message in an editing mode | `link.tools()` (`toolsOf`: the editor's reads and edits — never `select_objects` or `focus_objects`: the selection and the camera stay the person's, Kodjo's call) sent with it; `link.begin('assistant: <text>')` starts a turn, `link.end()` ends it however the turn ends — **one Ctrl+Z for the prompt** (ADR 0194) |
-| a `call` | the server hands the tab an editor action and waits ≤ 15 min for `result`. The tab says it in words (`describeCall`, objects by name), then **Confirm**: an edit waits on a card (`.asst-change`) — *Apply* runs it, *Don't* answers `{ declined: true }` (Kodjo's calls: every change asked; a no ends the prompt). **Auto**, or a read: run at once, the words as activity. A refusal (someone has it selected…) is shown too |
+| a `call` | the server hands the tab an editor action and waits ≤ 15 min for `result`. The tab says it in words (`describeCall`, objects by name), then **Confirm**: an edit waits on a card (`.asst-change`) — *Apply* runs it and the card says *Applied*, or *Not applied — why*, once it has; *Don't* answers `{ declined: true }` (Kodjo's calls: every change asked; a no ends the prompt). **Auto**, or a read: run at once, the words as activity. A refusal (someone has it selected…) is shown too |
 | a no | the model's tool result is `DECLINED`, the rest of the round `Not run`, and the turn ends with no further model call; the next message joins those results in one user turn |
 | Stop | `.asst-stop`, while an editing turn runs: a card waiting is settled *Stopped*; `POST …/stop` |
 | a picture | `screenshot_view`'s result goes to the model as an image block (`runOfAnswer`) |

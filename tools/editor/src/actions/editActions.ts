@@ -1,12 +1,14 @@
 import { readParams, type ParamSpec } from '@mp/components'
-import { PRIMITIVE_LABELS, PRIMITIVE_ORDER, type MaterialAsset, type MaterialValue, type Transform } from '@mp/content'
+import { isBuiltinModel, PRIMITIVE_LABELS, PRIMITIVE_ORDER, type MaterialAsset, type MaterialValue, type Transform } from '@mp/content'
 import { vec3, type Vec3 } from '@mp/core'
 
 import type { Doc } from '../editorDoc'
 import { rootsOf } from '../selection'
 import { roundAngle } from '../snap'
 import { ActionError, defineAction, type ActionCtx } from './actions'
+import { closest, componentTypeHint, didYouMean } from './hints'
 import { anyValue, bool, list, nullable, num, object, oneOf, record, str, vec3 as vec3In } from './schema'
+import { assetIdHint, assetView, viewOf } from './views'
 
 /**
  * The actions that change things (ADR 0194): the core of what a person does to a level or a prefab, and to a
@@ -15,7 +17,13 @@ import { anyValue, bool, list, nullable, num, object, oneOf, record, str, vec3 a
  * Left out on purpose, until each can be undone as one: anything that writes a file (create, rename, move or delete
  * an asset, a folder or a level, an upload), Apply to prefab and Save as prefab, and adding a shared component to the
  * game's list (Kodjo's call). An action asked for one says so rather than half-doing it.
+ *
+ * Each answers with what it changed as a read shows it — the object, its components and their ids; the asset — so the
+ * next call needs no read first. A refusal names what would have worked.
  */
+
+/** Most copies a duplicate answers with whole; past that, their ids. */
+const MAX_VIEWS = 5
 
 const r4 = (n: number): number => Math.round(n * 1e4) / 1e4
 const DEG = Math.PI / 180
@@ -34,15 +42,19 @@ const createObject = defineAction({
   summary: 'Create an empty object or a built-in shape (box, platform, sphere…) at a local position, optionally under a parent and named.',
   effect: 'edit',
   input: object({ kind: oneOf(KINDS, 'empty, or a built-in shape at its preset size') }, { parent: id('the object to put it under; the top level when absent'), position: vec3In('local position in metres; the origin when absent'), name: str('its name') }),
-  run: (ctx, input) =>
-    ctx.edit(`create ${input.kind === 'empty' ? 'empty' : PRIMITIVE_LABELS[input.kind].toLowerCase()}`, (doc) => {
+  run: (ctx, input) => ({
+    object: viewOf(
+      ctx,
+      ctx.edit(`create ${input.kind === 'empty' ? 'empty' : PRIMITIVE_LABELS[input.kind].toLowerCase()}`, (doc) => {
       const parent = input.parent === undefined ? null : ctx.at(input.parent)
       const where = input.position ?? vec3(0, 0, 0)
       const i = input.kind === 'empty' ? doc.placeEmpty(where, parent) : doc.placePrimitive(input.kind, where, parent)
       if (i < 0) throw new ActionError('nowhere to put that here')
       if (input.name !== undefined) doc.setName(i, input.name)
-      return { id: ctx.idAt(i) }
-    }),
+      return ctx.idAt(i)
+      }),
+    ),
+  }),
 })
 
 const placeAsset = defineAction({
@@ -51,14 +63,17 @@ const placeAsset = defineAction({
   effect: 'edit',
   input: object({ asset: str('the asset id of a prefab or a model, from list_assets'), position: vec3In('where, in metres') }, { name: str('its name') }),
   run: async (ctx, input) => {
+    if (isBuiltinModel(input.asset)) throw new ActionError(`${input.asset} is a built-in shape: make one with create_object, kind ${input.asset.slice('builtin:'.length)}`)
+    if (ctx.host.assetEntry(input.asset) === undefined) throw new ActionError(`no asset '${input.asset}'${assetIdHint(ctx, undefined, input.asset)}`)
     const ready = await ctx.host.toPlace(input.asset)
     if ('refused' in ready) throw new ActionError(ready.refused)
-    return ctx.edit('place', (doc) => {
+    const id = ctx.edit('place', (doc) => {
       const i = ready.kind === 'model' ? doc.placeModel(input.asset, input.position) : doc.placePrefab(input.asset, ready.root, input.position)
       if (i < 0) throw new ActionError('that did not place: its prefab may use a component this game does not have')
       if (input.name !== undefined) doc.setName(i, input.name)
-      return { id: ctx.idAt(i) }
+      return ctx.idAt(i)
     })
+    return { object: viewOf(ctx, id) }
   },
 })
 
@@ -84,7 +99,7 @@ const duplicateObjects = defineAction({
   input: object({ ids }),
   run: (ctx, input) => {
     const roots = rootsDeepestFirst(ctx.doc(), input.ids.map(ctx.at))
-    return ctx.edit(roots.length > 1 ? `duplicate ${roots.length}` : 'duplicate', (doc) => {
+    const copies = ctx.edit(roots.length > 1 ? `duplicate ${roots.length}` : 'duplicate', (doc) => {
       const made: number[] = []
       for (const i of roots) {
         const before = doc.count()
@@ -94,8 +109,9 @@ const duplicateObjects = defineAction({
         for (let n = 0; n < made.length; n++) made[n]! += inserted
         made.push(at)
       }
-      return { ids: made.reverse().map(ctx.idAt) }
+      return made.reverse().map(ctx.idAt)
     })
+    return copies.length <= MAX_VIEWS ? { objects: copies.map((c) => viewOf(ctx, c)) } : { ids: copies }
   },
 })
 
@@ -104,7 +120,10 @@ const renameObject = defineAction({
   summary: 'Rename an object. An empty name goes back to the one made from what it is.',
   effect: 'edit',
   input: object({ id: id('the object'), name: str('the new name') }),
-  run: (ctx, input) => ctx.edit('rename', (doc) => void doc.setName(ctx.at(input.id), input.name)),
+  run: (ctx, input) => {
+    ctx.edit('rename', (doc) => void doc.setName(ctx.at(input.id), input.name))
+    return { object: viewOf(ctx, input.id) }
+  },
 })
 
 const reparentObject = defineAction({
@@ -119,7 +138,8 @@ const reparentObject = defineAction({
     if (!doc.canReparent(i, parent)) throw new ActionError('it cannot go there: not inside itself, and not into a prefab’s piece')
     const reframed = ctx.host.reframe(i, parent)
     const last = parent === null ? Array.from({ length: doc.count() }, (_, n) => n).filter((n) => doc.depthOf(n) === 0).length : doc.childCount(parent)
-    return ctx.edit('reparent', (d) => ({ id: ctx.idAt(d.reparent(i, parent, Math.max(0, Math.round(input.index ?? last)), reframed)) }))
+    const moved = ctx.edit('reparent', (d) => ctx.idAt(d.reparent(i, parent, Math.max(0, Math.round(input.index ?? last)), reframed)))
+    return { object: viewOf(ctx, moved) }
   },
 })
 
@@ -128,7 +148,7 @@ const setTransform = defineAction({
   summary: 'Set an object’s local position (metres), rotation (degrees, XYZ) and scale. What is left out stays as it is.',
   effect: 'edit',
   input: object({ id: id('the object') }, { position: vec3In('local position, metres'), rotation: vec3In('local rotation, degrees'), scale: vec3In('local scale; 1 is its own size') }),
-  run: (ctx, input) =>
+  run: (ctx, input) => {
     ctx.edit('transform', (doc) => {
       const i = ctx.at(input.id)
       const now = doc.transformOf(i)
@@ -144,7 +164,9 @@ const setTransform = defineAction({
         ...(one ? {} : { scale: vec3(r4(s.x), r4(s.y), r4(s.z)) }),
       }
       doc.setTransform(i, next)
-    }),
+    })
+    return { object: viewOf(ctx, input.id) }
+  },
 })
 
 const addComponent = defineAction({
@@ -157,14 +179,15 @@ const addComponent = defineAction({
     const i = ctx.at(input.id)
     if (!doc.registry.has(input.type)) {
       if (ctx.host.adoptable().includes(input.type)) throw new ActionError(`${input.type} is a shared component this game has not added: adding one to a game is not done by an action, so a person adds it`)
-      throw new ActionError(`no component type '${input.type}' in this game`)
+      throw new ActionError(`no component type '${input.type}' in this game${componentTypeHint(doc.registry, input.type)}`)
     }
     if (!doc.canAdd(i, input.type)) throw new ActionError(`${input.type} cannot go on this object: it has one already, or it is not one to add by hand`)
-    return ctx.edit('add component', (d) => {
-      const componentId = d.addComponent(i, input.type)
-      if (componentId === null) throw new ActionError(`${input.type} was refused here`)
-      return { componentId }
+    const componentId = ctx.edit('add component', (d) => {
+      const added = d.addComponent(i, input.type)
+      if (added === null) throw new ActionError(`${input.type} was refused here`)
+      return added
     })
+    return { componentId, object: viewOf(ctx, input.id) }
   },
 })
 
@@ -184,7 +207,8 @@ const removeComponent = defineAction({
   run: (ctx, input) => {
     const i = ctx.at(input.id)
     componentOn(ctx.doc(), i, input.componentId)
-    return ctx.edit('remove component', (doc) => void doc.removeComponent(i, input.componentId))
+    ctx.edit('remove component', (doc) => void doc.removeComponent(i, input.componentId))
+    return { object: viewOf(ctx, input.id) }
   },
 })
 
@@ -204,6 +228,9 @@ const storedValue = (ctx: ActionCtx, doc: Doc | null, i: number | null, key: str
       return raw
     case 'asset': {
       if (raw === '' || typeof raw !== 'string') return raw
+      // The built-in shapes a model field offers beside the uploaded ones (ADR 0090): no file holds them.
+      if (spec.of === 'model' && isBuiltinModel(raw)) return raw
+      if (ctx.host.assetEntry(raw) === undefined) throw new ActionError(`${key}: no asset '${raw}'${assetIdHint(ctx, spec.of, raw)}`)
       const why = ctx.host.assetRefusal(spec.of, raw, spec.dataType)
       if (why !== null) throw new ActionError(`${key}: ${why}`)
       return raw
@@ -250,12 +277,16 @@ const setComponentFields = defineAction({
     const patch: Record<string, unknown> = {}
     for (const key of keys) {
       const spec = def.params[key]
-      if (spec === undefined) throw new ActionError(`${c.type} has no field '${key}': its fields are ${Object.keys(def.params).join(', ')}`)
+      if (spec === undefined) {
+        const near = closest(key, Object.keys(def.params))
+        throw new ActionError(`${c.type} has no field '${key}'${near.length > 0 ? didYouMean(near).replace('?', ';') : ':'} its fields are ${Object.keys(def.params).join(', ')}`)
+      }
       patch[key] = storedValue(ctx, doc, i, key, spec, input.values[key])
     }
     // The whole component checked as it would be after, the way a level is when it loads.
     doc.registry.checkParams(c.type, { ...doc.registry.defaults(c.type), ...c.params, ...patch }, c.type)
-    return ctx.edit(`${def.label ?? c.type} ${keys.join(', ')}`, (d) => void d.setParams(i, input.componentId, patch))
+    ctx.edit(`${def.label ?? c.type} ${keys.join(', ')}`, (d) => void d.setParams(i, input.componentId, patch))
+    return { object: viewOf(ctx, input.id) }
   },
 })
 
@@ -267,7 +298,8 @@ const setComponentEnabled = defineAction({
   run: (ctx, input) => {
     const i = ctx.at(input.id)
     componentOn(ctx.doc(), i, input.componentId)
-    return ctx.edit(input.enabled ? 'component on' : 'component off', (doc) => void doc.setComponentEnabled(i, input.componentId, input.enabled))
+    ctx.edit(input.enabled ? 'component on' : 'component off', (doc) => void doc.setComponentEnabled(i, input.componentId, input.enabled))
+    return { object: viewOf(ctx, input.id) }
   },
 })
 
@@ -276,7 +308,10 @@ const setObjectEnabled = defineAction({
   summary: 'Switch an object, and everything under it, on or off: off, it is not in the level at all.',
   effect: 'edit',
   input: object({ id: id('the object'), enabled: bool() }),
-  run: (ctx, input) => ctx.edit(input.enabled ? 'enabled' : 'disabled', (doc) => void doc.setNodeEnabled(ctx.at(input.id), input.enabled)),
+  run: (ctx, input) => {
+    ctx.edit(input.enabled ? 'enabled' : 'disabled', (doc) => void doc.setNodeEnabled(ctx.at(input.id), input.enabled))
+    return { object: viewOf(ctx, input.id) }
+  },
 })
 
 const moveComponent = defineAction({
@@ -287,7 +322,8 @@ const moveComponent = defineAction({
   run: (ctx, input) => {
     const i = ctx.at(input.id)
     if (componentOn(ctx.doc(), i, input.componentId).inherited) throw new ActionError('this component is the prefab’s: its order is the prefab’s to change')
-    return ctx.edit('move component', (doc) => void doc.moveComponent(i, input.componentId, input.direction === 'up' ? -1 : 1))
+    ctx.edit('move component', (doc) => void doc.moveComponent(i, input.componentId, input.direction === 'up' ? -1 : 1))
+    return { object: viewOf(ctx, input.id) }
   },
 })
 
@@ -323,7 +359,8 @@ const materialValue = (ctx: ActionCtx, key: string, kind: MaterialValue['kind'],
       if (raw === null || raw === '') return { kind, value: null }
       if (typeof raw !== 'string') break
       const entry = ctx.host.assetEntry(raw)
-      if (entry?.kind !== 'texture') throw new ActionError(`${key}: ${raw} is not a texture`)
+      if (entry === undefined) throw new ActionError(`${key}: no asset '${raw}'${assetIdHint(ctx, 'texture', raw)}`)
+      if (entry.kind !== 'texture') throw new ActionError(`${key}: ${entry.name} is a ${entry.kind}, not a texture`)
       const why = ctx.host.assetRefusal('texture', raw, undefined)
       if (why !== null) throw new ActionError(`${key}: ${why}`)
       return { kind, value: raw }
@@ -341,17 +378,21 @@ const setMaterialValues = defineAction({
   run: (ctx, input) => {
     const material = ctx.host.materialOf(input.asset)
     const entry = ctx.host.assetEntry(input.asset)
-    if (material === undefined || entry === undefined) throw new ActionError(`no material ${input.asset}`)
+    if (material === undefined || entry === undefined) throw new ActionError(`no material '${input.asset}'${assetIdHint(ctx, 'material', input.asset)}`)
     notOpenByOthers(ctx, input.asset)
     const params = ctx.host.shaderParams(material.shader)
     if (params === undefined) throw new ActionError(`its shader '${material.shader}' is not one this editor has`)
     const next: MaterialAsset = { ...material, params: { ...material.params } }
     for (const [key, raw] of Object.entries(input.values)) {
       const param = params.find((p) => p.key === key)
-      if (param === undefined) throw new ActionError(`${material.shader} has no parameter '${key}': its parameters are ${params.map((p) => p.key).join(', ')}`)
+      if (param === undefined) {
+        const near = closest(key, params.map((p) => p.key))
+        throw new ActionError(`${material.shader} has no parameter '${key}'${near.length > 0 ? didYouMean(near).replace('?', ';') : ':'} its parameters are ${params.map((p) => p.key).join(', ')}`)
+      }
       next.params[key] = materialValue(ctx, key, param.kind, raw)
     }
     ctx.host.editMaterial(input.asset, next, `${entry.name} ${Object.keys(input.values).join(', ')}`, ctx.turn)
+    return { asset: assetView(ctx, input.asset) }
   },
 })
 
@@ -363,19 +404,23 @@ const setDataFields = defineAction({
   run: (ctx, input) => {
     const data = ctx.host.dataOf(input.asset)
     const entry = ctx.host.assetEntry(input.asset)
-    if (data === undefined || entry === undefined) throw new ActionError(`no data asset ${input.asset}`)
+    if (data === undefined || entry === undefined) throw new ActionError(`no data asset '${input.asset}'${assetIdHint(ctx, 'data', input.asset)}`)
     notOpenByOthers(ctx, input.asset)
     const type = ctx.host.dataTypeOf(input.asset)
     if (type === undefined) throw new ActionError(`its type '${data.type}' is not one this game declares`)
     const fields: Record<string, unknown> = { ...data.fields }
     for (const [key, raw] of Object.entries(input.values)) {
       const spec = type.fields[key]
-      if (spec === undefined) throw new ActionError(`${type.label ?? type.type} has no field '${key}': its fields are ${Object.keys(type.fields).join(', ')}`)
+      if (spec === undefined) {
+        const near = closest(key, Object.keys(type.fields))
+        throw new ActionError(`${type.label ?? type.type} has no field '${key}'${near.length > 0 ? didYouMean(near).replace('?', ';') : ':'} its fields are ${Object.keys(type.fields).join(', ')}`)
+      }
       fields[key] = storedValue(ctx, null, null, key, spec, raw)
     }
     // The whole asset checked as it would be after, the way the game reads it.
     readParams(type.fields, fields, type.type)
     ctx.host.editData(input.asset, { ...data, fields }, `${entry.name} ${Object.keys(input.values).join(', ')}`, ctx.turn)
+    return { asset: assetView(ctx, input.asset) }
   },
 })
 

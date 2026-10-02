@@ -10,6 +10,8 @@ Auto modes run them (ADR 0195, `assistant.md`); an MCP endpoint is not built (Ko
 | `schema.ts` | `str num bool oneOf vec3 list nullable anyValue record object` → `Schema<T> { json, parse }`; `InputError` |
 | `readActions.ts` | `READ_ACTIONS`, `VIEW_ACTIONS` |
 | `editActions.ts` | `EDIT_ACTIONS` |
+| `views.ts` | `objectView`, `viewOf(ctx, id)`, `assetView`, `describeSpec`, `builtInModels`, `assetIdHint`: one shape for a read and an edit's answer |
+| `hints.ts` | `closest`, `didYouMean`, `componentTypeHint`: what a refusal says to put right |
 | `index.ts` | `EDITOR_ACTIONS` (reads, views, edits) |
 | `installed.ts` | `installEditorActions`, `editorActions()`: the tab's set, built at the end of `main.ts` over its own host |
 | `../undoSteps.ts` | `levelSteps`, `squashTransforms`, `assetSteps`, `planUndo`, `planRedo`: every undo's, not only a turn's |
@@ -37,6 +39,14 @@ component reference `{ object, component }`; stored as the node's id (`Doc.refTo
 Redraw: `room.repaint(ops)`, as an undo's. Edit actions leave the selection alone (Kodjo's call: it stays the
 person's); `select_objects` sets it.
 
+**Every edit answers with what it changed** (ADR 0196), as a read shows it: `{ object }` — `objectView`, components and
+their ids — `{ componentId, object }` for an add, `{ objects }` for up to 5 copies (else `{ ids }`), `{ deleted }`,
+`{ asset }` — so the next call needs no read. **A refusal names what would have worked**: a component's type for its
+label (`'Mesh Renderer'` → `'Renderer'`), the nearest field, parameter or action names, an asset's id for its name or
+for the start of its id. **Built-in shapes** (`builtin:box`…) are models no file holds: `list_assets` lists them with
+the models, a model field takes one, `place_asset` sends it to `create_object`. The tools stay low-level, one thing
+each (Kodjo's call).
+
 **The picture** (`main.ts` `shrinkToJpeg` over `cameraView.captureFrame`): the frame drawn now, read before the
 navigation gizmo goes on, then finished as the loop does — synchronous, because a canvas without
 `preserveDrawingBuffer` is readable only in the task that drew it, and a hidden tab draws no frames to wait for.
@@ -63,8 +73,8 @@ finished turns (`dropWhere`).
 | `get_editor` | read | game, level, prefab open, selected ids |
 | `get_scene { under? }` | read | objects in Hierarchy order: id, name, parent, components, `inherited`, `prefab`, `enabled: false`, `heldBy`; ≤ 400 |
 | `get_object { id }` | read | transform (rotation in degrees), children, each component's id, type, enabled, overrides, every field with defaults |
-| `list_component_types` | read | the game's registry: each type's fields, `kind`, default, range, options |
-| `list_assets { kind?, search? }` | read | assets the document may use (`mayUse`, ADR 0161); ≤ 300 |
+| `list_component_types { type? }` | read | the game's types and labels; with `type`, its fields: `kind`, default, range, options |
+| `list_assets { kind?, search? }` | read | the built-in shapes, then assets the document may use (`mayUse`, ADR 0161); ≤ 300 |
 | `get_asset { asset }` | read | a material's shader, values, parameters; a data asset's type, fields, declarations |
 | `get_problems` | read | the tab's last 20 warnings and errors |
 | `screenshot_view` | read | the viewport as the tab shows it: `{ image: { mediaType: 'image/jpeg', data }, width, height }`, ≤ 512 px on its longer side, quality 0.7 (Kodjo's call: small and light); refused while Play runs |

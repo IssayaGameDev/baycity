@@ -266,7 +266,7 @@ export const createChatWindow = (opts: ChatWindowOptions): ChatWindow => {
    * A change the assistant wants to make, for the person to Apply or not (Confirm). Resolves their answer, or
    * `null` when Stop ended the prompt first.
    */
-  const askCard = (words: string): Promise<boolean | null> =>
+  const askCard = (words: string): Promise<{ readonly yes: boolean | null; readonly foot: HTMLElement }> =>
     new Promise((resolve) => {
       const card = el('div', 'asst-change')
       card.append(el('div', 'asst-draft-k', 'Change'), el('div', 'asst-change-t', words))
@@ -277,8 +277,9 @@ export const createChatWindow = (opts: ChatWindowOptions): ChatWindow => {
       dont.type = 'button'
       const settle = (yes: boolean | null): void => {
         settleCard = null
-        foot.replaceChildren(el('span', 'asst-note', yes === true ? 'Applied' : yes === false ? 'Not done — say what you want instead' : 'Stopped'))
-        resolve(yes)
+        // Applied or not is said once the change has run: it can still be refused.
+        foot.replaceChildren(el('span', 'asst-note', yes === true ? 'Applying…' : yes === false ? 'Not done — say what you want instead' : 'Stopped'))
+        resolve({ yes, foot })
       }
       settleCard = settle
       apply.addEventListener('click', () => settle(true))
@@ -301,17 +302,20 @@ export const createChatWindow = (opts: ChatWindowOptions): ChatWindow => {
     }
     const words = await link.describe(call.name, call.input).catch(() => call.name)
     const edits = tools.find((t) => t.name === call.name)?.edits === true
+    let foot: HTMLElement | null = null
     if (edits && mode === 'confirm') {
-      const yes = await askCard(words)
-      if (yes === null) return
-      if (!yes) {
+      const asked = await askCard(words)
+      if (asked.yes === null) return
+      if (!asked.yes) {
         await answerCall(id, call.id, { declined: true })
         return
       }
+      foot = asked.foot
     } else note(words, 'asst-act')
     const outcome: ActionOutcome = await link.run(call.name, call.input).catch((e: unknown) => ({ ok: false, error: e instanceof Error ? e.message : String(e) }))
-    // A refused change is the person's to see too: who has it selected, a field it does not have.
-    if (!outcome.ok && edits) note(outcome.error, 'asst-err')
+    // What came of it, on the card that asked; a refused change in Auto is the person's to see too.
+    if (foot !== null) foot.replaceChildren(el('span', outcome.ok ? 'asst-note' : 'asst-err', outcome.ok ? 'Applied' : `Not applied — ${outcome.error}`))
+    else if (!outcome.ok && edits) note(outcome.error, 'asst-err')
     await answerCall(id, call.id, { outcome })
   }
 

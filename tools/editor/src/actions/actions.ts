@@ -3,6 +3,7 @@ import { applyOp, OpError, refKey, touchedRefs, type AssetEntry, type AssetKind,
 
 import type { Doc, OpBatch } from '../editorDoc'
 import type { HistoryStore, Turn } from '../historyStore'
+import { closest, didYouMean } from './hints'
 import { InputError, type JsonSchema, type Schema } from './schema'
 
 /**
@@ -241,7 +242,7 @@ export const createEditorActions = (host: ActionHost, actions: readonly Action[]
     },
     run: async (name, input, turn = null) => {
       const action = byName.get(name)
-      if (action === undefined) return { ok: false, error: `no action '${name}'` }
+      if (action === undefined) return { ok: false, error: `no action '${name}'${didYouMean(closest(name, actions.map((x) => x.name)))}` }
       try {
         return { ok: true, result: (await action.invoke(ctxFor(action, turn), input)) ?? null }
       } catch (e) {

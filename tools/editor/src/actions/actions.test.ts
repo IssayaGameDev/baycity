@@ -110,7 +110,7 @@ describe('what an action takes', () => {
     const { actions, submits } = rig()
     expect(await actions.run('rename_object', { id: 'n:a', nmae: 'x' })).toEqual({ ok: false, error: 'input.nmae: expected nothing: the fields are id, name' })
     expect(await actions.run('rename_object', { id: 'n:a' })).toEqual({ ok: false, error: 'input.name: expected a value: it is required' })
-    expect(await actions.run('rename_objekt', {})).toEqual({ ok: false, error: "no action 'rename_objekt'" })
+    expect(await actions.run('rename_objekt', {})).toEqual({ ok: false, error: "no action 'rename_objekt': did you mean 'rename_object'?" })
     expect(submits).toEqual([])
   })
 
@@ -124,7 +124,8 @@ describe('what an action takes', () => {
 describe('a person’s action', () => {
   it('is one entry of its own and one message to the room, undone like a click', async () => {
     const { lv, actions, history, submits } = rig()
-    expect(await actions.run('rename_object', { id: 'n:a', name: 'Crate' })).toEqual({ ok: true, result: null })
+    const r = await actions.run('rename_object', { id: 'n:a', name: 'Crate' })
+    expect(r.ok).toBe(true)
     expect(lv.nodes[0]!.name).toBe('Crate')
     expect(submits).toHaveLength(1)
     expect(history.labels().undo).toBe('rename')
@@ -222,7 +223,7 @@ describe('setting a component’s fields', () => {
   it('names the fields there are when given one that is not', async () => {
     const { actions } = rig()
     const r = await actions.run('set_component_fields', { id: 'n:a', componentId: 'k', values: { sped: 2 } })
-    expect(r).toEqual({ ok: false, error: "Spinner has no field 'sped': its fields are speed, axis, target" })
+    expect(r).toEqual({ ok: false, error: "Spinner has no field 'sped': did you mean 'speed'; its fields are speed, axis, target" })
   })
 
   it('refuses a value its declaration does not take, changing nothing', async () => {
@@ -245,7 +246,7 @@ describe('setting a component’s fields', () => {
   it('leaves a built-in shape’s collider locked, as the Inspector does', async () => {
     const { actions, doc } = rig()
     const made = await actions.run('create_object', { kind: 'box' })
-    const id = (made as { result: { id: string } }).result.id
+    const id = (made as { result: { object: { id: string } } }).result.object.id
     const i = doc().indexOfRef({ id: id.slice(2) })!
     const collider = doc().components(i).find((c) => c.type === COLLIDER)!
     const r = await actions.run('set_component_fields', { id, componentId: collider.id, values: { shape: { kind: 'ball', radius: 1 } } })
@@ -297,5 +298,69 @@ describe('a picture of the viewport', () => {
     expect(await actions.run('screenshot_view', {})).toEqual({ ok: true, result: { image: { mediaType: 'image/jpeg', data: 'AAAA' }, width: 512, height: 288 } })
     noPicture()
     expect(await actions.run('screenshot_view', {})).toEqual({ ok: false, error: 'nothing to picture: Play is running, or the viewport has no size' })
+  })
+})
+
+describe('an edit answers with what it changed', () => {
+  it('hands back the object it made, its components and their ids, so the next call needs no read', async () => {
+    const { actions } = rig()
+    const made = (await actions.run('create_object', { kind: 'sphere', name: 'Ball' })) as { result: { object: { id: string; name: string; components: { componentId: string; type: string; fields: Record<string, unknown> }[] } } }
+    const obj = made.result.object
+    expect(obj.name).toBe('Ball')
+    expect(obj.components.map((c) => c.type)).toEqual([COLLIDER, 'Renderer'])
+    expect(obj.components[1]!.fields.model).toBe('builtin:sphere')
+    expect(obj.components[0]!.componentId).toMatch(/^[0-9a-f]{8}$/)
+  })
+
+  it('hands back the object as it now is after a field is set', async () => {
+    const { actions } = rig()
+    const r = (await actions.run('set_component_fields', { id: 'n:a', componentId: 'k', values: { speed: 4 } })) as { result: { object: { components: { fields: Record<string, unknown> }[] } } }
+    expect(r.result.object.components[0]!.fields.speed).toBe(4)
+  })
+})
+
+describe('built-in shapes', () => {
+  it('are listed with the models, and taken by a model field', async () => {
+    const { lv, actions } = rig()
+    const listed = (await actions.run('list_assets', { kind: 'model' })) as { result: { assets: { id: string }[] } }
+    expect(listed.result.assets.map((a) => a.id)).toContain('builtin:sphere')
+    const made = (await actions.run('create_object', { kind: 'empty' })) as { result: { object: { id: string } } }
+    const id = made.result.object.id
+    const added = (await actions.run('add_component', { id, type: 'Renderer' })) as { result: { componentId: string } }
+    expect((await actions.run('set_component_fields', { id, componentId: added.result.componentId, values: { model: 'builtin:sphere' } })).ok).toBe(true)
+    const node = lv.nodes.find((n) => n.id === id.slice(2))!
+    expect(node.components.find((c) => c.type === 'Renderer')?.params.model).toBe('builtin:sphere')
+  })
+
+  it('are made with create_object, and place_asset says so', async () => {
+    const { actions } = rig()
+    expect(await actions.run('place_asset', { asset: 'builtin:sphere', position: { x: 0, y: 0, z: 0 } })).toEqual({ ok: false, error: 'builtin:sphere is a built-in shape: make one with create_object, kind sphere' })
+  })
+})
+
+describe('a refusal names what would have worked', () => {
+  it('gives a component’s type for its label', async () => {
+    const { actions } = rig()
+    const r = await actions.run('add_component', { id: 'n:b', type: 'Mesh Renderer' })
+    expect(r).toEqual({ ok: false, error: "no component type 'Mesh Renderer' in this game: its type is 'Renderer' (labelled Mesh Renderer)" })
+  })
+
+  it('tells an asset id that is not one, and the name of one by its name', async () => {
+    const { actions } = rig()
+    const r = await actions.run('set_component_fields', { id: 'n:a', componentId: 'k', values: {} })
+    expect(r.ok).toBe(false)
+    const made = (await actions.run('create_object', { kind: 'box' })) as { result: { object: { id: string; components: { componentId: string; type: string }[] } } }
+    const renderer = made.result.object.components.find((c) => c.type === 'Renderer')!
+    const guessed = await actions.run('set_component_fields', { id: made.result.object.id, componentId: renderer.componentId, values: { model: 'sphere' } })
+    expect(guessed).toEqual({ ok: false, error: "model: no asset 'sphere': did you mean 'builtin:sphere' (Sphere (built-in))? Asset ids come from list_assets" })
+  })
+
+  it('lists the component types short, and one type with its fields', async () => {
+    const { actions } = rig()
+    const all = (await actions.run('list_component_types', {})) as { result: { types: { type: string; label?: string }[] } }
+    expect(all.result.types).toContainEqual({ type: 'Renderer', label: 'Mesh Renderer' })
+    expect(JSON.stringify(all.result)).not.toContain('fields')
+    const one = (await actions.run('list_component_types', { type: 'Spinner' })) as { result: { fields: Record<string, { kind: string }> } }
+    expect(Object.keys(one.result.fields)).toEqual(['speed', 'axis', 'target'])
   })
 })

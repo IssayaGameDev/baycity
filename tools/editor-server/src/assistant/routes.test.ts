@@ -42,6 +42,7 @@ beforeEach(async () => {
   await git(repo, ['init', '--quiet'])
   writeFileSync(join(repo, 'README.md'), 'hello\n')
   writeFileSync(join(repo, 'ASSISTANT.md'), 'Answer from the docs.\n')
+  writeFileSync(join(repo, 'ASSISTANT-EDIT.md'), 'Edit the scene.\n')
   await git(repo, ['-c', 'user.name=s', '-c', 'user.email=s@x', 'add', '-A'])
   await git(repo, ['-c', 'user.name=s', '-c', 'user.email=s@x', 'commit', '--quiet', '-m', 'seed'])
   filed.length = 0
@@ -198,6 +199,7 @@ describe('the editing modes (ADR 0195)', () => {
     await turn.next('done')
     expect(requests).toHaveLength(2)
     expect(requests[0]!.tools.map((t) => t.name)).toContain('rename_object')
+    expect(requests[0]!.system[0]!.text, 'an editing mode’s own instructions').toBe('Edit the scene.')
     expect(JSON.stringify(requests[1]!.messages.at(-1))).toContain('"tool_use_id":"t1"')
     await s.close()
   })
