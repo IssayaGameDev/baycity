@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { applyAssetOps, COLLIDER, RENDERER, type AssetOp, type Level, type Op } from '@mp/content'
+import { applyAssetOps, applyBatch, COLLIDER, RENDERER, type AssetOp, type Level, type Op } from '@mp/content'
 import { vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
@@ -29,7 +29,7 @@ const level = (): Level => ({
 
 const rig = () => {
   const lv = level()
-  const calls = { repaints: [] as (readonly Op[])[], rebuilds: 0, selections: [] as (readonly number[])[], assets: [] as { id: string; ops: readonly AssetOp[] }[] }
+  const calls = { repaints: [] as (readonly Op[])[], rebuilds: 0, selections: [] as (readonly number[])[], assets: [] as { id: string; ops: readonly AssetOp[] }[], warnings: [] as string[] }
   /** The materials, as `assetSync` would show them: an asset undo applies its ops here. */
   const materials = new Map<string, unknown>([['m', { shader: 'standard', params: { color: { kind: 'color', value: '#000000' } } }]])
   let doc = levelDoc(lv)
@@ -54,7 +54,8 @@ const rig = () => {
       calls.assets.push({ id, ops })
       return true
     },
-    notify: { ok: () => {}, warn: () => {}, error: () => {} },
+    assetNow: (id) => materials.get(id),
+    notify: { ok: () => {}, warn: (m) => void calls.warnings.push(m), error: () => {} },
     renderStatus: () => {},
     refreshUi: () => {},
   }
@@ -152,5 +153,39 @@ describe('one history for the level and its materials (ADR 0159)', () => {
     history.undo()
     expect(calls.assets).toHaveLength(0)
     expect(history.depth(), 'gone, not waiting to redo').toEqual({ undo: 0, redo: 0 })
+  })
+})
+
+describe('an undo leaves what someone changed since (ADR 0194)', () => {
+  it('keeps their newer value of what you changed, and takes back the rest of your edit', () => {
+    const { lv, doc, history } = rig()
+    doc().setTransform(0, { position: vec3(4, 0, 0) })
+    doc().setName(0, 'Mine')
+    history.recordEdit('move and rename')
+    applyBatch(lv, [{ kind: 'setName', id: 'a', name: 'Bob’s' }]) // Bob, after you
+    history.undo()
+    expect(lv.nodes[0]!.name).toBe('Bob’s')
+    expect(lv.nodes[0]!.transform.position).toEqual(vec3(0, 0, 0))
+  })
+
+  it('says so, and drops the entry, when everything it changed has been changed since', () => {
+    const { lv, doc, history, calls } = rig()
+    doc().setName(0, 'Mine')
+    history.recordEdit('rename')
+    applyBatch(lv, [{ kind: 'setName', id: 'a', name: 'Bob’s' }])
+    history.undo()
+    expect(lv.nodes[0]!.name).toBe('Bob’s')
+    expect(calls.warnings).toEqual(['cannot undo rename: everything it changed has been changed since by someone else'])
+    expect(history.depth()).toEqual({ undo: 0, redo: 0 })
+  })
+
+  it('takes back your colour while someone else’s other field on the material stays', () => {
+    const { history, colour, colourOf, materials } = rig()
+    colour('#ff0000')
+    const m = materials.get('m') as { params: Record<string, unknown> }
+    materials.set('m', { ...m, params: { ...m.params, roughness: { kind: 'number', value: 0.2 } } }) // Bob
+    history.undo()
+    expect(colourOf()).toBe('#000000')
+    expect((materials.get('m') as { params: { roughness: { value: number } } }).params.roughness.value).toBe(0.2)
   })
 })

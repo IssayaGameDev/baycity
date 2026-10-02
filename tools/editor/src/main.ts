@@ -15,7 +15,7 @@ import {
   BUILTIN_LABELS, BUILTIN_MODELS,
   isSegment, parseQualified, qualify,
   applyAssetOps, diffAssetOps, gameDocId, gameOfDocId, isDataAsset, isLiveAssetPath, libraryOf, LiveAssetError, mayUse, textFontRefusal,
-  type AssetDatabase, type AssetOp, type MaterialAsset } from '@mp/content'
+  type AssetDatabase, type AssetKind, type AssetOp, type DataAsset, type MaterialAsset, type Transform } from '@mp/content'
 
 import { DEFAULT_REGISTRY, createRegistry, dataMenuPath, ENGINE_COMPONENTS, isSharedComponent, newDataAsset, PLAYER_COMPONENTS, SHARED_COMPONENT_TYPES, sharedComponents, type DataTypeDef, type Registry } from '@mp/components'
 import { type CurvePoint, type ModeDescriptor, readSettings } from '@mp/mode'
@@ -27,6 +27,7 @@ import {
   createThreeStage,
   OrbitControls,
   createAssetRuntime,
+  shaderDef,
   THREE,
   type AssetRuntime,
 } from '@mp/render-three'
@@ -57,7 +58,8 @@ import { createPreviews, prefabObject, type Previews } from './previews'
 import { createDragPlace } from './dragPlace'
 import { bootLevel, lastLevel, rememberLevel } from './lastOpen'
 import { createProjectPanel, type Project } from './projectPanel'
-import { createHistoryStore } from './historyStore'
+import { createHistoryStore, type Turn } from './historyStore'
+import { createEditorActions, EDITOR_ACTIONS, installEditorActions, type Screenshot } from './actions'
 import { createItemMeshes } from './itemMeshes'
 import { createLiveSession, peerCss } from './liveSession'
 import type { FieldSpot } from './collab'
@@ -569,6 +571,24 @@ const localInside = (
     position: vec3(r4(position.x), r4(position.y), r4(position.z)),
     rotation: vec3(e.x, e.y, e.z),
     scale: vec3(scale.x, scale.y, scale.z),
+  }
+}
+
+/**
+ * Node `i`'s local transform under `parent` (`null` = the level root) that keeps it where it is in the world, read off
+ * the **authored** poses (ADR 0126) and rounded as the document stores it — what a reparent writes, so nothing jumps.
+ * `undefined` when a group is missing. The Hierarchy's drag and the reparent action both write this.
+ */
+const reframedLocal = (i: number, parent: number | null): Transform | undefined => {
+  const parentGroup = parent === null ? null : (meshes.groupAt(parent) ?? null)
+  const local = motion.withAuthoredPoses(() => localInside(meshes.groupAt(i), parentGroup))
+  if (local === null) return undefined
+  return {
+    position: local.position,
+    ...(isZeroRot(new THREE.Euler(local.rotation.x, local.rotation.y, local.rotation.z, 'XYZ'))
+      ? {}
+      : { rotation: vec3(roundAngle(local.rotation.x), roundAngle(local.rotation.y), roundAngle(local.rotation.z)) }),
+    ...(isOne(new THREE.Vector3(local.scale.x, local.scale.y, local.scale.z)) ? {} : { scale: vec3(r4(local.scale.x), r4(local.scale.y), r4(local.scale.z)) }),
   }
 }
 
@@ -1441,10 +1461,7 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
      * authored plus whatever the sequences contribute, and reading those wrote the animation's position into
      * the file for good.
      */
-    const parentGroup = parent === null ? null : (meshes.groupAt(parent) ?? null)
-    const planned = motion.withAuthoredPoses(() =>
-      moving.map((i) => ({ ref: open.refAt(i), local: localInside(meshes.groupAt(i), parentGroup) })),
-    )
+    const planned = moving.map((i) => ({ ref: open.refAt(i), reframed: reframedLocal(i, parent) }))
     // Refs, not indices: each move renumbers the tree depth-first, so every index after the first is stale.
     const parentRef = parent === null ? null : open.refAt(parent)
 
@@ -1455,20 +1472,7 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
       const here = open.indexOfRef(step.ref)
       const into = parentRef === null ? null : open.indexOfRef(parentRef)
       if (here === null || (parentRef !== null && into === null)) continue
-      const local = step.local
-      const reframed =
-        local === null
-          ? undefined
-          : {
-              position: local.position,
-              ...(isZeroRot(new THREE.Euler(local.rotation.x, local.rotation.y, local.rotation.z, 'XYZ'))
-                ? {}
-                : { rotation: vec3(roundAngle(local.rotation.x), roundAngle(local.rotation.y), roundAngle(local.rotation.z)) }),
-              ...(isOne(new THREE.Vector3(local.scale.x, local.scale.y, local.scale.z))
-                ? {}
-                : { scale: vec3(r4(local.scale.x), r4(local.scale.y), r4(local.scale.z)) }),
-            }
-      const landed = open.reparent(here, into, slot, reframed)
+      const landed = open.reparent(here, into, slot, step.reframed)
       landedRefs.push(open.refAt(landed))
       slot++
     }
@@ -1938,7 +1942,7 @@ const edits = createHistoryStore({
   loadNewReferencesThen: (redraw) => loadNewReferences(redraw),
   // As this tab's edit: a material's through `assetSync`, and it then shows, the way a level undo shows the
   // selection; a game's data file's through `gameSync`, the games window's fields following if it is open.
-  applyAsset: (id, ops, what) => {
+  applyAsset: (id, ops, what, show = true) => {
     const game = gameOfDocId(id)
     const shown = game === null ? (assets?.materialOf(id) ?? assets?.dataOf(id)) : gameData[game]
     if (shown === undefined) {
@@ -1956,8 +1960,12 @@ const edits = createHistoryStore({
       return true
     }
     assetSync.edit(id, ops)
-    selectAsset(id)
+    if (show) selectAsset(id)
     return true
+  },
+  assetNow: (id) => {
+    const game = gameOfDocId(id)
+    return game === null ? (assets?.materialOf(id) ?? assets?.dataOf(id)) : gameData[game]
   },
   notify,
   renderStatus: () => renderStatus(),
@@ -1997,6 +2005,39 @@ for (const tab of bottomTabs) tab.addEventListener('click', () => showBottomTab(
 showBottomTab('palette')
 
 // --- asset inspector (materials) ---
+/**
+ * Why an asset field may not take this asset, or `null`: a library the document may not use (ADR 0161), another kind,
+ * a data asset of another type (ADR 0181). The Inspector's refusal, and an action's (ADR 0194).
+ */
+const fieldAssetRefusal = (of: AssetKind, id: string, dataType: string | undefined): string | null =>
+  assetRefusal(assets?.db ?? null, of, id, editingFor()) ??
+  (ofDataType(id, of, dataType) ? null : `this takes a ${(activeMode?.dataTypes ?? []).find((d) => d.type === dataType)?.label ?? dataType}, not a ${assets?.dataOf(id)?.type ?? 'data asset of another type'}`)
+
+/**
+ * A material edit is ops on its live document (ADR 0159): the difference between it as shown and as edited, shown at
+ * once and sent behind (`assetSync.ts`), and an entry in the one undo history — or a step of `turn`, an agent's prompt
+ * (ADR 0194). No lock: anyone edits it, the last change to land stays.
+ */
+const editMaterial = (id: string, material: MaterialAsset, label: string, ongoing: boolean, turn: Turn | null): void => {
+  const before = assets?.materialOf(id)
+  if (before === undefined) return
+  const shaderChanged = before.shader !== material.shader
+  const ops = diffAssetOps(before, material)
+  assetSync.edit(id, ops)
+  edits.recordAsset({ assetId: id, ops, inverses: applyAssetOps(before, ops).inverses.reverse(), label }, ongoing, turn)
+  // Its fields are the new shader's; any other edit leaves the panel — and the field being dragged — alone.
+  if (shaderChanged) assetInspector.show(id)
+}
+
+/** A data asset edited (ADR 0181), as a material is: ops on its live document, and one undo entry per drag. */
+const editData = (id: string, data: DataAsset, label: string, ongoing: boolean, turn: Turn | null): void => {
+  const before = assets?.dataOf(id)
+  if (before === undefined) return
+  const ops = diffAssetOps(before, data)
+  assetSync.edit(id, ops)
+  edits.recordAsset({ assetId: id, ops, inverses: applyAssetOps(before, ops).inverses.reverse(), label }, ongoing, turn)
+}
+
 const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#asset-inspector'), {
   db: () => assets?.db ?? null,
   draggedAssets: () => draggedAssets,
@@ -2042,26 +2083,11 @@ const assetInspector: AssetInspector = createAssetInspector($<HTMLDivElement>('#
    * shown at once and sent behind (`assetSync.ts`), and an entry in the one undo history. No lock: anyone edits
    * it, the last change to land stays.
    */
-  onMaterialChanged: (id, material, label, ongoing = false) => {
-    const before = assets?.materialOf(id)
-    if (before === undefined) return
-    const shaderChanged = before.shader !== material.shader
-    const ops = diffAssetOps(before, material)
-    assetSync.edit(id, ops)
-    edits.recordAsset({ assetId: id, ops, inverses: applyAssetOps(before, ops).inverses.reverse(), label }, ongoing)
-    // Its fields are the new shader's; any other edit leaves the panel — and the field being dragged — alone.
-    if (shaderChanged) assetInspector.show(id)
-  },
+  onMaterialChanged: (id, material, label, ongoing = false) => editMaterial(id, material, label, ongoing, null),
   dataOf: (id) => assets?.dataOf(id),
   dataTypeOf: (path, type) => dataTypeAt(path, type),
   /** A data asset edited (ADR 0181), as a material is: ops on its live document, and one undo entry per drag. */
-  onDataChanged: (id, data, label, ongoing = false) => {
-    const before = assets?.dataOf(id)
-    if (before === undefined) return
-    const ops = diffAssetOps(before, data)
-    assetSync.edit(id, ops)
-    edits.recordAsset({ assetId: id, ops, inverses: applyAssetOps(before, ops).inverses.reverse(), label }, ongoing)
-  },
+  onDataChanged: (id, data, label, ongoing = false) => editData(id, data, label, ongoing, null),
 })
 
 /**
@@ -2361,9 +2387,7 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     return out
   },
   dataTypeLabel: (type) => (activeMode?.dataTypes ?? []).find((d) => d.type === type)?.label ?? type,
-  assetRefusal: (of, id, dataType) =>
-    assetRefusal(assets?.db ?? null, of, id, editingFor()) ??
-    (ofDataType(id, of, dataType) ? null : `this takes a ${(activeMode?.dataTypes ?? []).find((d) => d.type === dataType)?.label ?? dataType}, not a ${assets?.dataOf(id)?.type ?? 'data asset of another type'}`),
+  assetRefusal: (of, id, dataType) => fieldAssetRefusal(of, id, dataType),
   draggedAssets: () => draggedAssets,
   pingNode: (index) => hierarchy.ping(index),
   revealAsset: (id) => revealAsset(id),
@@ -2453,6 +2477,98 @@ const assistantContext = (): EditorContext => {
   }
 }
 const assistantDock = createAssistantDock(stageEl, { context: assistantContext, playing: () => play.active() })
+
+/**
+ * The viewport as a small picture (ADR 0194, Kodjo's call: small and light): at most this many pixels along its longer
+ * side, a JPEG at this quality — a few hundred image tokens to a model, tens of kilobytes on the wire.
+ */
+const SCREENSHOT_SIDE = 512
+const SCREENSHOT_QUALITY = 0.7
+const shrinkToJpeg = (src: HTMLCanvasElement): Screenshot | null => {
+  if (src.width === 0 || src.height === 0) return null
+  const k = Math.min(1, SCREENSHOT_SIDE / Math.max(src.width, src.height))
+  const out = document.createElement('canvas')
+  out.width = Math.max(1, Math.round(src.width * k))
+  out.height = Math.max(1, Math.round(src.height * k))
+  const g = out.getContext('2d')
+  if (g === null) return null
+  g.imageSmoothingQuality = 'high'
+  g.drawImage(src, 0, 0, out.width, out.height)
+  const url = out.toDataURL('image/jpeg', SCREENSHOT_QUALITY)
+  return { mediaType: 'image/jpeg', data: url.slice(url.indexOf(',') + 1), width: out.width, height: out.height }
+}
+
+/**
+ * The editor's actions (ADR 0194) over this tab's own document, history and room: what a person does here, named, for
+ * an agent to be handed. Through the same calls as the controls: the reframe the Hierarchy's drag writes, the
+ * Inspector's asset refusal, the asset Inspector's edits, the Project window's placing checks.
+ */
+installEditorActions(
+  createEditorActions(
+    {
+      doc: () => doc,
+      rootLevel: () => rootLevel(),
+      history: edits,
+      repaint: (ops) => room.repaint(ops),
+      heldBy: (refs) => room.heldByOthers(refs),
+      assetOpenBy: (id) => room.openersOf(id)[0]?.name ?? null,
+      toPlace: async (id) => {
+        const library = assets
+        const entry = library?.db.byId[id]
+        if (library === null || entry === undefined) return { refused: `no asset ${id}` }
+        if (entry.kind !== 'prefab' && entry.kind !== 'model') return { refused: `${entry.name} is a ${entry.kind}: only a prefab or a model is placed` }
+        // As it is now, the way a drop from the Project window places it (ADR 0164).
+        if (entry.kind === 'prefab') await library.refreshPrefab(id).catch(() => undefined)
+        const why = fileOps.unplaceableWhy(id)
+        if (why !== null) return { refused: `${entry.name} ${why}` }
+        const { shared } = fileOps.missingIn(id)
+        if (shared.length > 0 && activeMode !== undefined && prefabOpen === null) {
+          return { refused: `${entry.name} uses ${shared.join(', ')}, which this game has not added: adding a shared component to a game is for a person to do` }
+        }
+        if (entry.kind === 'model') return { kind: 'model' }
+        const root = library.prefabOf(id)
+        return root === undefined ? { refused: `${entry.name} did not load` } : { kind: 'prefab', root }
+      },
+      reframe: (i, parent) => reframedLocal(i, parent),
+      assetEntry: (id) => assets?.db.byId[id],
+      usableAssets: (kind) => {
+        const db = assets?.db
+        if (db === undefined) return []
+        const user = editingFor()
+        return (kind === undefined ? db.entries : assetsOfKind(db, kind)).filter((a) => mayUse(user, a.path))
+      },
+      assetRefusal: (of, id, dataType) => fieldAssetRefusal(of, id, dataType),
+      materialOf: (id) => assets?.materialOf(id),
+      shaderParams: (shader) =>
+        shaderDef(shader)?.params.map((p) => ({ key: p.key, label: p.label, kind: p.kind, ...(p.min === undefined ? {} : { min: p.min }), ...(p.max === undefined ? {} : { max: p.max }) })),
+      dataOf: (id) => assets?.dataOf(id),
+      dataTypeOf: (id) => {
+        const entry = assets?.db.byId[id]
+        const data = assets?.dataOf(id)
+        return entry === undefined || data === undefined ? undefined : dataTypeAt(entry.path, data.type)
+      },
+      editMaterial: (id, next, label, turn) => editMaterial(id, next, label, false, turn),
+      editData: (id, next, label, turn) => editData(id, next, label, false, turn),
+      adoptable,
+      select: (indices) => {
+        follow.stop()
+        if (indices.length === 0) deselect()
+        else applySelection(indices)
+      },
+      frame: (indices) => nodes.frame(indices),
+      selection: () => selection,
+      where: () => ({ game: activeMode?.name ?? null, level: fileState.name === '' ? null : fileState.name, prefab: prefabOpen?.name ?? null }),
+      problems: () =>
+        notices
+          .log()
+          .filter((n) => n.kind !== 'ok')
+          .slice(-20)
+          .map((n) => n.text),
+      screenshot: () => (play.active() ? null : view.captureFrame(shrinkToJpeg)),
+    },
+    EDITOR_ACTIONS,
+  ),
+)
 
 /** The figure by the pointer during a gesture — the size while pulling a face — or none. */
 const readoutTag = $<HTMLDivElement>('#readout')
