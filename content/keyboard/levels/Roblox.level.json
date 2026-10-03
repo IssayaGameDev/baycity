@@ -12463,7 +12463,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:rounded-box",
-                "material": "55205761e38bc929"
+                "material": "9ceea29d6ae4cca8"
               }
             },
             {
@@ -12780,7 +12780,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:rounded-box",
-                "material": ""
+                "material": "9ceea29d6ae4cca8"
               }
             }
           ]
@@ -12830,7 +12830,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:rounded-box",
-                "material": ""
+                "material": "9ceea29d6ae4cca8"
               }
             }
           ]
@@ -16071,7 +16071,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:rounded-box",
-                "material": ""
+                "material": "9ceea29d6ae4cca8"
               }
             },
             {
@@ -17677,7 +17677,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:rounded-box",
-                "material": "55205761e38bc929"
+                "material": "9ceea29d6ae4cca8"
               }
             },
             {
@@ -17812,7 +17812,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:rounded-box",
-                "material": ""
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -17872,7 +17872,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:rounded-box",
-                "material": "55205761e38bc929"
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -17955,7 +17955,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:rounded-box",
-                "material": "55205761e38bc929"
+                "material": "546152d8d2e2b3d2"
               }
             },
             {
@@ -18038,7 +18038,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:rounded-box",
-                "material": "55205761e38bc929"
+                "material": "9ceea29d6ae4cca8"
               }
             },
             {
@@ -18121,7 +18121,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:rounded-box",
-                "material": "55205761e38bc929"
+                "material": "9ceea29d6ae4cca8"
               }
             },
             {
@@ -18204,7 +18204,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:rounded-box",
-                "material": "55205761e38bc929"
+                "material": "9ceea29d6ae4cca8"
               }
             },
             {
@@ -19005,7 +19005,7 @@
           "transform": {
             "position": {
               "x": 325.5,
-              "y": 28,
+              "y": 26.5,
               "z": -49
             },
             "rotation": {
@@ -19016,7 +19016,7 @@
             "scale": {
               "x": 15,
               "y": 15,
-              "z": 99
+              "z": 100
             }
           },
           "components": [
@@ -19098,8 +19098,8 @@
           "name": "platform",
           "transform": {
             "position": {
-              "x": 424.5,
-              "y": 28,
+              "x": 403,
+              "y": 26.5,
               "z": -49
             },
             "rotation": {
@@ -19110,7 +19110,195 @@
             "scale": {
               "x": 20,
               "y": 20,
-              "z": 99
+              "z": 55
+            }
+          },
+          "components": [
+            {
+              "id": "df9919a3",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "1bdef26e",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:rounded-box",
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "e4f7547e",
+              "type": "Sequence",
+              "params": {
+                "name": "",
+                "clock": "shared",
+                "axes": "object",
+                "loop": "restart",
+                "times": 0,
+                "offset": 0,
+                "stages": [
+                  {
+                    "id": "221b4be9",
+                    "steps": [
+                      {
+                        "id": "4daa7f0f",
+                        "kind": "turn",
+                        "axis": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 10
+                        },
+                        "angle": -360,
+                        "timing": {
+                          "by": "speed",
+                          "speed": 90
+                        },
+                        "ease": "linear"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "id": "8e13a7ca",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1,
+                "style": "dbd2775e3fece4fd",
+                "facing": "forward"
+              }
+            }
+          ]
+        },
+        {
+          "id": "15e243a7",
+          "name": "platform",
+          "transform": {
+            "position": {
+              "x": 443,
+              "y": 26.5,
+              "z": -49
+            },
+            "rotation": {
+              "x": 0,
+              "y": 1.5707963267948966,
+              "z": 0
+            },
+            "scale": {
+              "x": 15,
+              "y": 15,
+              "z": 25
+            }
+          },
+          "components": [
+            {
+              "id": "df9919a3",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "1bdef26e",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:rounded-box",
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "e4f7547e",
+              "type": "Sequence",
+              "params": {
+                "name": "",
+                "clock": "shared",
+                "axes": "object",
+                "loop": "restart",
+                "times": 0,
+                "offset": 0,
+                "stages": [
+                  {
+                    "id": "221b4be9",
+                    "steps": [
+                      {
+                        "id": "4daa7f0f",
+                        "kind": "turn",
+                        "axis": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 10
+                        },
+                        "angle": 360,
+                        "timing": {
+                          "by": "speed",
+                          "speed": 90
+                        },
+                        "ease": "linear"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "id": "35d3dcbb",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1,
+                "style": "dbd2775e3fece4fd",
+                "facing": "forward"
+              }
+            }
+          ]
+        },
+        {
+          "id": "847fef0f",
+          "name": "platform",
+          "transform": {
+            "position": {
+              "x": 468,
+              "y": 26.5,
+              "z": -49
+            },
+            "rotation": {
+              "x": 0,
+              "y": 1.5707963267948966,
+              "z": 0
+            },
+            "scale": {
+              "x": 20,
+              "y": 20,
+              "z": 25
             }
           },
           "components": [
