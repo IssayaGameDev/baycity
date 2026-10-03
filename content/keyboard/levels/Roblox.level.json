@@ -146,9 +146,9 @@
           "id": "2d23a1ab",
           "transform": {
             "position": {
-              "x": -4,
-              "y": 3,
-              "z": -3
+              "x": -325.5,
+              "y": 36,
+              "z": -62
             },
             "scale": {
               "x": 3.2997,
@@ -16073,6 +16073,16 @@
                 "model": "builtin:rounded-box",
                 "material": ""
               }
+            },
+            {
+              "id": "6ed3600c",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1,
+                "style": "a17f3493c7ef345c",
+                "facing": "right"
+              }
             }
           ]
         },
@@ -17553,7 +17563,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:rounded-box",
-                "material": ""
+                "material": "9ceea29d6ae4cca8"
               }
             }
           ]
@@ -17603,7 +17613,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:rounded-box",
-                "material": ""
+                "material": "9ceea29d6ae4cca8"
               }
             }
           ]
@@ -17804,6 +17814,16 @@
                 "model": "builtin:rounded-box",
                 "material": ""
               }
+            },
+            {
+              "id": "3c048c15",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1,
+                "style": "dbd2775e3fece4fd",
+                "facing": "forward"
+              }
             }
           ]
         },
@@ -17873,13 +17893,13 @@
                         "id": "0782d2ed",
                         "kind": "move",
                         "to": {
-                          "x": -19.5,
+                          "x": -22.5,
                           "y": 0,
                           "z": 0
                         },
                         "timing": {
-                          "by": "speed",
-                          "speed": 15
+                          "by": "seconds",
+                          "seconds": 1
                         },
                         "ease": "linear"
                       }
@@ -17897,7 +17917,7 @@
             "position": {
               "x": -5.4074,
               "y": 39.0332,
-              "z": -31.5
+              "z": -30.5
             },
             "rotation": {
               "x": 0,
@@ -17956,13 +17976,13 @@
                         "id": "0782d2ed",
                         "kind": "move",
                         "to": {
-                          "x": 19.5,
+                          "x": 21,
                           "y": 0,
                           "z": 0
                         },
                         "timing": {
-                          "by": "speed",
-                          "speed": 15
+                          "by": "seconds",
+                          "seconds": 1
                         },
                         "ease": "linear"
                       }
@@ -18039,13 +18059,13 @@
                         "id": "0782d2ed",
                         "kind": "move",
                         "to": {
-                          "x": -19.5,
+                          "x": -22.5,
                           "y": 0,
                           "z": 0
                         },
                         "timing": {
-                          "by": "speed",
-                          "speed": 15
+                          "by": "seconds",
+                          "seconds": 1
                         },
                         "ease": "linear"
                       }
@@ -18122,13 +18142,13 @@
                         "id": "0782d2ed",
                         "kind": "move",
                         "to": {
-                          "x": 19.5,
+                          "x": 20,
                           "y": 0,
                           "z": 0
                         },
                         "timing": {
-                          "by": "speed",
-                          "speed": 15
+                          "by": "seconds",
+                          "seconds": 1
                         },
                         "ease": "linear"
                       }
@@ -18986,7 +19006,7 @@
             "position": {
               "x": 325.5,
               "y": 28,
-              "z": -46.5
+              "z": -49
             },
             "rotation": {
               "x": 0,
@@ -19059,6 +19079,110 @@
                     ]
                   }
                 ]
+              }
+            },
+            {
+              "id": "35d3dcbb",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1,
+                "style": "dbd2775e3fece4fd",
+                "facing": "forward"
+              }
+            }
+          ]
+        },
+        {
+          "id": "279391b1",
+          "name": "platform",
+          "transform": {
+            "position": {
+              "x": 424.5,
+              "y": 28,
+              "z": -49
+            },
+            "rotation": {
+              "x": 0,
+              "y": 1.5707963267948966,
+              "z": 0
+            },
+            "scale": {
+              "x": 20,
+              "y": 20,
+              "z": 99
+            }
+          },
+          "components": [
+            {
+              "id": "df9919a3",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "1bdef26e",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:rounded-box",
+                "material": "55205761e38bc929"
+              }
+            },
+            {
+              "id": "e4f7547e",
+              "type": "Sequence",
+              "params": {
+                "name": "",
+                "clock": "shared",
+                "axes": "object",
+                "loop": "restart",
+                "times": 0,
+                "offset": 0,
+                "stages": [
+                  {
+                    "id": "221b4be9",
+                    "steps": [
+                      {
+                        "id": "4daa7f0f",
+                        "kind": "turn",
+                        "axis": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 10
+                        },
+                        "angle": -360,
+                        "timing": {
+                          "by": "speed",
+                          "speed": 90
+                        },
+                        "ease": "linear"
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "id": "8e13a7ca",
+              "type": "Keyboard",
+              "params": {
+                "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                "seed": 1,
+                "style": "dbd2775e3fece4fd",
+                "facing": "forward"
               }
             }
           ]
