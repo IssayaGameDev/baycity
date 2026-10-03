@@ -17767,13 +17767,13 @@
           "name": "platform",
           "transform": {
             "position": {
-              "x": 0,
-              "y": 31.5332,
+              "x": 73.5,
+              "y": 31.6916,
               "z": -49.4274
             },
             "scale": {
-              "x": 250,
-              "y": 0.3,
+              "x": 397,
+              "y": 1,
               "z": 25
             }
           },
@@ -17814,7 +17814,7 @@
             "position": {
               "x": -36.0949,
               "y": 39.0332,
-              "z": -65.4274
+              "z": -69.5
             },
             "rotation": {
               "x": 0,
@@ -17897,7 +17897,7 @@
             "position": {
               "x": -5.4074,
               "y": 39.0332,
-              "z": -34.4274
+              "z": -31.5
             },
             "rotation": {
               "x": 0,
@@ -17980,7 +17980,7 @@
             "position": {
               "x": 50.4051,
               "y": 39.0332,
-              "z": -65.4274
+              "z": -69.5
             },
             "rotation": {
               "x": 0,
@@ -18063,7 +18063,7 @@
             "position": {
               "x": 81.0926,
               "y": 39.0332,
-              "z": -34.4274
+              "z": -31.5
             },
             "rotation": {
               "x": 0,
@@ -18336,7 +18336,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.5,
                 "stages": [
                   {
                     "id": "dc803497",
@@ -18366,7 +18366,7 @@
                         "to": {
                           "x": -29.9274,
                           "y": 14.4834,
-                          "z": 0
+                          "z": -0.5
                         },
                         "timing": {
                           "by": "seconds",
@@ -18476,7 +18476,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.4,
                 "stages": [
                   {
                     "id": "dc803497",
@@ -18616,7 +18616,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.3,
                 "stages": [
                   {
                     "id": "dc803497",
@@ -18756,7 +18756,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.2,
                 "stages": [
                   {
                     "id": "dc803497",
@@ -18844,7 +18844,7 @@
           "name": "platform",
           "transform": {
             "position": {
-              "x": 212,
+              "x": 226.5,
               "y": 33.5,
               "z": -65.5
             },
@@ -18896,7 +18896,7 @@
                 "axes": "object",
                 "loop": "restart",
                 "times": 0,
-                "offset": 0,
+                "offset": 0.1,
                 "stages": [
                   {
                     "id": "dc803497",
@@ -18984,9 +18984,9 @@
           "name": "platform",
           "transform": {
             "position": {
-              "x": 237,
-              "y": 33.5,
-              "z": -65.5
+              "x": 325.5,
+              "y": 28,
+              "z": -46.5
             },
             "rotation": {
               "x": 0,
@@ -18994,9 +18994,9 @@
               "z": 0
             },
             "scale": {
-              "x": 3,
-              "y": 3,
-              "z": 25
+              "x": 15,
+              "y": 15,
+              "z": 99
             }
           },
           "components": [
@@ -19039,76 +19039,20 @@
                 "offset": 0,
                 "stages": [
                   {
-                    "id": "dc803497",
+                    "id": "221b4be9",
                     "steps": [
                       {
-                        "id": "0782d2ed",
-                        "kind": "move",
-                        "to": {
-                          "x": -29.9274,
+                        "id": "4daa7f0f",
+                        "kind": "turn",
+                        "axis": {
+                          "x": 0,
                           "y": 0,
-                          "z": 0
+                          "z": 10
                         },
+                        "angle": 360,
                         "timing": {
                           "by": "speed",
-                          "speed": 15
-                        },
-                        "ease": "linear"
-                      }
-                    ]
-                  },
-                  {
-                    "id": "b67b842e",
-                    "steps": [
-                      {
-                        "id": "b657152e",
-                        "kind": "move",
-                        "to": {
-                          "x": -29.9274,
-                          "y": 14.4834,
-                          "z": 0
-                        },
-                        "timing": {
-                          "by": "seconds",
-                          "seconds": 1
-                        },
-                        "ease": "linear"
-                      }
-                    ]
-                  },
-                  {
-                    "id": "a342d80f",
-                    "steps": [
-                      {
-                        "id": "b59d9707",
-                        "kind": "move",
-                        "to": {
-                          "x": 0,
-                          "y": 14.9834,
-                          "z": 0
-                        },
-                        "timing": {
-                          "by": "seconds",
-                          "seconds": 1
-                        },
-                        "ease": "linear"
-                      }
-                    ]
-                  },
-                  {
-                    "id": "c520cac8",
-                    "steps": [
-                      {
-                        "id": "ef2181aa",
-                        "kind": "move",
-                        "to": {
-                          "x": 0,
-                          "y": 0,
-                          "z": 0
-                        },
-                        "timing": {
-                          "by": "seconds",
-                          "seconds": 1
+                          "speed": 90
                         },
                         "ease": "linear"
                       }
