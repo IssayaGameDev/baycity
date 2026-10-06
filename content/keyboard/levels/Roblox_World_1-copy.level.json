@@ -9635,6 +9635,384 @@
                       "enabled": false
                     }
                   ]
+                },
+                {
+                  "id": "8f5fd21a",
+                  "name": "bonbon",
+                  "transform": {
+                    "position": {
+                      "x": -43.5,
+                      "y": 25.5,
+                      "z": -67
+                    },
+                    "scale": {
+                      "x": 8,
+                      "y": 8,
+                      "z": 8
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "773b56a7",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "f0e202885d498d05",
+                        "material": ""
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "1fc84f82",
+                  "name": "bonbon",
+                  "transform": {
+                    "position": {
+                      "x": -131,
+                      "y": 25.5,
+                      "z": -60
+                    },
+                    "scale": {
+                      "x": 8,
+                      "y": 8,
+                      "z": 5
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "773b56a7",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "f0e202885d498d05",
+                        "material": ""
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "bc87fce5",
+                  "name": "bonbon",
+                  "transform": {
+                    "position": {
+                      "x": -219,
+                      "y": 25.5,
+                      "z": -60
+                    },
+                    "scale": {
+                      "x": 8,
+                      "y": 8,
+                      "z": 5
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "773b56a7",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "f0e202885d498d05",
+                        "material": ""
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "906f4cb8",
+                  "name": "bonbon",
+                  "transform": {
+                    "position": {
+                      "x": -311,
+                      "y": 25.5,
+                      "z": -67
+                    },
+                    "scale": {
+                      "x": 8,
+                      "y": 8,
+                      "z": 8
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "773b56a7",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "f0e202885d498d05",
+                        "material": ""
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "c17746ac",
+                  "name": "bonbon",
+                  "transform": {
+                    "position": {
+                      "x": -405,
+                      "y": 25.5,
+                      "z": -67
+                    },
+                    "scale": {
+                      "x": 8,
+                      "y": 8,
+                      "z": 8
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "773b56a7",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "f0e202885d498d05",
+                        "material": ""
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "1448343f",
+                  "name": "floor",
+                  "transform": {
+                    "position": {
+                      "x": -223.375,
+                      "y": -11,
+                      "z": -52
+                    },
+                    "rotation": {
+                      "x": -1.5707963267948966,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 466,
+                      "y": 3,
+                      "z": 36
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "4c1a690c",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "c9b1bc29",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:rounded-box",
+                        "material": "546152d8d2e2b3d2"
+                      }
+                    },
+                    {
+                      "id": "eec994bf",
+                      "type": "Keyboard",
+                      "params": {
+                        "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                        "seed": 1
+                      },
+                      "enabled": false
+                    }
+                  ]
+                },
+                {
+                  "id": "361bf015",
+                  "name": "floor",
+                  "transform": {
+                    "position": {
+                      "x": -223.375,
+                      "y": -11,
+                      "z": 54.5
+                    },
+                    "rotation": {
+                      "x": -1.5707963267948966,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 466,
+                      "y": 3,
+                      "z": 36
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "4c1a690c",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "c9b1bc29",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:rounded-box",
+                        "material": "546152d8d2e2b3d2"
+                      }
+                    },
+                    {
+                      "id": "eec994bf",
+                      "type": "Keyboard",
+                      "params": {
+                        "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                        "seed": 1
+                      },
+                      "enabled": false
+                    }
+                  ]
+                },
+                {
+                  "id": "e82dd7f9",
+                  "name": "bonbon",
+                  "transform": {
+                    "position": {
+                      "x": -43.5,
+                      "y": 25.5,
+                      "z": 35.5
+                    },
+                    "scale": {
+                      "x": 8,
+                      "y": 8,
+                      "z": 8
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "773b56a7",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "f0e202885d498d05",
+                        "material": ""
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "c437388a",
+                  "name": "bonbon",
+                  "transform": {
+                    "position": {
+                      "x": -131,
+                      "y": 25.5,
+                      "z": 42.5
+                    },
+                    "scale": {
+                      "x": 8,
+                      "y": 8,
+                      "z": 5
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "773b56a7",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "f0e202885d498d05",
+                        "material": ""
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "45afb7b7",
+                  "name": "bonbon",
+                  "transform": {
+                    "position": {
+                      "x": -219,
+                      "y": 25.5,
+                      "z": 42.5
+                    },
+                    "scale": {
+                      "x": 8,
+                      "y": 8,
+                      "z": 5
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "773b56a7",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "f0e202885d498d05",
+                        "material": ""
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "1603ab06",
+                  "name": "bonbon",
+                  "transform": {
+                    "position": {
+                      "x": -311,
+                      "y": 25.5,
+                      "z": 35.5
+                    },
+                    "scale": {
+                      "x": 8,
+                      "y": 8,
+                      "z": 8
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "773b56a7",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "f0e202885d498d05",
+                        "material": ""
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "53789843",
+                  "name": "bonbon",
+                  "transform": {
+                    "position": {
+                      "x": -405,
+                      "y": 25.5,
+                      "z": 35.5
+                    },
+                    "scale": {
+                      "x": 8,
+                      "y": 8,
+                      "z": 8
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "773b56a7",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "f0e202885d498d05",
+                        "material": ""
+                      }
+                    }
+                  ]
                 }
               ]
             }
