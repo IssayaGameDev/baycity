@@ -1,0 +1,139 @@
+{
+  "id": "root",
+  "name": "platform",
+  "transform": {
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    }
+  },
+  "components": [
+    {
+      "id": "df9919a3",
+      "type": "Collider",
+      "params": {
+        "shape": {
+          "kind": "box",
+          "halfExtents": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5
+          }
+        },
+        "center": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        }
+      }
+    },
+    {
+      "id": "1bdef26e",
+      "type": "Renderer",
+      "params": {
+        "model": "builtin:rounded-box",
+        "material": "55205761e38bc929"
+      }
+    },
+    {
+      "id": "e4f7547e",
+      "type": "Sequence",
+      "params": {
+        "name": "",
+        "clock": "shared",
+        "axes": "object",
+        "loop": "restart",
+        "times": 0,
+        "offset": 0.1,
+        "stages": [
+          {
+            "id": "eee82b92",
+            "steps": [
+              {
+                "id": "1f9ba209",
+                "kind": "turn",
+                "axis": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 1
+                },
+                "angle": 90,
+                "timing": {
+                  "by": "speed",
+                  "speed": 20
+                },
+                "ease": "in-elastic"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "children": [
+    {
+      "id": "96e7c257",
+      "name": "platform",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 0,
+          "z": 1.5707963267948966
+        },
+        "scale": {
+          "x": 8,
+          "y": 0.1,
+          "z": 1
+        }
+      },
+      "components": [
+        {
+          "id": "df9919a3",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "1bdef26e",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:rounded-box",
+            "material": "55205761e38bc929"
+          }
+        },
+        {
+          "id": "e4f7547e",
+          "type": "Sequence",
+          "params": {
+            "name": "",
+            "clock": "shared",
+            "axes": "object",
+            "loop": "restart",
+            "times": 0,
+            "offset": 0.1,
+            "stages": []
+          }
+        }
+      ]
+    }
+  ]
+}
