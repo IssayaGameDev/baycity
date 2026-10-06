@@ -19189,12 +19189,12 @@
         },
         {
           "id": "4ee3c59e",
-          "name": "platform",
+          "name": "platform 2",
           "transform": {
             "position": {
-              "x": 474.5,
-              "y": 33.5,
-              "z": -50.5
+              "x": 487,
+              "y": 34.5,
+              "z": -46.5
             },
             "rotation": {
               "x": 0,
@@ -19224,10 +19224,64 @@
                 },
                 "scale": {
                   "x": 8,
-                  "y": 1,
+                  "y": 0.1,
                   "z": 1
                 }
-              }
+              },
+              "removedNodes": [
+                "96e7c257"
+              ]
+            },
+            "root": {
+              "addedChildren": [
+                {
+                  "id": "f7b27b48",
+                  "name": "platform 2",
+                  "transform": {
+                    "position": {
+                      "x": -0.02,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 0.12,
+                      "y": 8.3333,
+                      "z": 1
+                    }
+                  },
+                  "components": [],
+                  "prefab": "582d87ee5030b8a3",
+                  "overrides": {
+                    "96e7c257": {
+                      "transform": {
+                        "position": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        },
+                        "rotation": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 1.5707963267948966
+                        },
+                        "scale": {
+                          "x": 8,
+                          "y": 0.1,
+                          "z": 1
+                        }
+                      },
+                      "removedNodes": [
+                        "96e7c257"
+                      ]
+                    },
+                    "root": {
+                      "enabled": {
+                        "e4f7547e": false
+                      }
+                    }
+                  }
+                }
+              ]
             }
           }
         }
