@@ -7762,183 +7762,6 @@
                       "enabled": false
                     }
                   ]
-                },
-                {
-                  "id": "5f34a234",
-                  "name": "floor",
-                  "transform": {
-                    "position": {
-                      "x": -459.1997,
-                      "y": 50.1482,
-                      "z": 67.9034
-                    },
-                    "rotation": {
-                      "x": -1.5707963267948966,
-                      "y": 0,
-                      "z": 0
-                    },
-                    "scale": {
-                      "x": 465.75,
-                      "y": 3,
-                      "z": 84.3518
-                    }
-                  },
-                  "components": [
-                    {
-                      "id": "4c1a690c",
-                      "type": "Collider",
-                      "params": {
-                        "shape": {
-                          "kind": "box",
-                          "halfExtents": {
-                            "x": 0.5,
-                            "y": 0.5,
-                            "z": 0.5
-                          }
-                        },
-                        "center": {
-                          "x": 0,
-                          "y": 0,
-                          "z": 0
-                        }
-                      }
-                    },
-                    {
-                      "id": "c9b1bc29",
-                      "type": "Renderer",
-                      "params": {
-                        "model": "builtin:box",
-                        "material": ""
-                      }
-                    },
-                    {
-                      "id": "eec994bf",
-                      "type": "Keyboard",
-                      "params": {
-                        "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                        "seed": 1
-                      },
-                      "enabled": false
-                    }
-                  ]
-                },
-                {
-                  "id": "2a8c27cf",
-                  "name": "floor",
-                  "transform": {
-                    "position": {
-                      "x": -459.1997,
-                      "y": 50.1482,
-                      "z": -44.0966
-                    },
-                    "rotation": {
-                      "x": -1.5707963267948966,
-                      "y": 0,
-                      "z": 0
-                    },
-                    "scale": {
-                      "x": 466,
-                      "y": 3,
-                      "z": 84.3518
-                    }
-                  },
-                  "components": [
-                    {
-                      "id": "4c1a690c",
-                      "type": "Collider",
-                      "params": {
-                        "shape": {
-                          "kind": "box",
-                          "halfExtents": {
-                            "x": 0.5,
-                            "y": 0.5,
-                            "z": 0.5
-                          }
-                        },
-                        "center": {
-                          "x": 0,
-                          "y": 0,
-                          "z": 0
-                        }
-                      }
-                    },
-                    {
-                      "id": "c9b1bc29",
-                      "type": "Renderer",
-                      "params": {
-                        "model": "builtin:box",
-                        "material": ""
-                      }
-                    },
-                    {
-                      "id": "eec994bf",
-                      "type": "Keyboard",
-                      "params": {
-                        "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                        "seed": 1
-                      },
-                      "enabled": false
-                    }
-                  ]
-                },
-                {
-                  "id": "8092488c",
-                  "name": "floor",
-                  "transform": {
-                    "position": {
-                      "x": -459.1997,
-                      "y": 50.1482,
-                      "z": 14.4034
-                    },
-                    "rotation": {
-                      "x": -1.5707963267948966,
-                      "y": 0,
-                      "z": 0
-                    },
-                    "scale": {
-                      "x": 465.75,
-                      "y": 110,
-                      "z": 3
-                    }
-                  },
-                  "components": [
-                    {
-                      "id": "4c1a690c",
-                      "type": "Collider",
-                      "params": {
-                        "shape": {
-                          "kind": "box",
-                          "halfExtents": {
-                            "x": 0.5,
-                            "y": 0.5,
-                            "z": 0.5
-                          }
-                        },
-                        "center": {
-                          "x": 0,
-                          "y": 0,
-                          "z": 0
-                        }
-                      }
-                    },
-                    {
-                      "id": "c9b1bc29",
-                      "type": "Renderer",
-                      "params": {
-                        "model": "builtin:box",
-                        "material": ""
-                      }
-                    },
-                    {
-                      "id": "eec994bf",
-                      "type": "Keyboard",
-                      "params": {
-                        "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                        "seed": 1
-                      },
-                      "enabled": false
-                    }
-                  ]
                 }
               ]
             },
@@ -9016,7 +8839,7 @@
           "name": "obstacle 12",
           "transform": {
             "position": {
-              "x": 0,
+              "x": -9.5,
               "y": 0,
               "z": 0
             }
@@ -9117,7 +8940,7 @@
                         "scale": {
                           "x": 0.3,
                           "y": 0.12,
-                          "z": 8
+                          "z": 8.5
                         }
                       },
                       "components": [
@@ -9172,7 +8995,7 @@
                         "scale": {
                           "x": 0.1775,
                           "y": 0.12,
-                          "z": 8
+                          "z": 8.5
                         }
                       },
                       "components": [
@@ -9227,7 +9050,7 @@
                         "scale": {
                           "x": 0.3,
                           "y": 0.12,
-                          "z": 8
+                          "z": 8.5
                         }
                       },
                       "components": [
@@ -9363,7 +9186,7 @@
                         "scale": {
                           "x": 0.3,
                           "y": 0.12,
-                          "z": 8
+                          "z": 8.5
                         }
                       },
                       "components": [
@@ -9418,7 +9241,7 @@
                         "scale": {
                           "x": 0.1775,
                           "y": 0.12,
-                          "z": 8
+                          "z": 8.5
                         }
                       },
                       "components": [
@@ -9473,7 +9296,7 @@
                         "scale": {
                           "x": 0.3,
                           "y": 0.12,
-                          "z": 8
+                          "z": 8.5
                         }
                       },
                       "components": [
@@ -9524,12 +9347,12 @@
                   "transform": {
                     "position": {
                       "x": -226.5,
-                      "y": -24.5,
+                      "y": -25.25,
                       "z": 1.75
                     },
                     "scale": {
                       "x": 459,
-                      "y": 3,
+                      "y": 1.5,
                       "z": 110
                     }
                   },
@@ -9574,6 +9397,242 @@
                       "id": "9204c3df",
                       "type": "Hazard",
                       "params": {}
+                    }
+                  ]
+                },
+                {
+                  "id": "5f34a234",
+                  "name": "floor",
+                  "transform": {
+                    "position": {
+                      "x": -223.375,
+                      "y": 13.5,
+                      "z": 57.5
+                    },
+                    "rotation": {
+                      "x": -1.5707963267948966,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 466,
+                      "y": 3,
+                      "z": 85
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "4c1a690c",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "c9b1bc29",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": ""
+                      }
+                    },
+                    {
+                      "id": "eec994bf",
+                      "type": "Keyboard",
+                      "params": {
+                        "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                        "seed": 1
+                      },
+                      "enabled": false
+                    }
+                  ]
+                },
+                {
+                  "id": "8092488c",
+                  "name": "floor",
+                  "transform": {
+                    "position": {
+                      "x": -223.375,
+                      "y": 54.5,
+                      "z": 1.5
+                    },
+                    "rotation": {
+                      "x": -1.5707963267948966,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 465.75,
+                      "y": 111,
+                      "z": 3
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "4c1a690c",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "c9b1bc29",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": ""
+                      }
+                    },
+                    {
+                      "id": "eec994bf",
+                      "type": "Keyboard",
+                      "params": {
+                        "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                        "seed": 1
+                      },
+                      "enabled": false
+                    }
+                  ]
+                },
+                {
+                  "id": "2a8c27cf",
+                  "name": "floor",
+                  "transform": {
+                    "position": {
+                      "x": -223.375,
+                      "y": 13.5,
+                      "z": -54.5
+                    },
+                    "rotation": {
+                      "x": -1.5707963267948966,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 466,
+                      "y": 3,
+                      "z": 85
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "4c1a690c",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "c9b1bc29",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": ""
+                      }
+                    },
+                    {
+                      "id": "eec994bf",
+                      "type": "Keyboard",
+                      "params": {
+                        "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                        "seed": 1
+                      },
+                      "enabled": false
+                    }
+                  ]
+                },
+                {
+                  "id": "122634f8",
+                  "name": "floor",
+                  "transform": {
+                    "position": {
+                      "x": -223.375,
+                      "y": -28,
+                      "z": 1.5
+                    },
+                    "rotation": {
+                      "x": -1.5707963267948966,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 465.75,
+                      "y": 111,
+                      "z": 3
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "4c1a690c",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "c9b1bc29",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": ""
+                      }
+                    },
+                    {
+                      "id": "eec994bf",
+                      "type": "Keyboard",
+                      "params": {
+                        "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                        "seed": 1
+                      },
+                      "enabled": false
                     }
                   ]
                 }
