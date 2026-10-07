@@ -7266,7 +7266,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "2ee101f20ad587d8"
                   }
                 },
                 {
@@ -7274,7 +7274,8 @@
                   "type": "Keyboard",
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                    "seed": 1
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
                   }
                 }
               ]
@@ -7328,7 +7329,7 @@
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                     "seed": 1,
-                    "style": "dbd2775e3fece4fd"
+                    "style": "a17f3493c7ef345c"
                   }
                 }
               ]
@@ -7338,9 +7339,14 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -99,
-                  "y": 28,
-                  "z": -52
+                  "x": -87.5,
+                  "y": 22,
+                  "z": -53.5
+                },
+                "rotation": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0.2617993877991494
                 },
                 "scale": {
                   "x": 7.5,
@@ -7393,7 +7399,7 @@
               "transform": {
                 "position": {
                   "x": -63.25,
-                  "y": 28,
+                  "y": 27,
                   "z": -52.25
                 },
                 "scale": {
@@ -7427,7 +7433,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": "2ee101f20ad587d8"
+                    "material": "9ceea29d6ae4cca8"
                   }
                 },
                 {
@@ -7446,7 +7452,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -29,
+                  "x": -17,
                   "y": 28,
                   "z": -52
                 },
@@ -7500,7 +7506,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -21.5,
+                  "x": -9.5,
                   "y": 29,
                   "z": -52
                 },
@@ -7559,8 +7565,8 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -14.5,
-                  "y": 40.5,
+                  "x": 17.5,
+                  "y": 34,
                   "z": -49
                 },
                 "rotation": {
@@ -7599,7 +7605,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "2ee101f20ad587d8"
                   }
                 },
                 {
@@ -7607,7 +7613,8 @@
                   "type": "Keyboard",
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                    "seed": 1
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
                   }
                 }
               ]
@@ -7617,8 +7624,8 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -14.5,
-                  "y": 40.5,
+                  "x": 17.5,
+                  "y": 39,
                   "z": 2
                 },
                 "rotation": {
@@ -7657,7 +7664,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "2ee101f20ad587d8"
                   }
                 },
                 {
@@ -7665,7 +7672,8 @@
                   "type": "Keyboard",
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                    "seed": 1
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
                   }
                 }
               ]
@@ -7675,8 +7683,8 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -14.5,
-                  "y": 40.5,
+                  "x": 17.5,
+                  "y": 43,
                   "z": 59
                 },
                 "rotation": {
@@ -7715,7 +7723,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 },
                 {
@@ -7723,7 +7731,8 @@
                   "type": "Keyboard",
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                    "seed": 1
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
                   }
                 }
               ]
@@ -7768,7 +7777,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "2ee101f20ad587d8"
                   }
                 },
                 {
@@ -7776,7 +7785,8 @@
                   "type": "Keyboard",
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                    "seed": 1
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
                   }
                 }
               ]
@@ -7826,7 +7836,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "2ee101f20ad587d8"
                   }
                 },
                 {
@@ -7834,7 +7844,8 @@
                   "type": "Keyboard",
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                    "seed": 1
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
                   }
                 }
               ]
@@ -7849,9 +7860,9 @@
                   "z": 0.5
                 },
                 "scale": {
-                  "x": 170,
+                  "x": 150,
                   "y": 3,
-                  "z": 170
+                  "z": 130
                 }
               },
               "components": [
@@ -8393,7 +8404,117 @@
               "transform": {
                 "position": {
                   "x": -118,
+                  "y": 7,
+                  "z": 1
+                },
+                "scale": {
+                  "x": 1,
                   "y": 5,
+                  "z": 11.5
+                }
+              },
+              "components": [
+                {
+                  "id": "3377f95c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "cc8ca8c9",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": "2ee101f20ad587d8"
+                  }
+                },
+                {
+                  "id": "a8bf84cf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
+                  },
+                  "enabled": false
+                }
+              ]
+            },
+            {
+              "id": "4d422e32",
+              "name": "platform",
+              "transform": {
+                "position": {
+                  "x": -118,
+                  "y": 16.5,
+                  "z": 1
+                },
+                "scale": {
+                  "x": 1,
+                  "y": 5,
+                  "z": 11.5
+                }
+              },
+              "components": [
+                {
+                  "id": "3377f95c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "cc8ca8c9",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": "2ee101f20ad587d8"
+                  }
+                },
+                {
+                  "id": "a8bf84cf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
+                  },
+                  "enabled": false
+                }
+              ]
+            },
+            {
+              "id": "c23d0d29",
+              "name": "platform",
+              "transform": {
+                "position": {
+                  "x": -95.5,
+                  "y": 12,
                   "z": 1
                 },
                 "scale": {
