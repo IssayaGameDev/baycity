@@ -11073,6 +11073,234 @@
           }
         }
       }
+    },
+    {
+      "id": "ef0174be",
+      "name": "Obstacle 14",
+      "transform": {
+        "position": {
+          "x": -1654.5,
+          "y": 91,
+          "z": 439
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "f3f15517",
+          "name": "Obstacle 14",
+          "transform": {
+            "position": {
+              "x": -49,
+              "y": -191.5,
+              "z": -38
+            }
+          },
+          "components": [],
+          "prefab": "7af1b2a53a7bec6b",
+          "overrides": {
+            "30051eab": {
+              "transform": {
+                "position": {
+                  "x": 38.5032,
+                  "y": 191,
+                  "z": -15
+                },
+                "rotation": {
+                  "x": 0,
+                  "y": 1.5707928361363925,
+                  "z": 0
+                },
+                "scale": {
+                  "x": 122,
+                  "y": 1,
+                  "z": 22
+                }
+              },
+              "params": {
+                "0e9126ea": {
+                  "material": "9ceea29d6ae4cca8"
+                },
+                "ecb4beae": {
+                  "style": "a17f3493c7ef345c"
+                }
+              }
+            },
+            "d153f197": {
+              "params": {
+                "0e9126ea": {
+                  "material": "9ceea29d6ae4cca8"
+                }
+              },
+              "transform": {
+                "position": {
+                  "x": 49,
+                  "y": 194.5002,
+                  "z": -22.5
+                },
+                "rotation": {
+                  "x": 1.5707998174534008,
+                  "y": 0,
+                  "z": -1.5707998174534008
+                },
+                "scale": {
+                  "x": 107,
+                  "y": 1,
+                  "z": 7
+                }
+              }
+            },
+            "771a81e6": {
+              "params": {
+                "0e9126ea": {
+                  "material": "9ceea29d6ae4cca8"
+                }
+              },
+              "transform": {
+                "position": {
+                  "x": 38.303,
+                  "y": 194.5,
+                  "z": 45.5397
+                },
+                "rotation": {
+                  "x": 1.5707998174534008,
+                  "y": 0,
+                  "z": 3.141585672272785
+                },
+                "scale": {
+                  "x": 22,
+                  "y": 1,
+                  "z": 7.3
+                }
+              }
+            },
+            "554df1ae": {
+              "params": {
+                "0e9126ea": {
+                  "material": "9ceea29d6ae4cca8"
+                }
+              },
+              "transform": {
+                "position": {
+                  "x": 28,
+                  "y": 194.5,
+                  "z": -15.4104
+                },
+                "rotation": {
+                  "x": 1.5707998174534008,
+                  "y": 0,
+                  "z": -1.5707998174534008
+                },
+                "scale": {
+                  "x": 121,
+                  "y": 1,
+                  "z": 7
+                }
+              }
+            },
+            "root": {
+              "addedChildren": [
+                {
+                  "id": "c0cd2cf0",
+                  "name": "Platform",
+                  "transform": {
+                    "position": {
+                      "x": 38.5032,
+                      "y": 198.5,
+                      "z": -15
+                    },
+                    "rotation": {
+                      "x": 0,
+                      "y": 1.5707928361363925,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 122,
+                      "y": 1,
+                      "z": 22
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "4efea79f",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "0e9126ea",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": "9ceea29d6ae4cca8"
+                      }
+                    },
+                    {
+                      "id": "ecb4beae",
+                      "type": "Keyboard",
+                      "params": {
+                        "pitch": 0.9,
+                        "fill": 0.88,
+                        "height": 0.45,
+                        "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                        "seed": 1,
+                        "style": "a17f3493c7ef345c"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "6b0fa5e7",
+      "name": "InterLevel",
+      "transform": {
+        "position": {
+          "x": -1665,
+          "y": 90.5,
+          "z": 317.5
+        }
+      },
+      "components": [],
+      "prefab": "7b146287b66c6a52",
+      "overrides": {
+        "d1d3088a": {
+          "transform": {
+            "position": {
+              "x": 7.5001,
+              "y": 4,
+              "z": 0
+            },
+            "rotation": {
+              "x": 1.5707998174534008,
+              "y": 0,
+              "z": 1.5707998174534008
+            },
+            "scale": {
+              "x": 15,
+              "y": 1,
+              "z": 9
+            }
+          }
+        }
+      }
     }
   ],
   "prefabs": {

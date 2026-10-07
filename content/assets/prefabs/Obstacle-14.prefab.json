@@ -1,0 +1,722 @@
+{
+  "id": "root",
+  "name": "Obstacle 14",
+  "transform": {
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    }
+  },
+  "components": [],
+  "children": [
+    {
+      "id": "30051eab",
+      "name": "Platform",
+      "transform": {
+        "position": {
+          "x": 38.5032,
+          "y": 190.5787,
+          "z": -15.4104
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1.5708,
+          "z": 0
+        },
+        "scale": {
+          "x": 121.4,
+          "y": 0.5,
+          "z": 20.7
+        }
+      },
+      "components": [
+        {
+          "id": "4efea79f",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "0e9126ea",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": "55205761e38bc929"
+          }
+        },
+        {
+          "id": "ecb4beae",
+          "type": "Keyboard",
+          "params": {
+            "pitch": 0.9,
+            "fill": 0.88,
+            "height": 0.45,
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "6f921fba",
+      "name": "box",
+      "transform": {
+        "position": {
+          "x": 34.203,
+          "y": 193.7787,
+          "z": 27.4896
+        },
+        "scale": {
+          "x": 11.1,
+          "y": 5.9,
+          "z": 1.2
+        }
+      },
+      "components": [
+        {
+          "id": "508b2397",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "965f6971",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": ""
+          }
+        }
+      ],
+      "children": [
+        {
+          "id": "8140fd89",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": 0.8108,
+              "y": 0,
+              "z": -6.6667
+            }
+          },
+          "components": [
+            {
+              "id": "508b2397",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "965f6971",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "2568d84c",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": -13.3333
+            }
+          },
+          "components": [
+            {
+              "id": "508b2397",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "965f6971",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "0939679b",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": 0.8108,
+              "y": 0,
+              "z": -20
+            }
+          },
+          "components": [
+            {
+              "id": "508b2397",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "965f6971",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "f5598112",
+      "name": "box",
+      "transform": {
+        "position": {
+          "x": 34.203,
+          "y": 193.7787,
+          "z": -20.5104
+        },
+        "scale": {
+          "x": 11.1,
+          "y": 5.9,
+          "z": 1.2
+        }
+      },
+      "components": [
+        {
+          "id": "508b2397",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "965f6971",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": ""
+          }
+        }
+      ],
+      "children": [
+        {
+          "id": "c0fa0728",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": 0.8108,
+              "y": 0,
+              "z": -6.6667
+            }
+          },
+          "components": [
+            {
+              "id": "508b2397",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "965f6971",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "749feabc",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": -13.3333
+            }
+          },
+          "components": [
+            {
+              "id": "508b2397",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "965f6971",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "c3655f94",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": 0.8108,
+              "y": 0,
+              "z": -20
+            }
+          },
+          "components": [
+            {
+              "id": "508b2397",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "965f6971",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "8a6cc0f5",
+      "name": "box",
+      "transform": {
+        "position": {
+          "x": 34.203,
+          "y": 193.7787,
+          "z": -52.5104
+        },
+        "scale": {
+          "x": 11.1,
+          "y": 5.9,
+          "z": 1.2
+        }
+      },
+      "components": [
+        {
+          "id": "508b2397",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "965f6971",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": ""
+          }
+        }
+      ],
+      "children": [
+        {
+          "id": "e491a09f",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": 0.8108,
+              "y": 0,
+              "z": -6.6667
+            }
+          },
+          "components": [
+            {
+              "id": "508b2397",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "965f6971",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "15349636",
+          "name": "box",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "z": -13.3333
+            }
+          },
+          "components": [
+            {
+              "id": "508b2397",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "965f6971",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "554df1ae",
+      "name": "Platform",
+      "transform": {
+        "position": {
+          "x": 27.9032,
+          "y": 193.9789,
+          "z": -15.4104
+        },
+        "rotation": {
+          "x": 1.5708,
+          "y": 0,
+          "z": -1.5708
+        },
+        "scale": {
+          "x": 121.4,
+          "y": 0.5,
+          "z": 7.3
+        }
+      },
+      "components": [
+        {
+          "id": "4efea79f",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "0e9126ea",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": "55205761e38bc929"
+          }
+        },
+        {
+          "id": "ecb4beae",
+          "type": "Keyboard",
+          "params": {
+            "pitch": 0.9,
+            "fill": 0.88,
+            "height": 0.45,
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1
+          },
+          "enabled": false
+        }
+      ]
+    },
+    {
+      "id": "d153f197",
+      "name": "Platform",
+      "transform": {
+        "position": {
+          "x": 48.9032,
+          "y": 193.9789,
+          "z": -22.902
+        },
+        "rotation": {
+          "x": 1.5707998174534008,
+          "y": 0,
+          "z": -1.5707998174534008
+        },
+        "scale": {
+          "x": 105.8168,
+          "y": 0.5,
+          "z": 7.3
+        }
+      },
+      "components": [
+        {
+          "id": "4efea79f",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "0e9126ea",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": "55205761e38bc929"
+          }
+        },
+        {
+          "id": "ecb4beae",
+          "type": "Keyboard",
+          "params": {
+            "pitch": 0.9,
+            "fill": 0.88,
+            "height": 0.45,
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1
+          },
+          "enabled": false
+        }
+      ]
+    },
+    {
+      "id": "771a81e6",
+      "name": "Platform",
+      "transform": {
+        "position": {
+          "x": 38.303,
+          "y": 193.9787,
+          "z": 45.5397
+        },
+        "rotation": {
+          "x": 1.5708,
+          "y": 0,
+          "z": -3.1416
+        },
+        "scale": {
+          "x": 21.2,
+          "y": 0.5,
+          "z": 7.3
+        }
+      },
+      "components": [
+        {
+          "id": "4efea79f",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "0e9126ea",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": "55205761e38bc929"
+          }
+        },
+        {
+          "id": "ecb4beae",
+          "type": "Keyboard",
+          "params": {
+            "pitch": 0.9,
+            "fill": 0.88,
+            "height": 0.45,
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1
+          },
+          "enabled": false
+        }
+      ]
+    }
+  ]
+}
