@@ -920,6 +920,120 @@
                   "z": 100
                 }
               }
+            },
+            "96115d10": {
+              "transform": {
+                "position": {
+                  "x": -22,
+                  "y": 0.5002,
+                  "z": -0.4999
+                },
+                "rotation": {
+                  "x": 1.5707998174534008,
+                  "y": 0,
+                  "z": 0
+                },
+                "scale": {
+                  "x": 30,
+                  "y": 1,
+                  "z": 50.998
+                }
+              }
+            },
+            "7598d3d6": {
+              "transform": {
+                "position": {
+                  "x": 0,
+                  "y": 17.0002,
+                  "z": -0.5
+                },
+                "rotation": {
+                  "x": 1.5707998174534008,
+                  "y": 0,
+                  "z": 0
+                },
+                "scale": {
+                  "x": 14,
+                  "y": 1,
+                  "z": 17.998
+                }
+              }
+            },
+            "a00fac5b": {
+              "transform": {
+                "position": {
+                  "x": 22,
+                  "y": 0.5002,
+                  "z": -0.4999
+                },
+                "rotation": {
+                  "x": 1.5707998174534008,
+                  "y": 0,
+                  "z": 0
+                },
+                "scale": {
+                  "x": 30,
+                  "y": 1,
+                  "z": 50.998
+                }
+              }
+            },
+            "894af85b": {
+              "transform": {
+                "position": {
+                  "x": 22,
+                  "y": 0.4994,
+                  "z": 100.5001
+                },
+                "rotation": {
+                  "x": 1.5707998174534008,
+                  "y": 0,
+                  "z": 0
+                },
+                "scale": {
+                  "x": 30,
+                  "y": 1,
+                  "z": 50.9988
+                }
+              }
+            },
+            "12944e5d": {
+              "transform": {
+                "position": {
+                  "x": 0,
+                  "y": 16.9994,
+                  "z": 100.5
+                },
+                "rotation": {
+                  "x": 1.5707998174534008,
+                  "y": 0,
+                  "z": 0
+                },
+                "scale": {
+                  "x": 14,
+                  "y": 1,
+                  "z": 17.9988
+                }
+              }
+            },
+            "8585d00d": {
+              "transform": {
+                "position": {
+                  "x": -22,
+                  "y": 0.4994,
+                  "z": 100.5001
+                },
+                "rotation": {
+                  "x": 1.5707998174534008,
+                  "y": 0,
+                  "z": 0
+                },
+                "scale": {
+                  "x": 30,
+                  "y": 1,
+                  "z": 50.9988
+                }
+              }
             }
           }
         }
@@ -1657,6 +1771,11 @@
                   "y": 1,
                   "z": 40.0012
                 }
+              },
+              "params": {
+                "efa7dd05": {
+                  "material": "546152d8d2e2b3d2"
+                }
               }
             },
             "96d1dffd": {
@@ -1699,6 +1818,11 @@
                   "x": 14,
                   "y": 1,
                   "z": 14.5036
+                }
+              },
+              "params": {
+                "efa7dd05": {
+                  "material": "546152d8d2e2b3d2"
                 }
               }
             },
@@ -1749,7 +1873,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     }
                   ]
@@ -1794,7 +1918,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     }
                   ]
@@ -1839,7 +1963,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     },
                     {
@@ -1847,7 +1971,8 @@
                       "type": "Keyboard",
                       "params": {
                         "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                        "seed": 1
+                        "seed": 1,
+                        "style": "dbd2775e3fece4fd"
                       }
                     }
                   ]
@@ -1857,9 +1982,9 @@
                   "name": "Wall",
                   "transform": {
                     "position": {
-                      "x": 27.5001,
-                      "y": -10.0007,
-                      "z": 17.5001
+                      "x": 31,
+                      "y": 4.5,
+                      "z": 20.5
                     },
                     "rotation": {
                       "x": 1.5707998174534008,
@@ -1899,6 +2024,11 @@
                         "model": "builtin:box",
                         "material": "4a11d049f9f8e5ac"
                       }
+                    },
+                    {
+                      "id": "7a227b32",
+                      "type": "Hazard",
+                      "params": {}
                     }
                   ]
                 },
@@ -2054,6 +2184,206 @@
                     }
                   ],
                   "enabled": false
+                },
+                {
+                  "id": "0b1227fb",
+                  "name": "Wall",
+                  "transform": {
+                    "position": {
+                      "x": 27.5,
+                      "y": 5,
+                      "z": 18
+                    },
+                    "rotation": {
+                      "x": 1.5707998174534008,
+                      "y": 0,
+                      "z": 1.5707998174534008
+                    },
+                    "scale": {
+                      "x": 37.0001,
+                      "y": 1,
+                      "z": 39.9984
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "e94eb0e6",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "efa7dd05",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": "546152d8d2e2b3d2"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "694e9810",
+                  "name": "Wall",
+                  "transform": {
+                    "position": {
+                      "x": -158.5,
+                      "y": 12.4988,
+                      "z": 17.2497
+                    },
+                    "rotation": {
+                      "x": 1.5707998174534008,
+                      "y": 0,
+                      "z": 1.5707998174534008
+                    },
+                    "scale": {
+                      "x": 35.4996,
+                      "y": 1,
+                      "z": 25.0007
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "e94eb0e6",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "efa7dd05",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": "546152d8d2e2b3d2"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "11ed112a",
+                  "name": "Wall",
+                  "transform": {
+                    "position": {
+                      "x": -158.5,
+                      "y": -7.3758,
+                      "z": 4.2497
+                    },
+                    "rotation": {
+                      "x": 1.5707998174534008,
+                      "y": 0,
+                      "z": 1.5707998174534008
+                    },
+                    "scale": {
+                      "x": 9.4996,
+                      "y": 1,
+                      "z": 14.7486
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "e94eb0e6",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "efa7dd05",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": "546152d8d2e2b3d2"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "107d7194",
+                  "name": "Wall",
+                  "transform": {
+                    "position": {
+                      "x": -158.5,
+                      "y": -7.3758,
+                      "z": 29.5
+                    },
+                    "rotation": {
+                      "x": 1.5707998174534008,
+                      "y": 0,
+                      "z": 1.5707998174534008
+                    },
+                    "scale": {
+                      "x": 9.4996,
+                      "y": 1,
+                      "z": 14.7486
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "e94eb0e6",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "efa7dd05",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": "546152d8d2e2b3d2"
+                      }
+                    }
+                  ]
                 }
               ]
             },
@@ -2090,12 +2420,12 @@
           "transform": {
             "position": {
               "x": -0.0006,
-              "y": 21.25,
+              "y": 9,
               "z": 0
             },
             "scale": {
-              "x": 36,
-              "y": 26.5,
+              "x": 16,
+              "y": 1,
               "z": 15
             }
           }
@@ -2103,18 +2433,18 @@
         "d1d3088a": {
           "transform": {
             "position": {
-              "x": 12.4994,
+              "x": 7.5,
               "y": 3.9999,
               "z": 0
             },
             "rotation": {
-              "x": 1.5708,
+              "x": 1.5707998174534008,
               "y": 0,
-              "z": 1.5708
+              "z": 1.5707998174534008
             },
             "scale": {
               "x": 15,
-              "y": 10.9988,
+              "y": 1,
               "z": 9
             }
           }
@@ -2122,18 +2452,18 @@
         "37e81b77": {
           "transform": {
             "position": {
-              "x": -13.0006,
+              "x": -7.5,
               "y": 4.2499,
               "z": 0
             },
             "rotation": {
-              "x": 1.5708,
+              "x": 1.5707998174534008,
               "y": 0,
-              "z": 1.5708
+              "z": 1.5707998174534008
             },
             "scale": {
               "x": 15,
-              "y": 12.0012,
+              "y": 1,
               "z": 9.5
             }
           }
@@ -2209,7 +2539,7 @@
               "type": "Renderer",
               "params": {
                 "model": "builtin:box",
-                "material": ""
+                "material": "9ceea29d6ae4cca8"
               }
             },
             {
@@ -2217,7 +2547,8 @@
               "type": "Keyboard",
               "params": {
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                "seed": 1
+                "seed": 1,
+                "style": "a17f3493c7ef345c"
               }
             }
           ]
@@ -2407,8 +2738,299 @@
                       }
                     }
                   ]
+                },
+                {
+                  "id": "b4cb07d0",
+                  "name": "Wall",
+                  "transform": {
+                    "position": {
+                      "x": 0.0004,
+                      "y": 16.5018,
+                      "z": -101.5
+                    },
+                    "rotation": {
+                      "x": 1.5707998174534008,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 14,
+                      "y": 1,
+                      "z": 17.0012
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "e94eb0e6",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "efa7dd05",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": "9ceea29d6ae4cca8"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "ae92b26f",
+                  "name": "Wall",
+                  "transform": {
+                    "position": {
+                      "x": -21.4996,
+                      "y": 0.0006,
+                      "z": -101.4999
+                    },
+                    "rotation": {
+                      "x": 1.5707998174534008,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 29,
+                      "y": 1,
+                      "z": 49.9988
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "e94eb0e6",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "efa7dd05",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": "9ceea29d6ae4cca8"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "cf46731f",
+                  "name": "Wall",
+                  "transform": {
+                    "position": {
+                      "x": 21.5004,
+                      "y": 0.0012,
+                      "z": -101.4999
+                    },
+                    "rotation": {
+                      "x": 1.5707998174534008,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 29,
+                      "y": 1,
+                      "z": 50
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "e94eb0e6",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "efa7dd05",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": "9ceea29d6ae4cca8"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "9eab20dd",
+                  "name": "Wall",
+                  "transform": {
+                    "position": {
+                      "x": 0.0004,
+                      "y": -12.7488,
+                      "z": -101.5
+                    },
+                    "rotation": {
+                      "x": 1.5707998174534008,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 14,
+                      "y": 1,
+                      "z": 24.5024
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "e94eb0e6",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "efa7dd05",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": "9ceea29d6ae4cca8"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "3867b44e",
+                  "name": "Ground",
+                  "transform": {
+                    "position": {
+                      "x": -0.5001,
+                      "y": 26,
+                      "z": -52
+                    },
+                    "rotation": {
+                      "x": 0,
+                      "y": -1.5707928361363925,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 101.0031,
+                      "y": 1,
+                      "z": 35
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "e94eb0e6",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "efa7dd05",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": "546152d8d2e2b3d2"
+                      }
+                    }
+                  ]
                 }
+              ],
+              "childOrder": [
+                "6c1aca3c",
+                "96d1dffd",
+                "3867b44e",
+                "6e7e3ae1",
+                "c4dce4ac",
+                "337bbf8c",
+                "c48cc2b9",
+                "ae92b26f",
+                "cf46731f",
+                "b4cb07d0",
+                "9eab20dd"
               ]
+            },
+            "6c1aca3c": {
+              "params": {
+                "efa7dd05": {
+                  "material": "9ceea29d6ae4cca8"
+                }
+              }
+            },
+            "6e7e3ae1": {
+              "params": {
+                "efa7dd05": {
+                  "material": "9ceea29d6ae4cca8"
+                }
+              }
+            },
+            "c4dce4ac": {
+              "params": {
+                "efa7dd05": {
+                  "material": "9ceea29d6ae4cca8"
+                }
+              }
+            },
+            "96d1dffd": {
+              "params": {
+                "efa7dd05": {
+                  "material": "9ceea29d6ae4cca8"
+                }
+              }
             }
           }
         }
