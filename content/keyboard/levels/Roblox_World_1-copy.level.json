@@ -1293,6 +1293,75 @@
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                 "seed": 1
               }
+            },
+            {
+              "id": "2800de4f",
+              "type": "Sequence",
+              "params": {
+                "name": "",
+                "clock": "shared",
+                "axes": "object",
+                "loop": "restart",
+                "times": 0,
+                "offset": 0,
+                "stages": [
+                  {
+                    "id": "b5451464",
+                    "steps": [
+                      {
+                        "id": "167c9caa",
+                        "kind": "wait",
+                        "seconds": 2
+                      }
+                    ]
+                  },
+                  {
+                    "id": "9831281c",
+                    "steps": [
+                      {
+                        "id": "7e193369",
+                        "kind": "fade",
+                        "to": 0.5,
+                        "timing": {
+                          "by": "seconds",
+                          "seconds": 2
+                        },
+                        "ease": "linear"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "52932a61",
+                    "steps": [
+                      {
+                        "id": "0e6eeb88",
+                        "kind": "enabled",
+                        "on": false
+                      }
+                    ]
+                  },
+                  {
+                    "id": "f3d3cd60",
+                    "steps": [
+                      {
+                        "id": "8d789339",
+                        "kind": "wait",
+                        "seconds": 2
+                      }
+                    ]
+                  },
+                  {
+                    "id": "fbb065cb",
+                    "steps": [
+                      {
+                        "id": "a95e7908",
+                        "kind": "enabled",
+                        "on": true
+                      }
+                    ]
+                  }
+                ]
+              }
             }
           ]
         },
@@ -2020,7 +2089,7 @@
                     "position": {
                       "x": 31,
                       "y": 4.5,
-                      "z": 20.5
+                      "z": 18
                     },
                     "rotation": {
                       "x": 1.5707998174534008,
@@ -2065,6 +2134,39 @@
                       "id": "7a227b32",
                       "type": "Hazard",
                       "params": {}
+                    },
+                    {
+                      "id": "1c04e575",
+                      "type": "Sequence",
+                      "params": {
+                        "name": "",
+                        "clock": "shared",
+                        "axes": "object",
+                        "loop": "restart",
+                        "times": 0,
+                        "offset": 0,
+                        "stages": [
+                          {
+                            "id": "c22a005b",
+                            "steps": [
+                              {
+                                "id": "eb780d39",
+                                "kind": "move",
+                                "to": {
+                                  "x": 0.0007,
+                                  "y": 186,
+                                  "z": 0
+                                },
+                                "timing": {
+                                  "by": "speed",
+                                  "speed": 45
+                                },
+                                "ease": "linear"
+                              }
+                            ]
+                          }
+                        ]
+                      }
                     }
                   ]
                 },
@@ -2228,7 +2330,7 @@
                     "position": {
                       "x": 27.5,
                       "y": 5,
-                      "z": 18
+                      "z": 17.5
                     },
                     "rotation": {
                       "x": 1.5707998174534008,
@@ -3278,7 +3380,7 @@
                     "name": "",
                     "clock": "shared",
                     "axes": "object",
-                    "loop": "yoyo",
+                    "loop": "restart",
                     "times": 0,
                     "offset": 0,
                     "stages": [
