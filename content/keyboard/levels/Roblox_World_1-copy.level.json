@@ -9292,18 +9292,6 @@
           }
         }
       }
-    },
-    {
-      "id": "21a6fcc1",
-      "name": "Obstacle 5",
-      "transform": {
-        "position": {
-          "x": 0,
-          "y": 12.5,
-          "z": 338.5
-        }
-      },
-      "components": []
     }
   ],
   "prefabs": {
