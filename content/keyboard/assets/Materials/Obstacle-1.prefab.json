@@ -1,0 +1,1058 @@
+{
+  "id": "root",
+  "name": "Obstacle 1",
+  "transform": {
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    }
+  },
+  "components": [],
+  "children": [
+    {
+      "id": "759b8ba0",
+      "name": "Obstacle 1",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 17
+        }
+      },
+      "components": [],
+      "children": [
+        {
+          "id": "c7258e8d",
+          "name": "Wall",
+          "transform": {
+            "position": {
+              "x": 7.5,
+              "y": 2.9999,
+              "z": -10.75
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 1.5708
+            },
+            "scale": {
+              "x": 15.5001,
+              "y": 1,
+              "z": 9
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "14a2d303",
+          "name": "Ceilling",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 7.5,
+              "z": -10.5
+            },
+            "scale": {
+              "x": 16,
+              "y": 1,
+              "z": 15
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "2fc2f8c9",
+          "name": "Wall",
+          "transform": {
+            "position": {
+              "x": -7.5,
+              "y": 3.2499,
+              "z": -10.75
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 1.5708
+            },
+            "scale": {
+              "x": 15.5,
+              "y": 1,
+              "z": 9.5
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "9f812842",
+          "name": "Wall",
+          "transform": {
+            "position": {
+              "x": 10,
+              "y": 3,
+              "z": -3.5
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 6,
+              "y": 1,
+              "z": 9
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "c5b77c50",
+          "name": "Wall",
+          "transform": {
+            "position": {
+              "x": 12.5,
+              "y": -1.5001,
+              "z": 22.5
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 1.5708
+            },
+            "scale": {
+              "x": 53,
+              "y": 1,
+              "z": 18.0002
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "b3ea5080",
+          "name": "Wall",
+          "transform": {
+            "position": {
+              "x": -12.5,
+              "y": -1.5001,
+              "z": 22.75
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 1.5708
+            },
+            "scale": {
+              "x": 52.5,
+              "y": 1,
+              "z": 18.0002
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "2d44fb24",
+          "name": "Wall",
+          "transform": {
+            "position": {
+              "x": -10,
+              "y": 3,
+              "z": -3.5
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 6,
+              "y": 1,
+              "z": 9
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "8118bf97",
+          "name": "Ceilling",
+          "transform": {
+            "position": {
+              "x": 0,
+              "y": 7.5,
+              "z": 22.5
+            },
+            "scale": {
+              "x": 26,
+              "y": 1,
+              "z": 53
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "28a8b6b1",
+          "name": "Wall",
+          "transform": {
+            "position": {
+              "x": -10.5,
+              "y": 3.2498,
+              "z": 49.5
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 5,
+              "y": 1,
+              "z": 9.4997
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        },
+        {
+          "id": "b4b9c283",
+          "name": "Wall",
+          "transform": {
+            "position": {
+              "x": 10.5,
+              "y": 3.2498,
+              "z": 49.5
+            },
+            "rotation": {
+              "x": 1.5708,
+              "y": 0,
+              "z": 0
+            },
+            "scale": {
+              "x": 5,
+              "y": 1,
+              "z": 9.4997
+            }
+          },
+          "components": [
+            {
+              "id": "e94eb0e6",
+              "type": "Collider",
+              "params": {
+                "shape": {
+                  "kind": "box",
+                  "halfExtents": {
+                    "x": 0.5,
+                    "y": 0.5,
+                    "z": 0.5
+                  }
+                },
+                "center": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0
+                }
+              }
+            },
+            {
+              "id": "efa7dd05",
+              "type": "Renderer",
+              "params": {
+                "model": "builtin:box",
+                "material": ""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c1d8dc52",
+      "name": "Ground",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -1,
+          "z": 6.5
+        },
+        "scale": {
+          "x": 16,
+          "y": 1,
+          "z": 15
+        }
+      },
+      "components": [
+        {
+          "id": "e94eb0e6",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "efa7dd05",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": ""
+          }
+        },
+        {
+          "id": "93eb0bc1",
+          "type": "Keyboard",
+          "params": {
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "44700b77",
+      "name": "Ground",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -5.5,
+          "z": 28.5
+        },
+        "scale": {
+          "x": 24,
+          "y": 10,
+          "z": 3
+        }
+      },
+      "components": [
+        {
+          "id": "e94eb0e6",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "efa7dd05",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": "9ceea29d6ae4cca8"
+          }
+        },
+        {
+          "id": "93eb0bc1",
+          "type": "Keyboard",
+          "params": {
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1,
+            "style": "a17f3493c7ef345c"
+          }
+        }
+      ]
+    },
+    {
+      "id": "4f375d87",
+      "name": "Ground",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -5.5,
+          "z": 33
+        },
+        "scale": {
+          "x": 24,
+          "y": 10,
+          "z": 3
+        }
+      },
+      "components": [
+        {
+          "id": "e94eb0e6",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "efa7dd05",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": "9ceea29d6ae4cca8"
+          }
+        },
+        {
+          "id": "93eb0bc1",
+          "type": "Keyboard",
+          "params": {
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1,
+            "style": "a17f3493c7ef345c"
+          }
+        }
+      ]
+    },
+    {
+      "id": "aafabab9",
+      "name": "Ground",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -5.5,
+          "z": 40.5
+        },
+        "scale": {
+          "x": 24,
+          "y": 10,
+          "z": 9
+        }
+      },
+      "components": [
+        {
+          "id": "e94eb0e6",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "efa7dd05",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": "9ceea29d6ae4cca8"
+          }
+        },
+        {
+          "id": "93eb0bc1",
+          "type": "Keyboard",
+          "params": {
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1,
+            "style": "a17f3493c7ef345c"
+          }
+        }
+      ]
+    },
+    {
+      "id": "3847109d",
+      "name": "Ground",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -5.5,
+          "z": 48
+        },
+        "scale": {
+          "x": 24,
+          "y": 10,
+          "z": 2
+        }
+      },
+      "components": [
+        {
+          "id": "e94eb0e6",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "efa7dd05",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": "9ceea29d6ae4cca8"
+          }
+        },
+        {
+          "id": "93eb0bc1",
+          "type": "Keyboard",
+          "params": {
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1,
+            "style": "a17f3493c7ef345c"
+          }
+        }
+      ]
+    },
+    {
+      "id": "9f0d6340",
+      "name": "Ground",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -5.5,
+          "z": 52
+        },
+        "scale": {
+          "x": 24,
+          "y": 10,
+          "z": 2
+        }
+      },
+      "components": [
+        {
+          "id": "e94eb0e6",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "efa7dd05",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": "9ceea29d6ae4cca8"
+          }
+        },
+        {
+          "id": "93eb0bc1",
+          "type": "Keyboard",
+          "params": {
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1,
+            "style": "a17f3493c7ef345c"
+          }
+        }
+      ]
+    },
+    {
+      "id": "b0d463f6",
+      "name": "Ground",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -5.5,
+          "z": 61
+        },
+        "scale": {
+          "x": 24,
+          "y": 10,
+          "z": 10
+        }
+      },
+      "components": [
+        {
+          "id": "e94eb0e6",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "efa7dd05",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": "9ceea29d6ae4cca8"
+          }
+        },
+        {
+          "id": "93eb0bc1",
+          "type": "Keyboard",
+          "params": {
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1,
+            "style": "a17f3493c7ef345c"
+          }
+        }
+      ]
+    },
+    {
+      "id": "85f81640",
+      "name": "Ground",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -5.5,
+          "z": 19.75
+        },
+        "scale": {
+          "x": 24,
+          "y": 10,
+          "z": 12.5
+        }
+      },
+      "components": [
+        {
+          "id": "e94eb0e6",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "efa7dd05",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": "9ceea29d6ae4cca8"
+          }
+        },
+        {
+          "id": "93eb0bc1",
+          "type": "Keyboard",
+          "params": {
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1,
+            "style": "a17f3493c7ef345c"
+          }
+        }
+      ]
+    },
+    {
+      "id": "8c9d658d",
+      "name": "Lava",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": -7.75,
+          "z": 39.5
+        },
+        "scale": {
+          "x": 24,
+          "y": 5.5,
+          "z": 51
+        }
+      },
+      "components": [
+        {
+          "id": "e94eb0e6",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "efa7dd05",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": "4a11d049f9f8e5ac"
+          }
+        },
+        {
+          "id": "b1c5b807",
+          "type": "Hazard",
+          "params": {}
+        }
+      ]
+    },
+    {
+      "id": "bf2c7e04",
+      "name": "floor",
+      "transform": {
+        "position": {
+          "x": -21,
+          "y": 3.5,
+          "z": 37.6534
+        },
+        "rotation": {
+          "x": -1.5707963267948966,
+          "y": 0,
+          "z": 1.5707963267948966
+        },
+        "scale": {
+          "x": 72.5,
+          "y": 1,
+          "z": 9.5
+        }
+      },
+      "components": [
+        {
+          "id": "4c1a690c",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "c9b1bc29",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": ""
+          }
+        },
+        {
+          "id": "eec994bf",
+          "type": "Keyboard",
+          "params": {
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1
+          },
+          "enabled": false
+        }
+      ]
+    }
+  ]
+}
