@@ -1091,7 +1091,7 @@
                   "transform": {
                     "position": {
                       "x": 0.5,
-                      "y": 29.5,
+                      "y": 29,
                       "z": 57.5
                     },
                     "scale": {
@@ -1147,10 +1147,10 @@
                                   "z": -7
                                 },
                                 "timing": {
-                                  "by": "seconds",
-                                  "seconds": 1
+                                  "by": "speed",
+                                  "speed": 10
                                 },
-                                "ease": "linear"
+                                "ease": "in-back"
                               }
                             ]
                           },
@@ -1162,14 +1162,14 @@
                                 "kind": "move",
                                 "to": {
                                   "x": -0.5,
-                                  "y": -13.5,
-                                  "z": -8.5
+                                  "y": -15,
+                                  "z": -12
                                 },
                                 "timing": {
-                                  "by": "seconds",
-                                  "seconds": 1
+                                  "by": "speed",
+                                  "speed": 10
                                 },
-                                "ease": "linear"
+                                "ease": "out-bounce"
                               }
                             ]
                           },
@@ -1189,6 +1189,25 @@
                                   "speed": 10
                                 },
                                 "ease": "linear"
+                              }
+                            ]
+                          },
+                          {
+                            "id": "629e2ad1",
+                            "steps": [
+                              {
+                                "id": "fb6aa705",
+                                "kind": "move",
+                                "to": {
+                                  "x": 0,
+                                  "y": -25,
+                                  "z": -53
+                                },
+                                "timing": {
+                                  "by": "speed",
+                                  "speed": 2
+                                },
+                                "ease": "out-bounce"
                               }
                             ]
                           }
