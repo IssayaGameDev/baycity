@@ -48,7 +48,12 @@
       "overrides": {
         "dd138869": {
           "nodeEnabled": true,
-          "name": "Ceilling"
+          "name": "Ceilling",
+          "params": {
+            "efa7dd05": {
+              "material": "9ceea29d6ae4cca8"
+            }
+          }
         },
         "c0527796": {
           "transform": {
@@ -111,7 +116,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 }
               ]
@@ -211,7 +216,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
@@ -261,12 +266,43 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "546152d8d2e2b3d2"
                   }
                 }
               ]
             }
           ]
+        },
+        "2a3d3c4a": {
+          "params": {
+            "efa7dd05": {
+              "material": "9ceea29d6ae4cca8"
+            }
+          }
+        },
+        "63f32967": {
+          "params": {
+            "efa7dd05": {
+              "material": "9ceea29d6ae4cca8"
+            }
+          }
+        },
+        "15831e72": {
+          "params": {
+            "efa7dd05": {
+              "material": "546152d8d2e2b3d2"
+            }
+          }
+        },
+        "a1f94a2c": {
+          "params": {
+            "efa7dd05": {
+              "material": "546152d8d2e2b3d2"
+            },
+            "8c82eb4b": {
+              "style": "dbd2775e3fece4fd"
+            }
+          }
         }
       }
     },
@@ -2944,9 +2980,9 @@
                   "name": "Ground",
                   "transform": {
                     "position": {
-                      "x": -0.5001,
-                      "y": 26,
-                      "z": -52
+                      "x": 0.2486,
+                      "y": 25,
+                      "z": -50.9969
                     },
                     "rotation": {
                       "x": 0,
@@ -2954,9 +2990,9 @@
                       "z": 0
                     },
                     "scale": {
-                      "x": 101.0031,
+                      "x": 102,
                       "y": 1,
-                      "z": 35
+                      "z": 72.5
                     }
                   },
                   "components": [
@@ -2984,7 +3020,107 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": "546152d8d2e2b3d2"
+                        "material": "9ceea29d6ae4cca8"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "dde09380",
+                  "name": "Ground",
+                  "transform": {
+                    "position": {
+                      "x": -36.4998,
+                      "y": 0.25,
+                      "z": -50.997
+                    },
+                    "rotation": {
+                      "x": 0,
+                      "y": -1.5707928361363925,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 102,
+                      "y": 50.5,
+                      "z": 1
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "e94eb0e6",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "efa7dd05",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": "9ceea29d6ae4cca8"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "59d26f16",
+                  "name": "Ground",
+                  "transform": {
+                    "position": {
+                      "x": 36.0002,
+                      "y": 0.25,
+                      "z": -50.9967
+                    },
+                    "rotation": {
+                      "x": 0,
+                      "y": -1.5707928361363925,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 102,
+                      "y": 50.5,
+                      "z": 1
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "e94eb0e6",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "efa7dd05",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": "9ceea29d6ae4cca8"
                       }
                     }
                   ]
@@ -3001,7 +3137,9 @@
                 "ae92b26f",
                 "cf46731f",
                 "b4cb07d0",
-                "9eab20dd"
+                "9eab20dd",
+                "dde09380",
+                "59d26f16"
               ]
             },
             "6c1aca3c": {
@@ -3146,7 +3284,15 @@
                     "stages": []
                   }
                 }
-              ]
+              ],
+              "params": {
+                "ac003518": {
+                  "material": "546152d8d2e2b3d2"
+                },
+                "425319ba": {
+                  "style": "dbd2775e3fece4fd"
+                }
+              }
             },
             "511f5c04": {
               "transform": {
@@ -3205,7 +3351,8 @@
                   }
                 },
                 "7db09bd5": {
-                  "model": "builtin:box"
+                  "model": "builtin:box",
+                  "material": "546152d8d2e2b3d2"
                 }
               }
             },
@@ -3239,7 +3386,8 @@
                   }
                 },
                 "7db09bd5": {
-                  "model": "builtin:box"
+                  "model": "builtin:box",
+                  "material": "546152d8d2e2b3d2"
                 }
               }
             },
@@ -3266,7 +3414,8 @@
                   }
                 },
                 "ac003518": {
-                  "model": "builtin:box"
+                  "model": "builtin:box",
+                  "material": "4a11d049f9f8e5ac"
                 }
               },
               "transform": {
@@ -3324,7 +3473,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:rounded-box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     },
                     {
@@ -3332,7 +3481,8 @@
                       "type": "Keyboard",
                       "params": {
                         "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                        "seed": 1
+                        "seed": 1,
+                        "style": "dbd2775e3fece4fd"
                       }
                     }
                   ]
@@ -3377,7 +3527,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     }
                   ]
@@ -3422,7 +3572,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     }
                   ]
@@ -3467,7 +3617,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     }
                   ]
@@ -3512,7 +3662,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     }
                   ]
@@ -3616,7 +3766,8 @@
               },
               "params": {
                 "64debbe3": {
-                  "model": "builtin:box"
+                  "model": "builtin:box",
+                  "material": "9ceea29d6ae4cca8"
                 },
                 "b88e6b91": {
                   "shape": {
@@ -3627,6 +3778,9 @@
                       "z": 0.5
                     }
                   }
+                },
+                "503c2284": {
+                  "style": "a17f3493c7ef345c"
                 }
               }
             },
@@ -3660,7 +3814,11 @@
                   }
                 },
                 "64debbe3": {
-                  "model": "builtin:box"
+                  "model": "builtin:box",
+                  "material": "9ceea29d6ae4cca8"
+                },
+                "503c2284": {
+                  "style": "a17f3493c7ef345c"
                 }
               }
             },
@@ -3680,7 +3838,7 @@
               "params": {
                 "64debbe3": {
                   "model": "builtin:box",
-                  "material": "55205761e38bc929"
+                  "material": "546152d8d2e2b3d2"
                 },
                 "b88e6b91": {
                   "shape": {
@@ -3691,6 +3849,9 @@
                       "z": 0.5
                     }
                   }
+                },
+                "503c2284": {
+                  "style": "dbd2775e3fece4fd"
                 }
               }
             },
@@ -3709,7 +3870,8 @@
               },
               "params": {
                 "64debbe3": {
-                  "model": "builtin:box"
+                  "model": "builtin:box",
+                  "material": "546152d8d2e2b3d2"
                 },
                 "b88e6b91": {
                   "shape": {
@@ -3720,6 +3882,9 @@
                       "z": 0.5
                     }
                   }
+                },
+                "503c2284": {
+                  "style": "dbd2775e3fece4fd"
                 }
               }
             },
@@ -3743,7 +3908,8 @@
               },
               "params": {
                 "64debbe3": {
-                  "model": "builtin:box"
+                  "model": "builtin:box",
+                  "material": "546152d8d2e2b3d2"
                 },
                 "b88e6b91": {
                   "shape": {
@@ -3754,6 +3920,9 @@
                       "z": 0.5
                     }
                   }
+                },
+                "503c2284": {
+                  "style": "dbd2775e3fece4fd"
                 }
               }
             },
@@ -3799,7 +3968,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     },
                     {
@@ -3807,7 +3976,8 @@
                       "type": "Keyboard",
                       "params": {
                         "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                        "seed": 1
+                        "seed": 1,
+                        "style": "dbd2775e3fece4fd"
                       }
                     }
                   ]
@@ -3852,7 +4022,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     },
                     {
@@ -3860,7 +4030,8 @@
                       "type": "Keyboard",
                       "params": {
                         "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                        "seed": 1
+                        "seed": 1,
+                        "style": "dbd2775e3fece4fd"
                       }
                     }
                   ]
@@ -3910,7 +4081,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     },
                     {
@@ -3918,7 +4089,8 @@
                       "type": "Keyboard",
                       "params": {
                         "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                        "seed": 1
+                        "seed": 1,
+                        "style": "dbd2775e3fece4fd"
                       }
                     }
                   ]
@@ -3968,7 +4140,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     },
                     {
@@ -3976,7 +4148,8 @@
                       "type": "Keyboard",
                       "params": {
                         "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                        "seed": 1
+                        "seed": 1,
+                        "style": "dbd2775e3fece4fd"
                       }
                     }
                   ]
@@ -4021,7 +4194,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     },
                     {
@@ -4029,7 +4202,8 @@
                       "type": "Keyboard",
                       "params": {
                         "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                        "seed": 1
+                        "seed": 1,
+                        "style": "a17f3493c7ef345c"
                       }
                     }
                   ]
@@ -4079,7 +4253,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     },
                     {
@@ -4087,7 +4261,8 @@
                       "type": "Keyboard",
                       "params": {
                         "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                        "seed": 1
+                        "seed": 1,
+                        "style": "dbd2775e3fece4fd"
                       }
                     }
                   ]
@@ -4132,7 +4307,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "9ceea29d6ae4cca8"
                       }
                     },
                     {
@@ -4140,7 +4315,8 @@
                       "type": "Keyboard",
                       "params": {
                         "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                        "seed": 1
+                        "seed": 1,
+                        "style": "a17f3493c7ef345c"
                       }
                     }
                   ]
@@ -4190,7 +4366,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "9ceea29d6ae4cca8"
                       }
                     },
                     {
@@ -4198,7 +4374,8 @@
                       "type": "Keyboard",
                       "params": {
                         "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                        "seed": 1
+                        "seed": 1,
+                        "style": "a17f3493c7ef345c"
                       }
                     }
                   ]
@@ -4243,7 +4420,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     },
                     {
@@ -4251,7 +4428,8 @@
                       "type": "Keyboard",
                       "params": {
                         "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                        "seed": 1
+                        "seed": 1,
+                        "style": "dbd2775e3fece4fd"
                       }
                     }
                   ]
@@ -4296,7 +4474,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     },
                     {
@@ -4304,7 +4482,8 @@
                       "type": "Keyboard",
                       "params": {
                         "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                        "seed": 1
+                        "seed": 1,
+                        "style": "dbd2775e3fece4fd"
                       }
                     }
                   ]
@@ -4349,7 +4528,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "546152d8d2e2b3d2"
                       }
                     },
                     {
@@ -4357,7 +4536,8 @@
                       "type": "Keyboard",
                       "params": {
                         "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                        "seed": 1
+                        "seed": 1,
+                        "style": "dbd2775e3fece4fd"
                       }
                     }
                   ]
@@ -4740,7 +4920,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "9ceea29d6ae4cca8"
                       }
                     }
                   ]
@@ -4785,7 +4965,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "9ceea29d6ae4cca8"
                       }
                     }
                   ]
@@ -4890,7 +5070,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "9ceea29d6ae4cca8"
                       }
                     }
                   ]
@@ -4940,7 +5120,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "9ceea29d6ae4cca8"
                       }
                     }
                   ]
@@ -4990,7 +5170,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "9ceea29d6ae4cca8"
                       }
                     }
                   ]
@@ -5040,7 +5220,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "9ceea29d6ae4cca8"
                       }
                     }
                   ]
