@@ -11290,7 +11290,7 @@
                     "axes": "object",
                     "loop": "restart",
                     "times": 0,
-                    "offset": 0,
+                    "offset": 0.4,
                     "stages": [
                       {
                         "id": "f0309283",
@@ -11371,7 +11371,7 @@
                     "axes": "object",
                     "loop": "restart",
                     "times": 0,
-                    "offset": 0,
+                    "offset": 0.2,
                     "stages": [
                       {
                         "id": "89d96188",
@@ -11380,7 +11380,12 @@
                             "id": "7c155da7",
                             "kind": "wait",
                             "seconds": 1
-                          },
+                          }
+                        ]
+                      },
+                      {
+                        "id": "450bf993",
+                        "steps": [
                           {
                             "id": "7326df74",
                             "kind": "move",
@@ -11398,7 +11403,7 @@
                         ]
                       },
                       {
-                        "id": "450bf993",
+                        "id": "365b07db",
                         "steps": [
                           {
                             "id": "67152bbf",
@@ -11435,7 +11440,7 @@
                     "axes": "object",
                     "loop": "restart",
                     "times": 0,
-                    "offset": 0,
+                    "offset": 0.1,
                     "stages": [
                       {
                         "id": "a8c42f06",
