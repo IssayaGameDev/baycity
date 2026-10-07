@@ -58,9 +58,9 @@
         "c0527796": {
           "transform": {
             "position": {
-              "x": 1.5,
-              "y": 4.5,
-              "z": -4.5
+              "x": -1530.5,
+              "y": 94,
+              "z": 439.5
             },
             "scale": {
               "x": 3.2997,
@@ -9317,7 +9317,7 @@
           "transform": {
             "position": {
               "x": -1,
-              "y": 0,
+              "y": -0.5,
               "z": 0.5
             }
           },
@@ -11278,6 +11278,217 @@
                   ]
                 }
               ]
+            },
+            "6f921fba": {
+              "added": [
+                {
+                  "id": "7ff5db70",
+                  "type": "Sequence",
+                  "params": {
+                    "name": "",
+                    "clock": "shared",
+                    "axes": "object",
+                    "loop": "restart",
+                    "times": 0,
+                    "offset": 0,
+                    "stages": [
+                      {
+                        "id": "f0309283",
+                        "steps": [
+                          {
+                            "id": "980481f2",
+                            "kind": "wait",
+                            "seconds": 1
+                          }
+                        ]
+                      },
+                      {
+                        "id": "d4d8056e",
+                        "steps": [
+                          {
+                            "id": "1b0904e2",
+                            "kind": "move",
+                            "to": {
+                              "x": 0,
+                              "y": 5,
+                              "z": 0
+                            },
+                            "timing": {
+                              "by": "seconds",
+                              "seconds": 2
+                            },
+                            "ease": "out-bounce"
+                          }
+                        ]
+                      },
+                      {
+                        "id": "9d4f8c38",
+                        "steps": [
+                          {
+                            "id": "916cbb0b",
+                            "kind": "wait",
+                            "seconds": 1
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ],
+              "transform": {
+                "position": {
+                  "x": 34.203,
+                  "y": 188.5,
+                  "z": 27.4896
+                },
+                "scale": {
+                  "x": 11.1,
+                  "y": 5.9,
+                  "z": 1.2
+                }
+              }
+            },
+            "f5598112": {
+              "transform": {
+                "position": {
+                  "x": 34.203,
+                  "y": 188.5,
+                  "z": -20.5104
+                },
+                "scale": {
+                  "x": 11.1,
+                  "y": 5.9,
+                  "z": 1.2
+                }
+              },
+              "added": [
+                {
+                  "id": "8d6240e7",
+                  "type": "Sequence",
+                  "params": {
+                    "name": "",
+                    "clock": "shared",
+                    "axes": "object",
+                    "loop": "restart",
+                    "times": 0,
+                    "offset": 0,
+                    "stages": [
+                      {
+                        "id": "89d96188",
+                        "steps": [
+                          {
+                            "id": "7c155da7",
+                            "kind": "wait",
+                            "seconds": 1
+                          },
+                          {
+                            "id": "7326df74",
+                            "kind": "move",
+                            "to": {
+                              "x": 0,
+                              "y": 5.5,
+                              "z": 0
+                            },
+                            "timing": {
+                              "by": "seconds",
+                              "seconds": 2
+                            },
+                            "ease": "out-bounce"
+                          }
+                        ]
+                      },
+                      {
+                        "id": "450bf993",
+                        "steps": [
+                          {
+                            "id": "67152bbf",
+                            "kind": "wait",
+                            "seconds": 1
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "8a6cc0f5": {
+              "transform": {
+                "position": {
+                  "x": 34.203,
+                  "y": 188,
+                  "z": -52.5104
+                },
+                "scale": {
+                  "x": 11.1,
+                  "y": 5.9,
+                  "z": 1.2
+                }
+              },
+              "added": [
+                {
+                  "id": "93708931",
+                  "type": "Sequence",
+                  "params": {
+                    "name": "",
+                    "clock": "shared",
+                    "axes": "object",
+                    "loop": "restart",
+                    "times": 0,
+                    "offset": 0,
+                    "stages": [
+                      {
+                        "id": "a8c42f06",
+                        "steps": [
+                          {
+                            "id": "8da560da",
+                            "kind": "wait",
+                            "seconds": 1
+                          }
+                        ]
+                      },
+                      {
+                        "id": "f9417b7c",
+                        "steps": [
+                          {
+                            "id": "d3c56a74",
+                            "kind": "move",
+                            "to": {
+                              "x": 0,
+                              "y": 6.5,
+                              "z": 0
+                            },
+                            "timing": {
+                              "by": "seconds",
+                              "seconds": 2
+                            },
+                            "ease": "out-bounce"
+                          }
+                        ]
+                      },
+                      {
+                        "id": "45c8fb95",
+                        "steps": [
+                          {
+                            "id": "566c303a",
+                            "kind": "wait",
+                            "seconds": 1
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "8140fd89": {
+              "transform": {
+                "position": {
+                  "x": 0.8108,
+                  "y": -0.0063,
+                  "z": -6.658
+                }
+              }
             }
           }
         }
