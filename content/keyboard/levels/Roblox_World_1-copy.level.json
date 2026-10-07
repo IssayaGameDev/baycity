@@ -1295,7 +1295,7 @@
               }
             },
             {
-              "id": "2800de4f",
+              "id": "50a9159d",
               "type": "Sequence",
               "params": {
                 "name": "",
@@ -1306,57 +1306,72 @@
                 "offset": 0,
                 "stages": [
                   {
-                    "id": "b5451464",
+                    "id": "4860f876",
                     "steps": [
                       {
-                        "id": "167c9caa",
-                        "kind": "wait",
-                        "seconds": 2
-                      }
-                    ]
-                  },
-                  {
-                    "id": "9831281c",
-                    "steps": [
-                      {
-                        "id": "7e193369",
+                        "id": "1cbcc252",
                         "kind": "fade",
-                        "to": 0.5,
+                        "to": 1,
                         "timing": {
                           "by": "seconds",
-                          "seconds": 2
+                          "seconds": 10
                         },
                         "ease": "linear"
                       }
                     ]
                   },
                   {
-                    "id": "52932a61",
+                    "id": "e31d51ca",
                     "steps": [
                       {
-                        "id": "0e6eeb88",
+                        "id": "534736aa",
+                        "kind": "enabled",
+                        "on": true
+                      }
+                    ]
+                  },
+                  {
+                    "id": "b3aa7b15",
+                    "steps": [
+                      {
+                        "id": "0731ca73",
+                        "kind": "wait",
+                        "seconds": 5
+                      }
+                    ]
+                  },
+                  {
+                    "id": "7321025a",
+                    "steps": [
+                      {
+                        "id": "8e165f88",
+                        "kind": "fade",
+                        "to": 0,
+                        "timing": {
+                          "by": "seconds",
+                          "seconds": 1
+                        },
+                        "ease": "linear"
+                      }
+                    ]
+                  },
+                  {
+                    "id": "992944c4",
+                    "steps": [
+                      {
+                        "id": "e4cbb2a0",
                         "kind": "enabled",
                         "on": false
                       }
                     ]
                   },
                   {
-                    "id": "f3d3cd60",
+                    "id": "6508ed22",
                     "steps": [
                       {
-                        "id": "8d789339",
+                        "id": "08176a1d",
                         "kind": "wait",
-                        "seconds": 2
-                      }
-                    ]
-                  },
-                  {
-                    "id": "fbb065cb",
-                    "steps": [
-                      {
-                        "id": "a95e7908",
-                        "kind": "enabled",
-                        "on": true
+                        "seconds": 5
                       }
                     ]
                   }
@@ -2159,7 +2174,7 @@
                                 },
                                 "timing": {
                                   "by": "speed",
-                                  "speed": 45
+                                  "speed": 25
                                 },
                                 "ease": "linear"
                               }
