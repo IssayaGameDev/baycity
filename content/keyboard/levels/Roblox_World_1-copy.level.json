@@ -1148,7 +1148,7 @@
                                 },
                                 "timing": {
                                   "by": "speed",
-                                  "speed": 10
+                                  "speed": 20
                                 },
                                 "ease": "in-back"
                               }
@@ -1162,12 +1162,12 @@
                                 "kind": "move",
                                 "to": {
                                   "x": -0.5,
-                                  "y": -15,
-                                  "z": -12
+                                  "y": -13.5,
+                                  "z": -7
                                 },
                                 "timing": {
                                   "by": "speed",
-                                  "speed": 10
+                                  "speed": 20
                                 },
                                 "ease": "out-bounce"
                               }
@@ -1181,31 +1181,12 @@
                                 "kind": "move",
                                 "to": {
                                   "x": 0,
-                                  "y": -24.5,
-                                  "z": -45
+                                  "y": -25.5,
+                                  "z": -53.5
                                 },
                                 "timing": {
                                   "by": "speed",
-                                  "speed": 10
-                                },
-                                "ease": "linear"
-                              }
-                            ]
-                          },
-                          {
-                            "id": "629e2ad1",
-                            "steps": [
-                              {
-                                "id": "fb6aa705",
-                                "kind": "move",
-                                "to": {
-                                  "x": 0,
-                                  "y": -25,
-                                  "z": -53
-                                },
-                                "timing": {
-                                  "by": "speed",
-                                  "speed": 2
+                                  "speed": 15
                                 },
                                 "ease": "out-bounce"
                               }
@@ -7000,9 +6981,14 @@
       "name": "Obstacle 11",
       "transform": {
         "position": {
-          "x": -1056.5,
-          "y": 288,
-          "z": 438.5
+          "x": -1667.5,
+          "y": 14,
+          "z": -225.5
+        },
+        "rotation": {
+          "x": 0,
+          "y": -1.5707963267948966,
+          "z": 0
         }
       },
       "components": [],
@@ -7900,6 +7886,59 @@
                   "id": "9204c3df",
                   "type": "Hazard",
                   "params": {}
+                }
+              ]
+            },
+            {
+              "id": "f28829f5",
+              "name": "platform",
+              "transform": {
+                "position": {
+                  "x": -106.625,
+                  "y": 8,
+                  "z": 9.625
+                },
+                "scale": {
+                  "x": 7.25,
+                  "y": 1,
+                  "z": 5.75
+                }
+              },
+              "components": [
+                {
+                  "id": "3377f95c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "cc8ca8c9",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": ""
+                  }
+                },
+                {
+                  "id": "a8bf84cf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1
+                  }
                 }
               ]
             }
