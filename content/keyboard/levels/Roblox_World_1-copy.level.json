@@ -4813,7 +4813,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": "9ceea29d6ae4cca8"
+                        "material": "546152d8d2e2b3d2"
                       }
                     },
                     {
@@ -5236,7 +5236,7 @@
                   "name": "wall",
                   "transform": {
                     "position": {
-                      "x": -495,
+                      "x": -494.5,
                       "y": 40.5,
                       "z": 0.5
                     },
@@ -5276,7 +5276,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "9ceea29d6ae4cca8"
                       }
                     }
                   ]
@@ -5286,7 +5286,7 @@
                   "name": "wall",
                   "transform": {
                     "position": {
-                      "x": -495,
+                      "x": -494.5,
                       "y": 2.75,
                       "z": 23.5
                     },
@@ -5326,7 +5326,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "9ceea29d6ae4cca8"
                       }
                     }
                   ]
@@ -5336,7 +5336,7 @@
                   "name": "wall",
                   "transform": {
                     "position": {
-                      "x": -495,
+                      "x": -494.5,
                       "y": 2.75,
                       "z": -23
                     },
@@ -5376,7 +5376,7 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "9ceea29d6ae4cca8"
                       }
                     }
                   ]
@@ -5386,7 +5386,7 @@
                   "name": "wall",
                   "transform": {
                     "position": {
-                      "x": -495,
+                      "x": -494.5,
                       "y": -4,
                       "z": 2.75
                     },
@@ -5426,11 +5426,166 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
-                        "material": ""
+                        "material": "9ceea29d6ae4cca8"
                       }
                     }
                   ]
+                },
+                {
+                  "id": "e7a1150b",
+                  "name": "floor",
+                  "transform": {
+                    "position": {
+                      "x": -243.75,
+                      "y": 2.5,
+                      "z": -37.5
+                    },
+                    "rotation": {
+                      "x": -1.5707963267948966,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 498.5,
+                      "y": 3,
+                      "z": 36
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "4c1a690c",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "c9b1bc29",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:rounded-box",
+                        "material": "546152d8d2e2b3d2"
+                      }
+                    },
+                    {
+                      "id": "eec994bf",
+                      "type": "Keyboard",
+                      "params": {
+                        "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                        "seed": 1
+                      },
+                      "enabled": false
+                    }
+                  ]
+                },
+                {
+                  "id": "0070d78b",
+                  "name": "floor",
+                  "transform": {
+                    "position": {
+                      "x": -243.75,
+                      "y": 2.5,
+                      "z": 38.5
+                    },
+                    "rotation": {
+                      "x": -1.5707963267948966,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 498.5,
+                      "y": 3,
+                      "z": 36
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "4c1a690c",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "c9b1bc29",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:rounded-box",
+                        "material": "546152d8d2e2b3d2"
+                      }
+                    },
+                    {
+                      "id": "eec994bf",
+                      "type": "Keyboard",
+                      "params": {
+                        "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                        "seed": 1
+                      },
+                      "enabled": false
+                    }
+                  ]
                 }
+              ],
+              "childOrder": [
+                "e7a1150b",
+                "0070d78b",
+                "f8ebd7e9",
+                "927260c0",
+                "95257ff4",
+                "205be29c",
+                "f955106f",
+                "9c005393",
+                "d0474ba0",
+                "22790c0e",
+                "375ce25f",
+                "36ec3cec",
+                "01719fdc",
+                "65bdbc27",
+                "5368b1a8",
+                "bb490c6e",
+                "edca1e7d",
+                "06e19992",
+                "9518dc82",
+                "077c81cb",
+                "2c00c94d",
+                "d52dae4d",
+                "b243297e",
+                "2f754663",
+                "03b58fee",
+                "2efbfbec",
+                "4c8bc539",
+                "92239448",
+                "52e7f9e9",
+                "73b20f5d",
+                "fe38e5f8",
+                "494419a1",
+                "c063fcf3",
+                "becdfb4f",
+                "2077776a"
               ]
             }
           }
@@ -5745,7 +5900,7 @@
                   "transform": {
                     "position": {
                       "x": -220.3247,
-                      "y": 41.6482,
+                      "y": 41.2732,
                       "z": -28.3466
                     },
                     "rotation": {
@@ -5756,7 +5911,7 @@
                     "scale": {
                       "x": 61.5,
                       "y": 1,
-                      "z": 9.5
+                      "z": 8.75
                     }
                   },
                   "components": [
@@ -8263,7 +8418,7 @@
                   "name": "floor",
                   "transform": {
                     "position": {
-                      "x": 9,
+                      "x": 10,
                       "y": 32.5,
                       "z": 1.5
                     },
@@ -8322,7 +8477,7 @@
                   "name": "floor",
                   "transform": {
                     "position": {
-                      "x": 9,
+                      "x": 10,
                       "y": -14,
                       "z": 1.5
                     },
@@ -8381,7 +8536,7 @@
                   "name": "floor",
                   "transform": {
                     "position": {
-                      "x": 9,
+                      "x": 10,
                       "y": 4.75,
                       "z": -31.75
                     },
@@ -8440,7 +8595,7 @@
                   "name": "floor",
                   "transform": {
                     "position": {
-                      "x": 9,
+                      "x": 10,
                       "y": 4.75,
                       "z": 33.5
                     },
@@ -8480,6 +8635,65 @@
                       "type": "Renderer",
                       "params": {
                         "model": "builtin:box",
+                        "material": "9ceea29d6ae4cca8"
+                      }
+                    },
+                    {
+                      "id": "eec994bf",
+                      "type": "Keyboard",
+                      "params": {
+                        "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                        "seed": 1
+                      },
+                      "enabled": false
+                    }
+                  ]
+                },
+                {
+                  "id": "c03018b7",
+                  "name": "floor",
+                  "transform": {
+                    "position": {
+                      "x": 70.25,
+                      "y": -18.75,
+                      "z": 52
+                    },
+                    "rotation": {
+                      "x": -1.5707963267948966,
+                      "y": 0,
+                      "z": 0
+                    },
+                    "scale": {
+                      "x": 306.5,
+                      "y": 3,
+                      "z": 20.5
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "4c1a690c",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "c9b1bc29",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:rounded-box",
                         "material": "9ceea29d6ae4cca8"
                       }
                     },
