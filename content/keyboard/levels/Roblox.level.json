@@ -10985,6 +10985,24 @@
       ]
     },
     {
+      "id": "07bdc3e1",
+      "name": "Stage End",
+      "transform": {
+        "position": {
+          "x": -654.147,
+          "y": 106.0287,
+          "z": 255.4896
+        },
+        "rotation": {
+          "x": -3.141585672272785,
+          "y": 0,
+          "z": -3.141585672272785
+        }
+      },
+      "components": [],
+      "prefab": "8a569d7a7c66c3c7"
+    },
+    {
       "id": "bf7f06b0",
       "name": "Stage 10",
       "transform": {
@@ -11056,24 +11074,6 @@
               }
             }
           ]
-        },
-        {
-          "id": "07bdc3e1",
-          "name": "Stage End",
-          "transform": {
-            "position": {
-              "x": 38.653,
-              "y": 190.3287,
-              "z": -83.6104
-            },
-            "rotation": {
-              "x": 3.1416,
-              "y": 0,
-              "z": 3.1416
-            }
-          },
-          "components": [],
-          "prefab": "8a569d7a7c66c3c7"
         },
         {
           "id": "2879d512",
