@@ -58,9 +58,9 @@
         "c0527796": {
           "transform": {
             "position": {
-              "x": -1530.5,
-              "y": 94,
-              "z": 439.5
+              "x": -1663,
+              "y": 18.5,
+              "z": -118
             },
             "scale": {
               "x": 3.2997,
@@ -6982,8 +6982,8 @@
       "transform": {
         "position": {
           "x": -1667.5,
-          "y": 14,
-          "z": -225.5
+          "y": 8.5,
+          "z": -221.5
         },
         "rotation": {
           "x": 0,
@@ -7045,7 +7045,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "2ee101f20ad587d8"
                   }
                 },
                 {
@@ -7053,7 +7053,8 @@
                   "type": "Keyboard",
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                    "seed": 1
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
                   }
                 }
               ]
@@ -7098,7 +7099,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "2ee101f20ad587d8"
                   }
                 },
                 {
@@ -7106,7 +7107,8 @@
                   "type": "Keyboard",
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                    "seed": 1
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
                   }
                 }
               ]
@@ -7151,7 +7153,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "2ee101f20ad587d8"
                   }
                 },
                 {
@@ -7159,7 +7161,8 @@
                   "type": "Keyboard",
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                    "seed": 1
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
                   }
                 }
               ]
@@ -7204,7 +7207,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "2ee101f20ad587d8"
                   }
                 },
                 {
@@ -7212,7 +7215,8 @@
                   "type": "Keyboard",
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                    "seed": 1
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
                   }
                 }
               ]
@@ -7315,7 +7319,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "2ee101f20ad587d8"
                   }
                 },
                 {
@@ -7323,7 +7327,8 @@
                   "type": "Keyboard",
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                    "seed": 1
+                    "seed": 1,
+                    "style": "dbd2775e3fece4fd"
                   }
                 }
               ]
@@ -7368,7 +7373,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "2ee101f20ad587d8"
                   }
                 },
                 {
@@ -7376,7 +7381,8 @@
                   "type": "Keyboard",
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                    "seed": 1
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
                   }
                 }
               ]
@@ -7421,7 +7427,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "2ee101f20ad587d8"
                   }
                 },
                 {
@@ -7429,7 +7435,8 @@
                   "type": "Keyboard",
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                    "seed": 1
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
                   }
                 }
               ]
@@ -7474,7 +7481,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "2ee101f20ad587d8"
                   }
                 },
                 {
@@ -7482,7 +7489,8 @@
                   "type": "Keyboard",
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                    "seed": 1
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
                   }
                 }
               ]
@@ -7532,7 +7540,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "2ee101f20ad587d8"
                   }
                 },
                 {
@@ -7540,7 +7548,8 @@
                   "type": "Keyboard",
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                    "seed": 1
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
                   }
                 }
               ]
@@ -7895,7 +7904,7 @@
               "transform": {
                 "position": {
                   "x": -106.625,
-                  "y": 8,
+                  "y": 4,
                   "z": 9.625
                 },
                 "scale": {
@@ -7929,7 +7938,7 @@
                   "type": "Renderer",
                   "params": {
                     "model": "builtin:box",
-                    "material": ""
+                    "material": "9ceea29d6ae4cca8"
                   }
                 },
                 {
@@ -7937,7 +7946,62 @@
                   "type": "Keyboard",
                   "params": {
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                    "seed": 1
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "cc686f3a",
+              "name": "platform",
+              "transform": {
+                "position": {
+                  "x": -100,
+                  "y": 0.5288,
+                  "z": 1
+                },
+                "scale": {
+                  "x": 5.5,
+                  "y": 1,
+                  "z": 11.5
+                }
+              },
+              "components": [
+                {
+                  "id": "3377f95c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "cc8ca8c9",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": "2ee101f20ad587d8"
+                  }
+                },
+                {
+                  "id": "a8bf84cf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
                   }
                 }
               ]
@@ -12369,7 +12433,7 @@
           "type": "Renderer",
           "params": {
             "model": "builtin:box",
-            "material": "9ceea29d6ae4cca8"
+            "material": "546152d8d2e2b3d2"
           }
         },
         {
@@ -12381,7 +12445,7 @@
             "height": 0.45,
             "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
             "seed": 1,
-            "style": "a17f3493c7ef345c"
+            "style": "dbd2775e3fece4fd"
           }
         }
       ]
