@@ -11113,6 +11113,13 @@
           "components": [],
           "prefab": "7af1b2a53a7bec6b",
           "overrides": {
+            "15349636": {
+              "params": {
+                "965f6971": {
+                  "material": "546152d8d2e2b3d2"
+                }
+              }
+            },
             "30051eab": {
               "transform": {
                 "position": {
@@ -11346,6 +11353,11 @@
                   "y": 5.9,
                   "z": 1.2
                 }
+              },
+              "params": {
+                "965f6971": {
+                  "material": "546152d8d2e2b3d2"
+                }
               }
             },
             "f5598112": {
@@ -11415,7 +11427,12 @@
                     ]
                   }
                 }
-              ]
+              ],
+              "params": {
+                "965f6971": {
+                  "material": "546152d8d2e2b3d2"
+                }
+              }
             },
             "8a6cc0f5": {
               "transform": {
@@ -11484,7 +11501,12 @@
                     ]
                   }
                 }
-              ]
+              ],
+              "params": {
+                "965f6971": {
+                  "material": "546152d8d2e2b3d2"
+                }
+              }
             },
             "8140fd89": {
               "transform": {
@@ -11492,6 +11514,53 @@
                   "x": 0.8108,
                   "y": -0.0063,
                   "z": -6.658
+                }
+              },
+              "params": {
+                "965f6971": {
+                  "material": "546152d8d2e2b3d2"
+                }
+              }
+            },
+            "2568d84c": {
+              "params": {
+                "965f6971": {
+                  "material": "546152d8d2e2b3d2"
+                }
+              }
+            },
+            "0939679b": {
+              "params": {
+                "965f6971": {
+                  "material": "546152d8d2e2b3d2"
+                }
+              }
+            },
+            "c0fa0728": {
+              "params": {
+                "965f6971": {
+                  "material": "546152d8d2e2b3d2"
+                }
+              }
+            },
+            "749feabc": {
+              "params": {
+                "965f6971": {
+                  "material": "546152d8d2e2b3d2"
+                }
+              }
+            },
+            "c3655f94": {
+              "params": {
+                "965f6971": {
+                  "material": "546152d8d2e2b3d2"
+                }
+              }
+            },
+            "e491a09f": {
+              "params": {
+                "965f6971": {
+                  "material": "546152d8d2e2b3d2"
                 }
               }
             }
@@ -11898,6 +11967,68 @@
           }
         }
       }
+    },
+    {
+      "id": "24f0c316",
+      "name": "platform",
+      "transform": {
+        "position": {
+          "x": -1668.4998,
+          "y": 8.6506,
+          "z": -114
+        },
+        "rotation": {
+          "x": -3.141585672272785,
+          "y": 0,
+          "z": -3.141585672272785
+        },
+        "scale": {
+          "x": 31,
+          "y": 1,
+          "z": 159.7995
+        }
+      },
+      "components": [
+        {
+          "id": "df9919a3",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "1bdef26e",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:box",
+            "material": "9ceea29d6ae4cca8"
+          }
+        },
+        {
+          "id": "aa1b93e0",
+          "type": "Keyboard",
+          "params": {
+            "pitch": 0.9,
+            "fill": 0.88,
+            "height": 0.45,
+            "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "seed": 1,
+            "style": "a17f3493c7ef345c"
+          }
+        }
+      ]
     }
   ],
   "prefabs": {
