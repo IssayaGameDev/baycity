@@ -1291,7 +1291,8 @@
               "type": "Keyboard",
               "params": {
                 "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-                "seed": 1
+                "seed": 1,
+                "style": "a17f3493c7ef345c"
               }
             },
             {
@@ -2797,15 +2798,49 @@
                                   "z": -0.0001
                                 },
                                 "timing": {
-                                  "by": "speed",
-                                  "speed": 2
+                                  "by": "seconds",
+                                  "seconds": 5
                                 },
                                 "ease": "out-bounce"
+                              }
+                            ]
+                          },
+                          {
+                            "id": "c7046635",
+                            "steps": [
+                              {
+                                "id": "6264a214",
+                                "kind": "wait",
+                                "seconds": 1
+                              }
+                            ]
+                          },
+                          {
+                            "id": "b95792d9",
+                            "steps": [
+                              {
+                                "id": "2b66673a",
+                                "kind": "move",
+                                "to": {
+                                  "x": 0,
+                                  "y": 1,
+                                  "z": 0
+                                },
+                                "timing": {
+                                  "by": "seconds",
+                                  "seconds": 1
+                                },
+                                "ease": "linear"
                               }
                             ]
                           }
                         ]
                       }
+                    },
+                    {
+                      "id": "14afab0f",
+                      "type": "Hazard",
+                      "params": {}
                     }
                   ]
                 },
@@ -2880,15 +2915,49 @@
                                   "z": -0.0001
                                 },
                                 "timing": {
-                                  "by": "speed",
-                                  "speed": 2
+                                  "by": "seconds",
+                                  "seconds": 5
                                 },
                                 "ease": "out-bounce"
+                              }
+                            ]
+                          },
+                          {
+                            "id": "31636fbd",
+                            "steps": [
+                              {
+                                "id": "638ea7eb",
+                                "kind": "wait",
+                                "seconds": 1
+                              }
+                            ]
+                          },
+                          {
+                            "id": "1ab733eb",
+                            "steps": [
+                              {
+                                "id": "eea8eb20",
+                                "kind": "move",
+                                "to": {
+                                  "x": 0,
+                                  "y": 1,
+                                  "z": 0
+                                },
+                                "timing": {
+                                  "by": "seconds",
+                                  "seconds": 1
+                                },
+                                "ease": "linear"
                               }
                             ]
                           }
                         ]
                       }
+                    },
+                    {
+                      "id": "1874251c",
+                      "type": "Hazard",
+                      "params": {}
                     }
                   ]
                 },
@@ -3378,7 +3447,7 @@
               "transform": {
                 "position": {
                   "x": -1.477,
-                  "y": -42.528,
+                  "y": -44.5,
                   "z": 0.0169
                 },
                 "scale": {
@@ -3400,6 +3469,16 @@
                     "offset": 0,
                     "stages": [
                       {
+                        "id": "ac0e0de0",
+                        "steps": [
+                          {
+                            "id": "231044a4",
+                            "kind": "wait",
+                            "seconds": 1
+                          }
+                        ]
+                      },
+                      {
                         "id": "b3b9a4ef",
                         "steps": [
                           {
@@ -3407,7 +3486,7 @@
                             "kind": "move",
                             "to": {
                               "x": 0,
-                              "y": 78,
+                              "y": 80,
                               "z": 0
                             },
                             "timing": {
@@ -3415,6 +3494,16 @@
                               "seconds": 6
                             },
                             "ease": "linear"
+                          }
+                        ]
+                      },
+                      {
+                        "id": "2ba256e4",
+                        "steps": [
+                          {
+                            "id": "ffda1f69",
+                            "kind": "wait",
+                            "seconds": 1
                           }
                         ]
                       }
@@ -6325,9 +6414,117 @@
                       "enabled": false
                     }
                   ]
+                },
+                {
+                  "id": "41bcd90b",
+                  "name": "Boss",
+                  "transform": {
+                    "position": {
+                      "x": -132.3247,
+                      "y": 43.1482,
+                      "z": 9.4034
+                    },
+                    "scale": {
+                      "x": 5,
+                      "y": 5,
+                      "z": 5
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "22bb73a7",
+                      "type": "Boss",
+                      "params": {
+                        "zone": {
+                          "node": "62d007b8",
+                          "component": "c5c7e14c"
+                        },
+                        "speed": 12,
+                        "turn": 360
+                      }
+                    },
+                    {
+                      "id": "c0ba838f",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:capsule",
+                        "material": "4a11d049f9f8e5ac"
+                      }
+                    },
+                    {
+                      "id": "ac8250d2",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "capsule",
+                          "halfHeight": 0.5,
+                          "radius": 0.5
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        },
+                        "trigger": true
+                      }
+                    },
+                    {
+                      "id": "508cc286",
+                      "type": "Hazard",
+                      "params": {}
+                    }
+                  ]
+                },
+                {
+                  "id": "62d007b8",
+                  "name": "box",
+                  "transform": {
+                    "position": {
+                      "x": -120.8247,
+                      "y": 85.6482,
+                      "z": 15.4034
+                    },
+                    "scale": {
+                      "x": 200,
+                      "y": 100,
+                      "z": 150
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "c5c7e14c",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      },
+                      "enabled": false
+                    },
+                    {
+                      "id": "5734c215",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": ""
+                      },
+                      "enabled": false
+                    }
+                  ]
                 }
               ],
               "childOrder": [
+                "41bcd90b",
                 "734eecaa",
                 "b2489b21",
                 "45a854de",
@@ -6341,7 +6538,8 @@
                 "80e85013",
                 "6070a894",
                 "a6de2f12",
-                "970962ee"
+                "970962ee",
+                "62d007b8"
               ]
             },
             "55e72194": {
