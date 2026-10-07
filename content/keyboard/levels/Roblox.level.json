@@ -12380,6 +12380,33 @@
       ]
     },
     {
+      "id": "fc6c3da2",
+      "name": "Stage End",
+      "transform": {
+        "position": {
+          "x": -654,
+          "y": 36.5,
+          "z": -46
+        },
+        "rotation": {
+          "x": -3.141585672272785,
+          "y": 0,
+          "z": -3.141585672272785
+        }
+      },
+      "components": [],
+      "prefab": "8a569d7a7c66c3c7",
+      "overrides": {
+        "9dface46": {
+          "params": {
+            "aa1b93e0": {
+              "style": "a17f3493c7ef345c"
+            }
+          }
+        }
+      }
+    },
+    {
       "id": "7fc807e5",
       "name": "Stage 12",
       "transform": {
@@ -12391,33 +12418,6 @@
       },
       "components": [],
       "children": [
-        {
-          "id": "fc6c3da2",
-          "name": "Stage End",
-          "transform": {
-            "position": {
-              "x": 82.5,
-              "y": -22.5,
-              "z": -170
-            },
-            "rotation": {
-              "x": -3.141585672272785,
-              "y": 0,
-              "z": -3.141585672272785
-            }
-          },
-          "components": [],
-          "prefab": "8a569d7a7c66c3c7",
-          "overrides": {
-            "9dface46": {
-              "params": {
-                "aa1b93e0": {
-                  "style": "a17f3493c7ef345c"
-                }
-              }
-            }
-          }
-        },
         {
           "id": "826a4802",
           "name": "platform",
