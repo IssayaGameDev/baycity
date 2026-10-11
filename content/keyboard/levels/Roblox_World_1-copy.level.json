@@ -58,9 +58,9 @@
         "c0527796": {
           "transform": {
             "position": {
-              "x": -1663,
-              "y": 18.5,
-              "z": -118
+              "x": -1673,
+              "y": 95.5,
+              "z": -272
             },
             "scale": {
               "x": 3.2997,
@@ -7109,6 +7109,13 @@
                     "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                     "seed": 1,
                     "style": "a17f3493c7ef345c"
+                  }
+                },
+                {
+                  "id": "c9579e8e",
+                  "type": "Bumper",
+                  "params": {
+                    "power": 54
                   }
                 }
               ]
