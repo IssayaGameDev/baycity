@@ -55,6 +55,7 @@ import {
 import { THREE as THREEImpl, type THREE } from '@mp/render-three'
 
 import { createAvatars, type Avatars } from './avatars'
+import { contactsNow } from './contacts'
 import { createFrameHooks } from './frameHooks'
 import { type AssemblyTiming } from './assemble'
 import { createInputs } from './inputs'
@@ -690,6 +691,8 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
     const simClock = createSimClock({ tickMs: TICK_DT * 1000, reference: () => net.serverNow() })
     /** How late, by the loop's schedule, the tick running now runs: the clock takes its reference back by it. */
     let tickLateMs = 0
+    /** What the capsule touched in any slice of the tick running now, for the rules at its end (ADR 0208). */
+    const tickContacts = new Set<number>()
 
     const local: LocalWorld = {
       applyInput: (cmd) => {
@@ -733,6 +736,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
         const slices = loaded?.motionSlices(prevTickMs, nowMs, RIDEABLE_STEP) ?? 1
         const sliceDt = TICK_DT / slices
         const half = sliceDt / 2
+        tickContacts.clear()
         for (let s = 1; s <= slices; s++) {
           // Motion is a pure function of time (ADR 0103), so an intermediate pose is exact rather than
           // interpolated: the level really is where it would have been at that instant.
@@ -752,6 +756,8 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
           // against where the platforms are *now*.
           components.locomote(tickCount, at, sliceDt, cmd)
           world.step(half) // (B) character resolves against the moved platforms
+          // Every slice's, not the last one's (ADR 0208): a touch made and left inside the tick still counts.
+          for (const h of contactsNow(char.body)) tickContacts.add(h)
         }
         prevTickMs = nowMs
       },
@@ -860,11 +866,9 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
             base: basePose === undefined ? 0 : base,
           })
           // Real contact, handed straight to the components on whatever nodes own them — a corpse triggers
-          // nothing, which is why this is gated. The solids touching the capsule's skin, whichever of the two moved
-          // (ADR 0188); those its own move ran into; and the triggers it is standing inside (ADR 0054) — a sensor
-          // resolves no movement, so it never appears in `collisions` and has to be asked for. Each once: a
-          // component's `onContact` runs per handle.
-          if (!dead) components.contact([...new Set([...char.body.touching(), ...char.body.collisions(), ...char.body.overlaps()])])
+          // nothing, which is why this is gated. Whatever the capsule touched in any slice of the tick (`contactsNow`,
+          // ADR 0208). Each once: a component's `onContact` runs per handle.
+          if (!dead) components.contact([...tickContacts])
           // A rule killed us — a hazard pad, or the hazard plane under the level (ADR 0053). One question,
           // asked of the rules, which also consumes the flag. Gated on `dead`, because a corpse still resting
           // on the plane keeps generating contacts.

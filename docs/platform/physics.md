@@ -97,7 +97,7 @@ Defaults and constants (`world.ts`):
   capsule along it, `stopAtPenetration: false`, `EXCLUDE_SENSORS`, its own layers, its own collider and the
   `ignore` handles excluded — stopped `offset` short of a hit; body and collider set immediately (as
   `setPosition`). Returns what it moved.
-- `collisions()` and `overlaps()` are disjoint; hosts concatenate them (`packages/tps/src/client.ts`: `components.contact([...collisions(), ...overlaps()])`).
+- `collisions()` and `overlaps()` are disjoint; hosts concatenate them with `touching()` (`packages/tps/src/contacts.ts`, read after every slice — ADR 0208). Each answers for the last `move`/`step` only.
 
 ## Sensors / triggers (ADR 0054)
 
