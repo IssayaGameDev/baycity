@@ -7125,7 +7125,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -100,
+                  "x": -101.5,
                   "y": 0.5,
                   "z": 1
                 },
@@ -7186,7 +7186,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -106.5,
+                  "x": -108,
                   "y": 8.0288,
                   "z": 1
                 },
@@ -7240,7 +7240,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -106.5,
+                  "x": -108,
                   "y": 17,
                   "z": -43.0665
                 },
@@ -7299,7 +7299,7 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -106.5,
+                  "x": -108,
                   "y": 18.5,
                   "z": -52.25
                 },
@@ -7355,7 +7355,7 @@
                 "position": {
                   "x": -87.5,
                   "y": 22,
-                  "z": -60.5
+                  "z": -61
                 },
                 "rotation": {
                   "x": 0,
@@ -7414,7 +7414,7 @@
                 "position": {
                   "x": -63.25,
                   "y": 24.5,
-                  "z": -60.25
+                  "z": -60.75
                 },
                 "scale": {
                   "x": 13.5,
@@ -7468,7 +7468,7 @@
                 "position": {
                   "x": -20.5,
                   "y": 27,
-                  "z": -60
+                  "z": -60.5
                 },
                 "scale": {
                   "x": 7.5,
@@ -7522,7 +7522,7 @@
                 "position": {
                   "x": -13,
                   "y": 28,
-                  "z": -60
+                  "z": -60.5
                 },
                 "rotation": {
                   "x": 0,
@@ -7635,7 +7635,7 @@
                   "id": "697ddd0f",
                   "type": "Bumper",
                   "params": {
-                    "power": 26
+                    "power": 54
                   }
                 }
               ]
@@ -7767,7 +7767,7 @@
                   "id": "5f42f11b",
                   "type": "Bumper",
                   "params": {
-                    "power": 26
+                    "power": 54
                   }
                 }
               ]
@@ -7777,8 +7777,8 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -55,
-                  "y": 40.5,
+                  "x": -40,
+                  "y": 48.5,
                   "z": 62
                 },
                 "scale": {
@@ -7831,8 +7831,8 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -62,
-                  "y": 41.5,
+                  "x": -47,
+                  "y": 49.5,
                   "z": 62
                 },
                 "rotation": {
@@ -7890,12 +7890,12 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -53.5,
+                  "x": -46.5,
                   "y": -8,
                   "z": 0.5
                 },
                 "scale": {
-                  "x": 150,
+                  "x": 136.5,
                   "y": 3,
                   "z": 130
                 }
@@ -7949,12 +7949,12 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -53.5,
+                  "x": -46.5,
                   "y": 40.5,
                   "z": -66
                 },
                 "scale": {
-                  "x": 150,
+                  "x": 136.5,
                   "y": 100,
                   "z": 3
                 }
@@ -8009,12 +8009,12 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -53.5,
+                  "x": -47,
                   "y": 40.5,
                   "z": 67
                 },
                 "scale": {
-                  "x": 150,
+                  "x": 136.5,
                   "y": 100,
                   "z": 3
                 }
@@ -8069,14 +8069,14 @@
               "name": "platform",
               "transform": {
                 "position": {
-                  "x": -53.5,
+                  "x": -113.5,
                   "y": 40.5,
-                  "z": 67
+                  "z": 1
                 },
                 "scale": {
-                  "x": 150,
+                  "x": 3,
                   "y": 100,
-                  "z": 3
+                  "z": 136
                 }
               },
               "components": [
@@ -8121,6 +8121,431 @@
                   "type": "Hazard",
                   "params": {},
                   "enabled": false
+                }
+              ]
+            },
+            {
+              "id": "e22ed020",
+              "name": "platform",
+              "transform": {
+                "position": {
+                  "x": 22.5,
+                  "y": 52.5,
+                  "z": 1
+                },
+                "scale": {
+                  "x": 3,
+                  "y": 75,
+                  "z": 136
+                }
+              },
+              "components": [
+                {
+                  "id": "3377f95c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "cc8ca8c9",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": "9ceea29d6ae4cca8"
+                  }
+                },
+                {
+                  "id": "a8bf84cf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1
+                  },
+                  "enabled": false
+                },
+                {
+                  "id": "9204c3df",
+                  "type": "Hazard",
+                  "params": {},
+                  "enabled": false
+                }
+              ]
+            },
+            {
+              "id": "2b3d7335",
+              "name": "platform",
+              "transform": {
+                "position": {
+                  "x": -108.5,
+                  "y": 78.5,
+                  "z": -56.5
+                },
+                "rotation": {
+                  "x": 0,
+                  "y": -1.5707963267948966,
+                  "z": 0
+                },
+                "scale": {
+                  "x": 13.5,
+                  "y": 1,
+                  "z": 7.5
+                }
+              },
+              "components": [
+                {
+                  "id": "3377f95c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "cc8ca8c9",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": "2ee101f20ad587d8"
+                  }
+                },
+                {
+                  "id": "a8bf84cf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
+                  }
+                },
+                {
+                  "id": "697ddd0f",
+                  "type": "Bumper",
+                  "params": {
+                    "power": 54
+                  }
+                }
+              ]
+            },
+            {
+              "id": "45133474",
+              "name": "platform",
+              "transform": {
+                "position": {
+                  "x": -108.5,
+                  "y": 65.5,
+                  "z": 2
+                },
+                "rotation": {
+                  "x": 0,
+                  "y": -1.5707963267948966,
+                  "z": 0
+                },
+                "scale": {
+                  "x": 13.5,
+                  "y": 1,
+                  "z": 7.5
+                }
+              },
+              "components": [
+                {
+                  "id": "3377f95c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "cc8ca8c9",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": "2ee101f20ad587d8"
+                  }
+                },
+                {
+                  "id": "a8bf84cf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
+                  }
+                },
+                {
+                  "id": "fbb824dd",
+                  "type": "Bumper",
+                  "params": {
+                    "power": 26
+                  }
+                }
+              ]
+            },
+            {
+              "id": "0bca9d68",
+              "name": "platform",
+              "transform": {
+                "position": {
+                  "x": -108.5,
+                  "y": 57,
+                  "z": 59
+                },
+                "rotation": {
+                  "x": 0,
+                  "y": -1.5707963267948966,
+                  "z": 0
+                },
+                "scale": {
+                  "x": 13.5,
+                  "y": 1,
+                  "z": 7.5
+                }
+              },
+              "components": [
+                {
+                  "id": "3377f95c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "cc8ca8c9",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": "9ceea29d6ae4cca8"
+                  }
+                },
+                {
+                  "id": "a8bf84cf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
+                  }
+                },
+                {
+                  "id": "5f42f11b",
+                  "type": "Bumper",
+                  "params": {
+                    "power": 54
+                  }
+                }
+              ]
+            },
+            {
+              "id": "cc8d8793",
+              "name": "platform",
+              "transform": {
+                "position": {
+                  "x": -63.25,
+                  "y": 86,
+                  "z": -60.75
+                },
+                "scale": {
+                  "x": 13.5,
+                  "y": 1,
+                  "z": 7.5
+                }
+              },
+              "components": [
+                {
+                  "id": "3377f95c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "cc8ca8c9",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": "9ceea29d6ae4cca8"
+                  }
+                },
+                {
+                  "id": "a8bf84cf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "4c920519",
+              "name": "platform",
+              "transform": {
+                "position": {
+                  "x": -20.5,
+                  "y": 88.5,
+                  "z": -60.5
+                },
+                "scale": {
+                  "x": 7.5,
+                  "y": 1,
+                  "z": 7.5
+                }
+              },
+              "components": [
+                {
+                  "id": "3377f95c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "cc8ca8c9",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": "2ee101f20ad587d8"
+                  }
+                },
+                {
+                  "id": "a8bf84cf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "8c25f9e7",
+              "name": "platform",
+              "transform": {
+                "position": {
+                  "x": -13,
+                  "y": 89.5,
+                  "z": -60.5
+                },
+                "rotation": {
+                  "x": 0,
+                  "y": 0,
+                  "z": 0.2617993877991494
+                },
+                "scale": {
+                  "x": 7.5,
+                  "y": 1,
+                  "z": 7.5
+                }
+              },
+              "components": [
+                {
+                  "id": "3377f95c",
+                  "type": "Collider",
+                  "params": {
+                    "shape": {
+                      "kind": "box",
+                      "halfExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                      }
+                    },
+                    "center": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 0
+                    }
+                  }
+                },
+                {
+                  "id": "cc8ca8c9",
+                  "type": "Renderer",
+                  "params": {
+                    "model": "builtin:box",
+                    "material": "2ee101f20ad587d8"
+                  }
+                },
+                {
+                  "id": "a8bf84cf",
+                  "type": "Keyboard",
+                  "params": {
+                    "glyphs": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                    "seed": 1,
+                    "style": "a17f3493c7ef345c"
+                  }
                 }
               ]
             }
