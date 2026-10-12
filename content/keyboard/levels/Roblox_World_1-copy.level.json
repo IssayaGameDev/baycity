@@ -13672,7 +13672,18 @@
         }
       },
       "components": [],
-      "prefab": "7b146287b66c6a52"
+      "prefab": "7b146287b66c6a52",
+      "overrides": {
+        "root": {
+          "added": [
+            {
+              "id": "bc7ef15c",
+              "type": "StageGate",
+              "params": {}
+            }
+          ]
+        }
+      }
     },
     {
       "id": "91898210",
@@ -19394,6 +19405,30 @@
           }
         }
       ]
+    },
+    {
+      "id": "cb43d73d",
+      "name": "InterLevel",
+      "transform": {
+        "position": {
+          "x": -1668.5,
+          "y": 100,
+          "z": -398
+        }
+      },
+      "components": [],
+      "prefab": "7b146287b66c6a52",
+      "overrides": {
+        "root": {
+          "added": [
+            {
+              "id": "bc7ef15c",
+              "type": "StageGate",
+              "params": {}
+            }
+          ]
+        }
+      }
     },
     {
       "id": "f826b617",
