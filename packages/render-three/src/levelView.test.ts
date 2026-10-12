@@ -2,6 +2,7 @@ import type { VisualItem } from '@mp/content'
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 
+import type { AssetRuntime } from './assetRuntime'
 import { createCutoutMask } from './cutout'
 import { addLevel } from './levelView'
 
@@ -175,6 +176,23 @@ describe('sync', () => {
     faded.opacity = 0.5
     view.sync()
     expect((meshes[0]!.material as THREE.Material).opacity).toBeCloseTo(0.5, 9)
+    view.dispose()
+  })
+})
+
+/** A model is sized by its object's scale in the game, as the editor draws it (ADR 0207). */
+describe('a model', () => {
+  const assets = { model: () => new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)), material: () => undefined } as unknown as AssetRuntime
+
+  it('is drawn at its object’s scale, and a sequence stretches it from there', () => {
+    const scene = new THREE.Scene()
+    const v: VisualItem = { ...visual([1]), model: 'aaaaaaaaaaaaaaaa', scale: { x: 2, y: 3, z: 4 } }
+    const view = addLevel(scene, [v], { assets })
+    const drawn = view.group.children[0]!
+    expect(drawn.scale.toArray()).toEqual([2, 3, 4])
+    v.drawScale = { x: 1, y: 2, z: 1 }
+    view.sync()
+    expect(drawn.scale.toArray()).toEqual([2, 6, 4])
     view.dispose()
   })
 })

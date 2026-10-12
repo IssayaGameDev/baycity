@@ -384,3 +384,28 @@ describe('a restart (ADR 0206)', () => {
     expect(loaded.visuals[0]!.position.x, 'blending again').toBeCloseTo(2, 6)
   })
 })
+
+/** A model is drawn at its node's pivot, wherever its colliders sit (ADR 0207) — as the editor draws it. */
+describe('a model and its colliders', () => {
+  const MODEL = 'aaaaaaaaaaaaaaaa'
+  const offCentre = (): ComponentData[] => [
+    comp('col', COLLIDER, { shape: { kind: 'box', halfExtents: vec3(0.5, 0.5, 0.5) }, center: vec3(2, 0, 0) }),
+    comp('vis', RENDERER, { model: MODEL }),
+  ]
+
+  it('sits on the pivot, not on a collider’s centre, while the collider keeps its own', () => {
+    const loaded = load(levelOf([node('prop', offCentre(), { transform: { position: vec3(5, 0, 0) } })]))
+    expect(loaded.visuals[0]!.position).toEqual(vec3(5, 0, 0))
+    expect(loaded.basePose(loaded.nodes[0]!.colliderHandles[0]!), 'a still body has no pose to report').toBeUndefined()
+    // The collider two metres along, at x = 7: its face at 6.5, 26.5 m from where the ball starts, less its radius.
+    expect(reachFromLeft()).toBeCloseTo(26.45, 2)
+  })
+
+  it('follows the pivot as a sequence moves it, and the collider rides two metres off', () => {
+    const loaded = load(levelOf([node('prop', [...offCentre(), sequence([stage(move(vec3(0, 4, 0), 2)), stage(wait(1))])], { transform: { position: vec3(5, 0, 0) } })]))
+    loaded.update(1000)
+    loaded.render(1)
+    expect(loaded.visuals[0]!.position).toEqual(vec3(5, 2, 0))
+    expect(loaded.basePose(loaded.nodes[0]!.colliderHandles[0]!)?.position).toEqual(vec3(7, 2, 0))
+  })
+})

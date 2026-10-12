@@ -257,5 +257,6 @@ why matters.
 | [0204](adr/0204-a-frozen-prefab-copy-yields-to-its-prefab.md) | A frozen prefab copy yields to its prefab |
 | [0205](adr/0205-esc-steps-back-one-state.md) | Esc steps back one state |
 | [0206](adr/0206-a-sequence-restart-is-a-cut.md) | A sequence restart is a cut |
+| [0207](adr/0207-a-model-is-drawn-at-its-pivot-and-scale.md) | A model is drawn at its node's pivot, at its node's scale |
 
 `Design archive/` holds superseded design material and is not maintained.

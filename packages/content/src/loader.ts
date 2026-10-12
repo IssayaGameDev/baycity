@@ -726,6 +726,8 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
       nodes.push(worldNode)
       // A model draws once for the whole node, so every collider on it points back at this one visual.
       let modelItem: VisualItem | undefined
+      /** Whether the model rides the first body — only when that body sits on the node's pivot. */
+      let modelRides = false
       colliders.forEach((c, n) => {
         const collider = scaleCollider(shapeOf(c), f.scale)
         worldColliders.push(collider)
@@ -751,9 +753,12 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         let paired: VisualItem | undefined
         if (renderer !== undefined) {
           if (drawsModel) {
-            if (n === 0) modelItem = item(collider, at)
+            // At the node's pivot, not at a collider's centre (ADR 0207): the editor draws it there, and a model
+            // is the node's look, not its first collider's. Collision is the colliders' own.
+            if (n === 0) modelItem = item(collider, f.worldPos)
             modelItem?.colliderHandles.push(body.colliderHandle)
-            paired = n === 0 ? modelItem : undefined
+            modelRides = n === 0 && centre === undefined
+            paired = modelRides ? modelItem : undefined
           } else {
             paired = item(collider, at)
             paired.colliderHandles.push(body.colliderHandle)
@@ -761,6 +766,8 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         }
         if (f.animated) addDynamic(f, body, paired, centre, undefined, shapeOf(c), trigger)
       })
+      // A first collider off the pivot carries its own body; the model follows the pivot on a frame of its own.
+      if (f.animated && modelItem !== undefined && !modelRides) addDynamic(f, undefined, modelItem, undefined)
     } else if (drawsModel) {
       /**
        * Drawn but not solid — impossible for a `Piece`, whose collider was mandatory.

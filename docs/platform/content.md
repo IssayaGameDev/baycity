@@ -51,7 +51,7 @@ interface WorldNode { id; name; components /* resolved */; position, rotation /*
                      colliderHandles: readonly number[] /* opaque */
                      colliders: readonly ColliderDesc[] /* world-scaled, same order as handles (ADR 0095) */
                      scope: number }
-interface VisualItem { collider: ColliderDesc /* scale baked in */; position; rotation: Quat; scale: Vec3 /* world, sizes a built-in */; model?: string; material?: string; colliderHandles: number[]
+interface VisualItem { collider: ColliderDesc /* scale baked in */; position /* a model's: the node's pivot, ADR 0207 */; rotation: Quat; scale: Vec3 /* world, sizes a built-in and a model */; model?: string; material?: string; colliderHandles: number[]
                       visible: boolean; opacity: number; drawScale: Vec3 /* mutated per tick by sequences */; fades: boolean; animated: boolean /* at load; animated = a sequence drives it or above, ADR 0154 */ }   // ADR 0141
 interface WorldLight { …; position; rotation; visible: boolean /* off while its node is disabled */ }
 ```
@@ -74,7 +74,7 @@ interface WorldLight { …; position; rotation; visible: boolean /* off while it
 Build rules:
 - Frame `animated` if a sequence moves it (below), an enabled `moves` component, or an animated ancestor → kinematic bodies; else fixed.
 - `Collider.trigger` → sensor (ADR 0054), still in `colliderHandles`. Shape and `center` scaled by frame scale (box/convex exact, ball/capsule averaged). `cylinder` throws.
-- Draw (ADR 0153): an enabled `Renderer` with a model → one visual listing all handles; with none → one per collider; no `Renderer` → nothing. The model is `modelOf(components)` (`nodes.ts`): the enabled `Renderer`'s `model`. There is no `Mesh` component any more; a file naming one does not load. `MaterialOverride` cascades down over `Renderer.material`; `''` = unsurfaced. A model is an asset id or a **built-in shape** (below).
+- Draw (ADR 0153): an enabled `Renderer` with a model → one visual listing all handles, **at the node's pivot** and sized by its world scale (ADR 0207) — it rides the first body when that body sits on the pivot, else a body-less dynamic of its own; with none → one per collider; no `Renderer` → nothing. The model is `modelOf(components)` (`nodes.ts`): the enabled `Renderer`'s `model`. There is no `Mesh` component any more; a file naming one does not load. `MaterialOverride` cascades down over `Renderer.material`; `''` = unsurfaced. A model is an asset id or a **built-in shape** (below).
 - Placement with inherited children opens a new `scope` (own id + prefab root id; first writer wins).
 - **Sequences** (ADR 0141, `sequences.md`): each enabled `Sequence` compiled once. A frame is moved by its own aimed at `SELF` and its parent's aimed at its id. Any ⇒ `animated`. Posed at level time 0 while building, so what starts off is built off. Flags fixed at load: `scaling` (a scale track here or above ⇒ colliders re-shaped), `fading` (a fade here ⇒ `VisualItem.fades`), `localOnly` (a `local` sequence moving it or above ⇒ no `baseIndex`). Per tick: `shown` (not disabled here **or above**), `solid` (collider not switched off **here**), `drawScale` = world scale ÷ load scale, `opacity` = the fade here.
 
