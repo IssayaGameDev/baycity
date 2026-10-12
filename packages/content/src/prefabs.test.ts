@@ -2,7 +2,7 @@ import { vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
 import { effectiveNode } from './nodes'
-import { hydratePrefabs, prefabRefsIn, stripHydrated, type PrefabSource } from './prefabs'
+import { hydratePrefabs, prefabRefsIn, relinkPrefabs, stripHydrated, type PrefabSource } from './prefabs'
 import type { Level, Node } from './types'
 
 const PAD = 'aaaaaaaaaaaaaaaa'
@@ -91,5 +91,23 @@ describe('what goes back to disk', () => {
   it('strips nothing when nothing was filled', () => {
     const l = level([placement('a', 'Trampoline')], { Trampoline: pad('mine') })
     expect(stripHydrated(l, [])).toBe(l)
+  })
+})
+
+describe('a frozen copy of a prefab (ADR 0204)', () => {
+  it('yields to the prefab it copies, which then resolves in its place and stays off disk', () => {
+    const file = pad('current')
+    const l = level([placement('a', PAD), placement('b', 'Trampoline')], { [PAD]: pad('frozen'), Trampoline: pad('only') })
+    expect(relinkPrefabs(l, (id) => id === PAD)).toEqual([PAD])
+    const { filled } = hydratePrefabs(l, source({ [PAD]: file }))
+    expect(l.prefabs![PAD], 'the prefab itself').toBe(file)
+    expect(Object.keys(stripHydrated(l, filled).prefabs!), 'a copy with no prefab behind it stays').toEqual(['Trampoline'])
+  })
+
+  it('leaves no empty table, and nothing to do is nothing done', () => {
+    const l = level([placement('a', PAD)], { [PAD]: pad() })
+    relinkPrefabs(l, () => true)
+    expect(l.prefabs).toBeUndefined()
+    expect(relinkPrefabs(level([placement('a', PAD)]), () => true)).toEqual([])
   })
 })

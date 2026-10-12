@@ -1,5 +1,5 @@
 import { assetParamIds } from '@mp/components'
-import { hydratePrefabs, instantiateLevel, type DataAsset, type Level, type LoadedLevel } from '@mp/content'
+import { hydratePrefabs, instantiateLevel, relinkPrefabs, type DataAsset, type Level, type LoadedLevel } from '@mp/content'
 import type { PhysicsWorld } from '@mp/physics'
 import type { Registry } from '@mp/components'
 import {
@@ -95,6 +95,8 @@ export const loadLevelInto = async ({
    * and `instantiateLevel` stays synchronous with it. A reference with no file resolves to nothing — the placement
    * draws nothing and the level still loads.
    */
+  // A frozen copy of a prefab the level's file still carries yields to the prefab itself (ADR 0204).
+  relinkPrefabs(data, (assetId) => content.prefabs.root(assetId) !== undefined)
   const { missing } = hydratePrefabs(data, content.prefabs)
   if (missing.length > 0) console.warn(`level ${data.id}: no prefab file for ${missing.join(', ')}`)
   const loaded = instantiateLevel(world, data, registry)

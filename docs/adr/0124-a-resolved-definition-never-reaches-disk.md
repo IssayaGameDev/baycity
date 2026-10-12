@@ -1,6 +1,7 @@
 # ADR 0124 — A resolved definition never reaches disk
 
-Status: accepted. Repairs a promise ADR 0091 made in three places and kept in none.
+Status: accepted. Repairs a promise ADR 0091 made in three places and kept in none. A fourth door — a duplicate of
+an open level — and the levels that already carried a copy: ADR 0204.
 
 ## Context
 

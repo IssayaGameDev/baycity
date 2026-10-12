@@ -75,6 +75,25 @@ export const hydratePrefabs = (level: Level, source: PrefabSource): { filled: st
 }
 
 /**
+ * Drop the entries of a level's own table that **shadow a prefab asset** (ADR 0204), in place, and say which.
+ *
+ * An entry under an asset's id is a frozen copy of that asset: written to disk by a door that leaked a resolved
+ * definition (ADR 0124's three, a duplicated open level), and read instead of the asset from then on, so the
+ * placement looks linked and silently stops following its prefab. Run before `hydratePrefabs`, which then fills
+ * the id from the asset and reports it, so `stripHydrated` keeps it off disk at the next write.
+ *
+ * Only ids `hasAsset` knows. An entry with no asset behind it is the level's only definition there, and stays.
+ */
+export const relinkPrefabs = (level: Level, hasAsset: (assetId: string) => boolean): string[] => {
+  const table = level.prefabs
+  if (table === undefined) return []
+  const dropped = Object.keys(table).filter(hasAsset)
+  for (const id of dropped) delete table[id]
+  if (Object.keys(table).length === 0) delete level.prefabs
+  return dropped
+}
+
+/**
  * The level as it goes to disk or on the wire: a shallow copy without the entries hydration added.
  *
  * Only those. A level that still carries its own table keeps it, so this is safe to run on content the

@@ -199,13 +199,19 @@ removed before it is written.
 ```ts
 interface PrefabSource { root: (assetId: string) => Node | undefined }
 prefabRefsIn(level): string[]                                    // every reference, first-seen order
+relinkPrefabs(level, hasAsset): string[]                          // in place: drop entries shadowing an asset (ADR 0204)
 hydratePrefabs(level, source): { filled: string[]; missing: string[] }   // in place; by reference, not copied
 stripHydrated(level, filled): T                                  // a shallow copy without what was filled
 ```
 
+`relinkPrefabs` runs first wherever a level is read to be **used** — the server's live documents and the game's
+loader: an entry under an existing asset's id is a frozen copy of that asset, and yields to it. The editor reads
+the server's resolution and does not run it.
+
 Two rules carry the whole design. **Hydration never fills a reference that already resolves**, and **stripping
 removes only what hydration filled** — so a level still carrying its own table keeps it, which is what let this
-ship before the migration ran and what stops an unmigrated level losing its prefabs on its first write. And the
+ship before the migration ran and what stops an unmigrated level losing its prefabs on its first write. (A table
+entry under an asset's id is not the level's own: `relinkPrefabs` takes it out first.) And the
 definition is assigned **by reference**: every level hydrated from one source shares one object, so an edit to a
 prefab is in all of their resolutions at once.
 

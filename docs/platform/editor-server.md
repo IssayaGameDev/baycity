@@ -35,7 +35,7 @@ is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walk
 | `GET /api/me` | `{ user, heartbeatMs, maxUploadBytes, games, admin? }` — `games`: name → URL Play frames; `admin: true` for an email in `admins` (`ApiOptions.isAdmin`, ADR 0200, `admin.md`) | |
 | `GET /api/status` | `{ pushError }` | |
 | `GET /api/levels` | `[{ name, mode, prefabs? }]` — `name` qualified `<game>/<name>`, `mode` the **folder** it is in, so a file that will not parse still lists with its game (ADR 0108) | |
-| `GET/PUT /api/levels/:game/:name` | level JSON — two segments, because a game is a folder (ADR 0108). GET serves the **live copy** when the level is open; PUT runs `validateLevel(raw)` (structure only, no registry) and makes the game folder on demand, **409** while the level is open live. A name that is not a legal `<game>/<name>` is a 404 | |
+| `GET/PUT /api/levels/:game/:name` | level JSON — two segments, because a game is a folder (ADR 0108). GET serves the **live copy** when the level is open, as its file would be (`levelAsFile`: no resolved prefab definitions, ADR 0204); PUT runs `validateLevel(raw)` (structure only, no registry) and makes the game folder on demand, **409** while the level is open live. A name that is not a legal `<game>/<name>` is a 404 | |
 | `GET /api/live` | `{ docs: [{ name, seq, peers, holds }] }` | |
 | `GET /api/live/:kind/:name/events` | `:kind` is `level` or `prefab` (ADR 0091); a level's `:name` is the qualified `<game>/<name>` and so spans two segments (ADR 0108). SSE (`text/event-stream`, `:keepalive` every 25 s): `hello { connId, name }`, `snapshot { level, seq, holds, peers, hidden }`, then `ops { seq, from, batchId, ops }` with `id: seq`, `holds`, `peers`, `presence`, `open-assets { open: [{ assetId, connId, name }] }` and `fields { fields: [{ connId, name, targets, card, field }] }` (each after the snapshot too, when not empty), `rooms { rooms: [{ kind, name, peers }] }` (every document anyone is in, to every connection on each join and leave, ADR 0162), `levels {}` (a level made, renamed or deleted), `asset`, `error`, and on a **level's** stream `prefab { assetId, ops }` when a prefab it uses was edited. 404 when there is no such document. The stream closing is the leave | |
 | `POST /api/live/:kind/:name/ops` | `{ connId, batchId, ops }` → `{ ok, seq }` · 400 an op does not apply (`OpError`). Never refused for another's selection (ADR 0158). On a **prefab**, a connection in a level that uses it is accepted too — what *Apply to prefab* needs | |
@@ -106,10 +106,16 @@ instant it applies. A prefab stays open while any level resolves from it (`depen
 forgets a document with neither clients nor dependents.
 
 `hydrate` opens and registers **every** reference, not only the ones whose definition it had to fetch
-(ADR 0123). `hydratePrefabs` skips an id the level already carries inline — which `stripHydrated` preserves on
-purpose — so such a level used to leave the prefab's document shut, and `apply` on a prefab needs an open one:
-*Apply to prefab* answered 404 "is not open" while every visible thing about the placement worked. The inline
-definition is neither adopted nor stripped by opening it. A level keeping a frozen copy is repaired by `deploy/editor/fix-inline-prefabs.sh` (ADR 0124): dry by default, `--write` drops the table entry where a prefab asset has that id, so the placement resolves against the asset again. An entry with **no** asset is kept and named — there the table is genuinely the only source. Each rewrite is read back and refused unless the table is the only difference. Idempotent; the server is stopped while it runs, since an open live level would write the table straight back.
+(ADR 0123). **A frozen copy yields first** (ADR 0204): `relinkPrefabs` drops a table entry the file carries under a
+prefab asset's own id, so `hydratePrefabs` resolves that id from the prefab's open document, records it in
+`hydrated`, and the next write leaves it off disk — the placement follows its prefab again, and the editor and the
+server read the same definition. An entry with **no** asset behind it stays: there the table is the only source.
+`deploy/editor/fix-inline-prefabs.sh` (ADR 0124) cleans the files in one pass without waiting for an edit (dry by
+default, `--write`; server stopped while it runs).
+
+**Nothing hands a resolved level out.** `levelAsFile(name)` is an open document as it would be written
+(`stripHydrated`); `GET /api/levels/:name` and the play routes serve that, never `levelOf` — a duplicate of an open
+level made from the resolved one carried a frozen copy of every prefab it placed (ADR 0204).
 
 **One delivery path.** After a prefab's batch, every dependent level's clients get `prefab { assetId, ops }` —
 no sequence, because the level's own file did not change. A tab is in one document at a time, so nobody gets a
