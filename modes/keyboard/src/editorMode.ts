@@ -6,6 +6,7 @@ import { MARKER_COLORS } from '@mp/render-three'
 import { KEYBOARD_REGISTRY, keyboardSession, spawnOf } from './rules'
 import { KEY_SETTINGS, keyboardGridOf } from './keycaps'
 import { CURVE_SETTINGS } from './progression'
+import { StageGate } from './components/stageGate'
 import { StepPad } from './components/stepPad'
 import { Treadmill } from './components/treadmill'
 import { WinsPad } from './components/wins'
@@ -59,6 +60,8 @@ export const KEYBOARD_MODE: ModeDescriptor = {
    * where a stage ends, which is what the shared palette calls a goal.
    */
   gizmos: { [Hazard.type]: MARKER_COLORS.hazard, [WinsPad.type]: MARKER_COLORS.goal, [Treadmill.type]: MARKER_COLORS.checkpoint, [StepPad.type]: MARKER_COLORS.bumper },
+  /** A stage gate is where the teleport window puts you, facing its way (ADR 0202): blue, as a spawn is. */
+  facingGizmos: { [StageGate.type]: MARKER_COLORS.spawn },
   /**
    * The shipped locomotion, whose `moveSpeed` Level writes, and the **Stepper** that turns held input into the
    * steps Experience is paid for (ADR 0081). Their definitions are bound to the client in `main.ts`'s

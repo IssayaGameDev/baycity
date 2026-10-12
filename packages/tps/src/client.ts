@@ -860,14 +860,19 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
           // asked of the rules, which also consumes the flag. Gated on `dead`, because a corpse still resting
           // on the plane keeps generating contacts.
           if (rules.takeDeath() && !dead) die()
-          // A rule moved us without killing us — cashing out at the end of a stage (ADR 0073). Position and
-          // momentum only: the rig stays whole, so nothing about death is involved.
+          // A rule moved us without killing us — cashing out at the end of a stage (ADR 0073), a stage gate
+          // (ADR 0202). Position and momentum only: the rig stays whole, so nothing about death is involved.
           const teleport = dead ? null : (rules.takeTeleport?.() ?? null)
           if (teleport !== null) {
-            char.body.setPosition(teleport)
+            char.body.setPosition(teleport.position)
             // The same release a respawn needs, and for the same reason (ADR 0100): cashing out while riding
             // a platform used to leave `base` set, and the next tick dragged the player back onto it.
             releaseFooting(char)
+            // Turned to where the rule faces us, and the camera behind: forward is then the way to go.
+            if (teleport.yaw !== undefined) {
+              ownFacing = teleport.yaw
+              orbit.face(teleport.yaw)
+            }
           }
         }
       },

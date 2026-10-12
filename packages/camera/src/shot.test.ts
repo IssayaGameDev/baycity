@@ -121,3 +121,15 @@ describe('an authored eye', () => {
     expect(three.position.x).toBeLessThan(0)
   })
 })
+
+describe('facing a direction (ADR 0202)', () => {
+  it('swings the boom behind it, so the camera looks along the facing', () => {
+    const { three, orbit, step } = instant()
+    orbit.face(Math.PI / 2) // facing +X
+    step()
+    const f = forward(three)
+    expect(f.x).toBeGreaterThan(0.8)
+    expect(Math.abs(f.z)).toBeLessThan(1e-6)
+    expect(three.position.x, 'behind the character, on −X').toBeLessThan(-3)
+  })
+})

@@ -36,7 +36,7 @@ onFrame: (fn: (dt: number) => void) => () => void   // per rendered frame, end o
 partsOf: (id: EntityId) => Record<PartName, PartTransform> | null  // rig parts, world space, as last drawn
 id: () => EntityId | null
 peers: () => readonly Peer[]              // rebuilt per frame from the render pass; base frame undone (ADR 0068)
-readonly camera: OrbitCamera              // params live
+readonly camera: OrbitCamera              // params live; face(yaw): boom behind a facing at once, no lookahead flick (ADR 0202)
 readonly tuning: CharacterTuning          // the live copy the controller reads and the pane binds
 toScreen: (world: Vec3) => { x: number; y: number } | null  // overlay pixels; null behind lens (ADR 0072)
 readonly ui: UiOverlay                    // shared Pixi layer; read ui.width/height, not window
@@ -75,7 +75,8 @@ Then `stage.setRenderStep` (set by `createScene`) draws post-FX + overlay layer.
 `syncRemotes` (kinematic capsule mirrors, `BODY_LAYERS`) → `input.worldMove()` (zero when dead) → `controller.step({
 moveX, moveZ, jump, actions })` → landing dip `orbit.land` → `avatars.capture()` → `net.send({ position, flags, yaw,
 speed, base })` (v10 base frame; `packStates(states, playerStates())` in spare flag bits) → `components.contact` →
-`rules.takeDeath()` → `die()` → `rules.takeTeleport?.()`.
+`rules.takeDeath()` → `die()` → `rules.takeTeleport?.()` (alive): `setPosition(position)`, `releaseFooting`, and with a
+`yaw` `ownFacing = yaw` + `orbit.face(yaw)` (ADR 0202).
 
 `LocalWorld.applyInput`: `components.fixedUpdate` → per slice (ADR 0104): `loaded.update(at, base, s === 1)` →
 `loaded.shove(char.body)` (ADR 0186: out of whatever moved into it; before the step, ADR 0188) →

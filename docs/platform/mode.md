@@ -12,6 +12,7 @@ Package `packages/mode` (`@mp/mode`). Headless: no renderer import; gizmo colour
 | `dataTypes?` | `readonly DataTypeDef[]` | The data types this game declares (ADR 0181): what New data offers in its library, what its data assets are read against. Absent = none. |
 | `tuning` | `CharacterTuning` (`packages/humanoid/src/groundController.ts`) | Starting locomotion numbers; the client copies them. |
 | `gizmos` | `Readonly<Record<string, number>>` | Component type → `0xrrggbb` marker colour a tool draws over the rule's node. |
+| `facingGizmos?` | `Readonly<Record<string, number>>` | Component type → colour of a marker with an arrow along the node's forward (+Z, `yawOf`): a place a player is put, and the way they face (ADR 0202). On every node carrying it, collider or not (`allNodes`). Absent = none. |
 | `surfaceGrid?` | `(components, size: Vec3, settings) => SurfaceGrid \| null` (`src/surface.ts`) | What this game would tile onto a box surface, for a tool to draw before the game runs (ADR 0120). Returns the **grid** (`cols`, `rows`, `pitch`, `size`, `startX`, `startZ`), never geometry — six numbers whatever the cell count, so a tool may ask per drag frame, and `@mp/mode` stays headless. The game reads the node's own components, so a tool never learns what one means. Helpers: `gridCells`, `gridMargin`. Absent = nothing generated on this game's surfaces. |
 | `spawn` | `(loaded: LoadedLevel, seed?: number) => Vec3` | Start position. `seed` = player id in a game, absent in a tool. |
 | `player?` | `readonly ComponentData[]` | Components the player carries at runtime, validated against `registry` (ADR 0059). Absent = none. |
@@ -29,7 +30,11 @@ interface ModeSession {
   readonly respawnAt: () => Vec3               // moves with progress
   readonly takeDeath: () => boolean            // consume-on-read, once per tick
   readonly progress: () => number              // -1 = none; what a client persists
-  readonly takeTeleport?: () => Vec3 | null    // consume-on-read; a rule relocated the player (ADR 0073); optional
+  readonly takeTeleport?: () => Teleport | null  // consume-on-read; a rule relocated the player (ADR 0073); optional
+}
+interface Teleport {
+  readonly position: Vec3
+  readonly yaw?: number                         // yawOf convention: the player turns to it, the camera swings behind (ADR 0202)
 }
 interface ModeSessionOptions {
   readonly from?: number                                        // resume progress
@@ -89,6 +94,7 @@ The `self.node.id` the local player's components see.
 | `name`, `registry` | `registryFor(mode)` — registry plus live `content/<name>/game.json` extras; `adopt` writes that file |
 | `label` | picker; status text; Play's refusal |
 | `gizmos` | marker colours over rule nodes |
+| `facingGizmos?` | the same disc and post, plus an arrow turned to the node's yaw, over every node carrying the type (`itemMeshes.ts` `facingGizmo`) |
 | `surfaceGrid?` | the `Keys` overlay: cells drawn in each item's mesh holder, built-in box and rounded box only (ADR 0120) |
 
 The rest — `spawn`, `session`, `player`, `playerDefs`, `tuning`, `actions` — is the game client's; the editor plays a

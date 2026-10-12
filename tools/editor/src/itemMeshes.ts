@@ -1,6 +1,6 @@
 import type { Vec3 } from '@mp/core'
 import { isBuiltinModel, scaleCollider, type LoadedLevel } from '@mp/content'
-import { eulerToQuat, quat, vec3 } from '@mp/core'
+import { eulerToQuat, quat, vec3, yawOf } from '@mp/core'
 import type { ModeDescriptor } from '@mp/mode'
 import {
   colorForMarker,
@@ -186,6 +186,27 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
     return g
   }
 
+  /** The same marker, with an arrow on the disc along the node's forward: where a player is put, and facing which way (ADR 0202). */
+  const facingGizmo = (position: Vec3, yaw: number, color: number): THREE.Group => {
+    const g = markerGizmo(position, color)
+    const lift = 0.06
+    const arrow = new THREE.LineSegments(
+      mine(
+        new THREE.BufferGeometry().setFromPoints(
+          [
+            [0, 0, 0, 1.6],
+            [-0.35, 1.2, 0, 1.6],
+            [0.35, 1.2, 0, 1.6],
+          ].flatMap(([x0, z0, x1, z1]) => [new THREE.Vector3(x0, lift, z0), new THREE.Vector3(x1, lift, z1)]),
+        ),
+      ),
+      mine(new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false, toneMapped: false })),
+    )
+    arrow.rotation.y = yaw
+    g.add(arrow)
+    return g
+  }
+
   const buildMarkers = (): void => {
     disposeMeshes(markerGroup)
     const level = host.loaded()
@@ -205,6 +226,14 @@ export const createItemMeshes = (host: ItemMeshHost): ItemMeshes => {
         for (const c of n.components) {
           const color = gizmos[c.type]
           if (color !== undefined) markerGroup.add(markerGizmo(n.position, color))
+        }
+    // A place a player is put, facing its way (ADR 0202): on every node, since nothing is touched there.
+    const facing = host.mode()?.facingGizmos
+    if (facing !== undefined)
+      for (const n of level.allNodes)
+        for (const c of n.components) {
+          const color = facing[c.type]
+          if (color !== undefined) markerGroup.add(facingGizmo(n.position, yawOf(n.rotation), color))
         }
   }
 

@@ -6,6 +6,7 @@
 
 No component, node or list declares a stage. A stage is whatever platforms sit between the spawn and a
 `WinsPad`. No checkpoints: **falling anywhere is the level's spawn**. Nothing locks a stage. Both Kodjo's calls.
+A stage gate ([stage-gates.md](stage-gates.md)) is a place to teleport to, not a respawn point.
 
 ## `WinsPad`
 
@@ -14,9 +15,10 @@ No component, node or list declares a stage. A stage is whatever platforms sit b
 | `wins` | 1 | paid on touch |
 
 `onContact → effects.progress(node)` every tick stood on it. `keyboardSession` reads `WinsPad` off the node,
-sets a pending teleport to the spawn, and calls `opts.onCashOut(wins, node)` **once** (further contacts before
-the teleport is consumed are swallowed). The client applies `takeTeleport()` on the next tick: position set,
-velocity zeroed, `grounded` false, no death (ADR 0073 added `ModeSession.takeTeleport?`).
+sets a pending teleport to the spawn (`{ position }`, no yaw: you keep facing as you were), and calls
+`opts.onCashOut(wins, node)` **once** (further contacts before the teleport is consumed are swallowed). The client
+applies `takeTeleport()` on the next tick: position set, velocity zeroed, `grounded` false, no death (ADR 0073 added
+`ModeSession.takeTeleport?`).
 
 `padTop(node)`: the pad's top face (centre + box half-height), where the `+N Wins` popup spawns.
 
@@ -39,11 +41,14 @@ interface KeyboardSessionOptions extends ModeSessionOptions {
   onCashOut?: (wins: number, node: WorldNode) => void
   onTreadmill?: (on: TreadmillTick) => void       // per tick
   onStepPad?: (offer: StepPadOffer, node: WorldNode) => void  // per tick
+  requested?: () => Teleport | null               // a teleport the game asks for (ADR 0202)
 }
 ```
 
 `effects.progress(node)` dispatches on the node's component: `StepPad` → `onStepPad`; `Treadmill` →
 `onTreadmill`; `WinsPad` → cash-out. `progress()` is always `-1`: nothing persists through the platform.
+`takeTeleport()`: the cash-out's if one waits, else `opts.requested?.()` — so a request on a cash-out's tick lands
+the tick after ([stage-gates.md](stage-gates.md)).
 
 ## Level
 

@@ -5,7 +5,10 @@ import { createPhysicsWorld, initPhysics } from '@mp/physics'
 
 import { beforeAll, describe, expect, it } from 'vitest'
 
+import type { Teleport } from '@mp/mode'
+
 import { KEYBOARD_REGISTRY, STAND_OFFSET, keyboardSession } from './rules'
+import { StageGate, stageGatesOf } from './components/stageGate'
 import { qualifies, StepPad } from './components/stepPad'
 import { stepsThisTick } from './components/steps'
 import { DEFAULT_CURVE, stepsPerMinute } from './progression'
@@ -49,7 +52,7 @@ describe('keyboard cash-out', () => {
     const rules = keyboardSession(loaded, { onCashOut: (wins) => paid.push(wins) })
     rules.effects.progress(nodeById(loaded, 'end'))
     expect(paid).toEqual([7])
-    expect(rules.takeTeleport!()).toEqual(vec3(0, STAND_OFFSET, 0))
+    expect(rules.takeTeleport!(), 'to the spawn, facing as you were').toEqual({ position: vec3(0, STAND_OFFSET, 0) })
     expect(rules.takeTeleport!(), 'consumed').toBeNull()
   })
 
@@ -178,6 +181,49 @@ describe('a step is a tick of held input, at a cadence set by Level (ADR 0081)',
     expect(stepsThisTick({ moveX: 0, moveZ: 0 }, 10, DEFAULT_CURVE, 0.25)).toBe(0)
     // Level 200: ten a second.
     expect(stepsThisTick({ moveX: 0, moveZ: 1 }, 200, DEFAULT_CURVE, 0.1)).toBeCloseTo(1, 1)
+  })
+})
+
+describe('stage gates (ADR 0202)', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  const gate = (id: string, x: number, turn = 0): Node => ({ id, transform: { position: vec3(x, 1, 0), rotation: vec3(0, turn, 0) }, components: [comp(`${id}-g`, StageGate.type)] })
+
+  it('lists every gate in Hierarchy order — inside a parent too, collider or not — standing and facing as the node does', () => {
+    const area: Node = { id: 'area', transform: { position: vec3(100, 0, 0) }, components: [], children: [gate('inner', 5, Math.PI / 2)] }
+    const loaded = load([spawnAt(0), gate('first', 10), area, gate('last', 300)])
+    const gates = stageGatesOf(loaded, STAND_OFFSET)
+    expect(gates.map((g) => [g.number, g.position.x])).toEqual([
+      [1, 10],
+      [2, 105],
+      [3, 300],
+    ])
+    expect(gates[0]!.position.y).toBeCloseTo(1 + STAND_OFFSET, 9)
+    expect(gates[0]!.yaw, 'facing +Z').toBeCloseTo(0, 9)
+    expect(gates[1]!.yaw, 'turned a quarter about +Y: facing +X').toBeCloseTo(Math.PI / 2, 9)
+  })
+
+  it('is none in a level without one', () => {
+    expect(stageGatesOf(load([spawnAt(0), pad('board', 5)]), STAND_OFFSET)).toEqual([])
+  })
+
+  it('takes the teleport the game asks for, once, after a cash-out waiting on the same tick', () => {
+    const loaded = load([spawnAt(0), gate('g', 50, Math.PI), pad('end', 10, comp('w', WinsPad.type))])
+    const [stop] = stageGatesOf(loaded, STAND_OFFSET)
+    let asked: Teleport | null = { position: stop!.position, yaw: stop!.yaw }
+    const rules = keyboardSession(loaded, {
+      requested: () => {
+        const t = asked
+        asked = null
+        return t
+      },
+    })
+    rules.effects.progress(nodeById(loaded, 'end'))
+    expect(rules.takeTeleport!(), 'the cash-out first').toEqual({ position: vec3(0, STAND_OFFSET, 0) })
+    expect(rules.takeTeleport!(), 'then the gate, facing its way').toEqual({ position: stop!.position, yaw: stop!.yaw })
+    expect(rules.takeTeleport!(), 'once').toBeNull()
   })
 })
 
