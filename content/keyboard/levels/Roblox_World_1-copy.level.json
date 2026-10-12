@@ -58,9 +58,9 @@
         "c0527796": {
           "transform": {
             "position": {
-              "x": -1673,
-              "y": 13,
-              "z": -244.5
+              "x": 1.5,
+              "y": 1.5,
+              "z": 0.5
             },
             "scale": {
               "x": 3.2997,
@@ -2460,21 +2460,6 @@
                         "times": 0,
                         "offset": 0,
                         "stages": [
-                          {
-                            "id": "0103b34a",
-                            "steps": [
-                              {
-                                "id": "a294bc48",
-                                "kind": "fade",
-                                "to": 0.05,
-                                "timing": {
-                                  "by": "seconds",
-                                  "seconds": 0
-                                },
-                                "ease": "linear"
-                              }
-                            ]
-                          },
                           {
                             "id": "c22a005b",
                             "steps": [
