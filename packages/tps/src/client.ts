@@ -23,6 +23,7 @@ import {
   type CharacterTuning,
   DEFAULT_GAIT,
   type GaitTuning,
+  leaveBase,
   releaseFooting,
 } from '@mp/humanoid'
 import { createOrbitCamera, type OcclusionQueries, type OrbitCamera } from '@mp/camera'
@@ -738,6 +739,8 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
           const at = prevTickMs + ((nowMs - prevTickMs) * s) / slices
           // Only the first slice moves where a frame blends from, so the drawing spans the whole tick.
           loaded?.update(at, char.base?.colliderHandle, s === 1)
+          // The deck went back to its start under us (ADR 0206, Kodjo's call): we stay where we are, and fall.
+          if (char.base !== undefined && loaded?.cut(char.base.colliderHandle) === true) leaveBase(char)
           // Whatever moved into the character pushes it on the way it was going (ADR 0186): the controller only
           // resolves the character's own motion, so a platform arriving would otherwise pass straight through.
           // Before the step, which then sees those movers placed rather than moved (ADR 0188).

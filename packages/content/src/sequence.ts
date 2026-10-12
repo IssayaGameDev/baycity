@@ -429,6 +429,26 @@ export const sequenceTime = (c: CompiledSequence, nowMs: number): number => {
   return yoyo && n % 2 === 1 ? pass - u : u
 }
 
+/**
+ * Whether a `restart` sequence went back to its start between two instants (ADR 0206): a pass boundary crossed
+ * forward, into a pass that plays — not the hold after its last. A pose function jumps there, and the jump is a
+ * **cut, not a move**: whatever reads two poses as motion (a sweep, a body's velocity, a drawn blend, a ride) must
+ * take it as a teleport. A yo-yo never cuts: it turns round.
+ */
+export const restartsBetween = (c: CompiledSequence, from: SequenceClocks, to: SequenceClocks): boolean => {
+  const s = c.sequence
+  const pass = c.passSeconds
+  if (s.loop !== 'restart' || !(pass > 0)) return false
+  const passAt = (clocks: SequenceClocks): number => {
+    const ms = s.clock === 'local' ? clocks.local : clocks.shared
+    return Math.floor((Math.max(0, finiteOr(ms, 0) / 1000) + frac(finiteOr(s.offset, 0)) * c.cycleSeconds) / pass)
+  }
+  const a = passAt(from)
+  if (passAt(to) <= a) return false
+  const times = Math.floor(nonNegative(s.times))
+  return times === 0 || a + 1 < times
+}
+
 /** What one sequence does to one target at an instant, in the sequence's own axes. */
 export interface SequencePose {
   /** A point, in metres, from where the target was placed. */

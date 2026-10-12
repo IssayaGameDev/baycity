@@ -1,6 +1,6 @@
 import { COLLIDER, SEQUENCE, instantiateLevel, type Level, type Node, type TypeInfo } from '@mp/content'
 import { TICK_DT, vec3, type Vec3 } from '@mp/core'
-import { addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, stepCharacter } from '@mp/humanoid'
+import { addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, leaveBase, stepCharacter } from '@mp/humanoid'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -65,6 +65,8 @@ const run = (level: Level, spawn: Vec3, seconds: number, cmd = STILL): { player:
     for (let s = 1; s <= slices; s++) {
       const at = prev + ((now - prev) * s) / slices
       loaded.update(at, char.base?.colliderHandle, s === 1)
+      // As the game does: a deck that went back to its start leaves its rider behind (ADR 0206).
+      if (char.base !== undefined && loaded.cut(char.base.colliderHandle)) leaveBase(char)
       loaded.shove(char.body)
       world.step(TICK_DT / slices / 2)
       stepCharacter(char, cmd, TICK_DT / slices, undefined, loaded.basePose)
@@ -185,5 +187,74 @@ describe('a platform moving into a player', () => {
       expect(Math.abs(end.player.y - SOLE - (end.mover.y + 0.2)), JSON.stringify(to)).toBeLessThan(0.03)
       expect(Math.abs(end.player.x - end.mover.x), JSON.stringify(to)).toBeLessThan(0.03)
     }
+  })
+})
+
+/**
+ * Kodjo's wall (ADR 0206): a `restart` loop jumps back to its start, and that jump is a teleport. Swept, it ran
+ * through everyone on the line back — here a player the wall's own path went over and never touched.
+ */
+describe('a restart is a teleport, not a move', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  it('shoves nobody on the line back to the start', () => {
+    const step = (sid: string, to: Vec3) => ({ id: `${sid}-s`, steps: [{ id: sid, kind: 'move', to, timing: { by: 'speed', speed: 40 }, ease: 'linear' }] })
+    const wall: Node = {
+      id: 'wall',
+      transform: { position: vec3(0, 1, 0) },
+      components: [
+        { id: 'wall-col', type: COLLIDER, params: { shape: { kind: 'box', halfExtents: vec3(0.5, 1, 2) } } },
+        {
+          id: 'wall-seq',
+          type: SEQUENCE,
+          params: {
+            name: '',
+            clock: 'shared',
+            axes: 'object',
+            loop: 'restart',
+            times: 0,
+            offset: 0,
+            // Up, over the player, down at the far side — 1.5 s a pass — then back to the start in one jump.
+            stages: [step('up', vec3(0, 10, 0)), step('over', vec3(40, 10, 0)), step('down', vec3(40, 0, 0))],
+          },
+        },
+      ],
+    }
+    const end = run(levelOf([ground, wall]), vec3(20, SOLE + 0.3, 0), 4)
+    expect(Math.abs(end.player.x - 20), 'still where it stood').toBeLessThan(0.1)
+  })
+
+  /** Kodjo's call: the deck goes back to its start, its rider does not — they stay where they were, and fall. */
+  it('leaves a rider where they were, falling, when the deck under them restarts', () => {
+    const deck: Node = {
+      id: 'deck',
+      transform: { position: vec3(0, 10, 0) },
+      components: [
+        { id: 'deck-col', type: COLLIDER, params: { shape: { kind: 'box', halfExtents: vec3(3, 0.2, 3) } } },
+        {
+          id: 'deck-seq',
+          type: SEQUENCE,
+          params: {
+            name: '',
+            clock: 'shared',
+            axes: 'object',
+            loop: 'restart',
+            times: 0,
+            offset: 0,
+            // Settle, then up 20 m in 2 s — 3.5 s a pass — then back down to the start in one jump. Down is the case
+            // that mattered: the ride's longer look for a deck that dropped away found it below and pulled the rider down.
+            stages: [
+              { id: 'deck-a', steps: [{ id: 'deck-w', kind: 'wait', seconds: 1.5 }] },
+              { id: 'deck-b', steps: [{ id: 'deck-m', kind: 'move', to: vec3(0, 20, 0), timing: { by: 'speed', speed: 10 }, ease: 'linear' }] },
+            ],
+          },
+        },
+      ],
+    }
+    const end = run(levelOf([deck]), vec3(0, 10.2 + SOLE + 0.3, 0), 3.6)
+    expect(end.mover.y, 'the deck is back at its start').toBeLessThan(11)
+    expect(end.player.y - SOLE, 'the rider is not: still up where the deck was, falling').toBeGreaterThan(28)
   })
 })

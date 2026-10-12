@@ -463,6 +463,19 @@ export const releaseFooting = (state: CharacterState): void => {
   state.slopeReach = 0
 }
 
+/**
+ * The surface being ridden went away from under the character (ADR 0206, Kodjo's call): a platform's loop restarted,
+ * so it is back at its start and the rider is not. The ride and the platform's momentum go, so the next step finds
+ * no footing and the character falls from where it stands; its own motion and its footing flags stay, as walking
+ * off an edge leaves them.
+ */
+export const leaveBase = (state: CharacterState): void => {
+  state.base = undefined
+  state.carry = vec3(0, 0, 0)
+  state.liftVel = vec3(0, 0, 0)
+  state.liftStore = 0
+}
+
 export const stepCharacter = (
   state: CharacterState,
   cmd: InputCommand,

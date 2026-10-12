@@ -256,5 +256,6 @@ why matters.
 | [0203](adr/0203-the-teleport-window.md) | The teleport window |
 | [0204](adr/0204-a-frozen-prefab-copy-yields-to-its-prefab.md) | A frozen prefab copy yields to its prefab |
 | [0205](adr/0205-esc-steps-back-one-state.md) | Esc steps back one state |
+| [0206](adr/0206-a-sequence-restart-is-a-cut.md) | A sequence restart is a cut |
 
 `Design archive/` holds superseded design material and is not maintained.

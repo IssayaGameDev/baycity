@@ -67,6 +67,7 @@ repoint them when a subtree's ids are re-minted; `unlinkedNode` and the editor's
 ```ts
 compileSequence(s): CompiledSequence   // once per edit: every start and duration, problems
 sequenceTime(c, nowMs): number         // seconds into a pass: the looping, and only here
+restartsBetween(c, from, to): boolean  // a `restart` crossed into a pass that plays: a cut (ADR 0206)
 sampleSequence(c, { shared, local }): ReadonlyMap<target, SequencePose>   // SELF = '' for the object
 combineSequences(parts: { pose, axes }[], at: NodeFrame): SequenceOffset
 easeAt(ease, t)                        // exact 0 and 1 at the ends
@@ -90,7 +91,7 @@ axes. `SequenceOffset` — the same, framed and combined: `position` added to th
 | same channel, same stage | both start from where the target stood; the later in the list wins while both run |
 | before a step says | `collider`/`enabled` `undefined`: the object as it was set up |
 | turns within a sequence | about axes that stay put, each later one applied after (left-multiplied) |
-| restart | at exactly `passSeconds` it is already the next pass's start, so an instant step at the very end is never seen unless the passes are counted and it holds |
+| restart | at exactly `passSeconds` it is already the next pass's start, so an instant step at the very end is never seen unless the passes are counted and it holds. The jump back is a **cut** (`restartsBetween`, ADR 0206): the loader takes it as a teleport — no sweep, no velocity, no blend, no ride — never as travel; not the hold after the last pass |
 | yo-yo | odd passes read `pass − u`: moves, eases and instant steps all rewind; a final wait counts twice |
 | `times` | then holds where the last pass ended: the far end, or the start for an even yo-yo count (DOTween's `SetLoops`) |
 | `offset` | `frac(offset) × cycleSeconds`; the cycle is two passes for a yo-yo |

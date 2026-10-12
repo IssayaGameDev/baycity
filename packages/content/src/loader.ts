@@ -9,6 +9,7 @@ import {
   channelsOf,
   combineSequences,
   compileSequence,
+  restartsBetween,
   sampleSequence,
   type CompiledSequence,
   type NodeFrame,
@@ -251,6 +252,11 @@ interface Frame {
   localOnly: boolean
   parent: Frame | null
   animated: boolean
+  /**
+   * It went back to its start at the last `update` (ADR 0206): one of its sequences restarted, or one above it
+   * did. A teleport, not a move — nothing sweeps, derives a velocity from it, blends across it or rides it.
+   */
+  cut: boolean
   worldPos: Vec3
   worldRot: Quat
   /** What a component has moved this node by, or `null` on a node no component can move. See `NodeDrive`. */
@@ -389,6 +395,11 @@ export interface LoadedLevel {
   basePoseOf: (index: number, phase: BasePhase) => { position: Vec3; rotation: Quat } | undefined
   baseCarry: (index: number, localPos: Vec3) => Vec3 | undefined
   /**
+   * Whether the body owning this collider went back to its start at the last `update` — a sequence restarted
+   * (ADR 0206). A rider on it is left behind: the host drops the ride (`leaveBase`).
+   */
+  cut: (colliderHandle: number) => boolean
+  /**
    * Push `character` out of the movers that came into it over the last `update` (ADR 0186), and return how
    * far it went. For each solid, shown body that moved: its shape swept from its last pose by the motion it
    * gave the capsule's centre — its turn at that place as well as its travel — and, where it touched, the rest
@@ -516,6 +527,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
       // in the per-tick pose pass. So is one with a sequence, whatever it drives: switching a collider or a
       // fade happens per tick too. Inherited by children, so moving a parent carries its subtree.
       animated: driven || sequences.length > 0 || (parent?.animated ?? false),
+      cut: false,
       worldPos: vec3(0, 0, 0),
       worldRot: quat(),
       drive: driven ? { position: vec3(0, 0, 0), rotation: vec3(0, 0, 0) } : null,
@@ -783,6 +795,8 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
 
   let prevMs = 0
   let currMs = 0
+  /** The clocks the last `update` posed at: a restart between those and now is a cut (ADR 0206). */
+  let lastClocks: SequenceClocks | null = null
   /**
    * The level time this browser's own clock counts from (ADR 0137): the first instant it was posed at. So a
    * `local` sequence starts when this screen loaded the level, and keeps step with the tick — slicing a tick
@@ -805,6 +819,8 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
       // move it by adds, so their distances do.
       let step = 0
       for (const s of f.sequences) {
+        // A restart is a cut, not travel (ADR 0206): it needs no slices to be ridden, since nothing rides it.
+        if (restartsBetween(s.compiled, from, to)) continue
         const a = sampleSequence(s.compiled, from).get(s.key)
         const b = sampleSequence(s.compiled, to).get(s.key)
         if (a !== undefined && b !== undefined) step += distance(a.position, b.position)
@@ -825,13 +841,21 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     currMs = nowMs
     if (localStart === null) localStart = nowMs
     const clocks = clocksAt(nowMs)
-    for (const f of frames) if (f.animated) evaluate(f, clocks)
+    const before = lastClocks
+    lastClocks = clocks
+    // Parents come before their children in `frames`, so a cut above has been decided by the time one below asks.
+    for (const f of frames) {
+      if (!f.animated) continue
+      f.cut = before !== null && (f.sequences.some((s) => restartsBetween(s.compiled, before, clocks)) || (f.parent?.cut ?? false))
+      evaluate(f, clocks)
+    }
 
     for (const d of dynamics) {
       const f = d.frame
       const at = placeAt(f, scaledCentre(f, d.centre))
       if (d.body !== undefined) {
-        const poseIt = d.body.colliderHandle === ridingColliderHandle ? poseFrozen : pose
+        // A cut is placed with no velocity, as the ridden body is: Rapier would read the jump as speed.
+        const poseIt = f.cut || d.body.colliderHandle === ridingColliderHandle ? poseFrozen : pose
         poseIt(d.body, at, f.worldRot)
         // Re-shaped only when the scale actually changed: a sequence that scales pauses, and most never do.
         if (f.scaling && d.shape !== undefined && !sameVec(f.scale, d.shapeScale)) {
@@ -852,12 +876,21 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         d.prevScale = drawn
         d.prevOpacity = f.seq.opacity
       }
-      d.slicePos = primed ? d.currPos : at
-      d.sliceRot = primed ? d.currRot : f.worldRot
+      // A cut sweeps from where it is now, so `shove` finds no travel (ADR 0206).
+      d.slicePos = primed && !f.cut ? d.currPos : at
+      d.sliceRot = primed && !f.cut ? d.currRot : f.worldRot
       d.currPos = at
       d.currRot = f.worldRot
       d.currScale = drawn
       d.currOpacity = f.seq.opacity
+      // And blends from where it is now: drawn at its start at once, not sliding back over the path, and a ride
+      // on it carries nothing this tick (`baseCarry` reads the same two poses).
+      if (f.cut) {
+        d.prevPos = d.currPos
+        d.prevRot = d.currRot
+        d.prevScale = d.currScale
+        d.prevOpacity = d.currOpacity
+      }
       if (d.visual !== undefined) {
         d.visual.position = d.currPos
         d.visual.rotation = d.currRot
@@ -1017,5 +1050,9 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     baseIndex,
     basePoseOf,
     baseCarry,
+    cut: (colliderHandle) => {
+      const i = dynamicByCollider.get(colliderHandle)
+      return i !== undefined && dynamics[i]!.frame.cut
+    },
   }
 }
