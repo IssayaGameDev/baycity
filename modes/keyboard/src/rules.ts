@@ -7,6 +7,7 @@ import { spawnFrom, type ModeSession, type ModeSessionOptions } from '@mp/mode'
 import { Keyboard } from './components/keyboard'
 import { keyGeometryFrom, type KeyGeometry } from './keycaps'
 import { StepPad, type StepPadOffer } from './components/stepPad'
+import { StageGate } from './components/stageGate'
 import { STEPPER_DEF } from './components/steps'
 import { Treadmill, type TreadmillTick } from './components/treadmill'
 import { WinsPad } from './components/wins'
@@ -39,7 +40,7 @@ export const GAME_CURVE: ProgressCurve = curveFrom((game as { settings?: unknown
  */
 export const GAME_KEYS: KeyGeometry = keyGeometryFrom((game as { settings?: Record<string, unknown> }).settings)
 
-export const KEYBOARD_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, STEPPER_DEF, Keyboard, WinsPad, Treadmill, StepPad, ...sharedComponents(game.components)])
+export const KEYBOARD_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, STEPPER_DEF, Keyboard, WinsPad, Treadmill, StepPad, StageGate, ...sharedComponents(game.components)])
 
 /** How far above a spawn node the character's origin sits — half the capsule, plus its cap. */
 export const STAND_OFFSET = CHAR_HALF_HEIGHT + CHAR_RADIUS

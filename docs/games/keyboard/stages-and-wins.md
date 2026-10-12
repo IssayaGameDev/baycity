@@ -6,6 +6,7 @@
 
 No component, node or list declares a stage. A stage is whatever platforms sit between the spawn and a
 `WinsPad`. No checkpoints: **falling anywhere is the level's spawn**. Nothing locks a stage. Both Kodjo's calls.
+A stage gate ([stage-gates.md](stage-gates.md)) is a place to teleport to, not a respawn point.
 
 ## `WinsPad`
 

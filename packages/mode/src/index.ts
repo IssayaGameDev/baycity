@@ -151,6 +151,12 @@ export interface ModeDescriptor {
    */
   readonly gizmos: Readonly<Record<string, number>>
   /**
+   * Component type → gizmo colour, for a marker with an **arrow along the node's forward** (+Z): a place a player
+   * is put, and the way they will face (ADR 0202). Drawn on every node carrying it, collider or not — a place to
+   * stand is not something to touch.
+   */
+  readonly facingGizmos?: Readonly<Record<string, number>>
+  /**
    * What this game would tile onto a box surface, for a tool to preview before the game has run (ADR 0120).
    *
    * The same seam as `gizmos` and for the same reason — a tool draws what only the game can describe — one

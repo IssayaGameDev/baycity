@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { COLLIDER, LIGHT, RENDERER, type Level, type Node } from '@mp/content'
-import { vec3 } from '@mp/core'
+import { COLLIDER, LIGHT, RENDERER, type Level, type LoadedLevel, type Node } from '@mp/content'
+import { eulerToQuat, vec3 } from '@mp/core'
+import type { ModeDescriptor } from '@mp/mode'
 import { THREE } from '@mp/render-three'
 
 import { levelDoc, type Doc } from './editorDoc'
@@ -124,5 +125,20 @@ describe('a switched-off node redrawn alone (ADR 0099)', () => {
     doc.setNodeEnabled(0, true)
     meshes.rebuildSubtree(0)
     expect(drawnNow(meshes)).toEqual([true, true])
+  })
+})
+
+describe('a facing marker (ADR 0202)', () => {
+  it('stands on a node the game names, collider or not, its arrow along the node’s forward', () => {
+    const gate = { id: 'g', name: 'gate', components: [{ id: 'g-c', type: 'StageGate', params: {} }], position: vec3(4, 1, 0), rotation: eulerToQuat(vec3(0, Math.PI / 2, 0)), colliders: [], colliderHandles: [], scope: 0 }
+    const loaded = { markers: [], nodes: [], allNodes: [gate] } as unknown as LoadedLevel
+    const mode = { gizmos: {}, facingGizmos: { StageGate: 0x2979ff } } as unknown as ModeDescriptor
+    const meshes = createItemMeshes({ doc: () => null, loaded: () => loaded, runtime: () => null, mode: () => mode, gameSettings: () => ({}), selection: () => [], hidden: () => false, afterBuild: () => {} })
+    meshes.buildMarkers()
+    expect(meshes.markers.children).toHaveLength(1)
+    const marker = meshes.markers.children[0]!
+    expect(marker.position.x).toBe(4)
+    const arrow = marker.children.find((o) => o instanceof THREE.LineSegments)!
+    expect(arrow.rotation.y, 'turned to face +X').toBeCloseTo(Math.PI / 2, 9)
   })
 })

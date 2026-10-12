@@ -40,7 +40,7 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 
 | Game | Docs |
 | --- | --- |
-| [keyboard](games/keyboard/README.md) | progression, balance, world-1, steps, keycaps, stages-and-wins, pads, hud, debug, known-open |
+| [keyboard](games/keyboard/README.md) | progression, balance, world-1, steps, keycaps, stages-and-wins, stage-gates, pads, hud, debug, known-open |
 
 `modes/_template` is documented in `platform/workspace.md` (how to add a game).
 
@@ -252,5 +252,6 @@ why matters.
 | [0199](adr/0199-the-assistants-model-is-picked.md) | The assistant's model is picked per message |
 | [0200](adr/0200-an-admin-page.md) | An admin page, for the admins |
 | [0201](adr/0201-the-editors-view-reaches-the-whole-level.md) | The editor's view reaches the whole level |
+| [0202](adr/0202-stage-gates.md) | Stage gates |
 
 `Design archive/` holds superseded design material and is not maintained.
