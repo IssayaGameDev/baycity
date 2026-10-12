@@ -11,7 +11,8 @@ import type { Level, Node } from '../../../packages/content/src/types'
  * `level.prefabs` is a resolution table — contents in memory, reference on disk. A definition that reached
  * disk is read *instead of* the asset from then on (`hydratePrefabs` skips an id the level already carries),
  * so the placement looks linked and silently stops following its prefab. ADR 0124 stopped new ones; these are
- * the files that already have one.
+ * the files that already have one. Since ADR 0204 an open level relinks them in memory and drops them at its next
+ * write; this cleans the files in one pass without waiting for an edit.
  *
  * Planning is separate from writing, and pure, for the reason `layoutMoves` is: what this will do to Kodjo's
  * content has to be readable before it does it.

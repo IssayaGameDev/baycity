@@ -57,7 +57,7 @@ interface LevelHost {
 ```
 
 `LevelHostOptions.assets: LevelAssets` — what `loadLevel` fetched with the level. Order:
-`hydratePrefabs(data, assets.prefabs)` (ADR 0091 — a level names its prefabs and the definitions must be in place
+`relinkPrefabs` (a frozen copy of a fetched prefab yields to it, ADR 0204) → `hydratePrefabs(data, assets.prefabs)` (ADR 0091 — a level names its prefabs and the definitions must be in place
 first; fetched with the level, so this stays synchronous) → `instantiateLevel(world, data, registry)` →
 `assets.load([...assetIdsIn(visuals), ...assetParamIds(nodes, registry)])`
 → `addLevel` (sync) → `addLights` → `env.applyEnvironment(config.environment)` → `postfx.apply(config.environment?.postfx)`.

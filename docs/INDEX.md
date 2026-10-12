@@ -254,5 +254,6 @@ why matters.
 | [0201](adr/0201-the-editors-view-reaches-the-whole-level.md) | The editor's view reaches the whole level |
 | [0202](adr/0202-stage-gates.md) | Stage gates |
 | [0203](adr/0203-the-teleport-window.md) | The teleport window |
+| [0204](adr/0204-a-frozen-prefab-copy-yields-to-its-prefab.md) | A frozen prefab copy yields to its prefab |
 
 `Design archive/` holds superseded design material and is not maintained.

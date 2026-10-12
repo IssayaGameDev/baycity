@@ -269,7 +269,7 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
   /** A level's JSON as it is now: an open document is ahead of its file. `undefined` when it will not read. */
   const levelNow = (name: string, file: string): unknown => {
     try {
-      return opts.live?.levelOf(name) ?? (JSON.parse(readFileSync(file, 'utf8')) as unknown)
+      return opts.live?.levelAsFile(name) ?? (JSON.parse(readFileSync(file, 'utf8')) as unknown)
     } catch {
       return undefined
     }
@@ -697,8 +697,9 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
     // A game's data file is a live document (ADR 0162): its copy, when open, is ahead of the file.
     const liveGame = kind === 'games' && opts.liveAssets !== undefined ? opts.liveAssets.current(gameDocId(name)) : null
     if (req.method === 'GET') {
-      // An open live document is newer than its file until the next flush; serve it.
-      const open = kind === 'levels' ? opts.live?.levelOf(name) : null
+      // An open live document is newer than its file until the next flush; serve it — as its file would be, with no
+      // resolved prefab definitions in it, or a level duplicated from it would carry frozen copies (ADR 0204).
+      const open = kind === 'levels' ? opts.live?.levelAsFile(name) : null
       if (open !== null && open !== undefined) return sendJson(res, 200, open), true
       if (kind === 'games' && opts.liveAssets !== undefined) {
         // What it served, so the editor knows which edits it already has — `0` for the file.

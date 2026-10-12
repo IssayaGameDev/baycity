@@ -2,7 +2,7 @@
 // bundles this file for the dev editor cannot load.
 import { applyBatch, OpError, refKey, type NodeRef, type Op } from '../../../packages/content/src/ops'
 import type { Level, Node } from '../../../packages/content/src/types'
-import { hydratePrefabs, prefabRefsIn, stripHydrated } from '../../../packages/content/src/prefabs'
+import { hydratePrefabs, prefabRefsIn, relinkPrefabs, stripHydrated } from '../../../packages/content/src/prefabs'
 import { validateLevel, validateNodeTree } from '../../../packages/content/src/validate'
 import { forEachNode } from '../../../packages/content/src/tree'
 import { levelFile, parseQualified } from '../../../packages/content/src/layout'
@@ -237,6 +237,12 @@ export interface Live {
   isOpen: (name: string) => boolean
   /** The current level of an open document, or `null`. */
   levelOf: (name: string) => Level | null
+  /**
+   * An open document as it would be written: a level **without** the definitions resolution put in its table
+   * (ADR 0204). What anything handing a level out of this process serves — a copy of `levelOf` that left would
+   * carry frozen definitions into whatever saved it, which is how a duplicated level stopped following its prefabs.
+   */
+  levelAsFile: (name: string) => Level | null
   status: () => { name: string; seq: number; peers: Peer[]; holds: number }[]
   /** A connection in any open document, marked as heard from — an edit to a live asset arrives on one (ADR 0159). */
   connection: (connId: string) => LiveClient | null
@@ -404,6 +410,9 @@ export const createLive = (opts: LiveOptions): Live => {
       prefab.dependents.add(d.key)
       return prefab
     }
+    // A frozen copy of an asset the file carries goes first (ADR 0204), so the asset resolves in its place — and,
+    // being filled, it stays off disk from the next write. A copy with no asset behind it is the only one, and stays.
+    relinkPrefabs(d.level, (assetId) => opts.prefabs?.root(assetId) !== undefined)
     for (const id of hydratePrefabs(d.level, { root: (assetId) => attach(assetId)?.level.nodes[0] }).filled) d.hydrated.push(id)
     // The ones `hydratePrefabs` had nothing to do for. Their definition stays whatever the level carries —
     // replacing an inline table is a separate question — but their document is open and this level is on it.
@@ -681,6 +690,11 @@ export const createLive = (opts: LiveOptions): Live => {
     },
     isOpen: (name) => docs.has(canonKey(name)),
     levelOf: (name) => docs.get(canonKey(name))?.level ?? null,
+    levelAsFile: (name) => {
+      const d = docs.get(canonKey(name))
+      if (d === undefined) return null
+      return d.kind === 'level' ? stripHydrated(d.level, d.hydrated) : d.level
+    },
     status: () => [...docs.values()].map((d) => ({ name: d.name, seq: d.seq, peers: peersOf(d), holds: d.holds.size })),
     connection: (connId) => {
       for (const d of docs.values()) {
