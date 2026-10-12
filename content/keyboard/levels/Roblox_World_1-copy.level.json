@@ -13055,136 +13055,17 @@
                   ]
                 },
                 {
-                  "id": "d2a11038",
-                  "name": "capsule",
+                  "id": "3f7ee420",
+                  "name": "axe",
                   "transform": {
                     "position": {
                       "x": 0,
-                      "y": 18,
-                      "z": -22.5
+                      "y": 27,
+                      "z": -98
                     },
                     "scale": {
                       "x": 1,
-                      "y": 20,
-                      "z": 1
-                    }
-                  },
-                  "components": [
-                    {
-                      "id": "8af5eee1",
-                      "type": "Collider",
-                      "params": {
-                        "shape": {
-                          "kind": "capsule",
-                          "halfHeight": 0.5,
-                          "radius": 0.5
-                        },
-                        "center": {
-                          "x": 0,
-                          "y": 0,
-                          "z": 0
-                        }
-                      }
-                    },
-                    {
-                      "id": "e91b332c",
-                      "type": "Renderer",
-                      "params": {
-                        "model": "builtin:capsule",
-                        "material": ""
-                      }
-                    },
-                    {
-                      "id": "1bdefcdb",
-                      "type": "Sequence",
-                      "params": {
-                        "name": "",
-                        "clock": "shared",
-                        "axes": "object",
-                        "loop": "restart",
-                        "times": 0,
-                        "offset": 0,
-                        "stages": [
-                          {
-                            "id": "19593206",
-                            "steps": [
-                              {
-                                "id": "08e93c41",
-                                "kind": "turn",
-                                "axis": {
-                                  "x": 0,
-                                  "y": 0,
-                                  "z": 10
-                                },
-                                "angle": 90,
-                                "timing": {
-                                  "by": "seconds",
-                                  "seconds": 1
-                                },
-                                "ease": "linear"
-                              }
-                            ]
-                          }
-                        ]
-                      }
-                    }
-                  ],
-                  "children": [
-                    {
-                      "id": "f3faf7f7",
-                      "name": "sphere",
-                      "transform": {
-                        "position": {
-                          "x": 0,
-                          "y": -0.625,
-                          "z": 0
-                        },
-                        "scale": {
-                          "x": 10,
-                          "y": 0.5,
-                          "z": 10
-                        }
-                      },
-                      "components": [
-                        {
-                          "id": "2b842bf3",
-                          "type": "Collider",
-                          "params": {
-                            "shape": {
-                              "kind": "ball",
-                              "radius": 0.5
-                            },
-                            "center": {
-                              "x": 0,
-                              "y": 0,
-                              "z": 0
-                            }
-                          }
-                        },
-                        {
-                          "id": "118e5a95",
-                          "type": "Renderer",
-                          "params": {
-                            "model": "builtin:sphere",
-                            "material": ""
-                          }
-                        }
-                      ]
-                    }
-                  ]
-                },
-                {
-                  "id": "3f7ee420",
-                  "name": "box",
-                  "transform": {
-                    "position": {
-                      "x": 0,
-                      "y": 20,
-                      "z": -100.5
-                    },
-                    "scale": {
-                      "x": 2,
-                      "y": 2,
+                      "y": 1,
                       "z": 180
                     }
                   },
@@ -13215,6 +13096,793 @@
                         "model": "builtin:box",
                         "material": ""
                       }
+                    },
+                    {
+                      "id": "defccb0f",
+                      "type": "Sequence",
+                      "params": {
+                        "name": "",
+                        "clock": "shared",
+                        "axes": "object",
+                        "loop": "yoyo",
+                        "times": 0,
+                        "offset": 0,
+                        "stages": []
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "91f88aca",
+                  "name": "box",
+                  "transform": {
+                    "position": {
+                      "x": 0,
+                      "y": 27,
+                      "z": -22
+                    },
+                    "scale": {
+                      "x": 3,
+                      "y": 3,
+                      "z": 10
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "cb771ff9",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "12ad2113",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": ""
+                      }
+                    },
+                    {
+                      "id": "defccb0f",
+                      "type": "Sequence",
+                      "params": {
+                        "name": "",
+                        "clock": "shared",
+                        "axes": "object",
+                        "loop": "yoyo",
+                        "times": 0,
+                        "offset": 0,
+                        "stages": [
+                          {
+                            "id": "57c14631",
+                            "steps": [
+                              {
+                                "id": "0877c63d",
+                                "kind": "turn",
+                                "axis": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "z": 1
+                                },
+                                "angle": -180,
+                                "timing": {
+                                  "by": "seconds",
+                                  "seconds": 1
+                                },
+                                "ease": "linear"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "id": "d2a11038",
+                      "name": "capsule",
+                      "transform": {
+                        "position": {
+                          "x": 3.3333,
+                          "y": 0,
+                          "z": -0.0506
+                        },
+                        "rotation": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 1.5707963267948966
+                        },
+                        "scale": {
+                          "x": 0.3333,
+                          "y": 6.6667,
+                          "z": 0.1008
+                        }
+                      },
+                      "components": [
+                        {
+                          "id": "8af5eee1",
+                          "type": "Collider",
+                          "params": {
+                            "shape": {
+                              "kind": "capsule",
+                              "halfHeight": 0.5,
+                              "radius": 0.5
+                            },
+                            "center": {
+                              "x": 0,
+                              "y": 0,
+                              "z": 0
+                            }
+                          }
+                        },
+                        {
+                          "id": "e91b332c",
+                          "type": "Renderer",
+                          "params": {
+                            "model": "builtin:capsule",
+                            "material": ""
+                          }
+                        },
+                        {
+                          "id": "1bdefcdb",
+                          "type": "Sequence",
+                          "params": {
+                            "name": "",
+                            "clock": "shared",
+                            "axes": "object",
+                            "loop": "restart",
+                            "times": 0,
+                            "offset": 0,
+                            "stages": []
+                          }
+                        }
+                      ],
+                      "children": [
+                        {
+                          "id": "f3faf7f7",
+                          "name": "sphere",
+                          "transform": {
+                            "position": {
+                              "x": 0,
+                              "y": -0.625,
+                              "z": 0
+                            },
+                            "scale": {
+                              "x": 10,
+                              "y": 0.5,
+                              "z": 10
+                            }
+                          },
+                          "components": [
+                            {
+                              "id": "2b842bf3",
+                              "type": "Collider",
+                              "params": {
+                                "shape": {
+                                  "kind": "ball",
+                                  "radius": 0.5
+                                },
+                                "center": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "z": 0
+                                }
+                              }
+                            },
+                            {
+                              "id": "118e5a95",
+                              "type": "Renderer",
+                              "params": {
+                                "model": "builtin:sphere",
+                                "material": ""
+                              }
+                            },
+                            {
+                              "id": "e9df5c86",
+                              "type": "Bumper",
+                              "params": {
+                                "power": 54
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "957271de",
+                  "name": "box",
+                  "transform": {
+                    "position": {
+                      "x": 0,
+                      "y": 27,
+                      "z": -45
+                    },
+                    "rotation": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 3.141592653589793
+                    },
+                    "scale": {
+                      "x": 3,
+                      "y": 3,
+                      "z": 10
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "cb771ff9",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "12ad2113",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": ""
+                      }
+                    },
+                    {
+                      "id": "defccb0f",
+                      "type": "Sequence",
+                      "params": {
+                        "name": "",
+                        "clock": "shared",
+                        "axes": "object",
+                        "loop": "yoyo",
+                        "times": 0,
+                        "offset": 0,
+                        "stages": [
+                          {
+                            "id": "57c14631",
+                            "steps": [
+                              {
+                                "id": "0877c63d",
+                                "kind": "turn",
+                                "axis": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "z": 1
+                                },
+                                "angle": 180,
+                                "timing": {
+                                  "by": "seconds",
+                                  "seconds": 1
+                                },
+                                "ease": "linear"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "id": "467b1d9d",
+                      "name": "capsule",
+                      "transform": {
+                        "position": {
+                          "x": 3.3333,
+                          "y": 0,
+                          "z": -0.0506
+                        },
+                        "rotation": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 1.5707963267948966
+                        },
+                        "scale": {
+                          "x": 0.3333,
+                          "y": 6.6667,
+                          "z": 0.1008
+                        }
+                      },
+                      "components": [
+                        {
+                          "id": "8af5eee1",
+                          "type": "Collider",
+                          "params": {
+                            "shape": {
+                              "kind": "capsule",
+                              "halfHeight": 0.5,
+                              "radius": 0.5
+                            },
+                            "center": {
+                              "x": 0,
+                              "y": 0,
+                              "z": 0
+                            }
+                          }
+                        },
+                        {
+                          "id": "e91b332c",
+                          "type": "Renderer",
+                          "params": {
+                            "model": "builtin:capsule",
+                            "material": ""
+                          }
+                        },
+                        {
+                          "id": "1bdefcdb",
+                          "type": "Sequence",
+                          "params": {
+                            "name": "",
+                            "clock": "shared",
+                            "axes": "object",
+                            "loop": "restart",
+                            "times": 0,
+                            "offset": 0,
+                            "stages": []
+                          }
+                        }
+                      ],
+                      "children": [
+                        {
+                          "id": "1b04c834",
+                          "name": "sphere",
+                          "transform": {
+                            "position": {
+                              "x": 0,
+                              "y": -0.625,
+                              "z": 0
+                            },
+                            "scale": {
+                              "x": 10,
+                              "y": 0.5,
+                              "z": 10
+                            }
+                          },
+                          "components": [
+                            {
+                              "id": "2b842bf3",
+                              "type": "Collider",
+                              "params": {
+                                "shape": {
+                                  "kind": "ball",
+                                  "radius": 0.5
+                                },
+                                "center": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "z": 0
+                                }
+                              }
+                            },
+                            {
+                              "id": "118e5a95",
+                              "type": "Renderer",
+                              "params": {
+                                "model": "builtin:sphere",
+                                "material": ""
+                              }
+                            },
+                            {
+                              "id": "e9df5c86",
+                              "type": "Bumper",
+                              "params": {
+                                "power": 54
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "eee5db13",
+                  "name": "box",
+                  "transform": {
+                    "position": {
+                      "x": 0,
+                      "y": 27,
+                      "z": -58
+                    },
+                    "scale": {
+                      "x": 3,
+                      "y": 3,
+                      "z": 10
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "cb771ff9",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "12ad2113",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": ""
+                      }
+                    },
+                    {
+                      "id": "defccb0f",
+                      "type": "Sequence",
+                      "params": {
+                        "name": "",
+                        "clock": "shared",
+                        "axes": "object",
+                        "loop": "yoyo",
+                        "times": 0,
+                        "offset": 0,
+                        "stages": [
+                          {
+                            "id": "57c14631",
+                            "steps": [
+                              {
+                                "id": "0877c63d",
+                                "kind": "turn",
+                                "axis": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "z": 1
+                                },
+                                "angle": -180,
+                                "timing": {
+                                  "by": "seconds",
+                                  "seconds": 1
+                                },
+                                "ease": "linear"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "id": "d615cd34",
+                      "name": "capsule",
+                      "transform": {
+                        "position": {
+                          "x": 3.3333,
+                          "y": 0,
+                          "z": -0.0506
+                        },
+                        "rotation": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 1.5707963267948966
+                        },
+                        "scale": {
+                          "x": 0.3333,
+                          "y": 6.6667,
+                          "z": 0.1008
+                        }
+                      },
+                      "components": [
+                        {
+                          "id": "8af5eee1",
+                          "type": "Collider",
+                          "params": {
+                            "shape": {
+                              "kind": "capsule",
+                              "halfHeight": 0.5,
+                              "radius": 0.5
+                            },
+                            "center": {
+                              "x": 0,
+                              "y": 0,
+                              "z": 0
+                            }
+                          }
+                        },
+                        {
+                          "id": "e91b332c",
+                          "type": "Renderer",
+                          "params": {
+                            "model": "builtin:capsule",
+                            "material": ""
+                          }
+                        },
+                        {
+                          "id": "1bdefcdb",
+                          "type": "Sequence",
+                          "params": {
+                            "name": "",
+                            "clock": "shared",
+                            "axes": "object",
+                            "loop": "restart",
+                            "times": 0,
+                            "offset": 0,
+                            "stages": []
+                          }
+                        }
+                      ],
+                      "children": [
+                        {
+                          "id": "a68e0fef",
+                          "name": "sphere",
+                          "transform": {
+                            "position": {
+                              "x": 0,
+                              "y": -0.625,
+                              "z": 0
+                            },
+                            "scale": {
+                              "x": 10,
+                              "y": 0.5,
+                              "z": 10
+                            }
+                          },
+                          "components": [
+                            {
+                              "id": "2b842bf3",
+                              "type": "Collider",
+                              "params": {
+                                "shape": {
+                                  "kind": "ball",
+                                  "radius": 0.5
+                                },
+                                "center": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "z": 0
+                                }
+                              }
+                            },
+                            {
+                              "id": "118e5a95",
+                              "type": "Renderer",
+                              "params": {
+                                "model": "builtin:sphere",
+                                "material": ""
+                              }
+                            },
+                            {
+                              "id": "e9df5c86",
+                              "type": "Bumper",
+                              "params": {
+                                "power": 54
+                              }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "23e1f86d",
+                  "name": "box",
+                  "transform": {
+                    "position": {
+                      "x": 0,
+                      "y": 27,
+                      "z": -81
+                    },
+                    "rotation": {
+                      "x": 0,
+                      "y": 0,
+                      "z": 3.141592653589793
+                    },
+                    "scale": {
+                      "x": 3,
+                      "y": 3,
+                      "z": 10
+                    }
+                  },
+                  "components": [
+                    {
+                      "id": "cb771ff9",
+                      "type": "Collider",
+                      "params": {
+                        "shape": {
+                          "kind": "box",
+                          "halfExtents": {
+                            "x": 0.5,
+                            "y": 0.5,
+                            "z": 0.5
+                          }
+                        },
+                        "center": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 0
+                        }
+                      }
+                    },
+                    {
+                      "id": "12ad2113",
+                      "type": "Renderer",
+                      "params": {
+                        "model": "builtin:box",
+                        "material": ""
+                      }
+                    },
+                    {
+                      "id": "defccb0f",
+                      "type": "Sequence",
+                      "params": {
+                        "name": "",
+                        "clock": "shared",
+                        "axes": "object",
+                        "loop": "yoyo",
+                        "times": 0,
+                        "offset": 0,
+                        "stages": [
+                          {
+                            "id": "57c14631",
+                            "steps": [
+                              {
+                                "id": "0877c63d",
+                                "kind": "turn",
+                                "axis": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "z": 1
+                                },
+                                "angle": 180,
+                                "timing": {
+                                  "by": "seconds",
+                                  "seconds": 1
+                                },
+                                "ease": "linear"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "children": [
+                    {
+                      "id": "97c87cea",
+                      "name": "capsule",
+                      "transform": {
+                        "position": {
+                          "x": 3.3333,
+                          "y": 0,
+                          "z": -0.0506
+                        },
+                        "rotation": {
+                          "x": 0,
+                          "y": 0,
+                          "z": 1.5707963267948966
+                        },
+                        "scale": {
+                          "x": 0.3333,
+                          "y": 6.6667,
+                          "z": 0.1008
+                        }
+                      },
+                      "components": [
+                        {
+                          "id": "8af5eee1",
+                          "type": "Collider",
+                          "params": {
+                            "shape": {
+                              "kind": "capsule",
+                              "halfHeight": 0.5,
+                              "radius": 0.5
+                            },
+                            "center": {
+                              "x": 0,
+                              "y": 0,
+                              "z": 0
+                            }
+                          }
+                        },
+                        {
+                          "id": "e91b332c",
+                          "type": "Renderer",
+                          "params": {
+                            "model": "builtin:capsule",
+                            "material": ""
+                          }
+                        },
+                        {
+                          "id": "1bdefcdb",
+                          "type": "Sequence",
+                          "params": {
+                            "name": "",
+                            "clock": "shared",
+                            "axes": "object",
+                            "loop": "restart",
+                            "times": 0,
+                            "offset": 0,
+                            "stages": []
+                          }
+                        }
+                      ],
+                      "children": [
+                        {
+                          "id": "2e5dcecb",
+                          "name": "sphere",
+                          "transform": {
+                            "position": {
+                              "x": 0,
+                              "y": -0.625,
+                              "z": 0
+                            },
+                            "scale": {
+                              "x": 10,
+                              "y": 0.5,
+                              "z": 10
+                            }
+                          },
+                          "components": [
+                            {
+                              "id": "2b842bf3",
+                              "type": "Collider",
+                              "params": {
+                                "shape": {
+                                  "kind": "ball",
+                                  "radius": 0.5
+                                },
+                                "center": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "z": 0
+                                }
+                              }
+                            },
+                            {
+                              "id": "118e5a95",
+                              "type": "Renderer",
+                              "params": {
+                                "model": "builtin:sphere",
+                                "material": ""
+                              }
+                            },
+                            {
+                              "id": "e9df5c86",
+                              "type": "Bumper",
+                              "params": {
+                                "power": 54
+                              }
+                            }
+                          ]
+                        }
+                      ]
                     }
                   ]
                 }
