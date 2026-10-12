@@ -8,7 +8,13 @@
       "z": 0
     }
   },
-  "components": [],
+  "components": [
+    {
+      "id": "ad6201ac",
+      "type": "StageGate",
+      "params": {}
+    }
+  ],
   "children": [
     {
       "id": "c65ac1fb",
