@@ -8,6 +8,7 @@ import {
   combineSequences,
   compileSequence,
   easeAt,
+  restartsBetween,
   sampleSequence,
   sequenceTime,
   type CompiledSequence,
@@ -535,5 +536,32 @@ describe('combineSequences', () => {
     const own = eulerToQuat(tilted.ownRotation)
     const world = mulQuat(tilted.parentRot, mulQuat(own, o.rotation))
     expectSameTurn(world, mulQuat(q, mulQuat(tilted.parentRot, own)))
+  })
+})
+
+/** A `restart` loop going back to its start is a cut, which whatever reads two poses as motion must know (ADR 0206). */
+describe('a restart', () => {
+  const ms = (shared: number, local = 0) => ({ shared: shared * 1000, local: local * 1000 })
+  const twoSeconds = (over: Partial<Sequence> = {}) => compileSequence(sequence([stage(move(vec3(10, 0, 0), secs(2)))], over))
+
+  it('is crossing into the next pass, and nothing within one', () => {
+    const c = twoSeconds()
+    expect(restartsBetween(c, ms(1.9), ms(2.1))).toBe(true)
+    expect(restartsBetween(c, ms(0.5), ms(1.5))).toBe(false)
+    expect(restartsBetween(c, ms(3.9), ms(4)), 'exactly at the boundary is the next pass').toBe(true)
+  })
+
+  it('is never a yo-yo turning round, nor the hold after the last pass', () => {
+    expect(restartsBetween(twoSeconds({ loop: 'yoyo' }), ms(1.9), ms(2.1))).toBe(false)
+    const twice = twoSeconds({ times: 2 })
+    expect(restartsBetween(twice, ms(1.9), ms(2.1)), 'into the second pass').toBe(true)
+    expect(restartsBetween(twice, ms(3.9), ms(4.1)), 'into the hold').toBe(false)
+  })
+
+  it('reads the clock the sequence runs on, and its offset', () => {
+    const local = twoSeconds({ clock: 'local' })
+    expect(restartsBetween(local, ms(1.9, 0.5), ms(2.1, 0.6)), 'the shared clock crossing is not this one').toBe(false)
+    expect(restartsBetween(local, ms(0, 1.9), ms(0, 2.1))).toBe(true)
+    expect(restartsBetween(twoSeconds({ offset: 0.5 }), ms(0.9), ms(1.1)), 'half a pass ahead').toBe(true)
   })
 })

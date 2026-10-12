@@ -8,6 +8,10 @@
 respawn, a stage teleport. Clears `base`, `carry`, `liftVel`, `liftStore`, `slopeReach`, the three velocities
 and `grounded`.
 
+`leaveBase(state)`: the surface ridden went away from under the character, not the character — a platform's loop
+restarted (ADR 0206). Clears `base`, `carry`, `liftVel`, `liftStore` only; its own velocities and footing flags stay,
+so the next step finds nothing under it and it falls from where it stands, as off an edge.
+
 **`base` is the one that bites.** Left set, the second-look bounce-fall guard (step 1 below) can re-acquire the
 platform the character was standing on and then move it to its stored *local* spot on that platform — a
 respawn followed one tick later by a yank into the air. It also reaches peers: while `base` is set the wire

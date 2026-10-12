@@ -362,3 +362,25 @@ describe('through the frame tree', () => {
     expect(drawnAt(loaded, 2000).y).toBeCloseTo(0, 9)
   })
 })
+
+describe('a restart (ADR 0206)', () => {
+  it('is drawn at the start at once, carries nobody, and leaves the body with no speed', () => {
+    const loaded = load(levelOf([node('wall', [...solidBox('wall'), sequence([stage(move(vec3(10, 0, 0), 1))])])]))
+    const handle = loaded.nodes[0]!.colliderHandles[0]!
+    loaded.update(900)
+    loaded.update(1100)
+    loaded.render(0.5)
+    expect(loaded.visuals[0]!.position.x, 'not halfway back along the path').toBeCloseTo(1, 6)
+    expect(loaded.baseCarry(loaded.baseIndex(handle)!, vec3(0, 0.5, 0))).toEqual(vec3(0, 0, 0))
+    expect(loaded.motionSlices(900, 1100, 0.5), 'the jump needs no slicing').toBeLessThanOrEqual(2)
+  })
+
+  it('moves on as before on the ticks after', () => {
+    const loaded = load(levelOf([node('wall', [...solidBox('wall'), sequence([stage(move(vec3(10, 0, 0), 1))])])]))
+    loaded.update(900)
+    loaded.update(1100)
+    loaded.update(1300)
+    loaded.render(0.5)
+    expect(loaded.visuals[0]!.position.x, 'blending again').toBeCloseTo(2, 6)
+  })
+})

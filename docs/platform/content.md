@@ -148,7 +148,14 @@ from its authored transform, and a component's drive (`NodeDrive`, ADR 0058) add
 `motionSlices(fromMs, toMs, maxStep)`: how many equal slices a tick needs so nothing travels more than
 `maxStep` between two of them (ADR 0104). `1` when still or slow; capped at 8. Position only; a frame's
 sequences add. Level-wide: one fast mover slices every tick for the whole level, so a slice must never move
-where `render` blends from (`update`'s `opensTick`, ADR 0185).
+where `render` blends from (`update`'s `opensTick`, ADR 0185). A sequence restarting in the span adds nothing.
+
+**A restart is a cut** (ADR 0206). `update` marks a frame `cut` when one of its sequences `restartsBetween` the
+last `update`'s clocks and these — or its parent is cut (parents come first in `frames`). A cut dynamic is posed
+frozen (`setPosition`, so Rapier derives no velocity), its slice pose and its blend-from pose are set to where it
+is now — `shove` sweeps nothing, `render` draws it at the start at once, `baseCarry` gives a rider nothing — and
+the next `update` moves on as usual. Whoever is where it reappears is inside it, as with any teleport.
+`cut(colliderHandle)` says so for a body; the host drops a rider on one (`leaveBase`, Kodjo's call: left behind).
 
 ## Built-in shapes — `packages/content/src/primitives.ts` (ADR 0090)
 

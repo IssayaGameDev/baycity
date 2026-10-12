@@ -79,7 +79,8 @@ speed, base })` (v10 base frame; `packStates(states, playerStates())` in spare f
 `rules.takeDeath()` → `die()` → `rules.takeTeleport?.()` (alive): `setPosition(position)`, `releaseFooting`, and with a
 `yaw` `ownFacing = yaw` + `orbit.face(yaw)` (ADR 0202).
 
-`LocalWorld.applyInput`: `components.fixedUpdate` → per slice (ADR 0104): `loaded.update(at, base, s === 1)` →
+`LocalWorld.applyInput`: `components.fixedUpdate` → per slice (ADR 0104): `loaded.update(at, base, s === 1)` → a ridden
+base that `loaded.cut` (a restart, ADR 0206) → `leaveBase(char)` →
 `loaded.shove(char.body)` (ADR 0186: out of whatever moved into it; before the step, ADR 0188) →
 `world.step(slice/2)` → `components.locomote(cmd)` → `world.step(slice/2)`. At the tick's end, alive:
 `components.contact` with `touching()` ∪ `collisions()` ∪ `overlaps()`, each handle once (ADR 0188).
