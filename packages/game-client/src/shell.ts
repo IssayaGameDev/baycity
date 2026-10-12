@@ -11,10 +11,12 @@ import { createPauseMenu } from './pauseMenu'
  * simply what any game rendered into a canvas wants, and having it inline was what made
  * `startGameClient` the only way to get it.
  *
- * **Pointer lock is the pause state**, on a mouse. Releasing it (Esc, focus loss) opens the menu and
- * re-locking closes it, which is why the menu has no Esc handler of its own. Touch has no lock at all, so
- * there the pause button is the only way in *and* out — hence the `touch.active()` guard on every path,
- * without which the first tap would open the menu and never let it close (ADR 0022).
+ * **On a mouse, Esc steps back one state at a time** (ADR 0205, Kodjo's call): playing (the mouse locked to the
+ * camera) → the mouse showing, so a HUD button can be clicked → the pause screen → back to the mouse showing. A game
+ * window open closes first. A click on empty space plays again; a click on a button is the button's. Losing the
+ * lock any other way (focus loss) is the mouse showing too, never the pause screen. Touch has no lock at all, so
+ * there the pause button opens the menu and Esc only toggles it — hence the `touch.active()` guard on every lock
+ * path, without which the first tap would ask for a lock mobile cannot give (ADR 0022).
  */
 export interface Shell {
   /** The overlay's container, for anything else that draws in 2D. */
@@ -45,6 +47,26 @@ export interface ShellOptions {
   roster: () => { me: string; peers: readonly string[] }
   /** Restart: put the player back at their last checkpoint. */
   onRestart: () => void
+}
+
+/** What Esc does now (ADR 0205). */
+export type EscapeAction = 'ignore' | 'close-window' | 'close-pause' | 'open-pause'
+
+/**
+ * How long after the lock is let go an Esc still counts as the one that let it go, in ms. Locked, the browser takes
+ * Esc to show the mouse, and whether the page hears that key too, and before or after the lock goes, varies.
+ */
+export const ESC_UNLOCK_MS = 250
+
+/**
+ * Esc, one state back: the Esc that let the lock go only shows the mouse; then a game window closes; then the
+ * pause screen goes back to the mouse; the mouse brings up the pause screen.
+ */
+export const escapeAction = (s: { readonly locked: boolean; readonly msSinceUnlock: number; readonly window: boolean; readonly paused: boolean }): EscapeAction => {
+  if (s.locked || s.msSinceUnlock < ESC_UNLOCK_MS) return 'ignore'
+  if (s.window) return 'close-window'
+  if (s.paused) return 'close-pause'
+  return 'open-pause'
 }
 
 /** The slider's ends, in the camera's own units. */
@@ -115,14 +137,32 @@ export const createShell = async ({
     if (!isTouch() && !pause.isOpen()) canvas.requestPointerLock().catch(() => undefined)
   }
 
+  /** When the lock last went: the Esc that took it only showed the mouse. */
+  let unlockedAt = -Infinity
   const onPointerLockChange = (): void => {
     if (isTouch()) return
     if (document.pointerLockElement === canvas) pause.close()
-    // Let go for a game window: not a pause.
-    else if (held === null) openPause()
+    // However it went — Esc, focus, a game window — the mouse is showing; Esc again is the pause screen.
+    else unlockedAt = performance.now()
   }
   document.addEventListener('pointerlockchange', onPointerLockChange)
 
+  const onKey = (e: KeyboardEvent): void => {
+    if (e.code !== 'Escape' || e.repeat) return
+    const action = escapeAction({
+      locked: document.pointerLockElement === canvas,
+      msSinceUnlock: performance.now() - unlockedAt,
+      window: held !== null,
+      paused: pause.isOpen(),
+    })
+    // A window's close releases the hold, whose lock Esc cannot grant: the mouse stays out, as it should.
+    if (action === 'close-window') held?.onOutside()
+    else if (action === 'close-pause') pause.close()
+    else if (action === 'open-pause') openPause()
+  }
+  window.addEventListener('keydown', onKey)
+
+  // Empty space: play again — or close a game window, which plays again too. Not under the pause screen.
   ui.setBackgroundTap(() => {
     if (held !== null) held.onOutside()
     else lockAgain()
@@ -132,19 +172,9 @@ export const createShell = async ({
   // over the HUD's graphics.
   const touchHud = createTouchHud(ui.root)
 
-  // Top-left pause button (placeholder glyph until skinned). During locked play the cursor is hidden, so this
-  // is clickable when free; Esc is the primary open while playing.
-  const pauseBtn = uiButton({
-    label: 'II',
-    width: 44,
-    height: 40,
-    color: 0x475569,
-    onClick: () => {
-      if (isTouch()) openPause()
-      else if (document.pointerLockElement === canvas) document.exitPointerLock()
-      else openPause()
-    },
-  })
+  // Top-left pause button (placeholder glyph until skinned). Clickable whenever the mouse is showing, and the
+  // only way in on touch.
+  const pauseBtn = uiButton({ label: 'II', width: 44, height: 40, color: 0x475569, onClick: () => openPause() })
   pauseBtn.view.position.set(16, 16)
   ui.root.addChild(pauseBtn.view)
 
@@ -177,6 +207,7 @@ export const createShell = async ({
     },
     dispose: () => {
       document.removeEventListener('pointerlockchange', onPointerLockChange)
+      window.removeEventListener('keydown', onKey)
       observer.disconnect()
       window.removeEventListener('resize', onResize)
       touchHud.dispose()

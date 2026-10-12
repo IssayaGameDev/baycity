@@ -10,7 +10,8 @@ import { hudScale } from './hud'
 /**
  * The teleport window (ADR 0203), Kodjo's calls throughout: a square **Teleport** button on the left edge, where the
  * Wins counter was, opens a box that slides in from the left — Start, then every stage gate in Hierarchy order, a
- * list that scrolls. A pick teleports and closes it. ✕, T, Esc or a tap outside close it too.
+ * list that scrolls. A pick teleports and closes it. ✕, T, Esc or a tap outside close it too — Esc and the tap
+ * through the hold's `onOutside`, since the shell owns Esc (ADR 0205).
  *
  * Open, the mouse is free (`holdCursor`) and you can still walk: only the camera stops turning. T opens it on a
  * keyboard; on touch the button is tapped. Every gate is open for now — reaching them and paying for them come later.
@@ -142,7 +143,6 @@ export const createTeleportWindow = (client: TpsClient, opts: TeleportWindowOpti
   const onKey = (e: KeyboardEvent): void => {
     if (e.repeat || typing(e)) return
     if (e.code === 'KeyT') toggle()
-    else if (e.code === 'Escape' && open) close()
   }
   window.addEventListener('keydown', onKey)
 

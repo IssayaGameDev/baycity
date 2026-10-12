@@ -105,9 +105,14 @@ interface Shell {
 
 - Overlay sized from the **canvas** (`clientWidth/Height`), `position: fixed; inset: 0; z-index: 10`; resized by a
   `ResizeObserver` on the canvas plus `window.resize`.
-- **Pointer lock is the pause state** on mouse: `pointerlockchange` → lock held = close, lost = open. Touch: pause
-  button (`'II'`, top-left 16,16) is the only way in and out; every lock path guarded by `isTouch()` (ADR 0022).
-- Background tap (`ui.setBackgroundTap`) re-requests lock when not touch and menu closed.
+- **Esc steps back one state** on a mouse (ADR 0205, Kodjo's call), owned here — a game keeps no Esc of its own.
+  `escapeAction({ locked, msSinceUnlock, window, paused })`: locked, or within `ESC_UNLOCK_MS` 250 of the lock going
+  (the browser's Esc only shows the mouse) → nothing; a game window held → its `onOutside`; the menu open → close
+  it, back to the mouse showing; else → open the menu. `pointerlockchange`: lock gained closes the menu; lost (Esc,
+  focus) only records when — the mouse showing, never the menu. Touch: the pause button (`'II'`, top-left 16,16)
+  opens it; every lock path guarded by `isTouch()` (ADR 0022).
+- Background tap (`ui.setBackgroundTap`): a held window's `onOutside`, else re-request the lock when not touch and
+  the menu closed — a click on empty space plays again, a click on a widget is the widget's.
 - **`holdCursor(onOutside)`** — a game's own window wants the mouse (ADR 0203): `exitPointerLock` without opening the
   menu (a lock lost while held is not a pause); a background tap calls `onOutside` instead of locking. The returned
   release locks again (`requestPointerLock`, rejection swallowed — Esc grants none, and the next tap locks); a no-op

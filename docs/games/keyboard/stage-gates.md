@@ -40,7 +40,7 @@ behind (`OrbitCamera.face`), so forward is the way on. To Start: the spawn (`spa
 | | |
 | --- | --- |
 | the button | `uiButton` **Teleport**, 84 px square × `hudScale`, left edge 18 px in, vertically centred; toggles |
-| T | toggles (not while typing in a field); Esc closes |
+| T | toggles (not while typing in a field); Esc closes it (the shell's Esc, ADR 0205), leaving the mouse showing |
 | open | `client.holdCursor(close)` — the mouse freed without the pause screen; refused (`null`) while it is up. Walking still works (keys are read unlocked); the camera stops turning |
 | the box | 300 px wide × `hudScale`, as tall as Start + the gates need (header 58, rows 44, padding 12), at most the overlay less 40 px above and below; vertically centred; its background `eventMode` static, so a tap on it is neither "outside" nor a thumb on the stick |
 | the slide | `stepSlide`: progress ± `dt / SLIDE_SECONDS` (0.25), linear, so a reversal is continuous; `x = hidden + (out − hidden) × slideOut(p)`, `out-cubic` — closing is the opening played backwards |
