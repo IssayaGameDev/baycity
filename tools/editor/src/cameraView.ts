@@ -21,6 +21,21 @@ import type { Notify } from './notices'
  * button under it, the stand-in background and what it replaced, and the bounds box with its toggle.
  */
 
+/** A far plane changes in steps this long, so a moving camera re-cuts its projection seldom. */
+const FAR_STEP = 100
+/** How often the level is measured for the far plane, in ms: a bounding box over every object, not every frame. */
+const MEASURE_MS = 500
+
+/**
+ * The far plane that takes in all of `reach` from `eye` (ADR 0201): to the level's far side and a little more,
+ * never nearer than `floor`, in whole `FAR_STEP`s.
+ */
+export const farToSee = (eye: THREE.Vector3, reach: THREE.Sphere, floor: number): number => {
+  if (reach.isEmpty()) return floor
+  const need = (eye.distanceTo(reach.center) + reach.radius) * 1.05
+  return Math.max(floor, Math.ceil(need / FAR_STEP) * FAR_STEP)
+}
+
 /** What looking at the level needs from the editor around it. */
 export interface CameraViewHost {
   stage: ReturnType<typeof createThreeStage>
@@ -317,6 +332,33 @@ export const createCameraView = (host: CameraViewHost) => {
     }
   }
 
+  /**
+   * How far the view reaches (ADR 0201, Kodjo's call: the editor's, not the game's). The stage's camera stops at
+   * its own far plane, 1000 m, the game's — which cut a big level off a few hundred metres past what you looked at.
+   * So outside play the far plane follows the level: far enough to see all of it from where the camera is, never
+   * nearer than the camera's own. Play gets the game's back. The near plane stays: it is what decides depth
+   * precision, so a far plane further out costs next to nothing.
+   */
+  const gameFar = stage.camera.far
+  const isoFar = orthoCamera.far
+  const reach = new THREE.Sphere()
+  let measuredAt = -Infinity
+  const setFar = (camera: THREE.PerspectiveCamera | THREE.OrthographicCamera, far: number): void => {
+    if (camera.far === far) return
+    camera.far = far
+    camera.updateProjectionMatrix()
+  }
+  const fitFar = (): void => {
+    if (host.playing()) return setFar(stage.camera, gameFar)
+    const now = performance.now()
+    if (now - measuredAt >= MEASURE_MS) {
+      measuredAt = now
+      new THREE.Box3().setFromObject(host.instanceRoot).getBoundingSphere(reach)
+    }
+    const camera = activeCamera()
+    setFar(camera, farToSee(camera.position, reach, isometric ? isoFar : gameFar))
+  }
+
   /** The bound in force for the open document: the level's own, or the platform default. */
   const effectiveBounds = (): number => host.doc()?.netBounds() ?? QUANT_BOUND
 
@@ -369,8 +411,11 @@ export const createCameraView = (host: CameraViewHost) => {
     orthoHalfHeight: () => (orthoCamera.top - orthoCamera.bottom) / 2,
     /** Install a level's environment, then make the background match the projection. */
     installEnvironment,
-    /** Once per frame, so the navigation gizmo keeps up. */
-    update: (dt: number) => viewGizmo.update(dt),
+    /** Once per frame, so the navigation gizmo keeps up and the far plane takes in the level. */
+    update: (dt: number) => {
+      viewGizmo.update(dt)
+      fitFar()
+    },
     captureFrame,
     boundsBox,
     showBounds: () => showBoundsBox,

@@ -251,5 +251,6 @@ why matters.
 | [0198](adr/0198-the-assistant-writes-sequences.md) | The assistant writes sequences, and adds only the game's components |
 | [0199](adr/0199-the-assistants-model-is-picked.md) | The assistant's model is picked per message |
 | [0200](adr/0200-an-admin-page.md) | An admin page, for the admins |
+| [0201](adr/0201-the-editors-view-reaches-the-whole-level.md) | The editor's view reaches the whole level |
 
 `Design archive/` holds superseded design material and is not maintained.
