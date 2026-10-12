@@ -23,6 +23,14 @@ export interface Shell {
   readonly touchHud: TouchHud
   /** Whether the menu is up. The render loop stops routing touches and the camera stops swinging while it is. */
   isOpen: () => boolean
+  /**
+   * A game's own window wants the mouse (ADR 0203): the lock is let go **without** pausing, and a tap on empty
+   * space calls `onOutside` rather than locking again. The release returned locks again — call it from the click
+   * or key that closes the window, since a lock is granted only inside one. Opening the pause menu ends the hold
+   * with `onOutside`, and its release then does nothing. Touch has no lock: only the outside tap applies.
+   * `null` while the pause screen is up: no window opens over it.
+   */
+  holdCursor: (onOutside: () => void) => (() => void) | null
   dispose: () => void
 }
 
@@ -93,15 +101,31 @@ export const createShell = async ({
     },
   })
 
+  /** A game window holding the mouse, and what to call when a tap lands outside it. */
+  let held: { readonly onOutside: () => void } | null = null
+  /** The pause screen takes over from any game window: it closes, and nothing locks on its way out. */
+  const openPause = (): void => {
+    const h = held
+    held = null
+    h?.onOutside()
+    pause.open()
+  }
+  /** Asked from a click or key. A lock can still be refused — Esc grants none — and then the next click takes it. */
+  const lockAgain = (): void => {
+    if (!isTouch() && !pause.isOpen()) canvas.requestPointerLock().catch(() => undefined)
+  }
+
   const onPointerLockChange = (): void => {
     if (isTouch()) return
     if (document.pointerLockElement === canvas) pause.close()
-    else pause.open()
+    // Let go for a game window: not a pause.
+    else if (held === null) openPause()
   }
   document.addEventListener('pointerlockchange', onPointerLockChange)
 
   ui.setBackgroundTap(() => {
-    if (!isTouch() && !pause.isOpen()) void canvas.requestPointerLock()
+    if (held !== null) held.onOutside()
+    else lockAgain()
   })
 
   // Before the pause button, because Pixi draws later children on top and the button has to stay reachable
@@ -116,9 +140,9 @@ export const createShell = async ({
     height: 40,
     color: 0x475569,
     onClick: () => {
-      if (isTouch()) pause.open()
+      if (isTouch()) openPause()
       else if (document.pointerLockElement === canvas) document.exitPointerLock()
-      else pause.open()
+      else openPause()
     },
   })
   pauseBtn.view.position.set(16, 16)
@@ -140,6 +164,17 @@ export const createShell = async ({
     ui,
     touchHud,
     isOpen: () => pause.isOpen(),
+    holdCursor: (onOutside) => {
+      if (pause.isOpen()) return null
+      const h = { onOutside }
+      held = h
+      if (!isTouch() && document.pointerLockElement === canvas) document.exitPointerLock()
+      return () => {
+        if (held !== h) return
+        held = null
+        lockAgain()
+      }
+    },
     dispose: () => {
       document.removeEventListener('pointerlockchange', onPointerLockChange)
       observer.disconnect()

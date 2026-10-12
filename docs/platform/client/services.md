@@ -96,7 +96,11 @@ interface ShellOptions {
   sensitivity: { get: () => number; set: (t: number) => void }   // camera units; shell maps to 0..1 slider
   roster: () => { me: string; peers: readonly string[] }; onRestart: () => void
 }
-interface Shell { readonly ui: UiOverlay; readonly touchHud: TouchHud; isOpen: () => boolean; dispose: () => void }
+interface Shell {
+  readonly ui: UiOverlay; readonly touchHud: TouchHud; isOpen: () => boolean
+  holdCursor: (onOutside: () => void) => (() => void) | null   // ADR 0203
+  dispose: () => void
+}
 ```
 
 - Overlay sized from the **canvas** (`clientWidth/Height`), `position: fixed; inset: 0; z-index: 10`; resized by a
@@ -104,6 +108,11 @@ interface Shell { readonly ui: UiOverlay; readonly touchHud: TouchHud; isOpen: (
 - **Pointer lock is the pause state** on mouse: `pointerlockchange` → lock held = close, lost = open. Touch: pause
   button (`'II'`, top-left 16,16) is the only way in and out; every lock path guarded by `isTouch()` (ADR 0022).
 - Background tap (`ui.setBackgroundTap`) re-requests lock when not touch and menu closed.
+- **`holdCursor(onOutside)`** — a game's own window wants the mouse (ADR 0203): `exitPointerLock` without opening the
+  menu (a lock lost while held is not a pause); a background tap calls `onOutside` instead of locking. The returned
+  release locks again (`requestPointerLock`, rejection swallowed — Esc grants none, and the next tap locks); a no-op
+  once the hold has ended. Opening the menu — its button, or a lock lost with nothing held — ends a hold first
+  through `onOutside`. `null` while the menu is open.
 - Sensitivity slider range `SENS_MIN = 0.0005`, `SENS_MAX = 0.006`.
 - Pause menu (`pauseMenu.ts`, not exported): settings (sensitivity, language grid) + players list, Restart/Resume;
   all text via `@mp/i18n`, RTL-mirrored, scaled to fit.

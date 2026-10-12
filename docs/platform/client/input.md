@@ -99,12 +99,13 @@ pointer ids, so a `>= 0` test read a real finger as none (comment in `touchContr
 `createInputs` deep-copies the default and adds CSS `--safe-left/--safe-right/--safe-bottom` to the insets on
 resize. The `touch` pane folder binds this live copy.
 
-### DOM binding — `createTouchJoystick(target, layout?, { ignore? }): TouchInput`
+### DOM binding — `createTouchJoystick(target, layout?, { ignore?, ignoreAt? }): TouchInput`
 
 - Listens on **`window`**, capture phase, `passive: false` (the Pixi overlay sits over the canvas; window sees all).
 - `pointerType !== 'mouse'` counts as touch (pen, empty string included).
-- Pointers starting inside an `ignore` element are neither routed nor suppressed. `preventDefault` only on
-  pointers taken.
+- Pointers starting inside an `ignore` element, or where `ignoreAt(clientX, clientY)` says yes — the overlay's
+  `widgetAt`, wired by `@mp/tps` through `Inputs.ignoreWidgets` once the shell exists (ADR 0203) — are neither routed
+  nor suppressed. So a tap on a HUD button is not also a thumb on the stick. `preventDefault` only on pointers taken.
 - `blur` → `releaseAll`; `resize` → `controls.resize(rect)`.
 - Adds `setEnabled(on)` (off = release everything, route nothing; `active()` unaffected — used while pause open) and
   `dispose`.
@@ -124,7 +125,9 @@ this in the tick (`atan2(x, z)`).
 interface Inputs {
   touch: TouchInput; layout: TouchLayout; keys: Set<string>
   takeJump: () => boolean; worldMove: () => { x: number; z: number }
-  actions: () => ReadonlySet<string>; ignore: (el: HTMLElement) => void; dispose: () => void
+  actions: () => ReadonlySet<string>; ignore: (el: HTMLElement) => void
+  ignoreWidgets: (test: (clientX: number, clientY: number) => boolean) => void
+  dispose: () => void
 }
 createInputs({ canvas, camera: OrbitCamera, isDead, onRespawn, actions? }: InputsOptions): Inputs
 ```

@@ -40,6 +40,7 @@ readonly camera: OrbitCamera              // params live; face(yaw): boom behind
 readonly tuning: CharacterTuning          // the live copy the controller reads and the pane binds
 toScreen: (world: Vec3) => { x: number; y: number } | null  // overlay pixels; null behind lens (ADR 0072)
 readonly ui: UiOverlay                    // shared Pixi layer; read ui.width/height, not window
+holdCursor: (onOutside: () => void) => (() => void) | null  // the shell's: free the mouse for a game window, no pause (ADR 0203)
 readonly debugPane: DebugPane['pane']     // tweakpane root
 world: () => PhysicsWorld | null          // null before first snapshot
 level: () => LoadedLevel | null

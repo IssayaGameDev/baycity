@@ -253,5 +253,6 @@ why matters.
 | [0200](adr/0200-an-admin-page.md) | An admin page, for the admins |
 | [0201](adr/0201-the-editors-view-reaches-the-whole-level.md) | The editor's view reaches the whole level |
 | [0202](adr/0202-stage-gates.md) | Stage gates |
+| [0203](adr/0203-the-teleport-window.md) | The teleport window |
 
 `Design archive/` holds superseded design material and is not maintained.

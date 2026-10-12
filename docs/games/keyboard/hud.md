@@ -14,7 +14,8 @@ Bottom-centre, from Kodjo's screenshot of the real game:
 | Level bar | 520×46 px, bottom margin 22 | fill = `into / next` |
 | Level | inside the bar, left | `Level N` |
 | Progress | inside the bar, right | `<into> / <next>` |
-| Wins | left edge, vertically centred, 26 px | `<abbrev> Wins` |
+| Wins | top, centred, 16 px down, 26 px | `<abbrev> Wins` |
+| Teleport button | left edge, vertically centred, 84 px square, 18 px in (`teleportWindow.ts`) | `Teleport` — opens the teleport window ([stage-gates.md](stage-gates.md), ADR 0203) |
 
 Redrawn only when a value changes (Pixi text is a texture upload). Re-laid-out when `client.ui.width/height`
 change, compared per frame (`UiOverlay` has no resize event).

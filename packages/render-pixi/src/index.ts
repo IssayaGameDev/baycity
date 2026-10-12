@@ -17,4 +17,4 @@ export { createTouchHud, DEFAULT_TOUCH_HUD_STYLE } from './touchHud'
 
 // Reusable Pixi UI widgets (ADR 0015 — PixiJS is the game-UI layer).
 export type { UiOverlay, LabelStyle, PanelOpts, ButtonOpts, UiButton, SliderOpts, UiSlider, ListItem, ListOpts, UiList } from './ui'
-export { createUiOverlay, uiGroup, uiLabel, uiPanel, uiButton, uiSlider, uiList } from './ui'
+export { createUiOverlay, uiGroup, uiLabel, uiPanel, uiButton, uiSlider, uiList, clampListScroll, listRowAt, LIST_DRAG_SLOP } from './ui'

@@ -21,6 +21,11 @@ export interface UiOverlay {
   /** Called when the pointer taps empty overlay space (not a widget) — used to
    * re-capture the mouse for look control. */
   setBackgroundTap: (fn: (() => void) | null) => void
+  /**
+   * Whether a widget — anything that takes the pointer, not the empty space behind them all — is under this point,
+   * in overlay pixels. For the touch controls, so a tap on a HUD button is not also a thumb on the stick (ADR 0203).
+   */
+  widgetAt: (x: number, y: number) => boolean
   dispose: () => void
 }
 
@@ -61,6 +66,10 @@ export const createUiOverlay = async (opts: { width: number; height: number }): 
     },
     setBackgroundTap: (fn) => {
       bgTap = fn
+    },
+    widgetAt: (x, y) => {
+      const hit = app.renderer.events.rootBoundary.hitTest(x, y)
+      return hit !== null && hit !== backdrop
     },
     dispose: () => app.destroy(true),
   }
@@ -243,17 +252,37 @@ export const uiSlider = (o: SliderOpts): UiSlider => {
 export interface ListItem {
   text: string
   highlight?: boolean
+  /** Makes the row a button: a tap on it calls this — a press that travels is a drag of the list instead (ADR 0203). */
+  onPick?: () => void
 }
 export interface ListOpts {
   width: number
   height: number
   rowHeight?: number
+  /** The rows' type size; 15 by default. */
+  textSize?: number
 }
 export interface UiList {
   readonly view: Container
   setItems: (items: ListItem[]) => void
 }
 
+/** How far a press may travel and still be a tap on a row rather than a drag of the list, in overlay pixels. */
+export const LIST_DRAG_SLOP = 6
+
+/** The scroll a list may take: 0 at the top, never past its last row, and 0 when it all fits. */
+export const clampListScroll = (y: number, viewHeight: number, contentHeight: number): number => Math.min(0, Math.max(viewHeight - contentHeight, y))
+
+/** The row `localY` down a list's view is over, at scroll `scrollY`; -1 for none. */
+export const listRowAt = (localY: number, scrollY: number, rowHeight: number, count: number): number => {
+  const i = Math.floor((localY - scrollY) / rowHeight)
+  return i >= 0 && i < count ? i : -1
+}
+
+/**
+ * A vertical list that scrolls — the wheel, or a drag, which is how a finger scrolls. A row with `onPick` is a
+ * button: lit while the pointer is over it, picked by a tap that did not travel past `LIST_DRAG_SLOP`.
+ */
 export const uiList = (o: ListOpts): UiList => {
   const rowH = o.rowHeight ?? 30
   const view = new Container()
@@ -262,35 +291,79 @@ export const uiList = (o: ListOpts): UiList => {
   view.addChild(content, clip)
   content.mask = clip
 
-  let contentH = 0
-  const clampScroll = (): void => {
-    const min = Math.min(0, o.height - contentH)
-    content.y = content.y < min ? min : content.y > 0 ? 0 : content.y
+  let items: ListItem[] = []
+  let backs: Graphics[] = []
+  let hovered = -1
+  const contentH = (): number => items.length * rowH
+  const paintRow = (i: number): void => {
+    const it = items[i]
+    const back = backs[i]
+    if (it === undefined || back === undefined) return
+    back.clear()
+    if (it.highlight === true) back.roundRect(0, 2, o.width, rowH - 4, 6).fill({ color: 0x3b82f6, alpha: 0.25 })
+    else if (it.onPick !== undefined) back.roundRect(0, 2, o.width, rowH - 4, 6).fill({ color: 0x2f3646, alpha: i === hovered ? 1 : 0.55 })
   }
+  const hover = (i: number): void => {
+    if (i === hovered) return
+    const was = hovered
+    hovered = i
+    paintRow(was)
+    paintRow(i)
+    view.cursor = items[i]?.onPick !== undefined ? 'pointer' : 'default'
+  }
+  const rowUnder = (e: FederatedPointerEvent): number => listRowAt(view.toLocal(e.global).y, content.y, rowH, items.length)
 
   view.eventMode = 'static'
   view.hitArea = new Rectangle(0, 0, o.width, o.height)
   view.on('wheel', (e: FederatedWheelEvent) => {
-    content.y -= e.deltaY
-    clampScroll()
+    content.y = clampListScroll(content.y - e.deltaY, o.height, contentH())
+  })
+  /** The press in progress: where it started, the scroll it started at, and whether it has become a drag. */
+  let press: { id: number; startY: number; startScroll: number; dragged: boolean } | null = null
+  view.on('pointerdown', (e) => {
+    press = { id: e.pointerId, startY: e.global.y, startScroll: content.y, dragged: false }
+  })
+  view.on('globalpointermove', (e) => {
+    if (press === null || e.pointerId !== press.id) return
+    const dy = e.global.y - press.startY
+    if (!press.dragged && Math.abs(dy) > LIST_DRAG_SLOP) {
+      press.dragged = true
+      hover(-1)
+    }
+    if (press.dragged) content.y = clampListScroll(press.startScroll + dy, o.height, contentH())
+  })
+  view.on('pointermove', (e) => {
+    if (press === null) hover(rowUnder(e))
+  })
+  view.on('pointerout', () => hover(-1))
+  view.on('pointerup', (e) => {
+    const was = press
+    press = null
+    if (was === null || was.dragged || e.pointerId !== was.id) return
+    items[rowUnder(e)]?.onPick?.()
+  })
+  view.on('pointerupoutside', () => {
+    press = null
   })
 
   return {
     view,
-    setItems: (items) => {
+    setItems: (next) => {
       content.removeChildren()
-      items.forEach((it, i) => {
+      items = next
+      hovered = -1
+      backs = next.map((it, i) => {
         const row = new Container()
         row.y = i * rowH
-        if (it.highlight === true) {
-          row.addChild(new Graphics().roundRect(0, 2, o.width, rowH - 4, 6).fill({ color: 0x3b82f6, alpha: 0.25 }))
-        }
-        const label = uiLabel(it.text, { size: 15, color: it.highlight === true ? 0xffffff : 0xcbd5e1 })
-        label.position.set(10, rowH / 2 - 9)
-        row.addChild(label)
+        const back = new Graphics()
+        const label = uiLabel(it.text, { size: o.textSize ?? 15, color: it.highlight === true || it.onPick !== undefined ? 0xffffff : 0xcbd5e1 })
+        label.anchor.set(0, 0.5)
+        label.position.set(10, rowH / 2)
+        row.addChild(back, label)
         content.addChild(row)
+        return back
       })
-      contentH = items.length * rowH
+      next.forEach((_it, i) => paintRow(i))
       content.y = 0
     },
   }
