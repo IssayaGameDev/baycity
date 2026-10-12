@@ -97,6 +97,9 @@ export const addLevel = (scene: THREE.Scene, visuals: VisualItem[], opts: LevelV
         })
       }
       object = model
+      // Sized by its object's scale, as the editor and Unity draw it (ADR 0207): the file is its size at a scale
+      // of 1. It used to be drawn at file size whatever the scale, so the game and the editor disagreed.
+      object.scale.multiply(new THREE.Vector3(v.scale.x, v.scale.y, v.scale.z))
     } else {
       const geometry = builtin !== null ? geometryForBuiltin(builtin, v.scale) : geometryForCollider(v.collider)
       owned.geometries.push(geometry)

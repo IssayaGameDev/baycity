@@ -161,7 +161,8 @@ addMarkers(scene, markers: WorldMarker[]): MarkersView   // translucent pad + ri
 ```
 
 - Model (`assets.model`) replaces greybox shape, not collider; material from `assets.material` else
-  `createGreyboxMaterial()`. Synchronous — assets must be preloaded.
+  `createGreyboxMaterial()`. Synchronous — assets must be preloaded. A model is sized by `VisualItem.scale`, its
+  node's world scale, times its own root scale — as the editor draws it (ADR 0207); `drawScale` stretches from there.
 - `meshesByHandle` populated only when `cutout` supplied (`VisualItem.colliderHandles`).
 - Masked variants cached per plain material (`cutout.variant`), disposed by the view.
 
