@@ -30,7 +30,7 @@ One CSS grid `#app`; `--left`/`--right`/`--bottom` written by `createSplitter` (
 | `follow.ts` | whom this tab follows, the pose it glides to and whether the leader's holds are still to be taken; who follows it, the send timer and the last pose sent (ADR 0155, ADR 0184) | `FollowHost` |
 | `people.ts` | the icons it drew and whose card is open (ADR 0155) | `PeopleState` getter + `PeopleActions` |
 | `motionPreview.ts` | the preview clock, whether it runs, the last frame. Poses via `Doc.posesAt(timeMs, { sequences: playing })` — one walk, not `poseOf` per node (ADR 0125, ADR 0142) | `MotionPreviewHost` |
-| `cameraView.ts` | the orthographic camera, `isometric`, the nav gizmo and its drag flag, the stand-in background, the bounds box | `CameraViewHost` |
+| `cameraView.ts` | the orthographic camera, `isometric`, the nav gizmo and its drag flag, the stand-in background, the bounds box, the far plane | `CameraViewHost`, `farToSee` |
 | `fileActions.ts` | nothing — it is behaviour: ready a dropped asset (`whenPlaceable`), rename, delete an asset or a level (ADR 0097, ADR 0110) | `FileActionsHost` |
 | `assetWatch.ts` | the long poll's position and its back-off; `main.ts` keeps the paths waiting to be applied (ADR 0156) | `AssetWatchHost` |
 | `prefabActions.ts` | nothing — enter, close, unlink, save as, revert, apply (ADR 0091, ADR 0111) | `PrefabActionsHost` |
@@ -161,6 +161,12 @@ without re-applying this is a black viewport that only appears in isometric.
 the placement across, cuts the frustum so both show the same height at the orbit target, and re-points
 `postfx.setCamera`, `controls.object` and `gizmo.camera`. `focusSelection`
 and the picking raycast both go through `activeCamera()`.
+
+**The far plane** (ADR 0201): outside play, every frame (`view.update`), the active camera's `far` is
+`farToSee(position, reach, floor)` — the distance to the level's bounding sphere's far side × 1.05, rounded up to
+100 m, never below `floor`: the stage's own 1000 m in perspective, the ortho camera's 2000 in isometric. `reach` is
+`Box3.setFromObject(instanceRoot)`'s sphere, measured at most every 500 ms. Playing, `stage.camera.far` is the
+game's 1000 again. `near` stays 0.1; GTAO reads `far` each frame.
 
 **The pointer.** `document` in the **capture** phase, `stopPropagation` when the gizmo takes a press:
 `OrbitControls` and the selection click listen on the canvas itself and were added first, so there is no
