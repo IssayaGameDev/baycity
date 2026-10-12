@@ -82,8 +82,9 @@ speed, base })` (v10 base frame; `packStates(states, playerStates())` in spare f
 `LocalWorld.applyInput`: `components.fixedUpdate` → per slice (ADR 0104): `loaded.update(at, base, s === 1)` → a ridden
 base that `loaded.cut` (a restart, ADR 0206) → `leaveBase(char)` →
 `loaded.shove(char.body)` (ADR 0186: out of whatever moved into it; before the step, ADR 0188) →
-`world.step(slice/2)` → `components.locomote(cmd)` → `world.step(slice/2)`. At the tick's end, alive:
-`components.contact` with `touching()` ∪ `collisions()` ∪ `overlaps()`, each handle once (ADR 0188).
+`world.step(slice/2)` → `components.locomote(cmd)` → `world.step(slice/2)` → `contactsNow(char.body)` (`contacts.ts`:
+`touching()` ∪ `collisions()` ∪ `overlaps()`, ADR 0188) into the tick's set. At the tick's end, alive:
+`components.contact` with that set — every slice's, each handle once (ADR 0208).
 
 ## Debug pane — `pane.ts`
 
