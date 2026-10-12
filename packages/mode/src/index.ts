@@ -59,7 +59,17 @@ export interface ModeSession {
    * Optional, because most sessions never move anybody: a game with no such rule leaves it undefined and the
    * host never asks.
    */
-  readonly takeTeleport?: () => Vec3 | null
+  readonly takeTeleport?: () => Teleport | null
+}
+
+/** Where a rule moves the player: the character's origin, and — when the rule says — the way they then face. */
+export interface Teleport {
+  readonly position: Vec3
+  /**
+   * The character's yaw (`yawOf`: forward = `(sin yaw, 0, cos yaw)`): they turn to it and the camera swings
+   * behind them (ADR 0202). Absent: they keep facing as they were, the camera where it was.
+   */
+  readonly yaw?: number
 }
 
 /** How a session starts: where the player left off, and a hook for saving when they get further. */

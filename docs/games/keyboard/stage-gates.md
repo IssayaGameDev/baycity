@@ -25,6 +25,12 @@ Hierarchy order — `allNodes`, depth first, parents before children — numbere
 placement is numbered where the placement sits. `position` = the node's world position + `standOffset`
 (`STAND_OFFSET`, as a spawn is). `yaw` = `yawOf(rotation)`, the character's convention.
 
+## The teleport
+
+To a gate: `{ position, yaw }` handed to `keyboardSession` through `requested` (`Teleport`, `@mp/mode`), taken once
+the next tick after any cash-out. The client puts the character there, turns it to `yaw` and swings the camera
+behind (`OrbitCamera.face`), so forward is the way on. Nothing calls it yet: the window is next.
+
 ## In the editor
 
 `KEYBOARD_MODE.facingGizmos`: a blue disc and post (`MARKER_COLORS.spawn`) with an arrow along the gate's

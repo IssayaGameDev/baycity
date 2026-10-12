@@ -1,8 +1,7 @@
 import { LOCOMOTION_DEF, CHAR_HALF_HEIGHT, CHAR_RADIUS } from '@mp/humanoid'
 import { createRegistry, componentOn, ENGINE_COMPONENTS, PLAYER_COMPONENTS, sharedComponents } from '@mp/components'
 import type { LoadedLevel, WorldNode } from '@mp/content'
-import type { Vec3 } from '@mp/core'
-import { spawnFrom, type ModeSession, type ModeSessionOptions } from '@mp/mode'
+import { spawnFrom, type ModeSession, type ModeSessionOptions, type Teleport } from '@mp/mode'
 
 import { Keyboard } from './components/keyboard'
 import { keyGeometryFrom, type KeyGeometry } from './keycaps'
@@ -61,6 +60,11 @@ export interface KeyboardSessionOptions extends ModeSessionOptions {
   readonly onTreadmill?: (on: TreadmillTick) => void
   /** Standing on a `StepPad` this tick (ADR 0082): what it offers. The game holds the Wins and decides. */
   readonly onStepPad?: (offer: StepPadOffer, node: WorldNode) => void
+  /**
+   * A teleport the game asks for — the teleport window, to a stage gate or the start (ADR 0202). Asked when the
+   * host takes a teleport and nothing of the rules' own is waiting; it hands its request over once.
+   */
+  readonly requested?: () => Teleport | null
 }
 
 /**
@@ -77,7 +81,7 @@ export const keyboardSession = (loaded: LoadedLevel, opts: KeyboardSessionOption
   const spawn = spawnOf(loaded)
   let killed = false
   /** Where the next tick should put us, or `null`. Set by a pad, cleared by the host reading it. */
-  let teleport: Vec3 | null = null
+  let teleport: Teleport | null = null
   return {
     effects: {
       kill: () => {
@@ -101,7 +105,7 @@ export const keyboardSession = (loaded: LoadedLevel, opts: KeyboardSessionOption
         if (teleport !== null) return
         const pad = componentOn(node.components, WinsPad)
         if (pad === undefined) return
-        teleport = spawn
+        teleport = { position: spawn }
         opts.onCashOut?.(pad.wins, node)
       },
     },
@@ -111,8 +115,9 @@ export const keyboardSession = (loaded: LoadedLevel, opts: KeyboardSessionOption
       killed = false
       return died
     },
+    // A cash-out first; a request waits for the tick after, rather than being lost under it.
     takeTeleport: () => {
-      const to = teleport
+      const to = teleport ?? opts.requested?.() ?? null
       teleport = null
       return to
     },

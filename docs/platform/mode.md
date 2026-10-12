@@ -30,7 +30,11 @@ interface ModeSession {
   readonly respawnAt: () => Vec3               // moves with progress
   readonly takeDeath: () => boolean            // consume-on-read, once per tick
   readonly progress: () => number              // -1 = none; what a client persists
-  readonly takeTeleport?: () => Vec3 | null    // consume-on-read; a rule relocated the player (ADR 0073); optional
+  readonly takeTeleport?: () => Teleport | null  // consume-on-read; a rule relocated the player (ADR 0073); optional
+}
+interface Teleport {
+  readonly position: Vec3
+  readonly yaw?: number                         // yawOf convention: the player turns to it, the camera swings behind (ADR 0202)
 }
 interface ModeSessionOptions {
   readonly from?: number                                        // resume progress

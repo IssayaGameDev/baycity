@@ -216,6 +216,12 @@ export interface OrbitCamera {
    * blended direction throughout, so releasing a shot does not snap.
    */
   shot: (eye: Vec3 | null) => void
+  /**
+   * Swing the boom behind a facing, at once: the camera then looks along `yaw` — the character's convention,
+   * forward = `(sin yaw, 0, cos yaw)` — keeping its pitch and zoom. For a teleport that turns the player
+   * (ADR 0202). The turn is not a mouse flick, so the lookahead does not read it as one.
+   */
+  face: (yaw: number) => void
   land: (impact: number) => void
   /** The world's occlusion queries. Until this is called the camera simply uses its zoom. */
   observe: (queries: OcclusionQueries) => void
@@ -353,6 +359,12 @@ export const createOrbitCamera = (camera: THREE.PerspectiveCamera, opts: OrbitCa
     },
     shot: (eye) => {
       shotEye = eye
+    },
+    face: (facing) => {
+      // The boom sits on the far side of the target from where the camera looks.
+      yaw = facing + Math.PI
+      yawPrev = yaw
+      yawRate = 0
     },
     land: (impact) => {
       landImpact = Math.min(impact, params.landKickMax)
