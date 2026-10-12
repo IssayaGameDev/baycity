@@ -29,6 +29,11 @@ export interface TouchBindOptions {
    * look drag. The game's own canvases must not be listed.
    */
   ignore?: readonly HTMLElement[]
+  /**
+   * The same for UI drawn into a canvas, which has no element of its own to list: a pointer starting where this
+   * says yes — a HUD button, a game window — is ignored entirely (ADR 0203). Viewport (client) pixels.
+   */
+  ignoreAt?: (clientX: number, clientY: number) => boolean
 }
 
 /**
@@ -63,7 +68,7 @@ export const createTouchJoystick = (
   /** Pointers belonging to someone else's UI are not ours to route, nor to suppress. */
   const ignored = (e: PointerEvent): boolean => {
     const node = e.target
-    return node instanceof Node && (opts.ignore ?? []).some((el) => el.contains(node))
+    return (node instanceof Node && (opts.ignore ?? []).some((el) => el.contains(node))) || opts.ignoreAt?.(e.clientX, e.clientY) === true
   }
   /** Ids we accepted, so a move or a release is only ours if the press was. */
   const mine = new Set<number>()

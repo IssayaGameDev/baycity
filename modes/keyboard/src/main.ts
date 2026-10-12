@@ -1,6 +1,7 @@
-import { TICK_DT } from '@mp/core'
+import { TICK_DT, vec3, type Vec3 } from '@mp/core'
 import { CHAR_RADIUS, createAnimator, createLocomotion, DEFAULT_GAIT, FOOT_Y, RIG } from '@mp/humanoid'
 import { componentOn, readData } from '@mp/components'
+import type { Teleport } from '@mp/mode'
 import { worldLabel, type LabelLine, type THREE } from '@mp/render-three'
 import { startTpsClient } from '@mp/tps'
 
@@ -10,7 +11,9 @@ import { DEFAULT_KEYCAP_SHAPE, type KeycapShape } from './keycapGeometry'
 import { DEFAULT_KEYCAP_LOOK, DEFAULT_PRESS, drawKeycaps, type KeycapLook, type PressFeel } from './keycaps'
 import { createPopups, DEFAULT_POPUP, type PopupFeel } from './popups'
 import { abbreviate, BASE_PER_STEP, experienceForLevel, levelAt, loadExperience, maxSpeedAt, METRES_PER_STUD, saveExperience, type ProgressCurve } from './progression'
-import { keyboardSession, GAME_CURVE, GAME_KEYS } from './rules'
+import { keyboardSession, GAME_CURVE, GAME_KEYS, spawnOf, STAND_OFFSET } from './rules'
+import { createTeleportWindow, teleportRows } from './teleportWindow'
+import { stageGatesOf, type StageGateStop } from './components/stageGate'
 import { createStepper, stepsPerSecond } from './components/steps'
 import { Treadmill, TREADMILL_STATE, treadmillStepValue, type TreadmillTick } from './components/treadmill'
 import { loadPerStep, loadWins, padTop, savePerStep, saveWins } from './components/wins'
@@ -74,6 +77,12 @@ const NO_STATES: ReadonlySet<string> = new Set()
 /** The stepper's report for the tick in progress, held until the tick's contacts have said whether we are on a treadmill. */
 let stepsThisTick = 0
 
+/** The level being played's stage gates and spawn, for the teleport window (ADR 0203); read as each level loads. */
+let gates: readonly StageGateStop[] = []
+let start: Vec3 = vec3(0, 3, 0)
+/** Where the teleport window asked to go, until the rules take it on the next tick. */
+let wantTeleport: Teleport | null = null
+
 const client = await startTpsClient({
   ...KEYBOARD_MODE,
   /**
@@ -114,9 +123,17 @@ const client = await startTpsClient({
    * The game's own session, with the one callback the platform has no word for. The rules stay headless — the
    * editor calls them with no callback and still teleports — and the client hears about the payout here.
    */
-  session: (loaded, opts) =>
-    keyboardSession(loaded, {
+  session: (loaded, opts) => {
+    gates = stageGatesOf(loaded, STAND_OFFSET)
+    start = spawnOf(loaded)
+    return keyboardSession(loaded, {
       ...opts,
+      // The teleport window's pick, handed over once (ADR 0203).
+      requested: () => {
+        const to = wantTeleport
+        wantTeleport = null
+        return to
+      },
       onCashOut: (paid, node) => cashedOut.push({ wins: paid, at: padTop(node) }),
       // A pad's offer, every tick stood on it. Taken when the Wins allow; nothing otherwise (Kodjo's call).
       onStepPad: (offer: StepPadOffer) => {
@@ -132,7 +149,8 @@ const client = await startTpsClient({
         treadmillSteps += stepsPerSecond(levelAt(experience, curve).level, curve) * TICK_DT
         stepsThisTick = 0 // the stepper's report for this tick, if any, is superseded
       },
-    }),
+    })
+  },
   /**
    * The locomotion, and the Stepper bound to this client (ADR 0081): held input on the ground becomes steps,
    * banked per tick and paid out per frame below.
@@ -164,6 +182,12 @@ const styleOf = (id: string) => {
 const keycaps = drawKeycaps(client, look, shape, feel, () => GAME_KEYS, styleOf)
 const hud = createHud(client, curve)
 const popups = createPopups(client, pops)
+createTeleportWindow(client, {
+  rows: () => teleportRows(start, gates),
+  go: (to) => {
+    wantTeleport = to
+  },
+})
 
 /**
  * How far the torso part's centre sits above the ground when the character stands: its pivot at the hips, plus

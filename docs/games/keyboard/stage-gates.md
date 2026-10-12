@@ -1,7 +1,7 @@
 # Stage gates
 
-`modes/keyboard/src/components/stageGate.ts` (ADR 0202). The places a teleport window will send a player to.
-The window itself is not built yet.
+`modes/keyboard/src/components/stageGate.ts` (ADR 0202), `teleportWindow.ts` (ADR 0203). The places the teleport
+window sends a player to, and the window.
 
 ## `StageGate`
 
@@ -29,7 +29,23 @@ placement is numbered where the placement sits. `position` = the node's world po
 
 To a gate: `{ position, yaw }` handed to `keyboardSession` through `requested` (`Teleport`, `@mp/mode`), taken once
 the next tick after any cash-out. The client puts the character there, turns it to `yaw` and swings the camera
-behind (`OrbitCamera.face`), so forward is the way on. Nothing calls it yet: the window is next.
+behind (`OrbitCamera.face`), so forward is the way on. To Start: the spawn (`spawnOf`), no yaw.
+
+## The window (ADR 0203, Kodjo's calls)
+
+`createTeleportWindow(client, { rows, go })`, wired in `main.ts`: `rows = teleportRows(start, gates)` — Start, then
+`Checkpoint N` per gate — asked as it opens; `gates` and `start` read in the session factory as each level loads;
+`go` sets the request `requested` hands over.
+
+| | |
+| --- | --- |
+| the button | `uiButton` **Teleport**, 84 px square × `hudScale`, left edge 18 px in, vertically centred; toggles |
+| T | toggles (not while typing in a field); Esc closes |
+| open | `client.holdCursor(close)` — the mouse freed without the pause screen; refused (`null`) while it is up. Walking still works (keys are read unlocked); the camera stops turning |
+| the box | 300 px wide × `hudScale`, as tall as Start + the gates need (header 58, rows 44, padding 12), at most the overlay less 40 px above and below; vertically centred; its background `eventMode` static, so a tap on it is neither "outside" nor a thumb on the stick |
+| the slide | `stepSlide`: progress ± `dt / SLIDE_SECONDS` (0.25), linear, so a reversal is continuous; `x = hidden + (out − hidden) × slideOut(p)`, `out-cubic` — closing is the opening played backwards |
+| the list | `uiList` rows of 44 px, 17 px type, each with `onPick`: drag or wheel to scroll |
+| closes | a pick (teleports, then closes), ✕, T, Esc, a tap outside (`onOutside`), or the pause screen taking over. Closing calls the hold's release, which locks the mouse again — refused after Esc, so the next click locks |
 
 ## In the editor
 

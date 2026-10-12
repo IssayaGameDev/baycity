@@ -38,6 +38,8 @@ export interface Inputs {
   actions: () => ReadonlySet<string>
   /** UI that owns its own pointers, so dragging a slider is not also a camera swing. */
   ignore: (el: HTMLElement) => void
+  /** The same for widgets drawn on the overlay: a touch starting where `test` says yes is theirs (ADR 0203). */
+  ignoreWidgets: (test: (clientX: number, clientY: number) => boolean) => void
   /**
    * Release every listener this took on `window`, `document` and the canvas.
    *
@@ -84,7 +86,9 @@ export const createInputs = ({ canvas, camera, isDead, onRespawn, actions: bindi
   }
   /** Read per event, so pushing to it after the fact is enough. */
   const ignored: HTMLElement[] = []
-  const touch = createTouchJoystick(canvas, layout, { ignore: ignored })
+  /** The overlay's widget test, once it exists (ADR 0203): the overlay is made after the inputs. */
+  let widgetAt: ((x: number, y: number) => boolean) | null = null
+  const touch = createTouchJoystick(canvas, layout, { ignore: ignored, ignoreAt: (x, y) => widgetAt?.(x, y) === true })
 
   /**
    * Push the controls clear of a notch and the home indicator. `viewport-fit=cover` lets the canvas reach
@@ -193,6 +197,9 @@ export const createInputs = ({ canvas, camera, isDead, onRespawn, actions: bindi
     actions: () => actionsHeld(bindings, keys),
     ignore: (el) => {
       ignored.push(el)
+    },
+    ignoreWidgets: (test) => {
+      widgetAt = test
     },
     dispose: () => {
       for (const off of bound) off()

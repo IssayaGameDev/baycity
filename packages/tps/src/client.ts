@@ -197,6 +197,12 @@ export interface TpsClient {
    */
   readonly ui: UiOverlay
   /**
+   * Free the mouse for a window of the game's own, without the pause screen (ADR 0203): `onOutside` is a tap on
+   * empty space, or the pause screen taking over; the release locks the mouse again, from the click or key that
+   * closes the window; `null` while the pause screen is up. The shell's `holdCursor`.
+   */
+  readonly holdCursor: (onOutside: () => void) => (() => void) | null
+  /**
    * The debug pane's root, for a game to add a folder of its own (ADR 0067).
    *
    * A game's feel is the game's, and feel is set by eye rather than by argument (ADR 0018) — so the numbers
@@ -1049,6 +1055,9 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
     },
     onRestart: () => requestRespawn?.(),
   })
+  // A thumb on a HUD button is the button's, not the stick's or the camera's (ADR 0203).
+  const overlay = shell.ui
+  input.ignoreWidgets((x, y) => overlay.widgetAt(x, y))
 
   let disposed = false
   return {
@@ -1058,6 +1067,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
     // Non-null by here: `createShell` is awaited above, which is also why the render loop's own reads of
     // `shell` are guarded and this is not.
     ui: shell.ui,
+    holdCursor: (onOutside) => shell.holdCursor(onOutside),
     toScreen: (world) => {
       projected.set(world.x, world.y, world.z).project(stage.camera)
       // `project` divides by w, which is negative behind the lens — the point comes back mirrored into view

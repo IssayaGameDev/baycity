@@ -7,8 +7,9 @@ import { abbreviate, type ProgressCurve } from './progression'
  * The Experience counter, the Level bar (ADR 0071), the Wins counter (ADR 0073) and the speed readout.
  *
  * Laid out from Kodjo's own screenshot of the game being cloned: **the counter big and centred, with the Level
- * bar directly under it**, both across the bottom. Wins is a plain line on the left edge, vertically centred,
- * placed but not yet styled. The speed picker is deliberately not here yet.
+ * bar directly under it**, both across the bottom. Wins is a plain line at the top, centred — its old place on
+ * the left edge is the teleport button's (ADR 0203, Kodjo's call) — placed but not yet styled. The speed picker is
+ * deliberately not here yet.
  *
  * The game being cloned calls this currency "Speed". Here it is **Experience**, so that the word "speed" means
  * the one thing that is a velocity (ADR 0071) — and **"XP" on screen**, because a counter is read at a glance
@@ -36,7 +37,7 @@ export interface Hud {
    * only a `resize()` the shell calls. Comparing two numbers a frame is cheaper than adding one.
    */
   set: (experience: number, level: number, into: number, next: number, speedStuds: number) => void
-  /** The Wins counter, left edge, vertically centred. Same redraw-on-change rule. */
+  /** The Wins counter, top, centred. Same redraw-on-change rule. */
   setWins: (wins: number) => void
   dispose: () => void
 }
@@ -48,6 +49,7 @@ const BASE = {
   barRadius: 10,
   bottomMargin: 22,
   sideMargin: 18,
+  topMargin: 16,
   xpSize: 40,
   speedSize: 22,
   levelSize: 22,
@@ -87,7 +89,7 @@ export const createHud = (client: TpsClient, _curve: ProgressCurve): Hud => {
   progressText.anchor.set(1, 0.5)
 
   const winsText = uiLabel('0 Wins', { size: BASE.winsSize, weight: '700' })
-  winsText.anchor.set(0, 0.5)
+  winsText.anchor.set(0.5, 0)
 
   // Fill before the labels, so the text stays legible over it.
   root.addChild(barBack, barFill, levelText, progressText, xpText, speedText, winsText)
@@ -138,7 +140,7 @@ export const createHud = (client: TpsClient, _curve: ProgressCurve): Hud => {
     levelText.position.set(barX + 18 * k, barY + barH / 2)
     progressText.position.set(barX + barW - 18 * k, barY + barH / 2)
     xpText.position.set(width / 2, barY - 10 * k)
-    winsText.position.set(BASE.sideMargin * k, height / 2)
+    winsText.position.set(width / 2, BASE.topMargin * k)
     placeSpeed()
     drawBar(shownFraction)
   }
