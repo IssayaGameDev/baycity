@@ -64,8 +64,9 @@ const agree = (name: string, tuning: CharacterTuning, seconds: number, input: (t
       expect(Math.abs(p.y - base!.at[i]!.y), `${name}: y at ${times[i]} s, ${r.hz} against 30`).toBeLessThan(NEAR)
     })
     expect(Math.abs(r.peak - base!.peak), `${name}: peak, ${r.hz} against 30`).toBeLessThan(NEAR)
-    // Noticed at the end of the step it happens in: a 30 Hz tick is the most two rates can disagree by.
-    if (base!.landed !== null) expect(Math.abs(r.landed! - base!.landed), `${name}: landing, ${r.hz} against 30`).toBeLessThanOrEqual(1 / 30 + 1e-9)
+    // Noticed at the end of the step it happens in, and a tick later when the resolve stopped the fall short of the
+    // floor (the soles are not on it yet): two 30 Hz ticks is the most two rates can disagree by.
+    if (base!.landed !== null) expect(Math.abs(r.landed! - base!.landed), `${name}: landing, ${r.hz} against 30`).toBeLessThanOrEqual(2 / 30 + 1e-9)
   }
 }
 

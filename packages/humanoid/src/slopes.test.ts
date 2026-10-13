@@ -1,4 +1,4 @@
-import { axisAngleToQuat, TICK_DT, vec3, type Vec3 } from '@mp/core'
+import { axisAngleToQuat, TICK_DT, TICK_RATE_HZ, vec3, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -221,7 +221,7 @@ describe('slopes', () => {
     const rest = c.body.translation().y
     c.vx = 15
     let air = 0
-    for (let t = 0; t < 60; t++) {
+    for (let t = 0; t < 2 * TICK_RATE_HZ; t++) {
       stepCharacter(c, FORWARD, TICK_DT, tuning)
       w.step(TICK_DT)
       if (!c.grounded) air++

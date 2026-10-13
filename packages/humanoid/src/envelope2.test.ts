@@ -1,4 +1,4 @@
-import { axisAngleToQuat, TICK_DT, vec3, type Vec3 } from '@mp/core'
+import { axisAngleToQuat, TICK_DT, TICK_RATE_HZ, vec3, type Vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -31,7 +31,7 @@ const attemptGap = (gap: number, rise: number): boolean => {
 
   let jumped = false
   let ok = false
-  for (let t = 0; t < 240; t++) {
+  for (let t = 0; t < 8 * TICK_RATE_HZ; t++) {
     const p = c.body.translation()
     const want = !jumped && c.grounded && p.x > 6 - 0.45
     if (want) jumped = true
@@ -56,7 +56,7 @@ const standsOffCentre = (width: number, offset: number): boolean => {
   const w = world0()
   slab(w, vec3(0, 0, 0), width / 2, 8)
   const c = addCharacter(w, vec3(offset, T + STAND + 0.02, 0))
-  for (let t = 0; t < 90; t++) {
+  for (let t = 0; t < 3 * TICK_RATE_HZ; t++) {
     stepCharacter(c, STILL, TICK_DT)
     w.step(TICK_DT)
     if (c.body.translation().y < -3) break
@@ -71,7 +71,7 @@ const traverses = (width: number): boolean => {
   const w = world0()
   slab(w, vec3(0, 0, 0), width / 2, 8)
   const c = addCharacter(w, vec3(0, T + STAND + 0.02, -6))
-  for (let t = 0; t < 120; t++) {
+  for (let t = 0; t < 4 * TICK_RATE_HZ; t++) {
     stepCharacter(c, { moveX: 0, moveZ: 1, jump: false }, TICK_DT)
     w.step(TICK_DT)
     const p = c.body.translation()
@@ -96,7 +96,7 @@ const slopeDrift = (deg: number): number => {
   const d = STAND + 0.03
   const c = addCharacter(w, vec3(top.x + n.x * d, top.y + n.y * d, 0))
   const start = c.body.translation()
-  for (let t = 0; t < 120; t++) {
+  for (let t = 0; t < 4 * TICK_RATE_HZ; t++) {
     stepCharacter(c, STILL, TICK_DT)
     w.step(TICK_DT)
     if (c.body.translation().y < -8) break
@@ -122,7 +122,7 @@ const standsOnCurve = (kind: 'dome' | 'log', radius: number, phiDeg: number): bo
   const r = radius + CHAR_RADIUS
   const c = addCharacter(w, vec3(Math.sin(phi) * r, Math.cos(phi) * r + CHAR_HALF_HEIGHT + 0.02, 0))
   const start = c.body.translation()
-  for (let t = 0; t < 120; t++) {
+  for (let t = 0; t < 4 * TICK_RATE_HZ; t++) {
     stepCharacter(c, STILL, TICK_DT)
     w.step(TICK_DT)
     if (c.body.translation().y < -6) break

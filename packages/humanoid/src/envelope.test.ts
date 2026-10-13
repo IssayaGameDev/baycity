@@ -1,4 +1,4 @@
-import { TICK_DT, vec3 } from '@mp/core'
+import { TICK_DT, TICK_RATE_HZ, vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -22,7 +22,7 @@ const attemptGap = (gap: number, runUp: number): boolean => {
 
   let jumped = false
   let landed = false
-  for (let t = 0; t < 200; t++) {
+  for (let t = 0; t < Math.round((200 / 30) * TICK_RATE_HZ); t++) {
     // Jump on the last grounded tick before the edge; hold forward throughout.
     const p = c.body.translation()
     const wantJump = !jumped && c.grounded && p.x > 6 - 0.45
@@ -54,7 +54,7 @@ const attemptStepUp = (rise: number, withJump: boolean): boolean => {
   const onLedgeY = rise + TOP + STAND
   let jumped = false
   let up = false
-  for (let t = 0; t < 240; t++) {
+  for (let t = 0; t < 8 * TICK_RATE_HZ; t++) {
     const p = c.body.translation()
     const wantJump = withJump && !jumped && c.grounded && p.x > 3.2
     if (wantJump) jumped = true

@@ -1,4 +1,4 @@
-import { TICK_DT } from '@mp/core'
+import { TICK_DT, TICK_RATE_HZ } from '@mp/core'
 ﻿import { createPhysicsWorld, initPhysics, type PhysicsWorld } from '@mp/physics'
 import type { InputCommand } from '@mp/core'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -6,6 +6,12 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { ACCEL_REF_SPEED, addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, DEFAULT_TUNING, INTEGRATION_HZ, playerSpawn, stepCharacter, type CharacterState, type CharacterTuning, type PlatformPoseLookup } from './groundController'
 
 const cmd = (moveX: number, moveZ: number, jump = false): InputCommand => ({ moveX, moveZ, jump })
+
+/**
+ * `n` ticks of the 30 Hz these tests were written at, as ticks at the rate the game runs now — the same span of time.
+ * Movement is integrated per 1/240 s slice (ADR 0215), so a span of time is what a test means, not a count of steps.
+ */
+const T30 = (n: number): number => Math.round((n / 30) * TICK_RATE_HZ)
 
 // A minimal world with a big ground to stand/jump on (world content is now data;
 // tests build just what they need).
@@ -161,7 +167,7 @@ describe('character controller', () => {
     }
     // Gravity alone takes √(2gh)/g ≈ 0.33 s — 10 ticks — to turn a jump over. The roof is hit on the
     // second tick, so anything close to 10 means `vy` was left positive with nowhere to go.
-    expect(risingTicks, 'rise ends on contact, not when gravity gets around to it').toBeLessThan(5)
+    expect(risingTicks, 'rise ends on contact, not when gravity gets around to it').toBeLessThan(T30(5))
     // And it stopped where the roof is, rather than sinking into it.
     expect(peak + CHAR_HALF_HEIGHT + CHAR_RADIUS).toBeLessThan(ROOF_UNDERSIDE + 0.05)
     world.free()
@@ -210,7 +216,7 @@ describe('character controller', () => {
       stepCharacter(c, i, TICK_DT, tuning)
       world.step(TICK_DT)
     }
-    for (let i = 0; i < 20; i++) tick(cmd(0, 0)) // settle on the deck
+    for (let i = 0; i < T30(20); i++) tick(cmd(0, 0)) // settle on the deck
     let guard = 0
     while (c.grounded && guard++ < 200) tick(cmd(1, 0)) // walk +x until the ground runs out
     expect(c.grounded, 'the character actually left the deck').toBe(false)
@@ -233,8 +239,8 @@ describe('character controller', () => {
   })
 
   it('coyote time: a jump long past the ledge does not', () => {
-    // 5 ticks is 167 ms, past the 100 ms window.
-    expect(jumpAfterLedge(5)).toBe(false)
+    // 167 ms, past the 100 ms window.
+    expect(jumpAfterLedge(T30(5))).toBe(false)
   })
 
   it('coyote time: off at 0, which is the behaviour it replaced', () => {
@@ -268,15 +274,15 @@ describe('character controller', () => {
       stepCharacter(c, i, TICK_DT)
       world.step(TICK_DT)
     }
-    for (let i = 0; i < 30; i++) tick(cmd(0, 0))
-    // 12 ticks is 0.4 s, well inside the 0.66 s hang, so nothing here has landed to earn a second jump.
-    expect(countHeldJumps(12, c, tick)).toBe(1)
+    for (let i = 0; i < T30(30); i++) tick(cmd(0, 0))
+    // 0.4 s, well inside the 0.66 s hang, so nothing here has landed to earn a second jump.
+    expect(countHeldJumps(T30(12), c, tick)).toBe(1)
     world.free()
   })
 
   it('coyote time: one ledge gives one jump, however long the button is held', () => {
     const { world, c, tick } = walkOffALedge(DEFAULT_TUNING)
-    expect(countHeldJumps(12, c, tick, 1)).toBe(1)
+    expect(countHeldJumps(T30(12), c, tick, 1)).toBe(1)
     world.free()
   })
 
@@ -296,11 +302,11 @@ describe('character controller', () => {
         stepCharacter(c, i, TICK_DT, tuning)
         world.step(TICK_DT)
       }
-      for (let i = 0; i < 40; i++) tick(cmd(0, 0))
+      for (let i = 0; i < T30(40); i++) tick(cmd(0, 0))
       tick(cmd(0, 0, true)) // take off
       let landAt = -1
       let jumped = false
-      for (let n = 1; n <= 40; n++) {
+      for (let n = 1; n <= T30(40); n++) {
         tick(cmd(0, 0, n === pressAt))
         if (landAt < 0 && c.grounded) landAt = n
         if (landAt > 0 && c.vy > TAKE_OFF * 0.5) jumped = true
@@ -316,8 +322,8 @@ describe('character controller', () => {
   })
 
   it('jump buffer: a tap long before landing is not still queued', () => {
-    // 5 ticks is 167 ms, past the 100 ms window — otherwise the buffer would be a landing trap.
-    expect(pressedBeforeLanding(5)).toBe(false)
+    // 167 ms, past the 100 ms window — otherwise the buffer would be a landing trap.
+    expect(pressedBeforeLanding(T30(5))).toBe(false)
   })
 
   it('jump buffer: off at 0, which is the behaviour it replaced', () => {
@@ -491,7 +497,7 @@ describe('groundMaxAccel / airMaxAccel (ADR 0078)', () => {
   const reverse = (tuning: CharacterTuning, ticks: number): number[] => {
     const world = makeWideWorld()
     const c = addCharacter(world, playerSpawn(1000))
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < T30(60); i++) {
       stepCharacter(c, cmd(0, 1), TICK_DT, tuning)
       world.step(TICK_DT)
     }
@@ -507,15 +513,15 @@ describe('groundMaxAccel / airMaxAccel (ADR 0078)', () => {
 
   it('is off by default — a reversal at 30 m/s completes in the time-based 0.2 s, as before', () => {
     const fast: CharacterTuning = { ...DEFAULT_TUNING, moveSpeed: 30 }
-    const vz = reverse(fast, 8)
-    // groundAccelTime 0.1 s → 300 m/s² → 10 m/s per tick: +30 to -30 in six ticks.
-    expect(vz[5]).toBeCloseTo(-30, 5)
+    const vz = reverse(fast, T30(8))
+    // groundAccelTime 0.1 s → 300 m/s²: +30 to -30 in 0.2 s.
+    expect(vz[T30(6) - 1]).toBeCloseTo(-30, 5)
   })
 
   it('caps the change per tick, so the same reversal takes speed / brake ceiling seconds', () => {
     // `maxAccelScaling: 0` pins the ceiling at its quoted value, so this reads the cap and nothing else.
     const fast: CharacterTuning = { ...DEFAULT_TUNING, moveSpeed: 30, groundBrakeMaxAccel: 40, maxAccelScaling: 0 }
-    const vz = reverse(fast, 60)
+    const vz = reverse(fast, T30(60))
     // Never more than 40 m/s² × dt between ticks, *while still slowing down*. Past the turn the character is
     // accelerating the other way and the accel ceiling takes over, which is ADR 0096's whole point — from the
     // slice it turns over in, so the tick that holds the turn is part brake and part start (ADR 0215).
@@ -527,8 +533,8 @@ describe('groundMaxAccel / airMaxAccel (ADR 0078)', () => {
     // 30 m/s down to rest at 40 m/s² is 0.75 s = 22 ticks. Past rest it is gaining speed the other way,
     // which has no *ceiling* — but still has the time-based rate, 300 m/s², so it takes three more ticks
     // rather than arriving instantly. Uncapped is not the same as instant.
-    expect(vz[21]!, 'still slowing').toBeGreaterThan(0)
-    expect(vz[25]!, 'turned over and away at the accel rate').toBeCloseTo(-30, 4)
+    expect(vz[T30(22) - 1]!, 'still slowing').toBeGreaterThan(0)
+    expect(vz[T30(26) - 1]!, 'turned over and away at the accel rate').toBeCloseTo(-30, 4)
   })
 
   it('changes nothing at a speed the time-based rate is already gentler than the ceiling', () => {
@@ -561,7 +567,7 @@ describe('accelerating and braking are separate, and scale with speed (ADR 0096)
   const landed = (tuning: CharacterTuning): { world: PhysicsWorld; c: CharacterState } => {
     const world = makeWideWorld()
     const c = addCharacter(world, playerSpawn(1000))
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < T30(12); i++) {
       stepCharacter(c, cmd(0, 0), TICK_DT, tuning)
       world.step(TICK_DT)
     }
@@ -572,8 +578,8 @@ describe('accelerating and braking are separate, and scale with speed (ADR 0096)
   /** Land, reach full speed, then push the other way, reporting velocity each tick. */
   const reverse = (tuning: CharacterTuning, ticks: number): number[] => {
     const { world, c } = landed(tuning)
-    // Uncapped, full speed is `groundAccelTime / TICK_DT` = three ticks at any speed. Four for slack.
-    for (let i = 0; i < 4; i++) {
+    // Uncapped, full speed is `groundAccelTime` = 0.1 s at any speed. A tick more for slack.
+    for (let i = 0; i < T30(3) + 1; i++) {
       stepCharacter(c, cmd(0, 1), TICK_DT, tuning)
       world.step(TICK_DT)
     }
@@ -603,24 +609,24 @@ describe('accelerating and braking are separate, and scale with speed (ADR 0096)
   it('starts instantly however fast, while the same character brakes slowly', () => {
     const fast = split(120, 40)
     const { world, c } = landed(fast)
-    // 120 m/s over groundAccelTime 0.1 s is 1200 m/s², uncapped — 40 m/s a tick, so three ticks and no more,
-    // at any speed. That constant three is what "instant start however fast" means here.
-    for (const expected of [40, 80, 120]) {
+    // 120 m/s over groundAccelTime 0.1 s is 1200 m/s², uncapped — full speed in 0.1 s and no more, at any speed.
+    // That constant 0.1 s is what "instant start however fast" means here.
+    for (let k = 1; k <= T30(3); k++) {
       stepCharacter(c, cmd(0, 1), TICK_DT, fast)
       world.step(TICK_DT)
-      expect(c.vz).toBeCloseTo(expected, 4)
+      expect(c.vz).toBeCloseTo(Math.min(120, 1200 * k * TICK_DT), 4)
     }
     world.free()
-    // The reversal is the brake ceiling's: 40 m/s² is 1.33 m/s a tick, so eight ticks barely dent 120.
-    expect(reverse(fast, 8)[7]!).toBeCloseTo(120 - 8 * 40 * TICK_DT, 3)
+    // The reversal is the brake ceiling's: 40 m/s², so 0.27 s barely dents 120.
+    expect(reverse(fast, T30(8))[T30(8) - 1]!).toBeCloseTo(120 - T30(8) * 40 * TICK_DT, 3)
   })
 
   it('brakes until it turns over, then the accel ceiling takes it', () => {
     // A reversal is not one long brake. 10 m/s to rest at 20 m/s² is 0.5 s = 15 ticks; past rest it is
     // accelerating the other way with no ceiling, so the time-based 100 m/s² finishes it in three.
-    const vz = reverse(split(10, 20), 20)
-    expect(vz[13]!, 'still coming down').toBeGreaterThan(0)
-    expect(vz[17]!, 'away at the accel rate once it turned over').toBeCloseTo(-10, 4)
+    const vz = reverse(split(10, 20), T30(20))
+    expect(vz[T30(14) - 1]!, 'still coming down').toBeGreaterThan(0)
+    expect(vz[T30(18) - 1]!, 'away at the accel rate once it turned over').toBeCloseTo(-10, 4)
   })
 
   it('grows a ceiling with the square root of speed', () => {

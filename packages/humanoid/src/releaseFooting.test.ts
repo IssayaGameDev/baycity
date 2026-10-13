@@ -1,4 +1,4 @@
-import { TICK_DT } from '@mp/core'
+import { TICK_DT, TICK_RATE_HZ } from '@mp/core'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -35,8 +35,8 @@ describe('releaseFooting', () => {
     const platforms: PlatformPoseLookup = (h) => (h === deck.colliderHandle ? { position: ZERO, rotation: { x: 0, y: 0, z: 0, w: 1 } } : undefined)
     const c = addCharacter(world, { x: 0, y: 3, z: 0 })
 
-    // Settle onto the deck so the controller records it as the movement base.
-    for (let i = 0; i < 20; i++) {
+    // Settle onto the deck so the controller records it as the movement base: two thirds of a second.
+    for (let i = 0; i < Math.round((2 / 3) * TICK_RATE_HZ); i++) {
       stepCharacter(c, STILL, TICK_DT, DEFAULT_TUNING, platforms)
       world.step(TICK_DT)
     }
