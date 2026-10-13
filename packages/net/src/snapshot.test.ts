@@ -16,8 +16,8 @@ describe('snapshot codec', () => {
   const full: Snapshot = {
     serverTimeMs: 123456,
     entities: [
-      { id: entityId(1), position: { x: 1.5, y: 12, z: -20.25 }, flags: STATE_GROUNDED, yaw: 1.25, speed: 5.5, base: 0 },
-      { id: entityId(1000), position: { x: -5.5, y: 0.5, z: 8 }, flags: STATE_RISING, yaw: -2.5, speed: 0, base: 0 },
+      { id: entityId(1), position: { x: 1.5, y: 12, z: -20.25 }, flags: STATE_GROUNDED, yaw: 1.25, speed: 5.5, base: 0, teleports: 0 },
+      { id: entityId(1000), position: { x: -5.5, y: 0.5, z: 8 }, flags: STATE_RISING, yaw: -2.5, speed: 0, base: 0, teleports: 0 },
     ],
   }
 
@@ -49,7 +49,7 @@ describe('snapshot codec', () => {
       isFull: false,
       serverTimeMs: 200,
       changed: [
-        { id: entityId(1), position: { x: 2, y: 0, z: 0 }, flags: STATE_GROUNDED | STATE_RISING, yaw: 0, speed: 3, base: 0 },
+        { id: entityId(1), position: { x: 2, y: 0, z: 0 }, flags: STATE_GROUNDED | STATE_RISING, yaw: 0, speed: 3, base: 0, teleports: 0 },
       ],
       removed: [entityId(1000), entityId(1001)],
     }
@@ -61,9 +61,14 @@ describe('snapshot codec', () => {
     expect(decoded.removed).toEqual([1000, 1001])
   })
 
-  it('costs 12 bytes per entity: quantized position, then flags, yaw, speed and base bytes', () => {
-    // 9 header + 2*12 changed + 2 removedCount = 35 B for 2 entities
-    expect(encodeSnapshot(fullSnapshotMessage(full)).byteLength).toBe(9 + 2 * 12 + 2)
+  it('costs 13 bytes per entity: quantized position, then flags, yaw, speed, base and teleport bytes', () => {
+    // 9 header + 2*13 changed + 2 removedCount = 37 B for 2 entities
+    expect(encodeSnapshot(fullSnapshotMessage(full)).byteLength).toBe(9 + 2 * 13 + 2)
+  })
+
+  it('carries the teleport count exactly — a count, not a quantity (v13, ADR 0214)', () => {
+    const one: Snapshot = { serverTimeMs: 0, entities: [{ ...full.entities[0]!, teleports: 201 }] }
+    expect(decodeSnapshot(encodeSnapshot(fullSnapshotMessage(one))).changed[0]!.teleports).toBe(201)
   })
 
   it('carries the movement base exactly — it is an index, not a quantity', () => {

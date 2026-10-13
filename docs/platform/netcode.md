@@ -28,13 +28,13 @@ Dead on the live path: `@mp/core` transport types, `packages/client/src/transpor
 
 ## Wire format (`packages/net`)
 
-`PROTOCOL_VERSION = 12`. Little-endian. Every message rides one Colyseus channel `NET_CHANNEL = 'n'` as raw bytes; header `u8 version, u8 type`. `readMessageType` peeks; `readHeader` throws on mismatch (server catches and drops the frame).
+`PROTOCOL_VERSION = 13` (v13: the teleport count, ADR 0214). Little-endian. Every message rides one Colyseus channel `NET_CHANNEL = 'n'` as raw bytes; header `u8 version, u8 type`. `readMessageType` peeks; `readHeader` throws on mismatch (server catches and drops the frame).
 
 | Type | Const | Dir | Layout | Bytes |
 |---|---|---|---|---|
-| 1 | `MSG_SNAPSHOT` | s→c | below | 9 + 12n + 2 + 2m |
+| 1 | `MSG_SNAPSHOT` | s→c | below | 9 + 13n + 2 + 2m |
 | 2 | `MSG_WELCOME` | s→c | `u16 playerId, f32 bound` | 8 |
-| 3 | `MSG_STATE` | c→s | `f32 x,y,z, u8 flags, f32 yaw, f32 speed, u8 base` | 24 |
+| 3 | `MSG_STATE` | c→s | `f32 x,y,z, u8 flags, f32 yaw, f32 speed, u8 base, u8 teleports` | 25 |
 | 4 | `MSG_PING` | c→s | `u32 clientTimeMs` | 6 |
 | 5 | `MSG_PONG` | s→c | `u32 clientTimeMs, u32 serverTimeMs` | 10 |
 | 6 | `MSG_ROSTER` | s→c | `u16 count, [u16 id, u8 nameLen, utf8]*` | 4 + Σ(3+len), name ≤ 48 B |
@@ -52,7 +52,8 @@ Dead on the live path: `@mp/core` transport types, `packages/client/src/transpor
 | changed[].flags | u8 | 1 | unquantized |
 | changed[].yaw | u8 | 1 | `quantizeYaw` |
 | changed[].speed | u8 | 1 | `quantizeSpeed` |
-| changed[].base | u8 | 1 | index, not quantized — entity total 12 |
+| changed[].base | u8 | 1 | index, not quantized |
+| changed[].teleports | u8 | 1 | the sender's teleport count mod 256 (ADR 0214) — entity total 13 |
 | removedCount | u16 | 2 | |
 | removed[] | u16 | 2 each | |
 
@@ -107,7 +108,8 @@ Synchronous, join in flight; `id()` is `null` until `WELCOME`. `PING_INTERVAL_MS
 
 - `createSnapshotReassembler().apply(msg)` — full clears; `changed` upserts whole entities; `removed` deletes.
 - `createSnapshotClient({ interpolationDelayMs, serverNow, maxBufferMs? = 1000 })` — `sample()` = `interpolateAt(buffer, serverNow() − delay)`.
-- `interpolateAt`: outside the buffer holds the nearest endpoint (no extrapolation). Between samples: position lerped only when both share `base` (else older held); `speed` lerped; `flags`, `yaw` from the older sample.
+- `interpolateAt`: outside the buffer holds the nearest endpoint (no extrapolation). Between samples: position lerped only when both share `base` and `teleports` (else older held — a teleport is a vanish and an appearance, ADR 0214); `speed` lerped; `flags`, `yaw` from the older sample.
+- Teleports (ADR 0214): the sender counts every `setPosition` that is not a move — `respawn()` and a taken `takeTeleport` — `& 0xff`, and sends it with every state. The relay forwards a change (`relayDiffers`). A viewer holds the older sample across it (`interpolateAt`), *places* the peer's collision mirror rather than sweeping it (`remoteTrips`), and resets the rig's motion (`Avatars.drawPeer`, `peerTrips` → `resetMotion`).
 - `@mp/tps`: peer collision proxy = `addKinematicBody` capsule at `worldFromBase(loaded, e, false)`; drawn at `worldFromBase(loaded, e, true)`; base-switch offset decays with `BASE_SWITCH_HALFLIFE = 0.1` (`packages/tps/src/characterView.ts`).
 
 ### Local body and sim clock

@@ -47,9 +47,12 @@ export const interpolateAt = (
     // platform would send the rider through the geometry between them. On a base change the older
     // sample is held instead, which costs one snapshot interval of stillness at that instant.
     const sameBase = target !== undefined && target.base === e.base
+    // A teleport between the two samples (ADR 0214): the older is held until the newer is due, so they vanish and
+    // appear rather than streak across everything between — the same hold as a base change.
+    const sameTrip = target !== undefined && target.teleports === e.teleports
     return {
       id: e.id,
-      position: sameBase ? lerpVec3(e.position, target.position, t) : { ...e.position },
+      position: sameBase && sameTrip ? lerpVec3(e.position, target.position, t) : { ...e.position },
       // Flags are discrete state, not a quantity: blending "grounded" with "airborne" is
       // meaningless. Take them from `a`, the newest sample at or before the render time, so a
       // state change lands on the tick it was reported rather than fading in ahead of it.
@@ -63,9 +66,10 @@ export const interpolateAt = (
       // scalar in nobody's frame, so a base change does not affect it.
       speed: target ? e.speed + (target.speed - e.speed) * t : e.speed,
       base: e.base,
+      teleports: e.teleports,
     }
   })
 }
 
 const clone = (entities: readonly SnapshotEntity[]): SnapshotEntity[] =>
-  entities.map((e) => ({ id: e.id, position: { ...e.position }, flags: e.flags, yaw: e.yaw, speed: e.speed, base: e.base }))
+  entities.map((e) => ({ id: e.id, position: { ...e.position }, flags: e.flags, yaw: e.yaw, speed: e.speed, base: e.base, teleports: e.teleports }))

@@ -91,6 +91,8 @@ export interface SelfFrame {
 export interface PeerFrame {
   dead: boolean
   tickAlpha: number
+  /** Their teleport count as relayed (ADR 0214): a change is a teleport, drawn as one. */
+  teleports: number
 }
 
 export interface AvatarsOptions {
@@ -140,6 +142,8 @@ export const createAvatars = ({
    * their dead flag — and the same timing, so a respawn looks the same from outside as it does to its owner.
    */
   const peerAssemblies = new Map<EntityId, { assembly: Assembly; elapsed: number }>()
+  /** Each peer's teleport count as last drawn (ADR 0214). */
+  const peerTrips = new Map<EntityId, number>()
 
   const dropPeerAssembly = (id: EntityId): void => {
     const spawning = peerAssemblies.get(id)
@@ -215,9 +219,15 @@ export const createAvatars = ({
 
     },
 
-    drawPeer: (id, placement, dt, { dead, tickAlpha }) => {
+    drawPeer: (id, placement, dt, { dead, tickAlpha, teleports }) => {
       const at = placement.position
       let corpse = peerRagdolls.get(id)
+
+      // They were put somewhere (ADR 0214): the interpolation already jumps rather than blends, and this keeps the
+      // animator from reading the jump as a sprint — the respawn's reset below, for a teleport alive.
+      const tripped = peerTrips.has(id) && peerTrips.get(id) !== teleports
+      peerTrips.set(id, teleports)
+      if (tripped && !dead) views.resetMotion(id, at)
 
       if (corpse !== undefined && !dead) {
         // They respawned. The corpse goes and the body drops back in, exactly as it does for us.
@@ -281,6 +291,7 @@ export const createAvatars = ({
           spawning.assembly.dispose()
           peerAssemblies.delete(id)
         }
+      for (const id of peerTrips.keys()) if (!keep.has(id)) peerTrips.delete(id)
     },
 
     dispose: () => {

@@ -50,7 +50,9 @@ const relayDiffers = (a: PlayerState, b: PlayerState, bound: number): boolean =>
   quantizeSpeed(a.speed) !== quantizeSpeed(b.speed) ||
   // Stepping onto or off a platform changes the *frame* the position is expressed in, so it has to
   // reach every viewer on the tick it happens even if nothing else moved (v10, ADR 0021).
-  a.base !== b.base
+  a.base !== b.base ||
+  // A teleport: a viewer must stop blending at it, even onto a spot the same quantized position as before (ADR 0214).
+  a.teleports !== b.teleports
 
 // Colyseus hands us a Uint8Array view (possibly onto a pooled/shared buffer); our
 // codecs take a standalone ArrayBuffer, so copy the exact bytes out.
@@ -174,6 +176,7 @@ export class GameRoom extends Room {
           yaw: other.latest.yaw,
           speed: other.latest.speed,
           base: other.latest.base,
+          teleports: other.latest.teleports,
         })
       }
       const bound = this.bound ?? QUANT_BOUND
@@ -198,6 +201,7 @@ const asState = (e: SnapshotEntity): PlayerState => ({
   yaw: e.yaw,
   speed: e.speed,
   base: e.base,
+  teleports: e.teleports,
 })
 
 /** A full snapshot on first send, then per-client deltas vs the last states sent.

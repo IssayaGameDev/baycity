@@ -6,25 +6,38 @@ import { interpolateAt } from './interpolation'
 
 const snap = (t: number, x: number): Snapshot => ({
   serverTimeMs: t,
-  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags: 0, yaw: 0, speed: 0, base: 0 }],
+  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags: 0, yaw: 0, speed: 0, base: 0, teleports: 0 }],
 })
 
 const withFlags = (t: number, x: number, flags: number): Snapshot => ({
   serverTimeMs: t,
-  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags, yaw: 0, speed: 0, base: 0 }],
+  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags, yaw: 0, speed: 0, base: 0, teleports: 0 }],
 })
 
 const withMotion = (t: number, yaw: number, speed: number): Snapshot => ({
   serverTimeMs: t,
-  entities: [{ id: entityId(1), position: { x: 0, y: 0, z: 0 }, flags: 0, yaw, speed, base: 0 }],
+  entities: [{ id: entityId(1), position: { x: 0, y: 0, z: 0 }, flags: 0, yaw, speed, base: 0, teleports: 0 }],
+})
+
+const tripped = (t: number, x: number, teleports: number): Snapshot => ({
+  serverTimeMs: t,
+  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags: 0, yaw: 0, speed: 0, base: 0, teleports }],
 })
 
 const onBase = (t: number, x: number, base: number): Snapshot => ({
   serverTimeMs: t,
-  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags: 0, yaw: 0, speed: 0, base }],
+  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags: 0, yaw: 0, speed: 0, base, teleports: 0 }],
 })
 
 describe('interpolateAt', () => {
+  /** A teleport between two samples (ADR 0214): held, then there — a vanish and an appearance, never a streak. */
+  it('holds the older sample across a teleport, then jumps', () => {
+    const buf = [tripped(0, 0, 4), tripped(100, 500, 5)]
+    expect(interpolateAt(buf, 50)[0]!.position.x, 'not halfway across the map').toBe(0)
+    expect(interpolateAt(buf, 100)[0]!.position.x).toBe(500)
+    expect(interpolateAt([tripped(0, 0, 5), tripped(100, 10, 5)], 50)[0]!.position.x, 'no teleport: blended').toBeCloseTo(5)
+  })
+
   it('interpolates halfway between two snapshots', () => {
     expect(interpolateAt([snap(0, 0), snap(100, 10)], 50)[0]!.position.x).toBeCloseTo(5)
   })

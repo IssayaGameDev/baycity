@@ -588,10 +588,16 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
      * `liftVel`/`liftStore` is a departed mover's momentum held for a late jump, which would hand a fresh
      * spawn a free boost.
      */
+    /**
+     * How many times we have been put somewhere rather than moved there, mod 256 (ADR 0214): sent with every state,
+     * so a viewer stops blending at a respawn or a teleport instead of drawing us streaking across the level.
+     */
+    let teleports = 0
     const respawn = (): void => {
       dead = false
       avatars.reassemble()
       char.body.setPosition(rules.respawnAt())
+      teleports = (teleports + 1) & 0xff
       releaseFooting(char)
     }
     requestRespawn = respawn // let the pause menu's Restart reach it
@@ -774,6 +780,8 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
 
     // Remote players mirrored as kinematic capsules so walking into one collides locally.
     const remotes = new Map<EntityId, PhysicsBody>()
+    /** Each mirror's peer's teleport count as last seen: a change is placed, not swept (ADR 0214). */
+    const remoteTrips = new Map<EntityId, number>()
     const syncRemotes = (): void => {
       const seen = new Set<EntityId>()
       for (const e of net.sample()) {
@@ -790,12 +798,18 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
           })
           remotes.set(e.id, mirror)
         }
-        mirror.setNextKinematicTranslation(worldFromBase(loaded, e, false).position)
+        const at = worldFromBase(loaded, e, false).position
+        // A teleported peer is put there: moved as a kinematic body it would sweep the level between, and shove
+        // whatever loose bodies lay on the way (ADR 0214).
+        if (remoteTrips.has(e.id) && remoteTrips.get(e.id) !== e.teleports) mirror.setPosition(at)
+        remoteTrips.set(e.id, e.teleports)
+        mirror.setNextKinematicTranslation(at)
       }
       for (const [rid, mirror] of remotes)
         if (!seen.has(rid)) {
           mirror.remove()
           remotes.delete(rid)
+          remoteTrips.delete(rid)
         }
     }
 
@@ -871,6 +885,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
             yaw: basePose === undefined ? ownFacing : ownFacing - yawOf(basePose.rotation),
             speed: Math.hypot(char.vx, char.vz),
             base: basePose === undefined ? 0 : base,
+            teleports,
           })
           // Real contact, handed straight to the components on whatever nodes own them — a corpse triggers
           // nothing, which is why this is gated. Whatever the capsule touched in any slice of the tick (`contactsNow`,
@@ -885,6 +900,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
           const teleport = dead ? null : (rules.takeTeleport?.() ?? null)
           if (teleport !== null) {
             char.body.setPosition(teleport.position)
+            teleports = (teleports + 1) & 0xff
             // The same release a respawn needs, and for the same reason (ADR 0100): cashing out while riding
             // a platform used to leave `base` set, and the next tick dragged the player back onto it.
             releaseFooting(char)
@@ -1003,7 +1019,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
             name: net.nameOf(e.id) ?? '…',
           },
           frameDt,
-          { dead: (e.flags & STATE_DEAD) !== 0, tickAlpha },
+          { dead: (e.flags & STATE_DEAD) !== 0, tickAlpha, teleports: e.teleports },
         )
       }
     // Drop players who left the room, and whatever they were mid-way through.

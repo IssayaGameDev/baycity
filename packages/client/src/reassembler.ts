@@ -28,6 +28,7 @@ export const createSnapshotReassembler = (): SnapshotReassembler => {
           yaw: e.yaw,
           speed: e.speed,
           base: e.base,
+          teleports: e.teleports,
         })),
       }
     },

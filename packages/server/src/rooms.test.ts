@@ -6,13 +6,14 @@ import { deltaSnapshot, type DeltaBaseline } from './rooms'
 
 const A = entityId(1000)
 const B = entityId(1001)
-const at = (id: typeof A, x: number, flags = STATE_GROUNDED, yaw = 0, speed = 0, base = 0): SnapshotEntity => ({
+const at = (id: typeof A, x: number, flags = STATE_GROUNDED, yaw = 0, speed = 0, base = 0, teleports = 0): SnapshotEntity => ({
   id,
   position: { x, y: 0, z: 0 },
   flags,
   yaw,
   speed,
   base,
+  teleports,
 })
 
 // The Colyseus room + live handshake are exercised by the tsx load harness (a full
@@ -100,6 +101,14 @@ describe('deltaSnapshot (per-client relay delta)', () => {
     expect(deltaSnapshot(s, [at(A, 1, STATE_GROUNDED, 0, 0, 4)], 50).changed).toHaveLength(1)
     expect(deltaSnapshot(s, [at(A, 1, STATE_GROUNDED, 0, 0, 4)], 100).changed).toEqual([])
     expect(deltaSnapshot(s, [at(A, 1, STATE_GROUNDED, 0, 0, 0)], 150).changed).toHaveLength(1)
+  })
+
+  /** A teleport onto a spot that quantizes the same still has to reach viewers, or they never stop blending (ADR 0214). */
+  it('relays a peer that teleported, even to the same quantized spot', () => {
+    const s: DeltaBaseline = { sentFull: false, baseline: new Map() }
+    deltaSnapshot(s, [at(A, 1, STATE_GROUNDED, 0, 0, 0, 3)], 0) // full
+    expect(deltaSnapshot(s, [at(A, 1, STATE_GROUNDED, 0, 0, 0, 4)], 50).changed.map((e) => e.teleports)).toEqual([4])
+    expect(deltaSnapshot(s, [at(A, 1, STATE_GROUNDED, 0, 0, 0, 4)], 100).changed).toEqual([])
   })
 
   it('sends nothing for a peer that is both still and in the same state', () => {
