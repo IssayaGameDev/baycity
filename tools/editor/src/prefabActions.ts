@@ -1,10 +1,10 @@
 import type { Registry } from '@mp/components'
-import type { Level, Op } from '@mp/content'
+import { assetsUsedBy, parseQualified, type Level, type Op } from '@mp/content'
 
 import type { AssetLibrary } from './assetsApi'
 import { askName } from './confirm'
 import { prefabDoc, type Doc, type Mode } from './editorDoc'
-import { prefabFolder, prefabTarget, sanitisePrefabName } from './prefabPath'
+import { prefabFolder, prefabFolderFor, prefabTarget, sanitisePrefabName } from './prefabPath'
 import type { Notify } from './notices'
 
 /**
@@ -174,8 +174,13 @@ export const createPrefabActions = (host: PrefabActionsHost) => {
     const ref = open.refAt(index)
     if (ref === null) return
 
-    const folder = host.projectFolder()
-    const asked = await askName('Save as prefab', sanitisePrefabName(open.nameOf(index) || open.label(index)), `Saved in content/${prefabFolder(folder)}/ — the folder open in the Project panel. Letters, digits, - and _.`)
+    // Where it goes (ADR 0218): the open folder when it may hold what this uses, else the level's game's own library.
+    const shown = host.projectFolder()
+    const game = parseQualified(host.fileName())?.game
+    const uses = [...assetsUsedBy(definition, (s) => library.db.byId[s] !== undefined, () => undefined)].map((id) => library.db.byId[id]!.path)
+    const folder = game === undefined ? prefabFolder(shown) : prefabFolderFor(shown, game, uses)
+    const where = folder === prefabFolder(shown) ? 'the folder open in the Project panel' : `${game}’s own library: the folder open in the Project panel cannot hold it`
+    const asked = await askName('Save as prefab', sanitisePrefabName(open.nameOf(index) || open.label(index)), `Saved in content/${folder}/ — ${where}. Letters, digits, - and _.`)
     if (asked === null) return
     const target = prefabTarget(folder, asked, library.db.entries.map((e: { path: string }) => e.path))
     if ('error' in target) {

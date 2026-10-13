@@ -642,6 +642,72 @@ describe('asset libraries (ADR 0161)', () => {
   })
 })
 
+/**
+ * Every write keeps to the libraries (ADR 0218): a Shared asset uses only Shared's, a game's things only its own and
+ * Shared's. Adrien's Shared prefabs used Keyboard's materials, and only the content test said so, after the merge.
+ */
+describe('every write keeps to the libraries (ADR 0218)', () => {
+  const idOf = async (path: string): Promise<string> =>
+    (await json<{ entries: { id: string; path: string }[] }>(await call('ada', 'GET', '/api/assets'))).entries.find((e) => e.path === path)!.id
+  const drawnWith = (material: string) => ({ id: 'n', transform: { position: { x: 0, y: 0, z: 0 } }, components: [{ id: 'r', type: 'Renderer', params: { material } }] })
+  /** Keyboard, with a material and a texture of its own. */
+  const keyboardsOwn = async (): Promise<{ mat: string; tex: string }> => {
+    mkdirSync(join(root, 'content/keyboard'), { recursive: true })
+    writeFileSync(join(root, 'content/keyboard/game.json'), '{"components":[]}')
+    expect((await call('ada', 'PUT', '/content/keyboard/assets/materials/k.mat.json', { shader: 'standard', params: {} })).status, 'its own, in its library').toBe(200)
+    await call('ada', 'POST', '/api/assets/upload?path=keyboard/assets/textures/kt.png', undefined, Buffer.from('png'))
+    return { mat: await idOf('keyboard/assets/materials/k.mat.json'), tex: await idOf('keyboard/assets/textures/kt.png') }
+  }
+
+  it('refuses a Shared asset file using a game’s, and writes nothing', async () => {
+    const { mat } = await keyboardsOwn()
+    const refused = await call('ada', 'PUT', '/content/assets/prefabs/P.prefab.json', drawnWith(mat))
+    expect(refused.status).toBe(409)
+    expect((await json<{ error: string }>(refused)).error).toBe("Shared uses only Shared’s assets, and this uses keyboard's k.mat.json")
+    expect(existsSync(join(root, 'content/assets/prefabs/P.prefab.json'))).toBe(false)
+    expect((await call('ada', 'PUT', '/content/keyboard/assets/prefabs/P.prefab.json', drawnWith(mat))).status, 'in Keyboard’s own library').toBe(200)
+  })
+
+  it('refuses a level using another game’s asset', async () => {
+    const { mat } = await keyboardsOwn()
+    const refused = await call('ada', 'PUT', `/api/levels/${LV}`, { ...LEVEL, nodes: [drawnWith(mat)] })
+    expect(refused.status).toBe(409)
+    expect((await json<{ error: string }>(refused)).error).toBe("parkour uses only its own assets and Shared’s, and this uses keyboard's k.mat.json")
+    expect(JSON.parse(readFileSync(join(root, LEVEL_FILE), 'utf8')).nodes, 'the file as it was').toEqual([])
+  })
+
+  it('refuses a live edit to a level or a prefab before it applies', async () => {
+    const { mat } = await keyboardsOwn()
+    live.join(LV, { connId: 'c-ada', user: USERS.ada!, send: () => {} })
+    const insert = { kind: 'insertNode', parent: null, index: 0, node: drawnWith(mat) }
+    const refused = await call('ada', 'POST', `/api/live/level/${LV}/ops`, { connId: 'c-ada', batchId: 'b1', ops: [insert] })
+    expect(refused.status).toBe(409)
+    expect((await json<{ error: string }>(refused)).error).toBe("parkour uses only its own assets and Shared’s, and this uses keyboard's k.mat.json")
+    expect(live.levelAsFile(LV)?.nodes, 'not applied').toEqual([])
+    const plain = { ...insert, node: { ...drawnWith(''), components: [] } }
+    expect((await call('ada', 'POST', `/api/live/level/${LV}/ops`, { connId: 'c-ada', batchId: 'b2', ops: [plain] })).status).toBe(200)
+
+    // A Shared prefab's document: refused by its library, before the room is even asked.
+    await call('ada', 'PUT', '/content/assets/prefabs/S.prefab.json', { id: 'root', transform: { position: { x: 0, y: 0, z: 0 } }, components: [] })
+    const shared = await idOf('assets/prefabs/S.prefab.json')
+    const setMat = { kind: 'addComponent', id: 'root', component: { id: 'r', type: 'Renderer', params: { material: mat } } }
+    const prefab = await call('ada', 'POST', `/api/live/prefab/${shared}/ops`, { connId: 'c-ada', batchId: 'b3', ops: [setMat] })
+    expect(prefab.status).toBe(409)
+    expect((await json<{ error: string }>(prefab)).error).toBe("Shared uses only Shared’s assets, and this uses keyboard's k.mat.json")
+  })
+
+  it('refuses a live edit to a Shared material that would draw with a game’s texture', async () => {
+    const { tex } = await keyboardsOwn()
+    await call('ada', 'PUT', '/content/assets/materials/m.mat.json', { shader: 'standard', params: {} })
+    const m = await idOf('assets/materials/m.mat.json')
+    live.join(LV, { connId: 'c-ada', user: USERS.ada!, send: () => {} })
+    const refused = await call('ada', 'POST', `/api/live/asset/${m}/ops`, { connId: 'c-ada', batchId: 'b1', ops: [{ kind: 'set', path: ['params', 'map'], value: { kind: 'texture', value: tex } }] })
+    expect(refused.status).toBe(409)
+    expect((await json<{ error: string }>(refused)).error).toBe("Shared uses only Shared’s assets, and this uses keyboard's kt.png")
+    expect(liveAssets.current(m), 'nothing opened, nothing applied').toBeNull()
+  })
+})
+
 describe('moving a level to another game (ADR 0162)', () => {
   it('moves the file, keeps the tag in step, and refuses while it uses its old game’s own assets', async () => {
     mkdirSync(join(root, 'content/keyboard'), { recursive: true })

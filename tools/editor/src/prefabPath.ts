@@ -1,4 +1,4 @@
-import { inLibrary, libraryDir, libraryOf } from '@mp/content'
+import { inLibrary, libraryDir, libraryOf, mayUse } from '@mp/content'
 
 /**
  * Where `Save as prefab…` writes, and whether it may (ADR 0091).
@@ -17,6 +17,18 @@ import { inLibrary, libraryDir, libraryOf } from '@mp/content'
 export const prefabFolder = (open: string | null): string => {
   if (open === null || libraryOf(open) === undefined) return `${libraryDir(null)}/prefabs`
   return inLibrary(open) ? open : `${open}/prefabs`
+}
+
+/**
+ * Where a prefab saved from a level of `game` goes (ADR 0218, Kodjo's call): the folder open in the Project panel when
+ * it may hold it — Shared's when what it uses (`uses`, content-relative paths) is all Shared's, the game's own always —
+ * else the game's own `prefabs/`. Another game's library never: the level could not place what it saved there.
+ */
+export const prefabFolderFor = (open: string | null, game: string, uses: readonly string[]): string => {
+  const folder = prefabFolder(open)
+  const library = libraryOf(folder) ?? null
+  const fits = library === game || (library === null && uses.every((p) => mayUse(null, p)))
+  return fits ? folder : prefabFolder(libraryDir(game))
 }
 
 /** A name offered to the dialog: the object's, with everything a file name cannot carry turned into `-`. */

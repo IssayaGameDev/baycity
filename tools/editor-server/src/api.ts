@@ -18,7 +18,7 @@ import type { LiveAssets } from './liveAssets'
 import { gameDocId, isAssetOp, isLiveAssetPath } from '../../../packages/content/src/liveAssets'
 import { AssetOpError, listFolders, makeFolder, movePath, removePath } from './assetOps'
 import { componentTypesIn, levelMoveRefusal, libraryName, moveRefusal } from './libraryMoves'
-import { usersOf } from '../../../packages/content/src/usage'
+import { libraryRefusal, outOfLibrary, usersOf } from '../../../packages/content/src/usage'
 import type { ChangeFeed } from './changes'
 import type { User } from './config'
 import { docKey, LiveError, type FieldSpot, type Live } from './live'
@@ -291,6 +291,17 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       return undefined
     }
   }
+  /**
+   * Why `json`, being written as something of `user`'s — a game's name for its levels and its library's assets, `null`
+   * for Shared's — is refused for what it uses (ADR 0161, ADR 0218), or `null`. Every write of content goes through
+   * this server, so checking here is checking every way in: a saved file, a whole level, and a live edit's ops, which
+   * carry only the values they set.
+   */
+  const usesRefusal = (user: string | null, json: unknown): string | null =>
+    libraryRefusal(
+      user,
+      outOfLibrary(user, json, (s) => assets.byId(s) !== undefined, assetJsonNow, (id) => assets.byId(id)?.path),
+    )
   /** The prefab document open on asset path `rel` (its file `file`), if any: a prefab is a live document now (ADR 0091). */
   const openPrefabAt = (rel: string, file: string): { id: string; root: unknown } | null => {
     if (opts.live === undefined || !rel.endsWith('.prefab.json')) return null
@@ -532,6 +543,8 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
         // JSON only: materials, prefabs, data assets. Binaries go through upload, which has the cap.
         const parsed: unknown = await readJson(req)
         if (data && !isDataAsset(parsed)) return sendJson(res, 400, { error: 'a data asset names its type and holds its fields as an object' }), true
+        const why = usesRefusal(libraryOf(rel) ?? null, parsed)
+        if (why !== null) return sendJson(res, 409, { error: why }), true
         mkdirSync(join(file, '..'), { recursive: true })
         writeFileSync(file, `${JSON.stringify(parsed, null, 2)}\n`)
         changed(user, [keyFor.asset(rel)])
@@ -721,6 +734,8 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
         // registry, which the editor has and this server does not, so the editor checks those before sending.
         if (kind === 'levels') validateLevel(parsed)
         else if (!Array.isArray(asRecord(parsed).components)) throw new LevelError('games: expected { components: string[] }')
+        const why = ref === null ? null : usesRefusal(ref.game, parsed)
+        if (why !== null) return sendJson(res, 409, { error: why }), true
         // A game folder, and its levels folder, is made on demand: a PUT is how a new game comes into being.
         const made = !existsSync(file)
         mkdirSync(dirname(file), { recursive: true })
@@ -798,6 +813,9 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       }
       const ops = Array.isArray(args.ops) ? (args.ops as unknown[]) : null
       if (ops === null || !ops.every(isAssetOp)) return sendJson(res, 400, { error: 'ops: expected asset ops' }), true
+      const owner = am[2] ?? libraryOf(assets.byId(id)?.path ?? '')
+      const why = owner === undefined ? null : usesRefusal(owner, ops)
+      if (why !== null) return sendJson(res, 409, { error: why }), true
       try {
         const r = opts.liveAssets.apply(id, typeof args.connId === 'string' ? args.connId : '', user, {
           batchId: typeof args.batchId === 'string' ? args.batchId : '',
@@ -864,6 +882,11 @@ export const createContentApi = (opts: ApiOptions): ApiHandler => {
       switch (action) {
         case 'ops': {
           const ops = Array.isArray(args.ops) ? (args.ops as Op[]) : []
+          // Whose the document is: a level's game, or the library its prefab is in (ADR 0218). Refused before it
+          // applies, so the sender rolls it back as any refused batch.
+          const owner = kind === 'level' ? parseQualified(m[2]!)!.game : libraryOf(assets.byId(m[2]!)?.path ?? '')
+          const why = owner === undefined ? null : usesRefusal(owner, ops)
+          if (why !== null) return sendJson(res, 409, { error: why }), true
           sendJson(res, 200, live.apply(name, connId, user, { batchId: typeof args.batchId === 'string' ? args.batchId : '', ops }))
           return true
         }

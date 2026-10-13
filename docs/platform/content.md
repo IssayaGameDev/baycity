@@ -266,6 +266,8 @@ completes override transforms from the node they now override — then **throws 
 assetsUsedBy(json, isAssetId, contentsOf): Set<string>      // a level's (or any asset's) ids, and through each prefab and material, theirs
 levelsUsing([[name, json]…], isAssetId, contentsOf): Map<id, string[]>   // asset → level names, sorted; unused assets absent
 usersOf(id, levels, assets, isAssetId, contentsOf): { levels, assets }   // who uses one, level names and asset ids, sorted (ADR 0165)
+outOfLibrary(user, json, isAssetId, contentsOf, pathOf): string[]        // paths json, of user's, uses and may not (mayUse), sorted (ADR 0218)
+libraryRefusal(user, outside): string | null                           // "Shared uses only Shared’s assets, and this uses keyboard's k.mat.json"
 ```
 
 A reference is **a string value equal to a known id**, anywhere in the file (an id is 64 random bits): a game's own

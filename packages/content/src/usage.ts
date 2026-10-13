@@ -1,3 +1,5 @@
+import { libraryOf, mayUse } from './layout'
+
 /**
  * Which levels use which asset (ADR 0161): what a move between libraries has to check, what a game's build packs,
  * and what "used by" answers.
@@ -68,6 +70,33 @@ export const usersOf = (
     if (other !== id && json !== undefined && assetsUsedBy(json, isAssetId, contentsOf).has(id)) inAssets.push(other)
   }
   return { levels: inLevels.sort(), assets: inAssets.sort() }
+}
+
+/**
+ * What `json` — something of `user`'s: a game's name for its levels and its library's assets, `null` for Shared's —
+ * uses and may not (ADR 0161), as content-relative paths, sorted; directly or through what it uses, as `assetsUsedBy`
+ * walks. `pathOf(id)` is a known asset's path. Empty when it keeps to its libraries. The one rule the editor server
+ * refuses a write by and `libraries.test.ts` checks the content against (ADR 0218).
+ */
+export const outOfLibrary = (
+  user: string | null,
+  json: unknown,
+  isAssetId: (s: string) => boolean,
+  contentsOf: (id: string) => unknown,
+  pathOf: (id: string) => string | undefined,
+): string[] =>
+  [...assetsUsedBy(json, isAssetId, contentsOf)]
+    .map(pathOf)
+    .filter((p): p is string => p !== undefined && !mayUse(user, p))
+    .sort()
+
+/** Why a write of `user`'s is refused for using `outside` (`outOfLibrary`), or `null` when it uses nothing it may not. */
+export const libraryRefusal = (user: string | null, outside: readonly string[]): string | null => {
+  if (outside.length === 0) return null
+  const named = outside.map((p) => `${libraryOf(p) ?? 'Shared'}'s ${p.slice(p.lastIndexOf('/') + 1)}`)
+  const shown = named.length > 3 ? `${named.slice(0, 3).join(', ')} and ${named.length - 3} more` : named.join(', ')
+  const rule = user === null ? 'Shared uses only Shared’s assets' : `${user} uses only its own assets and Shared’s`
+  return `${rule}, and this uses ${shown}`
 }
 
 /** For each asset some level uses, the names of the levels using it, sorted. Assets no level uses are absent. */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { assetsUsedBy, levelsUsing, usersOf } from './usage'
+import { assetsUsedBy, levelsUsing, libraryRefusal, outOfLibrary, usersOf } from './usage'
 
 /**
  * Which levels use which asset (ADR 0161): an id anywhere in a level is a reference, and so is every id in what it
@@ -82,5 +82,31 @@ describe('who uses an asset (ADR 0165)', () => {
     expect(usersOf(BRICK, levels, assets, isAssetId, contentsOf)).toEqual({ levels: ['kb/a', 'kb/b'], assets: [PAD, RED] })
     expect(usersOf(PAD, levels, assets, isAssetId, contentsOf)).toEqual({ levels: ['kb/b'], assets: [] })
     expect(usersOf(LOOSE, levels, assets, isAssetId, contentsOf)).toEqual({ levels: [], assets: [] })
+  })
+})
+
+/** The rule every write is refused by (ADR 0161, ADR 0218): what something of `user`'s uses and may not. */
+describe('what something uses out of its libraries', () => {
+  const PATHS: Record<string, string> = {
+    [PAD]: 'assets/prefabs/Pad.prefab.json',
+    [RED]: 'assets/materials/Red.mat.json',
+    [BRICK]: 'keyboard/assets/textures/brick.png',
+    [CRATE]: 'assets/models/crate.glb',
+    [GLOW]: 'racing/assets/materials/Glow.mat.json',
+  }
+  const pathOf = (id: string): string | undefined => PATHS[id]
+  const drawn = (material: string): unknown => ({ id: 'n', components: [{ id: 'r', type: 'Renderer', params: { material } }] })
+
+  it('finds a game’s asset in Shared’s, through what it uses', () => {
+    expect(outOfLibrary(null, drawn(RED), isAssetId, contentsOf, pathOf), 'its texture is Keyboard’s').toEqual(['keyboard/assets/textures/brick.png'])
+    expect(outOfLibrary('keyboard', drawn(RED), isAssetId, contentsOf, pathOf), 'Keyboard may').toEqual([])
+    expect(outOfLibrary('keyboard', drawn(GLOW), isAssetId, contentsOf, pathOf), 'another game’s').toEqual(['racing/assets/materials/Glow.mat.json'])
+  })
+
+  it('says why, naming what it uses, a few at most', () => {
+    expect(libraryRefusal(null, [])).toBeNull()
+    expect(libraryRefusal(null, ['keyboard/assets/textures/brick.png'])).toBe("Shared uses only Shared’s assets, and this uses keyboard's brick.png")
+    expect(libraryRefusal('keyboard', ['racing/assets/materials/Glow.mat.json'])).toBe("keyboard uses only its own assets and Shared’s, and this uses racing's Glow.mat.json")
+    expect(libraryRefusal(null, ['a/assets/1', 'a/assets/2', 'a/assets/3', 'a/assets/4', 'a/assets/5'])).toBe("Shared uses only Shared’s assets, and this uses a's 1, a's 2, a's 3 and 2 more")
   })
 })

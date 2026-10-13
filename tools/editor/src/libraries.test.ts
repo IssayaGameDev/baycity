@@ -1,12 +1,13 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { assetsUsedBy, isGameName, kindForPath, levelRefForFile, libraryDir, libraryOf, LEVELS_DIR, mayUse, META_SUFFIX } from '@mp/content'
+import { isGameName, kindForPath, levelRefForFile, libraryDir, libraryOf, LEVELS_DIR, META_SUFFIX, outOfLibrary } from '@mp/content'
 import { describe, expect, it } from 'vitest'
 
 /**
  * Every game's content keeps to its libraries (ADR 0161): a level uses only its own game's assets and Shared's, and
- * so does anything in its game's library, while Shared's assets use only Shared's — any game may use them.
+ * so does anything in its game's library, while Shared's assets use only Shared's — any game may use them. The editor
+ * server refuses a write that would break it (ADR 0218); this is the net under that.
  *
  * Read-only over `content/`: sidecars are read, never written, so an asset that has none yet is simply not known here
  * (the importer gives it one; `levels.test.ts` and each game's own checks cover what exists).
@@ -35,9 +36,8 @@ describe('every game keeps to its asset libraries', () => {
     if (path === undefined || !path.endsWith('.json') || !existsSync(join(root, path))) return undefined
     return JSON.parse(readFileSync(join(root, path), 'utf8')) as unknown
   }
-  /** What `json` uses that `user` may not, as paths. */
-  const outOfBounds = (user: string | null, json: unknown): string[] =>
-    [...assetsUsedBy(json, isAssetId, contentsOf)].map((id) => paths.get(id)!).filter((p) => !mayUse(user, p)).sort()
+  /** What `json` uses that `user` may not, as paths: the rule the editor server refuses a write by (ADR 0218). */
+  const outOfBounds = (user: string | null, json: unknown): string[] => outOfLibrary(user, json, isAssetId, contentsOf, (id) => paths.get(id))
 
   it('knows some assets, so an empty walk cannot pass vacuously', () => {
     expect(paths.size).toBeGreaterThan(0)

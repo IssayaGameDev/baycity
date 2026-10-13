@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { prefabFolder, prefabTarget, sanitisePrefabName } from './prefabPath'
+import { prefabFolder, prefabFolderFor, prefabTarget, sanitisePrefabName } from './prefabPath'
 
 describe('where a prefab is saved', () => {
   it('writes into the folder the Project panel has open', () => {
@@ -12,6 +12,16 @@ describe('where a prefab is saved', () => {
     expect(prefabFolder('keyboard/assets')).toBe('keyboard/assets/prefabs')
     expect(prefabFolder(null)).toBe('assets/prefabs')
     expect(prefabTarget(null, 'Spike', [])).toEqual({ path: 'assets/prefabs/Spike.prefab.json', name: 'Spike' })
+  })
+
+  /** Kodjo's call (ADR 0218): what a level saves goes where that level can place it, and where it may live. */
+  it('goes to the level’s game’s own prefabs/ when the open folder cannot hold it', () => {
+    const own = ['assets/materials/Red.mat.json', 'racing/assets/materials/Tarmac.mat.json']
+    expect(prefabFolderFor('assets/materials', 'racing', own), 'Shared, using Racing’s').toBe('racing/assets/prefabs')
+    expect(prefabFolderFor(null, 'racing', own), 'no folder open: Shared’s, so the same').toBe('racing/assets/prefabs')
+    expect(prefabFolderFor('keyboard/assets/Prefabs', 'racing', ['assets/materials/Red.mat.json']), 'another game’s: the level could not place it').toBe('racing/assets/prefabs')
+    expect(prefabFolderFor('assets/props', 'racing', ['assets/materials/Red.mat.json']), 'Shared, using only Shared’s: stays').toBe('assets/props')
+    expect(prefabFolderFor('racing/assets/cars', 'racing', own), 'its own game’s: stays').toBe('racing/assets/cars')
   })
 
   /**

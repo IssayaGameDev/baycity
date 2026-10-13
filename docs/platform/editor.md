@@ -271,10 +271,13 @@ One action makes a prefab, replacing both `Extract to prefab` (which wrote no fi
 (which made no reference). In the Hierarchy and viewport menus, both calling
 `saveAsPrefab(index)`.
 
-`askName` → `prefabTarget(project.folder(), name, taken)` (`src/prefabPath.ts`, pure and tested) →
+`prefabFolderFor(project.folder(), game, uses)` → `askName` (its hint names the folder) → `prefabTarget(folder, name, taken)` (`src/prefabPath.ts`, pure and tested) →
 `assets.createPrefab(path, doc.definitionOf(index))` → `reloadAssets()` → `doc.linkToPrefab(at, id, definition)`
 → `recordEdit('save as prefab')`.
 
+- **Where it goes** (ADR 0218, Kodjo's call): the folder open in the Project panel when it may hold it — Shared's
+  when every asset the definition uses (`assetsUsedBy`, direct) is Shared's, the level's own game's always — else
+  `<game>/assets/prefabs/` of the level's game. Never another game's: the level could not place it.
 - **The file goes first.** A failed write costs an error toast; the reverse order would leave a placement
   pointing at nothing. If the write lands and the level edit does not, the file is an unreferenced prefab —
   visible in the Project panel and placeable by hand.
@@ -409,7 +412,7 @@ the games window's (ADR 0162).
 Any drag of tiles reports the asset ids it carries, `onDragAssets(ids)` (`[]` on `dragend`) → main's `draggedAssets`:
 what a reference field reads before the drop, since a browser drag cannot say until then (ADR 0176).
 
-`folder()` is where *Save as prefab…* writes (ADR 0091). An asset's URL is `/content/<path>` (`assetUrl`), as on disk.
+`folder()` is where *Save as prefab…* writes when it may (ADR 0091, ADR 0218). An asset's URL is `/content/<path>` (`assetUrl`), as on disk.
 `Filter` (`assetTree.ts`) is `{ libraries, folder: string | null, kind, search }`: one folder's own files, or — `null`
 — every folder of the libraries.
 

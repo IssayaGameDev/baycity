@@ -35,10 +35,10 @@ is the deploy, fails — which `tools/editor/src/viteConfigImports.test.ts` walk
 | `GET /api/me` | `{ user, heartbeatMs, maxUploadBytes, games, admin? }` — `games`: name → URL Play frames; `admin: true` for an email in `admins` (`ApiOptions.isAdmin`, ADR 0200, `admin.md`) | |
 | `GET /api/status` | `{ pushError }` | |
 | `GET /api/levels` | `[{ name, mode, prefabs? }]` — `name` qualified `<game>/<name>`, `mode` the **folder** it is in, so a file that will not parse still lists with its game (ADR 0108) | |
-| `GET/PUT /api/levels/:game/:name` | level JSON — two segments, because a game is a folder (ADR 0108). GET serves the **live copy** when the level is open, as its file would be (`levelAsFile`: no resolved prefab definitions, ADR 0204); PUT runs `validateLevel(raw)` (structure only, no registry) and makes the game folder on demand, **409** while the level is open live. A name that is not a legal `<game>/<name>` is a 404 | |
+| `GET/PUT /api/levels/:game/:name` | level JSON — two segments, because a game is a folder (ADR 0108). GET serves the **live copy** when the level is open, as its file would be (`levelAsFile`: no resolved prefab definitions, ADR 0204); PUT runs `validateLevel(raw)` (structure only, no registry) and makes the game folder on demand, **409** while the level is open live or when it uses what its game may not (`usesRefusal`, below). A name that is not a legal `<game>/<name>` is a 404 | |
 | `GET /api/live` | `{ docs: [{ name, seq, peers, holds }] }` | |
 | `GET /api/live/:kind/:name/events` | `:kind` is `level` or `prefab` (ADR 0091); a level's `:name` is the qualified `<game>/<name>` and so spans two segments (ADR 0108). SSE (`text/event-stream`, `:keepalive` every 25 s): `hello { connId, name }`, `snapshot { level, seq, holds, peers, hidden }`, then `ops { seq, from, batchId, ops }` with `id: seq`, `holds`, `peers`, `presence`, `open-assets { open: [{ assetId, connId, name }] }` and `fields { fields: [{ connId, name, targets, card, field }] }` (each after the snapshot too, when not empty), `rooms { rooms: [{ kind, name, peers }] }` (every document anyone is in, to every connection on each join and leave, ADR 0162), `levels {}` (a level made, renamed or deleted), `asset`, `error`, and on a **level's** stream `prefab { assetId, ops }` when a prefab it uses was edited. 404 when there is no such document. The stream closing is the leave | |
-| `POST /api/live/:kind/:name/ops` | `{ connId, batchId, ops }` → `{ ok, seq }` · 400 an op does not apply (`OpError`). Never refused for another's selection (ADR 0158). On a **prefab**, a connection in a level that uses it is accepted too — what *Apply to prefab* needs | |
+| `POST /api/live/:kind/:name/ops` | `{ connId, batchId, ops }` → `{ ok, seq }` · 400 an op does not apply (`OpError`) · **409** the ops use what the document may not, before it applies — a level's game, a prefab's library (`usesRefusal`). Never refused for another's selection (ADR 0158). On a **prefab**, a connection in a level that uses it is accepted too — what *Apply to prefab* needs | |
 | `POST /api/live/:kind/:name/hold` | `{ connId, refs }` — **this connection's holds become exactly `refs`**, whoever else holds them → `{ ok }` (ADR 0158) | |
 | `POST /api/live/:kind/:name/release` | `{ connId, refs }` → `{ ok }` | |
 | `POST /api/live/:kind/:name/ping` | `{ connId }` — still here | |
@@ -64,14 +64,21 @@ shipped when `hidden` was added (ADR 0132). `api.test.ts` walks one over the wir
 | `POST /api/assets/upload?path=` | raw bytes → `{ entry }`; `path` from `content/`, inside a library | ext ∈ `png jpg jpeg webp ktx2 glb ttf otf woff` (fonts for a Text, ADR 0190; not woff2); `≤ maxUploadBytes` else 413 |
 | `GET /content/<path>` | bytes of a path inside a library (anything else 404) — a prefab open live is served from its document, as a level is; a live asset (ADR 0159) from its document when open, with `x-asset-epoch` / `x-asset-seq` (`0` for the file) | |
 | `GET /api/play/<address>` | a game page's content (ADR 0169), each as it is now: `<game>/levels.json` → `levelIndexOf` over its level files · `<game>/levels/<name>.needs.json` → `levelNeeds` over `levelNow`, the asset index and `assetJsonNow`, `url`s `content/<path>` · `<game>/levels/<name>.level.json` → `levelNow` · a library path → as `GET /content/<path>`. 404 anything else, 405 anything but GET, `cache-control: no-cache`. The staging game's dev server proxies its page's `content/` here (`content-sync.md`) | `identifyPlayer`: signed in, not necessarily in `users` |
-| `POST /api/live/asset/<id>/ops` | `{ connId, batchId, ops }` — asset ops on any live connection of this user → `{ ok, seq }` · 400 not ops, an op that does not apply or leaves the file invalid, an unknown or foreign connection · 404 no such asset | |
+| `POST /api/live/asset/<id>/ops` | `{ connId, batchId, ops }` — asset ops on any live connection of this user → `{ ok, seq }` · 400 not ops, an op that does not apply or leaves the file invalid, an unknown or foreign connection · **409** the ops use what the asset's library may not (`usesRefusal`) · 404 no such asset | |
 | `POST /api/live/game/<game>/ops` | the same, on a game's `game.json` (ADR 0162); echoed as an `asset` event with `assetId` `game:<game>` · 404 no such game | |
-| `PUT /content/<path>` | JSON asset; **409** while that prefab, or that live asset, is open live; a `.data.json` **409** in Shared and **400** unless `isDataAsset` (ADR 0181) | |
+| `PUT /content/<path>` | JSON asset; **409** while that prefab, or that live asset, is open live; a `.data.json` **409** in Shared and **400** unless `isDataAsset` (ADR 0181); **409** when it uses what its library may not (`usesRefusal`) | |
 | `POST /api/admin/commit-all` | `Authorization: Bearer <stateDir/admin.token>` → commits every session | token, no user |
 | `/api/assistant…` | the assistant (ADR 0192, `assistant.md`): status, conversations, a turn as server-sent events, filing a draft; the editing modes' calls, their results, Stop (ADR 0195) | |
 | `GET /api/tree` | `{ seq, files: [{ path, size, sha1 }] }` — every file under `content/` (mirror, ADR 0084); flushes every live level first, as `GET /api/file` does | |
 | `GET /api/changes?since=N&timeout=MS` | `{ seq, paths }` long-poll (≤ 60 s); **410** when N is behind the feed or ahead of it. Followed by the mirror and by every editor tab (ADR 0156) | |
 | `GET /api/file?path=content/…` | the bytes; 404 when gone | |
+
+**Every write keeps to the libraries** (ADR 0161, ADR 0218): `usesRefusal(user, json)` = `libraryRefusal(user,
+outOfLibrary(user, json, …, assetJsonNow, …))` (`content.md`), run on a JSON asset's PUT (`user` its library), a
+level's PUT (its game), and a live batch's ops before they apply (a level's game, a prefab's or a material's library) —
+ops carry only the values they set, so a fix is never refused for what it replaces. 409 with the reason; the editor
+rolls a refused batch back and shows it (`edit refused: …`). Moves have their own check (`moveRefusal`,
+`levelMoveRefusal`); an upload carries no references. `libraries.test.ts` checks the content by the same rule.
 
 Identity first: `identify(req)` → `null` is 401, `AuthError` is its status (403 signed in but not in `users`, 503
 `aud` unset). `/api/play` alone asks `identifyPlayer(req)` instead (`ApiOptions.identifyPlayer`; absent: `identify`):
