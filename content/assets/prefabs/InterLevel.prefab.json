@@ -19,8 +19,14 @@
       "type": "Obstacle",
       "params": {
         "teleport": "844b2216",
-        "trigger": null,
-        "winsPad": null,
+        "trigger": {
+          "node": "0fbe1748",
+          "component": "3db9556d"
+        },
+        "winsPad": {
+          "node": "c0258f34",
+          "component": "fd50a89a"
+        },
         "wins": 1,
         "sign": {
           "node": "cac13975",
@@ -410,6 +416,44 @@
             "bold": false,
             "facing": "object",
             "back": "mirrored"
+          }
+        }
+      ]
+    },
+    {
+      "id": "0fbe1748",
+      "name": "box",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 4.25,
+          "z": 0
+        },
+        "scale": {
+          "x": 14,
+          "y": 7.5,
+          "z": 15
+        }
+      },
+      "components": [
+        {
+          "id": "3db9556d",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "trigger": true
           }
         }
       ]
