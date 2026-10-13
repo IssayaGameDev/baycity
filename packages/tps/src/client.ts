@@ -1025,8 +1025,11 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
      * The camera, and with it the see-through hole and the visibility of your own rig. One call, because all
      * of it is `@mp/camera`'s now (ADR 0056) — what it needs from here is the character's capsule centre and
      * somewhere to report the surfaces it wants holed.
+     *
+     * Dead, it follows the corpse's head (ADR 0209): the capsule stays put, invisible, wherever it died.
      */
-    const placed = orbit.update(frameDt, ownPos, (handles: readonly number[]) => level?.setOccluders(handles))
+    const corpseHead = dead ? avatars.corpseHead(tickAlpha) : null
+    const placed = orbit.update(frameDt, ownPos, (handles: readonly number[]) => level?.setOccluders(handles), corpseHead ?? undefined)
     // Whether your own rig is drawn. Three things want a say and only this one is the client's, so the
     // camera's answer goes in and `@mp/tps` resolves it against the other two. After the camera, because it
     // needs this frame's placement rather than last frame's. Peers are unaffected — they always see you.

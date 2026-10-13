@@ -54,6 +54,11 @@ export interface Avatars {
   die: (id: EntityId, at: Vec3, velocity: Vec3) => boolean
   /** Our respawn, and our first spawn: the corpse goes, and the body starts dropping back in. */
   reassemble: () => void
+  /**
+   * Where our corpse's head is drawn at `tickAlpha` — what the camera follows while we are dead (ADR 0209).
+   * `null` with no corpse: alive, or a game that drops none (`ragdoll: false`).
+   */
+  corpseHead: (tickAlpha: number) => Vec3 | null
   /** Whether our body is still arriving. */
   assembling: () => boolean
   /** After the world has stepped: every loose body's new pose, for the render loop to interpolate from. */
@@ -149,6 +154,8 @@ export const createAvatars = ({
     resetMotion: views.resetMotion,
 
     assembling: () => assembly !== null,
+
+    corpseHead: (tickAlpha) => ragdoll?.partAt('head', tickAlpha) ?? null,
 
     reassemble: () => {
       ragdoll?.dispose()

@@ -215,8 +215,9 @@ reference across variants; one `onBeforeCompile` closure so programs are shared.
 (`packages/camera/src/orbit.ts`) owns the instance and sets per frame: `camera` = eye, `target` = capsule centre,
 `radius = camMaskRadius × aperture`, `feather = camMaskFeather`; aperture chased on `camMaskSmooth`. Occluder
 handles come from `castSphere` with `probeRadius = 0.25`; pull-in only when the camera would be inside solid or
-below the feet. `OrbitCamera.update(dt, body, setOccluders): Placement { rigVisible }` hands the handles to
-`LevelView.setOccluders` each frame. **Only while `params.camSeeThrough`** — the level's `config.cameraSeeThrough`
+below the feet. `OrbitCamera.update(dt, body, setOccluders, focus?): Placement { rigVisible }` hands the handles to
+`LevelView.setOccluders` each frame. `focus` (a dead player's head, ADR 0209) replaces the aim point (`body` +
+`AIM_RISE`): aimed at exactly, no body probes, `feetY = focus.y`, cutout `target = focus`. **Only while `params.camSeeThrough`** — the level's `config.cameraSeeThrough`
 (ADR 0148), off by default: off, `occlusionFor(..., { seeThrough: false })` makes one cast along the boom, its hit
 is the limit (ADR 0020), and nothing is holed.
 

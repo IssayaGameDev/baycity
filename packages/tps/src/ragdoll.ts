@@ -31,6 +31,8 @@ export interface Ragdoll {
   capture: () => void
   /** Write the meshes, interpolated `alpha` of the way from the previous tick to the last one. */
   sync: (alpha: number) => void
+  /** Where part `name` is drawn at `alpha` — the same point `sync` puts its mesh at. */
+  partAt: (name: PartName, alpha: number) => Vec3
   /** Remove the bodies and the meshes. */
   dispose: () => void
 }
@@ -73,6 +75,13 @@ export const createRagdoll = (opts: RagdollOptions): Ragdoll => {
     curr[name] = { position: { ...t.position }, rotation: { ...t.rotation } }
   }
 
+  const partAt = (name: PartName, alpha: number): Vec3 => {
+    const a = clamp(alpha, 0, 1)
+    const p = prev[name].position
+    const c = curr[name].position
+    return vec3(p.x + (c.x - p.x) * a, p.y + (c.y - p.y) * a, p.z + (c.z - p.z) * a)
+  }
+
   return {
     colliders: PART_NAMES.map((name) => bodies[name].colliderHandle),
     capture: () => {
@@ -82,17 +91,16 @@ export const createRagdoll = (opts: RagdollOptions): Ragdoll => {
       }
     },
     sync: (alpha) => {
-      const a = clamp(alpha, 0, 1)
       for (const name of PART_NAMES) {
-        const p = prev[name]
-        const c = curr[name]
+        const at = partAt(name, alpha)
         const m = parts.mesh[name]
-        m.position.set(p.position.x + (c.position.x - p.position.x) * a, p.position.y + (c.position.y - p.position.y) * a, p.position.z + (c.position.z - p.position.z) * a)
+        m.position.set(at.x, at.y, at.z)
         // Slerp, not lerp: a tumbling part turns far enough per tick that the shortest-arc path matters.
-        const q = slerpQuat(p.rotation, c.rotation, a)
+        const q = slerpQuat(prev[name].rotation, curr[name].rotation, clamp(alpha, 0, 1))
         m.quaternion.set(q.x, q.y, q.z, q.w)
       }
     },
+    partAt,
     dispose: () => {
       for (const name of PART_NAMES) bodies[name].remove()
       parts.dispose()
