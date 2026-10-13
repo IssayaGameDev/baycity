@@ -77,3 +77,12 @@ describe('what an edit from elsewhere redraws', () => {
     expect(plan({ kind: 'somethingNew', id: 'a' } as unknown as Op).all).toBe(true)
   })
 })
+
+/** A component that sets another's parameters (ADR 0210) can change how some other object is drawn. */
+describe('an edit to a component that drives another', () => {
+  it('redraws everything', () => {
+    const drives = (type: string): boolean => type === 'Collider'
+    expect(repaintFor([{ kind: 'setParams', id: 'a', componentId: 'col', patch: {} }], typeOf, drives).all).toBe(true)
+    expect(repaintFor([{ kind: 'setParams', id: 'a', componentId: 'col', patch: {} }], typeOf).all, 'nothing drives: its own subtree').toBe(false)
+  })
+})

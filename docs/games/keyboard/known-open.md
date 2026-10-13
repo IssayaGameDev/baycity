@@ -25,3 +25,9 @@ What the game lacks or has unresolved, in one place. Each item names the doc or 
 - **Signs are built once**; a pad edited live keeps its old sign until reload (ADR 0082).
 - **The editor does not render keycaps**; a board is a plain box there (ADR 0069).
 - **Paste across games** is unchecked in the editor (ADR 0076/0077).
+- **`StageGate` still ships**, until the box's levels have swapped theirs for an `Obstacle` and that content is merged;
+  then it goes (ADR 0211, [obstacles.md](obstacles.md)).
+- **An Obstacle has no landing marker in the editor**; a StageGate's facing gizmo is drawn on its own node, and an
+  Obstacle lands on its `teleport` target ([obstacles.md](obstacles.md)).
+- **A checkpoint reached while the teleport window is open** stays greyed until the window is opened again: the rows
+  are read as it opens.

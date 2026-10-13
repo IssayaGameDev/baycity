@@ -1,18 +1,33 @@
 import { vec3 } from '@mp/core'
 import { describe, expect, it } from 'vitest'
 
+import type { WorldNode } from '@mp/content'
+
+import type { CheckpointStop } from './components/obstacle'
 import { SLIDE_SECONDS, slideOut, stepSlide, teleportRows } from './teleportWindow'
 
 /** The teleport window (ADR 0203): what it lists, and how it slides. */
 describe('the teleport window', () => {
-  it('lists Start, facing kept, then every gate by number, facing its way', () => {
-    const rows = teleportRows(vec3(0, 1, 0), [
-      { number: 1, position: vec3(0, 2, 90), yaw: 0 },
-      { number: 2, position: vec3(-160, 5, 440), yaw: Math.PI / 2 },
-    ])
+  const stop = (number: number, position: ReturnType<typeof vec3>, yaw: number, key: string, alwaysOpen = false): CheckpointStop => ({
+    number,
+    node: {} as WorldNode,
+    position,
+    yaw,
+    key,
+    alwaysOpen,
+  })
+
+  it('lists Start, facing kept, then every checkpoint by number, facing its way', () => {
+    const rows = teleportRows(vec3(0, 1, 0), [stop(1, vec3(0, 2, 90), 0, 'a'), stop(2, vec3(-160, 5, 440), Math.PI / 2, 'b')], () => true)
     expect(rows.map((r) => r.label)).toEqual(['Start', 'Checkpoint 1', 'Checkpoint 2'])
     expect(rows[0]!.to).toEqual({ position: vec3(0, 1, 0) })
     expect(rows[2]!.to).toEqual({ position: vec3(-160, 5, 440), yaw: Math.PI / 2 })
+  })
+
+  /** Kodjo's call (ADR 0211): one not yet reached is listed, greyed, and cannot be picked. */
+  it('shuts a checkpoint not yet reached, never Start, never a stage gate', () => {
+    const rows = teleportRows(vec3(0, 1, 0), [stop(1, vec3(0, 0, 1), 0, 'a'), stop(2, vec3(0, 0, 2), 0, 'b'), stop(3, vec3(0, 0, 3), 0, 'gate', true)], (key) => key === 'a')
+    expect(rows.map((r) => r.locked)).toEqual([false, false, true, false])
   })
 
   it('slides out in a quarter second, eased to a stop, and back the same way', () => {

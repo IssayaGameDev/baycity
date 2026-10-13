@@ -39,6 +39,7 @@ Boundary examples: snapshot header layout — technical. Interpolation buffer du
 - No new runtime dependency without asking
 - Prefer plain functions and data over classes
 - Every milestone ends runnable: tests green, demo works
+- **Player data is saved only through a `PersistenceAdapter`** (`packages/game-client/src/persistence.ts`) — never `localStorage` or any other store directly. Kodjo's rule, and it stands for every save from now on: platform accounts will replace local storage, and the adapter is the one thing that changes
 
 ## Git
 

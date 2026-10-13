@@ -9,6 +9,9 @@ import {
   stringParam,
   textOf,
   type TextDesc,
+  drivenComponents,
+  drivesOf,
+  type Drive,
   COLLIDER,
   LIGHT,
   MATERIAL_OVERRIDE,
@@ -223,8 +226,16 @@ export interface Doc {
    * into the node's own group, which already carries its transform.
    */
   lightSpec: (i: number) => LightDesc | undefined
-  /** The node's text, or `undefined` (ADR 0189): `textOf`, as the loader reads it. Placed by the node's group. */
+  /**
+   * The node's text, or `undefined` (ADR 0189): `textOf`, as the loader reads it — with what another component sets
+   * on it (ADR 0210), as the loader applies it. Placed by the node's group.
+   */
   textSpec: (i: number) => TextDesc | undefined
+  /**
+   * Whether components of this type set parameters on the components they point at (ADR 0210). An edit to one can
+   * change how another object is drawn, so it redraws everything rather than its own subtree.
+   */
+  drives: (type: string) => boolean
   /**
    * Place a primitive by name under a prefab's root — what the prefab palette offers. `-1` in a level, where a
    * primitive is placed by `placePrimitive` and a prefab by `placePrefab` (ADR 0091).
@@ -756,6 +767,27 @@ const docOver = (
   }
 
   const node = (i: number): DocNode | undefined => nodes()[i]
+  /** Where a reference on node `i` holding `id` points, in `all`: its own placement's piece first, then the level's. */
+  const refTargetIn = (all: readonly DocNode[], i: number, id: string): number | null => {
+    const n = all[i]
+    if (n === undefined) return null
+    const own = n.owner === undefined ? -1 : all.findIndex((o) => o.owner === n.owner && o.authored.id === id)
+    const at = own >= 0 ? own : all.findIndex((o) => o.owner === undefined && o.authored.id === id)
+    return at >= 0 ? at : null
+  }
+  /**
+   * What other components set on each node, by index (ADR 0210), resolved as the loader resolves it. Kept with the
+   * walk it was read from, so a reading pass resolves the whole level once rather than once per text.
+   */
+  let driven: { of: readonly DocNode[]; by: Map<number, Drive[]> } | null = null
+  const drivenOf = (i: number): readonly Drive[] => {
+    const all = nodes()
+    if (driven?.of !== all) {
+      const indices = all.map((_, k) => k)
+      driven = { of: all, by: drivesOf(indices, (k) => all[k]!.view.components, (from, id) => refTargetIn(all, from, id) ?? undefined, registry) }
+    }
+    return driven.by.get(i) ?? []
+  }
   /**
    * Whether a `nodeRef` on `n` may name `o` (stage C4): an own node names own nodes, and a placement's piece its own
    * placement's pieces or the level's — a reference authored inside a prefab must not dangle in its other levels.
@@ -1373,8 +1405,11 @@ const docOver = (
     },
     textSpec: (i) => {
       const n = node(i)
-      return n === undefined ? undefined : textOf(n.view.components)
+      if (n === undefined) return undefined
+      const drives = drivenOf(i)
+      return textOf(drives.length === 0 ? n.view.components : drivenComponents(n.view.components, drives))
     },
+    drives: (type) => registry.get(type)?.drives !== undefined,
     lightSpec: (i) => {
       const n = node(i)
       if (n === undefined) return undefined
@@ -1697,14 +1732,7 @@ const docOver = (
       const o = node(j)
       return n === undefined || o === undefined || !reaches(n, o) ? null : o.authored.id
     },
-    refTarget: (i, id) => {
-      const n = node(i)
-      if (n === undefined) return null
-      const all = nodes()
-      const own = n.owner === undefined ? -1 : all.findIndex((o) => o.owner === n.owner && o.authored.id === id)
-      const at = own >= 0 ? own : all.findIndex((o) => o.owner === undefined && o.authored.id === id)
-      return at >= 0 ? at : null
-    },
+    refTarget: (i, id) => refTargetIn(nodes(), i, id),
     overridesOf: (i) => describeRecord(i, true),
     revert: (i, field) => {
       const n = node(i)

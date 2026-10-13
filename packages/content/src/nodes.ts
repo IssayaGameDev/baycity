@@ -38,7 +38,20 @@ export const TEXT = 'Text'
  * and content takes a capability as an argument.
  */
 export interface TypeInfo {
-  readonly get: (type: string) => { readonly singleton?: boolean; readonly moves?: boolean } | undefined
+  readonly get: (
+    type: string,
+  ) => { readonly singleton?: boolean; readonly moves?: boolean; readonly drives?: (params: Record<string, unknown>) => readonly Drive[] } | undefined
+}
+
+/**
+ * Parameters a component sets on another it points at (ADR 0210), over that one's own: what a type's `drives` answers
+ * for one component's parameters. `ref` is found from the driving node as a `componentRef` is — a node id, then one of
+ * its components of `type` by id, `''` being the first.
+ */
+export interface Drive {
+  readonly ref: { readonly node: string; readonly component: string } | null
+  readonly type: string
+  readonly params: Readonly<Record<string, unknown>>
 }
 
 /**

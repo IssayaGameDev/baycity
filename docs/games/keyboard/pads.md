@@ -16,7 +16,7 @@ Sets what a step pays. The real game's row of numbered buttons at spawn.
 
 Rules (Kodjo's): stepping on a pad you qualify for (`qualifies(wins, offer)`, `wins >= requiresWins`) makes its
 `perStep` yours, **including a lower one**; with no pad ever taken the step pays `BASE_PER_STEP` (1); on a pad you do
-not qualify for nothing happens. Saved under `keyboard.perStep`.
+not qualify for nothing happens. Saved through the game's save adapter under `keyboard.perStep` ([progression.md](progression.md)).
 
 Materials: `stylePads()` in `main.ts` runs when `perStep` changes and swaps each pad's meshes
 (`client.meshesOf(node)`) to `client.material(id)`; the original material is remembered per mesh for the empty

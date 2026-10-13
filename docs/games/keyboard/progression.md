@@ -45,13 +45,17 @@ metres at the top (ADR 0107). Measured reach cost is −1.6 % holding the stick,
 
 ## Saves
 
-`localStorage`, this game's own keys, written every 3 s and on the debug resets, `level` and Wins grant:
+Through the adapter only (`CLAUDE.md`): `save.ts` — `KeyboardSave { experience, wins, perStep, reached }`,
+`localKeyboardSave(): PersistenceAdapter<KeyboardSave>` (`@mp/game-client`). `main.ts` loads it once and `persist()`s
+all of it every 3 s, on a `StepPad` taken, on a checkpoint reached, and on the debug resets, `level` and Wins grant. A value that is missing,
+unreadable or below its minimum loads as its default. Local storage, this game's own keys:
 
 | Key | Value |
 | --- | --- |
 | `keyboard.experience` | floored integer |
 | `keyboard.wins` | floored integer |
 | `keyboard.perStep` | the `StepPad` value last taken; fallback `BASE_PER_STEP` |
+| `keyboard.reached` | JSON `{ [levelName]: CheckpointStop.key[] }` — checkpoints reached ([obstacles.md](obstacles.md)); `withReached` adds one; a level whose value is not a list of strings is dropped |
 
 Nothing goes through the platform's `PlayerProgress` (`ModeSession.progress()` is always `-1`). Note the origin
 changes with every `pnpm share` link, so saves reset per link (ADR 0074).

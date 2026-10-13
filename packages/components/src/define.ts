@@ -1,4 +1,5 @@
-import type { ParamDecls, Params } from './params'
+import { readParams, type ParamDecls, type Params, type RawParams } from './params'
+import type { Drive } from '@mp/content'
 import type { InputCommand } from '@mp/core'
 
 import { HOOK_NAMES, type Ctx, type ErasedHooks, type Hit, type Self } from './runtime'
@@ -50,6 +51,13 @@ export interface ComponentDef<D extends ParamDecls = ParamDecls> {
    * load — it decides what a tool offers.
    */
   readonly attachesTo?: 'node' | 'player'
+  /**
+   * Parameters this component sets on components it points at (ADR 0210) — Unity's script writing a field of one it
+   * holds a reference to. Over the target's own: it keeps its value, and this one wins. Read as the level is built, by
+   * the loader (what the game plays) and by the editor (what the scene shows). Takes the component's raw parameters,
+   * erased as `hooks` are; `defineComponent` reads them for the typed `ComponentSpec.drives`.
+   */
+  readonly drives?: (params: RawParams) => readonly Drive[]
   /** What the runner calls. Absent means this component is data only, and the runner skips it entirely. */
   readonly hooks?: ErasedHooks
 }
@@ -71,6 +79,8 @@ export interface ComponentSpec<D extends ParamDecls, S> {
   readonly moves?: boolean
   /** See `ComponentDef.attachesTo`. */
   readonly attachesTo?: 'node' | 'player'
+  /** See `ComponentDef.drives`: what it sets on the components its references point at. */
+  readonly drives?: (params: Params<D>) => readonly Drive[]
   readonly init?: (params: Params<D>, ctx: Ctx) => S
   /** Once, when the level is instantiated. Unity's Awake and Start, merged. */
   readonly onAttach?: (self: Self<D, S>, ctx: Ctx) => void
@@ -106,6 +116,7 @@ export const defineComponent = <const D extends ParamDecls, S = undefined>(spec:
         // `D` and `S` at the call site, and the runner only ever hands a hook the instance built from the
         // same definition.
         (spec as unknown as ErasedHooks)
+  const drives = spec.drives
   return {
     type: spec.type,
     params: spec.params,
@@ -114,6 +125,7 @@ export const defineComponent = <const D extends ParamDecls, S = undefined>(spec:
     ...(spec.singleton !== undefined ? { singleton: spec.singleton } : {}),
     ...(spec.moves !== undefined ? { moves: spec.moves } : {}),
     ...(spec.attachesTo !== undefined ? { attachesTo: spec.attachesTo } : {}),
+    ...(drives !== undefined ? { drives: (raw: RawParams) => drives(readParams(spec.params, raw, spec.type)) } : {}),
     ...(hooks !== undefined ? { hooks } : {}),
   }
 }

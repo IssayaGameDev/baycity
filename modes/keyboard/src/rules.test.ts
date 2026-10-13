@@ -1,5 +1,5 @@
-import { Hazard } from '@mp/components'
-import { instantiateLevel, type ComponentData, type Level, type LoadedLevel, type Node } from '@mp/content'
+import { characterAccess, createComponentRuntime, Hazard } from '@mp/components'
+import { instantiateLevel, TEXT, type ComponentData, type Level, type LoadedLevel, type Node, type WorldNode } from '@mp/content'
 import { vec3 } from '@mp/core'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 
@@ -8,7 +8,8 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import type { Teleport } from '@mp/mode'
 
 import { KEYBOARD_REGISTRY, STAND_OFFSET, keyboardSession } from './rules'
-import { StageGate, stageGatesOf } from './components/stageGate'
+import { StageGate } from './components/stageGate'
+import { checkpointsOf, Obstacle, requiresLevelText } from './components/obstacle'
 import { qualifies, StepPad } from './components/stepPad'
 import { stepsThisTick } from './components/steps'
 import { DEFAULT_CURVE, stepsPerMinute } from './progression'
@@ -184,7 +185,7 @@ describe('a step is a tick of held input, at a cadence set by Level (ADR 0081)',
   })
 })
 
-describe('stage gates (ADR 0202)', () => {
+describe('stage gates (ADR 0202), listed as checkpoints until replaced', () => {
   beforeAll(async () => {
     await initPhysics()
   })
@@ -194,7 +195,8 @@ describe('stage gates (ADR 0202)', () => {
   it('lists every gate in Hierarchy order — inside a parent too, collider or not — standing and facing as the node does', () => {
     const area: Node = { id: 'area', transform: { position: vec3(100, 0, 0) }, components: [], children: [gate('inner', 5, Math.PI / 2)] }
     const loaded = load([spawnAt(0), gate('first', 10), area, gate('last', 300)])
-    const gates = stageGatesOf(loaded, STAND_OFFSET)
+    const gates = checkpointsOf(loaded, STAND_OFFSET)
+    expect(gates.every((g) => g.alwaysOpen), 'a gate is open without being reached').toBe(true)
     expect(gates.map((g) => [g.number, g.position.x])).toEqual([
       [1, 10],
       [2, 105],
@@ -206,12 +208,12 @@ describe('stage gates (ADR 0202)', () => {
   })
 
   it('is none in a level without one', () => {
-    expect(stageGatesOf(load([spawnAt(0), pad('board', 5)]), STAND_OFFSET)).toEqual([])
+    expect(checkpointsOf(load([spawnAt(0), pad('board', 5)]), STAND_OFFSET)).toEqual([])
   })
 
   it('takes the teleport the game asks for, once, after a cash-out waiting on the same tick', () => {
     const loaded = load([spawnAt(0), gate('g', 50, Math.PI), pad('end', 10, comp('w', WinsPad.type))])
-    const [stop] = stageGatesOf(loaded, STAND_OFFSET)
+    const [stop] = checkpointsOf(loaded, STAND_OFFSET)
     let asked: Teleport | null = { position: stop!.position, yaw: stop!.yaw }
     const rules = keyboardSession(loaded, {
       requested: () => {
@@ -224,6 +226,82 @@ describe('stage gates (ADR 0202)', () => {
     expect(rules.takeTeleport!(), 'the cash-out first').toEqual({ position: vec3(0, STAND_OFFSET, 0) })
     expect(rules.takeTeleport!(), 'then the gate, facing its way').toEqual({ position: stop!.position, yaw: stop!.yaw })
     expect(rules.takeTeleport!(), 'once').toBeNull()
+  })
+})
+
+/**
+ * The Obstacle (ADR 0211, Kodjo's design): on the InterLevel prefab's root, pointing inside it — where a teleport
+ * lands, the trigger that reaches the checkpoint, the pad whose wins it sets, the sign it writes.
+ */
+describe('obstacles (ADR 0211)', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  const ref = (node: string) => ({ node, component: '' })
+  const inter: Node = {
+    id: 'inter-root',
+    transform: { position: vec3(0, 0, 0) },
+    components: [comp('ob', Obstacle.type, { teleport: 'stand', trigger: ref('zone'), winsPad: ref('win'), wins: 10, sign: ref('board'), requiredLevel: 3 })],
+    children: [
+      { id: 'stand', transform: { position: vec3(0, 1, 5), rotation: vec3(0, Math.PI / 2, 0) }, components: [] },
+      { id: 'zone', transform: { position: vec3(0, 1, 10) }, components: [comp('zone-c', 'Collider', { ...box(2), trigger: true })] },
+      { id: 'win', transform: { position: vec3(0, 0, 20) }, components: [comp('win-c', 'Collider', box()), comp('win-w', WinsPad.type, { wins: 1 })] },
+      { id: 'board', transform: { position: vec3(0, 3, 15) }, components: [comp('board-t', TEXT, { text: 'Text' })] },
+    ],
+  }
+  const placed = (id: string, x: number, params?: Record<string, unknown>): Node =>
+    ({ id, transform: { position: vec3(x, 0, 0) }, components: [], prefab: 'inter', ...(params === undefined ? {} : { overrides: { 'inter-root': { params: { ob: params } } } }) }) as Node
+  /** Two placements, the second paying more and asking more; then an obstacle pointing at nothing. */
+  const level = (): LoadedLevel =>
+    instantiateLevel(
+      createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }),
+      {
+        ...levelOf([spawnAt(0), placed('a', 100), placed('b', 200, { wins: 25, requiredLevel: 9 }), { id: 'bare', transform: { position: vec3(300, 2, 0) }, components: [comp('bare-o', Obstacle.type)] }]),
+        prefabs: { inter },
+      },
+      KEYBOARD_REGISTRY,
+    )
+  const copies = (loaded: LoadedLevel, id: string): WorldNode[] => loaded.allNodes.filter((n) => n.id === id)
+
+  it('lists each where its teleport points, facing that way — its own node when it points nowhere — keyed by placement', () => {
+    const stops = checkpointsOf(level(), STAND_OFFSET)
+    expect(stops.map((s) => [s.number, s.key, s.position.x, s.position.z])).toEqual([
+      [1, 'a', 100, 5],
+      [2, 'b', 200, 5],
+      [3, 'bare', 300, 0],
+    ])
+    expect(stops[0]!.position.y).toBeCloseTo(1 + STAND_OFFSET, 9)
+    expect(stops[0]!.yaw, 'the stand point faces +X').toBeCloseTo(Math.PI / 2, 9)
+    expect(stops.some((s) => s.alwaysOpen), 'an obstacle opens once reached').toBe(false)
+  })
+
+  it('pays what it says, over the pad’s own, per placement', () => {
+    const loaded = level()
+    const paid: number[] = []
+    for (const win of copies(loaded, 'win')) keyboardSession(loaded, { onCashOut: (wins) => paid.push(wins) }).effects.progress(win)
+    expect(paid).toEqual([10, 25])
+  })
+
+  it('writes “Requires Level X” on its sign', () => {
+    expect(level().texts.map((t) => t.text)).toEqual([requiresLevelText(3), requiresLevelText(9)])
+    expect(requiresLevelText(12)).toBe('Requires Level 12')
+  })
+
+  it('is reached by walking into its trigger, and by nothing else', () => {
+    const loaded = level()
+    const reached: WorldNode[] = []
+    const rules = keyboardSession(loaded, { onReached: (node) => reached.push(node) })
+    const character = characterAccess({ launch: 0, impulse: vec3(0, 0, 0), vx: 0, vy: 0, vz: 0, carry: vec3(0, 0, 0), grounded: true, body: { translation: () => vec3(0, 0, 0) } })
+    const runtime = createComponentRuntime(loaded, KEYBOARD_REGISTRY, { character, effects: rules.effects })
+    runtime.attach(0, 0, 1)
+    const [zoneA, zoneB] = copies(loaded, 'zone')
+    const [winA] = copies(loaded, 'win')
+    runtime.contact([winA!.colliderHandles[0]!])
+    expect(reached, 'its pad is not its trigger').toEqual([])
+    runtime.contact([zoneB!.colliderHandles[0]!])
+    runtime.contact([zoneA!.colliderHandles[0]!])
+    expect(reached.map((n) => n.id), 'each placement its own').toEqual(['b', 'a'])
   })
 })
 

@@ -215,6 +215,8 @@ export interface TpsClient {
   world: () => PhysicsWorld | null
   /** The instantiated level, or `null` before there is one. */
   level: () => LoadedLevel | null
+  /** The name of the level being played — what a game keys a per-level save by (ADR 0211). */
+  readonly levelName: string
   /**
    * The drawn meshes of a level node (ADR 0082), for a game to restyle a piece of the level at runtime — an
    * active pad, a lit door. Empty before the level exists or for a node that draws nothing. The same "hand over
@@ -1095,6 +1097,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
     partsOf: (id) => avatars.partsOf(id),
     world: () => physicsWorld,
     level: () => loaded,
+    levelName,
     meshesOf: (node) => {
       if (level === null) return []
       // A node drawing a model lists all its colliders against one mesh; dedupe so a caller sees each once.

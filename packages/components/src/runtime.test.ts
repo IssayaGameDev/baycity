@@ -679,3 +679,75 @@ describe('hook detection', () => {
     expect(hasHooks(defineComponent({ type: 'JustData', params: {} }))).toBe(false)
   })
 })
+
+/**
+ * A collider pointed at, heard (ADR 0210): a `componentRef` to a Collider marked `contacts` runs the holder's
+ * `onContact` when that collider is touched — a trigger on another node, as an obstacle's checkpoint is.
+ */
+describe('hearing a collider it points at', () => {
+  beforeAll(async () => {
+    await initPhysics()
+  })
+
+  const Listener = defineComponent({
+    type: 'Listener',
+    params: { zone: { kind: 'componentRef', of: COLLIDER, contacts: true } },
+    onContact: (self, _ctx, hit) => void log.push(`heard:${self.node.id}:${hit.node.id}`),
+  })
+  /** The same reference, not marked: it points, it does not listen. */
+  const Deaf = defineComponent({
+    type: 'Deaf',
+    params: { zone: { kind: 'componentRef', of: COLLIDER } },
+    onContact: (self, _ctx, hit) => void log.push(`deaf:${self.node.id}:${hit.node.id}`),
+  })
+  const REG = createRegistry([...ENGINE_COMPONENTS, Listener, Deaf])
+  const run = (nodes: Node[]) => {
+    const loaded = instantiateLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), levelOf(nodes), REG)
+    const runtime = createComponentRuntime(loaded, REG, { character: anyCharacter(), effects: noEffects() })
+    runtime.attach(0, 0, 1)
+    log.length = 0
+    return { loaded, runtime }
+  }
+  const zone = (id: string): Node => ({ id, transform: { position: vec3(0, 0, 0) }, components: [comp(`${id}-c`, COLLIDER, { ...box, trigger: true })] })
+  const pointing = (id: string, type: string, at: string): Node => ({ id, transform: { position: vec3(9, 0, 0) }, components: [comp(`${id}-x`, type, { zone: { node: at, component: '' } })] })
+
+  it('runs onContact for a touch on the collider it points at, with that node as the hit', () => {
+    const { loaded, runtime } = run([zone('z'), zone('other'), pointing('l', Listener.type, 'z'), pointing('d', Deaf.type, 'z')])
+    const handle = loaded.nodes.find((n) => n.id === 'z')!.colliderHandles[0]!
+    runtime.contact([handle, loaded.nodes.find((n) => n.id === 'other')!.colliderHandles[0]!])
+    expect(log, 'only the listener, only for its zone').toEqual(['heard:l:z'])
+  })
+
+  it('runs it once when the collider is its own node’s', () => {
+    const own: Node = { id: 'o', transform: { position: vec3(0, 0, 0) }, components: [comp('o-c', COLLIDER, box), comp('o-x', Listener.type, { zone: { node: 'o', component: '' } })] }
+    const { loaded, runtime } = run([own])
+    runtime.contact([loaded.nodes[0]!.colliderHandles[0]!])
+    expect(log).toEqual(['heard:o:o'])
+  })
+
+  it('names the collider’s handle when one is found', () => {
+    const Finder = defineComponent({
+      type: 'Finder',
+      params: { zone: { kind: 'componentRef', of: COLLIDER } },
+      onAttach: (self) => void log.push(`found:${self.findComponent(self.params.zone, { type: COLLIDER, params: {} })?.colliderHandle}`),
+    })
+    const reg = createRegistry([...ENGINE_COMPONENTS, Finder])
+    const loaded = instantiateLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), levelOf([zone('z'), pointing('f', Finder.type, 'z')]), reg)
+    log.length = 0
+    createComponentRuntime(loaded, reg, { character: anyCharacter(), effects: noEffects() }).attach(0, 0, 1)
+    expect(log).toEqual([`found:${loaded.nodes[0]!.colliderHandles[0]}`])
+  })
+})
+
+/** What a component sets on another it points at (ADR 0210): typed against its own parameters, read with defaults. */
+describe('drives', () => {
+  it('hands its typed parameters to `drives`, defaulted, and is absent when not declared', () => {
+    const Driver = defineComponent({
+      type: 'Driver',
+      params: { target: { kind: 'componentRef', of: 'Text' }, words: { kind: 'string', default: 'hello' } },
+      drives: (p) => [{ ref: p.target, type: 'Text', params: { text: p.words } }],
+    })
+    expect(Driver.drives?.({ target: { node: 'n', component: '' } })).toEqual([{ ref: { node: 'n', component: '' }, type: 'Text', params: { text: 'hello' } }])
+    expect(defineComponent({ type: 'Plain', params: {} }).drives).toBeUndefined()
+  })
+})

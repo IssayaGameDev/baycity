@@ -44,6 +44,7 @@ holdCursor: (onOutside: () => void) => (() => void) | null  // the shell's: free
 readonly debugPane: DebugPane['pane']     // tweakpane root
 world: () => PhysicsWorld | null          // null before first snapshot
 level: () => LoadedLevel | null
+levelName: string                                              // the level played, for a per-level save (ADR 0211)
 meshesOf: (node: WorldNode) => readonly THREE.Mesh[]   // deduped across node.colliderHandles (ADR 0082)
 material: (assetId: string) => THREE.Material | null   // level-loaded material (ADR 0082)
 data: (assetId: string) => DataAsset | undefined       // a level-loaded data asset as its file holds it; readData reads it (ADR 0181)

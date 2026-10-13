@@ -252,6 +252,8 @@ export const uiSlider = (o: SliderOpts): UiSlider => {
 export interface ListItem {
   text: string
   highlight?: boolean
+  /** Greyed: a row there but not available — a checkpoint not yet reached (ADR 0211). Give it no `onPick`. */
+  muted?: boolean
   /** Makes the row a button: a tap on it calls this — a press that travels is a drag of the list instead (ADR 0203). */
   onPick?: () => void
 }
@@ -356,7 +358,8 @@ export const uiList = (o: ListOpts): UiList => {
         const row = new Container()
         row.y = i * rowH
         const back = new Graphics()
-        const label = uiLabel(it.text, { size: o.textSize ?? 15, color: it.highlight === true || it.onPick !== undefined ? 0xffffff : 0xcbd5e1 })
+        const color = it.muted === true ? 0x64748b : it.highlight === true || it.onPick !== undefined ? 0xffffff : 0xcbd5e1
+        const label = uiLabel(it.text, { size: o.textSize ?? 15, color })
         label.anchor.set(0, 0.5)
         label.position.set(10, rowH / 2)
         row.addChild(back, label)

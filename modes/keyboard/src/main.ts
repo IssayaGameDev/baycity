@@ -1,6 +1,7 @@
 import { TICK_DT, vec3, type Vec3 } from '@mp/core'
 import { CHAR_RADIUS, createAnimator, createLocomotion, DEFAULT_GAIT, FOOT_Y, RIG } from '@mp/humanoid'
 import { componentOn, readData } from '@mp/components'
+import type { WorldNode } from '@mp/content'
 import type { Teleport } from '@mp/mode'
 import { worldLabel, type LabelLine, type THREE } from '@mp/render-three'
 import { startTpsClient } from '@mp/tps'
@@ -10,15 +11,16 @@ import { createHud } from './hud'
 import { DEFAULT_KEYCAP_SHAPE, type KeycapShape } from './keycapGeometry'
 import { DEFAULT_KEYCAP_LOOK, DEFAULT_PRESS, drawKeycaps, type KeycapLook, type PressFeel } from './keycaps'
 import { createPopups, DEFAULT_POPUP, type PopupFeel } from './popups'
-import { abbreviate, BASE_PER_STEP, experienceForLevel, levelAt, loadExperience, maxSpeedAt, METRES_PER_STUD, saveExperience, type ProgressCurve } from './progression'
+import { abbreviate, experienceForLevel, levelAt, maxSpeedAt, METRES_PER_STUD, type ProgressCurve } from './progression'
 import { keyboardSession, GAME_CURVE, GAME_KEYS, spawnOf, STAND_OFFSET } from './rules'
 import { createTeleportWindow, teleportRows } from './teleportWindow'
-import { stageGatesOf, type StageGateStop } from './components/stageGate'
+import { checkpointsOf, type CheckpointStop } from './components/obstacle'
 import { createStepper, stepsPerSecond } from './components/steps'
 import { Treadmill, TREADMILL_STATE, treadmillStepValue, type TreadmillTick } from './components/treadmill'
-import { loadPerStep, loadWins, padTop, savePerStep, saveWins } from './components/wins'
+import { padTop } from './components/wins'
 import { qualifies, StepPad, type StepPadOffer } from './components/stepPad'
 import { KeyboardStyle } from './data/keyboardStyle'
+import { localKeyboardSave, withReached } from './save'
 
 /**
  * Keyboard Escape, as an application (ADR 0069, ADR 0071).
@@ -44,11 +46,20 @@ const feel: PressFeel = { ...DEFAULT_PRESS }
 const curve: ProgressCurve = { ...GAME_CURVE }
 const pops: PopupFeel = { ...DEFAULT_POPUP }
 
-/** Survive a reload. The game's own keys: Experience and Wins are this game's stats, not the platform's save shape. */
-let experience = loadExperience()
-let wins = loadWins()
+/**
+ * Survive a reload, through the adapter and nothing else (Kodjo's rule): this browser's storage now, platform accounts
+ * later. Experience and Wins are this game's stats, not the platform's save shape.
+ */
+const saves = localKeyboardSave()
+const saved = saves.load()
+let experience = saved.experience
+let wins = saved.wins
 /** What a step pays (ADR 0082): the last `StepPad` taken, or the curve's one. */
-let perStep = loadPerStep(BASE_PER_STEP)
+let perStep = saved.perStep
+/** The checkpoints reached, by level (ADR 0211). */
+let reached = saved.reached
+/** Everything above, as it is now. */
+const persist = (): void => saves.save({ experience, wins, perStep, reached })
 /** Cash-outs the rules reported this tick, banked here and popped on the next frame. */
 const cashedOut: { wins: number; at: { x: number; y: number; z: number } }[] = []
 /**
@@ -77,11 +88,31 @@ const NO_STATES: ReadonlySet<string> = new Set()
 /** The stepper's report for the tick in progress, held until the tick's contacts have said whether we are on a treadmill. */
 let stepsThisTick = 0
 
-/** The level being played's stage gates and spawn, for the teleport window (ADR 0203); read as each level loads. */
-let gates: readonly StageGateStop[] = []
+/** The level being played's checkpoints and spawn, for the teleport window (ADR 0203); read as each level loads. */
+let checkpoints: readonly CheckpointStop[] = []
 let start: Vec3 = vec3(0, 3, 0)
 /** Where the teleport window asked to go, until the rules take it on the next tick. */
 let wantTeleport: Teleport | null = null
+/**
+ * The level being played, by name, for what reached checkpoints are saved under — `null` until the client exists.
+ * A trigger walked into before then (a spawn inside one) waits in `reachedEarly`.
+ */
+let levelName: string | null = null
+const reachedEarly: WorldNode[] = []
+/** An Obstacle's trigger was walked into (ADR 0211): its checkpoint is reached for good, saved once. */
+const reach = (node: WorldNode): void => {
+  if (levelName === null) {
+    if (!reachedEarly.includes(node)) reachedEarly.push(node)
+    return
+  }
+  const stop = checkpoints.find((s) => s.node === node)
+  if (stop === undefined) return
+  const next = withReached(reached, levelName, stop.key)
+  if (next === reached) return
+  reached = next
+  persist()
+}
+const isReached = (key: string): boolean => levelName !== null && (reached[levelName] ?? []).includes(key)
 
 const client = await startTpsClient({
   ...KEYBOARD_MODE,
@@ -124,10 +155,11 @@ const client = await startTpsClient({
    * editor calls them with no callback and still teleports — and the client hears about the payout here.
    */
   session: (loaded, opts) => {
-    gates = stageGatesOf(loaded, STAND_OFFSET)
+    checkpoints = checkpointsOf(loaded, STAND_OFFSET)
     start = spawnOf(loaded)
     return keyboardSession(loaded, {
       ...opts,
+      onReached: reach,
       // The teleport window's pick, handed over once (ADR 0203).
       requested: () => {
         const to = wantTeleport
@@ -139,7 +171,7 @@ const client = await startTpsClient({
       onStepPad: (offer: StepPadOffer) => {
         if (!qualifies(wins, offer) || offer.perStep === perStep) return
         perStep = offer.perStep
-        savePerStep(perStep)
+        persist()
       },
       // Once per tick while standing on it: this tick's steps are the treadmill's, at its tier, whether or not a
       // direction was held (ADR 0080, ADR 0081).
@@ -182,8 +214,10 @@ const styleOf = (id: string) => {
 const keycaps = drawKeycaps(client, look, shape, feel, () => GAME_KEYS, styleOf)
 const hud = createHud(client, curve)
 const popups = createPopups(client, pops)
+levelName = client.levelName
+for (const node of reachedEarly.splice(0)) reach(node)
 createTeleportWindow(client, {
-  rows: () => teleportRows(start, gates),
+  rows: () => teleportRows(start, checkpoints, isReached),
   go: (to) => {
     wantTeleport = to
   },
@@ -284,7 +318,7 @@ const stylePads = (): void => {
   }
 }
 
-/** Written back on a timer, not per key: a struck cap is a `localStorage` write and there are several a second. */
+/** Written back on a timer, not per step: steps pay several times a second, and each would be a save. */
 let sinceSave = 0
 const SAVE_EVERY = 3
 
@@ -356,9 +390,7 @@ client.onFrame((dt) => {
   sinceSave += dt
   if (sinceSave >= SAVE_EVERY) {
     sinceSave = 0
-    saveExperience(experience)
-    saveWins(wins)
-    savePerStep(perStep)
+    persist()
   }
 })
 
@@ -387,11 +419,11 @@ movement.addBinding(speedPick, 'studs', { min: 1, max: 1000, step: 1, label: 'sp
 const loop = client.debugPane.addFolder({ title: 'Progression', expanded: false })
 loop.addButton({ title: 'Reset experience' }).on('click', () => {
   experience = 0
-  saveExperience(0)
+  persist()
 })
 loop.addButton({ title: 'Reset wins' }).on('click', () => {
   wins = 0
-  saveWins(0)
+  persist()
 })
 // Set the Level outright (Kodjo's call, in place of an XP grant): Experience goes to exactly where that Level
 // starts. It follows the Level as it is earned (the frame loop refreshes it), and a value that already matches
@@ -401,12 +433,12 @@ const levelSlider = loop.addBinding(levelPick, 'level', { min: 0, max: 500, step
 levelSlider.on('change', (e) => {
   const level = Math.round(e.value)
   if (levelAt(experience, curve).level !== level) experience = experienceForLevel(level, curve)
-  if (e.last) saveExperience(experience)
+  if (e.last) persist()
 })
 // The same for Wins: the step pads are gated on them, and earning 50K by running is not a debug workflow.
 const grantWins = { amount: 100 }
 loop.addBinding(grantWins, 'amount', { min: 0, step: 1, label: 'grant Wins' })
 loop.addButton({ title: 'Add wins' }).on('click', () => {
   wins += Math.max(0, Math.floor(grantWins.amount))
-  saveWins(wins)
+  persist()
 })

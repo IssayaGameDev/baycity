@@ -6,13 +6,13 @@
 
 No component, node or list declares a stage. A stage is whatever platforms sit between the spawn and a
 `WinsPad`. No checkpoints: **falling anywhere is the level's spawn**. Nothing locks a stage. Both Kodjo's calls.
-A stage gate ([stage-gates.md](stage-gates.md)) is a place to teleport to, not a respawn point.
+A checkpoint ([obstacles.md](obstacles.md)) is a place to teleport to, not a respawn point.
 
 ## `WinsPad`
 
 | Param | Default | Meaning |
 | --- | --- | --- |
-| `wins` | 1 | paid on touch |
+| `wins` | 1 | paid on touch — unless an `Obstacle` points at the pad: then its `wins` (ADR 0211) |
 
 `onContact → effects.progress(node)` every tick stood on it. `keyboardSession` reads `WinsPad` off the node,
 sets a pending teleport to the spawn (`{ position }`, no yaw: you keep facing as you were), and calls
@@ -24,7 +24,7 @@ applies `takeTeleport()` on the next tick: position set, velocity zeroed, `groun
 
 ## Wins
 
-`let wins` in `main.ts`; `loadWins`/`saveWins` under `keyboard.wins`. Shown on the HUD's left edge. Spent on
+`let wins` in `main.ts`, saved through the game's save adapter under `keyboard.wins` ([progression.md](progression.md)). Shown on the HUD's left edge. Spent on
 nothing yet except gating `StepPad`s ([pads.md](pads.md)). Debug grant: Progression folder.
 
 ## Death
@@ -42,13 +42,14 @@ interface KeyboardSessionOptions extends ModeSessionOptions {
   onTreadmill?: (on: TreadmillTick) => void       // per tick
   onStepPad?: (offer: StepPadOffer, node: WorldNode) => void  // per tick
   requested?: () => Teleport | null               // a teleport the game asks for (ADR 0202)
+  onReached?: (node: WorldNode) => void          // an Obstacle's trigger walked into (ADR 0211)
 }
 ```
 
-`effects.progress(node)` dispatches on the node's component: `StepPad` → `onStepPad`; `Treadmill` →
+`effects.progress(node)` dispatches on the node's component: `Obstacle` → `onReached` (its trigger, [obstacles.md](obstacles.md)); `StepPad` → `onStepPad`; `Treadmill` →
 `onTreadmill`; `WinsPad` → cash-out. `progress()` is always `-1`: nothing persists through the platform.
 `takeTeleport()`: the cash-out's if one waits, else `opts.requested?.()` — so a request on a cash-out's tick lands
-the tick after ([stage-gates.md](stage-gates.md)).
+the tick after ([obstacles.md](obstacles.md)).
 
 ## Level
 
