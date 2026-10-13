@@ -72,7 +72,8 @@ export type {
   StepKind,
   Timing,
 } from './sequence'
-export { hydratePrefabs, relinkPrefabs, stripHydrated, prefabRefsIn, retargetRef, unlinkPrefab, unlinkedNode, type UnlinkDeps } from './prefabs'
+export { hydratePrefabs, relinkPrefabs, stripHydrated, prefabRefsIn, retargetInto, retargetRef, unlinked, unlinkPrefab, unlinkedNode, type Unlinked, type UnlinkDeps } from './prefabs'
+export { REF_PATH_SEPARATOR, refInto, refPathOf } from './refPath'
 export { OVERRIDE_FIELDS, OVERRIDE_FIELD_NAMES, addedIdsOf, childListsOf, forEachNode, idsUnder, overrideFieldEmpty, overrideFieldsSet } from './tree'
 export type { OverrideField } from './tree'
 export { fingerprintLevel, fingerprintGeometry, firstDifference } from './fingerprint'

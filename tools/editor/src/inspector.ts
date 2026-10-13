@@ -1,5 +1,5 @@
 import { vec3, type Vec3 } from '@mp/core'
-import { COLLIDER, LIGHT, MATERIAL_OVERRIDE, RENDERER, SEQUENCE, SPAWN, compileSequence, readStages, sequenceOf, unitColliderFor, type ColliderDesc } from '@mp/content'
+import { COLLIDER, LIGHT, MATERIAL_OVERRIDE, RENDERER, SEQUENCE, SPAWN, compileSequence, readStages, refPathOf, sequenceOf, unitColliderFor, type ColliderDesc } from '@mp/content'
 import { sharedComponents, visibleParams, type AssetSpec, type ParamSpec } from '@mp/components'
 import { QUANT_BOUND } from '@mp/net'
 import { DEFAULT_POSTFX, DEFAULT_SKY_PARAMS } from '@mp/render-three'
@@ -246,8 +246,8 @@ const COMPONENT_ICONS: Readonly<Record<string, IconName>> = {
 }
 export const componentIcon = (type: string): IconName => COMPONENT_ICONS[type] ?? 'component'
 
-/** Why a reference field cannot take something out of its reach (`nodeChoices`, stage C4). */
-const UNREACHABLE = 'a piece inside another prefab cannot be linked from here'
+/** Why a reference field cannot take a row (`refTo` is `null`): one not in this document. Everything in it reaches (ADR 0219). */
+const UNREACHABLE = 'that object is not in this document'
 
 /**
  * The document's nodes as the Hierarchy lays them out, for a reference field's picker (ADR 0178): `offer(j)` says
@@ -854,6 +854,12 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
       if (peers === null) followers.push(() => show(now()))
     }
     const idle = (control: HTMLElement): boolean => !control.contains(document.activeElement)
+    /** How a reference field names node `j`, which `ref` points at: by its placement too when it points into one (ADR 0219). */
+    const refLabel = (ref: string, j: number): string => {
+      const path = refPathOf(ref)
+      const placement = path === null ? null : doc.refTarget(at, path.placement)
+      return placement === null ? doc.label(j) : `${doc.label(placement)} › ${doc.label(j)}`
+    }
 
     switch (spec.kind) {
       case 'number': {
@@ -1079,7 +1085,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         const shownFor = (v: unknown): RefShown => {
           if (typeof v !== 'string') return null
           const j = doc.refTarget(at, v)
-          return j === null ? { label: `missing · ${v.slice(0, 6)}`, icon: 'warn', missing: true } : { label: doc.label(j), icon: doc.refOf(j) === null ? 'object' : 'prefab' }
+          return j === null ? { label: `missing · ${v.slice(0, 6)}`, icon: 'warn', missing: true } : { label: refLabel(v, j), icon: doc.refOf(j) === null ? 'object' : 'prefab' }
         }
         // Written, then shown as written: nothing redraws a field for this tab's own edit — the room's refresh is for
         // everyone else's — so it showed None until a reload.
@@ -1131,25 +1137,25 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
         const glyph = componentIcon(spec.of)
         const ofType = (j: number): ComponentView[] => doc.components(j).filter((c) => c.type === spec.of)
         /** A component's name in the field: its object's, and the ordinal where the object has more than one. */
-        const named = (j: number, id: string): string => {
+        const named = (j: number, id: string, node?: string): string => {
           const all = ofType(j)
           const n = all.findIndex((c) => c.id === id)
-          return `${doc.label(j)} (${typeLabel}${all.length > 1 ? ` ${n + 1}` : ''})`
+          return `${node === undefined ? doc.label(j) : refLabel(node, j)} (${typeLabel}${all.length > 1 ? ` ${n + 1}` : ''})`
         }
         /** Where it points: the node's index and the component, the old shape — a bare node id — read as its first. */
-        const resolve = (v: unknown): { j: number; id: string } | null | 'missing' => {
+        const resolve = (v: unknown): { j: number; id: string; node: string } | null | 'missing' => {
           const ref: unknown = typeof v === 'string' ? { node: v, component: '' } : v
           if (typeof ref !== 'object' || ref === null) return null
           const { node, component } = ref as { node?: unknown; component?: unknown }
           if (typeof node !== 'string' || typeof component !== 'string') return null
           const j = doc.refTarget(at, node)
           const c = j === null ? undefined : component === '' ? ofType(j)[0] : ofType(j).find((x) => x.id === component)
-          return j === null || c === undefined ? 'missing' : { j, id: c.id }
+          return j === null || c === undefined ? 'missing' : { j, id: c.id, node }
         }
         const shownFor = (v: unknown): RefShown => {
           const r = resolve(v)
           if (r === null) return null
-          return r === 'missing' ? { label: `missing ${typeLabel}`, icon: 'warn', missing: true } : { label: named(r.j, r.id), icon: glyph }
+          return r === 'missing' ? { label: `missing ${typeLabel}`, icon: 'warn', missing: true } : { label: named(r.j, r.id, r.node), icon: glyph }
         }
         // Written, then shown as written, as an object field's is.
         const store = (v: { node: string; component: string } | null): void => {

@@ -676,9 +676,93 @@ describe('node references (stage C4)', () => {
     placeRef(doc, vec3(0, 0, 0))
     doc.placeModel('m', vec3(5, 0, 0))
     expect(doc.nodeChoices(1), 'the inherited pad, plus the two level nodes').toHaveLength(3)
-    // The other direction: an own node is not offered anything living inside a prefab.
+    // The other direction: an own node is offered a piece by its placement (ADR 0219), never by the bare id.
     const inheritedId = doc.prefabAt(PAD_ID)!.children![0]!.id
-    expect(doc.nodeChoices(2).map((c) => c.id)).not.toContain(inheritedId)
+    const offered = doc.nodeChoices(2)
+    expect(offered.map((c) => c.id)).not.toContain(inheritedId)
+    expect(offered.find((c) => c.id === `${level.nodes[0]!.id}/${inheritedId}`)?.label, 'labelled by its placement').toBe(`${doc.label(0)} › ${doc.label(1)}`)
+  })
+
+  /** Kodjo's call (ADR 0219): a reference into a placement keeps naming the same object through every edit that re-ids it. */
+  describe('a reference into a placement', () => {
+    const pieceOf = (doc: Doc, root: number): number => [...Array(doc.count()).keys()].find((i) => doc.kindOf(i) === 'inherited' && doc.parentOf(i) === root)!
+    /** A placement, and a level object pointing at its piece. */
+    const pointedInto = (): { level: Level; doc: Doc; target: () => unknown } => {
+      const level = blank()
+      const doc = levelDoc(level, REG)
+      const root = placeRef(doc, vec3(0, 0, 0))
+      const w = doc.placeModel('m', vec3(5, 0, 0))
+      doc.setName(w, 'watcher')
+      doc.addComponent(w, Linked.type)
+      doc.setParams(w, idOf(doc, w, Linked.type), { target: doc.refTo(w, pieceOf(doc, root)) })
+      const target = (): unknown => doc.components(named(doc, 'watcher')).find((c) => c.type === Linked.type)?.params.target
+      return { level, doc, target }
+    }
+
+    it('names the piece by its placement, and finds it', () => {
+      const { level, doc, target } = pointedInto()
+      expect(target()).toBe(`${level.nodes[0]!.id}/pad`)
+      expect(doc.refTarget(named(doc, 'watcher'), target() as string)).toBe(pieceOf(doc, 0))
+    })
+
+    it('points at the unlinked object once its placement is unlinked, in the same edit', () => {
+      const { doc, target } = pointedInto()
+      const batches: number[] = []
+      doc.onOps = (batch) => void batches.push(batch.ops.length)
+      expect(doc.unlinkNode(0)).toBe(true)
+      expect(batches, 'one batch: the unlink and the re-point').toHaveLength(1)
+      expect(batches[0], 'the replacement, then the watcher’s write').toBeGreaterThanOrEqual(2)
+      const child = doc.refTarget(named(doc, 'watcher'), target() as string)
+      expect(child, 'a plain id now, found').not.toBeNull()
+      expect(doc.kindOf(child!)).toBe('own')
+      expect(doc.parentOf(child!)).toBe(0)
+      expect(target()).not.toContain('/')
+    })
+
+    it('points at the unlinked object when the prefab is unlinked everywhere', () => {
+      const { doc, target } = pointedInto()
+      expect(doc.unlinkPrefab(PAD_ID)).toBe(1)
+      const child = doc.refTarget(named(doc, 'watcher'), target() as string)
+      expect(child).not.toBeNull()
+      expect(doc.parentOf(child!)).toBe(0)
+    })
+
+    it('points into the new placement when what it names is saved as a prefab', () => {
+      const level = blank()
+      const doc = levelDoc(level, REG)
+      const group = doc.placeModel('m', vec3(0, 0, 0))
+      doc.setName(group, 'group')
+      const inner = doc.placeModel('m', vec3(1, 0, 0))
+      doc.setName(inner, 'inner')
+      doc.reparent(named(doc, 'inner'), named(doc, 'group'), 0)
+      const w = doc.placeModel('m', vec3(5, 0, 0))
+      doc.setName(w, 'watcher')
+      doc.addComponent(w, Linked.type)
+      const innerId = level.nodes[0]!.children![0]!.id
+      doc.setParams(w, idOf(doc, w, Linked.type), { target: innerId })
+      const groupId = level.nodes[0]!.id
+
+      const at = named(doc, 'group')
+      expect(doc.linkToPrefab(at, 'bbbbbbbbbbbbbbbb', doc.definitionOf(at)!)).toBe(true)
+      const target = doc.components(named(doc, 'watcher')).find((c) => c.type === Linked.type)?.params.target
+      expect(target).toBe(`${groupId}/${innerId}`)
+      const found = doc.refTarget(named(doc, 'watcher'), target as string)
+      expect(found !== null && doc.kindOf(found)).toBe('inherited')
+      expect(doc.label(found!)).toBe('inner')
+    })
+
+    it('follows a duplicated placement duplicated with it', () => {
+      const { level, doc } = pointedInto()
+      const holder = doc.placeModel('m', vec3(0, 0, 9))
+      doc.setName(holder, 'holder')
+      doc.reparent(0, named(doc, 'holder'), 0)
+      doc.reparent(named(doc, 'watcher'), named(doc, 'holder'), 1)
+      doc.duplicate(named(doc, 'holder'))
+      const [original, copy] = level.nodes
+      const refOf = (h: Node): unknown => h.children![1]!.components.find((c) => c.type === Linked.type)?.params.target
+      expect(refOf(original!)).toBe(`${original!.children![0]!.id}/pad`)
+      expect(refOf(copy!), 'into the copy’s placement').toBe(`${copy!.children![0]!.id}/pad`)
+    })
   })
 
   /**
@@ -696,11 +780,14 @@ describe('node references (stage C4)', () => {
     const pieceId = doc.prefabAt(PAD_ID)!.children![0]!.id
     expect(doc.refTo(pieceA, pieceA)).toBe(pieceId)
     expect(doc.refTo(pieceA, rootB), 'a piece reaches the level').toBe(level.nodes[1]!.id)
-    expect(doc.refTo(pieceA, pieceB), 'not the twin in the other placement').toBeNull()
+    // The twin in the other placement, by that placement (ADR 0219).
+    const idB = level.nodes[1]!.id
+    expect(doc.refTo(pieceA, pieceB), 'the twin in the other placement, by it').toBe(`${idB}/${pieceId}`)
+    expect(doc.refTarget(pieceA, `${idB}/${pieceId}`)).toBe(pieceB)
     // A placement's root resolves inside its placement first, as the loader does: the prefab root's references to its
     // pieces, placed, are its own pieces — Kodjo's Obstacle on the InterLevel showed every one missing.
     expect(doc.refTo(rootA, pieceA), 'a placement reaches its own pieces').toBe(pieceId)
-    expect(doc.refTo(rootA, pieceB), 'not another placement’s').toBeNull()
+    expect(doc.refTo(rootA, pieceB), 'another placement’s, by it').toBe(`${idB}/${pieceId}`)
     expect(doc.refTarget(rootA, pieceId), 'and finds its own').toBe(pieceA)
     expect(doc.refTarget(rootB, pieceId)).toBe(pieceB)
     expect(doc.refTarget(pieceA, pieceId)).toBe(pieceA)
@@ -709,8 +796,13 @@ describe('node references (stage C4)', () => {
     expect(doc.refTarget(rootA, doc.refTo(rootA, rootB)!)).toBe(rootB)
     expect(doc.refTarget(rootA, 'nobody')).toBeNull()
     const other = doc.placeModel('m', vec3(9, 0, 0))
-    expect(doc.refTo(other, pieceA), 'a level node does not reach into a prefab').toBeNull()
-    expect(doc.refTarget(other, pieceId)).toBeNull()
+    const idA = level.nodes[0]!.id
+    expect(doc.refTo(other, pieceA), 'a level node reaches into a placement by it').toBe(`${idA}/${pieceId}`)
+    expect(doc.refTarget(other, `${idA}/${pieceId}`)).toBe(pieceA)
+    expect(doc.refTarget(other, pieceId), 'not by the bare piece id: two placements share it').toBeNull()
+    expect(doc.refTarget(other, `${idA}/${doc.prefabAt(PAD_ID)!.id}`), 'the prefab’s root, into a placement, is the placement').toBe(rootA)
+    expect(doc.refTarget(other, `${idA}/nobody`)).toBeNull()
+    expect(doc.refTarget(other, `nobody/${pieceId}`)).toBeNull()
   })
 
   it('re-points a reference when the subtree carrying it is duplicated', () => {

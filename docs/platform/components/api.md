@@ -24,10 +24,12 @@ Package `packages/components`. Headless; deps `@mp/content`, `@mp/core` (`@mp/ph
 | `nodeRef` | — | `string \| null`, default `null` | target unchecked |
 | `componentRef` (ADR 0177) | `of: string` — the component type it takes; `contacts?: true` (to a Collider, ADR 0210) — a touch on it runs the holder's `onContact` too | `ComponentRef \| null` = `{ node, component }` (a node id, found in the reference's scope as a `nodeRef` is, and one of its components by id), default `null` | shape; target unchecked. A bare node id — the old shape, until the box's content is migrated — reads as `{ node, component: '' }`: the node's first of the type |
 
-**Reference scope** (`LoadedLevel.findNode`; the editor's `reaches` in `editorDoc.ts` offers the same): a level node
-names level nodes; a node a placement inherited names its own placement's nodes, then the level's. **Open — Kodjo's
-call, to be fixed:** a level node cannot name a node *inside* a prefab placement (the editor does not offer it, the
-loader would not find it); Unity allows it.
+**Reference scope** (`LoadedLevel.findNode`; the editor's `refTarget` in `editorDoc.ts` resolves the same): a plain id
+— a level node names level nodes; a node a placement inherited names its own placement's nodes, then the level's.
+**Into a placement** (ADR 0219): `<placement id>/<node id>` (`refInto`, `refPathOf`, `packages/content/src/refPath.ts`)
+— the placement found as a plain id is, then the node by its prefab id in the scope that placement opens; the prefab's
+root id names the placement. From the level or from another placement. Unlink, Save as prefab and duplicate keep it
+naming the same object (`content.md`, `editor.md`).
 
 `readParams(decls, raw, at): Params<D>` — absent key → default; unknown key dropped; throws `ComponentError`. `defaultsOf`, `Params<D>`, `ParamDecls`, `RawParams`.
 

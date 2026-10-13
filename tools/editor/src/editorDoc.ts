@@ -51,7 +51,10 @@ import {
   PRIMITIVE_PRESETS,
   type BuiltinModel,
   type PrimitiveKind,
-  unlinkedNode,
+  unlinked,
+  retargetInto,
+  refInto,
+  refPathOf,
   childListsOf,
   forEachNode,
   overrideFieldsSet,
@@ -385,12 +388,12 @@ export interface Doc {
    */
   nodeChoices: (i: number) => readonly { readonly id: string; readonly label: string }[]
   /**
-   * The value a `nodeRef` on node `i` stores to point at node `j` — `j`'s id — or `null` when `j` is out of its
-   * reach, by the rule `nodeChoices` lists by (ADR 0176). By index, not id: two placements of one prefab carry the
-   * same piece ids, and a drag names the row it was.
+   * The value a `nodeRef` on node `i` stores to point at node `j` — `j`'s id, or `<placement>/<id>` for a piece of
+   * another placement (ADR 0219) — or `null` when `j` is out of its reach, by the rule `nodeChoices` lists by
+   * (ADR 0176). By index, not id: two placements of one prefab carry the same piece ids, and a drag names the row it was.
    */
   refTo: (i: number, j: number) => string | null
-  /** Where a `nodeRef` on node `i` holding `id` points: its own placement's piece first, then the level's. */
+  /** Where a `nodeRef` on node `i` holding `id` points: its own placement's piece first, then the level's; a path into its placement. */
   refTarget: (i: number, id: string) => number | null
 
   // ---- prefab overrides ---------------------------------------------------------------------------
@@ -777,10 +780,22 @@ const docOver = (
   /** A placement answers to its prefab root's id too, inside its scope: what a piece's reference to the root holds. */
   const prefabRootIdOf = (o: DocNode): string | undefined =>
     o.owner === undefined && o.authored.prefab !== undefined ? level.prefabs?.[o.authored.prefab]?.id : undefined
-  /** Where a reference on node `i` holding `id` points, in `all`: its own placement first, then the level. */
+  /**
+   * Where a reference on node `i` holding `id` points, in `all`: its own placement first, then the level. A reference
+   * into a placement (`<placement>/<node>`, ADR 0219) finds the placement so, then the piece in it — as the loader does.
+   */
   const refTargetIn = (all: readonly DocNode[], i: number, id: string): number | null => {
     const n = all[i]
     if (n === undefined) return null
+    const path = refPathOf(id)
+    if (path !== null) {
+      const p = refTargetIn(all, i, path.placement)
+      const placement = p === null ? undefined : all[p]
+      if (placement === undefined || placement.owner !== undefined || placement.authored.prefab === undefined) return null
+      if (prefabRootIdOf(placement) === path.node) return p
+      const piece = all.findIndex((o) => o.owner === placement.authored && o.authored.id === path.node)
+      return piece >= 0 ? piece : null
+    }
     const scope = scopeOf(n)
     const own = scope === undefined ? -1 : all.findIndex((o) => scopeOf(o) === scope && (o.authored.id === id || prefabRootIdOf(o) === id))
     const at = own >= 0 ? own : all.findIndex((o) => o.owner === undefined && o.authored.id === id)
@@ -800,11 +815,12 @@ const docOver = (
     return driven.by.get(i) ?? []
   }
   /**
-   * Whether a `nodeRef` on `n` may name `o` (stage C4): anything names the level's own nodes, and a piece is named only
-   * from inside its placement — by the placement's other pieces and by the placement itself. A level node naming a
-   * piece is open (Kodjo's call, `components/api.md`): the loader would not find it.
+   * Whether a `nodeRef` on `n` names `o` by its plain id (stage C4): anything names the level's own nodes, and a piece
+   * from inside its placement — by the placement's other pieces and by the placement itself.
    */
   const reaches = (n: DocNode, o: DocNode): boolean => o.owner === undefined || o.owner === scopeOf(n)
+  /** What a reference on `n` holds to name `o`: its id where it `reaches`, else by its placement (ADR 0219). */
+  const refValue = (n: DocNode, o: DocNode): string => (reaches(n, o) || o.owner === undefined ? o.authored.id : refInto(o.owner.id, o.authored.id))
 
   /**
    * Compiled sequences, keyed by what they say rather than by object: the Inspector patches a component's
@@ -1102,6 +1118,53 @@ const docOver = (
       for (const kids of childListsOf(x)) for (const kid of kids) repoint(kid)
     }
     repoint(root)
+  }
+
+  /**
+   * The ops that re-point every reference on this document's nodes, but `skip`'s, that `to(k, id)` maps — `k` the node
+   * holding it — each a parameter write where its value is authored, as the Inspector's would be (ADR 0219).
+   */
+  const repointOps = (to: (k: number, id: string) => string | undefined, skip: (k: number) => boolean): Op[] => {
+    const ops: Op[] = []
+    nodes().forEach((n, k) => {
+      if (skip(k)) return
+      for (const c of n.view.components)
+        for (const key of refKeys(c.type)) {
+          const was = c.params[key]
+          const now = retargetRef(was, (id) => to(k, id))
+          if (now !== was) ops.push(...paramOpsFor(k, c.id, { [key]: now }))
+        }
+    })
+    return ops
+  }
+
+  /**
+   * Unlink these placements of this document's (ADR 0097) as one batch: each replaced by what it was drawing, and
+   * every reference into one (ADR 0219) re-pointed at what it holds now — in the replacements, where they hold such a
+   * reference to another of them, and on every other node.
+   */
+  const unlinkOps = (placements: readonly Node[]): Op[] => {
+    // `unlinked` needs the registry for two things the content package cannot know: which components are singletons,
+    // and which parameters are node references that must follow a re-id.
+    const deps = { types: registry, freshId, refKeysOf: refKeys }
+    const done = placements.flatMap((p) => {
+      const u = p.prefab === undefined ? undefined : unlinked(level, p, p.prefab, deps)
+      return u === undefined || u.node === p ? [] : [{ id: p.id, node: structuredClone(u.node), into: u.into }]
+    })
+    if (done.length === 0) return []
+    const into = new Map(done.map((d) => [d.id, d.into] as const))
+    const to = (id: string): string | undefined => {
+      const path = refPathOf(id)
+      return path === null ? undefined : into.get(path.placement)?.(path.node)
+    }
+    retargetInto({ ...level, nodes: done.map((d) => d.node) }, refKeys, (placement) => into.get(placement))
+    const all = nodes()
+    const gone = new Set(done.map((d) => d.id))
+    const inside = new Set<number>()
+    all.forEach((n, k) => {
+      if (n.owner === undefined && gone.has(n.authored.id)) for (let j = k; j < subtreeEnd(k); j++) inside.add(j)
+    })
+    return [...done.map((d): Op => ({ kind: 'replaceNode', id: d.id, node: d.node })), ...repointOps((_k, id) => to(id), (k) => inside.has(k))]
   }
 
   /** Display name: the typed name if there is one, else what the node is made of. */
@@ -1734,15 +1797,15 @@ const docOver = (
     nodeChoices: (i) => {
       const n = node(i)
       if (n === undefined) return []
-      return nodes()
-        .map((o, at) => ({ o, at }))
-        .filter(({ o }) => reaches(n, o))
-        .map(({ o, at }) => ({ id: o.authored.id, label: labelAt(at) }))
+      const all = nodes()
+      // A piece of another placement is named by it (ADR 0219), and labelled so: two placements share piece names.
+      const placementAt = (o: DocNode): number => all.findIndex((x) => x.owner === undefined && x.authored === o.owner)
+      return all.map((o, at) => ({ id: refValue(n, o), label: reaches(n, o) ? labelAt(at) : `${labelAt(placementAt(o))} › ${labelAt(at)}` }))
     },
     refTo: (i, j) => {
       const n = node(i)
       const o = node(j)
-      return n === undefined || o === undefined || !reaches(n, o) ? null : o.authored.id
+      return n === undefined || o === undefined ? null : refValue(n, o)
     },
     refTarget: (i, id) => refTargetIn(nodes(), i, id),
     overridesOf: (i) => describeRecord(i, true),
@@ -2085,37 +2148,39 @@ const docOver = (
     linkToPrefab: (i, assetId, root) => {
       const n = own(i)
       if (n === undefined || n.authored.prefab !== undefined || mode === 'prefab') return false
+      // What pointed at an object now inside the placement points into it (ADR 0219), in the same batch. Worked out
+      // before: the objects inside keep their ids in the prefab, and only a reference from outside changes.
+      const all = nodes()
+      const end = subtreeEnd(i)
+      const inside = (k: number): boolean => k >= i && k < end
+      const repoint = repointOps((k, id) => {
+        const j = refTargetIn(all, k, id)
+        const target = j === null ? undefined : all[j]
+        return j === null || j === i || !inside(j) || target === undefined || target.authored.prefab !== undefined ? undefined : refInto(n.authored.id, target.authored.id)
+      }, inside)
       // Resolved for this document so the inherited nodes read at once; not an op, and never written to the level.
       ;(level.prefabs ??= {})[assetId] = root
       const { children: _kids, ...rest } = n.authored
       const placement: Node = { ...rest, components: [], prefab: assetId }
-      commit([{ kind: 'replaceNode', id: n.authored.id, node: placement }])
+      commit([{ kind: 'replaceNode', id: n.authored.id, node: placement }, ...repoint])
       return true
     },
     unlinkPrefab: (id) => {
       if (mode === 'prefab') return 0
-      const ops: Op[] = []
-      const walk = (nodes: readonly Node[]): void => {
-        for (const n of nodes) {
-          // `unlinkedNode` needs the registry for two things this package cannot know: which components are
-          // singletons, and which parameters are node references that must follow a re-id.
-          if (n.prefab === id) ops.push({ kind: 'replaceNode', id: n.id, node: unlinkedNode(level, n, id, { types: registry, freshId, refKeysOf: refKeys }) })
-          for (const kids of childListsOf(n)) walk(kids)
-        }
-      }
-      walk(level.nodes)
+      const placements: Node[] = []
+      forEachNode(level.nodes, (n) => void (n.prefab === id && placements.push(n)))
+      const ops = unlinkOps(placements)
       if (ops.length > 0) commit(ops)
-      return ops.length
+      return placements.length
     },
     unlinkNode: (i) => {
       const n = node(i)
-      const id = n?.authored.prefab
       // Only a placement, and only one this document owns: an inherited node is part of a prefab's own
       // definition, and there is nothing in this level to rewrite for it.
-      if (n === undefined || id === undefined || n.owner !== undefined) return false
-      const next = unlinkedNode(level, n.authored, id, { types: registry, freshId, refKeysOf: refKeys })
-      if (next === n.authored) return false
-      commit([{ kind: 'replaceNode', id: n.authored.id, node: next }])
+      if (n === undefined || n.authored.prefab === undefined || n.owner !== undefined) return false
+      const ops = unlinkOps([n.authored])
+      if (ops.length === 0) return false
+      commit(ops)
       return true
     },
     nodeEnabled: (i) => node(i)?.view.enabled !== false,

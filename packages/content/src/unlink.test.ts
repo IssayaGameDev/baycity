@@ -208,3 +208,44 @@ describe('a sequence in an unlinked placement', () => {
     expect(ids).not.toContain('lamp')
   })
 })
+
+/** A reference into a placement (ADR 0219) — `<placement>/<piece>` — has to survive the placement being unlinked. */
+describe('a reference into an unlinked placement', () => {
+  const boss = (level: Level, id: string): Record<string, unknown> => level.nodes.find((n) => n.id === id)!.components[0]!.params
+
+  it('names what the placement holds now: a piece’s new id, the placement for its root, an added child its own', () => {
+    const level = levelWith([
+      { id: 'a', transform: at(0), components: [], prefab: 'P', overrides: { root: { addedChildren: [{ id: 'mine', transform: at(3), components: [] }] } } },
+      { id: 'w', transform: at(5), components: [comp('b', 'Boss', { target: 'a/lamp', zone: { node: 'a/lamp', component: 'c1' } })] },
+      { id: 'v', transform: at(6), components: [comp('b', 'Boss', { target: 'a/root', zone: { node: 'a/mine', component: '' } })] },
+    ])
+    unlinkPrefab(level, 'P', deps())
+    const lamp = level.nodes[0]!.children!.find((k) => k.components.some((c) => c.type === 'Renderer'))!
+    expect(lamp.id).not.toBe('lamp')
+    expect(boss(level, 'w')).toEqual({ target: lamp.id, zone: { node: lamp.id, component: 'c1' } })
+    expect(boss(level, 'v')).toEqual({ target: 'a', zone: { node: 'mine', component: '' } })
+  })
+
+  it('reaches what another placement’s record says, and leaves a reference into anything else alone', () => {
+    const eye: Node = { id: 'root', transform: at(0), components: [], children: [{ id: 'eye', transform: at(0), components: [comp('e', 'Boss', {})] }] }
+    const level: Level = {
+      ...levelWith([
+        { id: 'a', transform: at(0), components: [], prefab: 'P' },
+        { id: 'b', transform: at(9), components: [], prefab: 'Q', overrides: { eye: { params: { e: { target: 'a/lamp' } } } } },
+        { id: 'w', transform: at(5), components: [comp('b', 'Boss', { target: 'b/eye' })] },
+      ]),
+      prefabs: { P: definition(), Q: eye },
+    }
+    unlinkPrefab(level, 'P', deps())
+    const lamp = level.nodes[0]!.children!.find((k) => k.components.some((c) => c.type === 'Renderer'))!
+    expect(level.nodes[1]!.overrides?.eye?.params?.e?.target, 'the record on b').toBe(lamp.id)
+    expect(boss(level, 'w').target, 'into b, which stays a placement').toBe('b/eye')
+  })
+
+  it('follows a copied placement, in retargetRef, when the whole id is not mapped', () => {
+    const to = (id: string): string | undefined => (id === 'p' ? 'q' : undefined)
+    expect(retargetRef('p/x', to)).toBe('q/x')
+    expect(retargetRef({ node: 'p/x', component: 'c' }, to)).toEqual({ node: 'q/x', component: 'c' })
+    expect(retargetRef('r/x', to)).toBe('r/x')
+  })
+})

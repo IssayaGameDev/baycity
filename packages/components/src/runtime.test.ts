@@ -419,6 +419,42 @@ describe('node references (stage C4)', () => {
     expect(loaded.findNode(anchors[1]!, 'anchor')).toBe(anchors[1]!)
   })
 
+  /**
+   * A level node pointing inside a placement (ADR 0219, Kodjo's call): by the placement, then the piece — two
+   * placements of one prefab share piece ids, so the piece alone cannot say which.
+   */
+  it('resolves a reference into a placement — placement, then piece — from the level and from another placement', () => {
+    const prefab: Node = {
+      id: 'root',
+      name: 'pair',
+      transform: { position: vec3(0, 0, 0) },
+      components: [],
+      children: [{ id: 'anchor', transform: { position: vec3(1, 0, 0) }, components: [] }],
+    }
+    const level: Level = {
+      id: 'fx',
+      config: {},
+      prefabs: { pair: prefab },
+      nodes: [
+        { id: 'first', transform: { position: vec3(0, 0, 0) }, components: [], prefab: 'pair' },
+        { id: 'second', transform: { position: vec3(9, 0, 0) }, components: [], prefab: 'pair', overrides: { anchor: { added: [comp('a0', Linked.type, { target: 'first/anchor' })] } } },
+        { id: 'level', transform: { position: vec3(0, 5, 0) }, components: [comp('c0', Linked.type, { target: 'second/anchor' })] },
+      ],
+    }
+    const loaded = loadWith(level)
+    log.length = 0
+    createComponentRuntime(loaded, REG, { character: anyCharacter(), effects: noEffects() }).attach(0, 0, 1 / 60)
+    const [inFirst, inSecond] = loaded.allNodes.filter((n) => n.id === 'anchor')
+    const from = loaded.allNodes.find((n) => n.id === 'level')!
+    expect(loaded.findNode(from, 'second/anchor'), 'the second placement’s, not the first’s').toBe(inSecond)
+    expect(loaded.findNode(inSecond!, 'first/anchor'), 'from inside one placement into another').toBe(inFirst)
+    expect(loaded.findNode(from, 'second/root'), 'the prefab’s root, into a placement, is the placement').toBe(loaded.allNodes.find((n) => n.id === 'second'))
+    expect(loaded.findNode(from, 'anchor'), 'the bare piece id is not the level’s').toBeUndefined()
+    expect(loaded.findNode(from, 'level/anchor'), 'into something that is no placement').toBeUndefined()
+    expect(loaded.findNode(from, 'second/ghost')).toBeUndefined()
+    expect(log.sort()).toEqual(['link:anchor->anchor', 'link:level->anchor'])
+  })
+
   it('lets a reference set on a placement reach a level node, since that override lives in the level', () => {
     const prefab: Node = { id: 'root', name: 'one', transform: { position: vec3(0, 0, 0) }, components: [], children: [{ id: 'inner', transform: { position: vec3(0, 0, 0) }, components: [] }] }
     const level: Level = {

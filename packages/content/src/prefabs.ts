@@ -1,4 +1,5 @@
 import { effectiveNode, type TypeInfo } from './nodes'
+import { refInto, refPathOf } from './refPath'
 import { retargetSequenceParams } from './sequenceData'
 import { addedIdsOf, childListsOf, forEachNode } from './tree'
 
@@ -127,14 +128,22 @@ export interface UnlinkDeps {
 
 /**
  * A reference parameter's value with the node it names re-pointed: a `nodeRef`'s node id, or a `componentRef`'s
- * `{ node, component }` — the component id stays, since a copy's components keep theirs (ADR 0177). Anything else,
- * or a node `to` does not map, comes back as it was.
+ * `{ node, component }` — the component id stays, since a copy's components keep theirs (ADR 0177). A reference into
+ * a placement (ADR 0219) follows its placement when `to` maps the whole of it to nothing: a copy's, into the copy.
+ * Anything else, or a node `to` does not map, comes back as it was.
  */
 export const retargetRef = (value: unknown, to: (id: string) => string | undefined): unknown => {
-  if (typeof value === 'string') return to(value) ?? value
+  const map = (id: string): string | undefined => {
+    const whole = to(id)
+    if (whole !== undefined) return whole
+    const path = refPathOf(id)
+    const placement = path === null ? undefined : to(path.placement)
+    return path === null || placement === undefined ? undefined : refInto(placement, path.node)
+  }
+  if (typeof value === 'string') return map(value) ?? value
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return value
   const node = (value as { node?: unknown }).node
-  const moved = typeof node === 'string' ? to(node) : undefined
+  const moved = typeof node === 'string' ? map(node) : undefined
   return moved === undefined ? value : { ...value, node: moved }
 }
 
@@ -152,24 +161,42 @@ export const retargetRef = (value: unknown, to: (id: string) => string | undefin
  *
  * A node that does not reference `assetId` comes back as-is, by identity.
  */
-export const unlinkedNode = (level: Level, node: Node, assetId: string, deps: UnlinkDeps): Node => {
-  if (node.prefab !== assetId) return node
+export const unlinkedNode = (level: Level, node: Node, assetId: string, deps: UnlinkDeps): Node => unlinked(level, node, assetId, deps).node
+
+/** A placement unlinked (`unlinkedNode`), and what a reference into it (ADR 0219) names now. */
+export interface Unlinked {
+  readonly node: Node
+  /**
+   * What `<placement>/<inner>` becomes: the placement itself for its prefab's root, a piece's new id, a child the
+   * placement added its own id — those were the level's all along. `undefined`: nothing in it had that id.
+   */
+  readonly into: (inner: string) => string | undefined
+}
+
+/** `unlinkedNode`, with where every reference into the placement goes now. `node` is `node` itself when it is not one. */
+export const unlinked = (level: Level, node: Node, assetId: string, deps: UnlinkDeps): Unlinked => {
+  if (node.prefab !== assetId) return { node, into: () => undefined }
   const resolved = effectiveNode(level, node, deps.types)
   const { prefab: _dropped, overrides: _also, ...own } = node
   // The placement's own children were already its own; only the inherited ones are new to this id space —
   // and among those, what the placement added under its pieces was the level's all along, and keeps its ids
   // so whatever in the level names it still does (ADR 0151).
   const inherited = resolved.children.slice(0, resolved.inheritedCount).map((k) => structuredClone(k))
-  const repoint = reidForest(inherited, deps, addedIdsOf(node))
+  const kept = addedIdsOf(node)
+  const { repoint, map } = reidForest(inherited, deps, kept)
   // The placement's own components can name the children just re-minted too — a sequence on a prefab's root
   // always does, since its steps target the root's children — so they follow the same map.
   const components = structuredClone(resolved.components) as ComponentData[]
   for (const c of components) repoint(c)
+  const rootId = level.prefabs?.[assetId]?.id
   return {
-    ...own,
-    ...(resolved.name === undefined ? {} : { name: resolved.name }),
-    components,
-    children: [...inherited, ...resolved.children.slice(resolved.inheritedCount)],
+    node: {
+      ...own,
+      ...(resolved.name === undefined ? {} : { name: resolved.name }),
+      components,
+      children: [...inherited, ...resolved.children.slice(resolved.inheritedCount)],
+    },
+    into: (inner) => (inner === rootId ? node.id : (map.get(inner) ?? (kept.has(inner) ? inner : undefined))),
   }
 }
 
@@ -184,7 +211,11 @@ export const unlinkedNode = (level: Level, node: Node, assetId: string, deps: Un
  * reference is left naming an id that no longer exists anywhere. One map over all of them, then one pass to
  * re-point.
  */
-const reidForest = (roots: readonly Node[], deps: UnlinkDeps, keep: ReadonlySet<string> = new Set()): ((c: ComponentData) => void) => {
+const reidForest = (
+  roots: readonly Node[],
+  deps: UnlinkDeps,
+  keep: ReadonlySet<string> = new Set(),
+): { repoint: (c: ComponentData) => void; map: ReadonlyMap<string, string> } => {
   const map = new Map<string, string>()
   const rename = (x: Node): void => {
     // A subtree the level authored is already in its id space: left as it is, everything under it included.
@@ -207,7 +238,40 @@ const reidForest = (roots: readonly Node[], deps: UnlinkDeps, keep: ReadonlySet<
     for (const kid of x.children ?? []) retarget(kid)
   }
   for (const root of roots) retarget(root)
-  return repoint
+  return { repoint, map }
+}
+
+/**
+ * Every reference in `level` into a placement `into` knows (ADR 0219), re-pointed in place: `into(placement)` says,
+ * for an inner id, where a reference into that placement goes now. Components, what a placement added, and what its
+ * records patch — whose type is read off its prefab, a record being keyed by the prefab's node.
+ */
+export const retargetInto = (
+  level: Level,
+  refKeysOf: (type: string) => readonly string[],
+  into: (placement: string) => ((inner: string) => string | undefined) | undefined,
+): void => {
+  const to = (id: string): string | undefined => {
+    const path = refPathOf(id)
+    return path === null ? undefined : into(path.placement)?.(path.node)
+  }
+  const repoint = (c: ComponentData): void => {
+    for (const key of refKeysOf(c.type)) if (key in c.params) c.params[key] = retargetRef(c.params[key], to)
+  }
+  forEachNode(level.nodes, (n) => {
+    for (const c of n.components) repoint(c)
+    const prefab = n.prefab === undefined ? undefined : level.prefabs?.[n.prefab]
+    for (const [key, over] of Object.entries(n.overrides ?? {})) {
+      for (const c of over.added ?? []) repoint(c)
+      const pieces: Node[] = []
+      if (prefab !== undefined) forEachNode([prefab], (x) => void (x.id === key && pieces.push(x)))
+      for (const [cid, patch] of Object.entries(over.params ?? {})) {
+        const type = pieces[0]?.components.find((c) => c.id === cid)?.type
+        if (type === undefined) continue
+        for (const k of refKeysOf(type)) if (k in patch) patch[k] = retargetRef(patch[k], to)
+      }
+    }
+  })
 }
 
 /**
@@ -222,19 +286,21 @@ const reidForest = (roots: readonly Node[], deps: UnlinkDeps, keep: ReadonlySet<
  * `stripHydrated`'s business on the way to disk.
  */
 export const unlinkPrefab = (level: Level, assetId: string, deps: UnlinkDeps): number => {
-  let count = 0
+  const done = new Map<string, (inner: string) => string | undefined>()
   const walk = (nodes: Node[]): void => {
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i]!
-      const next = unlinkedNode(level, node, assetId, deps)
-      if (next !== node) {
-        nodes[i] = next
-        count += 1
+      const next = unlinked(level, node, assetId, deps)
+      if (next.node !== node) {
+        nodes[i] = next.node
+        done.set(node.id, next.into)
       }
       // Every list under it, what a placement added under its pieces included (ADR 0151).
       for (const kids of childListsOf(nodes[i]!)) walk(kids)
     }
   }
   walk(level.nodes)
-  return count
+  // What pointed into them points at what they hold now (ADR 0219).
+  if (done.size > 0) retargetInto(level, deps.refKeysOf, (placement) => done.get(placement))
+  return done.size
 }

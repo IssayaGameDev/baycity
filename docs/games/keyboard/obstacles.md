@@ -5,8 +5,8 @@ The checkpoints the teleport window sends a player to, and the window.
 
 ## `Obstacle`
 
-Singleton. Put on the InterLevel prefab's root, pointing at what is inside the prefab (a
-level node cannot point inside a placement, `docs/platform/components/api.md`).
+Singleton. Put on the InterLevel prefab's root, pointing at what is inside the prefab — or on a level node, pointing
+into a placement (`<placement>/<node>`, ADR 0219).
 
 | Param | Kind | Default | Meaning |
 | --- | --- | --- | --- |

@@ -269,5 +269,6 @@ why matters.
 | [0216](adr/0216-the-tick-is-60.md) | The tick is 60 a second |
 | [0217](adr/0217-stagegate-and-checkpoint-are-deleted.md) | StageGate and Checkpoint are deleted |
 | [0218](adr/0218-every-write-keeps-to-the-libraries.md) | Every write keeps to the libraries |
+| [0219](adr/0219-a-reference-can-point-into-a-placement.md) | A reference can point into a placement |
 
 `Design archive/` holds superseded design material and is not maintained.

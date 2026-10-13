@@ -20,6 +20,7 @@ import {
 import { SEQUENCE, sequenceOf } from './sequenceData'
 import { textOf, type TextDesc } from './text'
 import { drivenComponents, drivesOf } from './drives'
+import { refPathOf } from './refPath'
 import {
   COLLIDER,
   LIGHT,
@@ -452,8 +453,19 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
   /** scope -> node id -> node. Scope 0 is the level; each placement gets one for what it inherited. */
   const byScope = new Map<number, Map<string, WorldNode>>()
   let nextScope = 0
-  /** A node's own reference scope first, then the level's (stage C4). Filled as the tree is built. */
-  const findNode = (from: WorldNode, id: string): WorldNode | undefined => byScope.get(from.scope)?.get(id) ?? byScope.get(0)?.get(id)
+  /** The scope each placement opens, by its node: where a reference into it looks (ADR 0219). */
+  const innerOf = new Map<WorldNode, number>()
+  /**
+   * A node's own reference scope first, then the level's (stage C4); a reference into a placement (`<placement>/<node>`,
+   * ADR 0219) finds the placement that way, then the node in the scope it opens. Filled as the tree is built.
+   */
+  const findNode = (from: WorldNode, id: string): WorldNode | undefined => {
+    const path = refPathOf(id)
+    if (path === null) return byScope.get(from.scope)?.get(id) ?? byScope.get(0)?.get(id)
+    const placement = findNode(from, path.placement)
+    const inner = placement === undefined ? undefined : innerOf.get(placement)
+    return inner === undefined ? undefined : byScope.get(inner)?.get(path.node)
+  }
   /** Each node's text, for what a drive writes into it once the tree is built (ADR 0210). */
   const textByNode = new Map<WorldNode, TextItem>()
   const frames: Frame[] = []
@@ -698,6 +710,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     }
     register(scope, r.id)
     if (inner !== scope) {
+      innerOf.set(worldNode, inner)
       register(inner, r.id)
       const rootId = node.prefab === undefined ? undefined : level.prefabs?.[node.prefab]?.id
       if (rootId !== undefined) register(inner, rootId)
