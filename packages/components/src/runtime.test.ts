@@ -7,7 +7,6 @@ import { createComponentRuntime, characterAccess, hasHooks, HOOK_NAMES, type Eff
 import { createRegistry } from './registry'
 import { defineComponent } from './define'
 import { Bumper } from './shared/bumper'
-import { Checkpoint } from './shared/checkpoint'
 import { Hazard } from './shared/hazard'
 import { Sequence } from './shared/sequence'
 import { ENGINE_COMPONENTS } from './engine/index'
@@ -26,6 +25,9 @@ const levelOf = (nodes: Node[]): Level => ({ id: 'fx', config: {}, nodes })
 
 /** Data only: no hooks, so the runner has nothing to run for it. */
 const Tag = defineComponent({ type: 'Tag', params: {}, singleton: true })
+
+/** Progress on contact, handing over the node — as a game's pads report it. */
+const Goal = defineComponent({ type: 'Goal', params: {}, singleton: true, onContact: (_self, ctx, hit) => ctx.effects.progress(hit.node) })
 
 /** Counts every call, so a test can assert order and how often something ran. */
 const log: string[] = []
@@ -93,7 +95,7 @@ const Turner = defineComponent({
   },
 })
 
-const TEST_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Bumper, Checkpoint, Hazard, Sequence, Tag, Counter, Peeker, Wanderer, Touchy, Riser, Sneak, Turner])
+const TEST_REGISTRY = createRegistry([...ENGINE_COMPONENTS, Bumper, Goal, Hazard, Sequence, Tag, Counter, Peeker, Wanderer, Touchy, Riser, Sneak, Turner])
 
 const load = (nodes: Node[]): ReturnType<typeof instantiateLevel> =>
   instantiateLevel(createPhysicsWorld({ gravity: { x: 0, y: 0, z: 0 } }), levelOf(nodes), TEST_REGISTRY)
@@ -259,8 +261,8 @@ describe('the rules that own their reaction', () => {
     expect(fire([solid('t', comp('c1', Hazard.type))]).killed).toBe(1)
   })
 
-  it('reports progress at a checkpoint, handing over the node', () => {
-    const { progressed } = fire([solid('cp', comp('c1', Checkpoint.type))])
+  it('reports progress, handing over the node', () => {
+    const { progressed } = fire([solid('cp', comp('c1', Goal.type))])
     expect(progressed.map((n) => n.id)).toEqual(['cp'])
   })
 

@@ -7,7 +7,7 @@ import { isSharedComponent, SHARED_COMPONENT_TYPES, sharedComponents } from './i
 /** The shared-component lookup a game's data file resolves through (ADR 0077). */
 describe('shared components', () => {
   it('is the shared set, by name', () => {
-    expect(SHARED_COMPONENT_TYPES).toEqual(['Boss', 'Bumper', 'Checkpoint', 'Hazard', 'Sequence'])
+    expect(SHARED_COMPONENT_TYPES).toEqual(['Boss', 'Bumper', 'Hazard', 'Sequence'])
   })
 
   it('resolves names to definitions, in the order given', () => {

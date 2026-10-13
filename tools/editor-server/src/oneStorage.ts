@@ -17,7 +17,7 @@ import type { Level, Node, NodeOverride } from '../../../packages/content/src/ty
  *   which only a component registry knows and this tool has none — so it stays, and is named in the report.
  * - Empty fields a record kept (`addedChildren: []` among them) go, as `ops.ts` tidies them.
  *
- * **Imports nothing that needs `node_modules`**, like `motionStrip.ts`: `migrate-one-storage.sh` runs it from a
+ * **Imports nothing that needs `node_modules`**, like `componentStrip.ts`: `migrate-one-storage.sh` runs it from a
  * checkout of `origin/master` that has none. Planning is separate from writing, and pure.
  */
 

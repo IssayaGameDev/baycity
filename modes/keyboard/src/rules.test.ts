@@ -8,7 +8,6 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import type { Teleport } from '@mp/mode'
 
 import { KEYBOARD_REGISTRY, STAND_OFFSET, keyboardSession, type KeyboardTeleport } from './rules'
-import { StageGate } from './components/stageGate'
 import { checkpointsOf, Obstacle, requiresLevelText, shownText } from './components/obstacle'
 import { qualifies, StepPad } from './components/stepPad'
 import { stepsThisTick } from './components/steps'
@@ -185,26 +184,26 @@ describe('a step is a tick of held input, at a cadence set by Level (ADR 0081)',
   })
 })
 
-describe('stage gates (ADR 0202), listed as checkpoints until replaced', () => {
+describe('checkpoints (ADR 0202, ADR 0211)', () => {
   beforeAll(async () => {
     await initPhysics()
   })
 
-  const gate = (id: string, x: number, turn = 0): Node => ({ id, transform: { position: vec3(x, 1, 0), rotation: vec3(0, turn, 0) }, components: [comp(`${id}-g`, StageGate.type)] })
+  /** An Obstacle pointing nowhere: its teleport lands on its own node. */
+  const at = (id: string, x: number, turn = 0): Node => ({ id, transform: { position: vec3(x, 1, 0), rotation: vec3(0, turn, 0) }, components: [comp(`${id}-o`, Obstacle.type)] })
 
-  it('lists every gate in Hierarchy order — inside a parent too, collider or not — standing and facing as the node does', () => {
-    const area: Node = { id: 'area', transform: { position: vec3(100, 0, 0) }, components: [], children: [gate('inner', 5, Math.PI / 2)] }
-    const loaded = load([spawnAt(0), gate('first', 10), area, gate('last', 300)])
-    const gates = checkpointsOf(loaded, STAND_OFFSET)
-    expect(gates.every((g) => g.alwaysOpen), 'a gate is open without being reached').toBe(true)
-    expect(gates.map((g) => [g.number, g.position.x])).toEqual([
+  it('lists every obstacle in Hierarchy order — inside a parent too, collider or not — standing and facing as the node does', () => {
+    const area: Node = { id: 'area', transform: { position: vec3(100, 0, 0) }, components: [], children: [at('inner', 5, Math.PI / 2)] }
+    const loaded = load([spawnAt(0), at('first', 10), area, at('last', 300)])
+    const stops = checkpointsOf(loaded, STAND_OFFSET)
+    expect(stops.map((s) => [s.number, s.position.x])).toEqual([
       [1, 10],
       [2, 105],
       [3, 300],
     ])
-    expect(gates[0]!.position.y).toBeCloseTo(1 + STAND_OFFSET, 9)
-    expect(gates[0]!.yaw, 'facing +Z').toBeCloseTo(0, 9)
-    expect(gates[1]!.yaw, 'turned a quarter about +Y: facing +X').toBeCloseTo(Math.PI / 2, 9)
+    expect(stops[0]!.position.y).toBeCloseTo(1 + STAND_OFFSET, 9)
+    expect(stops[0]!.yaw, 'facing +Z').toBeCloseTo(0, 9)
+    expect(stops[1]!.yaw, 'turned a quarter about +Y: facing +X').toBeCloseTo(Math.PI / 2, 9)
   })
 
   it('is none in a level without one', () => {
@@ -212,7 +211,7 @@ describe('stage gates (ADR 0202), listed as checkpoints until replaced', () => {
   })
 
   it('takes the teleport the game asks for, once, after a cash-out waiting on the same tick', () => {
-    const loaded = load([spawnAt(0), gate('g', 50, Math.PI), pad('end', 10, comp('w', WinsPad.type))])
+    const loaded = load([spawnAt(0), at('g', 50, Math.PI), pad('end', 10, comp('w', WinsPad.type))])
     const [stop] = checkpointsOf(loaded, STAND_OFFSET)
     let asked: Teleport | null = { position: stop!.position, yaw: stop!.yaw }
     const rules = keyboardSession(loaded, {
@@ -224,7 +223,7 @@ describe('stage gates (ADR 0202), listed as checkpoints until replaced', () => {
     })
     rules.effects.progress(nodeById(loaded, 'end'))
     expect(rules.takeTeleport!(), 'the cash-out first').toEqual({ position: vec3(0, STAND_OFFSET, 0) })
-    expect(rules.takeTeleport!(), 'then the gate, facing its way').toEqual({ position: stop!.position, yaw: stop!.yaw })
+    expect(rules.takeTeleport!(), 'then the checkpoint, facing its way').toEqual({ position: stop!.position, yaw: stop!.yaw })
     expect(rules.takeTeleport!(), 'once').toBeNull()
   })
 })
@@ -274,7 +273,6 @@ describe('obstacles (ADR 0211)', () => {
     ])
     expect(stops[0]!.position.y).toBeCloseTo(1 + STAND_OFFSET, 9)
     expect(stops[0]!.yaw, 'the stand point faces +X').toBeCloseTo(Math.PI / 2, 9)
-    expect(stops.some((s) => s.alwaysOpen), 'an obstacle opens once reached').toBe(false)
   })
 
   it('pays what it says, over the pad’s own, per placement', () => {

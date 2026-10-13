@@ -12,7 +12,7 @@ import {
   type Node,
   type Level,
 } from '@mp/content'
-import { Bumper, Checkpoint, DEFAULT_REGISTRY, ENGINE_COMPONENTS, SHARED_COMPONENTS, Hazard, createRegistry, defineComponent } from '@mp/components'
+import { Bumper, DEFAULT_REGISTRY, ENGINE_COMPONENTS, SHARED_COMPONENTS, Hazard, createRegistry, defineComponent } from '@mp/components'
 import { eulerToQuat, mulQuat, quat, rotateVec3, vec3, type Vec3 } from '@mp/core'
 
 import { componentTypesInRaw, levelDoc, prefabDoc, unknownComponentTypes, type Doc } from './editorDoc'
@@ -467,7 +467,7 @@ describe('editing an inherited node writes an override', () => {
     placeRef(doc, vec3(0, 0, 0))
     placeRef(doc, vec3(8, 0, 0))
     doc.setParams(1, idOf(doc, 1, RENDERER), { material: MAT_A })
-    doc.addComponent(1, Checkpoint.type)
+    doc.addComponent(1, Hazard.type)
 
     /**
      * Two halves now (ADR 0091): the ops the prefab's own document would take, and the override this level
@@ -485,7 +485,7 @@ describe('editing an inherited node writes an override', () => {
     expect(doc.overridesOf(1), 'no longer an override').toEqual([])
     expect(paramOn(doc, 1, RENDERER, 'material'), 'still what was chosen').toBe(MAT_A)
     expect(paramOn(doc, 3, RENDERER, 'material'), 'and the other placement followed').toBe(MAT_A)
-    expect(typesOn(doc, 3)).toContain(Checkpoint.type)
+    expect(typesOn(doc, 3)).toContain(Hazard.type)
     expect('overrides' in level.nodes[0]!).toBe(false)
   })
 

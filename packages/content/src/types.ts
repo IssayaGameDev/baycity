@@ -202,8 +202,8 @@ export interface ComponentData {
  * A scene object: a transform, a **list** of components, and children.
  *
  * One type for everything, which is what makes a prefab's insides real objects rather than half-addressable
- * things inside one (ADR 0035). It also absorbed the old `Marker`: a checkpoint marker with a radius is a node
- * with a ball `Collider` and a `Checkpoint`.
+ * things inside one (ADR 0035). It also absorbed the old `Marker`: a marker with a radius is a node with a ball
+ * `Collider` and the component that gives it a meaning.
  *
  * `prefab` set means this node's components and children come from the shared definition of that name. The
  * placement keeps its own `id`, `name` and `transform` — Unity's model, where the instance root *is* the

@@ -38,14 +38,14 @@ describe('where a game uses a component', () => {
 
   // A level the server could not read may hold one: removing on a guess would leave the game unable to load it.
   it('refuses when a level of the game could not be read', () => {
-    const use = componentUse('Checkpoint', 'keyboard', LEVELS, PREFABS)
+    const use = componentUse('Boss', 'keyboard', LEVELS, PREFABS)
     expect(use).toEqual({ levels: [], prefabs: [], unreadable: ['broken'] })
-    expect(removalRefusal('Checkpoint', use)).toBe('broken could not be read, so Checkpoint may still be in it')
+    expect(removalRefusal('Boss', use)).toBe('broken could not be read, so Boss may still be in it')
   })
 
   it('lets it go when nothing uses it', () => {
     const levels = LEVELS.filter((l) => l.name !== 'keyboard/broken')
-    expect(removalRefusal('Checkpoint', componentUse('Checkpoint', 'keyboard', levels, PREFABS))).toBeNull()
+    expect(removalRefusal('Boss', componentUse('Boss', 'keyboard', levels, PREFABS))).toBeNull()
   })
 
   it('names a few places, and how many more', () => {

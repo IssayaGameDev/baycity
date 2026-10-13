@@ -8,13 +8,12 @@ import { SLIDE_SECONDS, slideOut, stepSlide, teleportRows } from './teleportWind
 
 /** The teleport window (ADR 0203): what it lists, and how it slides. */
 describe('the teleport window', () => {
-  const stop = (number: number, position: ReturnType<typeof vec3>, yaw: number, key: string, alwaysOpen = false): CheckpointStop => ({
+  const stop = (number: number, position: ReturnType<typeof vec3>, yaw: number, key: string): CheckpointStop => ({
     number,
     node: {} as WorldNode,
     position,
     yaw,
     key,
-    alwaysOpen,
     pivot: position,
     safeZoneText: undefined,
     requiredLevelText: undefined,
@@ -29,9 +28,9 @@ describe('the teleport window', () => {
   })
 
   /** Kodjo's call (ADR 0211): one not yet reached is listed, greyed, and cannot be picked. */
-  it('shuts a checkpoint not yet reached, never Start, never a stage gate', () => {
-    const rows = teleportRows(vec3(0, 1, 0), [stop(1, vec3(0, 0, 1), 0, 'a'), stop(2, vec3(0, 0, 2), 0, 'b'), stop(3, vec3(0, 0, 3), 0, 'gate', true)], (key) => key === 'a')
-    expect(rows.map((r) => r.locked)).toEqual([false, false, true, false])
+  it('shuts a checkpoint not yet reached, never Start', () => {
+    const rows = teleportRows(vec3(0, 1, 0), [stop(1, vec3(0, 0, 1), 0, 'a'), stop(2, vec3(0, 0, 2), 0, 'b')], (key) => key === 'a')
+    expect(rows.map((r) => r.locked)).toEqual([false, false, true])
   })
 
   it('slides out in a quarter second, eased to a stop, and back the same way', () => {

@@ -17,13 +17,13 @@ import game from '@content/_template/game.json'
  * What this game's levels may contain: the engine's components, plus `Hazard` so a level can have a kill plane
  * under it (ADR 0053) and a fall is survivable authoring rather than an infinite drop.
  *
- * **Composed, not inherited.** Add `Checkpoint`, `Bumper` or your own from `@mp/components` as the
+ * **Composed, not inherited.** Add `Bumper` or your own from `@mp/components` as the
  * game needs them; the editor offers exactly what is listed here and nothing else.
  */
 /**
  * What this game's levels may contain (ADR 0077): the engine's components, the player's, this game's own code
  * components, and **the shared components named in `content/_template/game.json`** — a data file, so the editor can
- * add to it when a level here needs a `Bumper` or a `Checkpoint` the game did not have yet.
+ * add to it when a level here needs a `Bumper` the game did not have yet.
  */
 export const TEMPLATE_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, ...sharedComponents(game.components)])
 
