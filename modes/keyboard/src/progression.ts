@@ -182,23 +182,3 @@ export const abbreviate = (n: number): string => {
     }
   return Math.floor(n).toString()
 }
-
-const KEY = 'keyboard.experience'
-
-export const loadExperience = (): number => {
-  try {
-    const raw = localStorage.getItem(KEY)
-    const n = raw === null ? 0 : Number.parseFloat(raw)
-    return Number.isFinite(n) && n >= 0 ? n : 0
-  } catch {
-    return 0
-  }
-}
-
-export const saveExperience = (experience: number): void => {
-  try {
-    localStorage.setItem(KEY, String(Math.floor(experience)))
-  } catch {
-    // A session that cannot save still plays.
-  }
-}

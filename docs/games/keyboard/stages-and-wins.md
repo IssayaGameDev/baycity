@@ -24,7 +24,7 @@ applies `takeTeleport()` on the next tick: position set, velocity zeroed, `groun
 
 ## Wins
 
-`let wins` in `main.ts`; `loadWins`/`saveWins` under `keyboard.wins`. Shown on the HUD's left edge. Spent on
+`let wins` in `main.ts`, saved through the game's save adapter under `keyboard.wins` ([progression.md](progression.md)). Shown on the HUD's left edge. Spent on
 nothing yet except gating `StepPad`s ([pads.md](pads.md)). Debug grant: Progression folder.
 
 ## Death

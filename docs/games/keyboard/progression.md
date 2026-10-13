@@ -45,7 +45,10 @@ metres at the top (ADR 0107). Measured reach cost is −1.6 % holding the stick,
 
 ## Saves
 
-`localStorage`, this game's own keys, written every 3 s and on the debug resets, `level` and Wins grant:
+Through the adapter only (`CLAUDE.md`): `save.ts` — `KeyboardSave { experience, wins, perStep }`,
+`localKeyboardSave(): PersistenceAdapter<KeyboardSave>` (`@mp/game-client`). `main.ts` loads it once and `persist()`s
+all three every 3 s, on a `StepPad` taken, and on the debug resets, `level` and Wins grant. A value that is missing,
+unreadable or below its minimum loads as its default. Local storage, this game's own keys:
 
 | Key | Value |
 | --- | --- |

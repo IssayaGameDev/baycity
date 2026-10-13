@@ -163,6 +163,10 @@ localProgress(mode: string): PersistenceAdapter<PlayerProgress>
 
 `localStorage[`${mode}.state`]`; every failure falls back to `{ checkpoint: -1 }`.
 
+**Every player save goes through a `PersistenceAdapter`** (Kodjo's rule, `CLAUDE.md`): a game declares its save's
+shape and an adapter for it — Keyboard's `localKeyboardSave` ([progression.md](../../games/keyboard/progression.md)) —
+and nothing else touches storage, so platform accounts replace local storage by replacing the adapter.
+
 ## `levelAssets` — `assets.ts`
 
 ```ts
