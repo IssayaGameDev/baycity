@@ -5,22 +5,22 @@ import { ASSETS_DIR, GAME_FILE, LEVELS_DIR, LEVEL_SUFFIX } from '../../../packag
 import type { ComponentData, Level, Node, NodeOverride } from '../../../packages/content/src/types'
 
 /**
- * Taking `Mover` and `Spinner` out of the content (ADR 0137). **Deleted, not converted** — Kodjo's call:
- * nothing made with them needs keeping — and taken out at all because a file naming a component the build no
- * longer has does not load.
+ * Taking component types out of the content, by name: `Mover` and `Spinner` (ADR 0137), `StageGate` and
+ * `Checkpoint` (ADR 0217). **Deleted, not converted**, and taken out at all because a file naming a component the
+ * build no longer has does not load.
  *
- * What goes: every component of the two types, in levels, in prefab files and in a level's resolution table;
- * every record a placement keeps about one of them (its parameters, its switch, its removal, or the component
- * itself when the placement added it); and the two names from each game's shared list (ADR 0077).
+ * What goes: every component of the `retired` types, in levels, in prefab files and in a level's resolution
+ * table; every record a placement keeps about one of them (its parameters, its switch, its removal, or the
+ * component itself when the placement added it); and the names from each game's shared list (ADR 0077).
  *
- * **Imports nothing that needs `node_modules`**: `strip-motion.sh` runs it from a checkout of `origin/master`
- * that has none, before the code that drops the two is deployed — so the content is clean before anything
+ * **Imports nothing that needs `node_modules`**: `strip-components.sh` runs it from a checkout of `origin/master`
+ * that has none, before the code that drops the types is deployed — so the content is clean before anything
  * that cannot read it arrives. Planning is separate from writing, and pure, so the dry run says exactly what
  * the write will do.
  */
 
-export const RETIRED: ReadonlySet<string> = new Set(['Mover', 'Spinner'])
-
+/** The component types to take out. */
+export type Retired = ReadonlySet<string>
 /** What was taken out of one file. */
 export interface Stripped {
   components: number
@@ -31,10 +31,9 @@ export interface Stripped {
 /** A prefab's retired component ids, by the prefab's own node id: what a placement's records name them by. */
 export type RetiredIds = ReadonlyMap<string, ReadonlySet<string>>
 
-const isRetired = (c: ComponentData): boolean => RETIRED.has(c.type)
-
 /** The retired component ids of every node in a prefab's tree, by node id. */
-export const retiredIdsOf = (root: Node): RetiredIds => {
+export const retiredIdsOf = (root: Node, retired: Retired): RetiredIds => {
+  const isRetired = (c: ComponentData): boolean => retired.has(c.type)
   const out = new Map<string, Set<string>>()
   const walk = (n: Node): void => {
     const ids = (n.components ?? []).filter(isRetired).map((c) => c.id)
@@ -57,10 +56,10 @@ const tidy = (owner: Node, key: string): void => {
 }
 
 /** Take out whatever one placement record says about the components in `ids`. Returns how many entries went. */
-const stripRecord = (over: NodeOverride, ids: ReadonlySet<string>): number => {
+const stripRecord = (over: NodeOverride, retired: Retired, ids: ReadonlySet<string>): number => {
   let n = 0
   if (over.added !== undefined) {
-    const kept = over.added.filter((c) => !isRetired(c))
+    const kept = over.added.filter((c) => !retired.has(c.type))
     n += over.added.length - kept.length
     over.added = kept
   }
@@ -86,8 +85,8 @@ const stripRecord = (over: NodeOverride, ids: ReadonlySet<string>): number => {
  * the records naming its prefab's retired components (`prefabIds`) or retired components it added, and the
  * nodes it hangs under a piece.
  */
-export const stripNode = (n: Node, prefabIds: (assetId: string) => RetiredIds | undefined, count: Stripped): void => {
-  const kept = n.components.filter((c) => !isRetired(c))
+export const stripNode = (n: Node, retired: Retired, prefabIds: (assetId: string) => RetiredIds | undefined, count: Stripped): void => {
+  const kept = n.components.filter((c) => !retired.has(c.type))
   count.components += n.components.length - kept.length
   n.components = kept
   if (n.overrides !== undefined) {
@@ -95,13 +94,13 @@ export const stripNode = (n: Node, prefabIds: (assetId: string) => RetiredIds | 
     for (const key of Object.keys(n.overrides)) {
       const over = n.overrides[key]!
       const ids = new Set(inPrefab?.get(key) ?? [])
-      for (const c of over.added ?? []) if (isRetired(c)) ids.add(c.id)
-      count.records += stripRecord(over, ids)
-      for (const kid of over.addedChildren ?? []) stripNode(kid, prefabIds, count)
+      for (const c of over.added ?? []) if (retired.has(c.type)) ids.add(c.id)
+      count.records += stripRecord(over, retired, ids)
+      for (const kid of over.addedChildren ?? []) stripNode(kid, retired, prefabIds, count)
       tidy(n, key)
     }
   }
-  for (const kid of n.children ?? []) stripNode(kid, prefabIds, count)
+  for (const kid of n.children ?? []) stripNode(kid, retired, prefabIds, count)
 }
 
 /**
@@ -109,28 +108,28 @@ export const stripNode = (n: Node, prefabIds: (assetId: string) => RetiredIds | 
  * table's definition when the level carries one, since that is what it resolves against (ADR 0124), and
  * against the prefab asset otherwise.
  */
-export const stripLevel = (level: Level, assetIds: (assetId: string) => RetiredIds | undefined): Stripped => {
-  const table = new Map(Object.entries(level.prefabs ?? {}).map(([id, root]) => [id, retiredIdsOf(root)] as const))
+export const stripLevel = (level: Level, retired: Retired, assetIds: (assetId: string) => RetiredIds | undefined): Stripped => {
+  const table = new Map(Object.entries(level.prefabs ?? {}).map(([id, root]) => [id, retiredIdsOf(root, retired)] as const))
   const lookup = (id: string): RetiredIds | undefined => table.get(id) ?? assetIds(id)
   const count: Stripped = { components: 0, records: 0 }
-  for (const n of level.nodes) stripNode(n, lookup, count)
-  for (const root of Object.values(level.prefabs ?? {})) stripNode(root, lookup, count)
+  for (const n of level.nodes) stripNode(n, retired, lookup, count)
+  for (const root of Object.values(level.prefabs ?? {})) stripNode(root, retired, lookup, count)
   return count
 }
 
-/** A game's shared-component list without the two, or `null` when it names neither. */
-export const stripGameList = (components: readonly string[]): string[] | null => {
-  const kept = components.filter((c) => !RETIRED.has(c))
+/** A game's shared-component list without the retired names, or `null` when it names none. */
+export const stripGameList = (components: readonly string[], retired: Retired): string[] | null => {
+  const kept = components.filter((c) => !retired.has(c))
   return kept.length === components.length ? null : kept
 }
 
-/** How many components of the two types are left anywhere in a parsed file — the read-back check. */
-export const retiredLeft = (v: unknown): number => {
-  if (Array.isArray(v)) return v.reduce((n: number, x) => n + retiredLeft(x), 0)
+/** How many components of the retired types are left anywhere in a parsed file — the read-back check. */
+export const retiredLeft = (v: unknown, retired: Retired): number => {
+  if (Array.isArray(v)) return v.reduce((n: number, x) => n + retiredLeft(x, retired), 0)
   if (v === null || typeof v !== 'object') return 0
   const o = v as Record<string, unknown>
-  const own = typeof o.type === 'string' && RETIRED.has(o.type) && typeof o.id === 'string' ? 1 : 0
-  return Object.values(o).reduce((n: number, x) => n + retiredLeft(x), own)
+  const own = typeof o.type === 'string' && retired.has(o.type) && typeof o.id === 'string' ? 1 : 0
+  return Object.values(o).reduce((n: number, x) => n + retiredLeft(x, retired), own)
 }
 
 /** One file the strip changes: where, what it held and what it will hold, and what went. */
@@ -168,7 +167,7 @@ const filesUnder = (dir: string, suffix: string): string[] => {
  * records name — and prefab files are stripped like any tree. A file that does not parse is named in
  * `unreadable` and left alone.
  */
-export const planStrip = (contentDir: string): { changes: StripChange[]; unreadable: string[] } => {
+export const planStrip = (contentDir: string, retired: Retired): { changes: StripChange[]; unreadable: string[] } => {
   const changes: StripChange[] = []
   const unreadable: string[] = []
   const read = (full: string): { text: string; json: unknown } | null => {
@@ -188,7 +187,7 @@ export const planStrip = (contentDir: string): { changes: StripChange[]; unreada
     if (file === null) continue
     try {
       const id = (JSON.parse(readFileSync(`${full}.meta`, 'utf8')) as { id?: unknown }).id
-      if (typeof id === 'string') idsByAsset.set(id, retiredIdsOf(file.json as Node))
+      if (typeof id === 'string') idsByAsset.set(id, retiredIdsOf(file.json as Node, retired))
     } catch {
       // No sidecar: nothing can reference it by id, so it names nothing a level records.
     }
@@ -200,7 +199,7 @@ export const planStrip = (contentDir: string): { changes: StripChange[]; unreada
     if (file === null) continue
     const root = file.json as Node
     const stripped: Stripped = { components: 0, records: 0 }
-    stripNode(root, assetIds, stripped)
+    stripNode(root, retired, assetIds, stripped)
     const after = serialise(root)
     if (stripped.components + stripped.records > 0) changes.push({ file: relative(contentDir, full), before: file.text, after, stripped })
   }
@@ -215,7 +214,7 @@ export const planStrip = (contentDir: string): { changes: StripChange[]; unreada
       const file = read(full)
       if (file === null) continue
       const level = file.json as Level
-      const stripped = stripLevel(level, assetIds)
+      const stripped = stripLevel(level, retired, assetIds)
       if (stripped.components + stripped.records > 0) changes.push({ file: relative(contentDir, full), before: file.text, after: serialise(level), stripped })
     }
     const gameFull = join(contentDir, game, GAME_FILE)
@@ -224,7 +223,7 @@ export const planStrip = (contentDir: string): { changes: StripChange[]; unreada
     if (file === null) continue
     const doc = file.json as { components?: string[] }
     const from = doc.components ?? []
-    const to = stripGameList(from)
+    const to = stripGameList(from, retired)
     if (to === null) continue
     doc.components = to
     changes.push({ file: relative(contentDir, gameFull), before: file.text, after: serialise(doc), stripped: { components: 0, records: 0 }, names: { from, to } })

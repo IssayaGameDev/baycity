@@ -4,7 +4,7 @@ An object's motion as **stages of steps**, a pure function of time (ADR 0137). T
 formulas are `d3-ease` (ADR 0138). Headless, in `@mp/content`, because the loader and the editor's preview are
 two readers of one rule.
 
-**The only motion there is**: `Mover` and `Spinner` are deleted (ADR 0137), and `strip-motion.sh` took them
+**The only motion there is**: `Mover` and `Spinner` are deleted (ADR 0137), and `strip-components.sh` took them
 out of the content (`editor-server.md`). The loader runs sequences (`content.md`, ADR 0141), the editor's
 Motion button previews them (ADR 0142), the Inspector edits them (`editor.md`, ADR 0143), and the viewport
 drags a move's point and draws the route (`editor.md`, ADR 0144).
