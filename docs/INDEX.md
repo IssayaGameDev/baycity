@@ -265,5 +265,6 @@ why matters.
 | [0212](adr/0212-the-obstacle-you-are-on.md) | The obstacle you are on is the last trigger walked into |
 | [0213](adr/0213-only-the-obstacle-ahead-shows-its-text.md) | Only the obstacle ahead shows its text |
 | [0214](adr/0214-a-teleport-travels-as-a-count.md) | A teleport travels as a count, and a viewer does not blend across it |
+| [0215](adr/0215-movement-is-integrated-in-fixed-slices.md) | Movement is integrated in fixed slices, and a landing is on the floor |
 
 `Design archive/` holds superseded design material and is not maintained.

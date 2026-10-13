@@ -29,6 +29,18 @@ const STAND_HEIGHT = CHAR_HALF_HEIGHT + CHAR_RADIUS
 const CONTACT_SLACK = 0.05
 
 /**
+ * The rate the motion is integrated at inside a tick, whatever the tick (ADR 0215). 240 divides 30, 60 and 120, so
+ * each of those runs whole slices and they all land on the same slice boundaries.
+ */
+export const INTEGRATION_HZ = 240
+
+/**
+ * The tick the settle press was measured at (ADR 0215): footing presses down by `gravity · SETTLE_DT²` a tick at every
+ * rate — a 30 Hz tick's full `v·dt` — stopped `SEAT_OFFSET` below the floor. See the settling note in `stepCharacter`.
+ */
+const SETTLE_DT = 1 / 30
+
+/**
  * Where a rider is seated relative to the surface under it: the controller's own resting contact offset,
  * measured at 0.020 m. Seating to the arrival margin instead would hold every rider a visible 5 cm clear.
  */
@@ -605,18 +617,27 @@ export const stepCharacter = (
     state.jumpCut = false
   }
 
-  // Vertical velocity at the start of this tick's integration, kept for the exact position update below.
-  let vyStart = state.vy
+  /**
+   * **The motion is integrated in slices of `1 / INTEGRATION_HZ`, whatever the tick** (ADR 0215, Kodjo's call: the
+   * same jump at any step size). Gravity's regime, the ground's approach, air steering and drag are each decided
+   * per slice, and the distance is each slice's exact trapezoid, so 30, 60 and 120 steps a second walk the same
+   * velocity history and land on the same slice boundaries. Decided per tick, they switched up to a tick late and
+   * moved by the end-of-tick speed: a running jump reached 31 cm further at 120 than at 30. Arithmetic only — the
+   * one `move` below stays one per tick.
+   */
+  const slices = Math.max(1, Math.round(dt * INTEGRATION_HZ))
+  const h = dt / slices
+  /** This tick's own vertical travel, slice by slice; what the impulses below add rides on top of it. */
+  let dy = 0
   // While riding, the surface owns our vertical. Gravity must not fight a rising platform: it
   // loses by the difference each tick, and the character is left behind and drops off the edge
   // (measured: applying gravity while riding a 3 m/s elevator falls through to y ≈ −1085).
   if (riding) {
     state.vy = 0
-    vyStart = 0
   } else {
     // Gravity is a curve, not a constant: heavier on the way down than the way up shortens the fall
     // without lowering the apex, and lighter near the top buys hang time to aim a landing. Decided from
-    // the speed at the *start* of the tick, so a tick is never half in one regime and half in another.
+    // the speed at the start of each slice, so a slice is never half in one regime and half in another.
     //
     // Only ever applied to an **arc**, which is why it is gated on having no ground underfoot. A resting
     // character sits at `vy = 0`, which is inside any apex window, so an ungated version quietly halved
@@ -624,17 +645,16 @@ export const stepCharacter = (
     // halving it destabilised the controller's horizontal resolve exactly as the settling case below
     // describes (platform carry crept 33 mm over 3 s). The apex of a jump is not the top of a stand.
     const airborne = under === undefined || leaving
-    const scale = !airborne
-      ? 1
-      : Math.abs(vyStart) < tuning.apexSpeed
-        ? tuning.apexGravityScale
-        : vyStart < 0
-          ? tuning.fallGravityScale
-          : 1
-    state.vy -= tuning.gravity * scale * dt
-    // Terminal velocity. Clamped after gravity and before the ride inherit below, so it bounds the fall
-    // itself and never clips a launch or a jump — both of those are a positive `vy`.
-    if (state.vy < -tuning.maxFallSpeed) state.vy = -tuning.maxFallSpeed
+    for (let s = 0; s < slices; s++) {
+      const v0 = state.vy
+      const scale = !airborne ? 1 : Math.abs(v0) < tuning.apexSpeed ? tuning.apexGravityScale : v0 < 0 ? tuning.fallGravityScale : 1
+      let v1 = v0 - tuning.gravity * scale * h
+      // Terminal velocity. Clamped after gravity and before the ride inherit below, so it bounds the fall
+      // itself and never clips a launch or a jump — both of those are a positive `vy`.
+      if (v1 < -tuning.maxFallSpeed) v1 = -tuning.maxFallSpeed
+      dy += 0.5 * (v0 + v1) * h
+      state.vy = v1
+    }
   }
 
   const len = Math.hypot(cmd.moveX, cmd.moveZ)
@@ -646,82 +666,91 @@ export const stepCharacter = (
   // Time-based rates, each capped in m/s² so a fast character keeps its momentum (ADR 0078, ADR 0096).
   const accel = tuning.moveSpeed / Math.max(tuning.groundAccelTime, 1e-3)
   const groundCeiling = (gaining: boolean): number => scaleCeiling(gaining ? tuning.groundMaxAccel : tuning.groundBrakeMaxAccel, tuning)
-  if (state.grounded) {
-    const now = Math.hypot(state.vx, state.vz)
-    /**
-     * Is the change we need speeding us up, or slowing us down?
-     *
-     * The component of the needed change **along the direction we are already travelling**. Negative means
-     * the change is fighting our momentum, which is what braking and turning both are; positive means it adds
-     * to it, which is what a start is. From a standstill there is no direction to fight, so it is a start.
-     *
-     * Comparing *magnitudes* instead would be wrong halfway through a reversal: by then the target is larger
-     * than the speed we have left, so it would read as a start and snap us round at the uncapped rate. This
-     * reads as braking until the moment we actually turn over, then as a start — which is what happens.
-     */
-    const along = now < 1e-4 ? 1 : ((targetX - state.vx) * state.vx + (targetZ - state.vz) * state.vz) / now
-    const time = hasInput ? tuning.groundAccelTime : tuning.groundStopTime
-    const rate = Math.min(tuning.moveSpeed / Math.max(time, 1e-3), groundCeiling(along >= 0))
-    approachVec(state, targetX, targetZ, rate * dt)
-  } else if (hasInput) {
-    const rate = Math.min(accel * tuning.airControl, scaleCeiling(tuning.airMaxAccel, tuning))
-    // Air input steers and accelerates. It must never *brake* a character already travelling faster
-    // than `moveSpeed`, which is what a plain approach toward a `moveSpeed`-sized target does: launched
-    // off a fast mover at 12 m/s, holding the direction of flight measured 5.02 m of travel against
-    // 8.40 m for letting go of the stick. Pressing the way you are going cost you three and a half
-    // metres, which nobody would guess and which reads as the mover being unreliable.
-    //
-    // The rule is that speed above `moveSpeed` is not air control's to spend. Air control owns
-    // `moveSpeed` worth of velocity and steers it exactly as before; anything on top — a mover's fling,
-    // a bumper — rides along untouched. Four properties, all of them wanted:
-    // - pressing the way you are going is now free: the steered part is already there, so it neither
-    //   accelerates nor brakes, and holding forward matches letting go to the millimetre;
-    // - pressing *against* the motion still brakes and turns at the full rate, which is the correction
-    //   the player is reaching for. It just cannot cancel the fling itself;
-    // - speed can never exceed what you came in with, since the most air control can do is align its
-    //   own `moveSpeed` with the excess. Quake's projection cap *does* exceed it — that is air-strafing,
-    //   and the skill ceiling with it — at the price of every reach number in `docs/platform/humanoid/controller.md`, so it
-    //   stays rejected;
-    // - turning costs speed, monotonically: the excess stays pointed where it was while the steered part
-    //   swings away from it, so the two partly cancel. An earlier version stretched the *target* to the
-    //   current speed instead, which fed back on itself and conserved speed through a 90° turn — a fast
-    //   mover could be redirected losslessly, which is air-strafing arriving by the back door;
-    // - below the cap the branch does not fire at all, so ordinary jumps are bit-for-bit as before.
-    const speed = Math.hypot(state.vx, state.vz)
-    if (speed > tuning.moveSpeed) {
-      // Split the velocity into `moveSpeed` worth of it, which air control steers exactly as it always
-      // has, and the **excess** above that, which it may not touch. The excess is carried through the
-      // tick unchanged and added back along the direction it came in on.
-      const excess = speed - tuning.moveSpeed
-      const ex = (state.vx / speed) * excess
-      const ez = (state.vz / speed) * excess
-      const steered = { vx: state.vx - ex, vz: state.vz - ez }
-      approachVec(steered, targetX, targetZ, rate * dt)
-      state.vx = steered.vx + ex
-      state.vz = steered.vz + ez
-    } else {
-      approachVec(state, targetX, targetZ, rate * dt)
+  /** This tick's own horizontal travel, slice by slice (see `slices`); the inherits below ride on top of it. */
+  let dx = 0
+  let dz = 0
+  for (let s = 0; s < slices; s++) {
+    const vx0 = state.vx
+    const vz0 = state.vz
+    if (state.grounded) {
+      const now = Math.hypot(state.vx, state.vz)
+      /**
+       * Is the change we need speeding us up, or slowing us down?
+       *
+       * The component of the needed change **along the direction we are already travelling**. Negative means
+       * the change is fighting our momentum, which is what braking and turning both are; positive means it adds
+       * to it, which is what a start is. From a standstill there is no direction to fight, so it is a start.
+       *
+       * Comparing *magnitudes* instead would be wrong halfway through a reversal: by then the target is larger
+       * than the speed we have left, so it would read as a start and snap us round at the uncapped rate. This
+       * reads as braking until the moment we actually turn over, then as a start — which is what happens.
+       */
+      const along = now < 1e-4 ? 1 : ((targetX - state.vx) * state.vx + (targetZ - state.vz) * state.vz) / now
+      const time = hasInput ? tuning.groundAccelTime : tuning.groundStopTime
+      const rate = Math.min(tuning.moveSpeed / Math.max(time, 1e-3), groundCeiling(along >= 0))
+      approachVec(state, targetX, targetZ, rate * h)
+    } else if (hasInput) {
+      const rate = Math.min(accel * tuning.airControl, scaleCeiling(tuning.airMaxAccel, tuning))
+      // Air input steers and accelerates. It must never *brake* a character already travelling faster
+      // than `moveSpeed`, which is what a plain approach toward a `moveSpeed`-sized target does: launched
+      // off a fast mover at 12 m/s, holding the direction of flight measured 5.02 m of travel against
+      // 8.40 m for letting go of the stick. Pressing the way you are going cost you three and a half
+      // metres, which nobody would guess and which reads as the mover being unreliable.
+      //
+      // The rule is that speed above `moveSpeed` is not air control's to spend. Air control owns
+      // `moveSpeed` worth of velocity and steers it exactly as before; anything on top — a mover's fling,
+      // a bumper — rides along untouched. Four properties, all of them wanted:
+      // - pressing the way you are going is now free: the steered part is already there, so it neither
+      //   accelerates nor brakes, and holding forward matches letting go to the millimetre;
+      // - pressing *against* the motion still brakes and turns at the full rate, which is the correction
+      //   the player is reaching for. It just cannot cancel the fling itself;
+      // - speed can never exceed what you came in with, since the most air control can do is align its
+      //   own `moveSpeed` with the excess. Quake's projection cap *does* exceed it — that is air-strafing,
+      //   and the skill ceiling with it — at the price of every reach number in `docs/platform/humanoid/controller.md`, so it
+      //   stays rejected;
+      // - turning costs speed, monotonically: the excess stays pointed where it was while the steered part
+      //   swings away from it, so the two partly cancel. An earlier version stretched the *target* to the
+      //   current speed instead, which fed back on itself and conserved speed through a 90° turn — a fast
+      //   mover could be redirected losslessly, which is air-strafing arriving by the back door;
+      // - below the cap the branch does not fire at all, so ordinary jumps are bit-for-bit as before.
+      const speed = Math.hypot(state.vx, state.vz)
+      if (speed > tuning.moveSpeed) {
+        // Split the velocity into `moveSpeed` worth of it, which air control steers exactly as it always
+        // has, and the **excess** above that, which it may not touch. The excess is carried through the
+        // tick unchanged and added back along the direction it came in on.
+        const excess = speed - tuning.moveSpeed
+        const ex = (state.vx / speed) * excess
+        const ez = (state.vz / speed) * excess
+        const steered = { vx: state.vx - ex, vz: state.vz - ez }
+        approachVec(steered, targetX, targetZ, rate * h)
+        state.vx = steered.vx + ex
+        state.vz = steered.vz + ez
+      } else {
+        approachVec(state, targetX, targetZ, rate * h)
+      }
     }
-  }
 
-  /**
-   * Air drag (ADR 0107). The air is not free: horizontal speed decays every airborne tick whether the stick is
-   * held or not, by a fraction of itself rather than a fixed m/s².
-   *
-   * `1 / (1 + k·dt)` is the implicit form, chosen over `1 − k·dt` because it cannot go negative: at `k·dt > 1`
-   * the explicit form flings the character backwards, and `k` is a live slider.
-   *
-   * Placed **after** the steering branch, so the excess above `moveSpeed` that air control is forbidden to
-   * spend still decays — a 100 m/s fling slows like everything else — and **before** the ride/launch inherit
-   * below, so the tick you leave a mover you get its velocity whole.
-   *
-   * `state.grounded` is last tick's footing, the same reading the steering branch above uses, so a jump's
-   * take-off tick is grounded and undragged.
-   */
-  if (!state.grounded && tuning.airDrag > 0) {
-    const keep = 1 / (1 + tuning.airDrag * dt)
-    state.vx *= keep
-    state.vz *= keep
+    /**
+     * Air drag (ADR 0107). The air is not free: horizontal speed decays every airborne slice whether the stick is
+     * held or not, by a fraction of itself rather than a fixed m/s².
+     *
+     * `1 / (1 + k·dt)` is the implicit form, chosen over `1 − k·dt` because it cannot go negative: at `k·dt > 1`
+     * the explicit form flings the character backwards, and `k` is a live slider.
+     *
+     * Placed **after** the steering branch, so the excess above `moveSpeed` that air control is forbidden to
+     * spend still decays — a 100 m/s fling slows like everything else — and **before** the ride/launch inherit
+     * below, so the tick you leave a mover you get its velocity whole.
+     *
+     * `state.grounded` is last tick's footing, the same reading the steering branch above uses, so a jump's
+     * take-off tick is grounded and undragged.
+     */
+    if (!state.grounded && tuning.airDrag > 0) {
+      const keep = 1 / (1 + tuning.airDrag * h)
+      state.vx *= keep
+      state.vz *= keep
+    }
+    dx += 0.5 * (vx0 + state.vx) * h
+    dz += 0.5 * (vz0 + state.vz) * h
   }
 
   // Jumping off a mover inherits its velocity: the distance it would have carried us, over dt.
@@ -729,32 +758,34 @@ export const stepCharacter = (
   // would let the ground brake (no input → stop in `groundStopTime`) eat most of it again. The
   // ride is then dropped for this tick: velocity carries the motion instead, and doing both would
   // move us twice.
+  //
+  // What these three add travels the whole tick at once, on top of the sliced motion above: `added`.
+  const added = { x: 0, y: 0, z: 0 }
+  const add = (x: number, y: number, z: number): void => {
+    state.vx += x
+    state.vy += y
+    state.vz += z
+    added.x += x
+    added.y += y
+    added.z += z
+  }
   if (leaving && ride !== undefined) {
-    state.vx += ride.x / dt
-    state.vy += ride.y / dt
-    state.vz += ride.z / dt
-    vyStart += ride.y / dt
+    add(ride.x / dt, ride.y / dt, ride.z / dt)
     state.liftStore = 0
   } else if (leaving && state.liftStore > 0) {
     // Lift momentum storage: the jump came out of the coyote window, so footing — and with it the live
     // `ride` the branch above reads — was already gone. Without this the mover's momentum vanishes for
     // exactly the late jumps coyote time exists to allow, and the fast platform reads as randomly eating
     // your jump. Consumed, so one departure hands it over once.
-    state.vx += state.liftVel.x
-    state.vy += state.liftVel.y
-    state.vz += state.liftVel.z
-    vyStart += state.liftVel.y
+    add(state.liftVel.x, state.liftVel.y, state.liftVel.z)
     state.liftStore = 0
   }
 
   // The outside push, applied here rather than earlier for exactly the reason the block above gives: this
   // tick may still count as grounded, and the ground brake would eat most of a flat impulse before it moved
-  // anything. `vyStart` moves with it so the trapezoid below stays the exact integral.
+  // anything.
   if (impulsing) {
-    state.vx += state.impulse.x
-    state.vy += state.impulse.y
-    state.vz += state.impulse.z
-    vyStart += state.impulse.y
+    add(state.impulse.x, state.impulse.y, state.impulse.z)
     // Consumed, so one request is honoured once — `launch`'s contract, and what lets a component write it
     // every tick it wants to pull and simply stop writing it when it does not.
     //
@@ -770,12 +801,11 @@ export const stepCharacter = (
   // this is the only thing carrying us. The vertical while riding is the surface's alone — see the
   // gravity note above.
   //
-  // The vertical is the **trapezoid** `½(v₀+v₁)·dt`, not `v₁·dt`, and that is not a refinement: for a
-  // constant acceleration it is the exact integral, where `v₁·dt` undershoots by `½·g·dt²` every single
-  // tick. Accumulated over a rise that is `½·v₀·dt` — half a tick of take-off speed, 0.30 m at these
-  // numbers — so `jumpHeight` used to be short by 10% and the slider could not mean what it said.
-  // Same closed form as the `½at²` term; written as an average because the clamp above can bend `v₁`,
-  // and the average of the endpoints stays right when it does.
+  // The distance is the slices' (`dx`, `dy`, `dz`), each slice's **trapezoid** `½(v₀+v₁)·h`, plus what was
+  // added at once times the whole tick. Not `v₁·dt`, and that is not a refinement: for a constant acceleration
+  // the trapezoid is the exact integral, where `v₁·dt` undershoots by `½·g·dt²` every single tick —
+  // accumulated over a rise, half a tick of take-off speed, so `jumpHeight` used to be short by 10% and the
+  // slider could not mean what it said.
   //
   // Except while **settling** — resting on a surface, going nowhere. There `vy` is clamped back to 0 at
   // the end of every tick, so no fall is being integrated and the downward number is not motion at all:
@@ -783,12 +813,19 @@ export const stepCharacter = (
   // destabilises the controller's resolve — Rapier starts dropping slices of the *horizontal* step
   // (`CONTACT_NUDGE` in the physics wrapper: the start has to not be touching), which showed up as
   // platform carry creeping 33 mm over 3 s where it used to hold to the millimetre. So a settling tick
-  // keeps pressing down by the full `v·dt`. Every tick of an actual arc — the jump's own tick, which is
-  // `leaving`, and all the airborne ones — takes the exact form, so the apex is unaffected.
+  // keeps pressing down by the full `v·dt` of a 30 Hz tick, `SETTLE_DT`, at every rate (ADR 0215): its own tick's
+  // shrank to 4 mm at 120 steps a second, too little to hold the capsule settled, and starting a run hopped 6 cm.
+  // Only on footing already: a landing travels its own distance, or a slow fall within the probe's reach would be
+  // pulled down faster the more ticks a second there are. Every tick of an actual arc — the jump's own tick, which
+  // is `leaving`, and all the airborne ones — takes the exact form, so the apex is unaffected.
   // Keyed on the **probe**, not on `state.grounded`: the flag is last tick's answer and is `false` on a
   // freshly spawned character, so a capsule settling onto a surface for the first time took the exact
   // value, seated at a different depth, and stayed flaky from then on. `under` is this tick's ground.
   const settling = under !== undefined && !leaving && state.vy <= 0
+  /** Our own travel this tick: the slices', and what was added at once over the whole of it. */
+  const travelX = dx + added.x * dt
+  const travelY = dy + added.y * dt
+  const travelZ = dz + added.z * dt
   /**
    * **The vertical ride seats the soles on the surface** rather than repeating what the anchor moved by
    * (ADR 0105).
@@ -848,12 +885,30 @@ export const stepCharacter = (
    */
   const slopeDy =
     state.grounded && settling && !riding && under !== undefined
-      ? -(under.normal.x * state.vx * dt + under.normal.z * state.vz * dt) / under.normal.y
+      ? -(under.normal.x * travelX + under.normal.z * travelZ) / under.normal.y
       : 0
+  /**
+   * **The press stops at the surface** (ADR 0215). Running, the resolve sometimes took the settling press whole and
+   * left the capsule inside the floor — and from inside, the next resolve no longer meets that floor, so it sank on:
+   * 20 cm into flat ground running at 20 m/s, at 30 steps a second with the slices and at 60 without them. The probe
+   * has the surface, so the press may take the soles down to its plane where the capsule ends up and no further, and
+   * a capsule already below it is lifted back out. A landing's own travel is not a press and is not limited.
+   */
+  const floorDy =
+    under === undefined ? -Infinity : under.point.y - (under.normal.x * travelX + under.normal.z * travelZ) / Math.max(under.normal.y, 0.2) - feetY
+  // Settling asks for the further of its own travel and the press, as it always has, and then no further than the
+  // contact slack below the floor. Not to the floor itself: pressed only that far the capsule ends each tick inside
+  // the controller's offset, and a resolve starting there drops slices of the horizontal step (`CONTACT_NUDGE`) —
+  // 13 cm lost over 30 m. The slack is what the full press always sank on flat ground, so it rests as it did.
+  // A landing is its own fall, unlimited: cut short to the floor, a landing's travel fell under the resolve's 0.15 m
+  // resting retry (`CONTACT_NUDGE`), which kept the nudge instead of the fall, and the landing came a tick late.
+  const settleDy = state.grounded
+    ? Math.max(Math.min(slopeDy + travelY, slopeDy - tuning.gravity * SETTLE_DT * SETTLE_DT), floorDy - SEAT_OFFSET)
+    : travelY
   const desired = {
-    x: state.vx * dt + (riding ? ride!.x : 0),
-    y: riding ? (seatY ?? ride!.y) : slopeDy + (settling ? state.vy : 0.5 * (vyStart + state.vy)) * dt,
-    z: state.vz * dt + (riding ? ride!.z : 0),
+    x: travelX + (riding ? ride!.x : 0),
+    y: riding ? (seatY ?? ride!.y) : settling ? settleDy : travelY,
+    z: travelZ + (riding ? ride!.z : 0),
   }
 
   /**
@@ -885,7 +940,7 @@ export const stepCharacter = (
   // `applied.y` also cancels the gravity nudge on every grounded tick, and taking that difference
   // would report a permanent upward push from the floor holding us up. Snap-to-ground and autostep
   // land in `applied.y` for the same reason, which is the other half of why only x/z come from it.
-  state.carry = vec3((applied.x - state.vx * dt) / dt, riding ? ride!.y / dt : 0, (applied.z - state.vz * dt) / dt)
+  state.carry = vec3((applied.x - travelX) / dt, riding ? ride!.y / dt : 0, (applied.z - travelZ) / dt)
 
   // Either signal counts as footing: the probe covers the controller's flicker, and the controller
   // covers surfaces the probe's narrow ray misses (standing on an edge, wedged against geometry).
@@ -915,7 +970,35 @@ export const stepCharacter = (
    * above the soles, and without it every ordinary standing tick would read as an arrival.
    */
   const arrived = under !== undefined && under.point.y > feetY + CONTACT_SLACK
-  const standing = under !== undefined && !leaving && (state.vy <= 0 || arrived)
+  /**
+   * **Footing is where the soles end up, not where the probe can see** (ADR 0215). The probe reaches 0.4 m below
+   * the soles, so a fall that ended a tick short of the ground still found it — and was called landed with the
+   * capsule hovering up to 0.4 m clear: its fall stopped dead, and a held jump went again from up there. Kodjo's
+   * lava gave a free jump to a gentle drop; at 120 steps a second, where a landing travels less per step, every
+   * held jump re-jumped from about 14 cm up.
+   *
+   * So the soles must reach the surface this tick: the probe's plane, carried to where the capsule ended up — a run
+   * up a hill ends higher than the point it started over — within the contact slack, plus how far a resting sphere
+   * sits above a slope at the point below its centre, `r · (1/n.y − 1)`: 17 cm on 45°, which the ray meets that far
+   * down. `arrived` decks are above the soles and always pass; a ride seats the soles on its deck before this is read.
+   *
+   * **A landing only** — coming down out of the air. On footing already, the probe still holds it: a resolve that
+   * delivers part of a step (`docs/platform/physics.md`) leaves the soles short, and keeping footing is what lets
+   * snap-to-ground close that next tick. Asked of every tick, running down 40° at 58.8 m/s took off 48 % of the time.
+   */
+  //
+  // **Nor a fall the resolve cut short.** It can stop a landing's step well before the floor — asked for 0.75 m down,
+  // it delivered 3 mm with the soles 11 cm up — and then it is the floor that stopped it, a tick before the soles show
+  // it; waiting for them put the landing a tick late at 30 steps a second and not at 60. A gentle drop is not cut short:
+  // its step was simply too short to arrive, which is the case this is for.
+  const cutShort = applied.y > desired.y + 0.01
+  const reached =
+    state.grounded ||
+    cutShort ||
+    (under !== undefined &&
+      feetY + applied.y - (under.point.y - (under.normal.x * applied.x + under.normal.z * applied.z) / Math.max(under.normal.y, 0.2)) <=
+        CONTACT_SLACK + CHAR_RADIUS * (1 / Math.max(under.normal.y, 0.2) - 1))
+  const standing = under !== undefined && !leaving && reached && (state.vy <= 0 || arrived)
   state.grounded = (grounded && state.vy <= 0) || standing
   // A deck that arrived cancels the rest of the jump: it caught us, so the climb is over. Without this the
   // jump keeps its upward velocity while the ride owns the vertical, and spends it the instant the ride ends.

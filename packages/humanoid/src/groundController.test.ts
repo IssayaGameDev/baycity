@@ -3,7 +3,7 @@ import { TICK_DT } from '@mp/core'
 import type { InputCommand } from '@mp/core'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { ACCEL_REF_SPEED, addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, DEFAULT_TUNING, playerSpawn, stepCharacter, type CharacterState, type CharacterTuning, type PlatformPoseLookup } from './groundController'
+import { ACCEL_REF_SPEED, addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, DEFAULT_TUNING, INTEGRATION_HZ, playerSpawn, stepCharacter, type CharacterState, type CharacterTuning, type PlatformPoseLookup } from './groundController'
 
 const cmd = (moveX: number, moveZ: number, jump = false): InputCommand => ({ moveX, moveZ, jump })
 
@@ -189,7 +189,8 @@ describe('character controller', () => {
     // Uncapped, 120 ticks of 55 m/s² reaches −220 m/s and a 7 m step — past any slab thickness.
     const { vy, worstDrop } = fallForever(120)
     expect(vy).toBeCloseTo(-DEFAULT_TUNING.maxFallSpeed, 6)
-    expect(worstDrop).toBeLessThan(DEFAULT_TUNING.maxFallSpeed * TICK_DT + 1e-6)
+    // To the f32 the physics keeps positions in: the drop is summed from the tick's slices (ADR 0215).
+    expect(worstDrop).toBeLessThan(DEFAULT_TUNING.maxFallSpeed * TICK_DT + 1e-5)
   })
 
   it('takes the fall cap from tuning', () => {
@@ -516,10 +517,11 @@ describe('groundMaxAccel / airMaxAccel (ADR 0078)', () => {
     const fast: CharacterTuning = { ...DEFAULT_TUNING, moveSpeed: 30, groundBrakeMaxAccel: 40, maxAccelScaling: 0 }
     const vz = reverse(fast, 60)
     // Never more than 40 m/s² × dt between ticks, *while still slowing down*. Past the turn the character is
-    // accelerating the other way and the accel ceiling takes over, which is ADR 0096's whole point.
+    // accelerating the other way and the accel ceiling takes over, which is ADR 0096's whole point — from the
+    // slice it turns over in, so the tick that holds the turn is part brake and part start (ADR 0215).
     let prev = 30
     for (const v of vz) {
-      if (prev > 0) expect(prev - v).toBeLessThanOrEqual(40 * TICK_DT + 1e-6)
+      if (prev > 0 && v >= 0) expect(prev - v).toBeLessThanOrEqual(40 * TICK_DT + 1e-6)
       prev = v
     }
     // 30 m/s down to rest at 40 m/s² is 0.75 s = 22 ticks. Past rest it is gaining speed the other way,
@@ -745,9 +747,9 @@ describe('airDrag (ADR 0107)', () => {
     for (const v of coast) expect(v).toBeCloseTo(DEFAULT_TUNING.moveSpeed, 6)
   })
 
-  it('decays a coast by the implicit fraction, exactly', () => {
+  it('decays a coast by the implicit fraction, exactly — a slice at a time (ADR 0215)', () => {
     const drag: CharacterTuning = { ...DEFAULT_TUNING, airDrag: 0.5 }
-    const keep = 1 / (1 + 0.5 * TICK_DT)
+    const keep = (1 / (1 + 0.5 / INTEGRATION_HZ)) ** Math.round(TICK_DT * INTEGRATION_HZ)
     const coast = fly(drag, cmd(0, 0), 8)
     let want = DEFAULT_TUNING.moveSpeed
     for (const v of coast) {
@@ -775,7 +777,7 @@ describe('airDrag (ADR 0107)', () => {
     stepCharacter(c, cmd(0, 1, true), TICK_DT, drag)
     world.step(TICK_DT)
     c.vz = 100
-    const keep = 1 / (1 + 0.5 * TICK_DT)
+    const keep = (1 / (1 + 0.5 / INTEGRATION_HZ)) ** Math.round(TICK_DT * INTEGRATION_HZ)
     let want = 100
     for (let i = 0; i < 6; i++) {
       // Pressing the way you are going: air control is a no-op on the excess, so this reads drag alone.
