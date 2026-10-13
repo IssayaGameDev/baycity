@@ -10,11 +10,6 @@
   },
   "components": [
     {
-      "id": "ad6201ac",
-      "type": "StageGate",
-      "params": {}
-    },
-    {
       "id": "f5578cd7",
       "type": "Obstacle",
       "params": {
