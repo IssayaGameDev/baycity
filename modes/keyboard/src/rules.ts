@@ -53,6 +53,11 @@ export const STAND_OFFSET = CHAR_HALF_HEIGHT + CHAR_RADIUS
  */
 export const spawnOf = spawnFrom(STAND_OFFSET)
 
+/** A teleport the game asks for, and the checkpoint it lands on — `null` for Start (ADR 0212). */
+export interface KeyboardTeleport extends Teleport {
+  readonly obstacle?: WorldNode | null
+}
+
 /** The shared options, plus the one thing this game's rules report that the platform has no word for. */
 export interface KeyboardSessionOptions extends ModeSessionOptions {
   /** A `WinsPad` paid out. The client banks and shows it; the editor's play-test passes nothing. */
@@ -65,12 +70,22 @@ export interface KeyboardSessionOptions extends ModeSessionOptions {
    * A teleport the game asks for — the teleport window, to a stage gate or the start (ADR 0202). Asked when the
    * host takes a teleport and nothing of the rules' own is waiting; it hands its request over once.
    */
-  readonly requested?: () => Teleport | null
+  readonly requested?: () => KeyboardTeleport | null
   /**
    * An `Obstacle`'s trigger was walked into (ADR 0211): its checkpoint is reached. Every tick spent inside it; the
    * game saves it once.
    */
   readonly onReached?: (node: WorldNode) => void
+}
+
+/** The platform's session, plus what this game's rules know that the platform has no word for. */
+export interface KeyboardSession extends ModeSession {
+  /**
+   * The obstacle the player is on (ADR 0212, Kodjo's call): the node of the last `Obstacle` whose trigger was walked
+   * into, or of the checkpoint teleported to. `null` from the spawn — after a death, a cash-out, a respawn or a
+   * teleport to Start. The player's own only: it is not sent.
+   */
+  readonly currentObstacle: () => WorldNode | null
 }
 
 /**
@@ -84,11 +99,13 @@ export interface KeyboardSessionOptions extends ModeSessionOptions {
  * platform's save shape. Wins, Experience and reached checkpoints are the game's own, saved through its own adapter
  * (`save.ts`).
  */
-export const keyboardSession = (loaded: LoadedLevel, opts: KeyboardSessionOptions = {}): ModeSession => {
+export const keyboardSession = (loaded: LoadedLevel, opts: KeyboardSessionOptions = {}): KeyboardSession => {
   const spawn = spawnOf(loaded)
   let killed = false
   /** Where the next tick should put us, or `null`. Set by a pad, cleared by the host reading it. */
   let teleport: Teleport | null = null
+  /** See `KeyboardSession.currentObstacle`. */
+  let current: WorldNode | null = null
   return {
     effects: {
       kill: () => {
@@ -99,6 +116,7 @@ export const keyboardSession = (loaded: LoadedLevel, opts: KeyboardSessionOption
       progress: (node) => {
         // An obstacle's trigger (ADR 0211): its checkpoint is reached. Moves nobody.
         if (componentOn(node.components, Obstacle) !== undefined) {
+          current = node
           opts.onReached?.(node)
           return
         }
@@ -118,21 +136,33 @@ export const keyboardSession = (loaded: LoadedLevel, opts: KeyboardSessionOption
         const pad = componentOn(node.components, WinsPad)
         if (pad === undefined) return
         teleport = { position: spawn }
+        current = null
         opts.onCashOut?.(pad.wins, node)
       },
     },
-    respawnAt: () => spawn,
+    // A respawn and the pause menu's Restart both ask here, and both are back at the spawn.
+    respawnAt: () => {
+      current = null
+      return spawn
+    },
     takeDeath: () => {
       const died = killed
       killed = false
+      if (died) current = null
       return died
     },
     // A cash-out first; a request waits for the tick after, rather than being lost under it.
     takeTeleport: () => {
-      const to = teleport ?? opts.requested?.() ?? null
-      teleport = null
-      return to
+      if (teleport !== null) {
+        const to = teleport
+        teleport = null
+        return to
+      }
+      const asked = opts.requested?.() ?? null
+      if (asked !== null) current = asked.obstacle ?? null
+      return asked
     },
     progress: () => -1,
+    currentObstacle: () => current,
   }
 }

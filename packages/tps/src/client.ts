@@ -224,6 +224,11 @@ export interface TpsClient {
    */
   meshesOf: (node: WorldNode) => readonly THREE.Mesh[]
   /**
+   * How much of a level node's text shows, 0 to 1 (ADR 0213) — a game fading a sign in and out at runtime, as
+   * `meshesOf` lets it restyle a pad. On top of the text's own fade; a node with no text, or no level yet: nothing.
+   */
+  textShown: (node: WorldNode, shown: number) => void
+  /**
    * A material asset the level loaded, by id (ADR 0082). Every material a component parameter names is loaded
    * with the level, so a game restyling a node reads the id off the component and asks here.
    */
@@ -1105,6 +1110,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
       for (const handle of node.colliderHandles) for (const mesh of level.meshesOf(handle)) out.add(mesh)
       return [...out]
     },
+    textShown: (node, shown) => level?.setTextShown(node, shown),
     material: (assetId) => level?.material(assetId) ?? null,
     data: (assetId) => level?.data(assetId),
     excludeFromAO: (object) => {

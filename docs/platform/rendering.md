@@ -241,7 +241,7 @@ createText(style?: Partial<TextStyle>, facing?: { around?: Object3D }): WorldTex
 interface WorldText { object: THREE.Mesh; material; set(style); fade(opacity); laidOut(fn(bounds)); dispose() }
 faceCamera(object, { around? })   // turns it to each camera at draw time, in matrixWorld only
 textStyleOf(desc: TextDesc, fontUrl?: FontUrlOf): Partial<TextStyle>   // a Text's reading, depth 'world' — game and editor
-addTexts(scene, items: TextItem[], fontUrl?: FontUrlOf): LevelTexts { sync; objects; dispose }   // posed every frame
+addTexts(scene, items: TextItem[], fontUrl?: FontUrlOf): LevelTexts { sync; objects; setShown(item, 0–1); dispose }   // posed every frame; setShown (ADR 0213): × the item's opacity, applied at once
 type FontUrlOf = (assetId: string) => string | null   // the game's and the editor's `AssetRuntime.fontUrl`
 ```
 

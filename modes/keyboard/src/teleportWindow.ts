@@ -1,11 +1,11 @@
 import { easeAt } from '@mp/content'
 import type { Vec3 } from '@mp/core'
-import type { Teleport } from '@mp/mode'
 import { Container, Graphics, uiButton, uiLabel, uiList } from '@mp/render-pixi'
 import type { TpsClient } from '@mp/tps'
 
 import type { CheckpointStop } from './components/obstacle'
 import { hudScale } from './hud'
+import type { KeyboardTeleport } from './rules'
 
 /**
  * The teleport window (ADR 0203), Kodjo's calls throughout: a square **Teleport** button on the left edge, where the
@@ -21,15 +21,16 @@ import { hudScale } from './hud'
 /** One row: what it says, where it sends you, and whether it is shut. */
 export interface TeleportRow {
   readonly label: string
-  readonly to: Teleport
+  /** Where it sends you, and the checkpoint that is — the obstacle you are then on (ADR 0212); `null` for Start. */
+  readonly to: KeyboardTeleport
   /** Not reached yet: greyed, and a tap does nothing. */
   readonly locked: boolean
 }
 
 /** Start — the spawn, facing as you were — then every checkpoint, facing its way, shut until `reached` says so. */
 export const teleportRows = (start: Vec3, stops: readonly CheckpointStop[], reached: (key: string) => boolean): TeleportRow[] => [
-  { label: 'Start', to: { position: start }, locked: false },
-  ...stops.map((s) => ({ label: `Checkpoint ${s.number}`, to: { position: s.position, yaw: s.yaw }, locked: !s.alwaysOpen && !reached(s.key) })),
+  { label: 'Start', to: { position: start, obstacle: null }, locked: false },
+  ...stops.map((s) => ({ label: `Checkpoint ${s.number}`, to: { position: s.position, yaw: s.yaw, obstacle: s.node }, locked: !s.alwaysOpen && !reached(s.key) })),
 ]
 
 /** The slide, in seconds: snappy, Kodjo's call. */
@@ -63,7 +64,7 @@ export interface TeleportWindowOptions {
   /** The rows, asked as the window opens: the level being played's. */
   readonly rows: () => readonly TeleportRow[]
   /** Go there. */
-  readonly go: (to: Teleport) => void
+  readonly go: (to: KeyboardTeleport) => void
 }
 
 export interface TeleportWindow {

@@ -15,13 +15,17 @@ describe('the teleport window', () => {
     yaw,
     key,
     alwaysOpen,
+    pivot: position,
+    safeZoneText: undefined,
+    requiredLevelText: undefined,
   })
 
   it('lists Start, facing kept, then every checkpoint by number, facing its way', () => {
     const rows = teleportRows(vec3(0, 1, 0), [stop(1, vec3(0, 2, 90), 0, 'a'), stop(2, vec3(-160, 5, 440), Math.PI / 2, 'b')], () => true)
     expect(rows.map((r) => r.label)).toEqual(['Start', 'Checkpoint 1', 'Checkpoint 2'])
-    expect(rows[0]!.to).toEqual({ position: vec3(0, 1, 0) })
-    expect(rows[2]!.to).toEqual({ position: vec3(-160, 5, 440), yaw: Math.PI / 2 })
+    expect(rows[0]!.to).toEqual({ position: vec3(0, 1, 0), obstacle: null })
+    expect(rows[2]!.to).toEqual({ position: vec3(-160, 5, 440), yaw: Math.PI / 2, obstacle: rows[2]!.to.obstacle })
+    expect(rows[2]!.to.obstacle, 'the checkpoint it lands on').not.toBeNull()
   })
 
   /** Kodjo's call (ADR 0211): one not yet reached is listed, greyed, and cannot be picked. */

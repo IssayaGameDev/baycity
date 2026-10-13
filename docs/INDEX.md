@@ -262,5 +262,7 @@ why matters.
 | [0209](adr/0209-dead-the-camera-follows-the-head.md) | Dead, the camera follows the corpse's head |
 | [0210](adr/0210-a-component-hears-and-sets-what-it-points-at.md) | A component hears the collider it points at, and sets the components it points at |
 | [0211](adr/0211-the-obstacle.md) | The Obstacle: a checkpoint reached through a trigger, holding its stage's numbers |
+| [0212](adr/0212-the-obstacle-you-are-on.md) | The obstacle you are on is the last trigger walked into |
+| [0213](adr/0213-only-the-obstacle-ahead-shows-its-text.md) | Only the obstacle ahead shows its text |
 
 `Design archive/` holds superseded design material and is not maintained.

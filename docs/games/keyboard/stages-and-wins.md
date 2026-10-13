@@ -36,12 +36,12 @@ spawn. `Hazard` is a shared component listed in `content/keyboard/game.json`.
 ## The session
 
 ```ts
-keyboardSession(loaded, opts: KeyboardSessionOptions): ModeSession
+keyboardSession(loaded, opts: KeyboardSessionOptions): KeyboardSession   // + currentObstacle() (ADR 0212)
 interface KeyboardSessionOptions extends ModeSessionOptions {
   onCashOut?: (wins: number, node: WorldNode) => void
   onTreadmill?: (on: TreadmillTick) => void       // per tick
   onStepPad?: (offer: StepPadOffer, node: WorldNode) => void  // per tick
-  requested?: () => Teleport | null               // a teleport the game asks for (ADR 0202)
+  requested?: () => KeyboardTeleport | null       // a teleport the game asks for (ADR 0202), + the stop it lands on
   onReached?: (node: WorldNode) => void          // an Obstacle's trigger walked into (ADR 0211)
 }
 ```
