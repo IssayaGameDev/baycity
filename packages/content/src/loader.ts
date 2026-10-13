@@ -350,6 +350,8 @@ export interface LoadedLevel {
   lights: WorldLight[]
   /** Every `Text` component in the tree, in creation order (ADR 0189). Visual only, nothing on the wire. */
   texts: TextItem[]
+  /** A node's own text, or `undefined` — for a game fading one at runtime (ADR 0213). */
+  textItemOf: (node: WorldNode) => TextItem | undefined
   /**
    * The node a `nodeRef` on `from` points at, or `undefined`.
    *
@@ -1010,6 +1012,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     visuals,
     lights,
     texts,
+    textItemOf: (node) => textByNode.get(node),
     driveOf,
     update,
     shove: (character) => {

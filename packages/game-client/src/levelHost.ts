@@ -1,5 +1,5 @@
 import { assetParamIds } from '@mp/components'
-import { hydratePrefabs, instantiateLevel, relinkPrefabs, type DataAsset, type Level, type LoadedLevel } from '@mp/content'
+import { hydratePrefabs, instantiateLevel, relinkPrefabs, type DataAsset, type Level, type LoadedLevel, type WorldNode } from '@mp/content'
 import type { PhysicsWorld } from '@mp/physics'
 import type { Registry } from '@mp/components'
 import {
@@ -43,6 +43,8 @@ export interface LevelHost {
   occluding: () => Iterable<THREE.Object3D>
   /** The level's texts (ADR 0189), which the AO prepass must skip too: their glyph quads would ghost there. */
   texts: () => readonly THREE.Object3D[]
+  /** How much of a node's text shows, 0 to 1, on top of its own fade (ADR 0213). A node with no text: nothing. */
+  setTextShown: (node: WorldNode, shown: number) => void
   /** Hand the camera the surfaces it wants holed. */
   setOccluders: (handles: readonly number[]) => void
   /** The meshes drawing the node that owns a collider handle (ADR 0082). */
@@ -126,6 +128,10 @@ export const loadLevelInto = async ({
     },
     occluding: () => view.occluding(),
     texts: () => texts.objects(),
+    setTextShown: (node, shown) => {
+      const item = loaded.textItemOf(node)
+      if (item !== undefined) texts.setShown(item, shown)
+    },
     setOccluders: (handles) => {
       view.setOccluders(handles)
     },

@@ -5,8 +5,11 @@ import { vec3, yawOf, type Vec3 } from '@mp/core'
 import { StageGate } from './stageGate'
 import { WinsPad } from './wins'
 
-/** What an obstacle's sign says (Kodjo's wording). */
+/** What an obstacle's required-level text says (Kodjo's wording). */
 export const requiresLevelText = (level: number): string => `Requires Level ${level}`
+
+/** How long a text takes to fade in or out, in seconds (Kodjo's call, ADR 0213). */
+export const TEXT_FADE_SECONDS = 0.3
 
 /**
  * An obstacle's checkpoint, and what there is to know about the obstacle, in one place (ADR 0211, Kodjo's design).
@@ -15,7 +18,10 @@ export const requiresLevelText = (level: number): string => `Requires Level ${le
  * - `teleport` — where the teleport window puts you: standing on that node, facing its +Z. Empty: this node.
  * - `trigger` — a trigger collider. Walking into it reaches the checkpoint, for good. Empty: never reached.
  * - `winsPad`, `wins` — what that pad pays, over its own `wins`.
- * - `sign`, `requiredLevel` — that Text reads "Requires Level X". The level gates nothing yet.
+ * - `requiredLevelText`, `requiredLevel` — that Text reads "Requires Level X". The level gates nothing yet.
+ * - `safeZoneText` — a Text of its own words, shown while this is the obstacle ahead (ADR 0213).
+ *
+ * In the game both texts start hidden, and only the obstacle ahead of the player shows one (`shownText`).
  *
  * The trigger is heard here (`contacts`, ADR 0210) and reported through `effects.progress`; the session tells the
  * game, which saves it. The pad's and the sign's values are set as the level loads (`drives`), so the game, its
@@ -29,13 +35,14 @@ export const Obstacle = defineComponent({
     trigger: { kind: 'componentRef', of: Collider.type, contacts: true, label: 'reached by' },
     winsPad: { kind: 'componentRef', of: WinsPad.type, label: 'wins pad' },
     wins: { kind: 'number', default: 1, min: 1, step: 1, label: 'wins' },
-    sign: { kind: 'componentRef', of: TEXT, label: 'sign' },
+    requiredLevelText: { kind: 'componentRef', of: TEXT, label: 'required level text' },
     requiredLevel: { kind: 'number', default: 0, min: 0, step: 1, label: 'requires level' },
+    safeZoneText: { kind: 'componentRef', of: TEXT, label: 'safe zone text' },
   },
   singleton: true,
   drives: (p) => [
     { ref: p.winsPad, type: WinsPad.type, params: { wins: p.wins } },
-    { ref: p.sign, type: TEXT, params: { text: requiresLevelText(p.requiredLevel) } },
+    { ref: p.requiredLevelText, type: TEXT, params: { text: requiresLevelText(p.requiredLevel) } },
   ],
   onContact: (self, ctx, hit) => {
     // The trigger only: a collider of this node's own, if it has one, is not the way in.
@@ -57,6 +64,11 @@ export interface CheckpointStop {
   readonly key: string
   /** A stage gate is open without being reached, as every gate was (ADR 0202); an obstacle opens once reached. */
   readonly alwaysOpen: boolean
+  /** Where being past it is measured from: its trigger's object, else where the teleport lands (ADR 0213). */
+  readonly pivot: Vec3
+  /** The nodes of its two texts, where it has them (ADR 0213). A stage gate has neither. */
+  readonly safeZoneText: WorldNode | undefined
+  readonly requiredLevelText: WorldNode | undefined
 }
 
 /**
@@ -73,6 +85,8 @@ export const checkpointsOf = (loaded: Pick<LoadedLevel, 'allNodes' | 'findNode'>
     if (obstacle === undefined && !gate) continue
     const landing = obstacle === undefined || obstacle.teleport === null ? undefined : loaded.findNode(node, obstacle.teleport)
     const at = landing ?? node
+    const nodeOf = (ref: { node: string } | null | undefined): WorldNode | undefined => (ref === null || ref === undefined || ref.node === '' ? undefined : loaded.findNode(node, ref.node))
+    const trigger = nodeOf(obstacle?.trigger)
     const twin = seen.get(node.id) ?? 0
     seen.set(node.id, twin + 1)
     out.push({
@@ -82,7 +96,38 @@ export const checkpointsOf = (loaded: Pick<LoadedLevel, 'allNodes' | 'findNode'>
       yaw: yawOf(at.rotation),
       key: twin === 0 ? node.id : `${node.id}#${twin + 1}`,
       alwaysOpen: gate,
+      pivot: trigger === undefined ? vec3(at.position.x, at.position.y, at.position.z) : vec3(trigger.position.x, trigger.position.y, trigger.position.z),
+      safeZoneText: nodeOf(obstacle?.safeZoneText),
+      requiredLevelText: nodeOf(obstacle?.requiredLevelText),
     })
   }
   return out
+}
+
+/** Which text one obstacle shows (ADR 0213). */
+export interface ShownText {
+  readonly stop: CheckpointStop
+  readonly which: 'safeZone' | 'requiredLevel'
+}
+
+/**
+ * The one text the player sees (ADR 0213, Kodjo's calls): the obstacle ahead's Safe zone, and its "Requires Level X"
+ * instead while inside its trigger. `current` is the obstacle the player is on (ADR 0212), `inside` whether they are in
+ * its trigger now, `at` where they are.
+ *
+ * From the spawn the first obstacle is ahead. Out of the current one's trigger, past its pivot along the way its
+ * teleport faces (forward, Kodjo's pick) the next one is ahead; short of it, it still is — they turned back. `null`
+ * when nothing is ahead, or what is ahead is a stage gate, which has no texts.
+ */
+export const shownText = (stops: readonly CheckpointStop[], current: WorldNode | null, inside: boolean, at: Vec3): ShownText | null => {
+  const k = current === null ? -1 : stops.findIndex((s) => s.node === current)
+  const here = stops[k]
+  const obstacleFrom = (i: number): ShownText | null => {
+    const stop = stops[i]
+    return stop === undefined || stop.alwaysOpen ? null : { stop, which: 'safeZone' }
+  }
+  if (here === undefined) return obstacleFrom(stops.findIndex((s) => !s.alwaysOpen))
+  if (inside && !here.alwaysOpen) return { stop: here, which: 'requiredLevel' }
+  const past = (at.x - here.pivot.x) * Math.sin(here.yaw) + (at.z - here.pivot.z) * Math.cos(here.yaw) > 0
+  return obstacleFrom(past ? k + 1 : k)
 }

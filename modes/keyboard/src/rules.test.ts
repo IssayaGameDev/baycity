@@ -7,9 +7,9 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import type { Teleport } from '@mp/mode'
 
-import { KEYBOARD_REGISTRY, STAND_OFFSET, keyboardSession } from './rules'
+import { KEYBOARD_REGISTRY, STAND_OFFSET, keyboardSession, type KeyboardTeleport } from './rules'
 import { StageGate } from './components/stageGate'
-import { checkpointsOf, Obstacle, requiresLevelText } from './components/obstacle'
+import { checkpointsOf, Obstacle, requiresLevelText, shownText } from './components/obstacle'
 import { qualifies, StepPad } from './components/stepPad'
 import { stepsThisTick } from './components/steps'
 import { DEFAULT_CURVE, stepsPerMinute } from './progression'
@@ -242,12 +242,13 @@ describe('obstacles (ADR 0211)', () => {
   const inter: Node = {
     id: 'inter-root',
     transform: { position: vec3(0, 0, 0) },
-    components: [comp('ob', Obstacle.type, { teleport: 'stand', trigger: ref('zone'), winsPad: ref('win'), wins: 10, sign: ref('board'), requiredLevel: 3 })],
+    components: [comp('ob', Obstacle.type, { teleport: 'stand', trigger: ref('zone'), winsPad: ref('win'), wins: 10, requiredLevelText: ref('board'), requiredLevel: 3, safeZoneText: ref('safe') })],
     children: [
       { id: 'stand', transform: { position: vec3(0, 1, 5), rotation: vec3(0, Math.PI / 2, 0) }, components: [] },
       { id: 'zone', transform: { position: vec3(0, 1, 10) }, components: [comp('zone-c', 'Collider', { ...box(2), trigger: true })] },
       { id: 'win', transform: { position: vec3(0, 0, 20) }, components: [comp('win-c', 'Collider', box()), comp('win-w', WinsPad.type, { wins: 1 })] },
       { id: 'board', transform: { position: vec3(0, 3, 15) }, components: [comp('board-t', TEXT, { text: 'Text' })] },
+      { id: 'safe', transform: { position: vec3(0, 3, 8) }, components: [comp('safe-t', TEXT, { text: 'Safe Zone' })] },
     ],
   }
   const placed = (id: string, x: number, params?: Record<string, unknown>): Node =>
@@ -284,7 +285,8 @@ describe('obstacles (ADR 0211)', () => {
   })
 
   it('writes “Requires Level X” on its sign', () => {
-    expect(level().texts.map((t) => t.text)).toEqual([requiresLevelText(3), requiresLevelText(9)])
+    expect(level().texts.filter((t) => t.node === 'board').map((t) => t.text)).toEqual([requiresLevelText(3), requiresLevelText(9)])
+    expect(level().texts.filter((t) => t.node === 'safe').map((t) => t.text), 'the safe zone keeps its own words').toEqual(['Safe Zone', 'Safe Zone'])
     expect(requiresLevelText(12)).toBe('Requires Level 12')
   })
 
@@ -302,6 +304,69 @@ describe('obstacles (ADR 0211)', () => {
     runtime.contact([zoneB!.colliderHandles[0]!])
     runtime.contact([zoneA!.colliderHandles[0]!])
     expect(reached.map((n) => n.id), 'each placement its own').toEqual(['b', 'a'])
+  })
+
+  /**
+   * Kodjo's calls (ADR 0213): one text shows — the obstacle ahead's Safe zone, its "Requires Level X" inside its
+   * trigger — and which one is ahead turns on which side of its trigger you are, along the way its teleport faces.
+   */
+  it('shows the one text ahead of the player', () => {
+    const stops = checkpointsOf(level(), STAND_OFFSET)
+    const [a, b, bare] = stops
+    expect([a!.safeZoneText?.id, a!.requiredLevelText?.id]).toEqual(['safe', 'board'])
+    expect(a!.pivot, 'measured from its trigger').toEqual(vec3(100, 1, 10))
+    const shown = (current: WorldNode | null, inside: boolean, x: number) => {
+      const s = shownText(stops, current, inside, vec3(x, 0, 10))
+      return s === null ? null : [s.stop.key, s.which]
+    }
+    expect(shown(null, false, 0), 'from the spawn: the first one').toEqual(['a', 'safeZone'])
+    expect(shown(a!.node, true, 100), 'inside its trigger').toEqual(['a', 'requiredLevel'])
+    expect(shown(a!.node, false, 150), 'out of it, forward: the next').toEqual(['b', 'safeZone'])
+    expect(shown(a!.node, false, 90), 'out of it, back: still this one').toEqual(['a', 'safeZone'])
+    expect(shown(b!.node, false, 250)).toEqual(['bare', 'safeZone'])
+    expect(shown(bare!.node, false, 400), 'nothing ahead of the last').toBeNull()
+  })
+
+  /** Kodjo's call (ADR 0212): the obstacle you are on is the last trigger walked into; from the spawn, none. */
+  it('knows the obstacle the player is on, and forgets it back at the spawn', () => {
+    const loaded = level()
+    let asked: KeyboardTeleport | null = null
+    const rules = keyboardSession(loaded, {
+      requested: () => {
+        const t = asked
+        asked = null
+        return t
+      },
+    })
+    const character = characterAccess({ launch: 0, impulse: vec3(0, 0, 0), vx: 0, vy: 0, vz: 0, carry: vec3(0, 0, 0), grounded: true, body: { translation: () => vec3(0, 0, 0) } })
+    const runtime = createComponentRuntime(loaded, KEYBOARD_REGISTRY, { character, effects: rules.effects })
+    runtime.attach(0, 0, 1)
+    const [a, b] = checkpointsOf(loaded, STAND_OFFSET)
+    const [zoneA, zoneB] = copies(loaded, 'zone').map((n) => n.colliderHandles[0]!)
+    const [winA] = copies(loaded, 'win')
+    expect(rules.currentObstacle(), 'at the start').toBeNull()
+    runtime.contact([zoneA!])
+    expect(rules.currentObstacle()).toBe(a!.node)
+    runtime.contact([zoneB!])
+    expect(rules.currentObstacle()).toBe(b!.node)
+    runtime.contact([zoneA!])
+    expect(rules.currentObstacle(), 'walked back through an earlier one').toBe(a!.node)
+    rules.effects.kill()
+    expect(rules.takeDeath()).toBe(true)
+    expect(rules.currentObstacle(), 'a death').toBeNull()
+    runtime.contact([zoneB!])
+    rules.effects.progress(winA!)
+    expect(rules.currentObstacle(), 'a cash-out').toBeNull()
+    rules.takeTeleport!()
+    asked = { position: b!.position, yaw: b!.yaw, obstacle: b!.node }
+    rules.takeTeleport!()
+    expect(rules.currentObstacle(), 'teleported to a checkpoint').toBe(b!.node)
+    asked = { position: vec3(0, 0, 0), obstacle: null }
+    rules.takeTeleport!()
+    expect(rules.currentObstacle(), 'teleported to Start').toBeNull()
+    runtime.contact([zoneA!])
+    rules.respawnAt()
+    expect(rules.currentObstacle(), 'a respawn, or Restart').toBeNull()
   })
 })
 

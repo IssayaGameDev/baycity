@@ -2,7 +2,6 @@ import { TICK_DT, vec3, type Vec3 } from '@mp/core'
 import { CHAR_RADIUS, createAnimator, createLocomotion, DEFAULT_GAIT, FOOT_Y, RIG } from '@mp/humanoid'
 import { componentOn, readData } from '@mp/components'
 import type { WorldNode } from '@mp/content'
-import type { Teleport } from '@mp/mode'
 import { worldLabel, type LabelLine, type THREE } from '@mp/render-three'
 import { startTpsClient } from '@mp/tps'
 
@@ -12,9 +11,9 @@ import { DEFAULT_KEYCAP_SHAPE, type KeycapShape } from './keycapGeometry'
 import { DEFAULT_KEYCAP_LOOK, DEFAULT_PRESS, drawKeycaps, type KeycapLook, type PressFeel } from './keycaps'
 import { createPopups, DEFAULT_POPUP, type PopupFeel } from './popups'
 import { abbreviate, experienceForLevel, levelAt, maxSpeedAt, METRES_PER_STUD, type ProgressCurve } from './progression'
-import { keyboardSession, GAME_CURVE, GAME_KEYS, spawnOf, STAND_OFFSET } from './rules'
+import { keyboardSession, GAME_CURVE, GAME_KEYS, spawnOf, STAND_OFFSET, type KeyboardSession, type KeyboardTeleport } from './rules'
 import { createTeleportWindow, teleportRows } from './teleportWindow'
-import { checkpointsOf, type CheckpointStop } from './components/obstacle'
+import { checkpointsOf, shownText, TEXT_FADE_SECONDS, type CheckpointStop } from './components/obstacle'
 import { createStepper, stepsPerSecond } from './components/steps'
 import { Treadmill, TREADMILL_STATE, treadmillStepValue, type TreadmillTick } from './components/treadmill'
 import { padTop } from './components/wins'
@@ -92,13 +91,23 @@ let stepsThisTick = 0
 let checkpoints: readonly CheckpointStop[] = []
 let start: Vec3 = vec3(0, 3, 0)
 /** Where the teleport window asked to go, until the rules take it on the next tick. */
-let wantTeleport: Teleport | null = null
+let wantTeleport: KeyboardTeleport | null = null
 /**
  * The level being played, by name, for what reached checkpoints are saved under — `null` until the client exists.
  * A trigger walked into before then (a spawn inside one) waits in `reachedEarly`.
  */
 let levelName: string | null = null
 const reachedEarly: WorldNode[] = []
+/** The level's rules, for the obstacle the player is on (ADR 0212). */
+let session: KeyboardSession | null = null
+/**
+ * The trigger the player was last inside, and when (ADR 0213): reported every tick inside it, so "inside now" is a
+ * recent report — the treadmill's arrangement.
+ */
+let insideOf: WorldNode | null = null
+let insideSeenMs = -Infinity
+/** How much of each obstacle text shows, 0 to 1, fading toward the one shown (ADR 0213). Hidden until shown. */
+const textShown = new Map<WorldNode, number>()
 /** An Obstacle's trigger was walked into (ADR 0211): its checkpoint is reached for good, saved once. */
 const reach = (node: WorldNode): void => {
   if (levelName === null) {
@@ -157,9 +166,14 @@ const client = await startTpsClient({
   session: (loaded, opts) => {
     checkpoints = checkpointsOf(loaded, STAND_OFFSET)
     start = spawnOf(loaded)
-    return keyboardSession(loaded, {
+    textShown.clear()
+    session = keyboardSession(loaded, {
       ...opts,
-      onReached: reach,
+      onReached: (node) => {
+        insideOf = node
+        insideSeenMs = performance.now()
+        reach(node)
+      },
       // The teleport window's pick, handed over once (ADR 0203).
       requested: () => {
         const to = wantTeleport
@@ -182,6 +196,7 @@ const client = await startTpsClient({
         stepsThisTick = 0 // the stepper's report for this tick, if any, is superseded
       },
     })
+    return session
   },
   /**
    * The locomotion, and the Stepper bound to this client (ADR 0081): held input on the ground becomes steps,
@@ -343,6 +358,26 @@ client.onFrame((dt) => {
     if (parts !== null) press(peer.id, parts)
   }
   for (const id of lastSole.keys()) if (!seen.has(id)) lastSole.delete(id)
+
+  // The one obstacle text ahead of us (ADR 0213, Kodjo's calls): every one starts hidden, and each fades toward shown
+  // or hidden over `TEXT_FADE_SECONDS`.
+  const ownParts = me === null ? null : client.partsOf(me)
+  const current = session?.currentObstacle() ?? null
+  const inside = current !== null && insideOf === current && performance.now() - insideSeenMs < 3 * TICK_DT * 1000
+  const ahead = ownParts === null ? null : shownText(checkpoints, current, inside, standing(ownParts))
+  for (const stop of checkpoints)
+    for (const [which, node] of [
+      ['safeZone', stop.safeZoneText],
+      ['requiredLevel', stop.requiredLevelText],
+    ] as const) {
+      if (node === undefined) continue
+      const want = ahead !== null && ahead.stop === stop && ahead.which === which ? 1 : 0
+      const was = textShown.get(node) ?? 0
+      const step = dt / TEXT_FADE_SECONDS
+      const now = want > was ? Math.min(want, was + step) : Math.max(want, was - step)
+      textShown.set(node, now)
+      client.textShown(node, now)
+    }
 
   // Pay out whole steps, from the feet: ground steps at a key's worth (ADR 0081), treadmill steps at the tier's
   // (ADR 0080). Kodjo's call: popups on, one per step, saying what the step paid.

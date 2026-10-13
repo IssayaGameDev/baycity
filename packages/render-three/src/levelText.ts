@@ -27,6 +27,11 @@ export const textStyleOf = (desc: TextDesc, fontUrl: FontUrlOf = () => null): Pa
 export interface LevelTexts {
   /** Copy each item's pose, scale, visibility and fade onto its mesh. */
   sync: () => void
+  /**
+   * How much of an item the game lets show, 0 to 1, on top of its own fade (ADR 0213) — a sign a game fades in and
+   * out at runtime. 1 until set; drawn from the next `sync`.
+   */
+  setShown: (item: TextItem, shown: number) => void
   /** The meshes, for the ambient-occlusion prepass to leave out (a glyph's quad would ghost there, ADR 0082). */
   objects: () => readonly THREE.Object3D[]
   dispose: () => void
@@ -38,19 +43,34 @@ export const addTexts = (scene: THREE.Scene, items: readonly TextItem[], fontUrl
     scene.add(text.object)
     return { item, text }
   })
+  const shown = new Map<TextItem, number>()
+  const byItem = new Map(drawn.map((d) => [d.item, d]))
+  /** Visibility and fade: the item's own, times what the game lets show. */
+  const fadeOf = ({ item, text }: { item: TextItem; text: WorldText }): void => {
+    const opacity = item.opacity * (shown.get(item) ?? 1)
+    text.object.visible = item.visible && opacity > 0
+    text.fade(opacity)
+  }
   const sync = (): void => {
-    for (const { item, text } of drawn) {
+    for (const d of drawn) {
+      const { item, text } = d
       const o = text.object
-      o.visible = item.visible && item.opacity > 0
       o.position.set(item.position.x, item.position.y, item.position.z)
       o.quaternion.set(item.rotation.x, item.rotation.y, item.rotation.z, item.rotation.w)
       o.scale.set(item.scale.x * item.drawScale.x, item.scale.y * item.drawScale.y, item.scale.z * item.drawScale.z)
-      text.fade(item.opacity)
+      fadeOf(d)
     }
   }
   sync()
   return {
     sync,
+    setShown: (item, k) => {
+      shown.set(item, Math.min(1, Math.max(0, k)))
+      // At once, not at the next `sync`: a game sets it after this frame's sync, and the frame is drawn after both —
+      // so a text hidden from the start is never drawn for one frame first.
+      const d = byItem.get(item)
+      if (d !== undefined) fadeOf(d)
+    },
     objects: () => drawn.map((d) => d.text.object),
     dispose: () => {
       for (const { text } of drawn) {

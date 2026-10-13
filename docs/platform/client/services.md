@@ -50,6 +50,7 @@ interface LevelHost {
   occluding: () => Iterable<THREE.Object3D>    // meshes wearing the cutout (ADR 0055)
   setOccluders: (handles: readonly number[]) => void
   meshesOf: (handle: number) => readonly THREE.Mesh[]   // node's drawn meshes by collider handle (ADR 0082)
+  setTextShown: (node: WorldNode, shown: number) => void // 0–1 over a node's text's own fade (ADR 0213), via loaded.textItemOf
   material: (assetId: string) => THREE.Material | null  // any material a component parameter names (ADR 0082)
   data: (assetId: string) => DataAsset | undefined      // a data asset as its file holds it; read it with readData (ADR 0181)
   dispose: () => void
