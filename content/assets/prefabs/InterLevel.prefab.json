@@ -32,7 +32,15 @@
           "node": "516a00f3",
           "component": "6f858b59"
         },
-        "requiredLevel": 0
+        "requiredLevel": 0,
+        "safeZoneText": {
+          "node": "cac13975",
+          "component": "6f858b59"
+        },
+        "requiredLevelText": {
+          "node": "516a00f3",
+          "component": "6f858b59"
+        }
       }
     }
   ],
