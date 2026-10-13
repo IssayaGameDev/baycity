@@ -516,7 +516,7 @@ export const startTpsClient = async (mode: TpsClientOptions): Promise<TpsClient>
     })
     loaded = level.loaded
     /**
-     * **The rules run themselves.** `Bumper`, `Checkpoint` and `Hazard` carry their own `onContact`, so this
+     * **The rules run themselves.** `Bumper`, `Hazard` and a game's pads carry their own `onContact`, so this
      * mode supplies only what dying and making progress *mean* here, and the branches that used to sit in the
      * tick — a checkpoint loop, a `Math.max` over bumper powers, a hazard `Set` — are gone.
      *

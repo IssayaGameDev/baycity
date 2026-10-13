@@ -1,11 +1,11 @@
 # Obstacles and the teleport window
 
-`modes/keyboard/src/components/obstacle.ts` (ADR 0211), `stageGate.ts` (ADR 0202), `teleportWindow.ts` (ADR 0203).
+`modes/keyboard/src/components/obstacle.ts` (ADR 0211), `teleportWindow.ts` (ADR 0203). `StageGate` (ADR 0202) is gone (ADR 0217).
 The checkpoints the teleport window sends a player to, and the window.
 
 ## `Obstacle`
 
-Singleton. Put on the InterLevel prefab's root, where the stage gate was, pointing at what is inside the prefab (a
+Singleton. Put on the InterLevel prefab's root, pointing at what is inside the prefab (a
 level node cannot point inside a placement, `docs/platform/components/api.md`).
 
 | Param | Kind | Default | Meaning |
@@ -22,17 +22,15 @@ level node cannot point inside a placement, `docs/platform/components/api.md`).
 read them. `onContact`: a hit on the trigger's handle → `effects.progress(self.node)` → `keyboardSession` →
 `onReached(node)`.
 
-`StageGate` (no params) is kept until the box's levels have swapped theirs for Obstacles (ADR 0211): listed, always open.
-
 ## The list
 
 ```ts
 checkpointsOf(loaded: Pick<LoadedLevel, 'allNodes' | 'findNode'>, standOffset: number): CheckpointStop[]
-interface CheckpointStop { number; node: WorldNode; position: Vec3; yaw: number; key: string; alwaysOpen: boolean }
+interface CheckpointStop { number; node: WorldNode; position: Vec3; yaw: number; key: string; pivot: Vec3; safeZoneText; requiredLevelText }
 ```
 
-Every Obstacle and StageGate node (one with both is its Obstacle) in Hierarchy order — `allNodes`, depth first —
-numbered from 1. `key` = the node's id, `#2`, `#3`… on later nodes sharing one. `alwaysOpen` for a gate.
+Every Obstacle node in Hierarchy order — `allNodes`, depth first — numbered from 1. `key` = the node's id, `#2`,
+`#3`… on later nodes sharing one.
 
 ## Reached
 
@@ -59,7 +57,7 @@ One shows at a time — `shownText(stops, current, inside, feet)`:
 | out of it, past its `pivot` (the trigger's object, else the landing) along its teleport's facing | the next stop's safe zone text |
 | out of it, short of that | its own safe zone text again |
 
-A stage gate shows nothing. Each text fades toward 1 or 0 at `1 / TEXT_FADE_SECONDS` (0.3 s) a second, linear
+Each text fades toward 1 or 0 at `1 / TEXT_FADE_SECONDS` (0.3 s) a second, linear
 (`main.ts`, every frame, from the feet of the drawn rig).
 
 ## The teleport
@@ -73,7 +71,7 @@ behind (`OrbitCamera.face`). To Start: the spawn (`spawnOf`), no yaw, `obstacle:
 
 `createTeleportWindow(client, { rows, go })`, wired in `main.ts`: `rows = teleportRows(start, checkpoints, isReached)` —
 Start, then `Checkpoint N` per stop — asked as it opens. `TeleportRow { label, to, locked }`: `locked` = not
-`alwaysOpen` and not reached — drawn `muted` (greyed), no `onPick`.
+reached — drawn `muted` (greyed), no `onPick`.
 
 | | |
 | --- | --- |
@@ -87,5 +85,4 @@ Start, then `Checkpoint N` per stop — asked as it opens. `TeleportRow { label,
 
 ## In the editor
 
-`KEYBOARD_MODE.facingGizmos`: a blue disc and post (`MARKER_COLORS.spawn`) with an arrow along a **StageGate**'s
-forward, under the toolbar's Markers toggle. An Obstacle has none.
+No marker: `KEYBOARD_MODE` sets no `facingGizmos`.

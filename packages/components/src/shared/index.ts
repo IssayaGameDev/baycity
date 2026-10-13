@@ -2,7 +2,6 @@ import { ComponentError } from '../params'
 import type { AnyComponentDef } from '../registry'
 import { Boss } from './boss'
 import { Bumper } from './bumper'
-import { Checkpoint } from './checkpoint'
 import { Hazard } from './hazard'
 import { Sequence } from './sequence'
 
@@ -19,13 +18,13 @@ import { Sequence } from './sequence'
  * hazards kill once; two bumpers resolve to the stronger, which is the same as deleting the weaker).
  * Colliders are the repeatable ones. Reversible if a rule ever grows a per-copy parameter that stacks.
  */
-export const SHARED_COMPONENTS = [Checkpoint, Hazard, Bumper, Sequence, Boss]
+export const SHARED_COMPONENTS = [Hazard, Bumper, Sequence, Boss]
 
 /**
  * The components every game *could* have, looked up by name (ADR 0077).
  *
  * A game's registry is code plus data: its own components are code (`Keyboard`, `WinsPad`), and the shared
- * ones it has opted into — `Bumper`, `Checkpoint`, `Hazard`, `Sequence`, `Boss` — are a list of names in
+ * ones it has opted into — `Bumper`, `Hazard`, `Sequence`, `Boss` — are a list of names in
  * `content/<game>/game.json`. The list is data so the **editor can append to it**: placing a trampoline into a
  * game that has no `Bumper` adds `Bumper` to that game, rather than refusing, or crashing the game at load.
  *

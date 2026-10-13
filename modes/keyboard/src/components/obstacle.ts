@@ -2,7 +2,6 @@ import { Collider, componentOn, defineComponent } from '@mp/components'
 import { TEXT, type LoadedLevel, type WorldNode } from '@mp/content'
 import { vec3, yawOf, type Vec3 } from '@mp/core'
 
-import { StageGate } from './stageGate'
 import { WinsPad } from './wins'
 
 /** What an obstacle's required-level text says (Kodjo's wording). */
@@ -13,7 +12,7 @@ export const TEXT_FADE_SECONDS = 0.3
 
 /**
  * An obstacle's checkpoint, and what there is to know about the obstacle, in one place (ADR 0211, Kodjo's design).
- * On the InterLevel prefab's root, where the stage gate was, pointing at what is inside that prefab:
+ * On the InterLevel prefab's root, pointing at what is inside that prefab:
  *
  * - `teleport` — where the teleport window puts you: standing on that node, facing its +Z. Empty: this node.
  * - `trigger` — a trigger collider. Walking into it reaches the checkpoint, for good. Empty: never reached.
@@ -54,7 +53,7 @@ export const Obstacle = defineComponent({
 export interface CheckpointStop {
   /** 1-based, in Hierarchy order. */
   readonly number: number
-  /** The node carrying the Obstacle, or the stage gate. */
+  /** The node carrying the Obstacle. */
   readonly node: WorldNode
   /** Where the character's origin goes: the landing node's position, raised by the character's stand-off. */
   readonly position: Vec3
@@ -62,31 +61,27 @@ export interface CheckpointStop {
   readonly yaw: number
   /** What its being reached is saved under: the node's id, numbered from the second where two share one. */
   readonly key: string
-  /** A stage gate is open without being reached, as every gate was (ADR 0202); an obstacle opens once reached. */
-  readonly alwaysOpen: boolean
   /** Where being past it is measured from: its trigger's object, else where the teleport lands (ADR 0213). */
   readonly pivot: Vec3
-  /** The nodes of its two texts, where it has them (ADR 0213). A stage gate has neither. */
+  /** The nodes of its two texts, where it has them (ADR 0213). */
   readonly safeZoneText: WorldNode | undefined
   readonly requiredLevelText: WorldNode | undefined
 }
 
 /**
  * Every checkpoint in the level, in Hierarchy order — depth first, parents before children, the order the loader
- * walks (`allNodes`), so one inside a prefab placement is numbered where the placement sits. An Obstacle, or a stage
- * gate until they are all replaced; a node with both is its Obstacle.
+ * walks (`allNodes`), so one inside a prefab placement is numbered where the placement sits.
  */
 export const checkpointsOf = (loaded: Pick<LoadedLevel, 'allNodes' | 'findNode'>, standOffset: number): CheckpointStop[] => {
   const seen = new Map<string, number>()
   const out: CheckpointStop[] = []
   for (const node of loaded.allNodes) {
     const obstacle = componentOn(node.components, Obstacle)
-    const gate = obstacle === undefined && componentOn(node.components, StageGate) !== undefined
-    if (obstacle === undefined && !gate) continue
-    const landing = obstacle === undefined || obstacle.teleport === null ? undefined : loaded.findNode(node, obstacle.teleport)
+    if (obstacle === undefined) continue
+    const landing = obstacle.teleport === null ? undefined : loaded.findNode(node, obstacle.teleport)
     const at = landing ?? node
     const nodeOf = (ref: { node: string } | null | undefined): WorldNode | undefined => (ref === null || ref === undefined || ref.node === '' ? undefined : loaded.findNode(node, ref.node))
-    const trigger = nodeOf(obstacle?.trigger)
+    const trigger = nodeOf(obstacle.trigger)
     const twin = seen.get(node.id) ?? 0
     seen.set(node.id, twin + 1)
     out.push({
@@ -95,10 +90,9 @@ export const checkpointsOf = (loaded: Pick<LoadedLevel, 'allNodes' | 'findNode'>
       position: vec3(at.position.x, at.position.y + standOffset, at.position.z),
       yaw: yawOf(at.rotation),
       key: twin === 0 ? node.id : `${node.id}#${twin + 1}`,
-      alwaysOpen: gate,
       pivot: trigger === undefined ? vec3(at.position.x, at.position.y, at.position.z) : vec3(trigger.position.x, trigger.position.y, trigger.position.z),
-      safeZoneText: nodeOf(obstacle?.safeZoneText),
-      requiredLevelText: nodeOf(obstacle?.requiredLevelText),
+      safeZoneText: nodeOf(obstacle.safeZoneText),
+      requiredLevelText: nodeOf(obstacle.requiredLevelText),
     })
   }
   return out
@@ -117,17 +111,17 @@ export interface ShownText {
  *
  * From the spawn the first obstacle is ahead. Out of the current one's trigger, past its pivot along the way its
  * teleport faces (forward, Kodjo's pick) the next one is ahead; short of it, it still is — they turned back. `null`
- * when nothing is ahead, or what is ahead is a stage gate, which has no texts.
+ * when nothing is ahead.
  */
 export const shownText = (stops: readonly CheckpointStop[], current: WorldNode | null, inside: boolean, at: Vec3): ShownText | null => {
   const k = current === null ? -1 : stops.findIndex((s) => s.node === current)
   const here = stops[k]
   const obstacleFrom = (i: number): ShownText | null => {
     const stop = stops[i]
-    return stop === undefined || stop.alwaysOpen ? null : { stop, which: 'safeZone' }
+    return stop === undefined ? null : { stop, which: 'safeZone' }
   }
-  if (here === undefined) return obstacleFrom(stops.findIndex((s) => !s.alwaysOpen))
-  if (inside && !here.alwaysOpen) return { stop: here, which: 'requiredLevel' }
+  if (here === undefined) return obstacleFrom(0)
+  if (inside) return { stop: here, which: 'requiredLevel' }
   const past = (at.x - here.pivot.x) * Math.sin(here.yaw) + (at.z - here.pivot.z) * Math.cos(here.yaw) > 0
   return obstacleFrom(past ? k + 1 : k)
 }

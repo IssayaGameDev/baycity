@@ -9,13 +9,13 @@ import type { KeyboardTeleport } from './rules'
 
 /**
  * The teleport window (ADR 0203), Kodjo's calls throughout: a square **Teleport** button on the left edge, where the
- * Wins counter was, opens a box that slides in from the left — Start, then every stage gate in Hierarchy order, a
+ * Wins counter was, opens a box that slides in from the left — Start, then every checkpoint in Hierarchy order, a
  * list that scrolls. A pick teleports and closes it. ✕, T, Esc or a tap outside close it too — Esc and the tap
  * through the hold's `onOutside`, since the shell owns Esc (ADR 0205).
  *
  * Open, the mouse is free (`holdCursor`) and you can still walk: only the camera stops turning. T opens it on a
  * keyboard; on touch the button is tapped. A checkpoint not yet reached is listed greyed and cannot be picked
- * (ADR 0211, Kodjo's call); a stage gate is always open. Paying for one comes later.
+ * (ADR 0211, Kodjo's call). Paying for one comes later.
  */
 
 /** One row: what it says, where it sends you, and whether it is shut. */
@@ -30,7 +30,7 @@ export interface TeleportRow {
 /** Start — the spawn, facing as you were — then every checkpoint, facing its way, shut until `reached` says so. */
 export const teleportRows = (start: Vec3, stops: readonly CheckpointStop[], reached: (key: string) => boolean): TeleportRow[] => [
   { label: 'Start', to: { position: start, obstacle: null }, locked: false },
-  ...stops.map((s) => ({ label: `Checkpoint ${s.number}`, to: { position: s.position, yaw: s.yaw, obstacle: s.node }, locked: !s.alwaysOpen && !reached(s.key) })),
+  ...stops.map((s) => ({ label: `Checkpoint ${s.number}`, to: { position: s.position, yaw: s.yaw, obstacle: s.node }, locked: !reached(s.key) })),
 ]
 
 /** The slide, in seconds: snappy, Kodjo's call. */

@@ -7,7 +7,6 @@ import { Keyboard } from './components/keyboard'
 import { keyGeometryFrom, type KeyGeometry } from './keycaps'
 import { StepPad, type StepPadOffer } from './components/stepPad'
 import { Obstacle } from './components/obstacle'
-import { StageGate } from './components/stageGate'
 import { STEPPER_DEF } from './components/steps'
 import { Treadmill, type TreadmillTick } from './components/treadmill'
 import { WinsPad } from './components/wins'
@@ -26,7 +25,7 @@ import { curveFrom, type ProgressCurve } from './progression'
 /**
  * What this game's levels may contain (ADR 0077): the engine's components, the player's, this game's own code
  * components, and **the shared components named in `content/keyboard/game.json`** — a data file, so the editor can
- * add to it when a level here needs a `Bumper` or a `Checkpoint` the game did not have yet.
+ * add to it when a level here needs a `Bumper` the game did not have yet.
  */
 /** The curve as `content/keyboard/game.json` sets it (ADR 0087) — what the game and the editor's play run on. */
 export const GAME_CURVE: ProgressCurve = curveFrom((game as { settings?: unknown }).settings)
@@ -40,7 +39,7 @@ export const GAME_CURVE: ProgressCurve = curveFrom((game as { settings?: unknown
  */
 export const GAME_KEYS: KeyGeometry = keyGeometryFrom((game as { settings?: Record<string, unknown> }).settings)
 
-export const KEYBOARD_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, STEPPER_DEF, Keyboard, WinsPad, Treadmill, StepPad, StageGate, Obstacle, ...sharedComponents(game.components)])
+export const KEYBOARD_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, STEPPER_DEF, Keyboard, WinsPad, Treadmill, StepPad, Obstacle, ...sharedComponents(game.components)])
 
 /** How far above a spawn node the character's origin sits — half the capsule, plus its cap. */
 export const STAND_OFFSET = CHAR_HALF_HEIGHT + CHAR_RADIUS
@@ -67,7 +66,7 @@ export interface KeyboardSessionOptions extends ModeSessionOptions {
   /** Standing on a `StepPad` this tick (ADR 0082): what it offers. The game holds the Wins and decides. */
   readonly onStepPad?: (offer: StepPadOffer, node: WorldNode) => void
   /**
-   * A teleport the game asks for — the teleport window, to a stage gate or the start (ADR 0202). Asked when the
+   * A teleport the game asks for — the teleport window, to a checkpoint or the start (ADR 0202). Asked when the
    * host takes a teleport and nothing of the rules' own is waiting; it hands its request over once.
    */
   readonly requested?: () => KeyboardTeleport | null

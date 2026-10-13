@@ -56,7 +56,6 @@ describe('the built-in registry', () => {
       'Spawn',
       'Light',
       'Text',
-      'Checkpoint',
       'Hazard',
       'Bumper',
       'Sequence',
@@ -69,7 +68,7 @@ describe('the built-in registry', () => {
     // combine (ADR 0137).
     expect(Collider.singleton).toBeUndefined()
     expect(DEFAULT_REGISTRY.get('Sequence')?.singleton).toBeUndefined()
-    for (const type of ['Renderer', 'MaterialOverride', 'Spawn', 'Checkpoint', 'Hazard', 'Bumper'])
+    for (const type of ['Renderer', 'MaterialOverride', 'Spawn', 'Hazard', 'Bumper'])
       expect(DEFAULT_REGISTRY.get(type)?.singleton, type).toBe(true)
   })
 

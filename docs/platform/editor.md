@@ -528,7 +528,7 @@ server-side changed. Nobody following, nothing is sent.
 | `gameData` | per game, `content/<game>/game.json` (`parseGameData`), read by `loadGame` in `reloadAssets` with where the copy stands (`gameOrigins`), then kept live by `gameSync` (*Live assets* below) |
 | `registryFor(mode)` | `mode.registry`'s own and built-in types + the shared types `gameData[mode.name].components` lists now: a shared type the code has but the list dropped is left out, one the list added is appended (`sharedComponents`). `mode.registry` untouched until the data arrives |
 | `registry()` | `registryFor(activeMode)`, or `DEFAULT_REGISTRY` with no game |
-| `adoptable()` | `SHARED_COMPONENT_TYPES` the game lacks (`Boss`, `Bumper`, `Checkpoint`, `Hazard`, `Sequence`) |
+| `adoptable()` | `SHARED_COMPONENT_TYPES` the game lacks (`Boss`, `Bumper`, `Hazard`, `Sequence`) |
 | `adopt(types)` | shared ∧ new → `gameSync.edit(gameDocId(game), [set components])` → `gameShown` → `reopenWithRegistry()` |
 | `gameShown(game, before)` | after any change to a game's copy — this tab's, anyone's, an undo: the list changed → `reopenWithRegistry()` (the game you are in) and the games window redrawn; the settings → `meshes.buildAll()` for a `surfaceGrid` game (the key pitch, ADR 0120) and `gamesWindow.settingsChanged(game)` |
 
