@@ -29,7 +29,7 @@
         },
         "wins": 1,
         "sign": {
-          "node": "cac13975",
+          "node": "516a00f3",
           "component": "6f858b59"
         },
         "requiredLevel": 0
@@ -378,7 +378,7 @@
           "params": {
             "text": "Level X",
             "size": 1.75,
-            "color": "#fb00ff",
+            "color": "#ffffff",
             "align": "center",
             "width": 0,
             "bold": false,
@@ -410,7 +410,7 @@
           "params": {
             "text": "Safe Zone",
             "size": 1.75,
-            "color": "#fb00ff",
+            "color": "#ffffff",
             "align": "center",
             "width": 0,
             "bold": false,
