@@ -31,7 +31,8 @@ export {
   vec3Param,
   walkNodes,
 } from './nodes'
-export type { Resolved, TypeInfo } from './nodes'
+export type { Drive, Resolved, TypeInfo } from './nodes'
+export { drivenComponents, drivesOf } from './drives'
 export { LevelError, validateLevel, validateNodeTree, validateConfig, checkTransform, checkComponents, checkOverrides } from './validate'
 export type { ParamChecker, TreeContext } from './validate'
 export { applyOp, applyBatch, invertOp, touchedRefs, refKey, isInherited, OpError } from './ops'

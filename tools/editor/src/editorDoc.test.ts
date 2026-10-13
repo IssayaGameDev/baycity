@@ -5,6 +5,7 @@ import {
   MATERIAL_OVERRIDE,
   SPAWN,
   RENDERER,
+  TEXT,
   instantiateLevel,
   validateLevel,
   type ComponentData,
@@ -2043,5 +2044,37 @@ describe('a pass that only reads (ADR 0167)', () => {
     expect(seen).toBe(2)
     doc.placeEmpty(vec3(0, 0, 0), null)
     expect(doc.count(), 'nothing stale after the passes').toBe(2)
+  })
+})
+
+/** What a component sets on another it points at (ADR 0210), drawn by the editor as the loader applies it. */
+describe('a driven text', () => {
+  const Signer = defineComponent({
+    type: 'Signer',
+    params: { sign: { kind: 'componentRef', of: TEXT }, words: { kind: 'string', default: 'set' } },
+    drives: (p) => [{ ref: p.sign, type: TEXT, params: { text: p.words } }],
+  })
+  const reg = createRegistry([...ENGINE_COMPONENTS, Signer])
+  const level = (): Level => ({
+    id: 'fx',
+    config: {},
+    nodes: [
+      { id: 'board', transform: { position: vec3(0, 0, 0) }, components: [{ id: 't', type: TEXT, params: { text: 'own' } }] },
+      { id: 'signer', transform: { position: vec3(0, 0, 0) }, components: [{ id: 's', type: Signer.type, params: { sign: { node: 'board', component: '' }, words: 'Requires Level 4' } }] },
+      { id: 'other', transform: { position: vec3(0, 0, 0) }, components: [{ id: 'o', type: TEXT, params: { text: 'untouched' } }] },
+    ],
+  })
+
+  it('shows what the component pointing at it sets, and leaves the rest as authored', () => {
+    const doc = levelDoc(level(), reg)
+    expect(doc.textSpec(0)?.text).toBe('Requires Level 4')
+    expect(doc.textSpec(2)?.text).toBe('untouched')
+    expect(doc.reading(() => [doc.textSpec(0)?.text, doc.textSpec(2)?.text]), 'the same inside a reading pass').toEqual(['Requires Level 4', 'untouched'])
+  })
+
+  it('says which types drive others, so an edit to one redraws everything', () => {
+    const doc = levelDoc(level(), reg)
+    expect(doc.drives(Signer.type)).toBe(true)
+    expect(doc.drives(TEXT)).toBe(false)
   })
 })

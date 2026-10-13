@@ -19,6 +19,7 @@ import {
 } from './sequence'
 import { SEQUENCE, sequenceOf } from './sequenceData'
 import { textOf, type TextDesc } from './text'
+import { drivenComponents, drivesOf } from './drives'
 import {
   COLLIDER,
   LIGHT,
@@ -449,6 +450,10 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
   /** scope -> node id -> node. Scope 0 is the level; each placement gets one for what it inherited. */
   const byScope = new Map<number, Map<string, WorldNode>>()
   let nextScope = 0
+  /** A node's own reference scope first, then the level's (stage C4). Filled as the tree is built. */
+  const findNode = (from: WorldNode, id: string): WorldNode | undefined => byScope.get(from.scope)?.get(id) ?? byScope.get(0)?.get(id)
+  /** Each node's text, for what a drive writes into it once the tree is built (ADR 0210). */
+  const textByNode = new Map<WorldNode, TextItem>()
   const frames: Frame[] = []
   /** Node → its frame, for `driveOf`. Only driven nodes are ever looked up, but the map is cheap and total. */
   const frameByNode = new Map<WorldNode, Frame>()
@@ -644,6 +649,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     }
 
     const writes = textOf(r.components)
+    let textItem: TextItem | undefined
     if (writes !== undefined) {
       const text: TextItem = {
         ...writes,
@@ -656,6 +662,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
         opacity: f.seq.opacity,
       }
       texts.push(text)
+      textItem = text
       // Its own dynamic, as a light's: a sign rides a moving frame whether or not the node has a collider.
       if (f.animated) addDynamic(f, undefined, undefined, undefined, undefined, undefined, false, text)
     }
@@ -675,6 +682,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     }
     frameByNode.set(worldNode, f)
     allNodes.push(worldNode)
+    if (textItem !== undefined) textByNode.set(worldNode, textItem)
     /**
      * Registered under the id whoever might name it would use, which for a placement is **two** ids: its own,
      * to the level that placed it, and the prefab root's, to a reference authored inside that prefab.
@@ -785,6 +793,20 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
   }
 
   for (const node of level.nodes) build(node, null, undefined, 0, [])
+
+  /**
+   * What a component sets on another it points at (ADR 0210): once the whole tree is built, since a target can come
+   * before its driver, and before anything reads a node's components — the game's rules and components see the
+   * driven values, and a driven text is drawn with them. Its colliders and visuals were built from its own: a drive
+   * is for what is read, not for what is built.
+   */
+  for (const [target, drives] of drivesOf(allNodes, (n) => n.components, findNode, types)) {
+    const components = drivenComponents(target.components, drives)
+    ;(target as { components: readonly ComponentData[] }).components = components
+    const text = textByNode.get(target)
+    const writes = textOf(components)
+    if (text !== undefined && writes !== undefined) Object.assign(text, writes)
+  }
 
   let primed = false
 
@@ -984,7 +1006,7 @@ export const instantiateLevel = (world: PhysicsWorld, level: Level, types: TypeI
     nodes,
     allNodes,
     nodeOf: (colliderHandle) => nodeByCollider.get(colliderHandle),
-    findNode: (from, id) => byScope.get(from.scope)?.get(id) ?? byScope.get(0)?.get(id),
+    findNode,
     visuals,
     lights,
     texts,

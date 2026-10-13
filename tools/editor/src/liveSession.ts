@@ -270,10 +270,14 @@ export const createLiveSession = (host: LiveHost) => {
       return
     }
     const plan = open.reading(() =>
-      repaintFor(ops, (ref, componentId) => {
-        const i = open.indexOfRef(ref)
-        return i === null ? undefined : open.components(i).find((c) => c.id === componentId)?.type
-      }),
+      repaintFor(
+        ops,
+        (ref, componentId) => {
+          const i = open.indexOfRef(ref)
+          return i === null ? undefined : open.components(i).find((c) => c.id === componentId)?.type
+        },
+        open.drives,
+      ),
     )
     // The sky and its light re-bake only when the environment changed.
     if (plan.environment) host.installEnvironment(open.environment())

@@ -108,6 +108,11 @@ export interface NodeRefSpec extends SpecBase {
 export interface ComponentRefSpec extends SpecBase {
   readonly kind: 'componentRef'
   readonly of: string
+  /**
+   * A contact with the collider this points at runs this component's `onContact` too (ADR 0210): a trigger on
+   * another node, heard here, with `hit` naming that collider and its node. For `of: Collider` only.
+   */
+  readonly contacts?: boolean
 }
 
 /**

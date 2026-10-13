@@ -35,7 +35,8 @@ interface LevelConfig { mode?: { name: string }; environment?: Partial<{ sun: Su
 | Export | Role |
 |---|---|
 | `COLLIDER, MESH, RENDERER, MATERIAL_OVERRIDE, SPAWN, LIGHT, SEQUENCE` | The type constants the loader reads. First six = `ENGINE_COMPONENTS`; `Sequence` is gameplay-owned but loader-evaluated (ADR 0141), declared in `sequenceData.ts` and re-exported here; `patchComponents` applies a placement's `sequences` record to its `stages` (ADR 0139). |
-| `TypeInfo { get(type) → { singleton?, moves? } \| undefined }` | What resolution needs from a registry. |
+| `TypeInfo { get(type) → { singleton?, moves?, drives? } \| undefined }` | What resolution needs from a registry. `drives(params) → Drive[]` (ADR 0210). |
+| `Drive { ref: { node, component } \| null; type; params }` | What a component sets on another it points at, over its own. `drivesOf(nodes, componentsOf, find, types): Map<N, Drive[]>` (drives.ts — the loader's and the editor's resolution alike); `drivenComponents(components, drives)` (new objects: a prefab's components are shared). |
 | `effectiveNode(level, node, types): Resolved` | `{ id, name, transform, components, children, inheritedCount }`. Placement keeps own `id`/`transform`; `name` falls back to prefab root's. `bakeOverrides` patches the prefab tree (returns the prefab's own object when unchanged); `layerOwn`: own **singleton** replaces inherited same type, repeatable appends. Children = inherited then own. Unknown prefab key → own layer only. |
 | `walkNodes`, `componentsOfType`, `firstOfType`, `numberParam`/`vec3Param`/`stringParam`/`boolParam`, `freeTableKey` | Depth-first walk; untyped readers with fallbacks; table-key dedupe for interning prefabs. |
 
@@ -63,7 +64,7 @@ interface WorldLight { …; position; rotation; visible: boolean /* off while it
 | `nodes` | Nodes with ≥1 enabled `Collider`, depth-first. What a mode indexes. |
 | `allNodes` | Every node, same order. What the component runtime iterates. |
 | `nodeOf(handle)` | Contact → node. Inverse of `colliderHandles`. |
-| `findNode(from, id)` | `nodeRef` resolution: `from.scope`, then scope 0 (level). |
+| `findNode(from, id)` | `nodeRef` resolution: `from.scope`, then scope 0 (level). After the build, the loader applies every `drives` through it: the target's `components` replaced by `drivenComponents`, its `TextItem` re-read (`textOf`) — colliders and visuals stay as built (ADR 0210). |
 | `visuals`, `lights: WorldLight[]` | Draw list, light list; poses mutated by `update`/`render`. |
 | `driveOf(node)` | `NodeDrive { position; rotation }` local offset (ADR 0058); only for nodes with a `moves` component. |
 | `update(nowMs, ridingHandle?, opensTick = true)`, `render(alpha)` | Kinematic tick pose (riding body posed frozen); interpolated render pose, from where the **tick** began: a tick's later slices pass `opensTick: false` and move only `curr` (ADR 0185). Sequences (ADR 0141): `shared` on `nowMs`, `local` on `nowMs −` the first `update`'s; collider shapes re-set when the scale changed, bodies switched with `shown && solid`; `render` interpolates `drawScale` and `opacity` too. |

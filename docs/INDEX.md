@@ -40,7 +40,7 @@ Orient: this file → `platform/README.md` → the game's `README.md` → only w
 
 | Game | Docs |
 | --- | --- |
-| [keyboard](games/keyboard/README.md) | progression, balance, world-1, steps, keycaps, stages-and-wins, stage-gates, pads, hud, debug, known-open |
+| [keyboard](games/keyboard/README.md) | progression, balance, world-1, steps, keycaps, stages-and-wins, obstacles, pads, hud, debug, known-open |
 
 `modes/_template` is documented in `platform/workspace.md` (how to add a game).
 
@@ -260,5 +260,7 @@ why matters.
 | [0207](adr/0207-a-model-is-drawn-at-its-pivot-and-scale.md) | A model is drawn at its node's pivot, at its node's scale |
 | [0208](adr/0208-a-touch-in-any-slice-counts.md) | A touch in any slice of a tick counts |
 | [0209](adr/0209-dead-the-camera-follows-the-head.md) | Dead, the camera follows the corpse's head |
+| [0210](adr/0210-a-component-hears-and-sets-what-it-points-at.md) | A component hears the collider it points at, and sets the components it points at |
+| [0211](adr/0211-the-obstacle.md) | The Obstacle: a checkpoint reached through a trigger, holding its stage's numbers |
 
 `Design archive/` holds superseded design material and is not maintained.

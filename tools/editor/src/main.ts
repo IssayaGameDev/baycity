@@ -2342,7 +2342,10 @@ const inspector: Inspector = createInspector($<HTMLDivElement>('#insp-head'), $<
     // have moved on by the time a material arrives.
     const items = [...selection]
     edits.recordEdit('properties')
-    meshes.rebuildSelected()
+    // A component that sets another's (ADR 0210) can change how some other object is drawn — a sign's text: all of it.
+    const open = doc
+    if (open !== null && items.some((i) => open.components(i).some((c) => open.drives(c.type)))) meshes.buildAll()
+    else meshes.rebuildSelected()
     scheduleRebuild()
     hierarchy.render() // a trigger or name change shows in the row's badge/label
     // Draw with what is loaded now, then again once a newly named material has arrived.

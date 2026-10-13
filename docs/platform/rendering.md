@@ -305,7 +305,7 @@ Widgets (`ui.ts`, placeholder-skinned `Graphics`):
 | `uiPanel({ width, height, color? = 0x1b1f2a, alpha? = 0.98, radius? = 16 })` | `Container` |
 | `uiButton({ label, width, height? = 44, color? = 0x3b82f6, onClick })` | `UiButton { view; setLabel; setColor }` |
 | `uiSlider({ width, value, onChange })` | `UiSlider { view; setValue }` (0..1) |
-| `uiList({ width, height, rowHeight? = 30, textSize? = 15 })` | `UiList { view; setItems(ListItem[]) }`; scrolls by wheel or drag (`clampListScroll`). `ListItem { text; highlight?; onPick? }`: a row with `onPick` is a button — lit under the pointer, picked by a press that travelled ≤ `LIST_DRAG_SLOP` 6 px (`listRowAt`); further, it drags the list (ADR 0203) |
+| `uiList({ width, height, rowHeight? = 30, textSize? = 15 })` | `UiList { view; setItems(ListItem[]) }`; scrolls by wheel or drag (`clampListScroll`). `ListItem { text; highlight?; muted?; onPick? }` (`muted`: greyed text `0x64748b`, a row there but shut — give it no `onPick`, ADR 0211): a row with `onPick` is a button — lit under the pointer, picked by a press that travelled ≤ `LIST_DRAG_SLOP` 6 px (`listRowAt`); further, it drags the list (ADR 0203) |
 
 Touch HUD (`touchHud.ts`):
 

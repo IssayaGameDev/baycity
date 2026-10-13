@@ -22,7 +22,7 @@ Package `packages/components`. Headless; deps `@mp/content`, `@mp/core` (`@mp/ph
 | `string` `multiline` (ADR 0189) | `multiline?: true` | `string` | the Inspector draws a text area: Enter a new line, leaving it saves |
 | `list` (ADR 0182) | `item: ParamDecls` (a row's fields), `default: rows` | `readonly Params<item>[]` — each row read and defaulted as parameters are | an array of objects, each row by `readParams(item)`, naming `key[n].field` |
 | `nodeRef` | — | `string \| null`, default `null` | target unchecked |
-| `componentRef` (ADR 0177) | `of: string` — the component type it takes | `ComponentRef \| null` = `{ node, component }` (a node id, found in the reference's scope as a `nodeRef` is, and one of its components by id), default `null` | shape; target unchecked. A bare node id — the old shape, until the box's content is migrated — reads as `{ node, component: '' }`: the node's first of the type |
+| `componentRef` (ADR 0177) | `of: string` — the component type it takes; `contacts?: true` (to a Collider, ADR 0210) — a touch on it runs the holder's `onContact` too | `ComponentRef \| null` = `{ node, component }` (a node id, found in the reference's scope as a `nodeRef` is, and one of its components by id), default `null` | shape; target unchecked. A bare node id — the old shape, until the box's content is migrated — reads as `{ node, component: '' }`: the node's first of the type |
 
 **Reference scope** (`LoadedLevel.findNode`; the editor's `reaches` in `editorDoc.ts` offers the same): a level node
 names level nodes; a node a placement inherited names its own placement's nodes, then the level's. **Open — Kodjo's
@@ -55,12 +55,15 @@ interface ComponentSpec<D, S> {
   singleton?: boolean              // one per node; placement's copy replaces prefab's (effectiveNode)
   moves?: boolean                  // kinematic body + live self.offset (ADR 0058); must be declared
   attachesTo?: 'node' | 'player'   // default 'node'; 'player' hidden from the add menu (ADR 0059); not enforced at load
+  drives?(params): readonly Drive[] // ADR 0210: { ref, type, params } set on the referenced component, over its own — applied at load
   init?(params, ctx): S
   onAttach?(self, ctx); onFixedUpdate?(self, ctx); onLocomote?(self, ctx, cmd: InputCommand); onContact?(self, ctx, hit: Hit); onDetach?(self, ctx)
 }
 ```
 
-`ComponentDef` = same minus hooks, plus `hooks?: ErasedHooks` (absent → data-only, runner skips). `HOOK_NAMES` is the one list both sides read.
+`ComponentDef` = same minus hooks, plus `hooks?: ErasedHooks` (absent → data-only, runner skips) and `drives?(raw: RawParams)` (the typed one, its params read by `readParams`). `HOOK_NAMES` is the one list both sides read.
+
+**`drives`** (ADR 0210): the loader applies them once the tree is built (`drivesOf` + `drivenComponents`, `@mp/content`), so `WorldNode.components` — every rule, every `componentOn` — and a driven `Text`'s drawn text carry the driven values; the editor's `textSpec` applies them too. The target keeps its own parameter; the drive wins. A reference that does not resolve drives nothing.
 
 ## Hooks — `packages/components/src/runtime.ts`
 
@@ -70,7 +73,7 @@ interface ComponentSpec<D, S> {
 | `onAttach` | `attach`, after `init`, tree order |
 | `onFixedUpdate` | `fixedUpdate`, every sim tick, before the host's physics steps |
 | `onLocomote` | `locomote` — the **movement slot** (ADR 0061): between the host's two physics half-steps, given the tick's `InputCommand` |
-| `onContact` | `contact(handles)` — every node owning a handle from `touching()`/`collisions()`/`overlaps()` (each once), **every tick of contact** (a stay), in any slice of the tick (ADR 0208). Touching is the character's touch skin (ADR 0188): ridden, pushing or landed on counts, whichever moved |
+| `onContact` | `contact(handles)` — every node owning a handle from `touching()`/`collisions()`/`overlaps()` (each once), **every tick of contact** (a stay), in any slice of the tick (ADR 0208); and every component whose `contacts` reference points at the touched collider (ADR 0210), once per handle. Touching is the character's touch skin (ADR 0188): ridden, pushing or landed on counts, whichever moved |
 | `onDetach` | `detach`, reverse order |
 
 Order: `loaded.allNodes` depth-first, component order within node, player's components last. Player node: no colliders (never `onContact`), `position` zero, `offset` undefined.
@@ -84,9 +87,10 @@ interface Ctx { tick; dt; timeMs; random(): number /* hash(tick, instance, call)
                 players(): readonly PlayerView[] }   // ADR 0095
 interface PlayerView { id: number /* 0 = self */; position: Vec3; isSelf: boolean; alive: boolean }
 interface Self<D, S> { params: Params<D>; state: S /* never serialized */; node: WorldNode; get(def); find(ref); findComponent(ref, def); offset: NodeDrive | undefined }
-// findComponent(ref: ComponentRef | null, def: ComponentDef<O>) → { node: WorldNode; params: Params<O>; collider: ColliderDesc | undefined } | undefined
+// findComponent(ref: ComponentRef | null, def: ComponentDef<O>) → { node: WorldNode; params: Params<O>; collider: ColliderDesc | undefined; colliderHandle: number | undefined } | undefined
 //   (ADR 0177): the node as `find` finds it, then its enabled components of def's type by id ('' = the first); for a
-//   Collider, `collider` is its world-scaled shape — the same index into `node.colliders`. Undefined when off, gone, or another type.
+//   Collider, `collider` is its world-scaled shape and `colliderHandle` its handle — the same index into `node.colliders` /
+//   `node.colliderHandles`. Undefined when off, gone, or another type.
 interface Hit { colliderHandle: number; node: WorldNode }          // no contact normal
 interface CharacterAccess { launch(speed) /* max per tick */; position(); velocity(); carry(); grounded(); push(v) /* sums per tick */ }
 interface Effects { kill(): void; progress(node: WorldNode): void }

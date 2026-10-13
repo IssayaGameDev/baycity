@@ -6,6 +6,7 @@ import { spawnFrom, type ModeSession, type ModeSessionOptions, type Teleport } f
 import { Keyboard } from './components/keyboard'
 import { keyGeometryFrom, type KeyGeometry } from './keycaps'
 import { StepPad, type StepPadOffer } from './components/stepPad'
+import { Obstacle } from './components/obstacle'
 import { StageGate } from './components/stageGate'
 import { STEPPER_DEF } from './components/steps'
 import { Treadmill, type TreadmillTick } from './components/treadmill'
@@ -39,7 +40,7 @@ export const GAME_CURVE: ProgressCurve = curveFrom((game as { settings?: unknown
  */
 export const GAME_KEYS: KeyGeometry = keyGeometryFrom((game as { settings?: Record<string, unknown> }).settings)
 
-export const KEYBOARD_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, STEPPER_DEF, Keyboard, WinsPad, Treadmill, StepPad, StageGate, ...sharedComponents(game.components)])
+export const KEYBOARD_REGISTRY = createRegistry([...ENGINE_COMPONENTS, ...PLAYER_COMPONENTS, LOCOMOTION_DEF, STEPPER_DEF, Keyboard, WinsPad, Treadmill, StepPad, StageGate, Obstacle, ...sharedComponents(game.components)])
 
 /** How far above a spawn node the character's origin sits — half the capsule, plus its cap. */
 export const STAND_OFFSET = CHAR_HALF_HEIGHT + CHAR_RADIUS
@@ -65,6 +66,11 @@ export interface KeyboardSessionOptions extends ModeSessionOptions {
    * host takes a teleport and nothing of the rules' own is waiting; it hands its request over once.
    */
   readonly requested?: () => Teleport | null
+  /**
+   * An `Obstacle`'s trigger was walked into (ADR 0211): its checkpoint is reached. Every tick spent inside it; the
+   * game saves it once.
+   */
+  readonly onReached?: (node: WorldNode) => void
 }
 
 /**
@@ -75,7 +81,8 @@ export interface KeyboardSessionOptions extends ModeSessionOptions {
  * Kodjo's design and the reason a higher speed cap is worth earning.
  *
  * `progress` is always `-1` and `onProgress` is never called, so the client saves nothing through the
- * platform's save shape. Wins and Experience are the game's own stats and the game saves them itself.
+ * platform's save shape. Wins, Experience and reached checkpoints are the game's own, saved through its own adapter
+ * (`save.ts`).
  */
 export const keyboardSession = (loaded: LoadedLevel, opts: KeyboardSessionOptions = {}): ModeSession => {
   const spawn = spawnOf(loaded)
@@ -90,6 +97,11 @@ export const keyboardSession = (loaded: LoadedLevel, opts: KeyboardSessionOption
       // Every contact with a rule-bearing node lands here; only a pad means anything to this game. Standing on
       // one reports every tick, so a cash-out already waiting to be applied is not paid a second time.
       progress: (node) => {
+        // An obstacle's trigger (ADR 0211): its checkpoint is reached. Moves nobody.
+        if (componentOn(node.components, Obstacle) !== undefined) {
+          opts.onReached?.(node)
+          return
+        }
         // A step pad is a stay too (ADR 0082): the offer is reported every tick; the game takes it once.
         const stepPad = componentOn(node.components, StepPad)
         if (stepPad !== undefined) {

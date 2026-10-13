@@ -1,6 +1,7 @@
 import { TICK_DT, vec3, type Vec3 } from '@mp/core'
 import { CHAR_RADIUS, createAnimator, createLocomotion, DEFAULT_GAIT, FOOT_Y, RIG } from '@mp/humanoid'
 import { componentOn, readData } from '@mp/components'
+import type { WorldNode } from '@mp/content'
 import type { Teleport } from '@mp/mode'
 import { worldLabel, type LabelLine, type THREE } from '@mp/render-three'
 import { startTpsClient } from '@mp/tps'
@@ -13,13 +14,13 @@ import { createPopups, DEFAULT_POPUP, type PopupFeel } from './popups'
 import { abbreviate, experienceForLevel, levelAt, maxSpeedAt, METRES_PER_STUD, type ProgressCurve } from './progression'
 import { keyboardSession, GAME_CURVE, GAME_KEYS, spawnOf, STAND_OFFSET } from './rules'
 import { createTeleportWindow, teleportRows } from './teleportWindow'
-import { stageGatesOf, type StageGateStop } from './components/stageGate'
+import { checkpointsOf, type CheckpointStop } from './components/obstacle'
 import { createStepper, stepsPerSecond } from './components/steps'
 import { Treadmill, TREADMILL_STATE, treadmillStepValue, type TreadmillTick } from './components/treadmill'
 import { padTop } from './components/wins'
 import { qualifies, StepPad, type StepPadOffer } from './components/stepPad'
 import { KeyboardStyle } from './data/keyboardStyle'
-import { localKeyboardSave } from './save'
+import { localKeyboardSave, withReached } from './save'
 
 /**
  * Keyboard Escape, as an application (ADR 0069, ADR 0071).
@@ -55,8 +56,10 @@ let experience = saved.experience
 let wins = saved.wins
 /** What a step pays (ADR 0082): the last `StepPad` taken, or the curve's one. */
 let perStep = saved.perStep
-/** All three, as they are now. */
-const persist = (): void => saves.save({ experience, wins, perStep })
+/** The checkpoints reached, by level (ADR 0211). */
+let reached = saved.reached
+/** Everything above, as it is now. */
+const persist = (): void => saves.save({ experience, wins, perStep, reached })
 /** Cash-outs the rules reported this tick, banked here and popped on the next frame. */
 const cashedOut: { wins: number; at: { x: number; y: number; z: number } }[] = []
 /**
@@ -85,11 +88,31 @@ const NO_STATES: ReadonlySet<string> = new Set()
 /** The stepper's report for the tick in progress, held until the tick's contacts have said whether we are on a treadmill. */
 let stepsThisTick = 0
 
-/** The level being played's stage gates and spawn, for the teleport window (ADR 0203); read as each level loads. */
-let gates: readonly StageGateStop[] = []
+/** The level being played's checkpoints and spawn, for the teleport window (ADR 0203); read as each level loads. */
+let checkpoints: readonly CheckpointStop[] = []
 let start: Vec3 = vec3(0, 3, 0)
 /** Where the teleport window asked to go, until the rules take it on the next tick. */
 let wantTeleport: Teleport | null = null
+/**
+ * The level being played, by name, for what reached checkpoints are saved under — `null` until the client exists.
+ * A trigger walked into before then (a spawn inside one) waits in `reachedEarly`.
+ */
+let levelName: string | null = null
+const reachedEarly: WorldNode[] = []
+/** An Obstacle's trigger was walked into (ADR 0211): its checkpoint is reached for good, saved once. */
+const reach = (node: WorldNode): void => {
+  if (levelName === null) {
+    if (!reachedEarly.includes(node)) reachedEarly.push(node)
+    return
+  }
+  const stop = checkpoints.find((s) => s.node === node)
+  if (stop === undefined) return
+  const next = withReached(reached, levelName, stop.key)
+  if (next === reached) return
+  reached = next
+  persist()
+}
+const isReached = (key: string): boolean => levelName !== null && (reached[levelName] ?? []).includes(key)
 
 const client = await startTpsClient({
   ...KEYBOARD_MODE,
@@ -132,10 +155,11 @@ const client = await startTpsClient({
    * editor calls them with no callback and still teleports — and the client hears about the payout here.
    */
   session: (loaded, opts) => {
-    gates = stageGatesOf(loaded, STAND_OFFSET)
+    checkpoints = checkpointsOf(loaded, STAND_OFFSET)
     start = spawnOf(loaded)
     return keyboardSession(loaded, {
       ...opts,
+      onReached: reach,
       // The teleport window's pick, handed over once (ADR 0203).
       requested: () => {
         const to = wantTeleport
@@ -190,8 +214,10 @@ const styleOf = (id: string) => {
 const keycaps = drawKeycaps(client, look, shape, feel, () => GAME_KEYS, styleOf)
 const hud = createHud(client, curve)
 const popups = createPopups(client, pops)
+levelName = client.levelName
+for (const node of reachedEarly.splice(0)) reach(node)
 createTeleportWindow(client, {
-  rows: () => teleportRows(start, gates),
+  rows: () => teleportRows(start, checkpoints, isReached),
   go: (to) => {
     wantTeleport = to
   },

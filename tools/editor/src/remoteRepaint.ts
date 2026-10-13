@@ -61,9 +61,14 @@ const componentOf = (op: Op): { id: string; type?: string } | null => {
 
 /**
  * `typeOf(ref, componentId)`: the component's type as the document has it now, after the ops — `undefined` when
- * it is not there (removed), which counts as possibly a sequence.
+ * it is not there (removed), which counts as possibly a sequence. `drives(type)`: whether that type sets parameters
+ * on the components it points at (ADR 0210), which can change how another object is drawn.
  */
-export const repaintFor = (ops: readonly Op[], typeOf: (ref: NodeRef, componentId: string) => string | undefined): Repaint => {
+export const repaintFor = (
+  ops: readonly Op[],
+  typeOf: (ref: NodeRef, componentId: string) => string | undefined,
+  drives: (type: string) => boolean = () => false,
+): Repaint => {
   const plan: Repaint = { all: false, nodes: [], environment: false }
   for (const op of ops) {
     if (op.table === undefined && (op.kind === 'setEnvironment' || op.kind === 'setCameraSeeThrough')) {
@@ -79,8 +84,8 @@ export const repaintFor = (ops: readonly Op[], typeOf: (ref: NodeRef, componentI
     const c = componentOf(op)
     if (c !== null) {
       const type = c.type ?? typeOf(ref, c.id)
-      // Gone — it may have been one — or a sequence, which may fade another object.
-      if (type === undefined || type === SEQUENCE) {
+      // Gone — it may have been one — or a sequence, which may fade another object, or one that sets another's.
+      if (type === undefined || type === SEQUENCE || drives(type)) {
         plan.all = true
         continue
       }

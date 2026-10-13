@@ -89,6 +89,8 @@ export interface FoundComponent<O extends ParamDecls> {
   readonly params: Params<O>
   /** The component's collider as the world has it, scaled — for a `Collider`; `undefined` for anything else. */
   readonly collider: ColliderDesc | undefined
+  /** That collider's handle, what a `Hit` names — for a `Collider`; `undefined` for anything else. */
+  readonly colliderHandle: number | undefined
 }
 
 /** What a component instance sees of itself. */
@@ -402,6 +404,16 @@ export const createComponentRuntime = (
   /** By type, so the lookup above is one map hit rather than a scan per component. */
   const sessionDefs = new Map<string, AnyComponentDef>((io.player?.defs ?? []).map((d) => [d.type, d]))
 
+  /** Where a `componentRef` held by `from` points: its node, and the place among that node's enabled `type`s. */
+  const resolveRef = (from: WorldNode, ref: ComponentRef | null, type: string): { target: WorldNode; at: number } | undefined => {
+    const target = ref === null || ref.node === '' ? undefined : loaded.findNode(from, ref.node)
+    if (ref === null || target === undefined) return undefined
+    // The enabled ones, in order — the order the loader built `colliders` in, so the index is shared.
+    const ofType = componentsOfType(target.components, type)
+    const at = ref.component === '' ? 0 : ofType.findIndex((c) => c.id === ref.component)
+    return at >= 0 && at < ofType.length ? { target, at } : undefined
+  }
+
   const sources: readonly { node: WorldNode; components: readonly ComponentData[] }[] = [
     ...loaded.allNodes.map((node) => ({ node, components: node.components })),
     ...(playerNode === undefined ? [] : [{ node: playerNode, components: playerNode.components }]),
@@ -438,14 +450,17 @@ export const createComponentRuntime = (
         },
         find: (ref) => (ref === null || ref === '' ? undefined : loaded.findNode(node, ref)),
         findComponent: (ref, other) => {
-          const target = ref === null || ref.node === '' ? undefined : loaded.findNode(node, ref.node)
-          if (ref === null || target === undefined) return undefined
-          // The enabled ones, in order — the order the loader built `colliders` in, so the index is shared.
-          const ofType = componentsOfType(target.components, other.type)
-          const at = ref.component === '' ? 0 : ofType.findIndex((c) => c.id === ref.component)
-          const found = ofType[at]
-          if (found === undefined) return undefined
-          return { node: target, params: readParams(other.params, found.params, other.type), collider: other.type === COLLIDER ? target.colliders[at] : undefined }
+          const where = resolveRef(node, ref, other.type)
+          if (where === undefined) return undefined
+          const { target, at } = where
+          const found = componentsOfType(target.components, other.type)[at]!
+          const isCollider = other.type === COLLIDER
+          return {
+            node: target,
+            params: readParams(other.params, found.params, other.type),
+            collider: isCollider ? target.colliders[at] : undefined,
+            colliderHandle: isCollider ? target.colliderHandles[at] : undefined,
+          }
         },
         // Only for a component that asked. Handing it to every component would mean every node with any
         // hook at all became kinematic and got posed every tick, which is a cost nothing asked for.
@@ -456,6 +471,25 @@ export const createComponentRuntime = (
       here.push(instance)
     }
     if (here.length > 0) byNode.set(node, here)
+  }
+
+  /**
+   * Who hears a collider they do not own (ADR 0210): a component with `onContact` and a `componentRef` to a Collider
+   * marked `contacts`, by the handle it points at. Resolved once — a reference does not change during play.
+   */
+  const heardBy = new Map<number, Instance[]>()
+  for (const instance of instances) {
+    if (instance.def.hooks?.onContact === undefined) continue
+    for (const [key, spec] of Object.entries(instance.def.params)) {
+      if (spec.kind !== 'componentRef' || spec.contacts !== true || spec.of !== COLLIDER) continue
+      const ref = (instance.self.params as Record<string, unknown>)[key] as ComponentRef | null
+      const where = resolveRef(instance.self.node, ref, COLLIDER)
+      const handle = where === undefined ? undefined : where.target.colliderHandles[where.at]
+      if (handle === undefined) continue
+      const list = heardBy.get(handle)
+      if (list === undefined) heardBy.set(handle, [instance])
+      else if (!list.includes(instance)) list.push(instance)
+    }
   }
 
   /** Run one hook for one instance, with the seeded random keyed to it. */
@@ -495,10 +529,12 @@ export const createComponentRuntime = (
       for (const handle of handles) {
         const node = loaded.nodeOf(handle)
         if (node === undefined) continue
-        const here = byNode.get(node)
-        if (here === undefined) continue
+        const here = byNode.get(node) ?? []
+        // Those on the node first, then those that point at this collider from elsewhere (ADR 0210) — once each.
+        const heard = (heardBy.get(handle) ?? []).filter((instance) => !here.includes(instance))
+        if (here.length === 0 && heard.length === 0) continue
         const hit: Hit = { colliderHandle: handle, node }
-        for (const instance of here) {
+        for (const instance of [...here, ...heard]) {
           const fn = instance.def.hooks?.onContact
           if (fn === undefined) continue
           instanceOf = instances.indexOf(instance)

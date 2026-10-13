@@ -4,7 +4,7 @@ import type { Teleport } from '@mp/mode'
 import { Container, Graphics, uiButton, uiLabel, uiList } from '@mp/render-pixi'
 import type { TpsClient } from '@mp/tps'
 
-import type { StageGateStop } from './components/stageGate'
+import type { CheckpointStop } from './components/obstacle'
 import { hudScale } from './hud'
 
 /**
@@ -14,19 +14,22 @@ import { hudScale } from './hud'
  * through the hold's `onOutside`, since the shell owns Esc (ADR 0205).
  *
  * Open, the mouse is free (`holdCursor`) and you can still walk: only the camera stops turning. T opens it on a
- * keyboard; on touch the button is tapped. Every gate is open for now — reaching them and paying for them come later.
+ * keyboard; on touch the button is tapped. A checkpoint not yet reached is listed greyed and cannot be picked
+ * (ADR 0211, Kodjo's call); a stage gate is always open. Paying for one comes later.
  */
 
-/** One row: what it says, and where it sends you. */
+/** One row: what it says, where it sends you, and whether it is shut. */
 export interface TeleportRow {
   readonly label: string
   readonly to: Teleport
+  /** Not reached yet: greyed, and a tap does nothing. */
+  readonly locked: boolean
 }
 
-/** Start — the spawn, facing as you were — then every gate, facing its way. */
-export const teleportRows = (start: Vec3, gates: readonly StageGateStop[]): TeleportRow[] => [
-  { label: 'Start', to: { position: start } },
-  ...gates.map((g) => ({ label: `Checkpoint ${g.number}`, to: { position: g.position, yaw: g.yaw } })),
+/** Start — the spawn, facing as you were — then every checkpoint, facing its way, shut until `reached` says so. */
+export const teleportRows = (start: Vec3, stops: readonly CheckpointStop[], reached: (key: string) => boolean): TeleportRow[] => [
+  { label: 'Start', to: { position: start }, locked: false },
+  ...stops.map((s) => ({ label: `Checkpoint ${s.number}`, to: { position: s.position, yaw: s.yaw }, locked: !s.alwaysOpen && !reached(s.key) })),
 ]
 
 /** The slide, in seconds: snappy, Kodjo's call. */
@@ -122,13 +125,17 @@ export const createTeleportWindow = (client: TpsClient, opts: TeleportWindowOpti
     const list = uiList({ width: BASE.boxWidth - 2 * BASE.padding, height: boxH - BASE.header - BASE.padding, rowHeight: BASE.row, textSize: BASE.rowText })
     list.view.position.set(BASE.padding, BASE.header)
     list.setItems(
-      rows.map((row) => ({
-        text: row.label,
-        onPick: () => {
-          opts.go(row.to)
-          close()
-        },
-      })),
+      rows.map((row) =>
+        row.locked
+          ? { text: row.label, muted: true }
+          : {
+              text: row.label,
+              onPick: () => {
+                opts.go(row.to)
+                close()
+              },
+            },
+      ),
     )
     box.addChild(back, title, x.view, list.view)
   }
