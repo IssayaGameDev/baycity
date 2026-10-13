@@ -697,11 +697,20 @@ describe('node references (stage C4)', () => {
     expect(doc.refTo(pieceA, pieceA)).toBe(pieceId)
     expect(doc.refTo(pieceA, rootB), 'a piece reaches the level').toBe(level.nodes[1]!.id)
     expect(doc.refTo(pieceA, pieceB), 'not the twin in the other placement').toBeNull()
-    expect(doc.refTo(rootA, pieceA), 'an own node does not reach into a prefab').toBeNull()
+    // A placement's root resolves inside its placement first, as the loader does: the prefab root's references to its
+    // pieces, placed, are its own pieces — Kodjo's Obstacle on the InterLevel showed every one missing.
+    expect(doc.refTo(rootA, pieceA), 'a placement reaches its own pieces').toBe(pieceId)
+    expect(doc.refTo(rootA, pieceB), 'not another placement’s').toBeNull()
+    expect(doc.refTarget(rootA, pieceId), 'and finds its own').toBe(pieceA)
+    expect(doc.refTarget(rootB, pieceId)).toBe(pieceB)
     expect(doc.refTarget(pieceA, pieceId)).toBe(pieceA)
     expect(doc.refTarget(pieceB, pieceId)).toBe(pieceB)
+    expect(doc.refTarget(pieceB, doc.prefabAt(PAD_ID)!.id), 'a piece naming the prefab’s root finds its placement').toBe(rootB)
     expect(doc.refTarget(rootA, doc.refTo(rootA, rootB)!)).toBe(rootB)
     expect(doc.refTarget(rootA, 'nobody')).toBeNull()
+    const other = doc.placeModel('m', vec3(9, 0, 0))
+    expect(doc.refTo(other, pieceA), 'a level node does not reach into a prefab').toBeNull()
+    expect(doc.refTarget(other, pieceId)).toBeNull()
   })
 
   it('re-points a reference when the subtree carrying it is duplicated', () => {
@@ -2070,6 +2079,21 @@ describe('a driven text', () => {
     expect(doc.textSpec(0)?.text).toBe('Requires Level 4')
     expect(doc.textSpec(2)?.text).toBe('untouched')
     expect(doc.reading(() => [doc.textSpec(0)?.text, doc.textSpec(2)?.text]), 'the same inside a reading pass').toEqual(['Requires Level 4', 'untouched'])
+  })
+
+  /** On a prefab's root pointing at its own child, placed twice: each placement's sign shows that placement's words. */
+  it('shows each placement’s, when a prefab’s root drives its own child', () => {
+    const room: Node = {
+      id: 'room-root',
+      transform: { position: vec3(0, 0, 0) },
+      components: [{ id: 's', type: Signer.type, params: { sign: { node: 'board', component: '' }, words: 'Requires Level 1' } }],
+      children: [{ id: 'board', transform: { position: vec3(0, 0, 0) }, components: [{ id: 't', type: TEXT, params: { text: 'own' } }] }],
+    }
+    const placement = (id: string, words?: string): Node =>
+      ({ id, transform: { position: vec3(0, 0, 0) }, components: [], prefab: 'room', ...(words === undefined ? {} : { overrides: { 'room-root': { params: { s: { words } } } } }) }) as Node
+    const doc = levelDoc({ id: 'fx', config: {}, nodes: [placement('a'), placement('b', 'Requires Level 7')], prefabs: { room } }, reg)
+    const boards = [...Array(doc.count()).keys()].filter((i) => doc.kindOf(i) === 'inherited')
+    expect(boards.map((i) => doc.textSpec(i)?.text)).toEqual(['Requires Level 1', 'Requires Level 7'])
   })
 
   it('says which types drive others, so an edit to one redraws everything', () => {

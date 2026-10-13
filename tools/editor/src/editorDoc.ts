@@ -380,7 +380,8 @@ export interface Doc {
    * **Scoped, not everything.** A reference is stored where the node is authored: one on an own node lands in
    * the level, one authored inside a prefab lands in the prefab file — so offering a level node to a node
    * inside a prefab would author a reference that dangles in every other level the prefab is used in. An
-   * inherited node gets both, because a reference set *there* is an override and lives in the level.
+   * inherited node gets both, because a reference set *there* is an override and lives in the level — and so does a
+   * placement itself, whose root the loader resolves inside the placement first.
    */
   nodeChoices: (i: number) => readonly { readonly id: string; readonly label: string }[]
   /**
@@ -767,11 +768,21 @@ const docOver = (
   }
 
   const node = (i: number): DocNode | undefined => nodes()[i]
-  /** Where a reference on node `i` holding `id` points, in `all`: its own placement's piece first, then the level's. */
+  /**
+   * The placement a node resolves references in, as the loader's scopes have it (stage C4): a piece's is its owner, and
+   * a placement's own is itself — the loader puts a placement's root in the scope it opens, so the prefab's root,
+   * placed, names its pieces as it did in the prefab. Anything else resolves in the level (`undefined`).
+   */
+  const scopeOf = (n: DocNode): Node | undefined => n.owner ?? (n.authored.prefab !== undefined ? n.authored : undefined)
+  /** A placement answers to its prefab root's id too, inside its scope: what a piece's reference to the root holds. */
+  const prefabRootIdOf = (o: DocNode): string | undefined =>
+    o.owner === undefined && o.authored.prefab !== undefined ? level.prefabs?.[o.authored.prefab]?.id : undefined
+  /** Where a reference on node `i` holding `id` points, in `all`: its own placement first, then the level. */
   const refTargetIn = (all: readonly DocNode[], i: number, id: string): number | null => {
     const n = all[i]
     if (n === undefined) return null
-    const own = n.owner === undefined ? -1 : all.findIndex((o) => o.owner === n.owner && o.authored.id === id)
+    const scope = scopeOf(n)
+    const own = scope === undefined ? -1 : all.findIndex((o) => scopeOf(o) === scope && (o.authored.id === id || prefabRootIdOf(o) === id))
     const at = own >= 0 ? own : all.findIndex((o) => o.owner === undefined && o.authored.id === id)
     return at >= 0 ? at : null
   }
@@ -789,10 +800,11 @@ const docOver = (
     return driven.by.get(i) ?? []
   }
   /**
-   * Whether a `nodeRef` on `n` may name `o` (stage C4): an own node names own nodes, and a placement's piece its own
-   * placement's pieces or the level's — a reference authored inside a prefab must not dangle in its other levels.
+   * Whether a `nodeRef` on `n` may name `o` (stage C4): anything names the level's own nodes, and a piece is named only
+   * from inside its placement — by the placement's other pieces and by the placement itself. A level node naming a
+   * piece is open (Kodjo's call, `components/api.md`): the loader would not find it.
    */
-  const reaches = (n: DocNode, o: DocNode): boolean => (n.owner === undefined ? o.owner === undefined : o.owner === n.owner || o.owner === undefined)
+  const reaches = (n: DocNode, o: DocNode): boolean => o.owner === undefined || o.owner === scopeOf(n)
 
   /**
    * Compiled sequences, keyed by what they say rather than by object: the Inspector patches a component's

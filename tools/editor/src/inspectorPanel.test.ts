@@ -160,18 +160,19 @@ describe('the Inspector’s cards', () => {
     const reg = createRegistry([...ENGINE_COMPONENTS, Linked])
     const doc = levelDoc({ id: 'l', config: {}, nodes: [node('watcher', [comp('li', 'Linked')]), box('post', vec3(0, 0, 0))] }, reg)
     const calls: string[] = []
-    const { panel, refresh } = rig(doc, [0], {}, { pingNode: (i) => void calls.push(`ping ${i}`), selectNode: (i) => void calls.push(`select ${i}`) })
+    const { panel } = rig(doc, [0], {}, { pingNode: (i) => void calls.push(`ping ${i}`), selectNode: (i) => void calls.push(`select ${i}`) })
     const field = (): HTMLElement => line(card(panel, 'Linked'), 'target').querySelector<HTMLElement>('.rf')!
     expect(field().textContent).toContain('None (Object)')
     const target = refTargetOf(field())!
     expect(target.offer({ kind: 'node', index: 1 })).toBe(true)
     target.take({ kind: 'node', index: 1 })
     expect(paramOf(doc, 0, 'Linked', 'target')).toBe('post')
+    // Shown as soon as it is written: nothing else redraws a field for this tab's own edit.
+    expect(field().querySelector('.rf-name')!.textContent).toBe('post')
     // A card names its object, as a dragged component header does in Unity.
     target.take({ kind: 'component', index: 0, component: 'li' })
     expect(paramOf(doc, 0, 'Linked', 'target')).toBe('watcher')
     target.take({ kind: 'node', index: 1 })
-    refresh()
     expect(field().querySelector('.rf-name')!.textContent).toBe('post')
     field().querySelector<HTMLElement>('.rf-name')!.click()
     field().querySelector<HTMLElement>('.rf-name')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
@@ -183,16 +184,16 @@ describe('the Inspector’s cards', () => {
     const reg = createRegistry([...ENGINE_COMPONENTS, ...SHARED_COMPONENTS])
     const zone = node('zone', [comp('z-ball', COLLIDER, { shape: { kind: 'ball', radius: 1 } }), comp('z-box', COLLIDER, { shape: { kind: 'box', halfExtents: vec3(1, 1, 1) } })])
     const doc = levelDoc({ id: 'l', config: {}, nodes: [node('boss', [comp('bo', 'Boss'), comp('b-col', COLLIDER, { shape: { kind: 'box', halfExtents: vec3(1, 1, 1) } })]), zone, node('bare', [])] }, reg)
-    const { panel, refresh } = rig(doc, [0])
+    const { panel } = rig(doc, [0])
     const field = (): HTMLElement => line(card(panel, 'Boss'), 'zone').querySelector<HTMLElement>('.rf')!
     const name = (): string => field().querySelector('.rf-name')!.textContent ?? ''
     expect(name()).toBe('None (Collider)')
     const target = refTargetOf(field())!
     target.take({ kind: 'node', index: 1 })
     expect(paramOf(doc, 0, 'Boss', 'zone'), 'the row’s first Collider').toEqual({ node: 'zone', component: 'z-ball' })
+    expect(name(), 'shown as soon as it is written').toBe('zone (Collider 1)')
     target.take({ kind: 'component', index: 1, component: 'z-box' })
     expect(paramOf(doc, 0, 'Boss', 'zone'), 'the card’s own').toEqual({ node: 'zone', component: 'z-box' })
-    refresh()
     expect(name(), 'its object, and which of its two').toBe('zone (Collider 2)')
     // The picker is the Hierarchy's tree (ADR 0178): an object with one Collider is the row, one with two lists them,
     // the way to the current one is open, and an object with none is not there.
@@ -201,6 +202,7 @@ describe('the Inspector’s cards', () => {
     expect(rows).toEqual(['None', 'boss (Collider)', 'zone', 'zone (Collider 1)', 'zone (Collider 2)'])
     document.querySelector<HTMLElement>('.pop-ref .tp-row:nth-child(4)')!.click()
     expect(paramOf(doc, 0, 'Boss', 'zone')).toEqual({ node: 'zone', component: 'z-ball' })
+    expect(name(), 'picked from the list: shown at once').toBe('zone (Collider 1)')
     expect(target.offer({ kind: 'node', index: 2 })).toBe(false)
     expect(name()).toBe('bare has no Collider')
     expect(target.offer({ kind: 'component', index: 0, component: 'bo' })).toBe(false)

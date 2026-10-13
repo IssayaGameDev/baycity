@@ -1082,6 +1082,12 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
           const j = doc.refTarget(at, v)
           return j === null ? { label: `missing · ${v.slice(0, 6)}`, icon: 'warn', missing: true } : { label: doc.label(j), icon: doc.refOf(j) === null ? 'object' : 'prefab' }
         }
+        // Written, then shown as written: nothing redraws a field for this tab's own edit — the room's refresh is for
+        // everyone else's — so it showed None until a reload.
+        const store = (v: string | null): void => {
+          write({ [key]: v })
+          field.set(shownFor(now()))
+        }
         const field = refField({
           shown: shownFor(state[key]),
           none: 'None (Object)',
@@ -1095,7 +1101,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
             const j = target()
             return j === null ? null : String(j)
           },
-          pick: (v) => write({ [key]: v === null ? null : doc.refTo(at, Number(v)) }),
+          pick: (v) => store(v === null ? null : doc.refTo(at, Number(v))),
           ping: () => {
             const j = target()
             if (j !== null) host.pingNode(j)
@@ -1107,7 +1113,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
           refuse: (drag) => (drag.kind === 'asset' ? 'this takes an object, not an asset' : doc.refTo(at, drag.index) === null ? UNREACHABLE : null),
           take: (drag) => {
             const id = drag.kind === 'asset' ? null : doc.refTo(at, drag.index)
-            if (id !== null) write({ [key]: id })
+            if (id !== null) store(id)
           },
           draggedAssets: host.draggedAssets,
         })
@@ -1146,6 +1152,11 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
           if (r === null) return null
           return r === 'missing' ? { label: `missing ${typeLabel}`, icon: 'warn', missing: true } : { label: named(r.j, r.id), icon: glyph }
         }
+        // Written, then shown as written, as an object field's is.
+        const store = (v: { node: string; component: string } | null): void => {
+          write({ [key]: v })
+          field.set(shownFor(now()))
+        }
         /**
          * The picker's tree (ADR 0178): the Hierarchy's, keyed `<index>/<component id>`. An object in reach with one
          * of the type is itself the row to pick; one with several lists them under it, before its children.
@@ -1170,10 +1181,10 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
             return r === null || r === 'missing' ? null : `${r.j}/${r.id}`
           },
           pick: (v) => {
-            if (v === null) return write({ [key]: null })
+            if (v === null) return store(null)
             const cut = v.indexOf('/')
             const node = doc.refTo(at, Number(v.slice(0, cut)))
-            if (node !== null) write({ [key]: { node, component: v.slice(cut + 1) } })
+            if (node !== null) store({ node, component: v.slice(cut + 1) })
           },
           ping: () => {
             const r = resolve(now())
@@ -1196,7 +1207,7 @@ export const createInspector = (head: HTMLElement, container: HTMLElement, host:
             const node = doc.refTo(at, drag.index)
             // A row gives its first of the type, as Unity's does; a card, itself.
             const component = drag.kind === 'component' ? drag.component : ofType(drag.index)[0]?.id
-            if (node !== null && component !== undefined) write({ [key]: { node, component } })
+            if (node !== null && component !== undefined) store({ node, component })
           },
           draggedAssets: host.draggedAssets,
         })

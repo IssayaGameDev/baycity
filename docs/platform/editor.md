@@ -888,12 +888,14 @@ An `asset` parameter, a `nodeRef`, a `componentRef` and a material's texture slo
 | drop, a tile | the browser's drag: `dragover` reads `draggedAssets()` (the Project window's `onDragAssets`) and takes the **first** of several; `refuse`, then `preventDefault` only when it fits (`dropEffect` `move` for a `move`-only tile, else `copy`); `drop` → `take` |
 | drop, a row or a card | the Hierarchy's drag and a card's header drag are pointer events: they ask `refFieldAt(x, y)` (`elementFromPoint` → `.rf` → the field's `RefTarget`) — `offer(drag)`, `leave()`, `take(drag)`. `RefDrag` = `{ kind: 'node', index }` \| `{ kind: 'component', index, component }` \| `{ kind: 'asset', id }` |
 | what each takes | asset field: a tile (`assetRefusal(db, of, id, user)`, `assetRefusal.ts` — *not in the project*, *this takes a material, not a texture*, *X belongs to another game*, *X is a game's own, and this is Shared*). Object field: a row, or a card — its object, as Unity's does. Component field: a card of its type, itself (*this takes a Collider, not a Boss*), or a row — its **first** component of the type (*bare has no Collider*), as Unity's `GetComponent`. Out of reach (`Doc.refTo(at, index)` `null`): *a piece inside another prefab cannot be linked from here*. The wrong kind: *this takes an object, not an asset* and the like. Refusals show in place of the name (`.rf-no`); what fits lights `.rf-ok` |
-| in place | `follow` → `set(shownFor(now()))` (`asset`, `nodeRef` and `componentRef` are in `shapeNow`'s followed kinds); several selected: an asset shows `—` and writes all, a reference differing is the *differs* row |
+| in place | `follow` → `set(shownFor(now()))` (`asset`, `nodeRef` and `componentRef` are in `shapeNow`'s followed kinds) — for an edit from elsewhere. This tab's own: an asset's write rebuilds the panel (`rebuildKeepingScroll`); a reference's `store(v)` writes, then `set(shownFor(now()))` — nothing else redraws it, so a pick or a drop showed *None* until a reload. Several selected: an asset shows `—` and writes all, a reference differing is the *differs* row |
 
 A component field reads its value's old shape too — a bare node id, the node's first of the type — until the box's
 content is migrated (`migrate-component-refs.sh`, `content.md`). `Doc.refTo(i, j)` and `Doc.refTarget(i, id)` share
-`nodeChoices`' reach (`reaches(n, o)`: an own node names own nodes; a piece names its own placement's pieces or the
-level's), by index — two placements of one prefab carry the same piece ids. `refKeys` (the re-id on duplicate and
+`nodeChoices`' reach (`reaches(n, o)`: anything names the level's own nodes; a piece is named only from inside its
+placement — its other pieces and the placement itself, whose root the loader resolves inside the placement first;
+`scopeOf(n)`), by index — two placements of one prefab carry the same piece ids. `refTarget` looks in `scopeOf(n)`
+first (a placement answers to its prefab root's id there too), then the level, as `LoadedLevel.findNode` does. `refKeys` (the re-id on duplicate and
 paste) and `fileActions`' `nodeRefKeysOf` (unlink) follow both reference kinds (`retargetRef`).
 
 ## Numbers in the Inspector (ADR 0113)
