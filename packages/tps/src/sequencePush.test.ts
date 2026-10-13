@@ -1,5 +1,5 @@
 import { COLLIDER, SEQUENCE, instantiateLevel, type Level, type Node, type TypeInfo } from '@mp/content'
-import { TICK_DT, vec3, type Vec3 } from '@mp/core'
+import { TICK_DT, TICK_RATE_HZ, vec3, type Vec3 } from '@mp/core'
 import { addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, leaveBase, stepCharacter } from '@mp/humanoid'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -58,7 +58,7 @@ const run = (level: Level, spawn: Vec3, seconds: number, cmd = STILL): { player:
   let highest = -Infinity
   /** Ticks the mover was among what the capsule touched (ADR 0188). */
   let touched = 0
-  for (let k = 0; k < seconds * 30; k++) {
+  for (let k = 0; k < seconds * TICK_RATE_HZ; k++) {
     const now = k * TICK_DT * 1000
     if (prev < 0) prev = now
     const slices = loaded.motionSlices(prev, now, SOLE)
@@ -117,7 +117,7 @@ describe('a platform moving into a player', () => {
     const deck = box('deck', vec3(0, 10, 0), vec3(6, 0.2, 6), vec3(30, 0, 0), 3)
     const end = run(levelOf([deck]), vec3(0, 10.2 + SOLE + 0.3, 0), 5)
     // The first second is the landing; every tick after it the rider is on the deck.
-    expect(end.touched).toBeGreaterThanOrEqual(5 * 30 - 30)
+    expect(end.touched).toBeGreaterThanOrEqual((5 - 1) * TICK_RATE_HZ)
   })
 
   it('stays a wall to a player walking into it as it comes', () => {

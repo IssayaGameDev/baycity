@@ -902,9 +902,13 @@ export const stepCharacter = (
   // 13 cm lost over 30 m. The slack is what the full press always sank on flat ground, so it rests as it did.
   // A landing is its own fall, unlimited: cut short to the floor, a landing's travel fell under the resolve's 0.15 m
   // resting retry (`CONTACT_NUDGE`), which kept the nudge instead of the fall, and the landing came a tick late.
+  //
+  // Off footing, within the probe's reach, it is still pressed — at least `gravity · SETTLE_DT` m/s, a 30 Hz tick's
+  // press as a speed, so the same at any rate: a capsule put down at rest moves too little to meet its floor, and a
+  // landing is meeting it.
   const settleDy = state.grounded
     ? Math.max(Math.min(slopeDy + travelY, slopeDy - tuning.gravity * SETTLE_DT * SETTLE_DT), floorDy - SEAT_OFFSET)
-    : travelY
+    : Math.min(travelY, -tuning.gravity * SETTLE_DT * dt)
   const desired = {
     x: travelX + (riding ? ride!.x : 0),
     y: riding ? (seatY ?? ride!.y) : settling ? settleDy : travelY,
@@ -971,35 +975,26 @@ export const stepCharacter = (
    */
   const arrived = under !== undefined && under.point.y > feetY + CONTACT_SLACK
   /**
-   * **Footing is where the soles end up, not where the probe can see** (ADR 0215). The probe reaches 0.4 m below
-   * the soles, so a fall that ended a tick short of the ground still found it — and was called landed with the
-   * capsule hovering up to 0.4 m clear: its fall stopped dead, and a held jump went again from up there. Kodjo's
-   * lava gave a free jump to a gentle drop; at 120 steps a second, where a landing travels less per step, every
-   * held jump re-jumped from about 14 cm up.
+   * **A landing is touching what you land on, not seeing it** (ADR 0215). The probe reaches 0.4 m below the soles, so
+   * a fall that ended a tick short of the ground still found it — and was called landed with the capsule hovering up
+   * to 0.4 m clear: its fall stopped dead, and a held jump went again from up there. Kodjo's lava gave a gentle drop a
+   * free jump; at 120 steps a second, where a landing travels less per step, every held jump re-jumped from 14 cm up.
+   * A distance from the floor was not enough either: a step ending 2.7 cm clear was within any slack, and the jump
+   * that followed left before the touch skin had registered the lava at all.
    *
-   * So the soles must reach the surface this tick: the probe's plane, carried to where the capsule ended up — a run
-   * up a hill ends higher than the point it started over — within the contact slack, plus how far a resting sphere
-   * sits above a slope at the point below its centre, `r · (1/n.y − 1)`: 17 cm on 45°, which the ray meets that far
-   * down. `arrived` decks are above the soles and always pass; a ride seats the soles on its deck before this is read.
+   * So coming down out of the air, this tick's own move has to have run into the surface the probe found — the
+   * controller's contact, which every host already hands its rules as `collisions()`. Or the surface came to us: an
+   * `arrived` deck is above the soles, and boards however fast we rise (ADR 0105).
    *
-   * **A landing only** — coming down out of the air. On footing already, the probe still holds it: a resolve that
-   * delivers part of a step (`docs/platform/physics.md`) leaves the soles short, and keeping footing is what lets
-   * snap-to-ground close that next tick. Asked of every tick, running down 40° at 58.8 m/s took off 48 % of the time.
+   * **A landing only.** On footing already, the probe still holds it: a resolve that delivers part of a step
+   * (`docs/platform/physics.md`) leaves the soles short, and keeping footing is what lets snap-to-ground close that
+   * next tick. Asked of every tick, running down 40° at 58.8 m/s took off 48 % of the time. The controller's own
+   * `grounded` is held to the same landing: it reports ground 7 cm off, where nothing has been touched.
    */
-  //
-  // **Nor a fall the resolve cut short.** It can stop a landing's step well before the floor — asked for 0.75 m down,
-  // it delivered 3 mm with the soles 11 cm up — and then it is the floor that stopped it, a tick before the soles show
-  // it; waiting for them put the landing a tick late at 30 steps a second and not at 60. A gentle drop is not cut short:
-  // its step was simply too short to arrive, which is the case this is for.
-  const cutShort = applied.y > desired.y + 0.01
-  const reached =
-    state.grounded ||
-    cutShort ||
-    (under !== undefined &&
-      feetY + applied.y - (under.point.y - (under.normal.x * applied.x + under.normal.z * applied.z) / Math.max(under.normal.y, 0.2)) <=
-        CONTACT_SLACK + CHAR_RADIUS * (1 / Math.max(under.normal.y, 0.2) - 1))
+  // Riding is footing too: the ride seats the soles on the deck a contact offset clear, by design, so it never runs into it.
+  const reached = state.grounded || arrived || riding || (under !== undefined && state.body.collisions().includes(under.colliderHandle))
   const standing = under !== undefined && !leaving && reached && (state.vy <= 0 || arrived)
-  state.grounded = (grounded && state.vy <= 0) || standing
+  state.grounded = (grounded && state.vy <= 0 && (reached || under === undefined)) || standing
   // A deck that arrived cancels the rest of the jump: it caught us, so the climb is over. Without this the
   // jump keeps its upward velocity while the ride owns the vertical, and spends it the instant the ride ends.
   if (arrived && !leaving && state.vy > 0) state.vy = 0

@@ -1,5 +1,5 @@
 import { COLLIDER, SEQUENCE, instantiateLevel, type Level, type Node, type TypeInfo } from '@mp/content'
-import { TICK_DT, vec3 } from '@mp/core'
+import { TICK_DT, TICK_RATE_HZ, vec3 } from '@mp/core'
 import { addCharacter, CHAR_HALF_HEIGHT, CHAR_RADIUS, stepCharacter } from '@mp/humanoid'
 import { createPhysicsWorld, initPhysics } from '@mp/physics'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -21,7 +21,7 @@ const lava: Node = {
   transform: { position: vec3(0, -1, 0) },
   components: [{ id: 'lava-col', type: COLLIDER, params: { shape: { kind: 'box', halfExtents: vec3(20, 1, 20) } } }],
 }
-/** Far from the player, at 45 m/s: 1.5 m a tick, past the 1 m a rider allows, so every tick is two slices. */
+/** Far from the player, at 1.5 m a tick — past the 1 m a rider allows, so every tick is two slices. */
 const racer: Node = {
   id: 'racer',
   transform: { position: vec3(500, 0, 0) },
@@ -37,7 +37,7 @@ const racer: Node = {
         loop: 'restart',
         times: 0,
         offset: 0,
-        stages: [{ id: 'go', steps: [{ id: 'm', kind: 'move', to: vec3(200, 0, 0), timing: { by: 'speed', speed: 45 }, ease: 'linear' }] }],
+        stages: [{ id: 'go', steps: [{ id: 'm', kind: 'move', to: vec3(1000, 0, 0), timing: { by: 'speed', speed: 1.5 * TICK_RATE_HZ }, ease: 'linear' }] }],
       },
     },
   ],
@@ -55,7 +55,7 @@ const land = (height: number): { slices: number; everySlice: boolean; lastSlice:
   const char = addCharacter(world, vec3(0, SOLE + height, 0))
   let prev = -1
   try {
-    for (let k = 0; k < 3 * 30; k++) {
+    for (let k = 0; k < 3 * TICK_RATE_HZ; k++) {
       const now = k * TICK_DT * 1000
       if (prev < 0) prev = now
       const slices = loaded.motionSlices(prev, now, SOLE)

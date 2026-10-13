@@ -26,7 +26,7 @@ carries the local position (ADR 0021), so everyone else draws the character on t
 | `CHAR_RADIUS` | 0.4 m | capsule radius |
 | `CHAR_HALF_HEIGHT` | 0.6 m | capsule cylinder half-height; total height `2·(0.6+0.4)` = 2.0 m, width 0.8 m |
 
-Tick constants live in `@mp/core` (`TICK_RATE_HZ` 30, `TICK_DT`), not here.
+Tick constants live in `@mp/core` (`TICK_RATE_HZ` 60, `TICK_DT`), not here.
 
 ## `CharacterTuning`
 
@@ -88,12 +88,12 @@ interface PlatformFrame { position: Vec3; rotation: Quat }
 
 `InputCommand` (`@mp/core`): `moveX`, `moveZ` (−1..1, world space, normalised if `|v| > 1`), `jump`, `actions`. Deterministic; mutates `state` only. Call after platforms are posed and stepped for the tick.
 
-**Riding a fast deck has a ceiling per physics step**: about `halfHeight + radius` of deck travel, ~1.2 m, i.e. a deck at ~36 m/s at 30 Hz. Past that `move()` will not sweep the capsule out of the deck it is inside, so the client slices the tick (`LoadedLevel.motionSlices`, ADR 0104) rather than the character — slicing the character alone makes it worse, and sweeping the platform instead of teleporting it does nothing.
+**Riding a fast deck has a ceiling per physics step**: about `halfHeight + radius` of deck travel, ~1.2 m, i.e. a deck at ~72 m/s at 60 Hz (36 at 30). Past that `move()` will not sweep the capsule out of the deck it is inside, so the client slices the tick (`LoadedLevel.motionSlices`, ADR 0104) rather than the character — slicing the character alone makes it worse, and sweeping the platform instead of teleporting it does nothing.
 
 Step order:
 
 1. Footing: `body.probeGround()`, then for the ridden base if that missed — a **deeper** probe when the base dropped away (ADR 0042), or the base kept **without** a probe when it rose past the capsule's centre (ADR 0104), bounded by `-away <= 2 × (halfHeight + radius)`, the point still being overhead, and `vy <= 0`.
-1b. Footing is `!leaving && reached && (vy <= 0 || **arrived**)`, where `reached` (ADR 0215) is: on footing already last tick, or the resolve cut the fall short (`applied.y > desired.y + 0.01`), or the soles end the tick within `CONTACT_SLACK + r·(1/n.y − 1)` of the probe's plane carried to where the capsule ended up — so a landing is called with the soles on the floor, not up to 0.4 m above it (the lava's free jump; every held jump at 120 Hz re-jumped from 14 cm up). And `arrived` means the probe met the surface **above** the soles — it came to us (ADR 0105). `vy <= 0` alone refused a deck arriving under a jump, and a controller pushes nothing out of a kinematic body that moved into it, so the platform swept through. An arrival also cancels the remaining climb.
+1b. Footing is `!leaving && reached && (vy <= 0 || **arrived**)`, where `reached` (ADR 0215, ADR 0216) is: on footing already last tick, `arrived`, riding, or this tick's `move` ran into the probe's collider (`collisions()`) — a landing touches what it lands on, not up to 0.4 m above it nor a few cm clear (the lava's free jump; every held jump at 120 Hz re-jumped from 14 cm up; a step ending 2.7 cm clear left before the touch skin registered); the controller's own `grounded` is held to it (the lava's free jump; every held jump at 120 Hz re-jumped from 14 cm up). And `arrived` means the probe met the surface **above** the soles — it came to us (ADR 0105). `vy <= 0` alone refused a deck arriving under a jump, and a controller pushes nothing out of a kinematic body that moved into it, so the platform swept through. An arrival also cancels the remaining climb.
 2. `jumping = jumpBuffer > 0 && (grounded || coyote > 0)`; `leaving = jumping || launch > 0 || impulse.y > 0` spends both windows. Launch outranks jump.
 3. Jump cut when `jumpCut && !cmd.jump && vy > 0`.
 4. **Integrated in slices of `1 / INTEGRATION_HZ` (240), whatever the tick** (ADR 0215): `slices = round(dt · 240)`, `h = dt / slices`. Steps 4–5 run per slice, each slice's distance its trapezoid `½(v₀+v₁)·h`, summed into `dx, dy, dz` — so 30, 60 and 120 Hz walk one velocity history (`stepRate.test.ts`). Vertical: riding → `vy = 0`; else per slice gravity × scale (regime by the slice's starting `vy`), clamp `−maxFallSpeed`.
@@ -112,7 +112,7 @@ Step order:
    Which ceiling is decided by the component of the needed change along the direction of travel, not by comparing magnitudes: halfway through a reversal the target is larger than what is left, so magnitudes would read it as a start and let it round at the uncapped rate. A turn at speed is therefore braking, which is the point (ADR 0096). Uncapped is not instant — the time-based rate still applies.
 6. Leaving adds ride velocity (`ride/dt`, or `liftVel` from a coyote jump). Impulse added, zeroed. What these add travels the whole tick at once (`added · dt`) on top of the slices: `travel = (dx, dy, dz) + added · dt`.
 6b. **Slope following** (ADR 0127). Not riding, with footing that is staying put (`settling`) and `state.grounded` as of last tick, the vertical carries what keeps the soles on the probe's plane: `slopeDy = −(n.x·travel.x + n.z·travel.z) / n.y`, added to the settling press. Zero while airborne, leaving or rising, so no arc and no envelope number moves. `n.y` needs no guard — `probeGround` rejects anything flatter than the 50° limit.
-7. `body.move(desired, snapAtLeast)`: own `travel` + ride delta horizontally; **riding, the vertical seats the soles on the probe contact** (`under.point.y + 0.02 − feetY`, ADR 0105) rather than repeating the anchor's motion, which is what stopped a boarding gap being carried. Not riding, `travel.y`; settling on footing (`state.grounded`), `slopeDy` plus the further of `travel.y` and the press `−gravity · SETTLE_DT²` (a 30 Hz tick's full `v·dt`, at every rate), **stopped `SEAT_OFFSET` below the probe's plane** — the resolve sometimes took a press whole and left the capsule inside the floor, from where the next resolve no longer met it, and running sank 20 cm; a capsule already below is lifted back. A landing (not on footing) is its own `travel.y`, unlimited: limited, it fell under the resolve's 0.15 m resting retry and landed a tick late. Descending a slope, `snapAtLeast` is the step's own length and is also stored in `slopeReach` for next tick's probe: the resolve intermittently returns part of a step, and snap-to-ground is the only thing that absorbs the remainder (ADR 0127).
+7. `body.move(desired, snapAtLeast)`: own `travel` + ride delta horizontally; **riding, the vertical seats the soles on the probe contact** (`under.point.y + 0.02 − feetY`, ADR 0105) rather than repeating the anchor's motion, which is what stopped a boarding gap being carried. Not riding, `travel.y`; settling on footing (`state.grounded`), `slopeDy` plus the further of `travel.y` and the press `−gravity · SETTLE_DT²` (a 30 Hz tick's full `v·dt`, at every rate), **stopped `SEAT_OFFSET` below the probe's plane** — the resolve sometimes took a press whole and left the capsule inside the floor, from where the next resolve no longer met it, and running sank 20 cm; a capsule already below is lifted back. Off footing, `min(travel.y, −gravity · SETTLE_DT · dt)` — the press as a speed, so a capsule put down at rest meets its floor — unlimited: limited, a landing fell under the resolve's 0.15 m resting retry and landed a tick late. Descending a slope, `snapAtLeast` is the step's own length and is also stored in `slopeReach` for next tick's probe: the resolve intermittently returns part of a step, and snap-to-ground is the only thing that absorbs the remainder (ADR 0127).
 8. Update `carry`, `grounded`, `coyote`, `liftVel/liftStore`; ceiling cancels rise; `base` re-anchored. A base
    the probe could not see — it **missed** (`under === undefined`), grounded, not leaving — is taken from a
    collider `move` touched that has a frame. Not when the probe found still ground: a moving wall beside the
@@ -132,7 +132,7 @@ Moves `(vx, vz)` toward the target by at most `maxDelta` **along the difference 
 - `base.localPos` is what a rider sends on the wire (v10).
 - Jump/launch off a mover inherits ride velocity; walking off inherits nothing.
 
-## Envelope (measured, `DEFAULT_TUNING`)
+## Envelope (measured, `DEFAULT_TUNING`, 60 Hz)
 
 `pnpm exec vitest run packages/humanoid/src/envelope --project unit` (repo root). Tests **print** these and assert only `> 0` / `true`; no value is pinned. Below: current run.
 
@@ -140,17 +140,17 @@ Moves `(vx, vz)` toward the target by at most `maxDelta` **along the difference 
 |---|---|
 | Air time (parabola, no apex float) | 0.627 s |
 | Take-off speed | 17.2 m/s |
-| Max gap, running (5 m run-up) | 4.1 m |
+| Max gap, running (5 m run-up) | 4.0 m |
 | Max gap, standing | 4.3 m |
-| Max gap vs landing rise: −2 / −1 / 0 / +0.5 / +1 / +1.5 / +2 / +2.5 m | 4.4 / 4.3 / 4.1 / 3.9 / 3.8 / 3.7 / 3.5 / 3.2 m |
-| Step-up, no jump (autostep) | 0.45 m |
+| Max gap vs landing rise: −2 / −1 / 0 / +0.5 / +1 / +1.5 / +2 / +2.5 m | 4.4 / 4.3 / 4.1 / 3.9 / 3.8 / 3.7 / 3.5 / 3.3 m |
+| Step-up, no jump (autostep) | 0.40 m — the configured `maxHeight`; 0.45 at 30 Hz |
 | Step-up, jump | 3.2 m |
 | Beam off-centre margin, width 0.2 / 0.4 / 0.6 / 0.8 / 1.2 / 2.0 m | ±0.35 / 0.45 / 0.55 / 0.65 / 0.85 / 1.00 m |
-| Slope drift standing 4 s | ≤40°: ≤0.01 m; 44°: 0.03 m; 48°: slides off |
-| Standable band from crown, dome r=1/2/4 | 40° / 50° / 60° |
-| Standable band from crown, log r=1/2/4 | 45° / 50° / 60° |
+| Slope drift standing 4 s | ≤44°: ≤0.02 m; 48°: slides off |
+| Standable band from crown, dome r=1/2/4 | 50° / 60° / 60° |
+| Standable band from crown, log r=1/2/4 | 50° / 60° / 60° |
 
-The `DEFAULT_TUNING` comment quoting a 3.6 m gap predates ADR 0041; the current envelope run gives the numbers above (autostep 0.45 m).
+The `DEFAULT_TUNING` comment quoting a 3.6 m gap predates ADR 0041; the current envelope run gives the numbers above.
 
 ## Slopes (ADR 0127)
 

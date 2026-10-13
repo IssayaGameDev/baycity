@@ -113,7 +113,7 @@ Rapier's query index refreshes only in `step()`. The wrapper sets `queriesStale`
 
 ## Timestep conventions
 
-- Sim rate is `TICK_RATE_HZ = 30` (`packages/core/src/tick.ts`).
+- Sim rate is `TICK_RATE_HZ = 60` (`packages/core/src/tick.ts`, ADR 0216).
 - `@mp/tps` steps twice per tick with `half = TICK_DT / 2`: `loaded.update(nowMs, ridingHandle)` → `world.step(half)` (platforms move) → `components.locomote(...)` → `world.step(half)`. Two full steps made dynamic bodies (ragdoll parts) integrate at double speed. The character's translation is computed for the full `TICK_DT` and applied through `move`.
 - Kinematic pieces are posed via `setNextKinematicTranslation/Rotation` each tick; the ridden piece is posed with zero derived velocity (`LoadedLevel.update` second argument).
 - No cross-platform determinism is required or claimed; each client owns its own body.

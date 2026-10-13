@@ -14,7 +14,7 @@
  */
 
 /** Fixed simulation steps per second. */
-export const TICK_RATE_HZ = 30
+export const TICK_RATE_HZ = 60
 
 /** Seconds per fixed step. */
 export const TICK_DT = 1 / TICK_RATE_HZ

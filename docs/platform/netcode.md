@@ -6,7 +6,7 @@ Client-authoritative relay over Colyseus rooms (ADR 0011, ADR 0013). Each client
 
 | Package | Role |
 |---|---|
-| `packages/core/src/tick.ts` | `TICK_RATE_HZ = 30`, `TICK_DT = 1/30`. One rate for every game — two rates would be two protocols. |
+| `packages/core/src/tick.ts` | `TICK_RATE_HZ = 60`, `TICK_DT = 1/60` (ADR 0216; 30 until then). One rate for every game — two rates would be two protocols. |
 | `packages/core/src/simClock.ts` | `createSimClock` — fixed-step clock slewed to a reference |
 | `packages/net/src/*.ts` | codecs, quantization, flag bits |
 | `packages/server/src/{index,rooms}.ts` | `startServer`, `GameRoom`, `deltaSnapshot` |
