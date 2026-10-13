@@ -1,0 +1,19 @@
+{
+  "type": "KeyboardStyle",
+  "fields": {
+    "placeholder": "#ff0000",
+    "keys": [
+      {
+        "cap": "#ffadfc",
+        "letter": "#000000",
+        "weight": 1
+      },
+      {
+        "cap": "#ff61ad",
+        "letter": "#000000",
+        "weight": 1
+      }
+    ],
+    "jitter": 0.3
+  }
+}

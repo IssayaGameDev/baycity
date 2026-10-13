@@ -1,0 +1,158 @@
+{
+  "id": "root",
+  "name": "roue",
+  "transform": {
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    }
+  },
+  "components": [
+    {
+      "id": "6afb6f67",
+      "type": "Sequence",
+      "params": {
+        "name": "",
+        "clock": "shared",
+        "axes": "object",
+        "loop": "restart",
+        "times": 0,
+        "offset": 0,
+        "stages": [
+          {
+            "id": "c7e015db",
+            "steps": [
+              {
+                "id": "c72faa0f",
+                "kind": "move",
+                "to": {
+                  "x": 0,
+                  "y": 1,
+                  "z": 0
+                },
+                "timing": {
+                  "by": "seconds",
+                  "seconds": 1
+                },
+                "ease": "linear"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "children": [
+    {
+      "id": "09fe3096",
+      "name": "wall",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1.5707963267948966,
+          "z": 0
+        },
+        "scale": {
+          "x": 1.5,
+          "y": 14,
+          "z": 1.5
+        }
+      },
+      "components": [
+        {
+          "id": "28fb2764",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "ce927038",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:rounded-box",
+            "material": ""
+          }
+        },
+        {
+          "id": "06d022d6",
+          "type": "Hazard",
+          "params": {}
+        }
+      ]
+    },
+    {
+      "id": "ef8dd3bf",
+      "name": "wall",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0,
+          "z": 0
+        },
+        "rotation": {
+          "x": 0,
+          "y": 1.5707963267948966,
+          "z": 0
+        },
+        "scale": {
+          "x": 14.5,
+          "y": 1.5,
+          "z": 1.5
+        }
+      },
+      "components": [
+        {
+          "id": "28fb2764",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            }
+          }
+        },
+        {
+          "id": "ce927038",
+          "type": "Renderer",
+          "params": {
+            "model": "builtin:rounded-box",
+            "material": ""
+          }
+        },
+        {
+          "id": "eccde4ae",
+          "type": "Hazard",
+          "params": {}
+        }
+      ]
+    }
+  ]
+}

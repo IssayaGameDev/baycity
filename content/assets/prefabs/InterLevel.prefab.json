@@ -8,7 +8,37 @@
       "z": 0
     }
   },
-  "components": [],
+  "components": [
+    {
+      "id": "f5578cd7",
+      "type": "Obstacle",
+      "params": {
+        "teleport": "844b2216",
+        "trigger": {
+          "node": "0fbe1748",
+          "component": "3db9556d"
+        },
+        "winsPad": {
+          "node": "c0258f34",
+          "component": "fd50a89a"
+        },
+        "wins": 1,
+        "sign": {
+          "node": "516a00f3",
+          "component": "6f858b59"
+        },
+        "requiredLevel": 0,
+        "safeZoneText": {
+          "node": "cac13975",
+          "component": "6f858b59"
+        },
+        "requiredLevelText": {
+          "node": "516a00f3",
+          "component": "6f858b59"
+        }
+      }
+    }
+  ],
   "children": [
     {
       "id": "c65ac1fb",
@@ -314,6 +344,120 @@
               }
             }
           ]
+        }
+      ]
+    },
+    {
+      "id": "844b2216",
+      "name": "Teleport Point",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 0.5,
+          "z": 0
+        }
+      },
+      "components": []
+    },
+    {
+      "id": "516a00f3",
+      "name": "Level",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 4.5,
+          "z": 7.5
+        },
+        "rotation": {
+          "x": -3.141592653589793,
+          "y": 0,
+          "z": 3.141592653589793
+        }
+      },
+      "components": [
+        {
+          "id": "6f858b59",
+          "type": "Text",
+          "params": {
+            "text": "Level X",
+            "size": 1.75,
+            "color": "#ffffff",
+            "align": "center",
+            "width": 0,
+            "bold": false,
+            "facing": "object",
+            "back": "mirrored"
+          }
+        }
+      ]
+    },
+    {
+      "id": "cac13975",
+      "name": "Safe Zone",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 4.5,
+          "z": -7.5
+        },
+        "rotation": {
+          "x": -3.141592653589793,
+          "y": 0,
+          "z": 3.141592653589793
+        }
+      },
+      "components": [
+        {
+          "id": "6f858b59",
+          "type": "Text",
+          "params": {
+            "text": "Safe Zone",
+            "size": 1.75,
+            "color": "#ffffff",
+            "align": "center",
+            "width": 0,
+            "bold": false,
+            "facing": "object",
+            "back": "mirrored"
+          }
+        }
+      ]
+    },
+    {
+      "id": "0fbe1748",
+      "name": "box",
+      "transform": {
+        "position": {
+          "x": 0,
+          "y": 4.25,
+          "z": 0
+        },
+        "scale": {
+          "x": 14,
+          "y": 7.5,
+          "z": 15
+        }
+      },
+      "components": [
+        {
+          "id": "3db9556d",
+          "type": "Collider",
+          "params": {
+            "shape": {
+              "kind": "box",
+              "halfExtents": {
+                "x": 0.5,
+                "y": 0.5,
+                "z": 0.5
+              }
+            },
+            "center": {
+              "x": 0,
+              "y": 0,
+              "z": 0
+            },
+            "trigger": true
+          }
         }
       ]
     }
