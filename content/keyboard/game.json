@@ -2,7 +2,6 @@
   "components": [
     "Boss",
     "Bumper",
-    "Checkpoint",
     "Hazard",
     "Sequence"
   ],

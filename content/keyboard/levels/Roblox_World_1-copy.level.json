@@ -13672,18 +13672,7 @@
         }
       },
       "components": [],
-      "prefab": "7b146287b66c6a52",
-      "overrides": {
-        "root": {
-          "added": [
-            {
-              "id": "bc7ef15c",
-              "type": "StageGate",
-              "params": {}
-            }
-          ]
-        }
-      }
+      "prefab": "7b146287b66c6a52"
     },
     {
       "id": "91898210",
@@ -19417,18 +19406,7 @@
         }
       },
       "components": [],
-      "prefab": "7b146287b66c6a52",
-      "overrides": {
-        "root": {
-          "added": [
-            {
-              "id": "bc7ef15c",
-              "type": "StageGate",
-              "params": {}
-            }
-          ]
-        }
-      }
+      "prefab": "7b146287b66c6a52"
     },
     {
       "id": "f826b617",
