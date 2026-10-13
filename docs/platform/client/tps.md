@@ -78,7 +78,7 @@ Then `stage.setRenderStep` (set by `createScene`) draws post-FX + overlay layer.
 
 `syncRemotes` (kinematic capsule mirrors, `BODY_LAYERS`) → `input.worldMove()` (zero when dead) → `controller.step({
 moveX, moveZ, jump, actions })` → landing dip `orbit.land` → `avatars.capture()` → `net.send({ position, flags, yaw,
-speed, base })` (v10 base frame; `packStates(states, playerStates())` in spare flag bits) → `components.contact` →
+speed, base, teleports })` (v10 base frame; `teleports` counted by `respawn()` and a taken teleport, ADR 0214; `packStates(states, playerStates())` in spare flag bits) → `components.contact` →
 `rules.takeDeath()` → `die()` → `rules.takeTeleport?.()` (alive): `setPosition(position)`, `releaseFooting`, and with a
 `yaw` `ownFacing = yaw` + `orbit.face(yaw)` (ADR 0202).
 

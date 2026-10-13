@@ -87,10 +87,17 @@ export interface PlayerState {
    * happens to match today and that is not a promise).
    */
   base: number
+  /**
+   * How many times the sender has been teleported, mod 256 (v13, ADR 0214) — a cash-out, a teleport window pick, a
+   * respawn. A count rather than a one-tick flag, because the relay samples states at its own rate and a flag set for
+   * one tick could fall between two samples; a count that changed between two samples cannot be missed. A viewer
+   * seeing it change stops blending the two positions, so a teleport is a vanish and an appearance, not a streak.
+   */
+  teleports: number
 }
 
-// wire (little-endian): u8 version, u8 type, f32 x, f32 y, f32 z, u8 flags, f32 yaw, f32 speed, u8 base
-const STATE_BYTES = 24
+// wire (little-endian): u8 version, u8 type, f32 x, f32 y, f32 z, u8 flags, f32 yaw, f32 speed, u8 base, u8 teleports
+const STATE_BYTES = 25
 const LE = true
 
 export const encodeState = (state: PlayerState): ArrayBuffer => {
@@ -106,6 +113,7 @@ export const encodeState = (state: PlayerState): ArrayBuffer => {
   view.setFloat32(15, state.yaw, LE)
   view.setFloat32(19, state.speed, LE)
   view.setUint8(23, state.base & 0xff)
+  view.setUint8(24, state.teleports & 0xff)
   return buffer
 }
 
@@ -122,5 +130,6 @@ export const decodeState = (buffer: ArrayBuffer): PlayerState => {
     yaw: view.getFloat32(15, LE),
     speed: view.getFloat32(19, LE),
     base: view.getUint8(23),
+    teleports: view.getUint8(24),
   }
 }

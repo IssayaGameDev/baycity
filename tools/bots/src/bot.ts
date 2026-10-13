@@ -58,6 +58,7 @@ export const createBot = (url: string, phase = 0): Bot => {
               yaw: angle,
               speed: 0.12 * RADIUS * TICK_HZ,
               base: 0,
+              teleports: 0,
             }),
           ),
         )

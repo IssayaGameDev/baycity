@@ -5,7 +5,7 @@ import { decodeState, encodeState, STATE_DEAD, STATE_GROUNDED, STATE_RISING } fr
 
 describe('state codec', () => {
   it('round-trips a position at full float precision', () => {
-    const s = { position: { x: 1.5, y: 12.25, z: -20.125 }, flags: 0, yaw: 0.5, speed: 4.25, base: 0 }
+    const s = { position: { x: 1.5, y: 12.25, z: -20.125 }, flags: 0, yaw: 0.5, speed: 4.25, base: 0, teleports: 0 }
     expect(decodeState(encodeState(s))).toEqual(s)
   })
 
@@ -19,7 +19,7 @@ describe('state codec', () => {
       STATE_GROUNDED | STATE_DEAD,
       0xff,
     ]) {
-      const s = { position: { x: -3, y: 0.5, z: 7 }, flags, yaw: 0, speed: 0, base: 0 }
+      const s = { position: { x: -3, y: 0.5, z: 7 }, flags, yaw: 0, speed: 0, base: 0, teleports: 0 }
       expect(decodeState(encodeState(s)).flags).toBe(flags)
     }
   })
@@ -32,9 +32,9 @@ describe('state codec', () => {
     expect(STATE_RISING & STATE_DEAD).toBe(0)
   })
 
-  it('is a 24-byte state message tagged MSG_STATE', () => {
-    const buf = encodeState({ position: { x: 0, y: 1, z: 0 }, flags: STATE_GROUNDED, yaw: 1, speed: 2, base: 0 })
-    expect(buf.byteLength).toBe(24) // 2 header + 3 floats + 1 flags + 2 floats + 1 base
+  it('is a 25-byte state message tagged MSG_STATE', () => {
+    const buf = encodeState({ position: { x: 0, y: 1, z: 0 }, flags: STATE_GROUNDED, yaw: 1, speed: 2, base: 0, teleports: 0 })
+    expect(buf.byteLength).toBe(25) // 2 header + 3 floats + 1 flags + 2 floats + 1 base + 1 teleports
     expect(new Uint8Array(buf)[1]).toBe(MSG_STATE)
   })
 
@@ -43,13 +43,22 @@ describe('state codec', () => {
     // position is that piece's frame (v10, ADR 0021). The codec only carries the index — the meaning is
     // the sender's and the receiver's, which is why the two ends have to agree on the level.
     for (const base of [0, 1, 7, 255]) {
-      const s = { position: { x: 0.5, y: 0.25, z: -1.5 }, flags: 0, yaw: 0, speed: 0, base }
+      const s = { position: { x: 0.5, y: 0.25, z: -1.5 }, flags: 0, yaw: 0, speed: 0, base, teleports: 0 }
       expect(decodeState(encodeState(s)).base).toBe(base)
     }
   })
 
+  /** The teleport count (v13, ADR 0214): a byte, wrapping, so a viewer only has to see that it changed. */
+  it('round-trips the teleport count, wrapping at a byte', () => {
+    for (const teleports of [0, 1, 254, 255]) {
+      const s = { position: { x: 0, y: 0, z: 0 }, flags: 0, yaw: 0, speed: 0, base: 0, teleports }
+      expect(decodeState(encodeState(s)).teleports).toBe(teleports)
+    }
+    expect(decodeState(encodeState({ position: { x: 0, y: 0, z: 0 }, flags: 0, yaw: 0, speed: 0, base: 0, teleports: 256 })).teleports).toBe(0)
+  })
+
   it('keeps facing and speed at full precision upstream — quantization happens once, on relay', () => {
-    const s = { position: { x: 0, y: 0, z: 0 }, flags: 0, yaw: -2.3456789, speed: 5.4321, base: 0 }
+    const s = { position: { x: 0, y: 0, z: 0 }, flags: 0, yaw: -2.3456789, speed: 5.4321, base: 0, teleports: 0 }
     const back = decodeState(encodeState(s))
     // f32, so exact to about 7 digits rather than the byte the snapshot will later round it to.
     expect(back.yaw).toBeCloseTo(s.yaw, 5)

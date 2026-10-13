@@ -6,7 +6,7 @@ import { createSnapshotClient } from './snapshotClient'
 
 const snap = (t: number, x: number): Snapshot => ({
   serverTimeMs: t,
-  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags: 0 , yaw: 0, speed: 0, base: 0}],
+  entities: [{ id: entityId(1), position: { x, y: 0, z: 0 }, flags: 0 , yaw: 0, speed: 0, base: 0, teleports: 0 }],
 })
 
 describe('createSnapshotClient', () => {

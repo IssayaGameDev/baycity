@@ -29,10 +29,10 @@ Tripwires, not targets. Exceeding one is never resolved silently — mitigation 
 
 ## Wire-cost arithmetic (from the codec, `packages/net/src/snapshot.ts`)
 
-- Header 9 B + footer 2 B; 12 B per changed entity.
-- Worst case, 20 clients all moving every tick: (19 × 12 + 11) B × 20 Hz = 239 B × 20 = 4.8 kB/s per client — payload only, Colyseus framing and WS/TCP excluded.
-- Upstream `STATE` is 24 B × 30 Hz per client; not fanned out, not a tracked budget.
-- Since the last measurement `PROTOCOL_VERSION` is still 10 and the entity layout is unchanged: ADR 0064's game bits reuse the existing flags byte, so byte cost is identical; delta frequency may differ (a game-state flip forces a relay) — not measured.
+- Header 9 B + footer 2 B; 13 B per changed entity (v13).
+- Worst case, 20 clients all moving every tick: (19 × 13 + 11) B × 20 Hz = 258 B × 20 = 5.2 kB/s per client — payload only, Colyseus framing and WS/TCP excluded.
+- Upstream `STATE` is 25 B × 30 Hz per client; not fanned out, not a tracked budget.
+- Since the last measurement the entity grew a byte (v13, the teleport count, ADR 0214): +1 B per relayed entity, arithmetic above; otherwise ADR 0064's game bits reuse the existing flags byte, so byte cost is identical; delta frequency may differ (a game-state flip forces a relay) — not measured.
 
 ## Caveats on the recorded numbers
 

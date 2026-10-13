@@ -16,8 +16,10 @@
  * v12: WELCOME carries the room's quantization bound as an f32 (4 B -> 8 B), so the range positions are read
  * against is the level's rather than a constant compiled into both sides (ADR 0093). Everyone in a room is
  * told the same number by the room, which is what makes a stale client wrong about precision instead of
- * wrong about where people are. */
-export const PROTOCOL_VERSION = 12 as const
+ * wrong about where people are.
+ * v13: STATE and snapshot entities carry a teleport count (u8, wraps), so a viewer stops blending across a teleport
+ * and draws it as one rather than as a streak across the map (ADR 0214). +1 B each. */
+export const PROTOCOL_VERSION = 13 as const
 
 /** The single Colyseus message channel our whole binary protocol rides on (ADR 0013).
  * Colyseus never inspects the payload; we dispatch on the version+type header inside. */

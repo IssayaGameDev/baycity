@@ -223,8 +223,8 @@ describe('dying', () => {
 })
 
 describe('a peer', () => {
-  const alive = { dead: false, tickAlpha: 0 }
-  const isDead = { dead: true, tickAlpha: 0 }
+  const alive = { dead: false, tickAlpha: 0, teleports: 0 }
+  const isDead = { dead: true, tickAlpha: 0, teleports: 0 }
 
   it('keeps their rig while no world exists to drop parts into', () => {
     const { avatars } = build({ world: null })
@@ -298,7 +298,7 @@ describe('disposing', () => {
     const { avatars, scene } = build({ world })
     avatars.drawSelf(ME, placement(true), 1 / 60, { dead: false, tickAlpha: 0, at: vec3(0, 1, 0) })
     avatars.die(ME, vec3(0, 1, 0), vec3())
-    avatars.drawPeer(THEM, placement(false), 1 / 60, { dead: false, tickAlpha: 0 })
+    avatars.drawPeer(THEM, placement(false), 1 / 60, { dead: false, tickAlpha: 0, teleports: 0 })
     avatars.reassemble()
 
     avatars.dispose()
