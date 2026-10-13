@@ -65,7 +65,8 @@ interface Peer { id: EntityId; position: Vec3; yaw: number; states: ReadonlySet<
 5. `avatars.prune(seen)`.
 6. Touch (if `touch.active()`): `setEnabled(!paused)`, `drainLook()` → `orbit.lookTouch`/`zoomPinch`; tap while
    dead = respawn; `touchHud.draw(joystick, jumpButton)`.
-7. `orbit.update(frameDt, ownPos, level.setOccluders)` → `avatars.setSelfVisible(myId, placed.rigVisible)`.
+7. `orbit.update(frameDt, ownPos, level.setOccluders, focus)` — `focus` = `avatars.corpseHead(tickAlpha)` while dead,
+   else none (ADR 0209) → `avatars.setSelfVisible(myId, placed.rigVisible)`.
 8. `frameHooks.run(frameDt)` — **game `onFrame` hooks**, after level, bodies, camera.
 9. `pane.frame()` — frame meter, **last** (ADR 0070).
 
@@ -128,7 +129,8 @@ createAvatars({ scene, gait, makeAnimator?, timing, world: () => PhysicsWorld | 
 Owns every body on screen and their ordering: `CharacterViews` (`characterView.ts`: rig + animator + nametag per
 id, base-switch slip smoothing `BASE_SWITCH_HALFLIFE = 0.1`), own ragdoll + assembly, per-peer ragdolls and
 assemblies. Handles: `drawSelf`, `setSelfVisible(id, cameraSays)` (`!dead && !assembling && cameraSays`),
-`drawPeer`, `prune`, `die`, `reassemble`, `assembling`, `capture`, `obstacles(ownCollider)` (own capsule + every
+`drawPeer`, `prune`, `die`, `reassemble`, `corpseHead(tickAlpha)` (own corpse's head as drawn — `Ragdoll.partAt` —
+or `null`: alive, or `ragdoll: false`), `assembling`, `capture`, `obstacles(ownCollider)` (own capsule + every
 corpse collider, for camera occlusion exclusion), `poseOf`, `partsOf`, `resetMotion`, `dispose`. Reads no flag byte
 or base index — the caller passes `dead` and world-space placement.
 

@@ -228,8 +228,12 @@ export interface OrbitCamera {
   /**
    * Place the camera for this frame around `body`, the character capsule's **centre**, and report what the
    * host has to do about the rig. `setOccluders` is the level view's, for the see-through hole.
+   *
+   * `focus` is a point to aim at instead — a dead player's head (ADR 0209). Aimed at exactly, it is the only
+   * sightline kept clear and the hole's centre, and nothing below it is seen through: there is no standing body
+   * to keep in view, and the probes down one would sit under the floor the head lies on.
    */
-  update: (dt: number, body: Vec3, setOccluders: (handles: readonly number[]) => void) => Placement
+  update: (dt: number, body: Vec3, setOccluders: (handles: readonly number[]) => void, focus?: Vec3) => Placement
 }
 
 /**
@@ -372,7 +376,7 @@ export const createOrbitCamera = (camera: THREE.PerspectiveCamera, opts: OrbitCa
     observe: (q) => {
       queries = q
     },
-    update: (dt, body, setOccluders) => {
+    update: (dt, body, setOccluders, focus) => {
       // The lens, before anything is measured against it. Guarded because `updateProjectionMatrix` rebuilds
       // the projection, and this is a slider that moves on maybe one frame in a session.
       if (camera.fov !== params.fov) {
@@ -381,7 +385,9 @@ export const createOrbitCamera = (camera: THREE.PerspectiveCamera, opts: OrbitCa
       }
       // The aim point, dipped by whatever is left of the last landing.
       landImpact = chase(landImpact, 0, dt, params.landKickRecovery)
-      const target = vec3(body.x, body.y + AIM_RISE - landImpact * params.landKick, body.z)
+      const aim = focus ?? vec3(body.x, body.y + AIM_RISE, body.z)
+      const target = vec3(aim.x, aim.y - landImpact * params.landKick, aim.z)
+      const probes = focus === undefined ? bodyProbes(target) : []
       // Re-clamped every frame, because the range itself is tunable while playing.
       params.camZoom = clamp(params.camZoom, params.camZoomMin, params.camZoomMax)
       distance = chase(distance, params.camZoom, dt, params.camZoomSmooth)
@@ -411,11 +417,11 @@ export const createOrbitCamera = (camera: THREE.PerspectiveCamera, opts: OrbitCa
       // Anything the boom meets below the feet is floor: it stops the camera as it always did, rather than
       // being holed, because a hole in the floor is a view of the level's underside (ADR 0055). Always, not
       // only while grounded — falling and looking down puts the camera under the ground just the same.
-      const feetY = body.y - (CHAR_HALF_HEIGHT + CHAR_RADIUS)
+      const feetY = focus?.y ?? body.y - (CHAR_HALF_HEIGHT + CHAR_RADIUS)
       // Hard limit: how far the boom has room for *now*. The camera is clamped to it unconditionally, and
       // that clamp is the whole no-clipping guarantee. `seeThrough` is the case where there *is* something
       // in the way but the camera may stay out and let the shader dither it.
-      const live = occlude(target, vec3(boomX, boomY, boomZ), boom, bodyProbes(target), feetY)
+      const live = occlude(target, vec3(boomX, boomY, boomZ), boom, probes, feetY)
       const hard = live.limit
       // Soft limit: the same probe, of the same radius, run where the boom *will* be `lookahead` from now —
       // the character has moved on and the mouse has kept turning. An obstruction about to cross the sight
@@ -502,7 +508,7 @@ export const createOrbitCamera = (camera: THREE.PerspectiveCamera, opts: OrbitCa
        * blending or held — an ordinary orbit pays nothing.
        */
       const seen =
-        shotMix > 0.001 ? occlude(target, vec3(offX, offY, offZ), Math.hypot(offX, offY, offZ), bodyProbes(target), feetY) : live
+        shotMix > 0.001 ? occlude(target, vec3(offX, offY, offZ), Math.hypot(offX, offY, offZ), probes, feetY) : live
       maskOpen = chase(maskOpen, seen.seeThrough ? 1 : 0, dt, params.camMaskSmooth)
       if (seen.seeThrough) maskOccluders = seen.occluders
       else if (maskOpen < 0.004) maskOccluders = [] // shut: hand the plain materials back
@@ -511,8 +517,8 @@ export const createOrbitCamera = (camera: THREE.PerspectiveCamera, opts: OrbitCa
         camera: vec3(camera.position.x, camera.position.y, camera.position.z),
         // The capsule's centre, *not* the aim point: that one is a metre higher, at the top of the head, so
         // the hole would be centred there and the feet would fall outside it. It also carries the landing
-        // dip, which the hole has no business following.
-        target: vec3(body.x, body.y, body.z),
+        // dip, which the hole has no business following. A focus has no feet to reach: the hole is round it.
+        target: focus === undefined ? vec3(body.x, body.y, body.z) : vec3(focus.x, focus.y, focus.z),
         radius: params.camMaskRadius * maskOpen,
         feather: params.camMaskFeather,
         // Full strength whenever there is any hole at all: the aperture is the animation.

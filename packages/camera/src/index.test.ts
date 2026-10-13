@@ -80,3 +80,42 @@ describe('seeing through', () => {
     expect(holed).toEqual([WALL])
   })
 })
+
+/** A dead player's head, lying on the floor away from the capsule (ADR 0209). */
+describe('a focus', () => {
+  const BODY = vec3(0, 1, 0)
+  const HEAD = vec3(4, 0.15, -2)
+  /** Every point a sightline was cast from, with the eases and the lookahead off. */
+  const castFrom = (focus?: typeof HEAD): { three: THREE.PerspectiveCamera; from: { y: number }[] } => {
+    const three = new THREE.PerspectiveCamera(60, 1, 0.1, 1000)
+    const orbit = createOrbitCamera(three, {
+      params: { camZoomSmooth: 0, camPushInSmooth: 0, camReturnSmooth: 0, landKick: 0, camLookahead: 0, camSeeThrough: true },
+    })
+    const from: { y: number }[] = []
+    orbit.observe({
+      cast: (origin) => {
+        from.push({ y: origin.y })
+        return undefined
+      },
+      occupied: () => false,
+    })
+    orbit.update(1 / 60, BODY, () => {}, focus)
+    return { three, from }
+  }
+
+  it('is what the camera aims at, not the capsule', () => {
+    const { three } = castFrom(HEAD)
+    const wanted = new THREE.Vector3(HEAD.x, HEAD.y, HEAD.z).sub(three.position).normalize()
+    const got = three.getWorldDirection(new THREE.Vector3())
+    expect(got.x).toBeCloseTo(wanted.x, 4)
+    expect(got.y).toBeCloseTo(wanted.y, 4)
+    expect(got.z).toBeCloseTo(wanted.z, 4)
+  })
+
+  it('is the only sightline kept clear — none down a body, which would start under the floor', () => {
+    expect(castFrom().from.some((o) => o.y < BODY.y + 1 - 1e-6), 'alive, the body is probed below the aim').toBe(true)
+    const { from } = castFrom(HEAD)
+    expect(from.length).toBeGreaterThan(0)
+    for (const o of from) expect(o.y).toBeCloseTo(HEAD.y, 6)
+  })
+})

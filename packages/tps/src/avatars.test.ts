@@ -191,6 +191,24 @@ describe('dying', () => {
     expect(avatars.assembling()).toBe(true)
   })
 
+  /** What the camera follows while we are dead (ADR 0209). */
+  it("hands over where the corpse's head is, and nothing without a corpse", () => {
+    const { avatars } = build({ world: fakeWorld() })
+    avatars.drawSelf(ME, placement(true), 1 / 60, { dead: false, tickAlpha: 0, at: vec3(0, 1, 0) })
+    expect(avatars.corpseHead(1), 'alive').toBeNull()
+    const head = avatars.partsOf(ME)!.head.position
+    avatars.die(ME, vec3(0, 1, 0), vec3())
+    avatars.capture()
+    expect(avatars.corpseHead(1)).toEqual(head)
+    avatars.reassemble()
+    expect(avatars.corpseHead(1), 'respawned').toBeNull()
+
+    const none = build({ world: fakeWorld(), ragdoll: false }).avatars
+    none.drawSelf(ME, placement(true), 1 / 60, { dead: false, tickAlpha: 0, at: vec3(0, 1, 0) })
+    none.die(ME, vec3(0, 1, 0), vec3())
+    expect(none.corpseHead(1), 'a game that drops no ragdoll').toBeNull()
+  })
+
   /** The camera must not be shoved by our own capsule or our own parts. */
   it('adds our parts to what the camera ignores', () => {
     const world = fakeWorld()

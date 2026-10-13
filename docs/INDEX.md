@@ -259,5 +259,6 @@ why matters.
 | [0206](adr/0206-a-sequence-restart-is-a-cut.md) | A sequence restart is a cut |
 | [0207](adr/0207-a-model-is-drawn-at-its-pivot-and-scale.md) | A model is drawn at its node's pivot, at its node's scale |
 | [0208](adr/0208-a-touch-in-any-slice-counts.md) | A touch in any slice of a tick counts |
+| [0209](adr/0209-dead-the-camera-follows-the-head.md) | Dead, the camera follows the corpse's head |
 
 `Design archive/` holds superseded design material and is not maintained.
