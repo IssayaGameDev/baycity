@@ -125,6 +125,8 @@ const reach = (node: WorldNode): void => {
   teleportWindow?.refresh()
 }
 const isReached = (key: string): boolean => levelName !== null && (reached[levelName] ?? []).includes(key)
+/** Debug (Kodjo's call, for testing levels): every checkpoint open in the teleport window. Reaches and saves nothing. */
+const unlock = { all: false }
 
 const client = await startTpsClient({
   ...KEYBOARD_MODE,
@@ -235,7 +237,7 @@ const popups = createPopups(client, pops)
 levelName = client.levelName
 for (const node of reachedEarly.splice(0)) reach(node)
 teleportWindow = createTeleportWindow(client, {
-  rows: () => teleportRows(start, checkpoints, isReached),
+  rows: () => teleportRows(start, checkpoints, (key) => unlock.all || isReached(key)),
   go: (to) => {
     wantTeleport = to
   },
@@ -480,3 +482,4 @@ loop.addButton({ title: 'Add wins' }).on('click', () => {
   wins += Math.max(0, Math.floor(grantWins.amount))
   persist()
 })
+loop.addBinding(unlock, 'all', { label: 'unlock checkpoints' }).on('change', () => teleportWindow?.refresh())
