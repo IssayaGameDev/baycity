@@ -43,3 +43,30 @@ export const localProgress = (mode: string): PersistenceAdapter<PlayerProgress> 
     }
   },
 })
+
+/**
+ * The debug pane's few kept choices (Kodjo's call): on or off by name, per browser — a tester's preference, not
+ * progress, kept through the adapter as every save is. Which choices are kept is each caller's: the frame meter
+ * (`platform`), Keyboard's two checkpoint toggles (`keyboard`). Under `debug.<scope>`; best-effort, none on a failure.
+ */
+export type DebugChoices = Readonly<Record<string, boolean>>
+
+export const localDebugChoices = (scope: string): PersistenceAdapter<DebugChoices> => ({
+  load: () => {
+    try {
+      const raw = localStorage.getItem(`debug.${scope}`)
+      const parsed: unknown = raw === null ? {} : JSON.parse(raw)
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
+      return Object.fromEntries(Object.entries(parsed).filter(([, v]) => typeof v === 'boolean')) as DebugChoices
+    } catch {
+      return {}
+    }
+  },
+  save: (choices) => {
+    try {
+      localStorage.setItem(`debug.${scope}`, JSON.stringify(choices))
+    } catch {
+      // ignore — a session that cannot save still plays
+    }
+  },
+})

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { localProgress } from './persistence'
+import { localDebugChoices, localProgress } from './persistence'
 
 // Minimal in-memory localStorage stub (this runs in the node test env).
 beforeEach(() => {
@@ -39,4 +39,18 @@ it('keeps each game separate', () => {
   localProgress('parkour').save({ checkpoint: 3 })
   expect(localProgress('swing').load()).toEqual({ checkpoint: -1 })
   expect(localProgress('parkour').load()).toEqual({ checkpoint: 3 })
+})
+
+/** The debug pane's kept choices (Kodjo's call): on or off by name, per browser, under the caller's scope. */
+describe('kept debug choices', () => {
+  it('reads back what was saved, only on-or-off values, and nothing from an unreadable store', () => {
+    expect(localDebugChoices('keyboard').load()).toEqual({})
+    localDebugChoices('keyboard').save({ unlockCheckpoints: true, respawnAtCheckpoint: false })
+    expect(localDebugChoices('keyboard').load()).toEqual({ unlockCheckpoints: true, respawnAtCheckpoint: false })
+    expect(localDebugChoices('platform').load(), 'another scope').toEqual({})
+    localStorage.setItem('debug.platform', JSON.stringify({ frameMeter: true, junk: 3 }))
+    expect(localDebugChoices('platform').load()).toEqual({ frameMeter: true })
+    localStorage.setItem('debug.platform', '{nope')
+    expect(localDebugChoices('platform').load()).toEqual({})
+  })
 })

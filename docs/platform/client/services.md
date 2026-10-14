@@ -160,9 +160,13 @@ type ReadJson = (url: string) => Promise<unknown>      // readJson: fetch, a non
 interface PersistenceAdapter<T> { load: () => T; save: (state: T) => void }
 interface PlayerProgress { checkpoint: number }   // -1 = none
 localProgress(mode: string): PersistenceAdapter<PlayerProgress>
+localDebugChoices(scope: string): PersistenceAdapter<DebugChoices>   // DebugChoices = { [name]: boolean }
 ```
 
-`localStorage[`${mode}.state`]`; every failure falls back to `{ checkpoint: -1 }`.
+`localStorage[`${mode}.state`]`; every failure falls back to `{ checkpoint: -1 }`. `localDebugChoices`: the debug
+pane's few kept toggles, a tester's preference (Kodjo's call) — `localStorage[`debug.${scope}`]`, JSON of booleans,
+anything else dropped; `{}` on a failure. Scopes: `platform` (`frameMeter`), `keyboard` (`unlockCheckpoints`,
+`respawnAtCheckpoint`).
 
 **Every player save goes through a `PersistenceAdapter`** (Kodjo's rule, `CLAUDE.md`): a game declares its save's
 shape and an adapter for it — Keyboard's `localKeyboardSave` ([progression.md](../../games/keyboard/progression.md)) —

@@ -3,6 +3,7 @@ import { CHAR_RADIUS, createAnimator, createLocomotion, DEFAULT_GAIT, FOOT_Y, RI
 import { componentOn, readData } from '@mp/components'
 import type { WorldNode } from '@mp/content'
 import { worldLabel, type LabelLine, type THREE } from '@mp/render-three'
+import { localDebugChoices } from '@mp/game-client'
 import { startTpsClient } from '@mp/tps'
 
 import { KEYBOARD_MODE } from './editorMode'
@@ -133,13 +134,17 @@ const reach = (node: WorldNode): void => {
   teleportWindow?.refresh()
 }
 const isReached = (key: string): boolean => levelName !== null && (reached[levelName] ?? []).includes(key)
+/** The two checkpoint toggles below, kept across reloads (Kodjo's call) through the adapter: a tester's preference. */
+const debugKept = localDebugChoices('keyboard')
+const keptChoices = debugKept.load()
 /** Debug (Kodjo's call, for testing levels): every checkpoint open in the teleport window. Reaches and saves nothing. */
-const unlock = { all: false }
+const unlock = { all: keptChoices.unlockCheckpoints === true }
 /**
  * Debug (Kodjo's call): a respawn puts you at the checkpoint of the obstacle you were on — the last trigger walked into
  * or checkpoint teleported to — facing its way, rather than at the spawn. From the spawn, the spawn.
  */
-const respawnHere = { on: false }
+const respawnHere = { on: keptChoices.respawnAtCheckpoint === true }
+const keepDebug = (): void => debugKept.save({ ...debugKept.load(), unlockCheckpoints: unlock.all, respawnAtCheckpoint: respawnHere.on })
 
 const client = await startTpsClient({
   ...KEYBOARD_MODE,
@@ -521,5 +526,8 @@ loop.addButton({ title: 'Add wins' }).on('click', () => {
   wins += Math.max(0, Math.floor(grantWins.amount))
   persist()
 })
-loop.addBinding(unlock, 'all', { label: 'unlock checkpoints' }).on('change', () => teleportWindow?.refresh())
-loop.addBinding(respawnHere, 'on', { label: 'respawn at checkpoint' })
+loop.addBinding(unlock, 'all', { label: 'unlock checkpoints' }).on('change', () => {
+  teleportWindow?.refresh()
+  keepDebug()
+})
+loop.addBinding(respawnHere, 'on', { label: 'respawn at checkpoint' }).on('change', keepDebug)

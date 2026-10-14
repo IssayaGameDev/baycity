@@ -2,6 +2,7 @@ import { CAMERA_TUNABLES, type OrbitCamera } from '@mp/camera'
 import type { CharacterTuning, GaitTuning } from '@mp/humanoid'
 import type { TouchLayout } from '@mp/client/dom'
 import type { GreyboxEnvironment, PostFX, ThreeStage } from '@mp/render-three'
+import { localDebugChoices } from '@mp/game-client'
 import Stats from 'stats.js'
 import { Pane } from 'tweakpane'
 
@@ -364,9 +365,13 @@ export const installDebugPane = (opts: DebugPaneOptions): DebugPane => {
   document.body.appendChild(meter)
   opts.onTouchIgnore(meter)
 
-  const meterOn = { fps: false }
+  // Kept across reloads (Kodjo's call), through the adapter: a tester's preference.
+  const kept = localDebugChoices('platform')
+  const meterOn = { fps: kept.load().frameMeter === true }
+  meter.style.display = meterOn.fps ? 'block' : 'none'
   pane.addBinding(meterOn, 'fps', { label: 'frame meter' }).on('change', (e) => {
     meter.style.display = e.value ? 'block' : 'none'
+    kept.save({ ...kept.load(), frameMeter: e.value })
   })
 
   return {

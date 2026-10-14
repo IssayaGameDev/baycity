@@ -28,12 +28,12 @@ Gaining speed has no slider: `groundMaxAccel` is `Infinity`, so a start is insta
 | Reset wins | `wins = 0`, saved |
 | `level` | slider 0–500: Experience set to exactly where that Level starts (`experienceForLevel`), saved on release; follows the Level as it is earned (ADR 0187) |
 | `grant Wins` + **Add wins** | adds the field's amount to Wins, saved |
-| `unlock checkpoints` | on: every checkpoint open in the teleport window, reached or not (`unlock.all`, Kodjo's call) — nothing reached, nothing saved; off at each load |
-| `respawn at checkpoint` | on: a respawn — a death, the pause menu's Restart — lands on the checkpoint of the obstacle you were on, facing its way, and you stay on it (`respawnHere.on` → `KeyboardSessionOptions.respawnTo`); from the spawn, the spawn. Off at each load |
+| `unlock checkpoints` | on: every checkpoint open in the teleport window, reached or not (`unlock.all`, Kodjo's call) — nothing reached, nothing saved; **kept across reloads** (`localDebugChoices('keyboard')`, Kodjo's call) |
+| `respawn at checkpoint` | on: a respawn — a death, the pause menu's Restart — lands on the checkpoint of the obstacle you were on, facing its way, and you stay on it (`respawnHere.on` → `KeyboardSessionOptions.respawnTo`); from the spawn, the spawn. **Kept across reloads**, as `unlock checkpoints` is |
 
 To get a platform folder back for a session, list it in `debugFolders` in `main.ts`:
 `camera | sky | touch | movement | render | gait | idle | inertia | head | jointLag | air | death`.
 
 ## Frame meter
 
-`frame meter` checkbox at the pane root (platform, ADR 0070): `stats.js` FPS graph, off by default.
+`frame meter` checkbox at the pane root (platform, ADR 0070): `stats.js` FPS graph, off by default, kept across reloads.

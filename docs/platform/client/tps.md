@@ -100,7 +100,7 @@ interface DebugPane { readonly pane: Pane; frame: () => void; dispose: () => voi
 
 - Built in `DEBUG_FOLDERS` order, only keys in `opts.folders` (absent = all). Root `Pane({ title: 'Debug', expanded: false })`
   in a fixed div `top:8px;right:8px;width:256px;z-index:100`.
-- Frame meter (`stats.js`) always built, off by default; toggle binding `frame meter` (ADR 0070).
+- Frame meter (`stats.js`) always built, off by default; toggle binding `frame meter` (ADR 0070), kept across reloads per browser (`localDebugChoices('platform').frameMeter`).
 - Every folder binds an object owned elsewhere (`orbit.params`, `env.sunAngles/skyParams`, `touchLayout`, `tuning`,
   `postfx.params`, `gait`, `assembleTiming`); no state of its own. `orbit.params.camSeeThrough` starts as the
   level's `config.cameraSeeThrough` (`createOrbitCamera` options, ADR 0148); Camera's `see through` flips it live.
