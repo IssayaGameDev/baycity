@@ -11,7 +11,6 @@ const WORLD1 = JSON.parse(readFileSync(here('../balance.world1.json'), 'utf8')) 
 const one = (stages: { stage: number; speed: number; wins: number }[], extra: Partial<Scenario> = {}): Scenario => ({
   worlds: [{ name: 'W', levelRequired: 0, xpMultiplier: 1, speedMultiplier: 1, stages }],
   pads: [],
-  rebirths: [],
   trails: [],
   auras: [],
   clearSeconds: 10,
@@ -97,9 +96,10 @@ describe('simulate', () => {
     const scenario = one([{ stage: 1, speed: 1, wins: 100 }], {
       pads: [{ perStep: 1, requiresWins: 0 }, { perStep: 5, requiresWins: 300 }],
       trails: [{ name: 'a', wins: 500, multiplier: 2 }, { name: 'b', wins: 2000, multiplier: 3 }],
-      rebirths: [{ levelRequired: 3, multiplier: 2 }],
     })
-    const r = simulate({ curve: DEFAULT_CURVE, scenario, horizonS: 600 })
+    // One rebirth, at Level 3 for ×2: the second asks more than the run can reach (ADR 0221, the game's curves).
+    const curve = { ...DEFAULT_CURVE, rebirthLevel: [{ x: 1, y: 3 }, { x: 2, y: 1e9 }], rebirthMultiplier: [{ x: 1, y: 2 }, { x: 2, y: 2 }] }
+    const r = simulate({ curve, scenario, horizonS: 600 })
     const whats = r.events.map((e) => e.what)
     expect(whats.some((w) => w.startsWith('pad +5/step taken'))).toBe(true)
     expect(whats.filter((w) => w.startsWith('trail a bought'))).toHaveLength(1)
@@ -118,7 +118,8 @@ describe('simulate', () => {
         { name: 'W2', levelRequired: 5, xpMultiplier: 100, speedMultiplier: 0.5, stages: [{ stage: 1, speed: 1, wins: 1 }] },
       ],
     }
-    const r = simulate({ curve: DEFAULT_CURVE, scenario, horizonS: 1200 })
+    // No rebirth in reach, so the multiplier is the world's alone.
+    const r = simulate({ curve: { ...DEFAULT_CURVE, rebirthLevel: [{ x: 1, y: 1e9 }] }, scenario, horizonS: 1200 })
     expect(r.events.some((e) => e.what.startsWith('entered W2 at Level 5'))).toBe(true)
     expect(r.final.world).toBe('W2')
     expect(r.final.perStep).toBe(100)

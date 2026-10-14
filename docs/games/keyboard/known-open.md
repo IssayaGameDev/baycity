@@ -9,7 +9,7 @@ What the game lacks or has unresolved, in one place. Each item names the doc or 
 - **A climb penalty.** Slopes cost and grant no speed (ADR 0127). Kodjo wants going uphill to slow you
   eventually; it is not built, and it would need every built stage re-checked against its speed gate.
 - **Treadmill lock/unlock.** Every placed treadmill is usable (ADR 0080).
-- **Rebirth, trails, auras, more worlds.** Not started.
+- **Trails, auras, more worlds.** Not started.
 - **Active-pad highlight beyond material.** Only the material swap exists (ADR 0082).
 
 ## Unresolved

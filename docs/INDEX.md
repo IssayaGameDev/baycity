@@ -271,5 +271,6 @@ why matters.
 | [0218](adr/0218-every-write-keeps-to-the-libraries.md) | Every write keeps to the libraries |
 | [0219](adr/0219-a-reference-can-point-into-a-placement.md) | A reference can point into a placement |
 | [0220](adr/0220-a-reference-follows-a-move.md) | A reference follows a move, and an added child lives in its placement |
+| [0221](adr/0221-rebirth.md) | Rebirth |
 
 `Design archive/` holds superseded design material and is not maintained.

@@ -77,7 +77,7 @@ locked }`: `locked` = not reached, unless the debug pane's `unlock checkpoints` 
 
 | | |
 | --- | --- |
-| the button | `uiButton` **Teleport**, 84 px square × `hudScale`, left edge 18 px in, vertically centred; toggles |
+| the button | `uiButton` **Teleport**, 84 px square × `hudScale`, left edge 18 px in, vertically centred (`sideButtonY(0)`); toggles. Opening it closes the rebirth window, and the other way round (`onOpen`) |
 | T | toggles (not while typing in a field); Esc closes it (the shell's Esc, ADR 0205), leaving the mouse showing |
 | open | `client.holdCursor(close)` — the mouse freed without the pause screen; refused (`null`) while it is up. Walking still works (keys are read unlocked); the camera stops turning |
 | the box | 300 px wide × `hudScale`, as tall as the rows need (header 58, rows 44, padding 12), at most the overlay less 40 px above and below; vertically centred; its background `eventMode` static, so a tap on it is neither "outside" nor a thumb on the stick |

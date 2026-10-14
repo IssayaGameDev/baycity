@@ -50,10 +50,6 @@
     { "perStep": 250, "requiresWins": 15000 },
     { "perStep": 500, "requiresWins": 50000 }
   ],
-  "rebirths": [
-    { "levelRequired": 10, "multiplier": 2 },
-    { "levelRequired": 50, "multiplier": 5 }
-  ],
   "trails": [
     { "name": "trail 1", "wins": 500, "multiplier": 1.5 },
     { "name": "trail 2", "wins": 2050, "multiplier": 4.3 },

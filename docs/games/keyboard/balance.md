@@ -33,7 +33,7 @@ The right edge of the graph shows the extension, so what Level 300 costs is visi
 ```ts
 simulate({ curve, scenario, horizonS, hold?, dt? }, everyS = 60): SimResult
 Scenario { worlds: [{ name, levelRequired, xpMultiplier, speedMultiplier, stages: [{ stage, speed, wins }] }],
-           pads: [{ perStep, requiresWins }], rebirths: [{ levelRequired, multiplier }],
+           pads: [{ perStep, requiresWins }],
            trails: [{ name, wins, multiplier }], auras: [...], clearSeconds, fastClearSeconds }
 SimResult { levelAt: number[] /* current run */; stageOpenAt: Map<'World/stage', s>; events: [{ t, what }]; samples; final }
 ```
@@ -42,12 +42,12 @@ The model, from [world-1.md](world-1.md): a **stage is a speed gate** — passab
 clear, `clearTime` = `clearSeconds` at the gate falling to `fastClearSeconds` at twice it. The player holds a
 direction `hold` of the time, runs the furthest passable stage of the current world, takes pads by threshold
 (and keeps them when Wins are spent), buys the best affordable trail and aura, rebirths the moment the Level
-allows (XP and Level reset, multiplier replaces), and moves to the highest open world that has stages. Uses the
+allows — the game's own curves, `rebirthLevelAt` and `rebirthMultiplierAt` (XP and Level reset, ADR 0221) — and moves to the highest open world that has stages. Uses the
 game's own `levelAt`, `maxSpeedAt`, `stepsPerMinute`. A **ceiling**: no idling, no deaths. For comparing curves,
 not predicting a clock.
 
-Scenario data: `modes/keyboard/balance.world1.json` — World 1's 14 gates and payouts, the eight pads, the two
-rebirths, 15 trails and 5 auras interpolated between the ends Kodjo gave, Worlds 2 and 3 as openings with no
+Scenario data: `modes/keyboard/balance.world1.json` — World 1's 14 gates and payouts, the eight pads,
+15 trails and 5 auras interpolated between the ends Kodjo gave, Worlds 2 and 3 as openings with no
 stages yet. `balance.test.ts` asserts it matches the table in [world-1.md](world-1.md).
 
 ```sh

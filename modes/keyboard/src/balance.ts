@@ -1,4 +1,4 @@
-import { BASE_PER_STEP, levelAt, maxSpeedAt, stepsPerMinute, type ProgressCurve } from './progression'
+import { BASE_PER_STEP, levelAt, maxSpeedAt, rebirthLevelAt, rebirthMultiplierAt, stepsPerMinute, type ProgressCurve } from './progression'
 
 /**
  * The balance simulator (ADR 0087, rebuilt on gates ADR 0088): one imagined player run through the whole loop.
@@ -17,7 +17,8 @@ import { BASE_PER_STEP, levelAt, maxSpeedAt, stepsPerMinute, type ProgressCurve 
  *   `1 × pad × world × rebirth × trail × aura`.
  * - **Wins** are spent greedily: the best affordable trail and aura are bought as soon as they can be. Pads
  *   are thresholds, free to take, and **a pad once taken stays** (ADR 0082) even after Wins are spent below it.
- * - **Rebirth** the moment its Level is reached: XP and Level reset, the table's multiplier replaces the last.
+ * - **Rebirth** the moment its Level is reached: XP and Level reset, and the multiplier is the curves' for that
+ *   rebirth (`rebirthLevel`, `rebirthMultiplier`, ADR 0221) — the game's own, from the same settings.
  * - **Worlds** open at a Level; the player moves to the highest open one and stays there.
  *
  * It is a ceiling: a player who knows every route, never idles, never dies below the gate. Its use is comparing
@@ -46,12 +47,6 @@ export interface PadPlan {
   requiresWins: number
 }
 
-export interface RebirthPlan {
-  levelRequired: number
-  /** The rebirth multiplier after this rebirth (replaces the previous one). */
-  multiplier: number
-}
-
 /** A trail or an aura: bought once with Wins, the best owned is the one equipped. */
 export interface ShopItem {
   name: string
@@ -62,7 +57,6 @@ export interface ShopItem {
 export interface Scenario {
   worlds: readonly WorldPlan[]
   pads: readonly PadPlan[]
-  rebirths: readonly RebirthPlan[]
   trails: readonly ShopItem[]
   auras: readonly ShopItem[]
   /** Seconds a stage takes at exactly its gate speed, and at speeds far above it. */
@@ -243,11 +237,10 @@ export const simulate = (input: SimInput, everyS = 60): SimResult => {
     // Level milestones, then rebirth.
     const now = level()
     while (levelAtS.length <= now) levelAtS.push(t)
-    const next = scenario.rebirths[rebirths]
-    if (next !== undefined && now >= next.levelRequired) {
+    if (now >= rebirthLevelAt(rebirths + 1, curve)) {
       rebirths++
-      rebirthMult = next.multiplier
-      note(`rebirth ${rebirths} at Level ${now}: ×${next.multiplier} from now on, XP and Level reset`)
+      rebirthMult = rebirthMultiplierAt(rebirths, curve)
+      note(`rebirth ${rebirths} at Level ${now}: ×${rebirthMult} from now on, XP and Level reset`)
       experience = 0
       levelAtS.length = 1
     }

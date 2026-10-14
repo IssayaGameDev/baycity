@@ -6,6 +6,7 @@ import type { TpsClient } from '@mp/tps'
 import type { CheckpointStop } from './components/obstacle'
 import { hudScale } from './hud'
 import type { KeyboardTeleport } from './rules'
+import { SIDE_BUTTON, sideButtonY } from './sideButtons'
 
 /**
  * The teleport window (ADR 0203), Kodjo's calls throughout: a square **Teleport** button on the left edge, where the
@@ -49,8 +50,6 @@ export const slideOut = (progress: number): number => easeAt('out-cubic', progre
 
 /** Desktop geometry, in overlay pixels at a HUD scale of 1. */
 const BASE = {
-  button: 84,
-  sideMargin: 18,
   boxWidth: 300,
   header: 58,
   padding: 12,
@@ -66,9 +65,12 @@ export interface TeleportWindowOptions {
   readonly rows: () => readonly TeleportRow[]
   /** Go there. */
   readonly go: (to: KeyboardTeleport) => void
+  /** It just opened: the other side windows close (one box on the left edge at a time). */
+  readonly onOpen?: () => void
 }
 
 export interface TeleportWindow {
+  close: () => void
   /** Read the rows again, if it is open — a checkpoint reached while it is up opens there and then, the list's scroll kept. */
   refresh: () => void
   dispose: () => void
@@ -100,9 +102,10 @@ export const createTeleportWindow = (client: TpsClient, opts: TeleportWindowOpti
     open = true
     rows = opts.rows()
     built = null
+    opts.onOpen?.()
   }
 
-  const button = uiButton({ label: 'Teleport', width: BASE.button, height: BASE.button, color: 0x3b82f6, onClick: () => toggle() })
+  const button = uiButton({ label: 'Teleport', width: SIDE_BUTTON.size, height: SIDE_BUTTON.size, color: 0x3b82f6, onClick: () => toggle() })
   // Its own layer under the box, so the box slides over it.
   root.addChild(button.view)
 
@@ -164,19 +167,20 @@ export const createTeleportWindow = (client: TpsClient, opts: TeleportWindowOpti
     const { width, height } = client.ui
     const k = hudScale(width, height)
     button.view.scale.set(k)
-    button.view.position.set(BASE.sideMargin * k, height / 2 - (BASE.button * k) / 2)
+    button.view.position.set(SIDE_BUTTON.margin * k, sideButtonY(0, height, k))
 
     progress = stepSlide(progress, open, dt)
     box.visible = progress > 0
     if (!box.visible) return
     build(height, k)
     box.scale.set(k)
-    const outX = BASE.sideMargin * k
+    const outX = SIDE_BUTTON.margin * k
     const hiddenX = -BASE.boxWidth * k - 4
     box.position.set(hiddenX + (outX - hiddenX) * slideOut(progress), (height - boxH * k) / 2)
   })
 
   return {
+    close,
     refresh: () => {
       if (!open) return
       rows = opts.rows()

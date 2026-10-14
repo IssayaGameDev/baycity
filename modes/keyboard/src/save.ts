@@ -4,7 +4,7 @@ import { BASE_PER_STEP } from './progression'
 
 /**
  * What this game keeps for a player across visits: Experience (ADR 0071), Wins (ADR 0073), what a step pays
- * (ADR 0082) and the checkpoints reached (ADR 0211). A game's stats live in the game, and they are saved **only
+ * (ADR 0082), the checkpoints reached (ADR 0211) and how many times they have reborn (ADR 0221). A game's stats live in the game, and they are saved **only
  * through a `PersistenceAdapter`** (Kodjo's rule): this browser's storage now, platform accounts later, and the game
  * reads and writes this one shape either way.
  */
@@ -14,10 +14,12 @@ export interface KeyboardSave {
   perStep: number
   /** By level name, the keys of the checkpoints reached there (`CheckpointStop.key`). */
   reached: Readonly<Record<string, readonly string[]>>
+  /** Rebirths taken, a whole number (ADR 0221). */
+  rebirths: number
 }
 
 /** The keys these values were always saved under, so a save from before the adapter loads as it was. */
-const KEYS = { experience: 'keyboard.experience', wins: 'keyboard.wins', perStep: 'keyboard.perStep', reached: 'keyboard.reached' } as const
+const KEYS = { experience: 'keyboard.experience', wins: 'keyboard.wins', perStep: 'keyboard.perStep', reached: 'keyboard.reached', rebirths: 'keyboard.rebirths' } as const
 
 /** A stored number, or `fallback` when it is missing, unreadable, or below `min`. */
 const readNumber = (key: string, fallback: number, min: number): number => {
@@ -62,12 +64,14 @@ export const localKeyboardSave = (): PersistenceAdapter<KeyboardSave> => ({
     wins: readNumber(KEYS.wins, 0, 0),
     perStep: readNumber(KEYS.perStep, BASE_PER_STEP, 1),
     reached: readReached(),
+    rebirths: Math.floor(readNumber(KEYS.rebirths, 0, 0)),
   }),
   save: (s) => {
     write(KEYS.experience, String(Math.floor(s.experience)))
     write(KEYS.wins, String(Math.floor(s.wins)))
     write(KEYS.perStep, String(s.perStep))
     write(KEYS.reached, JSON.stringify(s.reached))
+    write(KEYS.rebirths, String(Math.floor(s.rebirths)))
   },
 })
 

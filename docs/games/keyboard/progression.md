@@ -10,16 +10,19 @@
 
 ## The curves
 
-Three designed curves (ADR 0088, [balance.md](balance.md)), edited in the editor's games window (Settings) and stored in
+Five designed curves (ADR 0088, [balance.md](balance.md)), edited in the editor's games window (Settings) and stored in
 `content/keyboard/game.json`; `DEFAULT_CURVE` = the declared defaults, `GAME_CURVE` (`rules.ts`) = the file over them.
+The two rebirth curves are [rebirth.md](rebirth.md)'s.
 
 ```ts
-interface ProgressCurve { levelCost: CurvePoint[]; speed: CurvePoint[]; cadence: CurvePoint[] }
+interface ProgressCurve { levelCost; speed; cadence; rebirthLevel; rebirthMultiplier }   // each CurvePoint[]
 levelCostAt(level)          // XP from level to level + 1 — sampleCurve(levelCost, ratio, extend)
 experienceForLevel(level)   // running sum of levelCostAt, memoised per point array
 levelAt(experience)         // binary search over that sum → { level, into, next }
 maxSpeedAt(level)           // sampleCurve(speed, linear, extend), studs/s
 stepsPerMinute(level)       // sampleCurve(cadence, linear, hold)
+rebirthLevelAt(rebirth)     // the Level rebirth n (1 the first) needs — rebirthLevel, ratio, extend; rounded, ≥ 1
+rebirthMultiplierAt(n)      // XP × after n rebirths — 1 for none, else rebirthMultiplier, ratio, extend
 METRES_PER_STUD = 0.28; BASE_PER_STEP = 1
 ```
 
@@ -45,9 +48,9 @@ metres at the top (ADR 0107). Measured reach cost is −1.6 % holding the stick,
 
 ## Saves
 
-Through the adapter only (`CLAUDE.md`): `save.ts` — `KeyboardSave { experience, wins, perStep, reached }`,
+Through the adapter only (`CLAUDE.md`): `save.ts` — `KeyboardSave { experience, wins, perStep, reached, rebirths }`,
 `localKeyboardSave(): PersistenceAdapter<KeyboardSave>` (`@mp/game-client`). `main.ts` loads it once and `persist()`s
-all of it every 3 s, on a `StepPad` taken, on a checkpoint reached, and on the debug resets, `level` and Wins grant. A value that is missing,
+all of it every 3 s, on a `StepPad` taken, on a checkpoint reached, on a rebirth, and on the debug resets, `level` and Wins grant. A value that is missing,
 unreadable or below its minimum loads as its default. Local storage, this game's own keys:
 
 | Key | Value |
@@ -56,6 +59,7 @@ unreadable or below its minimum loads as its default. Local storage, this game's
 | `keyboard.wins` | floored integer |
 | `keyboard.perStep` | the `StepPad` value last taken; fallback `BASE_PER_STEP` |
 | `keyboard.reached` | JSON `{ [levelName]: CheckpointStop.key[] }` — checkpoints reached ([obstacles.md](obstacles.md)); `withReached` adds one; a level whose value is not a list of strings is dropped |
+| `keyboard.rebirths` | floored integer — rebirths taken ([rebirth.md](rebirth.md)); fallback 0 |
 
 Nothing goes through the platform's `PlayerProgress` (`ModeSession.progress()` is always `-1`). Note the origin
 changes with every `pnpm share` link, so saves reset per link (ADR 0074).
@@ -63,3 +67,4 @@ changes with every `pnpm share` link, so saves reset per link (ADR 0074).
 ## Display
 
 `abbreviate(n)`: `K`/`M`/`B`/`T`/`Qa`/`Qi`/`Sx`/`Sp`/`Oc`/`No`/`Dc`, two decimals under 100, one above; used by the HUD and the signs.
+`shortAmount(n)`: up to two decimals under 1 000, `abbreviate` past it — a step's popup. `multiplierText(m)` = `×` + it.

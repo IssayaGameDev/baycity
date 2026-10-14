@@ -31,13 +31,13 @@ Fixed alongside:
 - **Worlds**: World 2 opens at Level 120, World 3 at 400. A world is a pair of multipliers on the global curves:
   measured World 2 ≈ ×550 XP per step and ×⅓ speed at Level 219 (300 → 99 studs/s, 1.35 B → 741 B per step).
 - **Rebirth**: resets XP and Level, keeps Wins and every multiplier; allowed at a Level per rebirth (10, 50, …),
-  pays a permanent XP multiplier per rebirth (×2, ×5, …). Not built.
+  pays a permanent XP multiplier per rebirth (×2, ×5, …). Built: [rebirth.md](rebirth.md), these as the curves' defaults.
 - **Trails**: 15 of them, one equipped, bought with Wins: from ×1.5 XP at 500 Wins to ×3 M XP at 250 B Wins. Not built.
 - **Auras**: one equipped, bought with Wins: from ×1.2 XP at 1 M Wins to ×8.5 XP at 1 B Wins. Not built.
 - **Per step**: `1 × stepPad × treadmill × world × rebirth × trail × aura × item`.
 - **No checkpoints** in any world: a fall is the start of the level.
-- **Surfaces**: a world is entered through a **portal** in the level; a rebirth is triggered from a **menu icon** on
-  screen. Neither built.
+- **Surfaces**: a world is entered through a **portal** in the level, not built; a rebirth is triggered from a **menu
+  icon** on screen, the Rebirth button.
 - **Time per clear**: 5 to 45 seconds a stage, shrinking with the player's speed.
 
 Machine copy for the simulator: `modes/keyboard/balance.world1.json` (`balance.test.ts` asserts it matches this

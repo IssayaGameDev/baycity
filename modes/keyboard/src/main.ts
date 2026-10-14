@@ -10,7 +10,8 @@ import { createHud } from './hud'
 import { DEFAULT_KEYCAP_SHAPE, type KeycapShape } from './keycapGeometry'
 import { DEFAULT_KEYCAP_LOOK, DEFAULT_PRESS, drawKeycaps, type KeycapLook, type PressFeel } from './keycaps'
 import { createPopups, DEFAULT_POPUP, type PopupFeel } from './popups'
-import { abbreviate, experienceForLevel, levelAt, maxSpeedAt, METRES_PER_STUD, type ProgressCurve } from './progression'
+import { abbreviate, experienceForLevel, levelAt, maxSpeedAt, METRES_PER_STUD, rebirthMultiplierAt, shortAmount, type ProgressCurve } from './progression'
+import { createRebirthWindow, rebirthView, type RebirthWindow } from './rebirthWindow'
 import { keyboardSession, GAME_CURVE, GAME_KEYS, spawnOf, STAND_OFFSET, type KeyboardSession, type KeyboardTeleport } from './rules'
 import { createTeleportWindow, teleportRows, type TeleportWindow } from './teleportWindow'
 import { checkpointsOf, shownText, TEXT_FADE_SECONDS, type CheckpointStop } from './components/obstacle'
@@ -37,7 +38,7 @@ import { localKeyboardSave, withReached } from './save'
  * Everything here goes through what ADR 0066 and ADR 0071 opened: the scene, a per-frame hook, the drawn rig
  * parts, and the 2D overlay. Not one field was added to `TpsClientOptions` or `ModeDescriptor`.
  *
- * **Still missing:** the click, the speed picker, anything Wins buy, rebirth.
+ * **Still missing:** the click, the speed picker, anything Wins buy.
  */
 const look: KeycapLook = { ...DEFAULT_KEYCAP_LOOK }
 const shape: KeycapShape = { ...DEFAULT_KEYCAP_SHAPE }
@@ -57,8 +58,10 @@ let wins = saved.wins
 let perStep = saved.perStep
 /** The checkpoints reached, by level (ADR 0211). */
 let reached = saved.reached
+/** Rebirths taken (ADR 0221): what every step's XP is multiplied by, through the curve. */
+let rebirths = saved.rebirths
 /** Everything above, as it is now. */
-const persist = (): void => saves.save({ experience, wins, perStep, reached })
+const persist = (): void => saves.save({ experience, wins, perStep, reached, rebirths })
 /** Cash-outs the rules reported this tick, banked here and popped on the next frame. */
 const cashedOut: { wins: number; at: { x: number; y: number; z: number } }[] = []
 /**
@@ -110,6 +113,8 @@ let insideSeenMs = -Infinity
 const textShown = new Map<WorldNode, number>()
 /** The teleport window, once it is made: told when a checkpoint is reached, so an open one opens the row then. */
 let teleportWindow: TeleportWindow | null = null
+/** The rebirth window (ADR 0221): one box on the left edge at a time, so each closes the other as it opens. */
+let rebirthWindow: RebirthWindow | null = null
 /** An Obstacle's trigger was walked into (ADR 0211): its checkpoint is reached for good, saved once. */
 const reach = (node: WorldNode): void => {
   if (levelName === null) {
@@ -241,6 +246,22 @@ teleportWindow = createTeleportWindow(client, {
   go: (to) => {
     wantTeleport = to
   },
+  onOpen: () => rebirthWindow?.close(),
+})
+/**
+ * Rebirth (ADR 0221, Kodjo's calls): at the Level the next one needs, Experience and so Level go back to 0 and every
+ * step pays the curve's multiplier from then on. Nothing else resets — Wins, the step pad, the checkpoints reached,
+ * where you stand. No Wins are paid.
+ */
+rebirthWindow = createRebirthWindow(client, {
+  view: () => rebirthView(levelAt(experience, curve).level, rebirths, curve),
+  rebirth: () => {
+    if (!rebirthView(levelAt(experience, curve).level, rebirths, curve).ready) return
+    rebirths += 1
+    experience = 0
+    persist()
+  },
+  onOpen: () => teleportWindow?.close(),
 })
 
 /**
@@ -391,14 +412,16 @@ client.onFrame((dt) => {
     if (steps < 1 || me === null) return pending
     experience += steps * each
     const parts = client.partsOf(me)
-    if (parts !== null) popups.burst(Array.from({ length: steps }, () => standing(parts)), `+${each}`)
+    if (parts !== null) popups.burst(Array.from({ length: steps }, () => standing(parts)), `+${shortAmount(each)}`)
     return pending - steps
   }
   // Every tick before this frame is complete, contacts included, so the last report is settled and on the ground.
   groundSteps += stepsThisTick
   stepsThisTick = 0
-  groundSteps = payOut(groundSteps, perStep)
-  if (treadmillOn !== null) treadmillSteps = payOut(treadmillSteps, treadmillStepValue(perStep, treadmillOn))
+  // Every step's worth times the rebirths' multiplier (ADR 0221): `1 × stepPad × treadmill × rebirth` so far.
+  const reborn = rebirthMultiplierAt(rebirths, curve)
+  groundSteps = payOut(groundSteps, perStep * reborn)
+  if (treadmillOn !== null) treadmillSteps = payOut(treadmillSteps, treadmillStepValue(perStep, treadmillOn) * reborn)
   // The tick already put us back at the spawn; the payout is what is left to show. Popped from the pad we left.
   for (const cash of cashedOut) {
     wins += cash.wins

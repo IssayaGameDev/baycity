@@ -19,12 +19,12 @@ beforeEach(() => {
 
 describe("the game's save, through its adapter", () => {
   it('starts from nothing when nothing was saved', () => {
-    expect(localKeyboardSave().load()).toEqual({ experience: 0, wins: 0, perStep: BASE_PER_STEP, reached: {} })
+    expect(localKeyboardSave().load()).toEqual({ experience: 0, wins: 0, perStep: BASE_PER_STEP, reached: {}, rebirths: 0 })
   })
 
   it('round-trips, whole numbers for the two counts', () => {
-    localKeyboardSave().save({ experience: 345510.7, wins: 42.9, perStep: 25, reached: { Roblox_World_1: ['a', 'b'] } })
-    expect(localKeyboardSave().load()).toEqual({ experience: 345510, wins: 42, perStep: 25, reached: { Roblox_World_1: ['a', 'b'] } })
+    localKeyboardSave().save({ experience: 345510.7, wins: 42.9, perStep: 25, reached: { Roblox_World_1: ['a', 'b'] }, rebirths: 2 })
+    expect(localKeyboardSave().load()).toEqual({ experience: 345510, wins: 42, perStep: 25, reached: { Roblox_World_1: ['a', 'b'] }, rebirths: 2 })
   })
 
   /** Kodjo's real save was written before the adapter existed: same keys, same numbers. */
@@ -32,7 +32,7 @@ describe("the game's save, through its adapter", () => {
     store.set('keyboard.experience', '345510')
     store.set('keyboard.wins', '1000')
     store.set('keyboard.perStep', '50')
-    expect(localKeyboardSave().load()).toEqual({ experience: 345510, wins: 1000, perStep: 50, reached: {} })
+    expect(localKeyboardSave().load()).toEqual({ experience: 345510, wins: 1000, perStep: 50, reached: {}, rebirths: 0 })
   })
 
   it('takes the default for a value it cannot use', () => {
@@ -40,7 +40,8 @@ describe("the game's save, through its adapter", () => {
     store.set('keyboard.wins', '-3')
     store.set('keyboard.perStep', '0')
     store.set('keyboard.reached', '{not json')
-    expect(localKeyboardSave().load()).toEqual({ experience: 0, wins: 0, perStep: BASE_PER_STEP, reached: {} })
+    store.set('keyboard.rebirths', '-1')
+    expect(localKeyboardSave().load()).toEqual({ experience: 0, wins: 0, perStep: BASE_PER_STEP, reached: {}, rebirths: 0 })
     store.set('keyboard.reached', JSON.stringify({ good: ['a'], bad: [1], worse: 'a' }))
     expect(localKeyboardSave().load().reached, 'only lists of keys').toEqual({ good: ['a'] })
   })

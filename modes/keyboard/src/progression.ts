@@ -14,12 +14,14 @@
  * the word "speed" for the only thing that is one.
  *
  * The shape of each conversion is a **designed curve** — control points Kodjo places in the editor, stored in
- * `content/keyboard/game.json` (ADR 0087/0088) — not a formula with parameters. Three of them:
+ * `content/keyboard/game.json` (ADR 0087/0088) — not a formula with parameters. Five of them:
  *
  * - `levelCost`: XP needed to go from Level L to L+1. Exponential, so edited on a log axis with constant-ratio
  *   segments; extends forever, because Level 500 must not be free.
  * - `speed`: Max Speed at Level, studs/s. Linear segments; extends.
  * - `cadence`: steps per minute at Level (`components/steps.ts`). Linear segments; holds past the last point.
+ * - `rebirthLevel`, `rebirthMultiplier` (ADR 0221): by rebirth — the 1st, the 2nd, … — the Level it needs and the XP
+ *   multiplier a player has after it, the whole of it. Ratio segments; extend, so there is always a next one.
  *
  * Headless and pure, so the curves can be checked against real save data rather than eyeballed in play.
  */
@@ -29,6 +31,8 @@ export interface ProgressCurve {
   levelCost: CurvePoint[]
   speed: CurvePoint[]
   cadence: CurvePoint[]
+  rebirthLevel: CurvePoint[]
+  rebirthMultiplier: CurvePoint[]
 }
 
 /** One stud, in metres. A unit, not a balance value: the character's world is metric, the game's numbers are studs. */
@@ -40,11 +44,13 @@ export const BASE_PER_STEP = 1
 const LEVEL_COST_SHAPE = { interpolation: 'ratio', beyond: 'extend' } as const
 const SPEED_SHAPE = { interpolation: 'linear', beyond: 'extend' } as const
 const CADENCE_SHAPE = { interpolation: 'linear', beyond: 'hold' } as const
+const REBIRTH_SHAPE = { interpolation: 'ratio', beyond: 'extend' } as const
 
 /**
- * The three curves, as the editor edits them (ADR 0088). The defaults are the fits that came before them:
- * Level 1 costs 100 and each level 1.15× the last (Kodjo's Level 45 save), speed 10 + 2 per Level (two readings),
- * cadence Kodjo's eight readings (ADR 0081). The data behind them is thin; that is what the editor is for.
+ * The curves, as the editor edits them (ADR 0088). The defaults are the fits that came before them: Level 1 costs
+ * 100 and each level 1.15× the last (Kodjo's Level 45 save), speed 10 + 2 per Level (two readings), cadence Kodjo's
+ * eight readings (ADR 0081), rebirths at Level 10 for ×2 and 50 for ×5 (`world-1.md`). The data behind them is thin;
+ * that is what the editor is for.
  */
 export const CURVE_SETTINGS = {
   levelCost: {
@@ -89,6 +95,34 @@ export const CURVE_SETTINGS = {
       { x: 50, y: 420 },
       { x: 85, y: 540 },
       { x: 170, y: 600 },
+    ],
+  },
+  rebirthLevel: {
+    kind: 'curve',
+    label: 'Rebirth Level',
+    hint: 'the Level a rebirth needs, by rebirth: the 1st, the 2nd, …; ratio segments, extends',
+    xLabel: 'Rebirth',
+    yLabel: 'Level needed',
+    ...REBIRTH_SHAPE,
+    logY: true,
+    yMin: 1,
+    default: [
+      { x: 1, y: 10 },
+      { x: 2, y: 50 },
+    ],
+  },
+  rebirthMultiplier: {
+    kind: 'curve',
+    label: 'Rebirth XP multiplier',
+    hint: 'the XP multiplier a player has after a rebirth, the whole of it, not on top of the last; ratio segments, extends',
+    xLabel: 'Rebirth',
+    yLabel: '× XP',
+    ...REBIRTH_SHAPE,
+    logY: true,
+    yMin: 1,
+    default: [
+      { x: 1, y: 2 },
+      { x: 2, y: 5 },
     ],
   },
 } satisfies Record<keyof ProgressCurve, CurveSetting & SettingDecl>
@@ -155,6 +189,20 @@ export const stepsPerMinute = (level: number, curve: ProgressCurve = DEFAULT_CUR
   Math.max(0, sampleCurve(curve.cadence, Math.max(0, level), CADENCE_SHAPE))
 
 export const maxSpeedMps = (level: number, curve: ProgressCurve = DEFAULT_CURVE): number => maxSpeedAt(level, curve) * METRES_PER_STUD
+
+/** The Level rebirth number `rebirth` (1 the first) needs: a whole Level, at least 1 (ADR 0221). */
+export const rebirthLevelAt = (rebirth: number, curve: ProgressCurve = DEFAULT_CURVE): number =>
+  Math.max(1, Math.round(sampleCurve(curve.rebirthLevel, rebirth, REBIRTH_SHAPE)))
+
+/** The XP multiplier after `rebirths` rebirths: 1 before the first, the curve's after each — the whole, not stacked (ADR 0221). */
+export const rebirthMultiplierAt = (rebirths: number, curve: ProgressCurve = DEFAULT_CURVE): number =>
+  rebirths < 1 ? 1 : Math.max(0, sampleCurve(curve.rebirthMultiplier, rebirths, REBIRTH_SHAPE))
+
+/** An amount as the genre writes it, short: `12.5` under a thousand, `2.50K` and up past it. */
+export const shortAmount = (n: number): string => (n < 1000 ? String(Number(n.toFixed(2))) : abbreviate(n))
+
+/** A multiplier so: `×2`, `×12.5`, `×15.00K`. */
+export const multiplierText = (m: number): string => `×${shortAmount(m)}`
 
 /**
  * The counter's number, the way the genre writes it: two decimals under 100, one above, and the short scale up
