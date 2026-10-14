@@ -483,6 +483,11 @@ client.onFrame((dt) => {
     levelPick.level = at.level
     levelSlider.refresh()
   }
+  // A rebirth taken in its window shows on the debug slider too.
+  if (rebirthPick.rebirths !== rebirths) {
+    rebirthPick.rebirths = rebirths
+    rebirthSlider.refresh()
+  }
   // Written into the **client's** live tuning — the object the controller reads. It went into the descriptor's
   // object for fifty levels and changed nothing: the client copies that on the way in (ADR 0057, ADR 0071's
   // correction).
@@ -497,7 +502,7 @@ client.onFrame((dt) => {
 
 /**
  * The two folders this game adds (ADR 0075). Kodjo's list, nothing else: Movement holds the two acceleration
- * caps (ADR 0078); Progression holds the two resets, the Level (ADR 0187) and a Wins grant. The curve, the keycap
+ * caps (ADR 0078); Progression holds the three resets, the Level (ADR 0187), the rebirths and a Wins grant. The curve, the keycap
  * press feel and the popup feel have defaults and no sliders — nobody asked for sliders.
  */
 // The movement numbers this game owns (ADR 0078, ADR 0096): how hard a fast character may lose or redirect
@@ -526,6 +531,10 @@ loop.addButton({ title: 'Reset wins' }).on('click', () => {
   wins = 0
   persist()
 })
+loop.addButton({ title: 'Reset rebirths' }).on('click', () => {
+  rebirths = 0
+  persist()
+})
 // Set the Level outright (Kodjo's call, in place of an XP grant): Experience goes to exactly where that Level
 // starts. It follows the Level as it is earned (the frame loop refreshes it), and a value that already matches
 // — that refresh itself — changes nothing.
@@ -534,6 +543,14 @@ const levelSlider = loop.addBinding(levelPick, 'level', { min: 0, max: 500, step
 levelSlider.on('change', (e) => {
   const level = Math.round(e.value)
   if (levelAt(experience, curve).level !== level) experience = experienceForLevel(level, curve)
+  if (e.last) persist()
+})
+// Set the rebirths taken outright, as the Level: every step pays that many rebirths' multiplier from then on. Nothing
+// else moves — a rebirth's reset of Experience is the window's, not this.
+const rebirthPick = { rebirths }
+const rebirthSlider = loop.addBinding(rebirthPick, 'rebirths', { min: 0, max: 50, step: 1, label: 'rebirths' })
+rebirthSlider.on('change', (e) => {
+  rebirths = Math.max(0, Math.round(e.value))
   if (e.last) persist()
 })
 // The same for Wins: the step pads are gated on them, and earning 50K by running is not a debug workflow.
