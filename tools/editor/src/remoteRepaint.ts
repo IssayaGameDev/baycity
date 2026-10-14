@@ -95,3 +95,31 @@ export const repaintFor = (
   }
   return plan
 }
+
+/**
+ * Remote ops gathered until the next frame, then handed to `flush` in one call, in the order they came (ADR 0224):
+ * every batch that lands before it is one repaint. `frame` is `requestAnimationFrame` in the editor.
+ */
+export const createFrameQueue = (frame: (fn: () => void) => number, cancel: (id: number) => void, flush: (ops: Op[]) => void) => {
+  let queued: Op[] = []
+  let pending: number | null = null
+  const run = (): void => {
+    pending = null
+    const ops = queued
+    queued = []
+    if (ops.length > 0) flush(ops)
+  }
+  return {
+    push: (ops: readonly Op[]): void => {
+      if (ops.length === 0) return
+      queued.push(...ops)
+      if (pending === null) pending = frame(run)
+    },
+    /** Drop what waits: the room was left, or a snapshot rebuilt everything. */
+    forget: (): void => {
+      if (pending !== null) cancel(pending)
+      pending = null
+      queued = []
+    },
+  }
+}

@@ -274,5 +274,6 @@ why matters.
 | [0221](adr/0221-rebirth.md) | Rebirth |
 | [0222](adr/0222-the-world-component.md) | The World component: a level's balance in one place |
 | [0223](adr/0223-the-simulator-plays-the-world.md) | The simulator plays the World |
+| [0224](adr/0224-a-bulk-edit-is-one-redraw-for-the-room.md) | A bulk edit is one redraw for the room |
 
 `Design archive/` holds superseded design material and is not maintained.

@@ -1,7 +1,7 @@
 import { SEQUENCE, type NodeRef, type Op } from '@mp/content'
 import { describe, expect, it } from 'vitest'
 
-import { repaintFor, type Repaint } from './remoteRepaint'
+import { createFrameQueue, repaintFor, type Repaint } from './remoteRepaint'
 
 /**
  * What an edit made elsewhere needs redrawn (ADR 0167): its objects' subtrees for most, everything for what
@@ -84,5 +84,53 @@ describe('an edit to a component that drives another', () => {
     const drives = (type: string): boolean => type === 'Collider'
     expect(repaintFor([{ kind: 'setParams', id: 'a', componentId: 'col', patch: {} }], typeOf, drives).all).toBe(true)
     expect(repaintFor([{ kind: 'setParams', id: 'a', componentId: 'col', patch: {} }], typeOf).all, 'nothing drives: its own subtree').toBe(false)
+  })
+})
+
+/** Batches from elsewhere that land within one frame are one repaint (ADR 0224). */
+describe('the frame queue', () => {
+  const setup = () => {
+    const frames: (() => void)[] = []
+    const flushed: Op[][] = []
+    const q = createFrameQueue(
+      (fn) => frames.push(fn),
+      (id) => void (frames[id - 1] = () => {}),
+      (ops) => void flushed.push(ops),
+    )
+    return { q, frames, flushed, tick: () => frames.splice(0).forEach((f) => f()) }
+  }
+  const move = (id: string): Op => ({ kind: 'setName', id, name: id })
+
+  it('hands every batch that landed before the frame over in one call, in order', () => {
+    const { q, frames, flushed, tick } = setup()
+    q.push([move('a')])
+    q.push([move('b'), move('c')])
+    q.push([move('d')])
+    expect(frames, 'one frame asked for, however many batches').toHaveLength(1)
+    expect(flushed, 'nothing redrawn before it').toEqual([])
+    tick()
+    expect(flushed).toEqual([[move('a'), move('b'), move('c'), move('d')]])
+  })
+
+  it('asks for another frame for what lands after one ran', () => {
+    const { q, flushed, tick } = setup()
+    q.push([move('a')])
+    tick()
+    q.push([move('b')])
+    tick()
+    expect(flushed).toEqual([[move('a')], [move('b')]])
+  })
+
+  it('forgets what waits, and asks for nothing for an empty batch', () => {
+    const { q, frames, flushed, tick } = setup()
+    q.push([])
+    expect(frames).toHaveLength(0)
+    q.push([move('a')])
+    q.forget()
+    tick()
+    expect(flushed).toEqual([])
+    q.push([move('b')])
+    tick()
+    expect(flushed).toEqual([[move('b')]])
   })
 })

@@ -6,7 +6,7 @@ import { createThreeStage, THREE, type OutlineGroup } from '@mp/render-three'
 import { createCollab, httpTransport, parseCameraPresence, parseFollowPresence, parseMotionPresence, parsePresence, peerChanges, type CameraPresence, type FieldFocus, type FieldSpot, type Hold, type OpenAsset, type Peer, type Room } from './collab'
 import type { Doc, LocalPose } from './editorDoc'
 import type { Notify } from './notices'
-import { repaintFor } from './remoteRepaint'
+import { createFrameQueue, repaintFor } from './remoteRepaint'
 
 /**
  * A connection's colour: its outline in the viewport (ADR 0145), its icon in the top bar and its badge in the
@@ -309,6 +309,21 @@ export const createLiveSession = (host: LiveHost) => {
     })
   }
 
+  /**
+   * Remote ops not yet redrawn (ADR 0224): every batch that lands before the next frame is one repaint. A bulk edit
+   * sent as many batches rebuilt every other editor in the room once per batch — fifty moves, a minute frozen on a
+   * big level. The data is applied as each lands; only the redraw waits, a frame at most, and a hidden tab's until
+   * it shows. While a rebuild runs the next batches queue, so a long rebuild coalesces more.
+   */
+  const remote = createFrameQueue(
+    (fn) => requestAnimationFrame(fn),
+    (id) => cancelAnimationFrame(id),
+    (ops) => repaintAfterOps(ops),
+  )
+  const queueRemote = remote.push
+  /** The queued redraw is moot: the room was left, or a snapshot rebuilt everything. */
+  const forgetRemote = remote.forget
+
   /** Repaint what arrived while the redraw was held off — the end of a gizmo drag. */
   const drainDeferredRemote = (): void => {
     if (deferredRemote.length === 0) return
@@ -325,6 +340,7 @@ export const createLiveSession = (host: LiveHost) => {
    */
   const reinstallLevel = (level: Level): void => {
     if (!host.reinstallRoot(level)) return
+    forgetRemote()
     lastHoldKey = null // a reconnect is a new connection: the server holds nothing for it yet
     syncHolds()
   }
@@ -436,7 +452,7 @@ export const createLiveSession = (host: LiveHost) => {
       latestSnapshot = level
       if (!joining) reinstallLevel(level)
     },
-    onApplied: (ops) => repaintAfterOps(ops),
+    onApplied: (ops) => queueRemote(ops),
     onHidden: (keys) => host.onHidden(keys),
     onRejected: (batch, reason) => {
       // The batch is already rolled back in the data; forget the history entry that holds it, then redraw.
@@ -518,9 +534,13 @@ export const createLiveSession = (host: LiveHost) => {
     live,
     /** Join a room; resolves the snapshot it greeted us with, or `null`. */
     joinRoom,
-    leave: () => collab.leave(),
+    leave: () => {
+      forgetRemote()
+      return collab.leave()
+    },
     /** Leaving everything: the room, the holds, the held batches and the presence timer. */
     leaveAll: () => {
+      forgetRemote()
       collab.leave()
       holdMap = new Map()
       holdsNow = []

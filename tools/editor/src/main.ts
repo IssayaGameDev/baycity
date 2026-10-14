@@ -1471,17 +1471,24 @@ const hierarchy: Hierarchy = createHierarchy($<HTMLDivElement>('#hierarchy'), {
 
     const landedRefs: (NodeRef | null)[] = []
     let slot = at
-    for (const step of planned) {
-      if (step.ref === null) continue
-      const here = open.indexOfRef(step.ref)
-      const into = parentRef === null ? null : open.indexOfRef(parentRef)
-      if (here === null || (parentRef !== null && into === null)) continue
-      const landed = open.reparent(here, into, slot, step.reframed)
-      landedRefs.push(open.refAt(landed))
-      slot++
+    // Each move is its own batch: held back and sent as one when the loop ends (ADR 0224), as a gizmo drag's are —
+    // every other editor in the room rebuilds its whole viewport on each batch it receives.
+    edits.beginDrag()
+    try {
+      for (const step of planned) {
+        if (step.ref === null) continue
+        const here = open.indexOfRef(step.ref)
+        const into = parentRef === null ? null : open.indexOfRef(parentRef)
+        if (here === null || (parentRef !== null && into === null)) continue
+        const landed = open.reparent(here, into, slot, step.reframed)
+        landedRefs.push(open.refAt(landed))
+        slot++
+      }
+    } finally {
+      // One entry for the drag however many it carried (ADR 0113), so it is one Ctrl+Z and one message. In the
+      // `finally`, so a throw mid-loop still sends and records the moves already made.
+      edits.endDrag(moving.length > 1 ? `reparent ${moving.length} objects` : 'reparent')
     }
-    // One entry for the drag however many it carried (ADR 0113), so it is one Ctrl+Z and one message.
-    edits.recordEdit(moving.length > 1 ? `reparent ${moving.length} objects` : 'reparent')
 
     // Depth-first indices *are* the identity here (meshes, selection, the gizmo's target) and a reparent
     // renumbers everything after it, so the scene graph and the physics world are rebuilt rather than
